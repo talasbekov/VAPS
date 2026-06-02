@@ -65,18 +65,24 @@ def structure_setup():
     department.refresh_from_db()
     directorate1.refresh_from_db()
 
+    # Подчиненный отдел
+    division1 = Division.objects.create(name="Отдел 1", code="div1", division_type=Division.DivisionType.DIVISION, parent=directorate1)
+    division1.refresh_from_db()
+
     # 2. Штатные единицы
     su_dept_1 = StaffUnit.objects.create(division=department, index=1)
     su_dir1_1 = StaffUnit.objects.create(division=directorate1, index=1)
     su_dir1_2 = StaffUnit.objects.create(division=directorate1, index=2)
     su_dir1_3 = StaffUnit.objects.create(division=directorate1, index=3)
     su_dir1_vacant = StaffUnit.objects.create(division=directorate1, index=4)
+    su_div1_1 = StaffUnit.objects.create(division=division1, index=1)
 
     # 3. Сотрудники
     emp_dept = Employee.objects.create(personnel_number="001", last_name="Иванов", first_name="Иван", gender=Employee.Gender.MALE); su_dept_1.employee = emp_dept; su_dept_1.save()
     emp_dir1_1 = Employee.objects.create(personnel_number="002", last_name="Петров", first_name="Петр", gender=Employee.Gender.MALE); su_dir1_1.employee = emp_dir1_1; su_dir1_1.save()
     emp_dir1_2 = Employee.objects.create(personnel_number="003", last_name="Сидоров", first_name="Сидор", gender=Employee.Gender.MALE); su_dir1_2.employee = emp_dir1_2; su_dir1_2.save()
     emp_dir1_3 = Employee.objects.create(personnel_number="004", last_name="Смирнов", first_name="Алексей", gender=Employee.Gender.MALE); su_dir1_3.employee = emp_dir1_3; su_dir1_3.save()
+    emp_div1_1 = Employee.objects.create(personnel_number="005", last_name="Николаев", first_name="Николай", gender=Employee.Gender.MALE); su_div1_1.employee = emp_div1_1; su_div1_1.save()
 
     # 4. Статусы
     today = timezone.now().date()
@@ -119,6 +125,15 @@ def structure_setup():
         end_date=tomorrow
     )
 
+    # Николаев: В командировке
+    EmployeeStatus.objects.create(
+        employee=emp_div1_1,
+        status_type=EmployeeStatus.StatusType.BUSINESS_TRIP,
+        state=EmployeeStatus.StatusState.ACTIVE,
+        start_date=yesterday, created_by=test_user,
+        end_date=tomorrow
+    )
+
     return {
         'department': department,
         'directorate1': directorate1,
@@ -151,12 +166,12 @@ class TestDailyExpenseIntegration:
         for row in ws.iter_rows(values_only=True):
             if row[0] == "Управление 1":
                 found_directorate = True
-                assert row[1] == 4  # staff units count in directorate1 (su_dir1_1, 2, 3, vacant)
-                assert row[2] == 3  # employees count (Петров, Сидоров, Смирнов)
+                assert row[1] == 5  # staff units count in directorate1 + division1 (su_dir1_1, 2, 3, vacant, su_div1_1) (su_dir1_1, 2, 3, vacant)
+                assert row[2] == 4  # employees count (Петров, Сидоров, Смирнов, Николаев) (Петров, Сидоров, Смирнов)
                 assert row[3] == 1  # in_service_count (Петров)
                 assert row[4] == 1  # vacancies_count (su_dir1_vacant)
                 assert row[5] == 1  # vacation_count (Сидоров)
-                assert row[6] == 0  # trip
+                assert row[6] == 1  # trip (Николаев)
                 assert row[7] == 1  # sick (Смирнов)
 
         assert found_directorate, "Управление 1 не найдено в отчете"
@@ -184,12 +199,12 @@ class TestDailyExpenseIntegration:
         for row in ws.iter_rows(values_only=True):
             if row[0] == "ИТОГО":
                 found_total = True
-                assert row[1] == 5  # total staff units
-                assert row[2] == 4  # total employees
-                assert row[3] == 2  # total in service
+                assert row[1] == 6  # total staff units (direct dept + all directorate descendants)
+                assert row[2] == 5  # total employees (direct dept + all directorate descendants)
+                assert row[3] == 2  # total in service (direct dept + all directorate descendants)
                 assert row[4] == 1  # total vacancies
                 assert row[5] == 1  # total vacation
-                assert row[6] == 0  # total trip
+                assert row[6] == 1  # total trip
                 assert row[7] == 1  # total sick
 
         assert found_total, "Строка ИТОГО не найдена"
