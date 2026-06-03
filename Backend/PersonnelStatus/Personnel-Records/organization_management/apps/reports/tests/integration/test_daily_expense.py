@@ -166,8 +166,8 @@ class TestDailyExpenseIntegration:
         for row in ws.iter_rows(values_only=True):
             if row[0] == "Управление 1":
                 found_directorate = True
-                assert row[1] == 5  # staff units count in directorate1 + division1 (su_dir1_1, 2, 3, vacant, su_div1_1) (su_dir1_1, 2, 3, vacant)
-                assert row[2] == 4  # employees count (Петров, Сидоров, Смирнов, Николаев) (Петров, Сидоров, Смирнов)
+                assert row[1] == 5  # staff units count in directorate1 + division1 (su_dir1_1, su_dir1_2, su_dir1_3, su_dir1_vacant, su_div1_1)
+                assert row[2] == 4  # employees count (Петров, Сидоров, Смирнов, Николаев)
                 assert row[3] == 1  # in_service_count (Петров)
                 assert row[4] == 1  # vacancies_count (su_dir1_vacant)
                 assert row[5] == 1  # vacation_count (Сидоров)
