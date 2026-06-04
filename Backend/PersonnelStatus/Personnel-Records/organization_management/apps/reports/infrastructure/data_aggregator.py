@@ -26,6 +26,10 @@ class DataAggregator:
         department = report.division
         return self._collect_for_scope(department, ref_date)
 
+    def collect_for_division(self, division, date=None) -> Dict[str, Any]:
+        ref_date = date or timezone.now().date()
+        return self._collect_for_scope(division, ref_date)
+
     def _collect_for_scope(self, department, ref_date) -> Dict[str, Any]:
 
         if not department:
@@ -83,7 +87,7 @@ class DataAggregator:
             employee__staff_unit__division_id__in=descendant_ids,
             start_date__lte=ref_date,
             state=EmployeeStatus.StatusState.ACTIVE
-        ).filter(Q(end_date__isnull=True) | Q(end_date__gte=ref_date)).select_related('employee', 'related_division')
+        ).filter(Q(end_date__isnull=True) | Q(end_date__gte=ref_date)).select_related('employee', 'employee__staff_unit', 'employee__staff_unit__division', 'related_division')
 
         # Прикомандированные считаем по related_division (входящие на приемную сторону)
         incoming_qs = EmployeeStatus.objects.filter(
@@ -91,7 +95,7 @@ class DataAggregator:
             related_division_id__in=descendant_ids,
             start_date__lte=ref_date,
             state=EmployeeStatus.StatusState.ACTIVE
-        ).filter(Q(end_date__isnull=True) | Q(end_date__gte=ref_date)).select_related('employee', 'employee__staff_unit')
+        ).filter(Q(end_date__isnull=True) | Q(end_date__gte=ref_date)).select_related('employee', 'employee__staff_unit', 'employee__staff_unit__division', 'related_division')
 
         seconded_in_map = {}
         for incoming in incoming_qs:
