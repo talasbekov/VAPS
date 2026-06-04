@@ -216,3 +216,34 @@ class TestDailyExpenseSyncAsyncContract:
         assert sync_total["vacation"] == async_total["vacation"]
         assert sync_total["trip"] == async_total["trip"]
         assert sync_total["sick"] == async_total["sick"]
+
+        # 4. Verify explicit text notes from generated sync XLSX (generated from DataAggregator now!)
+        found_sidorov_vacation = False
+        found_smirnov_sick = False
+        found_nikolaev_trip = False
+
+        notes_row = False
+        for row in ws.iter_rows(values_only=True):
+            if row[0] == "Управление 1":
+                notes_row = True
+                continue
+
+            if notes_row:
+                # The row immediately following the Directorate row contains the notes
+                # Index 5 = Vacation notes (zero-indexed) -> Column 6 (F)
+                if row[5] and "Сидоров Сидор" in str(row[5]):
+                    found_sidorov_vacation = True
+
+                # Index 6 = Trip notes -> Column 7 (G)
+                if row[6] and "Николаев Николай" in str(row[6]):
+                    found_nikolaev_trip = True
+
+                # Index 7 = Sick notes -> Column 8 (H)
+                if row[7] and "Смирнов Алексей" in str(row[7]):
+                    found_smirnov_sick = True
+
+                notes_row = False
+
+        assert found_sidorov_vacation, "Сидоров is missing from vacation notes"
+        assert found_smirnov_sick, "Смирнов is missing from sick notes"
+        assert found_nikolaev_trip, "Николаев is missing from trip notes"
