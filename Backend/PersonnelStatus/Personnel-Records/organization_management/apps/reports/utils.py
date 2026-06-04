@@ -8,11 +8,10 @@ from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 from django.conf import settings
+from django.utils import timezone
 
 from organization_management.apps.divisions.models import Division
-from organization_management.apps.staff_unit.models import StaffUnit
-from organization_management.apps.employees.models import Employee
-from organization_management.apps.statuses.models import EmployeeStatus
+from organization_management.apps.reports.infrastructure.data_aggregator import DataAggregator
 
 
 def safe_set_cell_value(ws, row, col, value):
@@ -22,43 +21,28 @@ def safe_set_cell_value(ws, row, col, value):
     """
     cell = ws.cell(row=row, column=col)
 
-    # Проверяем, является ли ячейка частью объединенного диапазона
     if isinstance(cell, MergedCell):
-        # Находим диапазон объединенных ячеек
         for merged_range in ws.merged_cells.ranges:
             if cell.coordinate in merged_range:
-                # Получаем координаты первой ячейки диапазона
                 min_row = merged_range.min_row
                 min_col = merged_range.min_col
-                # Записываем значение в первую ячейку
                 ws.cell(row=min_row, column=min_col).value = value
                 return
     else:
-        # Обычная ячейка - просто записываем значение
         cell.value = value
 
 
 def generate_personnel_expense_report(department_id):
     """
-    Генерирует отчет "Расход" по департаменту в памяти.
-
-    Args:
-        department_id: ID департамента
-
-    Returns:
-        tuple: (BytesIO объект с Excel файлом, имя файла)
+    Генерирует отчет "Расход" по департаменту в памяти, используя DataAggregator (STORY-000.8).
     """
-    # Путь к шаблону
     template_path = os.path.join(
         settings.BASE_DIR,
         'apps/reports/расход.xlsx'
     )
-
-    # Загружаем шаблон
     wb = load_workbook(template_path)
     ws = wb.active
 
-    # Получаем департамент
     try:
         department = Division.objects.get(pk=department_id, division_type=Division.DivisionType.DEPARTMENT)
     except Division.DoesNotExist:
@@ -66,167 +50,73 @@ def generate_personnel_expense_report(department_id):
 
     heads = Division.objects.filter(division_type=Division.DivisionType.DEPARTMENT, is_active=True).order_by('name')
 
-    # Получаем все управления в департаменте
     directorates = Division.objects.filter(
         parent=department,
         division_type=Division.DivisionType.DIRECTORATE,
         is_active=True
     ).order_by('name')
 
-    # Начальная строка для данных
-    start_row = 6
-    current_row = start_row
+    # 1. СБОР ДАННЫХ (DataAggregator)
+    aggregator = DataAggregator()
+    ref_date = timezone.now().date()
+    data = aggregator._collect_for_scope(department, ref_date)
 
-    # Итоговые счетчики
-    total_staff_units = 0
-    total_employees = 0
-    total_in_service = 0
-    total_vacancies = 0
-    total_vacation = 0
-    total_sick = 0
-    total_business_trip = 0
-    total_on_duty = 0
-    total_after_duty = 0
-    total_training = 0
-    total_seconded_from = 0
-    total_seconded_to = 0
+    head_metrics = data.get("head_metrics", {})
+    summary = data.get("summary", {})
+
+    # Ищем строки по directorate.id
+    def get_dir_row(dir_id):
+        for r in data.get("rows", []):
+            if r["division_id"] == dir_id:
+                return r
+        return None
+
+    # Итоговые счетчики (Берем напрямую из summary)
+    total_staff_units = summary.get("staff_unit", 0)
+    total_employees = summary.get("total_working", 0)
+    total_in_service = summary.get("in_service", 0)
+    total_vacancies = summary.get("vacancies", 0)
+    total_vacation = summary.get("vacation", 0)
+    total_sick = summary.get("sick_leave", 0)
+    total_business_trip = summary.get("business_trip", 0)
+
+    # Примечания ИТОГО
+    total_on_duty = summary.get("notes", {}).get("on_duty_list", []) if "notes" in summary else []
+    total_after_duty = summary.get("notes", {}).get("after_duty_list", []) if "notes" in summary else []
+    total_training = summary.get("training", 0)
+    total_seconded_from = summary.get("seconded_in", 0)
+    total_seconded_to = summary.get("seconded_out", 0)
 
     # === ОБРАБОТКА РУКОВОДСТВА ДЕПАРТАМЕНТА (строки 4-5) ===
     head_row = 4
 
-    # Получаем сотрудников, напрямую относящихся к департаменту (не к управлениям)
-    head_division_ids = [department.id]
+    # Извлекаем метрики руководителя
+    head_staff_units = head_metrics.get("staff_unit", 0)
+    head_employees = head_metrics.get("total_working", 0)
+    head_in_service = head_metrics.get("in_service", 0)
+    head_vacancies = head_metrics.get("vacancies", 0)
+    head_vacation_count = head_metrics.get("vacation", 0)
+    head_sick_count = head_metrics.get("sick_leave", 0)
+    head_trip_count = head_metrics.get("business_trip", 0)
 
-    # Количество штатных единиц руководства
-    head_staff_units = StaffUnit.objects.filter(division_id=department.id).count()
+    head_on_duty_count = len(head_metrics.get("notes", {}).get("on_duty_list", []))
+    head_after_duty_count = len(head_metrics.get("notes", {}).get("after_duty_list", []))
+    head_training_count = head_metrics.get("training", 0)
+    head_seconded_from_count = head_metrics.get("seconded_in", 0)
+    head_seconded_to_count = head_metrics.get("seconded_out", 0)
 
-    # Количество сотрудников руководства
-    head_employees = StaffUnit.objects.filter(
-        division_id=department.id,
-        employee__isnull=False
-    ).count()
-
-    # Количество "в строю"
-    head_in_service = EmployeeStatus.objects.filter(
-        employee__staff_unit__division_id=department.id,
-        status_type=EmployeeStatus.StatusType.IN_SERVICE,
-        state=EmployeeStatus.StatusState.ACTIVE
-    ).count()
-
-    # Вакансии руководства
-    head_vacancies = StaffUnit.objects.filter(
-        division_id=department.id,
-        employee__isnull=True
-    ).count()
-
-    # Отпуск руководства
-    head_vacation_statuses = EmployeeStatus.objects.filter(
-        employee__staff_unit__division_id=department.id,
-        status_type__in=[EmployeeStatus.StatusType.VACATION, EmployeeStatus.StatusType.LEAVE_BY_REPORT],
-        state=EmployeeStatus.StatusState.ACTIVE
-    ).select_related('employee')
-
-    head_vacation_count = head_vacation_statuses.count()
-    head_vacation_list = []
-    for status in head_vacation_statuses:
-        emp = status.employee
-        period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-        head_vacation_list.append(f"{emp.last_name} {emp.first_name} ({period})")
-
-    # Командировка руководства
-    head_trip_statuses = EmployeeStatus.objects.filter(
-        employee__staff_unit__division_id=department.id,
-        status_type=EmployeeStatus.StatusType.BUSINESS_TRIP,
-        state=EmployeeStatus.StatusState.ACTIVE
-    ).select_related('employee')
-
-    head_trip_count = head_trip_statuses.count()
-    head_trip_list = []
-    for status in head_trip_statuses:
-        emp = status.employee
-        period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-        head_trip_list.append(f"{emp.last_name} {emp.first_name} ({period})")
-
-    # Больничный руководства
-    head_sick_statuses = EmployeeStatus.objects.filter(
-        employee__staff_unit__division_id=department.id,
-        status_type=EmployeeStatus.StatusType.SICK_LEAVE,
-        state=EmployeeStatus.StatusState.ACTIVE
-    ).select_related('employee')
-
-    head_sick_count = head_sick_statuses.count()
-    head_sick_list = []
-    for status in head_sick_statuses:
-        emp = status.employee
-        period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-        head_sick_list.append(f"{emp.last_name} {emp.first_name} ({period})")
-
-    # На дежурстве руководства
-    head_on_duty_statuses = EmployeeStatus.objects.filter(
-        employee__staff_unit__division_id=department.id,
-        status_type=EmployeeStatus.StatusType.ON_DUTY,
-        state=EmployeeStatus.StatusState.ACTIVE
-    ).select_related('employee')
-
-    head_on_duty_count = head_on_duty_statuses.count()
-    head_on_duty_list = [f"{s.employee.last_name} {s.employee.first_name}" for s in head_on_duty_statuses]
-
-    # После дежурства руководства
-    head_after_duty_statuses = EmployeeStatus.objects.filter(
-        employee__staff_unit__division_id=department.id,
-        status_type=EmployeeStatus.StatusType.AFTER_DUTY,
-        state=EmployeeStatus.StatusState.ACTIVE
-    ).select_related('employee')
-
-    head_after_duty_count = head_after_duty_statuses.count()
-    head_after_duty_list = [f"{s.employee.last_name} {s.employee.first_name}" for s in head_after_duty_statuses]
-
-    # На учебе руководства
-    head_training_statuses = EmployeeStatus.objects.filter(
-        employee__staff_unit__division_id=department.id,
-        status_type__in=[EmployeeStatus.StatusType.TRAINING, EmployeeStatus.StatusType.COMPETITION],
-        state=EmployeeStatus.StatusState.ACTIVE
-    ).select_related('employee')
-
-    head_training_count = head_training_statuses.count()
-    head_training_list = []
-    for status in head_training_statuses:
-        emp = status.employee
-        period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-        head_training_list.append(f"{emp.last_name} {emp.first_name} ({period})")
-
-    # Прикомандирован руководства
-    head_seconded_from_statuses = EmployeeStatus.objects.filter(
-        employee__staff_unit__division_id=department.id,
-        status_type=EmployeeStatus.StatusType.SECONDED_FROM,
-        state=EmployeeStatus.StatusState.ACTIVE
-    ).select_related('employee')
-
-    head_seconded_from_count = head_seconded_from_statuses.count()
-    head_seconded_from_list = []
-    for status in head_seconded_from_statuses:
-        emp = status.employee
-        period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-        from_div = status.related_division.name if status.related_division else "?"
-        head_seconded_from_list.append(f"{emp.last_name} {emp.first_name} ({period}, из {from_div})")
-
-    # Откомандирован руководства
-    head_seconded_to_statuses = EmployeeStatus.objects.filter(
-        employee__staff_unit__division_id=department.id,
-        status_type=EmployeeStatus.StatusType.SECONDED_TO,
-        state=EmployeeStatus.StatusState.ACTIVE
-    ).select_related('employee')
-
-    head_seconded_to_count = head_seconded_to_statuses.count()
-    head_seconded_to_list = []
-    for status in head_seconded_to_statuses:
-        emp = status.employee
-        period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-        to_div = status.related_division.name if status.related_division else "?"
-        head_seconded_to_list.append(f"{emp.last_name} {emp.first_name} ({period}, в {to_div})")
+    head_notes = head_metrics.get("notes", {})
+    head_vacation_list = head_notes.get("vacation_list", [])
+    head_trip_list = head_notes.get("trip_list", [])
+    head_sick_list = head_notes.get("sick_list", [])
+    head_on_duty_list = head_notes.get("on_duty_list", [])
+    head_after_duty_list = head_notes.get("after_duty_list", [])
+    head_training_list = head_notes.get("training_list", [])
+    head_seconded_from_list = head_notes.get("seconded_from_list", [])
+    head_seconded_to_list = head_notes.get("seconded_to_list", [])
 
     # СТРОКА 4: Руководство - Название + Числа
-    safe_set_cell_value(ws, head_row, 1, "Басшылық")  # "Руководство"
+    safe_set_cell_value(ws, head_row, 1, department.name)
     safe_set_cell_value(ws, head_row, 2, head_staff_units)
     safe_set_cell_value(ws, head_row, 3, head_employees)
     safe_set_cell_value(ws, head_row, 4, head_in_service)
@@ -240,179 +130,53 @@ def generate_personnel_expense_report(department_id):
     safe_set_cell_value(ws, head_row, 12, head_seconded_from_count)
     safe_set_cell_value(ws, head_row, 13, head_seconded_to_count)
 
-    # СТРОКА 5: Руководство - Подробности ФИО
-    safe_set_cell_value(ws, head_row + 1, 6, "; ".join(head_vacation_list) if head_vacation_list else "")
-    safe_set_cell_value(ws, head_row + 1, 7, "; ".join(head_trip_list) if head_trip_list else "")
-    safe_set_cell_value(ws, head_row + 1, 8, "; ".join(head_sick_list) if head_sick_list else "")
-    safe_set_cell_value(ws, head_row + 1, 9, "; ".join(head_on_duty_list) if head_on_duty_list else "")
-    safe_set_cell_value(ws, head_row + 1, 10, "; ".join(head_after_duty_list) if head_after_duty_list else "")
-    safe_set_cell_value(ws, head_row + 1, 11, "; ".join(head_training_list) if head_training_list else "")
-    safe_set_cell_value(ws, head_row + 1, 12, "; ".join(head_seconded_from_list) if head_seconded_from_list else "")
-    safe_set_cell_value(ws, head_row + 1, 13, "; ".join(head_seconded_to_list) if head_seconded_to_list else "")
+    # СТРОКА 5: Руководство - Примечания
+    head_notes_row = head_row + 1
+    safe_set_cell_value(ws, head_notes_row, 6, "\n".join(head_vacation_list))
+    safe_set_cell_value(ws, head_notes_row, 7, "\n".join(head_trip_list))
+    safe_set_cell_value(ws, head_notes_row, 8, "\n".join(head_sick_list))
+    safe_set_cell_value(ws, head_notes_row, 9, "\n".join(head_on_duty_list))
+    safe_set_cell_value(ws, head_notes_row, 10, "\n".join(head_after_duty_list))
+    safe_set_cell_value(ws, head_notes_row, 11, "\n".join(head_training_list))
+    safe_set_cell_value(ws, head_notes_row, 12, "\n".join(head_seconded_from_list))
+    safe_set_cell_value(ws, head_notes_row, 13, "\n".join(head_seconded_to_list))
 
-    # Добавляем руководство к итоговым счетчикам
-    total_staff_units += head_staff_units
-    total_employees += head_employees
-    total_in_service += head_in_service
-    total_vacancies += head_vacancies
-    total_vacation += head_vacation_count
-    total_business_trip += head_trip_count
-    total_sick += head_sick_count
-    total_on_duty += head_on_duty_count
-    total_after_duty += head_after_duty_count
-    total_training += head_training_count
-    total_seconded_from += head_seconded_from_count
-    total_seconded_to += head_seconded_to_count
+    # === ОБРАБОТКА УПРАВЛЕНИЙ ===
+    start_row = 6
+    current_row = start_row
 
-    # Обрабатываем каждое управление
     for directorate in directorates:
-        # Получаем всех сотрудников управления (включая подчиненные отделы)
-        directorate_descendants = directorate.get_descendants(include_self=True)
-        directorate_division_ids = list(directorate_descendants.values_list('id', flat=True))
+        dr = get_dir_row(directorate.id)
+        if not dr:
+            continue
 
-        # Количество штатных единиц
-        staff_units_count = StaffUnit.objects.filter(
-            division_id__in=directorate_division_ids
-        ).count()
-        total_staff_units += staff_units_count
+        staff_units_count = dr.get("staff_unit", 0)
+        employees_count = dr.get("total_working", 0)
+        in_service_count = dr.get("in_service", 0)
+        vacancies_count = dr.get("vacancies", 0)
+        vacation_count = dr.get("vacation", 0)
+        trip_count = dr.get("business_trip", 0)
+        sick_count = dr.get("sick_leave", 0)
 
-        # Количество сотрудников
-        employees_count = StaffUnit.objects.filter(
-            division_id__in=directorate_division_ids,
-            employee__isnull=False
-        ).count()
-        total_employees += employees_count
+        dr_notes = dr.get("notes", {})
+        on_duty_list = dr_notes.get("on_duty_list", [])
+        on_duty_count = len(on_duty_list)
 
-        # Количество сотрудников "в строю"
-        in_service_count = EmployeeStatus.objects.filter(
-            employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type=EmployeeStatus.StatusType.IN_SERVICE,
-            state=EmployeeStatus.StatusState.ACTIVE
-        ).count()
-        total_in_service += in_service_count
+        after_duty_list = dr_notes.get("after_duty_list", [])
+        after_duty_count = len(after_duty_list)
 
-        # Количество вакансий
-        vacancies_count = StaffUnit.objects.filter(
-            division_id__in=directorate_division_ids,
-            employee__isnull=True
-        ).count()
-        total_vacancies += vacancies_count
+        training_count = dr.get("training", 0)
+        seconded_from_count = dr.get("seconded_in", 0)
+        seconded_to_count = dr.get("seconded_out", 0)
 
-        # Отпуск
-        vacation_statuses = EmployeeStatus.objects.filter(
-            employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type__in=[EmployeeStatus.StatusType.VACATION, EmployeeStatus.StatusType.LEAVE_BY_REPORT],
-            state=EmployeeStatus.StatusState.ACTIVE
-        ).select_related('employee')
+        vacation_list = dr_notes.get("vacation_list", [])
+        trip_list = dr_notes.get("trip_list", [])
+        sick_list = dr_notes.get("sick_list", [])
+        training_list = dr_notes.get("training_list", [])
+        seconded_from_list = dr_notes.get("seconded_from_list", [])
+        seconded_to_list = dr_notes.get("seconded_to_list", [])
 
-        vacation_count = vacation_statuses.count()
-        vacation_list = []
-        for status in vacation_statuses:
-            emp = status.employee
-            period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-            vacation_list.append(f"{emp.last_name} {emp.first_name} ({period})")
-        total_vacation += vacation_count
-
-        # Командировка
-        trip_statuses = EmployeeStatus.objects.filter(
-            employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type=EmployeeStatus.StatusType.BUSINESS_TRIP,
-            state=EmployeeStatus.StatusState.ACTIVE
-        ).select_related('employee')
-
-        trip_count = trip_statuses.count()
-        trip_list = []
-        for status in trip_statuses:
-            emp = status.employee
-            period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-            trip_list.append(f"{emp.last_name} {emp.first_name} ({period})")
-        total_business_trip += trip_count
-
-        # Больничный
-        sick_statuses = EmployeeStatus.objects.filter(
-            employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type=EmployeeStatus.StatusType.SICK_LEAVE,
-            state=EmployeeStatus.StatusState.ACTIVE
-        ).select_related('employee')
-
-        sick_count = sick_statuses.count()
-        sick_list = []
-        for status in sick_statuses:
-            emp = status.employee
-            period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-            sick_list.append(f"{emp.last_name} {emp.first_name} ({period})")
-        total_sick += sick_count
-
-        # На дежурстве
-        on_duty_statuses = EmployeeStatus.objects.filter(
-            employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type=EmployeeStatus.StatusType.ON_DUTY,
-            state=EmployeeStatus.StatusState.ACTIVE
-        ).select_related('employee')
-
-        on_duty_count = on_duty_statuses.count()
-        on_duty_list = [f"{s.employee.last_name} {s.employee.first_name}" for s in on_duty_statuses]
-        total_on_duty += on_duty_count
-
-        # После дежурства
-        after_duty_statuses = EmployeeStatus.objects.filter(
-            employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type=EmployeeStatus.StatusType.AFTER_DUTY,
-            state=EmployeeStatus.StatusState.ACTIVE
-        ).select_related('employee')
-
-        after_duty_count = after_duty_statuses.count()
-        after_duty_list = [f"{s.employee.last_name} {s.employee.first_name}" for s in after_duty_statuses]
-        total_after_duty += after_duty_count
-
-        # На учебе/соревнованиях
-        training_statuses = EmployeeStatus.objects.filter(
-            employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type__in=[EmployeeStatus.StatusType.TRAINING, EmployeeStatus.StatusType.COMPETITION],
-            state=EmployeeStatus.StatusState.ACTIVE
-        ).select_related('employee')
-
-        training_count = training_statuses.count()
-        training_list = []
-        for status in training_statuses:
-            emp = status.employee
-            period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-            training_list.append(f"{emp.last_name} {emp.first_name} ({period})")
-        total_training += training_count
-
-        # Прикомандирован
-        seconded_from_statuses = EmployeeStatus.objects.filter(
-            employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type=EmployeeStatus.StatusType.SECONDED_FROM,
-            state=EmployeeStatus.StatusState.ACTIVE
-        ).select_related('employee')
-
-        seconded_from_count = seconded_from_statuses.count()
-        seconded_from_list = []
-        for status in seconded_from_statuses:
-            emp = status.employee
-            period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-            from_div = status.related_division.name if status.related_division else "?"
-            seconded_from_list.append(f"{emp.last_name} {emp.first_name} ({period}, из {from_div})")
-        total_seconded_from += seconded_from_count
-
-        # Откомандирован
-        seconded_to_statuses = EmployeeStatus.objects.filter(
-            employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type=EmployeeStatus.StatusType.SECONDED_TO,
-            state=EmployeeStatus.StatusState.ACTIVE
-        ).select_related('employee')
-
-        seconded_to_count = seconded_to_statuses.count()
-        seconded_to_list = []
-        for status in seconded_to_statuses:
-            emp = status.employee
-            period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-            to_div = status.related_division.name if status.related_division else "?"
-            seconded_to_list.append(f"{emp.last_name} {emp.first_name} ({period}, в {to_div})")
-        total_seconded_to += seconded_to_count
-
-        # СТРОКА 1: Название + Числа
+        # Заполнение числовых данных (1 строка на управление)
         safe_set_cell_value(ws, current_row, 1, directorate.name)
         safe_set_cell_value(ws, current_row, 2, staff_units_count)
         safe_set_cell_value(ws, current_row, 3, employees_count)
@@ -427,39 +191,47 @@ def generate_personnel_expense_report(department_id):
         safe_set_cell_value(ws, current_row, 12, seconded_from_count)
         safe_set_cell_value(ws, current_row, 13, seconded_to_count)
 
-        # СТРОКА 2: Подробности ФИО
-        current_row += 1
-        safe_set_cell_value(ws, current_row, 6, "; ".join(vacation_list) if vacation_list else "")
-        safe_set_cell_value(ws, current_row, 7, "; ".join(trip_list) if trip_list else "")
-        safe_set_cell_value(ws, current_row, 8, "; ".join(sick_list) if sick_list else "")
-        safe_set_cell_value(ws, current_row, 9, "; ".join(on_duty_list) if on_duty_list else "")
-        safe_set_cell_value(ws, current_row, 10, "; ".join(after_duty_list) if after_duty_list else "")
-        safe_set_cell_value(ws, current_row, 11, "; ".join(training_list) if training_list else "")
-        safe_set_cell_value(ws, current_row, 12, "; ".join(seconded_from_list) if seconded_from_list else "")
-        safe_set_cell_value(ws, current_row, 13, "; ".join(seconded_to_list) if seconded_to_list else "")
+        # Заполнение примечаний ФИО
+        notes_row = current_row + 1
+        safe_set_cell_value(ws, notes_row, 6, "\n".join(vacation_list))
+        safe_set_cell_value(ws, notes_row, 7, "\n".join(trip_list))
+        safe_set_cell_value(ws, notes_row, 8, "\n".join(sick_list))
+        safe_set_cell_value(ws, notes_row, 9, "\n".join(on_duty_list))
+        safe_set_cell_value(ws, notes_row, 10, "\n".join(after_duty_list))
+        safe_set_cell_value(ws, notes_row, 11, "\n".join(training_list))
+        safe_set_cell_value(ws, notes_row, 12, "\n".join(seconded_from_list))
+        safe_set_cell_value(ws, notes_row, 13, "\n".join(seconded_to_list))
 
-        current_row += 1
+        current_row += 2
 
-    # ИТОГОВАЯ СТРОКА
-    safe_set_cell_value(ws, current_row, 1, "ИТОГО")
-    safe_set_cell_value(ws, current_row, 2, total_staff_units)
-    safe_set_cell_value(ws, current_row, 3, total_employees)
-    safe_set_cell_value(ws, current_row, 4, total_in_service)
-    safe_set_cell_value(ws, current_row, 5, total_vacancies)
-    safe_set_cell_value(ws, current_row, 6, total_vacation)
-    safe_set_cell_value(ws, current_row, 7, total_business_trip)
-    safe_set_cell_value(ws, current_row, 8, total_sick)
-    safe_set_cell_value(ws, current_row, 9, total_on_duty)
-    safe_set_cell_value(ws, current_row, 10, total_after_duty)
-    safe_set_cell_value(ws, current_row, 11, total_training)
-    safe_set_cell_value(ws, current_row, 12, total_seconded_from)
-    safe_set_cell_value(ws, current_row, 13, total_seconded_to)
+    # === СТРОКА ИТОГО ===
+    total_row = current_row
 
-    # Сохраняем в память
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
+    # Totals for duty counts are now tracked correctly inside DataAggregator summary payload
+    total_on_duty_count = summary.get("on_duty", 0)
+    total_after_duty_count = summary.get("after_duty", 0)
 
-    filename = f"расход_{department.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    safe_set_cell_value(ws, total_row, 1, "ИТОГО")
+    safe_set_cell_value(ws, total_row, 2, total_staff_units)
+    safe_set_cell_value(ws, total_row, 3, total_employees)
+    safe_set_cell_value(ws, total_row, 4, total_in_service)
+    safe_set_cell_value(ws, total_row, 5, total_vacancies)
+    safe_set_cell_value(ws, total_row, 6, total_vacation)
+    safe_set_cell_value(ws, total_row, 7, total_business_trip)
+    safe_set_cell_value(ws, total_row, 8, total_sick)
+    safe_set_cell_value(ws, total_row, 9, total_on_duty_count)
+    safe_set_cell_value(ws, total_row, 10, total_after_duty_count)
+    safe_set_cell_value(ws, total_row, 11, total_training)
+    safe_set_cell_value(ws, total_row, 12, total_seconded_from)
+    safe_set_cell_value(ws, total_row, 13, total_seconded_to)
 
-    return output, filename
+    # Название файла
+    current_date = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"расход_{department.name}_{current_date}.xlsx"
+
+    # Сохраняем в BytesIO
+    file_buffer = BytesIO()
+    wb.save(file_buffer)
+    file_buffer.seek(0)
+
+    return file_buffer, filename
