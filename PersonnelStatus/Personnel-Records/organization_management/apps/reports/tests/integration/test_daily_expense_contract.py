@@ -181,6 +181,8 @@ class TestDailyExpenseSyncAsyncContract:
 
         async_dir1 = {
             "staff_units": async_dir1_raw['staff_unit'] if async_dir1_raw else 0,
+            "employees": async_dir1_raw['total_working'] if async_dir1_raw else 0,
+            "vacancies": async_dir1_raw['vacancies'] if async_dir1_raw else 0,
             "in_service": async_dir1_raw['in_service'] if async_dir1_raw else 0,
             "vacation": async_dir1_raw['vacation'] if async_dir1_raw else 0,
             "trip": async_dir1_raw['business_trip'] if async_dir1_raw else 0,
@@ -189,40 +191,28 @@ class TestDailyExpenseSyncAsyncContract:
 
         async_total_raw = async_data.get('summary', {})
         async_total = {
-            "staff_units": async_total_raw.get('staff_unit', 0),
+            "staff_units": async_total_raw.get('staffing_qty', 0),
+            "employees": async_total_raw.get('total_working', 0),
+            "vacancies": async_total_raw.get('vacancies', 0),
             "in_service": async_total_raw.get('in_service', 0),
             "vacation": async_total_raw.get('vacation', 0),
             "trip": async_total_raw.get('business_trip', 0),
             "sick": async_total_raw.get('sick_leave', 0),
         }
 
-        # Assert explicitly the mismatch so test stays green
-        assert sync_dir1["staff_units"] == 5
-        assert async_dir1["staff_units"] == 1, "DataAggregator differs from sync"
+        # Now they should match perfectly!
+        assert sync_dir1["staff_units"] == async_dir1["staff_units"]
+        assert sync_dir1["employees"] == async_dir1["employees"]
+        assert sync_dir1["vacancies"] == async_dir1["vacancies"]
+        assert sync_dir1["in_service"] == async_dir1["in_service"]
+        assert sync_dir1["vacation"] == async_dir1["vacation"]
+        assert sync_dir1["trip"] == async_dir1["trip"]
+        assert sync_dir1["sick"] == async_dir1["sick"]
 
-        assert sync_dir1["in_service"] == 1
-        assert async_dir1["in_service"] == 1, "DataAggregator inferred_in_service algorithm differs"
-
-        assert sync_dir1["vacation"] == 1
-        assert async_dir1["vacation"] == 1
-
-        assert sync_dir1["trip"] == 1
-        assert async_dir1["trip"] == 0, "DataAggregator is not recursive, missed descendant trip"
-
-        assert sync_dir1["sick"] == 1
-        assert async_dir1["sick"] == 1
-
-        assert sync_total["staff_units"] == 6
-        assert async_total["staff_units"] == 0
-
-        assert sync_total["in_service"] == 2
-        assert async_total["in_service"] == 0
-
-        assert sync_total["vacation"] == 1
-        assert async_total["vacation"] == 0
-
-        assert sync_total["trip"] == 1
-        assert async_total["trip"] == 0
-
-        assert sync_total["sick"] == 1
-        assert async_total["sick"] == 0
+        assert sync_total["staff_units"] == async_total["staff_units"]
+        assert sync_total["employees"] == async_total["employees"]
+        assert sync_total["vacancies"] == async_total["vacancies"]
+        assert sync_total["in_service"] == async_total["in_service"]
+        assert sync_total["vacation"] == async_total["vacation"]
+        assert sync_total["trip"] == async_total["trip"]
+        assert sync_total["sick"] == async_total["sick"]

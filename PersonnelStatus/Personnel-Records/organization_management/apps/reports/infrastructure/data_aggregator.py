@@ -1,6 +1,6 @@
 from typing import Dict, Any
 
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from organization_management.apps.divisions.models import Division
@@ -11,18 +11,8 @@ from organization_management.apps.staff_unit.models import StaffUnit
 
 class DataAggregator:
     """
-    Сборщик данных для отчетов по расходу на дату.
-
-    Рассчитывает по каждому подразделению:
-    - Штатная численность (count StaffUnit)
-    - В строю, Отпуск, Больничный, Командировка, Учёба, Прочие отсутствия
-    - Прикомандировано (входящие) и Откомандировано (исходящие)
-    - Итого наличествует = В строю + Прикомандировано
-    - Процент наличия = Итого / Штатная * 100
+    Сборщик данных для отчетов по расходу на дату (Parity with sync XLSX generator).
     """
-
-    def _division_subtree_ids(self, division: Division):
-        return division.get_descendants(include_self=True).values_list("id", flat=True)
 
     def _reference_date(self, report):
         if report.date_to:
@@ -32,104 +22,152 @@ class DataAggregator:
         return timezone.now().date()
 
     def collect_data(self, report) -> Dict[str, Any]:
-        # Область охвата
-        if report.division_id:
-            division_ids = list(self._division_subtree_ids(report.division))
-        else:
-            division_ids = list(Division.objects.values_list("id", flat=True))
-
         ref_date = self._reference_date(report)
+        department = report.division
 
-        # Сотрудники (только работающие)
-        employees = Employee.objects.filter(
-            staff_unit__division_id__in=division_ids,
-            employment_status=Employee.EmploymentStatus.WORKING,
-        )
+        if not department:
+            return {"division": "Вся организация", "date": str(ref_date), "rows": [], "summary": {}}
 
-        # Текущие статусы на дату: отбираем все записи, перекрывающие дату
-        statuses = EmployeeStatus.objects.filter(
-            employee_id__in=employees.values_list("id", flat=True),
+        # Fetch all descendant divisions of the department to avoid N+1
+        descendants = list(department.get_descendants(include_self=True))
+        descendant_ids = [d.id for d in descendants]
+
+        # Get directorates (direct children of department that are Directorates)
+        directorates = [d for d in descendants if d.parent_id == department.id and d.division_type == Division.DivisionType.DIRECTORATE]
+
+        # Map each descendant division to its top-level directorate (for Python rollup)
+        # Also identify direct department divisions.
+        div_to_directorate = {}
+        for d in descendants:
+            # Trace back to find if it belongs to a directorate
+            current = d
+            directorate_id = None
+            while current and current.id != department.id:
+                if current.division_type == Division.DivisionType.DIRECTORATE:
+                    directorate_id = current.id
+                    break
+                # Find parent in our prefetched list
+                parent = next((p for p in descendants if p.id == current.parent_id), None)
+                current = parent
+            div_to_directorate[d.id] = directorate_id
+
+        # 1. Staff Units & Employees
+        staff_units_qs = StaffUnit.objects.filter(division_id__in=descendant_ids).values('division_id', 'employee')
+
+        staff_qty_map = {}
+        employees_map = {}
+        vacancies_map = {}
+
+        for su in staff_units_qs:
+            div_id = su['division_id']
+            staff_qty_map[div_id] = staff_qty_map.get(div_id, 0) + 1
+            if su['employee']:
+                employees_map[div_id] = employees_map.get(div_id, 0) + 1
+            else:
+                vacancies_map[div_id] = vacancies_map.get(div_id, 0) + 1
+
+        # 2. Statuses
+        statuses_qs = EmployeeStatus.objects.filter(
+            employee__staff_unit__division_id__in=descendant_ids,
             start_date__lte=ref_date,
-        ).filter(Q(end_date__isnull=True) | Q(end_date__gte=ref_date))
+            state=EmployeeStatus.StatusState.ACTIVE
+        ).filter(Q(end_date__isnull=True) | Q(end_date__gte=ref_date)).values('employee__staff_unit__division_id', 'status_type')
 
-        # Карты: по type и домашнему подразделению сотрудника
-        def _map_by_division(status_type: str) -> Dict[int, int]:
-            qs = statuses.filter(status_type=status_type).values("employee__staff_unit__division_id").annotate(total=Count("id"))
-            return {row["employee__staff_unit__division_id"]: row["total"] for row in qs}
-
-        in_service_map = _map_by_division(EmployeeStatus.StatusType.IN_SERVICE)
-        vacation_map = _map_by_division(EmployeeStatus.StatusType.VACATION)
-        sick_map = _map_by_division(EmployeeStatus.StatusType.SICK_LEAVE)
-        bt_map = _map_by_division(EmployeeStatus.StatusType.BUSINESS_TRIP)
-        training_map = _map_by_division(EmployeeStatus.StatusType.TRAINING)
-        other_map = _map_by_division(EmployeeStatus.StatusType.OTHER_ABSENCE)
-        seconded_out_map = _map_by_division(EmployeeStatus.StatusType.SECONDED_TO)
-
-        # Прикомандированные считаем по related_division (входящие на приемную сторону)
-        incoming_qs = statuses.filter(status_type=EmployeeStatus.StatusType.SECONDED_TO).values("related_division_id").annotate(total=Count("id"))
-        seconded_in_map = {row["related_division_id"]: row["total"] for row in incoming_qs}
-
-        # Общее число сотрудников по подразделению
-        total_working_map = {
-            row["staff_unit__division_id"]: row["total"]
-            for row in employees.values("staff_unit__division_id").annotate(total=Count("id"))
+        status_maps = {
+            EmployeeStatus.StatusType.IN_SERVICE: {},
+            EmployeeStatus.StatusType.VACATION: {},
+            EmployeeStatus.StatusType.SICK_LEAVE: {},
+            EmployeeStatus.StatusType.BUSINESS_TRIP: {},
+            EmployeeStatus.StatusType.TRAINING: {},
+            EmployeeStatus.StatusType.SECONDED_TO: {},
+            EmployeeStatus.StatusType.OTHER_ABSENCE: {},
         }
 
-        # Штатная численность (количество штатных единиц по подразделению)
-        staffing_map = {
-            row["division_id"]: row["qty"]
-            for row in StaffUnit.objects.filter(division_id__in=division_ids)
-            .values("division_id")
-            .annotate(qty=Count("id"))
+        for st in statuses_qs:
+            div_id = st['employee__staff_unit__division_id']
+            st_type = st['status_type']
+            if st_type in status_maps:
+                status_maps[st_type][div_id] = status_maps[st_type].get(div_id, 0) + 1
+
+        def safe_get(m, key):
+            return m.get(key, 0)
+
+        # 3. Python Rollup
+        directorate_results = {dir.id: {
+            "staff_unit": 0, "total_working": 0, "vacancies": 0, "in_service": 0, "vacation": 0,
+            "sick_leave": 0, "business_trip": 0, "training": 0, "other_absence": 0, "seconded_out": 0
+        } for dir in directorates}
+
+        total_summary = {
+            "staff_unit": 0, "total_working": 0, "vacancies": 0, "in_service": 0, "vacation": 0,
+            "sick_leave": 0, "business_trip": 0, "training": 0, "other_absence": 0, "seconded_out": 0
         }
+
+        for div in descendants:
+            div_id = div.id
+            dir_id = div_to_directorate[div_id]
+
+            su_qty = safe_get(staff_qty_map, div_id)
+            emp_qty = safe_get(employees_map, div_id)
+            vac_qty = safe_get(vacancies_map, div_id)
+            in_serv = safe_get(status_maps[EmployeeStatus.StatusType.IN_SERVICE], div_id)
+            vac = safe_get(status_maps[EmployeeStatus.StatusType.VACATION], div_id)
+            sick = safe_get(status_maps[EmployeeStatus.StatusType.SICK_LEAVE], div_id)
+            bt = safe_get(status_maps[EmployeeStatus.StatusType.BUSINESS_TRIP], div_id)
+            train = safe_get(status_maps[EmployeeStatus.StatusType.TRAINING], div_id)
+            other = safe_get(status_maps[EmployeeStatus.StatusType.OTHER_ABSENCE], div_id)
+            sec_out = safe_get(status_maps[EmployeeStatus.StatusType.SECONDED_TO], div_id)
+
+            # Roll up to Directorate
+            if dir_id in directorate_results:
+                dr = directorate_results[dir_id]
+                dr["staff_unit"] += su_qty
+                dr["total_working"] += emp_qty
+                dr["vacancies"] += vac_qty
+                dr["in_service"] += in_serv
+                dr["vacation"] += vac
+                dr["sick_leave"] += sick
+                dr["business_trip"] += bt
+                dr["training"] += train
+                dr["other_absence"] += other
+                dr["seconded_out"] += sec_out
+
+            # Roll up to Total (Total includes ALL divisions in scope)
+            total_summary["staff_unit"] += su_qty
+            total_summary["total_working"] += emp_qty
+            total_summary["vacancies"] += vac_qty
+            total_summary["in_service"] += in_serv
+            total_summary["vacation"] += vac
+            total_summary["sick_leave"] += sick
+            total_summary["business_trip"] += bt
+            total_summary["training"] += train
+            total_summary["other_absence"] += other
+            total_summary["seconded_out"] += sec_out
 
         rows = []
-        for d in Division.objects.filter(id__in=division_ids).values("id", "name"):
-            did = d["id"]
-            total = total_working_map.get(did, 0)
+        for dir in directorates:
+            dr = directorate_results[dir.id]
+            rows.append({
+                "division_id": dir.id,
+                "division_name": dir.name,
+                "staff_unit": dr["staff_unit"],
+                "total_working": dr["total_working"],
+                "vacancies": dr["vacancies"],
+                "in_service": dr["in_service"],
+                "vacation": dr["vacation"],
+                "sick_leave": dr["sick_leave"],
+                "business_trip": dr["business_trip"],
+                "training": dr["training"],
+                "other_absence": dr["other_absence"],
+                "seconded_out": dr["seconded_out"],
+            })
 
-            # Сумма известных статусов (кроме incoming, т.к. они считаются на приемнике отдельно)
-            known = (
-                in_service_map.get(did, 0)
-                + vacation_map.get(did, 0)
-                + sick_map.get(did, 0)
-                + bt_map.get(did, 0)
-                + training_map.get(did, 0)
-                + other_map.get(did, 0)
-                + seconded_out_map.get(did, 0)
-            )
-
-            # Сотрудники без статуса на дату считаются "В строю"
-            inferred_in_service = max(0, total - known)
-            in_service = in_service_map.get(did, 0) + inferred_in_service
-
-            seconded_in = seconded_in_map.get(did, 0)
-            seconded_out = seconded_out_map.get(did, 0)
-
-            present_total = in_service + seconded_in
-            staffing_qty = staffing_map.get(did, 0) or 0
-            presence_pct = (present_total / staffing_qty * 100.0) if staffing_qty else 0.0
-
-            rows.append(
-                {
-                    "division_id": did,
-                    "division_name": d["name"],
-                    "staff_unit": staffing_qty,
-                    "in_service": in_service,
-                    "vacation": vacation_map.get(did, 0),
-                    "sick_leave": sick_map.get(did, 0),
-                    "business_trip": bt_map.get(did, 0),
-                    "training": training_map.get(did, 0),
-                    "seconded_in": seconded_in,
-                    "seconded_out": seconded_out,
-                    "other_absence": other_map.get(did, 0),
-                    "present_total": present_total,
-                    "presence_pct": round(presence_pct, 2),
-                }
-            )
+        # Re-map total_working to total_working in summary to match the contract
+        total_summary["staffing_qty"] = total_summary.pop("staff_unit")
 
         return {
-            "division": report.division.name if report.division_id else "Вся организация",
+            "division": department.name,
             "date": str(ref_date),
             "rows": rows,
+            "summary": total_summary,
         }
