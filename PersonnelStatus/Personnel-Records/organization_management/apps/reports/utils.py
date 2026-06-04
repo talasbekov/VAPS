@@ -132,14 +132,14 @@ def generate_personnel_expense_report(department_id):
 
     # СТРОКА 5: Руководство - Примечания
     head_notes_row = head_row + 1
-    safe_set_cell_value(ws, head_notes_row, 6, "; ".join(head_vacation_list) if head_vacation_list else "")
-    safe_set_cell_value(ws, head_notes_row, 7, "; ".join(head_trip_list) if head_trip_list else "")
-    safe_set_cell_value(ws, head_notes_row, 8, "; ".join(head_sick_list) if head_sick_list else "")
-    safe_set_cell_value(ws, head_notes_row, 9, "; ".join(head_on_duty_list) if head_on_duty_list else "")
-    safe_set_cell_value(ws, head_notes_row, 10, "; ".join(head_after_duty_list) if head_after_duty_list else "")
-    safe_set_cell_value(ws, head_notes_row, 11, "; ".join(head_training_list) if head_training_list else "")
-    safe_set_cell_value(ws, head_notes_row, 12, "; ".join(head_seconded_from_list) if head_seconded_from_list else "")
-    safe_set_cell_value(ws, head_notes_row, 13, "; ".join(head_seconded_to_list) if head_seconded_to_list else "")
+    safe_set_cell_value(ws, head_notes_row, 6, "\n".join(head_vacation_list))
+    safe_set_cell_value(ws, head_notes_row, 7, "\n".join(head_trip_list))
+    safe_set_cell_value(ws, head_notes_row, 8, "\n".join(head_sick_list))
+    safe_set_cell_value(ws, head_notes_row, 9, "\n".join(head_on_duty_list))
+    safe_set_cell_value(ws, head_notes_row, 10, "\n".join(head_after_duty_list))
+    safe_set_cell_value(ws, head_notes_row, 11, "\n".join(head_training_list))
+    safe_set_cell_value(ws, head_notes_row, 12, "\n".join(head_seconded_from_list))
+    safe_set_cell_value(ws, head_notes_row, 13, "\n".join(head_seconded_to_list))
 
     # === ОБРАБОТКА УПРАВЛЕНИЙ ===
     start_row = 6
@@ -193,14 +193,14 @@ def generate_personnel_expense_report(department_id):
 
         # Заполнение примечаний ФИО
         notes_row = current_row + 1
-        safe_set_cell_value(ws, notes_row, 6, "; ".join(vacation_list) if vacation_list else "")
-        safe_set_cell_value(ws, notes_row, 7, "; ".join(trip_list) if trip_list else "")
-        safe_set_cell_value(ws, notes_row, 8, "; ".join(sick_list) if sick_list else "")
-        safe_set_cell_value(ws, notes_row, 9, "; ".join(on_duty_list) if on_duty_list else "")
-        safe_set_cell_value(ws, notes_row, 10, "; ".join(after_duty_list) if after_duty_list else "")
-        safe_set_cell_value(ws, notes_row, 11, "; ".join(training_list) if training_list else "")
-        safe_set_cell_value(ws, notes_row, 12, "; ".join(seconded_from_list) if seconded_from_list else "")
-        safe_set_cell_value(ws, notes_row, 13, "; ".join(seconded_to_list) if seconded_to_list else "")
+        safe_set_cell_value(ws, notes_row, 6, "\n".join(vacation_list))
+        safe_set_cell_value(ws, notes_row, 7, "\n".join(trip_list))
+        safe_set_cell_value(ws, notes_row, 8, "\n".join(sick_list))
+        safe_set_cell_value(ws, notes_row, 9, "\n".join(on_duty_list))
+        safe_set_cell_value(ws, notes_row, 10, "\n".join(after_duty_list))
+        safe_set_cell_value(ws, notes_row, 11, "\n".join(training_list))
+        safe_set_cell_value(ws, notes_row, 12, "\n".join(seconded_from_list))
+        safe_set_cell_value(ws, notes_row, 13, "\n".join(seconded_to_list))
 
         current_row += 2
 

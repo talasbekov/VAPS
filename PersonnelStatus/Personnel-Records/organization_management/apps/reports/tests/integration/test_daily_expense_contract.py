@@ -54,6 +54,9 @@ def structure_setup():
     emp_dir1_1 = Employee.objects.create(personnel_number="002", last_name="Петров", first_name="Петр", gender=Employee.Gender.MALE); su_dir1_1.employee = emp_dir1_1; su_dir1_1.save()
     emp_dir1_2 = Employee.objects.create(personnel_number="003", last_name="Сидоров", first_name="Сидор", gender=Employee.Gender.MALE); su_dir1_2.employee = emp_dir1_2; su_dir1_2.save()
     emp_dir1_3 = Employee.objects.create(personnel_number="004", last_name="Смирнов", first_name="Алексей", gender=Employee.Gender.MALE); su_dir1_3.employee = emp_dir1_3; su_dir1_3.save()
+
+    su_dir1_extra = StaffUnit.objects.create(division=directorate1, index=5)
+    emp_dir1_extra = Employee.objects.create(personnel_number="006", last_name="Васильев", first_name="Василий", gender=Employee.Gender.MALE); su_dir1_extra.employee = emp_dir1_extra; su_dir1_extra.save()
     emp_div1_1 = Employee.objects.create(personnel_number="005", last_name="Николаев", first_name="Николай", gender=Employee.Gender.MALE); su_div1_1.employee = emp_div1_1; su_div1_1.save()
 
     today = timezone.now().date()
@@ -72,6 +75,10 @@ def structure_setup():
     )
     EmployeeStatus.objects.create(
         employee=emp_dir1_2, status_type=EmployeeStatus.StatusType.VACATION,
+        state=EmployeeStatus.StatusState.ACTIVE, start_date=yesterday, end_date=tomorrow, created_by=test_user
+    )
+    EmployeeStatus.objects.create(
+        employee=emp_dir1_extra, status_type=EmployeeStatus.StatusType.VACATION,
         state=EmployeeStatus.StatusState.ACTIVE, start_date=yesterday, end_date=tomorrow, created_by=test_user
     )
     EmployeeStatus.objects.create(
@@ -135,20 +142,20 @@ class TestDailyExpenseSyncAsyncContract:
         assert sync_total, "ИТОГО row was not found in sync XLSX"
 
         assert sync_dir1 == {
-            "staff_units": 5,
-            "employees": 4,
+            "staff_units": 6,
+            "employees": 5,
             "in_service": 1,
             "vacancies": 1,
-            "vacation": 1,
+            "vacation": 2,
             "trip": 1,
             "sick": 1,
         }
         assert sync_total == {
-            "staff_units": 6,
-            "employees": 5,
+            "staff_units": 7,
+            "employees": 6,
             "in_service": 2,
             "vacancies": 1,
-            "vacation": 1,
+            "vacation": 2,
             "trip": 1,
             "sick": 1,
         }
@@ -231,8 +238,10 @@ class TestDailyExpenseSyncAsyncContract:
             if notes_row:
                 # The row immediately following the Directorate row contains the notes
                 # Index 5 = Vacation notes (zero-indexed) -> Column 6 (F)
-                if row[5] and "Сидоров Сидор" in str(row[5]):
-                    found_sidorov_vacation = True
+                if row[5]:
+                    val = str(row[5])
+                    if "Сидоров Сидор" in val and "Васильев Василий" in val and "\n" in val:
+                        found_sidorov_vacation = True
 
                 # Index 6 = Trip notes -> Column 7 (G)
                 if row[6] and "Николаев Николай" in str(row[6]):
