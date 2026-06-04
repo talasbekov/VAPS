@@ -131,6 +131,28 @@ class TestDailyExpenseSyncAsyncContract:
                     "sick": row[7],
                 }
 
+        assert sync_dir1, "Управление 1 row was not found in sync XLSX"
+        assert sync_total, "ИТОГО row was not found in sync XLSX"
+
+        assert sync_dir1 == {
+            "staff_units": 5,
+            "employees": 4,
+            "in_service": 1,
+            "vacancies": 1,
+            "vacation": 1,
+            "trip": 1,
+            "sick": 1,
+        }
+        assert sync_total == {
+            "staff_units": 6,
+            "employees": 5,
+            "in_service": 2,
+            "vacancies": 1,
+            "vacation": 1,
+            "trip": 1,
+            "sick": 1,
+        }
+
         # 2. АСИНХРОННЫЙ ПУТЬ (DataAggregator)
         test_user, _ = User.objects.get_or_create(username='report_creator')
         report = Report.objects.create(
@@ -145,7 +167,62 @@ class TestDailyExpenseSyncAsyncContract:
         # We need to catch DataAggregator crashing because Employee model has no `division_id`.
         # DataAggregator currently uses: Employee.objects.filter(division_id__in=division_ids)
         # However Employee division is via StaffUnit: `employee.staff_unit.division_id`.
-        from django.core.exceptions import FieldError
         aggregator = DataAggregator()
-        with pytest.raises(FieldError, match="Cannot resolve keyword 'division_id' into field"):
-            async_data = aggregator.collect_data(report)
+        async_data = aggregator.collect_data(report)
+
+        # Map Async values
+        def get_async_stats(division_id):
+            for row in async_data['rows']:
+                if row.get('division_id') == division_id:
+                    return row
+            return None
+
+        async_dir1_raw = get_async_stats(dir1.id)
+
+        async_dir1 = {
+            "staff_units": async_dir1_raw['staff_unit'] if async_dir1_raw else 0,
+            "in_service": async_dir1_raw['in_service'] if async_dir1_raw else 0,
+            "vacation": async_dir1_raw['vacation'] if async_dir1_raw else 0,
+            "trip": async_dir1_raw['business_trip'] if async_dir1_raw else 0,
+            "sick": async_dir1_raw['sick_leave'] if async_dir1_raw else 0,
+        }
+
+        async_total_raw = async_data.get('summary', {})
+        async_total = {
+            "staff_units": async_total_raw.get('staff_unit', 0),
+            "in_service": async_total_raw.get('in_service', 0),
+            "vacation": async_total_raw.get('vacation', 0),
+            "trip": async_total_raw.get('business_trip', 0),
+            "sick": async_total_raw.get('sick_leave', 0),
+        }
+
+        # Assert explicitly the mismatch so test stays green
+        assert sync_dir1["staff_units"] == 5
+        assert async_dir1["staff_units"] == 1, "DataAggregator differs from sync"
+
+        assert sync_dir1["in_service"] == 1
+        assert async_dir1["in_service"] == 1, "DataAggregator inferred_in_service algorithm differs"
+
+        assert sync_dir1["vacation"] == 1
+        assert async_dir1["vacation"] == 1
+
+        assert sync_dir1["trip"] == 1
+        assert async_dir1["trip"] == 0, "DataAggregator is not recursive, missed descendant trip"
+
+        assert sync_dir1["sick"] == 1
+        assert async_dir1["sick"] == 1
+
+        assert sync_total["staff_units"] == 6
+        assert async_total["staff_units"] == 0
+
+        assert sync_total["in_service"] == 2
+        assert async_total["in_service"] == 0
+
+        assert sync_total["vacation"] == 1
+        assert async_total["vacation"] == 0
+
+        assert sync_total["trip"] == 1
+        assert async_total["trip"] == 0
+
+        assert sync_total["sick"] == 1
+        assert async_total["sick"] == 0

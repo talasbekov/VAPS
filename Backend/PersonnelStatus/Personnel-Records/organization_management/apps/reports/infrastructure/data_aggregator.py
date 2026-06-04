@@ -42,7 +42,7 @@ class DataAggregator:
 
         # Сотрудники (только работающие)
         employees = Employee.objects.filter(
-            division_id__in=division_ids,
+            staff_unit__division_id__in=division_ids,
             employment_status=Employee.EmploymentStatus.WORKING,
         )
 
@@ -54,8 +54,8 @@ class DataAggregator:
 
         # Карты: по type и домашнему подразделению сотрудника
         def _map_by_division(status_type: str) -> Dict[int, int]:
-            qs = statuses.filter(status_type=status_type).values("employee__division_id").annotate(total=Count("id"))
-            return {row["employee__division_id"]: row["total"] for row in qs}
+            qs = statuses.filter(status_type=status_type).values("employee__staff_unit__division_id").annotate(total=Count("id"))
+            return {row["employee__staff_unit__division_id"]: row["total"] for row in qs}
 
         in_service_map = _map_by_division(EmployeeStatus.StatusType.IN_SERVICE)
         vacation_map = _map_by_division(EmployeeStatus.StatusType.VACATION)
@@ -71,8 +71,8 @@ class DataAggregator:
 
         # Общее число сотрудников по подразделению
         total_working_map = {
-            row["division_id"]: row["total"]
-            for row in employees.values("division_id").annotate(total=Count("id"))
+            row["staff_unit__division_id"]: row["total"]
+            for row in employees.values("staff_unit__division_id").annotate(total=Count("id"))
         }
 
         # Штатная численность (количество штатных единиц по подразделению)
