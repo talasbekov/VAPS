@@ -1,7 +1,7 @@
 from typing import Any
 from django.db.models import QuerySet, Q
 from organization_management.apps.divisions.models import Division
-from organization_management.apps.common.rbac import check_permission, is_in_scope
+from organization_management.apps.common.rbac import check_permission
 
 class PermissionService:
     """
@@ -23,7 +23,11 @@ class PermissionService:
         """Возвращает базовое (эффективное) подразделение для расчета видимости."""
         if not self.role_info:
             return None
-        return self.role_info.effective_scope_division
+        if hasattr(self.role_info, "effective_scope_division"):
+            return self.role_info.effective_scope_division
+        if hasattr(self.role_info, "get_user_division"):
+            return self.role_info.get_user_division()
+        return getattr(self.role_info, "scope_division", None)
 
     def get_visible_divisions(self) -> QuerySet[Division] | list:
         """Возвращает набор подразделений, доступных для просмотра."""
@@ -77,7 +81,12 @@ class PermissionService:
 
     def can_perform(self, action: str, obj: Any = None) -> bool:
         """Проверка права на действие с использованием базового rbac.check_permission"""
-        return check_permission(self.user, action, obj)
+        if not self.user or not self.user.is_authenticated:
+            return False
+        try:
+            return check_permission(self.user, action, obj)
+        except Exception:
+            return False
 
     # === ЯВНЫЕ ФИЛЬТРЫ ДЛЯ QUERYSET (Explicit filtering helpers) ===
 

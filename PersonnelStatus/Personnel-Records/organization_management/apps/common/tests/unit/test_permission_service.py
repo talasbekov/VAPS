@@ -84,3 +84,59 @@ class TestPermissionService:
         divisions = service.get_visible_divisions()
         assert divisions.count() == 1
         assert division in divisions
+
+    def test_role_1_sees_all(self, roles, structure):
+        user = self.create_user_with_role("obs_org", roles["ROLE_1"])
+        service = PermissionService(user)
+        assert service.get_role_code() == "ROLE_1"
+        assert service.get_visible_divisions().count() == 3
+
+    def test_role_5_sees_all(self, roles, structure):
+        user = self.create_user_with_role("hr", roles["ROLE_5"])
+        service = PermissionService(user)
+        assert service.get_role_code() == "ROLE_5"
+        assert service.get_visible_divisions().count() == 3
+
+    def test_filter_helpers(self, roles, structure):
+        # We will use ROLE_6 to verify filtering works strictly on division scoping
+        department, directorate, division = structure
+        user = self.create_user_with_role("div_head", roles["ROLE_6"], scope=division)
+        service = PermissionService(user)
+
+        from organization_management.apps.staff_unit.models import StaffUnit
+        from organization_management.apps.employees.models import Employee
+        from organization_management.apps.statuses.models import EmployeeStatus
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Create staff units
+        su_dept = StaffUnit.objects.create(division=department, index=1)
+        su_div = StaffUnit.objects.create(division=division, index=1)
+
+        # Create employees
+        emp_dept = Employee.objects.create(personnel_number="A01"); su_dept.employee = emp_dept; su_dept.save()
+        emp_div = Employee.objects.create(personnel_number="B01"); su_div.employee = emp_div; su_div.save()
+
+        # Create statuses
+        today = timezone.now().date()
+        test_user = User.objects.create(username="status_creator")
+        st_dept = EmployeeStatus.objects.create(employee=emp_dept, status_type=EmployeeStatus.StatusType.IN_SERVICE, state=EmployeeStatus.StatusState.ACTIVE, start_date=today, created_by=test_user)
+        st_div = EmployeeStatus.objects.create(employee=emp_div, status_type=EmployeeStatus.StatusType.IN_SERVICE, state=EmployeeStatus.StatusState.ACTIVE, start_date=today, created_by=test_user)
+
+        # Verify Staff Units
+        qs_su = service.filter_staff_units(StaffUnit.objects.all())
+        assert qs_su.count() == 1
+        assert qs_su.first() == su_div
+
+        # Verify Employees
+        qs_emp = service.filter_employees(Employee.objects.all())
+        assert qs_emp.count() == 1
+        assert qs_emp.first() == emp_div
+
+        # Verify Statuses
+        qs_st = service.filter_statuses(EmployeeStatus.objects.all())
+        assert qs_st.count() == 1
+        assert qs_st.first() == st_div
+
+        # Note: filter_secondments and filter_reports are complex to fixture here.
+        # They will be covered in the view migration story (STORY-005).
