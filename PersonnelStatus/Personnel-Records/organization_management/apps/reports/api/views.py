@@ -12,13 +12,16 @@ from organization_management.apps.reports.utils import generate_personnel_expens
 from organization_management.apps.divisions.models import Division
 import os
 
-class ReportViewSet(viewsets.ModelViewSet):
+from rest_framework import mixins
+
+class ReportViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """
     ViewSet для управления отчетами.
+    Поддерживает чтение (list, retrieve) и кастомные действия (например, generate).
     """
     queryset = Report.objects.all()
     serializer_class = ReportSerializer
-    http_method_names = ['get']
+    http_method_names = ['get', 'post']
 
     def get_queryset(self):
         user = self.request.user
