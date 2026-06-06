@@ -200,5 +200,6 @@ cython_debug/
 
 # Graphify
 graphify-out/cache/
-graphify-out/*.html
+graphify-out/cost.json
 graphify-out/*.log
+graphify-out/*.html

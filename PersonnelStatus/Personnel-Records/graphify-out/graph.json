@@ -1854,7 +1854,7 @@
       "source_location": "L15"
     },
     {
-      "id": "bool",
+      "id": "organization_management_apps_common_rbac_py_bool",
       "label": "bool",
       "file_type": "code",
       "source_file": "organization_management/apps/common/rbac.py",
@@ -1999,6 +1999,230 @@
       "file_type": "rationale",
       "source_file": "organization_management/apps/common/rbac.py",
       "source_location": "L449"
+    },
+    {
+      "id": "services_init",
+      "label": "__init__.py",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/__init__.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "services_permissions",
+      "label": "permissions.py",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "services_permissions_permissionservice",
+      "label": "PermissionService",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L6"
+    },
+    {
+      "id": "services_permissions_permissionservice_get_user_division",
+      "label": ".get_user_division()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L12"
+    },
+    {
+      "id": "organization_management_apps_common_services_permissions_py_division",
+      "label": "Division",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L12"
+    },
+    {
+      "id": "services_permissions_permissionservice_get_accessible_divisions",
+      "label": ".get_accessible_divisions()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L21"
+    },
+    {
+      "id": "organization_management_apps_common_services_permissions_py_queryset",
+      "label": "QuerySet",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L21"
+    },
+    {
+      "id": "services_permissions_permissionservice_can_access_division",
+      "label": ".can_access_division()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L38"
+    },
+    {
+      "id": "organization_management_apps_common_services_permissions_py_int",
+      "label": "int",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L38"
+    },
+    {
+      "id": "organization_management_apps_common_services_permissions_py_bool",
+      "label": "bool",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L38"
+    },
+    {
+      "id": "services_permissions_permissionservice_can_access_report",
+      "label": ".can_access_report()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L50"
+    },
+    {
+      "id": "report",
+      "label": "Report",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L50"
+    },
+    {
+      "id": "services_permissions_rationale_7",
+      "label": "Centralized service for evaluating user permissions based on their role and divi",
+      "file_type": "rationale",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L7"
+    },
+    {
+      "id": "services_permissions_rationale_13",
+      "label": "Extracts the user's division from their role_info.",
+      "file_type": "rationale",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L13"
+    },
+    {
+      "id": "services_permissions_rationale_22",
+      "label": "Returns a QuerySet of divisions the user is allowed to access.         For super",
+      "file_type": "rationale",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L22"
+    },
+    {
+      "id": "services_permissions_rationale_39",
+      "label": "Checks if the user has permission to access the specified division.",
+      "file_type": "rationale",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L39"
+    },
+    {
+      "id": "services_permissions_rationale_51",
+      "label": "Checks if the user has permission to view or download a specific report.",
+      "file_type": "rationale",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L51"
+    },
+    {
+      "id": "organization_management_apps_common_tests_unit_init_py_unit_init",
+      "label": "__init__.py",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/__init__.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "unit_test_permission_service",
+      "label": "test_permission_service.py",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "unit_test_permission_service_superuser",
+      "label": "superuser()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L12"
+    },
+    {
+      "id": "unit_test_permission_service_user_no_role",
+      "label": "user_no_role()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L16"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice",
+      "label": "TestPermissionService",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L20"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice_setup_divisions",
+      "label": ".setup_divisions()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L23"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice_user_with_role",
+      "label": ".user_with_role()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L37"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice_test_get_user_division_with_role",
+      "label": ".test_get_user_division_with_role()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L49"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice_test_get_user_division_no_role",
+      "label": ".test_get_user_division_no_role()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L53"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice_test_get_accessible_divisions_superuser",
+      "label": ".test_get_accessible_divisions_superuser()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L57"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice_test_get_accessible_divisions_no_role",
+      "label": ".test_get_accessible_divisions_no_role()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L61"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice_test_get_accessible_divisions_with_role",
+      "label": ".test_get_accessible_divisions_with_role()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L65"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice_test_can_access_division",
+      "label": ".test_can_access_division()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L73"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice_test_can_access_report_created_by_user",
+      "label": ".test_can_access_report_created_by_user()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L81"
+    },
+    {
+      "id": "unit_test_permission_service_testpermissionservice_test_can_access_report_in_division_scope",
+      "label": ".test_can_access_report_in_division_scope()",
+      "file_type": "code",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L91"
     },
     {
       "id": "common_throttles",
@@ -6831,7 +7055,7 @@
       "source_location": "L277"
     },
     {
-      "id": "queryset",
+      "id": "organization_management_apps_statuses_application_services_py_queryset",
       "label": "QuerySet",
       "file_type": "code",
       "source_file": "organization_management/apps/statuses/application/services.py",
@@ -15953,7 +16177,7 @@
     },
     {
       "source": "common_rbac_check_permission",
-      "target": "bool",
+      "target": "organization_management_apps_common_rbac_py_bool",
       "relation": "references",
       "context": "return_type",
       "confidence": "EXTRACTED",
@@ -15992,7 +16216,7 @@
     },
     {
       "source": "common_rbac_has_role_permission",
-      "target": "bool",
+      "target": "organization_management_apps_common_rbac_py_bool",
       "relation": "references",
       "context": "return_type",
       "confidence": "EXTRACTED",
@@ -16041,7 +16265,7 @@
     },
     {
       "source": "common_rbac_is_in_scope",
-      "target": "bool",
+      "target": "organization_management_apps_common_rbac_py_bool",
       "relation": "references",
       "context": "return_type",
       "confidence": "EXTRACTED",
@@ -16079,7 +16303,7 @@
     },
     {
       "source": "common_rbac_is_in_department",
-      "target": "bool",
+      "target": "organization_management_apps_common_rbac_py_bool",
       "relation": "references",
       "context": "return_type",
       "confidence": "EXTRACTED",
@@ -16098,7 +16322,7 @@
     },
     {
       "source": "common_rbac_is_in_directorate",
-      "target": "bool",
+      "target": "organization_management_apps_common_rbac_py_bool",
       "relation": "references",
       "context": "return_type",
       "confidence": "EXTRACTED",
@@ -16117,7 +16341,7 @@
     },
     {
       "source": "common_rbac_is_in_subtree",
-      "target": "bool",
+      "target": "organization_management_apps_common_rbac_py_bool",
       "relation": "references",
       "context": "return_type",
       "confidence": "EXTRACTED",
@@ -16369,6 +16593,423 @@
       "confidence": "EXTRACTED",
       "source_file": "organization_management/apps/common/rbac.py",
       "source_location": "L449",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions",
+      "target": "typing",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions",
+      "target": "django_db_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions",
+      "target": "organization_management_apps_divisions_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions",
+      "target": "organization_management_apps_reports_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions",
+      "target": "services_permissions_permissionservice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice",
+      "target": "services_permissions_permissionservice_get_user_division",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice_get_user_division",
+      "target": "organization_management_apps_common_services_permissions_py_division",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice",
+      "target": "services_permissions_permissionservice_get_accessible_divisions",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice_get_accessible_divisions",
+      "target": "organization_management_apps_common_services_permissions_py_queryset",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice_get_accessible_divisions",
+      "target": "organization_management_apps_common_services_permissions_py_division",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice",
+      "target": "services_permissions_permissionservice_can_access_division",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice_can_access_division",
+      "target": "organization_management_apps_common_services_permissions_py_int",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice_can_access_division",
+      "target": "organization_management_apps_common_services_permissions_py_bool",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice",
+      "target": "services_permissions_permissionservice_can_access_report",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice_can_access_report",
+      "target": "report",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice_can_access_report",
+      "target": "organization_management_apps_common_services_permissions_py_bool",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice_get_accessible_divisions",
+      "target": "services_permissions_permissionservice_get_user_division",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L31",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice_can_access_division",
+      "target": "services_permissions_permissionservice_get_accessible_divisions",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L45",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_permissionservice_can_access_report",
+      "target": "services_permissions_permissionservice_can_access_division",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L63",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_rationale_7",
+      "target": "services_permissions_permissionservice",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_rationale_13",
+      "target": "services_permissions_permissionservice_get_user_division",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_rationale_22",
+      "target": "services_permissions_permissionservice_get_accessible_divisions",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_rationale_39",
+      "target": "services_permissions_permissionservice_can_access_division",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L39",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions_rationale_51",
+      "target": "services_permissions_permissionservice_can_access_report",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L51",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "pytest",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "unittest_mock",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "django_contrib_auth",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "organization_management_apps_common_services_permissions",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "organization_management_apps_divisions_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "organization_management_apps_reports_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "organization_management_apps_common_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "unit_test_permission_service_superuser",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "unit_test_permission_service_user_no_role",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L16",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "unit_test_permission_service_testpermissionservice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "unit_test_permission_service_testpermissionservice_setup_divisions",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "unit_test_permission_service_testpermissionservice_user_with_role",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L37",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "unit_test_permission_service_testpermissionservice_test_get_user_division_with_role",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L49",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "unit_test_permission_service_testpermissionservice_test_get_user_division_no_role",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "unit_test_permission_service_testpermissionservice_test_get_accessible_divisions_superuser",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L57",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "unit_test_permission_service_testpermissionservice_test_get_accessible_divisions_no_role",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "unit_test_permission_service_testpermissionservice_test_get_accessible_divisions_with_role",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L65",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "unit_test_permission_service_testpermissionservice_test_can_access_division",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L73",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "unit_test_permission_service_testpermissionservice_test_can_access_report_created_by_user",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L81",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "unit_test_permission_service_testpermissionservice_test_can_access_report_in_division_scope",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L91",
       "weight": 1.0
     },
     {
@@ -26097,7 +26738,7 @@
     },
     {
       "source": "application_services_statusapplicationservice_get_employee_status_history",
-      "target": "queryset",
+      "target": "organization_management_apps_statuses_application_services_py_queryset",
       "relation": "references",
       "context": "return_type",
       "confidence": "EXTRACTED",
@@ -26136,7 +26777,7 @@
     },
     {
       "source": "application_services_statusapplicationservice_get_planned_statuses",
-      "target": "queryset",
+      "target": "organization_management_apps_statuses_application_services_py_queryset",
       "relation": "references",
       "context": "return_type",
       "confidence": "EXTRACTED",
@@ -43643,6 +44284,76 @@
       "weight": 1.0
     },
     {
+      "source": "services_permissions",
+      "target": "divisions_models_division",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "services_permissions",
+      "target": "reports_models_report",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "services_permissions_permissionservice",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "divisions_models_division",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "reports_models_report",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "common_models_role",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service",
+      "target": "common_models_userrole",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
       "source": "organization_management_apps_dictionaries_api_serializers_py_api_serializers",
       "target": "dictionaries_models_position",
       "relation": "imports",
@@ -46162,12 +46873,84 @@
       "weight": 0.8
     },
     {
-      "source": "bool",
+      "source": "organization_management_apps_common_rbac_py_bool",
       "target": "common_models_role",
       "relation": "uses",
       "confidence": "INFERRED",
       "source_file": "organization_management/apps/common/rbac.py",
       "source_location": "L93",
+      "weight": 0.8
+    },
+    {
+      "source": "services_permissions_permissionservice",
+      "target": "domain_models_report",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L4",
+      "weight": 0.8
+    },
+    {
+      "source": "organization_management_apps_common_services_permissions_py_division",
+      "target": "domain_models_report",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L4",
+      "weight": 0.8
+    },
+    {
+      "source": "organization_management_apps_common_services_permissions_py_queryset",
+      "target": "domain_models_report",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L4",
+      "weight": 0.8
+    },
+    {
+      "source": "organization_management_apps_common_services_permissions_py_int",
+      "target": "domain_models_report",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L4",
+      "weight": 0.8
+    },
+    {
+      "source": "organization_management_apps_common_services_permissions_py_bool",
+      "target": "domain_models_report",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L4",
+      "weight": 0.8
+    },
+    {
+      "source": "report",
+      "target": "domain_models_report",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "organization_management/apps/common/services/permissions.py",
+      "source_location": "L4",
+      "weight": 0.8
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "services_permissions_permissionservice",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L4",
+      "weight": 0.8
+    },
+    {
+      "source": "unit_test_permission_service_testpermissionservice",
+      "target": "domain_models_report",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L6",
       "weight": 0.8
     },
     {
@@ -47317,6 +48100,28 @@
       "confidence_score": 1.0,
       "source_file": "organization_management/apps/common/drf_permissions.py",
       "source_location": "L46",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_superuser",
+      "target": "user",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "unit_test_permission_service_user_no_role",
+      "target": "user",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "organization_management/apps/common/tests/unit/test_permission_service.py",
+      "source_location": "L17",
       "weight": 1.0
     },
     {
