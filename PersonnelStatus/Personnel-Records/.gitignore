@@ -197,3 +197,8 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 /media/
+
+# Graphify
+graphify-out/cache/
+graphify-out/*.html
+graphify-out/*.log
