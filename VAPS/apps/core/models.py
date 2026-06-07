@@ -231,3 +231,33 @@ class DivisionHistoricalSlot(UUIDTimeStampedModel):
         super().clean()
         if self.valid_to is not None and not (self.valid_from < self.valid_to):
             raise ValidationError("valid_from must be earlier than valid_to")
+
+
+class StaffingSlot(UUIDTimeStampedModel):
+    division = models.ForeignKey(
+        Division, on_delete=models.CASCADE, related_name="staffing_slots"
+    )
+    position_code = models.ForeignKey(
+        Position, on_delete=models.PROTECT, db_column="position_code", related_name="staffing_slots"
+    )
+    slot_number = models.CharField(max_length=50, null=True, blank=True)
+    parent_slot = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="child_slots"
+    )
+    is_active = models.BooleanField(default=True)
+    valid_from = models.DateTimeField()
+    valid_to = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "core_staffing_slots"
+        indexes = [
+            models.Index(
+                fields=["division", "is_active", "valid_from", "valid_to"],
+                name="idx_core_staffing_div",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.valid_to is not None and not (self.valid_from < self.valid_to):
+            raise ValidationError("valid_from must be earlier than valid_to")
