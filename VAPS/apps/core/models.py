@@ -1,6 +1,10 @@
 import uuid
 
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+
+from apps.core.validators import iin_validator
 
 
 class UUIDTimeStampedModel(models.Model):
@@ -100,3 +104,68 @@ class Division(UUIDTimeStampedModel):
 
     def __str__(self):
         return self.name
+
+
+class Employee(UUIDTimeStampedModel):
+    class Gender(models.TextChoices):
+        MALE = "M", "Мужской"
+        FEMALE = "F", "Женский"
+
+    class EmploymentStatus(models.TextChoices):
+        WORKING = "WORKING", "Работает"
+        FIRED = "FIRED", "Уволен"
+        ARCHIVED = "ARCHIVED", "В архиве"
+
+    external_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    iin = models.CharField(max_length=12, unique=True, validators=[iin_validator])
+    full_name = models.CharField(max_length=255)
+    rank_code = models.CharField(max_length=50)
+    rank_index = models.IntegerField(default=0)
+    position_code = models.CharField(max_length=50)
+    division = models.ForeignKey(
+        Division, on_delete=models.PROTECT, related_name="employees"
+    )
+    phone = models.CharField(max_length=50, null=True, blank=True)
+    gender = models.CharField(max_length=1, choices=Gender.choices, null=True, blank=True)
+    height_cm = models.IntegerField(
+        null=True, blank=True, validators=[MinValueValidator(120), MaxValueValidator(230)]
+    )
+    is_active = models.BooleanField(default=True)
+    is_attached_force = models.BooleanField(default=False)
+    data_source = models.CharField(max_length=50, default="STUB")
+    separated_at = models.DateTimeField(null=True, blank=True)
+
+    # §45.2 rich profile
+    personnel_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    last_name = models.CharField(max_length=150, null=True, blank=True)
+    first_name = models.CharField(max_length=150, null=True, blank=True)
+    middle_name = models.CharField(max_length=150, null=True, blank=True)
+    birth_date = models.DateField(null=True, blank=True)
+    photo_file_path = models.TextField(null=True, blank=True)
+    hire_date = models.DateField(null=True, blank=True)
+    dismissal_date = models.DateField(null=True, blank=True)
+    work_phone = models.CharField(max_length=50, null=True, blank=True)
+    work_email = models.CharField(max_length=255, null=True, blank=True)
+    personal_phone = models.CharField(max_length=50, null=True, blank=True)
+    personal_email = models.CharField(max_length=255, null=True, blank=True)
+    notes = models.TextField(null=True, blank=True)
+    employment_status = models.CharField(
+        max_length=50, choices=EmploymentStatus.choices, default=EmploymentStatus.WORKING
+    )
+
+    class Meta:
+        db_table = "core_employees"
+        indexes = [
+            models.Index(fields=["division", "is_active"], name="idx_emp_div_active"),
+            models.Index(fields=["full_name"], name="idx_emp_full_name"),
+        ]
+
+    def save(self, *args, **kwargs):
+        # BR-EMP-001: derive full_name from parts when present.
+        if self.last_name and self.first_name:
+            parts = [self.last_name, self.first_name, self.middle_name or ""]
+            self.full_name = " ".join(p for p in parts if p).strip()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.full_name
