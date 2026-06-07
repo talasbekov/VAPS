@@ -261,3 +261,28 @@ class StaffingSlot(UUIDTimeStampedModel):
         super().clean()
         if self.valid_to is not None and not (self.valid_from < self.valid_to):
             raise ValidationError("valid_from must be earlier than valid_to")
+
+
+class EmployeeStaffingAssignment(UUIDTimeStampedModel):
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="staffing_assignments"
+    )
+    staffing_slot = models.ForeignKey(
+        StaffingSlot, on_delete=models.PROTECT, related_name="assignments"
+    )
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField(null=True, blank=True)
+    source = models.CharField(max_length=50, default="MANUAL")
+
+    class Meta:
+        db_table = "core_employee_staffing_assignments"
+        indexes = [
+            models.Index(
+                fields=["employee", "starts_at", "ends_at"], name="idx_core_emp_staffing"
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.ends_at is not None and not (self.starts_at < self.ends_at):
+            raise ValidationError("starts_at must be earlier than ends_at")
