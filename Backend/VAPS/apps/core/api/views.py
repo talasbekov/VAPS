@@ -1,12 +1,21 @@
+import datetime as dt
+
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
-from apps.core.api.serializers import DivisionSerializer, EmployeeSerializer
-from apps.core.models import Division, Employee
+from apps.core.api.serializers import (
+    DivisionSerializer, EmployeeSerializer, PositionSerializer, RankSerializer,
+    StaffingAssignmentSerializer, StaffingSlotSerializer,
+)
+from apps.core.models import (
+    Division, Employee, EmployeeStaffingAssignment, Position, Rank, StaffingSlot,
+)
 from apps.core.selectors import CoreDivisionTreeSelector
-from apps.core.services import mask_employee_data
+from apps.core.services import compute_free_slots, mask_employee_data
 
 
 class DefaultPagination(PageNumberPagination):
@@ -83,3 +92,61 @@ class DivisionViewSet(viewsets.ModelViewSet):
         division = self.get_object()
         leaves = CoreDivisionTreeSelector.leaf_descendants(division.id)
         return Response(DivisionSerializer(leaves, many=True).data)
+
+
+class PositionViewSet(viewsets.ModelViewSet):
+    serializer_class = PositionSerializer
+    pagination_class = DefaultPagination
+    queryset = Position.objects.all().order_by("sort_order")
+    http_method_names = ["get", "post", "patch"]
+
+
+class RankViewSet(viewsets.ModelViewSet):
+    serializer_class = RankSerializer
+    pagination_class = DefaultPagination
+    queryset = Rank.objects.all().order_by("rank_index")
+    http_method_names = ["get", "post", "patch"]
+
+
+class StaffingSlotViewSet(viewsets.ModelViewSet):
+    serializer_class = StaffingSlotSerializer
+    pagination_class = DefaultPagination
+    queryset = StaffingSlot.objects.all().order_by("valid_from")
+    http_method_names = ["get", "post", "patch"]
+
+    @action(detail=True, methods=["post"], url_path="assign-employee")
+    def assign_employee(self, request, *args, **kwargs):
+        slot = self.get_object()
+        assignment = EmployeeStaffingAssignment.objects.create(
+            employee_id=request.data["employee_id"],
+            staffing_slot=slot,
+            starts_at=timezone.now(),
+        )
+        return Response(
+            StaffingAssignmentSerializer(assignment).data, status=status.HTTP_201_CREATED
+        )
+
+    @action(detail=True, methods=["post"])
+    def release(self, request, *args, **kwargs):
+        slot = self.get_object()
+        EmployeeStaffingAssignment.objects.filter(
+            staffing_slot=slot, ends_at__isnull=True
+        ).update(ends_at=timezone.now())
+        return Response({"released": True}, status=status.HTTP_200_OK)
+
+
+class VacancyViewSet(viewsets.ViewSet):
+    def list(self, request, *args, **kwargs):
+        division_id = request.query_params.get("division_id")
+        date_str = request.query_params.get("date")
+        on_date = (
+            timezone.make_aware(
+                dt.datetime.combine(parse_date(date_str), dt.time.min)
+            )
+            if date_str
+            else timezone.now()
+        )
+        free = compute_free_slots(division_id, on_date=on_date)
+        return Response(
+            {"count": len(free), "results": StaffingSlotSerializer(free, many=True).data}
+        )

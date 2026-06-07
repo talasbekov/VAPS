@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
-from apps.core.models import Division, Employee
+from apps.core.models import (
+    Division, Employee, EmployeeStaffingAssignment, Position, Rank, StaffingSlot,
+)
 
 
 class EmployeeSerializer(serializers.ModelSerializer):
@@ -22,4 +24,33 @@ class DivisionSerializer(serializers.ModelSerializer):
         fields = [
             "id", "organization", "parent", "type_code", "name", "code", "is_active",
         ]
+        read_only_fields = ["id"]
+
+
+class PositionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Position
+        fields = ["code", "name", "level", "sort_order", "is_active"]
+
+
+class RankSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Rank
+        fields = ["code", "name", "category", "rank_index", "is_active"]
+
+
+class StaffingSlotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StaffingSlot
+        fields = [
+            "id", "division", "position_code", "slot_number", "parent_slot",
+            "is_active", "valid_from", "valid_to",
+        ]
+        read_only_fields = ["id"]
+
+
+class StaffingAssignmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmployeeStaffingAssignment
+        fields = ["id", "employee", "staffing_slot", "starts_at", "ends_at", "source"]
         read_only_fields = ["id"]
