@@ -25,3 +25,16 @@ class Organization(UUIDTimeStampedModel):
 
     def __str__(self):
         return self.name
+
+
+class DivisionType(models.Model):
+    code = models.CharField(primary_key=True, max_length=50)
+    name = models.CharField(max_length=255)
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "core_division_types"
+
+    def __str__(self):
+        return self.code
