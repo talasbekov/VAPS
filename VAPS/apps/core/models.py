@@ -286,3 +286,27 @@ class EmployeeStaffingAssignment(UUIDTimeStampedModel):
         super().clean()
         if self.ends_at is not None and not (self.starts_at < self.ends_at):
             raise ValidationError("starts_at must be earlier than ends_at")
+
+
+class Vacancy(UUIDTimeStampedModel):
+    class Status(models.TextChoices):
+        OPEN = "OPEN", "Открыта"
+        CLOSED = "CLOSED", "Закрыта"
+        FROZEN = "FROZEN", "Заморожена"
+
+    staffing_slot = models.ForeignKey(
+        StaffingSlot, on_delete=models.CASCADE, related_name="vacancies"
+    )
+    status_code = models.CharField(max_length=50, choices=Status.choices, default=Status.OPEN)
+    opened_at = models.DateTimeField()
+    closed_at = models.DateTimeField(null=True, blank=True)
+    reason = models.TextField(null=True, blank=True)
+    created_by = models.CharField(max_length=100, null=True, blank=True)
+
+    class Meta:
+        db_table = "core_vacancies"
+
+    def clean(self):
+        super().clean()
+        if self.closed_at is not None and not (self.opened_at < self.closed_at):
+            raise ValidationError("opened_at must be earlier than closed_at")
