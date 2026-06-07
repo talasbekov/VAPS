@@ -3,8 +3,9 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
-from apps.core.api.serializers import EmployeeSerializer
-from apps.core.models import Employee
+from apps.core.api.serializers import DivisionSerializer, EmployeeSerializer
+from apps.core.models import Division, Employee
+from apps.core.selectors import CoreDivisionTreeSelector
 from apps.core.services import mask_employee_data
 
 
@@ -70,3 +71,15 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         emp.is_active = True
         emp.save(update_fields=["employment_status", "is_active", "updated_at"])
         return Response(self._mask(EmployeeSerializer(emp).data), status=status.HTTP_200_OK)
+
+
+class DivisionViewSet(viewsets.ModelViewSet):
+    serializer_class = DivisionSerializer
+    pagination_class = DefaultPagination
+    queryset = Division.objects.all().order_by("name")
+
+    @action(detail=True, methods=["get"], url_path="leaf-descendants")
+    def leaf_descendants(self, request, *args, **kwargs):
+        division = self.get_object()
+        leaves = CoreDivisionTreeSelector.leaf_descendants(division.id)
+        return Response(DivisionSerializer(leaves, many=True).data)

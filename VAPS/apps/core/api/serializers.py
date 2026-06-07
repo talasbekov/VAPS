@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.core.models import Employee
+from apps.core.models import Division, Employee
 
 
 class EmployeeSerializer(serializers.ModelSerializer):
@@ -14,3 +14,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "work_email", "personal_phone", "personal_email", "notes", "employment_status",
         ]
         read_only_fields = ["id", "full_name", "rank_index"]
+
+
+class DivisionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Division
+        fields = [
+            "id", "organization", "parent", "type_code", "name", "code", "is_active",
+        ]
+        read_only_fields = ["id"]
