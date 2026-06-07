@@ -68,3 +68,35 @@ class Rank(models.Model):
 
     def __str__(self):
         return self.code
+
+
+class Division(UUIDTimeStampedModel):
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="divisions"
+    )
+    parent = models.ForeignKey(
+        "self", on_delete=models.CASCADE, null=True, blank=True, related_name="children"
+    )
+    type_code = models.ForeignKey(
+        DivisionType, on_delete=models.PROTECT, db_column="type_code", related_name="divisions"
+    )
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=100)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "core_divisions"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "code"], name="unique_org_division_code"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["parent"], name="idx_core_divisions_parent"),
+            models.Index(
+                fields=["organization", "type_code"], name="idx_core_div_org_type"
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
