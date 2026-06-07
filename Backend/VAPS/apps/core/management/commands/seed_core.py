@@ -1,6 +1,13 @@
 from django.core.management.base import BaseCommand
 
-from apps.core.models import DivisionType
+from apps.core.models import DivisionType, Position
+
+POSITIONS = [
+    ("NACH_DEP", "Начальник департамента", 1, 10),
+    ("NACH_UPR", "Начальник управления", 2, 20),
+    ("NACH_OTD", "Начальник отдела", 3, 30),
+    ("OPER", "Оперуполномоченный", 4, 40),
+]
 
 DIVISION_TYPES = [
     ("department", "Департамент", 1),
@@ -20,3 +27,8 @@ class Command(BaseCommand):
                 code=code, defaults={"name": name, "sort_order": sort_order}
             )
         self.stdout.write(self.style.SUCCESS("Seeded core_division_types"))
+        for code, name, level, sort_order in POSITIONS:
+            Position.objects.update_or_create(
+                code=code, defaults={"name": name, "level": level, "sort_order": sort_order}
+            )
+        self.stdout.write(self.style.SUCCESS("Seeded core_positions"))

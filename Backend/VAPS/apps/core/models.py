@@ -38,3 +38,18 @@ class DivisionType(models.Model):
 
     def __str__(self):
         return self.code
+
+
+class Position(models.Model):
+    code = models.CharField(primary_key=True, max_length=50)
+    name = models.CharField(max_length=255)
+    level = models.IntegerField(default=0)
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "core_positions"
+
+    def __str__(self):
+        return self.code
