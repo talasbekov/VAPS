@@ -195,3 +195,17 @@ class EmployeeDivisionHistory(UUIDTimeStampedModel):
 
     def __str__(self):
         return f"{self.employee_id}@{self.division_id}"
+
+
+class UserEmployeeBinding(UUIDTimeStampedModel):
+    # BR-ACCOUNT-001: external auth account id as string, NOT employee UUID.
+    user_id = models.CharField(max_length=100, unique=True)
+    employee = models.OneToOneField(
+        Employee, on_delete=models.CASCADE, related_name="account_binding"
+    )
+
+    class Meta:
+        db_table = "core_user_employee_bindings"
+
+    def __str__(self):
+        return f"{self.user_id}->{self.employee_id}"
