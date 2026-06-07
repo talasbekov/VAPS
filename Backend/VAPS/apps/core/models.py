@@ -169,3 +169,29 @@ class Employee(UUIDTimeStampedModel):
 
     def __str__(self):
         return self.full_name
+
+
+class EmployeeDivisionHistory(UUIDTimeStampedModel):
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="division_history"
+    )
+    division = models.ForeignKey(Division, on_delete=models.PROTECT, related_name="+")
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField(null=True, blank=True)
+    source = models.CharField(max_length=50, default="MANUAL")
+
+    class Meta:
+        db_table = "core_employee_division_history"
+        indexes = [
+            models.Index(
+                fields=["employee", "starts_at", "ends_at"], name="idx_emp_div_hist_lookup"
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.ends_at is not None and not (self.starts_at < self.ends_at):
+            raise ValidationError("starts_at must be earlier than ends_at")
+
+    def __str__(self):
+        return f"{self.employee_id}@{self.division_id}"
