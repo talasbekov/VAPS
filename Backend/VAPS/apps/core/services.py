@@ -5,6 +5,7 @@ from django.db.models import Q
 from apps.core.models import (
     EmployeeDivisionHistory,
     EmployeeStaffingAssignment,
+    SensitiveFieldPolicy,
     StaffingSlot,
 )
 
@@ -58,3 +59,30 @@ def compute_free_slots(division_id, *, on_date):
         .values_list("staffing_slot_id", flat=True)
     )
     return [s for s in slots if s.id not in occupied_slot_ids]
+
+
+def _partial_mask(value: str) -> str:
+    text = str(value)
+    if len(text) <= 4:
+        return "*" * len(text)
+    return "*" * (len(text) - 4) + text[-4:]
+
+
+def mask_employee_data(data: dict, *, user_permissions: set) -> dict:
+    """Apply sensitive-field policies to a serialized employee dict.
+
+    BR-PRIVACY-001/002: a field is revealed only if the caller holds the
+    policy's permission_code; otherwise FULL_HIDE -> None, PARTIAL_MASK -> tail-masked.
+    """
+    result = dict(data)
+    policies = SensitiveFieldPolicy.objects.filter(is_active=True)
+    for policy in policies:
+        if policy.field_code not in result or result[policy.field_code] is None:
+            continue
+        if policy.permission_code in user_permissions or policy.mask_strategy == "ALLOW":
+            continue
+        if policy.mask_strategy == "FULL_HIDE":
+            result[policy.field_code] = None
+        elif policy.mask_strategy == "PARTIAL_MASK":
+            result[policy.field_code] = _partial_mask(result[policy.field_code])
+    return result

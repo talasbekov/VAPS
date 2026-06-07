@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from apps.core.models import DivisionType, Position, Rank
+from apps.core.models import DivisionType, Position, Rank, SensitiveFieldPolicy
 
 RANKS = [
     ("LT", "Лейтенант", "officer", 10),
@@ -25,6 +25,12 @@ DIVISION_TYPES = [
 ]
 
 
+SENSITIVE_FIELDS = [
+    "iin", "photo_file_path", "work_phone", "personal_phone", "work_email",
+    "personal_email", "birth_date", "notes",
+]
+
+
 class Command(BaseCommand):
     help = "Seed core reference tables (idempotent)."
 
@@ -45,3 +51,11 @@ class Command(BaseCommand):
                 defaults={"name": name, "category": category, "rank_index": rank_index},
             )
         self.stdout.write(self.style.SUCCESS("Seeded core_ranks"))
+        for field_code in SENSITIVE_FIELDS:
+            strategy = "PARTIAL_MASK" if field_code == "iin" else "FULL_HIDE"
+            SensitiveFieldPolicy.objects.update_or_create(
+                field_code=field_code,
+                permission_code="employee.sensitive.view",
+                defaults={"mask_strategy": strategy},
+            )
+        self.stdout.write(self.style.SUCCESS("Seeded core_sensitive_field_policies"))
