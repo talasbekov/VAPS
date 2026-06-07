@@ -11,6 +11,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-django>=4.8"]
 
+[tool.setuptools]
+packages = ["config", "apps", "apps.core"]
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["test_*.py"]
