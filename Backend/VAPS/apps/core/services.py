@@ -1,7 +1,12 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 
-from apps.core.models import EmployeeDivisionHistory
+from apps.core.models import (
+    EmployeeDivisionHistory,
+    EmployeeStaffingAssignment,
+    StaffingSlot,
+)
 
 
 @transaction.atomic
@@ -33,3 +38,23 @@ def assign_employee_division(employee, division, *, starts_at, source="MANUAL"):
     employee.division = division
     employee.save(update_fields=["division", "updated_at"])
     return record
+
+
+def compute_free_slots(division_id, *, on_date):
+    """BR-CORE-STAFF-002: a vacancy is a staffing slot with no active assignment on a date.
+
+    Returns active slots valid on `on_date` that have no staffing assignment
+    overlapping `on_date`.
+    """
+    slots = StaffingSlot.objects.filter(
+        division_id=division_id, is_active=True, valid_from__lte=on_date
+    ).filter(Q(valid_to__isnull=True) | Q(valid_to__gt=on_date))
+
+    occupied_slot_ids = set(
+        EmployeeStaffingAssignment.objects.filter(
+            staffing_slot__in=slots, starts_at__lte=on_date
+        )
+        .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=on_date))
+        .values_list("staffing_slot_id", flat=True)
+    )
+    return [s for s in slots if s.id not in occupied_slot_ids]
