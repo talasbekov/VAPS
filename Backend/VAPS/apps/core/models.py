@@ -209,3 +209,25 @@ class UserEmployeeBinding(UUIDTimeStampedModel):
 
     def __str__(self):
         return f"{self.user_id}->{self.employee_id}"
+
+
+class DivisionHistoricalSlot(UUIDTimeStampedModel):
+    division = models.ForeignKey(
+        Division, on_delete=models.CASCADE, related_name="historical_slots"
+    )
+    allocated_slots = models.IntegerField(validators=[MinValueValidator(0)])
+    valid_from = models.DateTimeField()
+    valid_to = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "core_division_historical_slots"
+        indexes = [
+            models.Index(
+                fields=["division", "valid_from", "valid_to"], name="idx_core_slots_timeline"
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.valid_to is not None and not (self.valid_from < self.valid_to):
+            raise ValidationError("valid_from must be earlier than valid_to")
