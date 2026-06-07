@@ -53,3 +53,18 @@ class Position(models.Model):
 
     def __str__(self):
         return self.code
+
+
+class Rank(models.Model):
+    code = models.CharField(primary_key=True, max_length=50)
+    name = models.CharField(max_length=255)
+    category = models.CharField(max_length=50, null=True, blank=True)
+    rank_index = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "core_ranks"
+
+    def __str__(self):
+        return self.code

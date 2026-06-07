@@ -1,6 +1,13 @@
 from django.core.management.base import BaseCommand
 
-from apps.core.models import DivisionType, Position
+from apps.core.models import DivisionType, Position, Rank
+
+RANKS = [
+    ("LT", "Лейтенант", "officer", 10),
+    ("CPT", "Капитан", "officer", 20),
+    ("MAJOR", "Майор", "officer", 30),
+    ("COL", "Полковник", "officer", 40),
+]
 
 POSITIONS = [
     ("NACH_DEP", "Начальник департамента", 1, 10),
@@ -32,3 +39,9 @@ class Command(BaseCommand):
                 code=code, defaults={"name": name, "level": level, "sort_order": sort_order}
             )
         self.stdout.write(self.style.SUCCESS("Seeded core_positions"))
+        for code, name, category, rank_index in RANKS:
+            Rank.objects.update_or_create(
+                code=code,
+                defaults={"name": name, "category": category, "rank_index": rank_index},
+            )
+        self.stdout.write(self.style.SUCCESS("Seeded core_ranks"))
