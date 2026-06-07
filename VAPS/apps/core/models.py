@@ -310,3 +310,23 @@ class Vacancy(UUIDTimeStampedModel):
         super().clean()
         if self.closed_at is not None and not (self.opened_at < self.closed_at):
             raise ValidationError("opened_at must be earlier than closed_at")
+
+
+class SensitiveFieldPolicy(UUIDTimeStampedModel):
+    class Strategy(models.TextChoices):
+        FULL_HIDE = "FULL_HIDE", "Скрыть полностью"
+        PARTIAL_MASK = "PARTIAL_MASK", "Частично маскировать"
+        ALLOW = "ALLOW", "Разрешить"
+
+    field_code = models.CharField(max_length=100)
+    permission_code = models.CharField(max_length=100)
+    mask_strategy = models.CharField(max_length=50, choices=Strategy.choices)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "core_sensitive_field_policies"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["field_code", "permission_code"], name="unique_sensitive_policy"
+            )
+        ]
