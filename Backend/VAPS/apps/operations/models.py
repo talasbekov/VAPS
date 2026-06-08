@@ -29,6 +29,28 @@ class Role(models.Model):
         return self.code
 
 
+class RolePermission(TimeStampedModel):
+    role_code = models.ForeignKey(
+        "Role", on_delete=models.CASCADE, db_column="role_code",
+        to_field="code", related_name="role_permissions",
+    )
+    permission_code = models.ForeignKey(
+        "Permission", on_delete=models.CASCADE, db_column="permission_code",
+        to_field="code", related_name="permission_roles",
+    )
+
+    class Meta:
+        db_table = "ops_role_permissions"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["role_code", "permission_code"], name="unique_role_permission"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.role_code_id}:{self.permission_code_id}"
+
+
 class Permission(models.Model):
     code = models.CharField(primary_key=True, max_length=100)
     name = models.CharField(max_length=255)
