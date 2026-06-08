@@ -1,6 +1,12 @@
 from django.db import models
 from django.conf import settings
 
+# Register the target AuditLog model (defined in domain/models.py) with the
+# audit app so makemigrations can generate its table. Story 1.1 scopes only the
+# AuditLog migration; the legacy AuditEntry below is left as-is for later stories.
+from organization_management.apps.audit.domain.models import AuditLog  # noqa: F401, E402
+
+
 class AuditEntry(models.Model):
     """Запись в журнале аудита"""
 
