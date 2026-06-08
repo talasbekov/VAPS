@@ -1,11 +1,10 @@
-from django.test import TestCase
-from rest_framework.test import APITestCase
-from django.utils import timezone
 import datetime
 
-from organization_management.apps.audit.domain.models import AuditLog
-from organization_management.apps.divisions.models import Division, DivisionType
+from django.contrib.auth.models import User
+from django.utils import timezone
+from rest_framework.test import APITestCase
 
+from organization_management.apps.audit.domain.models import AuditLog
 
 
 class AuditLogAPITest(APITestCase):
@@ -14,7 +13,6 @@ class AuditLogAPITest(APITestCase):
     def setUpTestData(cls):
         cls.user1 = User.objects.create_user(username='testuser1', password='password')
         cls.user2 = User.objects.create_user(username='testuser2', password='password')
-        UserProfile.objects.create(user=cls.user1, role=UserRole.ROLE_4)
 
         log1 = AuditLog.objects.create(user=cls.user1, action_type='CREATE', ip_address='127.0.0.1')
         log2 = AuditLog.objects.create(user=cls.user2, action_type='UPDATE', ip_address='127.0.0.2')
