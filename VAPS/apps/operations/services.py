@@ -1,5 +1,7 @@
+from django.utils import timezone
+
 from apps.core.selectors import CoreDivisionTreeSelector
-from apps.operations.models import RolePermission
+from apps.operations.models import RolePermission, TemporaryDutyPermission
 from apps.operations.selectors import OpsUserRoleSelector
 
 WILDCARD = "*"
@@ -25,6 +27,15 @@ class PermissionService:
             for ur in user_roles
             if cls._scope_matches(ur.scope_division_id, division_id)
         ]
+
+        now = timezone.now()
+        active_duties = TemporaryDutyPermission.objects.filter(
+            user_id=user_id, is_active=True, starts_at__lte=now, ends_at__gte=now
+        )
+        for duty in active_duties:
+            if cls._scope_matches(duty.scope_division_id, division_id):
+                matching_role_codes.append(duty.duty_role_code)
+
         if not matching_role_codes:
             return set()
         return set(
