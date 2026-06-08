@@ -1,7 +1,8 @@
+from django.db import transaction
 from django.utils import timezone
 
 from apps.core.selectors import CoreDivisionTreeSelector
-from apps.operations.models import RolePermission, TemporaryDutyPermission
+from apps.operations.models import RolePermission, TemporaryDutyPermission, UserRole
 from apps.operations.selectors import OpsUserRoleSelector
 
 WILDCARD = "*"
@@ -50,3 +51,41 @@ class PermissionService:
         if WILDCARD in perms:
             return True
         return permission_code in perms
+
+
+class RoleAdminService:
+    """Write-side wrappers for RBAC administration."""
+
+    @staticmethod
+    @transaction.atomic
+    def assign_role(user_id, role_code, scope_division_id=None):
+        user_role, _ = UserRole.objects.update_or_create(
+            user_id=user_id, role_code_id=role_code, scope_division_id=scope_division_id,
+            defaults={"is_active": True},
+        )
+        return user_role
+
+    @staticmethod
+    @transaction.atomic
+    def revoke_role(user_id, role_code, scope_division_id=None):
+        UserRole.objects.filter(
+            user_id=user_id, role_code_id=role_code, scope_division_id=scope_division_id
+        ).update(is_active=False)
+
+    @staticmethod
+    @transaction.atomic
+    def grant_temporary_duty(*, user_id, duty_role_code, starts_at, ends_at, created_by,
+                             employee_id=None, scope_division_id=None, event_id=None):
+        grant = TemporaryDutyPermission(
+            user_id=user_id, duty_role_code=duty_role_code, starts_at=starts_at,
+            ends_at=ends_at, created_by=created_by, employee_id=employee_id,
+            scope_division_id=scope_division_id, event_id=event_id,
+        )
+        grant.full_clean()
+        grant.save()
+        return grant
+
+    @staticmethod
+    @transaction.atomic
+    def expire_temporary_duty(grant_id):
+        TemporaryDutyPermission.objects.filter(id=grant_id).update(is_active=False)
