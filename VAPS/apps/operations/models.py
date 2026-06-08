@@ -1,4 +1,7 @@
+from django.core.exceptions import ValidationError
 from django.db import models
+
+from apps.operations.validators import DUTY_ROLE_CHOICES
 
 
 class TimeStampedModel(models.Model):
@@ -75,6 +78,35 @@ class RolePermission(TimeStampedModel):
 
     def __str__(self):
         return f"{self.role_code_id}:{self.permission_code_id}"
+
+
+class TemporaryDutyPermission(TimeStampedModel):
+    user_id = models.CharField(max_length=100)
+    employee_id = models.UUIDField(null=True, blank=True)
+    duty_role_code = models.CharField(max_length=50, choices=DUTY_ROLE_CHOICES)
+    scope_division_id = models.UUIDField(null=True, blank=True)
+    event_id = models.UUIDField(null=True, blank=True)  # flat; ops_events not built yet
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
+    created_by = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = "ops_temporary_duty_permissions"
+        indexes = [
+            models.Index(
+                fields=["user_id", "is_active", "starts_at", "ends_at"],
+                name="idx_ops_temp_duty_user",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if not (self.starts_at < self.ends_at):
+            raise ValidationError("starts_at must be earlier than ends_at")
+
+    def __str__(self):
+        return f"{self.user_id}:{self.duty_role_code}"
 
 
 class Permission(models.Model):
