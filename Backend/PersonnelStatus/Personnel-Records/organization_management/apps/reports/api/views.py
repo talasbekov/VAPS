@@ -10,15 +10,19 @@ from organization_management.apps.reports.models import Report
 from organization_management.apps.reports.tasks import generate_report_task
 from organization_management.apps.reports.utils import generate_personnel_expense_report
 from organization_management.apps.divisions.models import Division
+from organization_management.apps.common.services.permissions import PermissionService
 import os
 
-class ReportViewSet(viewsets.ModelViewSet):
+from rest_framework import mixins
+
+class ReportViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """
     ViewSet для управления отчетами.
+    Поддерживает чтение (list, retrieve) и кастомные действия (например, generate).
     """
     queryset = Report.objects.all()
     serializer_class = ReportSerializer
-    http_method_names = ['get']
+    http_method_names = ['get', 'post']
 
     def get_queryset(self):
         user = self.request.user
@@ -27,27 +31,18 @@ class ReportViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Суперпользователь видит все
         if user.is_superuser:
             return qs
 
-        # Получаем роль пользователя
-        user_division = None
-        role_code = None
-        if hasattr(user, 'role_info'):
-            user_division = user.role_info.get_user_division()
-            role_code = user.role_info.get_role_code()
+        accessible_divisions = PermissionService.get_accessible_divisions(user)
 
-        # Если нет подразделения - видит только свои отчеты
-        if not user_division:
+        # Если нет доступных подразделений (т.е. нет зоны видимости) - видит только свои
+        if not accessible_divisions.exists():
             return qs.filter(created_by_id=user.id)
-
-        # Определяем доступные подразделения
-        allowed = user_division.get_descendants(include_self=True)
 
         return qs.filter(
             models.Q(created_by_id=user.id) |
-            models.Q(division_id__in=allowed.values_list("id", flat=True))
+            models.Q(division_id__in=accessible_divisions.values_list("id", flat=True))
         )
 
     @action(detail=False, methods=['post'])
@@ -69,20 +64,12 @@ class ReportViewSet(viewsets.ModelViewSet):
             except Division.DoesNotExist:
                 return Response({'detail': 'Некорректное подразделение'}, status=400)
 
-            # Суперпользователь может создавать отчеты для любого подразделения
-            if not user.is_superuser:
-                # Получаем подразделение пользователя
-                user_division = None
-                if hasattr(user, 'role_info'):
-                    user_division = user.role_info.get_user_division()
-
-                if not user_division:
+            if not PermissionService.can_access_division(user, div.id):
+                # Preserve the legacy behavior: return specific message if user has no scope at all,
+                # otherwise return a generic forbidden message.
+                if not PermissionService.get_user_division(user) and not user.is_superuser:
                     return Response({'detail': 'Нет зоны ответственности'}, status=403)
-
-                # Проверяем, что запрашиваемое подразделение в области видимости
-                allowed = user_division.get_descendants(include_self=True)
-                if div.id not in allowed.values_list('id', flat=True):
-                    return Response({'detail': 'Подразделение вне зоны ответственности'}, status=403)
+                return Response({'detail': 'Подразделение вне зоны ответственности'}, status=403)
 
         report = serializer.save(created_by=user)
         generate_report_task.delay(report.id)
@@ -151,20 +138,13 @@ class ReportViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Департамент не найден'}, status=status.HTTP_404_NOT_FOUND)
 
         # Проверка прав доступа
-        if not user.is_superuser:
-            user_division = None
-            if hasattr(user, 'role_info'):
-                user_division = user.role_info.get_user_division()
-
-            if not user_division:
+        if not PermissionService.can_access_division(user, department.id):
+            if not PermissionService.get_user_division(user) and not user.is_superuser:
                 return Response({'detail': 'Нет зоны ответственности'}, status=status.HTTP_403_FORBIDDEN)
-
-            allowed = user_division.get_descendants(include_self=True)
-            if department.id not in allowed.values_list('id', flat=True):
-                return Response(
-                    {'detail': 'Департамент вне зоны ответственности'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+            return Response(
+                {'detail': 'Департамент вне зоны ответственности'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         # Генерируем отчет
         try:
