@@ -42,14 +42,14 @@ inconsistent or unresolvable ordering, so the initial set is an atomic
 deliverable. It is still independently reviewable and revertible as one commit.
 
 ### Acceptance Criteria
-- [ ] Given the models as they exist, when `makemigrations` runs, then an
+- [x] Given the models as they exist, when `makemigrations` runs, then an
       `0001_initial.py` (or equivalent) is created under each of the nine apps'
-      `migrations/` directories.
-- [ ] Given a clean database, when `migrate` runs, then all tables are created
+      `migrations/` directories. (8 apps; `common` excluded — not in INSTALLED_APPS.)
+- [x] Given a clean database, when `migrate` runs, then all tables are created
       with no errors.
-- [ ] Given `migrate`, when run a second time, then it reports no pending
+- [x] Given `migrate`, when run a second time, then it reports no pending
       migrations.
-- [ ] Given `makemigrations --check --dry-run`, when run after committing, then
+- [x] Given `makemigrations --check --dry-run`, when run after committing, then
       it reports no changes (model state matches migrations).
 - [x] Given the audit suite, when run, then the `no such table: divisions`
       blocker is gone. **Note:** 3 of the 5 `tests_middleware.py` cases still fail,
@@ -111,12 +111,12 @@ deliverable. It is still independently reviewable and revertible as one commit.
 - Manual: inspect generated migrations; `python manage.py migrate --plan`.
 
 ### Definition of Done
-- [ ] Code implemented (migrations generated)
-- [ ] Tests added / previously-blocked tests now run
-- [ ] Tests passing
-- [ ] Lint passing
-- [ ] No hardcoded secrets
-- [ ] Documentation updated if needed
+- [x] Code implemented (migrations generated)
+- [x] Tests added / previously-blocked tests now run
+- [x] Tests passing (in-scope; 3 divisions write-API failures deferred to Story 4.x)
+- [x] Lint passing
+- [x] No hardcoded secrets
+- [x] Documentation updated if needed
 
 ---
 
