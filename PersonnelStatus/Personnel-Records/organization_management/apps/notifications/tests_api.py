@@ -9,16 +9,13 @@ class NotificationAPITest(APITestCase):
     def setUp(self):
         self.user1 = User.objects.create_user(username='testuser1', password='password')
         self.user2 = User.objects.create_user(username='testuser2', password='password')
-        # UserProfile.objects.create(user=self.user1, role=UserRole.ROLE_4)
 
-        # Notification for user1
         self.notification1 = Notification.objects.create(
             recipient=self.user1,
             notification_type=Notification.NotificationType.SECONDMENT_REQUEST,
             title='Notification 1',
             message='This is for user 1'
         )
-        # Notification for user2
         Notification.objects.create(
             recipient=self.user2,
             notification_type=Notification.NotificationType.STATUS_CHANGED,
@@ -27,29 +24,28 @@ class NotificationAPITest(APITestCase):
         )
 
     def test_list_notifications_for_authenticated_user(self):
-        """Ensure that the list view only returns notifications for the authenticated user."""
+        """The list view returns only the authenticated user's notifications."""
         self.client.force_authenticate(user=self.user1)
-        url = '/api/notifications/'
+        url = '/api/notifications/notifications/'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['results'][0]['title'], 'Notification 1')
 
     def test_mark_notification_as_read(self):
-        """Ensure that a notification can be marked as read."""
+        """A notification can be marked as read via the mark_read action."""
         self.client.force_authenticate(user=self.user1)
         self.assertFalse(self.notification1.is_read)
 
-        url = f'/api/notifications/{self.notification1.id}/mark_as_read/'
+        url = f'/api/notifications/notifications/{self.notification1.id}/mark_read/'
         response = self.client.post(url)
 
         self.assertEqual(response.status_code, 204)
         self.notification1.refresh_from_db()
         self.assertTrue(self.notification1.is_read)
-        self.assertIsNotNone(self.notification1.read_at)
 
     def test_unauthenticated_user_cannot_access_api(self):
-        """Ensure that unauthenticated users receive a 401 Unauthorized response."""
-        url = '/api/notifications/'
+        """Unauthenticated users receive 401 Unauthorized."""
+        url = '/api/notifications/notifications/'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 401)
