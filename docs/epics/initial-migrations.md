@@ -134,10 +134,16 @@ deliverable. It is still independently reviewable and revertible as one commit.
   the middleware's `/api/<app>/<model>/<id>/` convention
   (`/api/divisions/divisions/`) and the real lowercase `division_type` enum
   value. All 15 `apps/audit` tests pass; `makemigrations --check` clean.
-- **Story 6.x (new):** `divisions/api/tests.py` is independently broken (uses a
-  nonexistent `parent_division` field and invalid `division_type` values like
-  `'COMPANY'`); also notifications `tests_api.py`/`tests_websockets` fail
-  pre-existing. Separate test-cleanup stories.
+- **Story 6.x — DONE** (`feat/fix-broken-tests`): Repaired the pre-existing
+  broken tests. `divisions/api/tests.py` used a nonexistent `parent_division`
+  field, invalid enum values, the wrong URL, and a non-paginated assertion;
+  `notifications/tests_api.py` hit the API-root path instead of the viewset,
+  used the wrong action name, and asserted a non-existent `read_at` field.
+  Both are now green (test-only changes; no production code touched).
+- **Story 7.x (new):** `notifications/tests_websockets.py` fails to import
+  because `daphne` is not installed (channels' `WebsocketCommunicator` pulls in
+  `daphne.testing`). Decide whether to add `daphne` as a dev dependency and run
+  the websocket tests, or guard/skip them. Own story.
 - **Story 5.x:** Decide whether `apps/common` belongs in `INSTALLED_APPS`; if so,
   generate and apply its migration.
 
