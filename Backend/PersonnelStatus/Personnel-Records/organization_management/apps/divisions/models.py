@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 from mptt.models import MPTTModel, TreeForeignKey
 from django.utils import timezone
@@ -41,6 +43,16 @@ class Division(MPTTModel):
         permissions = [
             ("can_view_subordinate_departments", "Может видеть на уровне Департамента"),
         ]
+
+    def save(self, *args, **kwargs):
+        # `code` is unique; auto-generate a unique value when none is supplied
+        # so divisions can be created without an explicit code.
+        if not self.code:
+            new_code = f"DIV-{uuid.uuid4().hex[:8].upper()}"
+            while Division.objects.filter(code=new_code).exclude(pk=self.pk).exists():
+                new_code = f"DIV-{uuid.uuid4().hex[:8].upper()}"
+            self.code = new_code
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name

@@ -13,8 +13,8 @@ class AuditMiddlewareTest(APITestCase):
         self.division = Division.objects.create(name='Test Division', division_type=Division.DivisionType.DEPARTMENT)
 
     def test_create_action_is_logged(self):
-        url = '/api/divisions/'
-        data = {'name': 'New Department', 'division_type': 'DEPARTMENT'}
+        url = '/api/divisions/divisions/'
+        data = {'name': 'New Department', 'division_type': 'department'}
 
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, 201)
@@ -27,8 +27,8 @@ class AuditMiddlewareTest(APITestCase):
         self.assertEqual(log_entry.object_id, response.data['id'])
 
     def test_update_action_is_logged_with_diff(self):
-        url = f'/api/divisions/{self.division.id}/'
-        data = {'name': 'Updated Division Name', 'division_type': 'DEPARTMENT'}
+        url = f'/api/divisions/divisions/{self.division.id}/'
+        data = {'name': 'Updated Division Name', 'division_type': 'department'}
 
         response = self.client.put(url, data, format='json')
         self.assertEqual(response.status_code, 200)
@@ -41,7 +41,7 @@ class AuditMiddlewareTest(APITestCase):
         self.assertEqual(log_entry.payload['diff']['new']['name'], 'Updated Division Name')
 
     def test_delete_action_is_logged(self):
-        url = f'/api/divisions/{self.division.id}/'
+        url = f'/api/divisions/divisions/{self.division.id}/'
 
         response = self.client.delete(url)
         self.assertEqual(response.status_code, 204)
@@ -52,7 +52,7 @@ class AuditMiddlewareTest(APITestCase):
         self.assertEqual(str(log_entry.object_id), str(self.division.id))
 
     def test_get_request_is_not_logged(self):
-        url = '/api/divisions/'
+        url = '/api/divisions/divisions/'
         self.client.get(url)
         self.assertEqual(AuditLog.objects.count(), 0)
 
