@@ -125,9 +125,19 @@ deliverable. It is still independently reviewable and revertible as one commit.
   lookup tables.
 - **Story 3.x:** CI gate that runs `makemigrations --check` to prevent future
   model/migration drift.
-- **Story 4.x:** Enable the divisions write API (register `DivisionViewSet` in
-  `apps/divisions/api/urls.py` and allow write methods), which unblocks the
-  remaining `apps/audit/tests_middleware.py` POST/PUT/DELETE cases.
+- **Story 4.x — DONE** (`feat/divisions-write-api`): Enabled the divisions write
+  API (registered `DivisionViewSet`, dropped the read-only `http_method_names`).
+  Enabling writes surfaced pre-existing bugs, fixed in the same change:
+  `destroy()`/`employees` referenced a nonexistent `Employee.division`
+  (corrected to `staff_unit__division`); `Division.code` (unique, `default=''`)
+  now auto-generates a unique value in `save()` when blank. Tests aligned with
+  the middleware's `/api/<app>/<model>/<id>/` convention
+  (`/api/divisions/divisions/`) and the real lowercase `division_type` enum
+  value. All 15 `apps/audit` tests pass; `makemigrations --check` clean.
+- **Story 6.x (new):** `divisions/api/tests.py` is independently broken (uses a
+  nonexistent `parent_division` field and invalid `division_type` values like
+  `'COMPANY'`); also notifications `tests_api.py`/`tests_websockets` fail
+  pre-existing. Separate test-cleanup stories.
 - **Story 5.x:** Decide whether `apps/common` belongs in `INSTALLED_APPS`; if so,
   generate and apply its migration.
 

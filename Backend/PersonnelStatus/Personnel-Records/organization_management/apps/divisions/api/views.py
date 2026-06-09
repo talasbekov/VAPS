@@ -39,7 +39,6 @@ class DivisionViewSet(viewsets.ModelViewSet):
     serializer_class = DivisionSerializer
 
     permission_classes = [permissions.IsAuthenticated]
-    http_method_names = ['get', 'head', 'options']
 
     @action(detail=True, methods=['get'])
     def employees(self, request, pk=None):
@@ -47,7 +46,8 @@ class DivisionViewSet(viewsets.ModelViewSet):
         Получение списка сотрудников для конкретного подразделения.
         """
         division = self.get_object()
-        employees = Employee.objects.filter(division=division)
+        # Employee links to Division through StaffUnit (Employee.staff_unit.division).
+        employees = Employee.objects.filter(staff_unit__division=division)
         serializer = EmployeeSerializer(employees, many=True)
         return Response(serializer.data)
 
@@ -60,7 +60,7 @@ class DivisionViewSet(viewsets.ModelViewSet):
         # запрет, если есть активные сотрудники
         from organization_management.apps.employees.models import Employee
         active_in_branch = Employee.objects.filter(
-            division__in=instance.get_descendants(include_self=True),
+            staff_unit__division__in=instance.get_descendants(include_self=True),
             employment_status=Employee.EmploymentStatus.WORKING,
         ).exists()
         if active_in_branch:
