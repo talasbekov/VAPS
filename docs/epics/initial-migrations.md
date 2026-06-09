@@ -123,8 +123,14 @@ deliverable. It is still independently reviewable and revertible as one commit.
 ## Follow-up (separate stories, out of scope here)
 - **Story 2.x:** Seed/reference data migrations for `dictionaries` and any
   lookup tables.
-- **Story 3.x:** CI gate that runs `makemigrations --check` to prevent future
-  model/migration drift.
+- **Story 3.x — DONE** (`feat/ci-makemigrations-gate`): Added a GitHub Actions
+  workflow (`.github/workflows/ci.yml`) that runs
+  `python manage.py makemigrations --check --dry-run` on every push to `main`
+  and every PR, failing the build on model/migration drift. Since the project
+  had no dependency manifest, captured one via `pip freeze` into
+  `Backend/PersonnelStatus/Personnel-Records/requirements.txt` for reproducible
+  CI installs. Verified the gate passes on the current tree and fails (exit 1)
+  when a model field is added without a migration.
 - **Story 4.x — DONE** (`feat/divisions-write-api`): Enabled the divisions write
   API (registered `DivisionViewSet`, dropped the read-only `http_method_names`).
   Enabling writes surfaced pre-existing bugs, fixed in the same change:
