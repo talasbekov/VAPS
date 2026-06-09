@@ -121,8 +121,15 @@ deliverable. It is still independently reviewable and revertible as one commit.
 ---
 
 ## Follow-up (separate stories, out of scope here)
-- **Story 2.x:** Seed/reference data migrations for `dictionaries` and any
-  lookup tables.
+- **Story 2.x — DONE** (`feat/dictionaries-seed-data`): Added data migration
+  `dictionaries/0002_seed_reference_data.py` that idempotently seeds the
+  reference/lookup tables (Position, StatusType, DismissalReason, TransferReason,
+  VacancyReason, EducationType, DocumentType, SystemSetting), mirroring the
+  `init_dictionaries` command (kept as a manual re-seed convenience). Uses
+  `get_or_create` (idempotent) with a reverse operation that deletes exactly the
+  seeded rows. Verified: forward seeds the expected counts, reverse cleans to
+  zero, re-running is idempotent, `makemigrations --check` clean. `statuses`
+  needs no seed — it uses enum `TextChoices`, not DB lookup tables.
 - **Story 3.x — DONE** (`feat/ci-makemigrations-gate`): Added a GitHub Actions
   workflow (`.github/workflows/ci.yml`) that runs
   `python manage.py makemigrations --check --dry-run` on every push to `main`
