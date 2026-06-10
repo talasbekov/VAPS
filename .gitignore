@@ -220,3 +220,8 @@ __marimo__/
 # Project documentation and knowledge graph — kept local only, not for GitHub
 docs/
 graphify-out/
+_bmad/
+_bmad-output/
+.agents/
+.claude/
+.github/
