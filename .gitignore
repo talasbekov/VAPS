@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project documentation and knowledge graph — kept local only, not for GitHub
+docs/
+graphify-out/
