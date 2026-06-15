@@ -4,7 +4,7 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
-from apps.operations.models import Role, RolePermission, TemporaryDutyPermission
+from apps.operations.models import Role, TemporaryDutyPermission
 from apps.operations.services import PermissionService
 
 pytestmark = pytest.mark.django_db

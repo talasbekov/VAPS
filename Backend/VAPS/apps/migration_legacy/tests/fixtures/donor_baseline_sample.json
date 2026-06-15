@@ -1,0 +1,26 @@
+{
+  "_comment": "SYNTHETIC donor baseline (Решение №4 / A4-страховка) aligned to donor_slice.json imported with --until 2026-06-07 --days 7. Numbers are a hand recalculation by the donor DataAggregator formula over the same slice, crafted so each diff cell lands on exactly one category of the prototype classifier. NOT a byte-for-byte donor recompute. model/overstaffed needs a VAPS staff_lt_list violation, which the real slice does not produce, so it is exercised in the unit suite (test_donor_diff.py) instead. The freeze path for a production baseline is documented in story 1.8 Completion Notes.",
+  "days": [
+    {
+      "date": "2026-06-04",
+      "rows": [
+        {"division_code": "DEP1", "division_name": "Департамент кадров", "staff_unit": 5, "in_service": 1, "vacation": 0, "sick_leave": 0, "business_trip": 0, "training": 0, "seconded_in": 0, "seconded_out": 0, "other_absence": 0},
+        {"division_code": "DIR1", "division_name": "Управление учёта", "staff_unit": 1, "in_service": 0, "vacation": 0, "sick_leave": 0, "business_trip": 0, "training": 1, "seconded_in": 1, "seconded_out": 1, "other_absence": 0}
+      ]
+    },
+    {
+      "date": "2026-06-05",
+      "rows": [
+        {"division_code": "DEP1", "division_name": "Департамент кадров", "staff_unit": 5, "in_service": 2, "vacation": 1, "sick_leave": 0, "business_trip": 0, "training": 0, "seconded_in": 0, "seconded_out": 0, "other_absence": 0},
+        {"division_code": "DIR1", "division_name": "Управление учёта", "staff_unit": 1, "in_service": 0, "vacation": 0, "sick_leave": 0, "business_trip": 0, "training": 0, "seconded_in": 0, "seconded_out": 1, "other_absence": 0}
+      ]
+    },
+    {
+      "date": "2026-06-06",
+      "rows": [
+        {"division_code": "DEP1", "division_name": "Департамент кадров", "staff_unit": 5, "in_service": 0, "vacation": 1, "sick_leave": 0, "business_trip": 0, "training": 0, "seconded_in": 0, "seconded_out": 0, "other_absence": 0},
+        {"division_code": "DIR1", "division_name": "Управление учёта", "staff_unit": 1, "in_service": 1, "vacation": 0, "sick_leave": 0, "business_trip": 0, "training": 0, "seconded_in": 0, "seconded_out": 0, "other_absence": 0}
+      ]
+    }
+  ]
+}

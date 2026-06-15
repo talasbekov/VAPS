@@ -18,9 +18,15 @@ def slot_and_employee():
     dtp = DivisionType.objects.create(code="management", name="Управление")
     div = Division.objects.create(organization=org, type_code=dtp, name="D", code="D")
     pos = Position.objects.create(code="OPER", name="Опер")
-    slot = StaffingSlot.objects.create(division=div, position_code=pos, valid_from=timezone.now())
+    slot = StaffingSlot.objects.create(
+        division=div, position_code=pos, valid_from=timezone.now()
+    )
     emp = Employee.objects.create(
-        iin="900101300500", full_name="X", rank_code="MAJOR", position_code="OPER", division=div
+        iin="900101300500",
+        full_name="X",
+        rank_code="MAJOR",
+        position_code="OPER",
+        division=div,
     )
     return slot, emp
 
@@ -37,7 +43,10 @@ def test_starts_after_ends_rejected(slot_and_employee):
     slot, emp = slot_and_employee
     now = timezone.now()
     a = EmployeeStaffingAssignment(
-        employee=emp, staffing_slot=slot, starts_at=now, ends_at=now - dt.timedelta(days=1)
+        employee=emp,
+        staffing_slot=slot,
+        starts_at=now,
+        ends_at=now - dt.timedelta(days=1),
     )
     with pytest.raises(ValidationError):
         a.full_clean()

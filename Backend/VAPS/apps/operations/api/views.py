@@ -3,7 +3,6 @@ from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
-from apps.operations.api.identity import get_user_id
 from apps.operations.api.permissions import require_permission
 from apps.operations.api.serializers import (
     PermissionSerializer, RoleSerializer, TemporaryDutySerializer, UserRoleSerializer,
@@ -54,7 +53,9 @@ class UserRoleViewSet(viewsets.ViewSet):
             qs = qs.filter(user_id=user_id)
         paginator = DefaultPagination()
         page = paginator.paginate_queryset(qs, request)
-        return paginator.get_paginated_response(UserRoleSerializer(page, many=True).data)
+        return paginator.get_paginated_response(
+            UserRoleSerializer(page, many=True).data
+        )
 
     def create(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
@@ -62,6 +63,7 @@ class UserRoleViewSet(viewsets.ViewSet):
             user_id=request.data["user_id"],
             role_code=request.data["role_code"],
             scope_division_id=request.data.get("scope_division_id"),
+            actor=request.actor_id,
         )
         return Response(
             UserRoleSerializer(user_role).data, status=status.HTTP_201_CREATED
@@ -86,7 +88,9 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
             qs = qs.filter(user_id=user_id)
         paginator = DefaultPagination()
         page = paginator.paginate_queryset(qs, request)
-        return paginator.get_paginated_response(TemporaryDutySerializer(page, many=True).data)
+        return paginator.get_paginated_response(
+            TemporaryDutySerializer(page, many=True).data
+        )
 
     def create(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
@@ -95,12 +99,16 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
             duty_role_code=request.data["duty_role_code"],
             starts_at=request.data["starts_at"],
             ends_at=request.data["ends_at"],
-            created_by=request.data["created_by"],
+            # ARCH-SEC-030: identity comes from the auth contract, never
+            # from a client-supplied payload field.
+            created_by=request.actor_id,
             employee_id=request.data.get("employee_id"),
             scope_division_id=request.data.get("scope_division_id"),
             event_id=request.data.get("event_id"),
         )
-        return Response(TemporaryDutySerializer(grant).data, status=status.HTTP_201_CREATED)
+        return Response(
+            TemporaryDutySerializer(grant).data, status=status.HTTP_201_CREATED
+        )
 
     @action(detail=True, methods=["post"])
     def expire(self, request, pk=None, *args, **kwargs):
@@ -111,10 +119,12 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
 
 class MyPermissionsViewSet(viewsets.ViewSet):
     def list(self, request, *args, **kwargs):
-        user_id = get_user_id(request)
+        user_id = getattr(request, "actor_id", None)
         if not user_id:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("PERMISSION_DENIED")
         division_id = request.query_params.get("division_id")
-        perms = PermissionService.effective_permissions(user_id, division_id=division_id)
+        perms = PermissionService.effective_permissions(
+            user_id, division_id=division_id
+        )
         return Response({"permissions": sorted(perms)})

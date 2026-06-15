@@ -14,7 +14,9 @@ def test_seed_creates_iin_policy():
 
 def test_iin_masked_without_permission():
     SensitiveFieldPolicy.objects.create(
-        field_code="iin", permission_code="employee.sensitive.view", mask_strategy="PARTIAL_MASK"
+        field_code="iin",
+        permission_code="employee.sensitive.view",
+        mask_strategy="PARTIAL_MASK",
     )
     data = {"full_name": "Иванов", "iin": "900101300123"}
     masked = mask_employee_data(data, user_permissions=set())
@@ -25,7 +27,9 @@ def test_iin_masked_without_permission():
 
 def test_iin_visible_with_permission():
     SensitiveFieldPolicy.objects.create(
-        field_code="iin", permission_code="employee.sensitive.view", mask_strategy="PARTIAL_MASK"
+        field_code="iin",
+        permission_code="employee.sensitive.view",
+        mask_strategy="PARTIAL_MASK",
     )
     data = {"iin": "900101300123"}
     masked = mask_employee_data(data, user_permissions={"employee.sensitive.view"})
@@ -34,7 +38,9 @@ def test_iin_visible_with_permission():
 
 def test_full_hide_strategy():
     SensitiveFieldPolicy.objects.create(
-        field_code="notes", permission_code="employee.sensitive.view", mask_strategy="FULL_HIDE"
+        field_code="notes",
+        permission_code="employee.sensitive.view",
+        mask_strategy="FULL_HIDE",
     )
     masked = mask_employee_data({"notes": "secret"}, user_permissions=set())
     assert masked["notes"] is None

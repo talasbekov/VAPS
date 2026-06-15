@@ -18,7 +18,8 @@ Every check goes through `PermissionService.has_permission(user_id, permission_c
 - temporary duty contributes its role's permissions only within `starts_at..ends_at`.
 
 `user_id` is the external auth account id (ARCH-007), never `core_employees.id`.
-At the API layer it is read from the `X-User-Id` header (MVP stub for JWT `sub`).
+At the API layer it arrives as `request.actor_id`, set by the authentication
+class in `apps/core/auth/` from the `X-User-Id` header (MVP stub for JWT `sub`).
 
 ## API (`/api/operations/`)
 

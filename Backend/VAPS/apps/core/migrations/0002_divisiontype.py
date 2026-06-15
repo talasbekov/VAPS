@@ -4,22 +4,24 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0001_initial'),
+        ("core", "0001_initial"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='DivisionType',
+            name="DivisionType",
             fields=[
-                ('code', models.CharField(max_length=50, primary_key=True, serialize=False)),
-                ('name', models.CharField(max_length=255)),
-                ('sort_order', models.IntegerField(default=0)),
-                ('is_active', models.BooleanField(default=True)),
+                (
+                    "code",
+                    models.CharField(max_length=50, primary_key=True, serialize=False),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("sort_order", models.IntegerField(default=0)),
+                ("is_active", models.BooleanField(default=True)),
             ],
             options={
-                'db_table': 'core_division_types',
+                "db_table": "core_division_types",
             },
         ),
     ]

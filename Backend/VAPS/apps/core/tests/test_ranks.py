@@ -7,7 +7,9 @@ pytestmark = pytest.mark.django_db
 
 
 def test_rank_code_primary_key_and_index():
-    r = Rank.objects.create(code="MAJOR", name="Майор", category="officer", rank_index=5)
+    r = Rank.objects.create(
+        code="MAJOR", name="Майор", category="officer", rank_index=5
+    )
     assert r.pk == "MAJOR"
     assert r.rank_index == 5
 

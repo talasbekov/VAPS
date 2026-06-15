@@ -1,6 +1,7 @@
+from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.utils import timezone
 
+from apps.core.clock import Clock
 from apps.core.selectors import CoreDivisionTreeSelector
 from apps.operations.models import RolePermission, TemporaryDutyPermission, UserRole
 from apps.operations.selectors import OpsUserRoleSelector
@@ -29,7 +30,7 @@ class PermissionService:
             if cls._scope_matches(ur.scope_division_id, division_id)
         ]
 
-        now = timezone.now()
+        now = Clock.now()
         active_duties = TemporaryDutyPermission.objects.filter(
             user_id=user_id, is_active=True, starts_at__lte=now, ends_at__gte=now
         )
@@ -58,10 +59,19 @@ class RoleAdminService:
 
     @staticmethod
     @transaction.atomic
-    def assign_role(user_id, role_code, scope_division_id=None):
+    def assign_role(user_id, role_code, scope_division_id=None, *, actor: str):
+        # Blank actor would blur the "NULL = honestly actorless" convention.
+        if not actor or not actor.strip():
+            raise ValidationError("actor must be a non-empty string")
+        # created_by records who created the ROW (append-once): reactivating
+        # an existing assignment must not rewrite the original creator, hence
+        # create_defaults (Django 5.0+), not defaults.
         user_role, _ = UserRole.objects.update_or_create(
-            user_id=user_id, role_code_id=role_code, scope_division_id=scope_division_id,
+            user_id=user_id,
+            role_code_id=role_code,
+            scope_division_id=scope_division_id,
             defaults={"is_active": True},
+            create_defaults={"is_active": True, "created_by": actor},
         )
         return user_role
 

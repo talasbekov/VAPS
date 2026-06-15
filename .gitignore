@@ -219,9 +219,11 @@ __marimo__/
 
 # Project documentation and knowledge graph — kept local only, not for GitHub
 docs/
-graphify-out/
+# graphify-out/ is tracked so the server can navigate the knowledge graph,
+# but its regenerable cache and the dated curated-graph backups stay local.
+graphify-out/cache/
+graphify-out/2???-??-??/
 _bmad/
-_bmad-output/
 .agents/
 .claude/
 .github/

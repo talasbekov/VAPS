@@ -6,10 +6,14 @@ dependencies = [
     "Django>=5.0,<5.2",
     "djangorestframework>=3.15",
     "psycopg[binary]>=3.1",
+    # Story 1.8: simple .xlsx output (AC-1). Pure-Python, no C extensions,
+    # offline-friendly — runs inside the air-gapped контур in the
+    # migration_legacy image. The deliberate end of 1.7's zero-runtime-deps.
+    "openpyxl>=3,<4",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-django>=4.8"]
+dev = ["pytest>=8.0", "pytest-django>=4.8", "ruff>=0.15", "hypothesis>=6,<7"]
 
 [tool.setuptools]
 packages = ["config", "apps", "apps.core"]
@@ -18,3 +22,15 @@ packages = ["config", "apps", "apps.core"]
 DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["test_*.py"]
 testpaths = ["apps"]
+addopts = "--strict-markers"
+markers = [
+    "property: property-based tests (hypothesis)",
+    "concurrency: concurrency smoke tests",
+    "slow: tests that take more than a few seconds",
+]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F"]

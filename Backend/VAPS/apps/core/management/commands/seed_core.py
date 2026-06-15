@@ -42,7 +42,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Seeded core_division_types"))
         for code, name, level, sort_order in POSITIONS:
             Position.objects.update_or_create(
-                code=code, defaults={"name": name, "level": level, "sort_order": sort_order}
+                code=code,
+                defaults={"name": name, "level": level, "sort_order": sort_order},
             )
         self.stdout.write(self.style.SUCCESS("Seeded core_positions"))
         for code, name, category, rank_index in RANKS:

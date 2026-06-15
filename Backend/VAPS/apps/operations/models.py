@@ -14,6 +14,8 @@ class TimeStampedModel(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # ARCH-007 / BR-ACCOUNT-002: external auth user_id as a flat string.
+    created_by = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         abstract = True
@@ -51,7 +53,9 @@ class UserRole(TimeStampedModel):
             )
         ]
         indexes = [
-            models.Index(fields=["user_id", "is_active"], name="idx_ops_user_roles_user"),
+            models.Index(
+                fields=["user_id", "is_active"], name="idx_ops_user_roles_user"
+            ),
         ]
 
     def __str__(self):

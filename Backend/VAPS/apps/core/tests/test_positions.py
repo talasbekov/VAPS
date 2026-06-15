@@ -7,7 +7,9 @@ pytestmark = pytest.mark.django_db
 
 
 def test_position_code_primary_key_and_level():
-    p = Position.objects.create(code="NACH_OTD", name="Начальник отдела", level=3, sort_order=10)
+    p = Position.objects.create(
+        code="NACH_OTD", name="Начальник отдела", level=3, sort_order=10
+    )
     assert p.pk == "NACH_OTD"
     assert p.level == 3
 

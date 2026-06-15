@@ -11,12 +11,18 @@ from apps.core.models import (
 
 
 @transaction.atomic
-def assign_employee_division(employee, division, *, starts_at, source="MANUAL"):
+def assign_employee_division(
+    employee, division, *, starts_at, actor: str, source="MANUAL"
+):
     """Move an employee to a division, maintaining a non-overlapping history.
 
     BR-CORE-HISTORY-001 (no overlapping intervals), BR-CORE-HISTORY-002
     (current employee.division mirrors the open interval).
     """
+    # Blank actor would blur the "NULL = honestly actorless" convention:
+    # a caller that reaches a service always has a real identity.
+    if not actor or not actor.strip():
+        raise ValidationError("actor must be a non-empty string")
     open_interval = (
         EmployeeDivisionHistory.objects.select_for_update()
         .filter(employee=employee, ends_at__isnull=True)
@@ -25,13 +31,19 @@ def assign_employee_division(employee, division, *, starts_at, source="MANUAL"):
     )
     if open_interval:
         if open_interval.starts_at >= starts_at:
-            raise ValidationError("New interval starts before the current open interval.")
+            raise ValidationError(
+                "New interval starts before the current open interval."
+            )
         open_interval.ends_at = starts_at
         open_interval.full_clean()
         open_interval.save(update_fields=["ends_at"])
 
     record = EmployeeDivisionHistory(
-        employee=employee, division=division, starts_at=starts_at, source=source
+        employee=employee,
+        division=division,
+        starts_at=starts_at,
+        source=source,
+        created_by=actor,
     )
     record.full_clean()
     record.save()
@@ -42,7 +54,7 @@ def assign_employee_division(employee, division, *, starts_at, source="MANUAL"):
 
 
 def compute_free_slots(division_id, *, on_date):
-    """BR-CORE-STAFF-002: a vacancy is a staffing slot with no active assignment on a date.
+    """BR-CORE-STAFF-002: vacancy = staffing slot with no active assignment on a date.
 
     Returns active slots valid on `on_date` that have no staffing assignment
     overlapping `on_date`.
@@ -79,7 +91,8 @@ def mask_employee_data(data: dict, *, user_permissions: set) -> dict:
     for policy in policies:
         if policy.field_code not in result or result[policy.field_code] is None:
             continue
-        if policy.permission_code in user_permissions or policy.mask_strategy == "ALLOW":
+        has_permission = policy.permission_code in user_permissions
+        if has_permission or policy.mask_strategy == "ALLOW":
             continue
         if policy.mask_strategy == "FULL_HIDE":
             result[policy.field_code] = None

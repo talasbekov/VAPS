@@ -6,23 +6,37 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0007_employeedivisionhistory'),
+        ("core", "0007_employeedivisionhistory"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='UserEmployeeBinding',
+            name="UserEmployeeBinding",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user_id', models.CharField(max_length=100, unique=True)),
-                ('employee', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='account_binding', to='core.employee')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4,
+                        editable=False,
+                        primary_key=True,
+                        serialize=False,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("user_id", models.CharField(max_length=100, unique=True)),
+                (
+                    "employee",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="account_binding",
+                        to="core.employee",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'core_user_employee_bindings',
+                "db_table": "core_user_employee_bindings",
             },
         ),
     ]

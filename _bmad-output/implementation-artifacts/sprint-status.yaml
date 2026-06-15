@@ -1,0 +1,316 @@
+# generated: 2026-06-11
+# last_updated: 2026-06-15
+# project: VAPS
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+#
+# VAPS NOTES:
+# ===========
+# - Пилот (этапы 0+1): E1–E13. Этап 2: E14–E18 (каркасы, детализация при старте). Этап 3: E19–E20.
+# - Порядок: E1 → E2 → E3 → E4 → E5 → E6 → E7 → {E8→E9→E10, E11} → 13.1–13.3 → E12 (пилот) → 13.4–13.6
+# - Анти-каскад: 13.1–13.3 — пререквизит 12.8 (пилот не стартует без канала исправлений)
+# - Бумажные контракты 9.1/10.1 отправляются по вертикали сразу после E1
+# - Parallel-run — фоновый РЕЖИМ с конца E6, не эпик
+# - Таймбокс E1 (допущение A10): 3 недели, зафиксирован на sprint planning 2026-06-11 (дедлайн: 2026-07-02)
+
+generated: 2026-06-11
+last_updated: 2026-06-15
+project: VAPS
+# last dev activity: story 1.8 → review (2026-06-15)
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: Walking Skeleton — расход к 17:00 из реальных данных донора
+  epic-1: in-progress
+  1-1-тестовый-фундамент-на-postgresql: done
+  1-2-кастомная-модель-user-и-identity-контракт: done
+  1-3-clock-сервис-и-watermark: done
+  1-4-поле-актора-в-базовых-моделях: done
+  1-5-минимальная-модель-статуса-с-exclusionconstraint: done
+  1-6-минимальный-импорт-среза-донора: done
+  1-7-derived-статус-и-расчёт-расхода: done
+  1-8-read-only-вывод-расхода-и-дифф-с-донором: review
+  1-9-спайк-контур-проба: backlog
+  1-10-спайк-перф-грид-на-целевой-машине: backlog
+  1-11-спайк-выгрузка-данных-донора: backlog
+  1-12-инвентаризация-артефакт: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Кадровое ядро, которое попадает в расход
+  epic-2: backlog
+  2-1-перенос-rbac-во-вложенный-app-operations-rbac: backlog
+  2-2-справочник-типов-статусов-с-seed: backlog
+  2-3-настройки-контроля-сдачи: backlog
+  2-4-списочный-состав-на-дату: backlog
+  2-5-сервис-увольнения: backlog
+  2-6-канон-сортировки-списков: backlog
+  2-7-импорт-должностей-и-званий-из-csv: backlog
+  2-8-admin-для-справочников: backlog
+  2-9-rbac-матрица-роль-операция: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Статусный движок — один статус на дату
+  epic-3: backlog
+  3-1-domainerror-и-единый-exception-handler: backlog
+  3-2-полная-модель-статуса: backlog
+  3-3-сервис-создания-статуса-с-валидациями: backlog
+  3-4-конфликт-детектор-на-матрице-данных: backlog
+  3-5-override-сущность: backlog
+  3-6-операции-жизненного-цикла-статуса: backlog
+  3-7-дефолт-в-строю-и-непрерывность: backlog
+  3-8-bulk-api-массового-обновления: backlog
+  3-9-статус-уточняется: backlog
+  3-10-секондменты-инициация: backlog
+  3-11-секондменты-возврат-и-ограничение-прав: backlog
+  3-12-catch-up-материализации-эффектов: backlog
+  3-13-спайк-часы-без-ntp: backlog
+  3-14-конкурентный-смоук-статусов: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Аудит — каждое решение восстановимо
+  epic-4: backlog
+  4-1-app-audit-и-модель-auditlog: backlog
+  4-2-append-only-на-уровне-бд: backlog
+  4-3-сервис-записи-и-request-id: backlog
+  4-4-аудит-мутаций-статусов: backlog
+  4-5-api-чтения-аудита: backlog
+  4-6-audit-coverage-тест: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Сдача дня — официальное заявление подразделения
+  epic-5: backlog
+  5-1-вход-оператора: backlog
+  5-2-модель-dailysubmission: backlog
+  5-3-сервис-сдачи-дня: backlog
+  5-4-amendment-flow: backlog
+  5-5-светофор-селектор: backlog
+  5-6-блокировка-на-завтра: backlog
+  5-7-notifications-backend-и-уведомления-об-отставании: backlog
+  5-8-api-сдачи-дня: backlog
+  5-9-аудит-сдач: backlog
+  5-10-property-иммутабельность-снапшота: backlog
+  5-11-фрактальная-сводка: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Документ Расхода — артефакт, которому верят
+  epic-6: backlog
+  6-1-app-documents-и-attachment: backlog
+  6-2-documentsequence: backlog
+  6-3-генератор-docx-перенос-из-донора: backlog
+  6-4-генераторы-xlsx-csv-pdf: backlog
+  6-5-выпуск-расхода: backlog
+  6-6-асинхронность-по-необходимости: backlog
+  6-7-скачивание-и-повторная-выдача: backlog
+  6-8-golden-master-20-30-исторических-дней: backlog
+  6-9-зерно-parallel-run: backlog
+  6-10-расход-за-период-и-на-завтра: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7: Миграция — верный список как условие выживания
+  # ВНИМАНИЕ: детализация E7 заблокирована открытыми вопросами заказчику (A5, A8)
+  epic-7: backlog
+  7-0-минимальный-стенд-в-контуре: backlog
+  7-1-профилирование-данных-донора: backlog
+  7-2-импортёр-оргструктуры-и-ставок: backlog
+  7-3-импортёр-сотрудников: backlog
+  7-4-импортёр-статусов-и-историй: backlog
+  7-5-post-migration-сходимость: backlog
+  7-6-репетиции-миграции: backlog
+  7-7-режим-без-двойного-ввода: backlog
+  7-8-формализация-parallel-run: backlog
+  7-9-сверка-списков-с-реальностью: backlog
+  7-10-план-cutover-и-отката: backlog
+  epic-7-retrospective: optional
+
+  # Epic 8: SPA Foundation — портал открывается
+  epic-8: backlog
+  8-1-scaffold-vite-react-ts-с-контурной-донастройкой: backlog
+  8-2-канон-линтеры: backlog
+  8-3-кодоген-типов-из-схемы: backlog
+  8-4-apiclient-и-domainerror-парсинг: backlog
+  8-5-useapimutation-и-conflictdialog: backlog
+  8-6-auth-подключение: backlog
+  8-7-роутер-routes-ts-и-layout: backlog
+  8-8-печатный-каркас: backlog
+  epic-8-retrospective: optional
+
+  # Epic 9: Клавиатурный грид — слепой ввод оператора
+  # 9.1 (бумажный контракт) отправляется по вертикали сразу после E1
+  epic-9: backlog
+  9-1-бумажный-контракт-экрана-1: backlog
+  9-2-state-machine-грамматики: backlog
+  9-3-property-based-грамматики: backlog
+  9-4-грид-компонент: backlog
+  9-5-фокус-слой: backlog
+  9-6-валидация-в-гриде: backlog
+  9-7-prefill-и-отклонения: backlog
+  9-8-перф-смоук-грида: backlog
+  9-9-e2e-слепого-ввода: backlog
+  epic-9-retrospective: optional
+
+  # Epic 10: Экраны портала — оператор сдаёт день за минуты
+  # 10.1 (бумажные контракты) отправляется вместе с 9.1 сразу после E1
+  epic-10: backlog
+  10-1-бумажные-контракты-экранов-сдачи-и-расхода: backlog
+  10-2-экран-массового-обновления: backlog
+  10-3-экран-сдачи-дня: backlog
+  10-4-светофор-дерево: backlog
+  10-5-экран-расхода: backlog
+  10-6-amendment-флоу-ui: backlog
+  10-7-печатная-форма-расхода: backlog
+  10-8-личный-экспорт-оператора-щит: backlog
+  10-9-журнал-сообщено-исправлено-каркас: backlog
+  10-10-e2e-сдачи-целиком: backlog
+  epic-10-retrospective: optional
+
+  # Epic 11: Уведомления — центр + WebSocket
+  epic-11: backlog
+  11-1-channels-и-channels-redis: backlog
+  11-2-публикация-в-ws-из-notify: backlog
+  11-3-ws-клиент-с-reconnect: backlog
+  11-4-центр-уведомлений-ui: backlog
+  11-5-kill-switch-ws: backlog
+  11-6-e2e-уведомления: backlog
+  epic-11-retrospective: optional
+
+  # Epic 12: Деплой в контур и пилот
+  # Анти-каскад: 12.8 (пилот) НЕ стартует без работающих 13.1–13.3
+  epic-12: backlog
+  12-1-прод-compose: backlog
+  12-2-bundle-sh-и-manifest: backlog
+  12-3-install-sh-и-smoke-sh: backlog
+  12-4-бэкапы-и-restore-репетиция: backlog
+  12-5-checklist-переноса-и-deploy-rehearsal: backlog
+  12-6-регистрация-beat-задач-и-smoke-брокера: backlog
+  12-7-полная-деплой-репетиция: backlog
+  12-8-запуск-пилота: backlog
+  epic-12-retrospective: optional
+
+  # Epic 13: Цикл исправлений в закрытом контуре
+  # 13.1–13.3 — ДО пилота (пререквизит 12.8); 13.4–13.6 — после старта пилота
+  epic-13: backlog
+  13-1-багрепорт-канал-в-ui: backlog
+  13-2-выгрузка-диагностики-носителем: backlog
+  13-3-патч-цикл-hotfix: backlog
+  13-4-журнал-починок: backlog
+  13-5-алерты-лидирующих-индикаторов: backlog
+  13-6-errors-журнал-на-сервере: backlog
+  epic-13-retrospective: optional
+
+  # Epic 14: Объекты и дежурства (этап 2 — каркас, полные AC при старте этапа)
+  epic-14: backlog
+  14-1-app-operations-facilities-facility-паспорт: backlog
+  14-2-post-и-sector-со-старшим: backlog
+  14-3-чек-лист-объекта: backlog
+  14-4-справочник-видов-дежурств: backlog
+  14-5-план-дежурств-на-месяц: backlog
+  14-6-сервис-проекции-om-auto: backlog
+  14-7-before-duty-проекция: backlog
+  14-8-конфликт-отдыха: backlog
+  14-9-перепланирование-отмена-дежурства: backlog
+  14-10-оперативный-блок-карточки: backlog
+  14-11-api-и-экраны-плана-дежурств: backlog
+  14-12-аудит-rbac-строки-e2e-дежурного-цикла: backlog
+  epic-14-retrospective: optional
+
+  # Epic 15: ОМ — Потребность и брокеридж (этап 2 — каркас)
+  epic-15: backlog
+  15-1-securityevent-и-жизненный-цикл: backlog
+  15-2-создание-ом-старший-объекта-бюллетень: backlog
+  15-3-рекогносцировка: backlog
+  15-4-обновление-паспорта-до-начала-ом: backlog
+  15-5-staffingdemand-расчёт-и-утверждение: backlog
+  15-6-справочник-групп: backlog
+  15-7-запросы-группам: backlog
+  15-8-выделение-людей-брокером: backlog
+  15-9-физнаряд-прямое-назначение-омд: backlog
+  15-10-эскалация-неотработанного-запроса: backlog
+  15-11-временные-полномочия-омд: backlog
+  15-12-api-экраны-аудит-e2e: backlog
+  epic-15-retrospective: optional
+
+  # Epic 16: ОМ — Расстановка (этап 2 — каркас)
+  epic-16: backlog
+  16-1-placement-модель-с-версионированием: backlog
+  16-2-черновик-авто-формирования: backlog
+  16-3-полный-конфликт-детектор-назначений: backlog
+  16-4-согласование-и-утверждение: backlog
+  16-5-проекция-статусов-участников: backlog
+  16-6-уведомления-о-назначении-и-ознакомления: backlog
+  16-7-упрощённая-печатная-форма-расстановки: backlog
+  16-8-api-экраны-расстановки-аудит-e2e: backlog
+  epic-16-retrospective: optional
+
+  # Epic 17: ОМ — Проведение (этап 2 — каркас)
+  epic-17: backlog
+  17-1-журнал-штаба: backlog
+  17-2-инциденты-с-фото: backlog
+  17-3-оперативные-изменения-после-утверждения: backlog
+  17-4-допнаряд: backlog
+  17-5-каскадная-замена-выбывшего: backlog
+  17-6-уведомление-снятого-заменённого: backlog
+  17-7-api-экраны-журнала-штаба-аудит-e2e: backlog
+  epic-17-retrospective: optional
+
+  # Epic 18: ОМ — Закрытие и опрос (этап 2 — каркас)
+  epic-18: backlog
+  18-1-закрытие-итоги-направлений: backlog
+  18-2-архив-ом-с-полной-историей: backlog
+  18-3-опрос-по-итогам: backlog
+  18-4-servicehours-запись-налёта-часов: backlog
+  18-5-отметка-перегрузки-по-факту: backlog
+  18-6-api-экраны-закрытия-аудит-e2e: backlog
+  epic-18-retrospective: optional
+
+  # Epic 19: Нагрузка и календари (этап 3 — каркас)
+  epic-19: backlog
+  19-1-расчёт-нагрузки-план-факт: backlog
+  19-2-перегрузка: backlog
+  19-3-справочник-коэффициентов-поправок: backlog
+  19-4-календарь-сотрудник-месяц: backlog
+  19-5-календарь-подразделение-дни: backlog
+  19-6-налёт-часов-в-карточке: backlog
+  19-7-нагрузочные-тесты-дедлайн-17-00: backlog
+  epic-19-retrospective: optional
+
+  # Epic 20: Дашборды и экспорт (этап 3 — каркас)
+  epic-20: backlog
+  20-1-дашборд-готовности-ом: backlog
+  20-2-дашборд-расхода-и-отстающих: backlog
+  20-3-дашборд-нагрузки-перегрузки: backlog
+  20-4-экспорт-с-маскированием: backlog
+  20-5-отчёт-штатное-расписание: backlog
+  20-6-отчёт-сводка-по-статусам: backlog
+  epic-20-retrospective: optional
