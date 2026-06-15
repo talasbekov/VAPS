@@ -9,7 +9,9 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def role_and_perm():
     role = Role.objects.create(code="OMD", name="ОМД")
-    perm = Permission.objects.create(code="assignment.create", name="Создание назначения")
+    perm = Permission.objects.create(
+        code="assignment.create", name="Создание назначения"
+    )
     return role, perm
 
 

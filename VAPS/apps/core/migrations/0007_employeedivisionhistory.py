@@ -6,27 +6,53 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0006_employee'),
+        ("core", "0006_employee"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='EmployeeDivisionHistory',
+            name="EmployeeDivisionHistory",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('starts_at', models.DateTimeField()),
-                ('ends_at', models.DateTimeField(blank=True, null=True)),
-                ('source', models.CharField(default='MANUAL', max_length=50)),
-                ('division', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='+', to='core.division')),
-                ('employee', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='division_history', to='core.employee')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4,
+                        editable=False,
+                        primary_key=True,
+                        serialize=False,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("starts_at", models.DateTimeField()),
+                ("ends_at", models.DateTimeField(blank=True, null=True)),
+                ("source", models.CharField(default="MANUAL", max_length=50)),
+                (
+                    "division",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="+",
+                        to="core.division",
+                    ),
+                ),
+                (
+                    "employee",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="division_history",
+                        to="core.employee",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'core_employee_division_history',
-                'indexes': [models.Index(fields=['employee', 'starts_at', 'ends_at'], name='idx_emp_div_hist_lookup')],
+                "db_table": "core_employee_division_history",
+                "indexes": [
+                    models.Index(
+                        fields=["employee", "starts_at", "ends_at"],
+                        name="idx_emp_div_hist_lookup",
+                    )
+                ],
             },
         ),
     ]

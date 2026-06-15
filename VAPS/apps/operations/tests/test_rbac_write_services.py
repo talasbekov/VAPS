@@ -4,7 +4,7 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
-from apps.operations.models import TemporaryDutyPermission, UserRole
+from apps.operations.models import UserRole
 from apps.operations.services import RoleAdminService
 
 pytestmark = pytest.mark.django_db
@@ -16,21 +16,23 @@ def seeded():
 
 
 def test_assign_role_creates_active_assignment(seeded):
-    ur = RoleAdminService.assign_role("u1", "OMD", scope_division_id=None)
+    ur = RoleAdminService.assign_role(
+        "u1", "OMD", scope_division_id=None, actor="admin"
+    )
     assert ur.is_active is True
     assert UserRole.objects.filter(user_id="u1", role_code_id="OMD").count() == 1
 
 
 def test_assign_role_is_idempotent_reactivates(seeded):
-    RoleAdminService.assign_role("u1", "OMD")
+    RoleAdminService.assign_role("u1", "OMD", actor="admin")
     RoleAdminService.revoke_role("u1", "OMD")
-    ur = RoleAdminService.assign_role("u1", "OMD")
+    ur = RoleAdminService.assign_role("u1", "OMD", actor="admin")
     assert ur.is_active is True
     assert UserRole.objects.filter(user_id="u1", role_code_id="OMD").count() == 1
 
 
 def test_revoke_role_deactivates(seeded):
-    RoleAdminService.assign_role("u1", "OMD")
+    RoleAdminService.assign_role("u1", "OMD", actor="admin")
     RoleAdminService.revoke_role("u1", "OMD")
     assert UserRole.objects.get(user_id="u1", role_code_id="OMD").is_active is False
 

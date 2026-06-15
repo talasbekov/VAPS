@@ -36,7 +36,10 @@ def test_valid_to_before_from_rejected(division_and_position):
     div, pos = division_and_position
     now = timezone.now()
     s = StaffingSlot(
-        division=div, position_code=pos, valid_from=now, valid_to=now - dt.timedelta(days=1)
+        division=div,
+        position_code=pos,
+        valid_from=now,
+        valid_to=now - dt.timedelta(days=1),
     )
     with pytest.raises(ValidationError):
         s.full_clean()

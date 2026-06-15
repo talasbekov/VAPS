@@ -4,24 +4,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0003_position'),
+        ("core", "0003_position"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Rank',
+            name="Rank",
             fields=[
-                ('code', models.CharField(max_length=50, primary_key=True, serialize=False)),
-                ('name', models.CharField(max_length=255)),
-                ('category', models.CharField(blank=True, max_length=50, null=True)),
-                ('rank_index', models.IntegerField(default=0)),
-                ('is_active', models.BooleanField(default=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "code",
+                    models.CharField(max_length=50, primary_key=True, serialize=False),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("category", models.CharField(blank=True, max_length=50, null=True)),
+                ("rank_index", models.IntegerField(default=0)),
+                ("is_active", models.BooleanField(default=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'db_table': 'core_ranks',
+                "db_table": "core_ranks",
             },
         ),
     ]

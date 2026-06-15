@@ -23,7 +23,9 @@ def division():
 
 def test_vacancy_status_default_open(division):
     div, pos = division
-    slot = StaffingSlot.objects.create(division=div, position_code=pos, valid_from=timezone.now())
+    slot = StaffingSlot.objects.create(
+        division=div, position_code=pos, valid_from=timezone.now()
+    )
     v = Vacancy.objects.create(staffing_slot=slot, opened_at=timezone.now())
     assert v.status_code == "OPEN"
 
@@ -31,10 +33,18 @@ def test_vacancy_status_default_open(division):
 def test_compute_free_slots_excludes_occupied(division):
     div, pos = division
     past = timezone.now() - dt.timedelta(days=30)
-    free_slot = StaffingSlot.objects.create(division=div, position_code=pos, valid_from=past)
-    busy_slot = StaffingSlot.objects.create(division=div, position_code=pos, valid_from=past)
+    free_slot = StaffingSlot.objects.create(
+        division=div, position_code=pos, valid_from=past
+    )
+    busy_slot = StaffingSlot.objects.create(
+        division=div, position_code=pos, valid_from=past
+    )
     emp = Employee.objects.create(
-        iin="900101300600", full_name="X", rank_code="MAJOR", position_code="OPER", division=div
+        iin="900101300600",
+        full_name="X",
+        rank_code="MAJOR",
+        position_code="OPER",
+        division=div,
     )
     EmployeeStaffingAssignment.objects.create(
         employee=emp, staffing_slot=busy_slot, starts_at=past

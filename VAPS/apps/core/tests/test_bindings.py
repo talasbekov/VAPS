@@ -13,7 +13,11 @@ def employee():
     dt = DivisionType.objects.create(code="management", name="Управление")
     div = Division.objects.create(organization=org, type_code=dt, name="D", code="D")
     return Employee.objects.create(
-        iin="900101300300", full_name="X", rank_code="MAJOR", position_code="OPER", division=div
+        iin="900101300300",
+        full_name="X",
+        rank_code="MAJOR",
+        position_code="OPER",
+        division=div,
     )
 
 

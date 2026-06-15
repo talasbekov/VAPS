@@ -17,7 +17,9 @@ def dtype():
 
 
 def test_create_division_tree(org, dtype):
-    root = Division.objects.create(organization=org, type_code=dtype, name="УВД", code="UVD")
+    root = Division.objects.create(
+        organization=org, type_code=dtype, name="УВД", code="UVD"
+    )
     child = Division.objects.create(
         organization=org, type_code=dtype, name="Отдел 1", code="OT1", parent=root
     )
@@ -27,4 +29,6 @@ def test_create_division_tree(org, dtype):
 def test_code_unique_per_organization(org, dtype):
     Division.objects.create(organization=org, type_code=dtype, name="A", code="SAME")
     with pytest.raises(IntegrityError):
-        Division.objects.create(organization=org, type_code=dtype, name="B", code="SAME")
+        Division.objects.create(
+            organization=org, type_code=dtype, name="B", code="SAME"
+        )

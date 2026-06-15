@@ -54,7 +54,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return qs
 
     def _mask(self, data):
-        return mask_employee_data(data, user_permissions=_permissions_from_request(self.request))
+        return mask_employee_data(
+            data, user_permissions=_permissions_from_request(self.request)
+        )
 
     def list(self, request, *args, **kwargs):
         page = self.paginate_queryset(self.get_queryset())
@@ -71,7 +73,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         emp.employment_status = Employee.EmploymentStatus.ARCHIVED
         emp.is_active = False
         emp.save(update_fields=["employment_status", "is_active", "updated_at"])
-        return Response(self._mask(EmployeeSerializer(emp).data), status=status.HTTP_200_OK)
+        return Response(
+            self._mask(EmployeeSerializer(emp).data), status=status.HTTP_200_OK
+        )
 
     @action(detail=True, methods=["post"])
     def restore(self, request, *args, **kwargs):
@@ -79,7 +83,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         emp.employment_status = Employee.EmploymentStatus.WORKING
         emp.is_active = True
         emp.save(update_fields=["employment_status", "is_active", "updated_at"])
-        return Response(self._mask(EmployeeSerializer(emp).data), status=status.HTTP_200_OK)
+        return Response(
+            self._mask(EmployeeSerializer(emp).data), status=status.HTTP_200_OK
+        )
 
 
 class DivisionViewSet(viewsets.ModelViewSet):
@@ -121,9 +127,13 @@ class StaffingSlotViewSet(viewsets.ModelViewSet):
             employee_id=request.data["employee_id"],
             staffing_slot=slot,
             starts_at=timezone.now(),
+            # No permission gate on this view yet (service move is E2), so
+            # actor_id may be absent — getattr, not a direct read.
+            created_by=getattr(request, "actor_id", None),
         )
         return Response(
-            StaffingAssignmentSerializer(assignment).data, status=status.HTTP_201_CREATED
+            StaffingAssignmentSerializer(assignment).data,
+            status=status.HTTP_201_CREATED,
         )
 
     @action(detail=True, methods=["post"])
@@ -147,6 +157,5 @@ class VacancyViewSet(viewsets.ViewSet):
             else timezone.now()
         )
         free = compute_free_slots(division_id, on_date=on_date)
-        return Response(
-            {"count": len(free), "results": StaffingSlotSerializer(free, many=True).data}
-        )
+        results = StaffingSlotSerializer(free, many=True).data
+        return Response({"count": len(free), "results": results})

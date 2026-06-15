@@ -5,27 +5,51 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('operations', '0002_rolepermission'),
+        ("operations", "0002_rolepermission"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='UserRole',
+            name="UserRole",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user_id', models.CharField(max_length=100)),
-                ('scope_division_id', models.UUIDField(blank=True, null=True)),
-                ('is_active', models.BooleanField(default=True)),
-                ('role_code', models.ForeignKey(db_column='role_code', on_delete=django.db.models.deletion.PROTECT, related_name='user_roles', to='operations.role')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("user_id", models.CharField(max_length=100)),
+                ("scope_division_id", models.UUIDField(blank=True, null=True)),
+                ("is_active", models.BooleanField(default=True)),
+                (
+                    "role_code",
+                    models.ForeignKey(
+                        db_column="role_code",
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="user_roles",
+                        to="operations.role",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'ops_user_roles',
-                'indexes': [models.Index(fields=['user_id', 'is_active'], name='idx_ops_user_roles_user')],
-                'constraints': [models.UniqueConstraint(fields=('user_id', 'role_code', 'scope_division_id'), name='unique_user_role_scope')],
+                "db_table": "ops_user_roles",
+                "indexes": [
+                    models.Index(
+                        fields=["user_id", "is_active"], name="idx_ops_user_roles_user"
+                    )
+                ],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("user_id", "role_code", "scope_division_id"),
+                        name="unique_user_role_scope",
+                    )
+                ],
             },
         ),
     ]

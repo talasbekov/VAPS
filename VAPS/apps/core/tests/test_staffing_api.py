@@ -35,10 +35,16 @@ def test_list_positions(client, env):
 def test_assign_and_release_slot(client, env):
     div, pos = env
     slot = StaffingSlot.objects.create(
-        division=div, position_code=pos, valid_from=timezone.now() - dt.timedelta(days=1)
+        division=div,
+        position_code=pos,
+        valid_from=timezone.now() - dt.timedelta(days=1),
     )
     emp = Employee.objects.create(
-        iin="900101300800", full_name="X", rank_code="MAJOR", position_code="OPER", division=div
+        iin="900101300800",
+        full_name="X",
+        rank_code="MAJOR",
+        position_code="OPER",
+        division=div,
     )
     resp = client.post(
         f"/api/core/staffing-slots/{slot.id}/assign-employee/",
@@ -52,7 +58,9 @@ def test_assign_and_release_slot(client, env):
 def test_vacancies_endpoint(client, env):
     div, pos = env
     StaffingSlot.objects.create(
-        division=div, position_code=pos, valid_from=timezone.now() - dt.timedelta(days=1)
+        division=div,
+        position_code=pos,
+        valid_from=timezone.now() - dt.timedelta(days=1),
     )
     today = timezone.now().date().isoformat()
     resp = client.get(f"/api/core/vacancies/?division_id={div.id}&date={today}")

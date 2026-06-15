@@ -13,11 +13,15 @@ def tree():
     call_command("seed_operations")
     org = Organization.objects.create(name="HQ", code="HQ")
     dt = DivisionType.objects.create(code="management", name="Управление")
-    root = Division.objects.create(organization=org, type_code=dt, name="root", code="R")
+    root = Division.objects.create(
+        organization=org, type_code=dt, name="root", code="R"
+    )
     child = Division.objects.create(
         organization=org, type_code=dt, name="child", code="C", parent=root
     )
-    other = Division.objects.create(organization=org, type_code=dt, name="other", code="O")
+    other = Division.objects.create(
+        organization=org, type_code=dt, name="other", code="O"
+    )
     return root, child, other
 
 
@@ -26,7 +30,10 @@ def test_scoped_role_matches_division_in_subtree(tree):
     UserRole.objects.create(
         user_id="op-1", role_code_id="DIVISION_OPERATOR", scope_division_id=root.id
     )
-    assert PermissionService.has_permission("op-1", "status.view", division_id=child.id) is True
+    result = PermissionService.has_permission(
+        "op-1", "status.view", division_id=child.id
+    )
+    assert result is True
 
 
 def test_scoped_role_denies_division_outside_subtree(tree):
@@ -34,7 +41,10 @@ def test_scoped_role_denies_division_outside_subtree(tree):
     UserRole.objects.create(
         user_id="op-1", role_code_id="DIVISION_OPERATOR", scope_division_id=root.id
     )
-    assert PermissionService.has_permission("op-1", "status.view", division_id=other.id) is False
+    result = PermissionService.has_permission(
+        "op-1", "status.view", division_id=other.id
+    )
+    assert result is False
 
 
 def test_scoped_role_still_grants_when_no_division_given(tree):
@@ -50,4 +60,7 @@ def test_global_role_matches_any_division(tree):
     UserRole.objects.create(
         user_id="op-1", role_code_id="DIVISION_OPERATOR", scope_division_id=None
     )
-    assert PermissionService.has_permission("op-1", "status.view", division_id=other.id) is True
+    result = PermissionService.has_permission(
+        "op-1", "status.view", division_id=other.id
+    )
+    assert result is True

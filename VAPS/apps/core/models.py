@@ -1,5 +1,6 @@
 import uuid
 
+from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
@@ -11,16 +12,67 @@ class UUIDTimeStampedModel(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # ARCH-007 / BR-ACCOUNT-002: external auth user_id as a flat string,
+    # never an FK to core_users. Nullable: actorless writes (imports, legacy
+    # rows) honestly stay NULL until E4 audit consolidation.
+    created_by = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         abstract = True
+
+
+class UserManager(BaseUserManager):
+    def create_user(self, username, password=None):
+        if not username:
+            raise ValueError("The given username must be set")
+        user = self.model(username=username)
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, *args, **kwargs):
+        # No Django superusers: authorization is the in-house PermissionService
+        # (FR-33); core.User has no is_staff/is_superuser semantics.
+        raise NotImplementedError(
+            "core.User has no superusers; grant roles via operations RBAC"
+        )
+
+
+class User(AbstractBaseUser):
+    # Deliberately AbstractBaseUser without PermissionsMixin: authorization is
+    # the in-house PermissionService (FR-33), not Django groups/permissions.
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # ARCH-007 / BR-ACCOUNT-002: external auth account id, the same string as
+    # UserEmployeeBinding.user_id / UserRole.user_id.
+    username = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    USERNAME_FIELD = "username"
+    REQUIRED_FIELDS = []
+
+    objects = UserManager()
+
+    class Meta:
+        db_table = "core_users"
+
+    def __str__(self):
+        return self.username
 
 
 class Organization(UUIDTimeStampedModel):
     name = models.CharField(max_length=255)
     code = models.CharField(max_length=50, unique=True)
     parent = models.ForeignKey(
-        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="children"
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="children",
     )
     is_active = models.BooleanField(default=True)
 
@@ -82,7 +134,10 @@ class Division(UUIDTimeStampedModel):
         "self", on_delete=models.CASCADE, null=True, blank=True, related_name="children"
     )
     type_code = models.ForeignKey(
-        DivisionType, on_delete=models.PROTECT, db_column="type_code", related_name="divisions"
+        DivisionType,
+        on_delete=models.PROTECT,
+        db_column="type_code",
+        related_name="divisions",
     )
     name = models.CharField(max_length=255)
     code = models.CharField(max_length=100)
@@ -126,9 +181,13 @@ class Employee(UUIDTimeStampedModel):
         Division, on_delete=models.PROTECT, related_name="employees"
     )
     phone = models.CharField(max_length=50, null=True, blank=True)
-    gender = models.CharField(max_length=1, choices=Gender.choices, null=True, blank=True)
+    gender = models.CharField(
+        max_length=1, choices=Gender.choices, null=True, blank=True
+    )
     height_cm = models.IntegerField(
-        null=True, blank=True, validators=[MinValueValidator(120), MaxValueValidator(230)]
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(120), MaxValueValidator(230)],
     )
     is_active = models.BooleanField(default=True)
     is_attached_force = models.BooleanField(default=False)
@@ -136,7 +195,9 @@ class Employee(UUIDTimeStampedModel):
     separated_at = models.DateTimeField(null=True, blank=True)
 
     # §45.2 rich profile
-    personnel_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    personnel_number = models.CharField(
+        max_length=50, unique=True, null=True, blank=True
+    )
     last_name = models.CharField(max_length=150, null=True, blank=True)
     first_name = models.CharField(max_length=150, null=True, blank=True)
     middle_name = models.CharField(max_length=150, null=True, blank=True)
@@ -150,7 +211,9 @@ class Employee(UUIDTimeStampedModel):
     personal_email = models.CharField(max_length=255, null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
     employment_status = models.CharField(
-        max_length=50, choices=EmploymentStatus.choices, default=EmploymentStatus.WORKING
+        max_length=50,
+        choices=EmploymentStatus.choices,
+        default=EmploymentStatus.WORKING,
     )
 
     class Meta:
@@ -184,7 +247,8 @@ class EmployeeDivisionHistory(UUIDTimeStampedModel):
         db_table = "core_employee_division_history"
         indexes = [
             models.Index(
-                fields=["employee", "starts_at", "ends_at"], name="idx_emp_div_hist_lookup"
+                fields=["employee", "starts_at", "ends_at"],
+                name="idx_emp_div_hist_lookup",
             )
         ]
 
@@ -223,7 +287,8 @@ class DivisionHistoricalSlot(UUIDTimeStampedModel):
         db_table = "core_division_historical_slots"
         indexes = [
             models.Index(
-                fields=["division", "valid_from", "valid_to"], name="idx_core_slots_timeline"
+                fields=["division", "valid_from", "valid_to"],
+                name="idx_core_slots_timeline",
             )
         ]
 
@@ -238,11 +303,18 @@ class StaffingSlot(UUIDTimeStampedModel):
         Division, on_delete=models.CASCADE, related_name="staffing_slots"
     )
     position_code = models.ForeignKey(
-        Position, on_delete=models.PROTECT, db_column="position_code", related_name="staffing_slots"
+        Position,
+        on_delete=models.PROTECT,
+        db_column="position_code",
+        related_name="staffing_slots",
     )
     slot_number = models.CharField(max_length=50, null=True, blank=True)
     parent_slot = models.ForeignKey(
-        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="child_slots"
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="child_slots",
     )
     is_active = models.BooleanField(default=True)
     valid_from = models.DateTimeField()
@@ -278,7 +350,8 @@ class EmployeeStaffingAssignment(UUIDTimeStampedModel):
         db_table = "core_employee_staffing_assignments"
         indexes = [
             models.Index(
-                fields=["employee", "starts_at", "ends_at"], name="idx_core_emp_staffing"
+                fields=["employee", "starts_at", "ends_at"],
+                name="idx_core_emp_staffing",
             )
         ]
 
@@ -297,11 +370,12 @@ class Vacancy(UUIDTimeStampedModel):
     staffing_slot = models.ForeignKey(
         StaffingSlot, on_delete=models.CASCADE, related_name="vacancies"
     )
-    status_code = models.CharField(max_length=50, choices=Status.choices, default=Status.OPEN)
+    status_code = models.CharField(
+        max_length=50, choices=Status.choices, default=Status.OPEN
+    )
     opened_at = models.DateTimeField()
     closed_at = models.DateTimeField(null=True, blank=True)
     reason = models.TextField(null=True, blank=True)
-    created_by = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         db_table = "core_vacancies"
@@ -330,3 +404,19 @@ class SensitiveFieldPolicy(UUIDTimeStampedModel):
                 fields=["field_code", "permission_code"], name="unique_sensitive_policy"
             )
         ]
+
+
+class Watermark(models.Model):
+    # Internal bookkeeping for materialization processes (ARCH-DATA-022):
+    # each process tracks how far it has materialized, keyed by name
+    # (e.g. "status_effects" — Story 3.12). No NOW()-default on the business
+    # date: consumers set it explicitly.
+    key = models.CharField(max_length=100, unique=True)
+    last_materialized_date = models.DateField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "core_watermarks"
+
+    def __str__(self):
+        return self.key

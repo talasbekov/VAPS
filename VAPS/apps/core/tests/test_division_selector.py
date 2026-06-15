@@ -10,10 +10,18 @@ pytestmark = pytest.mark.django_db
 def tree():
     org = Organization.objects.create(name="Главк", code="HQ")
     dt = DivisionType.objects.create(code="management", name="Управление")
-    root = Division.objects.create(organization=org, type_code=dt, name="root", code="R")
-    a = Division.objects.create(organization=org, type_code=dt, name="a", code="A", parent=root)
-    b = Division.objects.create(organization=org, type_code=dt, name="b", code="B", parent=root)
-    a1 = Division.objects.create(organization=org, type_code=dt, name="a1", code="A1", parent=a)
+    root = Division.objects.create(
+        organization=org, type_code=dt, name="root", code="R"
+    )
+    a = Division.objects.create(
+        organization=org, type_code=dt, name="a", code="A", parent=root
+    )
+    b = Division.objects.create(
+        organization=org, type_code=dt, name="b", code="B", parent=root
+    )
+    a1 = Division.objects.create(
+        organization=org, type_code=dt, name="a1", code="A1", parent=a
+    )
     return {"root": root, "a": a, "b": b, "a1": a1}
 
 

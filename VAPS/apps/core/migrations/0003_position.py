@@ -4,24 +4,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0002_divisiontype'),
+        ("core", "0002_divisiontype"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Position',
+            name="Position",
             fields=[
-                ('code', models.CharField(max_length=50, primary_key=True, serialize=False)),
-                ('name', models.CharField(max_length=255)),
-                ('level', models.IntegerField(default=0)),
-                ('sort_order', models.IntegerField(default=0)),
-                ('is_active', models.BooleanField(default=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "code",
+                    models.CharField(max_length=50, primary_key=True, serialize=False),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("level", models.IntegerField(default=0)),
+                ("sort_order", models.IntegerField(default=0)),
+                ("is_active", models.BooleanField(default=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'db_table': 'core_positions',
+                "db_table": "core_positions",
             },
         ),
     ]

@@ -5,24 +5,52 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('operations', '0001_initial'),
+        ("operations", "0001_initial"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='RolePermission',
+            name="RolePermission",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('permission_code', models.ForeignKey(db_column='permission_code', on_delete=django.db.models.deletion.CASCADE, related_name='permission_roles', to='operations.permission')),
-                ('role_code', models.ForeignKey(db_column='role_code', on_delete=django.db.models.deletion.CASCADE, related_name='role_permissions', to='operations.role')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "permission_code",
+                    models.ForeignKey(
+                        db_column="permission_code",
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="permission_roles",
+                        to="operations.permission",
+                    ),
+                ),
+                (
+                    "role_code",
+                    models.ForeignKey(
+                        db_column="role_code",
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="role_permissions",
+                        to="operations.role",
+                    ),
+                ),
             ],
             options={
-                'db_table': 'ops_role_permissions',
-                'constraints': [models.UniqueConstraint(fields=('role_code', 'permission_code'), name='unique_role_permission')],
+                "db_table": "ops_role_permissions",
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("role_code", "permission_code"),
+                        name="unique_role_permission",
+                    )
+                ],
             },
         ),
     ]

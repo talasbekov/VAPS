@@ -36,7 +36,10 @@ def test_negative_allocated_rejected(division):
 def test_valid_to_before_from_rejected(division):
     now = timezone.now()
     s = DivisionHistoricalSlot(
-        division=division, allocated_slots=1, valid_from=now, valid_to=now - dt.timedelta(days=1)
+        division=division,
+        allocated_slots=1,
+        valid_from=now,
+        valid_to=now - dt.timedelta(days=1),
     )
     with pytest.raises(ValidationError):
         s.full_clean()

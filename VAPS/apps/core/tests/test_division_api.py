@@ -15,9 +15,15 @@ def client():
 def tree():
     org = Organization.objects.create(name="HQ", code="HQ")
     dtp = DivisionType.objects.create(code="management", name="Управление")
-    root = Division.objects.create(organization=org, type_code=dtp, name="root", code="R")
-    a = Division.objects.create(organization=org, type_code=dtp, name="a", code="A", parent=root)
-    a1 = Division.objects.create(organization=org, type_code=dtp, name="a1", code="A1", parent=a)
+    root = Division.objects.create(
+        organization=org, type_code=dtp, name="root", code="R"
+    )
+    a = Division.objects.create(
+        organization=org, type_code=dtp, name="a", code="A", parent=root
+    )
+    a1 = Division.objects.create(
+        organization=org, type_code=dtp, name="a1", code="A1", parent=a
+    )
     return root, a, a1
 
 

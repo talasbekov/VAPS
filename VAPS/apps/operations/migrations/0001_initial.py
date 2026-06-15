@@ -4,35 +4,39 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
-    dependencies = [
-    ]
+    dependencies = []
 
     operations = [
         migrations.CreateModel(
-            name='Permission',
+            name="Permission",
             fields=[
-                ('code', models.CharField(max_length=100, primary_key=True, serialize=False)),
-                ('name', models.CharField(max_length=255)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('is_active', models.BooleanField(default=True)),
+                (
+                    "code",
+                    models.CharField(max_length=100, primary_key=True, serialize=False),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("description", models.TextField(blank=True, null=True)),
+                ("is_active", models.BooleanField(default=True)),
             ],
             options={
-                'db_table': 'ops_permissions',
+                "db_table": "ops_permissions",
             },
         ),
         migrations.CreateModel(
-            name='Role',
+            name="Role",
             fields=[
-                ('code', models.CharField(max_length=50, primary_key=True, serialize=False)),
-                ('name', models.CharField(max_length=255)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('is_active', models.BooleanField(default=True)),
+                (
+                    "code",
+                    models.CharField(max_length=50, primary_key=True, serialize=False),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("description", models.TextField(blank=True, null=True)),
+                ("is_active", models.BooleanField(default=True)),
             ],
             options={
-                'db_table': 'ops_roles',
+                "db_table": "ops_roles",
             },
         ),
     ]

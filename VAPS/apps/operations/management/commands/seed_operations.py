@@ -39,9 +39,13 @@ ROLE_PERMISSIONS = {
         "assignment.create", "assignment.delete", "assignment.submit",
         "daily_report.generate", "brokerage.manage",
     ],
-    "SENIOR_COORDINATOR": ["assignment.create", "assignment.delete", "assignment.submit"],
+    "SENIOR_COORDINATOR": [
+        "assignment.create", "assignment.delete", "assignment.submit"
+    ],
     "APPROVER": ["assignment.return", "assignment.approve"],
-    "DIVISION_OPERATOR": ["daily_report.mark_update", "daily_report.correct", "status.view"],
+    "DIVISION_OPERATOR": [
+        "daily_report.mark_update", "daily_report.correct", "status.view"
+    ],
     "ORGD": ["audit.view", "daily_report.generate"],
     "VIEWER": ["status.view"],
     "INTEGRATION_USER": ["status.manage"],

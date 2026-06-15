@@ -7,7 +7,9 @@ pytestmark = pytest.mark.django_db
 
 
 def test_division_type_code_is_primary_key():
-    dt = DivisionType.objects.create(code="department", name="Департамент", sort_order=1)
+    dt = DivisionType.objects.create(
+        code="department", name="Департамент", sort_order=1
+    )
     assert dt.pk == "department"
 
 

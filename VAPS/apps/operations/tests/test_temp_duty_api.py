@@ -32,7 +32,9 @@ def test_grant_temporary_duty(admin_client):
         format="json",
     )
     assert resp.status_code == 201
-    assert TemporaryDutyPermission.objects.filter(user_id="duty-1", is_active=True).exists()
+    assert TemporaryDutyPermission.objects.filter(
+        user_id="duty-1", is_active=True
+    ).exists()
 
 
 def test_expire_temporary_duty(admin_client):
