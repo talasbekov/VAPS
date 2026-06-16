@@ -137,15 +137,48 @@ class TestAggregatorInferred:
         assert diff.has_unclassified is False
 
 
-class TestSingleWinner:
-    def test_donor_double_count_loses_to_vaps_winner(self):
-        # Donor counts the person in BOTH sick_leave and vacation; VAPS
-        # picks the single winner (SICK, priority 10). The vacation loser
-        # stays only on the donor side, with no IN_SERVICE compensation.
+class TestAmbiguousDonorSurplusBlocksGate:
+    # Code review 2026-06-16, finding C1. A donor type-column surplus with no
+    # IN_SERVICE compensation is numerically IDENTICAL whether it is a donor
+    # double-count (the priority loser stays only donor-side) or a donor row
+    # VAPS dropped at import. It cannot be auto-explained as
+    # model/single_winner, so per AC-5 / Решение №11 it MUST block the gate.
+    def test_donor_double_count_signature_is_gate_blocking_not_explained(self):
+        # The former "single_winner" scenario: donor counts the person in BOTH
+        # sick_leave and vacation, VAPS keeps one winner (SICK). The donor
+        # vacation surplus is indistinguishable from a dropped donor row.
         rows = [vaps_row("DEP1", columns={"SICK": 1})]
         base = [baseline("DEP1", sick_leave=1, vacation=1)]
         diff = run(rows, base)
-        assert cats(diff) == {"model/single_winner"}
+        assert cats(diff) == {"unclassified"}
+        assert diff.has_unclassified is True
+
+    def test_type_column_donor_surplus_never_auto_explained(self):
+        # Guard against re-opening the C1 hole: no scenario where the donor
+        # merely counts more in a 1:1 type column (here COMMAND, no IN_SERVICE
+        # compensation) may produce an explained, gate-greening category.
+        rows = [vaps_row("DEP1", columns={"COMMAND": 2})]
+        base = [baseline("DEP1", business_trip=5)]  # donor +3 in COMMAND
+        diff = run(rows, base)
+        assert cats(diff) == {"unclassified"}
+        assert diff.has_unclassified is True
+
+    def test_pure_type_column_loss_blocks_gate(self):
+        # A clean dropped donor row landing in a type column (donor sick=3,
+        # VAPS sick=0, IN_SERVICE equal) — the exact C1 reproduction.
+        rows = [vaps_row("DEP1", columns={"SICK": 0, "IN_SERVICE": 4})]
+        base = [baseline("DEP1", sick_leave=3, in_service=4)]
+        diff = run(rows, base)
+        assert cats(diff) == {"unclassified"}
+        assert diff.has_unclassified is True
+
+    def test_genuine_boundary_timing_still_explained(self):
+        # The fix must NOT over-block: a donor type surplus that IS absorbed
+        # by a VAPS IN_SERVICE surplus stays timing/half_open_end (gate green).
+        rows = [vaps_row("DEP1", columns={"IN_SERVICE": 1})]
+        base = [baseline("DEP1", sick_leave=1, in_service=0)]
+        diff = run(rows, base)
+        assert cats(diff) == {"timing/half_open_end"}
         assert diff.has_unclassified is False
 
 
@@ -268,6 +301,80 @@ class TestLoadBaseline:
         )
         with pytest.raises(ValueError):
             load_baseline(data)
+
+    def test_duplicate_date_across_blocks_raises(self):
+        # Finding C3/C8: a freeze that glues the same date twice must STOP,
+        # not silently drop the first block (last-write-wins).
+        data = self._envelope(
+            self._day("2026-06-04", [self._row("DEP1", vacation=1)]),
+            self._day("2026-06-04", [self._row("DEP2", sick_leave=1)]),
+        )
+        with pytest.raises(ValueError, match="duplicate day"):
+            load_baseline(data)
+
+    @pytest.mark.parametrize("bad_rows", [None, 42, 2.5, True])
+    def test_non_list_rows_raises_value_error_not_typeerror(self, bad_rows):
+        # Finding C7/C9: a non-list 'rows' must surface as ValueError
+        # (AC-3 'invalid schema -> ValueError'), never a bare TypeError that
+        # escapes the command's ValueError->CommandError boundary.
+        # NB (review 2026-06-16, F8): params are NON-iterable scalars on
+        # purpose. An iterable like a str ("xxx") would reach ValueError via
+        # the inner row loop (raw["division_code"] -> TypeError -> ValueError)
+        # even WITHOUT the line-136 guard, so it would be false-green here.
+        # match= pins the raise to the guard, not an unrelated downstream one.
+        data = {"days": [{"date": "2026-06-04", "rows": bad_rows}]}
+        with pytest.raises(ValueError, match="must be a list"):
+            load_baseline(data)
+
+    @pytest.mark.parametrize("bad_value", [None, 2.5, "5", True])
+    def test_non_integer_cell_value_raises_value_error(self, bad_value):
+        # Finding C4: a null/float/str/bool count must be rejected up front,
+        # not crash later in diff_day or yield a fractional delta.
+        data = self._envelope(
+            self._day("2026-06-04", [self._row("DEP1", in_service=bad_value)])
+        )
+        with pytest.raises(ValueError, match="must be an integer"):
+            load_baseline(data)
+
+    @pytest.mark.parametrize("bad_value", [-1, -3])
+    def test_negative_cell_value_raises_value_error(self, bad_value):
+        # Review 2026-06-16 (пр.3): a NEGATIVE head-count must be rejected at
+        # the door. Reproduced gate-escape it closes — donor in_service=1,
+        # vacation=-1 vs VAPS zeros made BOTH the VACATION and IN_SERVICE cells
+        # model/aggregator_inferred (green), so has_unclassified=False and the
+        # AC-5 gate PASSED where a data-loss block was due. The C4 type guard
+        # let negatives through (isinstance(-1, int) is True); load_baseline now
+        # STOPs, so the malformed --diff-baseline never reaches the classifier.
+        data = self._envelope(
+            self._day("2026-06-04", [self._row("DEP1", vacation=bad_value)])
+        )
+        with pytest.raises(ValueError, match="must be non-negative"):
+            load_baseline(data)
+
+    def test_unhashable_division_code_raises_value_error(self):
+        # Finding C10: a list/dict division_code must be a ValueError, not a
+        # TypeError raised by the duplicate-detection membership test.
+        data = self._envelope(
+            self._day("2026-06-04", [self._row(["A"], vacation=1)])
+        )
+        with pytest.raises(ValueError, match="division_code must be a string"):
+            load_baseline(data)
+
+
+class TestDiffDayDuplicateCode:
+    def test_two_divisions_mapping_to_one_code_raises(self):
+        # Finding C2: Division.code is unique only per (organization, code);
+        # a global code map can collapse two divisions to one code. Mirror the
+        # donor-side load_baseline STOP — never a silent last-write-wins.
+        rows = [
+            vaps_row("id-a", columns={"IN_SERVICE": 5}),
+            vaps_row("id-b", columns={"IN_SERVICE": 7}),
+        ]
+        result = vaps_result(rows)
+        code_by_division_id = {"id-a": "X", "id-b": "X"}  # collision
+        baseline_for_day = {"X": baseline("X", in_service=12)}
+        with pytest.raises(ValueError, match="duplicate Division.code"):
+            diff_day(result, baseline_for_day, code_by_division_id)
 
 
 class TestRenderDiff:
