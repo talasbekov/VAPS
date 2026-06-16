@@ -44,9 +44,9 @@
 # - Таймбокс E1 (допущение A10): 3 недели, зафиксирован на sprint planning 2026-06-11 (дедлайн: 2026-07-02)
 
 generated: 2026-06-11
-last_updated: 2026-06-15
+last_updated: 2026-06-16
 project: VAPS
-# last dev activity: story 1.8 → review (2026-06-15)
+# last dev activity: story 1.9 → in-progress (спайк контур-проба; путь B — A5 открыт, эскалация draft-pending-send)
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
@@ -61,8 +61,8 @@ development_status:
   1-5-минимальная-модель-статуса-с-exclusionconstraint: done
   1-6-минимальный-импорт-среза-донора: done
   1-7-derived-статус-и-расчёт-расхода: done
-  1-8-read-only-вывод-расхода-и-дифф-с-донором: review
-  1-9-спайк-контур-проба: backlog
+  1-8-read-only-вывод-расхода-и-дифф-с-донором: done
+  1-9-спайк-контур-проба: in-progress
   1-10-спайк-перф-грид-на-целевой-машине: backlog
   1-11-спайк-выгрузка-данных-донора: backlog
   1-12-инвентаризация-артефакт: backlog
