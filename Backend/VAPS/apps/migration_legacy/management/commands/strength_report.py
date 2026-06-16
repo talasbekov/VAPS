@@ -18,6 +18,7 @@ The DoD gate is mechanical (AC-5): if any day's diff carries an
 import json
 from datetime import date, timedelta
 
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.core.models import Division
@@ -71,9 +72,14 @@ class Command(BaseCommand):
                     raise CommandError(
                         f"baseline has no day {business_date.isoformat()}"
                     )
-                diff = diff_day(
-                    result, baseline_by_date[business_date], code_by_division_id
-                )
+                try:
+                    diff = diff_day(
+                        result, baseline_by_date[business_date], code_by_division_id
+                    )
+                except ValueError as exc:
+                    # diff_day raises on a (organization, code) collision
+                    # (finding C2) — keep the CLI boundary clean.
+                    raise CommandError(f"diff failed: {exc}")
                 self.stdout.write(render_diff(diff))
                 self.stdout.write("")
                 if diff.has_unclassified:
@@ -129,7 +135,14 @@ class Command(BaseCommand):
         # Validate BEFORE compute (Решение №7): a silent empty report is
         # indistinguishable from a legitimately empty subtree, and
         # subtree_ids seeds a non-existent id unconditionally.
-        if not Division.objects.filter(id=division).exists():
+        try:
+            exists = Division.objects.filter(id=division).exists()
+        except ValidationError:
+            # A non-UUID --division raises at filter-build time; keep the CLI
+            # boundary clean instead of leaking a Django traceback
+            # (code review 2026-06-16, finding C5).
+            raise CommandError(f"division {division!r} is not a valid UUID")
+        if not exists:
             raise CommandError(f"division {division} not found")
         return division
 

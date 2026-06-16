@@ -71,9 +71,13 @@ class TestDiffAndGate:
     def test_sample_diff_prints_categories_and_blocks_gate(self):
         import_slice()
         out = io.StringIO()
-        # The sample carries a data/skipped_employee discrepancy (emp 4 / 7
-        # dropped at import), so the gate must fire AFTER printing the
-        # categorized diff (AC-2 + AC-5).
+        # The sample carries gate-blocking discrepancies — a data-loss surplus
+        # (DEP1 IN_SERVICE on 06-05) and an unexplained 1:1-column donor
+        # surplus (DIR1 DETACHED on 06-04) — so the gate must fire AFTER
+        # printing the categorized diff (AC-2 + AC-5). NB: code review
+        # 2026-06-16 (finding C1) removed the unsound auto model/single_winner
+        # label; an ambiguous donor type-column surplus now stays gate-blocking
+        # rather than being green-lit.
         with pytest.raises(CommandError):
             report(
                 "--from",
@@ -87,9 +91,10 @@ class TestDiffAndGate:
         text = out.getvalue()
         assert "model/aggregator_inferred" in text
         assert "model/attached_source" in text
-        assert "model/single_winner" in text
         assert "timing/half_open_end" in text
         assert "data/skipped_employee" in text
+        assert "[unclassified]" in text
+        assert "model/single_winner" not in text  # unsound label, removed (C1)
         assert "UNCLASSIFIED" in text
 
     def test_planted_unclassified_exits_nonzero(self, tmp_path):
@@ -151,6 +156,19 @@ class TestArgumentValidation:
                 "2026-06-04",
                 "--division",
                 "00000000-0000-0000-0000-000000000000",
+                stdout=io.StringIO(),
+            )
+
+    def test_malformed_division_is_command_error_not_traceback(self):
+        # Finding C5: a non-UUID --division raises ValidationError at
+        # filter-build time; the CLI boundary must convert it to CommandError,
+        # not leak a Django traceback.
+        with pytest.raises(CommandError, match="not a valid UUID"):
+            report(
+                "--date",
+                "2026-06-04",
+                "--division",
+                "not-a-uuid",
                 stdout=io.StringIO(),
             )
 

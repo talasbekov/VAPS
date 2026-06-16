@@ -46,7 +46,7 @@
 generated: 2026-06-11
 last_updated: 2026-06-16
 project: VAPS
-# last dev activity: story 1.9 → in-progress (спайк контур-проба; путь B — A5 открыт, эскалация draft-pending-send)
+# last dev activity: story 1.9 → review (спайк контур-проба; ревью АРТЕФАКТА — путь B, A5 открыт; AC-1 реальный контур → 12.7, A5 = находка №1)
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
@@ -62,7 +62,7 @@ development_status:
   1-6-минимальный-импорт-среза-донора: done
   1-7-derived-статус-и-расчёт-расхода: done
   1-8-read-only-вывод-расхода-и-дифф-с-донором: done
-  1-9-спайк-контур-проба: in-progress
+  1-9-спайк-контур-проба: review
   1-10-спайк-перф-грид-на-целевой-машине: backlog
   1-11-спайк-выгрузка-данных-донора: backlog
   1-12-инвентаризация-артефакт: backlog

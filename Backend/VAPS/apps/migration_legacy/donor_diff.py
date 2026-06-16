@@ -133,6 +133,11 @@ def load_baseline(data):
             rows = day["rows"]
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"baseline: invalid day block: {exc}")
+        if not isinstance(rows, list):
+            # A null/scalar 'rows' is otherwise iterated outside any guard and
+            # raises a bare TypeError, escaping the command's ValueError->
+            # CommandError boundary (code review 2026-06-16, findings C7/C9).
+            raise ValueError(f"baseline: 'rows' must be a list on {day_date}")
         by_code = {}
         for raw in rows:
             try:
@@ -140,11 +145,50 @@ def load_baseline(data):
                 fields = {name: raw[name] for name in _BASELINE_FIELDS}
             except (KeyError, TypeError) as exc:
                 raise ValueError(f"baseline: invalid row: {exc}")
+            if not isinstance(code, str):
+                # An unhashable (list/dict) or non-string division_code would
+                # otherwise raise TypeError at the membership test below
+                # (code review 2026-06-16, finding C10).
+                raise ValueError(
+                    f"baseline: division_code must be a string, got {code!r}"
+                )
+            if not isinstance(fields["division_name"], str):
+                raise ValueError(
+                    f"baseline: division_name must be a string on {code!r}"
+                )
+            for name in _BASELINE_FIELDS[1:]:
+                value = fields[name]
+                # Counts must be plain ints; a null/float/str donor value
+                # otherwise crashes later in diff_day or produces a fractional
+                # delta (code review 2026-06-16, finding C4). bool is an int
+                # subclass but never a valid head-count.
+                if not isinstance(value, int) or isinstance(value, bool):
+                    raise ValueError(
+                        f"baseline: {name} must be an integer on {code!r}, "
+                        f"got {value!r}"
+                    )
+                # ...and NON-NEGATIVE. A negative donor count (corrupted/typo'd
+                # freeze, e.g. vacation=-1) would otherwise GREEN-LIGHT the gate:
+                # it spawns a phantom fold/aggregator_inferred pairing that
+                # explains away a discrepancy which must block on data loss
+                # (code review 2026-06-16 пр.3 — reproduced gate-escape; the
+                # earlier C4 defer was wrongly justified as fail-safe).
+                # Head-counts are non-negative by construction.
+                if value < 0:
+                    raise ValueError(
+                        f"baseline: {name} must be non-negative on {code!r}, "
+                        f"got {value!r}"
+                    )
             if code in by_code:
                 raise ValueError(
                     f"baseline: duplicate division_code {code!r} on {day_date}"
                 )
             by_code[code] = BaselineRow(division_code=code, **fields)
+        if day_date in result:
+            # Mirror the within-day duplicate-code STOP one level up: a 5-7 day
+            # freeze must not glue the same date twice and silently drop the
+            # first block (code review 2026-06-16, findings C3/C8).
+            raise ValueError(f"baseline: duplicate day {day_date.isoformat()}")
         result[day_date] = by_code
     return result
 
@@ -291,10 +335,17 @@ def _classify_cell(
         if column in DONOR_MAPPED_FOLD_TARGETS and donor_in_service_higher:
             return "model/aggregator_inferred"
         return "unclassified"
-    # delta < 0: donor counts MORE in this type column.
+    # delta < 0: donor counts MORE in this type column than VAPS. A donor
+    # type-column surplus with no IN_SERVICE compensation is AMBIGUOUS from the
+    # emitted numbers alone: a donor double-count (the priority loser stays
+    # only donor-side) and a donor row VAPS dropped at import produce IDENTICAL
+    # figures. model/single_winner therefore cannot be auto-proven, and per
+    # AC-5 / Решение №11 the gate must NOT be greened on a possible data loss,
+    # so it stays gate-blocking (code review 2026-06-16, finding C1 — true
+    # discrimination needs donor timing-replay, deferred to E7 7.8).
     if vaps_in_service_higher:
         return "timing/half_open_end"
-    return "model/single_winner"
+    return "unclassified"
 
 
 def diff_day(vaps, baseline_for_day, code_by_division_id):
@@ -309,8 +360,19 @@ def diff_day(vaps, baseline_for_day, code_by_division_id):
     vaps_by_code = {}
     for row in vaps.rows:
         code = code_by_division_id.get(row.division_id)
-        if code is not None:
-            vaps_by_code[code] = row
+        if code is None:
+            continue
+        if code in vaps_by_code:
+            # Division.code is unique only per (organization, code); a global
+            # code_by_division_id can map two divisions to one code. Mirror the
+            # donor-side load_baseline STOP — never a silent last-write-wins
+            # (code review 2026-06-16, finding C2).
+            raise ValueError(
+                f"diff: duplicate Division.code {code!r} on "
+                f"{vaps.business_date.isoformat()} — resolve the "
+                f"(organization, code) collision"
+            )
+        vaps_by_code[code] = row
 
     overstaffed_codes = set()
     for violation in vaps.violations:

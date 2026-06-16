@@ -31,7 +31,10 @@ else
 fi
 echo "  date в контейнере:   $(docker compose exec -T probe date 2>/dev/null || echo '<exec недоступен — записать в рунбук>')"
 
-IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+# '|| true': без 'hostname -I' (BusyBox/locked-down/старый util-linux) pipefail+set -e
+# иначе рушит скрипт ДО печати LAN-URL; ниже срабатывает fallback ${IP:-<IP-сервера>}
+# (ревью спайка 1.9, пр.3 — благоприятный сюрприз не должен быть жёстким сбоем).
+IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 echo "[5/5] LAN-URL — ОТКРЫТЬ С КЛИЕНТСКОЙ машины в Firefox ~100:"
 echo "  http://${IP:-<IP-сервера>}:${PORT}/"
 echo
