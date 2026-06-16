@@ -17790,13 +17790,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1781518952.0376108,
-    "ast_hash": "c70a199be8c96e53195e4fb5eac88c94",
+    "mtime": 1781618521.9389524,
+    "ast_hash": "c113225221b249ab135f79b39d625b0d",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1781525545.4235866,
-    "ast_hash": "d10388fed1ed78ac85cae478122c7a96",
+    "mtime": 1781615829.1899126,
+    "ast_hash": "e530a80c4788acfb045f9e89e7d2f240",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -18050,13 +18050,13 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/donor_diff.py": {
-    "mtime": 1781525105.944583,
-    "ast_hash": "7a220bd07b76674b0cc3b94f5c619c85",
+    "mtime": 1781618368.3076344,
+    "ast_hash": "2eb8cb09d155517305c8b3492c7c9310",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/management/commands/strength_report.py": {
-    "mtime": 1781525138.6248128,
-    "ast_hash": "eef9e8100d3b726ca49a6431bcbd2abe",
+    "mtime": 1781617031.0366008,
+    "ast_hash": "4d550510d3d6fadf61310b106a893104",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/strength_render.py": {
@@ -18065,13 +18065,13 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/tests/fixtures/donor_baseline_sample.json": {
-    "mtime": 1781525281.6726875,
-    "ast_hash": "aa56e694d0147d4529d52a3159e3d5b9",
+    "mtime": 1781594988.728899,
+    "ast_hash": "da68146d9efeea1136d41323c4eab914",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/tests/test_donor_diff.py": {
-    "mtime": 1781525011.371983,
-    "ast_hash": "77c1dc4e0f34ce6aec829f0088608453",
+    "mtime": 1781618377.4845314,
+    "ast_hash": "d07f0e8c0c435bfd0c9cc877a01d64bf",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/tests/test_retro_amendment.py": {
@@ -18085,13 +18085,53 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/tests/test_strength_report_command.py": {
-    "mtime": 1781525348.3806481,
-    "ast_hash": "1f8fecc60150ce9a879728d0776c0cad",
+    "mtime": 1781594972.5431955,
+    "ast_hash": "ec4593f42de9be4040d2965972e04b10",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/1-8-read-only-\u0432\u044b\u0432\u043e\u0434-\u0440\u0430\u0441\u0445\u043e\u0434\u0430-\u0438-\u0434\u0438\u0444\u0444-\u0441-\u0434\u043e\u043d\u043e\u0440\u043e\u043c.md": {
-    "mtime": 1781525534.2075882,
-    "ast_hash": "f160795048dacc09ae808e34312fac7c",
+    "mtime": 1781618541.765741,
+    "ast_hash": "8674c4a9e15fbc083dea44f74efa8b7b",
+    "semantic_hash": ""
+  },
+  "deploy/spike-1.9/build-bundle.sh": {
+    "mtime": 1781607227.6095462,
+    "ast_hash": "976bd4d18889b2accc459470ebedd0e2",
+    "semantic_hash": ""
+  },
+  "deploy/spike-1.9/install-probe.sh": {
+    "mtime": 1781618383.9614587,
+    "ast_hash": "7de6c3bf4fa76784600722c2ffe874ab",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/1-9-\u0441\u043f\u0430\u0439\u043a-\u043a\u043e\u043d\u0442\u0443\u0440-\u043f\u0440\u043e\u0431\u0430.md": {
+    "mtime": 1781618594.1271892,
+    "ast_hash": "d79bfc38a446f14cd39777775fd04ed2",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/escalation-A5-A8-owner-2026-06-16.md": {
+    "mtime": 1781596487.7961013,
+    "ast_hash": "c12fc3f6836abd404a40098b9aba5c21",
+    "semantic_hash": ""
+  },
+  "deploy/spike-1.9/RUNBOOK.md": {
+    "mtime": 1781607379.627838,
+    "ast_hash": "c7621885fb64a63b3b095b2d8eb9afaf",
+    "semantic_hash": ""
+  },
+  "deploy/spike-1.9/docker-compose.yml": {
+    "mtime": 1781607194.1119254,
+    "ast_hash": "8ea809f5fa5b032da5a311e63825e471",
+    "semantic_hash": ""
+  },
+  "deploy/spike-1.9/index.html": {
+    "mtime": 1781607172.5681698,
+    "ast_hash": "15fda945433515e41eee3544faee608b",
+    "semantic_hash": ""
+  },
+  "deploy/spike-1.9/sha256sums.txt": {
+    "mtime": 1781607261.4981637,
+    "ast_hash": "66c5b7e34a40b3ee263829ec80ed6f6b",
     "semantic_hash": ""
   }
 }
