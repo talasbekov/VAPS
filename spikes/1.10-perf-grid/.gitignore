@@ -1,0 +1,8 @@
+# Спайк 1.10 — одноразовый прототип. Коммитятся только источники + BUDGET.md.
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# локальные выгрузки замера (JSON из window.__vapsPerf.exportJson())
+perf-run-*.json

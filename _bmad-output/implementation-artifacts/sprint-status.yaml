@@ -44,9 +44,9 @@
 # - Таймбокс E1 (допущение A10): 3 недели, зафиксирован на sprint planning 2026-06-11 (дедлайн: 2026-07-02)
 
 generated: 2026-06-11
-last_updated: 2026-06-16
+last_updated: 2026-06-17
 project: VAPS
-# last dev activity: story 1.9 → review (спайк контур-проба; ревью АРТЕФАКТА — путь B, A5 открыт; AC-1 реальный контур → 12.7, A5 = находка №1)
+# last dev activity: story 1.10 — dev-story (bmad-dev-story, 2026-06-17, путь B): собран одноразовый перф-грид-прототип (Vite7/React19.2/TanStack Virtual, target firefox100), верифицирован headless-смоуком (виртуализация, 1 коммит/edit-keystroke, ~70КБ gzip). BUDGET.md с методологией + бюджетом PENDING-target. Авторитетный замер TTI/память/p95 на 4ГБ/FF~100 (AC-2) делегирован Bratan/12.7 (A9 открыт). Status → review (ревью артефакта, по аналогии 1.9). Артефакты НЕ закоммичены (за Bratan). Предыдущее: 1.9 review (A5 открыт), 1.8 done.
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
@@ -63,7 +63,7 @@ development_status:
   1-7-derived-статус-и-расчёт-расхода: done
   1-8-read-only-вывод-расхода-и-дифф-с-донором: done
   1-9-спайк-контур-проба: review
-  1-10-спайк-перф-грид-на-целевой-машине: backlog
+  1-10-спайк-перф-грид-на-целевой-машине: review
   1-11-спайк-выгрузка-данных-донора: backlog
   1-12-инвентаризация-артефакт: backlog
   epic-1-retrospective: optional
