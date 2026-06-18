@@ -89,6 +89,13 @@
 
 - Реальный `install.sh` (E12/12.3) должен сверять `.tar` с pinned/подписанным ожидаемым хэшем, а не с со-расположенным регенерируемым `sha256sums.txt`. `sha256sum -c` ловит транзитную порчу, но НЕ преднамеренную подмену (подменили `.tar`+`sums` вместе → проходит); комментарий `install-probe.sh` «битый/изменённый архив => СТОП» переоценивает (tampered не детектируется). Прото-скрипт спайка by design доказывает только механику; узаконить pinned/signed-хэш в E12-хардённинге деплоя/импорта (`deploy/spike-1.9/install-probe.sh:14-19`).
 
+## Deferred from: code review of 1-10-спайк-перф-грид-на-целевой-машине (2026-06-18)
+
+Проход 1 (bmad-code-review, scoped diff `main...HEAD` по путям `spikes/1.10-perf-grid/` без `package-lock.json`; 3 слоя на Opus 4.8). 2 defer-находки (2 decision-needed + 3 patch — в Review Findings стори).
+
+- headless-Chromium апп-смоук не валидирует FF100-специфику: белый экран на firefox100-несовместимом синтаксисе, отсутствие `performance.memory` в Firefox, регрессия `Array.prototype.with` (FF115+). Присуще спайку (Playwright на FF100 невозможен, architecture.md:258; AI не водит GUI Firefox). Покрыто целевым прогоном Bratan (путь A, 4ГБ/FF~100) + `build.target:'firefox100'`-гардом сборки. Авто-детект FF-несовместимости (eslint-plugin-compat как гейт) — канон E8 (`spikes/1.10-perf-grid/vite.config.ts` vs `BUDGET.md §5`).
+- Точные пины тулчейна прототипа (`react 19.2.7`, `react-dom 19.2.7`, `@tanstack/react-virtual 3.14.3`, `vite 7.3.5`, `@vitejs/plugin-react 5.2.0` + транзитивы) живут только в `package-lock.json`, который вне scoped-диффа ревью; ревьюенный `package.json` пинит лишь caret-диапазоны (`^19.2.0` и т.п.). Для воспроизводимости перф-замера на FF~100 свериться с lock перед merge / коммитом 1.10 (`spikes/1.10-perf-grid/package.json:166-177` vs `package-lock.json`).
+
 ## Deferred from: code review of 1-9-спайк-контур-проба (2026-06-18)
 
 Проход 6 (bmad-code-review, scoped diff `main...HEAD` по путям `deploy/spike-1.9/`; 3 слоя на Opus 4.8). Контрольный 6-й проход (после 3/4/5). 1 defer (1 patch — `--pull never`-дрейф — в Review Findings стори; остальное повторы/by-design).

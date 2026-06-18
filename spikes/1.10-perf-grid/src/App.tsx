@@ -64,7 +64,11 @@ function Grid() {
   }, [])
 
   // pre-edit снимок при смене активной ячейки (для Esc)
-  useEffect(() => {
+  // useLayoutEffect (НЕ useEffect): scrollToIndex выполняется ДО paint в окне коммита keystroke —
+  // (а) активная строка не теряет кадр видимости при слепом вводе «вниз»; (б) каскадный коммит
+  // виртуализатора учитывается в commits-per-key текущего keystroke, а не «утекает» после paint
+  // мимо детектора (ревью 1.10 пр.1, D1).
+  useLayoutEffect(() => {
     preEditRef.current = {
       row: active.row,
       col: active.col,

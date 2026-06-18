@@ -12,7 +12,7 @@ type PerfState = {
   keystrokes: number
   /** метка performance.now() последнего keydown; null — ждём следующего */
   pendingTs: number | null
-  /** всего коммитов грида (через Profiler onRender) */
+  /** всего коммитов грида (через useLayoutEffect-тик; Profiler onRender — но-оп в прод-сборке, см. recordCommitTick) */
   commitsTotal: number
   /** коммитов с момента последнего keydown */
   commitsSinceKeydown: number
@@ -53,21 +53,28 @@ export function markKeydown(t0: number): void {
  * НАХОДКА СПАЙКА: <Profiler onRender> — НО-ОП в стандартной ПРОД-сборке react-dom
  * (нужна profiling-сборка). Поэтому на проде коммиты считаем через useLayoutEffect-тик,
  * а не через Profiler. Profiler-инварианты 9.8 живут в gate-окружении (Vitest/dev), где Profiler работает.
+ *
+ * commits-per-key трекается ЗДЕСЬ (на КАЖДОМ коммите), а НЕ в recordCommitLatency: иначе
+ * async-коммит виртуализатора (scrollToIndex на навигации) приходит уже ПОСЛЕ очистки pendingTs
+ * первым коммитом → max никогда не увидел бы каскад, ради детекции которого инвариант существует
+ * (ревью 1.10 пр.1, D1). Гейт `keystrokes > 0` отсекает mount/пред-первый-keydown коммиты от max.
  */
 export function recordCommitTick(): void {
   perf.commitsTotal += 1
   perf.commitsSinceKeydown += 1
-}
-
-/** вызывается из того же useLayoutEffect ПОСЛЕ тика — фиксирует задержку keydown→commit */
-export function recordCommitLatency(): void {
-  if (perf.pendingTs != null) {
-    const dt = performance.now() - perf.pendingTs
-    perf.samples.push(dt)
+  if (perf.keystrokes > 0) {
     perf.lastCommitsPerKey = perf.commitsSinceKeydown
     if (perf.commitsSinceKeydown > perf.maxCommitsPerKey) {
       perf.maxCommitsPerKey = perf.commitsSinceKeydown
     }
+  }
+}
+
+/** вызывается из того же useLayoutEffect ПОСЛЕ тика — фиксирует задержку keydown→commit (только латентность; commits-per-key считает recordCommitTick) */
+export function recordCommitLatency(): void {
+  if (perf.pendingTs != null) {
+    const dt = performance.now() - perf.pendingTs
+    perf.samples.push(dt)
     perf.pendingTs = null
   }
 }
@@ -136,8 +143,18 @@ function renderHud(): void {
 
 /** запускает rAF-цикл обновления HUD (вне React) */
 export function startHudLoop(): void {
+  // HUD обновляется ~6/с, а НЕ каждый rAF: renderHud → stats() сортирует выборку + domRowCount()
+  // делает querySelectorAll. На слабом target (4ГБ/FF~100) ежекадровая (~60/с) работа конкурировала бы
+  // с измеряемым путём keydown→commit и завышала p95 (инструмент пертурбировал бы своё измерение).
+  // 150 мс достаточно для списывания глазами (ревью 1.10 пр.1, P2).
+  const HUD_INTERVAL_MS = 150
+  let lastHud = 0
   const tick = (): void => {
-    renderHud()
+    const now = performance.now()
+    if (now - lastHud >= HUD_INTERVAL_MS) {
+      lastHud = now
+      renderHud()
+    }
     requestAnimationFrame(tick)
   }
   requestAnimationFrame(tick)
