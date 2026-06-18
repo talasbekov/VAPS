@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 IMAGE="vaps-probe:spike-1.9"
-PORT="${PORT:-8080}"
+export PORT="${PORT:-8080}"   # export: чтобы дочерний `docker compose` интерполировал ${PORT} в проброс порта (а не только в печатаемый URL)
 
 echo "[1/5] Проверка целостности архива (sha256) — битый/изменённый архив => СТОП до изменений..."
 sha256sum -c sha256sums.txt
@@ -18,7 +18,7 @@ TAR="$(awk '{print $2}' sha256sums.txt | head -n1)"
 echo "[2/5] docker load -i ${TAR}  (offline: ничего не тянется из сети)..."
 docker load -i "${TAR}"
 
-echo "[3/5] docker compose up -d  (НЕ должен тянуть образ из реестра — он уже загружен)..."
+echo "[3/5] docker compose up -d  (offline: образ уже загружен docker load, в compose нет build: → реестр не трогается)..."
 docker compose up -d
 
 echo "[4/5] Наблюдение ВРЕМЕНИ (секция «Время» рунбука; задел для спайка 3.13 «часы без NTP»):"

@@ -76,3 +76,15 @@
 - `diff_day` try/except в команде (`strength_report.py:75-82`) ловит только `ValueError`, а `diff_day` делает bracket-доступ `violation["division_id"]` (`donor_diff.py:368`) → отсутствие ключа даст `KeyError` мимо `except` → сырой трейсбек. Недостижимо сейчас (`violations` из `StrengthReportService` 1.7 всегда с `division_id`); защитить при изменении контракта violations — E7.
 - Ветка `timing/half_open_end` для type-колонки (`donor_diff.py:326-336`) срабатывает на голом булеве `vaps_in_service_higher` без Σ-проверки величины — асимметрично строгому IN_SERVICE-правилу (`delta == timing_surplus and timing_surplus > 0`). Гейт остаётся sound (качество метки прото-классификатора). Полный timing-replay донорской интервальной логики — E7 7.8 (Решение №6).
 - Gate-тест (`test_strength_report_command.py:92-98`) проверяет присутствие строк-категорий, а не полноту «каталог ↔ фикстура» — дрейф каталога/фикстуры (как F13) не ловится. Усиление: ассерт на исчерпываемость каталога/совпадение с фикстурой — test-hardening E1/E7.
+
+## Deferred from: code review of 1-9-спайк-контур-проба (2026-06-16)
+
+Проход 4 (bmad-code-review, branch diff vs main без graphify-out; 3 слоя на Opus 4.8). Из 3 defer-находок две (`diff_day`/`KeyError`, gate-тест/каталог-дрейф) УЖЕ присутствуют выше в секции 1-8 (проход 3) — дубликаты не добавляю. Ниже — единственная новая.
+
+- `_load_baseline` (`strength_report.py`) в команде `strength_report --diff-baseline` ловит только `(OSError, ValueError)`. Гигантский или патологически глубоко-вложенный operator-JSON даёт `MemoryError`/`RecursionError` — не подклассы пойманных → сырой трейсбек мимо `CommandError`. Malformed-текстовый JSON в CPython = `ValueError` (уже ловится), поэтому утекают только классы исчерпания ресурсов. Low: файл подаётся оператором, контекст одноразового спайка. Кандидат в хардённинг импортёров E7 (валидация размера/глубины baseline-файла).
+
+## Deferred from: code review of 1-9-спайк-контур-проба (2026-06-17)
+
+Проход 5 (bmad-code-review, scoped diff `main..HEAD` по путям 1.9 без graphify-out; 3 слоя на Opus 4.8). 1 defer-находка (2 decision-needed + 1 patch — в Review Findings стори).
+
+- Реальный `install.sh` (E12/12.3) должен сверять `.tar` с pinned/подписанным ожидаемым хэшем, а не с со-расположенным регенерируемым `sha256sums.txt`. `sha256sum -c` ловит транзитную порчу, но НЕ преднамеренную подмену (подменили `.tar`+`sums` вместе → проходит); комментарий `install-probe.sh` «битый/изменённый архив => СТОП» переоценивает (tampered не детектируется). Прото-скрипт спайка by design доказывает только механику; узаконить pinned/signed-хэш в E12-хардённинге деплоя/импорта (`deploy/spike-1.9/install-probe.sh:14-19`).
