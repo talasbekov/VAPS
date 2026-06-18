@@ -88,3 +88,9 @@
 Проход 5 (bmad-code-review, scoped diff `main..HEAD` по путям 1.9 без graphify-out; 3 слоя на Opus 4.8). 1 defer-находка (2 decision-needed + 1 patch — в Review Findings стори).
 
 - Реальный `install.sh` (E12/12.3) должен сверять `.tar` с pinned/подписанным ожидаемым хэшем, а не с со-расположенным регенерируемым `sha256sums.txt`. `sha256sum -c` ловит транзитную порчу, но НЕ преднамеренную подмену (подменили `.tar`+`sums` вместе → проходит); комментарий `install-probe.sh` «битый/изменённый архив => СТОП» переоценивает (tampered не детектируется). Прото-скрипт спайка by design доказывает только механику; узаконить pinned/signed-хэш в E12-хардённинге деплоя/импорта (`deploy/spike-1.9/install-probe.sh:14-19`).
+
+## Deferred from: code review of 1-9-спайк-контур-проба (2026-06-18)
+
+Проход 6 (bmad-code-review, scoped diff `main...HEAD` по путям `deploy/spike-1.9/`; 3 слоя на Opus 4.8). Контрольный 6-й проход (после 3/4/5). 1 defer (1 patch — `--pull never`-дрейф — в Review Findings стори; остальное повторы/by-design).
+
+- Реальный `install.sh` (E12/12.3) после `docker load` должен ВЕРИФИЦИРОВАТЬ идентичность загруженного образа (тег/digest = ожидаемый `vaps-probe:spike-1.9`), а не только sha-чек `.tar`. `docker load` восстанавливает любой тег из `.tar`; при резидентном устаревшем образе с тем же тегом `compose up` (нет `build:`) тихо поднимет СТАРЫЙ образ → страница-маркер покажет неверный `__GIT_SHA__`, а runbook-evidence «этот бандл доехал» окажется ложным. Сегодня смягчено визуальной проверкой sha человеком-оператором (рунбук шаг 6) — не полностью молчаливо; для одноразовой пробы на чистом контуре риск low. Узаконить image-identity-verify (сравнение digest загруженного образа с pinned) в E12-install.sh (`deploy/spike-1.9/install-probe.sh:19-22`).
