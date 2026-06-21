@@ -16,6 +16,7 @@ INSTALLED_APPS = [
     "apps.operations",
     "apps.operations.statuses",
     "apps.operations.rbac",
+    "apps.operations.submissions",
     "apps.migration_legacy",
 ]
 
