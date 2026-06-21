@@ -1,4 +1,4 @@
-from apps.operations.models import UserRole
+from apps.operations.rbac.models import UserRole
 
 
 class OpsUserRoleSelector:

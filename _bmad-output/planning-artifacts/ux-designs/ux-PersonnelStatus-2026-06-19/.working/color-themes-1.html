@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PersonnelStatus — Цветовые темы (исследование визуальной идентичности)</title>
+<!--
+  ============================================================================
+  PersonnelStatus — color-themes-1.html
+  Visual-identity exploration. Mantine v7, size="sm", data-dense штаб tool.
+  4 variations × {light, dark}. Inline CSS only, system fonts, no JS, no net.
+  Concrete hex values are listed in the per-variation <style> comments below
+  so they can be lifted directly into a Mantine theme.
+
+  WCAG note: target ~AA (4.5:1 text, 3:1 large/UI) on the chip's own bg.
+  Status chips use a tinted-fill + saturated-text/border pattern so the
+  text stays readable while the family hue stays recognisable at a glance.
+  Caveats per role are flagged in the report and inline where relevant.
+  ============================================================================
+-->
+<style>
+/* ---------- global, theme-agnostic scaffolding ---------- */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
+  font-size:13px;line-height:1.4;color:#1a1d22;background:#eef0f3;
+  -webkit-font-smoothing:antialiased;
+}
+.page-head{
+  padding:20px 28px;background:#0f1115;color:#e7eaf0;border-bottom:3px solid #3b82f6;
+}
+.page-head h1{margin:0 0 4px;font-size:18px;font-weight:650;letter-spacing:.2px}
+.page-head p{margin:0;font-size:12px;color:#9aa3b2;max-width:900px}
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:#cbd2dd}
+.legend b{color:#e7eaf0;font-weight:600}
+
+.variation{padding:24px 28px;border-bottom:1px solid #d7dbe0}
+.variation > h2{
+  margin:0 0 2px;font-size:16px;font-weight:650;display:flex;align-items:baseline;gap:10px;
+}
+.variation > h2 .tag{font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
+  padding:2px 7px;border-radius:4px;background:#1f2937;color:#fff}
+.variation > .register{margin:0 0 14px;font-size:12.5px;font-style:italic;color:#555c66}
+
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:1100px){.modes{grid-template-columns:1fr}}
+
+/* a "mode panel" carries its OWN theme via CSS custom props (see each variation block) */
+.panel{
+  border-radius:10px;overflow:hidden;border:1px solid var(--brd);
+  background:var(--bg);color:var(--tp);
+  box-shadow:0 1px 3px rgba(0,0,0,.08);
+}
+.panel-bar{
+  padding:7px 12px;font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;
+  background:var(--sf);border-bottom:1px solid var(--brd);color:var(--ts);
+  display:flex;justify-content:space-between;align-items:center;
+}
+.panel-bar .mode-dot{font-size:13px}
+.panel-body{padding:14px}
+
+.sect{margin-bottom:16px}
+.sect:last-child{margin-bottom:0}
+.sect-title{
+  font-size:9.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;
+  color:var(--tm);margin:0 0 7px;border-bottom:1px dashed var(--brd);padding-bottom:3px;
+}
+
+/* token chip grid */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  display:inline-flex;flex-direction:column;min-width:84px;border-radius:6px;
+  border:1px solid var(--brd);overflow:hidden;font-size:10px;line-height:1.25;
+}
+.chip .sw{height:26px;width:100%}
+.chip .lab{padding:3px 5px;background:var(--sf);color:var(--tp)}
+.chip .lab b{display:block;font-weight:600;font-size:10px}
+.chip .lab code{font-size:9px;color:var(--ts);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+/* status (categorical) chips render as the real in-row tag */
+.tagrow{display:flex;flex-wrap:wrap;gap:5px}
+.stag{
+  display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:5px;
+  font-size:11px;font-weight:600;border:1px solid transparent;white-space:nowrap;
+}
+.stag code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:8.5px;font-weight:500;opacity:.75}
+
+/* светофор */
+.lights{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.light{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600}
+.dot{width:13px;height:13px;border-radius:50%;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.12) inset}
+
+/* conflict swatches */
+.conflicts{display:flex;gap:10px;flex-wrap:wrap}
+.confbox{flex:1;min-width:150px;border-radius:7px;padding:9px 11px;font-size:11px;font-weight:600;
+  display:flex;align-items:flex-start;gap:7px}
+.confbox .ic{font-size:14px;line-height:1}
+.confbox small{display:block;font-weight:500;font-size:10px;opacity:.85;margin-top:2px}
+
+/* ---- realistic UI snippet: daily grid ---- */
+.grid{width:100%;border-collapse:collapse;font-size:11.5px}
+.grid th{
+  text-align:left;font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--tm);padding:5px 8px;border-bottom:1px solid var(--brd);background:var(--sf);
+}
+.grid td{padding:5px 8px;border-bottom:1px solid var(--rowbrd)}
+.grid tr:nth-child(even) td{background:var(--zebra)}
+.grid .name{font-weight:600;white-space:nowrap}
+.grid .rank{color:var(--tm);font-weight:400;font-size:10px}
+.cellflag{float:right;font-size:9.5px;font-weight:700;padding:0 5px;border-radius:4px;line-height:16px}
+
+/* светофор tree snippet */
+.tree{font-size:11.5px}
+.tree-row{display:flex;align-items:center;gap:9px;padding:5px 6px;border-bottom:1px solid var(--rowbrd)}
+.tree-row:last-child{border-bottom:none}
+.tree-name{flex:1;font-weight:600}
+.tree-sub{color:var(--tm);font-weight:400;font-size:10px;margin-left:6px}
+.tree-stat{font-size:10px;color:var(--ts);min-width:54px;text-align:right}
+.badge-plus{display:inline-flex;align-items:center;font-size:10px;font-weight:700;
+  padding:1px 7px;border-radius:9px;border:1px solid transparent}
+
+.note{margin-top:8px;font-size:10px;color:var(--tm);font-style:italic}
+
+/* ========================================================================
+   VARIATION 1 — «Штабная сводка» (institutional / neutral)
+   LIGHT
+     bg #f4f6f8 · surface #ffffff · border #d3d9e0
+     text-primary #1c2530 · text-secondary #525e6e · text-muted #8a96a6
+     accent #1f4f82  (focus ring #3a72b5)
+     светофор  green #2f7d43 · yellow #b07a00 · red #c0392b · grey #98a2b0
+     conflict  hard-block #a8201a / fill #fbe9e7 · soft-warn #8a5a00 / fill #fdf4e0
+   DARK
+     bg #11161d · surface #19212b · border #2c3744
+     text-primary #e3e9f0 · text-secondary #9fadbe · text-muted #6b7889
+     accent #5d9bdc (focus ring #7cb0e6)
+     светофор  green #4caf6a · yellow #d9a521 · red #e5675c · grey #6f7c8c
+     conflict  hard-block #ef6f63 / fill #2c1716 · soft-warn #e0a83a / fill #2a2010
+   ====================================================================== */
+.v1.light{
+  --bg:#f4f6f8;--sf:#ffffff;--brd:#d3d9e0;--rowbrd:#e6eaee;--zebra:#f7f9fb;
+  --tp:#1c2530;--ts:#525e6e;--tm:#8a96a6;
+  --acc:#1f4f82;--acc-on:#ffffff;--ring:#3a72b5;
+  --g:#2f7d43;--y:#b07a00;--r:#c0392b;--gr:#98a2b0;
+}
+.v1.dark{
+  --bg:#11161d;--sf:#19212b;--brd:#2c3744;--rowbrd:#222c38;--zebra:#161e27;
+  --tp:#e3e9f0;--ts:#9fadbe;--tm:#6b7889;
+  --acc:#5d9bdc;--acc-on:#0c1119;--ring:#7cb0e6;
+  --g:#4caf6a;--y:#d9a521;--r:#e5675c;--gr:#6f7c8c;
+}
+
+/* ========================================================================
+   VARIATION 2 — «Диспетчерская» (operational / high-signal NOC)
+   LIGHT
+     bg #eef1f4 · surface #fbfcfd · border #c4ccd6
+     text-primary #131922 · text-secondary #46505e · text-muted #7d899a
+     accent #0061d6 (focus ring #2e86ff)
+     светофор  green #1f9d57 · yellow #e08600 · red #d62828 · grey #8893a3
+     conflict  hard-block #b21f1f / fill #fde4e4 · soft-warn #9a5a00 / fill #fdf0d8
+   DARK  (control-room: darker, cooler chrome, hot status)
+     bg #0a0e14 · surface #121922 · border #243042
+     text-primary #e8edf4 · text-secondary #9bacc0 · text-muted #61728a
+     accent #4d9fff (focus ring #7ab8ff)
+     светофор  green #2ee37a · yellow #ffc23d · red #ff5c5c · grey #5c6b80
+     conflict  hard-block #ff6b6b / fill #2a1212 · soft-warn #ffb43d / fill #2a1f0c
+   ====================================================================== */
+.v2.light{
+  --bg:#eef1f4;--sf:#fbfcfd;--brd:#c4ccd6;--rowbrd:#dfe4ea;--zebra:#f3f6f9;
+  --tp:#131922;--ts:#46505e;--tm:#7d899a;
+  --acc:#0061d6;--acc-on:#ffffff;--ring:#2e86ff;
+  --g:#1f9d57;--y:#e08600;--r:#d62828;--gr:#8893a3;
+}
+.v2.dark{
+  --bg:#0a0e14;--sf:#121922;--brd:#243042;--rowbrd:#1a232f;--zebra:#0f151d;
+  --tp:#e8edf4;--ts:#9bacc0;--tm:#61728a;
+  --acc:#4d9fff;--acc-on:#06090e;--ring:#7ab8ff;
+  --g:#2ee37a;--y:#ffc23d;--r:#ff5c5c;--gr:#5c6b80;
+}
+
+/* ========================================================================
+   VARIATION 3 — «Документ» (paper / ink, print-aligned)
+   LIGHT  (ink on warm paper)
+     bg #f3efe7 · surface #fbf8f2 · border #ddd4c5
+     text-primary #2a2620 · text-secondary #5c544a · text-muted #908676
+     accent #7a5c2e  (focus ring #9a7a44)  — subdued sepia/brass
+     светофор  green #41713f · yellow #9a7212 · red #a83a2e · grey #9b9385
+     conflict  hard-block #8f2d23 / fill #f4e3df · soft-warn #87611a / fill #f5ecd8
+   DARK  (ink-inverted "night reading", still warm)
+     bg #1a1712 · surface #221d16 · border #3a3328
+     text-primary #ece4d6 · text-secondary #b3a892 · text-muted #8a8073
+     accent #c79a5a (focus ring #d9b277)
+     светофор  green #6fae64 · yellow #cda23a · red #d7766a · grey #8d8472
+     conflict  hard-block #df8270 / fill #2c1a16 · soft-warn #d2a64a / fill #2a2110
+   ====================================================================== */
+.v3.light{
+  --bg:#f3efe7;--sf:#fbf8f2;--brd:#ddd4c5;--rowbrd:#ebe4d6;--zebra:#f6f2ea;
+  --tp:#2a2620;--ts:#5c544a;--tm:#908676;
+  --acc:#7a5c2e;--acc-on:#fbf8f2;--ring:#9a7a44;
+  --g:#41713f;--y:#9a7212;--r:#a83a2e;--gr:#9b9385;
+}
+.v3.dark{
+  --bg:#1a1712;--sf:#221d16;--brd:#3a3328;--rowbrd:#2a241b;--zebra:#1e1a13;
+  --tp:#ece4d6;--ts:#b3a892;--tm:#8a8073;
+  --acc:#c79a5a;--acc-on:#1a1712;--ring:#d9b277;
+  --g:#6fae64;--y:#cda23a;--r:#d7766a;--gr:#8d8472;
+}
+
+/* ========================================================================
+   VARIATION 4 — «Mantine default+» (pragmatic, lowest-risk)
+   Stays on Mantine's blue[6]=#228be6 + gray scale. Minimal deviation.
+   LIGHT
+     bg #f8f9fa (gray.0) · surface #ffffff · border #dee2e6 (gray.3)
+     text-primary #212529 (gray.9) · text-secondary #495057 (gray.7) · text-muted #868e96 (gray.6)
+     accent #228be6 (blue.6, focus ring #339af0 blue.5)
+     светофор  green #2f9e44 (green.7) · yellow #f08c00 (yellow.7→orange) · red #e03131 (red.7) · grey #adb5bd (gray.5)
+     conflict  hard-block #c92a2a (red.9) / fill #fff5f5 (red.0) · soft-warn #e67700 (yellow.9) / fill #fff9db (yellow.0)
+   DARK  (Mantine dark.x)
+     bg #1a1b1e (dark.7) · surface #25262b (dark.6) · border #373a40 (dark.4)
+     text-primary #c1c2c5 (dark.0) · text-secondary #909296 (dark.2) · text-muted #5c5f66 (dark.3)
+     accent #4dabf7 (blue.4, focus ring #74c0fc blue.3)
+     светофор  green #51cf66 (green.4) · yellow #ffd43b (yellow.4) · red #ff6b6b (red.4) · grey #5c5f66 (dark.3)
+     conflict  hard-block #ff8787 (red.3) / fill #2a1414 · soft-warn #ffd43b (yellow.4) / fill #2a2410
+   ====================================================================== */
+.v4.light{
+  --bg:#f8f9fa;--sf:#ffffff;--brd:#dee2e6;--rowbrd:#e9ecef;--zebra:#f8f9fa;
+  --tp:#212529;--ts:#495057;--tm:#868e96;
+  --acc:#228be6;--acc-on:#ffffff;--ring:#339af0;
+  --g:#2f9e44;--y:#f08c00;--r:#e03131;--gr:#adb5bd;
+}
+.v4.dark{
+  --bg:#1a1b1e;--sf:#25262b;--brd:#373a40;--rowbrd:#2c2e33;--zebra:#1e1f23;
+  --tp:#c1c2c5;--ts:#909296;--tm:#5c5f66;
+  --acc:#4dabf7;--acc-on:#0b0c0e;--ring:#74c0fc;
+  --g:#51cf66;--y:#ffd43b;--r:#ff6b6b;--gr:#5c5f66;
+}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>PersonnelStatus — цветовые темы (исследование визуальной идентичности)</h1>
+  <p>Внутренний штабной инструмент учёта личного состава. Mantine v7, <code>size="sm"</code>, плотные виртуализированные таблицы, работа за столом весь день. Приоритет: скорость и читаемость с одного взгляда. Каждая тема показана в светлом и тёмном режимах.</p>
+  <div class="legend">
+    <span><b>Светофор</b> = индикатор подразделения (сдано / дрейф / не сдано / нет данных)</span>
+    <span><b>422</b> hard-block · нельзя переопределить</span>
+    <span><b>409</b> soft-warning · можно переопределить</span>
+  </div>
+</div>
+
+<!-- ============ TEMPLATE MACRO (rendered 4×) ============ -->
+<!--
+  Each .variation contains two .panel (light / dark). The panel class carries
+  the variation+mode theme (e.g. "panel v1 light"). All inner markup is identical.
+-->
+
+<!-- ===================== VARIATION 1 ===================== -->
+<section class="variation">
+  <h2><span class="tag" style="background:#1f4f82">V1</span> «Штабная сводка»</h2>
+  <p class="register">Институциональный, сдержанный. Серо-стальной/тёмно-синий — серьёзное государственное ПО, ничего лишнего; статусы приглушены, но различимы.</p>
+  <div class="modes">
+
+    <!-- ---- V1 LIGHT ---- -->
+    <div class="panel v1 light">
+      <div class="panel-bar"><span>Светлый режим</span><span class="mode-dot">☀</span></div>
+      <div class="panel-body">
+
+        <div class="sect">
+          <p class="sect-title">Chrome / каркас</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#f4f6f8"></div><div class="lab"><b>bg</b><code>#f4f6f8</code></div></div>
+            <div class="chip"><div class="sw" style="background:#ffffff"></div><div class="lab"><b>surface</b><code>#ffffff</code></div></div>
+            <div class="chip"><div class="sw" style="background:#d3d9e0"></div><div class="lab"><b>border</b><code>#d3d9e0</code></div></div>
+            <div class="chip"><div class="sw" style="background:#1c2530"></div><div class="lab"><b>text-pri</b><code>#1c2530</code></div></div>
+            <div class="chip"><div class="sw" style="background:#525e6e"></div><div class="lab"><b>text-sec</b><code>#525e6e</code></div></div>
+            <div class="chip"><div class="sw" style="background:#8a96a6"></div><div class="lab"><b>text-mut</b><code>#8a96a6</code></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Основной акцент</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#1f4f82"></div><div class="lab"><b>accent</b><code>#1f4f82</code></div></div>
+            <div class="chip"><div class="sw" style="background:#3a72b5"></div><div class="lab"><b>focus ring</b><code>#3a72b5</code></div></div>
+            <span class="stag" style="background:#1f4f82;color:#fff;border-color:#1f4f82">Кнопка действия</span>
+            <span class="stag" style="background:transparent;color:#1f4f82;border-color:#1f4f82;box-shadow:0 0 0 2px #3a72b555">фокус-кольцо</span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Светофор подразделения</p>
+          <div class="lights">
+            <span class="light"><span class="dot" style="background:#2f7d43"></span>Зелёный — сдано <code style="color:#8a96a6">#2f7d43</code></span>
+            <span class="light"><span class="dot" style="background:#b07a00"></span>Жёлтый — дрейф <code style="color:#8a96a6">#b07a00</code></span>
+            <span class="light"><span class="dot" style="background:#c0392b"></span>Красный — не сдано <code style="color:#8a96a6">#c0392b</code></span>
+            <span class="light"><span class="dot" style="background:#98a2b0"></span>Серый — нет данных <code style="color:#8a96a6">#98a2b0</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Семантика конфликтов</p>
+          <div class="conflicts">
+            <div class="confbox" style="background:#fbe9e7;color:#a8201a;border:1px solid #e6b3ad"><span class="ic">⛔</span><div>422 · Жёсткая блокировка<small>Нельзя переопределить · #a8201a / #fbe9e7</small></div></div>
+            <div class="confbox" style="background:#fdf4e0;color:#8a5a00;border:1px solid #e6cf95"><span class="ic">⚠</span><div>409 · Мягкое предупреждение<small>Можно переопределить · #8a5a00 / #fdf4e0</small></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Категориальная палитра статусов (StatusType.color)</p>
+          <div class="tagrow">
+            <span class="stag" style="background:#e3efe6;color:#1f5e30;border-color:#bcd8c3">В строю <code>#1f5e30</code></span>
+            <span class="stag" style="background:#e6eef7;color:#1f4f82;border-color:#bcd3ea">На дежурстве <code>#1f4f82</code></span>
+            <span class="stag" style="background:#eef0f7;color:#3f4a7a;border-color:#c9cfe3">После дежурства <code>#3f4a7a</code></span>
+            <span class="stag" style="background:#eaf2f5;color:#2a6171;border-color:#c2dbe2">До дежурства <code>#2a6171</code></span>
+            <span class="stag" style="background:#f3ece2;color:#7a5320;border-color:#ddc9ab">В отпуске <code>#7a5320</code></span>
+            <span class="stag" style="background:#f5ece9;color:#8a3f2e;border-color:#e0c4ba">Больничный <code>#8a3f2e</code></span>
+            <span class="stag" style="background:#efece3;color:#6b5e2a;border-color:#d6cda9">Командировка <code>#6b5e2a</code></span>
+            <span class="stag" style="background:#f1ece6;color:#705436;border-color:#d9c9b6">Отпуск по рапорту <code>#705436</code></span>
+            <span class="stag" style="background:#ece9f3;color:#4a3f7a;border-color:#cbc4e0">Учёба <code>#4a3f7a</code></span>
+            <span class="stag" style="background:#e9eef3;color:#3a5470;border-color:#c2d2df">Соревнования <code>#3a5470</code></span>
+            <span class="stag" style="background:#ebeef0;color:#445661;border-color:#c8d2d7">Конференция <code>#445661</code></span>
+            <span class="stag" style="background:#ece9ee;color:#5a3f63;border-color:#d3c4d8">ГЭВ <code>#5a3f63</code></span>
+            <span class="stag" style="background:#e6f0ec;color:#1e6650;border-color:#bcdcd0">Прикомандирован +N <code>#1e6650</code></span>
+            <span class="stag" style="background:#f1ebe8;color:#79483a;border-color:#dcc6bd">Откомандирован <code>#79483a</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Снимок: суточная ведомость + дерево светофора</p>
+          <table class="grid">
+            <thead><tr><th style="width:55%">ФИО</th><th>Статус на 19.06</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Иванов А.С. <span class="rank">м-р</span></td><td><span class="stag" style="background:#e3efe6;color:#1f5e30;border-color:#bcd8c3">В строю</span></td></tr>
+              <tr><td class="name">Петров В.Н. <span class="rank">к-н</span></td><td><span class="stag" style="background:#e6eef7;color:#1f4f82;border-color:#bcd3ea">На дежурстве</span></td></tr>
+              <tr><td class="name">Сидоров К.П. <span class="rank">ст. л-т</span></td><td><span class="stag" style="background:#f3ece2;color:#7a5320;border-color:#ddc9ab">В отпуске</span><span class="cellflag" style="background:#fdf4e0;color:#8a5a00">409</span></td></tr>
+              <tr><td class="name">Кузнецов Д.А. <span class="rank">л-т</span></td><td><span class="stag" style="background:#f5ece9;color:#8a3f2e;border-color:#e0c4ba">Больничный</span><span class="cellflag" style="background:#fbe9e7;color:#a8201a">422</span></td></tr>
+              <tr><td class="name">Морозов И.В. <span class="rank">пр-к</span></td><td><span class="stag" style="background:#ebeef0;color:#445661;border-color:#c8d2d7">Нет данных</span></td></tr>
+            </tbody>
+          </table>
+          <div class="tree" style="margin-top:12px;border:1px solid var(--brd);border-radius:7px">
+            <div class="tree-row"><span class="dot" style="background:#2f7d43"></span><span class="tree-name">1-е управление</span><span class="tree-stat">48/48</span></div>
+            <div class="tree-row"><span class="dot" style="background:#b07a00"></span><span class="tree-name">2-е управление <span class="tree-sub">3 в дрейфе</span></span><span class="badge-plus" style="background:#e6eef7;color:#1f4f82;border-color:#bcd3ea">+2</span><span class="tree-stat">31/34</span></div>
+            <div class="tree-row"><span class="dot" style="background:#c0392b"></span><span class="tree-name">Дежурная часть <span class="tree-sub">сводка не подана</span></span><span class="tree-stat">0/12</span></div>
+            <div class="tree-row"><span class="dot" style="background:#98a2b0"></span><span class="tree-name">Резерв <span class="tree-sub">нет данных</span></span><span class="tree-stat">—</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ---- V1 DARK ---- -->
+    <div class="panel v1 dark">
+      <div class="panel-bar"><span>Тёмный режим</span><span class="mode-dot">☾</span></div>
+      <div class="panel-body">
+
+        <div class="sect">
+          <p class="sect-title">Chrome / каркас</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#11161d"></div><div class="lab"><b>bg</b><code>#11161d</code></div></div>
+            <div class="chip"><div class="sw" style="background:#19212b"></div><div class="lab"><b>surface</b><code>#19212b</code></div></div>
+            <div class="chip"><div class="sw" style="background:#2c3744"></div><div class="lab"><b>border</b><code>#2c3744</code></div></div>
+            <div class="chip"><div class="sw" style="background:#e3e9f0"></div><div class="lab"><b>text-pri</b><code>#e3e9f0</code></div></div>
+            <div class="chip"><div class="sw" style="background:#9fadbe"></div><div class="lab"><b>text-sec</b><code>#9fadbe</code></div></div>
+            <div class="chip"><div class="sw" style="background:#6b7889"></div><div class="lab"><b>text-mut</b><code>#6b7889</code></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Основной акцент</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#5d9bdc"></div><div class="lab"><b>accent</b><code>#5d9bdc</code></div></div>
+            <div class="chip"><div class="sw" style="background:#7cb0e6"></div><div class="lab"><b>focus ring</b><code>#7cb0e6</code></div></div>
+            <span class="stag" style="background:#5d9bdc;color:#0c1119;border-color:#5d9bdc">Кнопка действия</span>
+            <span class="stag" style="background:transparent;color:#7cb0e6;border-color:#5d9bdc;box-shadow:0 0 0 2px #7cb0e655">фокус-кольцо</span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Светофор подразделения</p>
+          <div class="lights">
+            <span class="light"><span class="dot" style="background:#4caf6a"></span>Зелёный — сдано <code style="color:#6b7889">#4caf6a</code></span>
+            <span class="light"><span class="dot" style="background:#d9a521"></span>Жёлтый — дрейф <code style="color:#6b7889">#d9a521</code></span>
+            <span class="light"><span class="dot" style="background:#e5675c"></span>Красный — не сдано <code style="color:#6b7889">#e5675c</code></span>
+            <span class="light"><span class="dot" style="background:#6f7c8c"></span>Серый — нет данных <code style="color:#6b7889">#6f7c8c</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Семантика конфликтов</p>
+          <div class="conflicts">
+            <div class="confbox" style="background:#2c1716;color:#ef6f63;border:1px solid #5a2a26"><span class="ic">⛔</span><div>422 · Жёсткая блокировка<small>Нельзя переопределить · #ef6f63 / #2c1716</small></div></div>
+            <div class="confbox" style="background:#2a2010;color:#e0a83a;border:1px solid #574522"><span class="ic">⚠</span><div>409 · Мягкое предупреждение<small>Можно переопределить · #e0a83a / #2a2010</small></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Категориальная палитра статусов (StatusType.color)</p>
+          <div class="tagrow">
+            <span class="stag" style="background:#193022;color:#6fd08a;border-color:#2f5a3e">В строю <code>#6fd08a</code></span>
+            <span class="stag" style="background:#16263a;color:#7db4e6;border-color:#2c4a66">На дежурстве <code>#7db4e6</code></span>
+            <span class="stag" style="background:#1d2240;color:#9aa3e0;border-color:#363c66">После дежурства <code>#9aa3e0</code></span>
+            <span class="stag" style="background:#152a30;color:#6cc0d2;border-color:#2a4e57">До дежурства <code>#6cc0d2</code></span>
+            <span class="stag" style="background:#2a2114;color:#d6ab6a;border-color:#54442a">В отпуске <code>#d6ab6a</code></span>
+            <span class="stag" style="background:#2c1c17;color:#e08c74;border-color:#56362c">Больничный <code>#e08c74</code></span>
+            <span class="stag" style="background:#26230f;color:#c9b86a;border-color:#4d472a">Командировка <code>#c9b86a</code></span>
+            <span class="stag" style="background:#291f15;color:#cba07a;border-color:#52402e">Отпуск по рапорту <code>#cba07a</code></span>
+            <span class="stag" style="background:#1f1c30;color:#a89ae0;border-color:#3c3666">Учёба <code>#a89ae0</code></span>
+            <span class="stag" style="background:#172230;color:#7fa3c4;border-color:#2e4458">Соревнования <code>#7fa3c4</code></span>
+            <span class="stag" style="background:#1b232a;color:#9aaeb8;border-color:#34444d">Конференция <code>#9aaeb8</code></span>
+            <span class="stag" style="background:#241b29;color:#bd97c4;border-color:#473652">ГЭВ <code>#bd97c4</code></span>
+            <span class="stag" style="background:#152a24;color:#5fc4a4;border-color:#2a5046">Прикомандирован +N <code>#5fc4a4</code></span>
+            <span class="stag" style="background:#2a1c17;color:#cf937f;border-color:#52362c">Откомандирован <code>#cf937f</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Снимок: суточная ведомость + дерево светофора</p>
+          <table class="grid">
+            <thead><tr><th style="width:55%">ФИО</th><th>Статус на 19.06</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Иванов А.С. <span class="rank">м-р</span></td><td><span class="stag" style="background:#193022;color:#6fd08a;border-color:#2f5a3e">В строю</span></td></tr>
+              <tr><td class="name">Петров В.Н. <span class="rank">к-н</span></td><td><span class="stag" style="background:#16263a;color:#7db4e6;border-color:#2c4a66">На дежурстве</span></td></tr>
+              <tr><td class="name">Сидоров К.П. <span class="rank">ст. л-т</span></td><td><span class="stag" style="background:#2a2114;color:#d6ab6a;border-color:#54442a">В отпуске</span><span class="cellflag" style="background:#2a2010;color:#e0a83a">409</span></td></tr>
+              <tr><td class="name">Кузнецов Д.А. <span class="rank">л-т</span></td><td><span class="stag" style="background:#2c1c17;color:#e08c74;border-color:#56362c">Больничный</span><span class="cellflag" style="background:#2c1716;color:#ef6f63">422</span></td></tr>
+              <tr><td class="name">Морозов И.В. <span class="rank">пр-к</span></td><td><span class="stag" style="background:#1b232a;color:#9aaeb8;border-color:#34444d">Нет данных</span></td></tr>
+            </tbody>
+          </table>
+          <div class="tree" style="margin-top:12px;border:1px solid var(--brd);border-radius:7px">
+            <div class="tree-row"><span class="dot" style="background:#4caf6a"></span><span class="tree-name">1-е управление</span><span class="tree-stat">48/48</span></div>
+            <div class="tree-row"><span class="dot" style="background:#d9a521"></span><span class="tree-name">2-е управление <span class="tree-sub">3 в дрейфе</span></span><span class="badge-plus" style="background:#16263a;color:#7db4e6;border-color:#2c4a66">+2</span><span class="tree-stat">31/34</span></div>
+            <div class="tree-row"><span class="dot" style="background:#e5675c"></span><span class="tree-name">Дежурная часть <span class="tree-sub">сводка не подана</span></span><span class="tree-stat">0/12</span></div>
+            <div class="tree-row"><span class="dot" style="background:#6f7c8c"></span><span class="tree-name">Резерв <span class="tree-sub">нет данных</span></span><span class="tree-stat">—</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ===================== VARIATION 2 ===================== -->
+<section class="variation">
+  <h2><span class="tag" style="background:#0061d6">V2</span> «Диспетчерская»</h2>
+  <p class="register">Операционный, высокосигнальный (NOC / пультовая). Холоднее и темнее, статусные цвета «горят» — оптимизировано для мониторинга отстающих с одного взгляда.</p>
+  <div class="modes">
+
+    <!-- ---- V2 LIGHT ---- -->
+    <div class="panel v2 light">
+      <div class="panel-bar"><span>Светлый режим</span><span class="mode-dot">☀</span></div>
+      <div class="panel-body">
+
+        <div class="sect">
+          <p class="sect-title">Chrome / каркас</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#eef1f4"></div><div class="lab"><b>bg</b><code>#eef1f4</code></div></div>
+            <div class="chip"><div class="sw" style="background:#fbfcfd"></div><div class="lab"><b>surface</b><code>#fbfcfd</code></div></div>
+            <div class="chip"><div class="sw" style="background:#c4ccd6"></div><div class="lab"><b>border</b><code>#c4ccd6</code></div></div>
+            <div class="chip"><div class="sw" style="background:#131922"></div><div class="lab"><b>text-pri</b><code>#131922</code></div></div>
+            <div class="chip"><div class="sw" style="background:#46505e"></div><div class="lab"><b>text-sec</b><code>#46505e</code></div></div>
+            <div class="chip"><div class="sw" style="background:#7d899a"></div><div class="lab"><b>text-mut</b><code>#7d899a</code></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Основной акцент</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#0061d6"></div><div class="lab"><b>accent</b><code>#0061d6</code></div></div>
+            <div class="chip"><div class="sw" style="background:#2e86ff"></div><div class="lab"><b>focus ring</b><code>#2e86ff</code></div></div>
+            <span class="stag" style="background:#0061d6;color:#fff;border-color:#0061d6">Кнопка действия</span>
+            <span class="stag" style="background:transparent;color:#0061d6;border-color:#0061d6;box-shadow:0 0 0 2px #2e86ff55">фокус-кольцо</span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Светофор подразделения (высокосигнальный)</p>
+          <div class="lights">
+            <span class="light"><span class="dot" style="background:#1f9d57"></span>Зелёный — сдано <code style="color:#7d899a">#1f9d57</code></span>
+            <span class="light"><span class="dot" style="background:#e08600"></span>Жёлтый — дрейф <code style="color:#7d899a">#e08600</code></span>
+            <span class="light"><span class="dot" style="background:#d62828"></span>Красный — не сдано <code style="color:#7d899a">#d62828</code></span>
+            <span class="light"><span class="dot" style="background:#8893a3"></span>Серый — нет данных <code style="color:#7d899a">#8893a3</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Семантика конфликтов</p>
+          <div class="conflicts">
+            <div class="confbox" style="background:#fde4e4;color:#b21f1f;border:1px solid #f0b3b3"><span class="ic">⛔</span><div>422 · Жёсткая блокировка<small>Нельзя переопределить · #b21f1f / #fde4e4</small></div></div>
+            <div class="confbox" style="background:#fdf0d8;color:#9a5a00;border:1px solid #ecc98a"><span class="ic">⚠</span><div>409 · Мягкое предупреждение<small>Можно переопределить · #9a5a00 / #fdf0d8</small></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Категориальная палитра статусов (StatusType.color)</p>
+          <div class="tagrow">
+            <span class="stag" style="background:#dff5e8;color:#157a42;border-color:#a9e0c1">В строю <code>#157a42</code></span>
+            <span class="stag" style="background:#dde9fb;color:#0d56b8;border-color:#a7c6f0">На дежурстве <code>#0d56b8</code></span>
+            <span class="stag" style="background:#e3e7fb;color:#3a45b0;border-color:#b3bbf0">После дежурства <code>#3a45b0</code></span>
+            <span class="stag" style="background:#dcf0f5;color:#0f6a82;border-color:#a3d6e2">До дежурства <code>#0f6a82</code></span>
+            <span class="stag" style="background:#fbecd6;color:#9a5a00;border-color:#ecc98a">В отпуске <code>#9a5a00</code></span>
+            <span class="stag" style="background:#fce0db;color:#b23a22;border-color:#f0b3a7">Больничный <code>#b23a22</code></span>
+            <span class="stag" style="background:#f5edd6;color:#7d6310;border-color:#dccb96">Командировка <code>#7d6310</code></span>
+            <span class="stag" style="background:#f7e7d6;color:#965420;border-color:#e6c4a3">Отпуск по рапорту <code>#965420</code></span>
+            <span class="stag" style="background:#ebe3fb;color:#5a3ab0;border-color:#cbb6f0">Учёба <code>#5a3ab0</code></span>
+            <span class="stag" style="background:#dde9f5;color:#235a82;border-color:#a7c6e2">Соревнования <code>#235a82</code></span>
+            <span class="stag" style="background:#e0eef0;color:#2a5e6b;border-color:#aed4da">Конференция <code>#2a5e6b</code></span>
+            <span class="stag" style="background:#f3e0f0;color:#8a2f82;border-color:#e2aede">ГЭВ <code>#8a2f82</code></span>
+            <span class="stag" style="background:#d6f3ea;color:#0d7a5e;border-color:#9fe0cd">Прикомандирован +N <code>#0d7a5e</code></span>
+            <span class="stag" style="background:#f7e2db;color:#a3432a;border-color:#e6b3a7">Откомандирован <code>#a3432a</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Снимок: суточная ведомость + дерево светофора</p>
+          <table class="grid">
+            <thead><tr><th style="width:55%">ФИО</th><th>Статус на 19.06</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Иванов А.С. <span class="rank">м-р</span></td><td><span class="stag" style="background:#dff5e8;color:#157a42;border-color:#a9e0c1">В строю</span></td></tr>
+              <tr><td class="name">Петров В.Н. <span class="rank">к-н</span></td><td><span class="stag" style="background:#dde9fb;color:#0d56b8;border-color:#a7c6f0">На дежурстве</span></td></tr>
+              <tr><td class="name">Сидоров К.П. <span class="rank">ст. л-т</span></td><td><span class="stag" style="background:#fbecd6;color:#9a5a00;border-color:#ecc98a">В отпуске</span><span class="cellflag" style="background:#fdf0d8;color:#9a5a00">409</span></td></tr>
+              <tr><td class="name">Кузнецов Д.А. <span class="rank">л-т</span></td><td><span class="stag" style="background:#fce0db;color:#b23a22;border-color:#f0b3a7">Больничный</span><span class="cellflag" style="background:#fde4e4;color:#b21f1f">422</span></td></tr>
+              <tr><td class="name">Морозов И.В. <span class="rank">пр-к</span></td><td><span class="stag" style="background:#e0eef0;color:#2a5e6b;border-color:#aed4da">Нет данных</span></td></tr>
+            </tbody>
+          </table>
+          <div class="tree" style="margin-top:12px;border:1px solid var(--brd);border-radius:7px">
+            <div class="tree-row"><span class="dot" style="background:#1f9d57"></span><span class="tree-name">1-е управление</span><span class="tree-stat">48/48</span></div>
+            <div class="tree-row"><span class="dot" style="background:#e08600"></span><span class="tree-name">2-е управление <span class="tree-sub">3 в дрейфе</span></span><span class="badge-plus" style="background:#dde9fb;color:#0d56b8;border-color:#a7c6f0">+2</span><span class="tree-stat">31/34</span></div>
+            <div class="tree-row"><span class="dot" style="background:#d62828"></span><span class="tree-name">Дежурная часть <span class="tree-sub">сводка не подана</span></span><span class="tree-stat">0/12</span></div>
+            <div class="tree-row"><span class="dot" style="background:#8893a3"></span><span class="tree-name">Резерв <span class="tree-sub">нет данных</span></span><span class="tree-stat">—</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ---- V2 DARK ---- -->
+    <div class="panel v2 dark">
+      <div class="panel-bar"><span>Тёмный режим (пультовая)</span><span class="mode-dot">☾</span></div>
+      <div class="panel-body">
+
+        <div class="sect">
+          <p class="sect-title">Chrome / каркас</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#0a0e14"></div><div class="lab"><b>bg</b><code>#0a0e14</code></div></div>
+            <div class="chip"><div class="sw" style="background:#121922"></div><div class="lab"><b>surface</b><code>#121922</code></div></div>
+            <div class="chip"><div class="sw" style="background:#243042"></div><div class="lab"><b>border</b><code>#243042</code></div></div>
+            <div class="chip"><div class="sw" style="background:#e8edf4"></div><div class="lab"><b>text-pri</b><code>#e8edf4</code></div></div>
+            <div class="chip"><div class="sw" style="background:#9bacc0"></div><div class="lab"><b>text-sec</b><code>#9bacc0</code></div></div>
+            <div class="chip"><div class="sw" style="background:#61728a"></div><div class="lab"><b>text-mut</b><code>#61728a</code></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Основной акцент</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#4d9fff"></div><div class="lab"><b>accent</b><code>#4d9fff</code></div></div>
+            <div class="chip"><div class="sw" style="background:#7ab8ff"></div><div class="lab"><b>focus ring</b><code>#7ab8ff</code></div></div>
+            <span class="stag" style="background:#4d9fff;color:#06090e;border-color:#4d9fff">Кнопка действия</span>
+            <span class="stag" style="background:transparent;color:#7ab8ff;border-color:#4d9fff;box-shadow:0 0 0 2px #7ab8ff55">фокус-кольцо</span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Светофор подразделения (горит на тёмном)</p>
+          <div class="lights">
+            <span class="light"><span class="dot" style="background:#2ee37a"></span>Зелёный — сдано <code style="color:#61728a">#2ee37a</code></span>
+            <span class="light"><span class="dot" style="background:#ffc23d"></span>Жёлтый — дрейф <code style="color:#61728a">#ffc23d</code></span>
+            <span class="light"><span class="dot" style="background:#ff5c5c"></span>Красный — не сдано <code style="color:#61728a">#ff5c5c</code></span>
+            <span class="light"><span class="dot" style="background:#5c6b80"></span>Серый — нет данных <code style="color:#61728a">#5c6b80</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Семантика конфликтов</p>
+          <div class="conflicts">
+            <div class="confbox" style="background:#2a1212;color:#ff6b6b;border:1px solid #5e2626"><span class="ic">⛔</span><div>422 · Жёсткая блокировка<small>Нельзя переопределить · #ff6b6b / #2a1212</small></div></div>
+            <div class="confbox" style="background:#2a1f0c;color:#ffb43d;border:1px solid #5e451a"><span class="ic">⚠</span><div>409 · Мягкое предупреждение<small>Можно переопределить · #ffb43d / #2a1f0c</small></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Категориальная палитра статусов (StatusType.color)</p>
+          <div class="tagrow">
+            <span class="stag" style="background:#0f2a1c;color:#46e08a;border-color:#1f5a3a">В строю <code>#46e08a</code></span>
+            <span class="stag" style="background:#0f2238;color:#5fa8ff;border-color:#1f4470">На дежурстве <code>#5fa8ff</code></span>
+            <span class="stag" style="background:#15193a;color:#8a93ff;border-color:#2c3470">После дежурства <code>#8a93ff</code></span>
+            <span class="stag" style="background:#0c2730;color:#3fc0e0;border-color:#1c4e5e">До дежурства <code>#3fc0e0</code></span>
+            <span class="stag" style="background:#2a1f0a;color:#ffc23d;border-color:#5e451a">В отпуске <code>#ffc23d</code></span>
+            <span class="stag" style="background:#2c150f;color:#ff8a6b;border-color:#5e2c1f">Больничный <code>#ff8a6b</code></span>
+            <span class="stag" style="background:#26220a;color:#ddc23d;border-color:#54491a">Командировка <code>#ddc23d</code></span>
+            <span class="stag" style="background:#2a1d0f;color:#ffa45c;border-color:#5e3c1f">Отпуск по рапорту <code>#ffa45c</code></span>
+            <span class="stag" style="background:#1c1538;color:#a98aff;border-color:#382c70">Учёба <code>#a98aff</code></span>
+            <span class="stag" style="background:#0f1e30;color:#5f9ad6;border-color:#1f3c5e">Соревнования <code>#5f9ad6</code></span>
+            <span class="stag" style="background:#0f2226;color:#4faec0;border-color:#1f444e">Конференция <code>#4faec0</code></span>
+            <span class="stag" style="background:#2a1230;color:#e060d6;border-color:#5e245e">ГЭВ <code>#e060d6</code></span>
+            <span class="stag" style="background:#0c2a22;color:#2ee0b0;border-color:#1c5446">Прикомандирован +N <code>#2ee0b0</code></span>
+            <span class="stag" style="background:#2c170f;color:#ff7a5c;border-color:#5e2e1f">Откомандирован <code>#ff7a5c</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Снимок: суточная ведомость + дерево светофора</p>
+          <table class="grid">
+            <thead><tr><th style="width:55%">ФИО</th><th>Статус на 19.06</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Иванов А.С. <span class="rank">м-р</span></td><td><span class="stag" style="background:#0f2a1c;color:#46e08a;border-color:#1f5a3a">В строю</span></td></tr>
+              <tr><td class="name">Петров В.Н. <span class="rank">к-н</span></td><td><span class="stag" style="background:#0f2238;color:#5fa8ff;border-color:#1f4470">На дежурстве</span></td></tr>
+              <tr><td class="name">Сидоров К.П. <span class="rank">ст. л-т</span></td><td><span class="stag" style="background:#2a1f0a;color:#ffc23d;border-color:#5e451a">В отпуске</span><span class="cellflag" style="background:#2a1f0c;color:#ffb43d">409</span></td></tr>
+              <tr><td class="name">Кузнецов Д.А. <span class="rank">л-т</span></td><td><span class="stag" style="background:#2c150f;color:#ff8a6b;border-color:#5e2c1f">Больничный</span><span class="cellflag" style="background:#2a1212;color:#ff6b6b">422</span></td></tr>
+              <tr><td class="name">Морозов И.В. <span class="rank">пр-к</span></td><td><span class="stag" style="background:#0f2226;color:#4faec0;border-color:#1f444e">Нет данных</span></td></tr>
+            </tbody>
+          </table>
+          <div class="tree" style="margin-top:12px;border:1px solid var(--brd);border-radius:7px">
+            <div class="tree-row"><span class="dot" style="background:#2ee37a"></span><span class="tree-name">1-е управление</span><span class="tree-stat">48/48</span></div>
+            <div class="tree-row"><span class="dot" style="background:#ffc23d"></span><span class="tree-name">2-е управление <span class="tree-sub">3 в дрейфе</span></span><span class="badge-plus" style="background:#0f2238;color:#5fa8ff;border-color:#1f4470">+2</span><span class="tree-stat">31/34</span></div>
+            <div class="tree-row"><span class="dot" style="background:#ff5c5c"></span><span class="tree-name">Дежурная часть <span class="tree-sub">сводка не подана</span></span><span class="tree-stat">0/12</span></div>
+            <div class="tree-row"><span class="dot" style="background:#5c6b80"></span><span class="tree-name">Резерв <span class="tree-sub">нет данных</span></span><span class="tree-stat">—</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ===================== VARIATION 3 ===================== -->
+<section class="variation">
+  <h2><span class="tag" style="background:#7a5c2e">V3</span> «Документ»</h2>
+  <p class="register">Бумага и чернила, согласовано с печатью. Тёплый нейтральный, ощущение чернил на бумаге — перекликается с официальным .docx; акцент сдержан, статусы как спокойные теги.</p>
+  <div class="modes">
+
+    <!-- ---- V3 LIGHT ---- -->
+    <div class="panel v3 light">
+      <div class="panel-bar"><span>Светлый режим (бумага)</span><span class="mode-dot">☀</span></div>
+      <div class="panel-body">
+
+        <div class="sect">
+          <p class="sect-title">Chrome / каркас</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#f3efe7"></div><div class="lab"><b>bg</b><code>#f3efe7</code></div></div>
+            <div class="chip"><div class="sw" style="background:#fbf8f2"></div><div class="lab"><b>surface</b><code>#fbf8f2</code></div></div>
+            <div class="chip"><div class="sw" style="background:#ddd4c5"></div><div class="lab"><b>border</b><code>#ddd4c5</code></div></div>
+            <div class="chip"><div class="sw" style="background:#2a2620"></div><div class="lab"><b>text-pri</b><code>#2a2620</code></div></div>
+            <div class="chip"><div class="sw" style="background:#5c544a"></div><div class="lab"><b>text-sec</b><code>#5c544a</code></div></div>
+            <div class="chip"><div class="sw" style="background:#908676"></div><div class="lab"><b>text-mut</b><code>#908676</code></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Основной акцент (сепия/латунь)</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#7a5c2e"></div><div class="lab"><b>accent</b><code>#7a5c2e</code></div></div>
+            <div class="chip"><div class="sw" style="background:#9a7a44"></div><div class="lab"><b>focus ring</b><code>#9a7a44</code></div></div>
+            <span class="stag" style="background:#7a5c2e;color:#fbf8f2;border-color:#7a5c2e">Кнопка действия</span>
+            <span class="stag" style="background:transparent;color:#7a5c2e;border-color:#7a5c2e;box-shadow:0 0 0 2px #9a7a4455">фокус-кольцо</span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Светофор подразделения (приглушённый)</p>
+          <div class="lights">
+            <span class="light"><span class="dot" style="background:#41713f"></span>Зелёный — сдано <code style="color:#908676">#41713f</code></span>
+            <span class="light"><span class="dot" style="background:#9a7212"></span>Жёлтый — дрейф <code style="color:#908676">#9a7212</code></span>
+            <span class="light"><span class="dot" style="background:#a83a2e"></span>Красный — не сдано <code style="color:#908676">#a83a2e</code></span>
+            <span class="light"><span class="dot" style="background:#9b9385"></span>Серый — нет данных <code style="color:#908676">#9b9385</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Семантика конфликтов</p>
+          <div class="conflicts">
+            <div class="confbox" style="background:#f4e3df;color:#8f2d23;border:1px solid #ddb9b0"><span class="ic">⛔</span><div>422 · Жёсткая блокировка<small>Нельзя переопределить · #8f2d23 / #f4e3df</small></div></div>
+            <div class="confbox" style="background:#f5ecd8;color:#87611a;border:1px solid #dac796"><span class="ic">⚠</span><div>409 · Мягкое предупреждение<small>Можно переопределить · #87611a / #f5ecd8</small></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Категориальная палитра статусов (StatusType.color)</p>
+          <div class="tagrow">
+            <span class="stag" style="background:#e6ecdf;color:#3a5e38;border-color:#c3d2b8">В строю <code>#3a5e38</code></span>
+            <span class="stag" style="background:#e6e3d2;color:#5c4a1e;border-color:#cdc5a4">На дежурстве <code>#5c4a1e</code></span>
+            <span class="stag" style="background:#eae6da;color:#6b5e44;border-color:#d3cab6">После дежурства <code>#6b5e44</code></span>
+            <span class="stag" style="background:#e3e8e3;color:#3f5e54;border-color:#bfd0c8">До дежурства <code>#3f5e54</code></span>
+            <span class="stag" style="background:#efe6d2;color:#7a5320;border-color:#dccaa3">В отпуске <code>#7a5320</code></span>
+            <span class="stag" style="background:#f0e0da;color:#8f3a2e;border-color:#ddbbb0">Больничный <code>#8f3a2e</code></span>
+            <span class="stag" style="background:#ece6d2;color:#6b5316;border-color:#d6c9a3">Командировка <code>#6b5316</code></span>
+            <span class="stag" style="background:#eee2d4;color:#7a4f2a;border-color:#dcc4ab">Отпуск по рапорту <code>#7a4f2a</code></span>
+            <span class="stag" style="background:#e8e2ec;color:#574166;border-color:#cabcd3">Учёба <code>#574166</code></span>
+            <span class="stag" style="background:#e2e6ea;color:#3a5060;border-color:#b9c8d3">Соревнования <code>#3a5060</code></span>
+            <span class="stag" style="background:#e6e8e3;color:#4a564a;border-color:#c6cdc0">Конференция <code>#4a564a</code></span>
+            <span class="stag" style="background:#ebe2e6;color:#633f54;border-color:#d3bcc8">ГЭВ <code>#633f54</code></span>
+            <span class="stag" style="background:#e2ece4;color:#2e6650;border-color:#b8d6c6">Прикомандирован +N <code>#2e6650</code></span>
+            <span class="stag" style="background:#eee2dc;color:#79483a;border-color:#dcc0b6">Откомандирован <code>#79483a</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Снимок: суточная ведомость + дерево светофора</p>
+          <table class="grid">
+            <thead><tr><th style="width:55%">ФИО</th><th>Статус на 19.06</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Иванов А.С. <span class="rank">м-р</span></td><td><span class="stag" style="background:#e6ecdf;color:#3a5e38;border-color:#c3d2b8">В строю</span></td></tr>
+              <tr><td class="name">Петров В.Н. <span class="rank">к-н</span></td><td><span class="stag" style="background:#e6e3d2;color:#5c4a1e;border-color:#cdc5a4">На дежурстве</span></td></tr>
+              <tr><td class="name">Сидоров К.П. <span class="rank">ст. л-т</span></td><td><span class="stag" style="background:#efe6d2;color:#7a5320;border-color:#dccaa3">В отпуске</span><span class="cellflag" style="background:#f5ecd8;color:#87611a">409</span></td></tr>
+              <tr><td class="name">Кузнецов Д.А. <span class="rank">л-т</span></td><td><span class="stag" style="background:#f0e0da;color:#8f3a2e;border-color:#ddbbb0">Больничный</span><span class="cellflag" style="background:#f4e3df;color:#8f2d23">422</span></td></tr>
+              <tr><td class="name">Морозов И.В. <span class="rank">пр-к</span></td><td><span class="stag" style="background:#e6e8e3;color:#4a564a;border-color:#c6cdc0">Нет данных</span></td></tr>
+            </tbody>
+          </table>
+          <div class="tree" style="margin-top:12px;border:1px solid var(--brd);border-radius:7px">
+            <div class="tree-row"><span class="dot" style="background:#41713f"></span><span class="tree-name">1-е управление</span><span class="tree-stat">48/48</span></div>
+            <div class="tree-row"><span class="dot" style="background:#9a7212"></span><span class="tree-name">2-е управление <span class="tree-sub">3 в дрейфе</span></span><span class="badge-plus" style="background:#efe6d2;color:#7a5320;border-color:#dccaa3">+2</span><span class="tree-stat">31/34</span></div>
+            <div class="tree-row"><span class="dot" style="background:#a83a2e"></span><span class="tree-name">Дежурная часть <span class="tree-sub">сводка не подана</span></span><span class="tree-stat">0/12</span></div>
+            <div class="tree-row"><span class="dot" style="background:#9b9385"></span><span class="tree-name">Резерв <span class="tree-sub">нет данных</span></span><span class="tree-stat">—</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ---- V3 DARK ---- -->
+    <div class="panel v3 dark">
+      <div class="panel-bar"><span>Тёмный режим (ночное чтение)</span><span class="mode-dot">☾</span></div>
+      <div class="panel-body">
+
+        <div class="sect">
+          <p class="sect-title">Chrome / каркас</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#1a1712"></div><div class="lab"><b>bg</b><code>#1a1712</code></div></div>
+            <div class="chip"><div class="sw" style="background:#221d16"></div><div class="lab"><b>surface</b><code>#221d16</code></div></div>
+            <div class="chip"><div class="sw" style="background:#3a3328"></div><div class="lab"><b>border</b><code>#3a3328</code></div></div>
+            <div class="chip"><div class="sw" style="background:#ece4d6"></div><div class="lab"><b>text-pri</b><code>#ece4d6</code></div></div>
+            <div class="chip"><div class="sw" style="background:#b3a892"></div><div class="lab"><b>text-sec</b><code>#b3a892</code></div></div>
+            <div class="chip"><div class="sw" style="background:#8a8073"></div><div class="lab"><b>text-mut</b><code>#8a8073</code></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Основной акцент (латунь)</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#c79a5a"></div><div class="lab"><b>accent</b><code>#c79a5a</code></div></div>
+            <div class="chip"><div class="sw" style="background:#d9b277"></div><div class="lab"><b>focus ring</b><code>#d9b277</code></div></div>
+            <span class="stag" style="background:#c79a5a;color:#1a1712;border-color:#c79a5a">Кнопка действия</span>
+            <span class="stag" style="background:transparent;color:#d9b277;border-color:#c79a5a;box-shadow:0 0 0 2px #d9b27755">фокус-кольцо</span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Светофор подразделения (приглушённый)</p>
+          <div class="lights">
+            <span class="light"><span class="dot" style="background:#6fae64"></span>Зелёный — сдано <code style="color:#8a8073">#6fae64</code></span>
+            <span class="light"><span class="dot" style="background:#cda23a"></span>Жёлтый — дрейф <code style="color:#8a8073">#cda23a</code></span>
+            <span class="light"><span class="dot" style="background:#d7766a"></span>Красный — не сдано <code style="color:#8a8073">#d7766a</code></span>
+            <span class="light"><span class="dot" style="background:#8d8472"></span>Серый — нет данных <code style="color:#8a8073">#8d8472</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Семантика конфликтов</p>
+          <div class="conflicts">
+            <div class="confbox" style="background:#2c1a16;color:#df8270;border:1px solid #55322a"><span class="ic">⛔</span><div>422 · Жёсткая блокировка<small>Нельзя переопределить · #df8270 / #2c1a16</small></div></div>
+            <div class="confbox" style="background:#2a2110;color:#d2a64a;border:1px solid #524222"><span class="ic">⚠</span><div>409 · Мягкое предупреждение<small>Можно переопределить · #d2a64a / #2a2110</small></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Категориальная палитра статусов (StatusType.color)</p>
+          <div class="tagrow">
+            <span class="stag" style="background:#1c261a;color:#8cc480;border-color:#36492f">В строю <code>#8cc480</code></span>
+            <span class="stag" style="background:#26200f;color:#d9b86a;border-color:#4a3e22">На дежурстве <code>#d9b86a</code></span>
+            <span class="stag" style="background:#26221a;color:#c2b596;border-color:#473f30">После дежурства <code>#c2b596</code></span>
+            <span class="stag" style="background:#1a2622;color:#8cc4b0;border-color:#2f4942">До дежурства <code>#8cc4b0</code></span>
+            <span class="stag" style="background:#2a2110;color:#d6a85c;border-color:#524222">В отпуске <code>#d6a85c</code></span>
+            <span class="stag" style="background:#2a1a14;color:#df9080;border-color:#52322a">Больничный <code>#df9080</code></span>
+            <span class="stag" style="background:#26230f;color:#cdba6a;border-color:#494222">Командировка <code>#cdba6a</code></span>
+            <span class="stag" style="background:#2a1f14;color:#d6a070;border-color:#523c2a">Отпуск по рапорту <code>#d6a070</code></span>
+            <span class="stag" style="background:#221a26;color:#b094c4;border-color:#3f3049">Учёба <code>#b094c4</code></span>
+            <span class="stag" style="background:#1a2026;color:#8aa8c2;border-color:#2f3e49">Соревнования <code>#8aa8c2</code></span>
+            <span class="stag" style="background:#1f221c;color:#a8b59a;border-color:#3a4234">Конференция <code>#a8b59a</code></span>
+            <span class="stag" style="background:#261a22;color:#c490b0;border-color:#492f3f">ГЭВ <code>#c490b0</code></span>
+            <span class="stag" style="background:#16261f;color:#6fc4a4;border-color:#2c493e">Прикомандирован +N <code>#6fc4a4</code></span>
+            <span class="stag" style="background:#2a1c16;color:#d6907a;border-color:#52362a">Откомандирован <code>#d6907a</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Снимок: суточная ведомость + дерево светофора</p>
+          <table class="grid">
+            <thead><tr><th style="width:55%">ФИО</th><th>Статус на 19.06</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Иванов А.С. <span class="rank">м-р</span></td><td><span class="stag" style="background:#1c261a;color:#8cc480;border-color:#36492f">В строю</span></td></tr>
+              <tr><td class="name">Петров В.Н. <span class="rank">к-н</span></td><td><span class="stag" style="background:#26200f;color:#d9b86a;border-color:#4a3e22">На дежурстве</span></td></tr>
+              <tr><td class="name">Сидоров К.П. <span class="rank">ст. л-т</span></td><td><span class="stag" style="background:#2a2110;color:#d6a85c;border-color:#524222">В отпуске</span><span class="cellflag" style="background:#2a2110;color:#d2a64a">409</span></td></tr>
+              <tr><td class="name">Кузнецов Д.А. <span class="rank">л-т</span></td><td><span class="stag" style="background:#2a1a14;color:#df9080;border-color:#52322a">Больничный</span><span class="cellflag" style="background:#2c1a16;color:#df8270">422</span></td></tr>
+              <tr><td class="name">Морозов И.В. <span class="rank">пр-к</span></td><td><span class="stag" style="background:#1f221c;color:#a8b59a;border-color:#3a4234">Нет данных</span></td></tr>
+            </tbody>
+          </table>
+          <div class="tree" style="margin-top:12px;border:1px solid var(--brd);border-radius:7px">
+            <div class="tree-row"><span class="dot" style="background:#6fae64"></span><span class="tree-name">1-е управление</span><span class="tree-stat">48/48</span></div>
+            <div class="tree-row"><span class="dot" style="background:#cda23a"></span><span class="tree-name">2-е управление <span class="tree-sub">3 в дрейфе</span></span><span class="badge-plus" style="background:#26200f;color:#d9b86a;border-color:#4a3e22">+2</span><span class="tree-stat">31/34</span></div>
+            <div class="tree-row"><span class="dot" style="background:#d7766a"></span><span class="tree-name">Дежурная часть <span class="tree-sub">сводка не подана</span></span><span class="tree-stat">0/12</span></div>
+            <div class="tree-row"><span class="dot" style="background:#8d8472"></span><span class="tree-name">Резерв <span class="tree-sub">нет данных</span></span><span class="tree-stat">—</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ===================== VARIATION 4 ===================== -->
+<section class="variation" style="border-bottom:none">
+  <h2><span class="tag" style="background:#228be6">V4</span> «Mantine default+»</h2>
+  <p class="register">Прагматичный, минимальный риск. Почти штатный Mantine: синий blue.6 + серая шкала, минимум отклонений — быстрее всего до прода.</p>
+  <div class="modes">
+
+    <!-- ---- V4 LIGHT ---- -->
+    <div class="panel v4 light">
+      <div class="panel-bar"><span>Светлый режим</span><span class="mode-dot">☀</span></div>
+      <div class="panel-body">
+
+        <div class="sect">
+          <p class="sect-title">Chrome / каркас (Mantine gray)</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#f8f9fa"></div><div class="lab"><b>bg gray.0</b><code>#f8f9fa</code></div></div>
+            <div class="chip"><div class="sw" style="background:#ffffff"></div><div class="lab"><b>surface</b><code>#ffffff</code></div></div>
+            <div class="chip"><div class="sw" style="background:#dee2e6"></div><div class="lab"><b>border g.3</b><code>#dee2e6</code></div></div>
+            <div class="chip"><div class="sw" style="background:#212529"></div><div class="lab"><b>text g.9</b><code>#212529</code></div></div>
+            <div class="chip"><div class="sw" style="background:#495057"></div><div class="lab"><b>text g.7</b><code>#495057</code></div></div>
+            <div class="chip"><div class="sw" style="background:#868e96"></div><div class="lab"><b>text g.6</b><code>#868e96</code></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Основной акцент (Mantine blue)</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#228be6"></div><div class="lab"><b>blue.6</b><code>#228be6</code></div></div>
+            <div class="chip"><div class="sw" style="background:#339af0"></div><div class="lab"><b>focus b.5</b><code>#339af0</code></div></div>
+            <span class="stag" style="background:#228be6;color:#fff;border-color:#228be6">Кнопка действия</span>
+            <span class="stag" style="background:transparent;color:#228be6;border-color:#228be6;box-shadow:0 0 0 2px #339af055">фокус-кольцо</span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Светофор подразделения</p>
+          <div class="lights">
+            <span class="light"><span class="dot" style="background:#2f9e44"></span>Зелёный — сдано <code style="color:#868e96">#2f9e44</code></span>
+            <span class="light"><span class="dot" style="background:#f08c00"></span>Жёлтый — дрейф <code style="color:#868e96">#f08c00</code></span>
+            <span class="light"><span class="dot" style="background:#e03131"></span>Красный — не сдано <code style="color:#868e96">#e03131</code></span>
+            <span class="light"><span class="dot" style="background:#adb5bd"></span>Серый — нет данных <code style="color:#868e96">#adb5bd</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Семантика конфликтов</p>
+          <div class="conflicts">
+            <div class="confbox" style="background:#fff5f5;color:#c92a2a;border:1px solid #ffc9c9"><span class="ic">⛔</span><div>422 · Жёсткая блокировка<small>red.9/red.0 · #c92a2a / #fff5f5</small></div></div>
+            <div class="confbox" style="background:#fff9db;color:#e67700;border:1px solid #ffec99"><span class="ic">⚠</span><div>409 · Мягкое предупреждение<small>yellow.9/yellow.0 · #e67700 / #fff9db</small></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Категориальная палитра статусов (StatusType.color, Mantine .light варианты)</p>
+          <div class="tagrow">
+            <span class="stag" style="background:#ebfbee;color:#2b8a3e;border-color:#b2f2bb">В строю <code>#2b8a3e</code></span>
+            <span class="stag" style="background:#e7f5ff;color:#1971c2;border-color:#a5d8ff">На дежурстве <code>#1971c2</code></span>
+            <span class="stag" style="background:#edf2ff;color:#3b5bdb;border-color:#bac8ff">После дежурства <code>#3b5bdb</code></span>
+            <span class="stag" style="background:#e3fafc;color:#0c8599;border-color:#99e9f2">До дежурства <code>#0c8599</code></span>
+            <span class="stag" style="background:#fff4e6;color:#e8590c;border-color:#ffd8a8">В отпуске <code>#e8590c</code></span>
+            <span class="stag" style="background:#fff0f6;color:#c2255c;border-color:#fcc2d7">Больничный <code>#c2255c</code></span>
+            <span class="stag" style="background:#fff9db;color:#9c6a00;border-color:#ffec99">Командировка <code>#9c6a00</code></span>
+            <span class="stag" style="background:#fff4e6;color:#d9480f;border-color:#ffd8a8">Отпуск по рапорту <code>#d9480f</code></span>
+            <span class="stag" style="background:#f3f0ff;color:#6741d9;border-color:#d0bfff">Учёба <code>#6741d9</code></span>
+            <span class="stag" style="background:#e7f5ff;color:#1864ab;border-color:#a5d8ff">Соревнования <code>#1864ab</code></span>
+            <span class="stag" style="background:#f1f3f5;color:#495057;border-color:#dee2e6">Конференция <code>#495057</code></span>
+            <span class="stag" style="background:#f8f0fc;color:#9c36b5;border-color:#eebefa">ГЭВ <code>#9c36b5</code></span>
+            <span class="stag" style="background:#e6fcf5;color:#087f5b;border-color:#96f2d7">Прикомандирован +N <code>#087f5b</code></span>
+            <span class="stag" style="background:#fff0f6;color:#a61e4d;border-color:#fcc2d7">Откомандирован <code>#a61e4d</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Снимок: суточная ведомость + дерево светофора</p>
+          <table class="grid">
+            <thead><tr><th style="width:55%">ФИО</th><th>Статус на 19.06</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Иванов А.С. <span class="rank">м-р</span></td><td><span class="stag" style="background:#ebfbee;color:#2b8a3e;border-color:#b2f2bb">В строю</span></td></tr>
+              <tr><td class="name">Петров В.Н. <span class="rank">к-н</span></td><td><span class="stag" style="background:#e7f5ff;color:#1971c2;border-color:#a5d8ff">На дежурстве</span></td></tr>
+              <tr><td class="name">Сидоров К.П. <span class="rank">ст. л-т</span></td><td><span class="stag" style="background:#fff4e6;color:#e8590c;border-color:#ffd8a8">В отпуске</span><span class="cellflag" style="background:#fff9db;color:#e67700">409</span></td></tr>
+              <tr><td class="name">Кузнецов Д.А. <span class="rank">л-т</span></td><td><span class="stag" style="background:#fff0f6;color:#c2255c;border-color:#fcc2d7">Больничный</span><span class="cellflag" style="background:#fff5f5;color:#c92a2a">422</span></td></tr>
+              <tr><td class="name">Морозов И.В. <span class="rank">пр-к</span></td><td><span class="stag" style="background:#f1f3f5;color:#495057;border-color:#dee2e6">Нет данных</span></td></tr>
+            </tbody>
+          </table>
+          <div class="tree" style="margin-top:12px;border:1px solid var(--brd);border-radius:7px">
+            <div class="tree-row"><span class="dot" style="background:#2f9e44"></span><span class="tree-name">1-е управление</span><span class="tree-stat">48/48</span></div>
+            <div class="tree-row"><span class="dot" style="background:#f08c00"></span><span class="tree-name">2-е управление <span class="tree-sub">3 в дрейфе</span></span><span class="badge-plus" style="background:#e7f5ff;color:#1971c2;border-color:#a5d8ff">+2</span><span class="tree-stat">31/34</span></div>
+            <div class="tree-row"><span class="dot" style="background:#e03131"></span><span class="tree-name">Дежурная часть <span class="tree-sub">сводка не подана</span></span><span class="tree-stat">0/12</span></div>
+            <div class="tree-row"><span class="dot" style="background:#adb5bd"></span><span class="tree-name">Резерв <span class="tree-sub">нет данных</span></span><span class="tree-stat">—</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ---- V4 DARK ---- -->
+    <div class="panel v4 dark">
+      <div class="panel-bar"><span>Тёмный режим (Mantine dark)</span><span class="mode-dot">☾</span></div>
+      <div class="panel-body">
+
+        <div class="sect">
+          <p class="sect-title">Chrome / каркас (Mantine dark)</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#1a1b1e"></div><div class="lab"><b>bg dark.7</b><code>#1a1b1e</code></div></div>
+            <div class="chip"><div class="sw" style="background:#25262b"></div><div class="lab"><b>surf d.6</b><code>#25262b</code></div></div>
+            <div class="chip"><div class="sw" style="background:#373a40"></div><div class="lab"><b>border d.4</b><code>#373a40</code></div></div>
+            <div class="chip"><div class="sw" style="background:#c1c2c5"></div><div class="lab"><b>text d.0</b><code>#c1c2c5</code></div></div>
+            <div class="chip"><div class="sw" style="background:#909296"></div><div class="lab"><b>text d.2</b><code>#909296</code></div></div>
+            <div class="chip"><div class="sw" style="background:#5c5f66"></div><div class="lab"><b>text d.3</b><code>#5c5f66</code></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Основной акцент (Mantine blue dark)</p>
+          <div class="chips">
+            <div class="chip"><div class="sw" style="background:#4dabf7"></div><div class="lab"><b>blue.4</b><code>#4dabf7</code></div></div>
+            <div class="chip"><div class="sw" style="background:#74c0fc"></div><div class="lab"><b>focus b.3</b><code>#74c0fc</code></div></div>
+            <span class="stag" style="background:#4dabf7;color:#0b0c0e;border-color:#4dabf7">Кнопка действия</span>
+            <span class="stag" style="background:transparent;color:#74c0fc;border-color:#4dabf7;box-shadow:0 0 0 2px #74c0fc55">фокус-кольцо</span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Светофор подразделения</p>
+          <div class="lights">
+            <span class="light"><span class="dot" style="background:#51cf66"></span>Зелёный — сдано <code style="color:#5c5f66">#51cf66</code></span>
+            <span class="light"><span class="dot" style="background:#ffd43b"></span>Жёлтый — дрейф <code style="color:#5c5f66">#ffd43b</code></span>
+            <span class="light"><span class="dot" style="background:#ff6b6b"></span>Красный — не сдано <code style="color:#5c5f66">#ff6b6b</code></span>
+            <span class="light"><span class="dot" style="background:#5c5f66"></span>Серый — нет данных <code style="color:#5c5f66">#5c5f66</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Семантика конфликтов</p>
+          <div class="conflicts">
+            <div class="confbox" style="background:#2a1414;color:#ff8787;border:1px solid #5a2a2a"><span class="ic">⛔</span><div>422 · Жёсткая блокировка<small>red.3 · #ff8787 / #2a1414</small></div></div>
+            <div class="confbox" style="background:#2a2410;color:#ffd43b;border:1px solid #56491a"><span class="ic">⚠</span><div>409 · Мягкое предупреждение<small>yellow.4 · #ffd43b / #2a2410</small></div></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Категориальная палитра статусов (StatusType.color, Mantine dark .light варианты)</p>
+          <div class="tagrow">
+            <span class="stag" style="background:#0d2818;color:#69db7c;border-color:#1f5a35">В строю <code>#69db7c</code></span>
+            <span class="stag" style="background:#0d2233;color:#74c0fc;border-color:#1f4a6b">На дежурстве <code>#74c0fc</code></span>
+            <span class="stag" style="background:#161a33;color:#91a7ff;border-color:#2c356b">После дежурства <code>#91a7ff</code></span>
+            <span class="stag" style="background:#0c2630;color:#3bc9db;border-color:#1c4e5e">До дежурства <code>#3bc9db</code></span>
+            <span class="stag" style="background:#2e1a0c;color:#ffa94d;border-color:#5e361c">В отпуске <code>#ffa94d</code></span>
+            <span class="stag" style="background:#2e0f1c;color:#f06595;border-color:#5e1f38">Больничный <code>#f06595</code></span>
+            <span class="stag" style="background:#2a2410;color:#ffd43b;border-color:#56491a">Командировка <code>#ffd43b</code></span>
+            <span class="stag" style="background:#2e1808;color:#ff922b;border-color:#5e3216">Отпуск по рапорту <code>#ff922b</code></span>
+            <span class="stag" style="background:#1c1633;color:#9775fa;border-color:#382c6b">Учёба <code>#9775fa</code></span>
+            <span class="stag" style="background:#0d1e30;color:#4dabf7;border-color:#1f3e6b">Соревнования <code>#4dabf7</code></span>
+            <span class="stag" style="background:#222428;color:#adb5bd;border-color:#373a40">Конференция <code>#adb5bd</code></span>
+            <span class="stag" style="background:#26102e;color:#da77f2;border-color:#4e1f5e">ГЭВ <code>#da77f2</code></span>
+            <span class="stag" style="background:#0c2a22;color:#38d9a9;border-color:#1c5446">Прикомандирован +N <code>#38d9a9</code></span>
+            <span class="stag" style="background:#2e0f1f;color:#f783ac;border-color:#5e1f3e">Откомандирован <code>#f783ac</code></span>
+          </div>
+        </div>
+
+        <div class="sect">
+          <p class="sect-title">Снимок: суточная ведомость + дерево светофора</p>
+          <table class="grid">
+            <thead><tr><th style="width:55%">ФИО</th><th>Статус на 19.06</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Иванов А.С. <span class="rank">м-р</span></td><td><span class="stag" style="background:#0d2818;color:#69db7c;border-color:#1f5a35">В строю</span></td></tr>
+              <tr><td class="name">Петров В.Н. <span class="rank">к-н</span></td><td><span class="stag" style="background:#0d2233;color:#74c0fc;border-color:#1f4a6b">На дежурстве</span></td></tr>
+              <tr><td class="name">Сидоров К.П. <span class="rank">ст. л-т</span></td><td><span class="stag" style="background:#2e1a0c;color:#ffa94d;border-color:#5e361c">В отпуске</span><span class="cellflag" style="background:#2a2410;color:#ffd43b">409</span></td></tr>
+              <tr><td class="name">Кузнецов Д.А. <span class="rank">л-т</span></td><td><span class="stag" style="background:#2e0f1c;color:#f06595;border-color:#5e1f38">Больничный</span><span class="cellflag" style="background:#2a1414;color:#ff8787">422</span></td></tr>
+              <tr><td class="name">Морозов И.В. <span class="rank">пр-к</span></td><td><span class="stag" style="background:#222428;color:#adb5bd;border-color:#373a40">Нет данных</span></td></tr>
+            </tbody>
+          </table>
+          <div class="tree" style="margin-top:12px;border:1px solid var(--brd);border-radius:7px">
+            <div class="tree-row"><span class="dot" style="background:#51cf66"></span><span class="tree-name">1-е управление</span><span class="tree-stat">48/48</span></div>
+            <div class="tree-row"><span class="dot" style="background:#ffd43b"></span><span class="tree-name">2-е управление <span class="tree-sub">3 в дрейфе</span></span><span class="badge-plus" style="background:#0d2233;color:#74c0fc;border-color:#1f4a6b">+2</span><span class="tree-stat">31/34</span></div>
+            <div class="tree-row"><span class="dot" style="background:#ff6b6b"></span><span class="tree-name">Дежурная часть <span class="tree-sub">сводка не подана</span></span><span class="tree-stat">0/12</span></div>
+            <div class="tree-row"><span class="dot" style="background:#5c5f66"></span><span class="tree-name">Резерв <span class="tree-sub">нет данных</span></span><span class="tree-stat">—</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<div style="padding:16px 28px;background:#0f1115;color:#9aa3b2;font-size:11px">
+  Исследование визуальной идентичности · PersonnelStatus · 2026-06-19 · Mantine v7 / size="sm". Hex-значения вынесены в комментарии <code>&lt;style&gt;</code> по каждой вариации для прямого переноса в тему.
+</div>
+
+</body>
+</html>

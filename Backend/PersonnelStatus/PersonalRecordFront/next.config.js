@@ -1,0 +1,99 @@
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: "standalone",
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+  // Django требует trailing slash в конце URL
+  trailingSlash: true,
+  async rewrites() {
+    // URL бэкенда из переменных окружения
+    // - В продакшене: BACKEND_URL=http://10.15.3.187:8100 (из docker-compose)
+    // - В dev: BACKEND_URL из .env.local
+    const backendUrl =
+      process.env.BACKEND_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      "http://localhost:8100";
+
+    console.log(
+      "🔧 [Next.js Rewrites] Настройка прокси для бэкенда:",
+      backendUrl,
+      "(NODE_ENV:",
+      process.env.NODE_ENV,
+      ")"
+    );
+
+    return [
+      // Проксируем все /api/* запросы на бэкенд, КРОМЕ /api/auth/* (NextAuth роуты)
+      {
+        source: "/api/staff_unit/:path*",
+        destination: `${backendUrl}/api/staff_unit/:path*`,
+      },
+      {
+        source: "/api/dictionaries/:path*",
+        destination: `${backendUrl}/api/dictionaries/:path*`,
+      },
+      {
+        source: "/api/statuses/:path*",
+        destination: `${backendUrl}/api/statuses/:path*`,
+      },
+      {
+        source: "/api/employees/:path*",
+        destination: `${backendUrl}/api/employees/:path*`,
+      },
+      {
+        source: "/api/departments/:path*",
+        destination: `${backendUrl}/api/departments/:path*`,
+      },
+      {
+        source: "/api/divisions/:path*",
+        destination: `${backendUrl}/api/divisions/:path*`,
+      },
+      {
+        source: "/api/secondments/:path*",
+        destination: `${backendUrl}/api/secondments/:path*`,
+      },
+      {
+        source: "/api/org-chart/:path*",
+        destination: `${backendUrl}/api/org-chart/:path*`,
+      },
+      {
+        source: "/api/user/:path*",
+        destination: `${backendUrl}/api/user/:path*`,
+      },
+      {
+        source: "/api/notifications/:path*",
+        destination: `${backendUrl}/api/notifications/:path*`,
+      },
+      {
+        source: "/api/dashboard/:path*",
+        destination: `${backendUrl}/api/dashboard/:path*`,
+      },
+      {
+        source: "/api/reports/:path*",
+        destination: `${backendUrl}/api/reports/:path*`,
+      },
+      {
+        source: "/api/feedback/:path*",
+        destination: `${backendUrl}/api/feedback/:path*`,
+      },
+      {
+        source: "/api/token",
+        destination: `${backendUrl}/api/token/`,
+      },
+      {
+        source: "/api/token/",
+        destination: `${backendUrl}/api/token/`,
+      },
+      {
+        source: "/api/token/:path*",
+        destination: `${backendUrl}/api/token/:path*`,
+      },
+    ];
+  },
+};
+
+module.exports = nextConfig;

@@ -44,7 +44,7 @@
 # - Таймбокс E1 (допущение A10): 3 недели, зафиксирован на sprint planning 2026-06-11 (дедлайн: 2026-07-02)
 
 generated: 2026-06-11
-last_updated: 2026-06-18
+last_updated: 2026-06-21
 project: VAPS
 # last dev activity: story 1.11 — dev-story (bmad-dev-story, 2026-06-18, Opus 4.8): спайк выгрузки донора. Гейт A1 → путь A (Bratan). Построены источники spikes/1.11-donor-export/ (EXPORT-RECIPE + profile_export.py stdlib + EXPORT-REPORT + README + .gitignore allowlist). Аппарат доказан на donor_slice.json (объём 3/2/2/6/6/12, ИИН-дубль pk1/pk7 …0101×2, NULL-ИИН pk4, осиротевший статус pk110, вакансия pk5; PII маскирован). Регрессия нулевая, PII-allowlist подтверждён (git add dry-run = 5 источников, дамп игнорируется). Task 3 (реальная прод-выгрузка, заполнить EXPORT-REPORT р.2 VERIFIED-on-prod) и коммит источников — ЗА BRATAN. Task 4 N/A (путь A); fallback durable в рецепте. Status → review (auto-done осознанно переопределён, прецедент 1.9/1.10; артефакты не закоммичены агентом). Предыдущее: 1.10 review (AC-2 target-числа PENDING, Task 3 за Bratan), 1.9 review (A5 открыт), 1.8 done.
 # prev dev activity: story 1.10 — code-review пр.1 (bmad-code-review, 2026-06-18, scoped diff по путям 1.10; 3 слоя Opus 4.8): 2 decision→patch + 3 patch применены, 2 defer, ~10 dismiss. D1 (детектор «1 коммит/keystroke» был слеп к scrollToIndex-каскаду — Blind+Edge независимо сошлись) → патч аппарата (max/last в recordCommitTick вне latency-гарда + scroll-эффект в useLayoutEffect). D2 (закоммиченный BUDGET говорил «путь B / A9 открыт» против Tasks/Change Log «путь A») → синхронизирован к пути A + узаконена 3-маркерная таксономия в AC-3. P1 (методология BUDGET: viewport-DOM/метод p95/авто-фокус), P2 (троттлинг HUD), P3 (Profiler-комментарии). Верификация: tsc --noEmit + vite build зелёные (69.60КБ gzip, без регрессии); перепрогон headless-смоука в агенте не запустился (Chrome убит лимитом песочницы) — каскад финально подтверждается на исправленном аппарате при целевом прогоне Bratan. Status ОСТАЁТСЯ review (AC-2 target-числа PENDING, Task 3 за Bratan; авто-done осознанно переопределён). Артефакты НЕ закоммичены (за Bratan). Предыдущее: 1.9 review (A5 открыт), 1.8 done.
@@ -63,16 +63,16 @@ development_status:
   1-6-минимальный-импорт-среза-донора: done
   1-7-derived-статус-и-расчёт-расхода: done
   1-8-read-only-вывод-расхода-и-дифф-с-донором: done
-  1-9-спайк-контур-проба: review
-  1-10-спайк-перф-грид-на-целевой-машине: review
+  1-9-спайк-контур-проба: done
+  1-10-спайк-перф-грид-на-целевой-машине: done
   1-11-спайк-выгрузка-данных-донора: review
-  1-12-инвентаризация-артефакт: backlog
+  1-12-инвентаризация-артефакт: review
   epic-1-retrospective: optional
 
   # Epic 2: Кадровое ядро, которое попадает в расход
-  epic-2: backlog
-  2-1-перенос-rbac-во-вложенный-app-operations-rbac: backlog
-  2-2-справочник-типов-статусов-с-seed: backlog
+  epic-2: in-progress
+  2-1-перенос-rbac-во-вложенный-app-operations-rbac: review
+  2-2-справочник-типов-статусов-с-seed: review
   2-3-настройки-контроля-сдачи: backlog
   2-4-списочный-состав-на-дату: backlog
   2-5-сервис-увольнения: backlog

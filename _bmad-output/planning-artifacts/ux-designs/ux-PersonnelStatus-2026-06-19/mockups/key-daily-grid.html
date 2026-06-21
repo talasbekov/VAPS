@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VAPS · Расход дня — слепой ввод (донор card-язык)</title>
+<style>
+/*
+  SPINE COVERAGE — which spec sections govern this screen (post-РАЗВОРОТ на донор-эталон):
+  · DESIGN.md › Brand & Style / Layout & Spacing / Elevation / Shapes: донор card-язык —
+    скруглённые карточки radius="md" (~8px) с мягкими тенями shadow="sm/xs", воздух между блоками,
+    page-header (крупный H1 + цветная иконка + приглушённый подзаголовок + правые экшены).
+  · DESIGN.md › Components: page-header, button-primary/secondary, status-cell-tint/solid/neutral,
+    status-badge-plus-n, svetofor-dot, grid-focus, conflict-dialog-hard/soft, iin-mask.
+  · DESIGN.md › Colors: chrome (#f8f9fa/#fff/#dee2e6), primary #228be6, светофор (green/orange/red/grey),
+    conflict hard (#c92a2a на #fff5f5) / soft (#e67700 на #fff9db), категориальная палитра статусов
+    (neutral / tint / solid 422 / +N / muted).
+  · EXPERIENCE.md › Component Patterns: «Грид слепого ввода (экран №1)», «Status cell», «ConflictDialog (общий)».
+  · EXPERIENCE.md › Interaction Primitives: клавиатура без мыши (Enter↓/Tab→/Esc/первая буква type-ahead),
+    inclusive date-range «по … включ.», bulk select, оптимистичный автосейв; счётчик «изменено N из M».
+  · EXPERIENCE.md › State Patterns: 409 soft (overridable, маркер) · 422 hard (non-overridable, заливка) · Focus.
+  · .decision-log.md › Voice & Tone (тёплый, но рабочие строки точны): канон-строки
+    «Сдать день» · «Применить статус» · «Подтвердить оверрайд» · «Изменено 4 из 40» ·
+    «Конфликт: отдых после дежурства. Укажите причину, чтобы продолжить.» ·
+    «Нельзя: больничный пересекается с нарядом. Статус не сохранён.»
+  Spines win on any conflict. Tokens ниже — литеральные значения DESIGN.md (light mode).
+  ── ЗАМЕТКА: донор card-язык (дружелюбная оболочка) — рабочая ТАБЛИЦА плотная внутри карточки. ──
+*/
+
+:root{
+  /* chrome / каркас */
+  --bg:#f8f9fa; --surface:#fff; --border:#dee2e6;
+  --text:#212529; --text-2:#495057; --text-muted:#868e96;
+  /* primary / action */
+  --primary:#228be6; --focus-ring:#339af0;
+  /* светофор листа */
+  --svet-green:#2f9e44; --svet-orange:#f08c00; --svet-red:#e03131; --svet-grey:#adb5bd;
+  /* conflicts */
+  --hard-fg:#c92a2a; --hard-bg:#fff5f5; --soft-fg:#e67700; --soft-bg:#fff9db;
+  /* status palette */
+  --st-in-service:#495057;
+  --st-duty:#1971c2; --st-duty-bg:#e7f5ff;
+  --st-rest:#3b5bdb; --st-rest-bg:#edf2ff;
+  --st-attached:#66a80f; --st-attached-bg:#f4fce3;
+  --st-detached:#868e96;
+  /* hard-block solid (422) */
+  --st-vacation:#e8590c; --st-sick:#e03131;
+  /* card language */
+  --radius:8px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+  --shadow-pop:0 10px 30px rgba(0,0,0,.18), 0 4px 10px rgba(0,0,0,.10);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
+  background:#e9ecef; color:var(--text); font-size:14px; line-height:1.45;
+}
+
+/* ── browser frame ─────────────────────────────────────────── */
+.browser{max-width:1280px;margin:24px auto;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.16)}
+.chrome-bar{display:flex;align-items:center;gap:8px;background:#f1f3f5;border-bottom:1px solid var(--border);padding:9px 14px}
+.dot{width:11px;height:11px;border-radius:50%}
+.dot.r{background:#ff5f57}.dot.y{background:#febc2e}.dot.g{background:#28c840}
+.url{flex:1;margin-left:10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;
+  padding:5px 12px;font-size:12px;color:var(--text-muted)}
+
+/* ── app shell: sidebar + main ─────────────────────────────── */
+.app{display:flex;min-height:760px;background:var(--bg)}
+.sidebar{width:228px;flex:0 0 228px;background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;padding:16px 12px}
+.brand{display:flex;align-items:center;gap:9px;padding:6px 8px 16px;font-weight:700;font-size:15px;color:var(--text)}
+.brand .logo{width:30px;height:30px;border-radius:8px;background:var(--primary);color:#fff;display:flex;
+  align-items:center;justify-content:center;font-size:15px}
+.nav{display:flex;flex-direction:column;gap:3px;margin-top:4px}
+.nav a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:var(--text-2);
+  text-decoration:none;font-size:13.5px}
+.nav a:hover{background:#f1f3f5}
+.nav a.active{background:#e7f5ff;color:var(--primary);font-weight:600}
+.nav a .ic{width:18px;text-align:center;opacity:.9}
+.nav .spacer{flex:1}
+.nav .badge-n{margin-left:auto;background:var(--svet-red);color:#fff;font-size:10px;font-weight:700;
+  border-radius:9px;padding:1px 6px}
+.ver{padding:14px 12px 4px;color:var(--text-muted);font-size:11px;border-top:1px solid var(--border);margin-top:10px}
+
+.main{flex:1;padding:20px 24px 28px;overflow:auto}
+
+/* ── page-header card (донор) ──────────────────────────────── */
+.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-sm);padding:18px 22px;margin-bottom:16px}
+.ph-left{display:flex;gap:13px;align-items:flex-start}
+.ph-icon{width:42px;height:42px;border-radius:10px;background:#e7f5ff;color:var(--primary);
+  display:flex;align-items:center;justify-content:center;font-size:21px;flex:0 0 42px}
+.ph-h1{margin:0;font-size:25px;font-weight:700;color:var(--text);letter-spacing:-.3px}
+.ph-sub{margin:3px 0 0;color:var(--text-muted);font-size:13px}
+.ph-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+
+.stepper{display:flex;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;overflow:hidden}
+.stepper button{border:0;background:transparent;padding:7px 10px;cursor:pointer;color:var(--text-2);font-size:13px}
+.stepper button:hover{background:#f1f3f5}
+.stepper .date{padding:7px 10px;font-weight:600;font-size:13px;color:var(--text);border-left:1px solid var(--border);
+  border-right:1px solid var(--border)}
+.bell{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  padding:7px 11px;font-size:14px;cursor:pointer;color:var(--text-2)}
+.bell .n{position:absolute;top:-6px;right:-6px;background:var(--svet-red);color:#fff;font-size:10px;
+  font-weight:700;border-radius:9px;padding:1px 5px}
+.userchip{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);
+  border-radius:20px;padding:4px 12px 4px 5px;font-size:13px;color:var(--text-2)}
+.userchip .av{width:26px;height:26px;border-radius:50%;background:var(--primary);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+
+/* ── светофор-summary strip (small pills) ──────────────────── */
+.svet-strip{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.svet-pill{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);
+  border-radius:20px;box-shadow:var(--shadow-sm);padding:7px 14px;font-size:13px;color:var(--text-2)}
+.svet-pill b{color:var(--text);font-weight:600}
+.sdot{width:11px;height:11px;border-radius:50%;flex:0 0 11px}
+.sdot.g{background:var(--svet-green)}.sdot.o{background:var(--svet-orange)}
+.sdot.r{background:var(--svet-red)}.sdot.x{background:var(--svet-grey)}
+.svet-pill .mark{font-weight:700;margin-left:2px}
+.svet-pill .mark.g{color:var(--svet-green)}.svet-pill .mark.o{color:var(--svet-orange)}
+.svet-pill .mark.r{color:var(--svet-red)}.svet-pill .mark.x{color:var(--svet-grey)}
+
+/* ── main Card (контейнер рабочей таблицы) ─────────────────── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-sm)}
+
+.action-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--border)}
+.changed{font-size:13.5px;color:var(--text-2)}
+.changed b{color:var(--text)}
+.toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-2);cursor:pointer}
+.switch{width:34px;height:19px;border-radius:11px;background:#ced4da;position:relative;flex:0 0 34px}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.toggle.on .switch{background:var(--primary)}
+.toggle.on .switch::after{left:17px}
+.action-row .grow{flex:1}
+.btn{border-radius:8px;padding:8px 15px;font-size:13.5px;cursor:pointer;border:1px solid var(--border);
+  background:var(--surface);color:var(--text-2);display:inline-flex;align-items:center;gap:7px;font-weight:500}
+.btn:hover{background:#f1f3f5}
+.btn-primary{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
+.btn-primary:hover{background:#1c7ed6}
+
+/* bulk toolbar pill */
+.bulk{display:flex;align-items:center;gap:14px;margin:12px 18px 0;background:#e7f5ff;border:1px solid #a5d8ff;
+  border-radius:20px;padding:7px 16px;font-size:13px;color:#1971c2}
+.bulk b{font-weight:700}
+.bulk .blink{margin-left:auto;display:flex;gap:8px}
+.bulk .lbtn{background:#fff;border:1px solid #a5d8ff;border-radius:7px;padding:4px 11px;color:#1971c2;
+  cursor:pointer;font-size:12.5px}
+
+/* ── DENSE grid (size="sm") ────────────────────────────────── */
+.grid-wrap{padding:12px 18px 18px}
+table.grid{width:100%;border-collapse:collapse;font-size:13px}
+.grid thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);
+  font-weight:600;padding:8px 10px;border-bottom:2px solid var(--border);white-space:nowrap}
+.grid tbody td{padding:6px 10px;border-bottom:1px solid #f1f3f5;vertical-align:middle}
+.grid tbody tr:nth-child(even){background:#fcfcfd}
+.grid tbody tr:hover{background:#f8f9fa}
+.grid .c-chk{width:34px}
+.grid .c-name{min-width:240px}
+.grid .c-status{width:230px}
+.grid .c-period{width:200px;color:var(--text-2);white-space:nowrap}
+.grid .c-flag{width:40px;text-align:center}
+.grid input[type=checkbox]{width:15px;height:15px;accent-color:var(--primary)}
+.name-main{font-weight:600;color:var(--text)}
+.name-meta{font-size:11.5px;color:var(--text-muted)}
+.iin{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:var(--text-muted)}
+
+/* status cell variants */
+.st{display:inline-flex;align-items:center;gap:6px;border-radius:6px;padding:3px 9px;font-size:12.5px;
+  font-weight:600;white-space:nowrap}
+.st-neutral{color:var(--st-in-service);background:transparent;border:1px solid #e9ecef;font-weight:500}
+.st-tint-duty{color:var(--st-duty);background:var(--st-duty-bg)}
+.st-tint-rest{color:var(--st-rest);background:var(--st-rest-bg)}
+.st-solid-vac{color:#fff;background:var(--st-vacation)}
+.st-solid-sick{color:#fff;background:var(--st-sick)}
+.st-attached{color:var(--st-attached);background:var(--st-attached-bg)}
+.st-attached .plusn{font-weight:800}
+.st-detached{color:var(--st-detached);background:#f1f3f5;font-weight:500}
+.row-detached td{opacity:.55}
+
+/* 409 soft row (yellow marker) */
+.row-soft{background:var(--soft-bg)!important;box-shadow:inset 4px 0 0 var(--soft-fg)}
+.soft-note{display:inline-flex;align-items:center;gap:5px;color:var(--soft-fg);font-size:11.5px;margin-top:3px}
+/* 422 hard row (red tint + ⛔) */
+.row-hard{background:var(--hard-bg)!important;box-shadow:inset 4px 0 0 var(--hard-fg)}
+.hard-note{display:inline-flex;align-items:center;gap:5px;color:var(--hard-fg);font-size:11.5px;margin-top:3px}
+.flag-hard{color:var(--hard-fg);font-size:15px}
+.flag-soft{color:var(--soft-fg);font-size:15px}
+
+/* keyboard focus cell + type-ahead dropdown */
+.focus-cell{position:relative}
+.focus-box{display:inline-flex;align-items:center;gap:6px;border:2px solid var(--primary);border-radius:6px;
+  padding:4px 9px;background:#fff;box-shadow:0 0 0 3px rgba(51,154,240,.35);min-width:140px}
+.focus-box .typed{font-weight:600;color:var(--text)}
+.focus-box .caret{width:1px;height:15px;background:var(--text)}
+.dropdown{position:absolute;top:calc(100% + 4px);left:0;z-index:5;background:#fff;border:1px solid var(--border);
+  border-radius:8px;box-shadow:var(--shadow-pop);min-width:210px;padding:5px;font-size:13px}
+.dd-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:6px;color:var(--text-2)}
+.dd-item.sel{background:#e7f5ff;color:var(--primary);font-weight:600}
+.dd-item .hint{margin-left:auto;font-size:10.5px;color:var(--text-muted);background:#f1f3f5;border-radius:4px;padding:1px 5px}
+.dd-item.sel .hint{background:#d0ebff;color:#1971c2}
+
+/* keyboard help footer of grid */
+.kbd-help{display:flex;gap:14px;flex-wrap:wrap;padding:11px 18px;border-top:1px solid var(--border);
+  font-size:11.5px;color:var(--text-muted)}
+.kbd{font-family:ui-monospace,monospace;background:#f1f3f5;border:1px solid var(--border);border-bottom-width:2px;
+  border-radius:5px;padding:1px 6px;font-size:11px;color:var(--text-2)}
+
+/* ── ConflictDialog (409 soft) — rounded modal card ────────── */
+.modal-section{margin-top:26px}
+.modal-section .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);
+  font-weight:700;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.modal-stage{background:#dee2e6;border-radius:12px;padding:34px;display:flex;justify-content:center}
+.modal{width:480px;max-width:100%;background:var(--surface);border-radius:12px;box-shadow:var(--shadow-pop);overflow:hidden}
+.modal-head{display:flex;align-items:center;gap:11px;padding:18px 22px 14px;border-bottom:1px solid var(--border)}
+.modal-head .mi{width:38px;height:38px;border-radius:10px;background:var(--soft-bg);color:var(--soft-fg);
+  display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 38px}
+.modal-head h3{margin:0;font-size:16px;font-weight:700;color:var(--text)}
+.modal-head .sub{margin:2px 0 0;font-size:12.5px;color:var(--text-muted)}
+.modal-body{padding:18px 22px}
+.modal-body .explain{background:var(--soft-bg);border:1px solid #ffe066;border-radius:8px;padding:11px 13px;
+  font-size:13px;color:#664d00;margin:0 0 16px}
+.modal-body label{display:block;font-size:12.5px;color:var(--text-2);font-weight:600;margin-bottom:6px}
+.modal-body textarea{width:100%;min-height:92px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;
+  font-family:inherit;font-size:13px;color:var(--text);resize:vertical}
+.modal-body textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(51,154,240,.25)}
+.modal-body .counter{font-size:11.5px;color:var(--text-muted);margin-top:5px;text-align:right}
+.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 22px 20px}
+</style>
+</head>
+<body>
+<div class="browser">
+  <div class="chrome-bar">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="url">https://vaps.local/personnel/daily-status</span>
+  </div>
+
+  <div class="app">
+    <!-- ── sidebar (role-filtered nav) ── -->
+    <aside class="sidebar">
+      <div class="brand"><span class="logo">В</span> VAPS · Личный состав</div>
+      <nav class="nav">
+        <a href="#"><span class="ic">▦</span> Дашборд</a>
+        <a href="#" class="active"><span class="ic">📋</span> Расход дня</a>
+        <a href="#"><span class="ic">🏛</span> Подразделения</a>
+        <a href="#"><span class="ic">👥</span> Управление персоналом</a>
+        <a href="#"><span class="ic">🗂</span> Аудит</a>
+        <a href="#"><span class="ic">🔔</span> Уведомления <span class="badge-n">3</span></a>
+        <span class="spacer"></span>
+      </nav>
+      <div class="ver">VAPS PersonnelStatus · v0.9.2-pilot</div>
+    </aside>
+
+    <!-- ── main ── -->
+    <main class="main">
+
+      <!-- page-header card -->
+      <div class="page-header">
+        <div class="ph-left">
+          <div class="ph-icon">📋</div>
+          <div>
+            <h1 class="ph-h1">Расход дня</h1>
+            <p class="ph-sub">Ежедневный учёт статусов · 19.06.2026</p>
+          </div>
+        </div>
+        <div class="ph-right">
+          <div class="stepper">
+            <button title="Предыдущий день">◀</button>
+            <span class="date">19.06.2026</span>
+            <button title="Следующий день">▶</button>
+          </div>
+          <div class="bell">🔔<span class="n">3</span></div>
+          <div class="userchip"><span class="av">ДК</span> кап. Дамир</div>
+        </div>
+      </div>
+
+      <!-- светофор-summary strip -->
+      <div class="svet-strip">
+        <span class="svet-pill"><span class="sdot g"></span><b>1-е упр.</b><span class="mark g">✓</span></span>
+        <span class="svet-pill"><span class="sdot r"></span><b>2-е упр.</b><span class="mark r">✗</span></span>
+        <span class="svet-pill"><span class="sdot o"></span><b>Дежурная часть</b><span class="mark o">◐</span></span>
+        <span class="svet-pill"><span class="sdot x"></span><b>Резерв</b><span class="mark x">—</span></span>
+      </div>
+
+      <!-- main Card: action row + bulk + dense grid -->
+      <div class="card">
+        <div class="action-row">
+          <span class="changed">Изменено <b>4</b> из <b>40</b></span>
+          <span class="toggle"><span class="switch"></span> только отклонения</span>
+          <span class="grow"></span>
+          <button class="btn">Сбросить к «вчера»</button>
+          <button class="btn btn-primary">Сдать день →</button>
+        </div>
+
+        <!-- bulk toolbar pill (multi-select active) -->
+        <div class="bulk">
+          <span>Выбрано <b>2 строки</b></span>
+          <span class="blink">
+            <button class="lbtn">Применить статус группе</button>
+            <button class="lbtn">Снять выделение</button>
+          </span>
+        </div>
+
+        <div class="grid-wrap">
+          <table class="grid">
+            <thead>
+              <tr>
+                <th class="c-chk"><input type="checkbox"></th>
+                <th class="c-name">ФИО</th>
+                <th class="c-status">Статус</th>
+                <th class="c-period">Период (по … включительно)</th>
+                <th class="c-flag">!</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- 1 · В строю — нейтральный baseline -->
+              <tr>
+                <td class="c-chk"><input type="checkbox"></td>
+                <td class="c-name"><div class="name-main">Ахметов Серик Б.</div>
+                  <div class="name-meta">ст. инспектор · ИИН <span class="iin">******1841</span></div></td>
+                <td><span class="st st-neutral">В строю</span></td>
+                <td class="c-period">—</td>
+                <td class="c-flag"></td>
+              </tr>
+
+              <!-- 2 · На дежурстве — tint blue -->
+              <tr>
+                <td class="c-chk"><input type="checkbox"></td>
+                <td class="c-name"><div class="name-main">Бектұров Нұрлан Е.</div>
+                  <div class="name-meta">инспектор · ИИН <span class="iin">******0327</span></div></td>
+                <td><span class="st st-tint-duty">🛡 На дежурстве</span></td>
+                <td class="c-period">19.06 → 20.06 по 08:00 включ.</td>
+                <td class="c-flag"></td>
+              </tr>
+
+              <!-- 3 · KEYBOARD FOCUS — type-ahead «бол|» → «На больничном» -->
+              <tr>
+                <td class="c-chk"><input type="checkbox"></td>
+                <td class="c-name"><div class="name-main">Васильев Игорь П.</div>
+                  <div class="name-meta">ст. офицер · ИИН <span class="iin">******5502</span></div></td>
+                <td class="focus-cell">
+                  <span class="focus-box"><span class="typed">бол</span><span class="caret">|</span></span>
+                  <div class="dropdown">
+                    <div class="dd-item sel">На больничном <span class="hint">Enter ↵</span></div>
+                    <div class="dd-item">Больничный (стационар) <span class="hint">бол-с</span></div>
+                    <div class="dd-item">ГЭВ <span class="hint">гэв</span></div>
+                  </div>
+                </td>
+                <td class="c-period">с 19.06 …</td>
+                <td class="c-flag"></td>
+              </tr>
+
+              <!-- 4 · 409 SOFT — после дежурства (yellow marker) -->
+              <tr class="row-soft">
+                <td class="c-chk"><input type="checkbox" checked></td>
+                <td class="c-name"><div class="name-main">Громов Денис А.</div>
+                  <div class="name-meta">инспектор · ИИН <span class="iin">******7710</span></div></td>
+                <td>
+                  <span class="st st-tint-rest">😴 После дежурства</span>
+                  <div class="soft-note">⚠ Конфликт: отдых после дежурства. Укажите причину, чтобы продолжить.</div>
+                </td>
+                <td class="c-period">19.06 → 19.06 включ.</td>
+                <td class="c-flag"><span class="flag-soft">⚠</span></td>
+              </tr>
+
+              <!-- 5 · 422 HARD — больничный (red tint + ⛔), коммит блокируется -->
+              <tr class="row-hard">
+                <td class="c-chk"><input type="checkbox"></td>
+                <td class="c-name"><div class="name-main">Дусенов Арман К.</div>
+                  <div class="name-meta">офицер · ИИН <span class="iin">******2096</span></div></td>
+                <td>
+                  <span class="st st-solid-sick">🩺 На больничном</span>
+                  <div class="hard-note">⛔ Нельзя: больничный пересекается с нарядом. Статус не сохранён.</div>
+                </td>
+                <td class="c-period">17.06 → 23.06 включ.</td>
+                <td class="c-flag"><span class="flag-hard">⛔</span></td>
+              </tr>
+
+              <!-- 6 · В отпуске — solid orange (422-семья) -->
+              <tr>
+                <td class="c-chk"><input type="checkbox"></td>
+                <td class="c-name"><div class="name-main">Ережепов Тимур С.</div>
+                  <div class="name-meta">ст. инспектор · ИИН <span class="iin">******4418</span></div></td>
+                <td><span class="st st-solid-vac">🌴 В отпуске</span></td>
+                <td class="c-period">02.06 → 29.06 включ.</td>
+                <td class="c-flag"></td>
+              </tr>
+
+              <!-- 7 · Прикомандирован «+2» — lime badge -->
+              <tr>
+                <td class="c-chk"><input type="checkbox" checked></td>
+                <td class="c-name"><div class="name-main">Жұманов Әсет Т.</div>
+                  <div class="name-meta">инспектор · ИИН <span class="iin">******9035</span></div></td>
+                <td><span class="st st-attached">➕ Прикомандирован <span class="plusn">+2</span></span></td>
+                <td class="c-period">15.06 → 30.06 включ.</td>
+                <td class="c-flag"></td>
+              </tr>
+
+              <!-- 8 · Откомандирован — dimmed view-only -->
+              <tr class="row-detached">
+                <td class="c-chk"><input type="checkbox" disabled></td>
+                <td class="c-name"><div class="name-main">Зейнолла Бауыржан М.</div>
+                  <div class="name-meta">офицер · откомандирован · view-only</div></td>
+                <td><span class="st st-detached">↗ Откомандирован</span></td>
+                <td class="c-period">01.06 → 31.07 включ.</td>
+                <td class="c-flag"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="kbd-help">
+          <span><span class="kbd">Enter</span> следующий человек ↓</span>
+          <span><span class="kbd">Tab</span> следующее поле →</span>
+          <span><span class="kbd">Esc</span> отменить правку</span>
+          <span><span class="kbd">первая буква</span> подбор статуса</span>
+          <span style="margin-left:auto">Автосейв: 1 запись на изменение</span>
+        </div>
+      </div>
+
+      <!-- ── Second state: ConflictDialog (409 soft) ── -->
+      <div class="modal-section">
+        <p class="lbl">▸ Состояние 409 — ConflictDialog (soft, оверрайдаемый)</p>
+        <div class="modal-stage">
+          <div class="modal">
+            <div class="modal-head">
+              <div class="mi">⚠</div>
+              <div>
+                <h3>Конфликт: отдых после дежурства</h3>
+                <p class="sub">Громов Денис А. · 19.06.2026</p>
+              </div>
+            </div>
+            <div class="modal-body">
+              <p class="explain">Отдых после дежурства пересекается с уже учтённым нарядом. Это мягкий конфликт — продолжить можно, указав причину. Причина попадёт в аудит.</p>
+              <label for="reason">Причина (10–500 символов)</label>
+              <textarea id="reason" placeholder="Например: наряд сокращён по приказу №…">Замена по приказу — наряд снят, отдых подтверждён командиром</textarea>
+              <div class="counter">58 / 500</div>
+            </div>
+            <div class="modal-foot">
+              <button class="btn">Отмена</button>
+              <button class="btn btn-primary">Подтвердить оверрайд</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+</body>
+</html>

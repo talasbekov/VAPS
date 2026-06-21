@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_MEDIA_URL=http://10.15.3.187:8100
+        - PORT=3100
+    container_name: frontend
+    ports:
+      - "3100:3100"
+    environment:
+      - NODE_ENV=production
+      - PORT=3100
+      - HOSTNAME=0.0.0.0
+      - NEXTAUTH_URL=http://10.15.3.187:3100
+      - NEXTAUTH_SECRET=YWgNt6uBTZTP/t1WFwjkNFUx3sxrrT42GpyVjBStrmQ=
+      # Бэкенд запущен бэкендером отдельно на том же сервере
+      - BACKEND_URL=http://10.15.3.187:8100
+    restart: unless-stopped

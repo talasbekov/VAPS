@@ -1,6 +1,6 @@
 import pytest
 
-from apps.operations.models import Permission, Role
+from apps.operations.rbac.models import Permission, Role
 
 pytestmark = pytest.mark.django_db
 

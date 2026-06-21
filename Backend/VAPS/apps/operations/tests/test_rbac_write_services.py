@@ -4,7 +4,7 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
-from apps.operations.models import UserRole
+from apps.operations.rbac.models import UserRole
 from apps.operations.services import RoleAdminService
 
 pytestmark = pytest.mark.django_db

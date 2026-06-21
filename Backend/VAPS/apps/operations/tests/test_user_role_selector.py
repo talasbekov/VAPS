@@ -1,6 +1,6 @@
 import pytest
 
-from apps.operations.models import Role, UserRole
+from apps.operations.rbac.models import Role, UserRole
 from apps.operations.selectors import OpsUserRoleSelector
 
 pytestmark = pytest.mark.django_db

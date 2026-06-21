@@ -1,7 +1,7 @@
 import pytest
 from django.core.management import call_command
 
-from apps.operations.models import Permission, Role, RolePermission
+from apps.operations.rbac.models import Permission, Role, RolePermission
 
 pytestmark = pytest.mark.django_db
 

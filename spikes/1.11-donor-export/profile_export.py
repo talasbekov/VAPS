@@ -114,7 +114,7 @@ def print_volume(by_model):
 
 
 def print_employees(rows):
-    print(f"\n== employees.employee (ключи: iin, personnel_number) ==")
+    print("\n== employees.employee (ключи: iin, personnel_number) ==")
     print(f"  всего: {len(rows)}")
     pk_dups = duplicates([str(r["pk"]) for r in rows])
     if pk_dups:
@@ -124,16 +124,19 @@ def print_employees(rows):
         print(f"  ⚠ дубли pk (одинаковый pk у >1 строки — порча): {len(pk_dups)}")
 
     iins = [r["fields"].get("iin") for r in rows]
-    iin_null = sum(1 for v in iins if is_blank(v))
-    iin_bad = [
-        v
-        for v in iins
-        if not is_blank(v) and not (isinstance(v, str) and IIN_RE.fullmatch(v))
-    ]
-    # str()-нормализация: "12" и 12 — одна логическая личность (разнотипная
-    # SQL/ручная выгрузка), иначе дубль недосчитывается; заодно делает
-    # нехэшируемые значения (list/dict) безопасными для счётчика дублей.
-    iin_dups = duplicates([str(v) for v in iins if not is_blank(v)])
+    # ПАРИТЕТ С ИМПОРТЁРОМ 1.6 (transform.py:170-178) — эталон стори:
+    #   missing = `not iin` (ловит None/""/0/[]/{} — буквально импортёрский
+    #             `if not iin`), затем invalid = значение truthy, но НЕ str ИЛИ
+    #             НЕ fullmatch (ИИН с пробелом/`\n`, не-строковый тип, мусор).
+    # Импортёр скипает ОБА класса ДО identity-логики → дубли считаем ТОЛЬКО по
+    # ВАЛИДНЫМ ИИН. Иначе невалидные значения и пары int↔str ("12345678901" vs
+    # 12345678901) завышали бы «ИИН дубли» — merge-релевантное число, питающее
+    # 7.3, разошлось бы с тем, что реально увидит импортёр. strip() НЕ делаем:
+    # импортёр его тоже не делает (padded-ИИН = invalid, не «восстановленный дубль»).
+    iin_null = sum(1 for v in iins if not v)
+    iin_bad = [v for v in iins if v and not (isinstance(v, str) and IIN_RE.fullmatch(v))]
+    iin_valid = [v for v in iins if isinstance(v, str) and IIN_RE.fullmatch(v)]
+    iin_dups = duplicates(iin_valid)
 
     print(f"  ИИН NULL/пустой: {iin_null}")
     print(f"  ИИН невалидный формат (не ^[0-9]{{12}}$): {len(iin_bad)}", end="")
@@ -165,7 +168,7 @@ def print_employees(rows):
 
 
 def print_statuses(status_rows, employee_rows):
-    print(f"\n== statuses.employeestatus (ключ: employee FK) ==")
+    print("\n== statuses.employeestatus (ключ: employee FK) ==")
     print(f"  всего: {len(status_rows)}")
     # str()-нормализация pk и FK: dumpdata по рецепту даёт int с обеих сторон,
     # но SQL-дамп/--natural-foreign/ручная правка дали бы "1" против 1 — тогда
@@ -185,7 +188,7 @@ def print_statuses(status_rows, employee_rows):
 
 
 def print_staffunits(rows):
-    print(f"\n== staff_unit.staffunit ==")
+    print("\n== staff_unit.staffunit ==")
     print(f"  всего: {len(rows)}")
     vacant = sum(1 for r in rows if r["fields"].get("employee") is None)
     print(f"  вакантных (employee = NULL): {vacant}")

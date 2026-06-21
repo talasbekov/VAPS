@@ -1,0 +1,192 @@
+# docs/registries/ws-message-types.yaml
+# Реестр типов WebSocket-/in-app-уведомлений VAPS — разыменовывает СТОП-правило.
+#
+# ПРАВИЛО: тип сообщения, которого нет в реестре, использовать НЕЛЬЗЯ → СТОП и спроси
+#   (architecture.md «Как читать этот документ», п.5). Новый тип — тем же PR.
+#
+# КОНТРАКТ WS (architecture.md §Communication Patterns):
+#   {"type": "<UPPER_SNAKE из реестра>", "payload": {...}}
+#   - отправка ТОЛЬКО через transaction.on_commit;
+#   - WS — сигнал «обнови», ИСТИНА — REST/БД; после reconnect фронт дочитывает REST;
+#   - доставка best-effort; уведомление всегда персистится в notifications_messages (DB-first).
+#   type_code здесь = и тип WS-конверта, и notifications_messages.type_code (§4.5 / §33).
+
+meta:
+  registry: ws-message-types
+  source_spec: docs/PersonnelStatus/VAPS_7.8.2.md
+  source_section: "§33.2 Notification event matrix; §33.3 payload; §4.5 Notifications Context"
+  generated_by_story: "1.12"
+  generated_on: "2026-06-19"
+  growth_rule: "Тип не в реестре → СТОП. Новые типы — тем же PR."
+  priorities: [INFO, WARNING, CRITICAL]
+  payload_fields: [type_code, title, body, entity_type, entity_id, action_url, priority, expires_at]
+
+types:
+  DAILY_MARK_MISSING:
+    priority: WARNING
+    recipients: "division operators"
+    repeat: "daily until mark"
+    action_url: "/daily-expense"
+    trigger: "09:00 нет INITIAL-отметки"
+    source: "VAPS_7.8.2 §33.2"
+  DAILY_MARK_ESCALATION:
+    priority: CRITICAL
+    recipients: "OMD/ORGD/supervisor"
+    repeat: "daily until mark"
+    action_url: "/daily-expense"
+    trigger: "11:00 нет INITIAL-отметки"
+    source: "VAPS_7.8.2 §33.2"
+  REPORT_READY:
+    priority: INFO
+    recipients: "requester"
+    repeat: "no"
+    action_url: "/reports/{id}"
+    trigger: "документ сгенерирован"
+    source: "VAPS_7.8.2 §33.2"
+  REPORT_FAILED:
+    priority: WARNING
+    recipients: "requester/admin"
+    repeat: "no"
+    action_url: "/reports/{id}"
+    trigger: "генерация документа провалилась"
+    source: "VAPS_7.8.2 §33.2"
+  EVENT_BULLETIN_CREATED:
+    priority: INFO
+    recipients: "event participants/senior"
+    repeat: "no"
+    action_url: "/events/{id}"
+    trigger: "бюллетень создан"
+    source: "VAPS_7.8.2 §33.2"
+  RECON_REQUIRED:
+    priority: WARNING
+    recipients: "responsible user"
+    repeat: "no"
+    action_url: "/events/{id}/reconnaissance"
+    trigger: "событию нужна рекогносцировка"
+    source: "VAPS_7.8.2 §33.2"
+  NEED_RETURNED:
+    priority: WARNING
+    recipients: "need author"
+    repeat: "no"
+    action_url: "/events/{id}/need"
+    trigger: "потребность возвращена"
+    source: "VAPS_7.8.2 §33.2"
+  RESOURCE_REQUEST_SENT:
+    priority: INFO
+    recipients: "target division operator"
+    repeat: "no"
+    action_url: "/events/{id}/requests"
+    trigger: "запрос создан"
+    source: "VAPS_7.8.2 §33.2"
+  ALLOCATION_CONFIRMED:
+    priority: INFO
+    recipients: "event senior/OMD"
+    repeat: "no"
+    action_url: "/events/{id}/requests"
+    trigger: "выделение подтверждено"
+    source: "VAPS_7.8.2 §33.2"
+  ASSIGNMENT_SUBMITTED:
+    priority: WARNING
+    recipients: "approver"
+    repeat: "no"
+    action_url: "/assignment-versions/{id}"
+    trigger: "версия расстановки подана"
+    source: "VAPS_7.8.2 §33.2"
+  ASSIGNMENT_RETURNED:
+    priority: WARNING
+    recipients: "creator/senior"
+    repeat: "no"
+    action_url: "/assignment-versions/{id}"
+    trigger: "версия возвращена"
+    source: "VAPS_7.8.2 §33.2"
+  ASSIGNMENT_APPROVED:
+    priority: INFO
+    recipients: "assigned employees/senior"
+    repeat: "no"
+    action_url: "/assignment-versions/{id}"
+    trigger: "версия утверждена"
+    source: "VAPS_7.8.2 §33.2"
+  ACK_REQUIRED:
+    priority: WARNING
+    recipients: "assigned employee"
+    repeat: "every 2h until ack during event prep"
+    action_url: "/assignments/{id}"
+    trigger: "создано требование ознакомления"
+    source: "VAPS_7.8.2 §33.2"
+  ACK_MISSING_ESCALATION:
+    priority: CRITICAL
+    recipients: "senior"
+    repeat: "once"
+    action_url: "/assignment-versions/{id}/acknowledgements"
+    trigger: "близко начало события, ознакомление не получено"
+    source: "VAPS_7.8.2 §33.2"
+  SOFT_CONFLICT_DETECTED:
+    priority: WARNING
+    recipients: "creator/senior"
+    repeat: "no"
+    action_url: "/assignment-versions/{id}"
+    trigger: "создан soft-конфликт"
+    source: "VAPS_7.8.2 §33.2"
+  HARD_BLOCK_ATTEMPT:
+    priority: WARNING
+    recipients: "actor/admin optional"
+    repeat: "no"
+    action_url: "/assignment-versions/{id}"
+    trigger: "попытка hard-block назначения"
+    source: "VAPS_7.8.2 §33.2"
+  REPLACEMENT_CREATED:
+    priority: WARNING
+    recipients: "senior/affected users"
+    repeat: "no"
+    action_url: "/events/{id}"
+    trigger: "замена после утверждения"
+    source: "VAPS_7.8.2 §33.2"
+  INCIDENT_CREATED:
+    priority: CRITICAL
+    recipients: "HQ/senior/OMD"
+    repeat: "no"
+    action_url: "/events/{id}/incidents"
+    trigger: "инцидент открыт"
+    source: "VAPS_7.8.2 §33.2"
+  INCIDENT_CLOSED:
+    priority: INFO
+    recipients: "HQ/senior"
+    repeat: "no"
+    action_url: "/events/{id}/incidents"
+    trigger: "инцидент закрыт"
+    source: "VAPS_7.8.2 §33.2"
+  EVENT_READY_BLOCKED:
+    priority: WARNING
+    recipients: "event senior"
+    repeat: "every 4h until resolved"
+    action_url: "/events/{id}"
+    trigger: "блокер готовности"
+    source: "VAPS_7.8.2 §33.2"
+  TEMP_PERMISSION_ACTIVE:
+    priority: INFO
+    recipients: "duty user"
+    repeat: "no"
+    action_url: "/"
+    trigger: "временное полномочие началось"
+    source: "VAPS_7.8.2 §33.2"
+  TEMP_PERMISSION_EXPIRED:
+    priority: INFO
+    recipients: "duty user"
+    repeat: "no"
+    action_url: "/"
+    trigger: "временное полномочие истекло"
+    source: "VAPS_7.8.2 §33.2"
+  IMPORT_COMPLETED:
+    priority: INFO
+    recipients: "requester"
+    repeat: "no"
+    action_url: "/admin/import-export"
+    trigger: "импорт-джоба успешна"
+    source: "VAPS_7.8.2 §33.2"
+  IMPORT_FAILED:
+    priority: WARNING
+    recipients: "requester/admin"
+    repeat: "no"
+    action_url: "/admin/import-export"
+    trigger: "импорт-джоба провалилась"
+    source: "VAPS_7.8.2 §33.2"

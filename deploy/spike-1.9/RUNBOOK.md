@@ -40,7 +40,7 @@
 | 3 | Проверить целостность | `sha256sum -c sha256sums.txt` | `VERIFIED` (dev) | «ЦЕЛ»; битый архив → стоп до изменений |
 | 4 | Загрузить образ | `docker load -i vaps-probe-<sha>.tar` | `VERIFIED` (dev, чистый контекст) | образ удалён до load → восстановлен из `.tar` |
 | 5 | Поднять | `docker compose up -d` | `VERIFIED` (dev) | `spike-19-probe-1` Started |
-| 6 | Открыть с КЛИЕНТСКОЙ машины | Firefox ~100 → `http://<IP>:8080/` | `UNVERIFIED-pending-contour` | на dev — только `curl localhost` (≠ LAN-доказательство) |
+| 6 | Открыть с КЛИЕНТСКОЙ машины | Firefox ~100 → `http://<IP>:${PORT:-8080}/` | `UNVERIFIED-pending-contour` | порт = `PORT` (по умолч. 8080; `PORT=9090 ./install-probe.sh` если 8080 закрыт периметром); на dev — только `curl localhost` (≠ LAN-доказательство) |
 | 7 | Остановить | `docker compose down` | `VERIFIED` (dev) | сеть/контейнер удалены |
 
 ---
@@ -86,7 +86,7 @@
 | Образ пробы (digest) | `sha256:f6f03f0c613b12d646956ed4c9252e747c6f975137097daa0ef17b189cef0502` | то же |
 | `.tar` sha256 | `ea6378773edd6266cd16ea95bf46cd82580508450873dfa979c455d4b0afb643` | сверять после переноса |
 | Размер `.tar` | `~26 МБ` (26 070 528 Б) | носимо на любом USB |
-| Порт | `8080:80` | открыть в firewall LAN |
+| Порт | `${PORT:-8080}:80` (параметризуется `PORT`, по умолч. 8080) | открыть в firewall LAN |
 | IP сервера (пример dev) | `10.115.70.58` | IP сервера контура — `TODO` |
 | FF~100 по LAN | `UNVERIFIED-pending-contour` | штатный клиентский ПК |
 | Время/tz/NTP | хост Almaty+05 / контейнер UTC / NTP active | NTP сервера контура — `TODO` |

@@ -13,8 +13,7 @@ from datetime import date
 # Literal carry-over of the DB-OPS-003 seed (priority / report column);
 # must stay in sync with the StatusType rows — the seed test in story 2.2
 # cross-checks both tables (same contract as HARD_STATUS_TYPE_CODES).
-# OTHER_ABSENCE (38/OTHER) is absent from the seed: registry candidate,
-# to be fixed in 1.12 (inventory) and seed 2.2.
+# OTHER_ABSENCE (38/OTHER) is included in the StatusType seed (story 2.2).
 STATUS_TYPE_PRIORITIES = {
     "SICK_LEAVE": 10,
     "LEAVE_BY_REPORT": 15,

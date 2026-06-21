@@ -1,0 +1,152 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Bell,
+  Menu,
+  Settings,
+  LogOut,
+  AlertTriangle,
+  User,
+} from "lucide-react";
+import { useAuth, ROLES, ResourceGate } from "@/lib/auth";
+import { NotificationsDropdown } from "@/features/notifications/ui/NotificationsDropdown";
+import { EditProfileDialog } from "@/features/edit-profile";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
+
+interface HeaderProps {
+  onMenuClick: () => void;
+  onDesktopMenuClick?: () => void;
+  desktopSidebarOpen?: boolean;
+}
+
+export function Header({
+  onMenuClick,
+  onDesktopMenuClick,
+  desktopSidebarOpen = true,
+}: HeaderProps) {
+  const { user, logout, hasPermission } = useAuth();
+  const userRole = user ? ROLES[user.role] : null;
+  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+
+  return (
+    <header className="sticky top-0 z-40 bg-background border-b border-border">
+      <div className="flex items-center justify-between px-4 sm:px-6 h-14">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="lg:hidden"
+            onClick={onMenuClick}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          {onDesktopMenuClick && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden lg:flex"
+              onClick={onDesktopMenuClick}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center space-x-4 ml-auto">
+          <ThemeToggle />
+          <NotificationsDropdown />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+                <Avatar className="h-9 w-9">
+                  <AvatarImage
+                    src="/placeholder.svg?height=36&width=36"
+                    alt="Пользователь"
+                  />
+                  <AvatarFallback className="text-base font-bold">
+                    {user?.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("") || "U"}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-64" align="end" forceMount>
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-2">
+                  <p className="text-base font-semibold leading-none">
+                    {user?.name}
+                  </p>
+                  <p className="text-sm leading-none text-muted-foreground">
+                    {user?.email}
+                  </p>
+                  {userRole && (
+                    <Badge className={`mt-2 text-sm ${userRole.color} w-fit`}>
+                      {userRole.name}
+                    </Badge>
+                  )}
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setIsProfileDialogOpen(true)}
+                className="text-base py-2"
+              >
+                <User className="mr-3 h-4 w-4" />
+                <span>Редактировать профиль</span>
+              </DropdownMenuItem>
+              <ResourceGate resource="settings">
+                <DropdownMenuItem className="text-base py-2">
+                  <Settings className="mr-3 h-4 w-4" />
+                  <span>Настройки</span>
+                </DropdownMenuItem>
+              </ResourceGate>
+              <DropdownMenuItem
+                onClick={() => logout()}
+                className="text-base py-2"
+              >
+                <LogOut className="mr-3 h-4 w-4" />
+                <span>Выйти</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Диалог редактирования профиля */}
+      <EditProfileDialog
+        open={isProfileDialogOpen}
+        onOpenChange={setIsProfileDialogOpen}
+      />
+
+      {/* Alert встроен в header */}
+      {user &&
+        user.role !== "role-2" &&
+        user.role !== "role-4" &&
+        user.role !== "role-6" && (
+          <Alert className="border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 rounded-none">
+            <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+            <AlertDescription className="text-yellow-800 dark:text-yellow-200">
+              Ваша роль "{userRole?.name}" имеет ограниченные права доступа.
+              Некоторые функции могут быть недоступны.
+            </AlertDescription>
+          </Alert>
+        )}
+    </header>
+  );
+}

@@ -5,7 +5,7 @@ from django.core.management import call_command
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.operations.models import TemporaryDutyPermission, UserRole
+from apps.operations.rbac.models import TemporaryDutyPermission, UserRole
 
 pytestmark = pytest.mark.django_db
 

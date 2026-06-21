@@ -1,0 +1,261 @@
+# docs/registries/error-codes.yaml
+# Реестр кодов ошибок VAPS — разыменовывает СТОП-правило закрытого мира.
+#
+# ПРАВИЛО: код ошибки, которого нет в этом реестре, использовать НЕЛЬЗЯ → СТОП и спроси
+#   (architecture.md «Как читать этот документ», п.5; §Реестры). Новый код добавляется в этот
+#   файл ТЕМ ЖЕ PR, который его вводит. CI-сверка использованных кодов с реестром — отдельная
+#   стори (architecture.md Enforcement Guidelines); сейчас реестр — стартовый seed, не финал.
+#
+# СЕМАНТИКА http_status (architecture.md §Format Patterns → Ошибки):
+#   400 — нарушение ФОРМЫ (сериализатор/формат полей);
+#   422 — нарушение БИЗНЕС-ПРАВИЛА (hard-конфликт, окно дат) — overridable: false;
+#   409 — конфликт состояния: либо soft-warning (overridable: true), либо структурный (overridable: false);
+#   401/403/404 — стандартно; 500 — без деталей наружу.
+# overridable: true ⇒ тело ответа несёт details + клиент может повторить с override_reason (ARCH-FE-015).
+
+meta:
+  registry: error-codes
+  source_spec: docs/PersonnelStatus/VAPS_7.8.2.md
+  generated_by_story: "1.12"
+  generated_on: "2026-06-19"
+  growth_rule: "Код не в реестре → СТОП. Новые коды — тем же PR (architecture.md §Реестры)."
+  enforcement_pending: "CI-сверка кодов с реестром — отдельная стори (architecture.md §Enforcement)."
+
+codes:
+  # --- 400: нарушение формы ---
+  VALIDATION_ERROR:
+    http_status: 400
+    overridable: false
+    category: form
+    description: "Невалидный payload запроса: нарушение формы/формата полей."
+    source: "VAPS_7.8.2 §6 REST API (общие правила ошибок); §60 Updated Standard API Errors; API-OPS-001 Errors"
+  DUPLICATE_EMPLOYEE_ID:
+    http_status: 400
+    overridable: false
+    category: form
+    description: "Дубликат employee_id во входных данных массового импорта."
+    source: "VAPS_7.8.2 §6 (bulk-импорт)"
+  INVALID_SCOPE_STATUS:
+    http_status: 400
+    overridable: false
+    category: form
+    description: "Статус не допустим в scope подразделения актора."
+    source: "VAPS_7.8.2 §6"
+  OBJECT_CHECKLIST_REQUIRED:
+    http_status: 400
+    overridable: false
+    category: state
+    description: "У объекта нет разрешённого чек-листа (object has no resolved checklist)."
+    source: "VAPS_7.8.2 §60 Updated Standard API Errors"
+
+  # --- 401: аутентификация ---
+  AUTH_REQUIRED:
+    http_status: 401
+    overridable: false
+    category: auth
+    description: "Отсутствуют учётные данные аутентификации."
+    source: "VAPS_7.8.2 §6 (auth)"
+  TOKEN_INVALID:
+    http_status: 401
+    overridable: false
+    category: auth
+    description: "Невалидный/просроченный токен."
+    source: "VAPS_7.8.2 §6 (auth)"
+
+  # --- 403: авторизация ---
+  PERMISSION_DENIED:
+    http_status: 403
+    overridable: false
+    category: auth
+    description: "Актор не имеет права на действие (PermissionService → DomainError 403)."
+    source: "VAPS_7.8.2 §6 REST API; §60 Updated Standard API Errors; architecture.md ARCH-SEC-031"
+  USER_INACTIVE:
+    http_status: 403
+    overridable: false
+    category: auth
+    description: "Внешняя аутентификация сообщает, что пользователь неактивен (is_active=false)."
+    source: "VAPS_7.8.2 §6 (auth)"
+
+  # --- 404: не найдено ---
+  VERSION_NOT_FOUND:
+    http_status: 404
+    overridable: false
+    category: not_found
+    description: "Версия расстановки не существует."
+    source: "VAPS_7.8.2 API-OPS-001 Errors"
+  ENTITY_NOT_FOUND:
+    http_status: 404
+    overridable: false
+    category: not_found
+    description: "Запрошенный ресурс (generic) не найден. Паттерн §6 REST API: 404 *_NOT_FOUND."
+    source: "VAPS_7.8.2 §6 REST API (паттерн 404 *_NOT_FOUND)"
+
+  # --- 409: конфликт состояния (soft+override) ---
+  SOFT_CONFLICT_DETECTED:
+    http_status: 409
+    overridable: true
+    category: conflict_soft
+    description: "Один или более soft-конфликтов (BR-003). Тело несёт conflicts[] (см. conflict_codes); клиент может override с override_reason."
+    source: "VAPS_7.8.2 API-OPS-001 (409), BR-003"
+  STATUS_OVERLAP_WARNING:
+    http_status: 409
+    overridable: true
+    category: conflict_soft
+    description: "Ручной статус пересекает soft-статус — предупреждение с возможностью override."
+    source: "VAPS_7.8.2 §6 (статусы), architecture.md ARCH-DATA-020 (soft → 409+override)"
+  DUTY_CONFLICT_DETECTED:
+    http_status: 409
+    overridable: true
+    category: conflict_soft
+    description: "Конфликты смены дежурства (та же семантика BR-003, что у назначений)."
+    source: "VAPS_7.8.2 §6 (дежурства), BR-003"
+
+  # --- 409: конфликт состояния (структурный, не overridable) ---
+  HASH_MISMATCH:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Хэш payload утверждения не совпал на approve-endpoint (контроль целостности, BR-011)."
+    source: "VAPS_7.8.2 BR-011"
+  MARKS_INCOMPLETE:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Не хватает обязательных INITIAL-отметок подразделений для формирования FINAL-отчёта."
+    source: "VAPS_7.8.2 BR-DAILY-MARK-001"
+  NOT_READY:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Файл документа ещё не сгенерирован (асинхронное состояние)."
+    source: "VAPS_7.8.2 §34 (генерация документов)"
+  REPORT_NOT_READY_FOR_DATE:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Нет FINAL/CORRECTION-отчёта за требуемую дату для генерации документа."
+    source: "VAPS_7.8.2 §34"
+  POST_IN_USE:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Пост используется (окно деактивации поста, BR-016) — деактивация запрещена."
+    source: "VAPS_7.8.2 BR-016"
+  RECONNAISSANCE_REQUIRED:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Рекогносцировка объекта просрочена/обязательна (регламент)."
+    source: "VAPS_7.8.2 API-OPS-018 Errors"
+  CHECKLIST_ISSUES_UNRESOLVED:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "В чек-листе рекогносцировки есть неразрешённые ISSUE-пункты, блокирующие готовность."
+    source: "VAPS_7.8.2 API-OPS-018 Errors"
+  NOT_IMPLEMENTED_FOR_MVP:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Функция явно отложена за пределы MVP-core (может быть 403, если ограничена правами)."
+    source: "VAPS_7.8.2 §0 (MVP-2/Future)"
+
+  # --- 422: нарушение бизнес-правила (hard) ---
+  HARD_UNAVAILABLE_STATUS:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "У сотрудника hard-block статус на интервал назначения (недоступен)."
+    source: "VAPS_7.8.2 API-OPS-001 Errors, BR-003"
+  OVERLAPPING_HARD_STATUS:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Ручной статус конфликтует с существующим hard-block статусом (backstop — excl_hard_status_overlap)."
+    source: "VAPS_7.8.2 §6 (статусы); architecture.md ARCH-DATA-020"
+  REST_AFTER_DUTY_BLOCK:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Hard-политика (SOFT_OVERRIDE=false) блокирует назначение во время REST_AFTER_DUTY."
+    source: "VAPS_7.8.2 BR-017 / §6"
+  EMPTY_GROUP:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Групповое назначение по пустому списку участников."
+    source: "VAPS_7.8.2 BR-005"
+  UNDER_MINIMUM_GROUP_MEMBERS:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "В группе меньше активных участников, чем требует минимум."
+    source: "VAPS_7.8.2 §6 (группы)"
+  INVALID_RECONNAISSANCE_DECISION:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Невалидный код решения рекогносцировки."
+    source: "VAPS_7.8.2 API-OPS-018 Errors"
+  TEMPLATE_DATA_MISSING:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Для генерации документа не хватает обязательных полей шаблона."
+    source: "VAPS_7.8.2 §34"
+
+  # --- 423: заблокировано состоянием ---
+  ASSIGNMENT_VERSION_LOCKED:
+    http_status: 423
+    overridable: false
+    category: state_locked
+    description: "Версия расстановки SUBMITTED/APPROVED (иммутабельна) — правка/удаление запрещены."
+    source: "VAPS_7.8.2 API-OPS-001/003 Errors"
+
+  # --- 500: серверные ---
+  INTERNAL_ERROR:
+    http_status: 500
+    overridable: false
+    category: server
+    description: "Непредвиденная серверная ошибка (без деталей наружу)."
+    source: "VAPS_7.8.2 §6"
+  DOCUMENT_GENERATION_FAILED:
+    http_status: 500
+    overridable: false
+    category: server
+    description: "Непредвиденная ошибка при генерации документа."
+    source: "VAPS_7.8.2 §34"
+
+# conflict_code — значения внутри SOFT_CONFLICT_DETECTED.conflicts[] (НЕ самостоятельные HTTP-коды).
+# severity: WARNING; overridable наследуется от SOFT_CONFLICT_DETECTED. Матрица детектора — VAPS_7.8.2 §BR-003.
+# КАНОН набора — нормативный «Allowed conflict_code» VAPS_7.8.2 §6 (8 кодов).
+# РАСХОЖДЕНИЕ СПЕКИ (вход E7/spec-owner): §6 «Allowed conflict_code» = 8 (вкл. UNAVAILABLE_STATUS_CONFLICT и EMPTY_GROUP),
+#   а §BR-003 «Soft-warning codes» = 6 (без них). Реестр следует нормативному «Allowed».
+#   EMPTY_GROUP двойственен: §6 числит его как Allowed conflict_code, но §1093/AC-022 трактуют как 422-hard →
+#   реестр держит его как codes.EMPTY_GROUP (422), НЕ дублируя soft-вариантом (иначе overridable-конфликт).
+#   RATING_DATA_MISSING — расширение вне нормативного §6-списка (feature-flag BR-RATING-CONFLICT-002).
+conflict_codes:
+  DOUBLE_ASSIGNMENT_CONFLICT:
+    description: "Сотрудник уже назначен в другом месте на пересекающийся интервал."
+    source: "VAPS_7.8.2 §6 Allowed conflict_code, §BR-003"
+  UNAVAILABLE_STATUS_CONFLICT:
+    description: "Сотрудник недоступен по статусу на интервал назначения (soft-вариант детектора)."
+    source: "VAPS_7.8.2 §6 Allowed conflict_code, §BR-003"
+  REST_VIOLATION_CONFLICT:
+    description: "Сотрудник во временном интервале обязательного последежурного отдыха."
+    source: "VAPS_7.8.2 §6 Allowed conflict_code, API-OPS-001 (409), §BR-003"
+  WORKLOAD_EXCEEDED_CONFLICT:
+    description: "3 дня подряд: total_hours + новые > 8.0 (перегрузка)."
+    source: "VAPS_7.8.2 §6 Allowed conflict_code, BR-006, §BR-003"
+  POST_REQUIREMENT_MISMATCH_CONFLICT:
+    description: "Сотрудник не удовлетворяет требованиям поста (рост, пол, звание, должность и т.п.)."
+    source: "VAPS_7.8.2 §6 Allowed conflict_code, BR-007, §BR-003"
+  DUTY_OVERLAP_CONFLICT:
+    description: "Назначение пересекает интервал смены дежурства."
+    source: "VAPS_7.8.2 §6 Allowed conflict_code, §BR-003"
+  OVERQUALIFICATION_DETECTED:
+    description: "Звание сотрудника выше min_rank_index поста при allow_overqualification=false."
+    source: "VAPS_7.8.2 §6 Allowed conflict_code, §BR-003"
+  RATING_DATA_MISSING:
+    description: "Нет данных рейтинга при ENABLE_RATING_CONFLICTS=true (soft-предупреждение, не hard-block). РАСШИРЕНИЕ вне нормативного §6 «Allowed»-списка — feature-flag."
+    source: "VAPS_7.8.2 BR-RATING-CONFLICT-002 (gated ENABLE_RATING_CONFLICTS)"

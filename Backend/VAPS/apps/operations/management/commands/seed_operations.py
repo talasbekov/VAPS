@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from apps.operations.models import Permission, Role, RolePermission
+from apps.operations.rbac.models import Permission, Role, RolePermission
 
 PERMISSIONS = [
     ("*", "Все права"),

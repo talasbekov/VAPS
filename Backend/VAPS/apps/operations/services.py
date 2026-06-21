@@ -3,7 +3,9 @@ from django.db import transaction
 
 from apps.core.clock import Clock
 from apps.core.selectors import CoreDivisionTreeSelector
-from apps.operations.models import RolePermission, TemporaryDutyPermission, UserRole
+from apps.operations.rbac.models import (
+    RolePermission, TemporaryDutyPermission, UserRole,
+)
 from apps.operations.selectors import OpsUserRoleSelector
 
 WILDCARD = "*"

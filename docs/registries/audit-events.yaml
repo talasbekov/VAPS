@@ -1,0 +1,80 @@
+# docs/registries/audit-events.yaml
+# Реестр типов аудит-событий VAPS (значения audit_logs.action) — разыменовывает СТОП-правило.
+#
+# ПРАВИЛО: тип аудит-события, которого нет в реестре, использовать НЕЛЬЗЯ → СТОП и спроси
+#   (architecture.md «Как читать этот документ», п.5; §Communication Patterns: «action UPPER_SNAKE
+#   из реестра»). Новый action — тем же PR, что вводит мутацию.
+#
+# ВНИМАНИЕ — провенанс: спека НЕ перечисляет аудит-действия одним списком. Явно заданы только два
+#   AUTH_LEGACY_TOKEN_* (§81) + контролируемый словарь action_code истории статусов (DB-OPS-032 CHECK / §4).
+#   Остальные действия ВЫВЕДЕНЫ из правила §6 «все мутации пишутся в audit_logs» + конкретных API/BR,
+#   которые требуют аудит (помечены provenance: derived-from-mutation со ссылкой-основанием).
+#   Это СТАРТОВЫЙ seed: при реализации каждой мутирующей стори E2+ её action дописывается сюда тем же PR.
+
+meta:
+  registry: audit-events
+  source_spec: docs/PersonnelStatus/VAPS_7.8.2.md
+  source_section: "§4.6 Audit Context (audit_logs.action); §6 (все мутации → audit_logs); §81 (legacy-token)"
+  generated_by_story: "1.12"
+  generated_on: "2026-06-19"
+  growth_rule: "Action не в реестре → СТОП. Каждая мутирующая стори E2+ дописывает свой action тем же PR."
+  record_shape: "audit_logs: actor_user_id, action, entity_type, entity_id, before/after JSON, request_id, IP (architecture.md §Communication Patterns)"
+
+# audit_logs.action — типы аудит-событий.
+actions:
+  AUTH_LEGACY_TOKEN_ACCEPTED:
+    entity_type: auth
+    description: "Аутентификация по legacy-токену прошла успешно."
+    provenance: spec-explicit
+    source: "VAPS_7.8.2 §81 (adapter, п.5)"
+  AUTH_LEGACY_TOKEN_REJECTED:
+    entity_type: auth
+    description: "Невалидная попытка legacy-токена (актор идентифицируем)."
+    provenance: spec-explicit
+    source: "VAPS_7.8.2 §81 (adapter, п.6)"
+  ASSIGNMENT_CREATED:
+    entity_type: assignment
+    description: "Создано индивидуальное назначение."
+    provenance: derived-from-mutation
+    source: "VAPS_7.8.2 API-OPS-001 (audit required)"
+  ASSIGNMENT_DELETED:
+    entity_type: assignment
+    description: "Удалено назначение (сброс брокериджа BR-008)."
+    provenance: derived-from-mutation
+    source: "VAPS_7.8.2 API-OPS-002 (audit required)"
+  GROUP_ASSIGNMENT_CREATED:
+    entity_type: assignment
+    description: "Групповое назначение — одна сводная запись в audit_logs."
+    provenance: derived-from-mutation
+    source: "VAPS_7.8.2 BR-005 (§ «пишет одну сводную запись в audit_logs»)"
+  POST_DEACTIVATED:
+    entity_type: post
+    description: "Деактивация поста в окне деактивации."
+    provenance: derived-from-mutation
+    source: "VAPS_7.8.2 BR-016 (§ «действие пишется в audit_logs»)"
+  DOCUMENT_DOWNLOADED:
+    entity_type: document
+    description: "Скачивание чувствительного документа (обязательный аудит)."
+    provenance: derived-from-mutation
+    source: "VAPS_7.8.2 BR-DOC-003 (§ «скачивание … фиксируется в audit_logs»)"
+  DAILY_SUBMISSION_SUBMITTED:
+    entity_type: daily_submission
+    description: "Подразделение сдало день (акт сдачи, снапшот)."
+    provenance: derived-from-mutation
+    source: "architecture.md ARCH-DATA-021; см. дельта-секцию VAPS_7.8.2"
+  DAILY_SUBMISSION_AMENDED:
+    entity_type: daily_submission
+    description: "Пересдача/amendment сданного дня (кто/когда/причина/санкция)."
+    provenance: derived-from-mutation
+    source: "architecture.md ARCH-DATA-021 (amendment-flow)"
+
+# Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
+#   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.
+status_history_action_codes:
+  CREATED:    { description: "Статус создан вручную.", source: "VAPS_7.8.2 DB-OPS-032 action_code CHECK" }
+  APPLIED:    { description: "Статус применён автоматически (актор SYSTEM, BR-001 проекции).", source: "VAPS_7.8.2 DB-OPS-032 action_code CHECK; BR-001 проекция" }
+  EXTENDED:   { description: "Интервал статуса продлён.", source: "VAPS_7.8.2 DB-OPS-032 action_code CHECK" }
+  TERMINATED: { description: "Статус досрочно прекращён.", source: "VAPS_7.8.2 DB-OPS-032 action_code CHECK" }
+  COMPLETED:  { description: "Статус завершён штатно (актор SYSTEM).", source: "VAPS_7.8.2 DB-OPS-032 action_code CHECK; BR-001 проекция" }
+  CANCELLED:  { description: "Статус отменён.", source: "VAPS_7.8.2 DB-OPS-032 action_code CHECK" }
+  MODIFIED:   { description: "Статус изменён (поля кроме интервала).", source: "VAPS_7.8.2 DB-OPS-032 action_code CHECK" }
