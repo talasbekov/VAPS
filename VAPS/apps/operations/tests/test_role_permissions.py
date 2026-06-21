@@ -1,7 +1,7 @@
 import pytest
 from django.db import IntegrityError
 
-from apps.operations.models import Permission, Role, RolePermission
+from apps.operations.rbac.models import Permission, Role, RolePermission
 
 pytestmark = pytest.mark.django_db
 

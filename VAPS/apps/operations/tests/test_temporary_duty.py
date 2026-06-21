@@ -4,7 +4,7 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from apps.operations.models import TemporaryDutyPermission
+from apps.operations.rbac.models import TemporaryDutyPermission
 
 pytestmark = pytest.mark.django_db
 

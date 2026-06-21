@@ -1,0 +1,220 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  MoreHorizontal,
+  Edit,
+  Trash2,
+  Eye,
+  Phone,
+  Mail,
+  Calendar,
+} from "lucide-react";
+import { useAuth, PermissionGate } from "@/lib/auth";
+import {
+  EMPLOYEE_STATUS_CODE_BY_LABEL,
+  getEmployeeStatusColor,
+} from "@/lib/status";
+import type { Employee } from "../model/types";
+
+interface EmployeeTableProps {
+  employees: Employee[];
+  onSelectEmployee: (employee: Employee) => void;
+}
+
+export function EmployeeTable({
+  employees,
+  onSelectEmployee,
+}: EmployeeTableProps) {
+  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+  const { hasPermission } = useAuth();
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedEmployees(employees.map((emp) => emp.id));
+    } else {
+      setSelectedEmployees([]);
+    }
+  };
+
+  const handleSelectEmployee = (employeeId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedEmployees([...selectedEmployees, employeeId]);
+    } else {
+      setSelectedEmployees(selectedEmployees.filter((id) => id !== employeeId));
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    if (status === "Не обновлено") {
+      return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
+    }
+
+    const code = EMPLOYEE_STATUS_CODE_BY_LABEL[status];
+    const colorClass = getEmployeeStatusColor(code);
+
+    return <Badge className={colorClass}>{status}</Badge>;
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("ru-RU");
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>Список сотрудников</CardTitle>
+          {selectedEmployees.length > 0 && (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-500">
+                Выбрано: {selectedEmployees.length}
+              </span>
+              <PermissionGate resource="employees" action="update">
+                <Button variant="outline" size="sm">
+                  Массовые действия
+                </Button>
+              </PermissionGate>
+            </div>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={
+                      selectedEmployees.length === employees.length &&
+                      employees.length > 0
+                    }
+                    onCheckedChange={handleSelectAll}
+                  />
+                </TableHead>
+                <TableHead className="w-16">№</TableHead>
+                <TableHead>ФИО</TableHead>
+                <TableHead>Должность</TableHead>
+                <TableHead>Отдел</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead>Контакты</TableHead>
+                <TableHead>Дата найма</TableHead>
+
+                <TableHead className="w-12"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {employees.map((employee) => (
+                <TableRow
+                  key={employee.id}
+                  className="cursor-pointer hover:bg-gray-50"
+                >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedEmployees.includes(employee.id)}
+                      onCheckedChange={(checked) =>
+                        handleSelectEmployee(employee.id, checked as boolean)
+                      }
+                    />
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {employee.number}
+                  </TableCell>
+                  <TableCell onClick={() => onSelectEmployee(employee)}>
+                    <div>
+                      <div className="font-medium">{employee.name}</div>
+                      <div className="text-sm text-gray-500">
+                        {employee.manager}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-sm">{employee.position}</TableCell>
+                  <TableCell className="text-sm">
+                    {employee.department}
+                  </TableCell>
+                  <TableCell>{getStatusBadge(employee.status)}</TableCell>
+                  <TableCell>
+                    <div className="space-y-1">
+                      <div className="flex items-center text-sm">
+                        <Phone className="h-3 w-3 mr-1 text-gray-400" />
+                        {employee.phone}
+                      </div>
+                      <div className="flex items-center text-sm">
+                        <Mail className="h-3 w-3 mr-1 text-gray-400" />
+                        {employee.email}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    <div className="flex items-center">
+                      <Calendar className="h-3 w-3 mr-1 text-gray-400" />
+                      {formatDate(employee.hireDate)}
+                    </div>
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" className="h-8 w-8 p-0">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Действия</DropdownMenuLabel>
+                        <DropdownMenuItem
+                          onClick={() => onSelectEmployee(employee)}
+                        >
+                          <Eye className="mr-2 h-4 w-4" />
+                          Просмотр профиля
+                        </DropdownMenuItem>
+                        <PermissionGate resource="employees" action="update">
+                          <DropdownMenuItem>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Редактировать
+                          </DropdownMenuItem>
+                        </PermissionGate>
+                        <DropdownMenuSeparator />
+                        <PermissionGate resource="employees" action="delete">
+                          <DropdownMenuItem className="text-red-600">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Удалить
+                          </DropdownMenuItem>
+                        </PermissionGate>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        {employees.length === 0 && (
+          <div className="text-center py-8 text-gray-500">
+            <p>Сотрудники не найдены</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

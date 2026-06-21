@@ -1,0 +1,203 @@
+/* FullCalendar стилизация */
+.status-calendar {
+  --fc-border-color: #e5e7eb;
+  --fc-button-bg-color: #f3f4f6;
+  --fc-button-border-color: #e5e7eb;
+  --fc-button-text-color: #374151;
+  --fc-button-hover-bg-color: #e5e7eb;
+  --fc-button-hover-border-color: #d1d5db;
+  --fc-button-active-bg-color: #3b82f6;
+  --fc-button-active-border-color: #3b82f6;
+  --fc-today-bg-color: #eff6ff;
+  --fc-event-border-color: transparent;
+  --fc-page-bg-color: transparent;
+}
+
+/* Заголовок календаря */
+.status-calendar .fc-toolbar-title {
+  font-size: 1.25rem !important;
+  font-weight: 600;
+  color: #111827;
+}
+
+/* Кнопки навигации */
+.status-calendar .fc-button {
+  padding: 0.5rem 1rem !important;
+  font-weight: 500 !important;
+  border-radius: 0.5rem !important;
+  transition: all 0.2s ease !important;
+}
+
+.status-calendar .fc-button:focus {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
+}
+
+.status-calendar .fc-button-active {
+  background-color: #3b82f6 !important;
+  border-color: #3b82f6 !important;
+  color: white !important;
+}
+
+.status-calendar .fc-prev-button,
+.status-calendar .fc-next-button {
+  padding: 0.5rem !important;
+}
+
+/* Ячейки дней */
+.status-calendar .fc-daygrid-day {
+  transition: background-color 0.2s ease;
+}
+
+.status-calendar .fc-daygrid-day:hover {
+  background-color: #f9fafb;
+}
+
+.status-calendar .fc-daygrid-day-number {
+  padding: 0.5rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.status-calendar .fc-day-today .fc-daygrid-day-number {
+  background-color: #3b82f6;
+  color: white;
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* События */
+.status-calendar .fc-event {
+  border-radius: 0.375rem !important;
+  padding: 0.125rem 0.375rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 500 !important;
+  border-left-width: 3px !important;
+  cursor: pointer !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+.status-calendar .fc-event:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.status-calendar .fc-event-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ссылка "ещё" */
+.status-calendar .fc-daygrid-more-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #3b82f6;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  transition: background-color 0.2s ease;
+}
+
+.status-calendar .fc-daygrid-more-link:hover {
+  background-color: #eff6ff;
+}
+
+/* Названия дней недели */
+.status-calendar .fc-col-header-cell {
+  padding: 0.75rem 0;
+  background-color: #f9fafb;
+}
+
+.status-calendar .fc-col-header-cell-cushion {
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+/* Popover при клике на "ещё" */
+.status-calendar .fc-popover {
+  border-radius: 0.75rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  border: none;
+  overflow: hidden;
+}
+
+.status-calendar .fc-popover-header {
+  background-color: #f9fafb;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+}
+
+.status-calendar .fc-popover-body {
+  padding: 0.5rem;
+}
+
+/* Неделя */
+.status-calendar .fc-timegrid-slot {
+  height: 3rem;
+}
+
+.status-calendar .fc-timegrid-slot-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* Анимация появления */
+.status-calendar .fc-view-harness {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Скролл */
+.status-calendar .fc-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+
+.status-calendar .fc-scroller::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.status-calendar .fc-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.status-calendar .fc-scroller::-webkit-scrollbar-thumb {
+  background-color: #d1d5db;
+  border-radius: 3px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .status-calendar .fc-toolbar {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .status-calendar .fc-toolbar-title {
+    font-size: 1rem !important;
+  }
+  
+  .status-calendar .fc-button {
+    padding: 0.375rem 0.75rem !important;
+    font-size: 0.875rem !important;
+  }
+}
+
+

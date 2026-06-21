@@ -46,7 +46,7 @@ def test_require_permission_denies_without_permission():
 
 def test_require_permission_allows_admin():
     from django.core.management import call_command
-    from apps.operations.models import UserRole
+    from apps.operations.rbac.models import UserRole
     call_command("seed_operations")
     UserRole.objects.create(user_id="admin-1", role_code_id="ADMIN")
     request = _authenticated_request(HTTP_X_USER_ID="admin-1")

@@ -7,7 +7,9 @@ from apps.operations.api.permissions import require_permission
 from apps.operations.api.serializers import (
     PermissionSerializer, RoleSerializer, TemporaryDutySerializer, UserRoleSerializer,
 )
-from apps.operations.models import Permission, Role, TemporaryDutyPermission, UserRole
+from apps.operations.rbac.models import (
+    Permission, Role, TemporaryDutyPermission, UserRole,
+)
 from apps.operations.services import PermissionService, RoleAdminService
 
 

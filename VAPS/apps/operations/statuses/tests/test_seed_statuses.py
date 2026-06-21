@@ -1,0 +1,100 @@
+import pytest
+from django.core.management import call_command
+
+from apps.operations.statuses.models import HARD_STATUS_TYPE_CODES, StatusType
+from apps.operations.statuses.services.strength_report import (
+    ATTACHED_CODE,
+    REPORT_COLUMN_BY_CODE,
+    STATUS_TYPE_PRIORITIES,
+)
+
+pytestmark = pytest.mark.django_db
+
+EXPECTED_COUNT = 17
+# PENDING_CLARIFICATION is an architecture-added type with no strength_report row.
+EXTRA_BEYOND_STRENGTH_REPORT = {"PENDING_CLARIFICATION"}
+
+
+def _seed():
+    call_command("seed_statuses")
+
+
+def test_seed_creates_all_types():
+    _seed()
+    assert StatusType.objects.count() == EXPECTED_COUNT
+    codes = set(StatusType.objects.values_list("code", flat=True))
+    # AC-4: catalog == strength_report constants + the pending type.
+    assert codes == set(STATUS_TYPE_PRIORITIES) | EXTRA_BEYOND_STRENGTH_REPORT
+    assert codes == set(REPORT_COLUMN_BY_CODE) | EXTRA_BEYOND_STRENGTH_REPORT
+
+
+def test_seed_is_idempotent():
+    _seed()
+    _seed()
+    assert StatusType.objects.count() == EXPECTED_COUNT
+
+
+def test_exactly_four_hard_blocks_match_constant():
+    _seed()
+    hard = set(
+        StatusType.objects.filter(is_hard_block=True).values_list("code", flat=True)
+    )
+    # AC-3: hard set is exactly the codes employee_status guards.
+    assert hard == set(HARD_STATUS_TYPE_CODES)
+    assert len(hard) == 4
+
+
+def test_priorities_and_columns_match_strength_report():
+    _seed()
+    for st in StatusType.objects.exclude(code__in=EXTRA_BEYOND_STRENGTH_REPORT):
+        assert st.priority == STATUS_TYPE_PRIORITIES[st.code]
+        assert st.report_column_code == REPORT_COLUMN_BY_CODE[st.code]
+
+
+def test_counts_in_staff_false_only_for_attached():
+    _seed()
+    not_in_staff = set(
+        StatusType.objects.filter(counts_in_staff=False).values_list("code", flat=True)
+    )
+    assert not_in_staff == {ATTACHED_CODE}
+
+
+def test_restricts_editing_only_for_detached():
+    _seed()
+    restricting = set(
+        StatusType.objects.filter(restricts_editing=True).values_list("code", flat=True)
+    )
+    assert restricting == {"DETACHED"}
+
+
+def test_is_ku_owned_matches_db_ops_003():
+    _seed()
+    ku_owned = set(
+        StatusType.objects.filter(is_ku_owned=True).values_list("code", flat=True)
+    )
+    # DB-OPS-003: KU owns the absence catalog; operational statuses are
+    # system-owned. Independent expectation guards the seed's KU_OWNED_CODES set.
+    assert ku_owned == {
+        "SICK_LEAVE",
+        "LEAVE_BY_REPORT",
+        "VACATION",
+        "COMMAND",
+        "STUDY",
+        "COMPETITION",
+        "CONFERENCE",
+        "OTHER_ABSENCE",
+        "DETACHED",
+        "ATTACHED",
+    }
+
+
+def test_pending_clarification_provisional_values():
+    _seed()
+    pending = StatusType.objects.get(code="PENDING_CLARIFICATION")
+    # Provisional values (Bratan-confirmed) pending the status engine (E3);
+    # pin them so a silent drift in the unreviewed sentinel row fails red.
+    assert pending.priority == 990
+    assert pending.report_column_code == "IN_SERVICE"
+    assert pending.is_hard_block is False
+    assert pending.counts_in_staff is True
+    assert pending.counts_in_list is True

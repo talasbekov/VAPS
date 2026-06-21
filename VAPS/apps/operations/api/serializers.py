@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.operations.models import (
+from apps.operations.rbac.models import (
     Permission, Role, TemporaryDutyPermission, UserRole,
 )
 

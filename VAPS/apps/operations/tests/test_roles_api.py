@@ -2,7 +2,7 @@ import pytest
 from django.core.management import call_command
 from rest_framework.test import APIClient
 
-from apps.operations.models import UserRole
+from apps.operations.rbac.models import UserRole
 
 pytestmark = pytest.mark.django_db
 

@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BACKEND_URL=http://10.115.70.56:8100
+    ports:
+      - "3100:3100"
+    environment:
+      - NODE_ENV=production
+      - PORT=3100
+      - HOSTNAME=0.0.0.0
+      - BACKEND_URL=http://10.115.70.56:8100
+      - NEXTAUTH_URL=http://localhost:3100
+      - NEXTAUTH_SECRET=your-secret-key-change-in-production
+    # Убедитесь, что контейнер может достичь бэкенд по IP 10.115.70.56:8100
+    # Если бэкенд в той же сети, можно использовать network_mode: "host" (только для Linux)
+    # network_mode: "host"  # Раскомментируйте, если нужно использовать сеть хоста
+    restart: unless-stopped

@@ -3,7 +3,7 @@ import uuid
 import pytest
 from django.db import IntegrityError
 
-from apps.operations.models import Role, UserRole
+from apps.operations.rbac.models import Role, UserRole
 
 pytestmark = pytest.mark.django_db
 
