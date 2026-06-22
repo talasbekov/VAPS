@@ -3,11 +3,14 @@ from django.db import transaction
 from django.db.models import Q
 
 from apps.core.models import (
+    Employee,
     EmployeeDivisionHistory,
     EmployeeStaffingAssignment,
     SensitiveFieldPolicy,
     StaffingSlot,
+    Vacancy,
 )
+from apps.core.selectors import local_midnight
 
 
 @transaction.atomic
@@ -51,6 +54,78 @@ def assign_employee_division(
     employee.division = division
     employee.save(update_fields=["division", "updated_at"])
     return record
+
+
+@transaction.atomic
+def dismiss_employee(employee, *, date, reason=None, actor: str):
+    """Dismiss an employee on calendar date D (core side, story 2.5).
+
+    Soft-delete only (architecture.md:468 / ARCH-DATA-025 — nothing is
+    physically deleted): archive the card, close the open division-history
+    interval at D, free the staffing slot(s) (close the open assignment +
+    open an explicit Vacancy carrying the основание), so the employee drops
+    out of roster_on(D) — the Список denominator (story 2.4).
+
+    Cross-context note: closing EmployeeStatus rows is NOT here (core ↛
+    operations, ARCH-004) — the operations-side orchestrator composes this
+    with close_active_statuses_on. `date` is explicit (no wall-clock,
+    ARCH-DATA-022); datetime columns use local_midnight(D).
+    """
+    if not actor or not actor.strip():
+        raise ValidationError("actor must be a non-empty string")
+    employee = Employee.objects.select_for_update().get(id=employee.id)
+    if employee.employment_status != Employee.EmploymentStatus.WORKING:
+        raise ValidationError("employee is not WORKING; cannot dismiss")
+    t = local_midnight(date)
+
+    open_interval = (
+        EmployeeDivisionHistory.objects.select_for_update()
+        .filter(employee=employee, ends_at__isnull=True)
+        .order_by("-starts_at")
+        .first()
+    )
+    if open_interval:
+        if open_interval.starts_at >= t:
+            raise ValidationError("dismissal date precedes the open interval start.")
+        open_interval.ends_at = t
+        open_interval.full_clean()
+        open_interval.save(update_fields=["ends_at"])
+
+    open_assignments = list(
+        EmployeeStaffingAssignment.objects.select_for_update().filter(
+            employee=employee, ends_at__isnull=True
+        )
+    )
+    for assignment in open_assignments:
+        if assignment.starts_at >= t:
+            raise ValidationError("dismissal date precedes an assignment start.")
+        assignment.ends_at = t
+        assignment.full_clean()
+        assignment.save(update_fields=["ends_at"])
+        vacancy = Vacancy(
+            staffing_slot=assignment.staffing_slot,
+            status_code=Vacancy.Status.OPEN,
+            opened_at=t,
+            reason=reason,
+            created_by=actor,
+        )
+        vacancy.full_clean()
+        vacancy.save()
+
+    employee.employment_status = Employee.EmploymentStatus.ARCHIVED
+    employee.is_active = False
+    employee.dismissal_date = date
+    employee.separated_at = t
+    employee.save(
+        update_fields=[
+            "employment_status",
+            "is_active",
+            "dismissal_date",
+            "separated_at",
+            "updated_at",
+        ]
+    )
+    return employee
 
 
 def compute_free_slots(division_id, *, on_date):
