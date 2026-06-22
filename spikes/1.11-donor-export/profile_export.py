@@ -85,6 +85,13 @@ def load_by_model(path):
         missing = {"model", "pk", "fields"} - row.keys()
         if missing:
             raise ValueError(f"строка {i}: нет обязательных ключей {sorted(missing)}")
+        # 'model' — и КЛЮЧ defaultdict, и сравнивается в sorted() (print_volume):
+        # нестроковый model даёт traceback мимо контракта exit 1 — null/число →
+        # TypeError в sorted(); list → unhashable-ключ → TypeError вне пойманного
+        # (OSError, ValueError, KeyError). Валидируем здесь (под guard'ом → exit 1).
+        if not isinstance(row["model"], str):
+            got = type(row["model"]).__name__
+            raise ValueError(f"строка {i}: 'model' не строка (получено {got})")
         if not isinstance(row["fields"], dict):
             raise ValueError(f"строка {i} ({row['model']!r}): 'fields' не объект")
         by_model[row["model"]].append(row)
