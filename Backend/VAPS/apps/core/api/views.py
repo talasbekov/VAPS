@@ -69,6 +69,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def archive(self, request, *args, **kwargs):
+        # NOTE (story 2.5 review, decision A): the canonical dismissal is the
+        # service layer — apps.operations.statuses.services.dismissal
+        # .dismiss_employee (archive + interval + slot→Vacancy + status
+        # truncation, atomic). This thin legacy action is left as-is; an
+        # RBAC-gated dismissal endpoint that wires the orchestrator (with
+        # DomainError mapping) is deferred to 2.9/E5 — core ↛ operations
+        # prevents this core view from calling the orchestrator.
         emp = self.get_object()
         emp.employment_status = Employee.EmploymentStatus.ARCHIVED
         emp.is_active = False
