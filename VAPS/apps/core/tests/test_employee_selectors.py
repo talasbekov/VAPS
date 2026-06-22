@@ -3,7 +3,7 @@ import datetime as dt
 import pytest
 from django.utils import timezone
 
-from apps.core.models import Division, DivisionType, Employee, Organization
+from apps.core.models import Division, DivisionType, Employee, Organization, Position
 from apps.core.selectors import CoreEmployeeSelector, HistoricalEmployeeSelector
 from apps.core.services import assign_employee_division
 
@@ -26,6 +26,30 @@ def setup():
     return emp, d1, d2
 
 
+@pytest.fixture
+def fresh_division():
+    org = Organization.objects.create(name="HQ2", code="HQ2")
+    dtp = DivisionType.objects.create(code="dept", name="Отдел")
+    return Division.objects.create(
+        organization=org, type_code=dtp, name="CanonDiv", code="CD"
+    )
+
+
+def _emp(division, *, iin, last_name, position_code, attached=False):
+    # save() derives full_name from last_name + first_name; create() skips
+    # full_clean so the iin validator is not exercised here (selector test).
+    return Employee.objects.create(
+        iin=iin,
+        full_name="ignored",
+        last_name=last_name,
+        first_name="И",
+        rank_code="OFFICER",
+        position_code=position_code,
+        division=division,
+        is_attached_force=attached,
+    )
+
+
 def test_active_employees_in_division_excludes_inactive(setup):
     emp, d1, _ = setup
     Employee.objects.create(
@@ -38,6 +62,34 @@ def test_active_employees_in_division_excludes_inactive(setup):
     )
     active = CoreEmployeeSelector.active_in_division(d1.id)
     assert [e.id for e in active] == [emp.id]
+
+
+def test_active_in_division_applies_sort_canon(fresh_division):
+    # AC-2/AC-5: own personnel by Position.level (asc) then surname; the
+    # attached-force member goes to the bottom block (AC-1) regardless of level.
+    div = fresh_division
+    Position.objects.create(code="HEAD", name="Начальник", level=1)
+    Position.objects.create(code="OPER", name="Оператор", level=5)
+    oper = _emp(div, iin="900101300420", last_name="Яковлев", position_code="OPER")
+    head_b = _emp(div, iin="900101300421", last_name="Бойко", position_code="HEAD")
+    head_a = _emp(div, iin="900101300422", last_name="Абрамов", position_code="HEAD")
+    attached = _emp(
+        div, iin="900101300423", last_name="Сидоров", position_code="HEAD",
+        attached=True,
+    )
+    result = [e.id for e in CoreEmployeeSelector.active_in_division(div.id)]
+    assert result == [head_a.id, head_b.id, oper.id, attached.id]
+
+
+def test_active_in_division_unmatched_position_code_does_not_crash(fresh_division):
+    # AC-3: a position_code with no Position row gets UNKNOWN_LEVEL and sorts
+    # after the known-level person, by surname — the list still comes out.
+    div = fresh_division
+    Position.objects.create(code="HEAD", name="Начальник", level=1)
+    known = _emp(div, iin="900101300430", last_name="Яковлев", position_code="HEAD")
+    unknown = _emp(div, iin="900101300431", last_name="Абрамов", position_code="NOPE")
+    result = [e.id for e in CoreEmployeeSelector.active_in_division(div.id)]
+    assert result == [known.id, unknown.id]
 
 
 def test_historical_division_at_uses_history(setup):

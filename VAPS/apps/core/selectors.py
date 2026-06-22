@@ -10,6 +10,13 @@ from apps.core.models import (
     DivisionHistoricalSlot,
     Employee,
     EmployeeDivisionHistory,
+    Position,
+)
+from apps.core.sorting import (
+    UNKNOWN_LEVEL,
+    RosterEntry,
+    RosterGroup,
+    sort_roster,
 )
 
 
@@ -112,11 +119,35 @@ class CoreEmployeeSelector:
 
     @staticmethod
     def active_in_division(division_id):
-        return list(
-            Employee.objects.filter(division_id=division_id, is_active=True).order_by(
-                "full_name"
+        """Active employees of a division in the FR-5 sort canon (story 2.6).
+
+        Order: own personnel by Position.level (asc) then surname, then the
+        attached-force block. ``position_code`` is a plain string, so the level
+        comes from one ``{code: level}`` map (no N+1); an unmatched code falls
+        back to UNKNOWN_LEVEL (AC-3). Group is static here — ``is_attached_force``
+        is the only attach signal available without a date; date-keyed
+        ATTACHED/DETACHED classification lives in apps.operations.statuses
+        (core ↛ operations) and plugs into the same canon when the per-person
+        расход lists land (E6/E9/E10).
+        """
+        levels = dict(Position.objects.values_list("code", "level"))
+        entries = [
+            RosterEntry(
+                group=(
+                    RosterGroup.ATTACHED
+                    if employee.is_attached_force
+                    else RosterGroup.OWN
+                ),
+                position_level=levels.get(employee.position_code, UNKNOWN_LEVEL),
+                surname=employee.last_name or employee.full_name or "",
+                id=employee.id,
+                payload=employee,
             )
-        )
+            for employee in Employee.objects.filter(
+                division_id=division_id, is_active=True
+            )
+        ]
+        return [entry.payload for entry in sort_roster(entries)]
 
     @staticmethod
     def working_by_division(division_ids=None) -> dict:
