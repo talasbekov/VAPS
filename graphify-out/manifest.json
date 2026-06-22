@@ -1950,8 +1950,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/api/views.py": {
-    "mtime": 1781181152.0284526,
-    "ast_hash": "e0ef47e1c707a1054f5ec07a72ceb1cc",
+    "mtime": 1782133000.0825956,
+    "ast_hash": "876b9019c9310bb8dbf2958694f55b06",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/apps.py": {
@@ -2050,13 +2050,13 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/selectors.py": {
-    "mtime": 1781519515.7815833,
-    "ast_hash": "080bcab334f320a3fe41a2843585ccff",
+    "mtime": 1782129227.7784767,
+    "ast_hash": "153e3ea398a50d329814e9203d1ad0c9",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/services.py": {
-    "mtime": 1781184429.5853686,
-    "ast_hash": "f4b0fe767596a83839a29c021e30c8fe",
+    "mtime": 1782132907.873037,
+    "ast_hash": "619ca21024209b30eae65ffb180cd120",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/tests/__init__.py": {
@@ -2185,8 +2185,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/api/serializers.py": {
-    "mtime": 1781077308.3129559,
-    "ast_hash": "5b87dda93d165b5766825357c7e35499",
+    "mtime": 1782051469.9441664,
+    "ast_hash": "7473454857c1222a2e4b7022a767fd40",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/api/urls.py": {
@@ -2195,8 +2195,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/api/views.py": {
-    "mtime": 1781181049.9490345,
-    "ast_hash": "14ad5baaf0ddde5b54b920f2865baabf",
+    "mtime": 1782052256.2753224,
+    "ast_hash": "b28b0cad1aa255633d930cfa6e2a3c53",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/apps.py": {
@@ -2215,8 +2215,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/management/commands/seed_operations.py": {
-    "mtime": 1781156214.660918,
-    "ast_hash": "f032577096b57c2330048bcef79d467f",
+    "mtime": 1782051469.9250455,
+    "ast_hash": "d5c7d7c16541b8df946fb5f88c5af596",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/migrations/0001_initial.py": {
@@ -2245,18 +2245,18 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/models.py": {
-    "mtime": 1781180984.0214221,
-    "ast_hash": "ff726400ff253e1f00eee17283bde982",
+    "mtime": 1782051443.7967627,
+    "ast_hash": "d6c237acaab72299eaf7ad8563a72573",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/selectors.py": {
-    "mtime": 1781156225.716875,
-    "ast_hash": "55a3155b955c0dc79a5918d7cf4470b4",
+    "mtime": 1782051469.9353354,
+    "ast_hash": "2b4418f9e801b874b5a991c735976110",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/services.py": {
-    "mtime": 1781184434.8443482,
-    "ast_hash": "5a2f1ae163b31c8553c6c6c1e4384adc",
+    "mtime": 1782052255.1062884,
+    "ast_hash": "4a90c15b72daf5656e4cbeee7bc8c6e7",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/__init__.py": {
@@ -2265,8 +2265,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_api_permissions.py": {
-    "mtime": 1781158762.3496559,
-    "ast_hash": "58c4925a3fe35b86c72e022b2cf58909",
+    "mtime": 1782051469.9293644,
+    "ast_hash": "5b1b85889cc9d641c7aba03b09dd081c",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_app.py": {
@@ -2280,68 +2280,68 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_permission_scope.py": {
-    "mtime": 1781156307.842561,
-    "ast_hash": "6c6837192f5cb184ff67485de207da3f",
+    "mtime": 1782051469.9222772,
+    "ast_hash": "fe233d7be04124874b8a4f70cdccd644",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_permission_service.py": {
-    "mtime": 1781155754.9465404,
-    "ast_hash": "618647ae70f727036298593042e16519",
+    "mtime": 1782051469.9337924,
+    "ast_hash": "e4c6db6452f771e1c20007816c252244",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_permission_temp_duty.py": {
-    "mtime": 1781155754.9465404,
-    "ast_hash": "def63e68b6f16f3d9a19903d0000a2e1",
+    "mtime": 1782051469.9380407,
+    "ast_hash": "93ee35b09ca6b8334352af9572c47a87",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_rbac_write_services.py": {
-    "mtime": 1781181117.4036477,
-    "ast_hash": "6cda55a505c9c622b9d1419169d1415d",
+    "mtime": 1782051469.9193509,
+    "ast_hash": "8bef2dd04616fb9d5126b1018e11f5a2",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_role_permissions.py": {
-    "mtime": 1781156264.4117258,
-    "ast_hash": "b440ce81ae424d52698ee8d7a024b9e1",
+    "mtime": 1782051469.9174974,
+    "ast_hash": "fbfd3156a6bc81d3c55708516457b17f",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_roles_api.py": {
-    "mtime": 1781077308.3132808,
-    "ast_hash": "3c9ab10306a85e5d89836d2ca181ebb3",
+    "mtime": 1782051469.9325078,
+    "ast_hash": "fa09336c10e1294a94190df264a8a8f7",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_roles_permissions.py": {
-    "mtime": 1781077308.3132808,
-    "ast_hash": "607ac705a9ebd49574eb2be994edc885",
+    "mtime": 1782051469.940721,
+    "ast_hash": "0b66f8fe87042785767c9d4fc87e5d30",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_seed.py": {
-    "mtime": 1781077308.3132808,
-    "ast_hash": "e87f5d699b6273aba208e9b25105a8ac",
+    "mtime": 1782051469.9198918,
+    "ast_hash": "68bd3c2f4517574bd23f096868f9ba59",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_temp_duty_api.py": {
-    "mtime": 1781156272.1736963,
-    "ast_hash": "0f9b9b15b22ef1ea7d319ebfe8687ef9",
+    "mtime": 1782051469.9268916,
+    "ast_hash": "e3440427084828cdb532086c74a167c9",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_temporary_duty.py": {
-    "mtime": 1781077308.3132808,
-    "ast_hash": "f8508c19e709cf9eec9cb73bff82672e",
+    "mtime": 1782051469.939353,
+    "ast_hash": "18c2ee0182eb0adff4e4ee6ffefff62c",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_user_role_selector.py": {
-    "mtime": 1781077308.3132808,
-    "ast_hash": "60c3e805bb63e418ef1f7af503fb170a",
+    "mtime": 1782051469.9236567,
+    "ast_hash": "f131478f15dcdc3acd5b05af5d3a3797",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_user_roles.py": {
-    "mtime": 1781077308.3132808,
-    "ast_hash": "9e9777c32cc02c2c70056dd4ec9e7583",
+    "mtime": 1782051469.9367204,
+    "ast_hash": "0b94c16a73fd91316327d6590bad34a6",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_user_roles_api.py": {
-    "mtime": 1781156282.5986564,
-    "ast_hash": "8f6a1bbe4bbf9d46c0c799911451986f",
+    "mtime": 1782051469.9310749,
+    "ast_hash": "220ef04170595c98c89ea1f45af4734a",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/validators.py": {
@@ -2355,8 +2355,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/config/settings.py": {
-    "mtime": 1781241371.3856666,
-    "ast_hash": "79919e320aa9ee6aeb8caeda4677ca83",
+    "mtime": 1782060136.9550967,
+    "ast_hash": "584c42abb61fde0fe70aed7cd03c8c9c",
     "semantic_hash": ""
   },
   "Backend/VAPS/config/urls.py": {
@@ -17270,8 +17270,8 @@
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1781077308.3136585,
-    "ast_hash": "3930565ba39af9bd67dd433ea2fdf1dd",
+    "mtime": 1781791049.513165,
+    "ast_hash": "4ca2780868ea70b381b97cbd17e71b1b",
     "semantic_hash": ""
   },
   "README.md": {
@@ -17790,18 +17790,18 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1781618521.9389524,
-    "ast_hash": "c113225221b249ab135f79b39d625b0d",
+    "mtime": 1782128846.7464035,
+    "ast_hash": "8a1f507fa1c355e594eb01c552421026",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1781615829.1899126,
-    "ast_hash": "e530a80c4788acfb045f9e89e7d2f240",
+    "mtime": 1782133240.9446757,
+    "ast_hash": "374a469960b18021d85688be0d045f49",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
-    "mtime": 1781100580.3517892,
-    "ast_hash": "725eac2fb739c81f6cce05256434a977",
+    "mtime": 1781851108.248842,
+    "ast_hash": "a0031853537e8280690d85e50ecd296d",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/epics.md": {
@@ -17890,8 +17890,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_actor_field.py": {
-    "mtime": 1781184496.0011094,
-    "ast_hash": "279a33bd88254811f635a4fdb9aac5a7",
+    "mtime": 1782051469.9264164,
+    "ast_hash": "be302b3bc9eaf59181e6dfa72c17cce4",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/1-4-\u043f\u043e\u043b\u0435-\u0430\u043a\u0442\u043e\u0440\u0430-\u0432-\u0431\u0430\u0437\u043e\u0432\u044b\u0445-\u043c\u043e\u0434\u0435\u043b\u044f\u0445.md": {
@@ -17975,8 +17975,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/models/__init__.py": {
-    "mtime": 1781185509.3590555,
-    "ast_hash": "e06f5e04b4f804133888686c1d601e63",
+    "mtime": 1782057009.5167587,
+    "ast_hash": "0a2253f0c7e222966a3b13d9bb30c7aa",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/models/employee_status.py": {
@@ -17990,8 +17990,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/tests/test_app.py": {
-    "mtime": 1781185468.7879193,
-    "ast_hash": "d2164e8c01a3078a86d0dc19e4485795",
+    "mtime": 1782057203.0784335,
+    "ast_hash": "5129910c8a2185b691f9b5461b245ff3",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/tests/test_employee_status_concurrency.py": {
@@ -18025,8 +18025,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/services/strength_report.py": {
-    "mtime": 1781519519.1145856,
-    "ast_hash": "ded8f32239af16289c4f24b498da30be",
+    "mtime": 1782127831.0774693,
+    "ast_hash": "d6790d82f5a86fa203767fdd4389577d",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/tests/test_strength_report_properties.py": {
@@ -18035,8 +18035,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/tests/test_strength_report_service.py": {
-    "mtime": 1781519556.0936093,
-    "ast_hash": "22074e6d5ac5e8736f89c95a37574826",
+    "mtime": 1782127930.689573,
+    "ast_hash": "bbd9819d902e04922343493ca97546ce",
     "semantic_hash": ""
   },
   "Backend/VAPS/conftest.py": {
@@ -18100,13 +18100,13 @@
     "semantic_hash": ""
   },
   "deploy/spike-1.9/install-probe.sh": {
-    "mtime": 1781618383.9614587,
-    "ast_hash": "7de6c3bf4fa76784600722c2ffe874ab",
+    "mtime": 1781844869.2356157,
+    "ast_hash": "a42c4beee755ad2434af7f4839cc0f2d",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/1-9-\u0441\u043f\u0430\u0439\u043a-\u043a\u043e\u043d\u0442\u0443\u0440-\u043f\u0440\u043e\u0431\u0430.md": {
-    "mtime": 1781618594.1271892,
-    "ast_hash": "d79bfc38a446f14cd39777775fd04ed2",
+    "mtime": 1781844985.8930285,
+    "ast_hash": "64ce5625528fc1b407039248382b96ff",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/escalation-A5-A8-owner-2026-06-16.md": {
@@ -18115,13 +18115,13 @@
     "semantic_hash": ""
   },
   "deploy/spike-1.9/RUNBOOK.md": {
-    "mtime": 1781607379.627838,
-    "ast_hash": "c7621885fb64a63b3b095b2d8eb9afaf",
+    "mtime": 1781844896.6442614,
+    "ast_hash": "70af0ecb8be70b9ad5153ecd287c78f2",
     "semantic_hash": ""
   },
   "deploy/spike-1.9/docker-compose.yml": {
-    "mtime": 1781607194.1119254,
-    "ast_hash": "8ea809f5fa5b032da5a311e63825e471",
+    "mtime": 1781628572.5511124,
+    "ast_hash": "28f76e71a867e5113692175f6839c219",
     "semantic_hash": ""
   },
   "deploy/spike-1.9/index.html": {
@@ -18132,6 +18132,1006 @@
   "deploy/spike-1.9/sha256sums.txt": {
     "mtime": 1781607261.4981637,
     "ast_hash": "66c5b7e34a40b3ee263829ec80ed6f6b",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/.eslintrc.json": {
+    "mtime": 1756369444.0,
+    "ast_hash": "b413aa4a89c5a30e0478eafaa3949127",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/api/auth/[...nextauth]/route.ts": {
+    "mtime": 1763794808.0,
+    "ast_hash": "09fc1059e912380ab76b87494b271878",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/dashboard/page.tsx": {
+    "mtime": 1764332657.0,
+    "ast_hash": "6ba5fd1630edf921b282e89513140510",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/employees/loading.tsx": {
+    "mtime": 1755896145.0,
+    "ast_hash": "97ead856438c8f56e8518180bce09ede",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/employees/page.tsx": {
+    "mtime": 1764329164.0,
+    "ast_hash": "896547ad6d4efb7e6836f7ddcf53246f",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/feedback/page.tsx": {
+    "mtime": 1764332657.0,
+    "ast_hash": "7b146fbe8554e0a488b12b9a6d992eb2",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/layout.tsx": {
+    "mtime": 1763794804.0,
+    "ast_hash": "c06c147b6b8da6360669415726a7c7d0",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/not-found.tsx": {
+    "mtime": 1763789038.0,
+    "ast_hash": "62f329c49fe7f5001ad44ae65b34cc3e",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/organization/page.tsx": {
+    "mtime": 1764140302.0,
+    "ast_hash": "bed9bb91b0cb8477d87458b3c4ab576c",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/page.tsx": {
+    "mtime": 1763794975.0,
+    "ast_hash": "7df01d3b776b45e10da935ea4ca943d2",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/reports/page.tsx": {
+    "mtime": 1764332657.0,
+    "ast_hash": "a1af9f73544b4481ae05163bf879ba7b",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/app/statuses/page.tsx": {
+    "mtime": 1764325461.0,
+    "ast_hash": "121999b153aa663534747332b78a0286",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components.json": {
+    "mtime": 1763794802.0,
+    "ast_hash": "883a0b7479775a644b93b9e708b89d30",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/dashboard-layout.tsx": {
+    "mtime": 1764309628.0,
+    "ast_hash": "20b29131f260d2f3b200e499c971c9b9",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/dashboard/stats-cards.tsx": {
+    "mtime": 1764310748.0,
+    "ast_hash": "92a1185ee542a68dd5ed31b1f96fe092",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/edit-status-dialog.tsx": {
+    "mtime": 1764140302.0,
+    "ast_hash": "38fbd1b7b6ac28968d17333c11fb6b3e",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/mass-status-update.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "170fd563395ac627ca594e0e8ae7eb8d",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/navigation/header.tsx": {
+    "mtime": 1764153415.0,
+    "ast_hash": "bec6ce30e780057c941064b07463b731",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/navigation/mobile-menu.tsx": {
+    "mtime": 1764140302.0,
+    "ast_hash": "aeae295a110c5e49f37131b3deb5b5a6",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/navigation/sidebar.tsx": {
+    "mtime": 1764309628.0,
+    "ast_hash": "69748e7dd8c9e76a14295ce290046aaf",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/org-board.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "35675642307323f71ac2296e7d05a5f6",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/org-chart.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "20f928b8194b8bbfa96cc49924a55675",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/org-node.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "557c6eb052a3b35bb390fb9e0e3363bd",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/profiler.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "9b7a914a37d51777219ed7369faeacfd",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/providers.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "03780f3c1c72739d087b86e0557dac1e",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/status-table.tsx": {
+    "mtime": 1764332657.0,
+    "ast_hash": "efd47d98c471f97a1d75a65fa4dbaff1",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/theme/ThemeToggle.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "f78815e78a96345a8cff8e5a3804bad0",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/alert.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "60a1358bb82344b005cea0eca2cbf275",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/avatar.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "dfe8c1ef8f73aa7f91230c14a4a21b71",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/badge.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "b18d5e3e077aac3937008f6f09eb12d9",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/button.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "ec47dd35a37fd626e7911239dedf5f18",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/calendar.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "221fd160aa8270ac68d530e06de55e26",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/card.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "d5d74cd69618f2aa3d4012bebc33162a",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/checkbox.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "d2a583d1dcaf06dcf1ef6d83430f620f",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/dialog.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "8735cc509ecf04f07f2e611bb03c3d6f",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/dropdown-menu.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "1f52d5f575d66293a8a16de5261e5064",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/input.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "e26a9d621d7015887b408d4428a6c869",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/label.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "54182f15eaa11b2f35bc2ff903e2557b",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/popover.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "6a3f7b8119ecbf80cad8bbe2848266ba",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/progress.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "9c90dcb71b3ebb4af52e5b5bab7c4492",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/select.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "e2968fe993602c0f40c7884a15682f25",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/separator.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "981488d95a2e21d07ed8acfd3963d7e9",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/table.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "1b339aeaa78100603808436dd1ae9fe2",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/tabs.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "c40b57c831b57166ae18690a41e5d5b3",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/textarea.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "16e5d792f0aed75752e902fa141a1f18",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/toast.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "5c7c1ac18b49d8e42f0c0c400e242a86",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/components/ui/tooltip.tsx": {
+    "mtime": 1763798832.0,
+    "ast_hash": "058a728d28f0bb59b2b6c347438d9d53",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/entities/employee/model/types.ts": {
+    "mtime": 1763534736.0,
+    "ast_hash": "504231c7ba1de7e7c3a932812446ba60",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/entities/employee/ui/EmployeeProfile.tsx": {
+    "mtime": 1764067661.0,
+    "ast_hash": "d7a7772ba4e938a916ca07c408474f72",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/entities/employee/ui/EmployeeTable.tsx": {
+    "mtime": 1763794808.0,
+    "ast_hash": "42bdd36f30f4adcd2cf02f035e1e8c83",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/entities/status/index.ts": {
+    "mtime": 1764325461.0,
+    "ast_hash": "58852ea73de2d1a734199d5c58e11965",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/entities/status/model.ts": {
+    "mtime": 1764332657.0,
+    "ast_hash": "892f73b971c6ad77fa087eb02d6aab0e",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/entities/status/ui/StatusBadge.tsx": {
+    "mtime": 1764332657.0,
+    "ast_hash": "cefe9872aab6846256442e3dc54e204e",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/add-employee/api/add-employee-api.ts": {
+    "mtime": 1764331354.0,
+    "ast_hash": "a06aaa0871f277b24b411959946d138e",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/add-employee/index.ts": {
+    "mtime": 1764332657.0,
+    "ast_hash": "15998550a1723c893da70abe7d1e92d0",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/add-employee/model/types.ts": {
+    "mtime": 1764332657.0,
+    "ast_hash": "6cb53ab74aaaec296fcc7752c2952acd",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/add-employee/ui/AddEmployeeDialog.tsx": {
+    "mtime": 1764153184.0,
+    "ast_hash": "983f92dd2fd1bf5ee75fe97bac2aea36",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/edit-profile/api/edit-profile-api.ts": {
+    "mtime": 1764331354.0,
+    "ast_hash": "2b11aa28d1ed51b7082dd2b47c44053b",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/edit-profile/index.ts": {
+    "mtime": 1764332657.0,
+    "ast_hash": "ec83dc9c9a072347f267b6eba070bd0e",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/edit-profile/model/types.ts": {
+    "mtime": 1764140303.0,
+    "ast_hash": "8fd31d775abd0c6c0aa9fb83690bcd13",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/edit-profile/ui/EditProfileDialog.tsx": {
+    "mtime": 1764332657.0,
+    "ast_hash": "e69c960b3815d608cacd176d1718889b",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/employee-status-update/ui/EditStatusDialog.tsx": {
+    "mtime": 1764332657.0,
+    "ast_hash": "19f9dd79c8b5b1bfbf9c98cb8ab0036f",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/employee-status-update/ui/MassStatusUpdate.tsx": {
+    "mtime": 1764310742.0,
+    "ast_hash": "c1e05e7c04dab811f5b17de92c54b15d",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/employee-status-update/ui/PlannedStatusesDialog.tsx": {
+    "mtime": 1764310748.0,
+    "ast_hash": "d37adf480393f7f9939826bbce9df004",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/employee-status-update/ui/SecondEmployeeDialog.tsx": {
+    "mtime": 1764331354.0,
+    "ast_hash": "7b6ca06ca8f3c379965dc8fd96d0abaa",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/feedback-chat/api/feedback-api.ts": {
+    "mtime": 1764331354.0,
+    "ast_hash": "3644c511ae5a220624167ede08d58466",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/feedback-chat/index.ts": {
+    "mtime": 1764332657.0,
+    "ast_hash": "c33964d3cca6818b98814ef47330cd99",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/feedback-chat/model/types.ts": {
+    "mtime": 1764332657.0,
+    "ast_hash": "9c0d853c30833922c0ae496ad00b7646",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/feedback-chat/ui/FeedbackChat.tsx": {
+    "mtime": 1764332657.0,
+    "ast_hash": "7b8ce482dd5aa3ac9a03f47320f84cc1",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/notifications/api/notifications-api.ts": {
+    "mtime": 1764309628.0,
+    "ast_hash": "05d465bfdbf43fe6c59e4baba99ba98a",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/notifications/ui/NotificationsDropdown.tsx": {
+    "mtime": 1764309628.0,
+    "ast_hash": "8174e0d6837095898e105ed31a69a8b0",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/organization-structure/ui/OrgBoard.tsx": {
+    "mtime": 1764325462.0,
+    "ast_hash": "03725129bc7f574a5508bd83258c8d4e",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/organization-structure/ui/OrgChart.tsx": {
+    "mtime": 1763794975.0,
+    "ast_hash": "ea2b39ca433c55940a6f053acc04e816",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/organization-structure/ui/OrgNode.tsx": {
+    "mtime": 1763794975.0,
+    "ast_hash": "1445de4346d5ff0c237369367a0e0f43",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/secondment-requests/api/secondment-requests-api.ts": {
+    "mtime": 1764225817.0,
+    "ast_hash": "940d87f2202d9297e54bcae6346c5b66",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/secondment-requests/ui/SecondmentRequestsDialog.tsx": {
+    "mtime": 1764153184.0,
+    "ast_hash": "5c9973e2933a10e5ca8cfcffa1571483",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/send-feedback/index.ts": {
+    "mtime": 1763798832.0,
+    "ast_hash": "5b8d0e678ffd5bc9886bf400bae0ca61",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/features/send-feedback/ui/feedback-dialog.tsx": {
+    "mtime": 1764153184.0,
+    "ast_hash": "a41053f17ea9e3039ad7faf77c0e72d3",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/hooks/use-absence-statistics.ts": {
+    "mtime": 1763794808.0,
+    "ast_hash": "40b16a7d1e9c2873b1d53bcd500ed89f",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/hooks/use-divisions-tree.ts": {
+    "mtime": 1763794808.0,
+    "ast_hash": "d89de50d75fd17f93940dfaaa52df176",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/hooks/use-positions.ts": {
+    "mtime": 1763794808.0,
+    "ast_hash": "36959b75788d1faed8eeb3821c6f676a",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/hooks/use-ranks.ts": {
+    "mtime": 1763794808.0,
+    "ast_hash": "6e3753d2c8f327579ec816895bfd6335",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/hooks/use-staff-unit-statistics.ts": {
+    "mtime": 1763794808.0,
+    "ast_hash": "adb046cbf7fc28e55503e627ce5b4de7",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/hooks/use-staff-units-by-directorate.ts": {
+    "mtime": 1763794808.0,
+    "ast_hash": "6545db559bd7bafd4a4632fc3417e329",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/hooks/use-staff-units.ts": {
+    "mtime": 1763794808.0,
+    "ast_hash": "4bae42184380f6720b0e72419caa9a1a",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/middleware.ts": {
+    "mtime": 1763789477.0,
+    "ast_hash": "4d5052a9d46a199d4d6a154b10e5dbce",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/next-env.d.ts": {
+    "mtime": 1762432662.0,
+    "ast_hash": "c68600c0eb0d34c34bfc0f4b2547e31f",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/next.config.js": {
+    "mtime": 1764335621.0,
+    "ast_hash": "6d571de3cf82169fb70c4504e7a339f0",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/package.json": {
+    "mtime": 1764246755.0,
+    "ast_hash": "5cdfe2ab8169c183539ff3f67e4a7776",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/postcss.config.js": {
+    "mtime": 1755898475.0,
+    "ast_hash": "854b38759e7a8b4b82306ae2d9a3a833",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/shared/config/env.ts": {
+    "mtime": 1764333066.0,
+    "ast_hash": "722abc81e5a591fe159c51bba939f1d6",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/shared/hooks/use-toast.ts": {
+    "mtime": 1763794808.0,
+    "ast_hash": "62189b591f2615fc0ddd5e39149d0d5b",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/tailwind.config.js": {
+    "mtime": 1764332657.0,
+    "ast_hash": "aed46ae73d254edd8e344ed698f865a3",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/tsconfig.json": {
+    "mtime": 1755896145.0,
+    "ast_hash": "38ecd4531c7b67c69f668ab912eb0052",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/types/next-auth.d.ts": {
+    "mtime": 1763788503.0,
+    "ast_hash": "16f6a8fd07335b2b7b6c4d84b00fb78b",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/widgets/status-calendar/index.ts": {
+    "mtime": 1764332657.0,
+    "ast_hash": "5914e3b055edf8d525380bd03c02b838",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/widgets/status-calendar/ui/StatusCalendar.tsx": {
+    "mtime": 1764325461.0,
+    "ast_hash": "b8636a22d430ef6c7435505e0edad9d1",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/widgets/status-overview/index.ts": {
+    "mtime": 1764332657.0,
+    "ast_hash": "477f17b5ca857bd9bba8b7097b949390",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/widgets/status-overview/ui/StatusOverview.tsx": {
+    "mtime": 1764332657.0,
+    "ast_hash": "bcae8715c6bb1f293db2ef136c9678b1",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/core/tests/test_roster_merge_properties.py": {
+    "mtime": 1782129309.8809915,
+    "ast_hash": "77de7f57122271439da041916202b346",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/core/tests/test_roster_selector.py": {
+    "mtime": 1782129282.038478,
+    "ast_hash": "20e224f3379f1e3b02b9b3805ff81701",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/migrations/0006_remove_rbac_models_state.py": {
+    "mtime": 1782051580.4141183,
+    "ast_hash": "f8fdabfb4bae8a837997cff149052056",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/rbac/__init__.py": {
+    "mtime": 1782051333.5163157,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/rbac/apps.py": {
+    "mtime": 1782051334.854274,
+    "ast_hash": "abf3fd911d989c1175ff860ea0671add",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/rbac/migrations/0001_initial.py": {
+    "mtime": 1782125515.5294702,
+    "ast_hash": "4cb0ea5a87cee3cd0f3c8d39b7c0c82f",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/rbac/migrations/0002_rename_content_types.py": {
+    "mtime": 1782054955.174277,
+    "ast_hash": "6cca1ebdfae1a0d21914863e50547899",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/rbac/migrations/__init__.py": {
+    "mtime": 1782051336.0852358,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/rbac/models.py": {
+    "mtime": 1782051478.6365993,
+    "ast_hash": "9040e4e1726dfb21b557d5859e8b40e0",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/rbac/tests/__init__.py": {
+    "mtime": 1782051336.2242315,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/rbac/tests/test_app.py": {
+    "mtime": 1782051406.6359842,
+    "ast_hash": "058d4ef5df44b2aa9c4d3320fda55cf7",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/statuses/management/__init__.py": {
+    "mtime": 1782057155.5858266,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/statuses/management/commands/__init__.py": {
+    "mtime": 1782057155.5858266,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/statuses/management/commands/seed_statuses.py": {
+    "mtime": 1782058433.3374076,
+    "ast_hash": "75496dbc7be68ef3c8384e90e9f5f2a5",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/statuses/migrations/0002_status_type.py": {
+    "mtime": 1782058440.9569974,
+    "ast_hash": "0c03e3386dd3167b434e91ac187774cf",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/statuses/models/status_type.py": {
+    "mtime": 1782058439.108855,
+    "ast_hash": "81ef71b173adf05040b0c8b923797399",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/statuses/tests/test_seed_statuses.py": {
+    "mtime": 1782058474.5105155,
+    "ast_hash": "e8fc3c5637dfeaa112c24dae85af73fd",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/__init__.py": {
+    "mtime": 1782060136.8920553,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/apps.py": {
+    "mtime": 1782060156.4616466,
+    "ast_hash": "9d1a7ddd85094d831e755e2c36eaccf9",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/migrations/0001_submission_control_settings.py": {
+    "mtime": 1782061218.4460049,
+    "ast_hash": "da40e42e2a824048740aee6c1ba8e531",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/migrations/__init__.py": {
+    "mtime": 1782060136.8920553,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/models/__init__.py": {
+    "mtime": 1782060173.3283188,
+    "ast_hash": "8191ac333d0875e83fcf7d583aa507e4",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/models/control_settings.py": {
+    "mtime": 1782061097.4773386,
+    "ast_hash": "01ba33b3940219e14fd260141a369c06",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/selectors.py": {
+    "mtime": 1782061184.8139365,
+    "ast_hash": "e15808af8ee7ea390ec756266002673b",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/tests/__init__.py": {
+    "mtime": 1782060136.8920553,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/tests/test_app.py": {
+    "mtime": 1782060254.326243,
+    "ast_hash": "060588c6d24a7fd4ccaa483a106b18f6",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/tests/test_control_settings.py": {
+    "mtime": 1782061196.714876,
+    "ast_hash": "69d97d3ca1b2f1d1d05df69472606f39",
+    "semantic_hash": ""
+  },
+  "spikes/1.10-perf-grid/package.json": {
+    "mtime": 1781695968.2108836,
+    "ast_hash": "984e1667533b81c13885b78e2f18f4e7",
+    "semantic_hash": ""
+  },
+  "spikes/1.10-perf-grid/src/App.tsx": {
+    "mtime": 1781777258.7478025,
+    "ast_hash": "789c1fde36d4e1c88f305923ab033dd4",
+    "semantic_hash": ""
+  },
+  "spikes/1.10-perf-grid/src/main.tsx": {
+    "mtime": 1781696019.9706528,
+    "ast_hash": "dbe6c17357855e3fbf71ee4786c47ded",
+    "semantic_hash": ""
+  },
+  "spikes/1.10-perf-grid/src/perf.ts": {
+    "mtime": 1781777229.6517656,
+    "ast_hash": "aae30d11ba4dff8c51e33cc79a9008a8",
+    "semantic_hash": ""
+  },
+  "spikes/1.10-perf-grid/tsconfig.json": {
+    "mtime": 1781695976.8128438,
+    "ast_hash": "538c8d7b811dda27f5f6537f8251fa6c",
+    "semantic_hash": ""
+  },
+  "spikes/1.10-perf-grid/vite.config.ts": {
+    "mtime": 1781695973.488859,
+    "ast_hash": "bba13e1ae4adae28cf242657c4561dc1",
+    "semantic_hash": ""
+  },
+  "spikes/1.11-donor-export/profile_export.py": {
+    "mtime": 1782114047.10891,
+    "ast_hash": "8b2252de1ea53b4ad5c18c2d824a85ae",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/docker-compose.prod.yml": {
+    "mtime": 1764310748.0,
+    "ast_hash": "5b87ce36f04791fca67c58809be6665d",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/docker-compose.yml": {
+    "mtime": 1764140825.0,
+    "ast_hash": "bbf43c0aeecace6c08c22869023e70d7",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/1-10-\u0441\u043f\u0430\u0439\u043a-\u043f\u0435\u0440\u0444-\u0433\u0440\u0438\u0434-\u043d\u0430-\u0446\u0435\u043b\u0435\u0432\u043e\u0439-\u043c\u0430\u0448\u0438\u043d\u0435.md": {
+    "mtime": 1781849078.5872025,
+    "ast_hash": "1cabf35b1af3a3f9f3d022e8094da893",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/1-11-\u0441\u043f\u0430\u0439\u043a-\u0432\u044b\u0433\u0440\u0443\u0437\u043a\u0430-\u0434\u0430\u043d\u043d\u044b\u0445-\u0434\u043e\u043d\u043e\u0440\u0430.md": {
+    "mtime": 1782114160.2717206,
+    "ast_hash": "462ee081362a33eb56de7d910e03a9b1",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/1-12-\u0438\u043d\u0432\u0435\u043d\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u044f-\u0430\u0440\u0442\u0435\u0444\u0430\u043a\u0442.md": {
+    "mtime": 1781868672.5987284,
+    "ast_hash": "1fde0db4de36d0760d185ba47875a8ec",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/2-1-\u043f\u0435\u0440\u0435\u043d\u043e\u0441-rbac-\u0432\u043e-\u0432\u043b\u043e\u0436\u0435\u043d\u043d\u044b\u0439-app-operations-rbac.md": {
+    "mtime": 1782125609.5756443,
+    "ast_hash": "8eb9b4bee5efee1ea03b1d0c88c6349f",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/2-2-\u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a-\u0442\u0438\u043f\u043e\u0432-\u0441\u0442\u0430\u0442\u0443\u0441\u043e\u0432-\u0441-seed.md": {
+    "mtime": 1782058721.1472187,
+    "ast_hash": "1fcaf6655b7b93e77a346a3a7791aa67",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/2-3-\u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438-\u043a\u043e\u043d\u0442\u0440\u043e\u043b\u044f-\u0441\u0434\u0430\u0447\u0438.md": {
+    "mtime": 1782061296.895418,
+    "ast_hash": "24afc9c87c70782644dbefbd9d642ac5",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/2-4-\u0441\u043f\u0438\u0441\u043e\u0447\u043d\u044b\u0439-\u0441\u043e\u0441\u0442\u0430\u0432-\u043d\u0430-\u0434\u0430\u0442\u0443.md": {
+    "mtime": 1782129421.2710426,
+    "ast_hash": "53337d64ee9010b4af0781957daa2d5d",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/.decision-log.md": {
+    "mtime": 1781939310.2927763,
+    "ast_hash": "8a46e1f1711ec4cd949c8f15406aec7e",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/.working/color-themes-1.html": {
+    "mtime": 1781875403.6255078,
+    "ast_hash": "7895ca401c2556e00661e9dc72ad3b0a",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/.working/extracts/extract-architecture.md": {
+    "mtime": 1781871078.1744845,
+    "ast_hash": "fee7c0f725a7bf8fc6d936a1582f65d7",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/.working/extracts/extract-domain-core.md": {
+    "mtime": 1781871038.1713254,
+    "ast_hash": "558b45dbd270956d4248f2fd59cd0288",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/.working/extracts/extract-master-spec.md": {
+    "mtime": 1781871124.451668,
+    "ast_hash": "6f28f9bb7c3a8f1923b5f954898174fa",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/.working/extracts/extract-prd.md": {
+    "mtime": 1781870931.5128975,
+    "ast_hash": "83594a368e6719e9d9cf79ba37296bd8",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/.working/extracts/extract-usecases.md": {
+    "mtime": 1781871105.9685948,
+    "ast_hash": "89e45e586816afeff8ccc2b024cdf731",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/DESIGN.md": {
+    "mtime": 1781939149.3728368,
+    "ast_hash": "147e1275b0d772541bc478800031c386",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/EXPERIENCE.md": {
+    "mtime": 1781939191.855561,
+    "ast_hash": "c14e1575c09f19f4f835baa0ee5d1e23",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/mockups/color-themes-1.html": {
+    "mtime": 1781877900.328339,
+    "ast_hash": "7895ca401c2556e00661e9dc72ad3b0a",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/mockups/key-daily-grid.html": {
+    "mtime": 1781882239.3114302,
+    "ast_hash": "f4e44aa3eab16dea9df4f1d9b015d857",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/mockups/key-rashod.html": {
+    "mtime": 1781882109.6689458,
+    "ast_hash": "03d102f0db56cd196247bc11bbc4b9a8",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/reconcile-screenshots.md": {
+    "mtime": 1781882335.7887897,
+    "ast_hash": "3914c16d7c061675e4fdf223a455abec",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/review-rubric.md": {
+    "mtime": 1781877539.75261,
+    "ast_hash": "77c8878e0e7d2f00226ed0ccc222fe78",
+    "semantic_hash": ""
+  },
+  "docs/registries/audit-events.yaml": {
+    "mtime": 1781868529.8203828,
+    "ast_hash": "0d3c4a3daf1683165cf426685775c0db",
+    "semantic_hash": ""
+  },
+  "docs/registries/error-codes.yaml": {
+    "mtime": 1781868466.7692356,
+    "ast_hash": "cab2d15ce916c91b9dbe2cfd22448e1f",
+    "semantic_hash": ""
+  },
+  "docs/registries/ws-message-types.yaml": {
+    "mtime": 1781850942.9818313,
+    "ast_hash": "4efd5a070a72d926b4b60237a8d0270f",
+    "semantic_hash": ""
+  },
+  "spikes/1.10-perf-grid/BUDGET.md": {
+    "mtime": 1781849069.3014047,
+    "ast_hash": "77c93609dbf9702142a3d0f7d35e9f80",
+    "semantic_hash": ""
+  },
+  "spikes/1.10-perf-grid/README.md": {
+    "mtime": 1781696500.2832289,
+    "ast_hash": "5f9a99ebc0896b8e47beb4e78120d870",
+    "semantic_hash": ""
+  },
+  "spikes/1.10-perf-grid/index.html": {
+    "mtime": 1781696348.9265692,
+    "ast_hash": "a24d2383485c6bec3b60e872cf5715c8",
+    "semantic_hash": ""
+  },
+  "spikes/1.11-donor-export/EXPORT-RECIPE.md": {
+    "mtime": 1781864847.3029397,
+    "ast_hash": "e297d99444d6ba23edd8218de3fd0ced",
+    "semantic_hash": ""
+  },
+  "spikes/1.11-donor-export/EXPORT-REPORT.md": {
+    "mtime": 1781782460.9860494,
+    "ast_hash": "e90aad438292001b0c214b91e846e212",
+    "semantic_hash": ""
+  },
+  "spikes/1.11-donor-export/README.md": {
+    "mtime": 1781782213.0140045,
+    "ast_hash": "4da9b552f77072389d7b4f66cda59cd3",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/backend-developer.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "aa9c3c2a763c2e903d427ba4d3c47179",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/ceo-male-suit.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "e40cbc885fc829247516a80e83eba513",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/deputy-male-suit-2.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "3e491f11e9c66eff0f1ecc4ef03b9262",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/deputy-male-suit-3.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "931edeb0c0db3143723773fb86777bcf",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/deputy-male-suit-4.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "58a4e9b74cad6db0392f640d12811264",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/female-developer.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "519dd237d01d49d4753bafcf943c51a9",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/female-employee.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "13c100491a431a0ece25862bf2e6c6f7",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/female-hr.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "19bd50cc95326b63b1e2aa8c37e35203",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/female-manager.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "b14a9a2fcc28c137dedaa4a3ea94c519",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/female-qa.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "c235c5a6c362be44c5d4db27ce32bc63",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/female-specialist.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "52f4fc280352d885a1f755954db46afb",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/it-director-male.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "de7211ed5120a6cc2683ef2f5ec2d75c",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/male-department-head.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "60da687635e1174bee30550231d7d293",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/male-deputy-suit.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "2087e1cc6403665eacd34c406b2e9c11",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/male-junior.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "dd2ad63d1f0907828b76c6bce0b2e93e",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/male-senior.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "ae77374a3c4d4e9bf50bdee86c1e62c8",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/male-specialist.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "f7010c715a0c0fb0bb4c3b3227d82d7c",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/okak.jpeg": {
+    "mtime": 1751009571.0,
+    "ast_hash": "e6ae9dd9decdb828cf20415d00170587",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/placeholder-logo.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "95d8d1a4a9bbcccc875e2c381e74064a",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/placeholder-logo.svg": {
+    "mtime": 1755896145.0,
+    "ast_hash": "1e16dc7df824652c5906a2ab44aef78c",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/placeholder-user.jpg": {
+    "mtime": 1755896145.0,
+    "ast_hash": "7ee6562646feae6d6d77e2c72e204591",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/placeholder.jpg": {
+    "mtime": 1755896145.0,
+    "ast_hash": "1e533b7b4545d1d605144ce893afc601",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/placeholder.svg": {
+    "mtime": 1755896145.0,
+    "ast_hash": "35707bd9960ba5281c72af927b79291f",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/senior-developer.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "cd79061a5648d5590ab8d20a6c9d80b6",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/public/software-manager-male.png": {
+    "mtime": 1755896145.0,
+    "ast_hash": "22a3f968c8804991fce197f6617c7258",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/imports/etalon-employees-list.png": {
+    "mtime": 1781878367.675313,
+    "ast_hash": "03ac93d9821e3ad216eb4bc8e55a2e5c",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/imports/etalon-rashod-dashboard-2.png": {
+    "mtime": 1781878367.6739495,
+    "ast_hash": "738a0edbd11e2c857b032181bf0c0f3d",
+    "semantic_hash": ""
+  },
+  "_bmad-output/planning-artifacts/ux-designs/ux-PersonnelStatus-2026-06-19/imports/etalon-rashod-dashboard.png": {
+    "mtime": 1781878367.6717978,
+    "ast_hash": "f7bcde7034cdf6fbc997364174de27a7",
+    "semantic_hash": ""
+  },
+  "spikes/\u0420\u0430\u0441\u0445\u043e\u0434.png": {
+    "mtime": 1771567182.0,
+    "ast_hash": "f7bcde7034cdf6fbc997364174de27a7",
+    "semantic_hash": ""
+  },
+  "spikes/\u0420\u0430\u0441\u0445\u043e\u04342.png": {
+    "mtime": 1771567182.0,
+    "ast_hash": "738a0edbd11e2c857b032181bf0c0f3d",
+    "semantic_hash": ""
+  },
+  "spikes/\u0420\u0430\u0441\u0445\u043e\u04343.png": {
+    "mtime": 1771567184.0,
+    "ast_hash": "03ac93d9821e3ad216eb4bc8e55a2e5c",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/core/tests/test_dismissal_service.py": {
+    "mtime": 1782133097.1912394,
+    "ast_hash": "09af24336879956cb667f5dd4b5d33eb",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/statuses/services/dismissal.py": {
+    "mtime": 1782132967.875051,
+    "ast_hash": "edc624dd1106e1aa3e3f1bc58d0ecbb9",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/statuses/tests/test_dismissal.py": {
+    "mtime": 1782133108.3594284,
+    "ast_hash": "8857527b32abcd90d570fc84d5b8f36d",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/2-5-\u0441\u0435\u0440\u0432\u0438\u0441-\u0443\u0432\u043e\u043b\u044c\u043d\u0435\u043d\u0438\u044f.md": {
+    "mtime": 1782133218.9893034,
+    "ast_hash": "10a0f67755ab74b612c71727057c0532",
     "semantic_hash": ""
   }
 }
