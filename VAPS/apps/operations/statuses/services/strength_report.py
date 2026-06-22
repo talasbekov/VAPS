@@ -256,15 +256,20 @@ class StrengthReportService:
         # without Django) and break the selectors <-> services cycle.
         from apps.core.selectors import (
             CoreDivisionTreeSelector,
-            CoreEmployeeSelector,
             CoreStaffingSelector,
+            HistoricalEmployeeSelector,
         )
         from apps.operations.statuses.selectors import EmployeeStatusSelector
 
         division_ids = None
         if division_id is not None:
             division_ids = CoreDivisionTreeSelector.subtree_ids(division_id)
-        employees = CoreEmployeeSelector.working_by_division(division_ids)
+        # Story 2.4: the Список denominator is date-versioned — membership on
+        # business_date from EmployeeDivisionHistory intervals (fallback to
+        # current Employee.division), replacing the working_by_division
+        # snapshot. On the pilot (zero history rows) every employee takes the
+        # fallback, so this is behaviour-identical to the snapshot.
+        employees = HistoricalEmployeeSelector.roster_on(business_date, division_ids)
         staff_map = CoreStaffingSelector.allocated_slots_on(
             business_date, division_ids
         )
