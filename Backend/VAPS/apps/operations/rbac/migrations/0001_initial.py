@@ -14,6 +14,11 @@ class Migration(migrations.Migration):
     dependencies = [
         # нужно для data-миграции 0002 (UPDATE django_content_type)
         ("contenttypes", "__first__"),
+        # state-only CreateModel описывает таблицы, физически созданные
+        # operations/0001-0005 → явное ребро фиксирует порядок (без него —
+        # топологический тайбрейк): operations/0005 → ops_rbac/0001 →
+        # operations/0006 (цикла нет; 0006 уже зависит от обоих).
+        ("operations", "0005_created_by"),
     ]
 
     operations = [
