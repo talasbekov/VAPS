@@ -25,6 +25,42 @@ def local_midnight(business_date):
     )
 
 
+def _resolve_roster(working, history, division_ids=None):
+    """Merge current-division headcount with versioned history → roster.
+
+    Pure (no ORM): ``working`` is {employee_id: current_division_id} for the
+    WORKING & active headcount; ``history`` is an iterable of
+    (employee_id, division_id, starts_at) rows whose interval covers the
+    target date. History overrides the current division (max starts_at wins
+    per employee — EmployeeDivisionHistory has no DB exclusion constraint, so
+    the read must survive overlap); employees absent from history keep their
+    current division (BR-CORE-HISTORY-003 fallback). Only employees present
+    in ``working`` are placed — a non-working employee's history never
+    resurrects them. ``division_ids=None`` = all divisions.
+
+    Returns {division_id: [employee_id]}. Kept pure so the global-convergence
+    invariants (никто не потерян, никто в двух списках, Σ сходится — AC-3)
+    are property-tested without a database.
+    """
+    chosen, best_key = {}, {}
+    for employee_id, division_id, starts_at in history:
+        # Tie-break on (starts_at, division_id): equal-starts overlaps (no DB
+        # exclusion constraint on the history table) must resolve to the SAME
+        # division regardless of query/iteration order — the расход
+        # denominator must not flip between runs.
+        key = (starts_at, division_id)
+        if employee_id not in best_key or key > best_key[employee_id]:
+            best_key[employee_id] = key
+            chosen[employee_id] = division_id
+    result: dict = {}
+    for employee_id, current_division_id in working.items():
+        division_id = chosen.get(employee_id, current_division_id)
+        if division_ids is not None and division_id not in division_ids:
+            continue
+        result.setdefault(division_id, []).append(employee_id)
+    return result
+
+
 class CoreDivisionTreeSelector:
     """Read-only division tree access.
 
@@ -167,3 +203,78 @@ class HistoricalEmployeeSelector:
         return (
             Employee.objects.values_list("division_id", flat=True).get(id=employee_id)
         )
+
+    @classmethod
+    def roster_on(cls, business_date, division_ids=None) -> dict:
+        """division_id -> [employee_id]: the roster on a business date.
+
+        The date-versioned Список denominator of the strength report
+        (ARCH-DATA-025): membership comes from EmployeeDivisionHistory
+        intervals on the date, falling back to the current Employee.division
+        for employees with no covering interval (BR-CORE-HISTORY-003). The
+        fallback is load-bearing: the donor import writes zero history rows,
+        so every employee takes it until E7 backfills intervals.
+
+        Bulk: two queries (WORKING headcount + covering history) merged by
+        _resolve_roster — NEVER division_at in a loop. Only WORKING & active
+        employees count (parity with working_by_division, review D1
+        2026-06-15): hire/dismissal bound membership via employment_status /
+        is_active. business_date is explicit (ARCH-DATA-022, no wall-clock);
+        T = local_midnight(business_date); a row acts iff starts_at <= T AND
+        (ends_at IS NULL OR ends_at > T). division_ids=None = the whole DB.
+
+        History is fetched DB-wide (not pushed into the query): a covering
+        interval may resolve to a division other than the current one, so
+        filtering happens AFTER resolution. Indexing the bulk-by-date scan is
+        a perf follow-up (the table is empty until E7 backfills).
+        """
+        t = local_midnight(business_date)
+        working = dict(
+            Employee.objects.filter(
+                employment_status=Employee.EmploymentStatus.WORKING,
+                is_active=True,
+            ).values_list("id", "division_id")
+        )
+        history = list(
+            EmployeeDivisionHistory.objects.filter(starts_at__lte=t)
+            .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=t))
+            .values_list("employee_id", "division_id", "starts_at")
+        )
+        roster = _resolve_roster(working, history, division_ids)
+        covered = {row[0] for row in history}
+        fallback_count = sum(1 for eid in working if eid not in covered)
+        if fallback_count:
+            # BR-CORE-HISTORY-003: aggregate (not per-row — bulk would spam)
+            # visibility of employees placed by current-division fallback.
+            logger.debug(
+                "roster_on(%s): %d/%d employees via current-division fallback "
+                "(no covering history; BR-CORE-HISTORY-003).",
+                business_date, fallback_count, len(working),
+            )
+        return roster
+
+    @classmethod
+    def roster_reconciliation(cls, business_date) -> dict:
+        """Global convergence check for the date-versioned roster (AC-3).
+
+        Σ(roster over all divisions) must equal the count of WORKING & active
+        employees (ARCH-DATA-025: convergence is global). A hole — an active
+        employee placed in no division — is a DATA finding, NOT an exception
+        (Решение №6 стори 1.7): the report still comes out. With the fallback
+        above, the invariant holds by construction; missing stays [] and
+        guards against regressions / a future no-fallback mode.
+        """
+        roster = cls.roster_on(business_date)
+        placed = {eid for ids in roster.values() for eid in ids}
+        active = set(
+            Employee.objects.filter(
+                employment_status=Employee.EmploymentStatus.WORKING,
+                is_active=True,
+            ).values_list("id", flat=True)
+        )
+        missing = sorted(active - placed, key=str)
+        return {
+            "expected": len(active),
+            "actual": len(placed),
+            "missing_employee_ids": missing,
+        }

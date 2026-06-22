@@ -229,12 +229,14 @@ class TestStrengthReportService:
         assert {r.division_id for r in result.rows} == {division.id, child.id}
 
     def test_bulk_one_query_per_entity(self, division, django_assert_num_queries):
-        # NFR: employees + slots + statuses + names — and nothing per item.
+        # NFR: roster (working + history, story 2.4) + slots + statuses +
+        # names — 5 bulk queries, nothing per item. The versioned roster
+        # costs one extra constant query (history) over working_by_division.
         for _ in range(5):
             emp = make_employee(division)
             make_status(emp, "VACATION", date(2026, 6, 2), date(2026, 6, 6))
         make_slot(division, 5)
-        with django_assert_num_queries(4):
+        with django_assert_num_queries(5):
             result = StrengthReportService.compute(D)
         assert row_for(result, division).columns["VACATION"] == 5
 
@@ -242,9 +244,10 @@ class TestStrengthReportService:
         self, org, division, django_assert_num_queries
     ):
         # C19: a single-division fixture cannot detect a per-division N+1
-        # (it would still total 4). Spread entities across 3 divisions so
-        # the constant 4-query count under varying division cardinality is
-        # what is actually pinned.
+        # (it would still total 5). Spread entities across 3 divisions so
+        # the constant 5-query count under varying division cardinality is
+        # what is actually pinned (roster's working+history queries, story
+        # 2.4, are both DB-wide constants — they do not scale with divisions).
         second = make_division(org, "Отдел Б", "SR-B")
         third = make_division(org, "Отдел В", "SR-D")
         for d in (division, second, third):
@@ -252,7 +255,7 @@ class TestStrengthReportService:
                 emp = make_employee(d)
                 make_status(emp, "VACATION", date(2026, 6, 2), date(2026, 6, 6))
             make_slot(d, 2)
-        with django_assert_num_queries(4):
+        with django_assert_num_queries(5):
             result = StrengthReportService.compute(D)
         assert sum(r.columns["VACATION"] for r in result.rows) == 6
 
