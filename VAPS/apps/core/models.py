@@ -1,6 +1,7 @@
 import uuid
 
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
+from django.contrib.auth.models import PermissionsMixin
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
@@ -33,22 +34,36 @@ class UserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, *args, **kwargs):
-        # No Django superusers: authorization is the in-house PermissionService
-        # (FR-33); core.User has no is_staff/is_superuser semantics.
-        raise NotImplementedError(
-            "core.User has no superusers; grant roles via operations RBAC"
-        )
+    def create_superuser(self, username, password=None, **extra_fields):
+        # Story 2.8: Django superusers exist solely to operate the Admin for
+        # reference catalogs. Business authorization stays the in-house
+        # PermissionService (FR-33); Django permissions are admin-only.
+        # Canonical Django manager contract: accept extra_fields, enforce the
+        # superuser invariants, and validate username like create_user does.
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+        if not username:
+            raise ValueError("The given username must be set")
+        user = self.model(username=username, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
 
 
-class User(AbstractBaseUser):
-    # Deliberately AbstractBaseUser without PermissionsMixin: authorization is
-    # the in-house PermissionService (FR-33), not Django groups/permissions.
+class User(AbstractBaseUser, PermissionsMixin):
+    # Story 2.8: PermissionsMixin added so the Django Admin (catalogs only) can
+    # use is_staff/is_superuser. Django groups/permissions are ADMIN-ONLY;
+    # business authorization remains the in-house PermissionService (FR-33).
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # ARCH-007 / BR-ACCOUNT-002: external auth account id, the same string as
     # UserEmployeeBinding.user_id / UserRole.user_id.
     username = models.CharField(max_length=100, unique=True)
     is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

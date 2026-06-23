@@ -61,8 +61,13 @@ def test_create_user_rejects_empty_username():
         User.objects.create_user("")
 
 
-def test_create_superuser_is_not_supported():
+def test_create_superuser_creates_admin_user():
+    # Story 2.8: Django superusers now exist for the catalog Admin (FR-33
+    # reversed for the admin surface only; business RBAC stays the in-house
+    # PermissionService).
     from apps.core.models import User
 
-    with pytest.raises(NotImplementedError):
-        User.objects.create_superuser("root")
+    user = User.objects.create_superuser("root", "pw")
+    assert user.is_staff
+    assert user.is_superuser
+    assert user.check_password("pw")
