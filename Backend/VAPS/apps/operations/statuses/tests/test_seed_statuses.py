@@ -34,6 +34,26 @@ def test_seed_is_idempotent():
     assert StatusType.objects.count() == EXPECTED_COUNT
 
 
+def test_reseed_preserves_operator_edits_but_resyncs_canon():
+    # Story 2.12 / deferred #L174: once StatusType is Admin-editable (2.11), the
+    # operator-owned fields (is_active, color) must survive a re-seed
+    # (create_defaults), while canon fields stay re-synced from STATUS_TYPES
+    # (defaults) so the operator cannot fork the catalog.
+    _seed()
+    row = StatusType.objects.get(code="IN_SERVICE")
+    row.is_active = False  # operator deactivates via Admin
+    row.color = "#abc123"  # operator sets a palette value via Admin
+    row.name = "ОПЕРАТОРСКИЙ МУСОР"  # canon field — must be overwritten on re-seed
+    row.save()
+
+    _seed()  # nightly re-seed
+
+    row.refresh_from_db()
+    assert row.is_active is False  # operator edit survives
+    assert row.color == "#abc123"  # operator edit survives
+    assert row.name == "В строю"  # canon re-synced from code
+
+
 def test_exactly_four_hard_blocks_match_constant():
     _seed()
     hard = set(

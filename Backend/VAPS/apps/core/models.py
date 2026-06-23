@@ -101,7 +101,7 @@ class Organization(UUIDTimeStampedModel):
 class DivisionType(models.Model):
     code = models.CharField(primary_key=True, max_length=50)
     name = models.CharField(max_length=255)
-    sort_order = models.IntegerField(default=0)
+    sort_order = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -114,8 +114,10 @@ class DivisionType(models.Model):
 class Position(models.Model):
     code = models.CharField(primary_key=True, max_length=50)
     name = models.CharField(max_length=255)
-    level = models.IntegerField(default=0)
-    sort_order = models.IntegerField(default=0)
+    # level drives roster seniority ("lower = senior"); a negative value would
+    # sort senior to level 0. Keep ordinals non-negative. (deferred #L193)
+    level = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    sort_order = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -130,7 +132,7 @@ class Rank(models.Model):
     code = models.CharField(primary_key=True, max_length=50)
     name = models.CharField(max_length=255)
     category = models.CharField(max_length=50, null=True, blank=True)
-    rank_index = models.IntegerField(default=0)
+    rank_index = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

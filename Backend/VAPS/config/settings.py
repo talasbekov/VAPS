@@ -8,8 +8,14 @@ DEBUG = os.environ.get("VAPS_DEBUG", "1") == "1"
 ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
+    # Django Admin (только справочники, стори 2.10/2.11; ARCH#L467) +
+    # его зависимости. Бизнес-авторизация остаётся за PermissionService.
+    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
     "django.contrib.postgres",
     "rest_framework",
     "apps.core",
@@ -21,11 +27,32 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Порядок обязателен для admin (system-check admin.E408/E409/E410):
+    # Session → ... → Auth → Message; Session ДО Auth.
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
-TEMPLATES = []
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                # Обязательны для admin (admin.E402/E403/E404).
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
 WSGI_APPLICATION = None
 
 # Postgres in prod via env. SQLite remains the no-env default, but since
@@ -67,8 +94,16 @@ AUTO_GENERATE_PERSONNEL_NUMBER = (
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        # Order matters: XUserId sets request.actor_id (returns None → chain
+        # continues), then the resolver reads it and attaches
+        # request.effective_permissions for the core API gate (story 2.13).
         "apps.core.auth.authentication.XUserIdAuthentication",
+        "apps.operations.api.authz.EffectivePermissionsResolver",
     ],
     "DEFAULT_PERMISSION_CLASSES": [],
     "UNAUTHENTICATED_USER": None,
 }
+
+# Admin-ассеты под DEBUG/runserver через staticfiles. STATIC_ROOT +
+# collectstatic + nginx-alias — прод-статика, отложено в E12 (ARCH#L335).
+STATIC_URL = "static/"

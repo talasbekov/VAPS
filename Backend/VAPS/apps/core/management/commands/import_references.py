@@ -144,11 +144,15 @@ class Command(BaseCommand):
                 report.skip("duplicate_in_file", example)
                 continue
             level = _parse_int(row.get("level"))
-            if level is None:
+            # Ordinals are non-negative (a negative level sorts senior to 0 in
+            # the roster canon — story 2.12 / deferred #L193). The model
+            # validator only fires on full_clean (Admin/API), not this bulk
+            # upsert, so the floor is enforced here too.
+            if level is None or level < 0:
                 report.skip("invalid_level", example)
                 continue
             sort_order = _parse_int(row.get("sort_order"))
-            if sort_order is None:
+            if sort_order is None or sort_order < 0:
                 report.skip("invalid_sort_order", example)
                 continue
             seen.add(code)
@@ -183,7 +187,7 @@ class Command(BaseCommand):
                 continue
             category = (row.get("category") or "").strip() or None
             rank_index = _parse_int(row.get("rank_index"))
-            if rank_index is None:
+            if rank_index is None or rank_index < 0:
                 report.skip("invalid_rank_index", example)
                 continue
             seen.add(code)

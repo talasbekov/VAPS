@@ -58,20 +58,29 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         for code, name, priority, report_column_code in STATUS_TYPES:
+            # Canon fields are re-synced from code on every run (so the catalog
+            # can't be forked via Admin). color/is_active are operator-owned once
+            # StatusType is Admin-editable (story 2.11), so they are seeded ONLY
+            # on create and never re-synced — this is why they live in
+            # create_defaults but NOT defaults (deferred #L174).
+            #
+            # create_defaults (Django 5.0+) fully REPLACES defaults on the create
+            # path (it is not merged), so it must carry every field needed for a
+            # valid INSERT — canon + the operator-owned pair.
+            canon = {
+                "name": name,
+                "priority": priority,
+                "report_column_code": report_column_code,
+                "is_hard_block": code in HARD_BLOCK_CODES,
+                "restricts_editing": code in RESTRICTS_EDITING_CODES,
+                "counts_in_staff": code not in NOT_COUNTED_IN_STAFF_CODES,
+                "counts_in_list": True,
+                "is_ku_owned": code in KU_OWNED_CODES,
+            }
             StatusType.objects.update_or_create(
                 code=code,
-                defaults={
-                    "name": name,
-                    "priority": priority,
-                    "report_column_code": report_column_code,
-                    "is_hard_block": code in HARD_BLOCK_CODES,
-                    "restricts_editing": code in RESTRICTS_EDITING_CODES,
-                    "counts_in_staff": code not in NOT_COUNTED_IN_STAFF_CODES,
-                    "counts_in_list": True,
-                    "is_ku_owned": code in KU_OWNED_CODES,
-                    "color": "",
-                    "is_active": True,
-                },
+                defaults=canon,
+                create_defaults={**canon, "color": "", "is_active": True},
             )
         self.stdout.write(
             self.style.SUCCESS(f"Seeded {len(STATUS_TYPES)} status types")

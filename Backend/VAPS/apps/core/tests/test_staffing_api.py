@@ -26,13 +26,31 @@ def env():
     return div, pos
 
 
-def test_list_positions(client, env):
+def test_list_positions(client, env, grant):
+    grant(client)  # gate: orgstructure.view (story 2.14)
     resp = client.get("/api/core/positions/")
     assert resp.status_code == 200
     assert any(p["code"] == "OPER" for p in resp.json()["results"])
 
 
-def test_assign_and_release_slot(client, env):
+def test_options_is_not_gated(client, env):
+    # Story 2.14 review patch: OPTIONS (metadata / CORS preflight) must NOT be
+    # fail-closed into 403 by the gate mixin — even unauthenticated.
+    resp = client.options("/api/core/positions/")
+    assert resp.status_code != 403
+
+
+def test_unsupported_method_returns_405_not_403(client, env, grant):
+    # Story 2.14 review patch: a method the ViewSet does not serve (DELETE on
+    # positions, http_method_names=get/post/patch) must surface 405, not a
+    # misleading 403 from the gate.
+    grant(client)
+    resp = client.delete("/api/core/positions/OPER/")
+    assert resp.status_code == 405
+
+
+def test_assign_and_release_slot(client, env, grant):
+    grant(client)  # gate: personnel.edit (story 2.14)
     div, pos = env
     slot = StaffingSlot.objects.create(
         division=div,
@@ -55,7 +73,8 @@ def test_assign_and_release_slot(client, env):
     assert resp2.status_code == 200
 
 
-def test_vacancies_endpoint(client, env):
+def test_vacancies_endpoint(client, env, grant):
+    grant(client)  # gate: personnel.view (story 2.13)
     div, pos = env
     StaffingSlot.objects.create(
         division=div,

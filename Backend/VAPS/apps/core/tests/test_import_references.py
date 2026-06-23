@@ -92,6 +92,31 @@ def test_invalid_level_skipped_with_line_number(tmp_path):
     assert "3:BAD" in report  # the CSV line number is in the report
 
 
+def test_negative_level_skipped(tmp_path):
+    # Story 2.12: negative ordinals are rejected on the bulk import path too,
+    # not only via the Admin/API full_clean validator.
+    csv_path = _write(
+        tmp_path,
+        "pos.csv",
+        "code,name,level,sort_order\nNEG,Минус,-1,10\nOK,Норм,1,1\n",
+    )
+    report = _run(positions=csv_path)
+    assert set(Position.objects.values_list("code", flat=True)) == {"OK"}
+    assert not Position.objects.filter(code="NEG").exists()
+    assert "invalid_level: 1" in report
+
+
+def test_negative_sort_order_skipped(tmp_path):
+    csv_path = _write(
+        tmp_path,
+        "pos.csv",
+        "code,name,level,sort_order\nNEG,Минус,1,-5\nOK,Норм,1,1\n",
+    )
+    report = _run(positions=csv_path)
+    assert set(Position.objects.values_list("code", flat=True)) == {"OK"}
+    assert "invalid_sort_order: 1" in report
+
+
 def test_empty_code_skipped(tmp_path):
     csv_path = _write(
         tmp_path,
@@ -181,6 +206,18 @@ def test_invalid_rank_index_reported(tmp_path):
     )
     report = _run(ranks=csv_path)
     assert not Rank.objects.filter(code="BAD").exists()
+    assert "invalid_rank_index: 1" in report
+
+
+def test_negative_rank_index_skipped(tmp_path):
+    # Story 2.12: negative ordinals rejected on the bulk import path.
+    csv_path = _write(
+        tmp_path,
+        "ranks.csv",
+        "code,name,category,rank_index\nNEG,Минус,officer,-3\nOK,Норм,officer,1\n",
+    )
+    report = _run(ranks=csv_path)
+    assert set(Rank.objects.values_list("code", flat=True)) == {"OK"}
     assert "invalid_rank_index: 1" in report
 
 
