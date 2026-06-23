@@ -63,7 +63,7 @@ def test_created_by_is_nullable_on_direct_create(setup):
     assert d1.created_by is None
 
 
-def test_assign_employee_api_fills_created_by_from_header(setup):
+def test_assign_employee_api_fills_created_by_from_header(setup, grant):
     from rest_framework.test import APIClient
 
     emp, d1, _ = setup
@@ -74,7 +74,9 @@ def test_assign_employee_api_fills_created_by_from_header(setup):
         division=d1, position_code=pos, valid_from=timezone.now()
     )
     client = APIClient()
-    client.credentials(HTTP_X_USER_ID="hr-7")
+    # Gate (story 2.14): assign-employee needs personnel.edit; bind hr-7 so the
+    # actor_id ("hr-7") still lands in created_by.
+    grant(client, user_id="hr-7")
     resp = client.post(
         f"/api/core/staffing-slots/{slot.id}/assign-employee/",
         {"employee_id": str(emp.id)},
@@ -85,10 +87,11 @@ def test_assign_employee_api_fills_created_by_from_header(setup):
     assert assignment.created_by == "hr-7"
 
 
-def test_assign_employee_api_without_header_leaves_created_by_null(setup):
-    # The view has no permission gate yet (E2) and XUserIdAuthentication
-    # deliberately does not reject a missing header (403 is the permission
-    # layer's job) — so the actorless path must succeed with created_by NULL.
+def test_assign_employee_api_denies_anonymous_caller(setup):
+    # Story 2.14 closes deferred-work.md#L25: assign-employee is gated on
+    # personnel.edit, so an anonymous caller (no X-User-Id) is rejected BEFORE
+    # the view runs. The actorless, created_by-NULL path is no longer reachable
+    # via the API — that was the security hole this test used to document.
     from rest_framework.test import APIClient
 
     emp, d1, _ = setup
@@ -103,9 +106,10 @@ def test_assign_employee_api_without_header_leaves_created_by_null(setup):
         {"employee_id": str(emp.id)},
         format="json",
     )
-    assert resp.status_code == 201
-    assignment = EmployeeStaffingAssignment.objects.get(staffing_slot=slot)
-    assert assignment.created_by is None
+    assert resp.status_code == 403
+    # Assert it is the RBAC gate (not CSRF/validation) that rejected it.
+    assert resp.json().get("detail") == "PERMISSION_DENIED"
+    assert not EmployeeStaffingAssignment.objects.filter(staffing_slot=slot).exists()
 
 
 def test_vacancy_inherits_created_by_from_base(setup):

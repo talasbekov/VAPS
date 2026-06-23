@@ -28,25 +28,29 @@ def employee(division):
     )
 
 
-def test_list_masks_iin_by_default(client, employee):
+def test_list_masks_iin_by_default(client, employee, grant):
+    grant(client)  # gate: personnel.view (story 2.14); masking is X-User-Permissions
     resp = client.get("/api/core/employees/")
     assert resp.status_code == 200
     row = resp.json()["results"][0]
     assert row["iin"] != "900101300700"
 
 
-def test_list_filter_by_division(client, employee, division):
+def test_list_filter_by_division(client, employee, division, grant):
+    grant(client)
     resp = client.get(f"/api/core/employees/?division_id={division.id}")
     assert resp.status_code == 200
     assert len(resp.json()["results"]) == 1
 
 
-def test_search_by_last_name(client, employee):
+def test_search_by_last_name(client, employee, grant):
+    grant(client)
     resp = client.get("/api/core/employees/?search=Иванов")
     assert len(resp.json()["results"]) == 1
 
 
-def test_detail_with_permission_reveals_iin(client, employee):
+def test_detail_with_permission_reveals_iin(client, employee, grant):
+    grant(client)
     resp = client.get(
         f"/api/core/employees/{employee.id}/",
         HTTP_X_USER_PERMISSIONS="employee.sensitive.view",
@@ -54,7 +58,8 @@ def test_detail_with_permission_reveals_iin(client, employee):
     assert resp.json()["iin"] == "900101300700"
 
 
-def test_patch_updates_phone(client, employee):
+def test_patch_updates_phone(client, employee, grant):
+    grant(client)
     resp = client.patch(
         f"/api/core/employees/{employee.id}/", {"work_phone": "+7700"}, format="json"
     )
@@ -63,7 +68,8 @@ def test_patch_updates_phone(client, employee):
     assert employee.work_phone == "+7700"
 
 
-def test_archive_sets_status_and_inactive(client, employee):
+def test_archive_sets_status_and_inactive(client, employee, grant):
+    grant(client)
     resp = client.post(f"/api/core/employees/{employee.id}/archive/")
     assert resp.status_code == 200
     employee.refresh_from_db()
@@ -71,7 +77,8 @@ def test_archive_sets_status_and_inactive(client, employee):
     assert employee.is_active is False
 
 
-def test_restore_reactivates(client, employee):
+def test_restore_reactivates(client, employee, grant):
+    grant(client)
     client.post(f"/api/core/employees/{employee.id}/archive/")
     resp = client.post(f"/api/core/employees/{employee.id}/restore/")
     assert resp.status_code == 200

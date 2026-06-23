@@ -38,6 +38,8 @@ def test_omd_matrix():
     assert omd_perms == {
         "assignment.create", "assignment.delete", "assignment.submit",
         "daily_report.generate", "brokerage.manage",
+        # core API perms (story 2.13, provisional): OMD needs roster visibility.
+        "personnel.view", "orgstructure.view",
     }
 
 
@@ -45,4 +47,4 @@ def test_seed_is_idempotent():
     call_command("seed_operations")
     call_command("seed_operations")
     assert Role.objects.count() == 8
-    assert RolePermission.objects.filter(role_code="OMD").count() == 5
+    assert RolePermission.objects.filter(role_code="OMD").count() == 7

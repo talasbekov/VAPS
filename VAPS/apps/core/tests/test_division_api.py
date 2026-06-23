@@ -27,13 +27,15 @@ def tree():
     return root, a, a1
 
 
-def test_list_divisions(client, tree):
+def test_list_divisions(client, tree, grant):
+    grant(client)  # gate: orgstructure.view (story 2.14)
     resp = client.get("/api/core/divisions/")
     assert resp.status_code == 200
     assert resp.json()["count"] == 3
 
 
-def test_leaf_descendants_endpoint(client, tree):
+def test_leaf_descendants_endpoint(client, tree, grant):
+    grant(client)
     root, a, a1 = tree
     resp = client.get(f"/api/core/divisions/{root.id}/leaf-descendants/")
     assert resp.status_code == 200

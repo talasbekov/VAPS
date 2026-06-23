@@ -20,6 +20,12 @@ PERMISSIONS = [
     ("event.manage", "Управление мероприятиями"),
     ("duty.manage", "Управление дежурствами"),
     ("audit.view", "Просмотр аудита"),
+    # core API gating (story 2.13). Provisional role-mapping below — пометка
+    # PROVISIONAL (открытый вопрос Bratan); тест проверяет механизм, не политику.
+    ("personnel.view", "Просмотр кадровых записей"),
+    ("personnel.edit", "Редактирование кадровых записей"),
+    ("orgstructure.view", "Просмотр оргструктуры"),
+    ("orgstructure.manage", "Управление оргструктурой"),
 ]
 
 ROLES = [
@@ -33,21 +39,34 @@ ROLES = [
     ("INTEGRATION_USER", "Интеграционная учётная запись"),
 ]
 
+# core perms (personnel.*/orgstructure.*) — PROVISIONAL раскладка (story 2.13,
+# открытый вопрос Bratan). INTEGRATION_USER намеренно БЕЗ core-прав → служит
+# DENY-дискриминатором в пилот-тесте vacancy-list.
 ROLE_PERMISSIONS = {
     "ADMIN": ["*"],
     "OMD": [
         "assignment.create", "assignment.delete", "assignment.submit",
         "daily_report.generate", "brokerage.manage",
+        "personnel.view", "orgstructure.view",
     ],
     "SENIOR_COORDINATOR": [
-        "assignment.create", "assignment.delete", "assignment.submit"
+        "assignment.create", "assignment.delete", "assignment.submit",
+        "personnel.view", "orgstructure.view",
     ],
-    "APPROVER": ["assignment.return", "assignment.approve"],
+    "APPROVER": [
+        "assignment.return", "assignment.approve",
+        "personnel.view", "orgstructure.view",
+    ],
     "DIVISION_OPERATOR": [
-        "daily_report.mark_update", "daily_report.correct", "status.view"
+        "daily_report.mark_update", "daily_report.correct", "status.view",
+        "personnel.view", "orgstructure.view",
     ],
-    "ORGD": ["audit.view", "daily_report.generate"],
-    "VIEWER": ["status.view"],
+    "ORGD": [
+        "audit.view", "daily_report.generate",
+        "personnel.view", "personnel.edit",
+        "orgstructure.view", "orgstructure.manage",
+    ],
+    "VIEWER": ["status.view", "personnel.view", "orgstructure.view"],
     "INTEGRATION_USER": ["status.manage"],
 }
 

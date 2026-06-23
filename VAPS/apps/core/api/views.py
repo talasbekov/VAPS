@@ -7,6 +7,9 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
+from apps.core.api.permissions import (
+    RequirePermissionMixin, require_permission,
+)
 from apps.core.api.serializers import (
     DivisionSerializer, EmployeeSerializer, PositionSerializer, RankSerializer,
     StaffingAssignmentSerializer, StaffingSlotSerializer,
@@ -27,10 +30,18 @@ def _permissions_from_request(request) -> set:
     return {p.strip() for p in raw.split(",") if p.strip()}
 
 
-class EmployeeViewSet(viewsets.ModelViewSet):
+class EmployeeViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
     serializer_class = EmployeeSerializer
     pagination_class = DefaultPagination
     http_method_names = ["get", "patch", "post"]
+    permission_map = {
+        "list": "personnel.view",
+        "retrieve": "personnel.view",
+        "create": "personnel.edit",
+        "partial_update": "personnel.edit",
+        "archive": "personnel.edit",
+        "restore": "personnel.edit",
+    }
 
     def get_queryset(self):
         qs = Employee.objects.all().order_by("full_name")
@@ -95,10 +106,19 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
 
 
-class DivisionViewSet(viewsets.ModelViewSet):
+class DivisionViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
     serializer_class = DivisionSerializer
     pagination_class = DefaultPagination
     queryset = Division.objects.all().order_by("name")
+    permission_map = {
+        "list": "orgstructure.view",
+        "retrieve": "orgstructure.view",
+        "leaf_descendants": "orgstructure.view",
+        "create": "orgstructure.manage",
+        "update": "orgstructure.manage",
+        "partial_update": "orgstructure.manage",
+        "destroy": "orgstructure.manage",
+    }
 
     @action(detail=True, methods=["get"], url_path="leaf-descendants")
     def leaf_descendants(self, request, *args, **kwargs):
@@ -107,25 +127,45 @@ class DivisionViewSet(viewsets.ModelViewSet):
         return Response(DivisionSerializer(leaves, many=True).data)
 
 
-class PositionViewSet(viewsets.ModelViewSet):
+class PositionViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
     serializer_class = PositionSerializer
     pagination_class = DefaultPagination
     queryset = Position.objects.all().order_by("sort_order")
     http_method_names = ["get", "post", "patch"]
+    permission_map = {
+        "list": "orgstructure.view",
+        "retrieve": "orgstructure.view",
+        "create": "orgstructure.manage",
+        "partial_update": "orgstructure.manage",
+    }
 
 
-class RankViewSet(viewsets.ModelViewSet):
+class RankViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
     serializer_class = RankSerializer
     pagination_class = DefaultPagination
     queryset = Rank.objects.all().order_by("rank_index")
     http_method_names = ["get", "post", "patch"]
+    permission_map = {
+        "list": "orgstructure.view",
+        "retrieve": "orgstructure.view",
+        "create": "orgstructure.manage",
+        "partial_update": "orgstructure.manage",
+    }
 
 
-class StaffingSlotViewSet(viewsets.ModelViewSet):
+class StaffingSlotViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
     serializer_class = StaffingSlotSerializer
     pagination_class = DefaultPagination
     queryset = StaffingSlot.objects.all().order_by("valid_from")
     http_method_names = ["get", "post", "patch"]
+    permission_map = {
+        "list": "personnel.view",
+        "retrieve": "personnel.view",
+        "create": "personnel.edit",
+        "partial_update": "personnel.edit",
+        "assign_employee": "personnel.edit",
+        "release": "personnel.edit",
+    }
 
     @action(detail=True, methods=["post"], url_path="assign-employee")
     def assign_employee(self, request, *args, **kwargs):
@@ -154,6 +194,9 @@ class StaffingSlotViewSet(viewsets.ModelViewSet):
 
 class VacancyViewSet(viewsets.ViewSet):
     def list(self, request, *args, **kwargs):
+        # Story 2.13 pilot gate: in-house RBAC via request.effective_permissions
+        # (populated by the operations authz seam) — core ↛ operations.
+        require_permission(request, "personnel.view")
         division_id = request.query_params.get("division_id")
         date_str = request.query_params.get("date")
         on_date = (
