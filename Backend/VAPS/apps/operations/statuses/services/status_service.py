@@ -44,6 +44,33 @@ def _require_actor(actor):
         )
 
 
+def assert_employee_status_editable(employee_id):
+    """FR-16 (story 3.11): a seconded employee is read-only for status edits.
+
+    While the employee holds a LIVE `DETACHED` («Откомандирован») status, any
+    operator's attempt to create/edit their statuses is 403 — the restriction
+    follows the EMPLOYEE (not the editing scope), so it applies «и в штатном, и
+    в принимающем». Direct existence query (NOT resolve_status — a higher-
+    priority status would mask the live DETACHED). The secondment return /
+    dismissal close-paths MUST NOT call this (they legitimately close the
+    restricting status); it is wired into the create/edit family only.
+    """
+    today = Clock.today_local()
+    if EmployeeStatus.objects.filter(
+        employee_id=employee_id,
+        status_type_code="DETACHED",
+        cancelled_at__isnull=True,
+        date_start__lte=today,
+        date_end__gt=today,
+    ).exists():
+        raise DomainError(
+            "PERMISSION_DENIED",
+            403,
+            detail={"employee_id": str(employee_id)},
+            message="Сотрудник откомандирован — редактирование статусов запрещено.",
+        )
+
+
 def _lock_employee(employee_id):
     """AC-6: pessimistic lock; missing employee → 404 (not a 500)."""
     try:
@@ -213,6 +240,7 @@ def create_status(
     """
     _require_actor(actor)
     employee = _lock_employee(employee_id)
+    assert_employee_status_editable(employee_id)  # FR-16 (3.11): DETACHED → 403
     # AC-2 (3.5): override requires a non-empty reason — checked before the
     # (more expensive) conflict detection. `(... or "")` guards a None reason
     # from a future caller (e.g. a serializer's .get) so it is a 400, not a 500.
@@ -287,6 +315,7 @@ def update_status(
     """
     _require_actor(actor)
     employee = _lock_employee(status.employee_id)
+    assert_employee_status_editable(status.employee_id)  # FR-16 (3.11)
     status.assert_user_editable()  # AC-8 — guard before mutation
 
     # Re-validate the interval ONLY when a date actually changes. A metadata
@@ -572,6 +601,7 @@ def resolve_pending_clarification(
             message="При override обязательна непустая причина.",
         )
     employee = _lock_for_edit(pending)  # lock employee + refresh + editable guard
+    assert_employee_status_editable(pending.employee_id)  # FR-16 (3.11)
     if pending.status_type_code != PENDING_CLARIFICATION_CODE:
         raise DomainError(
             "INVALID_LIFECYCLE_TRANSITION",

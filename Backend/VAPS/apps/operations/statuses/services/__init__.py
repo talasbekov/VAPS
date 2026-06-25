@@ -2,7 +2,9 @@ from apps.operations.statuses.services.bulk_status_service import (
     bulk_create_statuses,
 )
 from apps.operations.statuses.services.secondment_service import (
+    confirm_return,
     initiate_secondment,
+    request_return,
 )
 from apps.operations.statuses.services.status_service import (
     cancel_status,
@@ -37,10 +39,12 @@ __all__ = [
     "bulk_create_statuses",
     "cancel_status",
     "complete_status_early",
+    "confirm_return",
     "create_status",
     "derive_report",
     "extend_status",
     "initiate_secondment",
+    "request_return",
     "resolve_pending_clarification",
     "resolve_status",
     "update_status",

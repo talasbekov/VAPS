@@ -16,6 +16,7 @@ Reuses the 3.3 validation spine (``_lock_employee``/``_validate_interval``/
 
 from django.db import transaction
 
+from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector
 from apps.operations.statuses.models import EmployeeStatus, Secondment
@@ -25,6 +26,9 @@ from apps.operations.statuses.services.status_service import (
     _require_actor,
     _resolve_status_type,
     _validate_interval,
+    assert_employee_status_editable,
+    cancel_status,
+    complete_status_early,
 )
 
 DETACHED_CODE = "DETACHED"
@@ -50,6 +54,7 @@ def initiate_secondment(
     """
     _require_actor(actor)
     employee = _lock_employee(employee_id)  # 404 if missing
+    assert_employee_status_editable(employee_id)  # FR-16: already-DETACHED → 403
     from_division_id = employee.division_id
     if to_division_id == from_division_id:
         raise DomainError(
@@ -130,5 +135,86 @@ def initiate_secondment(
             to_division_id=to_division_id,
             document_basis=document_basis,
             created_by=actor,
+        )
+    return secondment
+
+
+# -- Story 3.11 — secondment return (FR-15): request → confirm → complete pair
+
+
+@transaction.atomic
+def request_return(secondment, *, actor):
+    """Step 1 (FR-15): the home unit requests the return — an append-once fact.
+
+    Idempotency: a secondment already requested or confirmed → 422. (Who may
+    request — the home/штатное operator — is role/scope-gated at the API layer,
+    Решение E; here ``actor`` is a plain string.)
+    """
+    _require_actor(actor)
+    secondment.refresh_from_db()
+    if (
+        secondment.return_requested_at is not None
+        or secondment.return_confirmed_at is not None
+    ):
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"secondment_id": secondment.id},
+            message="Возврат уже запрошен или подтверждён.",
+        )
+    secondment.return_requested_at = Clock.now()
+    secondment.return_requested_by = actor
+    secondment.save(
+        update_fields=["return_requested_at", "return_requested_by", "updated_at"]
+    )
+    return secondment
+
+
+@transaction.atomic
+def confirm_return(secondment, *, actor, reason=""):
+    """Step 2 (FR-15): the receiving side confirms — completes BOTH legs.
+
+    Requires a prior request (else 422); double-confirm → 422. Atomically closes
+    each leg by its lifecycle state (ACTIVE → ``complete_status_early`` as of
+    today; PLANNED → ``cancel_status``; already-closed → skip) and stamps the
+    append-once confirmed fact. The employee derived-returns to «В строю» with no
+    «returned» write (story 3.7). NOTE: the leg-completion path intentionally does
+    NOT run the FR-16 guard — closing the restricting status must not self-block.
+    """
+    _require_actor(actor)
+    _lock_employee(secondment.employee_id)  # serialize writers on this employee
+    secondment.refresh_from_db()
+    if secondment.return_requested_at is None:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"secondment_id": secondment.id},
+            message="Нельзя подтвердить возврат без запроса.",
+        )
+    if secondment.return_confirmed_at is not None:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"secondment_id": secondment.id},
+            message="Возврат уже подтверждён.",
+        )
+    today = Clock.today_local()
+    with transaction.atomic():
+        for leg in (secondment.out_status, secondment.in_status):
+            leg.refresh_from_db()
+            state = leg.state_on(today)
+            if state == EmployeeStatus.LifecycleState.ACTIVE:
+                complete_status_early(leg, actor=actor, actual_end=today)
+            elif state == EmployeeStatus.LifecycleState.PLANNED:
+                cancel_status(leg, actor=actor, reason=reason or "возврат секондмента")
+            # COMPLETED / CANCELLED legs are already closed — nothing to do.
+        secondment.return_confirmed_at = Clock.now()
+        secondment.return_confirmed_by = actor
+        secondment.save(
+            update_fields=[
+                "return_confirmed_at",
+                "return_confirmed_by",
+                "updated_at",
+            ]
         )
     return secondment
