@@ -32,6 +32,14 @@ class Secondment(TimeStampedModel):
     from_division_id = models.UUIDField()
     to_division_id = models.UUIDField()
     document_basis = models.TextField(blank=True, default="")
+    # Story 3.11 — return handshake as append-once FACTS (NOT a mutated enum,
+    # ARCH-DATA-022): home requests, the receiving side confirms; confirmation
+    # completes both legs. The employee's post-return status is derived (3.7), so
+    # there is no stored «returned» flag — only who/when of each beat.
+    return_requested_at = models.DateTimeField(null=True, blank=True)
+    return_requested_by = models.CharField(max_length=100, null=True, blank=True)
+    return_confirmed_at = models.DateTimeField(null=True, blank=True)
+    return_confirmed_by = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         db_table = "ops_status_secondments"

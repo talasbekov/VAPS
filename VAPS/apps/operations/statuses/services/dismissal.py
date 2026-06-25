@@ -9,8 +9,9 @@ operations-side status truncation, atomically.
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from apps.core.clock import Clock
 from apps.core.services import dismiss_employee as _dismiss_core
-from apps.operations.statuses.models import EmployeeStatus
+from apps.operations.statuses.models import EmployeeStatus, Secondment
 
 
 @transaction.atomic
@@ -51,10 +52,46 @@ def dismiss_employee(employee, *, date, reason=None, actor: str) -> dict:
     """Full cross-context dismissal (story 2.5, Shape B), atomic.
 
     core dismiss_employee (archive + interval + slot→Vacancy) then truncate
-    active statuses. Forward-hook (AC-3): synchronous close of PAIRED
-    secondment statuses at the receiving division is deferred to 3.10/3.11
-    — no secondment-pair model exists yet to traverse.
+    active statuses. Story 3.11 (FR-15): a dismissed employee mid-secondment has
+    BOTH legs truncated by close_active_statuses_on above; here we stamp the live
+    Secondment closed (append-once confirmed fact) so pair-state stays coherent
+    with its now-dead legs — a system close, no operator request/confirm.
     """
     _dismiss_core(employee, date=date, reason=reason, actor=actor)
     closed = close_active_statuses_on(employee.id, on_date=date, actor=actor)
-    return {"employee_id": employee.id, "statuses_closed": closed}
+    secondments_closed = 0
+    for sec in Secondment.objects.select_for_update().filter(
+        employee_id=employee.id, return_confirmed_at__isnull=True
+    ):
+        # close_active_statuses_on above truncated only spanning ACTIVE legs
+        # (date_start < D < date_end); a not-yet-started leg (date_start >= D,
+        # i.e. PLANNED or same-day-start) is left live. Append-once cancel it so
+        # the closed pair never references a live leg.
+        for leg in (sec.out_status, sec.in_status):
+            if leg.cancelled_at is None and leg.date_start >= date:
+                leg.cancelled_at = Clock.now()
+                leg.cancelled_by = actor
+                leg.cancelled_reason = "увольнение сотрудника"
+                leg.save(
+                    update_fields=[
+                        "cancelled_at",
+                        "cancelled_by",
+                        "cancelled_reason",
+                        "updated_at",
+                    ]
+                )
+        sec.return_confirmed_at = Clock.now()
+        sec.return_confirmed_by = actor
+        sec.save(
+            update_fields=[
+                "return_confirmed_at",
+                "return_confirmed_by",
+                "updated_at",
+            ]
+        )
+        secondments_closed += 1
+    return {
+        "employee_id": employee.id,
+        "statuses_closed": closed,
+        "secondments_closed": secondments_closed,
+    }

@@ -20,6 +20,7 @@ from collections import Counter
 
 from django.db import transaction
 
+from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreEmployeeLockSelector
 from apps.operations.statuses.conflict_matrix import detect_conflicts
@@ -141,6 +142,26 @@ def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
     ).values("employee_id", "status_type_code", "date_start", "date_end")
     for row in existing:
         existing_by_employee.setdefault(row["employee_id"], []).append(row)
+
+    # FR-16 (story 3.11): a seconded (live DETACHED) employee is read-only → 403.
+    # Computed in-memory from the already-fetched live statuses — no extra query.
+    today = Clock.today_local()
+    detached = sorted(
+        {
+            str(eid)
+            for eid, st_rows in existing_by_employee.items()
+            for r in st_rows
+            if r["status_type_code"] == "DETACHED"
+            and r["date_start"] <= today < r["date_end"]
+        }
+    )
+    if detached:
+        raise DomainError(
+            "PERMISSION_DENIED",
+            403,
+            detail={"employee_ids": detached},
+            message="Сотрудник откомандирован — массовое обновление запрещено.",
+        )
 
     # Per-row business validation, fully in memory (AC-4/AC-6). Each row's
     # DomainError is caught and collected; nothing is written yet.
