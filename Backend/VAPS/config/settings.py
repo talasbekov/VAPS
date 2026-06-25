@@ -102,6 +102,9 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PERMISSION_CLASSES": [],
     "UNAUTHENTICATED_USER": None,
+    # Story 3.1: единая точка формирования ошибок (§36-конверт, DomainError +
+    # IntegrityError-по-имени-constraint). Все ошибки DRF-границы — здесь.
+    "EXCEPTION_HANDLER": "apps.core.api.exception_handler.domain_exception_handler",
 }
 
 # Admin-ассеты под DEBUG/runserver через staticfiles. STATIC_ROOT +

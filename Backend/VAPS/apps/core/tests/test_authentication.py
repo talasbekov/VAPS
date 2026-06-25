@@ -38,7 +38,8 @@ def test_actor_id_visible_in_view_through_full_dispatch():
 def test_protected_endpoint_without_header_returns_403():
     response = APIClient().get("/api/operations/my-permissions/")
     assert response.status_code == 403
-    assert response.data["detail"] == "PERMISSION_DENIED"
+    # Story 3.1: errors carry the §36 envelope; PERMISSION_DENIED is error_code.
+    assert response.data["error_code"] == "PERMISSION_DENIED"
 
 
 def test_create_user_uuid_pk_unusable_password_active():

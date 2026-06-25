@@ -203,6 +203,42 @@ codes:
     category: business_hard
     description: "Для генерации документа не хватает обязательных полей шаблона."
     source: "VAPS_7.8.2 §34"
+  AUTO_STATUS_READONLY:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Статус со source≠USER (OM_AUTO/KU_SYNC) принадлежит проекции — operations единственный writer; ручная правка/удаление оператором запрещены."
+    source: "architecture.md ARCH-DATA-022 / L105 (OM_AUTO single-writer 422); VAPS_7.8.2 §DB-OPS-007; стори 3.2"
+  INVALID_DATE_RANGE:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Пустой/инвертированный интервал статуса (date_start >= date_end). Сервисная валидация опережает DataError на generated-колонке period."
+    source: "VAPS_7.8.2 §6 (статусы); epics.md 3.3; architecture.md ARCH-DATA-023 (полуоткрытые интервалы)"
+  MAX_DURATION_EXCEEDED:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Длительность статуса превышает max_duration_days своего типа (StatusType-справочник)."
+    source: "VAPS_7.8.2 §6 (статусы); epics.md 3.3 (FR-10 max длительность по типу)"
+  DATE_OUTSIDE_EMPLOYMENT:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Интервал статуса выходит за границы занятости сотрудника (date_start < hire_date или date_end > dismissal_date)."
+    source: "VAPS_7.8.2 §6 (статусы); epics.md 3.3 (FR-10 границы приёма/увольнения); стори 2.4"
+  INVALID_STATUS_TYPE:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "status_type_code отсутствует в справочнике StatusType или неактивен (is_active=false)."
+    source: "VAPS_7.8.2 §6 (статусы); epics.md 3.3; стори 2.2 (seed_statuses)"
+  INVALID_LIFECYCLE_TRANSITION:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Недопустимый переход жизненного цикла статуса: отмена не-PLANNED, досрочное завершение не-ACTIVE или датой в будущем, продление не-вперёд, любая lifecycle/edit-операция над CANCELLED-записью (append-once)."
+    source: "VAPS_7.8.2 §6 (статусы); epics.md 3.6 (FR-10 lifecycle: продление/досрочное завершение/отмена); architecture.md ARCH-DATA-022 (append-once cancel)"
 
   # --- 423: заблокировано состоянием ---
   ASSIGNMENT_VERSION_LOCKED:

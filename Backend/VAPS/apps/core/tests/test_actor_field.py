@@ -108,7 +108,8 @@ def test_assign_employee_api_denies_anonymous_caller(setup):
     )
     assert resp.status_code == 403
     # Assert it is the RBAC gate (not CSRF/validation) that rejected it.
-    assert resp.json().get("detail") == "PERMISSION_DENIED"
+    # Story 3.1: §36 envelope → PERMISSION_DENIED is carried as error_code.
+    assert resp.json().get("error_code") == "PERMISSION_DENIED"
     assert not EmployeeStaffingAssignment.objects.filter(staffing_slot=slot).exists()
 
 
