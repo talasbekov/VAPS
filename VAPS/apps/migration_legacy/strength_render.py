@@ -30,6 +30,7 @@ COLUMN_LABELS_RU = {
     "AFTER_DUTY": "После деж.",
     "BEFORE_DUTY": "Перед деж.",
     "ON_DUTY": "На деж.",
+    "PENDING": "Уточняется",
     "IN_SERVICE": "В строю",
     "ATTACHED": "Прикомандировано",
 }

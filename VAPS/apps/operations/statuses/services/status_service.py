@@ -25,12 +25,16 @@ from django.db import transaction
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreEmployeeLockSelector
+from apps.operations.statuses.amendment_hook import mark_days_for_amendment
 from apps.operations.statuses.conflict_matrix import detect_conflicts
 from apps.operations.statuses.models import (
     EmployeeStatus,
     Override,
     StatusType,
 )
+
+# Story 3.9: the «уточняется» status-type code (resolved via retro-replacement).
+PENDING_CLARIFICATION_CODE = "PENDING_CLARIFICATION"
 
 
 def _require_actor(actor):
@@ -512,3 +516,148 @@ def extend_status(
                 created_by=actor,
             )
     return status
+
+
+# -- Story 3.9 — resolve «уточняется» (PENDING_CLARIFICATION) -----------------
+#
+# «Уточняется» is the honest placeholder for an undetermined day. When the truth
+# emerges («госпиталь со вторника»), the operator resolves it with one
+# sanctioned retro operation (Решение №2=B: close the PENDING row + create the
+# real status, atomically — reuses the 3.3/3.6 spine, preserves the «было
+# уточняется» trail). The resolving interval runs through the conflict detector
+# (hard → 422 BEFORE any write), and the affected days are flagged for amendment
+# via the E5 no-op seam (statuses ↛ submissions, architecture.md#L587).
+
+
+@transaction.atomic
+def resolve_pending_clarification(
+    pending,
+    *,
+    resolved_type_code,
+    date_start,
+    date_end,
+    actor,
+    reason,
+    override=False,
+    override_reason="",
+):
+    """Resolve a PENDING_CLARIFICATION status into the real status (Решение №2=B).
+
+    Atomically closes the «уточняется» row (append-once cancel facts carry the
+    sanction: ``cancelled_by=actor`` / ``cancelled_reason=reason``) and creates
+    the resolved ``source=USER`` status over ``[date_start, date_end)``. ``reason``
+    (sanction) is required non-empty. The resolving interval is validated and
+    conflict-checked (excluding the pending row) so a hard overlap raises 422
+    BEFORE anything is written. A soft overlap is bypassable with ``override`` +
+    a non-empty ``override_reason`` (3.5 machinery). On success the affected span
+    (union of the old «уточняется» and the new interval) is handed to the E5
+    amendment seam.
+    """
+    _require_actor(actor)
+    if not (reason or "").strip():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"field": "reason"},
+            message=(
+                "При разрешении статуса «уточняется» обязательна непустая "
+                "причина (санкция)."
+            ),
+        )
+    if override and not (override_reason or "").strip():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"field": "override_reason"},
+            message="При override обязательна непустая причина.",
+        )
+    employee = _lock_for_edit(pending)  # lock employee + refresh + editable guard
+    if pending.status_type_code != PENDING_CLARIFICATION_CODE:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"status_type_code": pending.status_type_code},
+            message="Разрешать ретро-заменой можно только статус «уточняется».",
+        )
+    # Append-once: a PENDING already closed must not be re-resolved — that would
+    # overwrite the original cancel facts and spawn a second resolved status
+    # (assert_user_editable guards only `source`, not `cancelled_at`). Mirror
+    # cancel_status, which rejects an already-CANCELLED row.
+    if pending.cancelled_at is not None:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"cancelled_at": str(pending.cancelled_at)},
+            message="Статус «уточняется» уже закрыт — повторное разрешение невозможно.",
+        )
+    # The resolution must produce a REAL status, not another placeholder.
+    if resolved_type_code == PENDING_CLARIFICATION_CODE:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"resolved_type_code": resolved_type_code},
+            message=(
+                "Разрешение должно давать реальный статус, "
+                "а не снова «уточняется»."
+            ),
+        )
+
+    # Resolving interval: cheap→expensive, conflict BEFORE write (AC-3).
+    status_type = _resolve_status_type(resolved_type_code)
+    _validate_interval(
+        date_start=date_start,
+        date_end=date_end,
+        employee=employee,
+        status_type=status_type,
+    )
+    bypassed_conflicts = _assert_no_conflict(
+        employee_id=pending.employee_id,
+        status_type_code=resolved_type_code,
+        date_start=date_start,
+        date_end=date_end,
+        exclude_pk=pending.pk,
+        override=override,
+    )
+
+    resolved = EmployeeStatus(
+        employee_id=pending.employee_id,
+        status_type_code=resolved_type_code,
+        date_start=date_start,
+        date_end=date_end,
+        source=EmployeeStatus.Source.USER,
+    )
+    with transaction.atomic():
+        # Close «уточняется»: it was a placeholder, not a fact that happened, so
+        # append-once cancel facts (carrying the sanction) supersede it. The
+        # GiST hard-overlap constraint backstops the resolved INSERT race → 422.
+        pending.cancelled_at = Clock.now()
+        pending.cancelled_by = actor
+        pending.cancelled_reason = reason
+        pending.save(
+            update_fields=[
+                "cancelled_at",
+                "cancelled_by",
+                "cancelled_reason",
+                "updated_at",
+            ]
+        )
+        resolved.save()
+        if override and bypassed_conflicts:
+            Override.objects.create(
+                status=resolved,
+                employee_id=pending.employee_id,
+                status_type_code=resolved_type_code,
+                reason=override_reason,
+                conflicts=_conflict_details(bypassed_conflicts),
+                created_by=actor,
+            )
+
+    # E5 amendment seam (no-op until DailySubmission exists). Affected span =
+    # union of the old «уточняется» and the new interval — every day whose
+    # derived status could have changed.
+    mark_days_for_amendment(
+        pending.employee_id,
+        min(pending.date_start, date_start),
+        max(pending.date_end, date_end),
+    )
+    return resolved

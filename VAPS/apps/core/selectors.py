@@ -207,6 +207,21 @@ class CoreEmployeeLockSelector:
         """
         return Employee.objects.select_for_update().get(id=employee_id)
 
+    @staticmethod
+    def lock_employees(employee_ids):
+        """Bulk row-lock employees for a mass status write — ONE query, no
+        per-item lock (NFR-4 / story 3.8). ``order_by("id")`` makes the lock
+        order deterministic so two operators writing the same unit at the
+        16-17 peak cannot deadlock on a different acquisition order. Use inside
+        a transaction. Returns ``{id: Employee}`` (missing ids are simply absent
+        — the caller decides whether that is a 404)."""
+        rows = (
+            Employee.objects.select_for_update()
+            .filter(id__in=list(employee_ids))
+            .order_by("id")
+        )
+        return {employee.id: employee for employee in rows}
+
 
 class HistoricalEmployeeSelector:
     @staticmethod

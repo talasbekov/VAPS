@@ -42,6 +42,25 @@ def test_soft_when_both_sides_soft():
     assert classify_pair("STUDY", "STUDY") is ConflictSeverity.SOFT
 
 
+def test_secondment_pair_is_compatible():
+    # Story 3.10: DETACHED + ATTACHED is the reserved secondment pair — declared
+    # COMPATIBLE so the two legs of one secondment don't false-conflict (409).
+    assert classify_pair("DETACHED", "ATTACHED") is ConflictSeverity.COMPATIBLE
+    assert classify_pair("ATTACHED", "DETACHED") is ConflictSeverity.COMPATIBLE
+
+
+def test_detect_compatible_pair_is_not_a_conflict():
+    # detect_conflicts skips a COMPATIBLE overlap: an ATTACHED status overlapping
+    # the employee's own DETACHED leg yields no hard/soft/warning.
+    report = detect_conflicts(
+        new_type="ATTACHED",
+        existing_rows=[_row("DETACHED", date(2026, 6, 1), date(2026, 6, 10))],
+        business_date=date(2026, 6, 5),
+    )
+    assert not report.hard and not report.soft and not report.warnings
+    assert not report.has_blocking()
+
+
 # -- property: totality + symmetry + hard-consistency (AC-4, AC-6) ------------
 
 

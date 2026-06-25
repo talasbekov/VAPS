@@ -30,6 +30,10 @@ STATUS_TYPE_PRIORITIES = {
     "DUTY": 70,
     "GEV": 75,
     "EVENT_ASSIGNMENT": 80,
+    # «Уточняется» (story 3.9): below every real fact (loses the расход winner
+    # to an actual status on the same date) but above derived «В строю», so an
+    # undetermined day reads honestly «уточняется» instead of a false in-service.
+    "PENDING_CLARIFICATION": 990,
     "IN_SERVICE": 999,
 }
 
@@ -49,6 +53,7 @@ REPORT_COLUMN_BY_CODE = {
     "DUTY": "ON_DUTY",
     "GEV": "ON_DUTY",
     "EVENT_ASSIGNMENT": "IN_SERVICE",
+    "PENDING_CLARIFICATION": "PENDING",
     "IN_SERVICE": "IN_SERVICE",
 }
 
@@ -67,6 +72,7 @@ REPORT_COLUMNS = (
     "AFTER_DUTY",
     "BEFORE_DUTY",
     "ON_DUTY",
+    "PENDING",
     "IN_SERVICE",
 )
 
