@@ -25,6 +25,10 @@ class StatusType(models.Model):
     restricts_editing = models.BooleanField(default=False)
     # FR-39 contract column; concrete palette deferred to the UI story.
     color = models.CharField(max_length=20, blank=True, default="")
+    # FR-10 / story 3.3: max status duration in calendar days for this type;
+    # NULL = no limit. A type property (re-synced from canon when the spec
+    # supplies limits), not operator-owned — consumed by the creation service.
+    max_duration_days = models.PositiveIntegerField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
