@@ -51,9 +51,10 @@ COMPARABLE_COLUMNS = (
 DONOR_MAPPED_FOLD_TARGETS = ("VACATION", "TRAINING")
 
 # VAPS columns the donor aggregator has NO column for at all (on_duty /
-# after_duty are not split; before_duty does not exist donor-side): their
-# bearers land in the donor's inferred "В строю".
-VAPS_ONLY_FOLD_COLUMNS = ("ON_DUTY", "AFTER_DUTY", "BEFORE_DUTY")
+# after_duty are not split; before_duty does not exist donor-side; PENDING
+# «уточняется» is a VAPS-only status the donor never modelled): their bearers
+# land in the donor's inferred "В строю".
+VAPS_ONLY_FOLD_COLUMNS = ("ON_DUTY", "AFTER_DUTY", "BEFORE_DUTY", "PENDING")
 
 # The two type columns iterated as cells (1:1 mappings + fold targets).
 _TYPE_COLUMNS = ("SICK", "VACATION", "COMMAND", "TRAINING", "OTHER", "DETACHED")

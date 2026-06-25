@@ -24,9 +24,10 @@ STATUS_TYPES = [
     ("DUTY", "На дежурстве", 70, "ON_DUTY"),
     ("GEV", "Группа экстренного выезда", 75, "ON_DUTY"),
     ("EVENT_ASSIGNMENT", "Привлечён на мероприятие", 80, "IN_SERVICE"),
-    # Architecture decision (FR-6): "уточняется" is a real status-type value;
-    # priority/column are provisional pending the status engine (E3).
-    ("PENDING_CLARIFICATION", "Уточняется", 990, "IN_SERVICE"),
+    # Architecture decision (FR-6) + story 3.9: "уточняется" is a first-class
+    # status-type value with its OWN расход column (AR-11 «своя строка расхода»).
+    # priority 990 = below every real fact, above derived «В строю» (Решение №1).
+    ("PENDING_CLARIFICATION", "Уточняется", 990, "PENDING"),
     ("IN_SERVICE", "В строю", 999, "IN_SERVICE"),
 ]
 

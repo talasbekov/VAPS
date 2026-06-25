@@ -11,8 +11,9 @@ from apps.operations.statuses.services.strength_report import (
 pytestmark = pytest.mark.django_db
 
 EXPECTED_COUNT = 17
-# PENDING_CLARIFICATION is an architecture-added type with no strength_report row.
-EXTRA_BEYOND_STRENGTH_REPORT = {"PENDING_CLARIFICATION"}
+# Story 3.9: PENDING_CLARIFICATION is now a first-class strength_report column
+# (its own «уточняется» row), so the catalog matches the constants exactly.
+EXTRA_BEYOND_STRENGTH_REPORT: set = set()
 
 
 def _seed():
@@ -108,13 +109,13 @@ def test_is_ku_owned_matches_db_ops_003():
     }
 
 
-def test_pending_clarification_provisional_values():
+def test_pending_clarification_values():
     _seed()
     pending = StatusType.objects.get(code="PENDING_CLARIFICATION")
-    # Provisional values (Bratan-confirmed) pending the status engine (E3);
-    # pin them so a silent drift in the unreviewed sentinel row fails red.
+    # Story 3.9 (Решение №1): own расход column "PENDING"; priority 990 keeps it
+    # below every real fact but above derived «В строю»; soft; counts in list.
     assert pending.priority == 990
-    assert pending.report_column_code == "IN_SERVICE"
+    assert pending.report_column_code == "PENDING"
     assert pending.is_hard_block is False
     assert pending.counts_in_staff is True
     assert pending.counts_in_list is True

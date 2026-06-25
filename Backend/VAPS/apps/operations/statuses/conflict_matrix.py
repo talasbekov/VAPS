@@ -37,9 +37,11 @@ from enum import Enum
 HARD_STATUS_TYPE_CODES = ("SICK_LEAVE", "LEAVE_BY_REPORT", "VACATION", "COMMAND")
 
 # Declarative exceptions: unordered type pairs that may legitimately coexist.
-# Reserved for secondment pairs (DETACHED/ATTACHED, story 3.10); empty until
-# that story populates it. Each entry is a frozenset of two type codes.
-COMPATIBLE_PAIRS: frozenset = frozenset()
+# Story 3.10 (FR-14): the secondment pair — a seconded employee carries both
+# DETACHED (home «по списку») and ATTACHED («+N» at the receiving unit) over the
+# same interval, so the two legs must NOT classify as a conflict. Each entry is
+# a frozenset of two type codes.
+COMPATIBLE_PAIRS: frozenset = frozenset({frozenset(("DETACHED", "ATTACHED"))})
 
 
 class ConflictSeverity(Enum):
