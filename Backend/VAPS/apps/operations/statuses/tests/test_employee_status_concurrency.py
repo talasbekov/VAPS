@@ -101,6 +101,12 @@ def test_concurrent_create_status_one_commits_other_conflicts():
     # status and raises a clean DomainError(OVERLAPPING_HARD_STATUS, 422) — NOT a
     # 500, NOT a raw IntegrityError/OperationalError, NOT a lost update.
     #
+    # This asserts the OUTCOME contract (one commit + 422 + no 500/lost-update);
+    # which layer fires — the lock pre-check or the GiST backstop — is
+    # defense-in-depth and not isolated here (both yield 422). Assumes READ
+    # COMMITTED + Postgres: under a higher isolation level the loser's snapshot
+    # could miss the winner and hit the GiST → raw IntegrityError instead.
+    #
     # Thin gate-runnable companion (deterministic, no threads): test_status_service
     # .py::test_service_savepoint_integrityerror_maps_to_422 (GiST→§36→422). Deadlock
     # backstop: test_exception_handler.py::test_deadlock_sqlstate_maps_to_422. The
@@ -177,13 +183,14 @@ def test_concurrent_create_status_one_commits_other_conflicts():
         conflict = next(v for v in results.values() if v[0] == "conflict")
         assert conflict[1] == "OVERLAPPING_HARD_STATUS", results
         assert conflict[2] == 422, results
-        # exactly one commit, no lost update
-        assert (
-            EmployeeStatus.objects.filter(
-                employee_id=emp.id, cancelled_at__isnull=True
-            ).count()
-            == 1
+        # exactly one commit, and the surviving row is the WINNER's (not a
+        # phantom / not a lost update)
+        live = EmployeeStatus.objects.filter(
+            employee_id=emp.id, cancelled_at__isnull=True
         )
+        assert live.count() == 1
+        ok = next(v for v in results.values() if v[0] == "ok")
+        assert live.get().pk == ok[1], results
     finally:
         EmployeeStatus.objects.filter(employee_id=emp.id).delete()
         Employee.objects.filter(id=emp.id).delete()
