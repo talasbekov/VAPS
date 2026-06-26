@@ -147,8 +147,8 @@ development_status:
   3-11-секондменты-возврат-и-ограничение-прав: done
   3-12-catch-up-материализации-эффектов: done
   3-13-спайк-часы-без-ntp: review
-  3-14-конкурентный-смоук-статусов: review
-  epic-3-retrospective: optional
+  3-14-конкурентный-смоук-статусов: done
+  epic-3-retrospective: done
 
   # Epic 4: Аудит — каждое решение восстановимо
   epic-4: backlog
