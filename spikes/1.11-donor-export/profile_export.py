@@ -62,7 +62,10 @@ def mask(value):
         return "…(пусто)"
     if len(s) <= 4:
         return f"…(скрыто, {len(s)} симв.)"
-    return "…" + s[-4:]
+    # Управляющие символы (\n, \t, …) в хвосте сломали бы однострочный формат
+    # «(примеры: …)», который потребляет EXPORT-REPORT. Непечатаемое → «□».
+    tail = "".join(ch if ch.isprintable() else "□" for ch in s[-4:])
+    return "…" + tail
 
 
 def is_blank(value):
@@ -123,6 +126,17 @@ def print_volume(by_model):
 def print_employees(rows):
     print("\n== employees.employee (ключи: iin, personnel_number) ==")
     print(f"  всего: {len(rows)}")
+    nonscalar_pk = sum(1 for r in rows if not isinstance(r["pk"], (int, str)))
+    if nonscalar_pk:
+        # pk не скаляр (обычно --natural-primary: pk=null) — дамп НЕ по рецепту.
+        # str(None) схлопывает разные личности в один ключ → ложные «дубли pk»
+        # ниже и ложный orphan-storm в print_statuses. Не молча: явная аномалия.
+        print(
+            f"  ⚠ АНОМАЛИЯ ФОРМАТА: {nonscalar_pk} строк с не-скалярным pk "
+            "(вероятно --natural-primary). Нужен обычный dumpdata --format json "
+            "со скалярными pk — см. EXPORT-RECIPE.md «формат». Числа дублей pk и "
+            "осиротевших статусов НЕНАДЁЖНЫ."
+        )
     pk_dups = duplicates([str(r["pk"]) for r in rows])
     if pk_dups:
         # Множество employee_pks в print_statuses молча схлопнуло бы дубль pk —
@@ -177,10 +191,25 @@ def print_employees(rows):
 def print_statuses(status_rows, employee_rows):
     print("\n== statuses.employeestatus (ключ: employee FK) ==")
     print(f"  всего: {len(status_rows)}")
-    # str()-нормализация pk и FK: dumpdata по рецепту даёт int с обеих сторон,
-    # но SQL-дамп/--natural-foreign/ручная правка дали бы "1" против 1 — тогда
-    # строгое сравнение пометило бы ВСЕ статусы осиротевшими (false orphan-storm,
-    # неверный продукт-число). На int-ключах результат идентичен.
+    # str()-нормализация pk и FK кроет РАСХОЖДЕНИЕ ТИПОВ СКАЛЯРА: dumpdata по
+    # рецепту даёт int с обеих сторон, но SQL-дамп/ручная правка дали бы str "1"
+    # против int 1 — без str() строгое сравнение пометило бы ВСЕ статусы
+    # осиротевшими. На int-ключах результат идентичен. ВНИМАНИЕ: natural-key str()
+    # НЕ кроет — --natural-foreign даёт FK=[natural-key] (список), а не "1" vs 1;
+    # это формат НЕ по рецепту, ловится отдельной АНОМАЛИЕЙ ниже, а не молча.
+    nonscalar_fk = sum(
+        1
+        for r in status_rows
+        if r["fields"].get("employee") is not None
+        and not isinstance(r["fields"]["employee"], (int, str))
+    )
+    if nonscalar_fk:
+        print(
+            f"  ⚠ АНОМАЛИЯ ФОРМАТА: {nonscalar_fk} статусов с не-скалярным "
+            "employee-FK (вероятно --natural-foreign: FK=[natural-key]). "
+            "str([...]) не совпадёт со str(pk) → счётчик осиротевших НЕНАДЁЖЕН "
+            "(ложный orphan-storm). Нужен обычный dumpdata со скалярными FK."
+        )
     employee_pks = {str(r["pk"]) for r in employee_rows}
     fk_null = sum(1 for r in status_rows if r["fields"].get("employee") is None)
     fk_missing = sum(
