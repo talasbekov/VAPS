@@ -23,10 +23,14 @@ INSTALLED_APPS = [
     "apps.operations.statuses",
     "apps.operations.rbac",
     "apps.operations.submissions",
+    "apps.audit",
     "apps.migration_legacy",
 ]
 
 MIDDLEWARE = [
+    # request_id contextvar — ПЕРВЫМ (внешним), чтобы оборачивать весь
+    # request/response; reset в finally не даёт ему течь между запросами (4.3).
+    "apps.core.middleware.RequestContextMiddleware",
     # Порядок обязателен для admin (system-check admin.E408/E409/E410):
     # Session → ... → Auth → Message; Session ДО Auth.
     "django.contrib.sessions.middleware.SessionMiddleware",

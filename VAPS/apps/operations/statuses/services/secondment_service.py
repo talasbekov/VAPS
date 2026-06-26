@@ -16,6 +16,7 @@ Reuses the 3.3 validation spine (``_lock_employee``/``_validate_interval``/
 
 from django.db import transaction
 
+from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector
@@ -136,6 +137,24 @@ def initiate_secondment(
             document_basis=document_basis,
             created_by=actor,
         )
+    # One event for the whole pair (story 4.4); legs are created via direct
+    # .save() above (not create_status), so there is no per-leg double-emit.
+    record(
+        actor=actor,
+        action="SECONDMENT_INITIATED",
+        entity_type="secondment",
+        entity_id=employee_id,
+        old_value=None,
+        new_value={
+            "secondment_id": secondment.pk,
+            "out_status_id": out_status.pk,
+            "in_status_id": in_status.pk,
+            "from_division_id": str(from_division_id),
+            "to_division_id": str(to_division_id),
+            "date_start": str(date_start),
+            "date_end": str(date_end),
+        },
+    )
     return secondment
 
 
@@ -166,6 +185,17 @@ def request_return(secondment, *, actor):
     secondment.return_requested_by = actor
     secondment.save(
         update_fields=["return_requested_at", "return_requested_by", "updated_at"]
+    )
+    record(
+        actor=actor,
+        action="SECONDMENT_RETURN_REQUESTED",
+        entity_type="secondment",
+        entity_id=secondment.employee_id,
+        old_value={"return_requested_at": None},
+        new_value={
+            "return_requested_at": secondment.return_requested_at.isoformat(),
+            "return_requested_by": actor,
+        },
     )
     return secondment
 
@@ -199,14 +229,24 @@ def confirm_return(secondment, *, actor, reason=""):
             message="Возврат уже подтверждён.",
         )
     today = Clock.today_local()
+    legs_closed = []
     with transaction.atomic():
         for leg in (secondment.out_status, secondment.in_status):
             leg.refresh_from_db()
             state = leg.state_on(today)
+            # _audit=False: this is ONE operation (SECONDMENT_RETURNED) — the leg
+            # closures must not emit their own STATUS_* events (реш. №4, no double).
             if state == EmployeeStatus.LifecycleState.ACTIVE:
-                complete_status_early(leg, actor=actor, actual_end=today)
+                complete_status_early(leg, actor=actor, actual_end=today, _audit=False)
+                legs_closed.append({"status_id": leg.pk, "action": "completed"})
             elif state == EmployeeStatus.LifecycleState.PLANNED:
-                cancel_status(leg, actor=actor, reason=reason or "возврат секондмента")
+                cancel_status(
+                    leg,
+                    actor=actor,
+                    reason=reason or "возврат секондмента",
+                    _audit=False,
+                )
+                legs_closed.append({"status_id": leg.pk, "action": "cancelled"})
             # COMPLETED / CANCELLED legs are already closed — nothing to do.
         secondment.return_confirmed_at = Clock.now()
         secondment.return_confirmed_by = actor
@@ -217,4 +257,16 @@ def confirm_return(secondment, *, actor, reason=""):
                 "updated_at",
             ]
         )
+    record(
+        actor=actor,
+        action="SECONDMENT_RETURNED",
+        entity_type="secondment",
+        entity_id=secondment.employee_id,
+        old_value={"return_confirmed_at": None},
+        new_value={
+            "return_confirmed_at": secondment.return_confirmed_at.isoformat(),
+            "return_confirmed_by": actor,
+            "legs_closed": legs_closed,
+        },
+    )
     return secondment
