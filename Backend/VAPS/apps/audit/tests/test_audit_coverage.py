@@ -1,0 +1,278 @@
+"""Story 4.6 — audit-coverage CI guard (AR-9). No production code: this IS the guard.
+
+Two facets:
+
+* **B — source-derived closed world.** AST-scan every ``record()``/``record_many()``
+  call site across ``apps/**`` and collect the ``action`` codes the code ACTUALLY
+  emits; assert ``emitted ⊆ docs/registries/audit-events.yaml::actions``. This
+  replaces story 4.4's hand-maintained literal ``_STORY_4_4_ACTIONS`` (the
+  deferred-work.md:401 gap): ``literal ⊆ registry`` → ``source ⊆ registry``, so a
+  new service emitting an unregistered code now turns CI red.
+* **A — route-coverage living registry.** Walk the URL resolver, take every
+  mutating route (POST/PUT/PATCH/DELETE incl. write ``@action``), and require each
+  to be classified in ``AUDIT_MATRIX`` as ``_Audited`` | ``_DeferredAudit(ref)``.
+  A new mutating route absent from the matrix → red (AR-9: "новая мутация без
+  аудита не пройдёт CI"). TODAY no mutating route emits audit (audit is wired at
+  the E3 service level — 4.4 — and those services have no REST yet; REST is E10),
+  so every current mutating route is ``_DeferredAudit``.
+
+Only ONE direction is asserted for facet B (``emitted ⊆ registry``): the registry
+is a forward seed carrying codes for not-yet-built epics (AUTH_*/ASSIGNMENT_*/...),
+so ``registry ⊆ emitted`` (no-orphans) would fail and is deliberately NOT asserted.
+
+Mirrors: ``test_rbac_matrix`` (resolver walk + ``_DeferredGate``),
+``exception_handler.emitted_codes`` (source-derived ⊆ registry),
+``test_audit_write_boundary`` (AST rglob+walk, skip ``tests/``). PyYAML is absent
+in the venv → the registry is parsed indent-aware (same as ``test_status_audit``).
+"""
+
+import ast
+import re
+from pathlib import Path
+
+from django.conf import settings
+from django.urls import get_resolver
+from django.urls.resolvers import URLPattern, URLResolver
+
+_APPS_DIR = Path(settings.BASE_DIR) / "apps"
+_REGISTRY = Path(settings.BASE_DIR).parent.parent / "docs/registries/audit-events.yaml"
+
+
+# ---------------------------------------------------------------------------
+# Facet B — source-derived emitted action codes (AST scan)
+# ---------------------------------------------------------------------------
+_RECORD_FUNCS = {"record", "record_many"}
+
+
+def _call_name(func):
+    """Callable name from an ``ast.Call.func`` — ``record(...)`` (Name) or
+    ``services.record(...)`` (Attribute)."""
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return None
+
+
+def _actions_in_tree(tree):
+    """All ``action`` string literals emitted via ``record``/``record_many`` in
+    one parsed module. Catches BOTH forms and ONLY record/record_many calls:
+
+    * keyword: ``record(action="STATUS_CREATED", ...)``
+    * dict-literal: ``record_many([{"action": "STATUS_CREATED", ...}, ...])``
+      (bulk_status_service builds entry dicts in a list-comp — the action is a
+      dict VALUE, not a kwarg).
+
+    Scoping to ``record``/``record_many`` calls keeps DRF ``@action(...)``
+    decorators and unrelated dicts with an "action" key out of the result.
+    """
+    found = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or _call_name(node.func) not in _RECORD_FUNCS:
+            continue
+        # (a) keyword form
+        for kw in node.keywords:
+            if (
+                kw.arg == "action"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ):
+                found.add(kw.value.value)
+        # (b) dict-literal form (inside list/comprehension args)
+        for arg in node.args:
+            for sub in ast.walk(arg):
+                if not isinstance(sub, ast.Dict):
+                    continue
+                for key, value in zip(sub.keys, sub.values):
+                    if (
+                        isinstance(key, ast.Constant)
+                        and key.value == "action"
+                        and isinstance(value, ast.Constant)
+                        and isinstance(value.value, str)
+                    ):
+                        found.add(value.value)
+    return found
+
+
+def _emitted_actions():
+    """Every audit ``action`` code emitted by production source under ``apps/**``
+    (``tests/`` excluded — test files carry literals that would self-pollute)."""
+    actions = set()
+    for path in _APPS_DIR.rglob("*.py"):
+        if "tests" in path.parts:
+            continue
+        actions |= _actions_in_tree(ast.parse(path.read_text(encoding="utf-8")))
+    return actions
+
+
+def _registry_actions():
+    """``audit_logs.action`` codes from the registry — indent-aware parse (no
+    PyYAML), reading ONLY the ``actions:`` section (NOT the separate
+    ``status_history_action_codes:`` dictionary). Mirrors
+    ``test_status_audit._registry_actions``."""
+    actions, in_actions = set(), False
+    for line in _REGISTRY.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line.startswith(" "):
+            in_actions = stripped == "actions:"
+            continue
+        if in_actions:
+            m = re.match(r"^  ([A-Z][A-Z0-9_]*):", line)
+            if m:
+                actions.add(m.group(1))
+    return actions
+
+
+def test_emitted_actions_subset_of_registry():
+    # source ⊆ registry. The reverse (registry ⊆ emitted) is intentionally NOT
+    # asserted: audit-events.yaml is a forward seed with codes for not-yet-built
+    # epics (AUTH_*/ASSIGNMENT_*/...), so no-orphans would fail today (реш. №3).
+    missing = _emitted_actions() - _registry_actions()
+    assert not missing, (
+        f"эмитируемые код(ы) вне audit-events.yaml actions: {sorted(missing)} "
+        "(growth_rule: добавь action в реестр тем же PR)"
+    )
+
+
+def test_emission_scan_not_vacuous():
+    # Anti-green-vacuum: a broken AST walk / wrong paths must fail, not pass on 0.
+    # Floor = the 11 codes story 4.4 wired into the E3 services.
+    emitted = _emitted_actions()
+    assert len(emitted) >= 11, emitted
+
+
+def test_scan_detects_both_emission_forms():
+    # Guards the guard: the scanner catches kwarg AND dict-literal forms, and
+    # ignores a same-named kwarg on a non-record call.
+    snippet = (
+        'record(action="KWARG_FORM", entity_type="x", entity_id=1)\n'
+        'record_many([{"actor": a, "action": "DICT_FORM"} for x in xs])\n'
+        'some_other_call(action="NOT_A_RECORD_CALL")\n'
+    )
+    assert _actions_in_tree(ast.parse(snippet)) == {"KWARG_FORM", "DICT_FORM"}
+
+
+# ---------------------------------------------------------------------------
+# Facet A — route-coverage living registry (mirror of test_rbac_matrix)
+# ---------------------------------------------------------------------------
+_WRITE_METHODS = {"post", "put", "patch", "delete"}
+_NON_ENDPOINT_NAMES = {"api-root"}
+
+
+class _Audited:
+    """A mutating route whose handler writes an AuditLog row. (None yet — audit is
+    service-level today; reserved for when a route gains audit + a behavioral test.)"""
+
+    audited = True
+
+
+class _DeferredAudit:
+    """A mutating route NOT yet audited — audit deferred to ``fix_ref``. Today every
+    mutating route is here: audit (4.4) is wired at the E3 SERVICE level and no
+    mutating REST route emits AuditLog. The value of this gate is COMPLETENESS — a
+    new mutating route must be classified, or CI goes red (AR-9)."""
+
+    audited = False
+
+    def __init__(self, fix_ref):
+        self.fix_ref = fix_ref
+
+
+# Why these are deferred (no mutating route audits today — verified):
+_CORE = (
+    "core CRUD-мутации не аудируются — E4-аудит покрыл только E3-статусы на "
+    "сервис-уровне (4.4); аудит core-путей = будущая hardening-стори"
+)
+_RBAC = "RBAC-admin мутации не аудируются — будущая admin-аудит стори"
+
+# Declarative registry: route name → audit verdict. UPDATE when a mutating route
+# is added (AR-9 living registry; a missing row fails test_audit_matrix_covers_*).
+AUDIT_MATRIX = {
+    # core personnel.* (Employee + StaffingSlot):
+    "employee-list": _DeferredAudit(_CORE),
+    "employee-detail": _DeferredAudit(_CORE),
+    "employee-archive": _DeferredAudit(_CORE),
+    "employee-restore": _DeferredAudit(_CORE),
+    "staffing-slot-list": _DeferredAudit(_CORE),
+    "staffing-slot-detail": _DeferredAudit(_CORE),
+    "staffing-slot-assign-employee": _DeferredAudit(_CORE),
+    "staffing-slot-release": _DeferredAudit(_CORE),
+    # core orgstructure.* (Division + Position + Rank):
+    "division-list": _DeferredAudit(_CORE),
+    "division-detail": _DeferredAudit(_CORE),
+    "position-list": _DeferredAudit(_CORE),
+    "position-detail": _DeferredAudit(_CORE),
+    "rank-list": _DeferredAudit(_CORE),
+    "rank-detail": _DeferredAudit(_CORE),
+    # operations RBAC admin:
+    "ops-user-role-list": _DeferredAudit(_RBAC),
+    "ops-user-role-detail": _DeferredAudit(_RBAC),
+    "ops-temp-duty-list": _DeferredAudit(_RBAC),
+    "ops-temp-duty-expire": _DeferredAudit(_RBAC),
+}
+
+
+def _walk(resolver):
+    for pattern in resolver.url_patterns:
+        if isinstance(pattern, URLResolver):
+            yield from _walk(pattern)
+        elif isinstance(pattern, URLPattern):
+            cb = pattern.callback
+            yield pattern.name, getattr(cb, "cls", None), getattr(cb, "actions", None)
+
+
+def _served_mutating():
+    """name → set(write-methods) for every route serving ≥1 mutating verb. Same
+    introspection as ``test_rbac_matrix._served_routes`` (both DRF patterns:
+    router-ViewSet via ``callback.actions``, plain APIView via handlers ∩
+    ``http_method_names``), narrowed to write verbs."""
+    served = {}
+    for name, cls, actions in _walk(get_resolver()):
+        if cls is None or name in _NON_ENDPOINT_NAMES:
+            continue
+        allowed = {m.lower() for m in getattr(cls, "http_method_names", [])}
+        if actions:
+            methods = {m for m in actions if m in allowed}
+        else:
+            methods = {
+                m
+                for m in allowed
+                if m in _WRITE_METHODS and callable(getattr(cls, m, None))
+            }
+        methods = {m for m in methods if m in _WRITE_METHODS}
+        if methods:
+            served.setdefault(name, set()).update(methods)
+    return served
+
+
+def test_audit_matrix_covers_every_mutating_route():
+    """Every mutating route ∈ AUDIT_MATRIX; no stale rows (AR-9 completeness)."""
+    served = set(_served_mutating())
+    matrix = set(AUDIT_MATRIX)
+    missing = served - matrix
+    stale = matrix - served
+    assert not missing, (
+        f"мутирующие роуты без строки в AUDIT_MATRIX (AR-9 — классифицируй "
+        f"_Audited/_DeferredAudit): {sorted(missing)}"
+    )
+    assert not stale, (
+        f"протухшие строки AUDIT_MATRIX (роут удалён — убери): {sorted(stale)}"
+    )
+
+
+def test_route_introspection_not_vacuous():
+    # Anti-green-vacuum: a broken URLconf must fail, not pass on an empty walk.
+    assert _served_mutating(), (
+        "интроспекция вернула 0 мутирующих роутов — сломан резолвер/URLconf"
+    )
+
+
+def test_audit_matrix_verdicts_are_explicit():
+    for name, spec in AUDIT_MATRIX.items():
+        assert isinstance(spec, (_Audited, _DeferredAudit)), (
+            f"{name}: неизвестный вердикт"
+        )
+        if isinstance(spec, _DeferredAudit):
+            assert spec.fix_ref, f"{name}: _DeferredAudit без fix_ref"
