@@ -8,12 +8,9 @@ services emits exactly one before/after audit event via ``audit.services.record(
 row, and every emitted code lives in the registry (closed world).
 """
 
-import re
 from datetime import date, datetime, timezone
-from pathlib import Path
 
 import pytest
-from django.conf import settings
 from django.db import connection
 from django.http import HttpResponse
 from django.test import RequestFactory
@@ -156,6 +153,12 @@ def test_update_status_emits_only_on_change(env):
     with clock.override(date(2026, 6, 5)):
         update_status(st, actor="op")
     assert _count("STATUS_UPDATED") == 1
+    # KNOWN wart (value-diff deferred → E10/4.5): a field SUPPLIED equal to its
+    # current value still counts as "changed" and STILL emits. Characterised here
+    # so the E10 fix is a deliberate flip of this assertion, not a silent change.
+    with clock.override(date(2026, 6, 5)):
+        update_status(st, actor="op", comment="новый коммент")  # same value
+    assert _count("STATUS_UPDATED") == 2
 
 
 def test_cancel_status_emits_status_cancelled(env):
@@ -211,6 +214,9 @@ def test_resolve_pending_emits_clarification_resolved(env):
     assert log.old_value["status_type_code"] == "PENDING_CLARIFICATION"
     assert log.new_value["status_type_code"] == "STUDY"
     assert log.entity_id == emp.id
+    # «уточняется» is closed via inline cancel-fact assignment, NOT cancel_status,
+    # so the retro-replacement stays ONE composite event (no stray STATUS_CANCELLED).
+    assert _count("STATUS_CANCELLED") == 0
 
 
 # -- AC-4: OVERRIDE_APPLIED is a separate countable event (реш. №3) -----------
@@ -251,6 +257,44 @@ def test_create_override_without_conflict_emits_no_override_event(env):
     assert _count("OVERRIDE_APPLIED") == 0  # nothing bypassed → no override event
 
 
+def test_extend_with_override_emits_status_and_override(env):
+    home, _ = env
+    emp = _emp(home)
+    a = _status(emp, "STUDY", date(2026, 6, 1), date(2026, 6, 10))
+    # ACTIVE neighbour on the clock date (Jun5) — a PLANNED neighbour would be a
+    # non-blocking FR-10 warning, not a bypassable soft conflict.
+    _status(emp, "STUDY", date(2026, 6, 2), date(2026, 6, 25))
+    with clock.override(date(2026, 6, 5)):
+        extend_status(  # extend with an ACTIVE soft overlap present → bypassed
+            a, actor="op", new_date_end=date(2026, 6, 15),
+            override=True, override_reason="приказ №9",
+        )
+    assert _count("STATUS_EXTENDED") == 1
+    assert _count("OVERRIDE_APPLIED") == 1
+    ov = AuditLog.objects.get(action="OVERRIDE_APPLIED")
+    assert ov.entity_type == "override"
+    assert ov.entity_id == emp.id
+
+
+def test_resolve_with_override_emits_clarification_and_override(env):
+    home, _ = env
+    emp = _emp(home)
+    pending = _status(emp, "PENDING_CLARIFICATION", date(2026, 6, 1), date(2026, 6, 10))
+    _status(emp, "STUDY", date(2026, 6, 5), date(2026, 6, 20))  # soft neighbour
+    with clock.override(date(2026, 6, 5)):
+        resolve_pending_clarification(
+            pending, resolved_type_code="STUDY",
+            date_start=date(2026, 6, 1), date_end=date(2026, 6, 10),
+            actor="op", reason="приказ", override=True, override_reason="обход",
+        )
+    assert _count("STATUS_CLARIFICATION_RESOLVED") == 1
+    assert _count("OVERRIDE_APPLIED") == 1  # extend/resolve override paths also fire
+    assert _count("STATUS_CANCELLED") == 0
+    ov = AuditLog.objects.get(action="OVERRIDE_APPLIED")
+    assert ov.entity_type == "override"
+    assert ov.entity_id == emp.id
+
+
 # -- AC-1: secondments ---------------------------------------------------------
 
 
@@ -269,6 +313,8 @@ def test_initiate_secondment_emits_one_event(env):
     assert log.new_value["secondment_id"] == sec.pk
     assert log.new_value["out_status_id"] == sec.out_status_id
     assert log.new_value["in_status_id"] == sec.in_status_id
+    # legs are created via direct .save() (not create_status) → no per-leg event
+    assert _count("STATUS_CREATED") == 0
 
 
 def test_request_return_emits_event(env):
@@ -306,6 +352,25 @@ def test_confirm_return_emits_single_event_no_leg_double(env):
     log = AuditLog.objects.get(action="SECONDMENT_RETURNED")
     assert log.entity_id == emp.id
     assert len(log.new_value["legs_closed"]) == 2
+
+
+def test_confirm_return_planned_legs_cancel_no_leg_events(env):
+    home, recv = env
+    emp = _emp(home)
+    with clock.override(date(2026, 6, 5)):  # legs PLANNED — secondment not started
+        sec = initiate_secondment(
+            emp.id, to_division_id=recv.id,
+            date_start=date(2026, 6, 10), date_end=date(2026, 6, 30), actor="op",
+        )
+        request_return(sec, actor="op")
+        confirm_return(sec, actor="recv-op")
+    assert _count("SECONDMENT_RETURNED") == 1
+    # PLANNED legs → closed via cancel_status(_audit=False): NO leg events leak
+    assert _count("STATUS_CANCELLED") == 0
+    assert _count("STATUS_COMPLETED") == 0
+    log = AuditLog.objects.get(action="SECONDMENT_RETURNED")
+    assert len(log.new_value["legs_closed"]) == 2
+    assert all(leg["action"] == "cancelled" for leg in log.new_value["legs_closed"])
 
 
 # -- AC-2: bulk → N per-row STATUS_CREATED + ONE summary, bounded queries ------
@@ -383,39 +448,7 @@ def test_rejected_mutation_leaves_no_audit(env):
     assert _count("STATUS_CREATED") == 1  # the rejected create left NO audit row
 
 
-# -- AC-3: closed world — every 4.4 code is registered ------------------------
-
-
-_STORY_4_4_ACTIONS = {
-    "STATUS_CREATED", "STATUS_UPDATED", "STATUS_EXTENDED", "STATUS_COMPLETED",
-    "STATUS_CANCELLED", "STATUS_CLARIFICATION_RESOLVED", "OVERRIDE_APPLIED",
-    "STATUS_BULK_CREATED", "SECONDMENT_INITIATED", "SECONDMENT_RETURN_REQUESTED",
-    "SECONDMENT_RETURNED",
-}
-
-
-def _registry_actions():
-    """audit_logs.action codes from the registry (no PyYAML — indent-aware parse,
-    mirroring test_exception_handler._registry_codes)."""
-    path = (
-        Path(settings.BASE_DIR).parent.parent
-        / "docs/registries/audit-events.yaml"
-    )
-    actions, in_actions = set(), False
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if not line.startswith(" "):
-            in_actions = stripped == "actions:"
-            continue
-        if in_actions:
-            m = re.match(r"^  ([A-Z][A-Z0-9_]*):", line)
-            if m:
-                actions.add(m.group(1))
-    return actions
-
-
-def test_all_4_4_action_codes_in_registry():
-    missing = _STORY_4_4_ACTIONS - _registry_actions()
-    assert not missing, f"codes not in audit-events.yaml actions: {missing}"
+# NB: closed-world enforcement (emitted action codes ⊆ audit-events.yaml) moved to
+# the source-derived gate in apps/audit/tests/test_audit_coverage.py (story 4.6) —
+# it AST-scans the real record()/record_many() call sites, superseding the static
+# _STORY_4_4_ACTIONS literal that used to live here (deferred-work.md:401).
