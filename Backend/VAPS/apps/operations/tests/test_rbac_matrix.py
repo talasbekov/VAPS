@@ -129,6 +129,11 @@ MATRIX = {
     "ops-temp-duty-list": _Gate("admin.roles"),
     "ops-temp-duty-expire": _Gate("admin.roles"),
     "ops-my-permissions-list": _AnyAuthenticated(),
+    # audit — read-only журнал, загейчен RequirePermissionMixin("audit.view")
+    # (story 4.5). GET-only (list+retrieve); ORGD/ADMIN → ALLOW, прочие/аноним
+    # → DENY (из seed).
+    "audit-log-list": _Gate("audit.view"),
+    "audit-log-detail": _Gate("audit.view"),
     # core — загейчено RequirePermissionMixin (story 2.13 механизм A + 2.14
     # раскатка). GET=view, write(create/update/destroy/archive/...)=edit/manage.
     "vacancy-list": _Gate("personnel.view"),  # GET-only (2.13 пилот)
