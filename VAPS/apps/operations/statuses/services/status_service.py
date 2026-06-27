@@ -414,7 +414,12 @@ def update_status(
         changed.append("updated_at")
         with transaction.atomic():
             status.save(update_fields=changed)
-        # Emit only when something actually changed — a no-op edit is not an event.
+        # Emit when at least one field was *supplied* (changed is non-empty).
+        # NB: this gates the all-None no-op, but a field supplied equal to its
+        # current value still counts as "changed" here → still emits. Value-diff
+        # semantics (suppress supplied-but-unchanged) are deferred to E10/4.5,
+        # where the REST PUT serializer normalises a full-object echo. See the
+        # story 4.4 Review Findings.
         record(
             actor=actor,
             action="STATUS_UPDATED",
