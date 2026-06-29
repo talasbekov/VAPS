@@ -96,11 +96,35 @@ AUTO_GENERATE_PERSONNEL_NUMBER = (
     os.environ.get("AUTO_GENERATE_PERSONNEL_NUMBER", "false") == "true"
 )
 
+# Story 5.1 — external-Auth JWT verification (config-driven). None → JWT disabled
+# (dev/tests use the X-User-Id path). In prod the issuer's key + algorithms MUST be set
+# via env; the algorithms allowlist never includes "none". RS256 default (asymmetric:
+# VAPS_JWT_KEY = the issuer's PUBLIC key). The contour's real algorithm/claims come from
+# the 5.1 readiness spike (spikes/5.1-auth-contour/RUNBOOK.md).
+_VAPS_JWT_KEY = os.environ.get("VAPS_JWT_KEY")
+VAPS_JWT = (
+    {
+        "key": _VAPS_JWT_KEY,
+        "algorithms": [
+            a.strip()
+            for a in os.environ.get("VAPS_JWT_ALGORITHMS", "RS256").split(",")
+            if a.strip()
+        ],
+        "audience": os.environ.get("VAPS_JWT_AUDIENCE") or None,
+        "issuer": os.environ.get("VAPS_JWT_ISSUER") or None,
+        "leeway": int(os.environ.get("VAPS_JWT_LEEWAY", "0")),
+    }
+    if _VAPS_JWT_KEY
+    else None
+)
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        # Order matters: XUserId sets request.actor_id (returns None → chain
-        # continues), then the resolver reads it and attaches
-        # request.effective_permissions for the core API gate (story 2.13).
+        # Order matters (story 5.1): JWT first — a verified Bearer's `sub` →
+        # request.actor_id; an absent/non-Bearer request returns None and falls
+        # through to XUserId (dev), which sets request.actor_id; then the resolver
+        # reads it and attaches request.effective_permissions (story 2.13).
+        "apps.core.auth.authentication.JWTAuthentication",
         "apps.core.auth.authentication.XUserIdAuthentication",
         "apps.operations.api.authz.EffectivePermissionsResolver",
     ],

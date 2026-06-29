@@ -10,6 +10,10 @@ dependencies = [
     # offline-friendly — runs inside the air-gapped контур in the
     # migration_legacy image. The deliberate end of 1.7's zero-runtime-deps.
     "openpyxl>=3,<4",
+    # Story 5.1: verify external-Auth JWTs (signature/exp/alg-allowlist). `[crypto]`
+    # pulls `cryptography` for RS256/asymmetric — the issuer's public key is the
+    # only trust anchor; VAPS stores no passwords (ARCH-SEC-030).
+    "PyJWT[crypto]>=2,<3",
 ]
 
 [project.optional-dependencies]
