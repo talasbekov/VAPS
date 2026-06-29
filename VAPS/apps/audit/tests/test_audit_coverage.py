@@ -7,7 +7,19 @@ Two facets:
   emits; assert ``emitted ⊆ docs/registries/audit-events.yaml::actions``. This
   replaces story 4.4's hand-maintained literal ``_STORY_4_4_ACTIONS`` (the
   deferred-work.md:401 gap): ``literal ⊆ registry`` → ``source ⊆ registry``, so a
-  new service emitting an unregistered code now turns CI red.
+  service emitting an unregistered code **in literal form** turns CI red.
+
+  INVARIANT this guard relies on (and which the codebase must keep): an audit
+  ``action`` code is a STRING LITERAL passed directly to ``record``/``record_many``
+  (kwarg ``record(action="X")`` or dict-literal value), and audit rows are written
+  only via ``record()``/``record_many()`` (enforced by ``test_audit_write_boundary``).
+  The scan deliberately does NOT resolve non-literal forms — ``action=SOME_CONST`` /
+  f-strings / a list bound to a variable then passed to ``record_many(var)`` /
+  ``record`` re-imported under an alias / a direct ``AuditLog.objects.create(...)``
+  would be INVISIBLE here (silent false-green). All current emissions are literal,
+  so the guard is exact today; a future emitter using a non-literal form must either
+  keep the invariant or extend this scan. (Hardening the scan to FAIL on a non-literal
+  ``action=`` is deferred — deferred-work.md, code review 4.6.)
 * **A — route-coverage living registry.** Walk the URL resolver, take every
   mutating route (POST/PUT/PATCH/DELETE incl. write ``@action``), and require each
   to be classified in ``AUDIT_MATRIX`` as ``_Audited`` | ``_DeferredAudit(ref)``.
@@ -56,7 +68,7 @@ def _call_name(func):
 
 def _actions_in_tree(tree):
     """All ``action`` string literals emitted via ``record``/``record_many`` in
-    one parsed module. Catches BOTH forms and ONLY record/record_many calls:
+    one parsed module. Catches both LITERAL forms, and ONLY record/record_many calls:
 
     * keyword: ``record(action="STATUS_CREATED", ...)``
     * dict-literal: ``record_many([{"action": "STATUS_CREATED", ...}, ...])``
@@ -65,6 +77,12 @@ def _actions_in_tree(tree):
 
     Scoping to ``record``/``record_many`` calls keeps DRF ``@action(...)``
     decorators and unrelated dicts with an "action" key out of the result.
+
+    LIMITATION (see module docstring invariant): only string LITERALS sitting
+    directly in the call are extracted. A non-literal ``action`` (named constant,
+    f-string, conditional) or a dict/list bound to a variable then passed to
+    ``record_many(var)`` is NOT resolved and stays invisible to the scan. The
+    codebase keeps audit codes as direct literals, so this is exact today.
     """
     found = set()
     for node in ast.walk(tree):

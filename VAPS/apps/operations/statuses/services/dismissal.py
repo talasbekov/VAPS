@@ -9,9 +9,28 @@ operations-side status truncation, atomically.
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.services import dismiss_employee as _dismiss_core
 from apps.operations.statuses.models import EmployeeStatus, Secondment
+
+
+def _employee_snapshot(employee):
+    """JSON-safe snapshot of an Employee for the EMPLOYEE_DISMISSED audit event
+    (story 4.7) — mirrors ``status_service._status_snapshot``: ``entity_id`` of the
+    audit row is ``employee.id`` (UUID); ``date``/``datetime`` → str/isoformat for a
+    stable, readable before/after diff."""
+    return {
+        "employee_id": str(employee.id),
+        "employment_status": employee.employment_status,
+        "is_active": employee.is_active,
+        "dismissal_date": (
+            str(employee.dismissal_date) if employee.dismissal_date else None
+        ),
+        "separated_at": (
+            employee.separated_at.isoformat() if employee.separated_at else None
+        ),
+    }
 
 
 @transaction.atomic
@@ -57,7 +76,12 @@ def dismiss_employee(employee, *, date, reason=None, actor: str) -> dict:
     Secondment closed (append-once confirmed fact) so pair-state stays coherent
     with its now-dead legs — a system close, no operator request/confirm.
     """
-    _dismiss_core(employee, date=date, reason=reason, actor=actor)
+    # Snapshot the WORKING card before any mutation. _dismiss_core re-fetches the
+    # employee via select_for_update and mutates THAT instance, so the passed-in
+    # `employee` stays stale (WORKING) in memory — take the returned instance for
+    # the after-snapshot (story 4.7).
+    before = _employee_snapshot(employee)
+    core_emp = _dismiss_core(employee, date=date, reason=reason, actor=actor)
     closed = close_active_statuses_on(employee.id, on_date=date, actor=actor)
     secondments_closed = 0
     for sec in Secondment.objects.select_for_update().filter(
@@ -90,6 +114,23 @@ def dismiss_employee(employee, *, date, reason=None, actor: str) -> dict:
             ]
         )
         secondments_closed += 1
+    # ONE composite event for the whole dismissal (mirror of SECONDMENT_RETURNED,
+    # 4.4): the truncated statuses / cancelled legs go through direct .save(), not
+    # the lifecycle helpers, so they emit NO per-row events — their counts ride in
+    # new_value. Written in this @transaction.atomic → rolls back if the dismissal does.
+    record(
+        actor=actor,
+        action="EMPLOYEE_DISMISSED",
+        entity_type="employee",
+        entity_id=employee.id,
+        old_value=before,
+        new_value={
+            **_employee_snapshot(core_emp),
+            "statuses_truncated": closed,
+            "secondments_closed": secondments_closed,
+        },
+        reason=reason or "",  # основание приказа (восстановимость «почему уволен»)
+    )
     return {
         "employee_id": employee.id,
         "statuses_closed": closed,
