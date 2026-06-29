@@ -1,4 +1,42 @@
-from apps.operations.submissions.models import SubmissionControlSettings
+from apps.operations.submissions.models import (
+    DailySubmission,
+    SubmissionControlSettings,
+)
+
+
+class DailySubmissionSelector:
+    """Read access to daily submissions for the сдача service (5.3b)."""
+
+    @staticmethod
+    def current_for(division_id, business_date):
+        """The current (is_current) submission for (division, day), or None.
+
+        Drives the duplicate pre-check (409 DAY_ALREADY_SUBMITTED): a second
+        сдача of a day that already has a current version is rejected before the
+        INSERT (the partial-unique is only the race backstop).
+        """
+        return DailySubmission.objects.filter(
+            division_id=division_id, business_date=business_date, is_current=True
+        ).first()
+
+    @staticmethod
+    def previous_for(division_id, business_date):
+        """The most recent current submission STRICTLY before business_date — the
+        «вчерашний снапшот» diff-baseline (5.3b event).
+
+        Most-recent prior is_current (NOT literal business_date-1): robust to
+        weekends/gaps. Rides idx_daily_submission_lookup (division_id,
+        business_date, -version).
+        """
+        return (
+            DailySubmission.objects.filter(
+                division_id=division_id,
+                business_date__lt=business_date,
+                is_current=True,
+            )
+            .order_by("-business_date", "-version")
+            .first()
+        )
 
 
 class SubmissionControlSettingsSelector:

@@ -11,6 +11,7 @@ from apps.core.models import (
     Employee,
     EmployeeDivisionHistory,
     Position,
+    Rank,
 )
 from apps.core.sorting import (
     UNKNOWN_LEVEL,
@@ -108,6 +109,14 @@ class CoreDivisionTreeSelector:
             qs = qs.filter(id__in=division_ids)
         return dict(qs.values_list("id", "name"))
 
+    @staticmethod
+    def exists(division_id) -> bool:
+        """True if a division with this id exists — the сдача-сервис 5.3b
+        existence gate (404 BEFORE building a snapshot, so a valid-but-phantom
+        UUID can't silently produce an empty сдача). Cross-context callers read
+        this instead of importing core.models (ARCH-003/004 isolation)."""
+        return Division.objects.filter(id=division_id).exists()
+
 
 logger = logging.getLogger("apps.core")
 
@@ -148,6 +157,33 @@ class CoreEmployeeSelector:
             )
         ]
         return [entry.payload for entry in sort_roster(entries)]
+
+    @staticmethod
+    def denorm_for(employee_ids) -> dict:
+        """employee_id -> {"full_name", "rank"} for the сдача-снапшот (5.3a).
+
+        Denormalised print values «как было»: ``full_name`` as stored, ``rank``
+        resolved to the Rank dictionary name (fall back to the raw ``rank_code``
+        when the dictionary has no row). Two bulk queries (employees + ranks).
+        Cross-context callers (apps.operations) read this instead of importing
+        core models directly — ARCH-003 isolation (operations ↛ core.models).
+        """
+        employees = list(
+            Employee.objects.filter(id__in=employee_ids).values(
+                "id", "full_name", "rank_code"
+            )
+        )
+        rank_codes = {e["rank_code"] for e in employees if e["rank_code"]}
+        rank_names = dict(
+            Rank.objects.filter(code__in=rank_codes).values_list("code", "name")
+        )
+        return {
+            e["id"]: {
+                "full_name": e["full_name"],
+                "rank": rank_names.get(e["rank_code"], e["rank_code"]),
+            }
+            for e in employees
+        }
 
     @staticmethod
     def working_by_division(division_ids=None) -> dict:
@@ -244,10 +280,11 @@ class HistoricalEmployeeSelector:
         logger.warning(
             "No division history for employee %s at %s; "
             "falling back to current division.",
-            employee_id, at,
+            employee_id,
+            at,
         )
-        return (
-            Employee.objects.values_list("division_id", flat=True).get(id=employee_id)
+        return Employee.objects.values_list("division_id", flat=True).get(
+            id=employee_id
         )
 
     @classmethod
@@ -295,7 +332,9 @@ class HistoricalEmployeeSelector:
             logger.debug(
                 "roster_on(%s): %d/%d employees via current-division fallback "
                 "(no covering history; BR-CORE-HISTORY-003).",
-                business_date, fallback_count, len(working),
+                business_date,
+                fallback_count,
+                len(working),
             )
         return roster
 

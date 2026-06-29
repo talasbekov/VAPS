@@ -22,6 +22,32 @@ class EmployeeStatusSelector:
             qs.values("employee_id", "status_type_code", "date_start", "date_end")
         )
 
+    @staticmethod
+    def snapshot_facts_on(on_date, employee_ids=None):
+        """Like overlapping_on, but also carries status_id (pk) and source.
+
+        The DailySubmission снапшот row (story 5.3a) needs ``status_id`` and
+        ``source``, which overlapping_on omits. overlapping_on is left UNTOUCHED
+        (strength_report rides its exact 4-field shape) — this is a sibling, not
+        a change. Same predicate: cancelled_at IS NULL + period contains the
+        date (the GiST-indexed half-open [date_start, date_end) lookup).
+        """
+        qs = EmployeeStatus.objects.filter(
+            cancelled_at__isnull=True, period__contains=on_date
+        )
+        if employee_ids is not None:
+            qs = qs.filter(employee_id__in=employee_ids)
+        return list(
+            qs.values(
+                "id",
+                "employee_id",
+                "status_type_code",
+                "date_start",
+                "date_end",
+                "source",
+            )
+        )
+
     @classmethod
     def status_on(cls, employee_id, on_date) -> str:
         """Point AC contract: the derived status of ONE employee.

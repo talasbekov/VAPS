@@ -26,6 +26,15 @@ logger = logging.getLogger(__name__)
 # Решение №1 (story 3.1): hard-status overlap → 422 (registry + FR-11).
 CONSTRAINT_ERROR_MAP = {
     "excl_hard_status_overlap": ("OVERLAPPING_HARD_STATUS", 422, False),
+    # 5.3b: submit_day pre-checks the duplicate (409 DAY_ALREADY_SUBMITTED); this
+    # is the RACE backstop — two concurrent сдачи trip the partial-unique, which
+    # would otherwise surface as 500. Maps it to the same 409.
+    "unique_daily_submission_current": ("DAY_ALREADY_SUBMITTED", 409, False),
+    # Two concurrent FIRST сдачи both INSERT (div, date, v=1, is_current=True),
+    # violating BOTH unique indexes at once; which one Postgres reports depends on
+    # index check order — NOT contractual (pg_dump/restore reorders OIDs). Map the
+    # version index to the same 409 so the race surfaces consistently, never 500.
+    "unique_daily_submission_version": ("DAY_ALREADY_SUBMITTED", 409, False),
 }
 
 # DRF-handled HTTP status → registry code (re-shaped into the §36 envelope).
