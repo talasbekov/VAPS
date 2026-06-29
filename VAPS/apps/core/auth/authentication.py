@@ -1,4 +1,7 @@
+import jwt
+from django.conf import settings
 from rest_framework.authentication import BaseAuthentication
+from rest_framework.exceptions import AuthenticationFailed
 
 
 class XUserIdAuthentication(BaseAuthentication):
@@ -17,4 +20,72 @@ class XUserIdAuthentication(BaseAuthentication):
         user_id = request.headers.get("X-User-Id")
         if user_id:
             request.actor_id = user_id
+        return None
+
+
+def _jwt_config():
+    """JWT verification params from settings (env-driven, story 5.1). Returns None
+    when JWT is not configured (dev/tests without an external Auth) — the class then
+    no-ops and the X-User-Id path handles identity."""
+    cfg = getattr(settings, "VAPS_JWT", None)
+    if not cfg or not cfg.get("key") or not cfg.get("algorithms"):
+        return None
+    return cfg
+
+
+class JWTAuthentication(BaseAuthentication):
+    """External-Auth JWT identity (ARCH-SEC-030), runs BEFORE XUserIdAuthentication.
+
+    - Bearer present + valid → ``request.actor_id = sub``, return None (continue).
+    - Bearer present + invalid (bad signature / expired / disallowed alg / bad aud-iss /
+      no valid sub) → ``AuthenticationFailed`` (401): a presented-but-broken token must
+      NOT silently downgrade to the X-User-Id dev path.
+    - No Bearer (or a non-Bearer scheme) → return None: the chain falls through to
+      ``XUserIdAuthentication`` (the dev/test path).
+    - JWT not configured (dev/tests) → return None.
+
+    Verification is explicit (this IS auth): the ``algorithms`` allowlist comes from
+    config and never includes ``none`` (PyJWT requires it, blocking alg-confusion);
+    signature + ``exp``/``nbf``/``iat`` (leeway) are checked, plus ``aud``/``iss`` when
+    configured. No User DB lookup — ``actor_id`` is a string (ARCH-007); no passwords —
+    the issuer's signature is the only trust anchor.
+    """
+
+    keyword = "Bearer"
+
+    def authenticate(self, request):
+        header = request.headers.get("Authorization")
+        if not header:
+            return None
+        parts = header.split()
+        if len(parts) != 2 or parts[0].lower() != self.keyword.lower():
+            return None  # not a Bearer token → not ours; let the chain continue
+        cfg = _jwt_config()
+        if cfg is None:
+            return None  # JWT disabled (dev/tests) → X-User-Id path handles identity
+        try:
+            payload = jwt.decode(
+                parts[1],
+                cfg["key"],
+                algorithms=cfg["algorithms"],
+                audience=cfg.get("audience"),
+                issuer=cfg.get("issuer"),
+                leeway=cfg.get("leeway", 0),
+                options={
+                    "require": ["exp", "sub"],
+                    "verify_aud": cfg.get("audience") is not None,
+                },
+            )
+        except jwt.InvalidTokenError as exc:
+            # present-but-invalid → hard 401, never a downgrade to X-User-Id
+            raise AuthenticationFailed("INVALID_TOKEN") from exc
+        sub = payload.get("sub")
+        if (
+            not isinstance(sub, str)
+            or not sub
+            or len(sub) > 100
+            or not sub.isprintable()
+        ):
+            raise AuthenticationFailed("INVALID_TOKEN")
+        request.actor_id = sub
         return None
