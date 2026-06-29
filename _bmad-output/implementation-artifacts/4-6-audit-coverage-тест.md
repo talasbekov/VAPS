@@ -9,7 +9,7 @@ context:
 
 # Story 4.6: Audit-coverage тест
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -52,7 +52,7 @@ so that **новая мутация без аудита или новый `actio
 1. **`emitted ⊆ реестр` из ИСХОДНИКА.** **Given** AST-скан всех `apps/**/*.py` (исключая `*/tests/*`) собирает строковые `action`-литералы из call-sites `record(...)`/`record_many(...)`, **When** прогоняю coverage-тест, **Then** каждый эмитируемый код ∈ `docs/registries/audit-events.yaml` секции `actions:`; код вне реестра → красный. Это `исходник ⊆ реестр` (а не `литерал ⊆ реестр`). [Source: deferred-work.md:401; architecture.md:398,479; audit-events.yaml growth_rule:20]
 2. **Обе формы эмиссии.** **Given** аудит эмитится двумя формами — `record(action="X", …)` (keyword) И `record_many([{"action":"X", …}])` (dict-литерал, `bulk_status_service.py:263`), **Then** скан собирает коды из ОБЕИХ; пропуск dict-формы (только kwarg) недопустим (потеряет `STATUS_CREATED` из bulk). **And** скан скоуплен к вызовам `record`/`record_many` (не к любому kwarg `action=`) — DRF `@action(...)`-декоратор и посторонние dict с ключом `action` не дают ложных кодов. [Source: bulk_status_service.py:263; status_service.py record ×9; secondment_service.py record ×3]
 3. **Только одно направление (`emitted ⊆ registry`), НЕ обратное.** **Given** реестр `audit-events.yaml` — forward-seed (содержит 9 кодов будущих эпиков AUTH_*/ASSIGNMENT_*/GROUP_*/POST_*/DOCUMENT_*/DAILY_SUBMISSION_*, ещё не эмитируемых кодом), **Then** тест НЕ ассертит `registry ⊆ emitted` (no-orphans упал бы на 9 кодах); зафиксировать одно направление с комментарием-обоснованием. [Source: audit-events.yaml:24-128 (20 кодов: 9 базовых seed + 11 из 4.4); реш. №3]
-4. **Анти-вакуум скана.** **Given** скан вернул 0 кодов (сломан AST-парсер/пути), **Then** тест ПАДАЕТ, а не «зеленеет ни о чём» (assert `len(emitted) >= 1`, зеркало `test_introspection_is_not_vacuous`). [Source: test_rbac_matrix.py:280-284]
+4. **Анти-вакуум скана.** **Given** скан вернул 0 кодов (сломан AST-парсер/пути), **Then** тест ПАДАЕТ, а не «зеленеет ни о чём» (assert `len(emitted) >= 11` — текущие 11 кодов 4.4, зеркало `test_introspection_is_not_vacuous`). [Source: test_rbac_matrix.py:280-284]
 
 ### Фасет A — route-coverage living-registry (буква AR-9)
 
@@ -176,12 +176,12 @@ claude-opus-4-8[1m] (Opus 4.8, 1M context)
 - **RED-эквивалент ДОКАЗАН (discriminating power, 2.9-прецедент):**
   - Фасет B: временный `apps/audit/_red_probe.py` с `record(action="NOPE_NOT_IN_REGISTRY")` → `test_emitted_actions_subset_of_registry` КРАСНЕЕТ (`эмитируемые код(ы) вне audit-events.yaml: ['NOPE_NOT_IN_REGISTRY']`); удалён → зелёный.
   - Фасет A: временно убрана строка `ops-temp-duty-expire` из `AUDIT_MATRIX` → `test_audit_matrix_covers_every_mutating_route` КРАСНЕЕТ (`мутирующие роуты без строки: ['ops-temp-duty-expire']`) — заодно подтвердило, что walker находит РОВНО 18 роутов, и матрица совпадает; строка возвращена.
-- **VERIFIED:** focused `test_audit_coverage.py` + `test_status_audit.py` — 23 passed; `make gate` (Postgres :5433) — **1374 passed** (+5 нетто: +6 новых coverage-тестов −1 удалённый статический), 24 deselected; `makemigrations --check` → «No changes detected» (тест-only); `ruff check`/`ruff format --check` чисты; 24s.
+- **VERIFIED:** focused `test_audit_coverage.py` + `test_status_audit.py` — 23 passed; `make gate` (Postgres :5433) — **1374 passed** (+8 нетто: +6 новых coverage-тестов +3 hardening-теста в `test_status_audit` −1 удалённый статический), 24 deselected; `makemigrations --check` → «No changes detected» (тест-only); `ruff check`/`ruff format --check` чисты; 24s.
 - **Скан нашёл 11 эмитируемых кодов** (STATUS_CREATED/UPDATED/EXTENDED/COMPLETED/CANCELLED/CLARIFICATION_RESOLVED, OVERRIDE_APPLIED, STATUS_BULK_CREATED, SECONDMENT_INITIATED/RETURN_REQUESTED/RETURNED) — все ∈ реестр. Walker нашёл 18 мутирующих роутов — все классифицированы `_DeferredAudit`.
 
 ### Completion Notes List
 
-4.6 — audit-coverage CI-страж (AR-9): тест-only, продакшн-кода ноль. Два фасета мета-теста доказывают «новая мутация/код без аудита роняет CI». `make gate` зелёный (1374 passed, +5).
+4.6 — audit-coverage CI-страж (AR-9): тест-only, продакшн-кода ноль. Два фасета мета-теста доказывают «новая мутация/код без аудита роняет CI». `make gate` зелёный (1374 passed, +8).
 
 - ✅ **Task 1 (Фасет B):** `test_audit_coverage.py::_emitted_actions()` — AST-скан `apps/**` (skip `tests/`), `_actions_in_tree` ловит ОБЕ формы (kwarg + dict-литерал), скоуплен к `record`/`record_many` (`_call_name` для Name/Attribute). `_registry_actions()` — indent-aware парс только секции `actions:`. `test_emitted_actions_subset_of_registry` (одно направление, реш.№3), `test_emission_scan_not_vacuous` (≥11), `test_scan_detects_both_emission_forms` (guards-the-guard: оба формата + игнор не-record `action=`).
 - ✅ **Task 2 (Фасет A):** `_walk`/`_served_mutating` (калька rbac, фильтр write-методов), `_Audited`/`_DeferredAudit(fix_ref)`, `AUDIT_MATRIX` (18 роутов, все `_DeferredAudit` с ref `_CORE`/`_RBAC`). `test_audit_matrix_covers_every_mutating_route` (missing+stale), `test_route_introspection_not_vacuous`, `test_audit_matrix_verdicts_are_explicit`.
@@ -203,4 +203,26 @@ claude-opus-4-8[1m] (Opus 4.8, 1M context)
 
 ## Change Log
 
-- 2026-06-27 — Dev (bmad-dev-story, Opus 4.8, TDD): реализована стори 4.6 — audit-coverage CI-страж (AR-9), тест-only. Фасет B: AST-скан `record()`/`record_many()` по `apps/**` (обе формы — kwarg + dict-литерал, скоуплен к record-вызовам, skip `tests/`) → `emitted ⊆ audit-events.yaml::actions` (одно направление — реестр forward-seed); заменяет статический `_STORY_4_4_ACTIONS` (закрывает дефер ревью 4.4, deferred-work:401). Фасет A: route-coverage living-registry (зеркало `test_rbac_matrix`) — walker мутирующих роутов + `AUDIT_MATRIX` (18 роутов = `_DeferredAudit(ref)`, аудит на сервис-уровне, роуты не аудируются); новый неклассифицированный мутирующий роут → красный. RED-эквивалент доказан для обоих фасетов. Удалён статический литерал-тест из `test_status_audit.py`. `make gate` зелёный (Postgres :5433: **1374 passed** +5, 24 deselected, makemigrations пуст, ruff check/format чисты, 24s). Регрессия нулевая. Артефакты НЕ закоммичены агентом. Status → review.
+- 2026-06-27 — Dev (bmad-dev-story, Opus 4.8, TDD): реализована стори 4.6 — audit-coverage CI-страж (AR-9), тест-only. Фасет B: AST-скан `record()`/`record_many()` по `apps/**` (обе формы — kwarg + dict-литерал, скоуплен к record-вызовам, skip `tests/`) → `emitted ⊆ audit-events.yaml::actions` (одно направление — реестр forward-seed); заменяет статический `_STORY_4_4_ACTIONS` (закрывает дефер ревью 4.4, deferred-work:401). Фасет A: route-coverage living-registry (зеркало `test_rbac_matrix`) — walker мутирующих роутов + `AUDIT_MATRIX` (18 роутов = `_DeferredAudit(ref)`, аудит на сервис-уровне, роуты не аудируются); новый неклассифицированный мутирующий роут → красный. RED-эквивалент доказан для обоих фасетов. Удалён статический литерал-тест из `test_status_audit.py`. `make gate` зелёный (Postgres :5433: **1374 passed** +8, 24 deselected, makemigrations пуст, ruff check/format чисты, 24s). Регрессия нулевая. Артефакты НЕ закоммичены агентом. Status → review.
+
+## Review Findings
+
+_Code review 2026-06-29 (bmad-code-review, Opus 4.8 ×3 слоя: Blind Hunter / Edge Case Hunter / Acceptance Auditor). **Тест-код обоих фасетов корректен** — все ассерты сверены с реальным сервис-кодом; served-mutating 18 == AUDIT_MATRIX 18; emitted 11 ⊆ registry 20; парсер реестра, исключение `tests/`, удалённые импорты — verified clean. Findings — про forward-контракт стража, scope и точность отчёта, не про текущие баги. Итог: **2 decision · 2 patch · 4 defer · 6 dismiss**._
+
+### Decision needed
+
+- [x] [Review][Decision→Patch] **Forward-протекция Фасета B слабее, чем заявляет докстринг** — AST-скан ловит только ЛИТЕРАЛЬНЫЕ формы `record(action="LIT")` / `{"action":"LIT"}`; не-литеральные (именованная константа, f-string, conditional, `record_many(<переменная-список>)`, алиас-импорт `record as ...`, прямой `AuditLog.objects.create(action=…)`) тихо невидимы → будущий ложно-зелёный. Сегодня честно зелёный (все 11 эмиссий литеральны — проверено; `record()` keyword-only → позиционная форма невозможна; прямой insert закрыт `test_audit_write_boundary`). НО докстринг/PR заявляют «a new service emitting an unregistered code now turns CI red», что верно лишь для литеральных форм. [blind+edge; `apps/audit/tests/test_audit_coverage.py:68-99`] — **Решение Bratan: (A)** задокументировать инвариант + смягчить оверклейм докстринга → см. patch P-D1.
+- [x] [Review][Decision→Keep] **Scope creep в `test_status_audit.py`** — добавлены 3 НОВЫХ 4.4-теста (`test_extend_with_override_*`, `test_resolve_with_override_*`, `test_confirm_return_planned_legs_*`) + 4 ассерта поверх санкционированной Task 3 «только-чистки» (спека: «1 новый + 1 MODIFY = чистка»). Добавочно и корректно (сверено с сервис-кодом), AR-9 НЕ ослабляет. [auditor; `apps/operations/statuses/tests/test_status_audit.py:329-400` + ассерты 302-321,370-375] — **Решение Bratan: (A)** оставить (написано, зелено, харднит 4.4); учёт поправить → P1.
+
+### Patch
+
+- [x] [Review][Patch] **P-D1** (из D1→A): смягчить оверклейм-докстринг `test_audit_coverage.py` («a new service emitting an unregistered code now turns CI red» → честная формулировка про литеральные формы) + зафиксировать инвариант «audit action-коды ОБЯЗАНЫ быть строковыми литералами прямо в `record`/`record_many`; единственная точка записи — `record()` (enforced `test_audit_write_boundary`)». [`apps/audit/tests/test_audit_coverage.py:1-31,68-73`]
+- [x] [Review][Patch] **P1**: Completion Notes/Debug Log врут в учёте: «+5 нетто» → реально **+8** (+6 coverage +3 status_audit −1 удалён) — DoD «без вранья». D2=оставить → финальное +8. [`4-6-audit-coverage-тест.md:179,184,206`]
+- [x] [Review][Patch] **P2**: AC4 сам себе противоречил: тело AC4 говорило `len(emitted) >= 1`, код и Task1/DevNotes — `>= 11` (код строже и верен). Prose AC4 приведён к `>= 11`. [`4-6-audit-coverage-тест.md:55`]
+
+### Defer (pre-existing / future hardening)
+
+- [x] [Review][Defer] Анти-вакуум `>= 11` имеет нулевой запас (== текущему числу); 1-в-1 переименование оставит `len==11`. Реальный дискриминатор — subset-тест. [`apps/audit/tests/test_audit_coverage.py:145-149`] — deferred, low
+- [x] [Review][Defer] Фасет A слеп к роутам без `callback.cls` (функц-вью / Django-admin / вебхуки мутации) — принятое сквозное допущение, зеркало `test_rbac_matrix`; API проекта только DRF. Не регресс 4.6. [`apps/audit/tests/test_audit_coverage.py:233-254`] — deferred, pre-existing
+- [x] [Review][Defer] `_emitted_actions` без обработки SyntaxError / не-UTF-8 по `apps/**` — будущий битый файл уронит набор непрозрачно; сейчас 6/6 зелёные. [`apps/audit/tests/test_audit_coverage.py:107-110`] — deferred, future hardening
+- [x] [Review][Defer] `tests.py`-однофайлы / app-root `test_*.py` не исключены (только пакет `tests/`); в репо таких нет (verified) → нет триггера. [`apps/audit/tests/test_audit_coverage.py:107-109`] — deferred, future hardening

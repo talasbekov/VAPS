@@ -127,6 +127,13 @@ actions:
     provenance: derived-from-mutation
     source: "epics.md Story 4.4; secondment_service.confirm_return (FR-15)"
 
+  # --- Story 4.7: аудит увольнения (named-дефер 4.4 №6=B) ---
+  EMPLOYEE_DISMISSED:
+    entity_type: employee
+    description: "Сотрудник уволен — карточка в архив, активные статусы усечены, секондменты закрыты (одно композитное событие на оркестраторе dismiss_employee)."
+    provenance: derived-from-mutation
+    source: "Story 4.7 (named-дефер 4.4 №6=B); operations dismissal.dismiss_employee (FR-36, AR-9)"
+
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.
 status_history_action_codes:
