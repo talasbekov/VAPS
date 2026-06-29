@@ -34,35 +34,51 @@ def _jwt_config():
 
 
 class JWTAuthentication(BaseAuthentication):
-    """External-Auth JWT identity (ARCH-SEC-030), runs BEFORE XUserIdAuthentication.
+    """External-Auth JWT identity (ARCH-SEC-030). First in the chain; the X-User-Id
+    stand-in is present ONLY when JWT is not configured (dev) — review D1 in settings.
 
     - Bearer present + valid → ``request.actor_id = sub``, return None (continue).
-    - Bearer present + invalid (bad signature / expired / disallowed alg / bad aud-iss /
-      no valid sub) → ``AuthenticationFailed`` (401): a presented-but-broken token must
-      NOT silently downgrade to the X-User-Id dev path.
-    - No Bearer (or a non-Bearer scheme) → return None: the chain falls through to
-      ``XUserIdAuthentication`` (the dev/test path).
-    - JWT not configured (dev/tests) → return None.
+    - Bearer present (our scheme) but malformed / invalid (bad signature / expired /
+      disallowed alg / bad aud-iss / no valid sub) → ``AuthenticationFailed`` → **401**
+      (``authenticate_header`` makes DRF return 401, not 403): a presented-but-broken
+      token must NOT silently downgrade to the X-User-Id dev path.
+    - No Bearer / a non-Bearer scheme → return None (chain continues).
+    - JWT not configured (dev/tests) → return None (a Bearer is ignored).
 
     Verification is explicit (this IS auth): the ``algorithms`` allowlist comes from
-    config and never includes ``none`` (PyJWT requires it, blocking alg-confusion);
-    signature + ``exp``/``nbf``/``iat`` (leeway) are checked, plus ``aud``/``iss`` when
-    configured. No User DB lookup — ``actor_id`` is a string (ARCH-007); no passwords —
-    the issuer's signature is the only trust anchor.
+    config and never includes ``none`` (config also rejects mixing HS*+RS*); signature
+    + ``exp``/``nbf``/``iat`` (leeway) checked, plus ``aud``/``iss`` (required when
+    configured; audience is mandatory in prod — review D2). No User DB lookup —
+    ``actor_id`` is a string (ARCH-007); no passwords — the issuer's signature is the
+    only trust anchor. ``sub`` is stripped and must be non-empty, ≤100, printable, no
+    inner whitespace (the value keys permission lookups + audit attribution).
     """
 
     keyword = "Bearer"
+
+    def authenticate_header(self, request):
+        # Make DRF answer a failed token with 401 + ``WWW-Authenticate: Bearer``
+        # (RFC 6750) instead of the default 403.
+        return self.keyword
 
     def authenticate(self, request):
         header = request.headers.get("Authorization")
         if not header:
             return None
         parts = header.split()
-        if len(parts) != 2 or parts[0].lower() != self.keyword.lower():
-            return None  # not a Bearer token → not ours; let the chain continue
+        if not parts or parts[0].lower() != self.keyword.lower():
+            return None  # not a Bearer scheme → not ours; the chain continues
         cfg = _jwt_config()
         if cfg is None:
             return None  # JWT disabled (dev/tests) → X-User-Id path handles identity
+        if len(parts) != 2:
+            # our scheme but malformed ("Bearer", "Bearer a b") → 401, NOT a downgrade
+            raise AuthenticationFailed("INVALID_TOKEN")
+        require = ["exp", "sub"]
+        if cfg.get("audience"):
+            require.append("aud")
+        if cfg.get("issuer"):
+            require.append("iss")
         try:
             payload = jwt.decode(
                 parts[1],
@@ -72,20 +88,25 @@ class JWTAuthentication(BaseAuthentication):
                 issuer=cfg.get("issuer"),
                 leeway=cfg.get("leeway", 0),
                 options={
-                    "require": ["exp", "sub"],
+                    "require": require,
                     "verify_aud": cfg.get("audience") is not None,
                 },
             )
-        except jwt.InvalidTokenError as exc:
-            # present-but-invalid → hard 401, never a downgrade to X-User-Id
+        except jwt.PyJWTError as exc:
+            # PyJWTError (not only InvalidTokenError) also catches a misconfigured-key
+            # InvalidKeyError → hard 401, no downgrade to X-User-Id, no unhandled 500.
             raise AuthenticationFailed("INVALID_TOKEN") from exc
         sub = payload.get("sub")
+        if not isinstance(sub, str):
+            raise AuthenticationFailed("INVALID_TOKEN")
+        sub = sub.strip()
         if (
-            not isinstance(sub, str)
-            or not sub
+            not sub
             or len(sub) > 100
             or not sub.isprintable()
+            or any(c.isspace() for c in sub)
         ):
+            # exact actor id only — no padded / whitespace-bearing / non-printable sub
             raise AuthenticationFailed("INVALID_TOKEN")
         request.actor_id = sub
         return None
