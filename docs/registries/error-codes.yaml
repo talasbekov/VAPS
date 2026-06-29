@@ -123,6 +123,12 @@ codes:
     category: state
     description: "Не хватает обязательных INITIAL-отметок подразделений для формирования FINAL-отчёта."
     source: "VAPS_7.8.2 BR-DAILY-MARK-001"
+  DAY_ALREADY_SUBMITTED:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Подразделение уже сдало этот день (есть действующая is_current версия). Повторная сдача — только через amendment-flow (5.4), НЕ override."
+    source: "epics.md Story 5.3; architecture.md ARCH-DATA-021 (unique_daily_submission_current)"
   NOT_READY:
     http_status: 409
     overridable: false
@@ -215,6 +221,12 @@ codes:
     category: business_hard
     description: "Пустой/инвертированный интервал статуса (date_start >= date_end). Сервисная валидация опережает DataError на generated-колонке period."
     source: "VAPS_7.8.2 §6 (статусы); epics.md 3.3; architecture.md ARCH-DATA-023 (полуоткрытые интервалы)"
+  BUSINESS_DATE_OUT_OF_WINDOW:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "business_date вне окна первичной сдачи (default: завтра/сегодня). Прошлые даты — только через amendment-flow (5.4)."
+    source: "epics.md Story 5.3 (окно первичной сдачи); architecture.md ARCH-DATA-022"
   MAX_DURATION_EXCEEDED:
     http_status: 422
     overridable: false

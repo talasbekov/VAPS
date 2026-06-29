@@ -670,9 +670,19 @@ As a система, I want DailySubmission (date, division, submitted_by/at, sn
 **Given** две версии за день, **Then** ровно одна is_current (partial unique (division, business_date) WHERE is_current); unique (division, business_date, version).
 **And** снапшот хранит интервалы-факты, не derived-состояния.
 
-### Story 5.3: Сервис сдачи дня
+### Story 5.3a: Срез-билдер (snapshot builder)
 
-As a оператор управления, I want сдать день одним действием: атомарный срез, diff против вчерашнего снапшота → CONFIRMED_NO_CHANGES/CHANGED, So that сдача фиксирует состояние и считаемое событие.
+As a система, I want чистый билдер self-contained иммутабельного среза подразделения на business_date — `{schema_version, roster, rows}` (денормализованный roster + интервалы-факты), So that расход derive(снапшот, дата) воспроизводим без повторного обращения к live-данным (ARCH-DATA-021; основа иммутабельности 5.10).
+
+**Acceptance Criteria:**
+
+**Given** подразделение и business_date, **Then** билдер возвращает `{schema_version, roster:[{employee_id, full_name, rank}], rows:[{employee_id, status_type_code, status_id, date_start, date_end, source}]}`: roster = списочный состав на дату (own-level, roster_on), rows = действующие интервалы-факты (cancelled исключены, полуоткрытые [date_start,date_end)).
+**And** пустое подразделение → roster=[], rows=[]; срез самодостаточен — derive не обращается к roster_on повторно (denominator внутри snapshot).
+**And** срез читается консистентно в один момент — basis для атомарной сдачи 5.3b.
+
+### Story 5.3b: Сервис сдачи дня
+
+As a оператор управления, I want сдать день одним действием: атомарный срез (5.3a) → diff против вчерашнего снапшота → CONFIRMED_NO_CHANGES/CHANGED, So that сдача фиксирует состояние и считаемое событие.
 
 **Acceptance Criteria:**
 
@@ -680,7 +690,9 @@ As a оператор управления, I want сдать день одни�
 **And** окно первичной сдачи — параметр (default: завтра — основной режим «за день вперёд», сегодня — коррекция); прошлые даты — ТОЛЬКО через amendment-flow; вне окна → 422 BUSINESS_DATE_OUT_OF_WINDOW. Семантика окна подтверждается с владельцем расхода на пилоте.
 **And** поздняя сдача (после 17:00) РАЗРЕШЕНА и фиксируется late=true (событие для SM-1) — иначе будут врать ради зелёного.
 **And** пустое подразделение (0 сотрудников): сдача валидна, снапшот rows=[], формулы сходятся (0=0+0).
-**And** срез в одной транзакции (torn snapshot невозможен); граница 17:00 зафиксирована тестом.
+**And** срез+создание в одной транзакции (атомарность записи + структурная консистентность среза rows⊆roster; NB: под default READ COMMITTED — не межстейтментный snapshot-isolation, строгий point-in-time → REPEATABLE READ); граница 17:00 зафиксирована тестом.
+
+> **Декомпозиция (2026-06-29):** исходная 5.3 разбита на 5.3a (срез-билдер) + 5.3b (сервис сдачи) по правилу ≤5 файлов — естественный шов между построением self-contained снапшота и бизнес-правилами сдачи (окно/дубль/event-diff/late/atomic). 5.3a — пререквизит 5.3b.
 
 ### Story 5.4: Amendment-flow
 

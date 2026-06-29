@@ -1,7 +1,10 @@
 from django.apps import apps
 from django.conf import settings
 
-from apps.operations.submissions.models import SubmissionControlSettings
+from apps.operations.submissions.models import (
+    DailySubmission,
+    SubmissionControlSettings,
+)
 
 
 def test_ops_submissions_app_installed():
@@ -14,3 +17,7 @@ def test_ops_submissions_app_config():
 
 def test_submission_control_settings_db_table():
     assert SubmissionControlSettings._meta.db_table == "ops_submission_control_settings"
+
+
+def test_daily_submission_db_table():
+    assert DailySubmission._meta.db_table == "ops_daily_submissions"

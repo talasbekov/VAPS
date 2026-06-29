@@ -427,3 +427,22 @@
 
 - **Дефер 1.2:61 закрыт только для JWT-пути** (`apps/core/auth/authentication.py`, auditor, Low): `JWTAuthentication` валидирует `sub` (≤100/непустой/печатный), но `XUserIdAuthentication` (по «НЕ трогать» 5.1) ставит `actor_id` из X-User-Id без валидации длины/charset. После D1 (X-User-Id только в dev) остаточный риск — только dev. Закрыть валидацию X-User-Id-пути, когда дойдут руки до dev-hardening.
 - **Нет логирования отказов JWT-верификации** (`apps/core/auth/authentication.py:79-89`, blind, Low): провалы подписи/exp/alg/sub конвертируются в отказ без записи → нет детектирования brute-force/подделки. Hardening: WARNING-лог неудачных верификаций (без утечки токена) с метаданными для SIEM. Вернуться при выстраивании security-мониторинга (E12/прод).
+
+## Deferred from: code review of 5-2-модель-dailysubmission (2026-06-29)
+
+Проход (bmad-code-review, Opus 4.8 ×3 слоя, **same-model caveat**; baseline `fec75d9`, чисто модельная стори 5.2 DailySubmission). Все 5 AC выполнены; 1 decision + 3 patch в Review Findings стори. 1 defer:
+
+- **Partial-unique `unique_daily_submission_current` — immediate (не deferrable)** (`Backend/VAPS/apps/operations/submissions/models/daily_submission.py`, blind BH-2, Low): на Postgres unique проверяется по-стейтментно. В txn amendment'а (5.4) новую `is_current=True` строку нужно вставлять ПОСЛЕ снятия флага со старой; интуитивный порядок «вставить новую → снять старую» тронет констрейнт посреди транзакции. Порядок load-bearing, но невидим на уровне схемы. Решить при реализации 5.4: либо зафиксировать порядок (flip-then-insert) в сервисе amendment, либо перейти на `deferrable=Deferrable.DEFERRED`. Для 5.2 (рядов не пишет) — нерелевантно.
+
+## Deferred from: code review of 5-3a-срез-билдер (2026-06-29)
+
+Проход (bmad-code-review, Opus 4.8 ×3 слоя, **same-model caveat**; baseline `fec75d9`, read-only срез-билдер 5.3a). Все 7 AC выполнены; 4 patch в Review Findings стори. 1 defer:
+
+- **Билдер не валидирует существование подразделения** (`Backend/VAPS/apps/operations/submissions/services/snapshot.py`, edge EC-4, Low): несуществующий валидный UUID `division_id` неотличим от легитимно пустого подразделения — оба дают `{schema_version:1, roster:[], rows:[]}` без ошибки. `build_division_snapshot` — чистая read-only проекция, существование/скоуп подразделения не его забота. Закрыть в 5.3b-сервисе сдачи (`submit_day` имеет actor/scope-контекст: проверить, что подразделение существует и оператор вправе по нему сдавать → 404/403 ДО построения среза).
+
+## Deferred from: code review of 5-3b-сервис-сдачи-дня (2026-06-29)
+
+Проход (bmad-code-review, Opus 4.8 ×3 слоя — Blind/Edge/Auditor, **same-model caveat**; baseline `fec75d9`, охват — вся незакоммиченная E5-фича сдачи дня). Все 7 AC выполнены по поведению; 2 decision + 3 patch в Review Findings стори. 2 defer:
+
+- **Хардкод `version=1` + пречек дубля только по `is_current` → 500 для дня с не-current версиями** (`Backend/VAPS/apps/operations/submissions/services/day_submission_service.py:96,128`, blind BH-2 / edge EC-4, Low→forward-risk): `current_for` ищет только `is_current=True`, а `create()` всегда ставит `version=1`. День, у которого есть строки `version=1`, но все `is_current=False` (БД допускает «ноль текущих»), пройдёт пречек → второй INSERT `version=1` сорвёт `unique_daily_submission_version` (неотмаплен) → 500. Недостижимо чистым 5.3b (ничто не снимает is_current), но мина под 5.4. Закрыть в 5.4-amendment: вычислять `max(version)+1`, не хардкодить 1.
+- **`_diff_key` доверяет форме `previous.snapshot` → KeyError при дрейфе схемы** (`Backend/VAPS/apps/operations/submissions/services/day_submission_service.py:50`, edge EC-5, Low→forward-risk): `_compute_event` читает `previous.snapshot["rows"][*]["employee_id"/"status_type_code"/"source"]` без проверки `schema_version`/наличия ключей. Будущий снапшот иной формы (v2) → `KeyError` (не `DomainError`) → 500. `schema_version` намеренно игнорируется в diff — это же снимает единственный guard от формодрейфа. Вернуться при бампе snapshot-схемы до v2 (guard на schema_version перед сравнением).
