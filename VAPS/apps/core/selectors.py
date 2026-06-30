@@ -76,15 +76,29 @@ class CoreDivisionTreeSelector:
     """
 
     @staticmethod
-    def _children_map():
+    def children_map() -> dict:
+        """{parent_id: [child_id, ...]} for the whole tree, ONE query.
+
+        The single sanctioned channel for division-tree STRUCTURE
+        (ARCH-DATA-024): a generic adjacency map with NO светофор/расход
+        semantics — the consumer (e.g. the 5.5b cascade in
+        apps.operations.submissions) folds its own values up over it.
+        ``parent_id`` is ``None`` for top-level divisions. FULL-scans Division,
+        so call it ONCE and reuse — never per node (NFR-4).
+        """
         children: dict = {}
         for did, parent_id in Division.objects.values_list("id", "parent_id"):
             children.setdefault(parent_id, []).append(did)
         return children
 
+    @staticmethod
+    def _children_map():
+        """Backward-compatible alias for the now-public ``children_map``."""
+        return CoreDivisionTreeSelector.children_map()
+
     @classmethod
     def subtree_ids(cls, division_id) -> set:
-        children = cls._children_map()
+        children = cls.children_map()
         result, stack = set(), [division_id]
         while stack:
             current = stack.pop()
@@ -96,7 +110,7 @@ class CoreDivisionTreeSelector:
 
     @classmethod
     def leaf_descendants(cls, division_id) -> list:
-        children = cls._children_map()
+        children = cls.children_map()
         ids = cls.subtree_ids(division_id)
         leaf_ids = [d for d in ids if not children.get(d)]
         return list(Division.objects.filter(id__in=leaf_ids))
