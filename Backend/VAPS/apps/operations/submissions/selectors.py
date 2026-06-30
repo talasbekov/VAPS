@@ -20,6 +20,25 @@ class DailySubmissionSelector:
         ).first()
 
     @staticmethod
+    def current_for_many(division_ids, business_date) -> dict:
+        """Bulk form of ``current_for`` for the 5.5b cascade.
+
+        The current (is_current) submission of EACH division on ``business_date``
+        in ONE query (``division_id__in``) → ``{division_id: DailySubmission}``. A
+        division with no current submission is simply absent from the map (mirror
+        ``current_for`` returning None). Rides ``idx_daily_submission_lookup``;
+        never call ``current_for`` in a loop over a subtree (NFR-4).
+        """
+        return {
+            row.division_id: row
+            for row in DailySubmission.objects.filter(
+                division_id__in=division_ids,
+                business_date=business_date,
+                is_current=True,
+            )
+        }
+
+    @staticmethod
     def covering(employee_id, business_dates):
         """Current submissions on ``business_dates`` whose snapshot roster contains
         the employee — amendment-enforcement detection by snapshot MEMBERSHIP (5.4b).
