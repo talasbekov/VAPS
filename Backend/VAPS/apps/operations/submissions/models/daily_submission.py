@@ -82,6 +82,16 @@ class DailySubmission(TimeStampedModel):
     late = models.BooleanField(default=False)
     # Denormalised interval-facts; form documented above. Populated by 5.3.
     snapshot = models.JSONField(default=dict)
+    # Amendment attributes (5.4a). For event=AMENDED these carry «причина / санкция /
+    # ссылка на ретро-правку» (ARCH-DATA-021 L288); required for AMENDED, blank for
+    # the 5.3 first-submission events (CheckConstraint below holds the asymmetry).
+    # default="" (not null) so 5.3 create() — which never passes them — stays valid.
+    reason = models.TextField(blank=True, default="")
+    sanction = models.CharField(max_length=255, blank=True, default="")
+    # ARCH-003: flat reference to the triggering EmployeeStatus surrogate PK
+    # (integer BigAutoField), never an FK. Nullable: a manual amendment need not
+    # cite a specific status. 5.4b populates it from the retro-edit hook.
+    triggered_by_status_id = models.PositiveBigIntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_daily_submissions"
@@ -111,6 +121,20 @@ class DailySubmission(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
                 name="chk_daily_submission_version_min",
+            ),
+            # 5.4a: AMENDED-версия ОБЯЗАНА нести содержательные reason+sanction
+            # (видимая поправка, ARCH-DATA-021 L288). Не-AMENDED строки (первичная
+            # сдача 5.3) не ограничены. Сервис amend_day отбивает пустые раньше (400)
+            # и strip'ит; это DB-backstop против «тихого пустого» прямого create().
+            # `__regex=r"\S"` (есть хоть один НЕ-пробельный символ) отвергает И ""
+            # И whitespace-only "   " — иначе backstop пропускал бы пробельно-пустую
+            # AMENDED-строку (code-review проход 1). Зеркало chk_*_event/version_min.
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(event="AMENDED")
+                    | (models.Q(reason__regex=r"\S") & models.Q(sanction__regex=r"\S"))
+                ),
+                name="chk_daily_submission_amended_requires_reason_sanction",
             ),
         ]
         indexes = [

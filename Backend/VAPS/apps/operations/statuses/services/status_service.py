@@ -73,9 +73,7 @@ def _override_snapshot(override):
 
 def _require_actor(actor):
     if not actor or not actor.strip():
-        raise DomainError(
-            "VALIDATION_ERROR", 400, message="actor обязателен."
-        )
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
 
 
 def assert_employee_status_editable(employee_id):
@@ -155,10 +153,7 @@ def _validate_interval(*, date_start, date_end, employee, status_type):
             },
             message="Начало статуса раньше даты приёма сотрудника.",
         )
-    if (
-        employee.dismissal_date is not None
-        and date_end > employee.dismissal_date
-    ):
+    if employee.dismissal_date is not None and date_end > employee.dismissal_date:
         raise DomainError(
             "DATE_OUTSIDE_EMPLOYMENT",
             422,
@@ -219,9 +214,7 @@ def _assert_no_conflict(
     )
     if exclude_pk is not None:
         overlaps = overlaps.exclude(pk=exclude_pk)
-    rows = list(
-        overlaps.values("status_type_code", "date_start", "date_end")
-    )
+    rows = list(overlaps.values("status_type_code", "date_start", "date_end"))
     report = detect_conflicts(
         new_type=status_type_code,
         existing_rows=rows,
@@ -575,9 +568,7 @@ def complete_status_early(status, *, actor, actual_end, _audit=True):
 
 
 @transaction.atomic
-def extend_status(
-    status, *, actor, new_date_end, override=False, override_reason=""
-):
+def extend_status(status, *, actor, new_date_end, override=False, override_reason=""):
     """Extend a non-CANCELLED status to a strictly later ``date_end``.
 
     Shortening is a different operation (досрочное завершение,
@@ -743,8 +734,7 @@ def resolve_pending_clarification(
             422,
             detail={"resolved_type_code": resolved_type_code},
             message=(
-                "Разрешение должно давать реальный статус, "
-                "а не снова «уточняется»."
+                "Разрешение должно давать реальный статус, а не снова «уточняется»."
             ),
         )
 
@@ -818,12 +808,19 @@ def resolve_pending_clarification(
             new_value=_override_snapshot(override_obj),
         )
 
-    # E5 amendment seam (no-op until DailySubmission exists). Affected span =
-    # union of the old «уточняется» and the new interval — every day whose
-    # derived status could have changed.
+    # E5 amendment seam (5.4b). Affected days = the OLD «уточняется» interval and
+    # the NEW resolving interval as SEPARATE half-open [start, end) pairs — NOT a
+    # min/max bounding box: disjoint intervals must not amend the gap days between
+    # them (closes deferred-work L315 / VAPS_7.8.2 §82.2). The handler (submissions)
+    # detects which days a current DailySubmission covers and triggers an amendment
+    # (amend_day) per covered (division, day), atomically within THIS transaction —
+    # so a retro-edit of a submitted day cannot land without its amendment. reason
+    # carries the sanction; resolved.id is the «ссылка на ретро-правку».
     mark_days_for_amendment(
         pending.employee_id,
-        min(pending.date_start, date_start),
-        max(pending.date_end, date_end),
+        [(pending.date_start, pending.date_end), (date_start, date_end)],
+        actor=actor,
+        reason=reason,
+        triggered_by_status_id=resolved.id,
     )
     return resolved
