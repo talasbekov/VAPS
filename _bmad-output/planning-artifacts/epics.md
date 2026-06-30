@@ -756,6 +756,14 @@ As a ответственный, I want модель Notification + notification
 
 **Given** управление не сдало к 17:00−N, **When** beat-проверка, **Then** уведомление ответственному создано (идемпотентно — одно на день); GET /notifications/?since= возвращает новые.
 
+> **Декомпозиция (2026-06-30):** исходная 5.7 разбита на 5.7a (модель `Notification` + notify-сервис) + 5.7b (catch-up проверка отставания) + 5.7c (read-API `GET /notifications`) по правилу ≤5 файлов — 4 ответственности (новый app + модель/миграция + scheduling-джоба + API; правила нотификаций+API требуют дробить). Зеркалит 5.3/5.4/5.5/5.6. **Архитектурный гвоздь:** «beat» ОБЯЗАН лечь на catch-up-паттерн проекта (`catchup_plan`/`Watermark`/management-команда, образец `materialize_status_effects`) — НЕ вводить Celery; закрывает «сервер был выключен ночью» (catch-up-семантика E6.9). Реюз `tomorrow_block`/laggards (5.6a) для «кто отстаёт», `SubmissionControlSettings.control_hour`, `Clock`.
+>
+> **5.7a — `Notification` модель + notify-сервис:** новый `apps/notifications` — модель `Notification` (recipient/тип/payload/business_date/created_at/read-флаг; flat-ссылки ARCH-003, без FK на core) + миграция + `notifications.services.notify(...)` (on_commit-эмиссия; идемпотентность-ключ для «одно на день»). Персистенция+эмиссия-примитив; без beat/API.
+>
+> **5.7b — Catch-up проверка отставания (FR-13):** management-команда + сервис — по due-датам (`Watermark`/`catchup_plan`) к контрольному часу → отстающие через `tomorrow_block`/laggards (5.6a) → `notify()` ответственным, идемпотентно одно-на-день. Реюз `catch_up.py`/`Clock`/`control_hour`. НЕ Celery (catch-up run-on-availability). Зависит от 5.7a + 5.6a.
+>
+> **5.7c — `GET /notifications/?since=` read-API:** endpoint + serializer + permission + `since`-фильтр (доставка готова к WS E11). API-слой (паттерн 5.8). Зависит от 5.7a.
+
 ### Story 5.8: API сдачи дня
 
 As a оператор, I want POST /api/operations/daily-submissions/, GET история/детали, POST /{id}/amend/, So that сдача доступна по паттернам API.
