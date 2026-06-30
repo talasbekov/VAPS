@@ -728,6 +728,12 @@ As a руководитель, I want трёхцветный светофор (�
 **And** перевод задним числом после сдачи: drift у сдавшего подразделения A (amendment у A), корректный live у принимающего B (его день ещё не сдан).
 **And** каскад агрегируется вверх одним селектором обхода дерева.
 
+> **Декомпозиция (2026-06-30):** исходная 5.5 разбита на 5.5a (светофор ОДНОГО подразделения) + 5.5b (каскад вверх по дереву) по правилу ≤5 файлов — естественный шов «drift одного подразделения» vs «агрегация по дереву». Зеркалит прецедент 5.3a/5.3b и 5.4a/5.4b. 5.5b зависит от 5.5a (использует per-division состояние).
+>
+> **5.5a — Светофор подразделения (drift):** для (`division_id`, `business_date`) вычисляет `TrafficLightStatus` ∈ {GREEN, YELLOW, RED} + `late` + diff-детали. GREEN = `derive(снапшот) == derive(live)`; YELLOW = разошлось (drift с деталями); RED = нет действующей сдачи. **And** drift — на уровне derived-победителей (`resolve_status` по сотруднику), а НЕ сырых фактов: переименование/пере-создание идентичного факта и не-расход-меняющая правка остаются GREEN (расход держится по снапшоту by design, ARCH-DATA-021 L291). **And** поздняя сдача: совпадает → GREEN c `late=True`. **And** перевод задним числом: drift у сдавшего A (live-ростер/победитель разошёлся со снапшотом). Reuse `resolve_status`/`current_for`/`roster_on`/`overlapping_on`; OWN-LEVEL (зеркало own-level снапшота 5.3a); без actor/RBAC (как `StrengthReportService`); без API/каскада/нотификаций/блока/аудита.
+>
+> **5.5b — Каскад по дереву:** новый upward-rollup примитив на `CoreDivisionTreeSelector` (единственный канал обхода, ARCH-DATA-024) + bulk `DailySubmissionSelector.current_for_many` (анти-N+1, NFR-4) + `traffic_light_tree(root, business_date)`: складывает per-division состояния 5.5a вверх правилом «худший цвет» (RED > YELLOW > GREEN), `late` видим в каскаде. Один обход, bulk-запросы (не `subtree_ids` на узел). Семантика не-сдающих промежуточных узлов решается здесь.
+
 ### Story 5.6: Блокировка «на завтра»
 
 As a система, I want блокировку формирования расхода «на завтра», derived из сдач необходимых управлений, + override-сущность для легального обхода, So that FR-18 выполняется, а обходы видимы.
@@ -735,6 +741,12 @@ As a система, I want блокировку формирования рас
 **Acceptance Criteria:**
 
 **Given** одно необходимое управление не сдало, **When** запрашиваю расход на завтра, **Then** 422 TOMORROW_BLOCKED со списком отстающих; **Given** override руководителем с причиной, **Then** расход формируется + Override-запись.
+
+> **Декомпозиция (2026-06-30):** исходная 5.6 разбита на 5.6a (derive-блокировка «на завтра», read-only) + 5.6b (override-сущность + легальный обход) по правилу ≤5 файлов — естественный шов «вычислить блок из сдач» vs «персистентная сущность обхода + миграция + write-сервис». Зеркалит прецедент 5.3a/b, 5.4a/b, 5.5a/b. 5.6b зависит от 5.6a (внедряет консультацию override в derive). Конфиг-зависимость закрыта: `SubmissionControlSettings.required_division_ids` (ArrayField UUID, flat ARCH-003) + `control_hour` уже есть, docstring модели прямо называет «next-day lock (5.6)» потребителем.
+>
+> **5.6a — Derive-блокировка «на завтра» (read-only, без миграции):** `tomorrow_block(business_date)` → из `SubmissionControlSettingsSelector.required_division_ids` и действующих сдач (реюз `current_for_many` 5.5b; пустой own-ростер НЕ освобождает — required=required, реш. code-review 2026-06-30 опц.A) вычисляет, какие required-управления НЕ сдали на дату → доменный результат `{blocked, laggards:[division_id]}`. HTTP-422/`TOMORROW_BLOCKED` — на API-слое (5.8/6.10); сервис возвращает результат (паттерн 5.5a/b: без actor/RBAC/API/нотиф/аудита). Без override (блок = «все required сдали?»). Файлы: новый сервис в `submissions/` + реюз селекторов + тесты; миграций НЕТ.
+>
+> **5.6b — Override-сущность + легальный обход (модель + миграция + сервис):** новая модель `TomorrowBlockOverride` (business_date + скоуп, причина, actor, время; flat UUID-ссылки ARCH-003, без FK на core) + миграция + сервис записи override → ВНЕДРИТЬ консультацию активного override в derive 5.6a (активный override на дату → `blocked=False`, обход видим записью). Зависит от 5.6a. Аудит `TOMORROW_BLOCK_OVERRIDDEN` — НЕ здесь (владеет 5.9, как 4.x-аудит отдельно); нотификации (5.7)/API (5.8)/документ-«на завтра» (6.10) — вне.
 
 ### Story 5.7: Notifications-backend и уведомления об отставании
 
