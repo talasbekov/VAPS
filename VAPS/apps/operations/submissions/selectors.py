@@ -1,6 +1,7 @@
 from apps.operations.submissions.models import (
     DailySubmission,
     SubmissionControlSettings,
+    TomorrowBlockOverride,
 )
 
 
@@ -122,3 +123,18 @@ class SubmissionControlSettingsSelector:
     @classmethod
     def required_division_ids(cls):
         return list(cls.get().required_division_ids)
+
+
+class TomorrowBlockOverrideSelector:
+    """Read-only access to the next-day-lock override (Story 5.6b)."""
+
+    @staticmethod
+    def active_for(business_date) -> bool:
+        """Whether a legal override exists for ``business_date`` (ONE query).
+
+        Date-level: any override on the date lifts the 5.6a block. Mirrors the
+        read-only селекторы (no actor — права на API 5.8).
+        """
+        return TomorrowBlockOverride.objects.filter(
+            business_date=business_date
+        ).exists()
