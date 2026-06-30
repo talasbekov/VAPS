@@ -32,3 +32,20 @@ def test_operations_does_not_import_core_models():
 def test_operations_may_import_core_selectors():
     # Sanity guard for the rule's intent: core.selectors is the sanctioned read path.
     assert "apps.core.selectors".startswith("apps.core.")
+
+
+def test_statuses_does_not_import_submissions():
+    # architecture.md#L587: subdomain flow is one-way, downward (statuses ←
+    # submissions ← reports). statuses MUST NOT import submissions — the 5.4b
+    # amendment seam inverts the dependency via a callback registered in
+    # amendment_hook (submissions → statuses at AppConfig.ready()), never a direct
+    # import. Without this guard a future `from apps.operations.submissions import …`
+    # inside statuses would silently break the central 5.4b invariant.
+    offenders = []
+    for path in _module_files("operations/statuses"):
+        for mod in _imports(path):
+            if mod == "apps.operations.submissions" or mod.startswith(
+                "apps.operations.submissions."
+            ):
+                offenders.append((str(path), mod))
+    assert offenders == [], f"statuses imports submissions directly: {offenders}"

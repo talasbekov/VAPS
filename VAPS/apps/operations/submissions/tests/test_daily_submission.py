@@ -201,9 +201,74 @@ def test_event_check_covers_event_choices():
     # Review D1 drift-guard: the DB CheckConstraint on event must list exactly
     # Event.values. If a new Event member is added without updating the
     # constraint, inserting it trips chk_daily_submission_event and this reddens.
+    # AMENDED additionally requires reason+sanction (5.4a constraint) — supply
+    # them so this test exercises chk_daily_submission_event, not the new one.
     for value in DailySubmission.Event.values:
-        row = _make(division_id=uuid.uuid4(), event=value)
+        extra = (
+            {"reason": "ретро-правка", "sanction": "санкция-1"}
+            if value == "AMENDED"
+            else {}
+        )
+        row = _make(division_id=uuid.uuid4(), event=value, **extra)
         assert row.event == value
+
+
+# --- 5.4a amendment fields + constraint -------------------------------------
+
+
+def test_amendment_field_defaults():
+    # 5.4a: reason/sanction default "" (not null) so 5.3 create() — which never
+    # passes them — stays valid; triggered_by_status_id defaults NULL.
+    row = _make()
+    row.refresh_from_db()
+    assert row.reason == ""
+    assert row.sanction == ""
+    assert row.triggered_by_status_id is None
+
+
+def test_amended_requires_reason_and_sanction():
+    # 5.4a: chk_daily_submission_amended_requires_reason_sanction — an AMENDED row
+    # with both reason and sanction is valid.
+    row = _make(event=DailySubmission.Event.AMENDED, reason="r", sanction="s")
+    row.refresh_from_db()
+    assert row.event == DailySubmission.Event.AMENDED
+
+
+def test_amended_empty_reason_rejected():
+    # 5.4a backstop: AMENDED with empty reason trips the CheckConstraint.
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            _make(event=DailySubmission.Event.AMENDED, reason="", sanction="s")
+
+
+def test_amended_empty_sanction_rejected():
+    # 5.4a backstop: AMENDED with empty sanction trips the CheckConstraint.
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            _make(event=DailySubmission.Event.AMENDED, reason="r", sanction="")
+
+
+def test_non_amended_unconstrained_by_reason_sanction():
+    # 5.4a: CHANGED/CONFIRMED_NO_CHANGES rows are NOT required to carry
+    # reason/sanction — the constraint only binds AMENDED.
+    row = _make(event=DailySubmission.Event.CHANGED, reason="", sanction="")
+    row.refresh_from_db()
+    assert row.event == DailySubmission.Event.CHANGED
+
+
+def test_amended_whitespace_reason_rejected():
+    # 5.4a review п1: the `\S` constraint rejects whitespace-only reason, not just
+    # "" — a semantically-empty AMENDED row must not pass the backstop.
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            _make(event=DailySubmission.Event.AMENDED, reason="   ", sanction="s")
+
+
+def test_amended_whitespace_sanction_rejected():
+    # 5.4a review п1: whitespace-only sanction (tab) is rejected by `\S` too.
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            _make(event=DailySubmission.Event.AMENDED, reason="r", sanction="\t")
 
 
 def test_empty_event_rejected():
