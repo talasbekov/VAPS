@@ -9,7 +9,7 @@ context:
 
 # Story 5.7b1: Recipient-config — получатель уведомлений об отставании (per-division + fallback)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -51,21 +51,21 @@ so that **catch-up-джоба 5.7b2 может детерминированно 
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — модель `DivisionNotifyRecipient` + миграция (AC: 1,3,6)**
-  - [ ] `apps/operations/submissions/models/division_notify_recipient.py`: `DivisionNotifyRecipient(TimeStampedModel)` — `division_id` (UUIDField, unique), `recipient` (CharField(100)). `Meta`: `db_table="division_notify_recipients"`, `constraints=[UniqueConstraint(division_id)]` (или `unique=True` на поле). БЕЗ FK на core. `__str__`.
-  - [ ] Экспорт в `submissions/models/__init__.py`.
-  - [ ] `makemigrations submissions` → миграция new table; `--check` пуст.
-- [ ] **Task 2 — `default_notify_recipient` на `SubmissionControlSettings` + миграция (AC: 2,3)**
-  - [ ] `models/control_settings.py`: `default_notify_recipient = models.CharField(max_length=100, blank=True, default="")` (глобальный дежурный).
-  - [ ] `makemigrations submissions` → миграция add-column; `--check` пуст.
-- [ ] **Task 3 — bulk-селектор `NotifyRecipientSelector.resolve_many` (AC: 4)**
-  - [ ] `submissions/selectors.py`: `class NotifyRecipientSelector` + `@staticmethod resolve_many(division_ids) -> dict[UUID, str]` — один `DivisionNotifyRecipient.objects.filter(division_id__in=division_ids)` → map; `default = SubmissionControlSettingsSelector.get().default_notify_recipient`; для каждого division_id: specific if present else (default if default else пропустить). Bulk.
-- [ ] **Task 4 — admin + edit-safety (AC: 5,6)**
-  - [ ] `submissions/admin.py`: зарегать `DivisionNotifyRecipient` (list_display division_id/recipient; справочник). Если нет `admin.py` — создать по образцу регистрации справочников (2.11).
-  - [ ] Валидатор/`clean` для `recipient` non-blank+strip; убедиться, что `unique(division_id)` даёт понятную ошибку (не raw 500) на дубле — паттерн 2.12/5.6b.
-- [ ] **Task 5 — тесты (AC: 1,2,4,6)**
-  - [ ] `submissions/tests/test_notify_recipient.py` (django_db): модель-поля; `unique(division_id)` (дубль → IntegrityError); `resolve_many` — специфичный побеждает; несопоставленный → fallback; fallback пуст → дивизион отсутствует; **bulk** (`assertNumQueries` — не N+1); recipient blank → отвергается.
-  - [ ] Регрессия: `make gate` зелёный; `makemigrations --check` пуст; ruff чист (by-file); `test_isolation` submissions зелёный (без `import apps.core.models`).
+- [x] **Task 1 — модель `DivisionNotifyRecipient` + миграция (AC: 1,3,6)**
+  - [x] `apps/operations/submissions/models/division_notify_recipient.py`: `DivisionNotifyRecipient(TimeStampedModel)` — `division_id` (UUIDField, `unique=True`), `recipient` (CharField(100)). `Meta`: `db_table="division_notify_recipients"`, `constraints=[CheckConstraint(~Q(recipient__regex=r"^\s*$"))]` (non-blank, паттерн 5.6b). БЕЗ FK на core. `clean()` (strip+reject-blank) + `__str__`.
+  - [x] Экспорт в `submissions/models/__init__.py`.
+  - [x] `makemigrations ops_submissions` → миграция 0005 (new table + add-column одним файлом); `--check` пуст.
+- [x] **Task 2 — `default_notify_recipient` на `SubmissionControlSettings` + миграция (AC: 2,3)**
+  - [x] `models/control_settings.py`: `default_notify_recipient = models.CharField(max_length=100, blank=True, default="")` (глобальный дежурный).
+  - [x] `makemigrations ops_submissions` → add-column вошёл в миграцию 0005; `--check` пуст.
+- [x] **Task 3 — bulk-селектор `NotifyRecipientSelector.resolve_many` (AC: 4)**
+  - [x] `submissions/selectors.py`: `class NotifyRecipientSelector` + `@staticmethod resolve_many(division_ids) -> dict` — один `DivisionNotifyRecipient.objects.filter(division_id__in=division_ids)` → map; `default = SubmissionControlSettingsSelector.get().default_notify_recipient`; для каждого division_id: specific if present else (default if default else пропустить). Bulk (2 запроса, инвариант к размеру входа).
+- [x] **Task 4 — admin + edit-safety (AC: 5,6)**
+  - [x] `submissions/admin.py`: зарегал `DivisionNotifyRecipient` (list_display division_id/recipient + search_fields; справочник). Обновил arch-guard allowlist (`test_admin_platform.py::CATALOG_MODELS`) — иначе `test_admin_registry_is_exactly_catalogs` красный.
+  - [x] `clean()` для `recipient` non-blank+strip (edit-safety через ModelForm.full_clean); `unique(division_id)` даёт IntegrityError на дубле.
+- [x] **Task 5 — тесты (AC: 1,2,4,6)**
+  - [x] `submissions/tests/test_notify_recipient.py` (django_db, 17 тестов): db_table/поля/str; `unique(division_id)` (дубль → IntegrityError); recipient non-blank на DB (""/whitespace → IntegrityError) + `clean` (strip / reject-blank → ValidationError); `default_notify_recipient` shape+default; `resolve_many` — специфичный побеждает / несопоставленный → fallback / fallback пуст → отсутствует / mixed / empty input; **bulk** (`CaptureQueriesContext` == 2, инвариант к размеру).
+  - [x] Регрессия: `make gate` зелёный (1602 passed, 24 deselected, 29s); `makemigrations --check` пуст; ruff чист (format by-file на миграции); `test_isolation` зелёный (production-код без `import apps.core.models`).
 
 ## Dev Notes
 
@@ -137,10 +137,90 @@ class NotifyRecipientSelector:
 
 ### Agent Model Used
 
-_TBD (bmad-dev-story)_
+Opus 4.8 (claude-opus-4-8[1m]) — bmad-dev-story, TDD (red→green→refactor).
 
 ### Debug Log References
 
+- RED: `test_notify_recipient.py` → `ImportError: DivisionNotifyRecipient` (до реализации).
+- GREEN: новый тест-файл 17/17 passed на Postgres :5433.
+- Регрессия-ловушка: `test_admin_platform.py::test_admin_registry_is_exactly_catalogs` покраснел на admin-регистрации нового справочника (arch-guard «Admin = ровно справочники») → добавил `DivisionNotifyRecipient` в `CATALOG_MODELS`. Это следствие AC-5, а не scope-creep.
+- `make gate` зелёный: 1602 passed, 24 deselected, ruff чист, `makemigrations --check` → «No changes detected», 29s (< 300s NFR-8).
+
 ### Completion Notes List
 
+- **AC-1** `DivisionNotifyRecipient(TimeStampedModel)` — `division_id` UUIDField `unique=True` (flat ARCH-003, БЕЗ FK), `recipient` CharField(100), `db_table="division_notify_recipients"`, `clean()` + `__str__`.
+- **AC-2** `SubmissionControlSettings.default_notify_recipient` CharField(100, blank=True, default="") — глобальный дежурный-fallback (Q1b).
+- **AC-3** миграция `0005_...` — AddField + CreateModel одним файлом (dep 0004); `makemigrations --check` пуст.
+- **AC-4** `NotifyRecipientSelector.resolve_many(division_ids) -> dict` — specific → fallback (если непустой) → отсутствует; **bulk** = 1 filter + 1 settings.get (2 запроса, инвариант к размеру входа, NFR-4). `recipient` non-blank по constraint → `or`-short-circuit безопасен.
+- **AC-5** admin-регистрация `DivisionNotifyRecipientAdmin` (справочник; в отличие от бизнес-записей Notification/DailySubmission). Arch-guard allowlist обновлён.
+- **AC-6** edit-safety: DB `CheckConstraint(~Q(recipient__regex=r"^\s*$"))` (rejects "" И whitespace, bypass-proof — паттерн 5.6b) + `clean()` strip/reject (понятная ошибка в admin вместо raw 500); `unique(division_id)` — не более одной записи на дивизион.
+- **AC-7 границы:** НЕ catch-up/детект (5.7b2), НЕ `notify()` (5.7a), НЕ read-API (5.7c), НЕ «когда слать» (control_hour). Production-код submissions-internal (ARCH-004 — без `import apps.core.models`; isolation зелёный).
+- **Открытые Q(a)/Q(b)** оставлены как в спеке (дефолты): валидация `division_id` против live-Division — НЕ здесь (тот же класс, что defer 5.6a required-id; admin-ответственность); аудит справочника — нет (config).
+
+### Change Log
+
+- 2026-07-01 — 5.7b1 реализация: модель `DivisionNotifyRecipient` + поле `default_notify_recipient` + селектор `resolve_many` + admin + миграция 0005 + 17 тестов. `make gate` зелёный. Status → review.
+
 ### File List
+
+**Created:**
+- `Backend/VAPS/apps/operations/submissions/models/division_notify_recipient.py`
+- `Backend/VAPS/apps/operations/submissions/migrations/0005_submissioncontrolsettings_default_notify_recipient_and_more.py`
+- `Backend/VAPS/apps/operations/submissions/tests/test_notify_recipient.py`
+
+**Modified:**
+- `Backend/VAPS/apps/operations/submissions/models/__init__.py` (экспорт)
+- `Backend/VAPS/apps/operations/submissions/models/control_settings.py` (+`default_notify_recipient`)
+- `Backend/VAPS/apps/operations/submissions/selectors.py` (+`NotifyRecipientSelector`, +импорт)
+- `Backend/VAPS/apps/operations/submissions/admin.py` (регистрация справочника + `default_notify_recipient` в list_display)
+- `Backend/VAPS/apps/core/tests/test_admin_platform.py` (arch-guard allowlist `CATALOG_MODELS`)
+
+## Review Findings
+
+Adversarial code-review (bmad-code-review, 2026-07-01, Opus 4.8) — 3 параллельных слоя:
+Blind Hunter / Edge Case Hunter / Acceptance Auditor. Все 7 AC substantively satisfied,
+scope-leak нет (без notify/catch-up/API/`import apps.core.models`), Critical/High-AC-нарушений нет.
+Триаж: 1 decision-needed · 3 patch · 0 defer · 2 dismissed.
+
+### Decision-needed (resolved 2026-07-01 → вариант 1: DB-constraint + selector-strip · FIXED)
+
+- [x] [Review][Patch] **Асимметричная нормализация recipient** (whitespace-fallback + padded) —
+  **РЕШЕНИЕ Bratan (вар.1) · ПРИМЕНЕНО:** DB-`CheckConstraint`
+  `ck_submission_control_settings_duty_not_whitespace` на `default_notify_recipient`
+  (allow `""` / reject `^\s+$`, `control_settings.py` + `AddConstraint` в миграции 0005) +
+  `.strip()`-нормализация default и specific в `resolve_many` (`selectors.py`). Тесты:
+  `test_default_notify_recipient_rejects_whitespace_only` / `_allows_blank` /
+  `test_resolve_many_strips_padded_specific_recipient`.
+  - [orig] 
+  `SubmissionControlSettings.default_notify_recipient` без guard (в отличие от per-division `recipient`,
+  у которого DB-CheckConstraint + `clean`): значение `"   "` truthy → `resolve_many` эмитит его как валидного
+  «дежурного» (`selectors.py:157` `default or None` + `if recipient:`), хотя семантика AC-4 «fallback если непустой» =
+  «нет дежурного». Плюс padded `"  boss  "` переживает `.create()`/`bulk_create` (strip живёт только в `clean()`;
+  CheckConstraint `^\s*$` ловит лишь полностью-пустое) → уходит в `resolve_many` как routing-ключ.
+  Где энфорсить? (i) DB-CheckConstraint на `default_notify_recipient` (allow "" / reject `^\s+$`) + приём padded as-is
+  [твой DB-integrity преференс, +миграция], (ii) центральный `.strip()` в `resolve_many` [zero-migration, чинит оба],
+  (iii) оба. [blind+edge+auditor]
+
+### Patch (all FIXED 2026-07-01)
+
+- [x] [Review][Patch] `resolve_many` input-fragility [`Backend/VAPS/apps/operations/submissions/selectors.py`] —
+  `division_ids` итерировался дважды: dict-comprehension через `.filter(division_id__in=...)` исчерпывал
+  generator/iterator → второй `for`-loop пуст → возврат `{}` (silent no-op, 5.7b2 никого не уведомит);
+  string-UUID вход ронял per-division recipient (ключи `specific` — `UUID`-объекты из `from_db_value`, а `.get()`
+  по сырой строке промахивался → тихий fallback/drop); `None` во входе при заданном default → `{None: default}`.
+  **FIX:** `division_ids = [did for did in division_ids if did is not None]` (materialize + drop None) +
+  ключи `str(...)` обе стороны. Тесты: `test_resolve_many_accepts_generator_input` /
+  `_resolves_string_uuid_input` / `_drops_none_ids`.
+- [x] [Review][Patch] `search_fields` над `UUIDField`
+  [`Backend/VAPS/apps/operations/submissions/admin.py`] — admin-поиск строил `ILIKE` по `uuid`, оператора нет
+  на Postgres → `ProgrammingError` 500 при поиске. **FIX:** `search_fields = ("recipient",)` (убран `division_id`).
+- [x] [Review][Patch] Test-hardening [`Backend/VAPS/apps/operations/submissions/tests/test_notify_recipient.py`] —
+  **FIX:** `test_resolve_many_fallback_only_is_bulk` (query-count fallback-пути == 2, AC-4/NFR-4) +
+  `test_division_notify_recipient_field_shape` (`recipient.max_length == 100`, `division_id.unique`, AC-1).
+
+### Dismissed (noise / by-design)
+
+- Хрупкий `assert n6 == 2` (test:451) — стабилен: тест pre-warm'ит singleton (`get()` = 1 SELECT при
+  существующей строке), а точный счётчик — намеренный NFR-4-guard, не дефект.
+- `db_table="division_notify_recipients"` без `ops_`-префикса — имя **явно задано спекой** (AC-1 L44 + псевдокод),
+  код spec-compliant; конвенция-деviation by-design.

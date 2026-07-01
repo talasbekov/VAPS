@@ -200,8 +200,8 @@ development_status:
   5-6a-derive-блокировки: done
   5-6b-override-сущность: done
   5-7a-notification-модель-notify: done
-  5-7b1-recipient-config-получатель-уведомлений: ready-for-dev
-  5-7b2-catch-up-детект-отставания: ready-for-dev
+  5-7b1-recipient-config-получатель-уведомлений: done
+  5-7b2-catch-up-детект-отставания: done
   5-7c-api-уведомлений: backlog
   5-8-api-сдачи-дня: backlog
   5-9-аудит-сдач: backlog

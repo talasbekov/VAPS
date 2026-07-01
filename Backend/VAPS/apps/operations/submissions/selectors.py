@@ -1,5 +1,6 @@
 from apps.operations.submissions.models import (
     DailySubmission,
+    DivisionNotifyRecipient,
     SubmissionControlSettings,
     TomorrowBlockOverride,
 )
@@ -123,6 +124,51 @@ class SubmissionControlSettingsSelector:
     @classmethod
     def required_division_ids(cls):
         return list(cls.get().required_division_ids)
+
+
+class NotifyRecipientSelector:
+    """Resolve «дивизион→получатель» for lagging-submission notices (Story 5.7b1).
+
+    Feeds the catch-up job (5.7b2): given the lagging divisions, WHO to notify.
+    A per-division ``DivisionNotifyRecipient`` wins; otherwise the global
+    ``SubmissionControlSettings.default_notify_recipient`` дежурный, if set; if
+    neither, the division is simply absent from the result (no recipient → 5.7b2
+    logs + skips). Mirrors the read-only селекторы (no actor — права на API 5.8).
+    """
+
+    @staticmethod
+    def resolve_many(division_ids) -> dict:
+        """``{division_id: recipient}`` for the resolvable divisions — BULK.
+
+        ONE query over the reference table (``division_id__in``) + ONE settings
+        ``get`` (the singleton) — never a per-division query in a loop (NFR-4).
+        ``recipient`` is non-blank by constraint, so the ``or`` short-circuit is
+        safe (no falsy-but-valid recipient masks a real one).
+
+        Robust to input shape (5.7b1 review): the ids are materialised once (a
+        generator would otherwise be drained by the ``__in`` query below, leaving
+        the merge loop empty), ``None`` ids are dropped (no recipient), and
+        lookups are keyed by ``str`` on both sides so string-UUID inputs resolve
+        to their per-division recipient (``row.division_id`` is a ``uuid.UUID``).
+        Recipients are stripped so a padded value written via ``.create`` /
+        ``bulk_create`` (which skip ``clean``) is not returned as a routing key.
+        """
+        division_ids = [did for did in division_ids if did is not None]
+        specific = {
+            str(row.division_id): row.recipient
+            for row in DivisionNotifyRecipient.objects.filter(
+                division_id__in=division_ids
+            )
+        }
+        default = (
+            SubmissionControlSettingsSelector.get().default_notify_recipient or ""
+        ).strip()
+        resolved = {}
+        for division_id in division_ids:
+            recipient = specific.get(str(division_id)) or (default or None)
+            if recipient:
+                resolved[division_id] = recipient.strip()
+        return resolved
 
 
 class TomorrowBlockOverrideSelector:

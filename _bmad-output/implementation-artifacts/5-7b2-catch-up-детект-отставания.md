@@ -11,7 +11,7 @@ context:
 
 # Story 5.7b2: Catch-up детект отставания — laggards + notify
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -54,24 +54,24 @@ so that **отстающие получают сигнал (FR-13) без руч
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — ПРЕРЕКВИЗИТ: резолюция получателя из 5.7b1 (AC: 5)**
-  - [ ] Убедиться, что 5.7b1 done: `NotifyRecipientSelector.resolve_many(division_ids) -> dict[UUID, str]` доступен (per-division справочник + глобальный fallback). **Своего селектора получателя в 5.7b2 НЕ писать** — использовать 5.7b1. Если 5.7b1 не готов — 5.7b2 заблокирован (см. Dependencies).
-- [ ] **Task 2 — сервис детекта отставания (AC: 3,4,5,6,7)**
-  - [ ] `apps/operations/submissions/services/<lagging_check>.py`: чистый сервис `check_lagging_submissions(*, today=None, ...) -> LaggingCheckResult` (dataclass halted/halt_reason/skipped/watermark_before/watermark_after/processed_days/notified_count — зеркало `CatchUpResult` catch_up.py:57-66).
-  - [ ] Advisory-lock СВОИМ ключом (`LAGGING_LOCK_KEY`, напр. `0x5641474C  # b"VAGL"`, ≠ `0x56415053`) через `apps.core.locks.advisory_lock(key, blocking=False)`; занято → `skipped=True`.
-  - [ ] Watermark СВОИМ ключом (`WATERMARK_KEY = "lagging_submissions"`) через `apps.core.watermark.get_or_bootstrap`/`advance` (НЕ `apps.core.models`). `default_date` бутстрапа = `real_today − 1` (проверять с дня деплоя вперёд, без ретро-backfill истории); `created` → ранний возврат.
-  - [ ] Гейт часа: `local_now = Clock.now().astimezone(ZoneInfo(settings.VAPS_LOCAL_TIMEZONE))`; `control_hour = SubmissionControlSettingsSelector.control_hour()`; `check_through = real_today if local_now.time() > control_hour else real_today - timedelta(days=1)`.
-  - [ ] Halt-ветки (порядок как catch_up.py): `real_today < watermark` → `halted, halt_reason="clock_behind_watermark"` + ERROR-лог; `gap > sanity` → `halted`. Если `check_through < watermark` (до контрольного часа, нового нет) → пустой план, no-op, **без** ложного алерта (НЕ звать `catchup_plan` с today<watermark).
-  - [ ] `plan = catchup_plan(watermark=before, today=check_through)[:MAX_CATCHUP_DAYS]`; per-day: `with transaction.atomic(): laggards_by_recipient = _detect(day); for recipient, div_ids: notify(...); watermark.advance(KEY, to_date=day)`. Сервис зовётся ВНЕ внешней txn (autocommit).
-  - [ ] `_detect(day)`: `laggards = tomorrow_block(day).laggards`; если пусто → `{}`; иначе `recipients = NotifyRecipientSelector.resolve_many(laggards)` (5.7b1, bulk), группировка `recipient -> [division_id]`, дивизион, отсутствующий в `recipients` (нет специфичного И пустой fallback), → `logger.warning(...)` + skip.
-  - [ ] `notify()` возвращает `Notification|None` (вариант B); None (эмиссия упала, залогировано) — не срывать прогон (сайд-канал). payload: `str(uuid)` для division-ids.
-- [ ] **Task 3 — management-команда (AC: 1,7)**
-  - [ ] `apps/operations/submissions/management/__init__.py`, `management/commands/__init__.py` (пустые — каталога ещё нет в submissions).
-  - [ ] `management/commands/<check_lagging_submissions>.py`: зеркало `materialize_status_effects.py` — `--today` (YYYY-MM-DD, опц., иначе `Clock.today_local()`); future-guard (`today > Clock.today_local()` → `CommandError`); malformed → `CommandError`; вызов сервиса; `result.skipped` → stdout+exit 0; `result.halted` → `CommandError` (ненулевой exit); успех → `self.style.SUCCESS(...)`. Docstring: «Beat-ready (12.1/12.6 register it); Celery НЕ импортируется».
-- [ ] **Task 4 — тесты (AC: 2–7)**
-  - [ ] `apps/operations/submissions/tests/test_<lagging_check>.py` (django_db): (a) laggard есть → notify получателю из `resolve_many`, payload с laggard-ids; (b) идемпотентность — 2 прогона за день → 1 запись; (c) все сдали → 0 уведомлений; (d) гейт часа: до `control_hour` — D не проверяется, watermark не двинулся; после — проверяется; (e) catch-up простоя: watermark на N дней назад → все дни хронологично, watermark = последний; (f) `today < watermark` → halt + ERROR, watermark не тронут; (g) занятый lock (второй вход) → skipped, без дублей; (h) дивизион с per-division-записью → его получателю; дивизион без записи → глобальному fallback; дивизион без записи И пустой fallback → warning+skip, без исключения; (i) группировка — один получатель за 2 laggard-дивизиона → одно уведомление с обоими id.
-  - [ ] `call_command` тесты команды (зеркало test_catch_up.py:244-292): норм-прогон advance watermark; halt → `CommandError`; malformed/future `--today` → `CommandError`; StringIO stdout.
-  - [ ] Регрессия: `make gate` зелёный; `makemigrations --check` пуст; ruff чист (`ruff format` по-файлово); `apps/operations/submissions/tests/test_isolation` — новый код без `import apps.core.models`.
+- [x] **Task 1 — ПРЕРЕКВИЗИТ: резолюция получателя из 5.7b1 (AC: 5)**
+  - [x] Убедиться, что 5.7b1 done: `NotifyRecipientSelector.resolve_many(division_ids) -> dict[UUID, str]` доступен (per-division справочник + глобальный fallback). **Своего селектора получателя в 5.7b2 НЕ писать** — использовать 5.7b1. Если 5.7b1 не готов — 5.7b2 заблокирован (см. Dependencies).
+- [x] **Task 2 — сервис детекта отставания (AC: 3,4,5,6,7)**
+  - [x] `apps/operations/submissions/services/<lagging_check>.py`: чистый сервис `check_lagging_submissions(*, today=None, ...) -> LaggingCheckResult` (dataclass halted/halt_reason/skipped/watermark_before/watermark_after/processed_days/notified_count — зеркало `CatchUpResult` catch_up.py:57-66).
+  - [x] Advisory-lock СВОИМ ключом (`LAGGING_LOCK_KEY`, напр. `0x5641474C  # b"VAGL"`, ≠ `0x56415053`) через `apps.core.locks.advisory_lock(key, blocking=False)`; занято → `skipped=True`.
+  - [x] Watermark СВОИМ ключом (`WATERMARK_KEY = "lagging_submissions"`) через `apps.core.watermark.get_or_bootstrap`/`advance` (НЕ `apps.core.models`). `default_date` бутстрапа = `real_today − 1` (проверять с дня деплоя вперёд, без ретро-backfill истории); `created` → ранний возврат.
+  - [x] Гейт часа: `local_now = Clock.now().astimezone(ZoneInfo(settings.VAPS_LOCAL_TIMEZONE))`; `control_hour = SubmissionControlSettingsSelector.control_hour()`; `check_through = real_today if local_now.time() > control_hour else real_today - timedelta(days=1)`.
+  - [x] Halt-ветки (порядок как catch_up.py): `real_today < watermark` → `halted, halt_reason="clock_behind_watermark"` + ERROR-лог; `gap > sanity` → `halted`. Если `check_through < watermark` (до контрольного часа, нового нет) → пустой план, no-op, **без** ложного алерта (НЕ звать `catchup_plan` с today<watermark).
+  - [x] `plan = catchup_plan(watermark=before, today=check_through)[:MAX_CATCHUP_DAYS]`; per-day: `with transaction.atomic(): laggards_by_recipient = _detect(day); for recipient, div_ids: notify(...); watermark.advance(KEY, to_date=day)`. Сервис зовётся ВНЕ внешней txn (autocommit).
+  - [x] `_detect(day)`: `laggards = tomorrow_block(day).laggards`; если пусто → `{}`; иначе `recipients = NotifyRecipientSelector.resolve_many(laggards)` (5.7b1, bulk), группировка `recipient -> [division_id]`, дивизион, отсутствующий в `recipients` (нет специфичного И пустой fallback), → `logger.warning(...)` + skip.
+  - [x] `notify()` возвращает `Notification|None` (вариант B); None (эмиссия упала, залогировано) — не срывать прогон (сайд-канал). payload: `str(uuid)` для division-ids.
+- [x] **Task 3 — management-команда (AC: 1,7)**
+  - [x] `apps/operations/submissions/management/__init__.py`, `management/commands/__init__.py` (пустые — каталога ещё нет в submissions).
+  - [x] `management/commands/<check_lagging_submissions>.py`: зеркало `materialize_status_effects.py` — `--today` (YYYY-MM-DD, опц., иначе `Clock.today_local()`); future-guard (`today > Clock.today_local()` → `CommandError`); malformed → `CommandError`; вызов сервиса; `result.skipped` → stdout+exit 0; `result.halted` → `CommandError` (ненулевой exit); успех → `self.style.SUCCESS(...)`. Docstring: «Beat-ready (12.1/12.6 register it); Celery НЕ импортируется».
+- [x] **Task 4 — тесты (AC: 2–7)**
+  - [x] `apps/operations/submissions/tests/test_<lagging_check>.py` (django_db): (a) laggard есть → notify получателю из `resolve_many`, payload с laggard-ids; (b) идемпотентность — 2 прогона за день → 1 запись; (c) все сдали → 0 уведомлений; (d) гейт часа: до `control_hour` — D не проверяется, watermark не двинулся; после — проверяется; (e) catch-up простоя: watermark на N дней назад → все дни хронологично, watermark = последний; (f) `today < watermark` → halt + ERROR, watermark не тронут; (g) занятый lock (второй вход) → skipped, без дублей; (h) дивизион с per-division-записью → его получателю; дивизион без записи → глобальному fallback; дивизион без записи И пустой fallback → warning+skip, без исключения; (i) группировка — один получатель за 2 laggard-дивизиона → одно уведомление с обоими id.
+  - [x] `call_command` тесты команды (зеркало test_catch_up.py:244-292): норм-прогон advance watermark; halt → `CommandError`; malformed/future `--today` → `CommandError`; StringIO stdout.
+  - [x] Регрессия: `make gate` зелёный; `makemigrations --check` пуст; ruff чист (`ruff format` по-файлово); `apps/operations/submissions/tests/test_isolation` — новый код без `import apps.core.models`.
 
 ## Dev Notes
 
@@ -222,10 +222,69 @@ def _emit_lagging(day) -> int:
 
 ### Agent Model Used
 
-_TBD (bmad-dev-story)_
+Opus 4.8 (claude-opus-4-8[1m]) — bmad-dev-story, зеркало `materialize_status_effects`.
 
 ### Debug Log References
 
+- GREEN: новый `test_lagging_check.py` — 19/19 passed на Postgres :5433 (включая concurrency-lock-тест, запущенный без marker-фильтра).
+- `make gate` зелёный: **1628 passed** (было 1610 после 5.7b1; +18 в gate, +1 concurrency deselected), 25 deselected, `ruff check .` чист, `makemigrations --check` → «No changes detected» (у 5.7b2 миграций НЕТ), 30s (< 300s NFR-8).
+- `test_isolation` (`apps/operations/tests/test_isolation.py::test_operations_does_not_import_core_models`) зелёный — сервис/команда через шлюзы `apps.core.clock`/`watermark`/`locks`, без `import apps.core.models`.
+
 ### Completion Notes List
 
+- **AC-1** management-команда `check_lagging_submissions` (тонкая обёртка) + сервис `check_lagging_submissions` в `services/lagging_check.py` (вся логика); зеркало `materialize_status_effects` + `catch_up`. Celery НЕ импортируется, beat-регистрация → 12.6.
+- **AC-2** catch-up от собственного watermark `WATERMARK_KEY="lagging_submissions"` (≠ status-effects), advisory-lock `LAGGING_LOCK_KEY=0x5641474C "VAGL"` (≠ `0x56415053`); план дат `catchup_plan`, дата-за-датой отдельными per-day `transaction.atomic()`; занятый lock → `skipped=True` тихо. Тесты: catch-up простоя, bootstrap, concurrency-skip.
+- **AC-3** гейт часа: `check_through = real_today if Clock.now().local.time() > control_hour else real_today−1`; до часа D не проверяется, watermark не двигается на D. `check_through < before` → no-op БЕЗ ложного «behind»-алерта (не зовём `catchup_plan(today<watermark)`). Тесты before/after-hour.
+- **AC-4** laggards = `tomorrow_block(D).laggards` (реюз 5.6a, bulk); своей «кто не сдал» логики нет.
+- **AC-5** получатели — bulk `NotifyRecipientSelector.resolve_many(laggards)` (5.7b1); группировка `recipient → [division_id]` → один `notify(recipient, SUBMISSION_LAGGING, D, payload={"laggard_division_ids":[str…]})` на получателя; дивизион без получателя (нет специфичного И пустой fallback) → `logger.warning` + skip, не падаем. Тесты: specific-wins, fallback, orphan-warn-skip, группировка.
+- **AC-6** идемпотентность «одно на день»: (а) watermark — D проверяется один раз при переходе; (б) `notify()`-`get_or_create` (5.7a). `notify()` — ВНУТРИ per-date atomic (вариант B): запись+watermark атомарны. Тест: 2 прогона/день → 1 запись.
+- **AC-7** `real_today < watermark` → `halted, halt_reason="clock_behind_watermark"` + ERROR-лог, watermark нетронут; команда → `CommandError` (ненулевой exit); `gap > SANITY_DAYS` → halt; занятый lock → stdout + exit 0. Halt-сравнение по `real_today`, не `check_through`. Тесты: halt-clock-behind, gap-sanity, command-halt→CommandError.
+- **AC-8 границы:** НЕ read-API (5.7c) / НЕ WS (11.2) / НЕ Celery+beat (12.1/12.6) / НЕ модель получателя (5.7b1) / НЕ RBAC / НЕ трогали notifications-app. **Миграций НЕТ.** Батч-кэп `MAX_CATCHUP_DAYS=31` (тест large-gap).
+- **Q3 (горизонт/бутстрап)** — реализован по дефолту Д5/Д6: bootstrap watermark = `real_today−1`, без ретро-backfill истории; «сегодня» проверяется только после `control_hour`. **Требует подтверждения Bratan при ревью** (backfill истории НЕ делаем).
+- **Reconcile on_commit vs вариант B:** `notify()` зовётся синхронно внутри per-date atomic (совместимо с ARCH-DATA-022 «отдельные транзакции»); расхождение с AR-7-лейблом «(on_commit)» — задокументировано (арх-текст аннотировать «вариант B» вне скоупа 5.7b2).
+
+### Change Log
+
+- 2026-07-01 — 5.7b2 реализация: сервис `lagging_check.check_lagging_submissions` (watermark+lock+гейт-часа+catch-up+notify) + management-команда `check_lagging_submissions` + 19 тестов. Зеркало `materialize_status_effects`. `make gate` зелёный (1628 passed), миграций нет. Status → review.
+- 2026-07-01 — code-review (3-layer adversarial, Opus 4.8): все AC SATISFIED. 2 patch применены — ① `notify()→None` теперь бросает `LaggingNotifyError` (watermark держится на N-1, идемпотентный ретрай; убран over-report `notified_count`); ② bootstrap watermark от реального `Clock.today_local()` (анти-poison `--today <прошлое>`). Целевые тесты 65/65, ruff check+format чисто. 2 defer → `deferred-work.md`, 3 dismiss. + 2 регресс-теста на ① (`test_notify_failure_raises_and_holds_watermark_on_n_minus_1`, `test_notify_failure_mid_catchup_keeps_prior_committed_days`). Целевой прогон `test_lagging_check.py` 21/21, ruff чисто. Status → done. ⚠️ патчи не закоммичены (в рабочем дереве).
+
 ### File List
+
+**Created:**
+- `Backend/VAPS/apps/operations/submissions/services/lagging_check.py`
+- `Backend/VAPS/apps/operations/submissions/management/__init__.py`
+- `Backend/VAPS/apps/operations/submissions/management/commands/__init__.py`
+- `Backend/VAPS/apps/operations/submissions/management/commands/check_lagging_submissions.py`
+- `Backend/VAPS/apps/operations/submissions/tests/test_lagging_check.py`
+
+**Modified:**
+- (нет — резолюция получателя через селектор 5.7b1; своего кода в selectors/models 5.7b2 не добавляет)
+
+### Review Findings
+
+Code review 2026-07-01 (adversarial 3-layer: Blind Hunter + Edge Case Hunter + Acceptance Auditor, Opus 4.8; scope — всё рабочее дерево b1+b2). Acceptance Auditor: все AC 5.7b1(1–7) и 5.7b2(1–8) реализованы и покрыты тестами, arch-гварды (ARCH-003/004, ARCH-DATA-022, свои watermark/lock-ключи, no-Celery, идемпотентность, graceful-orphan) соблюдены. Ниже — корректностные/эдж-находки.
+
+**Resolution (Bratan, 2026-07-01):** ① Patch · ② Patch · ③ Defer · ④ Dismiss · ⑤ Dismiss · ⑥ Dismiss.
+
+- ✅ **[Patch APPLIED 2026-07-01] ①** `notify()→None` (инфра-фейл) → `_emit_lagging` бросает `LaggingNotifyError`, per-day `atomic()` откатывается, watermark держится на N-1 → идемпотентный ретрай на след. ране; `notified_count` считает только персистнутые строки. [lagging_check.py:188-231] + 2 регресс-теста (одиночный день N-1 hold; multi-day partial-progress).
+- ✅ **[Patch APPLIED 2026-07-01] ②** bootstrap watermark `default_date` от реального `Clock.today_local()`, а не от параметра `today` (симметрично future-гарду) → `--today <прошлое>` first-run больше не отравляет watermark назад. [lagging_check.py:115-124]
+- **[Defer] ③** ретроактивный `required_division_ids` — reason: корень (неисторизированные настройки) вне скоупа 5.7b2; as-of историзацию делать отдельно. → `deferred-work.md`.
+- **[Dismiss] ④⑤⑥** — by-design: расход ежедневный (вкл. выходные); `--today`-граница только у ручного флага и самолечится на реальном ране; override снимает блокировку, а не факт отставания.
+
+**Decision-needed (resolved above):**
+
+- [ ] [Review][Decision] `notify()`-фейл проглатывается, но watermark всё равно advance → уведомление за день теряется молча [lagging_check.py:174-176,188-219] — `notify()` non-fatal (любой инфра-Exception → log+return None, не raise; services.py:52). `_emit_lagging` игнорирует возврат → per-day `atomic()` коммитит watermark даже когда INSERT уведомления упал и был поглощён savepoint'ом get_or_create (не IntegrityError, но восстановимо). Идемпотентность-по-watermark → день D больше не переобрабатывается → нотис за D потерян навсегда. Противоречит собственному докстрингу («failure on day N … leaves the watermark on N-1», :171-173) и контракту зеркала `catch_up` (материализатор ПРОБРАСЫВАЕТ фейл, чтобы watermark держался). Побочно: `notified_count` считает попытки, а не персистнутые строки → SUCCESS-строка команды over-report. Триггер узкий (DB-down/serialization крашат весь ран — данные не теряются; окно = восстановимый-но-не-Integrity фейл), но контракт нарушен. Рекоменд.: в `_emit_lagging` трактовать `notify()→None` как сигнал прервать день (raise) → watermark держится на N-1, ретрай на след. ране (идемпотентно). Решение: hold-and-retry (реком.) vs принять advance-and-lose.
+- [ ] [Review][Decision] Catch-up применяет ТЕКУЩИЙ `required_division_ids` ретроактивно к прошлым дням [lagging_check.py:198] — `tomorrow_block(day)` читает текущий singleton настроек для каждого прошлого дня плана (набор не историзирован). Добавили дивизион X в required сегодня при отстающем на N дней watermark → catch-up шлёт `SUBMISSION_LAGGING` за X на все прошлые дни, когда X не был обязан (и не мог сдать по тогдашнему правилу). То же для дивизиона, созданного mid-window. Корень — неисторизированные настройки (пред-существующий дизайн), но НОВО обнажён catch-up'ом по истории. Решение: приемлемо / нужна as-of историзация / floor на «дату добавления»?
+- [ ] [Review][Decision] Нет рабочего календаря — выходные/праздники помечаются как laggards [lagging_check.py:166,198] — `catchup_plan` даёт каждую календарную дату, `tomorrow_block` не знает о нерабочих днях; во всём app submissions нет ни одного календарного концепта. Если в домене сдача НЕ обязательна в выходные/праздники → флуд ложных `SUBMISSION_LAGGING`. Вероятно by-design (расход = ежедневный учёт каждый день, вкл. выходные) → тогда dismiss. Решение: подтвердить, что сдача обязательна каждый календарный день; если нет — нужен календарный фильтр.
+- [ ] [Review][Decision] Первый запуск с `--today <далёкое-прошлое>` на свежей БД отравляет watermark назад → заклинивает джобу sanity-потолком [lagging_check.py:108-112 + check_lagging_submissions.py:46-52] — гард команды блокирует только БУДУЩЕЕ `--today`. На свежей БД `--today 2025-01-01`: bootstrap ставит watermark=2024-12-31 и возвращается сразу (created-ветка, ничего не обрабатывает); след. реальный ран видит gap≈547 > SANITY_DAYS(366) → halt `gap_exceeds_sanity`, watermark заморожен до ручного DB-edit. Решение: гардить далёкое-прошлое `--today` при отсутствующем watermark / bootstrap'ить от реального wall-clock today, а не от параметра?
+- [ ] [Review][Decision] Включение граничного дня при `--today <прошлое>` зависит от текущего time-of-day, а не от истёкшего контроль-часа того дня [lagging_check.py:153-159] — `check_through` берёт `real_today` (параметр) при `local_now.time() > control_hour`, иначе `real_today-1`; `local_now` — всегда реальные стенные часы. `--today 2026-06-20` в 09:00 (до 17:00) → граничный день 06-20 пропущен; тот же вызов в 18:00 → обработан. Реальный beat (`today=None`) корректен; страдает только ручной/тестовый escape-hatch `--today`, самолечится на след. реальном ране. Решение: принять off-by-one флага / гейтить прошлые дни безусловно (real_today < wall-clock today ⇒ включать).
+- [ ] [Review][Decision] Активный override «на завтра» (5.6b) не подавляет lagging-уведомление [lagging_check.py:198] — `_emit_lagging` читает `.laggards`, а не `.blocked/overridden`; по дизайну `tomorrow_block` держит laggards видимыми при override. Продуктовый вопрос: должен ли легальный обход блокировки также глушить «нытьё» об отставании, или факт несдачи остаётся и уведомлять корректно (вероятно by-design). Решение: подавлять при активном override / продолжать уведомлять.
+
+**Defer:**
+
+- [x] [Review][Defer] Предусловие «MUST run OUTSIDE a transaction» (autocommit) задокументировано, но не гардируется рантаймом [lagging_check.py:85-90,170-176] — deferred, pre-existing: тот же пробел у зеркала `catch_up` (консистентно); дешёвый `connection.get_autocommit()`-assert падал бы громко при будущем мисюзе, но сейчас не actionable.
+
+**Dismissed (шум/false-positive, 2):**
+
+- `resolve_many` промахивается по specific-получателю на неканоническом (uppercase) строковом UUID [selectors.py:156-171] — внутренний путь 5.7b2 передаёт UUID-объекты (`required_division_ids = ArrayField(UUIDField)` → `laggards` = UUID), `str(uuid)` каноничен с обеих сторон → корректно; докстринг уже покрывает канонические строковые UUID. Задевает лишь гипотетического внешнего строкового вызывающего (5.7c API — backlog) с неканоническим форматом. Спекулятивно.
+- Атрибуция миграции 0005 (Acceptance Auditor) — информационная нота: 0005 — deliverable 5.7b1 (AC-3), а не 5.7b2 (у которой миграций нет, AC-8). Границы соблюдены, действий не требуется.
