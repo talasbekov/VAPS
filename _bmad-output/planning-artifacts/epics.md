@@ -760,7 +760,9 @@ As a ответственный, I want модель Notification + notification
 >
 > **5.7a — `Notification` модель + notify-сервис:** новый `apps/notifications` — модель `Notification` (recipient/тип/payload/business_date/created_at/read-флаг; flat-ссылки ARCH-003, без FK на core) + миграция + `notifications.services.notify(...)` (on_commit-эмиссия; идемпотентность-ключ для «одно на день»). Персистенция+эмиссия-примитив; без beat/API.
 >
-> **5.7b — Catch-up проверка отставания (FR-13):** management-команда + сервис — по due-датам (`Watermark`/`catchup_plan`) к контрольному часу → отстающие через `tomorrow_block`/laggards (5.6a) → `notify()` ответственным, идемпотентно одно-на-день. Реюз `catch_up.py`/`Clock`/`control_hour`. НЕ Celery (catch-up run-on-availability). Зависит от 5.7a + 5.6a.
+> **5.7b — Catch-up проверка отставания (FR-13):** _при create-story (2026-07-01, реш. Bratan Q1=B «конфигурируемый получатель») расщеплена на 5.7b1 + 5.7b2, т.к. «дивизион→ответственный» не был смоделирован (Q2 из 5.7a) → моделирование получателя = отдельная ответственность (decomposition-правило)._
+>   - **5.7b1 — Recipient-config (получатель уведомлений):** справочник `DivisionNotifyRecipient` (division_id→recipient, flat ARCH-003, admin-managed) + глобальный `default_notify_recipient`-fallback на `SubmissionControlSettings` + bulk-селектор `NotifyRecipientSelector.resolve_many`. Модель/миграция/admin/селектор. Зависит от 5.7a (recipient-space). **Пререквизит 5.7b2.**
+>   - **5.7b2 — Catch-up-джоба детекта отставания:** management-команда + сервис в `submissions` (зеркало `materialize_status_effects`) — по due-датам (свой `Watermark`/`catchup_plan`) к контрольному часу (`control_hour`, N=0) → отстающие через `tomorrow_block`/laggards (5.6a) → получатели через `resolve_many` (5.7b1) → `notify()` идемпотентно одно-на-день. Реюз `catch_up.py`/`Clock`. Отдельная джоба (свой watermark/lock-key), НЕ Celery (run-on-availability). Зависит от 5.7a + 5.6a + **5.7b1**.
 >
 > **5.7c — `GET /notifications/?since=` read-API:** endpoint + serializer + permission + `since`-фильтр (доставка готова к WS E11). API-слой (паттерн 5.8). Зависит от 5.7a.
 
