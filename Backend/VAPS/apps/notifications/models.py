@@ -37,6 +37,14 @@ class Notification(TimeStampedModel):
                 fields=["recipient", "kind", "business_date"],
                 name="uq_notification_recipient_kind_date",
             ),
+            # kind без дефолта → `.objects.create()`/`get_or_create()` НЕ валидируют
+            # choices (CharField.choices проверяется только в forms/full_clean —
+            # урок chk_daily_submission_event). DB-гард держит словарь видов
+            # (зеркало Kind.values; drift ловит test_kind_check_covers_kind_choices).
+            models.CheckConstraint(
+                condition=models.Q(kind__in=["SUBMISSION_LAGGING"]),
+                name="chk_notification_kind",
+            ),
         ]
         verbose_name = "Уведомление"
         verbose_name_plural = "Уведомления"
