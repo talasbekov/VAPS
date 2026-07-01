@@ -202,7 +202,7 @@ development_status:
   5-7a-notification-модель-notify: done
   5-7b1-recipient-config-получатель-уведомлений: done
   5-7b2-catch-up-детект-отставания: done
-  5-7c-api-уведомлений: backlog
+  5-7c-api-уведомлений: review
   5-8-api-сдачи-дня: backlog
   5-9-аудит-сдач: backlog
   5-10-property-иммутабельность-снапшота: backlog

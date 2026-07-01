@@ -30,6 +30,17 @@ class Notification(TimeStampedModel):
 
     class Meta:
         db_table = "notifications"
+        indexes = [
+            # Scoped-recency read (story 5.7c): the read-API query is
+            # `recipient=? AND created_at>? ORDER BY -created_at, id`. The
+            # UniqueConstraint's leftmost prefix (recipient) can't serve the
+            # created_at range/sort, so a dedicated (recipient, -created_at, id)
+            # index does — closes 5.7a deferred B9.
+            models.Index(
+                fields=["recipient", "-created_at", "id"],
+                name="ix_notif_recipient_recency",
+            ),
+        ]
         constraints = [
             # «Одно уведомление на день»: at most one of a given kind per
             # recipient per business_date — makes notify() idempotent.
