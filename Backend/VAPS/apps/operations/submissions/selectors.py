@@ -1,3 +1,5 @@
+import re
+
 from apps.operations.submissions.models import (
     DailySubmission,
     DivisionNotifyRecipient,
@@ -20,6 +22,22 @@ class DailySubmissionSelector:
         return DailySubmission.objects.filter(
             division_id=division_id, business_date=business_date, is_current=True
         ).first()
+
+    @staticmethod
+    def by_id(submission_id):
+        """The submission by surrogate pk, or None — the pk-resolution channel
+        for the API (5.8b amend; reused by the 5.8c detail view). The view
+        maps None to 404 ENTITY_NOT_FOUND (canon L442-452: views read only
+        through selectors). The pk arrives raw from the URL (the router's
+        pattern admits non-integers), so garbage is absorbed as «not found»
+        instead of leaking a ValueError → 500 out of the int-pk lookup.
+        Canonical ASCII digits only — bare int() would silently resolve alias
+        spellings ("+5", " 5 ", "5_0", arabic-indic digits) into the same pk,
+        forking one resource across many write-URLs (review 5.8b).
+        """
+        if not re.fullmatch(r"[0-9]+", str(submission_id)):
+            return None
+        return DailySubmission.objects.filter(pk=int(submission_id)).first()
 
     @staticmethod
     def current_for_many(division_ids, business_date) -> dict:

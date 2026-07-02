@@ -235,6 +235,11 @@ AUDIT_MATRIX = {
     "ops-daily-submission-list": _DeferredAudit(
         "аудит сдач (DAILY_SUBMISSION_SUBMITTED) — стори 5.9"
     ),
+    # amend (story 5.8b): аудит amendment (DAILY_SUBMISSION_AMENDED — имя из
+    # docs/registries/audit-events.yaml) — стори 5.9.
+    "ops-daily-submission-amend": _DeferredAudit(
+        "аудит amendment (DAILY_SUBMISSION_AMENDED) — стори 5.9"
+    ),
 }
 
 
