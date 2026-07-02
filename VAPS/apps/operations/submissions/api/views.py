@@ -1,34 +1,45 @@
-"""Story 5.8a — day-submission write API (POST /api/operations/daily-submissions/).
+"""Stories 5.8a/5.8b — day-submission write API (/api/operations/daily-submissions/).
 
-First write endpoint over a DomainError-raising service. The view stays thin
+Write endpoints over DomainError-raising services. The views stay thin
 (layer contract, architecture.md#L442-452): coarse permission gate
 (RequirePermissionMixin — the resolver is division-free) → input form →
 division-scope guard (ensure_division_scope, the service-layer check behind
-the «scope в сервисе» AC) → submit_day → 201 projection. Errors flow through
-the unified handler (no try/except, no manual error Response): the service's
-own 400/404/409/422 pass as-is, and the duplicate-race IntegrityError backstop
-is already mapped to 409 DAY_ALREADY_SUBMITTED by CONSTRAINT_ERROR_MAP.
-create-only: list/detail arrive with 5.8c, amend with 5.8b.
+the «scope в сервисе» AC) → domain service → 201 projection. Errors flow
+through the unified handler (no try/except, no manual error Response): the
+services' own 400/404/409/422 pass as-is, and the version-race IntegrityError
+backstop is already mapped to 409 DAY_ALREADY_SUBMITTED by
+CONSTRAINT_ERROR_MAP. The permission gates live ONLY here — amend_day itself
+stays gate-free because the 5.4b enforcement hook calls it with no HTTP actor
+(Ловушка №1). list/detail arrive with 5.8c.
 """
 
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.api.permissions import RequirePermissionMixin
+from apps.core.exceptions import DomainError
 from apps.operations.submissions.api.serializers import (
+    DailySubmissionAmendSerializer,
     DailySubmissionCreateSerializer,
     DailySubmissionSerializer,
 )
-from apps.operations.submissions.services import ensure_division_scope, submit_day
+from apps.operations.submissions.selectors import DailySubmissionSelector
+from apps.operations.submissions.services import (
+    amend_day,
+    ensure_division_scope,
+    submit_day,
+)
 
 # One source for both gates — the coarse mixin check and the scope re-check
 # must never drift onto different permission codes.
 _SUBMIT_PERMISSION = "daily_report.mark_update"
+_AMEND_PERMISSION = "daily_report.correct"
 
 
 class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # Methods outside the map fall through the mixin's early return to DRF → 405.
-    permission_map = {"create": _SUBMIT_PERMISSION}
+    permission_map = {"create": _SUBMIT_PERMISSION, "amend": _AMEND_PERMISSION}
     http_method_names = ["post", "options"]
 
     def create(self, request, *args, **kwargs):
@@ -47,5 +58,40 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
         return Response(
             DailySubmissionSerializer(submission).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def amend(self, request, pk=None, *args, **kwargs):
+        form = DailySubmissionAmendSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        # {pk} identifies the chain (Д1): amend_day re-resolves the head via
+        # latest_for itself, so a stale-version pk amends the same chain.
+        submission = DailySubmissionSelector.by_id(pk)
+        if submission is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"submission_id": str(pk)},
+                message="Сдача не найдена.",
+            )
+        # Scope re-check against the RESOLVED submission's division — the pk
+        # resolves first, so a phantom pk is 404 to any holder (existence by
+        # integer pk is enumerable; a conscious REST trade-off, cf. tests).
+        ensure_division_scope(
+            request.actor_id, _AMEND_PERMISSION, submission.division_id
+        )
+        new_version = amend_day(
+            division_id=submission.division_id,
+            business_date=submission.business_date,
+            # ARCH-SEC-030: identity from the auth contract, never the payload.
+            actor=request.actor_id,
+            reason=form.validated_data["reason"],
+            sanction=form.validated_data["sanction"],
+            # triggered_by_status_id stays None — it is the 5.4b hook's
+            # provenance ref, never a client-writable field (Ловушка №4).
+        )
+        return Response(
+            DailySubmissionSerializer(new_version).data,
             status=status.HTTP_201_CREATED,
         )

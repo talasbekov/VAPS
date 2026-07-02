@@ -136,6 +136,11 @@ MATRIX = {
     # сервис-гарде ensure_division_scope и матрицей не проверяется (payloadless
     # POST держателя = 400 бизнес-слоя = ALLOW по канону).
     "ops-daily-submission-list": _MethodGate({"post": "daily_report.mark_update"}),
+    # amend сдачи (story 5.8b, POST /{id}/amend/). Гейт mixin {"amend":
+    # daily_report.correct}; scope «чужое подразделение → 403» — в сервис-гарде
+    # ensure_division_scope (матрицей не проверяется: payloadless POST держателя
+    # на pk=0 = 400 формы = ALLOW по канону).
+    "ops-daily-submission-amend": _MethodGate({"post": "daily_report.correct"}),
     # audit — read-only журнал, загейчен RequirePermissionMixin("audit.view")
     # (story 4.5). GET-only (list+retrieve); ORGD/ADMIN → ALLOW, прочие/аноним
     # → DENY (из seed).
