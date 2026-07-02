@@ -775,6 +775,14 @@ As a оператор, I want POST /api/operations/daily-submissions/, GET ис�
 **Given** оператор без daily_report.mark_update, **Then** 403; **Given** сдача чужого подразделения, **Then** 403 (scope в сервисе).
 **And** все коды ошибок стори — в реестре; новые permission-коды (amendment и т.п.) добавляются в seed_operations + строкой в RBAC-матрицу 2.9.
 
+> **Декомпозиция 5.8 (реш. Bratan, 2026-07-02): 5.8a → 5.8b → 5.8c** (4 эндпоинта в одной стори — против правил сплита; зеркало 5.3/5.4/5.5/5.6/5.7). Сопутствующие решения: TOMORROW_BLOCKED (422) + override-API + деферы business_date=None блока/override → **6.10** (закрывает Q3 5.6a — блок гейтит только «расход на завтра», сдачу НЕ трогает); amend-право = **реюз `daily_report.correct`** (уже посеян, DIVISION_OPERATOR — seed НЕ меняется); чтение = **`daily_report.mark_update` + actor-scoped селектор** (кода daily_report.view не заводим; руководству чтение приедет с деревом 10.4).
+>
+> **5.8a — `POST /api/operations/daily-submissions/` (сдача):** api-скелет `submissions/api/` (зеркало audit/notifications) + ПЕРВЫЙ POST-body input-сериализатор проекта (`division_id` UUIDField + `business_date` DateField — закрывает business_date=None-класс для submit-пути) + `RequirePermissionMixin {"create": daily_report.mark_update}` + scope-гейт отдельным сервис-гардом `ensure_division_scope` (`PermissionService.has_permission(..., division_id)` → DomainError 403; НЕ внутрь `submit_day` — 18 тестов 5.3b целы) + 201 detail-проекция БЕЗ snapshot + строка RBAC-матрицы (`_MethodGate({"post": ...})`). `submit_day` НЕ меняется; регистрация в operations-router (`daily-submissions`, basename `ops-daily-submission`).
+>
+> **5.8b — `POST /{id}/amend/`:** custom `@action(detail=True)`; permission = `daily_report.correct` (реюз); input reason/sanction (+опц. без triggered_by_status_id — ручной amendment); scope тем же гардом. ⚠️ Хук 5.4b (`enforce_amendment_on_retro_edit` → `amend_day`) обязан остаться БЕЗ гейта — гейт на API-пути, НЕ внутри `amend_day`. Зависит от 5.8a (скелет).
+>
+> **5.8c — `GET` list (история) + detail:** новый actor-scoped list-селектор (канон architecture.md#L451 — селектор принимает actor первым аргументом и сам сужает видимость), list БЕЗ snapshot (`defer`), отдача snapshot в detail решается там; LimitOffset 50/200 + ordering с tie-breaker `id`; гейт `mark_update`; строки матрицы (get). Зависит от 5.8a.
+
 ### Story 5.9: Аудит сдач
 
 As a аудитор, I want события DAY_SUBMITTED / DAY_AMENDED / TOMORROW_BLOCK_OVERRIDDEN, So that цепочка сдач и обходов восстановима.
@@ -888,6 +896,8 @@ As a руководство, I want расход за период (страни
 
 **Given** период 3 дня, **Then** документ из трёх страниц по снапшотам этих дат; **Given** заблокированное «завтра», **Then** 422 со списком отстающих.
 **Given** дата до начала данных (нет roster и статусов), **Then** 422 с кодом, не пустой документ.
+
+> **Принято при создании 5.8 (Bratan, 2026-07-02):** HTTP-поверхность блокировки «на завтра» — целиком здесь, НЕ в 5.8: код `TOMORROW_BLOCKED` в реестр (закрывает Q3/Д3 5.6a), 422 с `{laggards}` при запросе расхода-на-завтра, POST override-эндпоинт (permission-код; сервис `override_tomorrow_block` кидает ValueError — маппинг на API), date-валидация business_date блока/override (деферы 5.6a/5.6b), фильтр протухших required-id в laggards (дефер 5.6a — ЛИБО admin 2.3/2.8).
 
 ## Epic 7: Миграция — верный список как условие выживания
 

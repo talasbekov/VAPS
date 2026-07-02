@@ -24,6 +24,7 @@ factory_boy). Здесь — санкционированное исключен
 РЕАЛЬНЫЙ посев ``seed_operations``, а не выдуманную фабриками копию (как
 весь существующий RBAC-suite).
 """
+
 import pytest
 from django.core.management import call_command
 from django.urls import NoReverseMatch, get_resolver, reverse
@@ -129,6 +130,12 @@ MATRIX = {
     "ops-temp-duty-list": _Gate("admin.roles"),
     "ops-temp-duty-expire": _Gate("admin.roles"),
     "ops-my-permissions-list": _AnyAuthenticated(),
+    # daily-submissions — сдача дня (story 5.8a), POST-only до 5.8b/5.8c. Гейт
+    # RequirePermissionMixin {"create": mark_update} — здесь ГРУБАЯ проверка
+    # кода (resolver division-free); scope «чужое подразделение → 403» живёт в
+    # сервис-гарде ensure_division_scope и матрицей не проверяется (payloadless
+    # POST держателя = 400 бизнес-слоя = ALLOW по канону).
+    "ops-daily-submission-list": _MethodGate({"post": "daily_report.mark_update"}),
     # audit — read-only журнал, загейчен RequirePermissionMixin("audit.view")
     # (story 4.5). GET-only (list+retrieve); ORGD/ADMIN → ALLOW, прочие/аноним
     # → DENY (из seed).
@@ -221,9 +228,7 @@ def _served_routes():
             continue
         allowed = {m.lower() for m in getattr(cls, "http_method_names", [])}
         if actions:
-            methods = {
-                m for m in actions if m in allowed and m not in _IGNORED_METHODS
-            }
+            methods = {m for m in actions if m in allowed and m not in _IGNORED_METHODS}
         else:
             methods = {
                 m
@@ -250,9 +255,7 @@ def test_matrix_covers_every_registered_route():
     assert not missing, (
         f"роуты без строки в MATRIX (AR-9 — добавь строку): {sorted(missing)}"
     )
-    assert not stale, (
-        f"протухшие строки MATRIX (роут удалён — убери): {sorted(stale)}"
-    )
+    assert not stale, f"протухшие строки MATRIX (роут удалён — убери): {sorted(stale)}"
 
 
 def test_matrix_declares_all_actors_explicitly():
@@ -383,6 +386,5 @@ def test_rbac_matrix_behaviour(matrix_actors, name, method, actor, verdict):
         # request.data[...] → KeyError) = «пропущено»: снятие стража ловят
         # DENY-ячейки (роль без права → ≠403 → красный), не эта ветка.
         assert response.status_code not in (401, 403), (
-            f"{name}/{method}/{actor}: ожидался ALLOW, "
-            f"получен {response.status_code}"
+            f"{name}/{method}/{actor}: ожидался ALLOW, получен {response.status_code}"
         )
