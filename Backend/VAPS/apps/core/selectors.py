@@ -97,8 +97,11 @@ class CoreDivisionTreeSelector:
         return CoreDivisionTreeSelector.children_map()
 
     @classmethod
-    def subtree_ids(cls, division_id) -> set:
-        children = cls.children_map()
+    def subtree_ids(cls, division_id, *, children_map=None) -> set:
+        # ``children_map`` lets a caller resolving SEVERAL subtrees reuse one
+        # adjacency scan (the map's own «call it ONCE» contract) instead of
+        # re-scanning Division per call (review 5.8c).
+        children = cls.children_map() if children_map is None else children_map
         result, stack = set(), [division_id]
         while stack:
             current = stack.pop()

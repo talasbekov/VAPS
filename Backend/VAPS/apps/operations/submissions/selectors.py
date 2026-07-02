@@ -1,11 +1,18 @@
 import re
 
+from apps.operations.services import PermissionService
 from apps.operations.submissions.models import (
     DailySubmission,
     DivisionNotifyRecipient,
     SubmissionControlSettings,
     TomorrowBlockOverride,
 )
+
+# Reads are gated on mark_update BY DECISION (epics 2026-07-02): no
+# daily_report.view code exists; leadership reads arrive with the tree screen
+# (10.4). Single source for the selector's visibility AND the view's read
+# gate — importing it keeps the two from drifting onto different codes.
+READ_PERMISSION = "daily_report.mark_update"
 
 
 class DailySubmissionSelector:
@@ -33,11 +40,35 @@ class DailySubmissionSelector:
         instead of leaking a ValueError → 500 out of the int-pk lookup.
         Canonical ASCII digits only — bare int() would silently resolve alias
         spellings ("+5", " 5 ", "5_0", arabic-indic digits) into the same pk,
-        forking one resource across many write-URLs (review 5.8b).
+        forking one resource across many write-URLs (review 5.8b). Leading
+        zeros are the same alias class ("006" ≡ "6") — rejected too (5.8c).
         """
-        if not re.fullmatch(r"[0-9]+", str(submission_id)):
+        if not re.fullmatch(r"0|[1-9][0-9]*", str(submission_id)):
             return None
         return DailySubmission.objects.filter(pk=int(submission_id)).first()
+
+    @staticmethod
+    def list(actor, *, division_id=None, business_date=None):
+        """History list for the read API (5.8c) — actor first, and the
+        selector narrows visibility ITSELF (canon L442-452/L451: the ViewSet
+        never filters by rights): the union of the actor's role subtrees
+        under READ_PERMISSION, or everything for a global/wildcard grant.
+        Out-of-scope rows are simply absent — a list never errors on scope.
+
+        ``snapshot`` is deferred: tens–hundreds of KB per row × a 50-row page
+        would be a traffic bomb; the 9-field list serializer never touches it.
+        Ordering: newest day first, fresh versions on top, ``id`` as the final
+        tie-breaker (L427 — without it pagination silently drops rows).
+        """
+        visible = PermissionService.visible_division_ids(actor, READ_PERMISSION)
+        qs = DailySubmission.objects.all()
+        if visible is not None:
+            qs = qs.filter(division_id__in=visible)
+        if division_id is not None:
+            qs = qs.filter(division_id=division_id)
+        if business_date is not None:
+            qs = qs.filter(business_date=business_date)
+        return qs.defer("snapshot").order_by("-business_date", "-version", "id")
 
     @staticmethod
     def current_for_many(division_ids, business_date) -> dict:

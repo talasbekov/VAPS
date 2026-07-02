@@ -165,14 +165,8 @@ def test_non_post_verbs_405_anonymous(tree, method):
     assert getattr(_client(actor=None), method)(_url(submission.pk)).status_code == 405
 
 
-def test_detail_route_absent_404(global_op, tree):
-    # No retrieve route until 5.8c — GET /{id}/ must be 404 (URL unresolved),
-    # NOT a 405 (which would falsely promise the resource exists). The detail
-    # URL is derived from the amend one to stay prefix-agnostic.
-    root, _, _ = tree
-    submission = _submitted(root)
-    detail_url = _url(submission.pk)[: -len("amend/")]
-    assert _client(global_op).get(detail_url).status_code == 404
+# (test_detail_route_absent_404 removed by 5.8c: the retrieve route now exists;
+# the detail contract is owned by test_daily_submission_read_api.)
 
 
 # -- AC-2: coarse permission gate -------------------------------------------------
