@@ -229,6 +229,12 @@ AUDIT_MATRIX = {
     "ops-user-role-detail": _DeferredAudit(_RBAC),
     "ops-temp-duty-list": _DeferredAudit(_RBAC),
     "ops-temp-duty-expire": _DeferredAudit(_RBAC),
+    # submissions (story 5.8a): аудит сдач (DAILY_SUBMISSION_SUBMITTED — имя из
+    # docs/registries/audit-events.yaml) — стори 5.9; submit_day docstring явно
+    # резервирует эмиссию за 5.9.
+    "ops-daily-submission-list": _DeferredAudit(
+        "аудит сдач (DAILY_SUBMISSION_SUBMITTED) — стори 5.9"
+    ),
 }
 
 
