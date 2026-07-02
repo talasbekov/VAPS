@@ -130,12 +130,19 @@ MATRIX = {
     "ops-temp-duty-list": _Gate("admin.roles"),
     "ops-temp-duty-expire": _Gate("admin.roles"),
     "ops-my-permissions-list": _AnyAuthenticated(),
-    # daily-submissions — сдача дня (story 5.8a), POST-only до 5.8b/5.8c. Гейт
-    # RequirePermissionMixin {"create": mark_update} — здесь ГРУБАЯ проверка
-    # кода (resolver division-free); scope «чужое подразделение → 403» живёт в
-    # сервис-гарде ensure_division_scope и матрицей не проверяется (payloadless
-    # POST держателя = 400 бизнес-слоя = ALLOW по канону).
-    "ops-daily-submission-list": _MethodGate({"post": "daily_report.mark_update"}),
+    # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
+    # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
+    # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется
+    # (payloadless POST держателя = 400 бизнес-слоя = ALLOW по канону).
+    # GET = mark_update ПО РЕШЕНИЮ (epics 2026-07-02): daily_report.view не
+    # заводим; ORGD/OMD с generate → DENY (руководству чтение — дерево 10.4);
+    # видимость поддерева — actor-scoped селектор (канон L451), не матрица.
+    "ops-daily-submission-list": _MethodGate(
+        {"get": "daily_report.mark_update", "post": "daily_report.mark_update"}
+    ),
+    # detail (story 5.8c, GET /{pk}/): формы у retrieve нет — pk=0 у держателя
+    # резолвится селектором by_id в None → 404 = ALLOW по канону матрицы.
+    "ops-daily-submission-detail": _MethodGate({"get": "daily_report.mark_update"}),
     # amend сдачи (story 5.8b, POST /{id}/amend/). Гейт mixin {"amend":
     # daily_report.correct}; scope «чужое подразделение → 403» — в сервис-гарде
     # ensure_division_scope (матрицей не проверяется: payloadless POST держателя
@@ -328,6 +335,20 @@ def _url_for(name):
         return reverse(name)
     except NoReverseMatch:
         return reverse(name, kwargs={"pk": "0"})
+
+
+def test_unmapped_method_on_action_route_is_405():
+    # review 5.8c (mixin-патч): метод, который ViewSet обслуживает глобально,
+    # но ДАННЫЙ роут не мапит (GET на post-only @action), резолвится в
+    # action=None → mixin сам поднимает MethodNotAllowed. 405 и держателю, и
+    # анониму — это метод-поверхность, не право (урок 5.7c), и исход не
+    # зависит от наличия у инстанса атрибута с именем глагола.
+    url = _url_for("employee-archive")
+    anon = APIClient()
+    assert anon.get(url).status_code == 405
+    authed = APIClient()
+    authed.credentials(HTTP_X_USER_ID="whoever")
+    assert authed.get(url).status_code == 405
 
 
 def _behavioral_params():

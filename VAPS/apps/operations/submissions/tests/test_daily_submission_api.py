@@ -115,15 +115,20 @@ def _post(actor, division_id, business_date=TODAY, extra=None):
 # -- AC-1: endpoint mounted, POST-only ----------------------------------------
 
 
-def test_get_is_405(global_op, tree):
-    # list/detail arrive with 5.8c — until then GET must be 405, not 403/404.
-    assert _client(global_op).get(_url()).status_code == 405
+def test_get_list_200_for_holder(global_op, tree):
+    # 5.8c mounted the read surface — GET collection now serves the list
+    # envelope (full read contract lives in test_daily_submission_read_api).
+    resp = _client(global_op).get(_url())
+    assert resp.status_code == 200
+    assert set(resp.data) == {"count", "next", "previous", "results"}
 
 
-def test_anonymous_get_is_405(tree):
-    # The mixin's early return for methods outside http_method_names answers
-    # anon reads with 405 (method surface), not a misleading 403 (5.7c lesson).
-    assert _client(actor=None).get(_url()).status_code == 405
+def test_anonymous_get_403(tree):
+    # With "get" in http_method_names an anon read hits the permission gate,
+    # not the 405 method surface (contrast pinned until 5.8c, flipped by it).
+    resp = _client(actor=None).get(_url())
+    assert resp.status_code == 403
+    assert resp.data["error_code"] == "PERMISSION_DENIED"
 
 
 @pytest.mark.parametrize("method", ["put", "patch", "delete"])

@@ -1,4 +1,4 @@
-"""Story 5.8a — daily-submissions API serializers (input form + 201 projection)."""
+"""Stories 5.8a/b/c — daily-submissions API serializers (forms + projections)."""
 
 from rest_framework import serializers
 
@@ -34,11 +34,22 @@ class DailySubmissionAmendSerializer(serializers.Serializer):
     sanction = serializers.CharField(max_length=255)  # model CharField(255)
 
 
+class DailySubmissionFilterSerializer(serializers.Serializer):
+    """GET list query-param form (5.8c) — optional equality filters, mirror of
+    AuditLogFilterSerializer: garbage values die here as 400 VALIDATION_ERROR
+    instead of leaking into the ORM (the boundary-lets-garbage-through class).
+    """
+
+    division_id = serializers.UUIDField(required=False)
+    business_date = serializers.DateField(required=False)
+
+
 class DailySubmissionSerializer(serializers.ModelSerializer):
-    """201 projection — flat, snake_case, WITHOUT the heavy snapshot JSON
+    """201/list projection — flat, snake_case, WITHOUT the heavy snapshot JSON
     (tens–hundreds of KB per row) and without the amend-only fields
-    (reason/sanction/triggered_by_status_id — always empty on v1). Whether the
-    detail view returns the snapshot is 5.8c's decision.
+    (reason/sanction/triggered_by_status_id — always empty on v1). The list
+    selector defers snapshot; this serializer never touching it keeps the
+    deferred column from being silently re-fetched.
     """
 
     class Meta:
@@ -53,5 +64,23 @@ class DailySubmissionSerializer(serializers.ModelSerializer):
             "submitted_by",
             "submitted_at",
             "late",
+        ]
+        read_only_fields = fields
+
+
+class DailySubmissionDetailSerializer(serializers.ModelSerializer):
+    """GET /{id}/ projection (5.8c, Д1) — the nine list fields plus the heavy
+    and amend-only payload. Detail is the ONLY HTTP channel for the snapshot
+    (расход screens 10.5/10.6, parallel-run reconciliation); reason/sanction
+    are empty strings and triggered_by_status_id is None on non-amended rows.
+    """
+
+    class Meta:
+        model = DailySubmission
+        fields = DailySubmissionSerializer.Meta.fields + [
+            "snapshot",
+            "reason",
+            "sanction",
+            "triggered_by_status_id",
         ]
         read_only_fields = fields
