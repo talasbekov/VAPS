@@ -14,10 +14,14 @@ class XUserIdAuthentication(BaseAuthentication):
     No AuthenticationFailed on a missing header: a 401 here would mask the
     403 PERMISSION_DENIED contract enforced by the permission layer. No User
     DB lookup per request: downstream keys on the actor_id string (ARCH-007).
+
+    The header is stripped and a whitespace-only value is treated as absent
+    (mirror of the JWT ``sub`` hygiene): a truthy-but-blank ``actor_id`` would
+    slip past truthiness gates into blank-guarded selectors → 500.
     """
 
     def authenticate(self, request):
-        user_id = request.headers.get("X-User-Id")
+        user_id = (request.headers.get("X-User-Id") or "").strip()
         if user_id:
             request.actor_id = user_id
         return None

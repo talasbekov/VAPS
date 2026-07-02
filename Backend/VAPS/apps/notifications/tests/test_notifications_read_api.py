@@ -24,6 +24,7 @@ from rest_framework.test import APIClient
 
 from apps.notifications.api.views import NotificationPagination
 from apps.notifications.models import Notification
+from apps.notifications.selectors import NotificationSelector
 
 pytestmark = pytest.mark.django_db
 
@@ -62,6 +63,15 @@ def _client(actor="alice"):
 def test_gate_denies_anonymous():
     _notif(recipient="alice")
     resp = _client(actor=None).get(_list_url())
+    assert resp.status_code == 403
+    assert resp.data["error_code"] == "PERMISSION_DENIED"
+
+
+def test_gate_denies_whitespace_actor_header():
+    # A whitespace-only X-User-Id must equal a missing one: the auth layer
+    # strips it, so the gate 403s — a truthy-but-blank actor_id would slip
+    # past the truthiness gate into the selector's blank-guard → 500.
+    resp = _client("   ").get(_list_url())
     assert resp.status_code == 403
     assert resp.data["error_code"] == "PERMISSION_DENIED"
 
@@ -165,6 +175,27 @@ def test_pagination_caps_limit_and_defaults():
 @pytest.mark.parametrize("method", ["post", "put", "patch", "delete"])
 def test_write_verbs_not_allowed(method):
     assert getattr(_client("alice"), method)(_list_url()).status_code == 405
+
+
+@pytest.mark.parametrize("method", ["post", "put", "patch", "delete"])
+def test_write_verbs_not_allowed_for_anonymous(method):
+    # Pins the gate's early return for methods outside http_method_names: an
+    # anonymous write is answered 405 (method check precedes the auth gate by
+    # design — the method surface is public via open OPTIONS anyway), not 403.
+    assert getattr(_client(actor=None), method)(_list_url()).status_code == 405
+
+
+# -- selector hardening: blank actor is a caller bug ---------------------------
+
+
+@pytest.mark.parametrize("actor", [None, "", "   ", 42])
+def test_selector_rejects_blank_actor(actor):
+    # Mirror of notify()'s blank-recipient guard: the recipient filter is the
+    # load-bearing access control — a blank (or non-string) actor must fail
+    # loud with the designed ValueError, not return an empty queryset (or an
+    # accidental AttributeError) that masks a caller bug.
+    with pytest.raises(ValueError):
+        NotificationSelector.list(actor)
 
 
 # -- AC-6: response shape (7 fields, snake_case) ------------------------------

@@ -3,7 +3,7 @@ baseline_commit: 281d404839d0d0f9ff608edc974e66593bd21175
 ---
 # Story 5.7c: API уведомлений (`GET /api/notifications/?since=`)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -84,6 +84,16 @@ so that **отстающие-уведомления (FR-13, созданные `
 - [x] **Task 9 — Гейт** (AC: 10)
   - [x] `ruff format` по КАЖДОМУ новому/тронутому файлу (не по app-папке — иначе трогает out-of-scope; урок feedback_vaps_ruff_format_scoping), затем `ruff check` (E,F).
   - [x] `make gate` зелёный; зафиксировать число прошедших тестов и время.
+
+### Review Findings (code-review проход 1, 2026-07-02, Fable 5 ×3 слоя — Blind/Edge/Auditor, cross-model vs dev Opus 4.8)
+
+- [x] [Review][Patch] Isolation-гвард не ловит `from apps.core import models` / `import apps.core` / relative-формы — проверка только `mod == "apps.core.models"`/префикс; `from apps.core import models` даёт `module="apps.core"` + alias `models`, а `from ..core import models` — `level=2, module="core"`; самый дешёвый обход проходит незамеченным [Backend/VAPS/apps/notifications/tests/test_isolation.py:27-40]
+- [x] [Review][Patch] Isolation-гвард вакуумно зелёный при пустом скане — нет assert, что `_module_files("notifications")` вернул хоть один файл; после переименования/сдвига раскладки `rglob` → `[]` → offenders пуст → гвард вечно зелёный, не отличая «нарушений нет» от «нечего сканировать» [Backend/VAPS/apps/notifications/tests/test_isolation.py:19-21]
+- [x] [Review][Patch] `NotificationSelector.list` без blank-guard на actor — `None`/`""`/пробельный actor тихо превращается в пустой qs (fail-safe, но каллер-баг маскируется тишиной); зеркалить контракт `notify()` (`services.py:38-39` — blank recipient → `ValueError`); view-путь не задет (гейт в `initial()` отсекает раньше) [Backend/VAPS/apps/notifications/selectors.py:33]
+- [x] [Review][Patch] Анонимные write-глаголы не запинены тестом — anon POST/PUT/PATCH/DELETE идёт по нетривиальной ветке `if request.method.lower() not in self.http_method_names: return` (405 до auth-гейта, не 403); единственный непокрытый участок самописного гейта — добавить параметризованный тест anon-write → 405 [Backend/VAPS/apps/notifications/api/views.py:44-45]
+- [x] [Review][Patch] Леджер deferred-work.md не аннотирован закрытием B9/F6 — конвенция «✅ ЗАКРЫТО стори X» (ср. :286/:315) не применена к записям 5.7a; B9 закрыт частично (recency-половина; unread-индекс по `read_at` → E11), F6 закрыт полностью [_bmad-output/implementation-artifacts/deferred-work.md:495-503]
+- [x] [Review][Defer] `since`-курсор может навсегда пропустить строку, чей COMMIT произошёл позже её `created_at` (visibility-гонка polling-курсора; окно в проекте ≈мс — notify() эмитит post-commit в autocommit) [Backend/VAPS/apps/notifications/selectors.py:33-34] — deferred, свойство паттерна; закрыть на потребителях (поллинг с перекрытием + дедуп по id / WS E11)
+- [x] [Review][Defer] Та же слепая зона AST-скана (`from apps.core import models`) в эталонном operations-гварде [Backend/VAPS/apps/operations/tests/test_isolation.py:27] — deferred, pre-existing; гармонизировать усиленный скан отдельной гигиеной
 
 ## Dev Notes
 
@@ -205,3 +215,4 @@ Opus 4.8 (1M context) — `claude-opus-4-8[1m]`
 |------|--------|-----------|-------|
 | 2026-07-01 | 0.1 | Создана стори (bmad-create-story) | Bratan |
 | 2026-07-01 | 1.0 | Реализован read-API `GET /api/notifications/?since=` (TDD): selector self-scope + serializers + list-only ViewSet + routing + recency-индекс (миграция 0002) + isolation-гвард + строка RBAC-матрицы. Закрыты defer 5.7a B9/F6. `make gate` зелёный (1655 passed). Status → review | Amelia (dev-story) |
+| 2026-07-02 | 1.1 | Code-review проход 1 (Fable 5 ×3 слоя, cross-model vs dev Opus 4.8): ACCEPT, все 10 AC SATISFIED. 5 патчей применены: isolation-гвард усилен (alias/relative-резолюция + анти-вакуум), blank-guard `NotificationSelector.list`, +7 тестов (anon-write→405, blank-actor→ValueError), леджер B9/F6 аннотирован. 2 defer → deferred-work.md (visibility-гонка since-курсора; слепая зона operations-гварда). 14 dismiss. `make gate` зелёный (1662 passed, +7). Status → done | Bratan (code-review) |

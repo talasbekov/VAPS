@@ -28,7 +28,15 @@ class NotificationSelector:
         Ordering is ``(-created_at, id)``: newest first with ``id`` as the
         MANDATORY tie-breaker — without it a LimitOffset page can silently
         drop/duplicate rows sharing a ``created_at`` (architecture.md#L427).
+
+        A blank/None/non-string ``actor`` raises ``ValueError`` — a caller bug
+        (mirror of ``notify()``'s blank-recipient guard): failing loud beats
+        silently returning an empty queryset for a load-bearing access filter.
+        Unreachable via HTTP — the auth layer strips the header and the view
+        gate 403s a missing actor_id first.
         """
+        if not isinstance(actor, str) or not actor.strip():
+            raise ValueError("NotificationSelector.list requires an actor")
         qs = Notification.objects.filter(recipient=actor)
         if since is not None:
             qs = qs.filter(created_at__gt=since)
