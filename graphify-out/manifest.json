@@ -17790,13 +17790,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1783001960.4271438,
-    "ast_hash": "f6172d939314e356632810b34cefb876",
+    "mtime": 1783084926.1013992,
+    "ast_hash": "7165b1fd8e90a50152bbfa922472c523",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1783002416.7200587,
-    "ast_hash": "4f548efe8013bbfeae03b402488e48ab",
+    "mtime": 1783085295.1683726,
+    "ast_hash": "1e466dfbd720a1472571ed429c6179b3",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -18915,8 +18915,8 @@
     "semantic_hash": ""
   },
   "docs/registries/audit-events.yaml": {
-    "mtime": 1782716734.989714,
-    "ast_hash": "545ea419102270b9d93da3bc7fba9f8b",
+    "mtime": 1783055599.8138368,
+    "ast_hash": "c5e429e308cf081806e4c2eef6668107",
     "semantic_hash": ""
   },
   "docs/registries/error-codes.yaml": {
@@ -19340,8 +19340,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/audit/tests/test_audit_coverage.py": {
-    "mtime": 1782992344.309996,
-    "ast_hash": "a4a81cef0fe02eb61d496c39a1bc3f37",
+    "mtime": 1783056275.2993572,
+    "ast_hash": "25c946a14fcf1ccb6e67379554920ae9",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/audit/tests/test_audit_log_model.py": {
@@ -19715,18 +19715,18 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/amendment_service.py": {
-    "mtime": 1782796844.9360676,
-    "ast_hash": "16a126b73d34082529319b8ae24c564d",
+    "mtime": 1783085113.0493946,
+    "ast_hash": "2b4c0a983f6ff68132e59d2ed7ed84c5",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/block_override.py": {
-    "mtime": 1782825099.7373145,
-    "ast_hash": "33c0e8a81111311458009b9815631ebd",
+    "mtime": 1783085103.447343,
+    "ast_hash": "b1d98096ead33c70f1c06ed4882d25c4",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/day_submission_service.py": {
-    "mtime": 1782742983.777911,
-    "ast_hash": "435d5b2200cd8b996c83eeec5f7a0b01",
+    "mtime": 1783055747.708962,
+    "ast_hash": "8debce75f091465fa95b671b569f04c8",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/lagging_check.py": {
@@ -20042,6 +20042,156 @@
   "Backend/VAPS/apps/operations/submissions/tests/test_daily_submission_read_api.py": {
     "mtime": 1783002287.0153003,
     "ast_hash": "22411466250a1da4b3c22673172fc5ec",
+    "semantic_hash": ""
+  },
+  ".design-sync/config.json": {
+    "mtime": 1783088603.6437666,
+    "ast_hash": "24ba792c673b328007ca2d192b8abb4a",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Alert.tsx": {
+    "mtime": 1783086979.244239,
+    "ast_hash": "4ca2039e422d99d5ce87c1eab07f6828",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Avatar.tsx": {
+    "mtime": 1783087466.5418656,
+    "ast_hash": "cc168085c29ff865bb95b05fbc2577ca",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Badge.tsx": {
+    "mtime": 1783087457.5968347,
+    "ast_hash": "1e6142d9c2cc06a2cf50227ed26f0399",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Button.tsx": {
+    "mtime": 1783086967.1172009,
+    "ast_hash": "9846391c889fb7ef47858475e6389897",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Calendar.tsx": {
+    "mtime": 1783087500.882985,
+    "ast_hash": "14c16cff1c8e9359e62a98b767541161",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Card.tsx": {
+    "mtime": 1783086976.0372288,
+    "ast_hash": "190733fe7d187ec1ad064a5b89aaff45",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Checkbox.tsx": {
+    "mtime": 1783087348.9534602,
+    "ast_hash": "ca374034d66f4392f2419eeced543ce4",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Dialog.tsx": {
+    "mtime": 1783087459.15584,
+    "ast_hash": "4cb95b5d0488b2bba3a76cb9d4285189",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/DropdownMenu.tsx": {
+    "mtime": 1783087464.8388598,
+    "ast_hash": "fdf407bb1a83b5f30f81b8834332e7af",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Input.tsx": {
+    "mtime": 1783087334.7004113,
+    "ast_hash": "b009e8fc74fa4790d0945d9c2b9356a2",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Label.tsx": {
+    "mtime": 1783087353.549476,
+    "ast_hash": "06b9fb0725b3515fc41c5232169c5622",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/OrgNode.tsx": {
+    "mtime": 1783087531.2780912,
+    "ast_hash": "d8293c4ca68f9024d2112830a39ec80f",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Popover.tsx": {
+    "mtime": 1783087469.5858762,
+    "ast_hash": "6b4f994936b252ca91e84d5a952a6e00",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Progress.tsx": {
+    "mtime": 1783087472.2408855,
+    "ast_hash": "ed655a21717ce2f2f5352c56114f6c92",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Select.tsx": {
+    "mtime": 1783087363.7275107,
+    "ast_hash": "3bc5b5623392fdb545ee94248d531aae",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Separator.tsx": {
+    "mtime": 1783087476.9049017,
+    "ast_hash": "5842d8c388a66a92ffd664ea83109fc5",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/StatsCards.tsx": {
+    "mtime": 1783087856.9475923,
+    "ast_hash": "9ab582b6b32b25eff846ba23bafeb723",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Table.tsx": {
+    "mtime": 1783087452.0158153,
+    "ast_hash": "3b336f3d6aaf567758808ae153aa786a",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Tabs.tsx": {
+    "mtime": 1783087486.1389337,
+    "ast_hash": "8bed4d8ce31e9e05f6bff0811c79b205",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Textarea.tsx": {
+    "mtime": 1783087558.1592941,
+    "ast_hash": "52ca91179a8d79cbb68af430629cc070",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/ThemeToggle.tsx": {
+    "mtime": 1783087534.7801034,
+    "ast_hash": "ee6f03dbf530d914a5cadd76fc71ad0b",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Toast.tsx": {
+    "mtime": 1783088219.3247924,
+    "ast_hash": "36f8543e77f697091d4c56d7be53665d",
+    "semantic_hash": ""
+  },
+  ".design-sync/previews/Tooltip.tsx": {
+    "mtime": 1783087472.691887,
+    "ast_hash": "4261a2e3c33761eceacc0cba282dd284",
+    "semantic_hash": ""
+  },
+  ".design-sync/tailwind.ds.config.js": {
+    "mtime": 1783087782.9210756,
+    "ast_hash": "715cd52022e3a9747e1cecdda6c43174",
+    "semantic_hash": ""
+  },
+  "Backend/PersonnelStatus/PersonalRecordFront/design-sync.entry.ts": {
+    "mtime": 1783086520.174941,
+    "ast_hash": "5f2d523ad3d937e5e6492834ea97e199",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/tests/test_submission_audit.py": {
+    "mtime": 1783085159.9186456,
+    "ast_hash": "9120b8cfe963f8db5126e73c779abecb",
+    "semantic_hash": ""
+  },
+  ".design-sync/NOTES.md": {
+    "mtime": 1783141679.0383413,
+    "ast_hash": "e3d5b7c66167ef3257caaf83f6a18a02",
+    "semantic_hash": ""
+  },
+  ".design-sync/conventions.md": {
+    "mtime": 1783088602.3937607,
+    "ast_hash": "eca3f349dd9f086236fa530751edbac2",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/5-9-\u0430\u0443\u0434\u0438\u0442-\u0441\u0434\u0430\u0447.md": {
+    "mtime": 1783085259.3301797,
+    "ast_hash": "08d1563cc489452434873acb939e7842",
     "semantic_hash": ""
   }
 }
