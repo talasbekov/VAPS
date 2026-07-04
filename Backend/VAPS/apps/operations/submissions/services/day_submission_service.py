@@ -5,8 +5,9 @@
 создание v1 поверх среза 5.3a (``build_division_snapshot``). Зеркало
 ``status_service``: ``@transaction.atomic`` + вложенный savepoint вокруг
 racy-INSERT; ``actor`` — keyword-only строка; время — только через ``Clock``.
-Аудит НЕ пишет (эмиссия ``DAILY_SUBMISSION_SUBMITTED`` — 5.9); права/скоуп НЕ
-гейтит (5.8). ``business_date`` — ЯВНЫЙ параметр (ARCH-DATA-022, не из часов).
+Аудит: ``DAILY_SUBMISSION_SUBMITTED`` через единый ``record()`` (5.9, канон
+4.4); права/скоуп НЕ гейтит (5.8). ``business_date`` — ЯВНЫЙ параметр
+(ARCH-DATA-022, не из часов).
 """
 
 from datetime import timedelta
@@ -15,6 +16,7 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.db import transaction
 
+from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector
@@ -29,6 +31,27 @@ from apps.operations.submissions.services.snapshot import build_division_snapsho
 def _require_actor(actor):
     if not actor or not actor.strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+
+
+def _submission_audit_value(submission):
+    """JSON-safe лёгкий снимок версии сдачи для audit-строки (story 5.9, Д3).
+
+    ``entity_id`` аудит-строки — division_id (UUID-ось сущности, канон
+    audit-events.yaml: int-PK строки едет в payload). Snapshot-JSONB сюда НЕ
+    кладётся: он иммутабельно живёт в самой строке ``ops_daily_submissions``,
+    для восстановления достаточно ``submission_id``. Amendment-атрибуты
+    (reason/sanction/triggered_by) добавляет amend-сторона поверх.
+    """
+    return {
+        "submission_id": submission.pk,
+        "division_id": str(submission.division_id),
+        "business_date": str(submission.business_date),
+        "version": submission.version,
+        "event": submission.event,
+        "late": submission.late,
+        "is_current": submission.is_current,
+        "submitted_at": submission.submitted_at.isoformat(),
+    }
 
 
 def _default_window():
@@ -90,7 +113,8 @@ def submit_day(*, division_id, business_date, actor, window_dates=None):
         window_dates: допустимые даты сдачи; None → default {today, tomorrow}.
 
     Raises DomainError: 400 (actor пуст), 422 BUSINESS_DATE_OUT_OF_WINDOW,
-        409 DAY_ALREADY_SUBMITTED. Аудит не пишет (5.9), права не гейтит (5.8).
+        409 DAY_ALREADY_SUBMITTED. Права не гейтит (5.8); успешная сдача пишет
+        DAILY_SUBMISSION_SUBMITTED (5.9), отклонённая — ничего.
     """
     _require_actor(actor)
 
@@ -154,4 +178,15 @@ def submit_day(*, division_id, business_date, actor, window_dates=None):
             late=late,
             snapshot=snapshot,
         )
+    # Audit (story 5.9) AFTER the savepoint commits, in the ambient txn (canon
+    # 4.4): a concurrent-duplicate IntegrityError above propagates out before
+    # reaching here, so a rolled-back сдача leaves no audit row.
+    record(
+        actor=actor,
+        action="DAILY_SUBMISSION_SUBMITTED",
+        entity_type="daily_submission",
+        entity_id=division_id,
+        old_value=None,
+        new_value=_submission_audit_value(submission),
+    )
     return submission

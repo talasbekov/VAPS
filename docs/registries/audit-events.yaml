@@ -67,6 +67,11 @@ actions:
     description: "Пересдача/amendment сданного дня (кто/когда/причина/санкция)."
     provenance: derived-from-mutation
     source: "architecture.md ARCH-DATA-021 (amendment-flow)"
+  TOMORROW_BLOCK_OVERRIDDEN:
+    entity_type: tomorrow_block_override
+    description: "Легальный обход блокировки «на завтра» (кто/когда/почему; 5.6b override)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 5.9; architecture.md ARCH-DATA-021 (блокировка следующего дня)"
 
   # --- Story 4.4: мутации статусов из сервисов E3 (синхронно-на-мутации, before/after) ---
   # entity_id = employee_id (UUID) — AuditLog.entity_id это UUIDField, а PK статус-сущностей
