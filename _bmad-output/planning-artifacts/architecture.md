@@ -238,14 +238,14 @@ npm create vite@latest frontend -- --template react-ts
 | ARCH-FE-011 | Кодоген: openapi-typescript (только типы) + свой apiClient.ts (~100 строк) + рукописные типизированные хуки. Пайплайн: manage.py spectacular → openapi-typescript → schema.d.ts (AUTO-GENERATED) | orval/openapi-generator; правка schema.d.ts; ручные типы при наличии схемы | CI: regenerate + git diff --exit-code |
 | ARCH-FE-012 | React Router (plain Routes) + src/shared/routes.ts (все пути — константы/фабрики) | TanStack Router; строковые literal-пути вне routes.ts | ревью-правило, ужесточить линтом при нарушениях |
 | ARCH-FE-013 | feature-folders (app/ features/ shared/); features/A→features/B запрещено; shared→features запрещено; app→всё | cross-feature импорты; barrel-index.ts реэкспорты | eslint-plugin-boundaries (зеркало AST-тестов бэка) |
-| ARCH-FE-014 | Styling: Tailwind + prettier-plugin-tailwindcss; печатные формы — отдельный print.css. ⚠️ Упростить на шаге 4: Tailwind vs стили Mantine — оставить ОДИН подход | styled-components/emotion (runtime CSS-in-JS); inline style кроме рантайм-значений виртуализации; @apply вне index.css | eslint-plugin-tailwindcss |
+| ARCH-FE-014 | Styling: донорские shadcn-компоненты + Tailwind-токены (ревизия 2026-07-04, см. финал-2 ниже); prettier-plugin-tailwindcss; печатные формы — отдельный print.css | styled-components/emotion (runtime CSS-in-JS); inline style кроме рантайм-значений виртуализации; @apply вне index.css; произвольные hex-цвета вне токен-семейств | eslint-plugin-tailwindcss |
 | ARCH-FE-015 | Протокол ошибок: apiClient → типизированный ApiError (422 ValidationError → setError RHF; 409 ConflictError → общий ConflictDialog + retry с override:true; 5xx → глобальный тост). Один хук useApiMutation | сырой useMutation в features; try/catch вокруг mutate; парсинг response.status вне apiClient; собственные override-диалоги | no-restricted-imports (paths) |
 
 **Формы и таблицы (анти-смерть на 4 ГБ):** react-hook-form (uncontrolled) + zod; TanStack Table + TanStack Virtual; данные — TanStack Query; eslint-plugin-react-hooks: error. Перф-инварианты — детерминированные счётчики, НЕ тайминги: React Profiler onRender → ровно 1 коммит на keystroke в гриде; виртуализация → ≤ N DOM-узлов при 5000 строк. Тайминги (p95 keydown→commit) — только тренд-артефакт через Playwright CDP CPU-throttling, не блокирующий.
 
-**UI-библиотека: Mantine v7+** (core, hooks, dates, notifications) — CSS Modules, без runtime CSS-in-JS (критично для CPU без GPU), Tree/DatePicker/ru-локаль из коробки, дружит с RHF, ~80–110 КБ gzip используемого набора, плотность size="sm" («штаб, не стартап»), пакеты без postinstall — вендорятся npm pack.
-- Отклонены: Ant Design v5 (cssinjs в рантайме на CPU; 150+ КБ; конфликт с RHF), shadcn/Radix как основной (нет Tree/DatePicker — недели инфраструктуры для соло без дизайнера), React Aria Components (unstyled), HeroUI (framer-motion), Chakra.
-- План Б (если Mantine упрётся): вендоренный shadcn/Radix + react-day-picker + react-arborist; миграция компонент-за-компонентом возможна (формы на RHF, таблицы на TanStack — не заперты).
+**UI-библиотека: донорские shadcn/Radix-компоненты, вендоренные из PersonalRecordFront** — **ревизия 2026-07-04 (решение Bratan): бывший План Б повышен до Плана А.** Мотив: ДС донора (23 компонента shadcn/ui new-york + доменные StatsCards/OrgNode) синкнута в claude.ai/design, одобрена как визуальный базлайн, прототипы экранов собраны из неё — вендоринг тех же компонентов даёт 1:1 маппинг прототип→код без слоя перевода Mantine←→донор. Компоненты копируются в `frontend/src/shared/ui` (copy-paste природа shadcn) с токенами донора; недостающие добавляются точечно: DatePicker → react-day-picker v9 (как у донора), Tree светофора — по прототипу (вложенные строки-карточки, ленивые ветки). Runtime CSS-in-JS отсутствует (Tailwind-классы + CVA) — требование CPU без GPU сохранено. Прежний довод против shadcn («нет Tree/DatePicker — недели инфраструктуры без дизайнера») снят: компоненты и вид уже построены донором и одобрены.
+- Отклонены: Ant Design v5 (cssinjs в рантайме на CPU; 150+ КБ; конфликт с RHF), React Aria Components (unstyled), HeroUI (framer-motion), Chakra.
+- План Б (если донорский набор упрётся): Mantine v7+ (План А до 2026-07-04 — Tree/DatePicker/ru-локаль из коробки, size="sm"); миграция компонент-за-компонентом возможна (формы на RHF, таблицы на TanStack — не заперты).
 - Чёрный список при любом раскладе: MUI, Vuetify, AG Grid, Handsontable, полный импорт AntD, Quasar.
 
 **Экран №1 (массовая форма статусов) — кастомный клавиатурный грид:** грамматика (Enter↓, Tab→, Esc-отмена, слепой ввод) = чистая state machine без React; тесты: exhaustive-таблица переходов + property-based (fast-check): фокус всегда в границах, нажатия не теряются, Esc возвращает pre-edit. Бумажный контракт экрана с клавиатурной грамматикой — до заморозки API.
@@ -271,7 +271,7 @@ npm create vite@latest frontend -- --template react-ts
 - PostgreSQL в интеграционных тестах + exclusion constraint (ARCH-DATA-020)
 - Сущность «Сдача дня» / DailySubmission (ARCH-DATA-021) — закрывает OQ-4
 - Derived-first статусный движок + watermark/Clock (ARCH-DATA-022)
-- Стили: Mantine (вид) + Tailwind (лейаут), preflight off (ARCH-FE-014 финал)
+- Стили: донорские shadcn-компоненты (вид = токены донора) + Tailwind (лейаут); preflight ON — нужен shadcn (ARCH-FE-014 финал-2, ревизия 2026-07-04)
 
 **Deferred (по принципу отсечения, с триггерами):** event/outbox, доктор данных, телеметрия, генератор данных, нагрузка/конкурентность — см. Project Context Analysis. Остаток семантики «уточняется» (N дней эскалации, права разрешения) — в эпике статусного движка.
 
@@ -328,7 +328,7 @@ npm create vite@latest frontend -- --template react-ts
 ### Frontend Architecture
 
 Зафиксировано в Starter Template Evaluation (ARCH-FE-010…015) + финал:
-- **ARCH-FE-014 (финал):** внешний вид компонентов — только Mantine (тема/токены, size="sm"); Tailwind — только лейаут (flex/grid/gap/spacing), preflight off; Tailwind-классы цвета/типографики на Mantine-компонентах — бан; styled-components/emotion запрещены.
+- **ARCH-FE-014 (финал-2, ревизия 2026-07-04):** внешний вид — только донорские shadcn-компоненты + семантические токен-классы (`bg-card`/`text-foreground`/…, статусные пары `bg-<цвет>-100 text-<цвет>-800`); произвольные hex-цвета и не-токенная типографика — бан; Tailwind-лейаут (flex/grid/gap/spacing) свободен; preflight ON (требуется shadcn); styled-components/emotion запрещены. (Финал-1 «только Mantine, preflight off» отменён активацией Плана Б — см. §UI-библиотека.)
 
 ### Infrastructure & Deployment
 
@@ -545,7 +545,7 @@ VAPS/                                    # корень репозитория (
 │   ├── .browserslistrc  .nvmrc
 │   ├── public/fonts/                    # вендоренные шрифты (казахская кириллица)
 │   └── src/
-│       ├── app/                         # роутер, providers (Mantine, Query), entry
+│       ├── app/                         # роутер, providers (Query, Theme/Tooltip/Toast), entry
 │       ├── features/                    # status-grid/ submissions/ strength-report/
 │       │                                #   duties/ facilities/ events/ calendar/
 │       │                                #   dashboards/ notifications/ print-forms/
@@ -645,7 +645,7 @@ VAPS/                                    # корень репозитория (
 
 ### Coherence Validation ✅
 
-**Decision Compatibility:** конфликты решений выявлялись адверсариально в 9 party-раундах и разрешены в тексте: exclusion constraint × derived-first (инвариант переформулирован time-independent); unique × версионирование DailySubmission (partial unique по is_current); WebSocket × deadline-домен (решение заказчика, компенсация: event-слой, kill-switch, дочитка); Mantine × Tailwind (граница «вид/лейаут»); вложенные apps × параллельные миграции агентов. Версии проверены веб-поиском 2026-06-10: Django 5.x, React 19.2.x, Vite 7 (build.target firefox100 обязателен), Mantine v7+.
+**Decision Compatibility:** конфликты решений выявлялись адверсариально в 9 party-раундах и разрешены в тексте: exclusion constraint × derived-first (инвариант переформулирован time-independent); unique × версионирование DailySubmission (partial unique по is_current); WebSocket × deadline-домен (решение заказчика, компенсация: event-слой, kill-switch, дочитка); Mantine × Tailwind (граница «вид/лейаут»; исторический контекст — с ревизией 2026-07-04 UI-слой = донорский shadcn, граница переформулирована в ARCH-FE-014 финал-2); вложенные apps × параллельные миграции агентов. Версии проверены веб-поиском 2026-06-10: Django 5.x, React 19.2.x, Vite 7 (build.target firefox100 обязателен), Mantine v7+ (заменён shadcn 2026-07-04).
 
 **Pattern Consistency:** паттерны выведены из существующего кода (db_table, kebab-роуты, PermissionService, селекторы), не изобретены; стресс-тест имплементации (Mimir) подтвердил исполнимость типовой стори — найденные 3 противоречия и 20 дыр закрыты правками.
 
@@ -758,7 +758,7 @@ _Собран стори 1.12 «Инвентаризация» (2026-06-19) — 
 | ARCH-FE-011 | кодоген: openapi-typescript (только типы) + свой apiClient.ts + рукописные хуки. MUST NOT: orval/openapi-generator; правка `schema.d.ts` | spectacular→openapi-typescript / ручные типы при наличии схемы | CI: regenerate + `git diff --exit-code` | §Канон фронтенд-стека | ACTIVE |
 | ARCH-FE-012 | React Router (plain Routes) + `src/shared/routes.ts` (все пути — константы/фабрики). MUST NOT: TanStack Router; literal-пути вне routes.ts | routes.ts фабрика / `<Link to="/x">` | ревью-правило, ужесточить линтом | §Канон фронтенд-стека | ACTIVE |
 | ARCH-FE-013 | feature-folders (app/ features/ shared/); features/A→features/B запрещено; shared→features запрещено. MUST NOT: cross-feature импорты; barrel-index реэкспорты | shared→app / features/a импортит features/b | eslint-plugin-boundaries (зеркало AST бэка) | §Канон фронтенд-стека | ACTIVE |
-| ARCH-FE-014 | styling: Tailwind + prettier-plugin-tailwindcss; печатные формы — отдельный print.css. MUST NOT: styled-components/emotion (runtime CSS-in-JS); inline style кроме рантайм-виртуализации | Tailwind-классы / `styled.div` | eslint-plugin-tailwindcss | §Канон фронтенд-стека; §Validation (Mantine vs Tailwind — финал) | ACTIVE |
+| ARCH-FE-014 | styling: донорские shadcn-компоненты + семантические токен-классы; prettier-plugin-tailwindcss; печатные формы — отдельный print.css. MUST NOT: styled-components/emotion (runtime CSS-in-JS); inline style кроме рантайм-виртуализации; hex-цвета вне токен-семейств | не-токенные цвета / `styled.div` | eslint-plugin-tailwindcss | §Канон фронтенд-стека; §Frontend Architecture (финал-2, 2026-07-04) | ACTIVE |
 | ARCH-FE-015 | протокол ошибок: apiClient → типизированный ApiError (422→setError RHF; 409→ConflictDialog+retry override:true; 5xx→тост); один хук `useApiMutation`. MUST NOT: сырой useMutation в features; парсинг response.status вне apiClient | useApiMutation / try/catch вокруг mutate | no-restricted-imports | §Канон фронтенд-стека | ACTIVE |
 | ARCH-DEFERRED-040 | event/outbox-слой (транспорт уведомлений как заменяемый адаптер). До триггера — дисциплина «доменные изменения через сервис-слой» | — | — | §Принцип отсечения (DEFERRED 1) | DEFERRED (триггер: подключение КУ) |
 | ARCH-DEFERRED-041 | ночной «доктор данных» (фоновая проверка целостности cross-context). До триггера — integrity-check по требованию | — | — | §Принцип отсечения (DEFERRED 2) | DEFERRED (триггер: первый инцидент целостности) |

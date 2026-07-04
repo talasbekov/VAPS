@@ -119,7 +119,7 @@ UX-спека отсутствует (осознанно). Заменители,
 - UX-1: Бумажные контракты трёх несущих экранов (массовая форма со слепым вводом, расход+светофор, чек-лист ОМ) — до заморозки API соответствующих стори
 - UX-2: Экран №1 — кастомный клавиатурный грид: грамматика Enter↓/Tab→/Esc = чистая state machine + property-based (fast-check); RTL keyboard-path тест в DoD
 - UX-3: Печатные формы — голый семантический HTML + print.css, без UI-библиотеки
-- UX-4: Канон стека: Mantine (вид, size="sm") + Tailwind (лейаут, preflight off); TanStack Table/Virtual/Query; RHF+zod; ConflictDialog для 409+override
+- UX-4: Канон стека: донорские shadcn/Tailwind-компоненты (вид = токены донора; рабочие таблицы — компактная плотность внутри карточки) + Tailwind (лейаут); TanStack Table/Virtual/Query; RHF+zod; ConflictDialog для 409+override. (Ревизия 2026-07-04: Mantine → донорский shadcn — активирован План Б архитектуры; см. architecture.md §UI-библиотека)
 
 ### FR Coverage Map
 
@@ -191,7 +191,7 @@ DailySubmission с версиями, Amendment-flow (ретро-правка с�
 **FRs covered:** NFR-9, AR-5, AR-9 (тесты импортёров)
 
 ### Epic 8: SPA Foundation — портал открывается
-Vite react-ts + контурная донастройка (firefox100, вендоринг, бюджеты), shared/api (typed client, DomainError, useApiMutation, ConflictDialog, MSW), auth-подключение, роутер+guards, layout Mantine.
+Vite react-ts + контурная донастройка (firefox100, вендоринг, бюджеты), shared/api (typed client, DomainError, useApiMutation, ConflictDialog, MSW), auth-подключение, роутер+guards, layout на донорских shadcn-компонентах. Визуальный контракт экранов — кликабельный прототип claude.ai/design «Дашборд расхода персонала» (брифы: ux-designs/ux-PersonnelStatus-2026-06-19/prototype-briefs-claude-design.md).
 **FRs covered:** AR-2, UX-4
 
 ### Epic 9: Клавиатурный грид — слепой ввод оператора
@@ -1049,7 +1049,7 @@ As a оператор, I want вход (JWT/dev-заголовок), AuthContext
 
 ### Story 8.7: Роутер, routes.ts и layout
 
-As a разработчик, I want React Router + все пути константами в routes.ts + каркас Mantine (size="sm") с Tailwind-лейаутом (preflight off), So that навигация и вид канонизированы.
+As a разработчик, I want React Router + все пути константами в routes.ts + каркас на донорских shadcn-компонентах (сайдбар+шапка по прототипу, компактная плотность рабочих таблиц) с Tailwind-лейаутом, So that навигация и вид канонизированы.
 
 **Acceptance Criteria:**
 
@@ -1061,7 +1061,7 @@ As a оператор, I want отдельный print-route с голым HTML 
 
 **Acceptance Criteria:**
 
-**Given** печать тестовой страницы, **Then** ни один Mantine/Tailwind класс не влияет на печатный вывод; смок в e2e.
+**Given** печать тестовой страницы, **Then** ни один класс UI-слоя (shadcn/Tailwind) не влияет на печатный вывод; смок в e2e.
 
 ## Epic 9: Клавиатурный грид — слепой ввод оператора
 
@@ -1173,7 +1173,7 @@ As a руководитель, I want дерево подразделений с
 
 **Acceptance Criteria:**
 
-**Given** 400 подразделений, **Then** дерево отзывчиво на 4 ГБ (Mantine Tree + ленивые ветки); цвета соответствуют селектору 5.5.
+**Given** 400 подразделений, **Then** дерево отзывчиво на 4 ГБ (вложенные строки-карточки по прототипу светофора, ленивые ветки); цвета соответствуют селектору 5.5.
 
 ### Story 10.5: Экран расхода
 
