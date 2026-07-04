@@ -24,9 +24,9 @@ Two facets:
   mutating route (POST/PUT/PATCH/DELETE incl. write ``@action``), and require each
   to be classified in ``AUDIT_MATRIX`` as ``_Audited`` | ``_DeferredAudit(ref)``.
   A new mutating route absent from the matrix → red (AR-9: "новая мутация без
-  аудита не пройдёт CI"). TODAY no mutating route emits audit (audit is wired at
-  the E3 service level — 4.4 — and those services have no REST yet; REST is E10),
-  so every current mutating route is ``_DeferredAudit``.
+  аудита не пройдёт CI"). Audit is wired at the SERVICE level (4.4); the two
+  submissions routes are the first ``_Audited`` (5.9 — submit_day/amend_day emit,
+  test_submission_audit pins through the route), the rest stay ``_DeferredAudit``.
 
 Only ONE direction is asserted for facet B (``emitted ⊆ registry``): the registry
 is a forward seed carrying codes for not-yet-built epics (AUTH_*/ASSIGNMENT_*/...),
@@ -180,17 +180,19 @@ _NON_ENDPOINT_NAMES = {"api-root"}
 
 
 class _Audited:
-    """A mutating route whose handler writes an AuditLog row. (None yet — audit is
-    service-level today; reserved for when a route gains audit + a behavioral test.)"""
+    """A mutating route that emits an AuditLog row (directly or via its service
+    layer) AND carries a behavioral test pinning the emission through the route
+    (the 5.9 HTTP-smoke pair in test_submission_audit is the pattern)."""
 
     audited = True
 
 
 class _DeferredAudit:
-    """A mutating route NOT yet audited — audit deferred to ``fix_ref``. Today every
-    mutating route is here: audit (4.4) is wired at the E3 SERVICE level and no
-    mutating REST route emits AuditLog. The value of this gate is COMPLETENESS — a
-    new mutating route must be classified, or CI goes red (AR-9)."""
+    """A mutating route NOT yet audited — audit deferred to ``fix_ref``. Audit
+    (4.4) is wired at the SERVICE level; a route flips to ``_Audited`` when its
+    service emits + a behavioral test proves it through the route (5.9 flipped
+    the first two). The value of this gate is COMPLETENESS — a new mutating
+    route must be classified, or CI goes red (AR-9)."""
 
     audited = False
 
@@ -229,17 +231,13 @@ AUDIT_MATRIX = {
     "ops-user-role-detail": _DeferredAudit(_RBAC),
     "ops-temp-duty-list": _DeferredAudit(_RBAC),
     "ops-temp-duty-expire": _DeferredAudit(_RBAC),
-    # submissions (story 5.8a): аудит сдач (DAILY_SUBMISSION_SUBMITTED — имя из
-    # docs/registries/audit-events.yaml) — стори 5.9; submit_day docstring явно
-    # резервирует эмиссию за 5.9.
-    "ops-daily-submission-list": _DeferredAudit(
-        "аудит сдач (DAILY_SUBMISSION_SUBMITTED) — стори 5.9"
-    ),
-    # amend (story 5.8b): аудит amendment (DAILY_SUBMISSION_AMENDED — имя из
-    # docs/registries/audit-events.yaml) — стори 5.9.
-    "ops-daily-submission-amend": _DeferredAudit(
-        "аудит amendment (DAILY_SUBMISSION_AMENDED) — стори 5.9"
-    ),
+    # submissions (5.8a → 5.9): DAILY_SUBMISSION_SUBMITTED эмитится на
+    # СЕРВИС-уровне (submit_day, канон 4.4); поведенческие пины + HTTP-smoke
+    # сквозь роут — test_submission_audit (5.9).
+    "ops-daily-submission-list": _Audited(),
+    # amend (5.8b → 5.9): DAILY_SUBMISSION_AMENDED эмитится в amend_day (один
+    # канал на HTTP 5.8b и хук 5.4b); пины — test_submission_audit (5.9).
+    "ops-daily-submission-amend": _Audited(),
 }
 
 

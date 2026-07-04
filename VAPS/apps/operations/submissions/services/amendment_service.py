@@ -14,18 +14,24 @@ ARCH-DATA-021 «не правится — вытесняется»); расхо�
 существующую сдачу (иначе ``NO_SUBMISSION_TO_AMEND``).
 
 Вне скоупа 5.4a (НЕ здесь): энфорс «ретро-правка требует amendment» + тело хука
-3.9 + инверсный seam statuses↔submissions (это 5.4b — будет ВЫЗЫВАТЬ amend_day);
-аудит ``DAILY_SUBMISSION_AMENDED`` (5.9); права/скоуп (5.8); эскалация «санкция
-выше после ухода расхода наверх» (forward-seam: расход-релиз — E6).
+3.9 + инверсный seam statuses↔submissions (это 5.4b — его хук
+``enforce_amendment_on_retro_edit`` ВЫЗЫВАЕТ amend_day на каждый накрытый день);
+права/скоуп (5.8); эскалация «санкция выше после ухода расхода наверх»
+(forward-seam: расход-релиз — E6). Аудит ``DAILY_SUBMISSION_AMENDED`` (5.9)
+эмитится ЗДЕСЬ — один канал на оба вызывающих (HTTP 5.8b и хук 5.4b).
 """
 
 from django.db import transaction
 
+from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector
 from apps.operations.submissions.models import DailySubmission
 from apps.operations.submissions.selectors import DailySubmissionSelector
+from apps.operations.submissions.services.day_submission_service import (
+    _submission_audit_value,
+)
 from apps.operations.submissions.services.snapshot import build_division_snapshot
 
 
@@ -71,7 +77,8 @@ def amend_day(
         который DRF-handler (`CONSTRAINT_ERROR_MAP`) маппит в 409 DAY_ALREADY_SUBMITTED.
         ВНЕ HTTP (вызыватель-сервис 5.4b) получит СЫРОЙ `IntegrityError` и обрабатывает
         сам — savepoint гарантирует целостность (flip откатан, прежняя версия цела).
-        Аудит не пишет (5.9), права не гейтит (5.8).
+        Права не гейтит (5.8); успешный amendment пишет DAILY_SUBMISSION_AMENDED
+        (5.9, before/after), отклонённый и гоночный — ничего.
     """
     _require_actor(actor)
     _require_text(reason, "reason")
@@ -106,6 +113,19 @@ def amend_day(
             message="Нельзя амендить несданный день (нет ни одной версии).",
         )
 
+    # Audit «before» — the prior head AS IT WAS before the flip (story 5.9): the
+    # in-memory `latest` still carries its pre-flip is_current, and .update()
+    # below won't touch the instance. A prior head that is itself an amendment
+    # (v≥2) carries its own reason/sanction/triggered_by — ride them along so
+    # the before/after pair stays symmetric (code-review реш. Bratan).
+    before = _submission_audit_value(latest)
+    if latest.event == DailySubmission.Event.AMENDED:
+        before |= {
+            "reason": latest.reason,
+            "sanction": latest.sanction,
+            "triggered_by_status_id": latest.triggered_by_status_id,
+        }
+
     # Re-snapshot the CORRECTED state (not a copy of v1) — a fresh self-contained
     # срез on the same business_date (ARCH-DATA-021: amendment = new version).
     snapshot = build_division_snapshot(division_id, business_date)
@@ -136,4 +156,22 @@ def amend_day(
             sanction=sanction,
             triggered_by_status_id=triggered_by_status_id,
         )
+    # Audit (story 5.9) AFTER the savepoint commits, in the ambient txn (canon
+    # 4.4): a version-race IntegrityError above propagates out before reaching
+    # here, so a rolled-back amendment leaves no audit row. Both callers (HTTP
+    # 5.8b and the 5.4b retro-edit hook) are covered by this single emission.
+    record(
+        actor=actor,
+        action="DAILY_SUBMISSION_AMENDED",
+        entity_type="daily_submission",
+        entity_id=division_id,
+        old_value=before,
+        new_value=_submission_audit_value(submission)
+        | {
+            "reason": reason,
+            "sanction": sanction,
+            "triggered_by_status_id": triggered_by_status_id,
+        },
+        reason=reason,
+    )
     return submission
