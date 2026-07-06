@@ -19,4 +19,13 @@ export default tseslint.config(
     files: ['src/**/*.{ts,tsx}'],
     ...compat.configs['flat/recommended'],
   },
+  {
+    // node-скрипты вне src (size-gate, сам конфиг) — без этого блока eslint их молча пропускает
+    files: ['**/*.{js,mjs}'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: globals.node,
+    },
+  },
 )

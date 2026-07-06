@@ -7,6 +7,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const proxyTarget = env.VITE_PROXY_TARGET || 'http://localhost:8000'
+  // Удалённый таргет (двухмашинный сетап) требует Host из ALLOWED_HOSTS Django,
+  // иначе 400 DisallowedHost; локальному Django оставляем canon-поведение (false).
+  const changeOrigin = !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/i.test(proxyTarget)
 
   return {
     plugins: [react()],
@@ -17,10 +20,12 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': {
           target: proxyTarget,
+          changeOrigin,
         },
         '/ws': {
           target: proxyTarget,
           ws: true,
+          changeOrigin,
         },
       },
     },

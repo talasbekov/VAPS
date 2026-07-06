@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# env-файлы (внутренние хосты контура, VITE_PROXY_TARGET) — не коммитить
+.env
+.env.*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -4,7 +4,7 @@ baseline_commit: 999a98d49b428562165d286dabfb7db70024948a
 
 # Story 8.1: Scaffold Vite react-ts с контурной донастройкой
 
-Status: review
+Status: done
 
 > **Контекст запуска:** первая фронтенд-стори проекта (эпик E8 стартует; фронта в репо ещё нет — гринфилд).
 > Baseline диффа: `999a98d` (ревизия планирования: донорский shadcn вместо Mantine).
@@ -47,6 +47,22 @@ so that фронтенд собирается под целевую среду (
   - [x] `public/fonts/README.md` (1–2 строки: системный стек — канон ДС; сюда лягут woff2 казахской кириллицы, если реальный контур потребует)
 - [x] Task 6: Проверка целиком
   - [x] Чистый прогон: `npm ci && npm run gate` зелёный; `npm run dev` поднимается, прокси отвечает (ручная проверка с бэком или curl-ом через dev-сервер)
+
+### Review Findings
+
+_Code review 2026-07-06 (bmad-code-review, Fable 5; слои: Blind Hunter / Edge Case Hunter / Acceptance Auditor; дифф 999a98d..6392562)._
+
+- [x] [Review][Decision] Vite 8.1 / TS 6.0 вместо запиненных спекой Vite 7.x / TS 5.x — девиация задокументирована в Completion Notes, но обоснование донор-совместимости для 8.7 («донор React 19, TS5 — версии совместимы») с TS6 не перепроверено. **Решение Bratan 2026-07-06: даунгрейд до спеки** → vite 7.3.6 / typescript 5.9.3 / @vitejs/plugin-react 5.2.0, гейт зелёный (59.4/300 КБ). (auditor)
+- [x] [Review][Decision] Dev-прокси без `changeOrigin: true` при удалённом `VITE_PROXY_TARGET` — спека предписывает `changeOrigin: false`, но при таргете на удалённый Django (двухмашинный сетап ноутбук+ВПС) уйдёт `Host: localhost:5173` → 400 DisallowedHost на каждый `/api`/`/ws` запрос. **Решение Bratan 2026-07-06: условный `changeOrigin`** — true только при не-localhost таргете (локальный кейс остаётся по спеке); regex-логика проверена на 6 кейсах. (blind+edge+auditor)
+- [x] [Review][Patch] no-CDN гвард дырявый: protocol-relative `//host`, `ws://`/`wss://`, байпас `localhost\b` (`localhost.evil.com`), эвристика пропускает `fetch(`/`new URL(`/`srcset=`/верхний регистр `SRC=`, сканируются только `.html|.css|.js` [frontend/scripts/size-gate.mjs:48-57] (blind+edge+auditor) — закрыто: точное сравнение хоста, +wss/protocol-relative, контексты srcset/JSON-ключи/fetch/new URL/WebSocket/xhr.open, /i-флаг, +svg/webmanifest/json/mjs/cjs; 8 байпас-фикстур ловятся, license/строки react.dev не флагуются
+- [x] [Review][Patch] Корневой `.gitignore` (`lib/`, `build/`) молча проглотит `frontend/src/lib/` — каноничное место shadcn-utils для вендоринга донора в 8.7; воспроизведено `git check-ignore` [.gitignore:11,17] (edge) — закрыто негейтом `!frontend/**/lib/`+`!frontend/**/build/`; проверено в обе стороны (Backend/lib всё ещё игнорируется)
+- [x] [Review][Patch] size-gate: 0 JS-файлов = вакуумный pass (stale/зачищенный dist → exit 0 без единого ассета); `.mjs`/`.cjs` не считаются бюджетом [frontend/scripts/size-gate.mjs:29-45] (edge) — закрыто: guard `jsFiles.length === 0` → exit 1, фильтр `\.(js|mjs|cjs)$`
+- [x] [Review][Patch] tsconfig `lib: ES2023` при таргете FF100: `findLast` (FF104+)/`toSorted` (FF115+) проходят весь гейт (tsc+esbuild+compat) и падают TypeError в рантайме; заодно нет `DOM.Iterable` (`for..of` по NodeList → TS2488) [frontend/tsconfig.app.json:5] (edge+blind) — закрыто: target/lib ES2022 + DOM.Iterable, комментарий-обоснование в tsconfig
+- [x] [Review][Patch] eslint не покрывает `scripts/size-gate.mjs` и `eslint.config.js` — нет конфиг-блока для `*.{js,mjs}`, гейт-скрипт сам вне гейта качества (проверено живым прогоном) [frontend/eslint.config.js:11,19] (blind+edge) — закрыто блоком `**/*.{js,mjs}` (js.recommended + node-globals); probe-файл с ошибкой ловится
+- [x] [Review][Patch] `frontend/README.md` — стоковый шаблон про несуществующий Oxlint/`.oxlintrc.json`; не описывает реальное: `gate`, бюджет 300КБ, `VITE_PROXY_TARGET`, FF100 [frontend/README.md] (blind+auditor) — закрыто: переписан под реальный сетап (команды, гейт, прокси, Node, структура ARCH-FE-013)
+- [x] [Review][Patch] `.gitignore` фронта не игнорирует `.env`/`.env.*` при том, что `vite.config.ts` читает env через `loadEnv` — первый же `.env` с внутренними хостами контура попадёт в git [frontend/.gitignore] (blind) — закрыто: добавлены `.env`/`.env.*`
+- [x] [Review][Patch] `public/fonts/README.md` с внутренним путём репо (`.design-sync/conventions.md`) копируется в деплой-артефакт `dist/fonts/README.md` — нейтрализовать содержимое, сам файл предписан AC3 [frontend/public/fonts/README.md] (blind+edge) — закрыто: содержимое нейтрализовано, dist проверен grep-ом
+- [x] [Review][Defer] Корневой quality-bar (`make gate`) не включает фронтовый гейт — `npm run gate` существует только внутри `frontend/` и ниоткуда не вызывается [Backend/VAPS/Makefile:31] — deferred, wiring корневого гейта/CI — отдельная стори (blind+edge)
 
 ## Dev Notes
 
@@ -146,3 +162,17 @@ Claude Fable 5 (claude-fable-5), bmad-dev-story, 2026-07-04.
 - `frontend/tsconfig.json`, `frontend/tsconfig.app.json`, `frontend/tsconfig.node.json` — new (шаблон, не менялись)
 - `frontend/README.md` — new (шаблон Vite, не менялся)
 - Удалено из шаблона: `.oxlintrc.json`, `src/App.css`, `src/index.css`, `src/assets/*`, `public/vite.svg`, `public/favicon.svg`, `public/icons.svg`
+
+### Post-Review Fixes (2026-07-06)
+
+Применены все 10 патчей ревью (2 из решений Bratan + 8 patch): даунгрейд до спеки
+(vite 7.3.6 / typescript 5.9.3 / @vitejs/plugin-react 5.2.0 — package.json+lock),
+условный `changeOrigin` (vite.config.ts), ужесточённый no-CDN гвард + guard вакуумного
+pass (scripts/size-gate.mjs), target/lib ES2022+DOM.Iterable (tsconfig.app.json),
+линт-блок `**/*.{js,mjs}` (eslint.config.js), переписан frontend/README.md,
+`.env`/`.env.*` в frontend/.gitignore, негейт `!frontend/**/lib|build/` в корневом
+.gitignore, нейтрализован public/fonts/README.md. Верификация: `npm run gate` зелёный
+(59.4/300 КБ gzip), 8 no-CDN байпас-фикстур ловятся / react.dev-строки не флагуются,
+git check-ignore в обе стороны, eslint-probe ловит ошибку, vite dev поднимается.
+Устаревшие после фиксов Completion Notes выше (версии Vite 8/TS 6, changeOrigin=false)
+— исторические, актуальное состояние здесь.

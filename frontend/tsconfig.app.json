@@ -1,8 +1,10 @@
 {
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "target": "es2023",
-    "lib": ["ES2023", "DOM"],
+    // ES2022, не ES2023: FF100 не знает ES2023-API (findLast FF104+, toSorted FF115+),
+    // а esbuild транспилирует только синтаксис — единственный ловящий слой это tsc lib
+    "target": "es2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "esnext",
     "types": ["vite/client"],
     "allowArbitraryExtensions": true,

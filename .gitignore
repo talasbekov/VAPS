@@ -239,3 +239,9 @@ ds-bundle/
 .design-sync/learnings/
 .design-sync/node_modules
 Backend/PersonnelStatus/PersonalRecordFront/.ds-tailwind.css
+
+# Frontend: питоньи packaging-паттерны (lib/, build/) выше не должны глотать каталоги
+# фронта (frontend/src/lib — каноничное место shadcn-utils, стори 8.7). Негейтим сами
+# каталоги (не файлы в исключённом родителе — так git re-include работает).
+!frontend/**/lib/
+!frontend/**/build/

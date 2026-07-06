@@ -1,32 +1,36 @@
-# React + TypeScript + Vite
+# VAPS Frontend (PersonnelStatus)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Vite + React + TypeScript. Целевая среда — закрытый контур: Firefox ~100, 4 ГБ RAM, без CDN
+и внешних запросов. Стек и структура — стори 8.1 (ARCH-FE-013).
 
-Currently, two official plugins are available:
+## Команды
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `npm run dev` — dev-сервер; `/api/*` и `/ws/*` проксируются на Django
+  (`http://localhost:8000`; цель переопределяется env `VITE_PROXY_TARGET`,
+  для удалённого таргета прокси сам включает `changeOrigin`)
+- `npm run build` — типы (`tsc -b`) + прод-сборка (`vite build`, target `firefox100`)
+- `npm run lint` — eslint flat config + `eslint-plugin-compat` против `.browserslistrc` (`firefox >= 100`)
+- `npm run gate` — фронтовый гейт: `tsc -b && eslint . && vite build && node scripts/size-gate.mjs`
 
-## React Compiler
+## Гейт (`scripts/size-gate.mjs`)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. **Бюджет**: суммарный gzip всех JS-ассетов `dist/` ≤ 300 КБ; при превышении — exit 1
+   с таблицей ассетов и размеров.
+2. **no-CDN**: в `dist/` нет загрузок с внешних хостов (`http(s)://`, `ws(s)://`,
+   protocol-relative `//host` вне `localhost`/`127.0.0.1`) в загрузочных контекстах
+   (`src`/`srcset`/`href`/`url()`/`@import`/`import()`/`fetch`/`new URL`/`WebSocket`).
 
-## Expanding the Oxlint configuration
+## Node
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+`.nvmrc` = 24; `package.json` `engines.node >= 22.12` (минимум Vite 7).
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+## Шрифты
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Системный sans-стек (канон ДС), внешние шрифты не подключаются; каркас под вендоринг
+woff2 — `public/fonts/`.
+
+## Структура `src/` (ARCH-FE-013)
+
+- `app/` — entry (`main.tsx`), корневой `App`
+- `features/` — фичи (пусто до 8.2+)
+- `shared/` — переиспользуемое (пусто до 8.2+)
