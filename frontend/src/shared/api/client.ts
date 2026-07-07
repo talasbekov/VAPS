@@ -4,6 +4,7 @@
 // Осознанно НЕТ: трансформаций имён (snake_case end-to-end, L429), ретраев
 // (канон §Process: мутации не ретраить), таймаутов (AbortSignal.timeout — граница
 // FF100), auth-логики (8.6 подключит через defaultHeaders, парсинг не правится).
+import { authHeaders } from '../auth/credential'
 import { NetworkError, parseErrorResponse } from './errors'
 
 export interface ApiClientOptions {
@@ -64,5 +65,5 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   }
 }
 
-/** Дефолтный клиент приложения: same-origin, без доп. заголовков. */
-export const apiClient = createApiClient()
+/** Дефолтный клиент приложения: same-origin; auth-заголовки — 8.6 (Д8). */
+export const apiClient = createApiClient({ defaultHeaders: authHeaders })

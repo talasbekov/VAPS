@@ -1,4 +1,7 @@
-from rest_framework import status, viewsets
+from drf_spectacular.utils import (
+    extend_schema, extend_schema_serializer, inline_serializer,
+)
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
@@ -120,6 +123,23 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
 
 
 class MyPermissionsViewSet(viewsets.ViewSet):
+    # Schema-only annotation (story 8.6): plain ViewSet has no serializer, so
+    # spectacular emitted "No response body" and the SPA had no type to codegen
+    # from (ARCH-FE-011 forbids handwritten types). Behaviour is unchanged.
+    # many=False coerces the list-view heuristic (action == "list") into a
+    # single-object response instead of an array wrap.
+    @extend_schema(
+        responses=extend_schema_serializer(many=False)(
+            inline_serializer(
+                name="MyPermissionsResponse",
+                fields={
+                    "permissions": serializers.ListField(
+                        child=serializers.CharField()
+                    ),
+                },
+            )
+        )
+    )
     def list(self, request, *args, **kwargs):
         user_id = getattr(request, "actor_id", None)
         if not user_id:

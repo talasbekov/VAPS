@@ -891,7 +891,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: operations["operations_my_permissions_retrieve"];
+        get: operations["operations_my_permissions_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1158,6 +1158,9 @@ export interface components {
          * @enum {string}
          */
         KindEnum: "SUBMISSION_LAGGING";
+        MyPermissionsResponse: {
+            permissions: string[];
+        };
         /** @description Read-only projection of a notification — flat, snake_case (FR-13). */
         Notification: {
             readonly id: number;
@@ -2285,7 +2288,7 @@ export interface operations {
             };
         };
     };
-    operations_my_permissions_retrieve: {
+    operations_my_permissions_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -2294,12 +2297,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MyPermissionsResponse"];
+                };
             };
         };
     };

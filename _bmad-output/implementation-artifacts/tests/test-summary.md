@@ -1,100 +1,106 @@
-# Test Automation Summary — Story 8.5 (useApiMutation и ConflictDialog)
+# Test Automation Summary — Story 8.6 (Auth-подключение)
 
 Дата: 2026-07-07 · Скилл: bmad-qa-generate-e2e-tests · Модель: Claude Fable 5
-(предыдущая сводка — 8.4 — в git-истории этого файла)
+(предыдущая сводка — 8.5 — в git-истории этого файла)
 
 ## Контекст
 
-Стори 8.5 — UI-половина протокола ошибок ARCH-FE-015: `useApiMutation` ветвит
-ApiError-union по каналам (форма/диалог/тост/state), общий `ConflictDialog` с
-override-повтором, aria-live тост, `Providers` (react-query `retry: false`).
-Браузерного раннера (Playwright/Cypress) в проекте нет → E2E-уровень стека =
-vitest 4 + RTL + user-event + MSW 2 (jsdom per-file docblock, Д7).
+Стори 8.6 — вход в портал: credential store (sessionStorage + мутируемый
+`authHeaders`) → apiClient, AuthContext (useSyncExternalStore), права
+ТОЛЬКО из `useQuery(['me'])` (ARCH-FE-010), guards RequireAuth/RequirePermission,
+LoginPage (RHF+zod «ровно одно»), глобальный handle401 (QueryCache+MutationCache).
+Браузерного раннера нет → E2E-уровень стека = vitest 4 + RTL + user-event +
+MSW 2 (jsdom per-file, прецедент QA 8.5).
 
-Dev-стори принесла 21 тест: хук изолированно (renderHook + локальная обёртка,
-12) и диалог изолированно (RTL, 9). QA-проход искал непокрытые связки и ветки.
+Dev-стори принесла 30 тестов, включая собственный E2E-файл
+`src/app/auth-flow.test.tsx` (вход по ID, 401-на-mutation → logout, 403 → нет,
+onError на обоих кэшах). QA-проход искал непокрытые связки поверх него.
 
-## Найденные пробелы покрытия (auto-applied, 51 → 60 тестов)
+## Найденные пробелы покрытия (auto-applied, 90 → 95 тестов)
 
-### E2E user-флоу через РЕАЛЬНУЮ app-композицию — `src/app/providers.test.tsx` (новый, +3)
+Все пять закрыты новым файлом **`src/app/auth-flow.qa.test.tsx`** — E2E через
+РЕАЛЬНУЮ композицию `<Providers>` (шпион QueryClientSpy достаёт внутренний
+QueryClient для кэш-ассертов; размещение в `app/` — imports features+shared
+легальны, ARCH-FE-013):
 
-1. **`providers.tsx` не тестировался вовсе**, а хук-тесты шли через локальную
-   обёртку, зеркалящую конфиг — регресс в самом `createQueryClient`/монтаже
-   `ToastProvider` тесты 21 шт. не поймали бы. Закрыто интеграцией «мини-фича
-   как в E9» (хук + общий ConflictDialog + error-state) внутри настоящего
-   `<Providers>`:
-   - **happy path глазами пользователя**: сабмит → 409 → диалог → paste причины →
-     «Подтвердить оверрайд» → тело второго запроса `{...исходное, override: true,
-     override_reason}` (захвачено) → «Статус создан», диалог закрыт (AC 1);
-   - **отмена глазами пользователя**: «Отмена» → повтора нет, ошибка у фичи;
-     повторный сабмит открывает диалог с ЧИСТОЙ textarea — state причины не
-     переживает закрытие (инвариант «размонтирование = закрытие», AC 2);
-   - **канал тоста через реальный ToastProvider**: 500 → generic-текст в
-     `role="status"`, без деталей конверта, без диалога, ровно 1 запрос (AC 5).
-   Размещение в `app/` — вынужденно-правильное: app→shared легален, обратное
-   запрещено (ARCH-FE-013); рядом с providers.tsx (L440).
+1. **`logout()` не покрыт НИ ОДНИМ тестом** (Task 6: clearCredential +
+   `removeQueries(['me'])` — кнопки в UI нет до 8.7, механика висела в воздухе).
+   Закрыто: клик «Выйти» → credential очищен всюду (store/storage/authHeaders),
+   `['me']` снят с кэша (removeQueries, не invalidate — Ловушка 4), RequireAuth
+   реактивно уводит на /login.
+2. **JWT-вход существовал только на локальной обёртке** (LoginPage.test) с
+   ручным `apiClient.get`. Закрыто: вставка JWT + **Enter в JWT-поле** (L262
+   теперь доказан для обоих полей) через реальный Providers → запрос самого
+   приложения `['me']` несёт ровно `Authorization: Bearer`, без X-User-Id (AC 2).
+3. **401 на query в UI не покрыт** (в стори — 401 на mutation в UI и fetchQuery
+   на кэш-уровне). Закрыто самым реалистичным сценарием: старт приложения с
+   протухшим JWT из sessionStorage → `['me']` сам ловит 401 → после дефолтных
+   ретраев глобальный logout → молчаливый /login (AC 6). Ассерт
+   `captured.toHaveLength(4)` **документирует цену Д10**: 1 запрос + 3 ретрая,
+   ~7 с до разлогина (кандидат на донастройку 8.7+ из Completion Notes).
+4. **«Переживает F5» на уровне приложения**: remount дерева с новым Providers
+   (новый QueryClient, пустой кэш) → сразу контент без /login, `['me']`
+   перезапрошен каждым клиентом (AC 1; гидратация модуля из storage — юнит
+   credential.test.ts, здесь — поведение целого приложения).
+5. **Deny-ветка по полному флоу входа**: guard увёл с защищённого маршрута →
+   вход → возврат на `state.from` → права без нужного кода → «Доступ запрещён»,
+   контент скрыт, БЕЗ редиректа и очистки credential — deny ≠ logout (AC 5;
+   в стори state.from-возврат и deny жили только на локальных обёртках).
 
-### Тост (`shared/ui/toast.tsx`) — `toast.test.tsx` (новый, +3)
+## API-тесты (Step 2 workflow): не требуются
 
-2. **Нулевое покрытие компонента**; `TOAST_AUTO_DISMISS_MS` экспортирован «для
-   тестов с fake timers», но не использовался ни одним тестом. Закрыто:
-   - авто-dismiss ровно через `TOAST_AUTO_DISMISS_MS` (граница: жив на −1 мс);
-   - постоянный live-регион существует и ДО сообщения;
-   - **перезарядка таймера**: второй toast заменяет сообщение, и дедлайн первого
-     НЕ гасит второе (ветка `clearTimeout` в `toast()`);
-   - guard `useToast` вне провайдера кидает понятную ошибку (монтаж из app).
-
-### Хук (`shared/api/useApiMutation.ts`) — дополнен `useApiMutation.test.tsx` (+3)
-
-3. **Сброс конфликта новым `mutate`** (строка `setConflict(null)` в mutate):
-   диалог закрывается синхронно, не дожидаясь ответа; новый 409 взводит заново.
-4. **Override-повтор, встретивший НОВЫЙ 409 overridable** → диалог взводится
-   заново, `onSuccess` не вызван — сервер авторитетен (UX L177: hard/soft
-   деление на бэке); дефолтная MSW-фикстура этот путь не проявляла (201 на повтор).
-5. **Guard `confirmOverride` без предшествующего mutate** — no-op: запрос не
-   уходит (defensive-ветка `lastVariablesRef === null`).
+Бэк-половина стори — только схемная аннотация `@extend_schema` (поведение не
+менялось). Эндпоинт `GET /api/operations/my-permissions/` уже покрыт бэком:
+`test_temp_duty_api.py` (happy + 403 без credential), `test_rbac_matrix.py`
+(гейт «любой аутентифицированный»), `test_authentication.py` (JWT/X-User-Id,
+5.1); контракт схемы — дрифт-гейтами (`test_schema_drift` + `schema-check.mjs`).
 
 ## Верификация (не вакуумность)
 
-- `vitest run` — **60/60 зелёные** (30 node 8.4 + 30 jsdom: 21 стори + 9 QA).
-- **Мутационная проба 1**: убран `setConflict(null)` из `mutate` → ровно тест
-  «новый mutate сбрасывает conflict-state» красный (1 failed | 14 passed). Откачено.
-- **Мутационная проба 2**: убран `clearTimeout` из `toast()` → ровно тест
-  перезарядки таймера красный (1 failed | 2 passed). Откачено.
-- **Мутационная проба 3**: `retry: false` → `retry: 1` в `createQueryClient` →
-  **все 3 E2E-теста красные** — интеграция пинует реальный app-конфиг, а не
-  тестовую обёртку. Откачено.
-- Прод-код восстановлен байт-в-байт (Edit туда-обратно; файлы стори untracked
-  до коммита — git-restore недоступен, урок 8.4 учтён).
-- `npm run gate` — **все 9 шагов зелёные** после отката (deps-gate 413 пакетов,
-  schema-check, tsc -b, eslint, lint-canon 13+5, schema-check.test, vitest 60/60,
-  vite build, size-gate). Бандл **66.7 KB gzip — не вырос** (тесты в бандл не утекли).
+- `vitest run` — **95/95 зелёные** (90 стори/базы + 5 QA), первый прогон QA-файла
+  5/5 без правок прод-кода.
+- **Мутационная проба А**: убран `removeQueries(['me'])` из `logout()` →
+  красный РОВНО один — новый logout-тест (1 failed | 4 passed): единственное
+  покрытие этой ветки в проекте. Откачено.
+- **Мутационная проба Б**: `navigate(...)` LoginPage игнорирует `state.from` →
+  красные РОВНО два флоу-теста QA (JWT-вход и deny-ветка): возврат на исходный
+  маршрут пинуется через реальную композицию. Откачено.
+- Прод-код восстановлен байт-в-байт (обратные Edit; файлы стори untracked до
+  коммита — git restore недоступен, урок 8.4 учтён).
+- `npm run gate` — **все 9 шагов зелёные**: deps-gate (418 пакетов), schema-check,
+  tsc -b, eslint (boundaries чисты для нового файла в app/), lint-canon (13+6),
+  schema-check.test, vitest 95/95, vite build, size-gate. Бандл **108.0 KB gzip —
+  не вырос** (тесты в бандл не утекли). Бэк не трогался → `make gate` бэка
+  не перезапускался (зелёный 1841 passed зафиксирован dev-стори).
 
 ## Покрытие
 
-- AC стори: 8/8 автоматизированы (AC 1–5 — хук + E2E-интеграция, AC 6 —
-  lint-canon фикстуры стори, AC 7 — контракт-тест каналов + компонентные, AC 8 —
-  сам gate); QA добавил E2E-срез поверх изолированных срезов dev-стори.
-- Файлы стори с тестами: 4/4 (`useApiMutation.ts`, `ConflictDialog.tsx`,
-  `toast.tsx` — было 0, `providers.tsx` — было 0).
-- Каналы протокола ARCH-FE-015: 4/4 доказаны дважды — изолированно (renderHook)
-  и в user-флоу (E2E через Providers) для диалога и тоста.
-- Переходы conflict-state: 5/5 (open/confirm/dismiss — стори; re-mutate,
-  re-conflict после override, no-op guard — QA).
+- AC стори: 8/8 автоматизированы (AC 1–6 — юниты + E2E; AC 7 — дрифт-гейты;
+  AC 8 — сам gate). QA добавил E2E-срез поверх изолированных срезов стори
+  для AC 1, 2, 5, 6.
+- Механики auth-флоу: **login/JWT/deny/401-mutation/401-query/403/F5/logout —
+  8/8 в user-флоу** (было 5/8: JWT и deny — только изолированно, logout — никак).
+- Файлы стори с тестами: 6/6 прод-файлов auth-слоя исполняются E2E-тестами
+  через реальную композицию (credential, AuthContext, usePermissions, guards,
+  LoginPage, providers).
+- Suite: 12 файлов, 95 тестов; QA-файл добавляет ~7.5 с к прогону (осознанно:
+  тест цены Д10 ждёт реальные ретраи, hardcoded-sleep нет — только polling
+  findBy*/waitFor).
 
 ## Файлы
 
-- Создано: `frontend/src/app/providers.test.tsx` (3 E2E),
-  `frontend/src/shared/ui/toast.test.tsx` (3 компонентных).
-- Изменено: `frontend/src/shared/api/useApiMutation.test.tsx` (+3 теста,
-  describe «conflict-state: граничные переходы»).
+- Создано: `frontend/src/app/auth-flow.qa.test.tsx` (5 E2E).
+- Обновлено: `_bmad-output/implementation-artifacts/tests/test-summary.md` (эта сводка).
 - Продакшен-код, конфиги, gate-цепочка — не тронуты (пробы откачены байт-в-байт).
 
 ## Next Steps
 
-- Q1–Q4 стори (Д1–Д8) по-прежнему ждут подтверждения Bratan на ревью — E2E-тесты
-  пинуют Д1-контракт повтора, при смене решения обновить капчер-ассерты.
-- Настоящие браузерные E2E (Playwright) — кандидат на конец E8/E9, когда появятся
-  роутер (8.7) и первые страницы; текущий стек сознательно ограничен jsdom.
-- Паттерн «мини-фича как в E9» из providers.test.tsx — готовый шаблон для
-  тестов первых реальных фич (8.6+).
+- Цена Д10 теперь задокументирована ассертом (4 запроса, ~7 с до logout при
+  протухшем токене): при донастройке retry для `['me']` в 8.7+ тест подскажет
+  новое число — обновить `toHaveLength`.
+- Кнопка «Выйти» приезжает в 8.7 (сайдбар) — механика `logout()` уже доказана,
+  8.7 останется подключить UI к готовому `useAuth().logout`.
+- Q1–Q4 стори (Д1–Д10) ждут подтверждения Bratan на ревью — QA-тесты пинуют
+  Д7 (двухуровневая 401-механика) и Д10 (дефолтные политики Query).
+- Настоящие браузерные E2E (Playwright) — кандидат на конец E8/E9; текущий
+  стек сознательно ограничен jsdom (без изменений с 8.5).

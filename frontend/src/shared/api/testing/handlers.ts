@@ -13,7 +13,20 @@ import type { ErrorEnvelope } from '../errors'
 type EmployeesListResponse =
   paths['/api/core/employees/']['get']['responses']['200']['content']['application/json']
 
+type MyPermissionsResponse =
+  paths['/api/operations/my-permissions/']['get']['responses']['200']['content']['application/json']
+
 const TIMESTAMP = '2026-07-07T12:00:00+05:00'
+
+// Права оператора (коды — из seed_operations.py, 8.6)
+export const myPermissionsFixture: MyPermissionsResponse = {
+  permissions: ['daily_report.mark_update', 'status.view'],
+}
+
+// Wildcard `*` = ADMIN (PermissionService.has_permission)
+export const adminPermissionsFixture: MyPermissionsResponse = {
+  permissions: ['*'],
+}
 
 export const employeesListFixture: EmployeesListResponse = {
   count: 1,
@@ -76,6 +89,25 @@ export const conflictStateEnvelope: ErrorEnvelope = {
   timestamp: TIMESTAMP,
 }
 
+// 401 всегда AUTH_REQUIRED (exception_handler L43-48: TOKEN_INVALID не эмитится)
+export const authRequiredEnvelope: ErrorEnvelope = {
+  error_code: 'AUTH_REQUIRED',
+  message: 'Требуется аутентификация.',
+  details: {},
+  request_id: null,
+  timestamp: TIMESTAMP,
+}
+
+// 403: право не выдано ЛИБО запрос вовсе без credential (Ловушка 1: на проводе
+// отсутствие credential даёт 403, а не 401)
+export const permissionDeniedEnvelope: ErrorEnvelope = {
+  error_code: 'PERMISSION_DENIED',
+  message: 'Недостаточно прав.',
+  details: {},
+  request_id: null,
+  timestamp: TIMESTAMP,
+}
+
 export const serverEnvelope: ErrorEnvelope = {
   error_code: 'INTERNAL_ERROR',
   message: 'Внутренняя ошибка сервера.',
@@ -91,6 +123,10 @@ export const handlers = [
   // 200: типизированное тело как есть (snake_case, L429)
   http.get('*/api/core/employees/', () =>
     HttpResponse.json(employeesListFixture),
+  ),
+  // 200: права текущего пользователя (8.6); вариант ['*'] — server.use в тестах
+  http.get('*/api/operations/my-permissions/', () =>
+    HttpResponse.json(myPermissionsFixture),
   ),
   // 204: реальный 204-ответ схемы (operations_user_roles_destroy)
   http.delete(

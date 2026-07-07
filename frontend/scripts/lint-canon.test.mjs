@@ -202,6 +202,13 @@ try {
     'import { useApiMutation } from "../../shared/api/useApiMutation"\n' +
       'export const hook = useApiMutation\n',
   )
+  // негативный контроль (8.6): канонный auth-хук из features прямым путём
+  // (shared/auth — новый слот-зеркало core/auth бэка; barrel-index запрещён)
+  writeFileSync(
+    join(A, 'uses-permissions.ts'),
+    'import { usePermissions } from "../../shared/auth/usePermissions"\n' +
+      'export const perms = usePermissions\n',
+  )
   // barrel-фикстура: сканер обязан её увидеть (самопроверка сканера)
   writeFileSync(join(A, 'index.ts'), 'export { ok } from "./legal"\n')
   // не-TS фикстура: сканер TS-only обязан её увидеть (самопроверка сканера)
@@ -259,6 +266,7 @@ try {
   expectClean(results, `${APP_NAME}/probe.ts`) // app → features + shared
   expectClean(results, `${API_NAME}/probe.ts`) // fetch внутри shared/api легален
   expectClean(results, `${A_NAME}/uses-api-mutation.ts`) // канонный хук из features (8.5)
+  expectClean(results, `${A_NAME}/uses-permissions.ts`) // канонный auth-хук из features (8.6)
 
   // сканеры видят свои фикстуры → сканеры живые, не вакуумные
   if (!barrelOffenders().some((f) => f.includes(A_NAME))) {
@@ -299,5 +307,5 @@ if (failures.length) {
   process.exit(1)
 }
 console.log(
-  'lint-canon: 13 красных фикстур + 5 негативных контролей + barrel/TS-only-сканы — канон доказан',
+  'lint-canon: 13 красных фикстур + 6 негативных контролей + barrel/TS-only-сканы — канон доказан',
 )

@@ -1271,12 +1271,16 @@ paths:
           description: No response body
   /api/operations/my-permissions/:
     get:
-      operationId: operations_my_permissions_retrieve
+      operationId: operations_my_permissions_list
       tags:
       - operations
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyPermissionsResponse'
+          description: ''
   /api/operations/permissions/:
     get:
       operationId: operations_permissions_list
@@ -1781,6 +1785,15 @@ components:
       - SUBMISSION_LAGGING
       type: string
       description: '* `SUBMISSION_LAGGING` - Отставание по сдаче'
+    MyPermissionsResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            type: string
+      required:
+      - permissions
     Notification:
       type: object
       description: Read-only projection of a notification — flat, snake_case (FR-13).
