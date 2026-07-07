@@ -36,9 +36,10 @@ export default tseslint.config(
     files: ['src/**/*.{ts,tsx}'],
     plugins: { boundaries },
     settings: {
-      // без .ts/.tsx резолвер не находит цель импорта → зависимость unknown → правило молчит
+      // без .ts/.tsx резолвер не находит цель импорта → зависимость unknown → правило молчит;
+      // .d.ts — для импорта типов из генерённого schema.d.ts (8.4)
       'import/resolver': {
-        node: { extensions: ['.js', '.mjs', '.ts', '.tsx'] },
+        node: { extensions: ['.js', '.mjs', '.ts', '.tsx', '.d.ts'] },
       },
       'boundaries/include': ['src/**/*'],
       'boundaries/elements': [
@@ -122,6 +123,53 @@ export default tseslint.config(
             },
           ],
           patterns: [{ group: BANNED_IMPORT_PATTERNS, message: BAN_MESSAGE }],
+        },
+      ],
+    },
+  },
+  {
+    // ARCH-FE-015 (стори 8.4): HTTP — только через apiClient из shared/api.
+    // Глобалы fetch/XMLHttpRequest и window/globalThis.{fetch,XMLHttpRequest} вне
+    // src/shared/api забанены (property-каналы XHR — ревью 8.4: бан глобала обходился
+    // через window.XMLHttpRequest); block-scoped ignores живут и под ignore:false
+    // самотеста (Ловушка 8), краснота по каждому каналу + негативный контроль
+    // (fetch ВНУТРИ shared/api зелёный) — lint-canon.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/shared/api/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'fetch',
+          message:
+            'HTTP только через apiClient из shared/api (ARCH-FE-015: парсинг статусов и конверта ошибок — в одной точке)',
+        },
+        {
+          name: 'XMLHttpRequest',
+          message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
+        },
+      ],
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'window',
+          property: 'fetch',
+          message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
+        },
+        {
+          object: 'globalThis',
+          property: 'fetch',
+          message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
+        },
+        {
+          object: 'window',
+          property: 'XMLHttpRequest',
+          message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
+        },
+        {
+          object: 'globalThis',
+          property: 'XMLHttpRequest',
+          message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
         },
       ],
     },

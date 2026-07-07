@@ -27,6 +27,11 @@ export const BANNED_PACKAGES = [
   'styled-jsx',
   // роутер вне канона (ARCH-FE-012: React Router plain)
   '@tanstack/react-router',
+  // сторонние HTTP-клиенты (ARCH-FE-015: только свой apiClient из shared/api;
+  // исполнение заявленного в каноне enforcement, не новая норма — стори 8.4)
+  'axios',
+  'ky',
+  'superagent',
   // чёрный список UI (architecture.md L249)
   'antd',
   'ag-grid-community',

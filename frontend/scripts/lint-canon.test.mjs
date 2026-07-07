@@ -28,11 +28,13 @@ const B_NAME = `__canon_b_${PID}__`
 const S_NAME = `__canon_s_${PID}__`
 const APP_NAME = `__canon_app_${PID}__`
 const X_NAME = `__canon_x_${PID}__` // намеренно ВНЕ app/features/shared
+const API_NAME = `__canon_api_${PID}__` // ВНУТРИ shared/api: негативный контроль банов HTTP
 const A = join(SRC, 'features', A_NAME)
 const B = join(SRC, 'features', B_NAME)
 const S = join(SRC, 'shared', S_NAME)
 const APP = join(SRC, 'app', APP_NAME)
 const X = join(SRC, X_NAME)
+const API = join(SRC, 'shared', 'api', API_NAME)
 
 const failures = []
 
@@ -104,6 +106,7 @@ try {
   mkdirSync(S, { recursive: true })
   mkdirSync(APP, { recursive: true })
   mkdirSync(X, { recursive: true })
+  mkdirSync(API, { recursive: true })
   writeFileSync(join(B, 'x.ts'), 'export const b = 1\n')
   writeFileSync(join(S, 'x.ts'), 'export const s = 1\n')
   writeFileSync(join(A, 'base.ts'), 'export const base = 1\n')
@@ -166,6 +169,31 @@ try {
       `import { s } from "../../shared/${S_NAME}/x"\n` +
       'export const app = b + s\n',
   )
+  // ARCH-FE-015 (8.4): HTTP вне shared/api забанен — краснота по каждому каналу;
+  // каждый канал — отдельная фикстура, иначе expectRule докажет соседний канал
+  writeFileSync(join(A, 'fetch.ts'), 'export const r = fetch("/api/x")\n')
+  writeFileSync(join(A, 'xhr.ts'), 'export const x = new XMLHttpRequest()\n')
+  writeFileSync(
+    join(A, 'winfetch.ts'),
+    'export const w = window.fetch("/api/x")\n' +
+      'export const g = globalThis.fetch("/api/x")\n',
+  )
+  // property-каналы XHR (ревью 8.4): бан глобала обходился через window.XMLHttpRequest
+  writeFileSync(
+    join(A, 'winxhr.ts'),
+    'export const wx = new window.XMLHttpRequest()\n' +
+      'export const gx = new globalThis.XMLHttpRequest()\n',
+  )
+  writeFileSync(
+    join(A, 'axios.ts'),
+    'import axios from "axios"\nexport const ax = axios\n',
+  )
+  // негативный контроль: fetch ВНУТРИ shared/api легален — block-scoped ignores
+  // остаются активны под ignore:false (гасятся только глобальные) — Ловушка 8
+  writeFileSync(
+    join(API, 'probe.ts'),
+    'export const probe = () => fetch("/api/x")\n',
+  )
   // barrel-фикстура: сканер обязан её увидеть (самопроверка сканера)
   writeFileSync(join(A, 'index.ts'), 'export { ok } from "./legal"\n')
   // не-TS фикстура: сканер TS-only обязан её увидеть (самопроверка сканера)
@@ -178,6 +206,7 @@ try {
     join(S, '*.ts'),
     join(APP, '*.ts'),
     join(X, '*.ts'),
+    join(API, '*.ts'),
   ])
 
   // красные: запрещённые рёбра и баны
@@ -206,10 +235,21 @@ try {
     `${A_NAME}/uses-unknown.ts`,
     'boundaries/no-unknown-dependencies',
   )
+  // красные: HTTP вне shared/api (ARCH-FE-015, стори 8.4)
+  expectRule(results, `${A_NAME}/fetch.ts`, 'no-restricted-globals')
+  expectRule(results, `${A_NAME}/xhr.ts`, 'no-restricted-globals')
+  expectRule(results, `${A_NAME}/winfetch.ts`, 'no-restricted-properties')
+  expectRule(results, `${A_NAME}/winxhr.ts`, 'no-restricted-properties')
+  expectRule(
+    results,
+    `${A_NAME}/axios.ts`,
+    '@typescript-eslint/no-restricted-imports',
+  )
   // зелёные: все разрешённые рёбра матрицы
   expectClean(results, `${A_NAME}/legal.ts`) // features → shared
   expectClean(results, `${A_NAME}/same.ts`) // та же фича
   expectClean(results, `${APP_NAME}/probe.ts`) // app → features + shared
+  expectClean(results, `${API_NAME}/probe.ts`) // fetch внутри shared/api легален
 
   // сканеры видят свои фикстуры → сканеры живые, не вакуумные
   if (!barrelOffenders().some((f) => f.includes(A_NAME))) {
@@ -226,6 +266,7 @@ try {
   rmSync(S, { recursive: true, force: true })
   rmSync(APP, { recursive: true, force: true })
   rmSync(X, { recursive: true, force: true })
+  rmSync(API, { recursive: true, force: true })
 }
 
 // реальное дерево (фикстуры параллельных прогонов не считаем):
@@ -249,5 +290,5 @@ if (failures.length) {
   process.exit(1)
 }
 console.log(
-  'lint-canon: 8 красных фикстур + 3 негативных контроля + barrel/TS-only-сканы — канон доказан',
+  'lint-canon: 13 красных фикстур + 4 негативных контроля + barrel/TS-only-сканы — канон доказан',
 )
