@@ -225,7 +225,7 @@ development_status:
   5-8c-api-чтение-сдач: done
   5-9-аудит-сдач: done
   5-10-property-иммутабельность-снапшота: done
-  5-11-фрактальная-сводка: backlog
+  5-11-фрактальная-сводка: done
   epic-5-retrospective: optional
 
   # Epic 6: Документ Расхода — артефакт, которому верят

@@ -67,6 +67,16 @@ actions:
     description: "Пересдача/amendment сданного дня (кто/когда/причина/санкция)."
     provenance: derived-from-mutation
     source: "architecture.md ARCH-DATA-021 (amendment-flow)"
+  DAILY_SUMMARY_ASSEMBLED:
+    entity_type: daily_submission
+    description: "Собрана сводка родительского подразделения (та же DailySubmission + пины sources прямых детей; payload — sources-компакт без снапшота)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 5.11; architecture.md ARCH-DATA-021 (фрактальность)"
+  DAILY_SUMMARY_REBUILT:
+    entity_type: daily_submission
+    description: "Явная пересборка сводки «взамен» (amendment сводки: свежий own-срез + свежие пины; before/after)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 5.11; architecture.md ARCH-DATA-021 (фрактальность, «взамен»)"
   TOMORROW_BLOCK_OVERRIDDEN:
     entity_type: tomorrow_block_override
     description: "Легальный обход блокировки «на завтра» (кто/когда/почему; 5.6b override)."

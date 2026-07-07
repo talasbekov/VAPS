@@ -233,6 +233,12 @@ codes:
     category: business_hard
     description: "Попытка amendment дня, который ещё не сдан (нет ни одной версии DailySubmission). Амендить можно только существующую сдачу — иначе первичная сдача (5.3b)."
     source: "epics.md Story 5.4a (amendment-flow); architecture.md ARCH-DATA-021 (поправка вытесняет существующую версию)"
+  SUMMARY_CHILDREN_NOT_SUBMITTED:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Сборка/пересборка сводки при required-детях без действующей сдачи (detail.laggards — отставшие прямые дети). Required = прямой ребёнок с непустым ростером поддерева на дату; «нечего сдавать» не блокирует."
+    source: "epics.md Story 5.11 (фрактальная сводка); architecture.md ARCH-DATA-021 (фрактальность)"
   MAX_DURATION_EXCEEDED:
     http_status: 422
     overridable: false
