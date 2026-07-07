@@ -13,6 +13,7 @@
     "format": "prettier --write .",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "gate": "node scripts/deps-gate.mjs && node scripts/schema-check.mjs && tsc -b && eslint . && node scripts/lint-canon.test.mjs && node scripts/schema-check.test.mjs && vitest run && vite build && node scripts/size-gate.mjs",
     "generate:api": "openapi-typescript ../Backend/VAPS/schema.yaml -o src/shared/api/schema.d.ts"
   },
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
+    "@playwright/test": "^1.61.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

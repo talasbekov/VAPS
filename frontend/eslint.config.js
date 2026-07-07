@@ -12,6 +12,75 @@ import { BANNED_IMPORT_PATTERNS } from './scripts/banned-packages.mjs'
 const BAN_MESSAGE =
   'Запрещено каноном ARCH-FE (architecture.md §Канон фронтенд-стека); список — scripts/banned-packages.mjs'
 
+const ROUTE_LITERAL_MESSAGE =
+  'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts'
+
+// ARCH-FE-012 (8.7): общий набор селекторов literal-путей. Константой — чтобы
+// print-forms-блок (8.8), переопределяя no-restricted-syntax (flat config не
+// мержит конфиг правила), не потерял канон маршрутов.
+const ROUTE_LITERAL_SELECTORS = [
+  {
+    selector: "JSXAttribute[name.name='to'] > Literal",
+    message: ROUTE_LITERAL_MESSAGE,
+  },
+  {
+    selector: "JSXAttribute[name.name='to'] > JSXExpressionContainer > Literal",
+    message: ROUTE_LITERAL_MESSAGE,
+  },
+  {
+    selector: "JSXAttribute[name.name='path'] > Literal",
+    message: ROUTE_LITERAL_MESSAGE,
+  },
+  {
+    selector:
+      "JSXAttribute[name.name='path'] > JSXExpressionContainer > Literal",
+    message: ROUTE_LITERAL_MESSAGE,
+  },
+  {
+    selector:
+      "CallExpression[callee.name='navigate'][arguments.0.type='Literal']",
+    message: ROUTE_LITERAL_MESSAGE,
+  },
+  {
+    selector:
+      "JSXAttribute[name.name='to'] > JSXExpressionContainer > TemplateLiteral[expressions.length=0]",
+    message: ROUTE_LITERAL_MESSAGE,
+  },
+  {
+    selector:
+      "JSXAttribute[name.name='path'] > JSXExpressionContainer > TemplateLiteral[expressions.length=0]",
+    message: ROUTE_LITERAL_MESSAGE,
+  },
+  {
+    selector:
+      "CallExpression[callee.name='navigate'][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0]",
+    message: ROUTE_LITERAL_MESSAGE,
+  },
+]
+
+const PRINT_CANON_MESSAGE =
+  'Печатный канон (ARCH-FE-014 / architecture L255): в print-forms className — только строковый литерал из print-*-классов; UI-слой на бумагу не попадает'
+
+const PRINT_IMPORT_MESSAGE =
+  'Печатный канон (ARCH-FE-014 / architecture L255): UI-слой (shared/ui, lucide-react) на бумагу не попадает — печатные формы = голый семантический HTML + print.css'
+
+// Печатный канон 8.8: className в print-forms — ТОЛЬКО строковый литерал,
+// целиком состоящий из print-*-классов. Динамика (включая шаблонные литералы
+// и cn/cva) красная селектором JSXExpressionContainer целиком; литерал с
+// не-print-классом (в т.ч. подмешанным: "print-root flex") — regex-селектором
+// (\s вместо пробела — esquery-парсер).
+const PRINT_CANON_SELECTORS = [
+  {
+    selector: "JSXAttribute[name.name='className'] > JSXExpressionContainer",
+    message: PRINT_CANON_MESSAGE,
+  },
+  {
+    selector:
+      "JSXAttribute[name.name='className'] > Literal[value!=/^print-[a-z0-9-]+(\\sprint-[a-z0-9-]+)*$/]",
+    message: PRINT_CANON_MESSAGE,
+  },
+]
+
 // Стори 8.1: типы + браузерная совместимость (FF100 из .browserslistrc).
 // Стори 8.2: канон-набор ARCH-FE — boundaries (010/013), no-restricted-imports
 // (010/011/012/014 + чёрный список UI), react-hooks: error, prettier-совместимость.
@@ -191,55 +260,7 @@ export default tseslint.config(
     files: ['src/**/*.{ts,tsx}'],
     ignores: ['src/shared/routes.ts', 'src/**/*.test.{ts,tsx}'],
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "JSXAttribute[name.name='to'] > Literal",
-          message:
-            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
-        },
-        {
-          selector:
-            "JSXAttribute[name.name='to'] > JSXExpressionContainer > Literal",
-          message:
-            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
-        },
-        {
-          selector: "JSXAttribute[name.name='path'] > Literal",
-          message:
-            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
-        },
-        {
-          selector:
-            "JSXAttribute[name.name='path'] > JSXExpressionContainer > Literal",
-          message:
-            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
-        },
-        {
-          selector:
-            "CallExpression[callee.name='navigate'][arguments.0.type='Literal']",
-          message:
-            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
-        },
-        {
-          selector:
-            "JSXAttribute[name.name='to'] > JSXExpressionContainer > TemplateLiteral[expressions.length=0]",
-          message:
-            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
-        },
-        {
-          selector:
-            "JSXAttribute[name.name='path'] > JSXExpressionContainer > TemplateLiteral[expressions.length=0]",
-          message:
-            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
-        },
-        {
-          selector:
-            "CallExpression[callee.name='navigate'][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0]",
-          message:
-            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...ROUTE_LITERAL_SELECTORS],
     },
   },
   {
@@ -253,6 +274,86 @@ export default tseslint.config(
       tailwindcss: {
         config: fileURLToPath(new URL('./tailwind.config.js', import.meta.url)),
         callees: ['cn', 'cva', 'clsx'],
+        // print.css исключён из скана известных классов (8.8): иначе plugin
+        // считал бы .print-root легальным ВЕЗДЕ — print-* классы разрешены
+        // только в print-forms (whitelist блоком ниже), утечка на UI красная
+        cssFiles: [
+          '**/*.css',
+          '!**/node_modules',
+          '!**/.*',
+          '!**/dist',
+          '!**/build',
+          '!src/features/print-forms/**',
+        ],
+      },
+    },
+    rules: {
+      'tailwindcss/no-contradicting-classname': 'error',
+      'tailwindcss/no-custom-classname': 'error',
+    },
+  },
+  {
+    // Печатный канон 8.8 (ARCH-FE-014/L255), продукт-код print-forms:
+    // route-селекторы сохранены (переопределение целиком — конфиг правила
+    // не мержится) + className-канон. Тесты print-forms — блоком ниже
+    // (канон маршрутов правит продукт-код, тестам синтетика легальна — 8.7).
+    files: ['src/features/print-forms/**/*.{ts,tsx}'],
+    ignores: ['src/**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...ROUTE_LITERAL_SELECTORS,
+        ...PRINT_CANON_SELECTORS,
+      ],
+    },
+  },
+  {
+    // className-канон печати действует и в тестах print-forms (печатная
+    // разметка не имеет права на UI-классы нигде в слоте).
+    files: ['src/features/print-forms/**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': ['error', ...PRINT_CANON_SELECTORS],
+    },
+  },
+  {
+    // «UI-слой на бумагу не попадает»: импорт shared/ui и lucide-react в
+    // print-forms красный. Переопределение целиком — баны пакетов и
+    // useMutation-канон (ARCH-FE-015) продублированы из features-блока.
+    files: ['src/features/print-forms/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': 'off',
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@tanstack/react-query',
+              importNames: ['useMutation'],
+              message:
+                'В features — только useApiMutation из shared/api (ARCH-FE-015)',
+            },
+          ],
+          patterns: [
+            { group: BANNED_IMPORT_PATTERNS, message: BAN_MESSAGE },
+            {
+              group: ['**/shared/ui/*', 'lucide-react', 'lucide-react/*'],
+              message: PRINT_IMPORT_MESSAGE,
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Whitelist print-* ТОЛЬКО для print-forms (глобальный канон
+    // no-custom-classname НЕ ослаблен — Ловушка 5); settings.tailwindcss
+    // замещается целиком, поэтому config/callees продублированы.
+    files: ['src/features/print-forms/**/*.{ts,tsx}'],
+    settings: {
+      tailwindcss: {
+        config: fileURLToPath(new URL('./tailwind.config.js', import.meta.url)),
+        callees: ['cn', 'cva', 'clsx'],
+        whitelist: ['print\\-.*'],
       },
     },
     rules: {

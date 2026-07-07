@@ -19,6 +19,10 @@ dist-ssr
 # временные фикстуры lint-canon.test.mjs (живут только внутри прогона; страховка от kill -9)
 __canon_*
 
+# артефакты Playwright (e2e-смок 8.8)
+test-results/
+playwright-report/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

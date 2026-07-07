@@ -29,12 +29,14 @@ const S_NAME = `__canon_s_${PID}__`
 const APP_NAME = `__canon_app_${PID}__`
 const X_NAME = `__canon_x_${PID}__` // намеренно ВНЕ app/features/shared
 const API_NAME = `__canon_api_${PID}__` // ВНУТРИ shared/api: негативный контроль банов HTTP
+const PRINT_NAME = `__canon_print_${PID}__` // ВНУТРИ features/print-forms: печатный канон 8.8
 const A = join(SRC, 'features', A_NAME)
 const B = join(SRC, 'features', B_NAME)
 const S = join(SRC, 'shared', S_NAME)
 const APP = join(SRC, 'app', APP_NAME)
 const X = join(SRC, X_NAME)
 const API = join(SRC, 'shared', 'api', API_NAME)
+const PRINT = join(SRC, 'features', 'print-forms', PRINT_NAME)
 
 const failures = []
 
@@ -107,6 +109,7 @@ try {
   mkdirSync(APP, { recursive: true })
   mkdirSync(X, { recursive: true })
   mkdirSync(API, { recursive: true })
+  mkdirSync(PRINT, { recursive: true })
   writeFileSync(join(B, 'x.ts'), 'export const b = 1\n')
   writeFileSync(join(S, 'x.ts'), 'export const s = 1\n')
   writeFileSync(join(A, 'base.ts'), 'export const base = 1\n')
@@ -295,6 +298,63 @@ try {
       '  )\n' +
       '}\n',
   )
+  // Печатный канон 8.8 (ARCH-FE-014/L255) — фикстура на КАЖДЫЙ канал
+  // (ревью-урок 8.7: недоказанный канал = молчаливый регресс):
+  // (а) tailwind-класс литералом
+  writeFileSync(
+    join(PRINT, 'tailwind-class.tsx'),
+    'export function Probe() {\n' +
+      '  return <div className="flex">x</div>\n' +
+      '}\n',
+  )
+  // (б) динамический className (JSXExpressionContainer целиком — включая
+  // шаблонные литералы и cn/cva)
+  writeFileSync(
+    join(PRINT, 'dynamic-class.tsx'),
+    'export function Probe({ x }: { x: string }) {\n' +
+      '  return <div className={x}>y</div>\n' +
+      '}\n',
+  )
+  // (в) подмешанный не-print-класс в print-литерале (обходной канал —
+  // банить сразу, ревью-урок 8.7 №2)
+  writeFileSync(
+    join(PRINT, 'smuggle-class.tsx'),
+    'export function Probe() {\n' +
+      '  return <div className="print-root flex">x</div>\n' +
+      '}\n',
+  )
+  // (г) импорт shared/ui
+  writeFileSync(
+    join(PRINT, 'ui-import.tsx'),
+    'import { Button } from "../../../shared/ui/Button"\n' +
+      'export const probe = Button\n',
+  )
+  // (д) импорт lucide-react
+  writeFileSync(
+    join(PRINT, 'lucide-import.tsx'),
+    'import { FileText } from "lucide-react"\n' +
+      'export const probe = FileText\n',
+  )
+  // негативный контроль: print-*-литералы (одиночный и составной) зелёные —
+  // whitelist print-forms работает, селектор Literal их не задевает
+  writeFileSync(
+    join(PRINT, 'legal.tsx'),
+    'export function Probe() {\n' +
+      '  return (\n' +
+      '    <main className="print-root">\n' +
+      '      <p className="print-screen-hint print-note">x</p>\n' +
+      '    </main>\n' +
+      '  )\n' +
+      '}\n',
+  )
+  // утечка whitelist: print-класс ВНЕ print-forms остаётся красным
+  // (глобальный канон no-custom-classname НЕ ослаблен — Ловушка 5)
+  writeFileSync(
+    join(APP, 'print-class.tsx'),
+    'export function Probe() {\n' +
+      '  return <div className="print-root">x</div>\n' +
+      '}\n',
+  )
   // barrel-фикстура: сканер обязан её увидеть (самопроверка сканера)
   writeFileSync(join(A, 'index.ts'), 'export { ok } from "./legal"\n')
   // не-TS фикстура: сканер TS-only обязан её увидеть (самопроверка сканера)
@@ -308,6 +368,7 @@ try {
     join(APP, '*.{ts,tsx}'),
     join(X, '*.ts'),
     join(API, '*.ts'),
+    join(PRINT, '*.{ts,tsx}'),
   ])
 
   // красные: запрещённые рёбра и баны
@@ -362,6 +423,26 @@ try {
     `${APP_NAME}/custom-class.tsx`,
     'tailwindcss/no-custom-classname',
   )
+  // красные: печатный канон 8.8 — каждый канал отдельной фикстурой
+  expectRule(results, `${PRINT_NAME}/tailwind-class.tsx`, 'no-restricted-syntax')
+  expectRule(results, `${PRINT_NAME}/dynamic-class.tsx`, 'no-restricted-syntax')
+  expectRule(results, `${PRINT_NAME}/smuggle-class.tsx`, 'no-restricted-syntax')
+  expectRule(
+    results,
+    `${PRINT_NAME}/ui-import.tsx`,
+    '@typescript-eslint/no-restricted-imports',
+  )
+  expectRule(
+    results,
+    `${PRINT_NAME}/lucide-import.tsx`,
+    '@typescript-eslint/no-restricted-imports',
+  )
+  // красный: print-класс вне print-forms — whitelist НЕ глобален (Ловушка 5)
+  expectRule(
+    results,
+    `${APP_NAME}/print-class.tsx`,
+    'tailwindcss/no-custom-classname',
+  )
   // зелёные: все разрешённые рёбра матрицы
   expectClean(results, `${A_NAME}/legal.ts`) // features → shared
   expectClean(results, `${A_NAME}/same.ts`) // та же фича
@@ -371,6 +452,7 @@ try {
   expectClean(results, `${A_NAME}/uses-permissions.ts`) // канонный auth-хук из features (8.6)
   expectClean(results, `${APP_NAME}/nav-const.tsx`) // navigate(ROUTES.*) и шаблон С подстановкой легальны (8.7)
   expectClean(results, `${APP_NAME}/link-const.tsx`) // to={ROUTES.*} + токен-классы легальны (8.7)
+  expectClean(results, `${PRINT_NAME}/legal.tsx`) // print-*-литералы в print-forms легальны (8.8)
 
   // сканеры видят свои фикстуры → сканеры живые, не вакуумные
   if (!barrelOffenders().some((f) => f.includes(A_NAME))) {
@@ -388,6 +470,7 @@ try {
   rmSync(APP, { recursive: true, force: true })
   rmSync(X, { recursive: true, force: true })
   rmSync(API, { recursive: true, force: true })
+  rmSync(PRINT, { recursive: true, force: true })
 }
 
 // реальное дерево (фикстуры параллельных прогонов не считаем):
@@ -411,5 +494,5 @@ if (failures.length) {
   process.exit(1)
 }
 console.log(
-  'lint-canon: 18 красных фикстур + 8 негативных контролей + barrel/TS-only-сканы — канон доказан',
+  'lint-canon: 24 красных фикстур + 9 негативных контролей + barrel/TS-only-сканы — канон доказан',
 )

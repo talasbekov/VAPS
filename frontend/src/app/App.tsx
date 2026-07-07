@@ -6,6 +6,7 @@
 // (экраны — E9/E10). /admin/* в карте нет (Д5); catch-all/404 не в карте UX.
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
+import { PrintTestPage } from '../features/print-forms/PrintTestPage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
 import { ROUTES } from '../shared/routes'
 import { AppLayout } from '../shared/ui/AppLayout'
@@ -24,6 +25,18 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path={ROUTES.login} element={<LoginPage />} />
+      {/* Печатный каркас (8.8, канон L255): сиблинг layout-route — на бумагу
+          сайдбар/шапка AppLayout не попадают. За RequireAuth (единый credential-
+          гейт: реальные формы = ПДн), БЕЗ RequirePermission — у тест-страницы
+          данных нет, коды прав приедут с формами E10 (Д3). */}
+      <Route
+        path={ROUTES.printTest}
+        element={
+          <RequireAuth>
+            <PrintTestPage />
+          </RequireAuth>
+        }
+      />
       <Route
         element={
           <RequireAuth>

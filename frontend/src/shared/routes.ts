@@ -23,6 +23,11 @@ export const ROUTES = {
   organization: '/organization',
   reports: '/reports',
   audit: '/audit',
+  /**
+   * Тест-страница печатного каркаса (8.8, ARCH-FE-014/L255): вне AppLayout,
+   * в NAV_SECTIONS не живёт. Фабрики реальных печатных форм — со сториями E10.
+   */
+  printTest: '/print/test',
 } as const
 
 export interface NavSection {

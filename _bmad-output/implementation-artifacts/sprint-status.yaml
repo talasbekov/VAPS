@@ -266,7 +266,7 @@ development_status:
   8-5-useapimutation-и-conflictdialog: done
   8-6-auth-подключение: done
   8-7-роутер-routes-ts-и-layout: done
-  8-8-печатный-каркас: backlog
+  8-8-печатный-каркас: done
   epic-8-retrospective: optional
 
   # Epic 9: Клавиатурный грид — слепой ввод оператора
