@@ -131,7 +131,7 @@ _Собрано в 5 раундов коллаборативного анали�
 
 **Интеграции:**
 
-- Auth (INT-2): внешний, JWT; MVP — X-User-Id; переход не меняет PermissionService.
+- Auth (INT-2): внешний, JWT — реализован (5.1): `build_auth_classes(VAPS_JWT)` — при заданном VAPS_JWT работает только JWT (прод fail-closed), X-User-Id остаётся dev-путём при `VAPS_JWT is None`; PermissionService не менялся.
 - КУ (INT-1): не существует; `integration_ku` заглушка + контракт sync; статусы несут source (USER/KU_SYNC/OM_AUTO).
 - Иерархия канонов: RECONCILIATION.md (арбитр) → ПланРасстановка + Дополнение (master ФТ) → VAPS_7.8.2 (детальные контракты) → PRD (capability) → настоящий документ.
 
@@ -314,7 +314,7 @@ npm create vite@latest frontend -- --template react-ts
 
 ### Authentication & Security
 
-- **ARCH-SEC-030 — Auth-контракт:** единственная точка извлечения идентичности — request.user_context (user_id: str); наполняется X-User-Id middleware, при JWT меняется только middleware. MUST NOT: читать заголовок/парсить токен вне middleware.
+- **ARCH-SEC-030 — Auth-контракт:** единственная точка извлечения идентичности — `request.actor_id` (user_id: str, ARCH-007); ставится только authentication classes в core/auth (реализовано в 5.1: JWT + X-User-Id-dev, взаимоисключающие через `build_auth_classes`). MUST NOT: читать заголовок/парсить токен вне core/auth.
 - **ARCH-SEC-031 — Авторизация:** только PermissionService; права на каждый запрос, без кэша в сессии → гашение временного полномочия действует со следующего запроса (граничное поведение определено).
 - **ARCH-SEC-032 — Аудит:** append-only enforced БД (REVOKE UPDATE/DELETE + триггер); консолидация на AuditLog.
 - Маскирование: SensitiveFieldPolicy + применение в экспорте и печатных формах.
@@ -482,7 +482,7 @@ view → сервис → (селекторы, модели, аудит)   |   v
 
 ### Pattern Examples
 
-**Good:** `db_table="ops_daily_submissions"` · `POST /api/operations/daily-submissions/` → 201 detail · `{"count":2,"results":[{"date_start":"2026-06-01","date_end":"2026-06-15"}]}` · `raise DomainError("STATUS_OVERLAP", 409, details=..., overridable=True)` · `DailySubmissionService.submit(division_id=..., business_date=..., actor=request.actor_id)`.
+**Good:** `db_table="ops_daily_submissions"` · `POST /api/operations/daily-submissions/` → 201 detail · `{"count":2,"results":[{"date_start":"2026-06-01","date_end":"2026-06-15"}]}` · `raise DomainError("STATUS_OVERLAP", 409, details=..., overridable=True)` · `submit_day(division_id=..., business_date=..., actor=request.actor_id)` (сервис-функции модульные, как `status_service`; класс-обёртки не заводятся).
 
 **Anti-patterns:** `db_table="DailySubmission"` · `/api/operations/getDailySubmissions` · `{"dateStart": ...}` · `serializer.create()` с бизнес-логикой · `useState(false) // isLoading` · `timezone.now()` в services · `import apps.core.models` из operations · ретрай мутации · регистрация DailySubmission в admin · перевод термина мимо Glossary.
 
@@ -506,7 +506,7 @@ VAPS/                                    # корень репозитория (
 │       └── apps/
 │           ├── core/                    # СУЩЕСТВУЕТ: оргструктура, сотрудники, ставки
 │           │   ├── models/              # пакет (рефактор при первом касании, с реэкспортом)
-│           │   ├── auth/                # identity: X-User-Id authentication class → JWT
+│           │   ├── auth/                # identity: JWT (5.1) + X-User-Id (только dev, VAPS_JWT is None)
 │           │   │                        #   (пакет, не app; промоушен при появлении моделей)
 │           │   ├── exceptions.py        # DomainError + DRF exception_handler
 │           │   ├── clock.py             # Clock-сервис (+override для тестов)
@@ -538,7 +538,7 @@ VAPS/                                    # корень репозитория (
 │           │                            #   генераторы docx/xlsx/pdf (Celery worker),
 │           │                            #   X-Accel-Redirect endpoint
 │           ├── notifications/           # in-app центр, WS consumers (channels_redis),
-│           │                            #   notify() on_commit, дочитка ?since=
+│           │                            #   notify() синхронно in-txn (вариант B, 5.7a), дочитка ?since=
 │           ├── integration_ku/          # заглушка + контракт sync (Фаза 2)
 │           └── migration_legacy/        # импортёры донора (management commands);
 │                                        #   едет в image; УДАЛЯЕТСЯ после cutover
@@ -589,7 +589,7 @@ VAPS/                                    # корень репозитория (
 | между субдоменами operations | statuses ← submissions ← reports (вниз); duties/events → statuses только через сервис проекции (единственный writer OM_AUTO — тест) | AST + **тест на графе моделей** (apps.get_models(), ловит string-FK) |
 | audit ← все | запись только audit.services.record(); прямой импорт audit.models — бан | AST |
 | documents ← operations | файлы только через documents.services (Attachment); разрешённая стрелка | AST |
-| notifications ← все | только notifications.services.notify() (on_commit) | AST |
+| notifications ← все | только notifications.services.notify() (синхронно in-txn, вариант B 5.7a; non-fatal) | AST |
 | core/auth | request.actor_id ставит только authentication class; чтение X-User-Id вне core/auth — бан | AST |
 | frontend | features A ↛ B; shared ↛ features | eslint-boundaries |
 
@@ -620,7 +620,7 @@ VAPS/                                    # корень репозитория (
 
 ### Data Flow (ключевые цепочки)
 
-- **Сдача дня:** status-grid → POST submissions → DailySubmissionService (atomic: срез из statuses-селектора → снапшот фактов → audit.record → on_commit notify) → светофор.
+- **Сдача дня:** status-grid → POST submissions → submit_day (atomic: срез из statuses-селектора → снапшот фактов → audit.record → notify in-txn) → светофор.
 - **Расход:** POST reports → AsyncJob → Celery worker (documents: derive по снапшоту → docx → Attachment + DocumentSequence) → поллинг /api/jobs/ → скачивание X-Accel.
 - **Ретро-правка:** statuses.amend → обнаружение накрытых сдач → Amendment-flow (submissions) → новый расход «взамен исх. №».
 - **Проекция:** duties/events → statuses.projection_service (OM_AUTO, source_ref, идемпотентно).
@@ -753,7 +753,7 @@ _Собран стори 1.12 «Инвентаризация» (2026-06-19) — 
 | ARCH-DATA-023 | интервалы — полуоткрытые `[start, end)`; календарные сутки; полночь Asia/Qyzylorda (UTC+5 без переходов). MUST NOT: смешивать `date.today()` и `timezone.now().date()` | смежные [a,b)+[b,c) не пересекаются / closed-интервал | tzdata-канарейка (utcoffset==+05:00) в gate | §ARCH-DATA-023 | ACTIVE |
 | ARCH-DATA-024 | дерево подразделений — adjacency (parent FK) + `CoreDivisionTreeSelector` (один канал обхода для индикатора/RBAC-scope/расхода); при деградации — recursive CTE внутри селектора. MUST NOT: django-mptt в новой системе | селектор поддерева / mptt-поля | ревью + модель-граф | §ARCH-DATA-024 | ACTIVE |
 | ARCH-DATA-025 | cross-context целостность: soft-delete под внешними ссылками; принадлежность подразделению — интервал [start,end); Список(D) версионирован на дату; сходимость глобальна; адресация operations извне — integer PK API, ссылки только на UUID core | soft-delete + integrity-check / hard delete аудируемого | integrity-check; конвенция адресации | §ARCH-DATA-025 | ACTIVE |
-| ARCH-SEC-030 | Auth-контракт: единственная точка идентичности — `request.user_context` (user_id: str), наполняется X-User-Id middleware; при JWT меняется только middleware. MUST NOT: читать заголовок/парсить токен вне middleware | middleware → user_context / парсинг в view | AST-чек | §ARCH-SEC-030 | ACTIVE |
+| ARCH-SEC-030 | Auth-контракт: единственная точка идентичности — `request.actor_id` (user_id: str, ARCH-007), ставится только authentication classes в core/auth (5.1: JWT + X-User-Id-dev через `build_auth_classes`, взаимоисключающие). MUST NOT: читать заголовок/парсить токен вне core/auth | authentication class → actor_id / парсинг в view | AST-чек | §ARCH-SEC-030 | ACTIVE |
 | ARCH-SEC-031 | авторизация — только `PermissionService`; права проверяются на КАЖДЫЙ запрос, без кэша в сессии (гашение временного полномочия — со следующего запроса). MUST NOT: кэш прав в сессии | per-request has_permission / закэшированная роль | ревью + тест граничного гашения | §ARCH-SEC-031 | ACTIVE |
 | ARCH-SEC-032 | аудит — append-only, enforced БД (REVOKE UPDATE/DELETE + триггер); консолидация на `AuditLog`. MUST NOT: raw insert в аудит мимо сервиса; UPDATE/DELETE аудита | REVOKE + триггер / ручной UPDATE audit_logs | БД-привилегии + триггер; единый аудит-сервис | §ARCH-SEC-032; VAPS_7.8.2 §4.6 | ACTIVE |
 | ARCH-FE-010 | стейт: TanStack Query (серверный) + URL params + useState/useReducer + 2 Context (Auth/Theme). MUST NOT: zustand/jotai/redux/mobx; дублирование Query-кэша в useState | useQuery(['me']) / redux store | no-restricted-imports + CI `npm ls` | §Канон фронтенд-стека | ACTIVE |
