@@ -108,6 +108,14 @@ export class NetworkError extends Error {
   }
 }
 
+/**
+ * Всё, чем может упасть вызов apiClient (тип ошибки useApiMutation, 8.5).
+ * Ветвление — instanceof + kind-runtime; полноценный discriminated-union по
+ * kind НЕ вводить: широкий kind базового ApiError поглощает narrowing
+ * (нота L2 ревью 8.4).
+ */
+export type ApiFailure = ApiError | NetworkError
+
 /** Defensive-чтение конверта: не-JSON тело или JSON без error_code → null. */
 async function readEnvelope(response: Response): Promise<ErrorEnvelope | null> {
   let raw: unknown

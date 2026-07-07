@@ -105,10 +105,24 @@ export const handlers = [
   http.post('*/api/operations/daily-submissions/', () =>
     HttpResponse.json(businessRuleEnvelope, { status: 422 }),
   ),
-  // 409 overridable: протокольная фикстура на существующем пути (Д8)
-  http.post('*/api/operations/temporary-duty/', () =>
-    HttpResponse.json(conflictOverridableEnvelope, { status: 409 }),
-  ),
+  // 409 overridable: протокольная фикстура на существующем пути (Д8).
+  // Override-aware (8.5): повтор с ДВУМЯ полями протокола (Д1, зеркало kwargs
+  // status_service) → 201 c echo-телом; иначе — 409. Живого override-эндпоинта
+  // в API нет — контракт протокольный (Д8-прецедент 8.4).
+  http.post('*/api/operations/temporary-duty/', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >
+    const overridden =
+      body.override === true &&
+      typeof body.override_reason === 'string' &&
+      body.override_reason.trim() !== ''
+    if (overridden) {
+      return HttpResponse.json(body, { status: 201 })
+    }
+    return HttpResponse.json(conflictOverridableEnvelope, { status: 409 })
+  }),
   // 409 НЕ overridable: state-конфликт (протокольная, Д8)
   http.post('*/api/operations/daily-submissions/:id/amend/', () =>
     HttpResponse.json(conflictStateEnvelope, { status: 409 }),

@@ -194,6 +194,14 @@ try {
     join(API, 'probe.ts'),
     'export const probe = () => fetch("/api/x")\n',
   )
+  // негативный контроль ARCH-FE-015 (8.5): useMutation в features красный
+  // (mutation.ts выше), а канонная замена — useApiMutation из shared/api
+  // прямым путём (без barrel) — зелёная
+  writeFileSync(
+    join(A, 'uses-api-mutation.ts'),
+    'import { useApiMutation } from "../../shared/api/useApiMutation"\n' +
+      'export const hook = useApiMutation\n',
+  )
   // barrel-фикстура: сканер обязан её увидеть (самопроверка сканера)
   writeFileSync(join(A, 'index.ts'), 'export { ok } from "./legal"\n')
   // не-TS фикстура: сканер TS-only обязан её увидеть (самопроверка сканера)
@@ -250,6 +258,7 @@ try {
   expectClean(results, `${A_NAME}/same.ts`) // та же фича
   expectClean(results, `${APP_NAME}/probe.ts`) // app → features + shared
   expectClean(results, `${API_NAME}/probe.ts`) // fetch внутри shared/api легален
+  expectClean(results, `${A_NAME}/uses-api-mutation.ts`) // канонный хук из features (8.5)
 
   // сканеры видят свои фикстуры → сканеры живые, не вакуумные
   if (!barrelOffenders().some((f) => f.includes(A_NAME))) {
@@ -290,5 +299,5 @@ if (failures.length) {
   process.exit(1)
 }
 console.log(
-  'lint-canon: 13 красных фикстур + 4 негативных контроля + barrel/TS-only-сканы — канон доказан',
+  'lint-canon: 13 красных фикстур + 5 негативных контролей + barrel/TS-only-сканы — канон доказан',
 )

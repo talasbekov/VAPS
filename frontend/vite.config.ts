@@ -20,12 +20,14 @@ export default defineConfig(({ mode }) => {
       target: 'firefox100',
     },
     // Стори 8.4: тестовый фундамент фронта. environment node — fetch нативный,
-    // MSW перехватывает на уровне node; jsdom/RTL придут с первым компонентом (8.5)
+    // MSW перехватывает на уровне node. Стори 8.5: компонентные .test.tsx берут
+    // jsdom per-file docblock `// @vitest-environment jsdom` (Д7: vitest 4 удалил
+    // environmentMatchGlobs; node-тесты 8.4 не трогаются)
     test: {
       environment: 'node',
       // только src: scripts/*.test.mjs — самостоятельные node-скрипты gate-цепочки,
       // не vitest-тесты (исполняются своими шагами gate)
-      include: ['src/**/*.test.ts'],
+      include: ['src/**/*.test.{ts,tsx}'],
       setupFiles: ['./src/shared/api/testing/vitest.setup.ts'],
     },
     server: {
