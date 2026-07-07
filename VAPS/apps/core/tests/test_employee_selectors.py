@@ -3,11 +3,41 @@ import datetime as dt
 import pytest
 from django.utils import timezone
 
-from apps.core.models import Division, DivisionType, Employee, Organization, Position
+from apps.core.models import (
+    Division,
+    DivisionType,
+    Employee,
+    Organization,
+    Position,
+    Rank,
+)
 from apps.core.selectors import CoreEmployeeSelector, HistoricalEmployeeSelector
 from apps.core.services import assign_employee_division
 
 pytestmark = pytest.mark.django_db
+
+
+def test_denorm_for_resolves_rank_name_with_fallback():
+    # Story 5.3a denominator denorm: full_name as stored; rank -> Rank.name,
+    # falling back to the raw rank_code when the dictionary has no row.
+    org = Organization.objects.create(name="DN", code="DN")
+    dtp = DivisionType.objects.create(code="dn-dept", name="Отдел")
+    div = Division.objects.create(organization=org, type_code=dtp, name="DN", code="DN")
+    Rank.objects.create(code="CAPT", name="капитан")
+    known = Employee.objects.create(
+        iin="900101300401", full_name="Иванов", rank_code="CAPT", division=div
+    )
+    unknown = Employee.objects.create(
+        iin="900101300402", full_name="Петров", rank_code="NOPE", division=div
+    )
+
+    result = CoreEmployeeSelector.denorm_for([known.id, unknown.id])
+    assert result[known.id] == {"full_name": "Иванов", "rank": "капитан"}
+    assert result[unknown.id] == {"full_name": "Петров", "rank": "NOPE"}
+
+
+def test_denorm_for_empty():
+    assert CoreEmployeeSelector.denorm_for([]) == {}
 
 
 @pytest.fixture
@@ -74,7 +104,10 @@ def test_active_in_division_applies_sort_canon(fresh_division):
     head_b = _emp(div, iin="900101300421", last_name="Бойко", position_code="HEAD")
     head_a = _emp(div, iin="900101300422", last_name="Абрамов", position_code="HEAD")
     attached = _emp(
-        div, iin="900101300423", last_name="Сидоров", position_code="HEAD",
+        div,
+        iin="900101300423",
+        last_name="Сидоров",
+        position_code="HEAD",
         attached=True,
     )
     result = [e.id for e in CoreEmployeeSelector.active_in_division(div.id)]

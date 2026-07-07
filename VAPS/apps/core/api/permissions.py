@@ -1,4 +1,4 @@
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import MethodNotAllowed, PermissionDenied
 
 
 def require_permission(request, permission_code):
@@ -46,6 +46,15 @@ class RequirePermissionMixin:
             return
         if self.action == "metadata":
             return
+        # A method the ViewSet serves globally but THIS route does not map
+        # (e.g. GET on a post-only @action URL once "get" is in
+        # http_method_names, 5.8c) resolves to action=None — that's a method-
+        # surface miss: raise the 405 HERE rather than fall through, so the
+        # outcome never depends on whether the instance happens to grow an
+        # attribute named after the verb (review 5.8c). Fail-closed is
+        # untouched: every MAPPED action still needs a code.
+        if self.action is None:
+            raise MethodNotAllowed(request.method)
         code = self.permission_map.get(self.action)
         if code is None:
             raise PermissionDenied("PERMISSION_DENIED")

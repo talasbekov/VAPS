@@ -16,10 +16,12 @@ bulk-fetch their live statuses (1), validate every row IN MEMORY (reusing the
 business errors (422/409 collected into ``detail.rows[]``).
 """
 
+import uuid
 from collections import Counter
 
 from django.db import transaction
 
+from apps.audit.services import record, record_many
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreEmployeeLockSelector
@@ -28,8 +30,14 @@ from apps.operations.statuses.models import EmployeeStatus, StatusType
 from apps.operations.statuses.services.status_service import (
     _conflict_details,
     _require_actor,
+    _status_snapshot,
     _validate_interval,
 )
+
+# Bulk summary (STATUS_BULK_CREATED) has no single entity — AuditLog.entity_id is
+# NOT NULL UUIDField, so a nil-UUID sentinel marks "batch, see new_value". The N
+# per-row STATUS_CREATED events carry the real employee UUIDs.
+_BULK_SUMMARY_ENTITY_ID = uuid.UUID(int=0)
 
 # Keys every payload row must carry. Accessed via ``[]`` below, so a missing one
 # would raise KeyError → 500; the up-front shape check turns that into a 400.
@@ -246,4 +254,31 @@ def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
     ]
     with transaction.atomic():
         created = EmployeeStatus.objects.bulk_create(objects)
+    # Audit (story 4.4): N per-row STATUS_CREATED in ONE bulk INSERT (record_many —
+    # preserves the NFR-4 constant-query property) + one summary STATUS_BULK_CREATED.
+    record_many(
+        [
+            {
+                "actor": actor,
+                "action": "STATUS_CREATED",
+                "entity_type": "employee_status",
+                "entity_id": st.employee_id,
+                "old_value": None,
+                "new_value": _status_snapshot(st),
+            }
+            for st in created
+        ]
+    )
+    record(
+        actor=actor,
+        action="STATUS_BULK_CREATED",
+        entity_type="employee_status",
+        entity_id=_BULK_SUMMARY_ENTITY_ID,
+        old_value=None,
+        new_value={
+            "count": len(created),
+            "business_date": str(business_date),
+            "employee_ids": [str(st.employee_id) for st in created],
+        },
+    )
     return created

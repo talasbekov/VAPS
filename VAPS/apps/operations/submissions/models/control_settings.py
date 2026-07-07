@@ -29,6 +29,11 @@ class SubmissionControlSettings(TimeStampedModel):
     # cross-context references are flat UUIDs, never FKs). Resolve names via
     # CoreDivisionTreeSelector, never by importing apps.core.models.
     required_division_ids = ArrayField(models.UUIDField(), default=list, blank=True)
+    # Global «дежурный» recipient — the fallback for divisions without a specific
+    # DivisionNotifyRecipient (Q1b, 5.7b1). Flat actor id (ARCH-007). May be blank
+    # («нет дежурного») → an unmapped division simply is not resolved by
+    # NotifyRecipientSelector.resolve_many (5.7b2 logs + skips it).
+    default_notify_recipient = models.CharField(max_length=100, blank=True, default="")
 
     class Meta:
         db_table = "ops_submission_control_settings"
@@ -36,6 +41,15 @@ class SubmissionControlSettings(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(singleton_key=1),
                 name="ck_submission_control_settings_singleton",
+            ),
+            # «Нет дежурного» must mean blank (""), never whitespace-only: a
+            # value like "   " is truthy and would resolve every unmapped
+            # division to a garbage recipient. Allow "" (default), reject any
+            # non-empty all-whitespace value. Mirrors DivisionNotifyRecipient's
+            # non-blank guard for symmetry (5.7b1 review).
+            models.CheckConstraint(
+                condition=~models.Q(default_notify_recipient__regex=r"^\s+$"),
+                name="ck_submission_control_settings_duty_not_whitespace",
             ),
         ]
         verbose_name = "Настройки контроля сдачи"
