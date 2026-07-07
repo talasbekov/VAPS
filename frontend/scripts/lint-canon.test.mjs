@@ -209,6 +209,92 @@ try {
     'import { usePermissions } from "../../shared/auth/usePermissions"\n' +
       'export const perms = usePermissions\n',
   )
+  // ARCH-FE-012 ужесточение (8.7): literal-пути вне routes.ts красные —
+  // по каналу на фикстуру (navigate-вызов и JSX-атрибут to); фикстуры в app —
+  // тесты из-под правила выведены осознанно (Ловушка 9), app-код им покрыт
+  writeFileSync(
+    join(APP, 'nav-literal.tsx'),
+    'import { useNavigate } from "react-router"\n' +
+      'export function Probe() {\n' +
+      '  const navigate = useNavigate()\n' +
+      '  return (\n' +
+      '    <button type="button" onClick={() => navigate("/literal")}>x</button>\n' +
+      '  )\n' +
+      '}\n',
+  )
+  writeFileSync(
+    join(APP, 'link-literal.tsx'),
+    'import { Link } from "react-router"\n' +
+      'export function Probe() {\n' +
+      '  return <Link to="/literal">x</Link>\n' +
+      '}\n',
+  )
+  // канал path (<Route path="/literal">) — свой селектор, своя фикстура
+  // (ревью 8.7: живой пробы Task 12 мало — без фикстуры регресс селектора
+  // прошёл бы гейт молча)
+  writeFileSync(
+    join(APP, 'route-literal.tsx'),
+    'import { Route } from "react-router"\n' +
+      'export function Probe() {\n' +
+      '  return <Route path="/literal" element={null} />\n' +
+      '}\n',
+  )
+  // шаблонный литерал БЕЗ подстановки — тот же literal-канал (обход бана,
+  // ревью 8.7): navigate(`/x`) и to={`/x`} красные
+  writeFileSync(
+    join(APP, 'template-literal.tsx'),
+    'import { Link, useNavigate } from "react-router"\n' +
+      'export function Probe() {\n' +
+      '  const navigate = useNavigate()\n' +
+      '  return (\n' +
+      '    <div>\n' +
+      '      <button type="button" onClick={() => navigate(`/literal`)}>x</button>\n' +
+      '      <Link to={`/literal`}>x</Link>\n' +
+      '    </div>\n' +
+      '  )\n' +
+      '}\n',
+  )
+  // ARCH-FE-014 enforcement (8.7): не-токенный произвол красный
+  writeFileSync(
+    join(APP, 'custom-class.tsx'),
+    'export function Probe() {\n' +
+      '  return <div className="__not_a_token_class">x</div>\n' +
+      '}\n',
+  )
+  // негативные контроли 8.7: те же места с константами ROUTES зелёные
+  // (+ токен-классы донора не считаются «кастомными»; шаблон С подстановкой
+  // ROUTES.* легален — бан только на без-подстановочные литералы)
+  writeFileSync(
+    join(APP, 'nav-const.tsx'),
+    'import { useNavigate } from "react-router"\n' +
+      'import { ROUTES } from "../../shared/routes"\n' +
+      'export function Probe() {\n' +
+      '  const navigate = useNavigate()\n' +
+      '  return (\n' +
+      '    <div>\n' +
+      '      <button type="button" onClick={() => navigate(ROUTES.home)}>x</button>\n' +
+      '      <button\n' +
+      '        type="button"\n' +
+      '        onClick={() => navigate(`${ROUTES.home}?tab=day`)}\n' +
+      '      >\n' +
+      '        x\n' +
+      '      </button>\n' +
+      '    </div>\n' +
+      '  )\n' +
+      '}\n',
+  )
+  writeFileSync(
+    join(APP, 'link-const.tsx'),
+    'import { Link } from "react-router"\n' +
+      'import { ROUTES } from "../../shared/routes"\n' +
+      'export function Probe() {\n' +
+      '  return (\n' +
+      '    <Link className="bg-sidebar p-2 text-sidebar-foreground" to={ROUTES.home}>\n' +
+      '      x\n' +
+      '    </Link>\n' +
+      '  )\n' +
+      '}\n',
+  )
   // barrel-фикстура: сканер обязан её увидеть (самопроверка сканера)
   writeFileSync(join(A, 'index.ts'), 'export { ok } from "./legal"\n')
   // не-TS фикстура: сканер TS-only обязан её увидеть (самопроверка сканера)
@@ -219,7 +305,7 @@ try {
   const results = await eslint.lintFiles([
     join(A, '*.{ts,tsx}'),
     join(S, '*.ts'),
-    join(APP, '*.ts'),
+    join(APP, '*.{ts,tsx}'),
     join(X, '*.ts'),
     join(API, '*.ts'),
   ])
@@ -260,6 +346,22 @@ try {
     `${A_NAME}/axios.ts`,
     '@typescript-eslint/no-restricted-imports',
   )
+  // красные: literal-пути вне routes.ts (ARCH-FE-012, стори 8.7)
+  expectRule(results, `${APP_NAME}/nav-literal.tsx`, 'no-restricted-syntax')
+  expectRule(results, `${APP_NAME}/link-literal.tsx`, 'no-restricted-syntax')
+  // канал path и без-подстановочные шаблонные литералы (ревью 8.7)
+  expectRule(results, `${APP_NAME}/route-literal.tsx`, 'no-restricted-syntax')
+  expectRule(
+    results,
+    `${APP_NAME}/template-literal.tsx`,
+    'no-restricted-syntax',
+  )
+  // красный: не-токенный classname (ARCH-FE-014, стори 8.7)
+  expectRule(
+    results,
+    `${APP_NAME}/custom-class.tsx`,
+    'tailwindcss/no-custom-classname',
+  )
   // зелёные: все разрешённые рёбра матрицы
   expectClean(results, `${A_NAME}/legal.ts`) // features → shared
   expectClean(results, `${A_NAME}/same.ts`) // та же фича
@@ -267,6 +369,8 @@ try {
   expectClean(results, `${API_NAME}/probe.ts`) // fetch внутри shared/api легален
   expectClean(results, `${A_NAME}/uses-api-mutation.ts`) // канонный хук из features (8.5)
   expectClean(results, `${A_NAME}/uses-permissions.ts`) // канонный auth-хук из features (8.6)
+  expectClean(results, `${APP_NAME}/nav-const.tsx`) // navigate(ROUTES.*) и шаблон С подстановкой легальны (8.7)
+  expectClean(results, `${APP_NAME}/link-const.tsx`) // to={ROUTES.*} + токен-классы легальны (8.7)
 
   // сканеры видят свои фикстуры → сканеры живые, не вакуумные
   if (!barrelOffenders().some((f) => f.includes(A_NAME))) {
@@ -307,5 +411,5 @@ if (failures.length) {
   process.exit(1)
 }
 console.log(
-  'lint-canon: 13 красных фикстур + 6 негативных контролей + barrel/TS-only-сканы — канон доказан',
+  'lint-canon: 18 красных фикстур + 8 негативных контролей + barrel/TS-only-сканы — канон доказан',
 )

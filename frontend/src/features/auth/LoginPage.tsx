@@ -1,7 +1,10 @@
 // Вход (Д1): страница /login с двумя взаимоисключающими способами —
 // идентификатор (X-User-Id, dev + пилот-fallback A6) и вставка готового JWT
 // (внешний Auth INT-2, redirect-flow контракта не имеет). Первая форма
-// проекта: RHF (uncontrolled) + zod (канон L246). Headless без стилей (8.7).
+// проекта: RHF (uncontrolled) + zod (канон L246). Одета в 8.7 (Д8):
+// вендоренные Card/Label/Input/Button, токен-классы; DOM-семантика и
+// поведение 8.6 сохранены (label-ассоциации через htmlFor/id).
+import { useId } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useLocation, useNavigate } from 'react-router'
@@ -9,6 +12,15 @@ import { z } from 'zod'
 import { useAuth } from '../../shared/auth/AuthContext'
 import type { Credential } from '../../shared/auth/credential'
 import { ROUTES } from '../../shared/routes'
+import { Button } from '../../shared/ui/Button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+} from '../../shared/ui/Card'
+import { Input } from '../../shared/ui/Input'
+import { Label } from '../../shared/ui/Label'
 
 export const EXACTLY_ONE_MESSAGE =
   'Заполните ровно одно поле: идентификатор ИЛИ JWT-токен'
@@ -57,6 +69,8 @@ export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const userIdId = useId()
+  const jwtId = useId()
   const {
     register,
     handleSubmit,
@@ -79,21 +93,50 @@ export function LoginPage() {
   })
 
   return (
-    <main>
-      <h1>Вход</h1>
-      {/* нативный form: Enter в любом поле сабмитит (keyboard path L262) */}
-      <form onSubmit={(event) => void onSubmit(event)}>
-        <label>
-          Идентификатор (X-User-Id)
-          <input type="text" autoComplete="off" {...register('userId')} />
-        </label>
-        <label>
-          JWT-токен
-          <input type="text" autoComplete="off" {...register('jwt')} />
-        </label>
-        {errors.userId && <p role="alert">{errors.userId.message}</p>}
-        <button type="submit">Войти</button>
-      </form>
+    <main className="flex min-h-screen items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <h1 className="text-2xl font-semibold leading-none tracking-tight">
+            Вход
+          </h1>
+          <CardDescription>
+            Заполните ровно одно поле: идентификатор ИЛИ готовый JWT-токен
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* нативный form: Enter в любом поле сабмитит (keyboard path L262) */}
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(event) => void onSubmit(event)}
+          >
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={userIdId}>Идентификатор (X-User-Id)</Label>
+              <Input
+                id={userIdId}
+                type="text"
+                autoComplete="off"
+                {...register('userId')}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={jwtId}>JWT-токен</Label>
+              {/* type=password: токен не светится на экране (ревью 8.6 №5) */}
+              <Input
+                id={jwtId}
+                type="password"
+                autoComplete="off"
+                {...register('jwt')}
+              />
+            </div>
+            {errors.userId && (
+              <p role="alert" className="text-sm text-destructive">
+                {errors.userId.message}
+              </p>
+            )}
+            <Button type="submit">Войти</Button>
+          </form>
+        </CardContent>
+      </Card>
     </main>
   )
 }

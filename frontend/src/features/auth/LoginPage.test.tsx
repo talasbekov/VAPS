@@ -194,6 +194,14 @@ describe('возврат на исходно запрошенный маршру
 })
 
 describe('вход по JWT (AC 2)', () => {
+  it('JWT-поле скрывает ввод: type=password (ревью 8.6 №5, стори 8.7 AC 8)', () => {
+    renderLogin()
+    expect(screen.getByLabelText(JWT_LABEL)).toHaveAttribute(
+      'type',
+      'password',
+    )
+  })
+
   it('запросы несут Authorization: Bearer и НЕ несут X-User-Id (JWT приоритетен)', async () => {
     const captured = captureHeaders()
     const user = userEvent.setup()

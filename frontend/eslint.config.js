@@ -1,9 +1,11 @@
+import { fileURLToPath } from 'node:url'
 import js from '@eslint/js'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
 import compat from 'eslint-plugin-compat'
 import boundaries from 'eslint-plugin-boundaries'
 import reactHooks from 'eslint-plugin-react-hooks'
+import tailwindcss from 'eslint-plugin-tailwindcss'
 import prettierConfig from 'eslint-config-prettier'
 import { BANNED_IMPORT_PATTERNS } from './scripts/banned-packages.mjs'
 
@@ -42,6 +44,9 @@ export default tseslint.config(
         node: { extensions: ['.js', '.mjs', '.ts', '.tsx', '.d.ts'] },
       },
       'boundaries/include': ['src/**/*'],
+      // css — ассет, не слой: вход Tailwind src/index.css (8.7) импортируется
+      // из app/main.tsx и не должен считаться «unknown element»
+      'boundaries/ignore': ['**/*.css'],
       'boundaries/elements': [
         { type: 'app', pattern: 'src/app/**' },
         { type: 'features', pattern: 'src/features/*', capture: ['feature'] },
@@ -172,6 +177,87 @@ export default tseslint.config(
           message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
         },
       ],
+    },
+  },
+  {
+    // ARCH-FE-012 ужесточение (стори 8.7, обещание 8.6 AC-8): строковые
+    // literal-пути в <Link to>/<Navigate to>/<Route path>/navigate() запрещены —
+    // только константы ROUTES из shared/routes.ts. Сам routes.ts исключён
+    // (константы-строки — его содержимое); тесты исключены ОСОЗНАННО: канон
+    // правит продукт-код, тестам синтетические маршруты легальны (Ловушка 9,
+    // guards.test.tsx path="/secret"). Шаблонный литерал БЕЗ подстановки —
+    // тот же literal-канал (обход бана, ревью 8.7) и тоже красный; шаблоны
+    // С подстановкой (`${ROUTES.x}?tab=…`) и MSW-строки URL селекторы не задевают.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/shared/routes.ts', 'src/**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "JSXAttribute[name.name='to'] > Literal",
+          message:
+            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
+        },
+        {
+          selector:
+            "JSXAttribute[name.name='to'] > JSXExpressionContainer > Literal",
+          message:
+            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
+        },
+        {
+          selector: "JSXAttribute[name.name='path'] > Literal",
+          message:
+            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
+        },
+        {
+          selector:
+            "JSXAttribute[name.name='path'] > JSXExpressionContainer > Literal",
+          message:
+            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
+        },
+        {
+          selector:
+            "CallExpression[callee.name='navigate'][arguments.0.type='Literal']",
+          message:
+            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
+        },
+        {
+          selector:
+            "JSXAttribute[name.name='to'] > JSXExpressionContainer > TemplateLiteral[expressions.length=0]",
+          message:
+            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
+        },
+        {
+          selector:
+            "JSXAttribute[name.name='path'] > JSXExpressionContainer > TemplateLiteral[expressions.length=0]",
+          message:
+            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
+        },
+        {
+          selector:
+            "CallExpression[callee.name='navigate'][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0]",
+          message:
+            'Literal-путь запрещён (ARCH-FE-012): используйте константы ROUTES из shared/routes.ts',
+        },
+      ],
+    },
+  },
+  {
+    // ARCH-FE-014 enforcement (стори 8.7): токен-классы донора, никакого
+    // не-токенного произвола. Конфиг — абсолютным путём через fileURLToPath
+    // (кириллица в пути репо, закреплённый урок 8.1–8.6); callees — cn/cva
+    // (склейка и варианты shadcn-компонентов).
+    files: ['src/**/*.{ts,tsx}'],
+    plugins: { tailwindcss },
+    settings: {
+      tailwindcss: {
+        config: fileURLToPath(new URL('./tailwind.config.js', import.meta.url)),
+        callees: ['cn', 'cva', 'clsx'],
+      },
+    },
+    rules: {
+      'tailwindcss/no-contradicting-classname': 'error',
+      'tailwindcss/no-custom-classname': 'error',
     },
   },
   {
