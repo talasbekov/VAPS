@@ -100,34 +100,53 @@ def div():
 @pytest.fixture
 def types(db):
     StatusType.objects.create(
-        code="PENDING_CLARIFICATION", name="Уточняется", is_hard_block=False,
-        priority=990, report_column_code="PENDING",
+        code="PENDING_CLARIFICATION",
+        name="Уточняется",
+        is_hard_block=False,
+        priority=990,
+        report_column_code="PENDING",
     )
     StatusType.objects.create(
-        code="SICK_LEAVE", name="На больничном", is_hard_block=True,
-        priority=10, report_column_code="SICK",
+        code="SICK_LEAVE",
+        name="На больничном",
+        is_hard_block=True,
+        priority=10,
+        report_column_code="SICK",
     )
     StatusType.objects.create(
-        code="VACATION", name="В отпуске", is_hard_block=True,
-        priority=20, report_column_code="VACATION",
+        code="VACATION",
+        name="В отпуске",
+        is_hard_block=True,
+        priority=20,
+        report_column_code="VACATION",
     )
     StatusType.objects.create(
-        code="STUDY", name="Учёба", is_hard_block=False,
-        priority=32, report_column_code="TRAINING",
+        code="STUDY",
+        name="Учёба",
+        is_hard_block=False,
+        priority=32,
+        report_column_code="TRAINING",
     )
 
 
 def _emp(div, **kw):
     return Employee.objects.create(
-        iin=next(_iin), full_name="T", rank_code="",
-        position_code="", division=div, **kw,
+        iin=next(_iin),
+        full_name="T",
+        rank_code="",
+        position_code="",
+        division=div,
+        **kw,
     )
 
 
 def _pending(emp, start=date(2026, 6, 1), end=date(2026, 6, 10)):
     return EmployeeStatus.objects.create(
-        employee_id=emp.id, status_type_code="PENDING_CLARIFICATION",
-        date_start=start, date_end=end, source=EmployeeStatus.Source.USER,
+        employee_id=emp.id,
+        status_type_code="PENDING_CLARIFICATION",
+        date_start=start,
+        date_end=end,
+        source=EmployeeStatus.Source.USER,
     )
 
 
@@ -139,9 +158,12 @@ def test_resolve_closes_pending_and_creates_real_status(div, types):
     e = _emp(div)
     pending = _pending(e)
     resolved = resolve_pending_clarification(
-        pending, resolved_type_code="STUDY",
-        date_start=date(2026, 6, 3), date_end=date(2026, 6, 8),
-        actor="op", reason="выяснилось: учёба",
+        pending,
+        resolved_type_code="STUDY",
+        date_start=date(2026, 6, 3),
+        date_end=date(2026, 6, 8),
+        actor="op",
+        reason="выяснилось: учёба",
     )
     assert resolved.status_type_code == "STUDY"
     assert resolved.source == EmployeeStatus.Source.USER
@@ -149,9 +171,7 @@ def test_resolve_closes_pending_and_creates_real_status(div, types):
     assert pending.cancelled_at is not None  # «уточняется» closed
     assert pending.cancelled_by == "op"
     # Exactly one live status remains (the resolved one); PENDING is cancelled.
-    live = EmployeeStatus.objects.filter(
-        employee_id=e.id, cancelled_at__isnull=True
-    )
+    live = EmployeeStatus.objects.filter(employee_id=e.id, cancelled_at__isnull=True)
     assert list(live.values_list("status_type_code", flat=True)) == ["STUDY"]
 
 
@@ -161,9 +181,12 @@ def test_resolve_empty_reason_400(div, types):
     pending = _pending(e)
     with pytest.raises(DomainError) as ei:
         resolve_pending_clarification(
-            pending, resolved_type_code="STUDY",
-            date_start=date(2026, 6, 3), date_end=date(2026, 6, 8),
-            actor="op", reason="   ",
+            pending,
+            resolved_type_code="STUDY",
+            date_start=date(2026, 6, 3),
+            date_end=date(2026, 6, 8),
+            actor="op",
+            reason="   ",
         )
     assert ei.value.http_status == 400
     assert ei.value.code == "VALIDATION_ERROR"
@@ -177,9 +200,12 @@ def test_resolve_empty_actor_400(div, types):
     pending = _pending(e)
     with pytest.raises(DomainError) as ei:
         resolve_pending_clarification(
-            pending, resolved_type_code="STUDY",
-            date_start=date(2026, 6, 3), date_end=date(2026, 6, 8),
-            actor="", reason="r",
+            pending,
+            resolved_type_code="STUDY",
+            date_start=date(2026, 6, 3),
+            date_end=date(2026, 6, 8),
+            actor="",
+            reason="r",
         )
     assert ei.value.http_status == 400
 
@@ -193,15 +219,20 @@ def test_resolve_hard_conflict_422_nothing_written(div, types):
     pending = _pending(e)
     # Pre-existing hard status (VACATION) overlapping the resolving interval.
     EmployeeStatus.objects.create(
-        employee_id=e.id, status_type_code="VACATION",
-        date_start=date(2026, 6, 4), date_end=date(2026, 6, 15),
+        employee_id=e.id,
+        status_type_code="VACATION",
+        date_start=date(2026, 6, 4),
+        date_end=date(2026, 6, 15),
     )
     before = EmployeeStatus.objects.count()
     with pytest.raises(DomainError) as ei:
         resolve_pending_clarification(
-            pending, resolved_type_code="SICK_LEAVE",  # hard, overlaps VACATION
-            date_start=date(2026, 6, 6), date_end=date(2026, 6, 12),
-            actor="op", reason="госпиталь",
+            pending,
+            resolved_type_code="SICK_LEAVE",  # hard, overlaps VACATION
+            date_start=date(2026, 6, 6),
+            date_end=date(2026, 6, 12),
+            actor="op",
+            reason="госпиталь",
         )
     assert ei.value.http_status == 422
     assert ei.value.code == "OVERLAPPING_HARD_STATUS"
@@ -219,18 +250,35 @@ def test_resolve_marks_days_for_amendment(div, types, monkeypatch):
     pending = _pending(e, start=date(2026, 6, 1), end=date(2026, 6, 10))
     calls = []
     monkeypatch.setattr(
-        status_service, "mark_days_for_amendment",
-        lambda employee_id, date_start, date_end: calls.append(
-            (employee_id, date_start, date_end)
+        status_service,
+        "mark_days_for_amendment",
+        lambda employee_id, intervals, *, actor, reason, triggered_by_status_id=None: (
+            calls.append(
+                (employee_id, intervals, actor, reason, triggered_by_status_id)
+            )
         ),
     )
-    resolve_pending_clarification(
-        pending, resolved_type_code="STUDY",
-        date_start=date(2026, 6, 3), date_end=date(2026, 6, 12),
-        actor="op", reason="учёба",
+    resolved = resolve_pending_clarification(
+        pending,
+        resolved_type_code="STUDY",
+        date_start=date(2026, 6, 3),
+        date_end=date(2026, 6, 12),
+        actor="op",
+        reason="учёба",
     )
-    # Affected span = union of the old «уточняется» and the new interval.
-    assert calls == [(e.id, date(2026, 6, 1), date(2026, 6, 12))]
+    # 5.4b: the OLD «уточняется» and NEW resolving intervals are passed SEPARATELY
+    # (half-open [start, end)), NOT a min/max bounding box — disjoint intervals must
+    # not amend the gap. actor/reason flow through; resolved.id is the trigger ref.
+    assert len(calls) == 1
+    employee_id, intervals, actor, reason, triggered = calls[0]
+    assert employee_id == e.id
+    assert intervals == [
+        (date(2026, 6, 1), date(2026, 6, 10)),  # old «уточняется»
+        (date(2026, 6, 3), date(2026, 6, 12)),  # new resolving
+    ]
+    assert actor == "op"
+    assert reason == "учёба"
+    assert triggered == resolved.id
 
 
 # --- AC-5: resolving a non-PENDING status → 422 -----------------------------
@@ -240,15 +288,20 @@ def test_resolve_marks_days_for_amendment(div, types, monkeypatch):
 def test_resolve_non_pending_status_422(div, types):
     e = _emp(div)
     not_pending = EmployeeStatus.objects.create(
-        employee_id=e.id, status_type_code="STUDY",
-        date_start=date(2026, 6, 1), date_end=date(2026, 6, 10),
+        employee_id=e.id,
+        status_type_code="STUDY",
+        date_start=date(2026, 6, 1),
+        date_end=date(2026, 6, 10),
         source=EmployeeStatus.Source.USER,
     )
     with pytest.raises(DomainError) as ei:
         resolve_pending_clarification(
-            not_pending, resolved_type_code="VACATION",
-            date_start=date(2026, 6, 3), date_end=date(2026, 6, 8),
-            actor="op", reason="r",
+            not_pending,
+            resolved_type_code="VACATION",
+            date_start=date(2026, 6, 3),
+            date_end=date(2026, 6, 8),
+            actor="op",
+            reason="r",
         )
     assert ei.value.http_status == 422
     assert ei.value.code == "INVALID_LIFECYCLE_TRANSITION"
@@ -264,18 +317,24 @@ def test_resolve_already_resolved_pending_422_no_double(div, types):
     e = _emp(div)
     pending = _pending(e)
     resolve_pending_clarification(
-        pending, resolved_type_code="STUDY",
-        date_start=date(2026, 6, 3), date_end=date(2026, 6, 8),
-        actor="op", reason="первое разрешение",
+        pending,
+        resolved_type_code="STUDY",
+        date_start=date(2026, 6, 3),
+        date_end=date(2026, 6, 8),
+        actor="op",
+        reason="первое разрешение",
     )
     pending.refresh_from_db()
     first_cancelled_by = pending.cancelled_by
     before = EmployeeStatus.objects.count()
     with pytest.raises(DomainError) as ei:
         resolve_pending_clarification(
-            pending, resolved_type_code="VACATION",
-            date_start=date(2026, 6, 4), date_end=date(2026, 6, 9),
-            actor="op2", reason="повторное",
+            pending,
+            resolved_type_code="VACATION",
+            date_start=date(2026, 6, 4),
+            date_end=date(2026, 6, 9),
+            actor="op2",
+            reason="повторное",
         )
     assert ei.value.http_status == 422
     assert ei.value.code == "INVALID_LIFECYCLE_TRANSITION"
@@ -291,9 +350,12 @@ def test_resolve_to_pending_clarification_422(div, types):
     pending = _pending(e)
     with pytest.raises(DomainError) as ei:
         resolve_pending_clarification(
-            pending, resolved_type_code="PENDING_CLARIFICATION",
-            date_start=date(2026, 6, 3), date_end=date(2026, 6, 8),
-            actor="op", reason="r",
+            pending,
+            resolved_type_code="PENDING_CLARIFICATION",
+            date_start=date(2026, 6, 3),
+            date_end=date(2026, 6, 8),
+            actor="op",
+            reason="r",
         )
     assert ei.value.http_status == 422
     assert ei.value.code == "INVALID_LIFECYCLE_TRANSITION"

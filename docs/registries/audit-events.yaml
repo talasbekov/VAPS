@@ -67,6 +67,77 @@ actions:
     description: "Пересдача/amendment сданного дня (кто/когда/причина/санкция)."
     provenance: derived-from-mutation
     source: "architecture.md ARCH-DATA-021 (amendment-flow)"
+  TOMORROW_BLOCK_OVERRIDDEN:
+    entity_type: tomorrow_block_override
+    description: "Легальный обход блокировки «на завтра» (кто/когда/почему; 5.6b override)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 5.9; architecture.md ARCH-DATA-021 (блокировка следующего дня)"
+
+  # --- Story 4.4: мутации статусов из сервисов E3 (синхронно-на-мутации, before/after) ---
+  # entity_id = employee_id (UUID) — AuditLog.entity_id это UUIDField, а PK статус-сущностей
+  # integer; PK конкретной строки кладётся в new_value (.status_id и т.п.).
+  STATUS_CREATED:
+    entity_type: employee_status
+    description: "Статус создан оператором (create_status / bulk-строка)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 4.4; status_service.create_status (FR-36, AR-9)"
+  STATUS_UPDATED:
+    entity_type: employee_status
+    description: "Правка метаданных/интервала статуса (update_status)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 4.4; status_service.update_status"
+  STATUS_EXTENDED:
+    entity_type: employee_status
+    description: "Интервал статуса продлён (extend_status)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 4.4; status_service.extend_status"
+  STATUS_COMPLETED:
+    entity_type: employee_status
+    description: "Статус досрочно завершён фактической датой (complete_status_early)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 4.4; status_service.complete_status_early"
+  STATUS_CANCELLED:
+    entity_type: employee_status
+    description: "Не начавшийся (PLANNED) статус отменён (cancel_status)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 4.4; status_service.cancel_status"
+  STATUS_CLARIFICATION_RESOLVED:
+    entity_type: employee_status
+    description: "Статус «уточняется» разрешён ретро-заменой в реальный (resolve_pending_clarification)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 4.4; status_service.resolve_pending_clarification"
+  OVERRIDE_APPLIED:
+    entity_type: override
+    description: "Обход soft-конфликта оператором — отдельное считаемое событие (SM-C1)."
+    provenance: derived-from-mutation
+    source: "architecture.md:52 «каждый override — считаемое событие»; epics.md Story 4.4"
+  STATUS_BULK_CREATED:
+    entity_type: employee_status
+    description: "Сводное событие массового создания (N построчных STATUS_CREATED + одно сводное)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 4.4 (bulk N+сводное); BR-005-паттерн «одна сводная запись»"
+  SECONDMENT_INITIATED:
+    entity_type: secondment
+    description: "Откомандирование инициировано — пара DETACHED+ATTACHED (initiate_secondment)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 4.4; secondment_service.initiate_secondment (FR-14)"
+  SECONDMENT_RETURN_REQUESTED:
+    entity_type: secondment
+    description: "Запрошен возврат из откомандирования (request_return)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 4.4; secondment_service.request_return (FR-15)"
+  SECONDMENT_RETURNED:
+    entity_type: secondment
+    description: "Возврат подтверждён — обе ноги закрыты одним событием (confirm_return)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 4.4; secondment_service.confirm_return (FR-15)"
+
+  # --- Story 4.7: аудит увольнения (named-дефер 4.4 №6=B) ---
+  EMPLOYEE_DISMISSED:
+    entity_type: employee
+    description: "Сотрудник уволен — карточка в архив, активные статусы усечены, секондменты закрыты (одно композитное событие на оркестраторе dismiss_employee)."
+    provenance: derived-from-mutation
+    source: "Story 4.7 (named-дефер 4.4 №6=B); operations dismissal.dismiss_employee (FR-36, AR-9)"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

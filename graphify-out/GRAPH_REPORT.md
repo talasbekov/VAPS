@@ -1,16 +1,16 @@
-# Graph Report - VAPS  (2026-06-23)
+# Graph Report - VAPS  (2026-07-04)
 
 ## Corpus Check
-- 657 files · ~1,156,267 words
+- 842 files · ~1,378,347 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 5516 nodes · 7487 edges · 672 communities (572 shown, 100 thin omitted)
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 556 edges (avg confidence: 0.68)
+- 8054 nodes · 11370 edges · 822 communities (708 shown, 114 thin omitted)
+- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 1010 edges (avg confidence: 0.72)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `66585685`
+- Built from commit: `be847033`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -18,6 +18,7 @@
 - [[_COMMUNITY_Employee Status Service Layer|Employee Status Service Layer]]
 - [[_COMMUNITY_Vendored JS (minified bundle)|Vendored JS (minified bundle)]]
 - [[_COMMUNITY_Vendored JS (minified bundle)|Vendored JS (minified bundle)]]
+- [[_COMMUNITY_Select2 Library (vendored)|Select2 Library (vendored)]]
 - [[_COMMUNITY_Notifications API & WebSocket|Notifications API & WebSocket]]
 - [[_COMMUNITY_CoreAPI JS (vendored)|CoreAPI JS (vendored)]]
 - [[_COMMUNITY_WDS Activation & Glossary|WDS Activation & Glossary]]
@@ -288,7 +289,9 @@
 - [[_COMMUNITY_Community 439|Community 439]]
 - [[_COMMUNITY_Community 440|Community 440]]
 - [[_COMMUNITY_Community 441|Community 441]]
+- [[_COMMUNITY_Community 442|Community 442]]
 - [[_COMMUNITY_Community 448|Community 448]]
+- [[_COMMUNITY_Community 456|Community 456]]
 - [[_COMMUNITY_Community 459|Community 459]]
 - [[_COMMUNITY_Community 460|Community 460]]
 - [[_COMMUNITY_Community 461|Community 461]]
@@ -311,12 +314,131 @@
 - [[_COMMUNITY_Community 478|Community 478]]
 - [[_COMMUNITY_Community 479|Community 479]]
 - [[_COMMUNITY_Community 480|Community 480]]
+- [[_COMMUNITY_Community 481|Community 481]]
 - [[_COMMUNITY_Community 482|Community 482]]
 - [[_COMMUNITY_Community 483|Community 483]]
 - [[_COMMUNITY_Community 484|Community 484]]
 - [[_COMMUNITY_Community 485|Community 485]]
+- [[_COMMUNITY_Community 486|Community 486]]
+- [[_COMMUNITY_Community 487|Community 487]]
+- [[_COMMUNITY_Community 488|Community 488]]
+- [[_COMMUNITY_Community 489|Community 489]]
+- [[_COMMUNITY_Community 490|Community 490]]
+- [[_COMMUNITY_Community 491|Community 491]]
+- [[_COMMUNITY_Community 492|Community 492]]
+- [[_COMMUNITY_Community 493|Community 493]]
+- [[_COMMUNITY_Community 494|Community 494]]
+- [[_COMMUNITY_Community 495|Community 495]]
+- [[_COMMUNITY_Community 496|Community 496]]
+- [[_COMMUNITY_Community 497|Community 497]]
+- [[_COMMUNITY_Community 498|Community 498]]
+- [[_COMMUNITY_Community 499|Community 499]]
+- [[_COMMUNITY_Community 500|Community 500]]
+- [[_COMMUNITY_Community 501|Community 501]]
+- [[_COMMUNITY_Community 502|Community 502]]
+- [[_COMMUNITY_Community 503|Community 503]]
+- [[_COMMUNITY_Community 504|Community 504]]
+- [[_COMMUNITY_Community 505|Community 505]]
+- [[_COMMUNITY_Community 506|Community 506]]
+- [[_COMMUNITY_Community 507|Community 507]]
+- [[_COMMUNITY_Community 508|Community 508]]
+- [[_COMMUNITY_Community 509|Community 509]]
+- [[_COMMUNITY_Community 510|Community 510]]
+- [[_COMMUNITY_Community 511|Community 511]]
+- [[_COMMUNITY_Community 512|Community 512]]
+- [[_COMMUNITY_Community 513|Community 513]]
+- [[_COMMUNITY_Community 514|Community 514]]
+- [[_COMMUNITY_Community 515|Community 515]]
+- [[_COMMUNITY_Community 516|Community 516]]
+- [[_COMMUNITY_Community 517|Community 517]]
+- [[_COMMUNITY_Community 518|Community 518]]
+- [[_COMMUNITY_Community 519|Community 519]]
+- [[_COMMUNITY_Community 520|Community 520]]
+- [[_COMMUNITY_Community 521|Community 521]]
+- [[_COMMUNITY_Community 522|Community 522]]
+- [[_COMMUNITY_Community 523|Community 523]]
+- [[_COMMUNITY_Community 524|Community 524]]
+- [[_COMMUNITY_Community 525|Community 525]]
+- [[_COMMUNITY_Community 526|Community 526]]
+- [[_COMMUNITY_Community 527|Community 527]]
+- [[_COMMUNITY_Community 528|Community 528]]
+- [[_COMMUNITY_Community 529|Community 529]]
+- [[_COMMUNITY_Community 530|Community 530]]
+- [[_COMMUNITY_Community 531|Community 531]]
+- [[_COMMUNITY_Community 532|Community 532]]
+- [[_COMMUNITY_Community 533|Community 533]]
+- [[_COMMUNITY_Community 534|Community 534]]
+- [[_COMMUNITY_Community 535|Community 535]]
+- [[_COMMUNITY_Community 536|Community 536]]
+- [[_COMMUNITY_Community 537|Community 537]]
+- [[_COMMUNITY_Community 538|Community 538]]
+- [[_COMMUNITY_Community 539|Community 539]]
+- [[_COMMUNITY_Community 540|Community 540]]
+- [[_COMMUNITY_Community 541|Community 541]]
+- [[_COMMUNITY_Community 542|Community 542]]
+- [[_COMMUNITY_Community 543|Community 543]]
+- [[_COMMUNITY_Community 544|Community 544]]
+- [[_COMMUNITY_Community 545|Community 545]]
+- [[_COMMUNITY_Community 546|Community 546]]
+- [[_COMMUNITY_Community 547|Community 547]]
+- [[_COMMUNITY_Community 548|Community 548]]
+- [[_COMMUNITY_Community 549|Community 549]]
+- [[_COMMUNITY_Community 550|Community 550]]
+- [[_COMMUNITY_Community 551|Community 551]]
+- [[_COMMUNITY_Community 552|Community 552]]
+- [[_COMMUNITY_Community 553|Community 553]]
+- [[_COMMUNITY_Community 554|Community 554]]
+- [[_COMMUNITY_Community 555|Community 555]]
+- [[_COMMUNITY_Community 556|Community 556]]
+- [[_COMMUNITY_Community 557|Community 557]]
+- [[_COMMUNITY_Community 558|Community 558]]
+- [[_COMMUNITY_Community 559|Community 559]]
+- [[_COMMUNITY_Community 560|Community 560]]
+- [[_COMMUNITY_Community 561|Community 561]]
+- [[_COMMUNITY_Community 562|Community 562]]
+- [[_COMMUNITY_Community 563|Community 563]]
+- [[_COMMUNITY_Community 564|Community 564]]
+- [[_COMMUNITY_Community 565|Community 565]]
+- [[_COMMUNITY_Community 566|Community 566]]
+- [[_COMMUNITY_Community 567|Community 567]]
+- [[_COMMUNITY_Community 568|Community 568]]
+- [[_COMMUNITY_Community 569|Community 569]]
+- [[_COMMUNITY_Community 570|Community 570]]
+- [[_COMMUNITY_Community 571|Community 571]]
+- [[_COMMUNITY_Community 572|Community 572]]
+- [[_COMMUNITY_Community 573|Community 573]]
+- [[_COMMUNITY_Community 574|Community 574]]
+- [[_COMMUNITY_Community 575|Community 575]]
+- [[_COMMUNITY_Community 576|Community 576]]
+- [[_COMMUNITY_Community 577|Community 577]]
+- [[_COMMUNITY_Community 578|Community 578]]
+- [[_COMMUNITY_Community 579|Community 579]]
+- [[_COMMUNITY_Community 580|Community 580]]
+- [[_COMMUNITY_Community 594|Community 594]]
+- [[_COMMUNITY_Community 595|Community 595]]
+- [[_COMMUNITY_Community 596|Community 596]]
+- [[_COMMUNITY_Community 597|Community 597]]
+- [[_COMMUNITY_Community 598|Community 598]]
+- [[_COMMUNITY_Community 599|Community 599]]
+- [[_COMMUNITY_Community 600|Community 600]]
+- [[_COMMUNITY_Community 601|Community 601]]
+- [[_COMMUNITY_Community 602|Community 602]]
+- [[_COMMUNITY_Community 604|Community 604]]
+- [[_COMMUNITY_Community 605|Community 605]]
+- [[_COMMUNITY_Community 607|Community 607]]
+- [[_COMMUNITY_Community 608|Community 608]]
+- [[_COMMUNITY_Community 609|Community 609]]
+- [[_COMMUNITY_Community 614|Community 614]]
+- [[_COMMUNITY_Community 615|Community 615]]
+- [[_COMMUNITY_Community 616|Community 616]]
+- [[_COMMUNITY_Community 617|Community 617]]
+- [[_COMMUNITY_Community 620|Community 620]]
+- [[_COMMUNITY_Community 621|Community 621]]
+- [[_COMMUNITY_Community 622|Community 622]]
+- [[_COMMUNITY_Community 623|Community 623]]
+- [[_COMMUNITY_Community 624|Community 624]]
+- [[_COMMUNITY_Community 625|Community 625]]
 - [[_COMMUNITY_Community 903|Community 903]]
-- [[_COMMUNITY_Community 1386|Community 1386]]
 - [[_COMMUNITY_Community 1611|Community 1611]]
 - [[_COMMUNITY_Community 1705|Community 1705]]
 - [[_COMMUNITY_Community 1760|Community 1760]]
@@ -384,30 +506,31 @@
 - [[_COMMUNITY_Community 3724|Community 3724]]
 - [[_COMMUNITY_Community 3725|Community 3725]]
 - [[_COMMUNITY_Community 3726|Community 3726]]
+- [[_COMMUNITY_Community 3813|Community 3813]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `datetime` - 64 edges
-2. `$()` - 54 edges
+1. `datetime` - 133 edges
+2. `Deferred Work` - 72 edges
 3. `$()` - 54 edges
-4. `EmployeeStatusViewSet` - 35 edges
-5. `StaffUnitViewSet` - 34 edges
-6. `Deferred Work` - 33 edges
-7. `transform()` - 30 edges
-8. `UserRole` - 29 edges
-9. `StatusApplicationService` - 28 edges
-10. `Button()` - 26 edges
+4. `$()` - 54 edges
+5. `submit_day()` - 49 edges
+6. `DomainError` - 44 edges
+7. `EmployeeStatusViewSet` - 35 edges
+8. `StaffUnitViewSet` - 34 edges
+9. `transform()` - 30 edges
+10. `_status()` - 30 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `EmployeeViewSet` --semantically_similar_to--> `EmployeeApplicationService`  [INFERRED] [semantically similar]
   Backend/PersonnelStatus/Personnel-Records/organization_management/apps/employees/api/views.py → /root/projects/VAPS/Backend/PersonnelStatus/Personnel-Records/organization_management/apps/employees/application/services.py
+- `OrgNode()` --calls--> `renderEmployee()`  [INFERRED]
+  Backend/PersonnelStatus/PersonalRecordFront/features/organization-structure/ui/OrgNode.tsx → .design-sync/previews/OrgNode.tsx
+- `Meta` --uses--> `AuditLog`  [INFERRED]
+  Backend/VAPS/apps/audit/api/serializers.py → /root/projects/VAPS/Backend/PersonnelStatus/Personnel-Records/organization_management/apps/audit/domain/models.py
 - `QuerySet` --uses--> `Report`  [INFERRED]
   Backend/PersonnelStatus/Personnel-Records/organization_management/apps/common/services/permissions.py → /root/projects/VAPS/Backend/PersonnelStatus/Personnel-Records/organization_management/apps/reports/domain/models.py
 - `Report` --uses--> `Report`  [INFERRED]
   Backend/PersonnelStatus/Personnel-Records/organization_management/apps/common/services/permissions.py → /root/projects/VAPS/Backend/PersonnelStatus/Personnel-Records/organization_management/apps/reports/domain/models.py
-- `int` --uses--> `EmployeeRepository`  [INFERRED]
-  Backend/PersonnelStatus/Personnel-Records/organization_management/apps/employees/infrastructure/repositories.py → /root/projects/VAPS/Backend/PersonnelStatus/Personnel-Records/organization_management/apps/employees/domain/repositories.py
-- `Meta` --uses--> `Report`  [INFERRED]
-  Backend/PersonnelStatus/Personnel-Records/organization_management/apps/reports/api/serializers.py → /root/projects/VAPS/Backend/PersonnelStatus/Personnel-Records/organization_management/apps/reports/domain/models.py
 
 ## Import Cycles
 - 1-file cycle: `Backend/VAPS/apps/core/clock.py -> Backend/VAPS/apps/core/clock.py`
@@ -424,23 +547,27 @@
 - **WDS session lifecycle: start -> handoff -> wrap** —  [INFERRED 0.85]
 - **WDS agent triad across phases** —  [EXTRACTED 1.00]
 
-## Communities (672 total, 100 thin omitted)
+## Communities (822 total, 114 thin omitted)
 
 ### Community 0 - "Employee Status Service Layer"
-Cohesion: 0.15
-Nodes (22): Планирование будущего статуса сотрудника          Args:             employee_id:, Продление существующего статуса          Args:             status_id: ID статуса, Досрочное завершение статуса          Args:             status_id: ID статуса, Отмена запланированного статуса          Args:             status_id: ID статуса, Получение текущего активного статуса сотрудника          Args:             emplo, Создание нового статуса сотрудника          Args:             employee_id: ID со, Применение запланированных статусов, дата начала которых наступила          Args, Завершение статусов, срок которых истек          Args:             target_date: (+14 more)
+Cohesion: 0.17
+Nodes (19): Планирование будущего статуса сотрудника          Args:             employee_id:, Продление существующего статуса          Args:             status_id: ID статуса, Досрочное завершение статуса          Args:             status_id: ID статуса, Отмена запланированного статуса          Args:             status_id: ID статуса, Получение текущего активного статуса сотрудника          Args:             emplo, Создание нового статуса сотрудника          Args:             employee_id: ID со, Применение запланированных статусов, дата начала которых наступила          Args, Завершение статусов, срок которых истек          Args:             target_date: (+11 more)
 
 ### Community 1 - "Vendored JS (minified bundle)"
-Cohesion: 0.07
-Nodes (28): $(), Ae(), B(), Be(), c(), $e(), ee(), F() (+20 more)
+Cohesion: 0.05
+Nodes (45): $(), Ae(), B(), Be(), c(), $e(), ee(), F() (+37 more)
 
 ### Community 2 - "Vendored JS (minified bundle)"
 Cohesion: 0.07
 Nodes (28): $(), Ae(), B(), Be(), c(), $e(), ee(), F() (+20 more)
 
+### Community 3 - "Select2 Library (vendored)"
+Cohesion: 0.03
+Nodes (10): callDep(), createAndSelect(), handler(), hasProp(), makeNormalize(), makeRelParts(), normalize(), select() (+2 more)
+
 ### Community 4 - "Notifications API & WebSocket"
-Cohesion: 0.06
-Nodes (34): NotificationSerializer, NotificationViewSet, ViewSet для управления уведомлениями текущего пользователя.      Предоставляет д, Возвращает список всех уведомлений для текущего пользователя., Пометить уведомление как прочитанное.          Args:             request: HTTP з, Пометить все уведомления как прочитанные.          Args:             request: HT, AsyncJsonWebsocketConsumer, Meta (+26 more)
+Cohesion: 0.18
+Nodes (9): Meta, NotificationSerializer, Serializer definitions for the notifications API.  Serializers convert ``Notific, URL configuration for the notifications API.  This module registers the ``Notifi, NotificationViewSet, REST API views for notifications.  This viewset provides read‑only access to a u, API endpoint that allows notifications to be viewed and marked as read., Return only notifications belonging to the authenticated user. (+1 more)
 
 ### Community 5 - "CoreAPI JS (vendored)"
 Cohesion: 0.07
@@ -455,12 +582,12 @@ Cohesion: 0.20
 Nodes (6): EmployeeAdmin, EmployeeTransferHistoryAdmin, HasUserFilter, Отображение информации о пользователе в списке, Фильтр для отображения сотрудников с/без привязанного пользователя, Детальная информация о пользователе в форме редактирования
 
 ### Community 8 - "Dictionaries API (Ranks/Positions)"
-Cohesion: 0.11
-Nodes (21): ChildStaffUnitBulkSerializer, DirectorateStaffUnitSerializer, DivisionBriefSerializer, EmployeeSerializer, EmployeeStatusBulkSerializer, Meta, PositionSerializer, Кастомизация вывода - показываем полные объекты, а не ID (+13 more)
+Cohesion: 0.05
+Nodes (51): PositionSerializer, RankSerializer, StatusTypeListSerializer, PositionViewSet, RankViewSet, ViewSet для справочника должностей (только GET в API), ViewSet для справочника званий (только GET в API), ViewSet для справочника типов статусов (только GET) (+43 more)
 
 ### Community 9 - "jQuery (vendored)"
 Cohesion: 0.05
-Nodes (6): computeStyleTests(), dataAttr(), finalPropName(), getData(), roundPixelMeasures(), vendorPropName()
+Nodes (13): boxModelAdjustment(), computeStyleTests(), createButtonPseudo(), createInputPseudo(), curCSS(), dataAttr(), finalPropName(), getData() (+5 more)
 
 ### Community 10 - "RBAC & Docker Infrastructure"
 Cohesion: 0.20
@@ -471,12 +598,12 @@ Cohesion: 0.08
 Nodes (24): _arrayLikeToArray(), augment(), buildAstral(), cacheAstral(), cacheInvertedBmp(), charCode(), clipDuplicates(), copyRegex() (+16 more)
 
 ### Community 12 - "Employee Serializer & Staffing Permissions"
-Cohesion: 0.08
-Nodes (32): CanCloseVacancy, CanCreateVacancy, CanEditVacancy, CanManageStaffingTable, CanViewStaffingTable, CanViewVacancies, IsRoleAdmin, IsRoleHRAdmin (+24 more)
+Cohesion: 0.06
+Nodes (42): EmployeeStatusSerializer, Основной сериализатор для статуса сотрудника, CanCloseVacancy, CanCreateVacancy, CanEditVacancy, CanManageStaffingTable, CanViewStaffingTable, CanViewVacancies (+34 more)
 
 ### Community 13 - "Role Model & RBAC Engine"
-Cohesion: 0.17
-Nodes (28): Any, bool, str, bool, check_permission(), _get_division_field_for_model(), get_object_division(), _get_scope_division_ids() (+20 more)
+Cohesion: 0.10
+Nodes (34): Any, bool, str, bool, check_permission(), _get_division_field_for_model(), get_object_division(), _get_scope_division_ids() (+26 more)
 
 ### Community 14 - "BMAD Config Resolver"
 Cohesion: 0.06
@@ -495,8 +622,8 @@ Cohesion: 0.23
 Nodes (12): Freya (WDS Designer Agent), Product Brief, Saga (WDS Analyst Agent), Discovery Conversation Guide, Dream Up Approach (5-Layer Architecture), Inspiration Analysis Workshop, Project Brief Template, Strategic Documentation Guide (+4 more)
 
 ### Community 18 - "Role Permissions & Scope"
-Cohesion: 0.11
-Nodes (18): EmployeeInline, Django Admin для управления ролями пользователей и системой RBAC, Inline для управления правами роли, Админка для управления связями роль-право, Админка для управления ролями пользователей, Красивое отображение роли, Отображение эффективного подразделения (автоматически определенного), Inline для отображения роли в админке User (+10 more)
+Cohesion: 0.07
+Nodes (27): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+19 more)
 
 ### Community 19 - "Employee Status ViewSet"
 Cohesion: 0.07
@@ -511,8 +638,8 @@ Cohesion: 0.13
 Nodes (16): DivisionSerializer, DivisionTreeViewSet, DivisionViewSet, Возвращает корневое подразделение с детьми, ViewSet для управления подразделениями.     Предоставляет CRUD операции и кастом, Получение списка сотрудников для конкретного подразделения., Получение списка сотрудников для конкретного подразделения., Мягкое удаление подразделения с проверками. (+8 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.09
-Nodes (17): EmployeeStatusSerializer, Основной сериализатор для статуса сотрудника, staff_unit urls, Определяет СОБСТВЕННОЕ подразделение пользователя (для directorate endpoint)., ViewSet для управления штатным расписанием с проверкой прав на основе ролей, Фильтрация queryset по области видимости пользователя, Проверка прав при обновлении штатной единицы         - Пользователь может редакт, Проверка прав при удалении штатной единицы         - Пользователь может удалять (+9 more)
+Cohesion: 0.11
+Nodes (36): _amend(), child_scoped_op(), _client(), global_op(), Story 5.8b — API amend сдачи (POST /api/operations/daily-submissions/{id}/amend/, DIVISION_OPERATOR with a global (unscoped) role., VIEWER — has a role (status.view), NOT daily_report.correct: the     «есть роль,, A submitted day to amend — via the submit_day SERVICE (faster than the     5.8a (+28 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.11
@@ -539,8 +666,8 @@ Cohesion: 0.08
 Nodes (25): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+17 more)
 
 ### Community 29 - "Community 29"
-Cohesion: 0.10
-Nodes (12): setup_demo_roles Command, Модель для хранения ролевой информации пользователя.      Роль определяется чере, Возвращает департамент в зависимости от роли, Автоматически определяет подразделение пользователя.          Логика:         1., Возвращает эффективную область видимости с учётом автоматического определения., Проверка права на редактирование статусов с учётом откомандирования, Получить код роли.         Возвращает строку вида 'ROLE_1', 'ROLE_2' и т.д., Получить название роли (+4 more)
+Cohesion: 0.04
+Nodes (53): BaseUserAdmin, CustomUserAdmin, EmployeeInline, PermissionAdmin, Django Admin для управления ролями пользователей и системой RBAC, При сохранении инвалидируем кеш, Админка для управления правами доступа, Красивое отображение категории (+45 more)
 
 ### Community 30 - "Community 30"
 Cohesion: 0.09
@@ -575,20 +702,20 @@ Cohesion: 0.06
 Nodes (31): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+23 more)
 
 ### Community 38 - "Community 38"
-Cohesion: 0.20
-Nodes (9): AuditLogSerializer, Meta, Serializers for the audit app.  These serializers convert ``AuditLog`` instances, URL configuration for the audit API.  Registers the ``AuditLogViewSet`` on the `, audit urls router, AuditLogViewSet, API views for the audit app.  Provides a read‑only viewset for ``AuditLog`` obje, API endpoint that allows audit logs to be viewed. (+1 more)
+Cohesion: 0.16
+Nodes (12): AuditLog domain model, AuditLogFilter, Meta, Filterset definitions for the audit API.  Uses ``django_filters`` to allow clien, AuditEntry, Запись в журнале аудита, URL configuration for the audit API.  Registers the ``AuditLogViewSet`` on the `, audit urls router (+4 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.14
-Nodes (17): DivisionBasicSerializer, EmployeeBasicSerializer, EmployeeStatusCreateSerializer, EmployeeStatusDetailSerializer, EmployeeStatusExtendSerializer, EmployeeStatusTerminateSerializer, Сериализаторы для API управления статусами сотрудников, Детальный сериализатор статуса с историей изменений и документами (+9 more)
+Cohesion: 0.07
+Nodes (71): CascadeTrafficLight, _descendants(), _diff_winners(), division_traffic_light(), DivisionTrafficLight, _live_winners(), Story 5.5a — светофор ОДНОГО подразделения (drift detection).  For one ``(divisi, derive(снапшот): {str(employee_id): winner_code}, only from the snapshot.      R (+63 more)
 
 ### Community 42 - "Community 42"
 Cohesion: 0.14
 Nodes (13): Валидация данных с помощью метода clean модели, Сериализатор документов статуса, StatusDocumentSerializer, Загрузка документа к статусу          Body (multipart/form-data): {, Employee, EmployeeStatus, StatusDocument, str (+5 more)
 
 ### Community 43 - "Community 43"
-Cohesion: 0.07
-Nodes (16): AppConfig, AuditConfig, CommonConfig, Common app configuration, CoreConfig, MigrationLegacyConfig, NotificationsConfig, Configuration for the notifications app.      Ensures that signal handlers are i (+8 more)
+Cohesion: 0.05
+Nodes (23): AppConfig, AuditConfig, NotificationsConfig, CommonConfig, Common app configuration, CoreConfig, MigrationLegacyConfig, Configuration for the notifications app.      Ensures that signal handlers are i (+15 more)
 
 ### Community 44 - "Community 44"
 Cohesion: 0.10
@@ -619,8 +746,8 @@ Cohesion: 0.10
 Nodes (19): 1. ПОТЕРЯННОЕ (нет ни в PRD, ни в addendum, не покрыто сознательным исключением), 2. ПРОВЕРЕНО И ПОКРЫТО (ключевые элементы исходников — где они в PRD/addendum), 3. ПОКРЫТО СОЗНАТЕЛЬНЫМ ИСКЛЮЧЕНИЕМ (потерей не считается), 4. Итоговая оценка, GAP-10. Маркировка дополнительного наряда — **LOW**, GAP-11. Отчёты донора помимо Расхода — **LOW**, GAP-12. ИИН, дата рождения, пол в карточке сотрудника — **LOW**, GAP-13. Статус ГЭВ (группа экстренного выезда) — **LOW** (+11 more)
 
 ### Community 51 - "Community 51"
-Cohesion: 0.21
-Nodes (8): MPTTModelAdmin, Meta, Форма с валидацией для предотвращения циклических зависимостей в дереве, Дополнительная валидация всей формы, Безопасное сохранение с обработкой MPTT ошибок, StaffUnitAdmin, StaffUnitAdminForm, VacancyAdmin
+Cohesion: 0.16
+Nodes (9): DivisionAdmin, MPTTModelAdmin, Meta, Форма с валидацией для предотвращения циклических зависимостей в дереве, Дополнительная валидация всей формы, Безопасное сохранение с обработкой MPTT ошибок, StaffUnitAdmin, StaffUnitAdminForm (+1 more)
 
 ### Community 52 - "Community 52"
 Cohesion: 0.18
@@ -671,12 +798,12 @@ Cohesion: 0.17
 Nodes (11): Epic 14: Объекты и дежурства (этап 2 — каркас, детализация при старте этапа), Epic 15: ОМ — Потребность и брокеридж (этап 2 — каркас), Epic 16: ОМ — Расстановка (этап 2 — каркас), Epic 17: ОМ — Проведение (этап 2 — каркас), Epic 18: ОМ — Закрытие и опрос (этап 2 — каркас), Epic 19: Нагрузка и календари (этап 3 — каркас), Epic 20: Дашборды и экспорт (этап 3 — каркас), Overview (+3 more)
 
 ### Community 64 - "Community 64"
-Cohesion: 0.17
-Nodes (12): Epic 5: Сдача дня — официальное заявление подразделения, Story 5.10: Property — иммутабельность снапшота, Story 5.11: Фрактальная сводка, Story 5.1: Вход оператора, Story 5.2: Модель DailySubmission, Story 5.3: Сервис сдачи дня, Story 5.4: Amendment-flow, Story 5.5: Светофор-селектор (+4 more)
+Cohesion: 0.14
+Nodes (14): Epic 5: Сдача дня — официальное заявление подразделения, Story 5.10: Property — иммутабельность снапшота, Story 5.11: Фрактальная сводка, Story 5.1: Вход оператора, Story 5.2: Модель DailySubmission, Story 5.3a: Срез-билдер (snapshot builder), Story 5.3b: Сервис сдачи дня, Story 5.4a: Сервис amendment — создание версии v2+ (+6 more)
 
 ### Community 65 - "Community 65"
-Cohesion: 0.10
-Nodes (35): useDivisionsTree(), usePositions(), useRanks(), useToast(), AddEmployeeDialog(), AddEmployeeDialogProps, Alert(), AlertDescription() (+27 more)
+Cohesion: 0.11
+Nodes (31): Alert(), AlertDescription(), alertVariants, Calendar(), Dialog(), DialogContent(), DialogDescription(), DialogFooter() (+23 more)
 
 ### Community 66 - "Community 66"
 Cohesion: 0.17
@@ -687,20 +814,20 @@ Cohesion: 0.08
 Nodes (25): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+17 more)
 
 ### Community 68 - "Community 68"
-Cohesion: 0.22
-Nodes (8): MPTTModel, Meta, MPTTMeta, Конкретная штатная единица (слот) для пары division+position., StaffUnit, Vacancy, VacancyStatus, Проверка прав при создании штатной единицы         - Пользователь может создават
+Cohesion: 0.14
+Nodes (10): Meta, MPTTMeta, Конкретная штатная единица (слот) для пары division+position., StaffUnit, Vacancy, VacancyStatus, Проверка прав при создании штатной единицы         - Пользователь может создават, Проверка прав при обновлении штатной единицы         - Пользователь может редакт (+2 more)
 
 ### Community 69 - "Community 69"
-Cohesion: 0.25
-Nodes (8): adoptValue(), ajaxConvert(), ajaxHandleResponses(), createTween(), defaultPrefilter(), done(), getDefaultDisplay(), showHide()
+Cohesion: 0.08
+Nodes (53): _amended(), child_scoped_op(), _client(), _detail(), _detail_url(), _duty(), global_op(), _list() (+45 more)
 
 ### Community 70 - "Community 70"
 Cohesion: 0.54
 Nodes (7): e(), i(), l(), n(), r(), s(), u()
 
 ### Community 71 - "Community 71"
-Cohesion: 0.22
-Nodes (8): AuditLog domain model, AuditLogFilter, Meta, Filterset definitions for the audit API.  Uses ``django_filters`` to allow clien, ActionType, AuditEntry, Meta, Запись в журнале аудита
+Cohesion: 0.40
+Nodes (3): AuditLog, Meta, Story 4.1 — AuditLog: append-only audit record (db_table ``audit_logs``).  Found
 
 ### Community 73 - "Community 73"
 Cohesion: 0.07
@@ -723,8 +850,8 @@ Cohesion: 0.20
 Nodes (8): Рекурсивно сериализует дочерние подразделения., Сериализатор для модели Division.     Использует рекурсивное поле для отображени, Any, str, Any, DivisionSerializer, Meta, str
 
 ### Community 78 - "Community 78"
-Cohesion: 0.15
-Nodes (9): derive_report(), Aggregate per-division strength columns with convergence formulas.      ``employ, headcount(), live(), Pure-core tests for the strength report (no DB).  Unmarked table tests run in th, Employees over 1-3 divisions + raw facts (with a cancelled flag,     filtered ou, TestDeriveReportTables, TestStrengthReportProperties (+1 more)
+Cohesion: 0.08
+Nodes (24): componentSrcMap, Alert, Avatar, Badge, Button, Calendar, Card, Checkbox (+16 more)
 
 ### Community 79 - "Community 79"
 Cohesion: 0.57
@@ -739,16 +866,16 @@ Cohesion: 0.24
 Nodes (6): Employee, int, EmployeeRepository, EmployeeRepositoryImpl, Employee, int
 
 ### Community 82 - "Community 82"
-Cohesion: 0.20
-Nodes (6): При сохранении инвалидируем кеш, Админка для управления ролями через БД, Красивое отображение уровня иерархии, Количество пользователей с этой ролью, Количество прав у роли, RoleAdmin
+Cohesion: 0.07
+Nodes (27): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+19 more)
 
 ### Community 83 - "Community 83"
 Cohesion: 0.03
 Nodes (59): dependencies, class-variance-authority, clsx, cmdk, date-fns, embla-carousel-react, framer-motion, @fullcalendar/core (+51 more)
 
 ### Community 84 - "Community 84"
-Cohesion: 0.12
-Nodes (8): DivisionViewSetTest, DivisionAdmin, Division, DivisionType, Meta, MPTTMeta, Модель подразделения (поддерживает иерархию), Модель подразделения (поддерживает иерархию)
+Cohesion: 0.13
+Nodes (8): DivisionViewSetTest, Division, DivisionType, Meta, MPTTMeta, Модель подразделения (поддерживает иерархию), Модель подразделения (поддерживает иерархию), MPTTModel
 
 ### Community 85 - "Community 85"
 Cohesion: 0.20
@@ -766,6 +893,10 @@ Nodes (4): debug_task(), Celery application configuration for the organization_m
 Cohesion: 0.20
 Nodes (9): 1. Технологический стек (зафиксирован), 2. Структура модулей (R6), 3. Иерархия источников (RECONCILIATION v2), 4. Разрешённые противоречия (унаследованы, не пересматривать), 5. Выводы технического аудита (для архитектуры), 6. Текущее состояние реализации (на 2026-06-10), 7. Материал для будущего PRD «Аккредитация» (вне текущего PRD), 8. Формат документа Расхода (детальный контракт) (+1 more)
 
+### Community 89 - "Community 89"
+Cohesion: 0.07
+Nodes (29): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+21 more)
+
 ### Community 90 - "Community 90"
 Cohesion: 0.22
 Nodes (9): Architecture Completeness Checklist, Architecture Readiness Assessment, Architecture Validation Results, Coherence Validation ✅, Gap Analysis Results, Implementation Handoff, Implementation Readiness Validation ✅, Requirements Coverage Validation ✅ (+1 more)
@@ -779,8 +910,8 @@ Cohesion: 0.53
 Nodes (4): generate_personnel_report_docx(), generate_personnel_report_pdf(), generate_personnel_report_xlsx(), get_division_statistics()
 
 ### Community 93 - "Community 93"
-Cohesion: 0.22
-Nodes (5): StandardResultsSetPagination, StandardResultsSetPagination, PageNumberPagination, StandardResultsSetPagination, StandardResultsSetPagination
+Cohesion: 0.20
+Nodes (6): StandardResultsSetPagination, StandardResultsSetPagination, DefaultPagination, PageNumberPagination, StandardResultsSetPagination, StandardResultsSetPagination
 
 ### Community 94 - "Community 94"
 Cohesion: 0.31
@@ -803,8 +934,8 @@ Cohesion: 0.22
 Nodes (9): Epic 8: SPA Foundation — портал открывается, Story 8.1: Scaffold Vite react-ts с контурной донастройкой, Story 8.2: Канон-линтеры, Story 8.3: Кодоген типов из схемы, Story 8.4: apiClient и DomainError-парсинг, Story 8.5: useApiMutation и ConflictDialog, Story 8.6: Auth-подключение, Story 8.7: Роутер, routes.ts и layout (+1 more)
 
 ### Community 101 - "Community 101"
-Cohesion: 0.17
-Nodes (10): BulkStatusPlanSerializer, EmployeeStatusCancelSerializer, Сериализатор для отмены запланированного статуса, Сериализатор для загрузки документа, Сериализатор для массового планирования статусов, StatusDocumentUploadSerializer, API Views для управления статусами сотрудников, ViewSet для просмотра документов статусов      Endpoints:     - GET /status-docu (+2 more)
+Cohesion: 0.08
+Nodes (38): APIView, ConflictReport, True if anything blocks creation (hard → 422 or soft → 409)., _emp(), env(), Story 3.3 — status creation/edit service with validations (FR-10).  Postgres-bac, Org/div + the two status types the suite leans on: VACATION (hard,     in HARD_S, Raw create that bypasses the service pre-check, so the DB constraint +     §36 h (+30 more)
 
 ### Community 102 - "Community 102"
 Cohesion: 0.40
@@ -819,12 +950,12 @@ Cohesion: 0.05
 Nodes (26): Command, EntityReport, Import a 5-7 day slice of donor data into the walking skeleton (1.6).  Reads a d, Materialize Штат: one DivisionHistoricalSlot per division.          Sanctioned b, count_staff_slots(), EmployeeRow, _parse_date(), Pure transformation of donor dumpdata rows into VAPS-shaped rows.  No ORM and no (+18 more)
 
 ### Community 105 - "Community 105"
-Cohesion: 0.29
-Nodes (5): BaseUserAdmin, CustomUserAdmin, Кастомная админка для User с отображением роли и сотрудника, Получить роль пользователя, Получить информацию о сотруднике
+Cohesion: 0.14
+Nodes (17): BulkStatusPlanSerializer, EmployeeStatusCancelSerializer, EmployeeStatusCreateSerializer, EmployeeStatusDetailSerializer, EmployeeStatusExtendSerializer, EmployeeStatusTerminateSerializer, Детальный сериализатор статуса с историей изменений и документами, Сериализатор для создания статуса (+9 more)
 
 ### Community 106 - "Community 106"
-Cohesion: 0.29
-Nodes (7): boxModelAdjustment(), createButtonPseudo(), createInputPseudo(), curCSS(), getWidthOrHeight(), manipulationTarget(), nodeName()
+Cohesion: 0.11
+Nodes (22): override_tomorrow_block(), Story 5.6b — record a legal override of the next-day lock.  A руководитель legal, Record a date-level override; raise ``ValueError`` on bad input or a duplicate., test_override_blank_input_leaves_no_row(), test_override_emits_row_with_deterministic_entity_id(), test_override_entity_id_differs_across_dates(), test_override_non_date_business_date_leaves_no_row(), make_division() (+14 more)
 
 ### Community 107 - "Community 107"
 Cohesion: 0.29
@@ -859,16 +990,16 @@ Cohesion: 0.40
 Nodes (4): Employee, int, Employee, int
 
 ### Community 126 - "Community 126"
-Cohesion: 0.06
-Nodes (16): BaseCommand, Command, Command, Command, EntityReport, _is_ragged(), _parse_int(), Idempotent CSV import of core reference catalogs — positions and ranks (2.7, FR- (+8 more)
+Cohesion: 0.19
+Nodes (8): Command, EntityReport, _is_ragged(), _parse_int(), Idempotent CSV import of core reference catalogs — positions and ranks (2.7, FR-, Yield (csv_line_number, row_dict). Raises CommandError on a structurally, Blank -> 0; integer string -> int; anything else -> None (invalid)., A CSV row whose field count differs from the header. Surplus values land     und
 
 ### Community 139 - "Community 139"
-Cohesion: 0.33
-Nodes (3): Проверка прав на уровне view, Проверка прав на уровне объекта, Получить требуемое право                  Порядок поиска:         1. required_pe
+Cohesion: 0.06
+Nodes (50): DailySubmissionAmendSerializer, DailySubmissionCreateSerializer, DailySubmissionDetailSerializer, DailySubmissionFilterSerializer, DailySubmissionSerializer, POST /{id}/amend/ form (5.8b) — exactly the reason/sanction pair the     API for, GET list query-param form (5.8c) — optional equality filters, mirror of     Audi, 201/list projection — flat, snake_case, WITHOUT the heavy snapshot JSON     (ten (+42 more)
 
 ### Community 140 - "Community 140"
-Cohesion: 0.18
-Nodes (8): BR-001 winner code for one employee's live interval facts on a date.      A fact, resolve_status(), AC-4: a retroactive edit of a status interval changes the derived strength on a, TestRetroactiveAmendmentEffect, vacation(), around(), fact(), TestResolveStatusTables
+Cohesion: 0.14
+Nodes (10): derive_report(), Aggregate per-division strength columns with convergence formulas.      ``employ, test_pending_lands_in_own_column_convergence_holds(), headcount(), live(), Pure-core tests for the strength report (no DB).  Unmarked table tests run in th, Employees over 1-3 divisions + raw facts (with a cancelled flag,     filtered ou, TestDeriveReportTables (+2 more)
 
 ### Community 141 - "Community 141"
 Cohesion: 0.33
@@ -879,20 +1010,24 @@ Cohesion: 0.33
 Nodes (6): Additional Requirements, FR Coverage Map, Functional Requirements, NonFunctional Requirements, Requirements Inventory, UX Design Requirements
 
 ### Community 143 - "Community 143"
-Cohesion: 0.16
-Nodes (10): date, catchup_plan(), _local_tz(), override(), Temporal core (ARCH-DATA-022/023).  Clock is the single legitimate wall-clock re, Aware UTC datetime; honors an active override()., Current business date: calendar day at midnight Asia/Qyzylorda., Freeze Clock to `value` within the context (nestable, exception-safe).      Acce (+2 more)
+Cohesion: 0.11
+Nodes (18): Notification, notify(), Story 5.7a — emit a notification (idempotent, in the caller's transaction).  ``n, Idempotently emit a notification inside the caller's transaction.      «Одно уве, RuntimeError, _emit_lagging(), LaggingNotifyError, Story 5.7b2 — catch-up detection of lagging submissions (FR-13, ARCH-DATA-022). (+10 more)
+
+### Community 147 - "Community 147"
+Cohesion: 0.19
+Nodes (13): build_workbook(), _header_cells(), Pure rendering of a strength report (1.7) — text table + simple .xlsx.  No ORM,, ``list[StrengthReportResult]`` -> ``openpyxl.Workbook`` (one sheet/date).      S, One logical row as a list of cell values (ints + the name string)., Text table for stdout: a row per division + a totals row.      Numbers are right, render_table(), _row_cells() (+5 more)
 
 ### Community 151 - "Community 151"
-Cohesion: 0.08
-Nodes (33): Command, BaselineRow, _classify_cell(), _classify_division(), diff_day(), DiffCell, DiffResult, _donor_values() (+25 more)
+Cohesion: 0.29
+Nodes (6): baseline(), cats(), run(), TestAggregatorInferred, TestAmbiguousDonorSurplusBlocksGate, vaps_row()
 
 ### Community 273 - "Community 273"
-Cohesion: 0.40
-Nodes (5): Animation(), camelCase(), createFxNow(), propFilter(), Tween()
+Cohesion: 0.06
+Nodes (33): Clock, DomainError, Domain error protocol (Story 3.1, AR-7).  ``DomainError`` is the single way the, A business/state error with an explicit HTTP status and registry code.      Args, Exception, derive_state(), EmployeeStatus, EmployeeStatusQuerySet (+25 more)
 
 ### Community 280 - "Community 280"
-Cohesion: 0.07
-Nodes (28): EffectivePermissionsResolver, Attach ``request.effective_permissions`` (in-house RBAC) post-identity.      Reg, Single identity-extraction point (ARCH-SEC-030).      MVP stand-in for the JWT `, XUserIdAuthentication, BaseAuthentication, Story 2.13 — core API permission seam + gate (pilot).  The operations authz seam, Run a request through the auth chain in DEFAULT_AUTHENTICATION_CLASSES     order, _resolved_request() (+20 more)
+Cohesion: 0.15
+Nodes (7): _jwt_config(), JWT verification params from settings (env-driven, story 5.1). Returns None, Single identity-extraction point (ARCH-SEC-030).      MVP stand-in for the JWT `, XUserIdAuthentication, _drf_request(), test_authenticate_sets_actor_id_from_header(), test_authenticate_without_header_leaves_actor_id_unset()
 
 ### Community 281 - "Community 281"
 Cohesion: 0.07
@@ -903,8 +1038,8 @@ Cohesion: 0.07
 Nodes (26): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+18 more)
 
 ### Community 283 - "Community 283"
-Cohesion: 0.33
-Nodes (4): EmployeeStatusSelector, Live interval facts containing the date, one bulk query.          period__contai, Point AC contract: the derived status of ONE employee.          MUST NOT be call, Bulk-first status reads — the ONLY data channel for aggregation.
+Cohesion: 0.10
+Nodes (18): Command, DismissalReason, DocumentType, EducationType, Meta, Position, Справочник: Типы документов, Справочник: Настройки системы (+10 more)
 
 ### Community 284 - "Community 284"
 Cohesion: 0.07
@@ -919,32 +1054,52 @@ Cohesion: 0.08
 Nodes (25): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+17 more)
 
 ### Community 287 - "Community 287"
-Cohesion: 0.10
-Nodes (19): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+11 more)
+Cohesion: 0.08
+Nodes (23): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Defer (2), Dev Agent Record, Dev Notes (+15 more)
 
 ### Community 288 - "Community 288"
-Cohesion: 0.09
-Nodes (9): Read-only strength report for a date/period: text table + simple .xlsx, plus an, datetime, Migration, TestClockOverride, TestClockReal, TestWatermarkModel, test_qyzylorda_utcoffset_summer(), test_qyzylorda_utcoffset_winter() (+1 more)
+Cohesion: 0.05
+Nodes (15): datetime, Migration, test_selector_latest_for_finds_head_with_zero_current(), TestClockOverride, TestClockReal, TestWatermarkModel, Story 3.7 — verification: «В строю» default + continuity AC-pins.  The derived-d, _row() (+7 more)
 
 ### Community 289 - "Community 289"
-Cohesion: 0.19
-Nodes (17): Return ``entries`` in canonical order (pure; does not mutate input)., sort_roster(), _entry(), entry_lists(), Story 2.6 — pure canon of roster sorting (no DB).  ``sort_roster`` is the single, Random rosters across all three groups, unique ids for a stable     tie-break; ~, test_blank_surname_sorts_after_named_within_same_group_and_level(), test_equal_level_and_surname_tie_break_by_id_is_deterministic() (+9 more)
+Cohesion: 0.14
+Nodes (21): Case-insensitive surname key; a blank surname — empty OR whitespace-only —     s, The canon key: group block, then position level (asc), then surname,     then a, Return ``entries`` in canonical order (pure; does not mutate input)., roster_sort_key(), sort_roster(), _surname_key(), _entry(), entry_lists() (+13 more)
 
 ### Community 290 - "Community 290"
 Cohesion: 0.67
 Nodes (3): Mimir Brief (artifact), Work Order (artifact), Mimir (WDS Builder Agent)
 
 ### Community 291 - "Community 291"
-Cohesion: 0.06
-Nodes (33): Deferred from: code review of 1-10-спайк-перф-грид-на-целевой-машине (2026-06-18), Deferred from: code review of 1-10-спайк-перф-грид-на-целевой-машине (2026-06-19), Deferred from: code review of 1-11-спайк-выгрузка-данных-донора (2026-06-18), Deferred from: code review of 1-11-спайк-выгрузка-данных-донора (2026-06-19), Deferred from: code review of 1-11-спайк-выгрузка-данных-донора (2026-06-19), Deferred from: code review of 1-11-спайк-выгрузка-данных-донора (2026-06-22), Deferred from: code review of 1-12-инвентаризация-артефакт (2026-06-19), Deferred from: code review of 1-1-тестовый-фундамент-на-postgresql (2026-06-11) (+25 more)
+Cohesion: 0.03
+Nodes (72): Deferred from: code-review 3.6 (2026-06-25), Deferred from: code review of 1-10-спайк-перф-грид-на-целевой-машине (2026-06-18), Deferred from: code review of 1-10-спайк-перф-грид-на-целевой-машине (2026-06-19), Deferred from: code review of 1-11-спайк-выгрузка-данных-донора (2026-06-18), Deferred from: code review of 1-11-спайк-выгрузка-данных-донора (2026-06-19), Deferred from: code review of 1-11-спайк-выгрузка-данных-донора (2026-06-19), Deferred from: code review of 1-11-спайк-выгрузка-данных-донора (2026-06-22), Deferred from: code review of 1-11-спайк-выгрузка-данных-донора (2026-06-26) (+64 more)
 
 ### Community 294 - "Community 294"
-Cohesion: 0.13
-Nodes (20): PositionSerializer, RankSerializer, StatusTypeListSerializer, PositionViewSet, RankViewSet, ViewSet для справочника должностей (только GET в API), ViewSet для справочника званий (только GET в API), ViewSet для справочника типов статусов (только GET) (+12 more)
+Cohesion: 0.22
+Nodes (19): date, Story 5.6a — derive «блокировка на завтра» (read-only FR-18 core).  For one ``bu, Result of the next-day lock derive.      ``laggards`` are the required division, Derive the next-day lock for ``business_date``.      ``required`` (необходимые у, tomorrow_block(), TomorrowBlock, make_division(), Tests for tomorrow_block — the derive «next-day lock» (Story 5.6a).  Read-only F (+11 more)
 
 ### Community 297 - "Community 297"
-Cohesion: 0.10
-Nodes (12): PermissionSerializer, RoleSerializer, TemporaryDutySerializer, UserRoleSerializer, MyPermissionsViewSet, PermissionViewSet, RoleViewSet, TemporaryDutyViewSet (+4 more)
+Cohesion: 0.06
+Nodes (41): NotificationFilterSerializer, PermissionSerializer, Validates the ``since`` query param; a bad datetime → DRF ValidationError     →, RoleSerializer, TemporaryDutySerializer, UserRoleSerializer, MyPermissionsViewSet, NotificationPagination (+33 more)
+
+### Community 298 - "Community 298"
+Cohesion: 0.08
+Nodes (42): _compute_event(), _default_window(), _diff_key(), _is_late(), Сервис сдачи дня (Story 5.3b): ``submit_day``.  Первый писатель рядов DailySubmi, Сдать день: атомарный срез + diff-event + late + создание DailySubmission v1., Окно по умолчанию: today + tomorrow («за день вперёд» основной + коррекция)., late = сдача после контрольного часа (local time-of-day > control_hour).      Де (+34 more)
+
+### Community 299 - "Community 299"
+Cohesion: 0.15
+Nodes (39): Command, Story 5.7b2 — beat-ready entrypoint for the lagging-submission catch-up job.  Ru, check_lagging_submissions(), LaggingCheckResult, Outcome of one lagging-check pass (for the command / callers / tests)., Run one idempotent, concurrency-safe lagging-check pass; return the result., after_hour(), before_hour() (+31 more)
+
+### Community 300 - "Community 300"
+Cohesion: 0.13
+Nodes (38): complete_status_early(), Close an ACTIVE status with a factual end date ``≤ today``.      Only ACTIVE row, _emp(), env(), Story 3.6 — lifecycle operations on a status (cancel / early-complete / extend)., Org/div + VACATION (hard), STUDY (soft, no limit), CONFERENCE (soft, 5d)., Create a status directly (bypasses create_status validations) so a test     can, _registry_block() (+30 more)
+
+### Community 301 - "Community 301"
+Cohesion: 0.17
+Nodes (25): assert_employee_status_editable(), _assert_no_conflict(), cancel_status(), _conflict_details(), create_status(), extend_status(), _lock_employee(), _lock_for_edit() (+17 more)
+
+### Community 302 - "Community 302"
+Cohesion: 0.12
+Nodes (30): _constraint_name(), domain_exception_handler(), emitted_codes(), _envelope(), _internal_error(), _is_conflict_sqlstate(), Single DRF exception handler — the only place errors become responses.  Every er, Render any exception into the §36 envelope (the sole error-shaping point). (+22 more)
 
 ### Community 303 - "Community 303"
 Cohesion: 0.10
@@ -955,8 +1110,8 @@ Cohesion: 0.29
 Nodes (3): EmployeeDivisionHistory, test_assign_closes_previous_open_interval(), test_starts_after_ends_rejected()
 
 ### Community 305 - "Community 305"
-Cohesion: 0.19
-Nodes (13): build_workbook(), _header_cells(), Pure rendering of a strength report (1.7) — text table + simple .xlsx.  No ORM,, ``list[StrengthReportResult]`` -> ``openpyxl.Workbook`` (one sheet/date).      S, One logical row as a list of cell values (ints + the name string)., Text table for stdout: a row per division + a totals row.      Numbers are right, render_table(), _row_cells() (+5 more)
+Cohesion: 0.10
+Nodes (30): Command, Story 3.12 — beat-ready entrypoint for the status-effects catch-up engine.  Runn, advisory_lock(), Process-coordination locks (ARCH-DATA-022).  Postgres **session-level** advisory, Hold a session-level Postgres advisory lock for ``key`` (a stable int).      Yie, CatchUpResult, _materialize_day(), materialize_status_effects() (+22 more)
 
 ### Community 306 - "Community 306"
 Cohesion: 0.21
@@ -964,19 +1119,19 @@ Nodes (6): import_slice(), Integration test for the strength_report command (Pos
 
 ### Community 328 - "Community 328"
 Cohesion: 0.09
-Nodes (28): authorizedFetch(), buildUrl(), fetchUnreadNotifications(), markAllRead(), markNotificationRead(), Notification, Employee, StatusTableProps (+20 more)
+Nodes (26): authorizedFetch(), buildUrl(), fetchUnreadNotifications(), markAllRead(), markNotificationRead(), Notification, Employee, StatusTableProps (+18 more)
 
 ### Community 329 - "Community 329"
-Cohesion: 0.09
-Nodes (26): DashboardPage(), absenceTypeConfig, cardVariants, containerVariants, StatsCards(), StatsCardsProps, useAbsenceStatistics(), useStaffUnitStatistics() (+18 more)
+Cohesion: 0.13
+Nodes (18): DashboardLayout(), DashboardPage(), absenceTypeConfig, cardVariants, containerVariants, StatsCards(), StatsCardsProps, useAbsenceStatistics() (+10 more)
 
 ### Community 330 - "Community 330"
 Cohesion: 0.27
 Nodes (13): _create(), test_adjacent_hard_intervals_pass(), test_cancelled_hard_excluded_from_constraint(), test_empty_interval_rejected_by_chk_status_dates(), test_hard_overlap_sequential_raises_named_constraint(), test_one_day_interval_is_valid(), test_period_is_half_open_and_created_by_inherited(), test_reversed_interval_fails_in_generated_period_not_chk() (+5 more)
 
 ### Community 331 - "Community 331"
-Cohesion: 0.09
-Nodes (9): AuditLogModelTest, AuditLogMigrationTest, Story 1.1 verification: the AuditLog table exists and accepts rows.  Scope is in, Model-level tests for the single audit implementation, ``AuditLog``.  These exer, EmployeeStatus, StatusRepositoryImpl, StatusApplicationServiceIntegrationTest, EmployeeStatus (+1 more)
+Cohesion: 0.13
+Nodes (6): AuditLogModelTest, AuditLogMigrationTest, Story 1.1 verification: the AuditLog table exists and accepts rows.  Scope is in, Model-level tests for the single audit implementation, ``AuditLog``.  These exer, StatusApplicationServiceIntegrationTest, TestCase
 
 ### Community 334 - "Community 334"
 Cohesion: 0.18
@@ -987,8 +1142,8 @@ Cohesion: 0.07
 Nodes (28): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Decision-needed, Defer, Definition of Done (+20 more)
 
 ### Community 336 - "Community 336"
-Cohesion: 0.22
-Nodes (4): PermissionService, Stateless authorization resolution (spec §1254). All checks go through here., Write-side wrappers for RBAC administration., RoleAdminService
+Cohesion: 0.18
+Nodes (13): createEmployee(), useDivisionsTree(), usePositions(), useRanks(), useToast(), CreateEmployeeFormData, CreateEmployeeRequest, CreateEmployeeResponse (+5 more)
 
 ### Community 337 - "Community 337"
 Cohesion: 0.18
@@ -1032,7 +1187,7 @@ Nodes (28): approveSecondmentRequest(), fetchIncomingSecondmentRequests(), postA
 
 ### Community 363 - "Community 363"
 Cohesion: 0.06
-Nodes (31): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+23 more)
+Nodes (33): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+25 more)
 
 ### Community 364 - "Community 364"
 Cohesion: 0.06
@@ -1051,16 +1206,20 @@ Cohesion: 0.07
 Nodes (29): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Decision Register: формат, состав, локация, Definition of Done, Dev Agent Record (+21 more)
 
 ### Community 368 - "Community 368"
-Cohesion: 0.15
-Nodes (20): DashboardLayout(), StatusTable(), EmployeesPage(), useStaffUnitsByDirectorate(), Employee, StatusesPage(), Avatar(), AvatarFallback() (+12 more)
+Cohesion: 0.13
+Nodes (24): StatusTable(), EmployeesPage(), useStaffUnitsByDirectorate(), Employee, StatusesPage(), Avatar(), AvatarFallback(), AvatarImage() (+16 more)
 
 ### Community 370 - "Community 370"
-Cohesion: 0.50
-Nodes (3): AbsenceStatisticsSerializer, Сериализатор для статистики по отсутствиям и количеству штата, Получение статистики по типам отсутствий на сегодняшний день          Автоматиче
+Cohesion: 0.07
+Nodes (29): §36-конверт (целевое тело — единственная форма), Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record (+21 more)
 
 ### Community 371 - "Community 371"
-Cohesion: 0.50
-Nodes (3): DivisionHeadcountSerializer, Сериализатор для расхода подразделения, Получение расхода подразделения на определенную дату          Query params:
+Cohesion: 0.07
+Nodes (28): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+20 more)
+
+### Community 372 - "Community 372"
+Cohesion: 0.07
+Nodes (28): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Decision needed, Defer (future hardening), Definition of Done (+20 more)
 
 ### Community 374 - "Community 374"
 Cohesion: 0.67
@@ -1083,7 +1242,7 @@ Cohesion: 0.07
 Nodes (27): Accessibility Floor (behavioral), Component Patterns (behavioral), ConflictDialog (общий, E8), Employee card (детальная), Employee row / Employee card — добавлено, Foundation, Greeting (дашборд) — добавлено, Information Architecture (+19 more)
 
 ### Community 379 - "Community 379"
-Cohesion: 0.12
+Cohesion: 0.11
 Nodes (15): useStaffUnits(), MobileMenuProps, ThemeToggle(), Button(), buttonVariants, buildOrgStructure(), buildTree(), OrgBoard() (+7 more)
 
 ### Community 380 - "Community 380"
@@ -1095,8 +1254,8 @@ Cohesion: 0.08
 Nodes (23): 1. RBAC / roles & permissions, 2. Data entities & relationships (IA / navigation depth), 3. Real-time behavior (from ws-message-types.yaml), 4. Error states (from error-codes.yaml), 5. Audit events (from audit-events.yaml), 6. PersonnelStatus epics / stories (features & screens in scope) — build order, 7. UX-affecting constraints from architecture, 8. Open questions / contradictions (+15 more)
 
 ### Community 382 - "Community 382"
-Cohesion: 0.15
-Nodes (12): getFeedback(), sendFeedback(), DashboardLayoutProps, PerformanceProfiler(), PerformanceProfilerProps, FeedbackMessage, FeedbackResponse, Header() (+4 more)
+Cohesion: 0.31
+Nodes (6): getFeedback(), sendFeedback(), BACKEND_URL, FeedbackMessage, FeedbackResponse, FeedbackChat()
 
 ### Community 383 - "Community 383"
 Cohesion: 0.10
@@ -1115,8 +1274,8 @@ Cohesion: 0.17
 Nodes (15): Active, App(), root, domRowCount(), exportJson(), markKeydown(), percentile(), perf (+7 more)
 
 ### Community 387 - "Community 387"
-Cohesion: 0.20
-Nodes (12): createEmployee(), changePassword(), updateProfile(), BACKEND_URL, ChangePasswordRequest, ChangePasswordResponse, CreateEmployeeFormData, CreateEmployeeRequest (+4 more)
+Cohesion: 0.36
+Nodes (8): changePassword(), updateProfile(), ChangePasswordRequest, ChangePasswordResponse, UpdateProfileRequest, UpdateProfileResponse, EditProfileDialog(), EditProfileDialogProps
 
 ### Community 388 - "Community 388"
 Cohesion: 0.15
@@ -1176,7 +1335,7 @@ Nodes (9): name, private, scripts, build, dev, dev:webpack, lint, start (+1 more
 
 ### Community 402 - "Community 402"
 Cohesion: 0.35
-Nodes (10): _seed(), test_counts_in_staff_false_only_for_attached(), test_exactly_four_hard_blocks_match_constant(), test_is_ku_owned_matches_db_ops_003(), test_pending_clarification_provisional_values(), test_priorities_and_columns_match_strength_report(), test_reseed_preserves_operator_edits_but_resyncs_canon(), test_restricts_editing_only_for_detached() (+2 more)
+Nodes (10): _seed(), test_counts_in_staff_false_only_for_attached(), test_exactly_four_hard_blocks_match_constant(), test_is_ku_owned_matches_db_ops_003(), test_pending_clarification_values(), test_priorities_and_columns_match_strength_report(), test_reseed_preserves_operator_edits_but_resyncs_canon(), test_restricts_editing_only_for_detached() (+2 more)
 
 ### Community 403 - "Community 403"
 Cohesion: 0.22
@@ -1203,8 +1362,12 @@ Cohesion: 0.09
 Nodes (22): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Deferred, Dev Agent Record, Dev Notes (+14 more)
 
 ### Community 410 - "Community 410"
-Cohesion: 0.10
-Nodes (18): Command, DismissalReason, DocumentType, EducationType, Meta, Position, Справочник: Типы документов, Справочник: Настройки системы (+10 more)
+Cohesion: 0.18
+Nodes (8): BR-001 winner code for one employee's live interval facts on a date.      A fact, resolve_status(), AC-4: a retroactive edit of a status interval changes the derived strength on a, TestRetroactiveAmendmentEffect, vacation(), around(), fact(), TestResolveStatusTables
+
+### Community 413 - "Community 413"
+Cohesion: 0.07
+Nodes (17): DailySubmissionSelector, NotifyRecipientSelector, The highest-version submission for (division, day) — current or not — or, The most recent current submission STRICTLY before business_date — the         «, Read-only access to the singleton submission-control settings.      Deviation fr, Resolve «дивизион→получатель» for lagging-submission notices (Story 5.7b1)., Read access to daily submissions for the сдача service (5.3b)., ``{division_id: recipient}`` for the resolvable divisions — BULK.          ONE q (+9 more)
 
 ### Community 414 - "Community 414"
 Cohesion: 0.09
@@ -1231,48 +1394,56 @@ Cohesion: 0.50
 Nodes (3): 1. Аппарат — `apparatus-verified-on-sample` ✅ (2026-06-18), 2. Реальная выгрузка прода — `PENDING-prod-access` (путь A, Task 3 за Bratan), EXPORT-REPORT — отчёт выгрузки донора (спайк 1.11)
 
 ### Community 420 - "Community 420"
-Cohesion: 0.22
-Nodes (17): a(), c(), d(), f(), g(), h(), i(), l() (+9 more)
+Cohesion: 0.07
+Nodes (28): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Decision needed, Defer, Definition of Done (+20 more)
 
 ### Community 422 - "Community 422"
 Cohesion: 0.09
 Nodes (21): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Decision (1) → РАЗРЕШЕНО (Patch применён), Defer (2), Dev Agent Record (+13 more)
 
 ### Community 423 - "Community 423"
-Cohesion: 0.25
-Nodes (7): Category, Meta, Модели для системы ролей и прав доступа, Модель для хранения ролей системы в БД.     Позволяет создавать роли через админ, Получить все права роли с кешированием, Role, ScopeType
+Cohesion: 0.11
+Nodes (6): BaseCommand, Command, Command, Command, Command, Command
 
 ### Community 424 - "Community 424"
 Cohesion: 0.50
 Nodes (3): Architecture Decision Document, Decision Register (сводный), Как читать этот документ (для AI-агентов — читать первым)
+
+### Community 425 - "Community 425"
+Cohesion: 0.07
+Nodes (27): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Decision needed, Defer (pre-existing / future hardening), Definition of Done (+19 more)
 
 ### Community 426 - "Community 426"
 Cohesion: 0.50
 Nodes (3): JWT, Session, User
 
 ### Community 427 - "Community 427"
-Cohesion: 0.22
-Nodes (11): close_active_statuses_on(), dismiss_employee(), Story 2.5 — dismissal status-close + cross-context orchestrator.  Lives in opera, Truncate an employee's active statuses spanning D to end on D (AC-2).      An ac, Full cross-context dismissal (story 2.5, Shape B), atomic.      core dismiss_emp, _emp(), Story 2.5 — status truncation on dismissal + cross-context orchestrator., test_close_blank_actor_rejected() (+3 more)
+Cohesion: 0.19
+Nodes (13): close_active_statuses_on(), dismiss_employee(), _employee_snapshot(), Story 2.5 — dismissal status-close + cross-context orchestrator.  Lives in opera, JSON-safe snapshot of an Employee for the EMPLOYEE_DISMISSED audit event     (st, Truncate an employee's active statuses spanning D to end on D (AC-2).      An ac, Full cross-context dismissal (story 2.5, Shape B), atomic.      core dismiss_emp, _emp() (+5 more)
 
 ### Community 428 - "Community 428"
 Cohesion: 0.23
 Nodes (19): Story 2.7 — CSV import of positions/ranks (FR-39).  Idempotent upsert on ``code`, _run(), test_blank_int_columns_default_to_zero(), test_both_files_one_run_two_subreports(), test_duplicate_code_in_file_reported(), test_empty_code_skipped(), test_empty_name_skipped(), test_imports_ranks_with_nullable_category() (+11 more)
 
 ### Community 438 - "Community 438"
-Cohesion: 0.13
-Nodes (16): _AnyAuthenticated, _behavioral_params(), matrix_actors(), RBAC-матрица роль×endpoint — сквозной gate-тест (Story 2.9, AR-9).  Параметризов, ALLOW любому actor_id (право не требуется), аноним DENY., name → set(методы): что реально обслуживает API.      Пересекаем с ``http_method, Каждый обслуживаемый роут ∈ MATRIX; нет протухших строк (AR-9)., Per-метод completeness (AR-9 / deferred 2.9 #L215): _MethodGate обязан     покры (+8 more)
+Cohesion: 0.10
+Nodes (23): _AnyAuthenticated, _behavioral_params(), _DeferredGate, matrix_actors(), RBAC-матрица роль×endpoint — сквозной gate-тест (Story 2.9, AR-9).  Параметризов, ALLOW любому actor_id (право не требуется), аноним DENY., core-роут без стража: гейт отложен в стори-гейт., name → set(методы): что реально обслуживает API.      Пересекаем с ``http_method (+15 more)
 
 ### Community 439 - "Community 439"
-Cohesion: 0.31
-Nodes (5): make_employee(), make_slot(), make_status(), row_for(), TestStrengthReportService
+Cohesion: 0.21
+Nodes (9): division(), make_division(), make_employee(), make_slot(), make_status(), Integration tests: selectors + StrengthReportService on Postgres., row_for(), TestEmployeeStatusSelector (+1 more)
 
 ### Community 440 - "Community 440"
 Cohesion: 0.08
 Nodes (24): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Defer (3), Dev Agent Record, Dev Notes (+16 more)
 
 ### Community 441 - "Community 441"
+Cohesion: 0.16
+Nodes (10): date, catchup_plan(), _local_tz(), override(), Temporal core (ARCH-DATA-022/023).  Clock is the single legitimate wall-clock re, Aware UTC datetime; honors an active override()., Current business date: calendar day at midnight Asia/Qyzylorda., Freeze Clock to `value` within the context (nestable, exception-safe).      Acce (+2 more)
+
+### Community 442 - "Community 442"
 Cohesion: 0.20
-Nodes (4): PermissionAdmin, Админка для управления правами доступа, Красивое отображение категории, Количество ролей с этим правом
+Nodes (10): Meta, Kind, NotificationType, create_employee_delete_notification(), create_employee_update_notification(), create_secondment_notification(), create_status_update_notification(), Signal handlers for notifications.  These receivers listen to model events acros (+2 more)
 
 ### Community 448 - "Community 448"
 Cohesion: 0.07
@@ -1283,32 +1454,32 @@ Cohesion: 0.20
 Nodes (4): Тест успешного приема на работу, TestEmployeeApplicationService, Интеграционный тест успешного приема на работу, TestEmployeeApplicationServiceIntegration
 
 ### Community 460 - "Community 460"
-Cohesion: 0.17
-Nodes (10): Any, Employee, str, Any, Employee, str, EmployeeStatusBriefSerializer, Получить последние статусы сотрудника (+2 more)
+Cohesion: 0.07
+Nodes (27): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Decision Needed, Deferred, Definition of Done (+19 more)
 
 ### Community 461 - "Community 461"
-Cohesion: 0.33
-Nodes (4): PositionAdmin, RankAdmin, Rank, Справочник: Звание согласно ТЗ
+Cohesion: 0.07
+Nodes (27): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dependencies, Dev Agent Record, Dev Notes (+19 more)
 
 ### Community 462 - "Community 462"
 Cohesion: 0.25
 Nodes (5): Division, Organization, SensitiveFieldPolicy, UserEmployeeBinding, UUIDTimeStampedModel
 
 ### Community 463 - "Community 463"
-Cohesion: 0.25
-Nodes (6): _DeferredGate, core-роут без стража: гейт отложен в стори-гейт., Каждая (строка, метод) даёт явное ожидание для 8 ролей + анонима., test_matrix_declares_all_actors_explicitly(), test_my_permissions_is_any_authenticated(), test_operations_admin_routes_are_admin_only()
+Cohesion: 0.08
+Nodes (44): Enum, bulk_create_statuses(), _overlaps(), Story 3.8 — atomic mass status creation (FR-12), no N+1.  ``bulk_create_statuses, Half-open interval overlap, in Python (the predicate that lives in the     selec, Create operator-owned deviation statuses atomically (source=USER).      ``rows``, classify_pair(), Conflict (+36 more)
 
 ### Community 464 - "Community 464"
 Cohesion: 0.24
 Nodes (8): dismiss_employee(), mask_employee_data(), _partial_mask(), Apply sensitive-field policies to a serialized employee dict.      BR-PRIVACY-00, Dismiss an employee on calendar date D (core side, story 2.5).      Soft-delete, test_full_hide_strategy(), test_iin_masked_without_permission(), test_iin_visible_with_permission()
 
 ### Community 465 - "Community 465"
-Cohesion: 0.24
+Cohesion: 0.18
 Nodes (5): TestReportsAccess, forward(), Migration, _relabel(), reverse()
 
 ### Community 466 - "Community 466"
-Cohesion: 0.13
-Nodes (9): StaffingAssignmentSerializer, StaffingSlotSerializer, EmployeeSerializer, Meta, PositionSerializer, RankSerializer, compute_free_slots(), BR-CORE-STAFF-002: vacancy = staffing slot with no active assignment on a date. (+1 more)
+Cohesion: 0.22
+Nodes (5): StaffingSlotSerializer, VacancyViewSet, compute_free_slots(), BR-CORE-STAFF-002: vacancy = staffing slot with no active assignment on a date., test_compute_free_slots_excludes_occupied()
 
 ### Community 467 - "Community 467"
 Cohesion: 0.22
@@ -1323,8 +1494,8 @@ Cohesion: 0.33
 Nodes (3): BaseUserManager, Employee, UserManager
 
 ### Community 470 - "Community 470"
-Cohesion: 0.29
-Nodes (4): division(), make_division(), Integration tests: selectors + StrengthReportService on Postgres., TestEmployeeStatusSelector
+Cohesion: 0.13
+Nodes (24): _make(), Constraint/shape tests for the DailySubmission model (Story 5.2).  5.2 writes no, Create a DailySubmission with the minimum required fields.      snapshot default, test_amended_empty_reason_rejected(), test_amended_empty_sanction_rejected(), test_amended_requires_reason_and_sanction(), test_amended_whitespace_reason_rejected(), test_amended_whitespace_sanction_rejected() (+16 more)
 
 ### Community 472 - "Community 472"
 Cohesion: 0.29
@@ -1335,36 +1506,420 @@ Cohesion: 0.43
 Nodes (6): _business_files(), Boundary-guard: бизнес-слой не консультирует Django-auth (Story 2.9).  Хвост рев, Бизнес-слой: вся логика operations + core api/services/selectors.      Исключены, test_business_layer_does_not_consult_django_auth(), test_guard_excludes_legitimate_django_auth_sites(), _violations()
 
 ### Community 474 - "Community 474"
-Cohesion: 0.20
-Nodes (5): _Gate, _holders(), _MethodGate, Загейчен правом ``code`` (одно право на все методы роута): ALLOW     держателям, Per-method страж: разные коды на разные HTTP-методы одного роута     (смешанная
+Cohesion: 0.07
+Nodes (26): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Deferred, Definition of Done, Dev Agent Record (+18 more)
 
 ### Community 475 - "Community 475"
 Cohesion: 0.40
 Nodes (4): DivisionTypeAdmin, PositionAdmin, RankAdmin, Admin-регистрация core-справочников (Story 2.11).  Только справочники без бизнес
 
-### Community 477 - "Community 477"
+### Community 476 - "Community 476"
 Cohesion: 0.33
-Nodes (5): FR-5 — the single canon for sorting personnel lists (story 2.6).  One sort, one, Case-insensitive surname key; a blank surname — empty OR whitespace-only —     s, The canon key: group block, then position level (asc), then surname,     then a, roster_sort_key(), _surname_key()
+Nodes (3): DivisionNotifyRecipientAdmin, Admin-регистрация справочников сдачи (Story 2.11 / 5.7b1).  SubmissionControlSet, SubmissionControlSettingsAdmin
+
+### Community 477 - "Community 477"
+Cohesion: 0.07
+Nodes (26): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+18 more)
 
 ### Community 479 - "Community 479"
-Cohesion: 0.40
-Nodes (5): 1.1 Назначение модуля, 1.2 Типы организационных структур, 1.3 Функциональные возможности, 1.4 Бизнес-правила, 1. Управление организационной структурой
+Cohesion: 0.20
+Nodes (23): _affected_days(), enforce_amendment_on_retro_edit(), Amendment enforcement (Story 5.4b): the submissions-side body of the statuses am, Union of the half-open ``[date_start, date_end)`` day-sets — ``end`` EXCLUDED., Create an amendment for every submitted day the retro-edit covers.      Affected, _day(), _enforce(), make_employee() (+15 more)
+
+### Community 481 - "Community 481"
+Cohesion: 0.42
+Nodes (3): load_baseline(), Multi-day envelope -> ``dict[date, dict[code, BaselineRow]]``.      The donor ``, TestLoadBaseline
 
 ### Community 484 - "Community 484"
-Cohesion: 0.40
-Nodes (5): 2.1 Назначение модуля, 2.2 Карточка сотрудника, 2.3 Функциональные возможности, 2.4 Бизнес-правила, 2. Управление сотрудниками
+Cohesion: 0.08
+Nodes (25): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+17 more)
 
 ### Community 485 - "Community 485"
 Cohesion: 0.50
 Nodes (3): AbstractBaseUser, User, PermissionsMixin
 
+### Community 486 - "Community 486"
+Cohesion: 0.18
+Nodes (23): _amend(), _current(), _direct_v1(), make_employee(), make_status(), Tests for amend_day — the amendment-flow service (Story 5.4a).  amend_day create, A directly-built current v1 (lets tests amend a PAST date submit_day forbids)., test_amend_blank_actor_raises_400() (+15 more)
+
+### Community 487 - "Community 487"
+Cohesion: 0.16
+Nodes (22): _detail_url(), _list_url(), _log(), Story 4.5 — read-only audit API (GET /api/audit/logs/), FR-36.  Proves: filters, Plant an audit row directly (``created_at`` has no DB default)., test_bad_date_is_400(), test_bad_entity_id_is_400(), test_filter_by_action() (+14 more)
+
+### Community 488 - "Community 488"
+Cohesion: 0.20
+Nodes (24): _count(), _emp(), _in_request(), Story 4.4 — audit of status mutations: every E3 operation leaves a trace.  Postg, Run fn() inside the middleware so the request-context contextvar is set., Plant a row directly (bypasses create_status → no audit) to isolate the     sing, _status(), test_bulk_emits_n_plus_one_summary_bounded_queries() (+16 more)
+
+### Community 489 - "Community 489"
+Cohesion: 0.08
+Nodes (24): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+16 more)
+
+### Community 490 - "Community 490"
+Cohesion: 0.08
+Nodes (24): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+16 more)
+
+### Community 491 - "Community 491"
+Cohesion: 0.08
+Nodes (24): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+16 more)
+
+### Community 492 - "Community 492"
+Cohesion: 0.08
+Nodes (24): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+16 more)
+
+### Community 493 - "Community 493"
+Cohesion: 0.08
+Nodes (24): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+16 more)
+
+### Community 494 - "Community 494"
+Cohesion: 0.08
+Nodes (24): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+16 more)
+
+### Community 495 - "Community 495"
+Cohesion: 0.15
+Nodes (13): adoptValue(), ajaxConvert(), ajaxHandleResponses(), Animation(), camelCase(), createFxNow(), createTween(), defaultPrefilter() (+5 more)
+
+### Community 496 - "Community 496"
+Cohesion: 0.11
+Nodes (22): _actions_in_tree(), _Audited, _call_name(), _DeferredAudit, _emitted_actions(), Story 4.6 — audit-coverage CI guard (AR-9). No production code: this IS the guar, Every audit ``action`` code emitted by production source under ``apps/**``     (, ``audit_logs.action`` codes from the registry — indent-aware parse (no     PyYAM (+14 more)
+
+### Community 497 - "Community 497"
+Cohesion: 0.08
+Nodes (23): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Decision-needed (resolved 2026-07-01 → вариант 1: DB-constraint + selector-strip · FIXED), Dev Agent Record, Dev Notes (+15 more)
+
+### Community 498 - "Community 498"
+Cohesion: 0.08
+Nodes (23): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+15 more)
+
+### Community 499 - "Community 499"
+Cohesion: 0.24
+Nodes (20): JWTAuthentication, External-Auth JWT identity (ARCH-SEC-030). First in the chain; the X-User-Id, Story 5.1 — JWTAuthentication: a verified external-Auth JWT's ``sub`` claim beco, _request(), test_alg_none_rejected(), test_alg_not_in_allowlist_rejected(), test_authenticate_header_is_bearer(), test_bad_signature_rejected() (+12 more)
+
+### Community 500 - "Community 500"
+Cohesion: 0.09
+Nodes (22): Acceptance Criteria, Agent Model Used, Change Log, Code-review проход 1 (bmad-code-review, 2026-06-25, Opus 4.8 — same-model caveat), Completion Notes List, Debug Log References, Defer (записано в deferred-work.md), Dev Agent Record (+14 more)
+
+### Community 501 - "Community 501"
+Cohesion: 0.09
+Nodes (22): Acceptance Criteria, Agent Model Used, Change Log, Code-review проход 1 (bmad-code-review, 2026-06-25, Opus 4.8 — same-model caveat), Completion Notes List, Debug Log References, Defer (записано в deferred-work.md), Dev Agent Record (+14 more)
+
+### Community 502 - "Community 502"
+Cohesion: 0.09
+Nodes (22): Acceptance Criteria, Agent Model Used, Change Log, Code-review проход 1 (bmad-code-review, 2026-06-25, Opus 4.8 — same-model caveat), Completion Notes List, Debug Log References, Defer (записано в deferred-work.md), Dev Agent Record (+14 more)
+
+### Community 503 - "Community 503"
+Cohesion: 0.09
+Nodes (22): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+14 more)
+
+### Community 504 - "Community 504"
+Cohesion: 0.09
+Nodes (22): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+14 more)
+
+### Community 505 - "Community 505"
+Cohesion: 0.18
+Nodes (20): confirm_return(), Story 3.10 — secondment initiation (FR-14), atomic linked pair.  ``initiate_seco, Step 1 (FR-15): the home unit requests the return — an append-once fact.      Id, Step 2 (FR-15): the receiving side confirms — completes BOTH legs.      Requires, request_return(), _emp(), Story 3.11 — secondment return (FR-15) + DETACHED read-only (FR-16).  Postgres-b, _secondment() (+12 more)
+
+### Community 506 - "Community 506"
+Cohesion: 0.11
+Nodes (7): Tests for the notify-recipient config (Story 5.7b1).  The «дивизион→получатель», set_default(), test_resolve_many_drops_none_ids(), test_resolve_many_fallback_only_is_bulk(), test_resolve_many_falls_back_when_unmapped(), test_resolve_many_mixed(), test_resolve_many_specific_wins_over_fallback()
+
+### Community 507 - "Community 507"
+Cohesion: 0.08
+Nodes (29): Story 4.3 — the SINGLE audit write point.  architecture.md §Communication Patter, Append one ``AuditLog`` row and return it.      ``actor`` is the authenticated a, Append many ``AuditLog`` rows in ONE bulk INSERT (story 4.4).      A bulk mutati, record(), record_many(), AuditLog, get_request_context(), get_request_id() (+21 more)
+
+### Community 508 - "Community 508"
+Cohesion: 0.09
+Nodes (21): Acceptance Criteria, Agent Model Used, Change Log, Code-review проход 1 (bmad-code-review, 2026-06-25, Opus 4.8 — same-model caveat), Completion Notes List, Debug Log References, Defer (записано в deferred-work.md), Dev Agent Record (+13 more)
+
+### Community 509 - "Community 509"
+Cohesion: 0.09
+Nodes (21): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+13 more)
+
+### Community 510 - "Community 510"
+Cohesion: 0.09
+Nodes (21): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+13 more)
+
+### Community 511 - "Community 511"
+Cohesion: 0.09
+Nodes (21): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+13 more)
+
+### Community 512 - "Community 512"
+Cohesion: 0.09
+Nodes (21): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+13 more)
+
+### Community 513 - "Community 513"
+Cohesion: 0.09
+Nodes (21): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+13 more)
+
+### Community 514 - "Community 514"
+Cohesion: 0.09
+Nodes (21): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+13 more)
+
+### Community 515 - "Community 515"
+Cohesion: 0.10
+Nodes (20): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, File List (+12 more)
+
+### Community 516 - "Community 516"
+Cohesion: 0.22
+Nodes (17): build_division_snapshot(), Срез-билдер (Story 5.3a): self-contained иммутабельный снапшот сдачи.  ``build_d, Build the self-contained снапшот dict for one division on a date.      Read-only, make_employee(), make_status(), Tests for build_division_snapshot (Story 5.3a).  The builder is READ-ONLY: it as, test_cancelled_status_excluded_from_rows(), test_deterministic_order() (+9 more)
+
+### Community 517 - "Community 517"
+Cohesion: 0.14
+Nodes (13): ViewSet для управления уведомлениями текущего пользователя.      Предоставляет д, Пометить уведомление как прочитанное.          Args:             request: HTTP з, Пометить все уведомления как прочитанные.          Args:             request: HT, Получение списка непрочитанных уведомлений., int, Request, Response, Meta (+5 more)
+
+### Community 518 - "Community 518"
+Cohesion: 0.11
+Nodes (18): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+10 more)
+
+### Community 519 - "Community 519"
+Cohesion: 0.11
+Nodes (18): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+10 more)
+
+### Community 520 - "Community 520"
+Cohesion: 0.11
+Nodes (18): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+10 more)
+
+### Community 521 - "Community 521"
+Cohesion: 0.11
+Nodes (18): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+10 more)
+
+### Community 522 - "Community 522"
+Cohesion: 0.11
+Nodes (18): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+10 more)
+
+### Community 523 - "Community 523"
+Cohesion: 0.23
+Nodes (15): Resolve a PENDING_CLARIFICATION status into the real status (Решение №2=B)., resolve_pending_clarification(), _emp(), _pending(), Story 3.9 — PENDING_CLARIFICATION («уточняется») first-class.  Postgres-backed (, test_pending_resolves_to_its_own_winner_not_in_service(), test_real_fact_beats_pending_clarification(), test_resolve_already_resolved_pending_422_no_double() (+7 more)
+
+### Community 524 - "Community 524"
+Cohesion: 0.29
+Nodes (3): EmployeeStatus, StatusRepositoryImpl, EmployeeStatus
+
+### Community 525 - "Community 525"
+Cohesion: 0.24
+Nodes (10): BaselineRow, Unit tests for the pure donor diff classifier (no DB, gate).  Each test builds a, TestAlignmentByCode, TestDataLossAndUnclassified, TestDiffDayDuplicateCode, TestExactMatch, TestNonComparableColumns, TestOverstaffed (+2 more)
+
+### Community 526 - "Community 526"
+Cohesion: 0.17
+Nodes (12): cardMode, viewport, overrides, DropdownMenu, Separator, StatsCards, Table, Tabs (+4 more)
+
+### Community 527 - "Community 527"
+Cohesion: 0.30
+Nodes (12): _count(), _emp(), _in_request(), Story 4.7 — audit of employee dismissal: one composite EMPLOYEE_DISMISSED event., Run fn() inside the middleware so the request-context contextvar is set., test_dismiss_clean_employee_emits_zero_counts(), test_dismiss_employee_emits_one_event(), test_dismiss_truncation_emits_no_status_events() (+4 more)
+
+### Community 528 - "Community 528"
+Cohesion: 0.26
+Nodes (11): _emp(), Story 3.5 — Override-сущность: bypass soft-409 with a reason + record it.  Postg, A soft (STUDY) status that is ACTIVE on business date 2026-06-05., _seed_active_soft(), test_default_no_override_soft_still_409(), test_override_does_not_bypass_hard(), test_override_record_failure_rolls_back_status(), test_override_snapshot_records_the_conflicting_type_not_the_new() (+3 more)
+
+### Community 529 - "Community 529"
+Cohesion: 0.15
+Nodes (9): AuditLogPagination, AuditLogSelector, Story 4.5 — read-side selector for the audit log (FR-36).  The read path lives I, Filtered, deterministically-ordered reads over ``audit_logs``., Return audit rows matching the AND-combined filters (only the ones         suppl, Single audit row by pk (retrieve). The ``.get`` lives HERE, not in the         v, Story 4.5 — read-only audit journal API (FR-36).  ``GET /api/audit/logs/`` (list, limit/offset envelope {count, next, previous, results} — the project     canon ( (+1 more)
+
+### Community 530 - "Community 530"
+Cohesion: 0.31
+Nodes (11): initiate_secondment(), Initiate a secondment (FR-14): create the linked DETACHED+ATTACHED pair.      Re, _emp(), Story 3.10 — initiate_secondment: paired DETACHED + ATTACHED statuses (FR-14)., test_initiate_creates_linked_pair(), test_initiate_empty_actor_400(), test_initiate_hard_conflict_422_nothing_written(), test_initiate_missing_employee_404() (+3 more)
+
+### Community 531 - "Community 531"
+Cohesion: 0.23
+Nodes (9): Story 2.13 — core API permission seam + gate (pilot).  The operations authz seam, Run a request through the auth chain in DEFAULT_AUTHENTICATION_CLASSES     order, _resolved_request(), test_gate_allows_holder(), test_gate_denies_actor_without_permission(), test_gate_denies_without_actor(), test_gate_wildcard_admin_allows_any_code(), test_seam_empty_set_for_anonymous() (+1 more)
+
+### Community 532 - "Community 532"
+Cohesion: 0.17
+Nodes (11): 📝 Action Items (все подтверждены Bratan; owner — Bratan), 🔜 E4 (Аудит — каждое решение восстановимо) — зависимости на E3, Retrospective — Epic 3: Статусный движок (один статус на дату), Готовность, 🚨 ЗНАЧИМОЕ ОТКРЫТИЕ — реконсилировать ДО старта E4, 🚧 Критический путь (до «E3 done» и старта E4), Решения сессии, Сводка эпика (+3 more)
+
+### Community 533 - "Community 533"
+Cohesion: 0.18
+Nodes (10): 1. Auth-сервер жив и в контуре, 2. Алгоритм и ключ подписи, 3. Claims и принципал, 4. Учётки операторов, Зачем, Маппинг на конфиг (`VAPS_JWT_*` env), Решение по итогам, Спайк 5.1 — Готовность внешнего Auth (контур) (+2 more)
+
+### Community 535 - "Community 535"
+Cohesion: 0.18
+Nodes (10): 📝 Action Items (все подтверждены Bratan; owner — Bratan), 🔜 E5 «Сдача дня» — зависимости и готовность, Готовность, 🚧 Критический путь (до старта E5), Ретроспектива Epic 4 — «Аудит: каждое решение восстановимо», Решения сессии, Сводка эпика, 🧾 Технический долг → E5+ (+2 more)
+
+### Community 536 - "Community 536"
+Cohesion: 0.24
+Nodes (7): EffectivePermissionsResolver, Attach ``request.effective_permissions`` (in-house RBAC) post-identity.      Reg, BaseAuthentication, Story 2.14: the core gate (``apps/core/api/permissions.require_permission``) dup, _request(), test_core_gate_denies_anonymous(), test_core_gate_matches_permission_service()
+
+### Community 537 - "Community 537"
+Cohesion: 0.20
+Nodes (7): AuditLogFilterSerializer, AuditLogSerializer, Validates query-string filters; a bad UUID/datetime → DRF ValidationError     →, AuditLogViewSet, Meta, Story 4.5 — audit read API serializers (output projection + filter form)., Read-only projection of an audit row — FR-36 fields, snake_case, flat.
+
+### Community 538 - "Community 538"
+Cohesion: 0.22
+Nodes (8): 0. Почему это важно (одно предложение), 1. Обнаружение дрейфа (без NTP), 2. Безопасная коррекция часов, 3. Переравнивание `watermark`, 4. Верификация backward-halt (что catch-up реально защищает данные), 5. DO / DON'T (сводка), 6. Открытые пункты (вход для будущего), РУНБУК — часы сервера контура без NTP (спайк 3.13)
+
+### Community 539 - "Community 539"
+Cohesion: 0.24
+Nodes (7): DashboardLayoutProps, PerformanceProfiler(), PerformanceProfilerProps, Header(), MobileMenu(), Sidebar(), TooltipContent
+
+### Community 540 - "Community 540"
+Cohesion: 0.39
+Nodes (8): _make(), Story 4.2 — append-only `audit_logs`: trigger rejects UPDATE/DELETE/TRUNCATE.  E, test_delete_via_orm_rejected(), test_delete_via_raw_sql_rejected(), test_insert_still_allowed(), test_truncate_rejected(), test_update_via_orm_rejected(), test_update_via_raw_sql_rejected()
+
+### Community 541 - "Community 541"
+Cohesion: 0.18
+Nodes (10): buildCmd, cssEntry, entry, globalName, pkg, projectId, readmeHeader, shape (+2 more)
+
+### Community 542 - "Community 542"
+Cohesion: 0.36
+Nodes (7): _create(), Story 3.2 — provenance fields (source/source_ref/comment/document_basis) + the O, test_non_user_status_edit_raises_422(), test_optional_fields_blank_by_default(), test_provenance_fields_persist(), test_source_defaults_to_user(), test_user_status_is_editable()
+
+### Community 543 - "Community 543"
+Cohesion: 0.29
+Nodes (10): _classify_cell(), _classify_division(), diff_day(), DiffCell, DiffResult, _donor_values(), Pure donor-vs-VAPS diff with a fixed category catalog (no ORM, no DB).  The cata, All DiffCells for one aligned division (first-match rule per cell). (+2 more)
+
+### Community 544 - "Community 544"
+Cohesion: 0.22
+Nodes (8): DivisionBasicSerializer, EmployeeBasicSerializer, Базовый сериализатор сотрудника для вложенного представления, Базовый сериализатор подразделения для вложенного представления, Сериализатор истории изменений статуса, StatusChangeHistorySerializer, Meta, Сериализаторы для API управления статусами сотрудников
+
+### Community 545 - "Community 545"
+Cohesion: 0.25
+Nodes (5): DivisionNotifyRecipient, Meta, Config: who receives lagging-submission notifications for a division (5.7b1)., test_clean_rejects_blank_recipient(), test_clean_strips_recipient()
+
+### Community 546 - "Community 546"
+Cohesion: 0.15
+Nodes (5): Write-side wrappers for RBAC administration., RoleAdminService, TemporaryDutyPermission, test_invalid_duty_role_code_rejected(), test_starts_after_ends_rejected()
+
+### Community 547 - "Community 547"
+Cohesion: 0.08
+Nodes (30): amend_day(), Сервис amendment-flow (Story 5.4a): ``amend_day``.  Механизм пересдачи сданного, Непустой (после strip) обязательный атрибут amendment → иначе 400.      Сервис о, Создать следующую версию (AMENDED) сдачи дня.      Args:         division_id: UU, _require_actor(), _require_text(), JSON-safe лёгкий снимок версии сдачи для audit-строки (story 5.9, Д3).      ``en, _submission_audit_value() (+22 more)
+
+### Community 548 - "Community 548"
+Cohesion: 0.43
+Nodes (7): _authenticated_request(), Build a DRF request and run it through the authentication class.      APIRequest, test_authentication_leaves_actor_id_unset_when_absent(), test_authentication_sets_actor_id_from_header(), test_require_permission_allows_admin(), test_require_permission_denies_without_actor_id(), test_require_permission_denies_without_permission()
+
+### Community 549 - "Community 549"
+Cohesion: 0.32
+Nodes (6): _make(), Story 4.1 — AuditLog model: every field round-trips, db_table, UUID pk, JSONB., created_at carries NO auto_now_add / DB default (ARCH-DATA-022): omitting     it, test_all_fields_round_trip(), test_created_at_required_no_auto_default(), test_jsonb_values_are_nullable()
+
+### Community 550 - "Community 550"
+Cohesion: 0.29
+Nodes (6): FINDINGS — часы без NTP (спайк 3.13), Границы спайка (анти-gold-plating), Каталог режимов рассинхрона, Находка → стори (перенос результата спайка), Премиссы (зафиксированы), Что доказано на dev (VERIFIED-on-dev, 2026-06-26)
+
+### Community 551 - "Community 551"
+Cohesion: 0.38
+Nodes (6): Path, _imports(), _module_files(), Story 5.7c — app-isolation guard for ``notifications`` (closes 5.7a defer F6)., Absolute dotted paths imported by *path* (relative levels and     ``from pkg imp, test_notifications_does_not_import_core_models()
+
+### Community 553 - "Community 553"
+Cohesion: 0.53
+Nodes (5): Path, _imports_audit_models(), Story 4.3 — AST boundary: only apps/audit touches the model.  architecture.md §C, test_audit_models_not_imported_outside_audit_app(), test_ban_detects_each_import_form()
+
+### Community 554 - "Community 554"
+Cohesion: 0.28
+Nodes (5): EmployeeStatusSelector, Live interval facts containing the date, one bulk query.          period__contai, Like overlapping_on, but also carries status_id (pk) and source.          The Da, Point AC contract: the derived status of ONE employee.          MUST NOT be call, Bulk-first status reads — the ONLY data channel for aggregation.
+
+### Community 555 - "Community 555"
+Cohesion: 0.33
+Nodes (5): advance(), get_or_bootstrap(), Watermark gateway (ARCH-DATA-022) — materialization bookkeeping.  The core-owned, Return ``(last_materialized_date, created)`` for the watermark ``key``.      A m, Move the watermark ``key`` forward to ``to_date`` (refreshes updated_at).
+
+### Community 556 - "Community 556"
+Cohesion: 0.33
+Nodes (4): DailySubmission, Event, Meta, Версионируемое иммутабельное заявление-факт о сдаче дня (ARCH-DATA-021).      Од
+
+### Community 557 - "Community 557"
+Cohesion: 0.33
+Nodes (4): NotificationSelector, Story 5.7c — read-side selector for notifications (FR-13 delivery surface).  The, Self-scoped, deterministically-ordered reads over ``notifications``., Return the caller's own notifications, newest first.          ``actor`` is the r
+
+### Community 558 - "Community 558"
+Cohesion: 0.53
+Nodes (6): _rs_cfg(), _rs_token(), _rsa_keys(), test_bad_key_raises_401_not_500(), test_rs_hs_confusion_rejected(), test_valid_rs256_token_sets_actor_id()
+
+### Community 559 - "Community 559"
+Cohesion: 0.40
+Nodes (4): Два главных остаточных риска (ради чего спайк), Содержимое, Спайк 3.13 — часы без NTP (рассинхрон/дрейф времени контура), Статус проверок (2026-06-26, dev)
+
+### Community 560 - "Community 560"
+Cohesion: 0.60
+Nodes (3): AuditLogSerializer, Meta, Serializers for the audit app.  These serializers convert ``AuditLog`` instances
+
+### Community 561 - "Community 561"
+Cohesion: 0.25
+Nodes (3): AsyncJsonWebsocketConsumer, NotificationConsumer, Отправка уведомления клиенту
+
+### Community 562 - "Community 562"
+Cohesion: 0.10
+Nodes (13): Notification, Meta, Singleton config for submission control (FR-13 / FR-18 / FR-39).      Provides t, SubmissionControlSettings, A persisted notification (Story 5.7a).      The backend record behind FR-13 «уве, Meta, Integer-PK base with timestamps. Operations surrogate-PK tables use this.      D, TimeStampedModel (+5 more)
+
+### Community 563 - "Community 563"
+Cohesion: 0.25
+Nodes (7): design-sync NOTES — VAPS Design System (донор PersonalRecordFront), Known render warns, Re-sync risks (что может молча протухнуть), Квирки донора (воспроизводим честно, не «чиним»), Превью, Ревью пользователя, Сборка
+
+### Community 594 - "Community 594"
+Cohesion: 0.25
+Nodes (5): departmentUnit, leadershipUnit, renderEmployee(), sizeClasses, statusColors
+
+### Community 595 - "Community 595"
+Cohesion: 0.33
+Nodes (5): VAPS Design System — конвенции, Где правда, Идиоматичный пример, Обёртка и настройка, Стилевой идиом: Tailwind-утилиты + семантические токены
+
+### Community 596 - "Community 596"
+Cohesion: 0.50
+Nodes (3): Прикрепление документа к статусу          Args:             status_id: ID статус, StatusDocument, StatusDocument
+
+### Community 597 - "Community 597"
+Cohesion: 0.40
+Nodes (3): Meta, Legal override of the next-day lock (Story 5.6b).      One record per ``business, TomorrowBlockOverride
+
+### Community 598 - "Community 598"
+Cohesion: 0.33
+Nodes (4): PositionAdmin, RankAdmin, Rank, Справочник: Звание согласно ТЗ
+
+### Community 599 - "Community 599"
+Cohesion: 0.20
+Nodes (5): _Gate, _holders(), _MethodGate, Загейчен правом ``code`` (одно право на все методы роута): ALLOW     держателям, Per-method страж: разные коды на разные HTTP-методы одного роута     (смешанная
+
+### Community 601 - "Community 601"
+Cohesion: 0.33
+Nodes (4): PermissionService, Stateless authorization resolution (spec §1254). All checks go through here., ``(scope_division_id, role_code)`` pairs from BOTH grant sources —         activ, The INVERSE question to ``has_permission`` for list selectors         (architect
+
+### Community 602 - "Community 602"
+Cohesion: 0.29
+Nodes (5): StaffingAssignmentSerializer, EmployeeSerializer, Meta, PositionSerializer, RankSerializer
+
+### Community 604 - "Community 604"
+Cohesion: 0.50
+Nodes (3): Text diff report: grouped by category + an explicit UNCLASSIFIED block.      The, render_diff(), TestRenderDiff
+
+### Community 605 - "Community 605"
+Cohesion: 0.33
+Nodes (3): Проверка прав на уровне view, Проверка прав на уровне объекта, Получить требуемое право                  Порядок поиска:         1. required_pe
+
+### Community 608 - "Community 608"
+Cohesion: 0.40
+Nodes (5): 1.1 Назначение модуля, 1.2 Типы организационных структур, 1.3 Функциональные возможности, 1.4 Бизнес-правила, 1. Управление организационной структурой
+
+### Community 609 - "Community 609"
+Cohesion: 0.40
+Nodes (5): 2.1 Назначение модуля, 2.2 Карточка сотрудника, 2.3 Функциональные возможности, 2.4 Бизнес-правила, 2. Управление сотрудниками
+
+### Community 614 - "Community 614"
+Cohesion: 0.50
+Nodes (3): AbsenceStatisticsSerializer, Сериализатор для статистики по отсутствиям и количеству штата, Получение статистики по типам отсутствий на сегодняшний день          Автоматиче
+
+### Community 615 - "Community 615"
+Cohesion: 0.50
+Nodes (3): DivisionHeadcountSerializer, Сериализатор для расхода подразделения, Получение расхода подразделения на определенную дату          Query params:
+
+### Community 621 - "Community 621"
+Cohesion: 0.67
+Nodes (3): cardMode, viewport, Calendar
+
+### Community 622 - "Community 622"
+Cohesion: 0.67
+Nodes (3): cardMode, viewport, Dialog
+
+### Community 623 - "Community 623"
+Cohesion: 0.67
+Nodes (3): Popover, cardMode, viewport
+
+### Community 624 - "Community 624"
+Cohesion: 0.67
+Nodes (3): Toast, cardMode, viewport
+
+### Community 625 - "Community 625"
+Cohesion: 0.67
+Nodes (3): Tooltip, cardMode, viewport
+
 ### Community 903 - "Community 903"
 Cohesion: 0.09
 Nodes (22): Домен 10 — Время и календарь, Домен 11 — Аудит и комплаенс, Домен 12 — Миграция и совместное существование, Домен 13 — Мобильный клиент / офлайн, Домен 13b — Закрытая локальная сеть + каскадная замена, Домен 14 — ЧП-сценарии, Домен 15 — Уведомления, Домен 16 — Обучение (+14 more)
-
-### Community 1386 - "Community 1386"
-Cohesion: 0.07
-Nodes (16): Meta, Singleton config for submission control (FR-13 / FR-18 / FR-39).      Provides t, SubmissionControlSettings, EmployeeStatus, Meta, Meta, Integer-PK base with timestamps. Operations surrogate-PK tables use this.      D, TimeStampedModel (+8 more)
 
 ### Community 1611 - "Community 1611"
 Cohesion: 0.12
@@ -1379,11 +1934,11 @@ Cohesion: 0.33
 Nodes (6): 11.1 Назначение, 11.2 Функции, 11. Портал сотрудников, Заключение, Оглавление, Полное описание функционала системы "Расход Организации"
 
 ### Community 1845 - "Community 1845"
-Cohesion: 0.11
-Nodes (23): CoreDivisionTreeSelector, CoreEmployeeLockSelector, CoreEmployeeSelector, CoreStaffingSelector, HistoricalEmployeeSelector, id -> name for report rows, one query; None = the whole DB., Active employees of a division in the FR-5 sort canon (story 2.6).          Orde, division_id -> [employee_id] for WORKING & active employees.          One query (+15 more)
+Cohesion: 0.08
+Nodes (29): CoreDivisionTreeSelector, CoreEmployeeLockSelector, CoreEmployeeSelector, CoreStaffingSelector, HistoricalEmployeeSelector, id -> name for report rows, one query; None = the whole DB., True if a division with this id exists — the сдача-сервис 5.3b         existence, Active employees of a division in the FR-5 sort canon (story 2.6).          Orde (+21 more)
 
 ### Community 2000 - "Community 2000"
-Cohesion: 0.28
+Cohesion: 0.22
 Nodes (4): _emp(), test_active_in_division_applies_sort_canon(), test_active_in_division_unmatched_position_code_does_not_crash(), test_historical_division_at_uses_history()
 
 ### Community 2196 - "Community 2196"
@@ -1411,8 +1966,8 @@ Cohesion: 0.18
 Nodes (11): 9.10 Бизнес-правила, 9.1 Назначение модуля, 9.2 Типы уведомлений, 9.3 События, генерирующие уведомления, 9.4 Получатели уведомлений, 9.5 Центр уведомлений, 9.6 Настройки уведомлений, 9.7 Шаблоны уведомлений (+3 more)
 
 ### Community 2627 - "Community 2627"
-Cohesion: 0.11
-Nodes (14): grant(), Authorize an APIClient on the in-house RBAC gate (story 2.13/2.14).      Seeds o, test_leaf_descendants_endpoint(), test_list_divisions(), test_archive_sets_status_and_inactive(), test_detail_with_permission_reveals_iin(), test_list_filter_by_division(), test_list_masks_iin_by_default() (+6 more)
+Cohesion: 0.10
+Nodes (15): grant(), Authorize an APIClient on the in-house RBAC gate (story 2.13/2.14).      Seeds o, test_leaf_descendants_endpoint(), test_list_divisions(), test_archive_sets_status_and_inactive(), test_detail_with_permission_reveals_iin(), test_list_filter_by_division(), test_list_masks_iin_by_default() (+7 more)
 
 ### Community 2736 - "Community 2736"
 Cohesion: 0.20
@@ -1427,8 +1982,8 @@ Cohesion: 0.22
 Nodes (9): Контекст оргструктуры, Модель ролей VAPS ↔ канон VisitX (из /docs/VisitX/VisitX.md), [Ось A — РЕШЕНО]: Двухуровневый брокеридж + дежурные ОРГД/ОМД, [Ось B — РЕШЕНО]: Авто-каскад замены по штатной должности с ручным override, [Ось D — РЕШЕНО]: Single on-prem сервер в закрытом контуре; планшеты — отложенная офлайн-фаза, [Ось E — РЕШЕНО]: Единый портал, ролевые экраны; дежурные = назначение на личную учётку, [Ось F — РЕШЕНО]: In-app уведомления (колокольчик), событийные, эскалация вверх по вертикали, [Ось — Жизненный цикл статусов — РЕШЕНО]: Статус-как-интервал, авто-активация по дате (+1 more)
 
 ### Community 2865 - "Community 2865"
-Cohesion: 0.14
-Nodes (13): ViewSet mixin: gate each action on an in-house RBAC permission code.      Subcla, Gate a core API action on an in-house RBAC permission code.      Mirror of ``app, RequirePermissionMixin, _permissions_from_request(), StaffingSlotViewSet, VacancyViewSet, require_permission(), DefaultPagination (+5 more)
+Cohesion: 0.15
+Nodes (10): ViewSet mixin: gate each action on an in-house RBAC permission code.      Subcla, Gate a core API action on an in-house RBAC permission code.      Mirror of ``app, RequirePermissionMixin, _permissions_from_request(), StaffingSlotViewSet, require_permission(), DivisionViewSet, EmployeeViewSet (+2 more)
 
 ### Community 2878 - "Community 2878"
 Cohesion: 0.22
@@ -1467,8 +2022,8 @@ Cohesion: 0.29
 Nodes (6): API (`/api/operations/`), Authorization, Deferred, Isolation, operations context — RBAC foundation, Setup
 
 ### Community 3220 - "Community 3220"
-Cohesion: 0.47
-Nodes (4): Path, _imports(), _module_files(), test_operations_does_not_import_core_models()
+Cohesion: 0.48
+Nodes (5): Path, _imports(), _module_files(), test_operations_does_not_import_core_models(), test_statuses_does_not_import_submissions()
 
 ### Community 3285 - "Community 3285"
 Cohesion: 0.33
@@ -1502,29 +2057,33 @@ Nodes (3): analyze_file(), get_app_name(), main()
 Cohesion: 0.25
 Nodes (3): EmployeeStaffingAssignment, Vacancy, test_starts_after_ends_rejected()
 
+### Community 3813 - "Community 3813"
+Cohesion: 0.14
+Nodes (13): build_auth_classes(), jwt_config_from_env(), Build & validate the JWT verification config from an env mapping (story 5.1,, Compose the DRF auth chain (story 5.1, review D1). JWTAuthentication is always, test_build_auth_classes_excludes_xuserid_when_jwt_configured(), test_build_auth_classes_includes_xuserid_in_dev(), test_jwt_config_bad_leeway_rejected(), test_jwt_config_dev_no_key_is_none() (+5 more)
+
 ## Ambiguous Edges - Review These
 - `AuditLog` → `AuditMiddleware`  [AMBIGUOUS]
   Backend/PersonnelStatus/Personnel-Records/organization_management/apps/audit/middleware/audit_middleware.py · relation: references
 
 ## Knowledge Gaps
-- **1795 isolated node(s):** `extends`, `parser`, `plugins`, `@typescript-eslint/no-unused-vars`, `@typescript-eslint/no-explicit-any` (+1790 more)
+- **2735 isolated node(s):** `projectId`, `shape`, `pkg`, `globalName`, `entry` (+2730 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **100 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **114 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `AuditLog` and `AuditMiddleware`?**
   _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
-- **Why does `datetime` connect `Community 288` to `Community 388`, `Community 393`, `Community 140`, `Community 143`, `Community 2196`, `Community 151`, `Community 409`, `Community 31`, `Community 427`, `Community 303`, `Community 304`, `Community 2865`, `Community 305`, `Community 1845`, `Community 53`, `Community 439`, `Community 62`, `Community 3135`, `Community 2627`, `Community 72`, `Community 330`, `Community 459`, `Community 333`, `Community 78`, `Community 2000`, `Community 337`, `Community 466`, `Community 3155`, `Community 468`, `Community 470`, `Community 91`, `Community 478`, `Community 101`, `Community 104`, `Community 1386`, `Community 3320`, `Community 3323`, `Community 3581`?**
-  _High betweenness centrality (0.084) - this node is a cross-community bridge._
-- **Why does `EmployeeStatus` connect `Community 391` to `Community 388`, `Community 39`, `Community 393`, `Community 331`, `Status Admin Panel`, `Employee Status ViewSet`, `Community 22`, `Community 24`, `Community 31`?**
-  _High betweenness centrality (0.044) - this node is a cross-community bridge._
-- **Why does `StaffUnitViewSet` connect `Community 22` to `Community 68`, `Community 294`, `Community 391`, `Dictionaries API (Ranks/Positions)`, `Employee Serializer & Staffing Permissions`, `Community 24`, `Community 25`?**
-  _High betweenness centrality (0.041) - this node is a cross-community bridge._
-- **Are the 13 inferred relationships involving `datetime` (e.g. with `.test_datetime_arguments_raise_typeerror()` and `.test_override_with_aware_datetime()`) actually correct?**
-  _`datetime` has 13 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 10 inferred relationships involving `EmployeeStatusViewSet` (e.g. with `AbsenceStatisticsSerializer` and `BulkStatusPlanSerializer`) actually correct?**
-  _`EmployeeStatusViewSet` has 10 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `extends`, `parser`, `plugins` to the rest of the system?**
-  _2197 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `datetime` connect `Community 288` to `Community 388`, `Community 516`, `Community 393`, `Community 139`, `Community 523`, `Community 525`, `Community 140`, `Community 143`, `Community 527`, `Community 528`, `Community 530`, `Community 273`, `Community 2196`, `Community 147`, `Community 22`, `Community 409`, `Community 410`, `Community 540`, `Community 542`, `Community 543`, `Community 31`, `Community 546`, `Community 547`, `Community 549`, `Community 294`, `Community 39`, `Community 552`, `Community 297`, `Community 298`, `Community 299`, `Community 427`, `Community 300`, `Community 302`, `Community 303`, `Community 304`, `Community 2865`, `Community 305`, `Community 562`, `Community 1845`, `Community 53`, `Community 439`, `Community 441`, `Community 62`, `Community 3135`, `Community 2627`, `Community 69`, `Community 72`, `Community 330`, `Community 459`, `Community 333`, `Community 463`, `Community 2000`, `Community 337`, `Community 3323`, `Community 466`, `Community 468`, `Community 470`, `Community 600`, `Community 91`, `Community 478`, `Community 479`, `Community 101`, `Community 486`, `Community 487`, `Community 104`, `Community 617`, `Community 106`, `Community 488`, `Community 499`, `Community 505`, `Community 507`, `Community 3581`?**
+  _High betweenness centrality (0.113) - this node is a cross-community bridge._
+- **Why does `EmployeeStatus` connect `Community 391` to `Community 388`, `Community 105`, `Community 393`, `Community 524`, `Employee Serializer & Staffing Permissions`, `Status Admin Panel`, `Employee Status ViewSet`, `Community 24`, `Community 31`?**
+  _High betweenness centrality (0.040) - this node is a cross-community bridge._
+- **Why does `StaffUnitViewSet` connect `Employee Serializer & Staffing Permissions` to `Community 68`, `Community 391`, `Dictionaries API (Ranks/Positions)`, `Role Model & RBAC Engine`, `Community 24`, `Community 25`?**
+  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+- **Are the 36 inferred relationships involving `datetime` (e.g. with `_submission()` and `_direct_v1()`) actually correct?**
+  _`datetime` has 36 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `projectId`, `shape`, `pkg` to the rest of the system?**
+  _3390 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Vendored JS (minified bundle)` be split into smaller, more focused modules?**
+  _Cohesion score 0.05242566510172144 - nodes in this community are weakly interconnected._

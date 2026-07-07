@@ -24,6 +24,7 @@ factory_boy). Здесь — санкционированное исключен
 РЕАЛЬНЫЙ посев ``seed_operations``, а не выдуманную фабриками копию (как
 весь существующий RBAC-suite).
 """
+
 import pytest
 from django.core.management import call_command
 from django.urls import NoReverseMatch, get_resolver, reverse
@@ -129,6 +130,34 @@ MATRIX = {
     "ops-temp-duty-list": _Gate("admin.roles"),
     "ops-temp-duty-expire": _Gate("admin.roles"),
     "ops-my-permissions-list": _AnyAuthenticated(),
+    # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
+    # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
+    # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется
+    # (payloadless POST держателя = 400 бизнес-слоя = ALLOW по канону).
+    # GET = mark_update ПО РЕШЕНИЮ (epics 2026-07-02): daily_report.view не
+    # заводим; ORGD/OMD с generate → DENY (руководству чтение — дерево 10.4);
+    # видимость поддерева — actor-scoped селектор (канон L451), не матрица.
+    "ops-daily-submission-list": _MethodGate(
+        {"get": "daily_report.mark_update", "post": "daily_report.mark_update"}
+    ),
+    # detail (story 5.8c, GET /{pk}/): формы у retrieve нет — pk=0 у держателя
+    # резолвится селектором by_id в None → 404 = ALLOW по канону матрицы.
+    "ops-daily-submission-detail": _MethodGate({"get": "daily_report.mark_update"}),
+    # amend сдачи (story 5.8b, POST /{id}/amend/). Гейт mixin {"amend":
+    # daily_report.correct}; scope «чужое подразделение → 403» — в сервис-гарде
+    # ensure_division_scope (матрицей не проверяется: payloadless POST держателя
+    # на pk=0 = 400 формы = ALLOW по канону).
+    "ops-daily-submission-amend": _MethodGate({"post": "daily_report.correct"}),
+    # audit — read-only журнал, загейчен RequirePermissionMixin("audit.view")
+    # (story 4.5). GET-only (list+retrieve); ORGD/ADMIN → ALLOW, прочие/аноним
+    # → DENY (из seed).
+    "audit-log-list": _Gate("audit.view"),
+    "audit-log-detail": _Gate("audit.view"),
+    # notifications — личный read-only feed (story 5.7c). Гейт = аутентификация
+    # (self-scope recipient==actor_id в NotificationSelector — контроль доступа,
+    # НЕ RBAC-код); зеркало ops-my-permissions-list. Аноним → 403, любой actor →
+    # ALLOW (его список, возможно пустой). seed_operations НЕ трогается.
+    "notification-list": _AnyAuthenticated(),
     # core — загейчено RequirePermissionMixin (story 2.13 механизм A + 2.14
     # раскатка). GET=view, write(create/update/destroy/archive/...)=edit/manage.
     "vacancy-list": _Gate("personnel.view"),  # GET-only (2.13 пилот)
@@ -211,9 +240,7 @@ def _served_routes():
             continue
         allowed = {m.lower() for m in getattr(cls, "http_method_names", [])}
         if actions:
-            methods = {
-                m for m in actions if m in allowed and m not in _IGNORED_METHODS
-            }
+            methods = {m for m in actions if m in allowed and m not in _IGNORED_METHODS}
         else:
             methods = {
                 m
@@ -240,9 +267,7 @@ def test_matrix_covers_every_registered_route():
     assert not missing, (
         f"роуты без строки в MATRIX (AR-9 — добавь строку): {sorted(missing)}"
     )
-    assert not stale, (
-        f"протухшие строки MATRIX (роут удалён — убери): {sorted(stale)}"
-    )
+    assert not stale, f"протухшие строки MATRIX (роут удалён — убери): {sorted(stale)}"
 
 
 def test_matrix_declares_all_actors_explicitly():
@@ -312,6 +337,20 @@ def _url_for(name):
         return reverse(name, kwargs={"pk": "0"})
 
 
+def test_unmapped_method_on_action_route_is_405():
+    # review 5.8c (mixin-патч): метод, который ViewSet обслуживает глобально,
+    # но ДАННЫЙ роут не мапит (GET на post-only @action), резолвится в
+    # action=None → mixin сам поднимает MethodNotAllowed. 405 и держателю, и
+    # анониму — это метод-поверхность, не право (урок 5.7c), и исход не
+    # зависит от наличия у инстанса атрибута с именем глагола.
+    url = _url_for("employee-archive")
+    anon = APIClient()
+    assert anon.get(url).status_code == 405
+    authed = APIClient()
+    authed.credentials(HTTP_X_USER_ID="whoever")
+    assert authed.get(url).status_code == 405
+
+
 def _behavioral_params():
     params = []
     for name in sorted(SERVED):
@@ -373,6 +412,5 @@ def test_rbac_matrix_behaviour(matrix_actors, name, method, actor, verdict):
         # request.data[...] → KeyError) = «пропущено»: снятие стража ловят
         # DENY-ячейки (роль без права → ≠403 → красный), не эта ветка.
         assert response.status_code not in (401, 403), (
-            f"{name}/{method}/{actor}: ожидался ALLOW, "
-            f"получен {response.status_code}"
+            f"{name}/{method}/{actor}: ожидался ALLOW, получен {response.status_code}"
         )

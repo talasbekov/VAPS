@@ -1,5 +1,18 @@
 {
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env 'PROJECT_ROOT=/home/erda/\u041c\u0443\u0437\u044b\u043a\u0430/VAPS' '/home/erda/\u041c\u0443\u0437\u044b\u043a\u0430/VAPS/.claude/skills/bmad-story-automator/scripts/story-automator' stop-hook",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
   }
 }

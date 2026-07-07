@@ -11,6 +11,7 @@ from apps.core.models import (
     Employee,
     EmployeeDivisionHistory,
     Position,
+    Rank,
 )
 from apps.core.sorting import (
     UNKNOWN_LEVEL,
@@ -75,15 +76,32 @@ class CoreDivisionTreeSelector:
     """
 
     @staticmethod
-    def _children_map():
+    def children_map() -> dict:
+        """{parent_id: [child_id, ...]} for the whole tree, ONE query.
+
+        The single sanctioned channel for division-tree STRUCTURE
+        (ARCH-DATA-024): a generic adjacency map with NO светофор/расход
+        semantics — the consumer (e.g. the 5.5b cascade in
+        apps.operations.submissions) folds its own values up over it.
+        ``parent_id`` is ``None`` for top-level divisions. FULL-scans Division,
+        so call it ONCE and reuse — never per node (NFR-4).
+        """
         children: dict = {}
         for did, parent_id in Division.objects.values_list("id", "parent_id"):
             children.setdefault(parent_id, []).append(did)
         return children
 
+    @staticmethod
+    def _children_map():
+        """Backward-compatible alias for the now-public ``children_map``."""
+        return CoreDivisionTreeSelector.children_map()
+
     @classmethod
-    def subtree_ids(cls, division_id) -> set:
-        children = cls._children_map()
+    def subtree_ids(cls, division_id, *, children_map=None) -> set:
+        # ``children_map`` lets a caller resolving SEVERAL subtrees reuse one
+        # adjacency scan (the map's own «call it ONCE» contract) instead of
+        # re-scanning Division per call (review 5.8c).
+        children = cls.children_map() if children_map is None else children_map
         result, stack = set(), [division_id]
         while stack:
             current = stack.pop()
@@ -95,7 +113,7 @@ class CoreDivisionTreeSelector:
 
     @classmethod
     def leaf_descendants(cls, division_id) -> list:
-        children = cls._children_map()
+        children = cls.children_map()
         ids = cls.subtree_ids(division_id)
         leaf_ids = [d for d in ids if not children.get(d)]
         return list(Division.objects.filter(id__in=leaf_ids))
@@ -107,6 +125,14 @@ class CoreDivisionTreeSelector:
         if division_ids is not None:
             qs = qs.filter(id__in=division_ids)
         return dict(qs.values_list("id", "name"))
+
+    @staticmethod
+    def exists(division_id) -> bool:
+        """True if a division with this id exists — the сдача-сервис 5.3b
+        existence gate (404 BEFORE building a snapshot, so a valid-but-phantom
+        UUID can't silently produce an empty сдача). Cross-context callers read
+        this instead of importing core.models (ARCH-003/004 isolation)."""
+        return Division.objects.filter(id=division_id).exists()
 
 
 logger = logging.getLogger("apps.core")
@@ -148,6 +174,33 @@ class CoreEmployeeSelector:
             )
         ]
         return [entry.payload for entry in sort_roster(entries)]
+
+    @staticmethod
+    def denorm_for(employee_ids) -> dict:
+        """employee_id -> {"full_name", "rank"} for the сдача-снапшот (5.3a).
+
+        Denormalised print values «как было»: ``full_name`` as stored, ``rank``
+        resolved to the Rank dictionary name (fall back to the raw ``rank_code``
+        when the dictionary has no row). Two bulk queries (employees + ranks).
+        Cross-context callers (apps.operations) read this instead of importing
+        core models directly — ARCH-003 isolation (operations ↛ core.models).
+        """
+        employees = list(
+            Employee.objects.filter(id__in=employee_ids).values(
+                "id", "full_name", "rank_code"
+            )
+        )
+        rank_codes = {e["rank_code"] for e in employees if e["rank_code"]}
+        rank_names = dict(
+            Rank.objects.filter(code__in=rank_codes).values_list("code", "name")
+        )
+        return {
+            e["id"]: {
+                "full_name": e["full_name"],
+                "rank": rank_names.get(e["rank_code"], e["rank_code"]),
+            }
+            for e in employees
+        }
 
     @staticmethod
     def working_by_division(division_ids=None) -> dict:
@@ -244,10 +297,11 @@ class HistoricalEmployeeSelector:
         logger.warning(
             "No division history for employee %s at %s; "
             "falling back to current division.",
-            employee_id, at,
+            employee_id,
+            at,
         )
-        return (
-            Employee.objects.values_list("division_id", flat=True).get(id=employee_id)
+        return Employee.objects.values_list("division_id", flat=True).get(
+            id=employee_id
         )
 
     @classmethod
@@ -295,7 +349,9 @@ class HistoricalEmployeeSelector:
             logger.debug(
                 "roster_on(%s): %d/%d employees via current-division fallback "
                 "(no covering history; BR-CORE-HISTORY-003).",
-                business_date, fallback_count, len(working),
+                business_date,
+                fallback_count,
+                len(working),
             )
         return roster
 

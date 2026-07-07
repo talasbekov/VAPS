@@ -1,0 +1,35 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# env-файлы (внутренние хосты контура, VITE_PROXY_TARGET) — не коммитить
+.env
+.env.*
+
+# временные фикстуры lint-canon.test.mjs (живут только внутри прогона; страховка от kill -9)
+__canon_*
+
+# артефакты Playwright (e2e-смок 8.8)
+test-results/
+playwright-report/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

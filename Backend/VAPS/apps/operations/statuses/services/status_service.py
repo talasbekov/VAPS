@@ -22,6 +22,7 @@ row, so hire/dismissal bounds are read off it without a second query.
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 
+from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreEmployeeLockSelector
@@ -37,11 +38,42 @@ from apps.operations.statuses.models import (
 PENDING_CLARIFICATION_CODE = "PENDING_CLARIFICATION"
 
 
+def _status_snapshot(status):
+    """JSON-safe before/after snapshot of an EmployeeStatus row for the audit log
+    (story 4.4). ``entity_id`` of the audit row is the employee UUID; the row's
+    own (integer) PK rides here as ``status_id`` so the exact entity is
+    recoverable. ``date``/``datetime`` → str for a stable, readable diff."""
+    return {
+        "status_id": status.pk,
+        "employee_id": str(status.employee_id),
+        "status_type_code": status.status_type_code,
+        "date_start": str(status.date_start),
+        "date_end": str(status.date_end),
+        "source": status.source,
+        "cancelled_at": (
+            status.cancelled_at.isoformat() if status.cancelled_at else None
+        ),
+        "cancelled_by": status.cancelled_by,
+        "cancelled_reason": status.cancelled_reason,
+        "comment": status.comment,
+        "document_basis": status.document_basis,
+    }
+
+
+def _override_snapshot(override):
+    """JSON-safe snapshot of an Override row for the OVERRIDE_APPLIED event."""
+    return {
+        "override_id": override.pk,
+        "status_id": override.status_id,
+        "status_type_code": override.status_type_code,
+        "reason": override.reason,
+        "conflicts": override.conflicts,
+    }
+
+
 def _require_actor(actor):
     if not actor or not actor.strip():
-        raise DomainError(
-            "VALIDATION_ERROR", 400, message="actor обязателен."
-        )
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
 
 
 def assert_employee_status_editable(employee_id):
@@ -121,10 +153,7 @@ def _validate_interval(*, date_start, date_end, employee, status_type):
             },
             message="Начало статуса раньше даты приёма сотрудника.",
         )
-    if (
-        employee.dismissal_date is not None
-        and date_end > employee.dismissal_date
-    ):
+    if employee.dismissal_date is not None and date_end > employee.dismissal_date:
         raise DomainError(
             "DATE_OUTSIDE_EMPLOYMENT",
             422,
@@ -185,9 +214,7 @@ def _assert_no_conflict(
     )
     if exclude_pk is not None:
         overlaps = overlaps.exclude(pk=exclude_pk)
-    rows = list(
-        overlaps.values("status_type_code", "date_start", "date_end")
-    )
+    rows = list(overlaps.values("status_type_code", "date_start", "date_end"))
     report = detect_conflicts(
         new_type=status_type_code,
         existing_rows=rows,
@@ -282,10 +309,11 @@ def create_status(
     # Override record (3.5) is written in the SAME savepoint so status + override
     # commit or roll back together (AC-1 atomicity); it is created ONLY when a
     # soft conflict was actually bypassed (AC-4 — no conflict, no record).
+    override_obj = None
     with transaction.atomic():
         status.save()
         if override and bypassed_conflicts:
-            Override.objects.create(
+            override_obj = Override.objects.create(
                 status=status,
                 employee_id=employee_id,
                 status_type_code=status_type_code,
@@ -293,6 +321,26 @@ def create_status(
                 conflicts=_conflict_details(bypassed_conflicts),
                 created_by=actor,
             )
+    # Audit (story 4.4) AFTER the savepoint commits, in the caller's ambient txn:
+    # a hard-overlap IntegrityError above propagates out before reaching here, so
+    # a rolled-back mutation leaves no audit row (we audit successful mutations).
+    record(
+        actor=actor,
+        action="STATUS_CREATED",
+        entity_type="employee_status",
+        entity_id=employee_id,
+        old_value=None,
+        new_value=_status_snapshot(status),
+    )
+    if override_obj is not None:
+        record(
+            actor=actor,
+            action="OVERRIDE_APPLIED",
+            entity_type="override",
+            entity_id=employee_id,
+            old_value=None,
+            new_value=_override_snapshot(override_obj),
+        )
     return status
 
 
@@ -341,6 +389,7 @@ def update_status(
             exclude_pk=status.pk,
         )
 
+    before = _status_snapshot(status)  # before/after for audit (story 4.4)
     changed = []
     if date_start is not None:
         status.date_start = date_start
@@ -358,6 +407,20 @@ def update_status(
         changed.append("updated_at")
         with transaction.atomic():
             status.save(update_fields=changed)
+        # Emit when at least one field was *supplied* (changed is non-empty).
+        # NB: this gates the all-None no-op, but a field supplied equal to its
+        # current value still counts as "changed" here → still emits. Value-diff
+        # semantics (suppress supplied-but-unchanged) are deferred to E10/4.5,
+        # where the REST PUT serializer normalises a full-object echo. See the
+        # story 4.4 Review Findings.
+        record(
+            actor=actor,
+            action="STATUS_UPDATED",
+            entity_type="employee_status",
+            entity_id=status.employee_id,
+            old_value=before,
+            new_value=_status_snapshot(status),
+        )
     return status
 
 
@@ -392,7 +455,7 @@ def _lock_for_edit(status):
 
 
 @transaction.atomic
-def cancel_status(status, *, actor, reason):
+def cancel_status(status, *, actor, reason, _audit=True):
     """Cancel a not-yet-started (PLANNED) status — append-once cancel facts.
 
     Only PLANNED is cancellable: an ACTIVE/COMPLETED status is a fact that
@@ -400,6 +463,10 @@ def cancel_status(status, *, actor, reason):
     ``cancelled_at/by/reason`` are written once and never overwritten or cleared
     at the service level (DB-level append-only is Epic 4). A non-PLANNED state —
     including an already-CANCELLED row — is 422 INVALID_LIFECYCLE_TRANSITION.
+
+    ``_audit=False`` suppresses the per-status STATUS_CANCELLED event when an
+    orchestrator (confirm_return) closes a leg and emits its own composite event
+    instead (story 4.4, реш. №4 — one event per operation, no double-emit).
     """
     _require_actor(actor)
     if not (reason or "").strip():
@@ -418,6 +485,7 @@ def cancel_status(status, *, actor, reason):
             detail={"state": str(state)},
             message="Отменить можно только не начавшийся (PLANNED) статус.",
         )
+    before = _status_snapshot(status)  # cancelled_at still None
     status.cancelled_at = Clock.now()
     status.cancelled_by = actor
     status.cancelled_reason = reason
@@ -430,19 +498,31 @@ def cancel_status(status, *, actor, reason):
                 "updated_at",
             ]
         )
+    if _audit:
+        record(
+            actor=actor,
+            action="STATUS_CANCELLED",
+            entity_type="employee_status",
+            entity_id=status.employee_id,
+            old_value=before,
+            new_value=_status_snapshot(status),
+        )
     return status
 
 
 @transaction.atomic
-def complete_status_early(status, *, actor, actual_end):
+def complete_status_early(status, *, actor, actual_end, _audit=True):
     """Close an ACTIVE status with a factual end date ``≤ today``.
 
     Only ACTIVE rows complete early (a PLANNED status never started → cancel it;
     a COMPLETED one is already closed). ``actual_end`` must not be in the future
     ("факт" не в будущем) and must keep the interval non-empty
     (``actual_end > date_start``). The row becomes COMPLETED as of today
-    (half-open ``[start, actual_end)``). The before/after trail of the date
-    change is captured by the audit log (Epic 4 / 4.4), not here.
+    (half-open ``[start, actual_end)``). The before/after date change is captured
+    by the STATUS_COMPLETED audit event (story 4.4).
+
+    ``_audit=False`` suppresses the event when confirm_return closes a leg and
+    emits its own composite SECONDMENT_RETURNED instead (реш. №4 — no double-emit).
     """
     _require_actor(actor)
     _lock_for_edit(status)
@@ -471,16 +551,24 @@ def complete_status_early(status, *, actor, actual_end):
             },
             message="Дата завершения должна быть позже даты начала статуса.",
         )
+    before = _status_snapshot(status)
     status.date_end = actual_end
     with transaction.atomic():
         status.save(update_fields=["date_end", "updated_at"])
+    if _audit:
+        record(
+            actor=actor,
+            action="STATUS_COMPLETED",
+            entity_type="employee_status",
+            entity_id=status.employee_id,
+            old_value=before,
+            new_value=_status_snapshot(status),
+        )
     return status
 
 
 @transaction.atomic
-def extend_status(
-    status, *, actor, new_date_end, override=False, override_reason=""
-):
+def extend_status(status, *, actor, new_date_end, override=False, override_reason=""):
     """Extend a non-CANCELLED status to a strictly later ``date_end``.
 
     Shortening is a different operation (досрочное завершение,
@@ -532,11 +620,13 @@ def extend_status(
         exclude_pk=status.pk,
         override=override,
     )
+    before = _status_snapshot(status)
     status.date_end = new_date_end
+    override_obj = None
     with transaction.atomic():
         status.save(update_fields=["date_end", "updated_at"])
         if override and bypassed_conflicts:
-            Override.objects.create(
+            override_obj = Override.objects.create(
                 status=status,
                 employee_id=status.employee_id,
                 status_type_code=status.status_type_code,
@@ -544,6 +634,23 @@ def extend_status(
                 conflicts=_conflict_details(bypassed_conflicts),
                 created_by=actor,
             )
+    record(
+        actor=actor,
+        action="STATUS_EXTENDED",
+        entity_type="employee_status",
+        entity_id=status.employee_id,
+        old_value=before,
+        new_value=_status_snapshot(status),
+    )
+    if override_obj is not None:
+        record(
+            actor=actor,
+            action="OVERRIDE_APPLIED",
+            entity_type="override",
+            entity_id=status.employee_id,
+            old_value=None,
+            new_value=_override_snapshot(override_obj),
+        )
     return status
 
 
@@ -627,8 +734,7 @@ def resolve_pending_clarification(
             422,
             detail={"resolved_type_code": resolved_type_code},
             message=(
-                "Разрешение должно давать реальный статус, "
-                "а не снова «уточняется»."
+                "Разрешение должно давать реальный статус, а не снова «уточняется»."
             ),
         )
 
@@ -656,6 +762,8 @@ def resolve_pending_clarification(
         date_end=date_end,
         source=EmployeeStatus.Source.USER,
     )
+    pending_before = _status_snapshot(pending)  # «уточняется» before close
+    override_obj = None
     with transaction.atomic():
         # Close «уточняется»: it was a placeholder, not a fact that happened, so
         # append-once cancel facts (carrying the sanction) supersede it. The
@@ -673,7 +781,7 @@ def resolve_pending_clarification(
         )
         resolved.save()
         if override and bypassed_conflicts:
-            Override.objects.create(
+            override_obj = Override.objects.create(
                 status=resolved,
                 employee_id=pending.employee_id,
                 status_type_code=resolved_type_code,
@@ -681,13 +789,38 @@ def resolve_pending_clarification(
                 conflicts=_conflict_details(bypassed_conflicts),
                 created_by=actor,
             )
+    # One composite event for the retro-replacement: was «уточняется» → resolved.
+    record(
+        actor=actor,
+        action="STATUS_CLARIFICATION_RESOLVED",
+        entity_type="employee_status",
+        entity_id=pending.employee_id,
+        old_value=pending_before,
+        new_value=_status_snapshot(resolved),
+    )
+    if override_obj is not None:
+        record(
+            actor=actor,
+            action="OVERRIDE_APPLIED",
+            entity_type="override",
+            entity_id=pending.employee_id,
+            old_value=None,
+            new_value=_override_snapshot(override_obj),
+        )
 
-    # E5 amendment seam (no-op until DailySubmission exists). Affected span =
-    # union of the old «уточняется» and the new interval — every day whose
-    # derived status could have changed.
+    # E5 amendment seam (5.4b). Affected days = the OLD «уточняется» interval and
+    # the NEW resolving interval as SEPARATE half-open [start, end) pairs — NOT a
+    # min/max bounding box: disjoint intervals must not amend the gap days between
+    # them (closes deferred-work L315 / VAPS_7.8.2 §82.2). The handler (submissions)
+    # detects which days a current DailySubmission covers and triggers an amendment
+    # (amend_day) per covered (division, day), atomically within THIS transaction —
+    # so a retro-edit of a submitted day cannot land without its amendment. reason
+    # carries the sanction; resolved.id is the «ссылка на ретро-правку».
     mark_days_for_amendment(
         pending.employee_id,
-        min(pending.date_start, date_start),
-        max(pending.date_end, date_end),
+        [(pending.date_start, pending.date_end), (date_start, date_end)],
+        actor=actor,
+        reason=reason,
+        triggered_by_status_id=resolved.id,
     )
     return resolved

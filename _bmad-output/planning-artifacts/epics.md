@@ -119,7 +119,7 @@ UX-спека отсутствует (осознанно). Заменители,
 - UX-1: Бумажные контракты трёх несущих экранов (массовая форма со слепым вводом, расход+светофор, чек-лист ОМ) — до заморозки API соответствующих стори
 - UX-2: Экран №1 — кастомный клавиатурный грид: грамматика Enter↓/Tab→/Esc = чистая state machine + property-based (fast-check); RTL keyboard-path тест в DoD
 - UX-3: Печатные формы — голый семантический HTML + print.css, без UI-библиотеки
-- UX-4: Канон стека: Mantine (вид, size="sm") + Tailwind (лейаут, preflight off); TanStack Table/Virtual/Query; RHF+zod; ConflictDialog для 409+override
+- UX-4: Канон стека: донорские shadcn/Tailwind-компоненты (вид = токены донора; рабочие таблицы — компактная плотность внутри карточки) + Tailwind (лейаут); TanStack Table/Virtual/Query; RHF+zod; ConflictDialog для 409+override. (Ревизия 2026-07-04: Mantine → донорский shadcn — активирован План Б архитектуры; см. architecture.md §UI-библиотека)
 
 ### FR Coverage Map
 
@@ -191,7 +191,7 @@ DailySubmission с версиями, Amendment-flow (ретро-правка с�
 **FRs covered:** NFR-9, AR-5, AR-9 (тесты импортёров)
 
 ### Epic 8: SPA Foundation — портал открывается
-Vite react-ts + контурная донастройка (firefox100, вендоринг, бюджеты), shared/api (typed client, DomainError, useApiMutation, ConflictDialog, MSW), auth-подключение, роутер+guards, layout Mantine.
+Vite react-ts + контурная донастройка (firefox100, вендоринг, бюджеты), shared/api (typed client, DomainError, useApiMutation, ConflictDialog, MSW), auth-подключение, роутер+guards, layout на донорских shadcn-компонентах. Визуальный контракт экранов — кликабельный прототип claude.ai/design «Дашборд расхода персонала» (брифы: ux-designs/ux-PersonnelStatus-2026-06-19/prototype-briefs-claude-design.md).
 **FRs covered:** AR-2, UX-4
 
 ### Epic 9: Клавиатурный грид — слепой ввод оператора
@@ -670,9 +670,19 @@ As a система, I want DailySubmission (date, division, submitted_by/at, sn
 **Given** две версии за день, **Then** ровно одна is_current (partial unique (division, business_date) WHERE is_current); unique (division, business_date, version).
 **And** снапшот хранит интервалы-факты, не derived-состояния.
 
-### Story 5.3: Сервис сдачи дня
+### Story 5.3a: Срез-билдер (snapshot builder)
 
-As a оператор управления, I want сдать день одним действием: атомарный срез, diff против вчерашнего снапшота → CONFIRMED_NO_CHANGES/CHANGED, So that сдача фиксирует состояние и считаемое событие.
+As a система, I want чистый билдер self-contained иммутабельного среза подразделения на business_date — `{schema_version, roster, rows}` (денормализованный roster + интервалы-факты), So that расход derive(снапшот, дата) воспроизводим без повторного обращения к live-данным (ARCH-DATA-021; основа иммутабельности 5.10).
+
+**Acceptance Criteria:**
+
+**Given** подразделение и business_date, **Then** билдер возвращает `{schema_version, roster:[{employee_id, full_name, rank}], rows:[{employee_id, status_type_code, status_id, date_start, date_end, source}]}`: roster = списочный состав на дату (own-level, roster_on), rows = действующие интервалы-факты (cancelled исключены, полуоткрытые [date_start,date_end)).
+**And** пустое подразделение → roster=[], rows=[]; срез самодостаточен — derive не обращается к roster_on повторно (denominator внутри snapshot).
+**And** срез читается консистентно в один момент — basis для атомарной сдачи 5.3b.
+
+### Story 5.3b: Сервис сдачи дня
+
+As a оператор управления, I want сдать день одним действием: атомарный срез (5.3a) → diff против вчерашнего снапшота → CONFIRMED_NO_CHANGES/CHANGED, So that сдача фиксирует состояние и считаемое событие.
 
 **Acceptance Criteria:**
 
@@ -680,17 +690,32 @@ As a оператор управления, I want сдать день одни�
 **And** окно первичной сдачи — параметр (default: завтра — основной режим «за день вперёд», сегодня — коррекция); прошлые даты — ТОЛЬКО через amendment-flow; вне окна → 422 BUSINESS_DATE_OUT_OF_WINDOW. Семантика окна подтверждается с владельцем расхода на пилоте.
 **And** поздняя сдача (после 17:00) РАЗРЕШЕНА и фиксируется late=true (событие для SM-1) — иначе будут врать ради зелёного.
 **And** пустое подразделение (0 сотрудников): сдача валидна, снапшот rows=[], формулы сходятся (0=0+0).
-**And** срез в одной транзакции (torn snapshot невозможен); граница 17:00 зафиксирована тестом.
+**And** срез+создание в одной транзакции (атомарность записи + структурная консистентность среза rows⊆roster; NB: под default READ COMMITTED — не межстейтментный snapshot-isolation, строгий point-in-time → REPEATABLE READ); граница 17:00 зафиксирована тестом.
 
-### Story 5.4: Amendment-flow
+> **Декомпозиция (2026-06-29):** исходная 5.3 разбита на 5.3a (срез-билдер) + 5.3b (сервис сдачи) по правилу ≤5 файлов — естественный шов между построением self-contained снапшота и бизнес-правилами сдачи (окно/дубль/event-diff/late/atomic). 5.3a — пререквизит 5.3b.
 
-As a руководитель, I want пересдачу версией v2+ (AMENDED: причина, санкция, ссылка на ретро-правку), So that поправки видимы, а не молчаливы.
+### Story 5.4a: Сервис amendment — создание версии v2+
+
+As a руководитель, I want сервис пересдачи версией v2+ (event=AMENDED: причина, санкция, ссылка на ретро-правку; новый срез через билдер 5.3a), So that поправка — видимая новая действующая версия, а v1 сохраняется.
 
 **Acceptance Criteria:**
 
-**Given** ретро-правка статуса на дату, накрытую сданным днём (хук 3.9), **Then** система требует amendment — правка без него невозможна.
-**Given** amendment, **Then** v2 становится действующей, v1 сохраняется; санкция выше после ухода расхода наверх.
-**Given** amendment amendment'а (v3), **Then** цепочка «взамен исх.№» прослеживается через 2+ звена.
+**Given** сданный день (действующая v1) + причина + санкция + actor, **When** вызывается amendment-сервис, **Then** создаётся v2: `version=prev+1`, новый снапшот, `event=AMENDED`; старая `is_current→False` ставится ДО вставки новой `is_current=True` в ОДНОЙ транзакции (immediate partial-unique); v1 сохраняется (не удаляется/не правится).
+**Given** amendment amendment'а, **Then** v3 (`version=prev+1`), цепочка v1→v2→v3 прослеживается через `(division, business_date, version)` минимум на 2 звена.
+**And** причина/санкция хранятся на версии. Правило «санкция выше после ухода расхода наверх» — forward-seam: расход-релиз это E6 (ещё нет), сервис фиксирует санкцию как вход; эскалация-правило подключается с появлением релиза расхода.
+**And** повтор/гонка двух amendment на один (division, business_date) ловится unique-констрейнтами (partial-unique на текущую + unique на версию) → 409; новые поля reason/sanction → новая миграция поверх 0002.
+
+### Story 5.4b: Энфорс ретро-правки — хук 3.9 требует amendment
+
+As a система, I want чтобы ретро-правка статуса на дату, накрытую сданным днём, ОБЯЗАНА триггерить amendment (правка без него невозможна), So that не возникает «двух правд» (live молча расходится со сданным снапшотом).
+
+**Acceptance Criteria:**
+
+**Given** ретро-правка статуса на дату, накрытую действующей сдачей, **When** срабатывает хук 3.9 (`mark_days_for_amendment`), **Then** обнаруживаются накрытые сдачи и amendment требуется/триггерится — правка без него невозможна.
+**And** инверсный seam: `submissions` регистрирует обработчик в `statuses` (граница `statuses ↛ submissions` сохраняется); хук в `statuses` остаётся диспетчером (no-op, если обработчик не зарегистрирован).
+**And** корректный union над набором интервалов вместо наивного `min/max` bounding-box + явная семантика границы `end` для полуоткрытого `[date_start, date_end)` — закрывает deferred VAPS_7.8.2 §82.2.
+
+> **Декомпозиция (2026-06-30):** исходная 5.4 разбита на 5.4a (сервис создания версии v2+) + 5.4b (энфорс хука ретро-правки) по правилу ≤5 файлов — естественный шов «механизм пересдачи» vs «бизнес-правило обязательности amendment». 5.4a трогает submissions (модель+миграция+сервис); 5.4b трогает инверсную границу statuses↔submissions (registry-seam) + interval-union. 5.4b зависит от 5.4a (энфорс триггерит сервис). Зеркалит прецедент 5.3a/5.3b. «Санкция выше после ухода расхода наверх» — forward-seam (расход-релиз E6).
 
 ### Story 5.5: Светофор-селектор
 
@@ -703,6 +728,12 @@ As a руководитель, I want трёхцветный светофор (�
 **And** перевод задним числом после сдачи: drift у сдавшего подразделения A (amendment у A), корректный live у принимающего B (его день ещё не сдан).
 **And** каскад агрегируется вверх одним селектором обхода дерева.
 
+> **Декомпозиция (2026-06-30):** исходная 5.5 разбита на 5.5a (светофор ОДНОГО подразделения) + 5.5b (каскад вверх по дереву) по правилу ≤5 файлов — естественный шов «drift одного подразделения» vs «агрегация по дереву». Зеркалит прецедент 5.3a/5.3b и 5.4a/5.4b. 5.5b зависит от 5.5a (использует per-division состояние).
+>
+> **5.5a — Светофор подразделения (drift):** для (`division_id`, `business_date`) вычисляет `TrafficLightStatus` ∈ {GREEN, YELLOW, RED} + `late` + diff-детали. GREEN = `derive(снапшот) == derive(live)`; YELLOW = разошлось (drift с деталями); RED = нет действующей сдачи. **And** drift — на уровне derived-победителей (`resolve_status` по сотруднику), а НЕ сырых фактов: переименование/пере-создание идентичного факта и не-расход-меняющая правка остаются GREEN (расход держится по снапшоту by design, ARCH-DATA-021 L291). **And** поздняя сдача: совпадает → GREEN c `late=True`. **And** перевод задним числом: drift у сдавшего A (live-ростер/победитель разошёлся со снапшотом). Reuse `resolve_status`/`current_for`/`roster_on`/`overlapping_on`; OWN-LEVEL (зеркало own-level снапшота 5.3a); без actor/RBAC (как `StrengthReportService`); без API/каскада/нотификаций/блока/аудита.
+>
+> **5.5b — Каскад по дереву:** новый upward-rollup примитив на `CoreDivisionTreeSelector` (единственный канал обхода, ARCH-DATA-024) + bulk `DailySubmissionSelector.current_for_many` (анти-N+1, NFR-4) + `traffic_light_tree(root, business_date)`: складывает per-division состояния 5.5a вверх правилом «худший цвет» (RED > YELLOW > GREEN), `late` видим в каскаде. Один обход, bulk-запросы (не `subtree_ids` на узел). Семантика не-сдающих промежуточных узлов решается здесь.
+
 ### Story 5.6: Блокировка «на завтра»
 
 As a система, I want блокировку формирования расхода «на завтра», derived из сдач необходимых управлений, + override-сущность для легального обхода, So that FR-18 выполняется, а обходы видимы.
@@ -710,6 +741,12 @@ As a система, I want блокировку формирования рас
 **Acceptance Criteria:**
 
 **Given** одно необходимое управление не сдало, **When** запрашиваю расход на завтра, **Then** 422 TOMORROW_BLOCKED со списком отстающих; **Given** override руководителем с причиной, **Then** расход формируется + Override-запись.
+
+> **Декомпозиция (2026-06-30):** исходная 5.6 разбита на 5.6a (derive-блокировка «на завтра», read-only) + 5.6b (override-сущность + легальный обход) по правилу ≤5 файлов — естественный шов «вычислить блок из сдач» vs «персистентная сущность обхода + миграция + write-сервис». Зеркалит прецедент 5.3a/b, 5.4a/b, 5.5a/b. 5.6b зависит от 5.6a (внедряет консультацию override в derive). Конфиг-зависимость закрыта: `SubmissionControlSettings.required_division_ids` (ArrayField UUID, flat ARCH-003) + `control_hour` уже есть, docstring модели прямо называет «next-day lock (5.6)» потребителем.
+>
+> **5.6a — Derive-блокировка «на завтра» (read-only, без миграции):** `tomorrow_block(business_date)` → из `SubmissionControlSettingsSelector.required_division_ids` и действующих сдач (реюз `current_for_many` 5.5b; пустой own-ростер НЕ освобождает — required=required, реш. code-review 2026-06-30 опц.A) вычисляет, какие required-управления НЕ сдали на дату → доменный результат `{blocked, laggards:[division_id]}`. HTTP-422/`TOMORROW_BLOCKED` — на API-слое (5.8/6.10); сервис возвращает результат (паттерн 5.5a/b: без actor/RBAC/API/нотиф/аудита). Без override (блок = «все required сдали?»). Файлы: новый сервис в `submissions/` + реюз селекторов + тесты; миграций НЕТ.
+>
+> **5.6b — Override-сущность + легальный обход (модель + миграция + сервис):** новая модель `TomorrowBlockOverride` (business_date + скоуп, причина, actor, время; flat UUID-ссылки ARCH-003, без FK на core) + миграция + сервис записи override → ВНЕДРИТЬ консультацию активного override в derive 5.6a (активный override на дату → `blocked=False`, обход видим записью). Зависит от 5.6a. Аудит `TOMORROW_BLOCK_OVERRIDDEN` — НЕ здесь (владеет 5.9, как 4.x-аудит отдельно); нотификации (5.7)/API (5.8)/документ-«на завтра» (6.10) — вне.
 
 ### Story 5.7: Notifications-backend и уведомления об отставании
 
@@ -719,6 +756,16 @@ As a ответственный, I want модель Notification + notification
 
 **Given** управление не сдало к 17:00−N, **When** beat-проверка, **Then** уведомление ответственному создано (идемпотентно — одно на день); GET /notifications/?since= возвращает новые.
 
+> **Декомпозиция (2026-06-30):** исходная 5.7 разбита на 5.7a (модель `Notification` + notify-сервис) + 5.7b (catch-up проверка отставания) + 5.7c (read-API `GET /notifications`) по правилу ≤5 файлов — 4 ответственности (новый app + модель/миграция + scheduling-джоба + API; правила нотификаций+API требуют дробить). Зеркалит 5.3/5.4/5.5/5.6. **Архитектурный гвоздь:** «beat» ОБЯЗАН лечь на catch-up-паттерн проекта (`catchup_plan`/`Watermark`/management-команда, образец `materialize_status_effects`) — НЕ вводить Celery; закрывает «сервер был выключен ночью» (catch-up-семантика E6.9). Реюз `tomorrow_block`/laggards (5.6a) для «кто отстаёт», `SubmissionControlSettings.control_hour`, `Clock`.
+>
+> **5.7a — `Notification` модель + notify-сервис:** новый `apps/notifications` — модель `Notification` (recipient/тип/payload/business_date/created_at/read-флаг; flat-ссылки ARCH-003, без FK на core) + миграция + `notifications.services.notify(...)` (on_commit-эмиссия; идемпотентность-ключ для «одно на день»). Персистенция+эмиссия-примитив; без beat/API.
+>
+> **5.7b — Catch-up проверка отставания (FR-13):** _при create-story (2026-07-01, реш. Bratan Q1=B «конфигурируемый получатель») расщеплена на 5.7b1 + 5.7b2, т.к. «дивизион→ответственный» не был смоделирован (Q2 из 5.7a) → моделирование получателя = отдельная ответственность (decomposition-правило)._
+>   - **5.7b1 — Recipient-config (получатель уведомлений):** справочник `DivisionNotifyRecipient` (division_id→recipient, flat ARCH-003, admin-managed) + глобальный `default_notify_recipient`-fallback на `SubmissionControlSettings` + bulk-селектор `NotifyRecipientSelector.resolve_many`. Модель/миграция/admin/селектор. Зависит от 5.7a (recipient-space). **Пререквизит 5.7b2.**
+>   - **5.7b2 — Catch-up-джоба детекта отставания:** management-команда + сервис в `submissions` (зеркало `materialize_status_effects`) — по due-датам (свой `Watermark`/`catchup_plan`) к контрольному часу (`control_hour`, N=0) → отстающие через `tomorrow_block`/laggards (5.6a) → получатели через `resolve_many` (5.7b1) → `notify()` идемпотентно одно-на-день. Реюз `catch_up.py`/`Clock`. Отдельная джоба (свой watermark/lock-key), НЕ Celery (run-on-availability). Зависит от 5.7a + 5.6a + **5.7b1**.
+>
+> **5.7c — `GET /notifications/?since=` read-API:** endpoint + serializer + permission + `since`-фильтр (доставка готова к WS E11). API-слой (паттерн 5.8). Зависит от 5.7a.
+
 ### Story 5.8: API сдачи дня
 
 As a оператор, I want POST /api/operations/daily-submissions/, GET история/детали, POST /{id}/amend/, So that сдача доступна по паттернам API.
@@ -727,6 +774,14 @@ As a оператор, I want POST /api/operations/daily-submissions/, GET ис�
 
 **Given** оператор без daily_report.mark_update, **Then** 403; **Given** сдача чужого подразделения, **Then** 403 (scope в сервисе).
 **And** все коды ошибок стори — в реестре; новые permission-коды (amendment и т.п.) добавляются в seed_operations + строкой в RBAC-матрицу 2.9.
+
+> **Декомпозиция 5.8 (реш. Bratan, 2026-07-02): 5.8a → 5.8b → 5.8c** (4 эндпоинта в одной стори — против правил сплита; зеркало 5.3/5.4/5.5/5.6/5.7). Сопутствующие решения: TOMORROW_BLOCKED (422) + override-API + деферы business_date=None блока/override → **6.10** (закрывает Q3 5.6a — блок гейтит только «расход на завтра», сдачу НЕ трогает); amend-право = **реюз `daily_report.correct`** (уже посеян, DIVISION_OPERATOR — seed НЕ меняется); чтение = **`daily_report.mark_update` + actor-scoped селектор** (кода daily_report.view не заводим; руководству чтение приедет с деревом 10.4).
+>
+> **5.8a — `POST /api/operations/daily-submissions/` (сдача):** api-скелет `submissions/api/` (зеркало audit/notifications) + ПЕРВЫЙ POST-body input-сериализатор проекта (`division_id` UUIDField + `business_date` DateField — закрывает business_date=None-класс для submit-пути) + `RequirePermissionMixin {"create": daily_report.mark_update}` + scope-гейт отдельным сервис-гардом `ensure_division_scope` (`PermissionService.has_permission(..., division_id)` → DomainError 403; НЕ внутрь `submit_day` — 18 тестов 5.3b целы) + 201 detail-проекция БЕЗ snapshot + строка RBAC-матрицы (`_MethodGate({"post": ...})`). `submit_day` НЕ меняется; регистрация в operations-router (`daily-submissions`, basename `ops-daily-submission`).
+>
+> **5.8b — `POST /{id}/amend/`:** custom `@action(detail=True)`; permission = `daily_report.correct` (реюз); input reason/sanction (+опц. без triggered_by_status_id — ручной amendment); scope тем же гардом. ⚠️ Хук 5.4b (`enforce_amendment_on_retro_edit` → `amend_day`) обязан остаться БЕЗ гейта — гейт на API-пути, НЕ внутри `amend_day`. Зависит от 5.8a (скелет).
+>
+> **5.8c — `GET` list (история) + detail:** новый actor-scoped list-селектор (канон architecture.md#L451 — селектор принимает actor первым аргументом и сам сужает видимость), list БЕЗ snapshot (`defer`), отдача snapshot в detail решается там; LimitOffset 50/200 + ordering с tie-breaker `id`; гейт `mark_update`; строки матрицы (get). Зависит от 5.8a.
 
 ### Story 5.9: Аудит сдач
 
@@ -841,6 +896,8 @@ As a руководство, I want расход за период (страни
 
 **Given** период 3 дня, **Then** документ из трёх страниц по снапшотам этих дат; **Given** заблокированное «завтра», **Then** 422 со списком отстающих.
 **Given** дата до начала данных (нет roster и статусов), **Then** 422 с кодом, не пустой документ.
+
+> **Принято при создании 5.8 (Bratan, 2026-07-02):** HTTP-поверхность блокировки «на завтра» — целиком здесь, НЕ в 5.8: код `TOMORROW_BLOCKED` в реестр (закрывает Q3/Д3 5.6a), 422 с `{laggards}` при запросе расхода-на-завтра, POST override-эндпоинт (permission-код; сервис `override_tomorrow_block` кидает ValueError — маппинг на API), date-валидация business_date блока/override (деферы 5.6a/5.6b), фильтр протухших required-id в laggards (дефер 5.6a — ЛИБО admin 2.3/2.8).
 
 ## Epic 7: Миграция — верный список как условие выживания
 
@@ -992,7 +1049,7 @@ As a оператор, I want вход (JWT/dev-заголовок), AuthContext
 
 ### Story 8.7: Роутер, routes.ts и layout
 
-As a разработчик, I want React Router + все пути константами в routes.ts + каркас Mantine (size="sm") с Tailwind-лейаутом (preflight off), So that навигация и вид канонизированы.
+As a разработчик, I want React Router + все пути константами в routes.ts + каркас на донорских shadcn-компонентах (сайдбар+шапка по прототипу, компактная плотность рабочих таблиц) с Tailwind-лейаутом, So that навигация и вид канонизированы.
 
 **Acceptance Criteria:**
 
@@ -1004,7 +1061,7 @@ As a оператор, I want отдельный print-route с голым HTML 
 
 **Acceptance Criteria:**
 
-**Given** печать тестовой страницы, **Then** ни один Mantine/Tailwind класс не влияет на печатный вывод; смок в e2e.
+**Given** печать тестовой страницы, **Then** ни один класс UI-слоя (shadcn/Tailwind) не влияет на печатный вывод; смок в e2e.
 
 ## Epic 9: Клавиатурный грид — слепой ввод оператора
 
@@ -1116,7 +1173,7 @@ As a руководитель, I want дерево подразделений с
 
 **Acceptance Criteria:**
 
-**Given** 400 подразделений, **Then** дерево отзывчиво на 4 ГБ (Mantine Tree + ленивые ветки); цвета соответствуют селектору 5.5.
+**Given** 400 подразделений, **Then** дерево отзывчиво на 4 ГБ (вложенные строки-карточки по прототипу светофора, ленивые ветки); цвета соответствуют селектору 5.5.
 
 ### Story 10.5: Экран расхода
 

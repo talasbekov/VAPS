@@ -1,0 +1,2422 @@
+openapi: 3.0.3
+info:
+  title: VAPS API
+  version: 0.1.0
+paths:
+  /api/audit/logs/:
+    get:
+      operationId: audit_logs_list
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - audit
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAuditLogList'
+          description: ''
+  /api/audit/logs/{id}/:
+    get:
+      operationId: audit_logs_retrieve
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this audit log.
+        required: true
+      tags:
+      - audit
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLog'
+          description: ''
+  /api/core/divisions/:
+    get:
+      operationId: core_divisions_list
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDivisionList'
+          description: ''
+    post:
+      operationId: core_divisions_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DivisionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DivisionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DivisionRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Division'
+          description: ''
+  /api/core/divisions/{id}/:
+    get:
+      operationId: core_divisions_retrieve
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this division.
+        required: true
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Division'
+          description: ''
+    put:
+      operationId: core_divisions_update
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this division.
+        required: true
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DivisionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DivisionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DivisionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Division'
+          description: ''
+    patch:
+      operationId: core_divisions_partial_update
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this division.
+        required: true
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDivisionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDivisionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDivisionRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Division'
+          description: ''
+    delete:
+      operationId: core_divisions_destroy
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this division.
+        required: true
+      tags:
+      - core
+      responses:
+        '204':
+          description: No response body
+  /api/core/divisions/{id}/leaf-descendants/:
+    get:
+      operationId: core_divisions_leaf_descendants_retrieve
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this division.
+        required: true
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Division'
+          description: ''
+  /api/core/employees/:
+    get:
+      operationId: core_employees_list
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEmployeeList'
+          description: ''
+    post:
+      operationId: core_employees_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+          description: ''
+  /api/core/employees/{id}/:
+    get:
+      operationId: core_employees_retrieve
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this employee.
+        required: true
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+          description: ''
+    patch:
+      operationId: core_employees_partial_update
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this employee.
+        required: true
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+          description: ''
+  /api/core/employees/{id}/archive/:
+    post:
+      operationId: core_employees_archive_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this employee.
+        required: true
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+          description: ''
+  /api/core/employees/{id}/restore/:
+    post:
+      operationId: core_employees_restore_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this employee.
+        required: true
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+          description: ''
+  /api/core/positions/:
+    get:
+      operationId: core_positions_list
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPositionList'
+          description: ''
+    post:
+      operationId: core_positions_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PositionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PositionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PositionRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Position'
+          description: ''
+  /api/core/positions/{code}/:
+    get:
+      operationId: core_positions_retrieve
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: code
+        schema:
+          type: string
+        description: A unique value identifying this position.
+        required: true
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Position'
+          description: ''
+    patch:
+      operationId: core_positions_partial_update
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: code
+        schema:
+          type: string
+        description: A unique value identifying this position.
+        required: true
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPositionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPositionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPositionRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Position'
+          description: ''
+  /api/core/ranks/:
+    get:
+      operationId: core_ranks_list
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRankList'
+          description: ''
+    post:
+      operationId: core_ranks_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RankRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RankRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RankRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rank'
+          description: ''
+  /api/core/ranks/{code}/:
+    get:
+      operationId: core_ranks_retrieve
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: code
+        schema:
+          type: string
+        description: A unique value identifying this rank.
+        required: true
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rank'
+          description: ''
+    patch:
+      operationId: core_ranks_partial_update
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: code
+        schema:
+          type: string
+        description: A unique value identifying this rank.
+        required: true
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedRankRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedRankRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedRankRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rank'
+          description: ''
+  /api/core/staffing-slots/:
+    get:
+      operationId: core_staffing_slots_list
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStaffingSlotList'
+          description: ''
+    post:
+      operationId: core_staffing_slots_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffingSlotRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StaffingSlotRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StaffingSlotRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffingSlot'
+          description: ''
+  /api/core/staffing-slots/{id}/:
+    get:
+      operationId: core_staffing_slots_retrieve
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this staffing slot.
+        required: true
+      tags:
+      - core
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffingSlot'
+          description: ''
+    patch:
+      operationId: core_staffing_slots_partial_update
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this staffing slot.
+        required: true
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffingSlotRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffingSlotRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffingSlotRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffingSlot'
+          description: ''
+  /api/core/staffing-slots/{id}/assign-employee/:
+    post:
+      operationId: core_staffing_slots_assign_employee_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this staffing slot.
+        required: true
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffingSlotRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StaffingSlotRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StaffingSlotRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffingSlot'
+          description: ''
+  /api/core/staffing-slots/{id}/release/:
+    post:
+      operationId: core_staffing_slots_release_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this staffing slot.
+        required: true
+      tags:
+      - core
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffingSlotRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StaffingSlotRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StaffingSlotRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffingSlot'
+          description: ''
+  /api/core/vacancies/:
+    get:
+      operationId: core_vacancies_retrieve
+      tags:
+      - core
+      responses:
+        '200':
+          description: No response body
+  /api/notifications/:
+    get:
+      operationId: notifications_list
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - notifications
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificationList'
+          description: ''
+  /api/operations/daily-submissions/:
+    get:
+      operationId: operations_daily_submissions_retrieve
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      tags:
+      - operations
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: operations_daily_submissions_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      tags:
+      - operations
+      responses:
+        '201':
+          description: No response body
+  /api/operations/daily-submissions/{id}/:
+    get:
+      operationId: operations_daily_submissions_retrieve_2
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          description: No response body
+  /api/operations/daily-submissions/{id}/amend/:
+    post:
+      operationId: operations_daily_submissions_amend_create
+      description: |-
+        ViewSet mixin: gate each action on an in-house RBAC permission code.
+
+        Subclasses set ``permission_map = {action_name: permission_code}`` (action
+        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
+        custom ``@action`` method like ``archive``/``assign_employee``). The gate
+        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
+        authentication, so the operations seam has populated
+        ``request.effective_permissions`` (story 2.13). An action absent from the
+        map is denied (fail-closed); the rbac-matrix completeness test guarantees
+        every served action is mapped, so a gap surfaces at test time, not in prod.
+
+        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
+        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
+        imports operations — the gate reads only request attributes (ARCH#L585).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          description: No response body
+  /api/operations/my-permissions/:
+    get:
+      operationId: operations_my_permissions_list
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyPermissionsResponse'
+          description: ''
+  /api/operations/permissions/:
+    get:
+      operationId: operations_permissions_list
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPermissionList'
+          description: ''
+  /api/operations/permissions/{code}/:
+    get:
+      operationId: operations_permissions_retrieve
+      parameters:
+      - in: path
+        name: code
+        schema:
+          type: string
+        description: A unique value identifying this permission.
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Permission'
+          description: ''
+  /api/operations/roles/:
+    get:
+      operationId: operations_roles_list
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRoleList'
+          description: ''
+  /api/operations/roles/{code}/:
+    get:
+      operationId: operations_roles_retrieve
+      parameters:
+      - in: path
+        name: code
+        schema:
+          type: string
+        description: A unique value identifying this role.
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+          description: ''
+  /api/operations/temporary-duty/:
+    get:
+      operationId: operations_temporary_duty_retrieve
+      tags:
+      - operations
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: operations_temporary_duty_create
+      tags:
+      - operations
+      responses:
+        '201':
+          description: No response body
+  /api/operations/temporary-duty/{id}/expire/:
+    post:
+      operationId: operations_temporary_duty_expire_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          description: No response body
+  /api/operations/user-roles/:
+    get:
+      operationId: operations_user_roles_retrieve
+      tags:
+      - operations
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: operations_user_roles_create
+      tags:
+      - operations
+      responses:
+        '201':
+          description: No response body
+  /api/operations/user-roles/{id}/:
+    delete:
+      operationId: operations_user_roles_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '204':
+          description: No response body
+components:
+  schemas:
+    AuditLog:
+      type: object
+      description: Read-only projection of an audit row — FR-36 fields, snake_case,
+        flat.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        actor_user_id:
+          type: string
+          readOnly: true
+        action:
+          type: string
+          readOnly: true
+        entity_type:
+          type: string
+          readOnly: true
+        entity_id:
+          type: string
+          format: uuid
+          readOnly: true
+        old_value:
+          readOnly: true
+          nullable: true
+        new_value:
+          readOnly: true
+          nullable: true
+        reason:
+          type: string
+          readOnly: true
+        request_id:
+          type: string
+          readOnly: true
+        ip_address:
+          type: string
+          readOnly: true
+        user_agent:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - action
+      - actor_user_id
+      - created_at
+      - entity_id
+      - entity_type
+      - id
+      - ip_address
+      - new_value
+      - old_value
+      - reason
+      - request_id
+      - user_agent
+    BlankEnum:
+      enum:
+      - ''
+    Division:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        organization:
+          type: string
+          format: uuid
+        parent:
+          type: string
+          format: uuid
+          nullable: true
+        type_code:
+          type: string
+        name:
+          type: string
+          maxLength: 255
+        code:
+          type: string
+          maxLength: 100
+        is_active:
+          type: boolean
+      required:
+      - code
+      - id
+      - name
+      - organization
+      - type_code
+    DivisionRequest:
+      type: object
+      properties:
+        organization:
+          type: string
+          format: uuid
+        parent:
+          type: string
+          format: uuid
+          nullable: true
+        type_code:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        code:
+          type: string
+          minLength: 1
+          maxLength: 100
+        is_active:
+          type: boolean
+      required:
+      - code
+      - name
+      - organization
+      - type_code
+    Employee:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        external_id:
+          type: string
+          nullable: true
+          maxLength: 100
+        iin:
+          type: string
+          pattern: ^[0-9]{12}$
+          maxLength: 12
+        full_name:
+          type: string
+          readOnly: true
+        last_name:
+          type: string
+          nullable: true
+          maxLength: 150
+        first_name:
+          type: string
+          nullable: true
+          maxLength: 150
+        middle_name:
+          type: string
+          nullable: true
+          maxLength: 150
+        rank_code:
+          type: string
+          maxLength: 50
+        rank_index:
+          type: integer
+          readOnly: true
+        position_code:
+          type: string
+          maxLength: 50
+        division:
+          type: string
+          format: uuid
+        phone:
+          type: string
+          nullable: true
+          maxLength: 50
+        gender:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/GenderEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        height_cm:
+          type: integer
+          maximum: 230
+          minimum: 120
+          nullable: true
+        is_active:
+          type: boolean
+        is_attached_force:
+          type: boolean
+        data_source:
+          type: string
+          maxLength: 50
+        personnel_number:
+          type: string
+          nullable: true
+          maxLength: 50
+        birth_date:
+          type: string
+          format: date
+          nullable: true
+        photo_file_path:
+          type: string
+          nullable: true
+        hire_date:
+          type: string
+          format: date
+          nullable: true
+        dismissal_date:
+          type: string
+          format: date
+          nullable: true
+        work_phone:
+          type: string
+          nullable: true
+          maxLength: 50
+        work_email:
+          type: string
+          nullable: true
+          maxLength: 255
+        personal_phone:
+          type: string
+          nullable: true
+          maxLength: 50
+        personal_email:
+          type: string
+          nullable: true
+          maxLength: 255
+        notes:
+          type: string
+          nullable: true
+        employment_status:
+          $ref: '#/components/schemas/EmploymentStatusEnum'
+      required:
+      - division
+      - full_name
+      - id
+      - iin
+      - position_code
+      - rank_code
+      - rank_index
+    EmployeeRequest:
+      type: object
+      properties:
+        external_id:
+          type: string
+          nullable: true
+          maxLength: 100
+        iin:
+          type: string
+          minLength: 1
+          pattern: ^[0-9]{12}$
+          maxLength: 12
+        last_name:
+          type: string
+          nullable: true
+          maxLength: 150
+        first_name:
+          type: string
+          nullable: true
+          maxLength: 150
+        middle_name:
+          type: string
+          nullable: true
+          maxLength: 150
+        rank_code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        position_code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        division:
+          type: string
+          format: uuid
+        phone:
+          type: string
+          nullable: true
+          maxLength: 50
+        gender:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/GenderEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        height_cm:
+          type: integer
+          maximum: 230
+          minimum: 120
+          nullable: true
+        is_active:
+          type: boolean
+        is_attached_force:
+          type: boolean
+        data_source:
+          type: string
+          minLength: 1
+          maxLength: 50
+        personnel_number:
+          type: string
+          nullable: true
+          maxLength: 50
+        birth_date:
+          type: string
+          format: date
+          nullable: true
+        photo_file_path:
+          type: string
+          nullable: true
+        hire_date:
+          type: string
+          format: date
+          nullable: true
+        dismissal_date:
+          type: string
+          format: date
+          nullable: true
+        work_phone:
+          type: string
+          nullable: true
+          maxLength: 50
+        work_email:
+          type: string
+          nullable: true
+          maxLength: 255
+        personal_phone:
+          type: string
+          nullable: true
+          maxLength: 50
+        personal_email:
+          type: string
+          nullable: true
+          maxLength: 255
+        notes:
+          type: string
+          nullable: true
+        employment_status:
+          $ref: '#/components/schemas/EmploymentStatusEnum'
+      required:
+      - division
+      - iin
+      - position_code
+      - rank_code
+    EmploymentStatusEnum:
+      enum:
+      - WORKING
+      - FIRED
+      - ARCHIVED
+      type: string
+      description: |-
+        * `WORKING` - Работает
+        * `FIRED` - Уволен
+        * `ARCHIVED` - В архиве
+    GenderEnum:
+      enum:
+      - M
+      - F
+      type: string
+      description: |-
+        * `M` - Мужской
+        * `F` - Женский
+    KindEnum:
+      enum:
+      - SUBMISSION_LAGGING
+      type: string
+      description: '* `SUBMISSION_LAGGING` - Отставание по сдаче'
+    MyPermissionsResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            type: string
+      required:
+      - permissions
+    Notification:
+      type: object
+      description: Read-only projection of a notification — flat, snake_case (FR-13).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        recipient:
+          type: string
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/KindEnum'
+          readOnly: true
+        business_date:
+          type: string
+          format: date
+          readOnly: true
+        payload:
+          readOnly: true
+        read_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - business_date
+      - created_at
+      - id
+      - kind
+      - payload
+      - read_at
+      - recipient
+    NullEnum:
+      enum:
+      - null
+    PaginatedAuditLogList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+    PaginatedDivisionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Division'
+    PaginatedEmployeeList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Employee'
+    PaginatedNotificationList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+    PaginatedPermissionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+    PaginatedPositionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Position'
+    PaginatedRankList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Rank'
+    PaginatedRoleList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+    PaginatedStaffingSlotList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffingSlot'
+    PatchedDivisionRequest:
+      type: object
+      properties:
+        organization:
+          type: string
+          format: uuid
+        parent:
+          type: string
+          format: uuid
+          nullable: true
+        type_code:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        code:
+          type: string
+          minLength: 1
+          maxLength: 100
+        is_active:
+          type: boolean
+    PatchedEmployeeRequest:
+      type: object
+      properties:
+        external_id:
+          type: string
+          nullable: true
+          maxLength: 100
+        iin:
+          type: string
+          minLength: 1
+          pattern: ^[0-9]{12}$
+          maxLength: 12
+        last_name:
+          type: string
+          nullable: true
+          maxLength: 150
+        first_name:
+          type: string
+          nullable: true
+          maxLength: 150
+        middle_name:
+          type: string
+          nullable: true
+          maxLength: 150
+        rank_code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        position_code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        division:
+          type: string
+          format: uuid
+        phone:
+          type: string
+          nullable: true
+          maxLength: 50
+        gender:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/GenderEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        height_cm:
+          type: integer
+          maximum: 230
+          minimum: 120
+          nullable: true
+        is_active:
+          type: boolean
+        is_attached_force:
+          type: boolean
+        data_source:
+          type: string
+          minLength: 1
+          maxLength: 50
+        personnel_number:
+          type: string
+          nullable: true
+          maxLength: 50
+        birth_date:
+          type: string
+          format: date
+          nullable: true
+        photo_file_path:
+          type: string
+          nullable: true
+        hire_date:
+          type: string
+          format: date
+          nullable: true
+        dismissal_date:
+          type: string
+          format: date
+          nullable: true
+        work_phone:
+          type: string
+          nullable: true
+          maxLength: 50
+        work_email:
+          type: string
+          nullable: true
+          maxLength: 255
+        personal_phone:
+          type: string
+          nullable: true
+          maxLength: 50
+        personal_email:
+          type: string
+          nullable: true
+          maxLength: 255
+        notes:
+          type: string
+          nullable: true
+        employment_status:
+          $ref: '#/components/schemas/EmploymentStatusEnum'
+    PatchedPositionRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        level:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        sort_order:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        is_active:
+          type: boolean
+    PatchedRankRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        category:
+          type: string
+          nullable: true
+          maxLength: 50
+        rank_index:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        is_active:
+          type: boolean
+    PatchedStaffingSlotRequest:
+      type: object
+      properties:
+        division:
+          type: string
+          format: uuid
+        position_code:
+          type: string
+          minLength: 1
+        slot_number:
+          type: string
+          nullable: true
+          maxLength: 50
+        parent_slot:
+          type: string
+          format: uuid
+          nullable: true
+        is_active:
+          type: boolean
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type: string
+          format: date-time
+          nullable: true
+    Permission:
+      type: object
+      properties:
+        code:
+          type: string
+          maxLength: 100
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+      required:
+      - code
+      - name
+    Position:
+      type: object
+      properties:
+        code:
+          type: string
+          maxLength: 50
+        name:
+          type: string
+          maxLength: 255
+        level:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        sort_order:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        is_active:
+          type: boolean
+      required:
+      - code
+      - name
+    PositionRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        level:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        sort_order:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        is_active:
+          type: boolean
+      required:
+      - code
+      - name
+    Rank:
+      type: object
+      properties:
+        code:
+          type: string
+          maxLength: 50
+        name:
+          type: string
+          maxLength: 255
+        category:
+          type: string
+          nullable: true
+          maxLength: 50
+        rank_index:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        is_active:
+          type: boolean
+      required:
+      - code
+      - name
+    RankRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        category:
+          type: string
+          nullable: true
+          maxLength: 50
+        rank_index:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        is_active:
+          type: boolean
+      required:
+      - code
+      - name
+    Role:
+      type: object
+      properties:
+        code:
+          type: string
+          maxLength: 50
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+      required:
+      - code
+      - name
+    StaffingSlot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        division:
+          type: string
+          format: uuid
+        position_code:
+          type: string
+        slot_number:
+          type: string
+          nullable: true
+          maxLength: 50
+        parent_slot:
+          type: string
+          format: uuid
+          nullable: true
+        is_active:
+          type: boolean
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - division
+      - id
+      - position_code
+      - valid_from
+    StaffingSlotRequest:
+      type: object
+      properties:
+        division:
+          type: string
+          format: uuid
+        position_code:
+          type: string
+          minLength: 1
+        slot_number:
+          type: string
+          nullable: true
+          maxLength: 50
+        parent_slot:
+          type: string
+          format: uuid
+          nullable: true
+        is_active:
+          type: boolean
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - division
+      - position_code
+      - valid_from

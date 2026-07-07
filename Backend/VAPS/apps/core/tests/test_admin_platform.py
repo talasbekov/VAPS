@@ -4,6 +4,7 @@
 суперюзер доходит до admin-index. Граница 2.10↔2.11: НИ одна модель не
 зарегистрирована (регистрация справочников — стори 2.11).
 """
+
 import pytest
 from django.contrib import admin
 from django.contrib.auth import get_user_model
@@ -14,12 +15,24 @@ from django.urls import reverse
 from apps.core.models import Division, DivisionType, Employee, Position, Rank
 from apps.operations.rbac.models import Role
 from apps.operations.statuses.models import EmployeeStatus, StatusType
-from apps.operations.submissions.models import SubmissionControlSettings
+from apps.operations.submissions.models import (
+    DivisionNotifyRecipient,
+    SubmissionControlSettings,
+)
 
 pytestmark = pytest.mark.django_db
 
 # Справочники/настройки, допустимые в Admin (ARCH#L467) + contrib Group.
-CATALOG_MODELS = {Position, Rank, DivisionType, StatusType, SubmissionControlSettings}
+# DivisionNotifyRecipient — config-справочник получателей уведомлений (5.7b1),
+# admin-managed, потому допустим (в отличие от бизнес-записей Notification/…).
+CATALOG_MODELS = {
+    Position,
+    Rank,
+    DivisionType,
+    StatusType,
+    SubmissionControlSettings,
+    DivisionNotifyRecipient,
+}
 ALLOWED_IN_ADMIN = {Group} | CATALOG_MODELS
 
 

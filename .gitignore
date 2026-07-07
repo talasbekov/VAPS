@@ -231,3 +231,18 @@ _bmad/
 .agents/
 .claude/
 .github/
+
+# design-sync (staged scripts, build output, machine state)
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+Backend/PersonnelStatus/PersonalRecordFront/.ds-tailwind.css
+
+# Frontend: питоньи packaging-паттерны (lib/, build/) выше не должны глотать каталоги
+# фронта (frontend/src/lib — каноничное место shadcn-utils, стори 8.7). Негейтим сами
+# каталоги (не файлы в исключённом родителе — так git re-include работает).
+!frontend/**/lib/
+!frontend/**/build/
+.claude/.story-automator-active

@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    // ES2022, не ES2023: FF100 не знает ES2023-API (findLast FF104+, toSorted FF115+),
+    // а esbuild транспилирует только синтаксис — единственный ловящий слой это tsc lib
+    "target": "es2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    // 8.3: канон L229 «TypeScript strict» — фактически не был включён (пробел 8.1).
+    // Без strict contract-ценность tsc ослаблена: nullable-поля схемы не энфорсятся.
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"],
+  // __canon_* — временные фикстуры lint-canon (в т.ч. осиротевшие при kill −9):
+  // tsc не должен спотыкаться о заведомо красные файлы до шага самотеста
+  "exclude": ["src/**/__canon_*"]
+}
