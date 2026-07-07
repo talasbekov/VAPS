@@ -24,5 +24,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // __canon_* — временные фикстуры lint-canon (в т.ч. осиротевшие при kill −9):
+  // tsc не должен спотыкаться о заведомо красные файлы до шага самотеста
+  "exclude": ["src/**/__canon_*"]
 }

@@ -10,8 +10,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "format": "prettier --write .",
     "preview": "vite preview",
-    "gate": "tsc -b && eslint . && vite build && node scripts/size-gate.mjs"
+    "gate": "node scripts/deps-gate.mjs && tsc -b && eslint . && node scripts/lint-canon.test.mjs && vite build && node scripts/size-gate.mjs"
   },
   "dependencies": {
     "react": "^19.2.7",
@@ -24,8 +25,13 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-boundaries": "^7.0.0",
     "eslint-plugin-compat": "^6.0.2",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^16.0.0",
+    "prettier": "^3.9.4",
+    "prettier-plugin-tailwindcss": "^0.8.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.0",
     "vite": "^7.3.6"

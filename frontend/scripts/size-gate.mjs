@@ -29,7 +29,9 @@ try {
 const jsFiles = files.filter((f) => /\.(js|mjs|cjs)$/.test(f))
 if (jsFiles.length === 0) {
   // stale/зачищенный dist без единого JS — «бюджет 0.0 KB» был бы вакуумным pass
-  console.error('size-gate: в dist/ нет ни одного JS-ассета — сборка неполная, сначала vite build')
+  console.error(
+    'size-gate: в dist/ нет ни одного JS-ассета — сборка неполная, сначала vite build',
+  )
   process.exit(1)
 }
 let total = 0
@@ -75,7 +77,7 @@ const LOAD_CONTEXT = new RegExp(
       'WebSocket\\s*\\(\\s*["\']',
       '\\.open\\s*\\(\\s*["\'][a-z]+["\']\\s*,\\s*["\']',
     ].join('|') +
-  ')$',
+    ')$',
   'i',
 )
 const offenders = []

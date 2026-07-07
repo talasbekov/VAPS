@@ -16,6 +16,9 @@ dist-ssr
 .env
 .env.*
 
+# временные фикстуры lint-canon.test.mjs (живут только внутри прогона; страховка от kill -9)
+__canon_*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -535,3 +535,9 @@
 Проход 1 (bmad-code-review, Fable 5 ×3 слоя — Blind/Edge/Auditor; **same-model caveat** vs dev Fable 5; дифф 8.1 vs `999a98d`, лок-файл исключён). Acceptance Auditor: AC1/2/4/5/6 SATISFIED, AC3 PARTIAL (дыры no-CDN гварда). 2 decision (Vite8/TS6-девиация + changeOrigin — ждут Bratan) · 8 patch · 1 defer (ниже) · 7 dismiss.
 
 - **Корневой quality-bar (`make gate`) не включает фронтовый гейт** (`Backend/VAPS/Makefile:31` + `frontend/package.json` scripts.gate, blind+edge, Med): `npm run gate` (tsc+eslint+build+size-gate) существует только внутри `frontend/` и ниоткуда не вызывается — разработчик, прогоняющий `make gate` (quality-bar проекта), получит зелёный сигнал при сломанном фронте. Ассерты стори 8.1 существуют, но не enforced на уровне репо. Закрыть: wiring фронтового гейта в корневой quality-bar/CI отдельной сторей E8 (заодно решить: единый `make gate` с npm-зависимостью или раздельные гейты с общей документацией).
+
+## Deferred from: code review of 8-2-канон-линтеры (2026-07-07)
+
+Проход 1 (bmad-code-review, Fable 5 ×3 слоя — Blind/Edge/Auditor; **same-model caveat** vs dev Fable 5; дифф = рабочее дерево vs `362c7d9`, baseline спеки `75519a0`, лок-файл исключён из построчного, auditor проверил точечно — registry чист, версии по спеке). Acceptance Auditor: 7/7 AC SATISFIED. 1 decision (расширение бан-списка сверх канона — ждёт Bratan) · 7 patch · 1 defer (ниже) · 4 dismiss.
+
+- **Динамический `import('@tanstack/react-query')` обходит бан useMutation (ARCH-FE-015)** (`frontend/eslint.config.js` features-блок, blind+edge, Low): `@typescript-eslint/no-restricted-imports` проверяет только статические import/export-from; `const {useMutation} = await import('@tanstack/react-query')` в фиче пройдёт весь гейт. deps-gate не страхует — пакет канонный. Правило сейчас спит (пакета нет); закрыть при установке react-query в 8.4/8.5: `no-restricted-syntax` на dynamic-import этого пакета в features/** либо ревью-правило.
