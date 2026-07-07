@@ -258,7 +258,7 @@ development_status:
   epic-7-retrospective: optional
 
   # Epic 8: SPA Foundation — портал открывается
-  epic-8: in-progress
+  epic-8: done
   8-1-scaffold-vite-react-ts-с-контурной-донастройкой: done
   8-2-канон-линтеры: done
   8-3-кодоген-типов-из-схемы: done
@@ -267,7 +267,7 @@ development_status:
   8-6-auth-подключение: done
   8-7-роутер-routes-ts-и-layout: done
   8-8-печатный-каркас: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: done
 
   # Epic 9: Клавиатурный грид — слепой ввод оператора
   # 9.1 (бумажный контракт) отправляется по вертикали сразу после E1
