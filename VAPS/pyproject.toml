@@ -14,6 +14,10 @@ dependencies = [
     # pulls `cryptography` for RS256/asymmetric — the issuer's public key is the
     # only trust anchor; VAPS stores no passwords (ARCH-SEC-030).
     "PyJWT[crypto]>=2,<3",
+    # Story 8.3: OpenAPI-схема для кодогена типов фронта (ARCH-FE-011). Minor-пин:
+    # формат вывода spectacular — контракт drift-чека (lock-файла у бэка нет),
+    # апгрейд = осознанный regen-коммит schema.yaml + schema.d.ts.
+    "drf-spectacular>=0.30,<0.31",
 ]
 
 [project.optional-dependencies]
