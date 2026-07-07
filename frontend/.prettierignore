@@ -1,2 +1,5 @@
 dist
 package-lock.json
+# 8.3: AUTO-GENERATED кодогеном (openapi-typescript CLI); переформатирование
+# prettier'ом = вечное байтовое расхождение с fresh-regen в schema-check
+src/shared/api/schema.d.ts

@@ -245,3 +245,4 @@ Backend/PersonnelStatus/PersonalRecordFront/.ds-tailwind.css
 # каталоги (не файлы в исключённом родителе — так git re-include работает).
 !frontend/**/lib/
 !frontend/**/build/
+.claude/.story-automator-active

@@ -20,6 +20,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.postgres",
     "rest_framework",
+    # Story 8.3: только CLI-генерация схемы (manage.py spectacular) — runtime-роутов
+    # /api/schema нет (закрытый контур), urls.py не трогается.
+    "drf_spectacular",
     "apps.core",
     "apps.operations",
     "apps.operations.statuses",
@@ -178,6 +181,17 @@ REST_FRAMEWORK = {
     # Story 3.1: единая точка формирования ошибок (§36-конверт, DomainError +
     # IntegrityError-по-имени-constraint). Все ошибки DRF-границы — здесь.
     "EXCEPTION_HANDLER": "apps.core.api.exception_handler.domain_exception_handler",
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+# Story 8.3: schema.yaml — контракт для кодогена типов фронта (ARCH-FE-011).
+# VERSION статичная, НЕ из pyproject: привязка к версии проекта делала бы каждый
+# релизный бамп schema-дрифтом. COMPONENT_SPLIT_REQUEST — раздельные Request/
+# Response-компоненты (корректные типы readOnly-полей); включить позже = массовый дифф.
+SPECTACULAR_SETTINGS = {
+    "TITLE": "VAPS API",
+    "VERSION": "0.1.0",
+    "COMPONENT_SPLIT_REQUEST": True,
 }
 
 # Admin-ассеты под DEBUG/runserver через staticfiles. STATIC_ROOT +

@@ -19,6 +19,9 @@
     "jsx": "react-jsx",
 
     /* Linting */
+    // 8.3: канон L229 «TypeScript strict» — фактически не был включён (пробел 8.1).
+    // Без strict contract-ценность tsc ослаблена: nullable-поля схемы не энфорсятся.
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
