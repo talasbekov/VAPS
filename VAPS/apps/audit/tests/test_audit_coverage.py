@@ -238,6 +238,10 @@ AUDIT_MATRIX = {
     # amend (5.8b → 5.9): DAILY_SUBMISSION_AMENDED эмитится в amend_day (один
     # канал на HTTP 5.8b и хук 5.4b); пины — test_submission_audit (5.9).
     "ops-daily-submission-amend": _Audited(),
+    # attachments upload (6.1): ATTACHMENT_UPLOADED эмитится на СЕРВИС-уровне
+    # (create_attachment, канон 4.4) в той же транзакции; HTTP-smoke сквозь
+    # роут — test_attachment_api (паттерн test_submission_audit 5.9).
+    "documents-attachment-list": _Audited(),
 }
 
 
