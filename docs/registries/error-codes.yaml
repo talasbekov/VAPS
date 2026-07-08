@@ -165,6 +165,12 @@ codes:
     category: state
     description: "Функция явно отложена за пределы MVP-core (может быть 403, если ограничена правами)."
     source: "VAPS_7.8.2 §0 (MVP-2/Future)"
+  DOCUMENT_ALREADY_ISSUED:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Документ по текущей версии сдачи уже выпущен; повторная выдача файла — операция скачивания (6.7), новый выпуск — только после amendment сдачи."
+    source: "VAPS_7.8.2 §82.1-82.3 (снапшот-семантика выпуска); epics.md Story 6.5"
 
   # --- 422: нарушение бизнес-правила (hard) ---
   HARD_UNAVAILABLE_STATUS:
@@ -263,6 +269,18 @@ codes:
     category: business_hard
     description: "Недопустимый переход жизненного цикла статуса: отмена не-PLANNED, досрочное завершение не-ACTIVE или датой в будущем, продление не-вперёд, любая lifecycle/edit-операция над CANCELLED-записью (append-once)."
     source: "VAPS_7.8.2 §6 (статусы); epics.md 3.6 (FR-10 lifecycle: продление/досрочное завершение/отмена); architecture.md ARCH-DATA-022 (append-once cancel)"
+  SNAPSHOT_SCHEMA_UNSUPPORTED:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Снапшот сдачи имеет неподдерживаемую версию схемы (ключ schema_version отсутствует/не int/не равен поддерживаемой) — выпуск документа отказан ДО генерации и траты номера."
+    source: "epics.md Story 6.5 (AC-2 эпика); apps/operations/submissions/services/snapshot.py SCHEMA_VERSION"
+  REPORT_NOT_CONVERGENT:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Формулы сходимости расхода нарушены (Штат=Список+Вакансии / staffing-запись отсутствует) — несходящийся расход не выпускается; финдинги derive в details."
+    source: "epics.md Story 6.5 (AC-3 эпика, release-ассерт); architecture.md ARCH-DATA-025; deferred-work.md:549 (дефер ревью 6.3)"
 
   # --- 423: заблокировано состоянием ---
   ASSIGNMENT_VERSION_LOCKED:

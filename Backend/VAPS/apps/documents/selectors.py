@@ -11,7 +11,7 @@ whitespace/тип/канонический формат (ретро E5 §4.1); �
 import uuid
 
 from apps.core.exceptions import DomainError
-from apps.documents.models import Attachment, DocumentSequence
+from apps.documents.models import Attachment, DocumentSequence, IssuedDocument
 
 
 def _not_found():
@@ -28,6 +28,27 @@ def get_attachment(attachment_id):
         return Attachment.objects.get(id=canonical)
     except Attachment.DoesNotExist as exc:
         raise _not_found() from exc
+
+
+class IssuedDocumentSelector:
+    """Read-канал выпусков документов (Story 6.5)."""
+
+    @staticmethod
+    def current_issued(*, doc_type, division_id, business_date):
+        """Действующий (ISSUED) выпуск для (тип, подразделение, день), или None.
+
+        Контракт вызова (Ловушка №4): сервис выпуска читает это ВНУТРИ своей
+        транзакции ПОД submission-локом (``latest_for(lock=True)``) — выпуск и
+        amendment сериализуются на том же row-локе, потому select_for_update
+        здесь не нужен; partial-unique ``uq_issued_document_current`` — DB-ремень
+        на тот же инвариант.
+        """
+        return IssuedDocument.objects.filter(
+            doc_type=doc_type,
+            division_id=division_id,
+            business_date=business_date,
+            status=IssuedDocument.Status.ISSUED,
+        ).first()
 
 
 def lock_sequence(*, doc_type, year):
