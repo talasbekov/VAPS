@@ -17,6 +17,9 @@ from apps.documents.generators.expense_docx import (
     ExpenseTotals,
     generate_expense_docx,
 )
+from apps.documents.generators.expense_csv import generate_expense_csv
+from apps.documents.generators.expense_pdf import generate_expense_pdf
+from apps.documents.generators.expense_xlsx import generate_expense_xlsx
 
 __all__ = [
     "CELL_MAX_MEMBERS",
@@ -28,5 +31,8 @@ __all__ = [
     "ExpenseDocumentData",
     "ExpenseRow",
     "ExpenseTotals",
+    "generate_expense_csv",
     "generate_expense_docx",
+    "generate_expense_pdf",
+    "generate_expense_xlsx",
 ]
