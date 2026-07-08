@@ -61,6 +61,11 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# VAPS private file storage (story 6.1): uploaded attachment bytes live under
+# VAPS_PRIVATE_STORAGE_ROOT (dev default {BASE_DIR}/private_storage) — OUT of
+# version control (files carry PII, they are not repo artifacts).
+private_storage/
+
 # Flask stuff:
 instance/
 .webassets-cache

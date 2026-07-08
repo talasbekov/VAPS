@@ -1141,6 +1141,48 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/documents/attachments/:
+    post:
+      operationId: documents_attachments_create
+      description: Загрузка вложения (multipart, единственное поле `file`).
+      tags:
+      - documents
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AttachmentUploadRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+          description: ''
+  /api/documents/attachments/{id}/download/:
+    get:
+      operationId: documents_attachments_download_retrieve
+      description: 'Скачивание вложения: 200 с X-Accel-Redirect и пустым телом (байты
+        отдаёт nginx); при VAPS_XACCEL_ENABLED=0 — FileResponse.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this Вложение.
+        required: true
+      tags:
+      - documents
+      responses:
+        '200':
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/notifications/:
     get:
       operationId: notifications_list
@@ -1429,6 +1471,45 @@ paths:
           description: No response body
 components:
   schemas:
+    Attachment:
+      type: object
+      description: Read-only проекция Attachment — ответ upload (201) и retrieve-форм.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        original_name:
+          type: string
+          readOnly: true
+        content_type:
+          type: string
+          readOnly: true
+        size:
+          type: integer
+          readOnly: true
+        sha256:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - content_type
+      - created_at
+      - id
+      - original_name
+      - sha256
+      - size
+    AttachmentUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+      required:
+      - file
     AuditLog:
       type: object
       description: Read-only projection of an audit row — FR-36 fields, snake_case,

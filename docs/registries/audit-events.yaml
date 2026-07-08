@@ -57,6 +57,11 @@ actions:
     description: "Скачивание чувствительного документа (обязательный аудит)."
     provenance: derived-from-mutation
     source: "VAPS_7.8.2 BR-DOC-003 (§ «скачивание … фиксируется в audit_logs»)"
+  ATTACHMENT_UPLOADED:
+    entity_type: attachment
+    description: "Файл загружен в приватное хранилище (строка Attachment создана; метаданные в new_value)."
+    provenance: derived-from-mutation
+    source: "VAPS_7.8.2 §6 «все мутации пишутся в audit_logs» + BR-DOC-001; epics.md Story 6.1"
   DAILY_SUBMISSION_SUBMITTED:
     entity_type: daily_submission
     description: "Подразделение сдало день (акт сдачи, снапшот)."

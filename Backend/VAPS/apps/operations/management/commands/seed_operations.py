@@ -26,6 +26,10 @@ PERMISSIONS = [
     ("personnel.edit", "Редактирование кадровых записей"),
     ("orgstructure.view", "Просмотр оргструктуры"),
     ("orgstructure.manage", "Управление оргструктурой"),
+    # documents API gating (story 6.1). Раскладка ниже PROVISIONAL (Д6,
+    # открытый вопрос Bratan) — тест проверяет механизм, не политику.
+    ("document.upload", "Загрузка вложений"),
+    ("document.view", "Скачивание вложений/документов"),
 ]
 
 ROLES = [
@@ -60,13 +64,18 @@ ROLE_PERMISSIONS = {
     "DIVISION_OPERATOR": [
         "daily_report.mark_update", "daily_report.correct", "status.view",
         "personnel.view", "orgstructure.view",
+        "document.upload", "document.view",  # PROVISIONAL (6.1, Д6)
     ],
     "ORGD": [
         "audit.view", "daily_report.generate",
         "personnel.view", "personnel.edit",
         "orgstructure.view", "orgstructure.manage",
+        "document.upload", "document.view",  # PROVISIONAL (6.1, Д6)
     ],
-    "VIEWER": ["status.view", "personnel.view", "orgstructure.view"],
+    "VIEWER": [
+        "status.view", "personnel.view", "orgstructure.view",
+        "document.view",  # PROVISIONAL (6.1, Д6)
+    ],
     "INTEGRATION_USER": ["status.manage"],
 }
 

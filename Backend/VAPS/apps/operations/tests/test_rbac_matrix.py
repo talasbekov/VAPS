@@ -158,6 +158,12 @@ MATRIX = {
     # НЕ RBAC-код); зеркало ops-my-permissions-list. Аноним → 403, любой actor →
     # ALLOW (его список, возможно пустой). seed_operations НЕ трогается.
     "notification-list": _AnyAuthenticated(),
+    # documents — вложения (story 6.1): list-роут служит ТОЛЬКО POST (create;
+    # list/retrieve не реализованы, Д8), download — GET. Гейт
+    # RequirePermissionMixin; мусорный pk у держателя → селектор 404 = ALLOW
+    # по канону матрицы.
+    "documents-attachment-list": _Gate("document.upload"),
+    "documents-attachment-download": _Gate("document.view"),
     # core — загейчено RequirePermissionMixin (story 2.13 механизм A + 2.14
     # раскатка). GET=view, write(create/update/destroy/archive/...)=edit/manage.
     "vacancy-list": _Gate("personnel.view"),  # GET-only (2.13 пилот)

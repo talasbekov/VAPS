@@ -756,6 +756,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/documents/attachments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Загрузка вложения (multipart, единственное поле `file`). */
+        post: operations["documents_attachments_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/attachments/{id}/download/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Скачивание вложения: 200 с X-Accel-Redirect и пустым телом (байты отдаёт nginx); при VAPS_XACCEL_ENABLED=0 — FileResponse. */
+        get: operations["documents_attachments_download_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications/": {
         parameters: {
             query?: never;
@@ -1032,6 +1066,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Read-only проекция Attachment — ответ upload (201) и retrieve-форм. */
+        Attachment: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly original_name: string;
+            readonly content_type: string;
+            readonly size: number;
+            readonly sha256: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        AttachmentUploadRequest: {
+            /** Format: binary */
+            file: string;
+        };
         /** @description Read-only projection of an audit row — FR-36 fields, snake_case, flat. */
         AuditLog: {
             /** Format: uuid */
@@ -2185,6 +2234,51 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    documents_attachments_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AttachmentUploadRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attachment"];
+                };
+            };
+        };
+    };
+    documents_attachments_download_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this Вложение. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
