@@ -2,6 +2,11 @@ from django.db import models
 
 from apps.core.models import UUIDTimeStampedModel
 
+# Тип документа «расход» — единственный выпускаемый тип v1 (Story 6.5, Д6).
+# Живёт рядом с моделью выпуска: сервис выпуска (operations) и счётчик номеров
+# (DocumentSequence) читают ОДИН литерал, паритет тестам 6.2.
+EXPENSE_DOC_TYPE = "расход"
+
 
 class Attachment(UUIDTimeStampedModel):
     """Единая запись о файле в приватном хранилище (Story 6.1, AR-7).
@@ -130,3 +135,115 @@ class DocumentSequence(models.Model):
 
     def __str__(self):
         return f"{self.doc_type}/{self.year}: {self.last_number}"
+
+
+class IssuedDocument(UUIDTimeStampedModel):
+    """Выпуск официального документа: файл + sha256 + номер (Story 6.5).
+
+    Одна строка — один выпуск: номер из ``allocate_number`` + FK на
+    ``Attachment`` с зафиксированными байтами (снапшот-семантика «байт-в-байт
+    + хэш», §82.1-82.3). Строка иммутабельна по содержимому: amendment сдачи
+    порождает НОВЫЙ выпуск «взамен исх. №…» (``supersedes`` → прежний выпуск,
+    прежний ``ISSUED→SUPERSEDED``; его Attachment/байты не трогаются).
+
+    Cross-context ссылки — плоские id (ARCH-003): ``division_id`` (UUID
+    core_divisions), ``submission_id``/``submission_version`` (int-PK и версия
+    ``ops_daily_submissions``) — НИКОГДА не FK через границу. FK внутри app:
+    ``attachment`` (PROTECT — выпуск номерован и аудирован, байты не удалить),
+    ``supersedes`` (self, PROTECT — цепь выпусков не рвётся).
+
+    Инварианты БД: unique ``(doc_type, year, number)``; НЕ БОЛЕЕ одного
+    ISSUED на ``(doc_type, division_id, business_date)`` (partial-unique;
+    «ровно один после первого выпуска» — прикладной инвариант сервиса,
+    зеркало канона DailySubmission); ``supersedes`` непуст ⇒ ``reason``
+    непуст. Писатель ОДИН — ``issue_expense_document``
+    (apps/operations/submissions/services/document_release_service.py).
+
+    Бизнес-модель — НЕ регистрировать в Django Admin (Admin = только
+    справочники); hard delete запрещён (architecture §Process Patterns) —
+    delete-путей не заводить.
+    """
+
+    class Status(models.TextChoices):
+        ISSUED = "ISSUED", "Выпущен"
+        SUPERSEDED = "SUPERSEDED", "Заменён"
+
+    doc_type = models.CharField(max_length=50)
+    number = models.PositiveIntegerField()
+    year = models.PositiveIntegerField()
+    business_date = models.DateField()
+    # ARCH-003: flat cross-context reference to core_divisions, never an FK.
+    division_id = models.UUIDField()
+    # ARCH-003: flat int-PK of the issued ops_daily_submissions row + its
+    # version — what exactly this выпуск fixed, without a cross-context FK.
+    submission_id = models.PositiveBigIntegerField()
+    submission_version = models.PositiveIntegerField()
+    attachment = models.ForeignKey(
+        Attachment, on_delete=models.PROTECT, related_name="issued_documents"
+    )
+    supersedes = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="superseded_by",
+    )
+    # БЕЗ default: сервис всегда пишет ISSUED явно — молчаливое "" ловит CHECK.
+    status = models.CharField(max_length=20, choices=Status.choices)
+    # reason выпускаемой сдачи ("" у v1, непустой у AMENDED) — потому blank
+    # допустим и при supersedes=None (первый выпуск amended-сдачи несёт reason).
+    reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "documents_issued_documents"
+        constraints = [
+            # §82.3: номер уникален внутри (тип, год) — гарантия counter-канала.
+            models.UniqueConstraint(
+                fields=["doc_type", "year", "number"],
+                name="uq_issued_document_number",
+            ),
+            # НЕ БОЛЕЕ одного действующего выпуска на (тип, подразделение,
+            # день); флип ISSUED→SUPERSEDED освобождает слот (канон
+            # unique_daily_submission_current).
+            models.UniqueConstraint(
+                fields=["doc_type", "division_id", "business_date"],
+                condition=models.Q(status="ISSUED"),
+                name="uq_issued_document_current",
+            ),
+            # status без дефолта → `.objects.create()` не валидирует choices;
+            # DB-гард держит словарь состояний (зеркало chk_daily_submission_event).
+            models.CheckConstraint(
+                condition=models.Q(status__in=["ISSUED", "SUPERSEDED"]),
+                name="chk_issued_document_status",
+            ),
+            # Номера выдаются с 1 (auto-CHECK позитив-филда пропускает 0).
+            models.CheckConstraint(
+                condition=models.Q(number__gte=1),
+                name="chk_issued_document_number_min",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(doc_type__regex=r"\S"),
+                name="chk_issued_document_doc_type_not_blank",
+            ),
+            # «Взамен исх. №» обязан нести причину замены (зеркало
+            # chk_daily_submission_amended_requires_reason_sanction); обратное
+            # НЕ требуется — первый выпуск amended-сдачи несёт reason без
+            # supersedes.
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(supersedes__isnull=False) | models.Q(reason__regex=r"\S")
+                ),
+                name="chk_issued_document_supersede_reason",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["division_id", "business_date"],
+                name="idx_issued_document_lookup",
+            ),
+        ]
+        verbose_name = "Выпуск документа"
+        verbose_name_plural = "Выпуски документов"
+
+    def __str__(self):
+        return f"{self.doc_type} №{self.number}/{self.year} ({self.status})"
