@@ -231,7 +231,7 @@ development_status:
   # Epic 6: Документ Расхода — артефакт, которому верят
   epic-6: in-progress
   6-1-app-documents-и-attachment: done
-  6-2-documentsequence: backlog
+  6-2-documentsequence: done
   6-3-генератор-docx-перенос-из-донора: backlog
   6-4-генераторы-xlsx-csv-pdf: backlog
   6-5-выпуск-расхода: backlog

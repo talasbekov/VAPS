@@ -1,5 +1,6 @@
-"""Story 6.1 — read-канал Attachment (architecture.md#L451: селектор —
-единственный канал чтения; view остаётся тонкой).
+"""Селекторы app documents: read-канал Attachment (Story 6.1) и row-lock
+счётчика DocumentSequence (Story 6.2). architecture.md#L451: селектор —
+единственный канал чтения; view остаётся тонкой.
 
 Канонизация pk — здесь, НЕ в DRF ``get_object()``: невалидный UUID в pk у
 DRF-пути кидает ``ValueError`` → 500 (Ловушка №5). Каждый вход проверяется на
@@ -10,7 +11,7 @@ whitespace/тип/канонический формат (ретро E5 §4.1); �
 import uuid
 
 from apps.core.exceptions import DomainError
-from apps.documents.models import Attachment
+from apps.documents.models import Attachment, DocumentSequence
 
 
 def _not_found():
@@ -27,3 +28,16 @@ def get_attachment(attachment_id):
         return Attachment.objects.get(id=canonical)
     except Attachment.DoesNotExist as exc:
         raise _not_found() from exc
+
+
+def lock_sequence(*, doc_type, year):
+    """Row-lock строки счётчика (doc_type, year) для выдачи номера (Story 6.2).
+
+    Use inside a transaction (зеркало ``CoreEmployeeLockSelector
+    .lock_employee``): лок живёт до коммита вызывающего — это и есть механизм
+    «откат без дырки». Строка обязана существовать (bootstrap делает
+    ``allocate_number`` через ``get_or_create`` ДО перечитки под локом).
+    """
+    return DocumentSequence.objects.select_for_update().get(
+        doc_type=doc_type, year=year
+    )
