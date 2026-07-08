@@ -18,6 +18,12 @@ dependencies = [
     # формат вывода spectacular — контракт drift-чека (lock-файла у бэка нет),
     # апгрейд = осознанный regen-коммит schema.yaml + schema.d.ts.
     "drf-spectacular>=0.30,<0.31",
+    # Story 6.3: официальный .docx расхода (перенос из донора — тот же пин
+    # 1.2.0, что в donor requirements.txt; registry-снимок 1.2.0 на 2026-07-08).
+    # Offline-friendly: default-template внутри пакета, сети не касается. ЧЕСТНО:
+    # тянет lxml (C-extension) — осознанное отступление от openpyxl-обоснования
+    # «no C extensions»; бинарные wheels вендорятся в offline-зеркало контура.
+    "python-docx>=1.2,<2",
 ]
 
 [project.optional-dependencies]
