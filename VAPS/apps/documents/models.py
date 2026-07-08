@@ -63,3 +63,70 @@ class Attachment(UUIDTimeStampedModel):
 
     def __str__(self):
         return f"{self.original_name} ({self.id})"
+
+
+class DocumentSequence(models.Model):
+    """Счётчик номеров документов по паре (doc_type, year) — Story 6.2, AR-7.
+
+    Internal bookkeeping (зеркало ``core.Watermark``): bare-модель без API,
+    Admin и аудита; наружу не отдаётся. Номер выдаётся ТОЛЬКО через
+    ``apps.documents.services.allocate_number`` ВНУТРИ транзакции финализации
+    вызывающего (6.5): сервис берёт row-лок ``select_for_update`` и держит его
+    до коммита — откат транзакции отменяет и инкремент, дырки в нумерации нет
+    (gap-tolerant). Прямой UPDATE строки = мимо лока = lost update / дубль
+    номера — запрещён.
+
+    MUST NOT: Postgres SEQUENCE в любой форме (``CREATE SEQUENCE``,
+    ``GENERATED … AS IDENTITY``, ``AutoField``/``serial`` для номера) —
+    ``nextval()`` не транзакционен: взятый номер при откате не возвращается →
+    дырка. Наша механика — обычная integer-колонка ``last_number`` + row-лок
+    (architecture.md §Process Patterns «Нумерация документов»). PK самой
+    строки счётчика — неявный BigAutoField: это НЕ номер документа, его
+    транзакционность не важна.
+
+    Year-rollover (§82.3): новый ``(doc_type, year)`` бутстрапится
+    ``get_or_create`` под защитой ``uq_document_sequence_doc_type_year``
+    (unique-констрейнт load-bearing — гонка двух транзакций сериализуется на
+    unique-индексе + row-локе); счётчик нового года стартует с 1.
+    """
+
+    doc_type = models.CharField(max_length=50)
+    year = models.PositiveIntegerField()
+    last_number = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "documents_document_sequences"
+        constraints = [
+            # Load-bearing для bootstrap-гонки: get_or_create в сервисе
+            # опирается на этот unique при проигрыше INSERT-гонки (savepoint
+            # → повторный get). Не декорация.
+            models.UniqueConstraint(
+                fields=["doc_type", "year"],
+                name="uq_document_sequence_doc_type_year",
+            ),
+            # Осознанный дубль встроенного чека позитив-филда именованным
+            # констрейнтом (зеркало chk_daily_submission_version_min):
+            # greppable и переживает смену типа поля.
+            models.CheckConstraint(
+                condition=models.Q(last_number__gte=0),
+                name="chk_document_sequence_last_number_min",
+            ),
+            # Диапазон-гвард против перепутанных аргументов (year=6,
+            # year=20026); в сервисе продублирован на границе.
+            models.CheckConstraint(
+                condition=models.Q(year__gte=2000) & models.Q(year__lte=2200),
+                name="chk_document_sequence_year_range",
+            ),
+            # `\S` (хоть один НЕ-пробельный символ) отвергает и "" и
+            # whitespace-only (зеркало chk_attachment_*_not_blank).
+            models.CheckConstraint(
+                condition=models.Q(doc_type__regex=r"\S"),
+                name="chk_document_sequence_doc_type_not_blank",
+            ),
+        ]
+        verbose_name = "Счётчик номеров документов"
+        verbose_name_plural = "Счётчики номеров документов"
+
+    def __str__(self):
+        return f"{self.doc_type}/{self.year}: {self.last_number}"
