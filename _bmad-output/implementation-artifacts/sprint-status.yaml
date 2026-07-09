@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-06-15
+# last_updated: 2026-07-10
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -135,7 +135,7 @@ development_status:
   epic-2-retrospective: optional
 
   # Epic 3: Статусный движок — один статус на дату
-  epic-3: in-progress
+  epic-3: done
   3-1-domainerror-и-единый-exception-handler: done
   3-2-полная-модель-статуса: done
   3-3-сервис-создания-статуса-с-валидациями: done
@@ -150,7 +150,7 @@ development_status:
   3-12-catch-up-материализации-эффектов: done
   3-13-спайк-часы-без-ntp: done
   3-14-конкурентный-смоук-статусов: done
-  epic-3-retrospective: optional
+  epic-3-retrospective: done
 
   # Epic 4: Аудит — каждое решение восстановимо
   epic-4: backlog

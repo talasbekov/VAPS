@@ -4,28 +4,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**VAPS** — Personnel Records, VisitX (visitor management), and Accreditation system. Python project (inferred from `.gitignore`).
+**VAPS** — Personnel Records, VisitX (visitor management), and Accreditation system. Django + PostgreSQL backend; a Vite + React + TypeScript frontend is planned (Epic 8, not yet scaffolded).
 
 ## Status
 
-This repository is freshly initialized. No source code, build configuration, or test framework has been added yet. Commands below will need to be updated as the project takes shape.
+Backend lives in `Backend/VAPS`. Epics 1–3 are done: `core` context, `operations` context (statuses / RBAC / submissions), and the donor parallel-run harness (`migration_legacy`). Epic 4 (audit) is next. Planning artifacts are in `_bmad-output/planning-artifacts/` (`architecture.md`, `epics.md`, `prds/`); sprint state is `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Common Commands
 
-_Not yet configured — add build, lint, test, and run commands here as the project is set up._
-
-Likely candidates once scaffolded:
+Run these from `Backend/VAPS`, not the repo root.
 
 ```bash
 # Install dependencies
-pip install -e ".[dev]"
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
-# Run tests
-pytest
+# Start the test/dev database (PostgreSQL 16 on :5433)
+docker compose up -d --wait db
 
-# Lint
-ruff check .
+# Quality gate: ruff + fast suite + makemigrations --check. 300s budget (NFR-8).
+# This is the quality bar — a story is not done until `make gate` is green.
+make gate
+
+# Full suite, including property / concurrency / slow markers
+make test-full
+
+# Lint one file (do NOT run `ruff format` over a whole app dir — it touches out-of-scope files)
+.venv/bin/ruff check apps/path/to/file.py
 ```
+
+**Tests run on PostgreSQL, not SQLite** (ARCH-DATA-020). `make gate` and `make test-full` set `VAPS_DB=postgres` themselves. A bare `pytest` falls back to the SQLite default and cannot migrate `ops_statuses`, which uses `ExclusionConstraint` and a `GeneratedField` over `daterange`.
+
+## Canon (non-negotiable)
+
+- **Error codes are a closed world.** `docs/registries/error-codes.yaml` is the registry; a code that is not in it is a STOP, not a new constant. `DomainError` does not read the registry at runtime — a test enforces it.
+- **Status state is derived, never stored** (ARCH-DATA-022). No mutable enum flipped by scheduled tasks — that is the donor anti-pattern. Lifecycle facts (`cancelled_*`, `return_*`) are append-once.
+- **Intervals are half-open** `[start, end)` (ARCH-DATA-023). UI says "по … включительно".
+- **Time comes only from `core.clock.Clock`.** Never `timezone.now().date()` in domain code or tests; override with `core.clock.override(...)`. Note `clock.override()` is a ContextVar and does not cross thread boundaries.
+- **Any new write path to an append-once field must lock the row, `refresh_from_db()`, and check `cancelled_at`.** Three of Epic 3's HIGH bugs were this exact omission.
+- **There is no `factory_boy`.** Tests seed data directly. Do not add it (see ARCH-DEFERRED-043).
 
 # BMAD Epic and Story Decomposition Rules
 

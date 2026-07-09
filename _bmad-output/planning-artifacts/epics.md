@@ -479,8 +479,10 @@ As a разработчик, I want core.exceptions.DomainError(code, http_statu
 
 **Acceptance Criteria:**
 
-**Given** конкурентная вставка, нарушающая excl_hard_status_overlap, **When** сервис ловит IntegrityError, **Then** клиент получает 409 STATUS_OVERLAP с деталями, не 500.
+**Given** конкурентная вставка, нарушающая excl_hard_status_overlap, **When** сервис ловит IntegrityError, **Then** клиент получает 422 OVERLAPPING_HARD_STATUS с деталями, не 500.
 **Given** невалидная форма, **Then** 400 с ошибками по полям (DRF-формат); бизнес-нарушение → 422 с кодом из реестра.
+
+> Сверено на ретроспективе E3 (2026-07-10): исходная формулировка «409 STATUS_OVERLAP» старше реестра `docs/registries/error-codes.yaml` (2026-06-19). Кода `STATUS_OVERLAP` в реестре нет; hard-пересечение — 422 `OVERLAPPING_HARD_STATUS`, soft-пересечение — 409 `STATUS_OVERLAP_WARNING` (overridable). Решение зафиксировано в `sprint-status.yaml`.
 
 ### Story 3.2: Полная модель статуса
 
@@ -595,7 +597,9 @@ As a система, I want тест: два оператора одноврем
 
 **Acceptance Criteria:**
 
-**Given** две параллельные транзакции (барьер), **When** обе пишут пересекающиеся статусы, **Then** ровно один коммит; второй — 409; маркер concurrency, тонкая версия в gate.
+**Given** две параллельные транзакции (барьер), **When** обе пишут пересекающиеся статусы, **Then** ровно один коммит; второй — 409 при soft-пересечении, 422 при hard-пересечении; маркер concurrency, тонкая версия в gate.
+
+> Сверено на ретроспективе E3 (2026-07-10): «второй — 409» верно только для soft-гонки (`STATUS_OVERLAP_WARNING`). Hard-гонка бьётся о `excl_hard_status_overlap` → 422 `OVERLAPPING_HARD_STATUS`. Решение №1 Bratan, 2026-07-10. Mutation-проверка 3.14: hard-гонка не доказывает employee-lock (без лока GiST даёт тот же 422) — «не lost update» доказывает только soft-гонка.
 
 ## Epic 4: Аудит — каждое решение восстановимо
 
