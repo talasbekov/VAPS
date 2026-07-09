@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.documents",
     "apps.migration_legacy",
+    "apps.parallel_run",
 ]
 
 MIDDLEWARE = [
