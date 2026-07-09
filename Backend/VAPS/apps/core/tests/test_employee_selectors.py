@@ -1,10 +1,16 @@
 import datetime as dt
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.core.models import Division, DivisionType, Employee, Organization, Position
-from apps.core.selectors import CoreEmployeeSelector, HistoricalEmployeeSelector
+from apps.core.selectors import (
+    CoreEmployeeLockSelector,
+    CoreEmployeeSelector,
+    HistoricalEmployeeSelector,
+)
 from apps.core.services import assign_employee_division
 
 pytestmark = pytest.mark.django_db
@@ -107,3 +113,51 @@ def test_historical_division_falls_back_to_current_when_no_history(setup, caplog
     result = HistoricalEmployeeSelector.division_at(emp.id, timezone.now())
     assert result == d1.id
     assert any("history" in r.message.lower() for r in caplog.records)
+
+
+# == CoreEmployeeLockSelector.lock_employees — the NFR-4 acquisition contract ==
+
+
+def test_lock_employees_acquires_every_row_in_one_ordered_locking_query(
+    fresh_division,
+):
+    """The bulk lock must be ONE query that names a deterministic row order.
+
+    Both halves are load-bearing for `bulk_create_statuses` (story 3.8):
+
+    * ONE query — a per-row `select_for_update().get()` loop would acquire locks
+      in the CALLER's list order, so two operators mass-writing the same unit at
+      the 16-17 peak with oppositely ordered payloads deadlock each other. That
+      is NFR-4, and «ретраи мутаций запрещены» (architecture.md#L463) means a
+      deadlock reaches the operator as an error rather than a silent retry.
+    * ORDER BY — the clause that makes the acquisition order a property of the
+      rows, not of the caller's list.
+
+    A structural assertion rather than a threaded race, because no race CAN see
+    this: both writers run the same code, so they agree on whatever order it
+    picks (ascending, descending, or the scan order left after dropping the
+    clause) and never deadlock. Story 3.14 recorded exactly that — mutating
+    `order_by("id")` reddened nothing anywhere in the suite. Hence: assert that
+    a deterministic order is *requested*, and leave its direction unpinned.
+    """
+    a = _emp(fresh_division, iin="900101300440", last_name="Ан", position_code="OPER")
+    b = _emp(fresh_division, iin="900101300441", last_name="Бек", position_code="OPER")
+    c = _emp(fresh_division, iin="900101300442", last_name="Вин", position_code="OPER")
+
+    # Deliberately unsorted, so a lock order tracking the argument list would be
+    # observably different from one tracking the rows.
+    with CaptureQueriesContext(connection) as captured:
+        locked = CoreEmployeeLockSelector.lock_employees([c.id, a.id, b.id])
+
+    assert set(locked) == {a.id, b.id, c.id}
+    locking = [
+        query["sql"]
+        for query in captured.captured_queries
+        if "FOR UPDATE" in query["sql"].upper()
+    ]
+    assert len(locking) == 1, (
+        f"expected a single bulk-locking query, got {len(locking)}: {locking}"
+    )
+    assert "ORDER BY" in locking[0].upper(), (
+        f"locking query has no deterministic row order: {locking[0]}"
+    )
