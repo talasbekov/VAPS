@@ -57,6 +57,7 @@ markers = [
     "property: property-based tests (hypothesis)",
     "concurrency: concurrency smoke tests",
     "slow: tests that take more than a few seconds",
+    "golden: golden-master регрессия расхода (числа + нормализованный document.xml); только test-full",
 ]
 
 [tool.ruff]
