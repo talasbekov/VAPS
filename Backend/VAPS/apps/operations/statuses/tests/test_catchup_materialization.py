@@ -293,6 +293,41 @@ def test_clock_behind_watermark_halts_and_alerts(effects, caplog):
 
 
 @pytest.mark.django_db
+def test_clock_jumped_forward_materializes_future_days_characterization(effects):
+    """Characterization of UNGUARDED behaviour (spike 3.13), not an approval of it.
+
+    The wall clock jumping forward is the mirror image of the halt above, and it
+    is not guarded: `today > watermark` is indistinguishable from a legitimate
+    outage, so the runner replays the gap and drags the watermark into the
+    future with it. `CATCHUP_MAX_DAYS` chunks that plan, it does not stop it
+    (story 3.12, decision C), and there is no sanity ceiling on the gap and no
+    `--today` argument to override the clock from the CLI.
+
+    Today the blast radius is bounded — `materialize_day_effects` is a NO-OP, so
+    only `core_watermarks` moves. Once E4 (audit) and E5 (notifications) fill
+    the seams, these become N days of false audit and future-dated notices.
+
+    When the forward-guard story lands, this test INVERTS: the run must halt
+    instead of replaying. See `spikes/3.13-clock-no-ntp/FINDINGS.md`.
+    """
+    jumped = TODAY + timedelta(days=3)
+    bootstrap_watermark(WATERMARK_KEY, on=TODAY)
+    with clock.override(jumped):
+        result = run_status_effects_catchup()
+
+    future_days = [TODAY + timedelta(days=n) for n in (1, 2, 3)]
+    assert result.status == "ok", "no forward-bound guard exists (spike 3.13)"
+    assert result.processed == future_days
+    assert result.remaining == 0
+    assert effects == future_days, "effects fired for days that have not happened"
+    assert all(day > TODAY for day in result.processed)
+
+    # The watermark is now poisoned: correcting the clock back to TODAY leaves
+    # `today < watermark`, and the catch-up halts until real time catches up.
+    assert read_watermark(WATERMARK_KEY) == jumped
+
+
+@pytest.mark.django_db
 def test_second_sequential_run_on_the_same_day_is_a_noop(effects):
     # AC-7: idempotency is carried by the monotonic watermark, not a dedup key.
     bootstrap_watermark(WATERMARK_KEY, on=TODAY - timedelta(days=2))

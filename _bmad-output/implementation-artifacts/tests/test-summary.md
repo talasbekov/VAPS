@@ -1,131 +1,189 @@
-# Test Automation Summary — Story 3.12 (catch-up материализации эффектов)
+# Test Automation Summary — Story 3.13 (спайк: часы без NTP)
 
-**Дата:** 2026-07-09 · **Воркфлоу:** `bmad-qa-generate-e2e-tests` · **Модель:** claude-opus-4-8[1m]
-**Baseline:** `9294d0a` + рабочее дерево 3.12 (status `review`)
+**Дата:** 2026-07-10 · **Воркфлоу:** `bmad-qa-generate-e2e-tests` · **Модель:** claude-opus-4-8[1m]
+**Baseline:** `63842c3` + рабочее дерево 3.13 (status `review`)
 **Фреймворк:** pytest 8 + pytest-django (существующий; ничего не добавлялось).
 `factory_boy`/`freezegun` в проекте нет — данные сеются напрямую, время только через `clock.override()`.
 
-## Область
+> Предыдущая версия этого файла — саммари стори 3.12 — сохранена в git (`63842c3`).
 
-У стори 3.12 **нет HTTP-поверхности и нет UI**: раннер — обычный вызываемый + management-команда
-(AC-10: «раннер не поднимает `DomainError` — нет HTTP-поверхности»; AC-11: Celery/beat — предмет E12).
-Поэтому «API-тесты» здесь = публичная поверхность модулей + точка входа `manage.py catchup_status_effects`,
-а «E2E» = сквозной прогон раннера с **настоящим** `effects.py` (без monkeypatch) под реальным Postgres.
+## Область: почему у спайка вообще есть тесты
 
-## Сгенерированные тесты (15 новых)
+3.13 — **спайк**: его продукт — знание (`spikes/3.13-clock-no-ntp/{README,FINDINGS,RUNBOOK-clock}.md`),
+а не код. HTTP-поверхности и UI у catch-up нет; точка входа — `manage.py catchup_status_effects`,
+и она уже покрыта тремя тестами со стори 3.12. **Новых E2E-в-браузере здесь быть не может** —
+это свойство фичи, а не пробел.
 
-### `Backend/VAPS/apps/core/tests/test_watermark.py` (было 11 → стало 15)
+Поэтому «пробел в тестах» для спайка означает другое: **`FINDINGS.md` утверждает поведение в прозе,
+а никакой тест это поведение не держит**. Собственная легенда спайка определяет `code-traced` как
+«прочитано в коде, отдельным прогоном не подтверждено» — шесть строк каталога режимов стояли
+именно так. Прогон превратил их в `VERIFIED`.
 
-- [x] `test_advisory_lock_is_refused_while_another_session_holds_it` — ветка `acquired=False` из **второй реальной сессии**
-- [x] `test_lock_ids_differ_between_keys` — два watermark-ключа не сериализуются на одном локе
-- [x] `test_watermark_module_never_reads_the_wall_clock` — AST-гвард (AC-1)
-- [x] `test_watermark_keys_are_independent` — `advance_watermark` не тащит чужой ключ вперёд
+**Жёсткие границы, соблюдённые дословно:**
 
-### `Backend/VAPS/apps/operations/statuses/tests/test_catchup_materialization.py` (было 9 → стало 19)
+- **ни одного гарда** (AC-11): ни `CATCHUP_SANITY_DAYS`, ни `--today`, ни потолка на `N`;
+- **ни строки прод-кода**: `clock.py`, `tasks.py`, `watermark.py`, `effects.py`, команда — не тронуты;
+- **`test_catchup_materialization.py` не тронут** — в нём остался ровно один характеризационный тест,
+  как требует AC-6. Новые тесты живут в **новых файлах**;
+- `test_tzdata_canary.py` не тронут (AC-3 запрещает править существующие тесты) — слепое пятно
+  канарейки закрыто из нового файла.
 
-- [x] `test_effect_seams_are_no_ops_until_e4_and_e5` — сеймы возвращают `None`
-- [x] `test_materialize_day_effects_calls_both_seams` — проводка сейма (AC-9)
-- [x] `test_effect_seams_touch_no_database` — ноль запросов (AC-9 «ничего не пишут»)
-- [x] `test_real_run_writes_nothing_but_the_watermark` — **E2E**: настоящие эффекты; единственная запись — `core_watermarks` (ARCH-DATA-022 #L298)
-- [x] `test_runner_reads_the_wall_clock_exactly_once` — AST-гвард на `tasks.py` (#L300)
-- [x] `test_plan_exactly_at_the_cap_is_not_truncated_and_does_not_warn` — граница `len(plan) == CAP`
-- [x] `test_capped_plan_drains_over_successive_runs_without_replaying_a_day` — чанкинг **дотекает** и не переигрывает день на стыке
-- [x] `test_rival_session_holding_the_lock_makes_the_run_a_silent_noop` — AC-8 **внутри гейта**, без тредов
-- [x] `test_advisory_lock_is_released_after_the_runner_raises` — лок не течёт после падения на дне K
-- [x] `test_management_command_reports_the_days_left_after_a_capped_run` — `remaining=` в stdout
+## Сгенерированные тесты (11 новых, два новых файла)
 
-### `Backend/VAPS/apps/operations/tests/test_isolation.py` (было 2 → стало 3) — **tracked-файл, вне File List стори**
+### `Backend/VAPS/apps/core/tests/test_clock_drift_characterization.py` (новый, 7)
 
-- [x] `test_statuses_does_not_import_sibling_contexts` — граница #L587 (`statuses` ↛ `submissions`/`audit`/`notifications`)
+- [x] `test_backward_halt_alert_is_structured_for_forensics` — логгер `apps.core.clock`, точное сообщение и **`extra={"watermark","today"}`**
+- [x] `test_drift_inside_the_day_never_moves_the_business_date` — режим (в)
+- [x] `test_twenty_minutes_of_drift_before_midnight_flips_the_business_date` — режим (г), порог 23:50
+- [x] `test_the_same_twenty_minutes_at_noon_leaves_the_business_date_alone` — негативная половина того же правила
+- [x] `test_clock_resolves_the_business_date_through_vaps_local_timezone` — слепое пятно канарейки, исполняемо
+- [x] `test_vaps_local_timezone_is_pinned_to_the_canonical_zone` — пин зоны, которую `Clock` реально читает
+- [x] `test_watermark_updated_at_is_written_by_the_os_clock_not_by_the_clock_service` — `auto_now` мимо `Clock`
+
+### `Backend/VAPS/apps/operations/statuses/tests/test_catchup_clock_drift.py` (новый, 4)
+
+- [x] `test_sub_daily_backward_shift_inside_one_day_is_a_noop_not_a_halt` — режим (з)
+- [x] `test_drift_across_midnight_materializes_tomorrow_and_poisons_the_watermark` — режим (г) в раннере
+- [x] `test_poisoned_watermark_halts_until_real_time_catches_up_then_noops` — режим (д), включая выход в `noop`
+- [x] `test_forward_jump_beyond_the_cap_drains_over_ceil_n_over_cap_runs` — **главная находка ветки, числами**
+
+### `Backend/VAPS/apps/core/tests/test_staffing_api.py` — **починка, tracked-файл вне File List стори**
+
+- [x] `test_vacancies_endpoint` — бизнес-дата `timezone.now().date()` (UTC) → `Clock.today_local()`
 
 ## Найденные пробелы (все закрыты)
 
 | # | Пробел | Почему это дыра, а не педантизм |
 |---|--------|--------------------------------|
-| 1 | **`status="locked"` не покрыт гейтом** | AC-8 проверялся только тредовым тестом с маркером `concurrency`, который `make gate` **деселектит**. На каждом зелёном гейте ветка «лок занят» была непроверенной. Закрыто детерминированным тестом на второй сессии (`connections.create_connection`), без тредов. |
-| 2 | **`effects.py` не исполнялся ни одним тестом (0/3 функций)** | Все тесты раннера monkeypatch'ат `tasks.materialize_day_effects`. Удаление вызова `emit_catchup_notifications` из сейма не роняло ничего. |
-| 3 | **Раннер ни разу не прогонялся с настоящими эффектами** | Сквозного пути «раннер → реальный `effects.py` → БД» не существовало. Заодно закрыт запрет #L298: теперь проверяется, что единственная таблица, в которую пишет раннер, — `core_watermarks`. |
-| 4 | **Граница капа `len(plan) == CAP`** | `remaining = max(0, len(plan) - CAP)`: при `>= CAP` вместо `> CAP` был бы ложный WARNING на каждом легитимном простое ровно в 400 дней. Только «500 дней» не различает эти реализации. |
-| 5 | **Чанкинг не проверялся на «дотекание»** | AC-5 обещает «не hard-stop, догоняется следующим тиком» — второго запуска после капа не было ни в одном тесте, как и проверки, что день на стыке чанков не переигран. |
-| 6 | **Лок мог утечь после падения раннера** | `test_failure_mid_plan...` делает второй запуск в **той же сессии**, а advisory-локи реентерабельны ⇒ утечка лока дала бы ложно-зелёный. Спрашивать надо у чужой сессии. |
-| 7 | **«Дисциплина руками» без теста** | Стори сама пишет: AST-гвард `test_no_wall_clock_reads_in_domain_layers` не покрывает `tasks.py`/`watermark.py`. Два точечных AST-теста превращают дисциплину в гейт. |
-| 8 | **Ключи watermark не изолированы** | `core_watermarks` — keyed store; `advance_watermark` через `.update()` без фильтра утащил бы все потоки вперёд. |
-| 9 | **`statuses ↛ submissions` (AC-9, Task 3)** | Чекбокс Task 3 стоит, но теста нет — граница держалась только докстрокой в `amendment_hook.py`. |
-| 10 | **`remaining=` в выводе команды** | Оператор в cron-логе не отличал усечённый прогон от полного. |
+| 1 | **Форма ERROR-алерта не покрыта ничем** | В закрытом контуре внешних каналов нет — «алерт» это **одна ERROR-строка**, и `extra={"watermark","today"}` её единственная машиночитаемая часть: только она говорит, **насколько** уехали часы. `test_clock.py` ассертит подстроку сообщения. Имя логгера и `extra` были проверены разовым `python -c` (RUNBOOK §4 стр. 4) — то есть никем и никогда повторно. Удаление `extra=` не роняло гейт. |
+| 2 | **`⌈N/400⌉` — центральное число спайка — не исполнялось** | Вся ценность находки в том, что кап **чанкает, а не останавливает**, поэтому прыжок на `N` дней доезжает до конца. Это было `code-traced`. Существующий `…_drains_over_successive_runs…` проверяет дренаж для **легитимного простоя**, а не для прыжка в будущее. |
+| 3 | **Порог «близость к полуночи, а не величина Δ»** | Главный операционный совет рунбука (§1). Держался только прозой. Теперь два теста: 20 минут в 23:50 переворачивают дату, те же 20 минут в полдень — нет. |
+| 4 | **Дрейф внутри суток (режим в)** | Утверждение «вреда нет, пока дата не переброшена» — фундамент §1. Не проверялось. |
+| 5 | **Под-суточный сдвиг назад → `noop`, а не `halted` (режим з)** | Контринтуитивно, и на этом стоит совет §2 шаг 4 «двигать малым шагом». Если бы halt срабатывал, совет был бы вреден. |
+| 6 | **Выход из отравленного watermark (режим д)** | `FINDINGS` обещает: когда реальное время дойдёт до отравленного дня, будет `noop`, **не** halt, и день **не переиграется**. Ни один тест этого перехода не делал. |
+| 7 | **Слепое пятно tzdata-канарейки** | Спайк **сам его назвал** и отложил в `deferred-work`. Канарейка ассертит `settings.TIME_ZONE`, `Clock` читает `settings.VAPS_LOCAL_TIMEZONE`. Опечатка во второй → зелёный гейт при неверном `business_date` во всей системе. Это тест, а не гард ⇒ чинится здесь. |
+| 8 | **`updated_at` мимо `Clock`** | RUNBOOK §2/§5 велит «не доверять `updated_at`». Утверждение без теста. AST-гард не ловит: `auto_now` — kwarg, а не вызов. |
+| 9 | 🔴 **`test_vacancies_endpoint` — не флейк, а баг** | См. отдельную секцию ниже. |
+
+### Занижённое доказательство (правка реестра, не теста)
+
+Режим (д) «неисправимость отравленного watermark» стоял `code-traced`, хотя уже был покрыт
+`test_watermark.py::test_advance_watermark_backwards_raises` и `…_to_same_date_raises`.
+Статус в `FINDINGS.md` исправлен на `VERIFIED` со ссылкой.
+
+## 🔴 Побочная находка: «tz-флейк» оказался багом того же семейства
+
+```python
+# apps/core/tests/test_staffing_api.py:84 (было)
+today = timezone.now().date().isoformat()     # ← дата в UTC, мимо Clock
+```
+
+Эндпоинт принимает **бизнес-дату** и разрешает её через `local_midnight()`, чья собственная докстринга
+предупреждает: *«UTC midnight … produce off-by-one at day boundaries»*. Тест на стороне вызова делал
+ровно запрещённое. С 00:00 до 05:00 (+05) UTC-дата на сутки позади `Asia/Qyzylorda` → запрос уходил
+за `valid_from` слота → `count == 0`.
+
+Это тот же дефект-класс, что находки спайка про `Watermark.updated_at` (`auto_now`) и
+`core/api/views.py:176/191/207`: **чтение wall clock в обход `Clock`**. Ночной красный гейт списывали
+как «tz-флейк, не регрессия» (E5-ретро, AI-1). Регрессия была — в самом тесте.
+
+**A/B-проба выполнена внутри окна** (00:15 +05, та же минута, та же БД):
+
+| Версия строки | Результат |
+|---|---|
+| `Clock.today_local().isoformat()` | **1 passed** |
+| `timezone.now().date().isoformat()` | **1 failed** — `assert 0 == 1` |
+
+`timezone.now().date()` больше нигде в `apps/**` не встречается (проверено грепом).
+Запись E5-ретро AI-1 подлежит пересмотру; предложение о расширении гарда — в `deferred-work.md`.
 
 ## Мутационная проверка (тесты обязаны падать)
 
-Каждый новый тест проверен внесением дефекта в прод-код; прод-файлы восстановлены побайтово
-(sha1 сверены), `grep` на остатки чист.
+Дефект вносился в **прод-код**, файлы восстанавливались `git checkout --`;
+`git status` после каждой пробы чист.
 
 | Мутация | Тест | Результат |
 |---------|------|-----------|
-| M1 раннер игнорирует `acquired=False` | `..._rival_session_...silent_noop` | ✅ упал |
-| M2 `advisory_lock` всегда отдаёт `True` | `..._refused_while_another_session_...` | ✅ упал |
-| M3 безусловный `pg_advisory_unlock` в `finally` | `..._refused_while_another_session_...` | ⚠️ **сначала прошёл** → тест усилен (см. ниже) |
-| M4 off-by-one в `remaining` | `..._exactly_at_the_cap_...` | ✅ упал |
-| M5 выброшен вызов `emit_catchup_notifications` | `..._calls_both_seams` | ✅ упал |
-| M6 лок никогда не отпускается | `..._released_after_the_runner_raises` | ✅ упал |
-| M7 второй `Clock.today_local()` | `..._reads_the_wall_clock_exactly_once` | ✅ упал |
-| M8a/M8b сейм пишет в БД | `..._touch_no_database` / `..._writes_nothing_but_the_watermark` | ✅ упали |
-| M9 `advance_watermark` обновляет все ключи | `..._keys_are_independent` | ✅ упал |
-| M10 капнутый прогон переигрывает день | `..._drains_over_successive_runs_...` | ✅ упал |
-| M11 команда перестала печатать `remaining` | `..._reports_the_days_left_...` | ✅ упал |
-| M12 `bootstrap` перетирает существующую строку | `..._is_idempotent_and_never_overwrites` (существующий) | ✅ упал |
-| M13 `effects.py` импортирует `submissions` | `..._does_not_import_sibling_contexts` | ✅ упал |
+| M1 убрать `extra={...}` из `logger.error` в `clock.py` | `…_alert_is_structured_for_forensics` | ✅ упал |
+| M2 `_local_tz()` читает `settings.TIME_ZONE` вместо `VAPS_LOCAL_TIMEZONE` | `…_resolves_the_business_date_through_vaps_local_timezone` | ✅ упал |
+| M3 внедрить forward-guard в раннер (`today > watermark` → `halted`) | forward-тесты | ✅ упали **ровно два**: `…_drift_across_midnight_…` и `…_drains_over_ceil_n_over_cap_runs`; backward-тесты остались зелёными |
+| M4 (контроль) вернуть `timezone.now().date()` в `test_vacancies_endpoint` | `test_vacancies_endpoint` | ✅ упал (внутри окна 00:00–05:00) |
 
-**Находка M3.** Снятие guard'а `if acquired:` в `finally` **не наблюдаемо через состояние БД**: Postgres
-отказывается отдавать лок, которым сессия не владеет (`WARNING: you don't own a lock of type ExclusiveLock`,
-возврат `false`), так что чужой лок украсть нельзя в принципе. Первая версия теста была зелёной на этой мутации,
-т.е. не защищала то, что декларирует комментарий в `watermark.py`. Тест переписан на утверждение о
-**фактически отправленном SQL** (`CaptureQueriesContext`): при `acquired=False` `pg_advisory_unlock` не
-эмитится вовсе. Мутация ловится.
+**Смысл M3.** Это не просто проверка «тест умеет краснеть». Спайк обещает, что характеризационные
+тесты — **красно-зелёный якорь** для будущей стори forward-bound-guard: когда гард появится, они
+инвертируются. M3 исполняемо показывает, что якорь срабатывает точно и избирательно — гард роняет
+forward-контракт и не задевает backward-контракт.
 
 ## Покрытие
 
 | Поверхность | Было | Стало |
 |-------------|------|-------|
-| `apps/core/watermark.py` — публичные функции | 5/5 | 5/5 (+ветка «лок занят», +AST-гвард wall clock) |
-| `apps/operations/statuses/effects.py` — функции | **0/3** (только через monkeypatch) | **3/3** |
-| `run_status_effects_catchup()` — статусы | 4/5 в гейте (`locked` только за маркером `concurrency`) | **5/5 в гейте** |
-| `catchup_status_effects` — пути команды | 2/3 (`ok`, `halted`) | **3/3** (+`remaining` при капе) |
-| Границы контекстов (ARCH-004 / #L587) | 1/2 (`operations ↛ core.models`) | **2/2** |
-| AC стори | 11/11 (заявлено) | 11/11, из них 4 усилены (AC-1, AC-5, AC-8, AC-9) |
+| Режимы каталога `FINDINGS.md` со статусом `VERIFIED` | **3/8** (а, ж, е-частично) | **8/8** |
+| …из них подтверждены **тестом**, а не разовой командой | 2/8 | **8/8** |
+| Форма ERROR-алерта (логгер + сообщение + `extra`) | 0/3 полей | **3/3** |
+| Blast radius прыжка вперёд: `⌈N/CAP⌉`, дренаж, отсутствие переигрывания | `code-traced` | **тест** |
+| Границы суток (`today_local()` у полуночи) | 0 тестов | **3 теста** (до, после, контроль в полдень) |
+| Зона, которую читает `Clock` (`VAPS_LOCAL_TIMEZONE`) | **не пиннится** | **пиннится** + показан сдвиг при зелёной канарейке |
+| Бизнес-дата в тестах не берётся из UTC | 1 нарушение (ночной красный гейт) | **0** |
+| AC стори | 11/11 (заявлено dev-story) | 11/11, из них AC-3/4/5/6 усилены исполняемыми доказательствами |
 
 ## Прогоны
 
-- `make gate` (из `Backend/VAPS`): **1306 passed, 22 deselected, 25s** — зелёный.
-  `ruff check .` чист; `makemigrations --check --dry-run` → «No changes detected».
-  (baseline стори: 1291 passed ⇒ +15 тестов)
-- `pytest -m concurrency` (гейт деселектит): **2 passed, 1326 deselected, 3.3s**
-- Флейк-чек: три подряд прогона обоих файлов — `34 passed` каждый.
-- Независимость: все 15 новых тестов прогнаны **поодиночке**, каждый зелёный ⇒ порядкозависимости нет.
+- `make gate` (из `Backend/VAPS`, **00:16 +05 — внутри бывшего окна флейка**):
+  **1318 passed, 22 deselected, 26 s**, `No changes detected`, exit 0.
+  Baseline dev-story: 1307 passed ⇒ **+11 тестов**, ноль регрессий.
+- `ruff check .` → `All checks passed!`
+- Новые файлы: **11 passed in 1.41 s**.
+- Независимость: все 11 прогнаны **поодиночке** → 11/11 зелёные ⇒ порядкозависимости нет.
+- Флейк-чек: три прогона подряд — `11 passed` каждый; обратный порядок файлов — `11 passed`.
+- Гейт-селекция: `-m "not property and not concurrency and not slow"` собирает **все 11**
+  (маркеров не несут) ⇒ ни один не деселектится.
+- `graphify update` **не запускался** — app-код не менялся, тронут только тестовый слой (правило CLAUDE.md).
+
+> ⚠️ `ruff format` по `test_staffing_api.py` развернул два **чужих** блока (импорты,
+> `test_assign_and_release_slot`). Откачено; в файле остался минимальный диф (+1 импорт, +4 строки
+> комментария, 1 изменённая строка). Гейт использует `ruff check` (E, F), а не `format`.
 
 ## Валидация по `checklist.md`
 
-- [x] API-тесты — N/A (нет HTTP-поверхности); эквивалент — management-команда, 3/3 пути
-- [x] E2E-тесты — N/A (нет UI); эквивалент — сквозной прогон с настоящим `effects.py` под Postgres
-- [x] Стандартные API фреймворка (pytest, pytest-django, `monkeypatch`, `caplog`, `CaptureQueriesContext`)
-- [x] Happy path покрыт
-- [x] Критические ошибки покрыты (`halted`, `locked`, падение внутри плана, откат watermark назад)
-- [x] Все тесты зелёные
+- [x] API-тесты — N/A (у catch-up нет HTTP-поверхности); эквивалент — management-команда, покрыта 3/3 путей ещё в 3.12
+- [x] E2E-тесты — N/A (UI нет); эквивалент — сквозной прогон раннера под реальным Postgres
+- [x] Стандартные API фреймворка (`pytest`, `pytest-django`, `monkeypatch`, `caplog`, `settings`-фикстура)
+- [x] Happy path покрыт (`ok`, `noop`, `bootstrapped`)
+- [x] Критические ошибки покрыты (`halted`, отравленный watermark, дрейф через полночь, прыжок вперёд)
 - [x] Локаторы — N/A (нет UI)
-- [x] Внятные имена/описания тестов
-- [x] Нет `sleep` и хардкод-ожиданий (новые тесты детерминированы; тредовый AC-8 использует `Event`+таймаут)
-- [x] Тесты независимы (проверено поштучным прогоном)
+- [x] Внятные имена и докстринги; каждый тест назван по режиму `FINDINGS.md`
+- [x] Нет `sleep` и хардкод-ожиданий; время — только `clock.override()`; дренаж имеет runaway-стоп вместо таймаута
+- [x] Тесты независимы (проверено поштучным прогоном, 11/11)
+- [x] Все тесты зелёные (`make gate` 1318 passed)
 - [x] Саммари создано, метрики покрытия внутри
+
+## Изменённые артефакты вне тестового слоя
+
+Реестры доказательств приведены в соответствие с фактами (иначе спайк утверждал бы `code-traced`
+рядом с существующим тестом — а точность этого реестра и есть продукт спайка):
+
+- `spikes/3.13-clock-no-ntp/FINDINGS.md` — столбец «Доказано?» (6 строк), blast radius п.3,
+  новая секция «Достроено QA-прогоном», таблица «находка → стори», «Тронуто в коде»
+- `spikes/3.13-clock-no-ntp/RUNBOOK-clock.md` — §4 строки 7–9 (исполнимые команды для админа),
+  §5 DON'T (`updated_at`, `timezone.now().date()`)
+- `_bmad-output/implementation-artifacts/deferred-work.md` — пункт «слепое пятно канарейки» закрыт;
+  добавлен пункт про `test_vacancies_endpoint` и пересмотр записи E5-ретро AI-1
 
 ## Next Steps
 
-1. **Ревью 3.12 — другой моделью** (same-model caveat из Dev Agent Record остаётся в силе).
-2. **Решение A (`pg_try_advisory_lock` vs `cache.add`)** по-прежнему кандидат на STOP-эскалацию:
-   архитектура противоречива (#L299 vs #L469). Тесты фиксируют advisory-лок как реализованный контракт —
-   если Bratan переопределит на `cache.add`, падут `..._refused_while_another_session_...`,
-   `..._rival_session_...` и `..._released_after_the_runner_raises`.
-3. **`test_isolation.py` изменён** — это tracked-файл вне File List стори 3.12. Либо принять расширение
-   File List, либо вынести `test_statuses_does_not_import_sibling_contexts` отдельным `chore`-коммитом.
-4. E12 (Celery/beat): когда появится `@shared_task`-обёртка, добавить тест регистрации beat-задачи
-   (epics.md#L632) — сегодня сознательно не строился (AC-11).
-5. E4/E5: при наполнении сеймов `test_effect_seams_touch_no_database` **обязан покраснеть** — это
-   сигнал, а не регресс; заменить его на проверку реальных записей + дедуп-ключа
-   `unique(сущность, business_date, версия сдачи)`.
+1. **Ревью 3.13 — другой моделью** (same-model caveat в силе). Обратить внимание на два решения,
+   выходящие за букву стори: (а) два новых тестовых файла вместо «тронут ровно один файл»;
+   (б) починка `test_staffing_api.py` — tracked-файл вне File List стори.
+2. **Решение B стори** (не строить forward-guard) — по-прежнему кандидат на обсуждение. Спайк риск
+   **измерил**, теперь ещё и **исполняемо**: `⌈N/CAP⌉` доказан на раннере. Потолок `N` — продуктовое
+   число за Bratan; M3 показывает, что якорь инвертируется чисто.
+3. **E5-ретро AI-1** переклассифицировать: «tz-флейк» был багом теста, а не свойством окружения.
+   Ночной гейт больше не красный — проверено в 00:16 (+05).
+4. **Расширение AST-гарда** на `timezone.now().date()` в тестовом слое (`deferred-work.md`) —
+   сегодня гард смотрит только `services.py`/`models.py` и не смотрит в тесты вовсе.
+5. **E4/E5:** при наполнении сеймов `…_drift_across_midnight_materializes_tomorrow_…` и
+   `…_drains_over_ceil_n_over_cap_runs` станут описывать **реальный** ущерб (ложный аудит,
+   уведомления за будущие даты) — это сигнал перечитать §3 Вариант C рунбука, а не чинить тесты.
+6. **Контур (гейт A5):** все строки `UNVERIFIED-pending-contour` остаются за админом / E12 (12.7).
+   Ни одна из них не помечена `VERIFIED` — путь B соблюдён.

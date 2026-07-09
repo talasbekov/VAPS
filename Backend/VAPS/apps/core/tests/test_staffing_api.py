@@ -4,6 +4,7 @@ import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.core.clock import Clock
 from apps.core.models import (
     Division, DivisionType, Employee, Organization, Position, Rank, StaffingSlot,
 )
@@ -81,7 +82,11 @@ def test_vacancies_endpoint(client, env, grant):
         position_code=pos,
         valid_from=timezone.now() - dt.timedelta(days=1),
     )
-    today = timezone.now().date().isoformat()
+    # The endpoint takes a *business* date and resolves it through
+    # `local_midnight()`. `timezone.now().date()` is the UTC date, which differs
+    # from the Asia/Qyzylorda one between 00:00 and 05:00 local: the query went
+    # a day back, behind the slot's `valid_from`, and counted 0. (Spike 3.13.)
+    today = Clock.today_local().isoformat()
     resp = client.get(f"/api/core/vacancies/?division_id={div.id}&date={today}")
     assert resp.status_code == 200
     assert resp.json()["count"] == 1
