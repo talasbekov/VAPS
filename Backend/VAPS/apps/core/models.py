@@ -434,6 +434,14 @@ class Watermark(models.Model):
 
     class Meta:
         db_table = "core_watermarks"
+        constraints = [
+            # unique alone still admits a silently-blank key, and then every
+            # process that forgot to name itself shares one watermark row.
+            models.CheckConstraint(
+                condition=~models.Q(key=""),
+                name="ck_core_watermarks_key_not_blank",
+            ),
+        ]
 
     def __str__(self):
         return self.key

@@ -1,0 +1,1 @@
+{"stories":[{"storyId":"3.12","title":"Catch-up материализации эффектов","complexity":{"score":0,"level":"Low","reasons":[]}},{"storyId":"3.13","title":"Спайк — часы без NTP","complexity":{"score":0,"level":"Low","reasons":[]}},{"storyId":"3.14","title":"Конкурентный смоук статусов","complexity":{"score":0,"level":"Low","reasons":[]}}]}

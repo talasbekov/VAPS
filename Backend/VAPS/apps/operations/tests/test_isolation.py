@@ -32,3 +32,22 @@ def test_operations_does_not_import_core_models():
 def test_operations_may_import_core_selectors():
     # Sanity guard for the rule's intent: core.selectors is the sanctioned read path.
     assert "apps.core.selectors".startswith("apps.core.")
+
+
+def test_statuses_does_not_import_sibling_contexts():
+    # architecture.md#L587: statuses sits upstream of submissions and of the
+    # not-yet-built audit/notifications contexts. Its outward-facing hooks —
+    # amendment_hook (3.9), effects (3.12) — stay documented NO-OP seams instead
+    # of reaching across the boundary; this keeps them honest.
+    siblings = ("submissions", "audit", "notifications")
+    prefixes = tuple(
+        prefix
+        for sibling in siblings
+        for prefix in (f"apps.operations.{sibling}", f"apps.{sibling}")
+    )
+    offenders = []
+    for path in _module_files("operations/statuses"):
+        for mod in _imports(path):
+            if mod in prefixes or mod.startswith(tuple(f"{p}." for p in prefixes)):
+                offenders.append((str(path), mod))
+    assert offenders == [], f"statuses reaches across a context boundary: {offenders}"

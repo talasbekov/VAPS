@@ -231,3 +231,4 @@ _bmad/
 .agents/
 .claude/
 .github/
+.claude/.story-automator-active
