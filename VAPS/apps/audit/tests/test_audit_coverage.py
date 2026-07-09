@@ -246,6 +246,9 @@ AUDIT_MATRIX = {
     # эмитятся в issue_expense_document (6.5) в той же транзакции; период —
     # GET-only, не мутирует. (GET-by-date на том же роуте read-only.)
     "ops-expense-report-list": _Audited(),
+    # override «на завтра»-блока (6.10b): TOMORROW_BLOCK_OVERRIDDEN эмитится в
+    # override_tomorrow_block (5.6b/5.9) в той же транзакции.
+    "ops-expense-report-override-tomorrow-block": _Audited(),
 }
 
 

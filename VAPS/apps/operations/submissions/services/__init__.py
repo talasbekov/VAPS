@@ -10,10 +10,14 @@ from apps.operations.submissions.services.expense_read_service import (
 )
 from apps.operations.submissions.services.scope_gate import ensure_division_scope
 from apps.operations.submissions.services.snapshot import build_division_snapshot
+from apps.operations.submissions.services.tomorrow_gate import (
+    assert_tomorrow_not_blocked,
+)
 
 __all__ = [
     "amend_day",
     "assert_report_date_has_data",
+    "assert_tomorrow_not_blocked",
     "build_division_snapshot",
     "derive_period",
     "ensure_division_scope",

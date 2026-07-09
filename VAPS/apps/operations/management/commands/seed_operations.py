@@ -16,6 +16,7 @@ PERMISSIONS = [
     ("daily_report.generate", "Генерация суточного отчёта"),
     ("daily_report.mark_update", "Отметки в суточном отчёте"),
     ("daily_report.correct", "Корректировка суточного отчёта"),
+    ("daily_report.override_block", "Обход блокировки расхода на завтра"),
     ("object.manage", "Управление объектами"),
     ("event.manage", "Управление мероприятиями"),
     ("duty.manage", "Управление дежурствами"),
@@ -50,7 +51,7 @@ ROLE_PERMISSIONS = {
     "ADMIN": ["*"],
     "OMD": [
         "assignment.create", "assignment.delete", "assignment.submit",
-        "daily_report.generate", "brokerage.manage",
+        "daily_report.generate", "daily_report.override_block", "brokerage.manage",
         "personnel.view", "orgstructure.view",
     ],
     "SENIOR_COORDINATOR": [
@@ -67,7 +68,7 @@ ROLE_PERMISSIONS = {
         "document.upload", "document.view",  # PROVISIONAL (6.1, Д6)
     ],
     "ORGD": [
-        "audit.view", "daily_report.generate",
+        "audit.view", "daily_report.generate", "daily_report.override_block",
         "personnel.view", "personnel.edit",
         "orgstructure.view", "orgstructure.manage",
         "document.upload", "document.view",  # PROVISIONAL (6.1, Д6)

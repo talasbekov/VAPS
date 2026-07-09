@@ -117,6 +117,15 @@ class ExpensePeriodFilterSerializer(serializers.Serializer):
     date_to = serializers.DateField()
 
 
+class TomorrowBlockOverrideSerializer(serializers.Serializer):
+    """POST-body form (6.10b) — the date whose «на завтра» block is legally
+    lifted and the mandatory reason. DRF defaults reject a missing/blank reason
+    at the boundary (400); the actor never comes from the payload."""
+
+    business_date = serializers.DateField()
+    reason = serializers.CharField()
+
+
 class IssuedExpenseReportSerializer(serializers.ModelSerializer):
     """Issued расход projection (6.10a) — flat metadata + the attachment ref and
     sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here."""
