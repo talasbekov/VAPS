@@ -17,7 +17,7 @@ context:
 
 # Story 6.10b: Блокировка «на завтра» — HTTP и override
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -41,20 +41,20 @@ so that **FR-18 закрыт по HTTP (завтра блокируется до
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: TOMORROW_BLOCKED на ветке выпуска на завтра (AC: 1, 2)
-  - [ ] В сервис-обёртке выпуска (6.10a `issue_expense_document`-путь): ЕСЛИ `business_date > Clock.today_local()` → вызвать `tomorrow_block(business_date)`; если `blocked` → `DomainError("TOMORROW_BLOCKED", 422, details={"laggards": [...]})`. Прошлое/сегодня — блок не зовём (AC-2).
-  - [ ] `tomorrow_block` импортировать из `apps.operations.submissions.tomorrow_block` (НЕ из services/__init__ — не экспортирован).
-- [ ] Task 2: POST override-эндпоинт (AC: 3, 4)
-  - [ ] View: `POST` action с `RequirePermissionMixin("daily_report.override_block")`; сериализатор входа форма (`business_date: date`, `reason: str` непустой); вызывает `override_tomorrow_block(business_date=…, actor=request.actor_id, reason=…)`; `ValueError`→маппинг (Д2: 400 VALIDATION_ERROR / 409 дубль). Scope в сервисе.
-  - [ ] Date-валидация business_date (AC-4): непусто/парсится/будущее-легальное; иначе 400.
-- [ ] Task 3: Фильтр протухших laggards (AC: 5)
-  - [ ] При отдаче `laggards` — отфильтровать несуществующие/неактивные division_id (existence через `CoreDivisionTreeSelector`/core-селектор; Д4). ЛИБО задокументировать делегирование admin 2.3/2.8 и оставить как есть.
-- [ ] Task 4: Реестр + RBAC (AC: 6)
-  - [ ] `error-codes.yaml`: +`TOMORROW_BLOCKED` (422, business_hard, overridable:false, «Расход на завтра заблокирован — не все необходимые управления сдали», details.laggards).
-  - [ ] `seed_operations.py`: +`daily_report.override_block` (описание, роли ORGD/OMD); RBAC-матрица 2.9 строка для override-роута; `test_rbac_matrix`/`test_seed` зелёные.
-- [ ] Task 5: Тесты + гейт (AC: 1-6)
-  - [ ] django_db: выпуск-на-завтра при незакрытых required → 422 TOMORROW_BLOCKED + laggards; все сдали → проходит; прошлое/сегодня → блок не применяется; override с правом → снимает блок (выпуск проходит), запись TomorrowBlockOverride; override без права → 403; чужой scope → 403; ValueError (пустая причина/дубль) → 400/409; протухший required-id отфильтрован из laggards; date-валидация (пусто/прошлое) → 400. Посев Organization/Division/Employee + `SubmissionControlSettings.required_division_ids` + сдачи (реюз submit_day); `clock.override` для «завтра»; RBAC через `UserRole`/`seed_operations`.
-  - [ ] `make gate` зелёный; `makemigrations --check` чист; ruff чист (точечный format).
+- [x] Task 1: TOMORROW_BLOCKED на ветке выпуска на завтра (AC: 1, 2)
+  - [x] В сервис-обёртке выпуска (6.10a `issue_expense_document`-путь): ЕСЛИ `business_date > Clock.today_local()` → вызвать `tomorrow_block(business_date)`; если `blocked` → `DomainError("TOMORROW_BLOCKED", 422, details={"laggards": [...]})`. Прошлое/сегодня — блок не зовём (AC-2).
+  - [x] `tomorrow_block` импортировать из `apps.operations.submissions.tomorrow_block` (НЕ из services/__init__ — не экспортирован).
+- [x] Task 2: POST override-эндпоинт (AC: 3, 4)
+  - [x] View: `POST` action с `RequirePermissionMixin("daily_report.override_block")`; сериализатор входа форма (`business_date: date`, `reason: str` непустой); вызывает `override_tomorrow_block(business_date=…, actor=request.actor_id, reason=…)`; `ValueError`→маппинг (Д2: 400 VALIDATION_ERROR / 409 дубль). Scope в сервисе.
+  - [x] Date-валидация business_date (AC-4): непусто/парсится/будущее-легальное; иначе 400.
+- [x] Task 3: Фильтр протухших laggards (AC: 5)
+  - [x] При отдаче `laggards` — отфильтровать несуществующие/неактивные division_id (existence через `CoreDivisionTreeSelector`/core-селектор; Д4). ЛИБО задокументировать делегирование admin 2.3/2.8 и оставить как есть.
+- [x] Task 4: Реестр + RBAC (AC: 6)
+  - [x] `error-codes.yaml`: +`TOMORROW_BLOCKED` (422, business_hard, overridable:false, «Расход на завтра заблокирован — не все необходимые управления сдали», details.laggards).
+  - [x] `seed_operations.py`: +`daily_report.override_block` (описание, роли ORGD/OMD); RBAC-матрица 2.9 строка для override-роута; `test_rbac_matrix`/`test_seed` зелёные.
+- [x] Task 5: Тесты + гейт (AC: 1-6)
+  - [x] django_db: выпуск-на-завтра при незакрытых required → 422 TOMORROW_BLOCKED + laggards; все сдали → проходит; прошлое/сегодня → блок не применяется; override с правом → снимает блок (выпуск проходит), запись TomorrowBlockOverride; override без права → 403; чужой scope → 403; ValueError (пустая причина/дубль) → 400/409; протухший required-id отфильтрован из laggards; date-валидация (пусто/прошлое) → 400. Посев Organization/Division/Employee + `SubmissionControlSettings.required_division_ids` + сдачи (реюз submit_day); `clock.override` для «завтра»; RBAC через `UserRole`/`seed_operations`.
+  - [x] `make gate` зелёный; `makemigrations --check` чист; ruff чист (точечный format).
 
 ## Dev Notes
 
@@ -118,10 +118,33 @@ so that **FR-18 закрыт по HTTP (завтра блокируется до
 
 ### Agent Model Used
 
-claude-opus-4-8 (Opus 4.8), BMAD create-story
+claude-opus-4-8 (Opus 4.8) — create-story + fresh-context валидация + dev-story (TDD)
 
 ### Debug Log References
 
+- **make gate зелёный:** 2189 passed (+18 к 6.10a: 9 tomorrow-тестов + параметризованные RBAC/audit/seed по новому роуту+праву), 56 deselected, `makemigrations --check` «No changes detected» (TomorrowBlockOverride мигрирован в 5.6b — новой миграции НЕТ), schema-drift ок (регенерирован), ruff чист, 50s.
+- Fresh-валидация применена: C1 `DomainError(detail=…)` (singular; на проводе `details`); C2 `[str(d) for d in laggards]` (UUID→JSON); C3/матрицы (RBAC `_Gate` + AUDIT `_Audited` для override-роута); E1 блок-проверка = wrapper ПЕРЕД issue (сервис хука не имеет), только future; E3 все ValueError override → 400 (дубль и bad-input не различимы по типу).
+
 ### Completion Notes List
 
+- **Task 1 (TOMORROW_BLOCKED на выпуске-на-завтра) — DONE.** `tomorrow_gate.assert_tomorrow_not_blocked(business_date, today)` (новый сервис): только `business_date>today` (FR-18 прошлое/сегодня не блокируем) → `tomorrow_block` (5.6a) → при blocked: фильтр протухших id (`CoreDivisionTreeSelector.divisions_map`) + `str()`-коэрция laggards → `DomainError("TOMORROW_BLOCKED",422,detail={"laggards":[...]})`. Вшито в `ExpenseReportViewSet.create` ПОСЛЕ scope, ПЕРЕД date-before-data/issue.
+- **Task 2 (POST override-эндпоинт) — DONE.** `@action override_block` (url `override-tomorrow-block`, гейт `daily_report.override_block`): `TomorrowBlockOverrideSerializer` → date-валидация (не-future → 400) → `override_tomorrow_block` (5.6b) → все `ValueError`→400 VALIDATION_ERROR (E3) → 201. Scope не применяется (обход уровня дня, без division).
+- **Task 3 (фильтр протухших laggards) — DONE.** В `assert_tomorrow_not_blocked` через `divisions_map` (несуществующие id выпадают). Тест `test_stale_laggard_is_filtered_out`.
+- **Task 4 (реестр + RBAC) — DONE.** `TOMORROW_BLOCKED` (422 business_hard) в error-codes.yaml; `daily_report.override_block` в seed_operations (ORGD+OMD) + строки RBAC-матрицы (`_Gate`) и AUDIT-матрицы (`_Audited`); `test_seed` обновлён (OMD 7→8). Аудит `TOMORROW_BLOCK_OVERRIDDEN` НЕ дублируется (эмитит 5.6b/5.9).
+- **Task 5 (тесты + гейт) — DONE.** 9 тестов (`test_tomorrow_block_api.py`): blocked→422+laggards, все-сдали→не-блок(201), прошлое→не-блок(409), протухший-id→отфильтрован, override снимает блок, override без права→403, override прошлое→400, дубль→400, пустая причина→400. `clock.override` для детерминизма «завтра». Гейт зелёный.
+- **Границы:** derive-блок/override-модель (5.6) — реюз; аудит=5.9; выпуск/чтение/период=6.10a; фронт=E10. Новых моделей/миграций нет.
+- **Q1/Q2/Q3 (дефолты активны):** дубль→400 [Д2]; фильтр в 6.10b [Д4]; override-роли ORGD/OMD [Д5]. ⚠️ ревью cross-model (новый permission + error-код + бизнес-гейт).
+
 ### File List
+
+- `Backend/VAPS/apps/operations/submissions/services/tomorrow_gate.py` (создан — assert_tomorrow_not_blocked)
+- `Backend/VAPS/apps/operations/submissions/services/__init__.py` (изменён — +экспорт)
+- `Backend/VAPS/apps/operations/submissions/api/serializers.py` (изменён — +TomorrowBlockOverrideSerializer)
+- `Backend/VAPS/apps/operations/submissions/api/views.py` (изменён — block-check в create + override_block action)
+- `Backend/VAPS/apps/operations/management/commands/seed_operations.py` (изменён — +daily_report.override_block + ORGD/OMD)
+- `Backend/VAPS/apps/operations/submissions/tests/test_tomorrow_block_api.py` (создан — 9 тестов)
+- `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (изменён — +override-строка)
+- `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (изменён — +override _Audited)
+- `Backend/VAPS/apps/operations/tests/test_seed.py` (изменён — OMD 7→8 + override_block)
+- `docs/registries/error-codes.yaml` (изменён — +TOMORROW_BLOCKED)
+- `Backend/VAPS/schema.yaml` (регенерирован — override-эндпоинт)

@@ -1336,6 +1336,15 @@ paths:
       responses:
         '201':
           description: No response body
+  /api/operations/expense-reports/override-tomorrow-block/:
+    post:
+      operationId: operations_expense_reports_override_tomorrow_block_create
+      description: Story 6.10b — legally lift the «на завтра» block for a future date.
+      tags:
+      - operations
+      responses:
+        '200':
+          description: No response body
   /api/operations/expense-reports/period/:
     get:
       operationId: operations_expense_reports_period_retrieve

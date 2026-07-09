@@ -287,6 +287,12 @@ codes:
     category: business_hard
     description: "Запрошена дата ДО начала данных (нет ни списка, ни статусов на дату) — не пустой документ, а отказ. Отлична от 409 REPORT_NOT_READY_FOR_DATE («сдачи нет»)."
     source: "epics.md Story 6.10 (AC-3, «дата до начала данных → 422 с кодом»); Story 6.10a"
+  TOMORROW_BLOCKED:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Расход «на завтра» заблокирован — не все необходимые управления сдали (details.laggards). Легальный обход — отдельный override-эндпоинт (не override:true)."
+    source: "epics.md Story 5.6/6.10 (FR-18); Story 6.10b"
 
   # --- 423: заблокировано состоянием ---
   ASSIGNMENT_VERSION_LOCKED:

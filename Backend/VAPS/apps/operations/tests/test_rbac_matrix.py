@@ -156,6 +156,10 @@ MATRIX = {
         {"get": "daily_report.generate", "post": "daily_report.generate"}
     ),
     "ops-expense-report-period": _MethodGate({"get": "daily_report.generate"}),
+    # override «на завтра»-блока (story 6.10b, POST-only) — своё право
+    # daily_report.override_block (обход ≠ выпуск); scope не применяется (обход
+    # уровня дня, без division). ValueError сервиса → 400 = ALLOW по канону.
+    "ops-expense-report-override-tomorrow-block": _Gate("daily_report.override_block"),
     # audit — read-only журнал, загейчен RequirePermissionMixin("audit.view")
     # (story 4.5). GET-only (list+retrieve); ORGD/ADMIN → ALLOW, прочие/аноним
     # → DENY (из seed).
