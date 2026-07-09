@@ -242,6 +242,10 @@ AUDIT_MATRIX = {
     # (create_attachment, канон 4.4) в той же транзакции; HTTP-smoke сквозь
     # роут — test_attachment_api (паттерн test_submission_audit 5.9).
     "documents-attachment-list": _Audited(),
+    # expense-report POST issue (6.10a): DOCUMENT_ISSUED/DOCUMENT_SUPERSEDED
+    # эмитятся в issue_expense_document (6.5) в той же транзакции; период —
+    # GET-only, не мутирует. (GET-by-date на том же роуте read-only.)
+    "ops-expense-report-list": _Audited(),
 }
 
 

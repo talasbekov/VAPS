@@ -4,12 +4,18 @@ from apps.operations.submissions.services.day_submission_service import submit_d
 from apps.operations.submissions.services.document_release_service import (
     issue_expense_document,
 )
+from apps.operations.submissions.services.expense_read_service import (
+    assert_report_date_has_data,
+    derive_period,
+)
 from apps.operations.submissions.services.scope_gate import ensure_division_scope
 from apps.operations.submissions.services.snapshot import build_division_snapshot
 
 __all__ = [
     "amend_day",
+    "assert_report_date_has_data",
     "build_division_snapshot",
+    "derive_period",
     "ensure_division_scope",
     "issue_expense_document",
     "override_tomorrow_block",
