@@ -14,7 +14,9 @@ import {
   useState,
 } from 'react'
 
-import type { ConflictError } from '../../shared/api/errors'
+import { z } from 'zod'
+
+import { ConflictError } from '../../shared/api/errors'
 import { Card } from '../../shared/ui/Card'
 import { ConflictDialog } from '../../shared/ui/ConflictDialog'
 import { transition } from './grammar'
@@ -23,10 +25,18 @@ import type {
   DailyGridProps,
   EmployeeRow,
   RowChange,
+  RowMarker,
   StatusOption,
   ValueAction,
   ValueState,
 } from './DailyGrid.types'
+
+// zod-схема строки (9.6, Д1): statusCode обязателен непустой. Полная валидация
+// периода/дат — при реальном date-редакторе.
+const rowSchema = z.object({
+  statusCode: z.string().min(1),
+  period: z.string(),
+})
 
 // §2 контракта: ФИО(readonly) · Статус · Период · флаг.
 const COLUMN_KINDS: readonly ColumnKind[] = [
@@ -107,6 +117,7 @@ interface GridRowProps {
   focusedCol: number | null
   mode: CellState
   statusOptions: StatusOption[]
+  marker?: RowMarker
   onStatus: (id: string, code: string) => void
   onPeriod: (id: string, period: string) => void
 }
@@ -115,6 +126,14 @@ interface GridRowProps {
 // через querySelector (без ref-в-рендере — react-hooks/refs).
 const ACTIVE = { 'data-active': '' } as const
 
+// Слой конфликтов ПОВЕРХ статус-цвета (§5/DESIGN): soft=жёлтый, hard/invalid=
+// красная заливка (не статус-цвет).
+const MARKER_ROW: Record<RowMarker, string> = {
+  soft: 'bg-amber-50',
+  hard: 'bg-red-50',
+  invalid: 'bg-red-50',
+}
+
 const GridRow = memo(function GridRow({
   row,
   value,
@@ -122,6 +141,7 @@ const GridRow = memo(function GridRow({
   focusedCol,
   mode,
   statusOptions,
+  marker,
   onStatus,
   onPeriod,
 }: GridRowProps) {
@@ -132,8 +152,9 @@ const GridRow = memo(function GridRow({
   return (
     <div
       data-grid-row
+      data-marker={marker ?? undefined}
       role="row"
-      className={`flex items-stretch border-b text-sm ${dirty ? 'font-medium' : ''}`}
+      className={`flex items-stretch border-b text-sm ${dirty ? 'font-medium' : ''} ${marker ? MARKER_ROW[marker] : ''}`}
     >
       <span role="cell" className="w-64 px-1 py-1">
         <button
@@ -194,11 +215,15 @@ const GridRow = memo(function GridRow({
       <span role="cell" className="w-8 px-1 py-1 text-center">
         <button
           type="button"
-          aria-label="Флаг"
+          aria-label={
+            marker === 'soft' ? 'Предупреждение' : marker ? 'Конфликт' : 'Флаг'
+          }
           {...(focusedCol === 3 ? ACTIVE : {})}
           tabIndex={focusedCol === 3 ? 0 : -1}
-          className="w-full"
-        />
+          className={`w-full font-bold ${marker === 'soft' ? 'text-amber-600' : marker ? 'text-red-600' : ''}`}
+        >
+          {marker === 'soft' ? '!' : marker ? '×' : ''}
+        </button>
       </span>
     </div>
   )
@@ -221,6 +246,19 @@ export function DailyGrid({
     mode: 'NAVIGATE',
   })
   const [conflict, setConflict] = useState<ConflictError | null>(null)
+  const [markers, setMarkers] = useState<Record<string, RowMarker>>({})
+
+  const setMarker = useCallback((id: string, m: RowMarker) => {
+    setMarkers((prev) => (prev[id] === m ? prev : { ...prev, [id]: m }))
+  }, [])
+  const clearMarker = useCallback((id: string) => {
+    setMarkers((prev) => {
+      if (!prev[id]) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }, [])
 
   const parentRef = useRef<HTMLDivElement>(null)
   const emptyRef = useRef<HTMLDivElement>(null)
@@ -297,21 +335,38 @@ export function DailyGrid({
         dispatch({ type: 'SET_STATUS', id: pe.id, statusCode: pe.statusCode })
         dispatch({ type: 'SET_PERIOD', id: pe.id, period: pe.period })
       }
-      // Seam входа в CONFLICT (9.5): коммит спрашивает владельца; конфликт →
-      // остаёмся на ячейке, показываем диалог (move НЕ применяем).
-      if (result.action === 'COMMIT' && onCellCommit) {
+      // Коммит ячейки (9.6): zod-валидация → soft/hard-ветвление по ApiError.
+      if (result.action === 'COMMIT') {
         const row = rows[focus.row]
         const v = values[row.id]
-        const conflictErr = onCellCommit({
+        const change: RowChange = {
           id: row.id,
           statusCode: v.statusCode,
           period: v.period,
-        })
-        if (conflictErr) {
-          setConflict(conflictErr)
-          setFocus({ row: focus.row, col: focus.col, mode: 'CONFLICT' })
+        }
+        const stay = () =>
+          setFocus({ row: focus.row, col: focus.col, mode: 'NAVIGATE' })
+        // zod-невалид → invalid (блокирует, как hard).
+        if (!rowSchema.safeParse(change).success) {
+          setMarker(row.id, 'invalid')
+          stay()
           return
         }
+        const err = onCellCommit?.(change) ?? null
+        if (err) {
+          if (err instanceof ConflictError && err.overridable) {
+            // soft (409 overridable): жёлтый маркер + ConflictDialog (9.5).
+            setMarker(row.id, 'soft')
+            setConflict(err)
+            setFocus({ row: focus.row, col: focus.col, mode: 'CONFLICT' })
+          } else {
+            // hard (422 / non-overridable): красная заливка, блок, без диалога.
+            setMarker(row.id, 'hard')
+            stay()
+          }
+          return
+        }
+        clearMarker(row.id) // валидно, без конфликта
       }
       setFocus({
         row: result.nextPosition.row,
@@ -319,11 +374,28 @@ export function DailyGrid({
         mode: result.nextState,
       })
     },
-    [rows, values, focus, bounds, capturePreEdit, onCellCommit],
+    [
+      rows,
+      values,
+      focus,
+      bounds,
+      capturePreEdit,
+      onCellCommit,
+      setMarker,
+      clearMarker,
+    ],
   )
 
-  const closeConflict = useCallback(() => {
-    // Закрытие диалога (Отмена/Escape/оверрайд): возврат в ту же ячейку.
+  const overrideConflict = useCallback(() => {
+    // «Подтвердить оверрайд»: снять soft-маркер, коммит принят, фокус в ячейку.
+    const row = rows[focus.row]
+    if (row) clearMarker(row.id)
+    setConflict(null)
+    setFocus({ row: focus.row, col: focus.col, mode: 'NAVIGATE' })
+  }, [rows, focus.row, focus.col, clearMarker])
+
+  const cancelConflict = useCallback(() => {
+    // «Отмена»/Escape: soft-маркер ОСТАЁТСЯ (предупреждение), фокус в ячейку.
     setConflict(null)
     setFocus((f) => ({ row: f.row, col: f.col, mode: 'NAVIGATE' }))
   }, [])
@@ -427,6 +499,7 @@ export function DailyGrid({
                     focusedCol={item.index === focus.row ? focus.col : null}
                     mode={focus.mode}
                     statusOptions={statusOptions}
+                    marker={markers[row.id]}
                     onStatus={onStatus}
                     onPeriod={onPeriod}
                   />
@@ -440,8 +513,8 @@ export function DailyGrid({
       {focus.mode === 'CONFLICT' && (
         <ConflictDialog
           conflict={conflict}
-          onOverride={closeConflict}
-          onCancel={closeConflict}
+          onOverride={overrideConflict}
+          onCancel={cancelConflict}
         />
       )}
     </Card>

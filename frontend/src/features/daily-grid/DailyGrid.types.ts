@@ -1,7 +1,10 @@
 // Story 9.4 — типы грид-компонента (данные приходят props; реальный источник
 // + prefill = 9.7). Ноль бизнес-логики конфликтов (9.6) / отправки-дельт (9.7).
 
-import type { ConflictError } from '../../shared/api/errors'
+import type { ApiError } from '../../shared/api/errors'
+
+/** Маркер конфликта/валидации строки (Story 9.6). */
+export type RowMarker = 'soft' | 'hard' | 'invalid'
 
 export interface EmployeeRow {
   id: string
@@ -33,11 +36,12 @@ export interface DailyGridProps {
   /** Текст пустого состояния (0 строк). */
   emptyLabel?: string
   /**
-   * Seam входа в CONFLICT (Story 9.5): вызывается на коммите ячейки; вернул
-   * ConflictError → грид показывает ConflictDialog и возвращает фокус в ячейку
-   * после закрытия. Реальный маппинг 409/422 + маркеры строк = Story 9.6.
+   * Seam коммита ячейки (Story 9.5/9.6): вернул ApiError → грид маппит на
+   * маркер строки и ветвит soft (ConflictError.overridable → жёлтый +
+   * ConflictDialog + оверрайд) / hard (BusinessRuleError 422 / non-overridable
+   * → красная заливка, коммит блокируется, без диалога). null → нет конфликта.
    */
-  onCellCommit?: (change: RowChange) => ConflictError | null
+  onCellCommit?: (change: RowChange) => ApiError | null
 }
 
 /** Редактируемое значение строки (нормализованное состояние, ключ = row.id). */
