@@ -19,7 +19,7 @@ context:
 
 # Story 6.8: Golden master 20–30 исторических дней
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -45,25 +45,25 @@ so that **любая регрессия в расчёте (`derive_report`) ил
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Нормализатор document.xml (AC: 2, 5)
-  - [ ] Создать `apps/documents/generators/docx_normalize.py`: `normalize_document_xml(docx_bytes: bytes) -> bytes` — `zipfile.ZipFile(io.BytesIO(docx_bytes)).read("word/document.xml")` → `re.sub(rb'\s+w:rsid\w+="[0-9A-Fa-f]+"', b"", xml)` → `lxml.etree.canonicalize(xml_data=xml.decode("utf-8")).encode("utf-8")`. Никакого wall-clock/ORM. НЕ добавлять в `generators/__init__.py` re-export (держать импорт узким).
-  - [ ] Юнит-тест нормализатора (в `apps/documents/tests/test_docx_normalize.py`, unmarked → бежит в gate): идемпотентность (`normalize(x) == normalize(normalize_source_twice)`), вырезание `w:rsid*` (после — 0 вхождений `w:rsid`), детерминизм 2× на одном входе.
-- [ ] Task 2: Сериализатор эталона чисел — ОДИН источник правды (AC: 2, 4)
-  - [ ] Функция сериализации `StrengthReportResult` → JSON-словарь: `{business_date, rows:[{division_id(str), name, staff_total, list_total, vacancies, columns:{11 ключей REPORT_COLUMNS кроме ATTACHED}, attached}], totals:{…}, violations:[…], warnings:[…]}`. Разместить так, чтобы её импортировали И consumer, И `golden_update` (например, рядом с `golden_update` или в маленьком общем модуле `tests/golden/_serialize.py` — НЕ дублировать, дрейф сериализации = ложный дифф). Загрузчик `input.json`: `date.fromisoformat(business_date)`, `uuid.UUID(division_id)`, ключи `staff_map`/`division_names` → `uuid.UUID` (Ловушка №3); `date_start`/`date_end` строк снапшота ОСТАЮТСЯ ISO (билдер парсит сам, `expense_document.py:66-67`).
-- [ ] Task 3: Продюсер корпуса (одноразовый спайк) → закоммиченные `case_NNN/` (AC: 1, 3)
-  - [ ] Одноразовый сид-скрипт (в `spikes/golden-seed/`, НЕ app-код — арх-гвард: сид пишет `apps.core.models` Employee/Division/EmployeeStatus, в спайке легально, в `operations`-app нельзя). Зеркало сида `test_expense_formats_e2e.py:53-199`, масштабированное: реалистичное подразделение (по умолчанию 1, при желании дерево) + ~30–60 сотрудников со статусами, покрывающими 20–30 последовательных бизнес-дат. Для каждой даты `D`: `build_division_snapshot(div, D)` + `staff_map=CoreStaffingSelector.allocated_slots_on(...)` + `division_names=CoreDivisionTreeSelector.divisions_map([div])` → записать `input.json`; затем через функции Task 1/2 записать `expected_values.json` + `expected_document.xml`. **Провенанс по умолчанию — синтетика (донор-образная), Q2.**
-  - [ ] Закоммитить `apps/operations/submissions/tests/golden/case_001…case_0NN/` (≥20). Проверить разнообразие: не все колонки нулевые, есть вакансии/ATTACHED/IN_SERVICE, числа меняются день-в-день.
-- [ ] Task 4: `golden_update` management-команда + `make golden-update` (AC: 4)
-  - [ ] `apps/operations/submissions/management/commands/golden_update.py`: аргумент `--case NNN` (опц.). Для каждого кейса: перечитать `input.json` → регенерировать `expected_values.json` + `expected_document.xml` НА МЕСТЕ (импорт `build_expense_document`/`derive_report`/`generate_expense_docx`/`normalize_document_xml` + сериализатор Task 2). БЕЗ БД, БЕЗ `apps.core.models`. В конце stdout: «review the diff before committing: git diff -- apps/operations/submissions/tests/golden».
-  - [ ] `Backend/VAPS/Makefile`: добавить `golden-update` в `.PHONY`; цель зеркалит guard `.venv` цели `schema` (БЕЗ postgres env-блока — чистая регенерация): `$(PYTHON) manage.py golden_update $(if $(CASE),--case $(CASE),)` + echo-напоминание про diff.
-- [ ] Task 5: Consumer-тест + маркер (AC: 2, 6)
-  - [ ] `apps/operations/submissions/tests/test_expense_golden.py`: `@pytest.mark.golden`, БЕЗ `django_db`; `_CASES = sorted((Path(__file__).parent / "golden").glob("case_*"))`; `@pytest.mark.parametrize("case", _CASES, ids=[c.name for c in _CASES])`; загрузка через Task 2, сравнение AC-2(a)+(b). Guard-ассерт `len(_CASES) >= 20` (пустой glob не должен «зелёно проходить» вакуумно).
-  - [ ] `pyproject.toml:56-60`: добавить маркер `"golden: golden-master регрессия расхода (числа+нормализованный document.xml); только test-full"`.
-  - [ ] `Backend/VAPS/Makefile:68`: gate `-m "not property and not concurrency and not slow and not golden"`.
-- [ ] Task 6: Гейт, укус, границы (AC: 3, 6)
-  - [ ] `make gate` зелёный (golden исключён); `make test-full` зелёный (golden-корпус бежит и проходит).
-  - [ ] Укус AC-3: временная мутация в `derive_report`/билдере/генераторе → ≥1 golden красный → откат; зафиксировать в Dev Agent Record.
-  - [ ] `makemigrations --check` пуст; `ruff check` чист; `ruff format` точечно. git-сверка границ: `models.py`/миграции/эндпоинты/rbac-seed/`audit-events.yaml`/`error-codes.yaml` — НЕ тронуты; `test_rbac_matrix`/`test_audit_coverage`/арх-гвард `operations↛core.models` зелёные без правок.
+- [x] Task 1: Нормализатор document.xml (AC: 2, 5)
+  - [x] Создать `apps/documents/generators/docx_normalize.py`: `normalize_document_xml(docx_bytes: bytes) -> bytes` — `zipfile.ZipFile(io.BytesIO(docx_bytes)).read("word/document.xml")` → `re.sub(rb'\s+w:rsid\w+="[0-9A-Fa-f]+"', b"", xml)` → `lxml.etree.canonicalize(xml_data=xml.decode("utf-8")).encode("utf-8")`. Никакого wall-clock/ORM. НЕ добавлять в `generators/__init__.py` re-export (держать импорт узким).
+  - [x] Юнит-тест нормализатора (в `apps/documents/tests/test_docx_normalize.py`, unmarked → бежит в gate): идемпотентность (`normalize(x) == normalize(normalize_source_twice)`), вырезание `w:rsid*` (после — 0 вхождений `w:rsid`), детерминизм 2× на одном входе.
+- [x] Task 2: Сериализатор эталона чисел — ОДИН источник правды (AC: 2, 4)
+  - [x] Функция сериализации `StrengthReportResult` → JSON-словарь: `{business_date, rows:[{division_id(str), name, staff_total, list_total, vacancies, columns:{11 ключей REPORT_COLUMNS кроме ATTACHED}, attached}], totals:{…}, violations:[…], warnings:[…]}`. Разместить так, чтобы её импортировали И consumer, И `golden_update` (например, рядом с `golden_update` или в маленьком общем модуле `tests/golden/_serialize.py` — НЕ дублировать, дрейф сериализации = ложный дифф). Загрузчик `input.json`: `date.fromisoformat(business_date)`, `uuid.UUID(division_id)`, ключи `staff_map`/`division_names` → `uuid.UUID` (Ловушка №3); `date_start`/`date_end` строк снапшота ОСТАЮТСЯ ISO (билдер парсит сам, `expense_document.py:66-67`).
+- [x] Task 3: Продюсер корпуса (одноразовый спайк) → закоммиченные `case_NNN/` (AC: 1, 3)
+  - [x] Одноразовый сид-скрипт (в `spikes/golden-seed/`, НЕ app-код — арх-гвард: сид пишет `apps.core.models` Employee/Division/EmployeeStatus, в спайке легально, в `operations`-app нельзя). Зеркало сида `test_expense_formats_e2e.py:53-199`, масштабированное: реалистичное подразделение (по умолчанию 1, при желании дерево) + ~30–60 сотрудников со статусами, покрывающими 20–30 последовательных бизнес-дат. Для каждой даты `D`: `build_division_snapshot(div, D)` + `staff_map=CoreStaffingSelector.allocated_slots_on(...)` + `division_names=CoreDivisionTreeSelector.divisions_map([div])` → записать `input.json`; затем через функции Task 1/2 записать `expected_values.json` + `expected_document.xml`. **Провенанс по умолчанию — синтетика (донор-образная), Q2.**
+  - [x] Закоммитить `apps/operations/submissions/tests/golden/case_001…case_0NN/` (≥20). Проверить разнообразие: не все колонки нулевые, есть вакансии/ATTACHED/IN_SERVICE, числа меняются день-в-день.
+- [x] Task 4: `golden_update` management-команда + `make golden-update` (AC: 4)
+  - [x] `apps/operations/submissions/management/commands/golden_update.py`: аргумент `--case NNN` (опц.). Для каждого кейса: перечитать `input.json` → регенерировать `expected_values.json` + `expected_document.xml` НА МЕСТЕ (импорт `build_expense_document`/`derive_report`/`generate_expense_docx`/`normalize_document_xml` + сериализатор Task 2). БЕЗ БД, БЕЗ `apps.core.models`. В конце stdout: «review the diff before committing: git diff -- apps/operations/submissions/tests/golden».
+  - [x] `Backend/VAPS/Makefile`: добавить `golden-update` в `.PHONY`; цель зеркалит guard `.venv` цели `schema` (БЕЗ postgres env-блока — чистая регенерация): `$(PYTHON) manage.py golden_update $(if $(CASE),--case $(CASE),)` + echo-напоминание про diff.
+- [x] Task 5: Consumer-тест + маркер (AC: 2, 6)
+  - [x] `apps/operations/submissions/tests/test_expense_golden.py`: `@pytest.mark.golden`, БЕЗ `django_db`; `_CASES = sorted((Path(__file__).parent / "golden").glob("case_*"))`; `@pytest.mark.parametrize("case", _CASES, ids=[c.name for c in _CASES])`; загрузка через Task 2, сравнение AC-2(a)+(b). Guard-ассерт `len(_CASES) >= 20` (пустой glob не должен «зелёно проходить» вакуумно).
+  - [x] `pyproject.toml:56-60`: добавить маркер `"golden: golden-master регрессия расхода (числа+нормализованный document.xml); только test-full"`.
+  - [x] `Backend/VAPS/Makefile:68`: gate `-m "not property and not concurrency and not slow and not golden"`.
+- [x] Task 6: Гейт, укус, границы (AC: 3, 6)
+  - [x] `make gate` зелёный (golden исключён); `make test-full` зелёный (golden-корпус бежит и проходит).
+  - [x] Укус AC-3: временная мутация в `derive_report`/билдере/генераторе → ≥1 golden красный → откат; зафиксировать в Dev Agent Record.
+  - [x] `makemigrations --check` пуст; `ruff check` чист; `ruff format` точечно. git-сверка границ: `models.py`/миграции/эндпоинты/rbac-seed/`audit-events.yaml`/`error-codes.yaml` — НЕ тронуты; `test_rbac_matrix`/`test_audit_coverage`/арх-гвард `operations↛core.models` зелёные без правок.
 
 ## Dev Notes
 
@@ -195,12 +195,47 @@ claude-opus-4-8 (Opus 4.8), BMAD create-story, #YOLO
 
 ### Debug Log References
 
+- **Укус AC-3 (bite verification).** Временная мутация `strength_report.derive_report` (`vacancies = max(0, staff_total - list_total) + 1`) → golden RED (1 failed на слое чисел: `dumps(expected_values(inputs)) != expected_values.json`); откат `git checkout` → golden GREEN (26 passed). Корпус реально кусает регрессию.
+- **Round-trip корпуса.** Пересчёт из `input.json` всех 25 кейсов → 0 mismatch против записанных эталонов; 25/25 различных `expected_values` (вариативность); покрыты все 11 REPORT_COLUMNS + ATTACHED (в 11 кейсах) + IN_SERVICE (25) + вакансии.
+- **make gate** = 2122 passed, 56 deselected (golden исключён), makemigrations «No changes detected», ruff чист, 46s. **make test-full** = 2178 passed (все 26 golden), 6 teardown-ERROR concurrency — ПРЕД-СУЩЕСТВУЮЩИЕ (тот же счёт 6 без golden: `-m "not golden"` → 2152 passed, 6 errors; append-only audit_logs × TransactionTestCase TRUNCATE; память фиксировала «2» — устарело, с тех пор добавлены concurrency-тесты 6.2/6.5/статусов). НЕ регрессия.
+
 ### Completion Notes List
 
+- **Task 1 (нормализатор document.xml) — DONE.** `normalize_document_xml(docx_bytes)`: извлечь `word/document.xml` из zip → вырезать `w:rsid*` (`\s+w:rsid\w+="[0-9A-Fa-f]+"`) → `lxml.etree.canonicalize`. Узкий импорт (в `generators/__init__.py` НЕ добавлен). 4 юнит-теста (вырезание rsid, детерминизм 2×, идемпотентность C14N, два дока различаются только rsid→равны после нормализации), БЕЗ БД → бегут в gate. ruff чист (format точечно + ручной E501 в докстринге).
+- **Task 2 (сериализатор/загрузчик — единый источник) — DONE.** `apps/operations/submissions/golden.py`: `load_input` (согласованная uuid-коэрция division_id + ключей staff_map/division_names, Ловушка №3), `serialize_report` (StrengthReportResult→dict), `expected_values` (слой чисел), `expected_document_xml` (слой XML), `dumps` (канонический json). ЧИСТ — без core.models (docstring-упоминание ≠ импорт). ОДИН код для consumer и golden_update (анти-дрейф). 4 DB-free теста на синтетич. снапшоте (uuid-коэрция, числа+сходимость, детерминизм XML, канон-dumps) → бегут в gate.
+- **Task 3 (продюсер корпуса) — DONE.** `spikes/golden-seed/seed_golden_corpus.py` (одноразовый, вне app → легально пишет core.models, Ловушка №7): сид 1 подразделение + 40 сотрудников (по одному статус-интервалу, коды покрывают все колонки) в ОТКАТ-транзакции; для 25 дат `build_division_snapshot` + заморозка staff_map/division_names → `input.json` + эталоны через golden.py. 25 кейсов (75 файлов), БД чистая после отката. Провенанс = синтетика-богатая (Q2-дефолт; реальный донор = 6.9/контур).
+- **Task 4 (golden_update + make golden-update) — DONE.** Management-команда `golden_update` (`--case NNN` опц.): регенерация expected_* на месте из input.json теми же чистыми функциями, БЕЗ БД, НЕ трогает input.json, печатает напоминание про `git diff`. Makefile-цель `golden-update` (guard .venv, без postgres-env-блока) + `.PHONY`. Проверено: `make golden-update` → 0 изменённых файлов (идемпотентно, эталон воспроизводится точно).
+- **Task 5 (consumer + маркер) — DONE.** `test_expense_golden.py`: `@pytest.mark.golden`, БЕЗ django_db, параметризован по `sorted(golden/case_*)` (25) + guard `len≥20`; сравнивает (a) числа и (b) нормализованный XML. Маркер `golden` в pyproject; gate `-m "… and not golden"`. Проверено: `-m golden` → 26 passed; gate-фильтр → 26 deselected (исключён).
+- **Task 6 (гейт, укус, границы) — DONE.** gate зелёный (golden исключён), test-full зелёный (golden включён, 6 teardown-ERROR пред-существующие). Укус подтверждён (Debug Log). Границы: НЕ тронуты models/миграции/эндпоинты/rbac-seed/audit-events/error-codes (git-сверка); `makemigrations --check` чист; арх-гвард operations↛core.models зелёный (golden.py/consumer/команда не импортируют core.models); test_rbac_matrix/test_audit_coverage зелёные без правок.
+
 ### File List
+
+- `Backend/VAPS/apps/documents/generators/docx_normalize.py` (создан)
+- `Backend/VAPS/apps/documents/tests/test_docx_normalize.py` (создан)
+- `Backend/VAPS/apps/operations/submissions/golden.py` (создан — единый источник: load_input+uuid-коэрция, serialize_report, expected_values, expected_document_xml, dumps)
+- `Backend/VAPS/apps/operations/submissions/tests/test_golden_serialize.py` (создан — 4 DB-free теста синтетич. снапшота)
+- `Backend/VAPS/apps/operations/submissions/management/commands/golden_update.py` (создан — ревью-гейтовая регенерация эталона из input.json, без БД)
+- `Backend/VAPS/apps/operations/submissions/tests/test_expense_golden.py` (создан — consumer: @pytest.mark.golden, БЕЗ БД, 25 кейсов + guard len≥20)
+- `Backend/VAPS/apps/operations/submissions/tests/golden/case_001…case_025/` (создан — корпус 75 файлов: input.json + expected_values.json + expected_document.xml)
+- `Backend/VAPS/Makefile` (изменён — цель `golden-update` + `.PHONY`; gate `-m … and not golden`)
+- `Backend/VAPS/pyproject.toml` (изменён — маркер `golden`)
+- `spikes/golden-seed/seed_golden_corpus.py` (создан — одноразовый продюсер корпуса, откат-транзакция, вне app)
+
+## Senior Developer Review (AI)
+
+**Дата:** 2026-07-09 · **Ревьюер:** bmad-code-review (Fable 5, same-model — 6.8 не в cross-model AI-4-списке; 3 слоя: Blind Hunter / Edge Case Hunter / Acceptance Auditor). **Исход: APPROVE.**
+
+- **Acceptance Auditor: все 6 AC SATISFIED вживую** (≥20 кейсов×3 файла, стабильная сериализация, все 11 колонок покрыты; consumer БЕЗ БД 26 passed за 0.59s; укус подтверждён на ОБОИХ слоях — числа+XML → 25 failed → revert; golden-update идемпотентен и не трогает input.json; нормализация детерминирована; gate/границы/арх-гвард чисты). Dev Record без оверклейма.
+- **Edge Case Hunter** опроверг спекуляции Blind вживую (детерминизм 0 mismatch, uuid-коэрция согласована, арх-гвард чист, парсинг дат симметричен) и подтвердил 4 периферийные находки (management-команда + byte-regex).
+- **Триаж: 0 decision · 2 patch (применены+верифицированы) · 2 defer · dismiss остальное.**
+  - **P1** (MED): `golden_update` на битом/пустом/отсутствующем `input.json` кидал сырое исключение и мог оставить кейс полу-обновлённым → try/except→`CommandError` с именем кейса + вычисление обоих эталонов ДО записи (verified: `{}`→`CommandError: … KeyError: 'snapshot'`, gate 2122).
+  - **P2** (MED): `--case 5` молча не находил zero-padded `case_005` → нормализация числового аргумента `zfill(3)` (verified: `--case 5`→case_005).
+  - **Defer:** (1) multi-division `input.json` не поддержан — `build_expense_document` single-division by contract (падает громко ValueError, не тихо); корпус single-division by construction → E6/E10 при необходимости. (2) byte-regex нормализатора теоретически мог бы задеть `w:rsid`-подобную подстроку в тексте — но regex предписан спекой AC-5, триггер для реальных ФИО невозможен; пересмотреть при эволюции шаблона.
+  - **Dismiss:** newline-платформа (проект Linux-only); `rmtree` в спайке (корпус в git, one-off); спекуляции Blind, опровергнутые Edge/Auditor (nested-UUID findings плоские, детерминизм, Makefile-DB, arch-guard).
 
 ## Change Log
 
 | Дата | Версия | Описание | Автор |
 |------|--------|----------|-------|
 | 2026-07-09 | 0.1 | Черновик стори (bmad-create-story, Opus 4.8, #YOLO) — golden-master расхода: регресс-корпус (input.json+expected_values.json+нормализованный document.xml, VAPS-self-frozen), consumer БЕЗ БД (маркер golden→test-full), make golden-update ревью-гейтовый; нормализация document.xml (strip w:rsid*+C14N) эмпирически подтверждена спайком; провенанс=синтетика-богатая (реальный донор=6.9/контур). Границы: паритет-донор=6.9, HTTP=6.10. Status → ready-for-dev | Bratan (BMAD create-story) |
+| 2026-07-09 | 1.0 | Реализация (bmad-dev-story, ручной прогон, Fable 5) — нормализатор document.xml + golden.py (единый источник) + продюсер-спайк (25 кейсов/75 файлов) + golden_update/make golden-update + consumer (маркер golden) + маркер pyproject + gate-фильтр. gate 2122 passed / test-full 2178 passed (6 teardown-ERROR пред-существующие). Укус AC-3 подтверждён. Границы соблюдены (без моделей/миграций/эндпоинтов). Status → review | Bratan (BMAD dev-story) |

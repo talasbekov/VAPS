@@ -1,0 +1,47 @@
+{
+  "business_date": "2026-05-23",
+  "rows": [
+    {
+      "attached": 0,
+      "columns": {
+        "AFTER_DUTY": 0,
+        "BEFORE_DUTY": 0,
+        "COMMAND": 1,
+        "DETACHED": 0,
+        "IN_SERVICE": 36,
+        "ON_DUTY": 0,
+        "OTHER": 1,
+        "PENDING": 0,
+        "SICK": 1,
+        "TRAINING": 1,
+        "VACATION": 0
+      },
+      "division_id": "b1c28fde-f93c-414e-8c30-87ef0b71fca7",
+      "list_total": 40,
+      "name": "Отдел Голден",
+      "staff_total": 45,
+      "vacancies": 5
+    }
+  ],
+  "totals": {
+    "attached": 0,
+    "columns": {
+      "AFTER_DUTY": 0,
+      "BEFORE_DUTY": 0,
+      "COMMAND": 1,
+      "DETACHED": 0,
+      "IN_SERVICE": 36,
+      "ON_DUTY": 0,
+      "OTHER": 1,
+      "PENDING": 0,
+      "SICK": 1,
+      "TRAINING": 1,
+      "VACATION": 0
+    },
+    "list_total": 40,
+    "staff_total": 45,
+    "vacancies": 5
+  },
+  "violations": [],
+  "warnings": []
+}
