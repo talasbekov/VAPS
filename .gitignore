@@ -228,6 +228,10 @@ __marimo__/
 # Паттерн docs/* (не docs/) обязателен, иначе негейт !docs/registries/ не сработает (git не входит в исключённый родитель).
 docs/*
 !docs/registries/
+# ИСКЛЮЧЕНИЕ: docs/contracts/ трекается — бумажные контракты несущих экранов
+# (грид/расход/чек-лист) = версионируемые дизайн-артефакты на согласование по
+# вертикали (стори 9.1/10.1), не PII/донор-материал.
+!docs/contracts/
 # graphify-out/ is tracked so the server can navigate the knowledge graph,
 # but its regenerable cache and the dated curated-graph backups stay local.
 graphify-out/cache/
