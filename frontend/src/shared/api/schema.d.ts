@@ -918,6 +918,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/expense-reports/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+         *     + GET period (read-only page-per-date, no number). Thin views over the
+         *     existing issue/derive services; errors flow through the unified handler.
+         *     «На завтра»-блокировка и override — Story 6.10b.
+         */
+        get: operations["operations_expense_reports_retrieve"];
+        put?: never;
+        /**
+         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+         *     + GET period (read-only page-per-date, no number). Thin views over the
+         *     existing issue/derive services; errors flow through the unified handler.
+         *     «На завтра»-блокировка и override — Story 6.10b.
+         */
+        post: operations["operations_expense_reports_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/expense-reports/override-tomorrow-block/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Story 6.10b — legally lift the «на завтра» block for a future date. */
+        post: operations["operations_expense_reports_override_tomorrow_block_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/expense-reports/period/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+         *     + GET period (read-only page-per-date, no number). Thin views over the
+         *     existing issue/derive services; errors flow through the unified handler.
+         *     «На завтра»-блокировка и override — Story 6.10b.
+         */
+        get: operations["operations_expense_reports_period_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/my-permissions/": {
         parameters: {
             query?: never;
@@ -2369,6 +2436,78 @@ export interface operations {
             path: {
                 id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    operations_expense_reports_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    operations_expense_reports_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    operations_expense_reports_override_tomorrow_block_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    operations_expense_reports_period_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
