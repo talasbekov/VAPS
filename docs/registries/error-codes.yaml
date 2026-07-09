@@ -165,6 +165,12 @@ codes:
     category: state
     description: "Функция явно отложена за пределы MVP-core (может быть 403, если ограничена правами)."
     source: "VAPS_7.8.2 §0 (MVP-2/Future)"
+  DOCUMENT_ALREADY_ISSUED:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Документ по текущей версии сдачи уже выпущен; повторная выдача файла — операция скачивания (6.7), новый выпуск — только после amendment сдачи."
+    source: "VAPS_7.8.2 §82.1-82.3 (снапшот-семантика выпуска); epics.md Story 6.5"
 
   # --- 422: нарушение бизнес-правила (hard) ---
   HARD_UNAVAILABLE_STATUS:
@@ -233,6 +239,12 @@ codes:
     category: business_hard
     description: "Попытка amendment дня, который ещё не сдан (нет ни одной версии DailySubmission). Амендить можно только существующую сдачу — иначе первичная сдача (5.3b)."
     source: "epics.md Story 5.4a (amendment-flow); architecture.md ARCH-DATA-021 (поправка вытесняет существующую версию)"
+  SUMMARY_CHILDREN_NOT_SUBMITTED:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Сборка/пересборка сводки при required-детях без действующей сдачи (detail.laggards — отставшие прямые дети). Required = прямой ребёнок с непустым ростером поддерева на дату; «нечего сдавать» не блокирует."
+    source: "epics.md Story 5.11 (фрактальная сводка); architecture.md ARCH-DATA-021 (фрактальность)"
   MAX_DURATION_EXCEEDED:
     http_status: 422
     overridable: false
@@ -257,6 +269,30 @@ codes:
     category: business_hard
     description: "Недопустимый переход жизненного цикла статуса: отмена не-PLANNED, досрочное завершение не-ACTIVE или датой в будущем, продление не-вперёд, любая lifecycle/edit-операция над CANCELLED-записью (append-once)."
     source: "VAPS_7.8.2 §6 (статусы); epics.md 3.6 (FR-10 lifecycle: продление/досрочное завершение/отмена); architecture.md ARCH-DATA-022 (append-once cancel)"
+  SNAPSHOT_SCHEMA_UNSUPPORTED:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Снапшот сдачи имеет неподдерживаемую версию схемы (ключ schema_version отсутствует/не int/не равен поддерживаемой) — выпуск документа отказан ДО генерации и траты номера."
+    source: "epics.md Story 6.5 (AC-2 эпика); apps/operations/submissions/services/snapshot.py SCHEMA_VERSION"
+  REPORT_NOT_CONVERGENT:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Формулы сходимости расхода нарушены (Штат=Список+Вакансии / staffing-запись отсутствует) — несходящийся расход не выпускается; финдинги derive в details."
+    source: "epics.md Story 6.5 (AC-3 эпика, release-ассерт); architecture.md ARCH-DATA-025; deferred-work.md:549 (дефер ревью 6.3)"
+  REPORT_NO_DATA_FOR_DATE:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Запрошена дата ДО начала данных (нет ни списка, ни статусов на дату) — не пустой документ, а отказ. Отлична от 409 REPORT_NOT_READY_FOR_DATE («сдачи нет»)."
+    source: "epics.md Story 6.10 (AC-3, «дата до начала данных → 422 с кодом»); Story 6.10a"
+  TOMORROW_BLOCKED:
+    http_status: 422
+    overridable: false
+    category: business_hard
+    description: "Расход «на завтра» заблокирован — не все необходимые управления сдали (details.laggards). Легальный обход — отдельный override-эндпоинт (не override:true)."
+    source: "epics.md Story 5.6/6.10 (FR-18); Story 6.10b"
 
   # --- 423: заблокировано состоянием ---
   ASSIGNMENT_VERSION_LOCKED:
@@ -279,6 +315,12 @@ codes:
     category: server
     description: "Непредвиденная ошибка при генерации документа."
     source: "VAPS_7.8.2 §34"
+  DOCUMENT_INTEGRITY_FAILED:
+    http_status: 500
+    overridable: false
+    category: server
+    description: "Байты документа на диске отсутствуют или их sha256 не совпал с зафиксированным — выдача отказана (рантайм-проверка целостности)."
+    source: "epics.md Story 6.7 (sha256 сверяется, рантайм-проверка); VAPS_7.8.2 §6 (500 без деталей)"
 
 # conflict_code — значения внутри SOFT_CONFLICT_DETECTED.conflicts[] (НЕ самостоятельные HTTP-коды).
 # severity: WARNING; overridable наследуется от SOFT_CONFLICT_DETECTED. Матрица детектора — VAPS_7.8.2 §BR-003.

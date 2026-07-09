@@ -756,6 +756,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/documents/attachments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Загрузка вложения (multipart, единственное поле `file`). */
+        post: operations["documents_attachments_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/attachments/{id}/download/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Скачивание вложения: 200 с X-Accel-Redirect и пустым телом (байты отдаёт nginx); при VAPS_XACCEL_ENABLED=0 — FileResponse. */
+        get: operations["documents_attachments_download_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications/": {
         parameters: {
             query?: never;
@@ -878,6 +912,73 @@ export interface paths {
          *     imports operations — the gate reads only request attributes (ARCH#L585).
          */
         post: operations["operations_daily_submissions_amend_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/expense-reports/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+         *     + GET period (read-only page-per-date, no number). Thin views over the
+         *     existing issue/derive services; errors flow through the unified handler.
+         *     «На завтра»-блокировка и override — Story 6.10b.
+         */
+        get: operations["operations_expense_reports_retrieve"];
+        put?: never;
+        /**
+         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+         *     + GET period (read-only page-per-date, no number). Thin views over the
+         *     existing issue/derive services; errors flow through the unified handler.
+         *     «На завтра»-блокировка и override — Story 6.10b.
+         */
+        post: operations["operations_expense_reports_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/expense-reports/override-tomorrow-block/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Story 6.10b — legally lift the «на завтра» block for a future date. */
+        post: operations["operations_expense_reports_override_tomorrow_block_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/expense-reports/period/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+         *     + GET period (read-only page-per-date, no number). Thin views over the
+         *     existing issue/derive services; errors flow through the unified handler.
+         *     «На завтра»-блокировка и override — Story 6.10b.
+         */
+        get: operations["operations_expense_reports_period_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1032,6 +1133,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Read-only проекция Attachment — ответ upload (201) и retrieve-форм. */
+        Attachment: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly original_name: string;
+            readonly content_type: string;
+            readonly size: number;
+            readonly sha256: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        AttachmentUploadRequest: {
+            /** Format: binary */
+            file: string;
+        };
         /** @description Read-only projection of an audit row — FR-36 fields, snake_case, flat. */
         AuditLog: {
             /** Format: uuid */
@@ -2188,6 +2304,51 @@ export interface operations {
             };
         };
     };
+    documents_attachments_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AttachmentUploadRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attachment"];
+                };
+            };
+        };
+    };
+    documents_attachments_download_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this Вложение. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+        };
+    };
     notifications_list: {
         parameters: {
             query?: {
@@ -2275,6 +2436,78 @@ export interface operations {
             path: {
                 id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    operations_expense_reports_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    operations_expense_reports_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    operations_expense_reports_override_tomorrow_block_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    operations_expense_reports_period_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

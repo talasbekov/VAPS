@@ -18,10 +18,32 @@ dependencies = [
     # формат вывода spectacular — контракт drift-чека (lock-файла у бэка нет),
     # апгрейд = осознанный regen-коммит schema.yaml + schema.d.ts.
     "drf-spectacular>=0.30,<0.31",
+    # Story 6.3: официальный .docx расхода (перенос из донора — тот же пин
+    # 1.2.0, что в donor requirements.txt; registry-снимок 1.2.0 на 2026-07-08).
+    # Offline-friendly: default-template внутри пакета, сети не касается. ЧЕСТНО:
+    # тянет lxml (C-extension) — осознанное отступление от openpyxl-обоснования
+    # «no C extensions»; бинарные wheels вендорятся в offline-зеркало контура.
+    "python-docx>=1.2,<2",
+    # Story 6.4: нативный PDF расхода. Донорского прообраза НЕТ (донор PDF
+    # расхода не генерирует — проверено grep'ом reports-app); выбор fpdf2
+    # (registry-снимок 2.8.7 на 2026-07-08): декларативный table() +
+    # add_font(TTF) для kk-глифов, API проверен эмпирически на create-story.
+    # Альтернатива reportlab (донор пинит 4.5.1 в ДРУГОЙ подсистеме) отклонена
+    # (Д5/Q2). ЧЕСТНО: LGPL-3.0 + тянет Pillow (C-extension), fonttools,
+    # defusedxml — wheels вендорятся в offline-зеркало контура (прецедент Q2-6.3).
+    "fpdf2>=2.8,<3",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-django>=4.8", "ruff>=0.15", "hypothesis>=6,<7"]
+dev = [
+    "pytest>=8.0",
+    "pytest-django>=4.8",
+    "ruff>=0.15",
+    "hypothesis>=6,<7",
+    # Story 6.4: парсер PDF в тестах (round-trip/extract_text); BSD-3,
+    # pure-python, снимок 5.6.0 на 2026-07-08.
+    "pypdf>=5,<6",
+]
 
 [tool.setuptools]
 packages = ["config", "apps", "apps.core"]
@@ -35,6 +57,7 @@ markers = [
     "property: property-based tests (hypothesis)",
     "concurrency: concurrency smoke tests",
     "slow: tests that take more than a few seconds",
+    "golden: golden-master регрессия расхода (числа + нормализованный document.xml); только test-full",
 ]
 
 [tool.ruff]

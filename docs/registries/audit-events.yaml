@@ -57,6 +57,30 @@ actions:
     description: "Скачивание чувствительного документа (обязательный аудит)."
     provenance: derived-from-mutation
     source: "VAPS_7.8.2 BR-DOC-003 (§ «скачивание … фиксируется в audit_logs»)"
+  # Форвард-семя E6 (ретро E5 урок №4): сеет первая генераторная стори (6.3),
+  # эмиссия — Story 6.5 (выпуск расхода). Эмиссий в 6.3 НЕТ — прецедент
+  # DOCUMENT_DOWNLOADED, живущего в реестре без эмиссии до 6.7 (growth_rule:
+  # action дописывается тем же PR, что вводит зону мутации).
+  DOCUMENT_GENERATED:
+    entity_type: document
+    description: "Официальный документ сгенерирован из derive(снапшот) (байты собраны, ещё не выпущены)."
+    provenance: derived-from-mutation
+    source: "prd.md FR-17; VAPS_7.8.2 §34; epics.md Story 6.5"
+  DOCUMENT_ISSUED:
+    entity_type: document
+    description: "Документ выпущен: файл + sha256 + номер закреплены за выпуском (Attachment)."
+    provenance: derived-from-mutation
+    source: "prd.md FR-17; VAPS_7.8.2 §34; epics.md Story 6.5"
+  DOCUMENT_SUPERSEDED:
+    entity_type: document
+    description: "Документ выдан «взамен исх. №» — прежний выпуск помечен заменённым."
+    provenance: derived-from-mutation
+    source: "prd.md FR-17; VAPS_7.8.2 §34; epics.md Story 6.5"
+  ATTACHMENT_UPLOADED:
+    entity_type: attachment
+    description: "Файл загружен в приватное хранилище (строка Attachment создана; метаданные в new_value)."
+    provenance: derived-from-mutation
+    source: "VAPS_7.8.2 §6 «все мутации пишутся в audit_logs» + BR-DOC-001; epics.md Story 6.1"
   DAILY_SUBMISSION_SUBMITTED:
     entity_type: daily_submission
     description: "Подразделение сдало день (акт сдачи, снапшот)."
@@ -67,6 +91,16 @@ actions:
     description: "Пересдача/amendment сданного дня (кто/когда/причина/санкция)."
     provenance: derived-from-mutation
     source: "architecture.md ARCH-DATA-021 (amendment-flow)"
+  DAILY_SUMMARY_ASSEMBLED:
+    entity_type: daily_submission
+    description: "Собрана сводка родительского подразделения (та же DailySubmission + пины sources прямых детей; payload — sources-компакт без снапшота)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 5.11; architecture.md ARCH-DATA-021 (фрактальность)"
+  DAILY_SUMMARY_REBUILT:
+    entity_type: daily_submission
+    description: "Явная пересборка сводки «взамен» (amendment сводки: свежий own-срез + свежие пины; before/after)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 5.11; architecture.md ARCH-DATA-021 (фрактальность, «взамен»)"
   TOMORROW_BLOCK_OVERRIDDEN:
     entity_type: tomorrow_block_override
     description: "Легальный обход блокировки «на завтра» (кто/когда/почему; 5.6b override)."

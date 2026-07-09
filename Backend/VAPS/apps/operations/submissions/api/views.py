@@ -19,13 +19,21 @@ from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
 from apps.core.api.permissions import RequirePermissionMixin
+from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
+from apps.documents.models import EXPENSE_DOC_TYPE
+from apps.documents.selectors import IssuedDocumentSelector
 from apps.operations.submissions.api.serializers import (
     DailySubmissionAmendSerializer,
     DailySubmissionCreateSerializer,
     DailySubmissionDetailSerializer,
     DailySubmissionFilterSerializer,
     DailySubmissionSerializer,
+    ExpensePeriodFilterSerializer,
+    ExpenseReportByDateFilterSerializer,
+    ExpenseReportIssueSerializer,
+    IssuedExpenseReportSerializer,
+    TomorrowBlockOverrideSerializer,
 )
 from apps.operations.submissions.selectors import (
     READ_PERMISSION,
@@ -33,9 +41,22 @@ from apps.operations.submissions.selectors import (
 )
 from apps.operations.submissions.services import (
     amend_day,
+    assert_report_date_has_data,
+    assert_tomorrow_not_blocked,
+    derive_period,
     ensure_division_scope,
+    issue_expense_document,
+    override_tomorrow_block,
     submit_day,
 )
+
+# Расход read/issue endpoints gate on the (already-seeded) generation right
+# (Story 6.10a Д2: management reads what it issues; daily_report.view does not
+# exist — decided 2026-07-02).
+_EXPENSE_PERMISSION = "daily_report.generate"
+# Legal bypass of the «на завтра» block — its own permission (Story 6.10b),
+# distinct from generation (issuing ≠ overriding a control gate).
+_OVERRIDE_PERMISSION = "daily_report.override_block"
 
 # One source for both gates — the coarse mixin check and the scope re-check
 # must never drift onto different permission codes. The READ code is imported
@@ -144,5 +165,125 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
         return Response(
             DailySubmissionSerializer(new_version).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+    + GET period (read-only page-per-date, no number). Thin views over the
+    existing issue/derive services; errors flow through the unified handler.
+    «На завтра»-блокировка и override — Story 6.10b.
+    """
+
+    permission_map = {
+        "create": _EXPENSE_PERMISSION,
+        "list": _EXPENSE_PERMISSION,
+        "period": _EXPENSE_PERMISSION,
+        "override_block": _OVERRIDE_PERMISSION,
+    }
+    http_method_names = ["get", "post", "options"]
+
+    def create(self, request, *args, **kwargs):
+        form = ExpenseReportIssueSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        business_date = form.validated_data["business_date"]
+        ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        # «На завтра»-блок (6.10b): only future dates; 422 TOMORROW_BLOCKED with
+        # laggards, before the service's own 409 not-ready would fire.
+        assert_tomorrow_not_blocked(
+            business_date=business_date, today=Clock.today_local()
+        )
+        # Date-before-data (422) is checked BEFORE issuance so it wins over the
+        # service's own 409 REPORT_NOT_READY_FOR_DATE (AC-4).
+        assert_report_date_has_data(business_date=business_date)
+        issued = issue_expense_document(
+            division_id=division_id,
+            business_date=business_date,
+            actor=request.actor_id,
+        )
+        return Response(
+            IssuedExpenseReportSerializer(issued).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def list(self, request, *args, **kwargs):
+        form = ExpenseReportByDateFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        business_date = form.validated_data["business_date"]
+        ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        issued = IssuedDocumentSelector.current_issued(
+            doc_type=EXPENSE_DOC_TYPE,
+            division_id=division_id,
+            business_date=business_date,
+        )
+        if issued is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={
+                    "division_id": str(division_id),
+                    "business_date": business_date.isoformat(),
+                },
+                message="Расход за дату не выпущен.",
+            )
+        return Response(IssuedExpenseReportSerializer(issued).data)
+
+    @action(detail=False, methods=["get"])
+    def period(self, request, *args, **kwargs):
+        form = ExpensePeriodFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        pages = derive_period(
+            division_id=division_id,
+            date_from=form.validated_data["date_from"],
+            date_to=form.validated_data["date_to"],
+        )
+        return Response({"pages": pages})
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="override-tomorrow-block",
+        url_name="override-tomorrow-block",
+    )
+    def override_block(self, request, *args, **kwargs):
+        """Story 6.10b — legally lift the «на завтра» block for a future date."""
+        form = TomorrowBlockOverrideSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        business_date = form.validated_data["business_date"]
+        # Only a FUTURE date has a block to lift (FR-18: past/today never
+        # blocked); overriding a non-future date is a no-op mistake → 400.
+        if business_date <= Clock.today_local():
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={"business_date": business_date.isoformat()},
+                message="Обойти можно только блокировку будущей даты.",
+            )
+        try:
+            override = override_tomorrow_block(
+                business_date=business_date,
+                actor=request.actor_id,
+                reason=form.validated_data["reason"],
+            )
+        except ValueError as exc:
+            # Bad input and a duplicate active override both surface as ValueError
+            # (5.6b) — indistinguishable by type, both map to 400 (Story 6.10b Д2).
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={"business_date": business_date.isoformat()},
+                message=str(exc),
+            ) from exc
+        return Response(
+            {
+                "business_date": business_date.isoformat(),
+                "overridden_by": override.overridden_by,
+                "reason": override.reason,
+            },
             status=status.HTTP_201_CREATED,
         )
