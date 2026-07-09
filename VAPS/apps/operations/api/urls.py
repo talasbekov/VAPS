@@ -7,7 +7,10 @@ from apps.operations.api.views import (
     TemporaryDutyViewSet,
     UserRoleViewSet,
 )
-from apps.operations.submissions.api.views import DailySubmissionViewSet
+from apps.operations.submissions.api.views import (
+    DailySubmissionViewSet,
+    ExpenseReportViewSet,
+)
 
 router = DefaultRouter()
 router.register("roles", RoleViewSet, basename="ops-role")
@@ -17,6 +20,9 @@ router.register("temporary-duty", TemporaryDutyViewSet, basename="ops-temp-duty"
 router.register("my-permissions", MyPermissionsViewSet, basename="ops-my-permissions")
 router.register(
     "daily-submissions", DailySubmissionViewSet, basename="ops-daily-submission"
+)
+router.register(
+    "expense-reports", ExpenseReportViewSet, basename="ops-expense-report"
 )
 
 urlpatterns = router.urls

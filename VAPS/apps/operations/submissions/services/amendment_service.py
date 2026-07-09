@@ -129,6 +129,14 @@ def amend_day(
     # Re-snapshot the CORRECTED state (not a copy of v1) — a fresh self-contained
     # срез on the same business_date (ARCH-DATA-021: amendment = new version).
     snapshot = build_division_snapshot(division_id, business_date)
+    # Сводка (5.11): auto-amendment (хук 5.4b по own-сотруднику) чинит «две
+    # правды» ТОЛЬКО для own-строк — пины ``sources`` переезжают VERBATIM из
+    # вытесняемой версии (НЕ пере-пиновка свежих версий детей): консолидация
+    # обновляется исключительно явной пересборкой (rebuild_summary). Aliasing
+    # безопасен: ``latest`` после транзакции не используется, ``create()``
+    # сериализует значение в JSONB.
+    if "sources" in latest.snapshot:
+        snapshot["sources"] = latest.snapshot["sources"]
     version = latest.version + 1
 
     # Flip-before-insert: clear the prior is_current BEFORE inserting the new one —

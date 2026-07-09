@@ -148,6 +148,18 @@ MATRIX = {
     # ensure_division_scope (матрицей не проверяется: payloadless POST держателя
     # на pk=0 = 400 формы = ALLOW по канону).
     "ops-daily-submission-amend": _MethodGate({"post": "daily_report.correct"}),
+    # expense-reports — HTTP-поверхность расхода (story 6.10a). POST-выпуск + GET
+    # по дате на базовом роуте; GET период (page-per-date, read-only). Оба гейта =
+    # daily_report.generate (Д2: руководство читает то, что выпускает; scope в
+    # ensure_division_scope, матрицей не проверяется).
+    "ops-expense-report-list": _MethodGate(
+        {"get": "daily_report.generate", "post": "daily_report.generate"}
+    ),
+    "ops-expense-report-period": _MethodGate({"get": "daily_report.generate"}),
+    # override «на завтра»-блока (story 6.10b, POST-only) — своё право
+    # daily_report.override_block (обход ≠ выпуск); scope не применяется (обход
+    # уровня дня, без division). ValueError сервиса → 400 = ALLOW по канону.
+    "ops-expense-report-override-tomorrow-block": _Gate("daily_report.override_block"),
     # audit — read-only журнал, загейчен RequirePermissionMixin("audit.view")
     # (story 4.5). GET-only (list+retrieve); ORGD/ADMIN → ALLOW, прочие/аноним
     # → DENY (из seed).
@@ -158,6 +170,12 @@ MATRIX = {
     # НЕ RBAC-код); зеркало ops-my-permissions-list. Аноним → 403, любой actor →
     # ALLOW (его список, возможно пустой). seed_operations НЕ трогается.
     "notification-list": _AnyAuthenticated(),
+    # documents — вложения (story 6.1): list-роут служит ТОЛЬКО POST (create;
+    # list/retrieve не реализованы, Д8), download — GET. Гейт
+    # RequirePermissionMixin; мусорный pk у держателя → селектор 404 = ALLOW
+    # по канону матрицы.
+    "documents-attachment-list": _Gate("document.upload"),
+    "documents-attachment-download": _Gate("document.view"),
     # core — загейчено RequirePermissionMixin (story 2.13 механизм A + 2.14
     # раскатка). GET=view, write(create/update/destroy/archive/...)=edit/manage.
     "vacancy-list": _Gate("personnel.view"),  # GET-only (2.13 пилот)

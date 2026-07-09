@@ -30,7 +30,9 @@ INSTALLED_APPS = [
     "apps.operations.submissions",
     "apps.audit",
     "apps.notifications",
+    "apps.documents",
     "apps.migration_legacy",
+    "apps.parallel_run",
 ]
 
 MIDDLEWARE = [
@@ -197,3 +199,46 @@ SPECTACULAR_SETTINGS = {
 # Admin-ассеты под DEBUG/runserver через staticfiles. STATIC_ROOT +
 # collectstatic + nginx-alias — прод-статика, отложено в E12 (ARCH#L335).
 STATIC_URL = "static/"
+
+
+# Story 6.1 — приватное файловое хранилище (Attachment). Файлы живут ВНЕ
+# MEDIA_URL (MEDIA_ROOT/MEDIA_URL не вводятся вовсе, Д2) плоско как
+# {root}/{uuid}; отдача — X-Accel-Redirect на internal-location nginx.
+# Переключение отдачи — env-флаг, НЕ if DEBUG (канон «без веток по окружению»).
+def max_upload_mb_from_env(env):
+    """Парсинг VAPS_MAX_UPLOAD_MB с range-guard (паттерн VAPS_JWT_LEEWAY):
+    кривое значение валит старт, а не молча пропускает гигантский upload."""
+    try:
+        mb = int(env.get("VAPS_MAX_UPLOAD_MB", "20"))
+    except ValueError as exc:
+        raise ImproperlyConfigured(
+            "VAPS_MAX_UPLOAD_MB must be an integer (megabytes)."
+        ) from exc
+    if not 1 <= mb <= 1024:
+        raise ImproperlyConfigured("VAPS_MAX_UPLOAD_MB must be 1..1024 megabytes.")
+    return mb
+
+
+VAPS_MAX_UPLOAD_MB = max_upload_mb_from_env(os.environ)
+
+# Whitelist заявленных content-type (Д4: форматы расхода FR-17 + фото; сниффинг
+# содержимого не делаем — контур закрытый). CSV-переопределение через env.
+VAPS_ATTACHMENT_CONTENT_TYPES = [
+    ct.strip()
+    for ct in os.environ.get(
+        "VAPS_ATTACHMENT_CONTENT_TYPES",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+        "application/pdf,text/csv,image/jpeg,image/png",
+    ).split(",")
+    if ct.strip()
+]
+
+VAPS_PRIVATE_STORAGE_ROOT = Path(
+    os.environ.get("VAPS_PRIVATE_STORAGE_ROOT", BASE_DIR / "private_storage")
+)
+
+# X-Accel: Django отдаёт заголовки, байты стримит nginx internal location.
+# VAPS_XACCEL_ENABLED=0 — dev-fallback без nginx (FileResponse).
+VAPS_XACCEL_ENABLED = os.environ.get("VAPS_XACCEL_ENABLED", "1") == "1"
+VAPS_XACCEL_LOCATION = os.environ.get("VAPS_XACCEL_LOCATION", "/protected")
