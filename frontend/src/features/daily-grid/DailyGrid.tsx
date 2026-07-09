@@ -14,7 +14,9 @@ import {
   useState,
 } from 'react'
 
+import type { ConflictError } from '../../shared/api/errors'
 import { Card } from '../../shared/ui/Card'
+import { ConflictDialog } from '../../shared/ui/ConflictDialog'
 import { transition } from './grammar'
 import type { Bounds, CellState, ColumnKind, Key } from './grammar.types'
 import type {
@@ -133,8 +135,15 @@ const GridRow = memo(function GridRow({
       role="row"
       className={`flex items-stretch border-b text-sm ${dirty ? 'font-medium' : ''}`}
     >
-      <span role="cell" className="w-64 truncate px-2 py-1">
-        {row.fullName}
+      <span role="cell" className="w-64 px-1 py-1">
+        <button
+          type="button"
+          {...(focusedCol === 0 ? ACTIVE : {})}
+          tabIndex={focusedCol === 0 ? 0 : -1}
+          className="w-full truncate px-1 text-left"
+        >
+          {row.fullName}
+        </button>
       </span>
       <span role="cell" className="w-48 px-1 py-1">
         {focusedCol === STATUS_COL && mode === 'EDIT' ? (
@@ -182,7 +191,15 @@ const GridRow = memo(function GridRow({
           </button>
         )}
       </span>
-      <span role="cell" className="w-8 px-1 py-1 text-center" aria-hidden />
+      <span role="cell" className="w-8 px-1 py-1 text-center">
+        <button
+          type="button"
+          aria-label="Флаг"
+          {...(focusedCol === 3 ? ACTIVE : {})}
+          tabIndex={focusedCol === 3 ? 0 : -1}
+          className="w-full"
+        />
+      </span>
     </div>
   )
 })
@@ -192,6 +209,7 @@ export function DailyGrid({
   statusOptions,
   onSubmit,
   emptyLabel,
+  onCellCommit,
 }: DailyGridProps) {
   const initials = useMemo(() => initValues(rows), [rows])
   const [values, dispatch] = useReducer(valueReducer, undefined, () =>
@@ -202,6 +220,7 @@ export function DailyGrid({
     col: STATUS_COL,
     mode: 'NAVIGATE',
   })
+  const [conflict, setConflict] = useState<ConflictError | null>(null)
 
   const parentRef = useRef<HTMLDivElement>(null)
   const emptyRef = useRef<HTMLDivElement>(null)
@@ -278,14 +297,36 @@ export function DailyGrid({
         dispatch({ type: 'SET_STATUS', id: pe.id, statusCode: pe.statusCode })
         dispatch({ type: 'SET_PERIOD', id: pe.id, period: pe.period })
       }
+      // Seam входа в CONFLICT (9.5): коммит спрашивает владельца; конфликт →
+      // остаёмся на ячейке, показываем диалог (move НЕ применяем).
+      if (result.action === 'COMMIT' && onCellCommit) {
+        const row = rows[focus.row]
+        const v = values[row.id]
+        const conflictErr = onCellCommit({
+          id: row.id,
+          statusCode: v.statusCode,
+          period: v.period,
+        })
+        if (conflictErr) {
+          setConflict(conflictErr)
+          setFocus({ row: focus.row, col: focus.col, mode: 'CONFLICT' })
+          return
+        }
+      }
       setFocus({
         row: result.nextPosition.row,
         col: result.nextPosition.col,
         mode: result.nextState,
       })
     },
-    [rows.length, focus, bounds, capturePreEdit],
+    [rows, values, focus, bounds, capturePreEdit, onCellCommit],
   )
+
+  const closeConflict = useCallback(() => {
+    // Закрытие диалога (Отмена/Escape/оверрайд): возврат в ту же ячейку.
+    setConflict(null)
+    setFocus((f) => ({ row: f.row, col: f.col, mode: 'NAVIGATE' }))
+  }, [])
 
   // Управляемый фокус: активная ячейка получает DOM-фокус; строка — в вид.
   useLayoutEffect(() => {
@@ -394,6 +435,14 @@ export function DailyGrid({
             })}
           </div>
         </div>
+      )}
+
+      {focus.mode === 'CONFLICT' && (
+        <ConflictDialog
+          conflict={conflict}
+          onOverride={closeConflict}
+          onCancel={closeConflict}
+        />
       )}
     </Card>
   )

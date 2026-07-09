@@ -1,6 +1,8 @@
 // Story 9.4 — типы грид-компонента (данные приходят props; реальный источник
 // + prefill = 9.7). Ноль бизнес-логики конфликтов (9.6) / отправки-дельт (9.7).
 
+import type { ConflictError } from '../../shared/api/errors'
+
 export interface EmployeeRow {
   id: string
   fullName: string
@@ -30,6 +32,12 @@ export interface DailyGridProps {
   onSubmit: (changes: RowChange[]) => void
   /** Текст пустого состояния (0 строк). */
   emptyLabel?: string
+  /**
+   * Seam входа в CONFLICT (Story 9.5): вызывается на коммите ячейки; вернул
+   * ConflictError → грид показывает ConflictDialog и возвращает фокус в ячейку
+   * после закрытия. Реальный маппинг 409/422 + маркеры строк = Story 9.6.
+   */
+  onCellCommit?: (change: RowChange) => ConflictError | null
 }
 
 /** Редактируемое значение строки (нормализованное состояние, ключ = row.id). */
