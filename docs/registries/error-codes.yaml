@@ -303,6 +303,12 @@ codes:
     category: server
     description: "Непредвиденная ошибка при генерации документа."
     source: "VAPS_7.8.2 §34"
+  DOCUMENT_INTEGRITY_FAILED:
+    http_status: 500
+    overridable: false
+    category: server
+    description: "Байты документа на диске отсутствуют или их sha256 не совпал с зафиксированным — выдача отказана (рантайм-проверка целостности)."
+    source: "epics.md Story 6.7 (sha256 сверяется, рантайм-проверка); VAPS_7.8.2 §6 (500 без деталей)"
 
 # conflict_code — значения внутри SOFT_CONFLICT_DETECTED.conflicts[] (НЕ самостоятельные HTTP-коды).
 # severity: WARNING; overridable наследуется от SOFT_CONFLICT_DETECTED. Матрица детектора — VAPS_7.8.2 §BR-003.

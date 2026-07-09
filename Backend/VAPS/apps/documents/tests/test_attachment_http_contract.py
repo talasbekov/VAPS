@@ -3,9 +3,10 @@
 Дополняет dev-сьют ``test_attachment_api.py`` осями, которые там не судятся:
 отсутствие поля ``file`` (форма = ровно одно поле — контракт schema.yaml),
 403 на СУЩЕСТВУЮЩЕМ вложении у роли без ``document.view``, граница лимита
-(ровно max_bytes → 201), негативный аудит-контракт скачивания (Ловушка №2:
-``DOCUMENT_DOWNLOADED`` — зона 6.7, download не пишет НИ ОДНОЙ строки),
-спуф identity-полей в multipart (ARCH-SEC-030) и пин дефолтного whitelist Д4.
+(ровно max_bytes → 201), позитивный аудит-контракт скачивания (Story 6.7:
+``DOCUMENT_DOWNLOADED`` — РОВНО ОДНА строка per download, регресс-охрана
+ленивой/двойной эмиссии), спуф identity-полей в multipart (ARCH-SEC-030) и
+пин дефолтного whitelist Д4.
 
 Auth — канон Ловушки №5: свои копии фикстур (``seed_operations`` +
 ``UserRole`` + ``HTTP_X_USER_ID``), общего conftest нет.
@@ -111,16 +112,15 @@ def test_201_upload_at_exact_size_limit(storage, rbac_actors, settings):
     assert (storage / data["id"]).read_bytes() == exact
 
 
-# -- Ловушка №2: download НЕ эмитит аудит (зона 6.7) ----------------------------
+# -- Story 6.7: download эмитит РОВНО ОДНУ строку аудита per download -----------
 
 
-def test_download_emits_no_audit_rows(storage, rbac_actors, settings):
-    # Негативный контракт: аудит скачивания = Story 6.7 (`DOCUMENT_DOWNLOADED`
-    # уже в реестре — эмиссия сейчас запрещена). Судим оба режима отдачи:
-    # регрессия «ленивый record() в теле FileResponse» (deferred-work ~401)
-    # обязана краснить именно этот тест.
+def test_download_emits_audit_row(storage, rbac_actors, settings):
+    # Позитивный контракт (инверсия 6.1): скачивание пишет РОВНО ОДНУ строку
+    # `DOCUMENT_DOWNLOADED` на каждый download — в ОБОИХ режимах отдачи. Регресс-
+    # смысл сохранён: «ленивый/двойной record() в теле FileResponse» (deferred-
+    # work ~401) всплыл бы ЛИШНЕЙ строкой (тело fallback дочитываем).
     data = _uploaded()
-    rows_after_upload = AuditLog.objects.count()
 
     settings.VAPS_XACCEL_ENABLED = True
     assert _client().get(_download_url(data["id"])).status_code == 200
@@ -129,8 +129,11 @@ def test_download_emits_no_audit_rows(storage, rbac_actors, settings):
     assert response.status_code == 200
     b"".join(response.streaming_content)  # тело дочитано — ленивая эмиссия всплыла бы
 
-    assert AuditLog.objects.count() == rows_after_upload
-    assert not AuditLog.objects.filter(action="DOCUMENT_DOWNLOADED").exists()
+    rows = AuditLog.objects.filter(action="DOCUMENT_DOWNLOADED")
+    assert rows.count() == 2  # ровно одна строка на каждый из двух download
+    for row in rows:
+        assert str(row.entity_id) == data["id"]
+        assert row.actor_user_id == _UPLOADER
 
 
 # -- ARCH-SEC-030: identity только из request.actor_id --------------------------

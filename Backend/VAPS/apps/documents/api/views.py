@@ -7,8 +7,10 @@
 «Django не стримит» (Ловушка №2): легальная отдача — маленький 200 с
 ``X-Accel-Redirect`` и ПУСТЫМ телом, байты отдаёт nginx internal location;
 dev-fallback ``VAPS_XACCEL_ENABLED=0`` → ``FileResponse`` с теми же
-Content-*-заголовками (env-флаг, не if DEBUG). Аудит скачивания НЕ здесь —
-Story 6.7 (``DOCUMENT_DOWNLOADED`` не эмитить). Ошибки — через единый handler
+Content-*-заголовками (env-флаг, не if DEBUG). Сверка sha256 (байт-в-байт) и
+аудит скачивания (``DOCUMENT_DOWNLOADED``) — здесь (Story 6.7), через тонкое
+``services.prepare_download`` (verify → audit → путь); порча/пропажа байтов →
+500 ``DOCUMENT_INTEGRITY_FAILED``. Ошибки — через единый handler
 (никаких try/except + Response во view).
 """
 
@@ -70,13 +72,16 @@ class AttachmentViewSet(RequirePermissionMixin, viewsets.GenericViewSet):
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
         attachment = selectors.get_attachment(pk)
+        # verify sha256 (байт-в-байт) → аудит DOCUMENT_DOWNLOADED → путь на диске;
+        # порча/пропажа байтов → 500 до построения ответа (Story 6.7).
+        path = services.prepare_download(attachment=attachment, actor=request.actor_id)
         disposition = content_disposition_header(True, attachment.original_name)
         if settings.VAPS_XACCEL_ENABLED:
             response = HttpResponse(content_type=attachment.content_type)
             response["X-Accel-Redirect"] = services.xaccel_redirect_path(attachment)
         else:
             response = FileResponse(
-                open(services.storage_path(attachment), "rb"),
+                open(path, "rb"),
                 content_type=attachment.content_type,
             )
         response["Content-Disposition"] = disposition
