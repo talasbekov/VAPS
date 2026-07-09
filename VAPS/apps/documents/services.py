@@ -16,10 +16,13 @@ sha256/size; replace в финальное имя ДО create строки; пр
 джобы не строим.
 
 Аудит: ``ATTACHMENT_UPLOADED`` синхронно в той же транзакции (Д7, канон 4.4).
-Аудит СКАЧИВАНИЯ здесь не эмитится — это Story 6.7 (Ловушка №2).
+Скачивание (Story 6.7): ``prepare_download`` рантайм-сверяет sha256 байт-в-байт
+(``verify_integrity``) и эмитит ``DOCUMENT_DOWNLOADED`` — аудит владеет сервис,
+view остаётся тонкой (канон ``create_attachment``, Ловушка №2 6.7).
 """
 
 import hashlib
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -31,6 +34,8 @@ from apps.audit.services import record
 from apps.core.exceptions import DomainError
 from apps.documents import selectors
 from apps.documents.models import Attachment, DocumentSequence
+
+logger = logging.getLogger(__name__)
 
 _CHUNK_SIZE = 64 * 1024  # 64 KiB
 _MAX_NAME_LENGTH = 255  # = Attachment.original_name.max_length
@@ -196,3 +201,78 @@ def xaccel_redirect_path(attachment):
 def storage_path(attachment):
     """Путь к байтам на диске: ``{root}/{uuid}`` — derivable от PK (Д2)."""
     return Path(settings.VAPS_PRIVATE_STORAGE_ROOT) / str(attachment.id)
+
+
+def verify_integrity(attachment):
+    """Рантайм-сверка байт-в-байт ДО выдачи (Story 6.7, AC-2/3).
+
+    Читает байты из ``storage_path(attachment)`` чанками ``_CHUNK_SIZE`` и
+    считает ``sha256`` (ЗЕРКАЛО ``create_attachment``), сверяя с
+    ``attachment.sha256``. Несовпадение (порча/подмена приватного стореджа) ИЛИ
+    отсутствие файла (``FileNotFoundError`` — строка есть, байтов нет = серверная
+    порча) → ``DomainError`` 500 ``DOCUMENT_INTEGRITY_FAILED``, БЕЗ деталей
+    наружу (§Format Patterns «500 без деталей»); specifics
+    (``attachment_id``/expected/actual) — только в server-log.
+
+    «Django не стримит» ≠ «не читает» (Ловушка №1): в X-Accel-режиме тело
+    клиенту отдаёт nginx, но посчитать sha нельзя, не прочитав файл — verify
+    читает его В ПРОЦЕССЕ Django (тело ответа по-прежнему пустое). Стоимость
+    ограничена сверху ``VAPS_MAX_UPLOAD_MB`` (расход-документы .docx — десятки КБ).
+    """
+    path = storage_path(attachment)
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(_CHUNK_SIZE), b""):
+                digest.update(chunk)
+    except FileNotFoundError as exc:
+        logger.error(
+            "Integrity failure: bytes missing for attachment %s at %s",
+            attachment.id,
+            path,
+        )
+        raise DomainError("DOCUMENT_INTEGRITY_FAILED", 500, detail={}) from exc
+
+    actual = digest.hexdigest()
+    if actual != attachment.sha256:
+        logger.error(
+            "Integrity failure: sha256 mismatch for attachment %s "
+            "(expected %s, actual %s)",
+            attachment.id,
+            attachment.sha256,
+            actual,
+        )
+        raise DomainError("DOCUMENT_INTEGRITY_FAILED", 500, detail={})
+
+
+def prepare_download(*, attachment, actor):
+    """Сверить целостность, зафиксировать аудит скачивания, вернуть путь (6.7).
+
+    Порядок жёсткий (Ловушка №3): ``verify_integrity`` → ``record(
+    DOCUMENT_DOWNLOADED)`` → ``return storage_path`` — аудит фиксирует, что
+    «правильный файл выдан», а не «была попытка»; поэтому пишется ТОЛЬКО на
+    прошедшую сверку (отказ 500-integrity строки аудита не оставляет). Аудит —
+    через ``record()`` в СЕРВИСЕ (ARCH-SEC-032, канон ``create_attachment``),
+    view остаётся тонкой; ``entity_type="document"`` — по строке реестра
+    ``DOCUMENT_DOWNLOADED`` (Д3), ``entity_id`` = UUID вложения.
+
+    GET исполняется в autocommit (``ATOMIC_REQUESTS`` не задан) — ``record()``
+    своего ``atomic`` не открывает (Ловушка №4): одиночный INSERT ``AuditLog``
+    коммитится сам, лишнюю транзакцию на чтение НЕ городим. «Обязательный аудит»:
+    падение ``record()`` (сбой БД) → download 500-ит, и это правильно — нет
+    журнала ⇒ нет выдачи.
+    """
+    verify_integrity(attachment)
+    record(
+        actor=actor,
+        action="DOCUMENT_DOWNLOADED",
+        entity_type="document",
+        entity_id=attachment.id,
+        new_value={
+            "original_name": attachment.original_name,
+            "content_type": attachment.content_type,
+            "size": attachment.size,
+            "sha256": attachment.sha256,
+        },
+    )
+    return storage_path(attachment)
