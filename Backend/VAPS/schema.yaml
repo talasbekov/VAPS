@@ -1311,6 +1311,44 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/operations/expense-reports/:
+    get:
+      operationId: operations_expense_reports_retrieve
+      description: |-
+        Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+        + GET period (read-only page-per-date, no number). Thin views over the
+        existing issue/derive services; errors flow through the unified handler.
+        «На завтра»-блокировка и override — Story 6.10b.
+      tags:
+      - operations
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: operations_expense_reports_create
+      description: |-
+        Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+        + GET period (read-only page-per-date, no number). Thin views over the
+        existing issue/derive services; errors flow through the unified handler.
+        «На завтра»-блокировка и override — Story 6.10b.
+      tags:
+      - operations
+      responses:
+        '201':
+          description: No response body
+  /api/operations/expense-reports/period/:
+    get:
+      operationId: operations_expense_reports_period_retrieve
+      description: |-
+        Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+        + GET period (read-only page-per-date, no number). Thin views over the
+        existing issue/derive services; errors flow through the unified handler.
+        «На завтра»-блокировка и override — Story 6.10b.
+      tags:
+      - operations
+      responses:
+        '200':
+          description: No response body
   /api/operations/my-permissions/:
     get:
       operationId: operations_my_permissions_list

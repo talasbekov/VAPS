@@ -20,12 +20,18 @@ from rest_framework.response import Response
 
 from apps.core.api.permissions import RequirePermissionMixin
 from apps.core.exceptions import DomainError
+from apps.documents.models import EXPENSE_DOC_TYPE
+from apps.documents.selectors import IssuedDocumentSelector
 from apps.operations.submissions.api.serializers import (
     DailySubmissionAmendSerializer,
     DailySubmissionCreateSerializer,
     DailySubmissionDetailSerializer,
     DailySubmissionFilterSerializer,
     DailySubmissionSerializer,
+    ExpensePeriodFilterSerializer,
+    ExpenseReportByDateFilterSerializer,
+    ExpenseReportIssueSerializer,
+    IssuedExpenseReportSerializer,
 )
 from apps.operations.submissions.selectors import (
     READ_PERMISSION,
@@ -33,9 +39,17 @@ from apps.operations.submissions.selectors import (
 )
 from apps.operations.submissions.services import (
     amend_day,
+    assert_report_date_has_data,
+    derive_period,
     ensure_division_scope,
+    issue_expense_document,
     submit_day,
 )
+
+# Расход read/issue endpoints gate on the (already-seeded) generation right
+# (Story 6.10a Д2: management reads what it issues; daily_report.view does not
+# exist — decided 2026-07-02).
+_EXPENSE_PERMISSION = "daily_report.generate"
 
 # One source for both gates — the coarse mixin check and the scope re-check
 # must never drift onto different permission codes. The READ code is imported
@@ -146,3 +160,73 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
             DailySubmissionSerializer(new_version).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
+    + GET period (read-only page-per-date, no number). Thin views over the
+    existing issue/derive services; errors flow through the unified handler.
+    «На завтра»-блокировка и override — Story 6.10b.
+    """
+
+    permission_map = {
+        "create": _EXPENSE_PERMISSION,
+        "list": _EXPENSE_PERMISSION,
+        "period": _EXPENSE_PERMISSION,
+    }
+    http_method_names = ["get", "post", "options"]
+
+    def create(self, request, *args, **kwargs):
+        form = ExpenseReportIssueSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        business_date = form.validated_data["business_date"]
+        ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        # Date-before-data (422) is checked BEFORE issuance so it wins over the
+        # service's own 409 REPORT_NOT_READY_FOR_DATE (AC-4).
+        assert_report_date_has_data(business_date=business_date)
+        issued = issue_expense_document(
+            division_id=division_id,
+            business_date=business_date,
+            actor=request.actor_id,
+        )
+        return Response(
+            IssuedExpenseReportSerializer(issued).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def list(self, request, *args, **kwargs):
+        form = ExpenseReportByDateFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        business_date = form.validated_data["business_date"]
+        ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        issued = IssuedDocumentSelector.current_issued(
+            doc_type=EXPENSE_DOC_TYPE,
+            division_id=division_id,
+            business_date=business_date,
+        )
+        if issued is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={
+                    "division_id": str(division_id),
+                    "business_date": business_date.isoformat(),
+                },
+                message="Расход за дату не выпущен.",
+            )
+        return Response(IssuedExpenseReportSerializer(issued).data)
+
+    @action(detail=False, methods=["get"])
+    def period(self, request, *args, **kwargs):
+        form = ExpensePeriodFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        pages = derive_period(
+            division_id=division_id,
+            date_from=form.validated_data["date_from"],
+            date_to=form.validated_data["date_to"],
+        )
+        return Response({"pages": pages})

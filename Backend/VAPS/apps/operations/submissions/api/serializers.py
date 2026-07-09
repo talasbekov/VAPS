@@ -1,7 +1,11 @@
-"""Stories 5.8a/b/c — daily-submissions API serializers (forms + projections)."""
+"""Stories 5.8a/b/c — daily-submissions API serializers (forms + projections).
+
+Story 6.10a adds the расход HTTP forms/projections (issue + by-date + period).
+"""
 
 from rest_framework import serializers
 
+from apps.documents.models import IssuedDocument
 from apps.operations.submissions.models import DailySubmission
 
 
@@ -82,5 +86,57 @@ class DailySubmissionDetailSerializer(serializers.ModelSerializer):
             "reason",
             "sanction",
             "triggered_by_status_id",
+        ]
+        read_only_fields = fields
+
+
+class ExpenseReportIssueSerializer(serializers.Serializer):
+    """POST-body form (6.10a) — the two kwargs forwarded to
+    ``issue_expense_document``: a flat UUID division ref (ARCH-003) and a
+    YYYY-MM-DD business date. The actor NEVER comes from the payload
+    (ARCH-SEC-030); extra fields are ignored."""
+
+    division_id = serializers.UUIDField()
+    business_date = serializers.DateField()
+
+
+class ExpenseReportByDateFilterSerializer(serializers.Serializer):
+    """GET-by-date query form (6.10a) — both required for a point lookup of the
+    current issued расход. Garbage dies here as 400, not in the ORM."""
+
+    division_id = serializers.UUIDField()
+    business_date = serializers.DateField()
+
+
+class ExpensePeriodFilterSerializer(serializers.Serializer):
+    """GET /period/ query form (6.10a) — division + inclusive date range for the
+    read-only page-per-date расход (range/length validated in the service)."""
+
+    division_id = serializers.UUIDField()
+    date_from = serializers.DateField()
+    date_to = serializers.DateField()
+
+
+class IssuedExpenseReportSerializer(serializers.ModelSerializer):
+    """Issued расход projection (6.10a) — flat metadata + the attachment ref and
+    sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here."""
+
+    attachment_id = serializers.UUIDField(read_only=True)
+    sha256 = serializers.CharField(source="attachment.sha256", read_only=True)
+
+    class Meta:
+        model = IssuedDocument
+        fields = [
+            "id",
+            "doc_type",
+            "number",
+            "year",
+            "business_date",
+            "division_id",
+            "submission_id",
+            "submission_version",
+            "status",
+            "attachment_id",
+            "sha256",
         ]
         read_only_fields = fields
