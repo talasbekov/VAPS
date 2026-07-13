@@ -1,9 +1,20 @@
+from django.db.models import Min
+
 from apps.operations.statuses.models import EmployeeStatus
 from apps.operations.statuses.services.strength_report import resolve_status
 
 
 class EmployeeStatusSelector:
     """Bulk-first status reads — the ONLY data channel for aggregation."""
+
+    @staticmethod
+    def earliest_start():
+        """Earliest live status date_start — the status half of the report
+        data horizon (6.10a review D1 2026-07-13). None on an empty system.
+        """
+        return EmployeeStatus.objects.filter(cancelled_at__isnull=True).aggregate(
+            m=Min("date_start")
+        )["m"]
 
     @staticmethod
     def overlapping_on(on_date, employee_ids=None):

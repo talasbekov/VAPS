@@ -3,7 +3,7 @@ from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Min, Q
 
 from apps.core.models import (
     Division,
@@ -303,6 +303,17 @@ class HistoricalEmployeeSelector:
         return Employee.objects.values_list("division_id", flat=True).get(
             id=employee_id
         )
+
+    @staticmethod
+    def earliest_history_start():
+        """Earliest division-history start as a LOCAL business date — the
+        history half of the report data horizon (6.10a review D1 2026-07-13).
+        None while the pilot has zero history rows (E7 backfills intervals).
+        """
+        earliest = EmployeeDivisionHistory.objects.aggregate(m=Min("starts_at"))["m"]
+        if earliest is None:
+            return None
+        return earliest.astimezone(ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)).date()
 
     @classmethod
     def roster_on(cls, business_date, division_ids=None) -> dict:

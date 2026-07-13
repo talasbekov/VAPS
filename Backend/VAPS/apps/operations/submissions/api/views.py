@@ -13,7 +13,12 @@ permission gates live ONLY here — amend_day itself stays gate-free because
 the 5.4b enforcement hook calls it with no HTTP actor (Ловушка №1).
 """
 
-from rest_framework import status, viewsets
+from drf_spectacular.utils import (
+    extend_schema,
+    extend_schema_serializer,
+    inline_serializer,
+)
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
@@ -21,6 +26,7 @@ from rest_framework.response import Response
 from apps.core.api.permissions import RequirePermissionMixin
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
+from apps.core.selectors import CoreDivisionTreeSelector
 from apps.documents.models import EXPENSE_DOC_TYPE
 from apps.documents.selectors import IssuedDocumentSelector
 from apps.operations.submissions.api.serializers import (
@@ -64,6 +70,30 @@ _OVERRIDE_PERMISSION = "daily_report.override_block"
 # read gate share it the same way (reads = mark_update, epics 2026-07-02).
 _SUBMIT_PERMISSION = "daily_report.mark_update"
 _AMEND_PERMISSION = "daily_report.correct"
+
+
+def _ensure_division_exists(division_id):
+    """404 for a valid-but-phantom division UUID (review 2026-07-13).
+
+    Called AFTER the scope guard — a scoped stranger still gets 403 first,
+    never an existence oracle. Without this, a global-scope actor (scope NULL
+    matches anything) gets 200-with-zero-pages from /period/ and a misleading
+    409 «нет сдачи» from POST for a division that does not exist.
+    """
+    if not CoreDivisionTreeSelector.exists(division_id):
+        raise DomainError(
+            "ENTITY_NOT_FOUND",
+            404,
+            detail={"division_id": str(division_id)},
+            message="Подразделение не найдено.",
+        )
+
+
+# Single-object projection for OpenAPI: the list-action heuristic would wrap
+# the by-date point lookup into an array otherwise (canon: rbac views 2.9).
+_SingleIssuedExpenseReport = extend_schema_serializer(many=False)(
+    IssuedExpenseReportSerializer
+)
 
 
 class DailySubmissionPagination(LimitOffsetPagination):
@@ -182,14 +212,25 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "period": _EXPENSE_PERMISSION,
         "override_block": _OVERRIDE_PERMISSION,
     }
+    # No "head": HEAD stays 405 everywhere (mirror of the 5.8a/b minimal
+    # surface above — a deliberate project-wide canon, not an omission).
     http_method_names = ["get", "post", "options"]
 
+    @extend_schema(
+        request=ExpenseReportIssueSerializer,
+        responses={201: _SingleIssuedExpenseReport},
+        description="Выпуск суточного расхода за дату (нумерованный "
+        "юр-артефакт). 403 чужой scope; 404 нет подразделения; 409 нет "
+        "сдачи / уже выпущен; 422 дата до начала данных / несходимость / "
+        "TOMORROW_BLOCKED.",
+    )
     def create(self, request, *args, **kwargs):
         form = ExpenseReportIssueSerializer(data=request.data)
         form.is_valid(raise_exception=True)
         division_id = form.validated_data["division_id"]
         business_date = form.validated_data["business_date"]
         ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        _ensure_division_exists(division_id)
         # «На завтра»-блок (6.10b): only future dates; 422 TOMORROW_BLOCKED with
         # laggards, before the service's own 409 not-ready would fire.
         assert_tomorrow_not_blocked(
@@ -208,12 +249,21 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    @extend_schema(
+        parameters=[ExpenseReportByDateFilterSerializer],
+        responses={200: _SingleIssuedExpenseReport},
+        description="Метаданные выпущенного расхода за дату (point lookup). "
+        "Будущая дата НЕ блокируется намеренно: легально выпущенный через "
+        "override «на завтра»-документ (6.10b) должен читаться. 404 не "
+        "выпущен / нет подразделения.",
+    )
     def list(self, request, *args, **kwargs):
         form = ExpenseReportByDateFilterSerializer(data=request.query_params)
         form.is_valid(raise_exception=True)
         division_id = form.validated_data["division_id"]
         business_date = form.validated_data["business_date"]
         ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        _ensure_division_exists(division_id)
         issued = IssuedDocumentSelector.current_issued(
             doc_type=EXPENSE_DOC_TYPE,
             division_id=division_id,
@@ -231,16 +281,48 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         return Response(IssuedExpenseReportSerializer(issued).data)
 
+    @extend_schema(
+        parameters=[ExpensePeriodFilterSerializer],
+        responses={
+            200: inline_serializer(
+                name="ExpensePeriodResponse",
+                fields={
+                    "pages": serializers.ListField(
+                        child=serializers.DictField(),
+                        help_text="Страница-на-дату: {business_date, totals, "
+                        "rows} — read-only derive, без номера документа.",
+                    )
+                },
+            )
+        },
+        description="Read-only расход за период (страница на дату, без "
+        "выпуска). 400 инверсия/длина>62/будущее; 404 нет подразделения; "
+        "422 дата до начала данных.",
+    )
     @action(detail=False, methods=["get"])
     def period(self, request, *args, **kwargs):
         form = ExpensePeriodFilterSerializer(data=request.query_params)
         form.is_valid(raise_exception=True)
         division_id = form.validated_data["division_id"]
+        date_to = form.validated_data["date_to"]
         ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        _ensure_division_exists(division_id)
+        # Period pages are derived on the fly — a future range would fabricate
+        # official-looking numbers from today's roster (review D2 2026-07-13).
+        # The by-date GET above is deliberately NOT future-blocked: it only
+        # reads ISSUED documents, and a legal «на завтра» issue exists (6.10b).
+        today = Clock.today_local()
+        if date_to > today:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={"date_to": date_to.isoformat(), "today": today.isoformat()},
+                message="Период не может уходить в будущее.",
+            )
         pages = derive_period(
             division_id=division_id,
             date_from=form.validated_data["date_from"],
-            date_to=form.validated_data["date_to"],
+            date_to=date_to,
         )
         return Response({"pages": pages})
 

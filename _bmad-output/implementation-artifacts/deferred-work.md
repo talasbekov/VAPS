@@ -564,3 +564,10 @@
 
 - **`gap > SANITY_DAYS(366)` — вечный halt без канала эскалации** (`Backend/VAPS/apps/parallel_run/services/parallel_run_diff.py`, blind, Low): при разрыве >366 дней watermark не двигается → каждый ночной запуск снова halt при exit 0; единственный след — logger.error. Самоподдерживающийся мёртвый режим. Зеркало канона 5.7b2. Закрыть в 7.8: алёрт/дашборд зелёных дней обязан подсвечивать halted-прогоны.
 - **Хвосты 6.8 в коммите 6.9** (`Backend/VAPS/Makefile` — цель `golden-update` + gate-фильтр `not golden`, blind+auditor, Info): реверт 6.9 отдельно от куска 6.8 невозможен, атомарность стори нарушена. Уже закоммичено (`98ad0e0`), признано в frontmatter спеки («Makefile golden-update target едет в коммите 6.9 — общий файл»). Действий не требует; фиксируется как прецедент для будущих стори — коммитить чужие хвосты отдельным коммитом.
+
+## Deferred from: code review of 6-10a-http-выпуск-расхода-и-чтение-по-периоду (2026-07-13)
+
+Проход 1 (bmad-code-review, **CROSS-MODEL**: Fable 5 ×3 слоя vs спека+dev Opus 4.8; дифф = коммит `00bb0bb`). AC: 1-partial/2-partial/3-pass/4-FAIL/5-partial/6-pass. Главное: вакуумная проба AC-4 (все 3 слоя независимо) + 4 ложных чекбокса Task 1/2/5/6. 3 decision · 4 patch · 2 defer (ниже) · 3 dismiss.
+
+- **`GET /expense-reports/` — point-lookup на коллекционном роуте** (`Backend/VAPS/apps/operations/submissions/api/views.py`, blind, Low): возвращает одиночный объект или 404, требует оба query-параметра, operationId `operations_expense_reports_retrieve` на list-пути. Клиент, ожидающий массив, получит объект. Закрыть при подключении фронт-экрана расхода (10.5/E10): либо честный retrieve-роут, либо list-семантика с фильтрами.
+- **Страницы периода без снапшота консистентности** (`expense_read_service.py` derive_period, edge, Low): цикл per-date в READ COMMITTED без transaction.atomic/repeatable-read — параллельная мутация статусов во время долгого запроса даёт внутренне неконсистентный «отчёт за период» (невоспроизводимо). Терпимо для read-only просмотра; зафиксировать trade-off (или repeatable-read) при построении экрана периода 10.5.

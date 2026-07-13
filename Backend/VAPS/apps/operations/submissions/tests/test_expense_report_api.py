@@ -2,11 +2,14 @@
 
 HTTP contract only; issuance domain is proven at service level (6.5). RBAC via
 seed_operations + UserRole (ORGD holds daily_report.generate); auth via the
-X-User-Id header. Date-before-data (422) is exercised on a division with no
-roster/statuses (the global data probe is empty under test isolation).
+X-User-Id header. Date-before-data (422) is horizon-based (review D1
+2026-07-13): exercised both on an empty system AND on a populated DB with a
+far-past date — the latter is the regression pin for the vacuous roster-probe
+bug (roster_on's date-insensitive fallback made the old probe always-true).
 """
 
 import itertools
+import uuid
 from datetime import date, timedelta
 
 import pytest
@@ -261,3 +264,165 @@ def test_period_too_long_400(org_type):
     )
     assert resp.status_code == 400
     assert resp.data["error_code"] == "VALIDATION_ERROR"
+
+
+# --- Review 2026-07-13 additions ---------------------------------------------
+
+
+def test_issue_no_submission_409(org_type, storage):
+    # AC-1 guard passthrough: populated division, right+scope, but no сдача.
+    org, dtp = org_type
+    div = _division(org, dtp, "EXP-NR")
+    _populate(div)
+    _grant("orgd", div)
+    resp = _issue(_client("orgd"), div)
+    assert resp.status_code == 409
+    assert resp.data["error_code"] == "REPORT_NOT_READY_FOR_DATE"
+
+
+def test_issue_repeat_409_already_issued(org_type, storage):
+    # AC-1 guard passthrough: second POST for the same date/version → 409.
+    org, dtp = org_type
+    div = _division(org, dtp, "EXP-RI")
+    _populate(div)
+    _grant("orgd", div)
+    with clock.override(D):
+        submit_day(division_id=div.id, business_date=D, actor="op-1")
+    assert _issue(_client("orgd"), div).status_code == 201
+    resp = _issue(_client("orgd"), div)
+    assert resp.status_code == 409
+    assert resp.data["error_code"] == "DOCUMENT_ALREADY_ISSUED"
+
+
+def test_period_empty_division_valid_200(org_type, storage):
+    # AC-4 boundary: a legitimately EMPTY division on an in-range date is a
+    # valid 0=0+0 report, NOT 422 — the global horizon comes from other data.
+    org, dtp = org_type
+    populated = _division(org, dtp, "EXP-POP")
+    _populate(populated)  # global horizon = 2026-07-01
+    empty = _division(org, dtp, "EXP-EMP")  # zero employees, zero slots
+    _grant("orgd", empty)
+    resp = _client("orgd").get(
+        reverse("ops-expense-report-period"),
+        {
+            "division_id": str(empty.id),
+            "date_from": date(2026, 7, 6).isoformat(),
+            "date_to": date(2026, 7, 8).isoformat(),
+        },
+    )
+    assert resp.status_code == 200, resp.content
+    assert len(resp.data["pages"]) == 3
+    assert resp.data["pages"][0]["totals"]["staff_total"] == 0
+
+
+def test_period_far_past_422_on_populated_db(org_type, storage):
+    # THE regression pin for review D1: a populated DB (WORKING employees →
+    # the old roster probe was always-true) must still 422 on a far-past date.
+    org, dtp = org_type
+    div = _division(org, dtp, "EXP-FP")
+    _populate(div)  # horizon = earliest status start = 2026-07-01
+    _grant("orgd", div)
+    resp = _client("orgd").get(
+        reverse("ops-expense-report-period"),
+        {
+            "division_id": str(div.id),
+            "date_from": date(1990, 1, 1).isoformat(),
+            "date_to": date(1990, 1, 3).isoformat(),
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.data["error_code"] == "REPORT_NO_DATA_FOR_DATE"
+
+
+def test_issue_far_past_422_on_populated_db(org_type, storage):
+    # Same pin for the POST branch: far past → 422 (not 409 «нет сдачи»).
+    org, dtp = org_type
+    div = _division(org, dtp, "EXP-FI")
+    _populate(div)
+    _grant("orgd", div)
+    resp = _issue(_client("orgd"), div, business_date=date(1990, 1, 1))
+    assert resp.status_code == 422
+    assert resp.data["error_code"] == "REPORT_NO_DATA_FOR_DATE"
+
+
+def test_period_cap_boundary_62_ok_63_400(org_type, storage):
+    org, dtp = org_type
+    div = _division(org, dtp, "EXP-CB")
+    emp = _employee(div)
+    # Early status pushes the horizon before the 62-day window under test.
+    _status(emp, "VACATION", date(2026, 1, 1), date(2026, 1, 5))
+    _slot(div, 3)
+    _grant("orgd", div)
+    client = _client("orgd")
+    ok = client.get(
+        reverse("ops-expense-report-period"),
+        {
+            "division_id": str(div.id),
+            "date_from": date(2026, 5, 8).isoformat(),  # 62 days incl.
+            "date_to": date(2026, 7, 8).isoformat(),
+        },
+    )
+    assert ok.status_code == 200, ok.content
+    assert len(ok.data["pages"]) == 62
+    too_long = client.get(
+        reverse("ops-expense-report-period"),
+        {
+            "division_id": str(div.id),
+            "date_from": date(2026, 5, 7).isoformat(),  # 63 days incl.
+            "date_to": date(2026, 7, 8).isoformat(),
+        },
+    )
+    assert too_long.status_code == 400
+    assert too_long.data["error_code"] == "VALIDATION_ERROR"
+
+
+def test_period_future_400(org_type, storage):
+    # Review D2: derived pages must not fabricate the future; date_to > today
+    # → 400. (GET by-date is deliberately not blocked — 6.10b override issue.)
+    org, dtp = org_type
+    div = _division(org, dtp, "EXP-FU")
+    _populate(div)
+    _grant("orgd", div)
+    with clock.override(D):
+        resp = _client("orgd").get(
+            reverse("ops-expense-report-period"),
+            {
+                "division_id": str(div.id),
+                "date_from": D.isoformat(),
+                "date_to": (D + timedelta(days=1)).isoformat(),
+            },
+        )
+    assert resp.status_code == 400
+    assert resp.data["error_code"] == "VALIDATION_ERROR"
+
+
+def test_unknown_division_404(org_type, storage):
+    # Review: a valid-but-phantom UUID under a GLOBAL role (scope NULL passes
+    # the scope guard) must be 404 — not zero-pages and not 409 «нет сдачи».
+    org, dtp = org_type
+    div = _division(org, dtp, "EXP-GL")
+    _populate(div)  # global data exists → horizon passes
+    UserRole.objects.create(user_id="root", role_code_id="ORGD", scope_division_id=None)
+    phantom = str(uuid.uuid4())
+    client = _client("root")
+    get_resp = client.get(
+        reverse("ops-expense-report-list"),
+        {"division_id": phantom, "business_date": D.isoformat()},
+    )
+    assert get_resp.status_code == 404
+    assert get_resp.data["details"]["division_id"] == phantom
+    period_resp = client.get(
+        reverse("ops-expense-report-period"),
+        {
+            "division_id": phantom,
+            "date_from": date(2026, 7, 6).isoformat(),
+            "date_to": date(2026, 7, 8).isoformat(),
+        },
+    )
+    assert period_resp.status_code == 404
+    post_resp = client.post(
+        reverse("ops-expense-report-list"),
+        {"division_id": phantom, "business_date": D.isoformat()},
+        format="json",
+    )
+    assert post_resp.status_code == 404

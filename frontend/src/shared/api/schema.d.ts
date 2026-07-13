@@ -925,20 +925,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
-         *     + GET period (read-only page-per-date, no number). Thin views over the
-         *     existing issue/derive services; errors flow through the unified handler.
-         *     «На завтра»-блокировка и override — Story 6.10b.
-         */
-        get: operations["operations_expense_reports_retrieve"];
+        /** @description Метаданные выпущенного расхода за дату (point lookup). Будущая дата НЕ блокируется намеренно: легально выпущенный через override «на завтра»-документ (6.10b) должен читаться. 404 не выпущен / нет подразделения. */
+        get: operations["operations_expense_reports_list"];
         put?: never;
-        /**
-         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
-         *     + GET period (read-only page-per-date, no number). Thin views over the
-         *     existing issue/derive services; errors flow through the unified handler.
-         *     «На завтра»-блокировка и override — Story 6.10b.
-         */
+        /** @description Выпуск суточного расхода за дату (нумерованный юр-артефакт). 403 чужой scope; 404 нет подразделения; 409 нет сдачи / уже выпущен; 422 дата до начала данных / несходимость / TOMORROW_BLOCKED. */
         post: operations["operations_expense_reports_create"];
         delete?: never;
         options?: never;
@@ -970,12 +960,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
-         *     + GET period (read-only page-per-date, no number). Thin views over the
-         *     existing issue/derive services; errors flow through the unified handler.
-         *     «На завтра»-блокировка и override — Story 6.10b.
-         */
+        /** @description Read-only расход за период (страница на дату, без выпуска). 400 инверсия/длина>62/будущее; 404 нет подразделения; 422 дата до начала данных. */
         get: operations["operations_expense_reports_period_retrieve"];
         put?: never;
         post?: never;
@@ -1263,12 +1248,51 @@ export interface components {
          * @enum {string}
          */
         EmploymentStatusEnum: "WORKING" | "FIRED" | "ARCHIVED";
+        ExpensePeriodResponse: {
+            /** @description Страница-на-дату: {business_date, totals, rows} — read-only derive, без номера документа. */
+            pages: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * @description POST-body form (6.10a) — the two kwargs forwarded to
+         *     ``issue_expense_document``: a flat UUID division ref (ARCH-003) and a
+         *     YYYY-MM-DD business date. The actor NEVER comes from the payload
+         *     (ARCH-SEC-030); extra fields are ignored.
+         */
+        ExpenseReportIssueRequest: {
+            /** Format: uuid */
+            division_id: string;
+            /** Format: date */
+            business_date: string;
+        };
         /**
          * @description * `M` - Мужской
          *     * `F` - Женский
          * @enum {string}
          */
         GenderEnum: "M" | "F";
+        /**
+         * @description Issued расход projection (6.10a) — flat metadata + the attachment ref and
+         *     sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here.
+         */
+        IssuedExpenseReport: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly doc_type: string;
+            readonly number: number;
+            readonly year: number;
+            /** Format: date */
+            readonly business_date: string;
+            /** Format: uuid */
+            readonly division_id: string;
+            readonly submission_id: number;
+            readonly submission_version: number;
+            readonly status: components["schemas"]["StatusEnum"];
+            /** Format: uuid */
+            readonly attachment_id: string;
+            readonly sha256: string;
+        };
         /**
          * @description * `SUBMISSION_LAGGING` - Отставание по сдаче
          * @enum {string}
@@ -1563,6 +1587,12 @@ export interface components {
             /** Format: date-time */
             valid_to?: string | null;
         };
+        /**
+         * @description * `ISSUED` - Выпущен
+         *     * `SUPERSEDED` - Заменён
+         * @enum {string}
+         */
+        StatusEnum: "ISSUED" | "SUPERSEDED";
     };
     responses: never;
     parameters: never;
@@ -2449,21 +2479,25 @@ export interface operations {
             };
         };
     };
-    operations_expense_reports_retrieve: {
+    operations_expense_reports_list: {
         parameters: {
-            query?: never;
+            query: {
+                business_date: string;
+                division_id: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IssuedExpenseReport"];
+                };
             };
         };
     };
@@ -2474,14 +2508,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseReportIssueRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseReportIssueRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseReportIssueRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IssuedExpenseReport"];
+                };
             };
         };
     };
@@ -2505,19 +2546,24 @@ export interface operations {
     };
     operations_expense_reports_period_retrieve: {
         parameters: {
-            query?: never;
+            query: {
+                date_from: string;
+                date_to: string;
+                division_id: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpensePeriodResponse"];
+                };
             };
         };
     };

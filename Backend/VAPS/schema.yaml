@@ -1313,29 +1313,58 @@ paths:
           description: No response body
   /api/operations/expense-reports/:
     get:
-      operationId: operations_expense_reports_retrieve
-      description: |-
-        Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
-        + GET period (read-only page-per-date, no number). Thin views over the
-        existing issue/derive services; errors flow through the unified handler.
-        «На завтра»-блокировка и override — Story 6.10b.
+      operationId: operations_expense_reports_list
+      description: 'Метаданные выпущенного расхода за дату (point lookup). Будущая
+        дата НЕ блокируется намеренно: легально выпущенный через override «на завтра»-документ
+        (6.10b) должен читаться. 404 не выпущен / нет подразделения.'
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+          format: date
+        required: true
+      - in: query
+        name: division_id
+        schema:
+          type: string
+          format: uuid
+        required: true
       tags:
       - operations
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedExpenseReport'
+          description: ''
     post:
       operationId: operations_expense_reports_create
-      description: |-
-        Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
-        + GET period (read-only page-per-date, no number). Thin views over the
-        existing issue/derive services; errors flow through the unified handler.
-        «На завтра»-блокировка и override — Story 6.10b.
+      description: Выпуск суточного расхода за дату (нумерованный юр-артефакт). 403
+        чужой scope; 404 нет подразделения; 409 нет сдачи / уже выпущен; 422 дата
+        до начала данных / несходимость / TOMORROW_BLOCKED.
       tags:
       - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseReportIssueRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExpenseReportIssueRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExpenseReportIssueRequest'
+        required: true
       responses:
         '201':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedExpenseReport'
+          description: ''
   /api/operations/expense-reports/override-tomorrow-block/:
     post:
       operationId: operations_expense_reports_override_tomorrow_block_create
@@ -1348,16 +1377,36 @@ paths:
   /api/operations/expense-reports/period/:
     get:
       operationId: operations_expense_reports_period_retrieve
-      description: |-
-        Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
-        + GET period (read-only page-per-date, no number). Thin views over the
-        existing issue/derive services; errors flow through the unified handler.
-        «На завтра»-блокировка и override — Story 6.10b.
+      description: Read-only расход за период (страница на дату, без выпуска). 400
+        инверсия/длина>62/будущее; 404 нет подразделения; 422 дата до начала данных.
+      parameters:
+      - in: query
+        name: date_from
+        schema:
+          type: string
+          format: date
+        required: true
+      - in: query
+        name: date_to
+        schema:
+          type: string
+          format: date
+        required: true
+      - in: query
+        name: division_id
+        schema:
+          type: string
+          format: uuid
+        required: true
       tags:
       - operations
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpensePeriodResponse'
+          description: ''
   /api/operations/my-permissions/:
     get:
       operationId: operations_my_permissions_list
@@ -1900,6 +1949,35 @@ components:
         * `WORKING` - Работает
         * `FIRED` - Уволен
         * `ARCHIVED` - В архиве
+    ExpensePeriodResponse:
+      type: object
+      properties:
+        pages:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          description: 'Страница-на-дату: {business_date, totals, rows} — read-only
+            derive, без номера документа.'
+      required:
+      - pages
+    ExpenseReportIssueRequest:
+      type: object
+      description: |-
+        POST-body form (6.10a) — the two kwargs forwarded to
+        ``issue_expense_document``: a flat UUID division ref (ARCH-003) and a
+        YYYY-MM-DD business date. The actor NEVER comes from the payload
+        (ARCH-SEC-030); extra fields are ignored.
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        business_date:
+          type: string
+          format: date
+      required:
+      - business_date
+      - division_id
     GenderEnum:
       enum:
       - M
@@ -1908,6 +1986,62 @@ components:
       description: |-
         * `M` - Мужской
         * `F` - Женский
+    IssuedExpenseReport:
+      type: object
+      description: |-
+        Issued расход projection (6.10a) — flat metadata + the attachment ref and
+        sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        doc_type:
+          type: string
+          readOnly: true
+        number:
+          type: integer
+          readOnly: true
+        year:
+          type: integer
+          readOnly: true
+        business_date:
+          type: string
+          format: date
+          readOnly: true
+        division_id:
+          type: string
+          format: uuid
+          readOnly: true
+        submission_id:
+          type: integer
+          readOnly: true
+        submission_version:
+          type: integer
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusEnum'
+          readOnly: true
+        attachment_id:
+          type: string
+          format: uuid
+          readOnly: true
+        sha256:
+          type: string
+          readOnly: true
+      required:
+      - attachment_id
+      - business_date
+      - division_id
+      - doc_type
+      - id
+      - number
+      - sha256
+      - status
+      - submission_id
+      - submission_version
+      - year
     KindEnum:
       enum:
       - SUBMISSION_LAGGING
@@ -2548,3 +2682,11 @@ components:
       - division
       - position_code
       - valid_from
+    StatusEnum:
+      enum:
+      - ISSUED
+      - SUPERSEDED
+      type: string
+      description: |-
+        * `ISSUED` - Выпущен
+        * `SUPERSEDED` - Заменён

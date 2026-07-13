@@ -3,10 +3,11 @@
 Two read-only helpers over the existing per-date derive (`StrengthReportService
 .compute`, story 1.7) — NO new model, NO issuance, NO DocumentSequence number:
 
-* ``assert_report_date_has_data`` — the AC-4 guard: a date BEFORE data begins
-  (no roster and no statuses anywhere on it) → 422 ``REPORT_NO_DATA_FOR_DATE``
-  (distinct from 409 ``REPORT_NOT_READY_FOR_DATE`` = «сдачи нет», and from a
-  legitimately empty division on an in-range date = valid 0=0+0 report).
+* ``assert_report_date_has_data`` — the AC-4 guard: a date BEFORE the data
+  horizon (earlier than every known status and history row) → 422
+  ``REPORT_NO_DATA_FOR_DATE`` (distinct from 409 ``REPORT_NOT_READY_FOR_DATE``
+  = «сдачи нет», and from a legitimately empty division on an in-range date =
+  valid 0=0+0 report).
 * ``derive_period`` — read-only «страница на дату»: for each date in the range
   the derived расход numbers (Решение Bratan Q2 — no per-period document, no
   number; the numbered legal artifact stays the single-date issue, 6.5/AC-1).
@@ -27,23 +28,48 @@ from apps.operations.statuses.services import StrengthReportService
 MAX_PERIOD_DAYS = 62
 
 
-def assert_report_date_has_data(*, business_date):
-    """Raise 422 ``REPORT_NO_DATA_FOR_DATE`` if the date predates all data.
+def report_data_horizon():
+    """Earliest business date the system has ANY data for — or None if empty.
 
-    «До начала данных» = no roster AND no statuses anywhere on the date (a
-    global horizon probe, division-agnostic). A legitimately empty division on
-    an in-range date still has global data on that date → passes → valid empty
-    расход (0=0+0). NOT 409 ``REPORT_NOT_READY_FOR_DATE`` (that = «сдачи за дату
-    нет», a different, state-level condition).
+    min(earliest live status ``date_start``, earliest division-history start).
+    Date-SENSITIVE by construction (review D1 2026-07-13): the previous roster
+    truthiness probe was vacuous — ``roster_on`` falls back to the current
+    ``Employee.division`` for employees with no covering history interval, and
+    the pilot has ZERO history rows, so the roster is non-empty on ANY date
+    (including 1990) as soon as one WORKING employee exists.
     """
-    if HistoricalEmployeeSelector.roster_on(business_date):
-        return
-    if EmployeeStatusSelector.overlapping_on(business_date):
+    candidates = [
+        d
+        for d in (
+            EmployeeStatusSelector.earliest_start(),
+            HistoricalEmployeeSelector.earliest_history_start(),
+        )
+        if d is not None
+    ]
+    return min(candidates, default=None)
+
+
+def assert_report_date_has_data(*, business_date):
+    """Raise 422 ``REPORT_NO_DATA_FOR_DATE`` if the date predates the horizon.
+
+    «До начала данных» = earlier than every known data point (statuses ∪
+    division history), or an entirely empty system. A legitimately empty
+    division on an in-range date passes → valid empty расход (0=0+0) — NOT
+    this code. NOT 409 ``REPORT_NOT_READY_FOR_DATE`` (that = «сдачи за дату
+    нет», a different, state-level condition). The finer «division did not
+    exist yet on the date» refinement is deferred to 7.x — the pilot has no
+    trustworthy division creation date until E7 backfills history (review D1).
+    """
+    horizon = report_data_horizon()
+    if horizon is not None and business_date >= horizon:
         return
     raise DomainError(
         "REPORT_NO_DATA_FOR_DATE",
         422,
-        detail={"business_date": business_date.isoformat()},
+        detail={
+            "business_date": business_date.isoformat(),
+            "data_horizon": horizon.isoformat() if horizon else None,
+        },
         message="Запрошена дата до начала данных — нет ни списка, ни статусов.",
     )
 
@@ -100,10 +126,13 @@ def derive_period(*, division_id, date_from, date_to):
             message=f"Период слишком длинный (макс. {MAX_PERIOD_DAYS} дней).",
         )
 
+    # The range is contiguous and ascending, so one horizon check on date_from
+    # covers the whole span (hoisted out of the loop — review perf 2026-07-13).
+    assert_report_date_has_data(business_date=date_from)
+
     pages = []
     day = date_from
     while day <= date_to:
-        assert_report_date_has_data(business_date=day)
         result = StrengthReportService.compute(day, division_id)
         pages.append(_serialize_report(day, result))
         day += timedelta(days=1)
