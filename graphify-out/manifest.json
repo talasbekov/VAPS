@@ -2050,8 +2050,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/selectors.py": {
-    "mtime": 1783436411.4091492,
-    "ast_hash": "b3247995a9f29ed3bccfe018708006db",
+    "mtime": 1783952391.7704322,
+    "ast_hash": "d8838abe8e4434eb3fc34c49335d90b1",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/services.py": {
@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1783949454.1348064,
-    "ast_hash": "d0889be03fd3bcd57a630a179b177db8",
+    "mtime": 1783952254.5086715,
+    "ast_hash": "0cd12d4f800768141a1dc63f6f3ce3fa",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1783950294.9954011,
-    "ast_hash": "19601c2dda2e1f37a5ae171ef08e623b",
+    "mtime": 1783952546.2690387,
+    "ast_hash": "4436db2f584cf628a785d132185fcfd4",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -17930,8 +17930,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/selectors.py": {
-    "mtime": 1783436411.4161491,
-    "ast_hash": "0f0d8735b725922c2d2c384fb50b68c0",
+    "mtime": 1783952254.5066717,
+    "ast_hash": "ee361405814ee8f949d750e0c5e8dbd8",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/services/__init__.py": {
@@ -19560,8 +19560,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/api/views.py": {
-    "mtime": 1783584299.6725798,
-    "ast_hash": "c3c03809fdb9f277ddc05250450448d3",
+    "mtime": 1783952254.5066717,
+    "ast_hash": "77c76fe3a1c3bec632ff7e1e71589a1a",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/management/__init__.py": {
@@ -20320,8 +20320,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/expense_read_service.py": {
-    "mtime": 1783583445.027465,
-    "ast_hash": "5fa138d36d0df9be134e52f7868ca145",
+    "mtime": 1783952254.5066717,
+    "ast_hash": "1672d98f4eacd277776771b2f2a6d5d7",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/summary_service.py": {
@@ -20615,8 +20615,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/tests/test_expense_report_api.py": {
-    "mtime": 1783583882.3328886,
-    "ast_hash": "8c150305666810af233291118a355b0f",
+    "mtime": 1783952391.7704322,
+    "ast_hash": "dfe67a5a508959fb9cfeed17e511f136",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/tests/test_golden_serialize.py": {
@@ -20955,8 +20955,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/schema.d.ts": {
-    "mtime": 1783593858.373482,
-    "ast_hash": "63f6d8e69b101721e4b5ff075196efb4",
+    "mtime": 1783952273.2585022,
+    "ast_hash": "cc8149b3a27d5109913ffed2e047f7ef",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/testing/handlers.ts": {
@@ -21115,8 +21115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/schema.yaml": {
-    "mtime": 1783584480.6082866,
-    "ast_hash": "24d41c500e5d5777822e5ae61be56660",
+    "mtime": 1783952254.9586713,
+    "ast_hash": "631da0b310449127d57c7f7156bdebcc",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/5-10-property-\u0438\u043c\u043c\u0443\u0442\u0430\u0431\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c-\u0441\u043d\u0430\u043f\u0448\u043e\u0442\u0430.md": {
@@ -21135,8 +21135,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/6-10a-http-\u0432\u044b\u043f\u0443\u0441\u043a-\u0440\u0430\u0441\u0445\u043e\u0434\u0430-\u0438-\u0447\u0442\u0435\u043d\u0438\u0435-\u043f\u043e-\u043f\u0435\u0440\u0438\u043e\u0434\u0443.md": {
-    "mtime": 1783584073.0336356,
-    "ast_hash": "34b6b588fcaa16c11f8bf22ee592cb3b",
+    "mtime": 1783952533.7371516,
+    "ast_hash": "6b2cc928f69f5ddbb32286dfe43fbf2e",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/6-10b-\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u043a\u0430-\u043d\u0430-\u0437\u0430\u0432\u0442\u0440\u0430-http-\u0438-override.md": {
