@@ -89,6 +89,7 @@ class ParallelRunResult:
     skipped: bool = False  # another run held the advisory lock
     halted: bool = False
     halt_reason: str = ""
+    remaining_backlog: int = 0  # dates beyond the per-run batch cap (run again)
 
 
 def run_parallel_run_diff(*, today=None, baseline_path=None) -> ParallelRunResult:
@@ -101,11 +102,33 @@ def run_parallel_run_diff(*, today=None, baseline_path=None) -> ParallelRunResul
     progress (mirror the lagging engine). The command and the Celery task (12.6)
     both run without an enclosing transaction — keep it that way.
     """
-    real_today = today if today is not None else Clock.today_local()
-    if type(real_today) is not date:
-        raise TypeError(f"today must be a plain date, got {type(real_today)!r}")
+    run_today = today if today is not None else Clock.today_local()
+    if type(run_today) is not date:
+        raise TypeError(f"today must be a plain date, got {type(run_today)!r}")
 
-    baseline = load_baseline(_read_baseline(baseline_path))
+    # Foot-gun guard at the SERVICE layer, not only the CLI: 12.6 wraps THIS
+    # function in a @shared_task, so a future ``today`` here would push the
+    # watermark ahead of real time and stall every later real run.
+    wall_today = Clock.today_local()
+    if run_today > wall_today:
+        raise ValueError(
+            f"today {run_today.isoformat()} is ahead of real time "
+            f"{wall_today.isoformat()} — it would poison the watermark"
+        )
+
+    # An unreadable/malformed baseline is a SETUP failure of the whole pass,
+    # not a per-day crash — halt non-blocking (AC-5): the caller reports it
+    # and exits 0; the watermark stays put so nothing is burned.
+    try:
+        baseline = load_baseline(_read_baseline(baseline_path))
+    except (OSError, ValueError) as exc:
+        logger.error("parallel-run baseline unreadable: %s", exc)
+        return ParallelRunResult(
+            watermark_before=None,
+            watermark_after=None,
+            halted=True,
+            halt_reason="baseline_unreadable",
+        )
     code_by_division_id = dict(Division.objects.values_list("id", "code"))
 
     with advisory_lock(PARALLEL_RUN_LOCK_KEY, blocking=False) as acquired:
@@ -130,33 +153,40 @@ def run_parallel_run_diff(*, today=None, baseline_path=None) -> ParallelRunResul
                 green_streak=_green_streak(),
             )
 
-        # Clock went backwards: halt, leave the watermark, surface loudly. Halt is
-        # non-blocking here (the command reports it, exit 0) — parallel-run is a
-        # background mode, not a CI gate.
-        if real_today < before:
+        # ``today`` behind the watermark: halt, leave the watermark, surface
+        # loudly. Halt is non-blocking (the command reports it, exit 0). The
+        # reason distinguishes a genuinely backwards CLOCK from an operator's
+        # explicit --today below the watermark (nothing left to catch up).
+        if run_today < before:
+            reason = (
+                "today_behind_watermark"
+                if today is not None
+                else "clock_behind_watermark"
+            )
             logger.error(
-                "clock behind watermark: parallel-run halted",
+                "parallel-run halted: %s",
+                reason,
                 extra={
                     "watermark": before.isoformat(),
-                    "today": real_today.isoformat(),
+                    "today": run_today.isoformat(),
                 },
             )
             return ParallelRunResult(
                 watermark_before=before,
                 watermark_after=before,
                 halted=True,
-                halt_reason="clock_behind_watermark",
+                halt_reason=reason,
                 green_streak=_green_streak(),
             )
 
-        gap = (real_today - before).days
+        gap = (run_today - before).days
         if gap > SANITY_DAYS:
             logger.error(
                 "parallel-run gap beyond sanity ceiling: halted",
                 extra={
                     "gap_days": gap,
                     "watermark": before.isoformat(),
-                    "today": real_today.isoformat(),
+                    "today": run_today.isoformat(),
                 },
             )
             return ParallelRunResult(
@@ -167,7 +197,17 @@ def run_parallel_run_diff(*, today=None, baseline_path=None) -> ParallelRunResul
                 green_streak=_green_streak(),
             )
 
-        plan = catchup_plan(watermark=before, today=real_today)[:MAX_CATCHUP_DAYS]
+        full_plan = catchup_plan(watermark=before, today=run_today)
+        plan = full_plan[:MAX_CATCHUP_DAYS]
+        remaining_backlog = len(full_plan) - len(plan)
+        if remaining_backlog:
+            # Never truncate silently: the operator must see that the run made
+            # partial progress and the watermark still lags.
+            logger.warning(
+                "parallel-run backlog truncated to %d day(s); %d more remain",
+                MAX_CATCHUP_DAYS,
+                remaining_backlog,
+            )
 
         processed = []
         for day in plan:
@@ -185,9 +225,21 @@ def run_parallel_run_diff(*, today=None, baseline_path=None) -> ParallelRunResul
                 logger.exception(
                     "parallel-run diff failed on %s (recorded, non-blocking)", day
                 )
-                with transaction.atomic():
-                    _record_error_day(day)
-                    watermark_gateway.advance(WATERMARK_KEY, to_date=day)
+                try:
+                    with transaction.atomic():
+                        _record_error_day(day)
+                        watermark_gateway.advance(WATERMARK_KEY, to_date=day)
+                except Exception:
+                    # The recovery path must not be the thing that kills the
+                    # run (e.g. the original crash was a dying DB connection):
+                    # log and move on. If the DB is down, the later dates fail
+                    # too and the whole span is retried next pass; a one-off
+                    # failure here loses only this day's error marker.
+                    logger.exception(
+                        "parallel-run diff could not record the error day %s; "
+                        "continuing",
+                        day,
+                    )
             processed.append(day)
 
         after = processed[-1] if processed else before
@@ -196,15 +248,18 @@ def run_parallel_run_diff(*, today=None, baseline_path=None) -> ParallelRunResul
             watermark_after=after,
             processed_days=processed,
             green_streak=_green_streak(),
+            remaining_backlog=remaining_backlog,
         )
 
 
 def _run_one(day, baseline, code_by_division_id):
     """Diff + persist ONE business date. Idempotent (replaces the day's rows)."""
     baseline_for_day = baseline.get(day)
-    if baseline_for_day is None:
-        # No frozen donor data for this date — record the fact so the watermark
-        # advances and the date is not replayed forever (E4), without a false diff.
+    if not baseline_for_day:
+        # Date absent from the frozen donor OR present with zero rows (a freeze
+        # artifact — a real donor day always carries division rows): record the
+        # fact so the watermark advances and the date is not replayed forever
+        # (E4), without a false «donor=zeros» diff flood (review D3 2026-07-13).
         ParallelRunDiff.objects.filter(run_date=day).delete()
         ParallelRunDay.objects.update_or_create(
             run_date=day,
@@ -263,11 +318,18 @@ def _record_error_day(day):
 
 def _green_streak() -> int:
     """Consecutive most-recent business dates that are clean (status="ok",
-    zero blocking cells). The first non-green day (blocking, no_baseline or
-    error) ends the streak — the numeric basis for the 7.8 exit criterion.
+    zero blocking cells) — the numeric basis for the 7.8 exit criterion.
+
+    A ``no_baseline`` day is TRANSPARENT: no donor data means the day proves
+    nothing either way, so it neither extends nor breaks the streak (review
+    D2 2026-07-13 — otherwise calendar gaps in the frozen donor, e.g.
+    weekends, would structurally zero the streak and NFR-9 could never be
+    met). A blocking or ``error`` day ends the streak.
     """
     streak = 0
     for day in ParallelRunDay.objects.order_by("-run_date").iterator():
+        if day.status == ParallelRunDay.STATUS_NO_BASELINE:
+            continue
         if day.status == ParallelRunDay.STATUS_OK and day.blocking_count == 0:
             streak += 1
         else:
