@@ -311,7 +311,7 @@ development_status:
   9-4-грид-компонент: done
   9-5-фокус-слой: done
   9-6-валидация-в-гриде: done
-  9-7-prefill-и-отклонения: review
+  9-7-prefill-и-отклонения: done
   9-8-перф-смоук-грида: review
   9-9-e2e-слепого-ввода: backlog
   epic-9-retrospective: optional
