@@ -314,7 +314,7 @@ development_status:
   9-7-prefill-и-отклонения: done
   9-8-перф-смоук-грида: done
   9-9-e2e-слепого-ввода: done
-  epic-9-retrospective: optional
+  epic-9-retrospective: done
 
   # Epic 10: Экраны портала — оператор сдаёт день за минуты
   # 10.1 (бумажные контракты) отправляется вместе с 9.1 сразу после E1
