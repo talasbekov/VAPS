@@ -2050,8 +2050,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/selectors.py": {
-    "mtime": 1783952391.7704322,
-    "ast_hash": "d8838abe8e4434eb3fc34c49335d90b1",
+    "mtime": 1783961662.653511,
+    "ast_hash": "6e2e5ab467dc0dd975753dcbabc69876",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/services.py": {
@@ -2315,8 +2315,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_seed.py": {
-    "mtime": 1783584573.3767722,
-    "ast_hash": "477ad8f94c50af00ab2fca364435cf95",
+    "mtime": 1783961877.0047035,
+    "ast_hash": "41ecc28133b0fc4102a3f22adf52c1c2",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_temp_duty_api.py": {
@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1783952254.5086715,
-    "ast_hash": "0cd12d4f800768141a1dc63f6f3ce3fa",
+    "mtime": 1783954365.3581562,
+    "ast_hash": "9439faa7896d806a377d4c0f46d65efa",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1783952546.2690387,
-    "ast_hash": "4436db2f584cf628a785d132185fcfd4",
+    "mtime": 1783966878.3227508,
+    "ast_hash": "8f296ebb8b05ea90425ee2f7207c8d67",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -18825,8 +18825,8 @@
     "semantic_hash": ""
   },
   "docs/registries/error-codes.yaml": {
-    "mtime": 1783584343.5337677,
-    "ast_hash": "f15506ce44c4cf41d7989d98878e3209",
+    "mtime": 1783961732.4023354,
+    "ast_hash": "d5889345bfdd24c8750c544249b19a54",
     "semantic_hash": ""
   },
   "docs/registries/ws-message-types.yaml": {
@@ -19560,8 +19560,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/api/views.py": {
-    "mtime": 1783952254.5066717,
-    "ast_hash": "77c76fe3a1c3bec632ff7e1e71589a1a",
+    "mtime": 1783961709.7075987,
+    "ast_hash": "e92dbe8e84a38a8ca85e2f50ad24bddf",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/management/__init__.py": {
@@ -20330,8 +20330,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/tomorrow_gate.py": {
-    "mtime": 1783584231.2292898,
-    "ast_hash": "f9f58812459eba415910cf94157c0e0b",
+    "mtime": 1783961673.3630464,
+    "ast_hash": "b910c14924b569346e8080e05ab78272",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/tests/golden/case_001/expected_values.json": {
@@ -20645,8 +20645,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/tests/test_tomorrow_block_api.py": {
-    "mtime": 1783584489.5624025,
-    "ast_hash": "bd669d4a888d6b78c318d8f1793a8a77",
+    "mtime": 1783961806.2794926,
+    "ast_hash": "efd5b19e243d965841c858c205fcfd25",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/parallel_run/__init__.py": {
@@ -20955,8 +20955,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/schema.d.ts": {
-    "mtime": 1783952273.2585022,
-    "ast_hash": "cc8149b3a27d5109913ffed2e047f7ef",
+    "mtime": 1783961865.2818334,
+    "ast_hash": "369ee2d682247d0090bdb874b9325d99",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/testing/handlers.ts": {
@@ -21115,8 +21115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/schema.yaml": {
-    "mtime": 1783952254.9586713,
-    "ast_hash": "631da0b310449127d57c7f7156bdebcc",
+    "mtime": 1783961864.7191756,
+    "ast_hash": "556d2435e8f17d35775a075c2a4ec9b9",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/5-10-property-\u0438\u043c\u043c\u0443\u0442\u0430\u0431\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c-\u0441\u043d\u0430\u043f\u0448\u043e\u0442\u0430.md": {
@@ -21140,8 +21140,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/6-10b-\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u043a\u0430-\u043d\u0430-\u0437\u0430\u0432\u0442\u0440\u0430-http-\u0438-override.md": {
-    "mtime": 1783584673.6182184,
-    "ast_hash": "75da4b05194e9b620d34da4ae4b2900b",
+    "mtime": 1783966852.7179837,
+    "ast_hash": "98b7e32012711b417b79637a2c599857",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/6-2-documentsequence.md": {
