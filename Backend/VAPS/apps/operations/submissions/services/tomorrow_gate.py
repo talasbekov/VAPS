@@ -23,18 +23,25 @@ def assert_tomorrow_not_blocked(*, business_date, today):
 
     Only FUTURE dates are gated (FR-18). ``laggards`` are coerced to ``str`` (they
     are ``uuid.UUID`` from the ArrayField — a raw UUID is not JSON-serializable in
-    the §36 error ``detail``) and filtered of stale required-ids (a division id in
-    the config that no longer exists — deferred from 5.6a).
+    the §36 error ``detail``) and filtered of stale required-ids: deleted OR
+    deactivated divisions (AC-5, review D1 2026-07-13). The filter runs BEFORE
+    the block decision — a ghost-only laggard list would otherwise hold an
+    unliftable block (nobody can submit for a deleted division) with an empty,
+    non-actionable ``laggards``; config garbage must not gate the выпуск. The
+    laggards list is deliberately org-wide (UUID-only, no names) even for a
+    scoped requester — review D4 2026-07-13.
     """
     if business_date <= today:
         return
     block = tomorrow_block(business_date)
     if not block.blocked:
         return
-    # Stale-id filter (defer 5.6a): keep only laggards whose division still
-    # exists; divisions_map returns {id: name} for the existing ones.
-    existing = CoreDivisionTreeSelector.divisions_map(block.laggards)
-    laggards = [str(d) for d in block.laggards if d in existing]
+    active = CoreDivisionTreeSelector.active_ids(block.laggards)
+    laggards = sorted(str(d) for d in block.laggards if d in active)
+    if not laggards:
+        # Every «laggard» is config garbage (stale/inactive id) → no real
+        # division owes a submission → the day is NOT blocked (review D1).
+        return
     raise DomainError(
         "TOMORROW_BLOCKED",
         422,

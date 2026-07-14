@@ -129,6 +129,12 @@ codes:
     category: state
     description: "Подразделение уже сдало этот день (есть действующая is_current версия). Повторная сдача — только через amendment-flow (5.4), НЕ override."
     source: "epics.md Story 5.3; architecture.md ARCH-DATA-021 (unique_daily_submission_current)"
+  TOMORROW_BLOCK_ALREADY_OVERRIDDEN:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Обход блокировки «на завтра» для этой даты уже существует (unique по дате, отзыва нет). Повторный POST override — конфликт состояния, не ошибка входа."
+    source: "Story 6.10b (ревью 2026-07-13, Д2: дубль → 409, различение через __cause__ IntegrityError)"
   NOT_READY:
     http_status: 409
     overridable: false

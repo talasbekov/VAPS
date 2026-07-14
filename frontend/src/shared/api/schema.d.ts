@@ -945,7 +945,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Story 6.10b — legally lift the «на завтра» block for a future date. */
+        /** @description Легальный обход блокировки «на завтра» (право daily_report.override_block; day-level — без division-scope, обход действует на весь день). 400 не-будущая дата / дальше +31д / пустая причина; 409 обход на дату уже существует. */
         post: operations["operations_expense_reports_override_tomorrow_block_create"];
         delete?: never;
         options?: never;
@@ -1593,6 +1593,22 @@ export interface components {
          * @enum {string}
          */
         StatusEnum: "ISSUED" | "SUPERSEDED";
+        /**
+         * @description POST-body form (6.10b) — the date whose «на завтра» block is legally
+         *     lifted and the mandatory reason. DRF defaults reject a missing/blank reason
+         *     at the boundary (400); the actor never comes from the payload.
+         */
+        TomorrowBlockOverrideRequest: {
+            /** Format: date */
+            business_date: string;
+            reason: string;
+        };
+        TomorrowBlockOverrideResponse: {
+            /** Format: date */
+            business_date: string;
+            overridden_by: string;
+            reason: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -2533,14 +2549,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TomorrowBlockOverrideRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TomorrowBlockOverrideRequest"];
+                "multipart/form-data": components["schemas"]["TomorrowBlockOverrideRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TomorrowBlockOverrideResponse"];
+                };
             };
         };
     };
