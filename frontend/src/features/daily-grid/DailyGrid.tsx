@@ -140,9 +140,11 @@ interface GridRowProps {
   mode: CellState
   statusOptions: StatusOption[]
   marker?: RowMarker
-  ariaRowIndex: number
+  rowIndex: number
   onStatus: (id: string, code: string) => void
   onPeriod: (id: string, period: string) => void
+  /** DOM-фокус пришёл в ячейку мимо клавиатуры (клик мышью) — синк стейта. */
+  onCellFocus: (row: number, col: number) => void
 }
 
 // Фокусная ячейка помечается data-active; DOM-фокус наводит layout-эффект грида
@@ -165,9 +167,10 @@ const GridRow = memo(function GridRow({
   mode,
   statusOptions,
   marker,
-  ariaRowIndex,
+  rowIndex,
   onStatus,
   onPeriod,
+  onCellFocus,
 }: GridRowProps) {
   const label =
     statusOptions.find((o) => o.code === value.statusCode)?.label ??
@@ -178,7 +181,7 @@ const GridRow = memo(function GridRow({
       data-grid-row
       data-marker={marker ?? undefined}
       role="row"
-      aria-rowindex={ariaRowIndex}
+      aria-rowindex={rowIndex + 1}
       className={`flex items-stretch border-b text-sm ${dirty ? 'font-medium' : ''} ${marker ? MARKER_ROW[marker] : ''}`}
     >
       <span role="gridcell" className="w-64 px-1 py-1">
@@ -186,6 +189,7 @@ const GridRow = memo(function GridRow({
           type="button"
           {...(focusedCol === NAME_COL ? ACTIVE : {})}
           tabIndex={focusedCol === NAME_COL ? 0 : -1}
+          onFocus={() => onCellFocus(rowIndex, NAME_COL)}
           className="w-full truncate px-1 text-left"
         >
           {row.fullName}
@@ -198,6 +202,7 @@ const GridRow = memo(function GridRow({
             {...ACTIVE}
             value={value.statusCode}
             onChange={(e) => onStatus(row.id, e.target.value)}
+            onFocus={() => onCellFocus(rowIndex, STATUS_COL)}
             className="w-full rounded bg-muted px-1"
           >
             {statusOptions.map((o) => (
@@ -211,6 +216,7 @@ const GridRow = memo(function GridRow({
             type="button"
             {...(focusedCol === STATUS_COL ? ACTIVE : {})}
             tabIndex={focusedCol === STATUS_COL ? 0 : -1}
+            onFocus={() => onCellFocus(rowIndex, STATUS_COL)}
             className="w-full rounded bg-muted px-1 text-left"
           >
             {label}
@@ -224,6 +230,7 @@ const GridRow = memo(function GridRow({
             {...ACTIVE}
             value={value.period}
             onChange={(e) => onPeriod(row.id, e.target.value)}
+            onFocus={() => onCellFocus(rowIndex, PERIOD_COL)}
             className="w-full rounded bg-muted px-1"
           />
         ) : (
@@ -231,6 +238,7 @@ const GridRow = memo(function GridRow({
             type="button"
             {...(focusedCol === PERIOD_COL ? ACTIVE : {})}
             tabIndex={focusedCol === PERIOD_COL ? 0 : -1}
+            onFocus={() => onCellFocus(rowIndex, PERIOD_COL)}
             className="w-full px-1 text-left"
           >
             {value.period}
@@ -245,6 +253,7 @@ const GridRow = memo(function GridRow({
           }
           {...(focusedCol === FLAG_COL ? ACTIVE : {})}
           tabIndex={focusedCol === FLAG_COL ? 0 : -1}
+          onFocus={() => onCellFocus(rowIndex, FLAG_COL)}
           className={`w-full font-bold ${marker === 'soft' ? 'text-amber-600' : marker ? 'text-red-600' : ''}`}
         >
           {marker === 'soft' ? '!' : marker ? '×' : ''}
@@ -270,7 +279,13 @@ export function DailyGrid({
     col: STATUS_COL,
     mode: 'NAVIGATE',
   })
-  const [conflict, setConflict] = useState<ConflictError | null>(null)
+  // Конфликт захватывает id строки НА МОМЕНТ коммита (ревью 9.5): пока диалог
+  // открыт, rows может обновиться — снятие маркера по rows[focus.row] попало бы
+  // в чужую строку.
+  const [conflict, setConflict] = useState<{
+    error: ConflictError
+    rowId: string
+  } | null>(null)
   const [markers, setMarkers] = useState<Record<string, RowMarker>>({})
 
   const setMarker = useCallback((id: string, m: RowMarker) => {
@@ -284,6 +299,13 @@ export function DailyGrid({
       return next
     })
   }, [])
+
+  // Ref-зеркало focus для onCellFocus: синк-эффект объявлен ДО эффекта
+  // управляемого фокуса → к моменту focusin зеркало уже свежее.
+  const focusRef = useRef(focus)
+  useLayoutEffect(() => {
+    focusRef.current = focus
+  }, [focus])
 
   const parentRef = useRef<HTMLDivElement>(null)
   const emptyRef = useRef<HTMLDivElement>(null)
@@ -299,7 +321,20 @@ export function DailyGrid({
   const prevInitialsRef = useRef(initials)
   useLayoutEffect(() => {
     if (prevInitialsRef.current === initials) return
-    dispatch({ type: 'RESYNC', initials, prevInitials: prevInitialsRef.current })
+    dispatch({
+      type: 'RESYNC',
+      initials,
+      prevInitials: prevInitialsRef.current,
+    })
+    // Маркеры исчезнувших строк — прунинг (ревью 9.5): иначе строка, ушедшая
+    // из rows и вернувшаяся после RESYNC-сброса значения, воскресит стейл-маркер.
+    setMarkers((prev) => {
+      const alive = Object.keys(prev).filter((id) => initials[id])
+      if (alive.length === Object.keys(prev).length) return prev
+      const next: Record<string, RowMarker> = {}
+      for (const id of alive) next[id] = prev[id]
+      return next
+    })
     prevInitialsRef.current = initials
   }, [initials])
   useLayoutEffect(() => {
@@ -355,6 +390,18 @@ export function DailyGrid({
   const onPeriod = useCallback((id: string, period: string) => {
     dispatch({ type: 'SET_PERIOD', id, period })
   }, [])
+  // Клик мышью фокусит ячейку мимо клавиатуры — стейт следует за DOM-фокусом,
+  // иначе следующий Enter исполнится на ЧУЖОЙ строке (ревью 9.5). Программный
+  // .focus() layout-эффекта попадает в уже-активную ячейку → same-ref, без
+  // лишнего коммита (перф-инвариант 1 commit/keystroke не задет).
+  const onCellFocus = useCallback((row: number, col: number) => {
+    // Программный .focus() layout-эффекта приходит в уже-активную ячейку —
+    // сравнение через ref-зеркало БЕЗ setState: setState из фазы коммита не
+    // получает eager-bailout и дал бы лишний коммит (перф-инвариант).
+    const f = focusRef.current
+    if (f.row === row && f.col === col) return
+    setFocus({ row, col, mode: 'NAVIGATE' })
+  }, [])
 
   const capturePreEdit = useCallback(() => {
     const row = rows[focus.row]
@@ -369,18 +416,32 @@ export function DailyGrid({
   }, [rows, focus.row, values, initials])
 
   const overrideConflict = useCallback(() => {
-    // «Подтвердить оверрайд»: снять soft-маркер, коммит принят, фокус в ячейку.
-    const row = rows[focus.row]
-    if (row) clearMarker(row.id)
-    setConflict(null)
-    setFocus({ row: focus.row, col: focus.col, mode: 'NAVIGATE' })
-  }, [rows, focus.row, focus.col, clearMarker])
-
-  const cancelConflict = useCallback(() => {
-    // «Отмена»/Escape: soft-маркер ОСТАЁТСЯ (предупреждение), фокус в ячейку.
+    // «Подтвердить оверрайд»: снять soft-маркер (по захваченному rowId, не по
+    // rows[focus.row] — строки могли сдвинуться), коммит принят, фокус в ячейку.
+    if (conflict) clearMarker(conflict.rowId)
     setConflict(null)
     setFocus((f) => ({ row: f.row, col: f.col, mode: 'NAVIGATE' }))
-  }, [])
+  }, [conflict, clearMarker])
+
+  const cancelConflict = useCallback(() => {
+    // «Отмена»/Escape: §3.2 контракта — «значение НЕ сохранено» → откат к
+    // pre-edit (иначе отвергнутое значение осталось бы dirty и уехало в
+    // bulk-дельты 9.7); soft-маркер ОСТАЁТСЯ (предупреждение о конфликте).
+    const pe = preEditRef.current
+    if (conflict && pe && pe.id === conflict.rowId) {
+      dispatch({ type: 'SET_STATUS', id: pe.id, statusCode: pe.statusCode })
+      dispatch({ type: 'SET_PERIOD', id: pe.id, period: pe.period })
+      preEditRef.current = null
+    }
+    setConflict(null)
+    setFocus((f) => ({ row: f.row, col: f.col, mode: 'NAVIGATE' }))
+  }, [conflict])
+
+  // Синхронизация: conflict-стейт живёт ТОЛЬКО в режиме CONFLICT (ревью 9.5) —
+  // любой обходной выход из режима (кламп при сжатии rows) не оставит стейла.
+  useLayoutEffect(() => {
+    if (focus.mode !== 'CONFLICT' && conflict) setConflict(null)
+  }, [focus.mode, conflict])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -394,14 +455,11 @@ export function DailyGrid({
       })
       if (!GRID_ACTIONS.has(result.action)) return // LIST_MOVE/NOOP → нативный контрол
       e.preventDefault()
-      // CONFLICT-режим: Enter/Esc маршрутизируются в обработчики диалога 9.5/9.6
-      // (defense-in-depth — модальный focus-trap может не сработать вне честного
-      // showModal), НЕ в голый setFocus: иначе диалог закрылся бы, оставив
-      // conflict-стейт и маркер в рассинхроне.
-      if (result.action === 'OVERRIDE_RETRY') {
-        overrideConflict()
-        return
-      }
+      // CONFLICT-режим, клавиша добралась до грида (сбой focus-trap / полифилл-
+      // окружение — defense-in-depth): Enter НЕ оверрайдит — это обход причины
+      // 10–500 (BR-003) и аудита; клавиша гасится, оверрайд только кнопкой
+      // диалога с валидной причиной (ревью 9.5). Esc = безопасная отмена.
+      if (result.action === 'OVERRIDE_RETRY') return
       if (result.action === 'CLOSE_DIALOG') {
         cancelConflict()
         return
@@ -469,7 +527,7 @@ export function DailyGrid({
           if (err instanceof ConflictError && err.overridable) {
             // soft (409 overridable): жёлтый маркер + ConflictDialog (9.5).
             setMarker(row.id, 'soft')
-            setConflict(err)
+            setConflict({ error: err, rowId: row.id })
             setFocus({ row: focus.row, col: focus.col, mode: 'CONFLICT' })
           } else {
             // hard (422 / non-overridable): красная заливка, блок, без диалога.
@@ -494,7 +552,6 @@ export function DailyGrid({
       focus,
       bounds,
       capturePreEdit,
-      overrideConflict,
       cancelConflict,
       onCellCommit,
       setMarker,
@@ -605,9 +662,10 @@ export function DailyGrid({
                     mode={item.index === focus.row ? focus.mode : 'NAVIGATE'}
                     statusOptions={statusOptions}
                     marker={markers[row.id]}
-                    ariaRowIndex={item.index + 1}
+                    rowIndex={item.index}
                     onStatus={onStatus}
                     onPeriod={onPeriod}
+                    onCellFocus={onCellFocus}
                   />
                 </div>
               )
@@ -618,7 +676,7 @@ export function DailyGrid({
 
       {focus.mode === 'CONFLICT' && (
         <ConflictDialog
-          conflict={conflict}
+          conflict={conflict?.error ?? null}
           onOverride={overrideConflict}
           onCancel={cancelConflict}
         />
