@@ -628,3 +628,10 @@
 - **Полная валидация формата period** (`prefill.ts:63`, blind+edge, Medium): period — свободный `<input>`, zod проверяет только statusCode; `'15.07.2026'`/`'abc'` уедут как date_end, и одна плохая строка атомарно валит весь bulk (all-or-nothing). Решение 9.6 «валидация периода — при реальном date-редакторе» → E10/10.2.
 - **Fire-and-forget onBulkSubmit** (`DailyGridContainer.tsx:22`, blind, Medium): ни pending, ни дизейбла повторного клика, ни канала ошибки bulk-уровня (per-request, не per-row) — двойной клик = двойная сдача. Транспорт/состояния экрана = 10.2.
 - **businessDate без рантайм-гарда** (`DailyGridContainer.tsx:19`, edge, Low): `''` просочится в `business_date` запроса (сервис гейтит только None). Источник даты — экран 10.2 (роут/Clock).
+
+## Deferred from: code review of 9-8-перф-смоук-грида (2026-07-14)
+
+Проход 1 (bmad-code-review, **CROSS-MODEL**: Fable 5 ×3 слоя vs спека+dev Opus 4.8; дифф = коммит `7530b19`, аудит против HEAD). 0 decision · 5 patch · 2 defer (ниже) · 4 dismiss. Ядро прохода: серия была вакуумной (латиница vs кириллические лейблы — type-ahead ни разу не матчился, 12 коммитов держались на identity setFocus).
+
+- **Скролл-каскад коммитов при навигационном keystroke** (`DailyGrid.tsx:639` scrollToIndex, edge, Medium): единственный правдоподобный слом инварианта «1 commit/keystroke» на 500 строках — keystroke → scrollToIndex → scroll-событие → ре-рендер виртуализатора → 2-й коммит. jsdom не эмитит scroll от scrollToIndex; спайк 1.10 держит навигационный анти-каскад PENDING (BUDGET.md:73). ОБЯЗАТЕЛЬНЫЙ сценарий e2e 9.9: серия ArrowDown через границу окна виртуализации со счётчиком коммитов (Profiler в e2e-обвязке или CDP-трейс).
+- **p95 keydown→commit — Playwright CDP CPU-throttling тренд-артефакт** (auditor, Medium): epics обещает «p95 пишется в артефакт», в репо это нигде не затрекано (Task 2 9.8 закрыт разделом Dev Notes самой спеки). Привязка при появлении смонтированного грида: 9.9 (e2e) или 10.2 (экран) — внести в спеку соответствующей стори при create-story; бюджет = спайк 1.10 BUDGET.md (p95 там же; DOM-факт ~30 dev / ~40-46 target — НЕ 60).
