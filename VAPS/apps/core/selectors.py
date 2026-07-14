@@ -127,6 +127,21 @@ class CoreDivisionTreeSelector:
         return dict(qs.values_list("id", "name"))
 
     @staticmethod
+    def active_ids(division_ids) -> set:
+        """Subset of the given ids that exist AND are active.
+
+        The laggard filter of the tomorrow gate (6.10b review D1 2026-07-13):
+        a stale (deleted) or deactivated required-id must not hold the day
+        blocked — nobody can submit for it. Cross-context callers read this
+        instead of importing core.models (ARCH-003/004).
+        """
+        return set(
+            Division.objects.filter(
+                id__in=list(division_ids), is_active=True
+            ).values_list("id", flat=True)
+        )
+
+    @staticmethod
     def exists(division_id) -> bool:
         """True if a division with this id exists — the сдача-сервис 5.3b
         existence gate (404 BEFORE building a snapshot, so a valid-but-phantom

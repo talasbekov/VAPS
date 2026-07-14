@@ -13,6 +13,9 @@ permission gates live ONLY here — amend_day itself stays gate-free because
 the 5.4b enforcement hook calls it with no HTTP actor (Ловушка №1).
 """
 
+from datetime import timedelta
+
+from django.db import IntegrityError
 from drf_spectacular.utils import (
     extend_schema,
     extend_schema_serializer,
@@ -63,6 +66,10 @@ _EXPENSE_PERMISSION = "daily_report.generate"
 # Legal bypass of the «на завтра» block — its own permission (Story 6.10b),
 # distinct from generation (issuing ≠ overriding a control gate).
 _OVERRIDE_PERMISSION = "daily_report.override_block"
+# Upper bound on how far ahead an override may reach (Д3, review 2026-07-13):
+# the override record is irrevocable (5.6b — unique per date, no revocation),
+# so a year-off typo would silently pre-lift a future FR-18 block forever.
+MAX_OVERRIDE_HORIZON_DAYS = 31
 
 # One source for both gates — the coarse mixin check and the scope re-check
 # must never drift onto different permission codes. The READ code is imported
@@ -326,6 +333,23 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
         return Response({"pages": pages})
 
+    @extend_schema(
+        request=TomorrowBlockOverrideSerializer,
+        responses={
+            201: inline_serializer(
+                name="TomorrowBlockOverrideResponse",
+                fields={
+                    "business_date": serializers.DateField(),
+                    "overridden_by": serializers.CharField(),
+                    "reason": serializers.CharField(),
+                },
+            )
+        },
+        description="Легальный обход блокировки «на завтра» (право "
+        "daily_report.override_block; day-level — без division-scope, обход "
+        "действует на весь день). 400 не-будущая дата / дальше +31д / пустая "
+        "причина; 409 обход на дату уже существует.",
+    )
     @action(
         detail=False,
         methods=["post"],
@@ -337,14 +361,30 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         form = TomorrowBlockOverrideSerializer(data=request.data)
         form.is_valid(raise_exception=True)
         business_date = form.validated_data["business_date"]
+        today = Clock.today_local()
         # Only a FUTURE date has a block to lift (FR-18: past/today never
         # blocked); overriding a non-future date is a no-op mistake → 400.
-        if business_date <= Clock.today_local():
+        if business_date <= today:
             raise DomainError(
                 "VALIDATION_ERROR",
                 400,
                 detail={"business_date": business_date.isoformat()},
                 message="Обойти можно только блокировку будущей даты.",
+            )
+        # Upper bound (Д3, review 2026-07-13): the record is irrevocable, so a
+        # far-future typo would pre-lift the block for that date forever.
+        if business_date > today + timedelta(days=MAX_OVERRIDE_HORIZON_DAYS):
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={
+                    "business_date": business_date.isoformat(),
+                    "max_days_ahead": MAX_OVERRIDE_HORIZON_DAYS,
+                },
+                message=(
+                    f"Дата обхода дальше +{MAX_OVERRIDE_HORIZON_DAYS} дней — "
+                    "проверьте год."
+                ),
             )
         try:
             override = override_tomorrow_block(
@@ -353,8 +393,16 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 reason=form.validated_data["reason"],
             )
         except ValueError as exc:
-            # Bad input and a duplicate active override both surface as ValueError
-            # (5.6b) — indistinguishable by type, both map to 400 (Story 6.10b Д2).
+            # 5.6b raises ValueError for both bad input and a duplicate, but the
+            # duplicate carries the IntegrityError as __cause__ — a state
+            # conflict is 409, not a form error (Д2, review D2 2026-07-13).
+            if isinstance(exc.__cause__, IntegrityError):
+                raise DomainError(
+                    "TOMORROW_BLOCK_ALREADY_OVERRIDDEN",
+                    409,
+                    detail={"business_date": business_date.isoformat()},
+                    message="Обход блокировки на эту дату уже существует.",
+                ) from exc
             raise DomainError(
                 "VALIDATION_ERROR",
                 400,
