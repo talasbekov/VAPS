@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="data:," />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VAPS e2e-харнес — грид слепого ввода (9.9)</title>
+    <script>
+      // Стаб DevTools-hook ДО бандла react-dom (Ловушка №1 спеки 9.9):
+      // <Profiler> — но-оп на прод-сборке (спайк 1.10 §6.2), layout-тик
+      // обёртки не видит setState внутри грида — коммиты считает ТОЛЬКО
+      // onCommitFiberRoot. Замер keydown→commit: capture-keydown кладёт
+      // timestamp, дельта снимается на ближайшем коммите (latency-гард);
+      // commits-per-key инкрементится на КАЖДОМ коммите ВНЕ гарда, иначе
+      // async-каскад scrollToIndex невидим (§6.5 — слепота чинилась дважды).
+      ;(function () {
+        var e2e = {
+          commits: 0,
+          keys: 0,
+          maxCommitsPerKey: 0,
+          lastCommitsPerKey: 0,
+          samples: [],
+          lastBulkRequest: null,
+        }
+        window.__e2e = e2e
+        var pendingTs = null
+        var commitsSinceKey = 0
+        document.addEventListener(
+          'keydown',
+          function () {
+            e2e.keys += 1
+            commitsSinceKey = 0
+            pendingTs = performance.now()
+          },
+          true,
+        )
+        window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+          isDisabled: false,
+          supportsFiber: true,
+          inject: function () {
+            return 1
+          },
+          checkDCE: function () {},
+          onScheduleFiberRoot: function () {},
+          onCommitFiberUnmount: function () {},
+          onCommitFiberRoot: function () {
+            e2e.commits += 1
+            if (e2e.keys > 0) {
+              commitsSinceKey += 1
+              e2e.lastCommitsPerKey = commitsSinceKey
+              if (commitsSinceKey > e2e.maxCommitsPerKey)
+                e2e.maxCommitsPerKey = commitsSinceKey
+            }
+            if (pendingTs != null) {
+              e2e.samples.push(performance.now() - pendingTs)
+              pendingTs = null
+            }
+          },
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/e2e-harness/main.tsx"></script>
+  </body>
+</html>

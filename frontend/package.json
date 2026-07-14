@@ -12,6 +12,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview",
+    "build:e2e": "vite build --config vite.e2e.config.ts",
+    "preview:e2e": "vite preview --config vite.e2e.config.ts",
     "test": "vitest run",
     "test:property-full": "FC_PROFILE=full vitest run src/features/daily-grid/grammar.properties.test.ts",
     "test:e2e": "playwright test",

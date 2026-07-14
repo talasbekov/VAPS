@@ -16,9 +16,19 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:4173',
   },
-  webServer: {
-    command: 'npm run build && npm run preview',
-    url: 'http://localhost:4173',
-    reuseExistingServer: !process.env.CI,
-  },
+  // 9.9: второй сервер — e2e-харнес грида (отдельная сборка dist-e2e, порт
+  // 4174; Ловушка №3 — прод-dist/size-gate нетронуты). Грид-спеки ходят по
+  // АБСОЛЮТНОМУ URL 4174 (глобальный baseURL остаётся 4173 для print-спеков).
+  webServer: [
+    {
+      command: 'npm run build && npm run preview',
+      url: 'http://localhost:4173',
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      command: 'npm run build:e2e && npm run preview:e2e',
+      url: 'http://localhost:4174/e2e-harness/index.html',
+      reuseExistingServer: !process.env.CI,
+    },
+  ],
 })
