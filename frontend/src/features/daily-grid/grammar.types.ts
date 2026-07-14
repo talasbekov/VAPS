@@ -17,7 +17,11 @@ export type Key =
   | { type: 'ArrowRight' }
   | { type: 'Char'; char: string }
 
-/** Все классы клавиш — для guard-теста полноты (9.2 AC-3). */
+/**
+ * Все классы клавиш — для guard-теста полноты (9.2 AC-3).
+ * `satisfies` ловит чужой элемент; недостающий вариант ловит
+ * компайл-ассерт в grammar.test.ts.
+ */
 export const KEY_TYPES = [
   'Enter',
   'Tab',
@@ -28,14 +32,14 @@ export const KEY_TYPES = [
   'ArrowLeft',
   'ArrowRight',
   'Char',
-] as const
+] as const satisfies readonly Key['type'][]
 
 export const CELL_STATES = [
   'NAVIGATE',
   'EDIT',
   'PERIOD_EDIT',
   'CONFLICT',
-] as const
+] as const satisfies readonly CellState[]
 
 /** Вид колонки — из §2 контракта (ФИО=readonly · Статус · Период · флаг). */
 export type ColumnKind = 'readonly' | 'status' | 'period' | 'flag'
@@ -45,7 +49,12 @@ export interface Position {
   col: number
 }
 
-/** Форма грида: размеры + вид каждой колонки (индекс = col). */
+/**
+ * Форма грида: размеры + вид каждой колонки (индекс = col).
+ * Precondition: rows ≥ 1 и cols ≥ 1 — по пустому гриду не ходят
+ * (потребитель не зовёт transition: DailyGrid делает early-return).
+ * Вырожденный вход не ломает машину: позиции клампятся к нулю.
+ */
 export interface Bounds {
   rows: number
   cols: number
@@ -59,7 +68,7 @@ export interface Bounds {
 export type Action =
   | 'OPEN_EDIT' // открыть правку статуса (combobox)
   | 'OPEN_PERIOD' // открыть правку периода
-  | 'TYPE_AHEAD' // ввод символа в открытый combobox (seed в результате)
+  | 'TYPE_AHEAD' // символ type-ahead: из NAVIGATE — открыть combobox с seed; в EDIT — дописать символ в фильтр (seed в результате)
   | 'LIST_MOVE' // ↑/↓ по кандидатам combobox (без смены позиции грида)
   | 'COMMIT' // подтвердить правку; фокус → nextPosition
   | 'RESTORE_PRE_EDIT' // Esc: вернуть pre-edit значение (применит грид, 9.4)
@@ -79,6 +88,6 @@ export interface TransitionResult {
   action: Action
   nextState: CellState
   nextPosition: Position
-  /** Символ, засеявший type-ahead (только для TYPE_AHEAD из NAVIGATE). */
+  /** Символ type-ahead — при action=TYPE_AHEAD и из NAVIGATE, и в EDIT. */
   seed?: string
 }

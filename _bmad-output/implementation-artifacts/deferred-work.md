@@ -578,3 +578,10 @@
 
 - **`_Audited`-контракт HTTP-смоком через роут** (`ops-expense-report-override-tomorrow-block` + `ops-expense-report-list`, auditor, Low): docstring `_Audited` требует «behavioral test pinning the emission through the route», фактически эмиссия TOMORROW_BLOCK_OVERRIDDEN/DOCUMENT_ISSUED доказана только сервис-тестами. Закрыть скопом HTTP-смоками при e2e E10 (10.10) или отдельным чором по всем _Audited-роутам.
 - **Override неотзываем** (`block_override.py` 5.6b: no revocation, UniqueConstraint по дате, edge, Low): ошибочный/опечаточный override лечится только правкой БД. С верхней границей даты (патч 6.10b-ревью) окно ущерба сужено до +31д. API отзыва — кандидат в E10 (экран управления) или 13.x, при реальной потребности пилота.
+
+## Deferred from: code review of 9-2-state-machine-грамматики (2026-07-14)
+
+Проход 1 (bmad-code-review, **CROSS-MODEL**: Fable 5 ×3 слоя — Blind/Edge/Auditor vs спека+dev Opus 4.8; дифф = коммит `4e0172e`, аудит против HEAD — grammar-файлы байт-в-байт). AC: 1/4/5/6-pass, 2/3-PARTIAL → закрыты. 0 decision · 8 patch ПРИМЕНЕНЫ · 2 defer (ниже, оба — код ПОТРЕБИТЕЛЯ 9.4, не этого диффа) · 3 dismiss.
+
+- **TYPE_AHEAD сломан end-to-end у потребителя** (`frontend/src/features/daily-grid/DailyGrid.tsx:102-111,324-332`, edge, **MAJOR**): DailyGrid включил TYPE_AHEAD в GRID_ACTIONS, зовёт `preventDefault()` и НЕ читает `result.seed` — символ теряется, EDIT открывается пустым; в состоянии EDIT `preventDefault` гасит и нативную букво-навигацию select — набор в открытом редакторе проглатывается целиком. Нарушены §3.2 контракта («начать type-ahead с этого символа») и инвариант 2 §3.3 («нажатия не теряются»). Грамматика 9.2 эмитит корректно. ГЛАВНЫЙ вход в ревью 9.4/9.6 (следующие в очереди).
+- **Устаревший фокус при сжатии rows → TypeError в COMMIT-пути DailyGrid** (`frontend/src/features/daily-grid/DailyGrid.tsx:340-341`, edge, major): rows сжимается (refetch/фильтр), focus.row устарел → `rows[focus.row]` = undefined → крэш `values[row.id]`. Грамматика-сторона закрыта патчем ревью 9.2 (кламп входной позиции до шага); ре-кламп/гвард focus при смене rows — фикс потребителя, закрыть в ревью 9.4.
