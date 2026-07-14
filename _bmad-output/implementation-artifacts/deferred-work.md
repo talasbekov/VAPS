@@ -585,3 +585,15 @@
 
 - **TYPE_AHEAD сломан end-to-end у потребителя** (`frontend/src/features/daily-grid/DailyGrid.tsx:102-111,324-332`, edge, **MAJOR**): DailyGrid включил TYPE_AHEAD в GRID_ACTIONS, зовёт `preventDefault()` и НЕ читает `result.seed` — символ теряется, EDIT открывается пустым; в состоянии EDIT `preventDefault` гасит и нативную букво-навигацию select — набор в открытом редакторе проглатывается целиком. Нарушены §3.2 контракта («начать type-ahead с этого символа») и инвариант 2 §3.3 («нажатия не теряются»). Грамматика 9.2 эмитит корректно. ГЛАВНЫЙ вход в ревью 9.4/9.6 (следующие в очереди).
 - **Устаревший фокус при сжатии rows → TypeError в COMMIT-пути DailyGrid** (`frontend/src/features/daily-grid/DailyGrid.tsx:340-341`, edge, major): rows сжимается (refetch/фильтр), focus.row устарел → `rows[focus.row]` = undefined → крэш `values[row.id]`. Грамматика-сторона закрыта патчем ревью 9.2 (кламп входной позиции до шага); ре-кламп/гвард focus при смене rows — фикс потребителя, закрыть в ревью 9.4.
+
+> ✅ Оба defer-а закрыты патчами ревью 9.4 (2026-07-14): seed применяется (прыжок по префиксу label, снапшот pre-edit до seed), COMMIT-guard + layout-кламп focus при сжатии rows.
+
+## Deferred from: code review of 9-4-грид-компонент (2026-07-14)
+
+Проход 1 (bmad-code-review, **CROSS-MODEL**: Fable 5 ×3 слоя — Blind/Edge/Auditor vs спека+dev Opus 4.8; дифф = коммит `bafab60`, аудит против HEAD — DailyGrid менялся 9.5–9.7, каждая находка сверена с текущим кодом). Оба defer ревью 9.2 подтверждены живыми на HEAD и ЗАКРЫТЫ здесь. AC: 3/6-PARTIAL → закрыты, 1 — отклонение узаконено Д1 (react-table удалён как мёртвый), 2 — light-tint ниже, 4/5/7/8 — pass. 1 decision (Д1-дефолт применён) · 10 patch ПРИМЕНЕНЫ · 5 defer (ниже) · 5 dismiss.
+
+- **Tab-ловушка слепого ввода: из грида не выйти клавиатурой** (`DailyGrid.tsx` handleKeyDown + контракт §3.2, blind+edge, Low): preventDefault на клампе границы → «Сдать день» недостижима с клавиатуры (WCAG 2.1.2). Возможно by-design (§3.2, грамматика 9.2 заморожена) — нужен санкционированный контрактом выход (Esc из NAVIGATE? Ctrl+Enter?). Решение Bratan при подписи бумажного контракта; e2e 9.9 столкнётся первым.
+- **Ячейка статуса — нейтральный bg-muted вместо light-tint донор-палитры** (`DailyGrid.tsx` GridRow, auditor, Low): §4 контракта требует статусо-зависимый light-tint («В строю» = green, НЕ нейтральный baseline). Визуальный проход E10 (вместе с columnheader-шапкой грида и донорским card-языком).
+- **Дубликаты rowId не отвергаются** (`DailyGrid.types.ts`, edge, Low): коллапс значений + duplicate React keys при грязных данных. Инвариант уникальности — контракт данных источника; закрепить при подключении реального API (10.2).
+- **statusOptions=[] без индикации** (`DailyGrid.tsx`, edge, Low): пустой справочник (отказ загрузки) → select без опций молча. Обработать в состоянии-ошибке экрана 10.2 или combobox E10.
+- **overrideConflict без ретрая override:true, причина диалога отбрасывается** (`DailyGrid.tsx`, edge, Low): живого HTTP-эндпоинта с override нет (прецедент Д8-8.4) — реальный ретрай + аудит-причина = 10.2/E10; стори 10.2 должна забрать этот хвост явно.

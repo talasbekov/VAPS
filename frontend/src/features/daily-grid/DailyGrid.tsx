@@ -3,7 +3,11 @@
 // переходов клавиш; грид применяет action к фокусу/правке и ХРАНИТ значения
 // ячеек (грамматика значений не хранит). Границы: конфликт-маркеры = 9.6,
 // prefill+отправка-дельт = 9.7, глубокий фокус-RTL = 9.5.
-import { useVirtualizer } from '@tanstack/react-virtual'
+import {
+  defaultRangeExtractor,
+  useVirtualizer,
+  type Range,
+} from '@tanstack/react-virtual'
 import {
   memo,
   useCallback,
@@ -45,7 +49,10 @@ const COLUMN_KINDS: readonly ColumnKind[] = [
   'period',
   'flag',
 ]
+const NAME_COL = 0
 const STATUS_COL = 1
+const PERIOD_COL = 2
+const FLAG_COL = 3
 const ROW_HEIGHT = 36
 const OVERSCAN = 8
 
@@ -56,6 +63,21 @@ interface Focus {
 }
 
 function valueReducer(state: ValueState, action: ValueAction): ValueState {
+  if (action.type === 'RESYNC') {
+    // Смена состава rows: правки оператора живут, остальное — новый initial.
+    const next: ValueState = {}
+    for (const id of Object.keys(action.initials)) {
+      const current = state[id]
+      const before = action.prevInitials[id]
+      const edited =
+        current &&
+        before &&
+        (current.statusCode !== before.statusCode ||
+          current.period !== before.period)
+      next[id] = edited ? current : action.initials[id]
+    }
+    return next
+  }
   const prev = state[action.id]
   if (!prev) return state
   if (action.type === 'SET_STATUS') {
@@ -118,6 +140,7 @@ interface GridRowProps {
   mode: CellState
   statusOptions: StatusOption[]
   marker?: RowMarker
+  ariaRowIndex: number
   onStatus: (id: string, code: string) => void
   onPeriod: (id: string, period: string) => void
 }
@@ -142,6 +165,7 @@ const GridRow = memo(function GridRow({
   mode,
   statusOptions,
   marker,
+  ariaRowIndex,
   onStatus,
   onPeriod,
 }: GridRowProps) {
@@ -154,19 +178,20 @@ const GridRow = memo(function GridRow({
       data-grid-row
       data-marker={marker ?? undefined}
       role="row"
+      aria-rowindex={ariaRowIndex}
       className={`flex items-stretch border-b text-sm ${dirty ? 'font-medium' : ''} ${marker ? MARKER_ROW[marker] : ''}`}
     >
-      <span role="cell" className="w-64 px-1 py-1">
+      <span role="gridcell" className="w-64 px-1 py-1">
         <button
           type="button"
-          {...(focusedCol === 0 ? ACTIVE : {})}
-          tabIndex={focusedCol === 0 ? 0 : -1}
+          {...(focusedCol === NAME_COL ? ACTIVE : {})}
+          tabIndex={focusedCol === NAME_COL ? 0 : -1}
           className="w-full truncate px-1 text-left"
         >
           {row.fullName}
         </button>
       </span>
-      <span role="cell" className="w-48 px-1 py-1">
+      <span role="gridcell" className="w-48 px-1 py-1">
         {focusedCol === STATUS_COL && mode === 'EDIT' ? (
           <select
             aria-label="Статус"
@@ -192,8 +217,8 @@ const GridRow = memo(function GridRow({
           </button>
         )}
       </span>
-      <span role="cell" className="w-40 px-1 py-1">
-        {focusedCol === 2 && mode === 'PERIOD_EDIT' ? (
+      <span role="gridcell" className="w-40 px-1 py-1">
+        {focusedCol === PERIOD_COL && mode === 'PERIOD_EDIT' ? (
           <input
             aria-label="Период"
             {...ACTIVE}
@@ -204,22 +229,22 @@ const GridRow = memo(function GridRow({
         ) : (
           <button
             type="button"
-            {...(focusedCol === 2 ? ACTIVE : {})}
-            tabIndex={focusedCol === 2 ? 0 : -1}
+            {...(focusedCol === PERIOD_COL ? ACTIVE : {})}
+            tabIndex={focusedCol === PERIOD_COL ? 0 : -1}
             className="w-full px-1 text-left"
           >
             {value.period}
           </button>
         )}
       </span>
-      <span role="cell" className="w-8 px-1 py-1 text-center">
+      <span role="gridcell" className="w-8 px-1 py-1 text-center">
         <button
           type="button"
           aria-label={
             marker === 'soft' ? 'Предупреждение' : marker ? 'Конфликт' : 'Флаг'
           }
-          {...(focusedCol === 3 ? ACTIVE : {})}
-          tabIndex={focusedCol === 3 ? 0 : -1}
+          {...(focusedCol === FLAG_COL ? ACTIVE : {})}
+          tabIndex={focusedCol === FLAG_COL ? 0 : -1}
           className={`w-full font-bold ${marker === 'soft' ? 'text-amber-600' : marker ? 'text-red-600' : ''}`}
         >
           {marker === 'soft' ? '!' : marker ? '×' : ''}
@@ -268,6 +293,23 @@ export function DailyGrid({
     period: string
   } | null>(null)
 
+  // Самоисцеление при смене rows-пропа (refetch/фильтр — источник 9.7/10.2):
+  // (1) values-ресинк — новые id получают значения, правки живут; (2) кламп
+  // устаревшего фокуса — без него сжатие rows роняет COMMIT-путь и рендер.
+  const prevInitialsRef = useRef(initials)
+  useLayoutEffect(() => {
+    if (prevInitialsRef.current === initials) return
+    dispatch({ type: 'RESYNC', initials, prevInitials: prevInitialsRef.current })
+    prevInitialsRef.current = initials
+  }, [initials])
+  useLayoutEffect(() => {
+    setFocus((f) =>
+      rows.length > 0 && f.row > rows.length - 1
+        ? { row: rows.length - 1, col: f.col, mode: 'NAVIGATE' }
+        : f,
+    )
+  }, [rows.length])
+
   const bounds: Bounds = useMemo(
     () => ({
       rows: Math.max(rows.length, 1),
@@ -281,12 +323,26 @@ export function DailyGrid({
   // его API возвращает не-мемоизируемые функции → React Compiler пропускает
   // мемоизацию компонента (by-design). Перф-инвариант «1 commit/keystroke»
   // держится на ручном React.memo(GridRow) + стабильном dispatch, не на компайлере.
+  // Сфокусированная строка ПРИНУДИТЕЛЬНО в окне виртуализации: иначе скролл
+  // колёсиком демонтирует активную ячейку → DOM-фокус падает на body и
+  // клавиатура грида мертва до клика (AC-6 «точка опоры слепого ввода»).
+  const activeRow = Math.min(focus.row, rows.length - 1)
+  const rangeExtractor = useCallback(
+    (range: Range) => {
+      const indexes = defaultRangeExtractor(range)
+      if (activeRow < 0 || indexes.includes(activeRow)) return indexes
+      return [...indexes, activeRow].sort((a, b) => a - b)
+    },
+    [activeRow],
+  )
+
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: OVERSCAN,
+    rangeExtractor,
     // Стартовый rect до реального замера: в проде перемеряется фактической
     // высотой контейнера; без него среда без ResizeObserver (jsdom) держит
     // окно 0 и не рендерит строк.
@@ -303,13 +359,28 @@ export function DailyGrid({
   const capturePreEdit = useCallback(() => {
     const row = rows[focus.row]
     if (!row) return
-    const v = values[row.id]
+    const v = values[row.id] ?? initials[row.id]
+    if (!v) return
     preEditRef.current = {
       id: row.id,
       statusCode: v.statusCode,
       period: v.period,
     }
-  }, [rows, focus.row, values])
+  }, [rows, focus.row, values, initials])
+
+  const overrideConflict = useCallback(() => {
+    // «Подтвердить оверрайд»: снять soft-маркер, коммит принят, фокус в ячейку.
+    const row = rows[focus.row]
+    if (row) clearMarker(row.id)
+    setConflict(null)
+    setFocus({ row: focus.row, col: focus.col, mode: 'NAVIGATE' })
+  }, [rows, focus.row, focus.col, clearMarker])
+
+  const cancelConflict = useCallback(() => {
+    // «Отмена»/Escape: soft-маркер ОСТАЁТСЯ (предупреждение), фокус в ячейку.
+    setConflict(null)
+    setFocus((f) => ({ row: f.row, col: f.col, mode: 'NAVIGATE' }))
+  }, [])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -323,22 +394,63 @@ export function DailyGrid({
       })
       if (!GRID_ACTIONS.has(result.action)) return // LIST_MOVE/NOOP → нативный контрол
       e.preventDefault()
+      // CONFLICT-режим: Enter/Esc маршрутизируются в обработчики диалога 9.5/9.6
+      // (defense-in-depth — модальный focus-trap может не сработать вне честного
+      // showModal), НЕ в голый setFocus: иначе диалог закрылся бы, оставив
+      // conflict-стейт и маркер в рассинхроне.
+      if (result.action === 'OVERRIDE_RETRY') {
+        overrideConflict()
+        return
+      }
+      if (result.action === 'CLOSE_DIALOG') {
+        cancelConflict()
+        return
+      }
       if (
-        result.action === 'OPEN_EDIT' ||
-        result.action === 'OPEN_PERIOD' ||
-        result.action === 'TYPE_AHEAD'
+        (result.action === 'OPEN_EDIT' ||
+          result.action === 'OPEN_PERIOD' ||
+          result.action === 'TYPE_AHEAD') &&
+        focus.mode === 'NAVIGATE'
       ) {
+        // Снапшот pre-edit — ТОЛЬКО на входе в правку из NAVIGATE: TYPE_AHEAD
+        // внутри EDIT не перезатирает его, иначе Esc вернул бы промежуточное
+        // значение вместо исходного (§3.3).
         capturePreEdit()
+      }
+      // Seed type-ahead (AC-3): набранный символ применяется — прыжок на первую
+      // опцию с label по префиксу (нажатие не теряется, §3.3 инвариант 2).
+      // Полноценная combobox-фильтрация — E10.
+      if (result.action === 'TYPE_AHEAD' && result.seed) {
+        const row = rows[focus.row]
+        if (row) {
+          const seed = result.seed.toLocaleLowerCase('ru')
+          const match = statusOptions.find((o) =>
+            o.label.toLocaleLowerCase('ru').startsWith(seed),
+          )
+          if (match)
+            dispatch({ type: 'SET_STATUS', id: row.id, statusCode: match.code })
+        }
       }
       if (result.action === 'RESTORE_PRE_EDIT' && preEditRef.current) {
         const pe = preEditRef.current
         dispatch({ type: 'SET_STATUS', id: pe.id, statusCode: pe.statusCode })
         dispatch({ type: 'SET_PERIOD', id: pe.id, period: pe.period })
+        preEditRef.current = null // снапшот одноразовый: чужой правке не достанется
       }
       // Коммит ячейки (9.6): zod-валидация → soft/hard-ветвление по ApiError.
       if (result.action === 'COMMIT') {
         const row = rows[focus.row]
-        const v = values[row.id]
+        const v = row ? (values[row.id] ?? initials[row.id]) : undefined
+        if (!row || !v) {
+          // Стейл-фокус (rows сжался в момент правки): цели коммита больше
+          // нет — без записи, в исцелённую грамматикой позицию.
+          setFocus({
+            row: result.nextPosition.row,
+            col: result.nextPosition.col,
+            mode: 'NAVIGATE',
+          })
+          return
+        }
         const change: RowChange = {
           id: row.id,
           statusCode: v.statusCode,
@@ -377,28 +489,18 @@ export function DailyGrid({
     [
       rows,
       values,
+      initials,
+      statusOptions,
       focus,
       bounds,
       capturePreEdit,
+      overrideConflict,
+      cancelConflict,
       onCellCommit,
       setMarker,
       clearMarker,
     ],
   )
-
-  const overrideConflict = useCallback(() => {
-    // «Подтвердить оверрайд»: снять soft-маркер, коммит принят, фокус в ячейку.
-    const row = rows[focus.row]
-    if (row) clearMarker(row.id)
-    setConflict(null)
-    setFocus({ row: focus.row, col: focus.col, mode: 'NAVIGATE' })
-  }, [rows, focus.row, focus.col, clearMarker])
-
-  const cancelConflict = useCallback(() => {
-    // «Отмена»/Escape: soft-маркер ОСТАЁТСЯ (предупреждение), фокус в ячейку.
-    setConflict(null)
-    setFocus((f) => ({ row: f.row, col: f.col, mode: 'NAVIGATE' }))
-  }, [])
 
   // Управляемый фокус: активная ячейка получает DOM-фокус; строка — в вид.
   useLayoutEffect(() => {
@@ -461,6 +563,7 @@ export function DailyGrid({
         <div
           ref={parentRef}
           role="grid"
+          aria-rowcount={rows.length}
           tabIndex={0}
           onKeyDown={handleKeyDown}
           className="h-96 overflow-auto outline-none"
@@ -474,7 +577,9 @@ export function DailyGrid({
           >
             {items.map((item) => {
               const row = rows[item.index]
-              const v = values[row.id]
+              // Фолбэк на initial: RESYNC-эффект догоняет values ПОСЛЕ первого
+              // рендера нового состава rows — без фолбэка новый id падал бы.
+              const v = values[row.id] ?? initials[row.id]
               const init = initials[row.id]
               const dirty =
                 !!v &&
@@ -497,9 +602,10 @@ export function DailyGrid({
                     value={v}
                     dirty={dirty}
                     focusedCol={item.index === focus.row ? focus.col : null}
-                    mode={focus.mode}
+                    mode={item.index === focus.row ? focus.mode : 'NAVIGATE'}
                     statusOptions={statusOptions}
                     marker={markers[row.id]}
+                    ariaRowIndex={item.index + 1}
                     onStatus={onStatus}
                     onPeriod={onPeriod}
                   />
