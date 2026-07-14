@@ -313,7 +313,7 @@ development_status:
   9-6-валидация-в-гриде: done
   9-7-prefill-и-отклонения: done
   9-8-перф-смоук-грида: done
-  9-9-e2e-слепого-ввода: review
+  9-9-e2e-слепого-ввода: done
   epic-9-retrospective: optional
 
   # Epic 10: Экраны портала — оператор сдаёт день за минуты

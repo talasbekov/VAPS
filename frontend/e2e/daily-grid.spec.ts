@@ -24,7 +24,6 @@ declare global {
       commits: number
       keys: number
       maxCommitsPerKey: number
-      lastCommitsPerKey: number
       samples: number[]
       lastBulkRequest: {
         business_date: string
@@ -57,6 +56,9 @@ const PERIODS: Record<number, { typed: string; dateEnd: string }> = {
 
 // Кириллический сид: page.keyboard.press знает только US-раскладку — шлём
 // через реальный CDP-пайплайн ввода (keydown несёт event.key = 'н' и т.д.).
+// Ограничение: event.code пуст — если грамматика когда-нибудь обопрётся на
+// e.code (layout-независимость), CDP-ввод сломается молча (грид сейчас читает
+// только e.key — DailyGrid.tsx toKey).
 const cdpSessions = new WeakMap<Page, CDPSession>()
 async function getCdp(page: Page): Promise<CDPSession> {
   let session = cdpSessions.get(page)
@@ -91,6 +93,42 @@ async function e2eState(page: Page) {
   }))
 }
 
+// Дождаться, пока счётчик коммитов стабилен два замера подряд (ревью 9.9 P3):
+// async-хвост маунта (ResizeObserver initialRect→384px) или каскад
+// scrollToIndex должны докатиться ДО снапшота — иначе строгий toBe(N) флейкует
+// под троттлингом ×4. Заменяет магический waitForTimeout(300).
+async function settleCommits(page: Page) {
+  let prev = -1
+  for (;;) {
+    const c = await page.evaluate(() => window.__e2e.commits)
+    if (c === prev) return
+    prev = c
+    await page.waitForTimeout(80)
+  }
+}
+
+// aria-rowindex активной (сфокусированной) строки грида, или null если фокус
+// вне строки. Позиционная привязка серий (прецедент 9.5 — не «мутный таймаут»).
+async function activeRowIndex(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement)) return null
+    const row = active.closest('[data-grid-row]')
+    const raw = row?.getAttribute('aria-rowindex')
+    return raw ? Number(raw) : null
+  })
+}
+
+async function focusInside(page: Page, selector: string): Promise<boolean> {
+  // instanceof-гард обязателен (ревью 9.9 P1): `activeElement?.closest() !==
+  // null` даёт undefined!==null=true при фокусе В НИКУДА — ассерт стал бы
+  // вакуумным ровно там, ради чего 9.9 и существует.
+  return page.evaluate((sel) => {
+    const active = document.activeElement
+    return active instanceof HTMLElement && active.closest(sel) !== null
+  }, selector)
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto(HARNESS)
   // Грид сам фокусирует активную ячейку на маунте (layout-эффект 9.5) —
@@ -109,9 +147,7 @@ test('слепой ввод 20 строк только клавиатурой �
   page,
 }) => {
   // Стартовая точка: ячейка статуса строки 0 (aria-rowindex 1).
-  await expect(
-    page.locator('[data-grid-row]', { hasText: 'Сотрудник 0' }),
-  ).toHaveAttribute('aria-rowindex', '1')
+  expect(await activeRowIndex(page)).toBe(1)
 
   for (let row = 0; row < 20; row++) {
     const seed = SEEDS[row % SEEDS.length]
@@ -133,9 +169,13 @@ test('слепой ввод 20 строк только клавиатурой �
       // EDIT+Enter → COMMIT + вниз, колонка «Статус» сохраняется
       await page.keyboard.press('Enter')
     }
-    if (row === 10) {
-      // Середина серии: окно уже проскроллено реальным scrollToIndex —
-      // виртуализация держит бюджет прямо ПО ХОДУ ввода (AC2).
+    if (row === 15) {
+      // ПО ХОДУ ввода (ревью P8): ввод реально уехал через границу окна
+      // (фокус на строке 16, не в стартовом окне) И бюджет держится —
+      // сломанная виртуализация к этому моменту накопила бы строки >34
+      // (проба overscan 8→40 в 9.8 показала: 34 ловит 3× регрессию).
+      await settleCommits(page)
+      expect(await activeRowIndex(page)).toBe(17) // строка 16 = rowindex 17
       expect(await gridRowCount(page)).toBeLessThanOrEqual(DOM_BUDGET)
     }
   }
@@ -173,51 +213,81 @@ test('слепой ввод 20 строк только клавиатурой �
   )
 })
 
-test('ConflictDialog: реальная showModal-модальность — фокус внутри, фон inert, Esc = «Отмена», soft-маркер остаётся', async ({
+test('ConflictDialog: showModal-модальность — фокус внутри, фон inert, Esc = «Отмена» (маркер остаётся), оверрайд снимает маркер', async ({
   page,
 }) => {
-  // К строке-фикстуре e42 (вне слепой серии AC1 — ревью-C4) только клавиатурой.
+  // К строке-фикстуре e42 (вне слепой серии AC1 — ревью-C4) только клавиатурой;
+  // позиционный ассерт ПЕРЕД ударом (ревью P6: потерянная стрелка = внятный
+  // провал здесь, а не мутный таймаут на невидимом диалоге).
   for (let i = 0; i < 42; i++) await page.keyboard.press('ArrowDown')
+  expect(await activeRowIndex(page)).toBe(43) // строка e42 = rowindex 43
   await pressCyr(page, 'н') // EDIT + значение «На больничном»
   await page.keyboard.press('Enter') // COMMIT → seam вернёт soft-409 → CONFLICT
 
   const dialog = page.locator('dialog[open]')
   await expect(dialog).toBeVisible()
 
-  // Фокус УШЁЛ внутрь диалога (нативный showModal focus-trap) — jsdom-полифилл
-  // 9.5 этого доказать не мог, ради этого ассерта и существует 9.9.
-  const focusInsideDialog = await page.evaluate(
-    () => document.activeElement?.closest('dialog[open]') !== null,
-  )
-  expect(focusInsideDialog).toBe(true)
+  // Диалог реально МОДАЛЬНЫЙ (showModal, не show): `:modal` истинно только для
+  // top-layer showModal — жёсткий дискриминатор (красная проба showModal→show
+  // роняет именно этот ассерт; focus-in-dialog один show бы не отличил).
+  // jsdom-полифилл 9.5 модальность доказать не мог — ради этого 9.9 и есть.
+  expect(
+    await page.evaluate(
+      () => document.querySelector('dialog[open]')?.matches(':modal') ?? false,
+    ),
+  ).toBe(true)
+  // Фокус УШЁЛ внутрь диалога (нативный focus-trap top-layer).
+  expect(await focusInside(page, 'dialog[open]')).toBe(true)
 
-  // Inert-фон: сид мимо диалога грид НЕ меняет (значение ячейки как было).
-  await pressCyr(page, 'о')
   const fixtureRow = page.locator('[data-grid-row]', {
     hasText: 'Сотрудник 42',
   })
+  // Inert-фон: сид мимо диалога грид НЕ меняет. Барьер перед негативным
+  // ассертом (ревью P6) — окно на обработку события, затем проверка, что
+  // значение НЕ уехало.
+  await pressCyr(page, 'о')
+  await page.waitForTimeout(100)
   await expect(fixtureRow).toContainText('На больничном')
   await expect(fixtureRow).not.toContainText('Отпуск')
 
   // Esc = «Отмена»: диалог закрыт, значение ОТКАТИЛОСЬ к pre-edit («В строю»),
-  // soft-маркер ОСТАЁТСЯ (замороженная семантика 9.6 AC-3 — снимает только
-  // «Подтвердить оверрайд»), фокус вернулся в ячейку грида.
+  // soft-маркер ОСТАЁТСЯ (замороженная семантика 9.6 AC-3), фокус в ячейке.
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await expect(fixtureRow).toContainText('В строю')
   await expect(fixtureRow).toHaveAttribute('data-marker', 'soft')
-  const focusBackInGrid = await page.evaluate(
-    () => document.activeElement?.closest('[data-grid-row]') !== null,
-  )
-  expect(focusBackInGrid).toBe(true)
+  expect(await focusInside(page, '[data-grid-row]')).toBe(true)
+
+  // Override-ветка (ревью P6/Task 4): снова открыть конфликт, набрать причину
+  // (BR-003: 10–500 символов) и «Подтвердить оверрайд» — маркер СНЯТ, значение
+  // принято. Это браузерный override-путь, jsdom 9.5/9.6 его не покрывал.
+  await pressCyr(page, 'н')
+  await page.keyboard.press('Enter')
+  await expect(dialog).toBeVisible()
+  const reason = dialog.getByLabel('Причина (10–500 символов)')
+  await reason.fill('Наряд сокращён по приказу №42 от 14.07 (e2e-проверка)')
+  const overrideBtn = dialog.getByRole('button', {
+    name: 'Подтвердить оверрайд',
+  })
+  await overrideBtn.focus()
+  await page.keyboard.press('Enter')
+  await expect(dialog).toHaveCount(0)
+  // Маркер снят (overrideConflict → clearMarker), значение принято.
+  await expect(fixtureRow).not.toHaveAttribute('data-marker', 'soft')
+  await expect(fixtureRow).toContainText('На больничном')
 })
 
-test('перф-тренд под CDP-троттлингом: edit=1 коммит (блокирующе); p95/каскад → артефакт', async ({
+test('перф-тренд под CDP-троттлингом: edit=1 коммит/нажатие (блокирующе); p95/каскад → артефакт', async ({
   page,
+  browser,
 }) => {
   // CDP CPU-троттлинг ×4 (Д4) — эмуляция слабого железа контура.
   const cdp = await getCdp(page)
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+
+  // Дождаться async-хвоста маунта (RO initialRect→384px) ДО снапшота, иначе
+  // хвостовой коммит лёг бы в edit-окно → 61≠60 (ревью P3).
+  await settleCommits(page)
 
   // --- Edit-серия: 60 сидов в ОДНОЙ ячейке (н↔в реально переключают значение
   // каждым нажатием — вакуум-урок ревью 9.8), скролла нет.
@@ -225,25 +295,32 @@ test('перф-тренд под CDP-троттлингом: edit=1 коммит
   for (let i = 0; i < 60; i++) {
     await pressCyr(page, i % 2 === 0 ? 'н' : 'в')
   }
-  // Дать async-хвосту докатиться (урок BUDGET.md §6.5), затем строгий ассерт.
-  await page.waitForTimeout(300)
+  await settleCommits(page) // хвост докатился — строгий счёт честен (ревью P3)
   const afterEdit = await e2eState(page)
-  // БЛОКИРУЮЩИЙ детерминированный инвариант (L246): ровно 1 коммит/edit-нажатие.
-  expect(afterEdit.commits - beforeEdit.commits).toBe(60)
+  const editCommits = afterEdit.commits - beforeEdit.commits
+  // БЛОКИРУЮЩИЙ детерминированный инвариант (L246): ровно 1 коммит на нажатие,
+  // проверяется И суммой, И пиком (ревью P4: сумма 60 прошла бы для 0,2,0,2…;
+  // max=1 к этому моменту — nav-каскад ещё не бежал).
+  const editMaxPerKey = afterEdit.maxCommitsPerKey
 
-  // --- Навигационная серия: 40×ArrowDown из EDIT? Нет: выходим коммитом и
-  // едем вниз через границу окна (реальный scrollToIndex → возможный каскад).
+  // --- Навигационная серия: выйти из EDIT и ехать вниз через границу окна
+  // (реальный scrollToIndex → возможный каскад). beforeNav := afterEdit —
+  // между сериями нет непокрытой щели (ревью P3).
   await page.keyboard.press('Escape') // EDIT → NAVIGATE (RESTORE_PRE_EDIT)
+  await settleCommits(page)
   const beforeNav = await e2eState(page)
   for (let i = 0; i < 40; i++) {
     await page.keyboard.press('ArrowDown')
   }
-  await page.waitForTimeout(300)
+  await settleCommits(page)
   const afterNav = await e2eState(page)
   const navCommits = afterNav.commits - beforeNav.commits
+  // Нав-серия РЕАЛЬНО двигала фокус (ревью P5: без этого 0-каскад = вакуум).
+  expect(await activeRowIndex(page)).toBeGreaterThan(40)
 
-  // --- Артефакт тренда (НЕ блокирующий, L246; Q1 — порог назначается после
-  // первого факта). Закрывает PENDING-перепрогон спайка 1.10 §7 реальным числом.
+  // --- Артефакт тренда СОБРАН И ЗАПИСАН ДО блокирующих ассертов (ревью P7:
+  // при регрессе edit-инварианта интересные перф-данные не должны теряться,
+  // стейл-файл не должен маскировать провал).
   const perf = await page.evaluate(() => {
     const sorted = [...window.__e2e.samples].sort((a, b) => a - b)
     const rank = (q: number) =>
@@ -256,7 +333,6 @@ test('перф-тренд под CDP-троттлингом: edit=1 коммит
       max_commits_per_key: window.__e2e.maxCommitsPerKey,
       dom_rows: document.querySelectorAll('[data-grid-row]').length,
       keys: window.__e2e.keys,
-      user_agent: navigator.userAgent,
     }
   })
   const artefact = {
@@ -264,9 +340,12 @@ test('перф-тренд под CDP-троттлингом: edit=1 коммит
     generated_at: new Date().toISOString(),
     cdp_cpu_throttle: 4,
     note: 'dev-тренд (chromium, троттлинг ×4) — НЕ бюджет; бюджет = BUDGET.md §4 PENDING-target (FF100/4ГБ, ручной прогон)',
+    // Метаданные окружения (ревью P7: реальные, не спуфнутый UA-override).
+    env: { platform: process.platform, chromium: browser.version() },
     edit_series: {
       keystrokes: 60,
-      commits: afterEdit.commits - beforeEdit.commits,
+      commits: editCommits,
+      max_commits_per_key: editMaxPerKey,
     },
     nav_series: {
       keystrokes: 40,
@@ -281,6 +360,12 @@ test('перф-тренд под CDP-троттлингом: edit=1 коммит
     fileURLToPath(new URL('../test-results/perf-trend.json', import.meta.url)),
     JSON.stringify(artefact, null, 2),
   )
-  // Санити артефакта (не тайминг): выборка латентности реально собралась.
-  expect(perf.samples_n).toBeGreaterThanOrEqual(100)
+
+  // Блокирующие детерминированные инварианты — ПОСЛЕ записи артефакта.
+  expect(editCommits).toBe(60)
+  expect(editMaxPerKey).toBe(1)
+  // Санити артефакта (детерминированный, не тайминг): выборка собралась и
+  // нав-серия реально коммитила (ревью P5).
+  expect(perf.samples_n).toBeGreaterThanOrEqual(90)
+  expect(navCommits).toBeGreaterThanOrEqual(40)
 })

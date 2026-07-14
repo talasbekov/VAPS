@@ -12,6 +12,9 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   // fileURLToPath, не URL.pathname — путь репо содержит кириллицу (Ловушка 7)
   testDir: fileURLToPath(new URL('./e2e', import.meta.url)),
+  // Один воркер (ревью 9.9 P10): перф-замеры daily-grid не должны делить CPU
+  // с параллельным print-воркером — иначе p95-артефакт несравним между прогонами.
+  workers: 1,
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   use: {
     baseURL: 'http://localhost:4173',
@@ -28,7 +31,11 @@ export default defineConfig({
     {
       command: 'npm run build:e2e && npm run preview:e2e',
       url: 'http://localhost:4174/e2e-harness/index.html',
-      reuseExistingServer: !process.env.CI,
+      // ВСЕГДА пересобирать (ревью 9.9 P10): залипший preview со старым
+      // dist-e2e дал бы зелёные спеки против кода, которого больше нет —
+      // build:e2e не входит ни в один другой пайплайн (в отличие от 4173,
+      // который пересобирает gate).
+      reuseExistingServer: false,
     },
   ],
 })

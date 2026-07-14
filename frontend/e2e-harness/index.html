@@ -18,7 +18,6 @@
           commits: 0,
           keys: 0,
           maxCommitsPerKey: 0,
-          lastCommitsPerKey: 0,
           samples: [],
           lastBulkRequest: null,
         }
@@ -47,11 +46,15 @@
             e2e.commits += 1
             if (e2e.keys > 0) {
               commitsSinceKey += 1
-              e2e.lastCommitsPerKey = commitsSinceKey
               if (commitsSinceKey > e2e.maxCommitsPerKey)
                 e2e.maxCommitsPerKey = commitsSinceKey
             }
-            if (pendingTs != null) {
+            // Сэмпл латентности — ТОЛЬКО первый коммит после keydown (ревью
+            // 9.9 P2): без гарда keydown-без-коммита приписал бы себе чужой
+            // async-каскад. Ограничение: если у нажатия коммита нет вовсе,
+            // первый ЧУЖОЙ коммит всё же засчитается — в сериях спеков таких
+            // нажатий нет (каждое двигает setFocus → коммит).
+            if (pendingTs != null && commitsSinceKey === 1) {
               e2e.samples.push(performance.now() - pendingTs)
               pendingTs = null
             }

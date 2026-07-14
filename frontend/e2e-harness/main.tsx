@@ -17,14 +17,16 @@ declare global {
       commits: number
       keys: number
       maxCommitsPerKey: number
-      lastCommitsPerKey: number
       samples: number[]
       lastBulkRequest: BulkStatusRequest | null
     }
   }
 }
 
-export const BUSINESS_DATE = '2026-07-14'
+// Фикс-дата безопасна: грид clock-независим (Clock во фронте daily-grid не
+// используется, период с часами не сверяется — валидация дат = E10); фиксация
+// делает payload-ассерты спеков детерминированными.
+const BUSINESS_DATE = '2026-07-14'
 
 // Кириллические лейблы с РАЗНЫМИ префиксами (в/н/о/к) — type-ahead матчится
 // toLocaleLowerCase('ru'), латиница молча не матчится (Ловушка №4, ревью 9.8).
