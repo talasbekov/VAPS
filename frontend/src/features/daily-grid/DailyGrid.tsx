@@ -249,7 +249,13 @@ const GridRow = memo(function GridRow({
         <button
           type="button"
           aria-label={
-            marker === 'soft' ? 'Предупреждение' : marker ? 'Конфликт' : 'Флаг'
+            marker === 'soft'
+              ? 'Предупреждение'
+              : marker === 'invalid'
+                ? 'Ошибка заполнения'
+                : marker
+                  ? 'Конфликт'
+                  : 'Флаг'
           }
           {...(focusedCol === FLAG_COL ? ACTIVE : {})}
           tabIndex={focusedCol === FLAG_COL ? 0 : -1}
@@ -287,6 +293,9 @@ export function DailyGrid({
     rowId: string
   } | null>(null)
   const [markers, setMarkers] = useState<Record<string, RowMarker>>({})
+  // aria-live анонс блокировок (ревью 9.6): hard/invalid раньше молчали —
+  // слепой оператор не получал НИКАКОГО сигнала, что Enter не сработал.
+  const [announce, setAnnounce] = useState('')
 
   const setMarker = useCallback((id: string, m: RowMarker) => {
     setMarkers((prev) => (prev[id] === m ? prev : { ...prev, [id]: m }))
@@ -326,14 +335,27 @@ export function DailyGrid({
       initials,
       prevInitials: prevInitialsRef.current,
     })
-    // Маркеры исчезнувших строк — прунинг (ревью 9.5): иначе строка, ушедшая
-    // из rows и вернувшаяся после RESYNC-сброса значения, воскресит стейл-маркер.
+    // Маркеры: прунинг исчезнувших строк (ревью 9.5) + сброс у строк, чей
+    // initial обновил сервер (ревью 9.6 — маркер вычисленный по старым данным
+    // устарел; с гейтом «Сдать день» стейл-маркер блокировал бы отправку).
+    const prevInit = prevInitialsRef.current
     setMarkers((prev) => {
-      const alive = Object.keys(prev).filter((id) => initials[id])
-      if (alive.length === Object.keys(prev).length) return prev
+      let changed = false
       const next: Record<string, RowMarker> = {}
-      for (const id of alive) next[id] = prev[id]
-      return next
+      for (const id of Object.keys(prev)) {
+        const cur = initials[id]
+        const before = prevInit[id]
+        const healed =
+          cur &&
+          before &&
+          (cur.statusCode !== before.statusCode || cur.period !== before.period)
+        if (!cur || healed) {
+          changed = true
+          continue
+        }
+        next[id] = prev[id]
+      }
+      return changed ? next : prev
     })
     prevInitialsRef.current = initials
   }, [initials])
@@ -390,6 +412,52 @@ export function DailyGrid({
   const onPeriod = useCallback((id: string, period: string) => {
     dispatch({ type: 'SET_PERIOD', id, period })
   }, [])
+  // Валидация+seam одной строки — ОБЩИЙ путь клавиатурного COMMIT и
+  // blur-коммита при уходе мышью (ревью 9.6). Выставляет/чистит маркеры и
+  // aria-анонс; ConflictDialog открывает только интерактивный (клавиатурный)
+  // вызов — blur-путь не воюет с кликом за фокус, soft остаётся маркером.
+  const validateAndMark = useCallback(
+    (rowIdx: number, interactive: boolean): 'ok' | 'soft' | 'blocked' => {
+      const row = rows[rowIdx]
+      const v = row ? (values[row.id] ?? initials[row.id]) : undefined
+      if (!row || !v) return 'ok'
+      const change: RowChange = {
+        id: row.id,
+        statusCode: v.statusCode,
+        period: v.period,
+      }
+      // zod-невалид → invalid (блокирует, как hard).
+      if (!rowSchema.safeParse(change).success) {
+        setMarker(row.id, 'invalid')
+        setAnnounce(
+          `${row.fullName}: значение не прошло проверку — коммит заблокирован`,
+        )
+        return 'blocked'
+      }
+      const err = onCellCommit?.(change) ?? null
+      if (err) {
+        if (err instanceof ConflictError && err.overridable) {
+          // soft (409 overridable): жёлтый маркер + ConflictDialog (9.5).
+          setMarker(row.id, 'soft')
+          if (interactive) setConflict({ error: err, rowId: row.id })
+          setAnnounce(`${row.fullName}: мягкий конфликт — ${err.message}`)
+          return 'soft'
+        }
+        // hard (422 / non-overridable): красная заливка, блок, без диалога.
+        setMarker(row.id, 'hard')
+        setAnnounce(`${row.fullName}: коммит заблокирован — ${err.message}`)
+        return 'blocked'
+      }
+      clearMarker(row.id) // валидно, без конфликта
+      return 'ok'
+    },
+    [rows, values, initials, onCellCommit, setMarker, clearMarker],
+  )
+  const validateAndMarkRef = useRef(validateAndMark)
+  useLayoutEffect(() => {
+    validateAndMarkRef.current = validateAndMark
+  }, [validateAndMark])
+
   // Клик мышью фокусит ячейку мимо клавиатуры — стейт следует за DOM-фокусом,
   // иначе следующий Enter исполнится на ЧУЖОЙ строке (ревью 9.5). Программный
   // .focus() layout-эффекта попадает в уже-активную ячейку → same-ref, без
@@ -400,6 +468,10 @@ export function DailyGrid({
     // получает eager-bailout и дал бы лишний коммит (перф-инвариант).
     const f = focusRef.current
     if (f.row === row && f.col === col) return
+    // Уход мышью из правки МИНОВАЛ клавиатурный COMMIT (регрессия ревью 9.5):
+    // значение оставалось dirty без zod/seam, маркер лгал → blur-коммит.
+    if (f.mode === 'EDIT' || f.mode === 'PERIOD_EDIT')
+      validateAndMarkRef.current(f.row, false)
     setFocus({ row, col, mode: 'NAVIGATE' })
   }, [])
 
@@ -438,9 +510,19 @@ export function DailyGrid({
   }, [conflict])
 
   // Синхронизация: conflict-стейт живёт ТОЛЬКО в режиме CONFLICT (ревью 9.5) —
-  // любой обходной выход из режима (кламп при сжатии rows) не оставит стейла.
+  // любой обходной выход из режима (кламп при сжатии rows) не оставит стейла;
+  // семантика такого выхода = «Отмена» (ревью 9.6): значение откатывается к
+  // pre-edit, иначе отвергнутое уехало бы в bulk-дельты мимо cancelConflict.
   useLayoutEffect(() => {
-    if (focus.mode !== 'CONFLICT' && conflict) setConflict(null)
+    if (focus.mode !== 'CONFLICT' && conflict) {
+      const pe = preEditRef.current
+      if (pe && pe.id === conflict.rowId) {
+        dispatch({ type: 'SET_STATUS', id: pe.id, statusCode: pe.statusCode })
+        dispatch({ type: 'SET_PERIOD', id: pe.id, period: pe.period })
+        preEditRef.current = null
+      }
+      setConflict(null)
+    }
   }, [focus.mode, conflict])
 
   const handleKeyDown = useCallback(
@@ -493,13 +575,23 @@ export function DailyGrid({
         const pe = preEditRef.current
         dispatch({ type: 'SET_STATUS', id: pe.id, statusCode: pe.statusCode })
         dispatch({ type: 'SET_PERIOD', id: pe.id, period: pe.period })
+        // Значение вернулось к pre-edit → invalid/hard-маркер устарел и с
+        // гейтом «Сдать день» блокировал бы отправку призраком (ревью 9.6);
+        // soft остаётся предупреждением (AC-3).
+        setMarkers((prev) => {
+          const m = prev[pe.id]
+          if (!m || m === 'soft') return prev
+          const next = { ...prev }
+          delete next[pe.id]
+          return next
+        })
         preEditRef.current = null // снапшот одноразовый: чужой правке не достанется
       }
-      // Коммит ячейки (9.6): zod-валидация → soft/hard-ветвление по ApiError.
+      // Коммит ячейки (9.6): zod-валидация → soft/hard-ветвление по ApiError
+      // (общий validateAndMark — тот же путь у blur-коммита при уходе мышью).
       if (result.action === 'COMMIT') {
         const row = rows[focus.row]
-        const v = row ? (values[row.id] ?? initials[row.id]) : undefined
-        if (!row || !v) {
+        if (!row) {
           // Стейл-фокус (rows сжался в момент правки): цели коммита больше
           // нет — без записи, в исцелённую грамматикой позицию.
           setFocus({
@@ -509,34 +601,15 @@ export function DailyGrid({
           })
           return
         }
-        const change: RowChange = {
-          id: row.id,
-          statusCode: v.statusCode,
-          period: v.period,
+        const verdict = validateAndMark(focus.row, true)
+        if (verdict === 'soft') {
+          setFocus({ row: focus.row, col: focus.col, mode: 'CONFLICT' })
+          return
         }
-        const stay = () =>
+        if (verdict === 'blocked') {
           setFocus({ row: focus.row, col: focus.col, mode: 'NAVIGATE' })
-        // zod-невалид → invalid (блокирует, как hard).
-        if (!rowSchema.safeParse(change).success) {
-          setMarker(row.id, 'invalid')
-          stay()
           return
         }
-        const err = onCellCommit?.(change) ?? null
-        if (err) {
-          if (err instanceof ConflictError && err.overridable) {
-            // soft (409 overridable): жёлтый маркер + ConflictDialog (9.5).
-            setMarker(row.id, 'soft')
-            setConflict({ error: err, rowId: row.id })
-            setFocus({ row: focus.row, col: focus.col, mode: 'CONFLICT' })
-          } else {
-            // hard (422 / non-overridable): красная заливка, блок, без диалога.
-            setMarker(row.id, 'hard')
-            stay()
-          }
-          return
-        }
-        clearMarker(row.id) // валидно, без конфликта
       }
       setFocus({
         row: result.nextPosition.row,
@@ -546,16 +619,12 @@ export function DailyGrid({
     },
     [
       rows,
-      values,
-      initials,
       statusOptions,
       focus,
       bounds,
       capturePreEdit,
       cancelConflict,
-      onCellCommit,
-      setMarker,
-      clearMarker,
+      validateAndMark,
     ],
   )
 
@@ -586,6 +655,15 @@ export function DailyGrid({
     return list
   }, [rows, values, initials])
 
+  // Гейт отправки (ревью 9.6): hard/invalid-строки БЛОКИРУЮТ «Сдать день» —
+  // иначе «коммит блокируется» держал бы только фокус, а отвергнутые бэком /
+  // невалидные значения уезжали бы в bulk-дельты. soft не блокирует
+  // (предупреждение; оверрайд снимает).
+  const blockedCount = useMemo(
+    () => Object.values(markers).filter((m) => m !== 'soft').length,
+    [markers],
+  )
+
   const items = virtualizer.getVirtualItems()
 
   return (
@@ -596,15 +674,22 @@ export function DailyGrid({
           className="text-sm text-muted-foreground"
         >
           Изменено {changed.length} из {rows.length}
+          {blockedCount > 0 ? ` · заблокировано ${blockedCount}` : ''}
         </span>
         <button
           type="button"
-          className="rounded bg-primary px-3 py-1 text-sm text-primary-foreground"
+          disabled={blockedCount > 0}
+          className="rounded bg-primary px-3 py-1 text-sm text-primary-foreground disabled:opacity-50"
           onClick={() => onSubmit(changed)}
         >
           Сдать день
         </button>
       </div>
+      {/* aria-live анонс блокировок/конфликтов — слепой ввод получает сигнал,
+          что Enter НЕ перешёл дальше (ревью 9.6). */}
+      <span role="status" aria-live="assertive" className="sr-only">
+        {announce}
+      </span>
 
       {rows.length === 0 ? (
         <div

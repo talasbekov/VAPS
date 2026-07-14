@@ -41,7 +41,10 @@ export function buildPrefilledRows(
       id: e.id,
       fullName: e.fullName,
       rank: e.rank,
-      statusCode: y?.statusCode ?? defaultStatus,
+      // || (не ??): пустая строка из грязных вчерашних данных — тоже «нет
+      // статуса», иначе она просочилась бы в грид и легла invalid-маркером
+      // на невиновную строку (ревью 9.6).
+      statusCode: y?.statusCode || defaultStatus,
       period: y?.period,
     }
   })
