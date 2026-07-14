@@ -13,6 +13,7 @@
     "format": "prettier --write .",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:property-full": "FC_PROFILE=full vitest run src/features/daily-grid/grammar.properties.test.ts",
     "test:e2e": "playwright test",
     "gate": "node scripts/deps-gate.mjs && node scripts/schema-check.mjs && tsc -b && eslint . && node scripts/lint-canon.test.mjs && node scripts/schema-check.test.mjs && vitest run && vite build && node scripts/size-gate.mjs",
     "generate:api": "openapi-typescript ../Backend/VAPS/schema.yaml -o src/shared/api/schema.d.ts"
