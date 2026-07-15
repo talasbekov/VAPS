@@ -162,6 +162,13 @@ MATRIX = {
     # (payloadless POST держателя = 400 сериализатора = ALLOW по канону).
     # Держатели status.manage выводятся из seed (ADMIN, INTEGRATION_USER).
     "ops-status-bulk": _MethodGate({"post": "status.manage"}),
+    # query-загрузка «вчера» для префилла грида (story 10.1b, GET
+    # /statuses/grid-prefill/). Гейт = читающее право статусов status.view
+    # (держат DIVISION_OPERATOR, VIEWER, ADMIN `*` — Решение №2 10.1b, НЕ
+    # mark_update-прецедент L137: у статусов собственное read-право ЕСТЬ);
+    # scope — сужение селектором (канон L451), матрицей не проверяется
+    # (запрос без business_date у держателя = 400 формы = ALLOW по канону).
+    "ops-status-grid-prefill": _MethodGate({"get": "status.view"}),
     # override «на завтра»-блока (story 6.10b, POST-only) — своё право
     # daily_report.override_block (обход ≠ выпуск); scope не применяется (обход
     # уровня дня, без division). ValueError сервиса → 400 = ALLOW по канону.

@@ -35,3 +35,42 @@ class BulkStatusCreateSerializer(serializers.Serializer):
     rows = BulkStatusCreateRowSerializer(
         many=True, allow_empty=False, max_length=MAX_BULK_ROWS
     )
+
+
+# --- Story 10.1b — GET /api/operations/statuses/grid-prefill/ ----------------
+
+
+class GridPrefillQuerySerializer(serializers.Serializer):
+    """Query-параметры префилла: обязательная дата («вчера» считает фронт,
+    Решение №6 10.1b). Отсутствие/мусор → DRF 400 VALIDATION_ERROR."""
+
+    business_date = serializers.DateField()
+
+
+class GridPrefillEmployeeSerializer(serializers.Serializer):
+    """Read-only схема строки roster (spectacular): ровно ``EmployeeSeed``
+    фронта (prefill.ts 9.7) — id, full_name, rank (имя из справочника,
+    fallback сырой код — семантика ``denorm_for``)."""
+
+    id = serializers.UUIDField()
+    full_name = serializers.CharField()
+    rank = serializers.CharField(allow_null=True)
+
+
+class GridPrefillStatusSerializer(serializers.Serializer):
+    """Read-only схема живого статус-интервала: 4 поля ``overlapping_on``
+    как есть (сырые факты; derived IN_SERVICE доклеивает фронт)."""
+
+    employee_id = serializers.UUIDField()
+    status_type_code = serializers.CharField()
+    date_start = serializers.DateField()
+    date_end = serializers.DateField()
+
+
+class GridPrefillResponseSerializer(serializers.Serializer):
+    """Read-only схема ответа 200 grid-prefill (только для spectacular —
+    вьюха отдаёт selector-словарь напрямую, поля 1:1)."""
+
+    business_date = serializers.DateField()
+    employees = GridPrefillEmployeeSerializer(many=True)
+    statuses = GridPrefillStatusSerializer(many=True)

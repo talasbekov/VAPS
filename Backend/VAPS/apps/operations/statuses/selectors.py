@@ -1,7 +1,14 @@
 from django.db.models import Min
 
+from apps.core.selectors import CoreEmployeeSelector, HistoricalEmployeeSelector
+from apps.operations.services import PermissionService
 from apps.operations.statuses.models import EmployeeStatus
 from apps.operations.statuses.services.strength_report import resolve_status
+
+# Право чтения статусов — единый источник для гейта вьюхи И сужения видимости
+# селектором (зеркало READ_PERMISSION submissions/selectors.py — импорт держит
+# оба слоя на одном коде). Держат DIVISION_OPERATOR, VIEWER (+ADMIN `*`).
+GRID_PREFILL_PERMISSION = "status.view"
 
 
 class EmployeeStatusSelector:
@@ -58,6 +65,54 @@ class EmployeeStatusSelector:
                 "source",
             )
         )
+
+    @classmethod
+    def grid_prefill(cls, actor, business_date) -> dict:
+        """Query-загрузка данных дня для префилла грида (story 10.1b).
+
+        Actor-first LIST-селектор — сужает видимость САМ (канон L451, зеркало
+        ``DailySubmissionSelector.list``): чужие дивизионы просто отсутствуют,
+        scope никогда не ошибается. ``visible_division_ids`` → None (глобальный/
+        wildcard грант) проходит в ``roster_on`` как есть — его контракт
+        «None = вся БД» совпадает. Статусы тянутся ТОЛЬКО по employee_ids из
+        roster (``overlapping_on(date, None)`` отдал бы всю БД мимо scope);
+        пустой roster → пустые списки. Всё bulk (NFR-4): RBAC-резолв +
+        roster=2 + denorm=2 + statuses=1 запросов — никаких per-row вызовов.
+
+        Ответ — сырые факты (Решение №4): derived IN_SERVICE-строк нет,
+        отсутствие записи = дефолт на фронте (prefill.ts DEFAULT_STATUS).
+        Порядок ``employees`` детерминирован: (full_name, str(id)). Порядок
+        ``statuses`` тоже: (employee_id, status_type_code, date_start) —
+        правило выбора «победителя» при 2+ живых статусах — маппер 10.2.
+        """
+        visible = PermissionService.visible_division_ids(
+            actor, GRID_PREFILL_PERMISSION
+        )
+        roster = HistoricalEmployeeSelector.roster_on(
+            business_date, division_ids=visible
+        )
+        employee_ids = [eid for ids in roster.values() for eid in ids]
+        denorm = CoreEmployeeSelector.denorm_for(employee_ids)
+        employees = sorted(
+            (
+                {"id": eid, "full_name": d["full_name"], "rank": d["rank"]}
+                for eid, d in denorm.items()
+            ),
+            key=lambda e: (e["full_name"], str(e["id"])),
+        )
+        statuses = cls.overlapping_on(business_date, employee_ids=employee_ids)
+        # Детерминированный порядок (ревью 10.1b): при 2+ живых статусах
+        # одного сотрудника (легальная секондмент-пара DETACHED+ATTACHED)
+        # БД без ORDER BY отдаёт строки в случайном порядке — фронт-маппер
+        # получал бы случайного «победителя».
+        statuses.sort(
+            key=lambda s: (
+                str(s["employee_id"]),
+                s["status_type_code"],
+                str(s["date_start"]),
+            )
+        )
+        return {"employees": employees, "statuses": statuses}
 
     @classmethod
     def status_on(cls, employee_id, on_date) -> str:

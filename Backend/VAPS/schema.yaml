@@ -1554,6 +1554,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkStatusCreateResponse'
           description: ''
+  /api/operations/statuses/grid-prefill/:
+    get:
+      operationId: operations_statuses_grid_prefill_retrieve
+      description: 'Query-загрузка данных дня для префилла грида (FR/AI-4 E10): roster
+        подразделений актора на дату (WORKING & active) + живые статус-интервалы,
+        содержащие дату, одним ответом. Scope сужает видимость (чужие дивизионы отсутствуют
+        — НЕ 403); 403 без status.view; 400 отсутствующий/битый business_date. Сотрудник
+        без записи в statuses = дефолт IN_SERVICE на фронте.'
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+          format: date
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GridPrefillResponse'
+          description: ''
   /api/operations/temporary-duty/:
     get:
       operationId: operations_temporary_duty_retrieve
@@ -2085,6 +2109,68 @@ components:
       description: |-
         * `M` - Мужской
         * `F` - Женский
+    GridPrefillEmployee:
+      type: object
+      description: |-
+        Read-only схема строки roster (spectacular): ровно ``EmployeeSeed``
+        фронта (prefill.ts 9.7) — id, full_name, rank (имя из справочника,
+        fallback сырой код — семантика ``denorm_for``).
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        rank:
+          type: string
+          nullable: true
+      required:
+      - full_name
+      - id
+      - rank
+    GridPrefillResponse:
+      type: object
+      description: |-
+        Read-only схема ответа 200 grid-prefill (только для spectacular —
+        вьюха отдаёт selector-словарь напрямую, поля 1:1).
+      properties:
+        business_date:
+          type: string
+          format: date
+        employees:
+          type: array
+          items:
+            $ref: '#/components/schemas/GridPrefillEmployee'
+        statuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/GridPrefillStatus'
+      required:
+      - business_date
+      - employees
+      - statuses
+    GridPrefillStatus:
+      type: object
+      description: |-
+        Read-only схема живого статус-интервала: 4 поля ``overlapping_on``
+        как есть (сырые факты; derived IN_SERVICE доклеивает фронт).
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+        status_type_code:
+          type: string
+        date_start:
+          type: string
+          format: date
+        date_end:
+          type: string
+          format: date
+      required:
+      - date_end
+      - date_start
+      - employee_id
+      - status_type_code
     IssuedExpenseReport:
       type: object
       description: |-

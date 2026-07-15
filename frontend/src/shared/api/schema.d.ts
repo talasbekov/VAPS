@@ -1067,6 +1067,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/statuses/grid-prefill/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Query-загрузка данных дня для префилла грида (FR/AI-4 E10): roster подразделений актора на дату (WORKING & active) + живые статус-интервалы, содержащие дату, одним ответом. Scope сужает видимость (чужие дивизионы отсутствуют — НЕ 403); 403 без status.view; 400 отсутствующий/битый business_date. Сотрудник без записи в statuses = дефолт IN_SERVICE на фронте. */
+        get: operations["operations_statuses_grid_prefill_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/temporary-duty/": {
         parameters: {
             query?: never;
@@ -1314,6 +1331,40 @@ export interface components {
          * @enum {string}
          */
         GenderEnum: "M" | "F";
+        /**
+         * @description Read-only схема строки roster (spectacular): ровно ``EmployeeSeed``
+         *     фронта (prefill.ts 9.7) — id, full_name, rank (имя из справочника,
+         *     fallback сырой код — семантика ``denorm_for``).
+         */
+        GridPrefillEmployee: {
+            /** Format: uuid */
+            id: string;
+            full_name: string;
+            rank: string | null;
+        };
+        /**
+         * @description Read-only схема ответа 200 grid-prefill (только для spectacular —
+         *     вьюха отдаёт selector-словарь напрямую, поля 1:1).
+         */
+        GridPrefillResponse: {
+            /** Format: date */
+            business_date: string;
+            employees: components["schemas"]["GridPrefillEmployee"][];
+            statuses: components["schemas"]["GridPrefillStatus"][];
+        };
+        /**
+         * @description Read-only схема живого статус-интервала: 4 поля ``overlapping_on``
+         *     как есть (сырые факты; derived IN_SERVICE доклеивает фронт).
+         */
+        GridPrefillStatus: {
+            /** Format: uuid */
+            employee_id: string;
+            status_type_code: string;
+            /** Format: date */
+            date_start: string;
+            /** Format: date */
+            date_end: string;
+        };
         /**
          * @description Issued расход projection (6.10a) — flat metadata + the attachment ref and
          *     sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here.
@@ -2764,6 +2815,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BulkStatusCreateResponse"];
+                };
+            };
+        };
+    };
+    operations_statuses_grid_prefill_retrieve: {
+        parameters: {
+            query: {
+                business_date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridPrefillResponse"];
                 };
             };
         };
