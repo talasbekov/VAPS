@@ -249,6 +249,11 @@ AUDIT_MATRIX = {
     # override «на завтра»-блока (6.10b): TOMORROW_BLOCK_OVERRIDDEN эмитится в
     # override_tomorrow_block (5.6b/5.9) в той же транзакции.
     "ops-expense-report-override-tomorrow-block": _Audited(),
+    # bulk-создание статусов (10.1a): STATUS_CREATED (record_many, по строке) +
+    # STATUS_BULK_CREATED (summary) эмитятся в bulk_create_statuses (3.8/4.4) в
+    # той же транзакции; HTTP-smoke сквозь роут — test_bulk_status_api
+    # (test_bulk_emits_audit_through_route, паттерн test_submission_audit 5.9).
+    "ops-status-bulk": _Audited(),
 }
 
 

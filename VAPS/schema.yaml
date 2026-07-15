@@ -1525,6 +1525,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/Role'
           description: ''
+  /api/operations/statuses/bulk/:
+    post:
+      operationId: operations_statuses_bulk_create
+      description: 'Массовое создание статусов-отклонений одним вызовом (FR-12). 403
+        нет права status.manage / сотрудник вне scope оператора; 400 структурная ошибка
+        payload (дубль/пропуск ключа/пустой/тип/cap); 409 soft-пересечение (details.rows[]);
+        422 hard-пересечение / интервал / уволен (details.rows[]). Успех → {created:
+        N}.'
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkStatusCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkStatusCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkStatusCreateRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkStatusCreateResponse'
+          description: ''
   /api/operations/temporary-duty/:
     get:
       operationId: operations_temporary_duty_retrieve
@@ -1684,6 +1713,58 @@ components:
     BlankEnum:
       enum:
       - ''
+    BulkStatusCreateRequest:
+      type: object
+      description: Тело POST-запроса bulk-создания. Без ``division_id`` — scope из
+        RBAC.
+      properties:
+        business_date:
+          type: string
+          format: date
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkStatusCreateRowRequest'
+      required:
+      - business_date
+      - rows
+    BulkStatusCreateResponse:
+      type: object
+      properties:
+        created:
+          type: integer
+      required:
+      - created
+    BulkStatusCreateRowRequest:
+      type: object
+      description: |-
+        Одна строка-отклонение. 4 обязательных ключа зеркалят
+        ``_REQUIRED_ROW_KEYS`` сервиса 3.8 (отсутствие → 400 ДО сервиса).
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+        status_type_code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        date_start:
+          type: string
+          format: date
+        date_end:
+          type: string
+          format: date
+        comment:
+          type: string
+        document_basis:
+          type: string
+        source_ref:
+          type: string
+      required:
+      - date_end
+      - date_start
+      - employee_id
+      - status_type_code
     Division:
       type: object
       properties:
