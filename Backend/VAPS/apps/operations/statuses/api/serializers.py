@@ -1,0 +1,37 @@
+"""Story 10.1a — bulk-payload сериализаторы (POST /api/operations/statuses/bulk/).
+
+Валидация формы на границе: DRF отклоняет отсутствующие ключи / неверные типы /
+пустой rows / превышение cap → 400 VALIDATION_ERROR ДО сервиса 3.8. division_id
+в payload НЕТ — scope резолвится из RBAC актора во вьюхе (Решение №2 3.8;
+фронт-контракт 9.7 prefill.ts). actor/source из payload игнорируются: полей нет,
+DRF их отбросит (ARCH-SEC-030 — identity из auth-контракта).
+"""
+
+from rest_framework import serializers
+
+# Верхняя граница payload — утро управления ~40–300 строк; cap с запасом.
+# Закрывает 3.8-defer «нет cap на payload → сериализатор E10» на естественной
+# границе (param-limit нужен лишь на порядки больших объёмах).
+MAX_BULK_ROWS = 1000
+
+
+class BulkStatusCreateRowSerializer(serializers.Serializer):
+    """Одна строка-отклонение. 4 обязательных ключа зеркалят
+    ``_REQUIRED_ROW_KEYS`` сервиса 3.8 (отсутствие → 400 ДО сервиса)."""
+
+    employee_id = serializers.UUIDField()
+    status_type_code = serializers.CharField(max_length=50)
+    date_start = serializers.DateField()
+    date_end = serializers.DateField()
+    comment = serializers.CharField(required=False, allow_blank=True)
+    document_basis = serializers.CharField(required=False, allow_blank=True)
+    source_ref = serializers.CharField(required=False, allow_blank=True)
+
+
+class BulkStatusCreateSerializer(serializers.Serializer):
+    """Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC."""
+
+    business_date = serializers.DateField()
+    rows = BulkStatusCreateRowSerializer(
+        many=True, allow_empty=False, max_length=MAX_BULK_ROWS
+    )

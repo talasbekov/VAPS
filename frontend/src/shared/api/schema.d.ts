@@ -1050,6 +1050,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/statuses/bulk/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Массовое создание статусов-отклонений одним вызовом (FR-12). 403 нет права status.manage / сотрудник вне scope оператора; 400 структурная ошибка payload (дубль/пропуск ключа/пустой/тип/cap); 409 soft-пересечение (details.rows[]); 422 hard-пересечение / интервал / уволен (details.rows[]). Успех → {created: N}. */
+        post: operations["operations_statuses_bulk_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/temporary-duty/": {
         parameters: {
             query?: never;
@@ -1153,6 +1170,31 @@ export interface components {
         };
         /** @enum {unknown} */
         BlankEnum: "";
+        /** @description Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC. */
+        BulkStatusCreateRequest: {
+            /** Format: date */
+            business_date: string;
+            rows: components["schemas"]["BulkStatusCreateRowRequest"][];
+        };
+        BulkStatusCreateResponse: {
+            created: number;
+        };
+        /**
+         * @description Одна строка-отклонение. 4 обязательных ключа зеркалят
+         *     ``_REQUIRED_ROW_KEYS`` сервиса 3.8 (отсутствие → 400 ДО сервиса).
+         */
+        BulkStatusCreateRowRequest: {
+            /** Format: uuid */
+            employee_id: string;
+            status_type_code: string;
+            /** Format: date */
+            date_start: string;
+            /** Format: date */
+            date_end: string;
+            comment?: string;
+            document_basis?: string;
+            source_ref?: string;
+        };
         Division: {
             /** Format: uuid */
             readonly id: string;
@@ -2697,6 +2739,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Role"];
+                };
+            };
+        };
+    };
+    operations_statuses_bulk_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkStatusCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BulkStatusCreateRequest"];
+                "multipart/form-data": components["schemas"]["BulkStatusCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkStatusCreateResponse"];
                 };
             };
         };
