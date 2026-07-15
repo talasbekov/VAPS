@@ -156,6 +156,12 @@ MATRIX = {
         {"get": "daily_report.generate", "post": "daily_report.generate"}
     ),
     "ops-expense-report-period": _MethodGate({"get": "daily_report.generate"}),
+    # bulk-создание статусов (story 10.1a, POST /statuses/bulk/). Грубый гейт
+    # RequirePermissionMixin {"bulk": status.manage}; per-строчный scope
+    # (allowed_division_ids) энфорсит сервис 3.8, матрицей не проверяется
+    # (payloadless POST держателя = 400 сериализатора = ALLOW по канону).
+    # Держатели status.manage выводятся из seed (ADMIN, INTEGRATION_USER).
+    "ops-status-bulk": _MethodGate({"post": "status.manage"}),
     # override «на завтра»-блока (story 6.10b, POST-only) — своё право
     # daily_report.override_block (обход ≠ выпуск); scope не применяется (обход
     # уровня дня, без division). ValueError сервиса → 400 = ALLOW по канону.

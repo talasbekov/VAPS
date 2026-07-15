@@ -41,8 +41,10 @@ golden-update:
 
 # Story 6.9: parallel-run diff catch-up job (расход VAPS vs замороженный донор).
 # Beat-ready manual entrypoint (12.6 регистрирует в beat); NON-blocking — НЕ в
-# `gate` (фоновый режим, не CI-гейт). Читает БД → нужен postgres env (docker
-# db поднимается). Опц. TODAY=YYYY-MM-DD (догон прошлого), BASELINE=path.
+# `gate` (фоновый режим, не CI-гейт). Читает БД → нужен УЖЕ ЗАПУЩЕННЫЙ postgres
+# (docker compose up -d --wait db) — цель БД сама НЕ поднимает. Опц.
+# TODAY=YYYY-MM-DD (ручной/тестовый прогон: обрабатываются даты (watermark,
+# TODAY], не раньше), BASELINE=path.
 parallel-run-diff:
 	@test -x $(PYTHON) || { \
 		echo "parallel-run-diff: .venv not found or incomplete."; \
