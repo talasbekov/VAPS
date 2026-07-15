@@ -5,9 +5,10 @@ in a Celery ``@shared_task`` and registers it in the beat schedule — Celery is
 NOT imported here and is NOT a dependency.
 
 NON-BLOCKING (AC-5): the command NEVER exits non-zero on discrepancies, a halt,
-or a per-day crash — parallel-run is a background mode, not a CI gate. It prints
-the outcome (watermark move, green-day streak, and any blocking «tickets») and
-returns. The only hard error is a malformed ``--today`` argument.
+an unreadable baseline, or a per-day crash — parallel-run is a background mode,
+not a CI gate. It prints the outcome (watermark move, green-day streak, and any
+blocking «tickets») and returns. The only hard errors are a malformed or future
+``--today`` argument.
 """
 
 from datetime import date
@@ -69,10 +70,15 @@ class Command(BaseCommand):
             return
         if result.halted:
             # Surfaced but NON-blocking (exit 0): parallel-run is not a CI gate.
+            watermark_note = (
+                f"watermark unchanged at {result.watermark_before}"
+                if result.watermark_before
+                else "watermark untouched"
+            )
             self.stdout.write(
                 self.style.WARNING(
-                    f"parallel-run diff halted ({result.halt_reason}); watermark "
-                    f"unchanged at {result.watermark_before}. See logs."
+                    f"parallel-run diff halted ({result.halt_reason}); "
+                    f"{watermark_note}. See logs."
                 )
             )
             return
@@ -84,14 +90,19 @@ class Command(BaseCommand):
                 f"green-streak {result.green_streak}"
             )
         )
+        if result.remaining_backlog:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"backlog truncated: {result.remaining_backlog} date(s) "
+                    "beyond the per-run cap remain — run again to continue"
+                )
+            )
 
         blocking = ParallelRunDiff.objects.filter(
             run_date__in=result.processed_days, is_blocking=True
         ).order_by("run_date", "division_code", "column_code")
         if blocking:
-            self.stdout.write(
-                "UNCLASSIFIED / DATA-LOSS (тикеты, НЕ блокер мержа):"
-            )
+            self.stdout.write("UNCLASSIFIED / DATA-LOSS (тикеты, НЕ блокер мержа):")
             for row in blocking:
                 self.stdout.write(
                     f"  {row.run_date.isoformat()} {row.division_code} "

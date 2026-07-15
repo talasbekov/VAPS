@@ -88,7 +88,7 @@ const PRINT_CANON_SELECTORS = [
 export default tseslint.config(
   // __canon_* — временные фикстуры lint-canon: невидимы для `eslint .` (и IDE),
   // сам самотест линтит их принудительно через ignore:false; сироты не валят гейт
-  { ignores: ['dist', 'src/**/__canon_*/**'] },
+  { ignores: ['dist', 'dist-e2e', 'src/**/__canon_*/**'] },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],

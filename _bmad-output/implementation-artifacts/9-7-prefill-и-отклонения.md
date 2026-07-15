@@ -13,7 +13,7 @@ context:
 
 # Story 9.7: Prefill и отклонения
 
-Status: review
+Status: done
 
 ## Story
 
@@ -36,7 +36,7 @@ Prefill-маппер (вчера→дефолт-строки) + bulk-маппе�
 
 2. **Счётчик отклонений от prefill.** Given грид открыт с prefill-строками, Then счётчик «изменено 0 из M» (ничего не правлено); правка ячейки → счётчик растёт (базовая линия = prefill-значения). (Механизм в 9.4 — 9.7 подтверждает базу.)
 
-3. **Bulk-маппер дельт.** Given изменённые строки (`RowChange[]` из onSubmit), Then `toBulkRequest(changes, businessDate)` даёт bulk-3.8-запрос `{business_date, rows: [{employee_id, status_type_code, date_end?}]}` РОВНО из дельт (неизменённые НЕ включаются). Чистая функция.
+3. **Bulk-маппер дельт.** Given изменённые строки (`RowChange[]` из onSubmit), Then `toBulkRequest(changes, businessDate)` даёт bulk-3.8-запрос `{business_date, rows: [{employee_id, status_type_code, date_end?}]}` РОВНО из дельт (неизменённые НЕ включаются). Чистая функция. _(Ревью D1: shape выровнен с реальным сервисом 3.8 — `date_start`/`date_end` обязательны в каждой строке; `date_start = businessDate`; полуинтервал `[s, e)`: период «по … включительно» → `date_end = period+1д`, пусто → `businessDate+1д`.)_
 
 4. **Контейнер связывает prefill + submit.** Given `DailyGridContainer` (props: `employees`, `yesterday`, `businessDate`, `onBulkSubmit(request)`), Then он строит prefill-строки, рендерит `DailyGrid`, а `onSubmit(deltas)` → `toBulkRequest` → `onBulkSubmit`. Ответ 409/422 (per-row) маппится обратно в маркеры через `onCellCommit`-seam (9.6) — контракт для E10.
 
@@ -45,7 +45,7 @@ Prefill-маппер (вчера→дефолт-строки) + bulk-маппе�
 ## Tasks / Subtasks
 
 - [x] Task 1: Типы данных prefill/bulk (AC: 1, 3, 4)
-  - [x] `prefill.ts` (feature daily-grid): `YesterdayPlacement = Record<employeeId, {statusCode, period?}>`; `EmployeeSeed` (id/fullName/rank?); `BulkStatusRequest = {business_date: string; rows: {employee_id, status_type_code, date_end?}[]}`; `DailyGridContainerProps`.
+  - [x] `prefill.ts` (feature daily-grid): `YesterdayPlacement = Record<employeeId, {statusCode, period?}>`; `EmployeeSeed` (id/fullName/rank?); `BulkStatusRequest = {business_date: string; rows: {employee_id, status_type_code, date_start, date_end}[]}` (D1); `DailyGridContainerProps` — по факту объявлен в `DailyGridContainer.tsx` рядом с компонентом, не в prefill.ts (ревью P8: размещение разумнее буквы сабтаска).
 - [x] Task 2: Чистые мапперы (AC: 1, 3)
   - [x] `buildPrefilledRows(employees, yesterday, defaultStatus="IN_SERVICE") → EmployeeRow[]`; `toBulkRequest(changes, businessDate) → BulkStatusRequest` (period → date_end если непусто).
 - [x] Task 3: Контейнер (AC: 2, 4)
@@ -54,6 +54,26 @@ Prefill-маппер (вчера→дефолт-строки) + bulk-маппе�
   - [x] `prefill.test.ts` (чистые): prefill из вчера (+дефолт для новых); bulk-маппер только дельты + date_end. `DailyGridContainer.test.tsx` (jsdom): открытие → счётчик «0 из M»; правка → счётчик растёт; «Сдать день» → onBulkSubmit получает bulk-запрос ТОЛЬКО с дельтами.
 - [x] Task 5: Гейт + регресс (AC: 5)
   - [x] `npm run gate` зелёный; перф/фокус/валидация-тесты зелёные; grammar.ts не тронут; prettier.
+
+### Review Findings
+
+Проход 1 (bmad-code-review, **CROSS-MODEL**: Fable 5 ×3 слоя vs спека+dev Opus 4.8; дифф = коммит `6ba1021` + правка prefill.ts из 1d858e5, аудит против HEAD). 2 decision РЕШЕНЫ Bratan · 9 patch ПРИМЕНЕНЫ · 4 defer · 3 dismiss. Гейт после правок: 232 зелёных (+7).
+
+- [x] [Review][Decision] **D1: фронт-контракт «bulk-3.8-shape» гарантированно отвергается сервисом 3.8** — `_REQUIRED_ROW_KEYS = (employee_id, status_type_code, date_start, date_end)`: строка без ЛЮБОГО ключа → 400 на весь payload (bulk_status_service.py:44,91). `toBulkRequest` не эмитит `date_start` никогда, `date_end` — только при непустом period → каждый запрос маппера заведомо 400. Плюс семантика: бэк — полуинтервал `[s, e)`, date_end=None невозможен (`_validate_interval`: `date_start >= date_end` → TypeError), день = `[D, D+1)`; а UI-период «по … включительно» → date_end = period+1день. Q1 спеки откладывал сверку «при появлении роута», но сервис-shape знаем уже сейчас. **РЕШЕНИЕ Bratan: выровнять сейчас** — применено (date_start=businessDate; date_end=period+1д | businessDate+1д, ключи всегда; UTC-математика; не-ISO мусор — как есть, громкий 422).
+- [x] [Review][Decision] **D2: отклонение «вернулся в строй» невыразимо в bulk-3.8** — bulk только СОЗДАЁТ deviation-записи; IN_SERVICE есть в StatusType (999), но USER-запись IN_SERVICE поверх ещё живого вчерашнего статуса (напр. VACATION по 20-е) даст 409/422, а сервис атомарен — один вернувшийся блокирует сдачу ВСЕГО дня. Правильный механизм — закрытие/снятие вчерашнего статуса, которого в 3.8 нет. **РЕШЕНИЕ Bratan: слать как есть** — громкий отказ вместо тихой потери; требование механизма снятия/закрытия статуса зафиксировано как обязательный вход спеки 10.2 (deferred-work.md).
+- [x] [Review][Patch] P1: осиротевший `period` при пустом вчерашнем `statusCode` — статус лёг в дефолт, а его period выжил и уедет как date_end уже с другим статусом [prefill.ts:48]
+- [x] [Review][Patch] P2: «Сдать день» без правок → `onBulkSubmit({rows: []})` → бэк 400 «Пустой payload»; гейт `changes.length === 0` в контейнере + тест [DailyGridContainer.tsx:45]
+- [x] [Review][Patch] P3: дубли `id` в `employees` → две строки грида с одним id → дубль в `changed` → бэк 400 (AC-3) на весь день; дедуп (первый выигрывает) в buildPrefilledRows + тест [prefill.ts:38]
+- [x] [Review][Patch] P4: самоисцеление входа: `employees`/`yesterday` = null/undefined из рантайма → TypeError в useMemo, падение страницы (прецедент 9.2/9.4) [prefill.ts:38]
+- [x] [Review][Patch] P5: `period.trim()` в toBulkRequest — whitespace-only period сейчас truthy и эмитит мусорный date_end [prefill.ts:63]
+- [x] [Review][Patch] P6: смена `businessDate` при живых правках — правки переживают RESYNC и уходят с НОВЫМ business_date; `key={businessDate}` (правки принадлежат дню) + тест [DailyGridContainer.tsx:42]
+- [x] [Review][Patch] P7: тесты-усиления: откат правки → счётчик обратно «0 из 3» и строки нет в bulk; позиционная привязка «В отпуске» к строке e0 (прецедент 9.5); restore стабов offsetHeight/Width в afterAll; toHaveBeenCalledTimes(1); кейс `statusCode: ''` + period (защищает ||-фикс 9.6) [DailyGridContainer.test.tsx, prefill.test.ts]
+- [x] [Review][Patch] P8: чекбокс-дрейф Task 1 — `DailyGridContainerProps` заявлен в prefill.ts, объявлен в DailyGridContainer.tsx (размещение по факту разумнее — поправить текст сабтаска) [спека Task 1]
+- [x] [Review][Patch] P9: тип `onBulkSubmit` → `void | Promise<void>` (Д4 спеки говорит void|Promise) + JSDoc-требование стабильности ссылок employees/yesterday + useCallback на onSubmit-лямбду [DailyGridContainer.tsx:22,45]
+- [x] [Review][Defer] AC4-seam непригоден по направлению данных для маппинга bulk-ответа: `onCellCommit` зовётся гридом синхронно в момент коммита, а per-row ошибки (`detail.rows[]`) приходят ПОСЛЕ onBulkSubmit; каналов «ответ → setMarkers» нет — расширение дважды деферённой темы seam (9.5/9.6) → вход спеки 10.2 [DailyGridContainer.tsx:24] — deferred
+- [x] [Review][Defer] полная валидация формата period (свободный текст → мусорный date_end; одна строка атомарно валит весь bulk) → E10, реальный date-редактор (решение 9.6) [prefill.ts:63] — deferred
+- [x] [Review][Defer] pending/двойной клик «Сдать день»/ошибки bulk-уровня — fire-and-forget onBulkSubmit → транспорт/экран 10.2 [DailyGridContainer.tsx:22] — deferred
+- [x] [Review][Defer] `businessDate === ''` проходит в business_date запроса — источник даты = E10 [DailyGridContainer.tsx:19] — deferred
 
 ## Dev Notes
 
@@ -76,7 +96,7 @@ Prefill-маппер (вчера→дефолт-строки) + bulk-маппе�
 ### Дефолты (#YOLO)
 
 - **Д1 (дефолт-статус):** сотрудник без вчерашней записи → `IN_SERVICE` (derived «В строю»).
-- **Д2 (period→date_end):** непустой `period` строки → `date_end` в bulk-row; пустой → опустить.
+- **Д2 (period→date_end):** ~~непустой `period` строки → `date_end` в bulk-row; пустой → опустить~~ **ПЕРЕРЕШЕНО ревью D1:** ключи `date_start`/`date_end` всегда присутствуют (требование `_REQUIRED_ROW_KEYS` сервиса 3.8); период «включительно» → `date_end = period+1д`, пустой → `businessDate+1д` (день `[D, D+1)`).
 - **Д3 (фильтр «только отклонения»):** НЕ в 9.7 (nice-to-have EXPERIENCE → E10).
 - **Д4 (submit-проп):** `onBulkSubmit(request): void|Promise` — реальный вызов (apiClient+эндпоинт) в 10.2.
 
@@ -92,8 +112,8 @@ Prefill-маппер (вчера→дефолт-строки) + bulk-маппе�
 
 ### Открытые вопросы (для Bratan — дефолты активны)
 
-- **Q1 (bulk-shape):** `{business_date, rows:[{employee_id, status_type_code, date_end?}]}` [Д2] — сверить с бэк-3.8 при появлении HTTP-роута (10.2); division_id/actor нужны в теле?
-- **Q2 (дефолт-статус):** сотрудник без вчера → IN_SERVICE [Д1] или пусто (обязательный ввод)?
+- **Q1 (bulk-shape):** ЗАКРЫТ ревью D1 в части rows-shape (выровнен с сервисом: date_start/date_end обязательны). Остаток на 10.2: division_id/actor в теле или из auth-контекста; типизация из schema.d.ts при появлении роута.
+- **Q2 (дефолт-статус):** сотрудник без вчера → IN_SERVICE [Д1] или пусто (обязательный ввод)? Смежное решение D2 ревью: дельта «вернулся в строй» уходит в bulk как есть (громкий 409/422); механизм снятия статуса — обязательный вход спеки 10.2.
 
 ### Процессный гейт
 

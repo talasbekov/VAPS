@@ -12,7 +12,10 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview",
+    "build:e2e": "vite build --config vite.e2e.config.ts",
+    "preview:e2e": "vite preview --config vite.e2e.config.ts",
     "test": "vitest run",
+    "test:property-full": "FC_PROFILE=full vitest run src/features/daily-grid/grammar.properties.test.ts",
     "test:e2e": "playwright test",
     "gate": "node scripts/deps-gate.mjs && node scripts/schema-check.mjs && tsc -b && eslint . && node scripts/lint-canon.test.mjs && node scripts/schema-check.test.mjs && vitest run && vite build && node scripts/size-gate.mjs",
     "generate:api": "openapi-typescript ../Backend/VAPS/schema.yaml -o src/shared/api/schema.d.ts"
@@ -24,7 +27,6 @@
     "@radix-ui/react-separator": "^1.1.11",
     "@radix-ui/react-slot": "^1.3.0",
     "@tanstack/react-query": "^5.101.2",
-    "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.14.5",
     "autoprefixer": "^10.5.2",
     "class-variance-authority": "^0.7.1",

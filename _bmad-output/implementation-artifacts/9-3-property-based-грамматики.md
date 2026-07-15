@@ -12,7 +12,7 @@ context:
 
 # Story 9.3: Property-based грамматики
 
-Status: review
+Status: done
 
 ## Story
 
@@ -48,7 +48,7 @@ so that **слепой ввод не ломается на неожиданны�
 - [x] Task 1: Зависимость (AC: 1)
   - [x] `npm i -D fast-check` (обновит package.json + lock); `node scripts/deps-gate.mjs` зелёный.
 - [x] Task 2: Генераторы (arbitraries) (AC: 2-4)
-  - [x] `keyArb` (произвольный `Key`, `Char` с непустым символом), `stateArb` (из `CELL_STATES`), `boundsArb` (`rows/cols` 1..8, `columnKinds` длиной `cols` из `{readonly,status,period,flag}`), `positionArb(bounds)` (в границах). Чистые, без React.
+  - [x] ⚙️ Ревью 2026-07-14: `stateArb`/`positionArb(bounds)` как отдельных генераторов НЕТ — реализованы слитно внутри `startArb` (эквивалентно, раскрыто в Completion Notes; дрейф формулировки чекбокса зафиксирован). `keyArb` (non-Char литералы под `satisfies` + `Char` из пула с кириллицей — правка ревью), `boundsArb` (`rows/cols` 1..8, `columnKinds` длиной `cols`). Чистые, без React.
 - [x] Task 3: Свойства (AC: 2-5)
   - [x] `grammar.properties.test.ts`: (а) свёртка `Key[]` через `transition` — `nextPosition` в границах на каждом шаге + позиция следующего шага = предыдущий `nextPosition`; (б) детерминизм (двойной вызов ≡); (в) Esc в EDIT/PERIOD_EDIT → RESTORE_PRE_EDIT+NAVIGATE+та же позиция; (г) `action`∈множества/`nextState`∈CELL_STATES. Сид зафиксирован; numRuns по профилю.
 - [x] Task 4: Гейт (AC: 6)
@@ -99,6 +99,23 @@ fast-check с фиксированным `seed` (воспроизводимос�
 - `npm run gate` (frontend). Property на чистой функции — быстрый, node-env, без jsdom.
 - Ревью — по §3.3 контракта (инварианты) + фикс-сид (нет флейка).
 
+## Review Findings
+
+<!-- Ревью 2026-07-14 (bmad-code-review, Fable 5, CROSS-MODEL vs спека+dev Opus 4.8; дифф = коммит 0cc64ad, аудит против HEAD — grammar.ts/types менялись d13fed8 [ревью 9.2], сам тест-файл не менялся; Auditor прогнал 3 мутационные пробы фактически). Слои: Blind Hunter / Edge Case Hunter / Acceptance Auditor. Вердикт AC: 1/2/4/5/6-pass (инв.1 и инв.3 доказуемо НЕ вакуумны — красные на мутациях), 3-ВАКУУМЕН → закрыт. 0 decision · 9 patch ПРИМЕНЕНЫ · 2 defer · 4 dismiss. После патчей: 4 теста (2→4), красная проба «Char→NOOP» красная (15 прогонов), full-профиль 687мс, npm run gate зелёный (219, 150.4KB). -->
+
+- [x] [Review][Patch] ✅ ИСПРАВЛЕНО 2026-07-14 (в свёртку добавлены эффект-классы §3.2 без дублирования всей таблицы: стрелки в NAVIGATE → MOVE с направленным сдвигом/клампом на границе; Char на status → TYPE_AHEAD+seed===char+EDIT; Enter на status/period → OPEN_EDIT/OPEN_PERIOD; Char в EDIT → TYPE_AHEAD+seed; красная проба «Char→NOOP» роняет свойство за 15 прогонов) **Инв.2 «нажатия не теряются» был подменён вакуумным «результат определён и валиден» (blind CRITICAL + auditor мутационной пробой: вечно-NOOP заглушка проходила инв.1+2 на 100%):** свойство не отличало «нажатие обработано» от «нажатие проглочено» — регрессия глотания символов прошла бы гейт. Ослабление было внесено ещё на этапе спеки (AC-3 сформулирован слабо) — AC-3 оставлен как есть (тотальность+детерминизм), различающая сила добавлена В ДОПОЛНЕНИЕ. [frontend/src/features/daily-grid/grammar.properties.test.ts]
+- [x] [Review][Patch] ✅ ИСПРАВЛЕНО (ассерт в свёртке: state∈{EDIT,PERIOD_EDIT} && action≠COMMIT → nextPosition === входная позиция) **Инв.3 не видел дрейфа позиции внутри edit-сессии (blind MAJOR):** одиночный синтетический Esc-шаг честен, но если бы какой-то ключ внутри EDIT сдвигал позицию, Esc «вернул» бы фокус в уехавшую ячейку — оба свойства оставались зелёными. [frontend/src/features/daily-grid/grammar.properties.test.ts]
+- [x] [Review][Patch] ✅ ИСПРАВЛЕНО (новое 3-е свойство: стартовая позиция −5..15 × bounds 1..8 × любой state/key → nextPosition в границах) **Самоисцеление входа (d13fed8) лежало ЦЕЛИКОМ вне property-пространства (edge MAJOR):** startArb генерировал только валидные старты — единственное поведение, добавленное правками ревью 9.2, не исполнялось ни одним прогоном; отрицательные координаты и overflow по col не были покрыты ВООБЩЕ нигде (юнит-кейсы d13fed8 — только row-overflow и rows=0). [frontend/src/features/daily-grid/grammar.properties.test.ts]
+- [x] [Review][Patch] ✅ ИСПРАВЛЕНО (CHAR_POOL с кириллицей/ё/цифрами/пробелом/дефисом + oneof с дефолтным string) **Генератор Char покрывал только ASCII fast-check (blind MAJOR):** язык самих операторов (кириллический type-ahead статусов) не встречался ни в одном прогоне. [frontend/src/features/daily-grid/grammar.properties.test.ts]
+- [x] [Review][Patch] ✅ ИСПРАВЛЕНО (toStrictEqual вместо toEqual) **Детерминизм не отличал `seed: undefined` от отсутствия seed (edge MINOR):** toEqual считает `{seed: undefined}` ≡ `{}` — недетерминизм формы результата проходил. [frontend/src/features/daily-grid/grammar.properties.test.ts]
+- [x] [Review][Patch] ✅ ИСПРАВЛЕНО (снапшот входной позиции до вызова + ассерт неизменности) **Чистота transition не ассертилась (blind+edge MINOR):** кламп мутацией входного объекта прошёл бы все свойства, а гриду 9.4 дал бы shared-reference баг. [frontend/src/features/daily-grid/grammar.properties.test.ts]
+- [x] [Review][Patch] ✅ ИСПРАВЛЕНО (Record<Action,true> → Set; литералы NON_CHAR_KEYS под `satisfies readonly Key[]` вместо `as Key`; мета-тест синка NON_CHAR_KEYS↔KEY_TYPES) **ACTIONS-сет и Key-касты без компайл-привязки (blind+edge MINOR):** Set<Action> принимал подмножество (новый Action — только рантайм-лотерея), `as Key` пропустил бы будущий payload-несущий вариант в генератор молча. [frontend/src/features/daily-grid/grammar.properties.test.ts]
+- [x] [Review][Patch] ✅ ИСПРАВЛЕНО (`npm run test:property-full` в package.json — зеркало backend test-full/HYPOTHESIS_PROFILE) **FC_PROFILE=full не был подключён ни к одному скрипту (blind+edge MINOR):** ветка full=1000 не исполнялась никаким автоматическим прогоном — могла молча сломаться (проверено: 687мс, зелёная). [frontend/package.json]
+- [x] [Review][Patch] ✅ ИСПРАВЛЕНО (minLength:1 у последовательности + комментарий о CONFLICT-покрытии в тест-файле) **Вакуумные пустые последовательности + недокументированная граница CONFLICT (blind+edge NOTE):** fast-check биасит к малым размерам — часть из 100 сидированных прогонов не исполняла тело вовсе; вход в CONFLICT задаёт грид (не грамматика) → в свёртке CONFLICT только стартовым префиксом, компенсация exhaustive-таблицей теперь оговорена комментом. [frontend/src/features/daily-grid/grammar.properties.test.ts]
+- [x] [Review][Defer] **Фикс-сид навсегда = замороженные N примеров (blind MINOR):** канон проекта (урок tz-флейка — гейт не мигает) осознанно меняет «случайность» на воспроизводимость; рандом-сид с логированием в ночном full-прогоне — вопрос CI-инфраструктуры (её нет до E12) — deferred [frontend/src/features/daily-grid/grammar.properties.test.ts:19]
+- [x] [Review][Defer] **Дрейф чекбокса Task 2 (auditor LOW):** заявленные `stateArb`/`positionArb(bounds)` реализованы слитно в `startArb` — эквивалентно и раскрыто в Notes, чекбокс аннотирован; систематический паттерн (8-е наблюдение) — отслеживается ретроспективой эпика — deferred/зафиксировано [_bmad-output/implementation-artifacts/9-3-property-based-грамматики.md]
+- [x] [Review][Dismiss ×4] `columnKinds.length < cols` не генерируется (fallback `?? 'readonly'` = безопасное направление, dismissed ещё ревью 9.2); инв.3 «сигнал, не значение» (санкционировано Ловушкой №2 спеки, значение тестирует грид 9.4 — Esc-тест ревью 9.4); File List без sprint-status.yaml (процессная конвенция, консистентно с 9.4); ассерты `nextState∈CELL_STATES`/`ACTIONS.has` «тавтологичны под strict TS» (ловят unsafe cast и рантайм-мусор не-TS вызова — осознанная стоимость нуля).
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -120,6 +137,6 @@ claude-opus-4-8 (Opus 4.8) — create-story + dev-story (property-based)
 
 ### File List
 
-- `frontend/src/features/daily-grid/grammar.properties.test.ts` (создан — 2 property-свойства fast-check)
-- `frontend/package.json` (изменён — +fast-check в devDependencies)
+- `frontend/src/features/daily-grid/grammar.properties.test.ts` (создан — 2 property-свойства fast-check; ревью 2026-07-14 — усилен до 4 тестов: эффект-классы в свёртке, OOB-самоисцеление, кириллица, toStrictEqual, чистота, компайл-привязки, мета-синк генератора)
+- `frontend/package.json` (изменён — +fast-check в devDependencies; ревью — +скрипт test:property-full)
 - `frontend/package-lock.json` (изменён — fast-check + транзитивные)

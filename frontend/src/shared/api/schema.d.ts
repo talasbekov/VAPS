@@ -925,20 +925,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
-         *     + GET period (read-only page-per-date, no number). Thin views over the
-         *     existing issue/derive services; errors flow through the unified handler.
-         *     «На завтра»-блокировка и override — Story 6.10b.
-         */
-        get: operations["operations_expense_reports_retrieve"];
+        /** @description Метаданные выпущенного расхода за дату (point lookup). Будущая дата НЕ блокируется намеренно: легально выпущенный через override «на завтра»-документ (6.10b) должен читаться. 404 не выпущен / нет подразделения. */
+        get: operations["operations_expense_reports_list"];
         put?: never;
-        /**
-         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
-         *     + GET period (read-only page-per-date, no number). Thin views over the
-         *     existing issue/derive services; errors flow through the unified handler.
-         *     «На завтра»-блокировка и override — Story 6.10b.
-         */
+        /** @description Выпуск суточного расхода за дату (нумерованный юр-артефакт). 403 чужой scope; 404 нет подразделения; 409 нет сдачи / уже выпущен; 422 дата до начала данных / несходимость / TOMORROW_BLOCKED. */
         post: operations["operations_expense_reports_create"];
         delete?: never;
         options?: never;
@@ -955,7 +945,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Story 6.10b — legally lift the «на завтра» block for a future date. */
+        /** @description Легальный обход блокировки «на завтра» (право daily_report.override_block; day-level — без division-scope, обход действует на весь день). 400 не-будущая дата / дальше +31д / пустая причина; 409 обход на дату уже существует. */
         post: operations["operations_expense_reports_override_tomorrow_block_create"];
         delete?: never;
         options?: never;
@@ -970,12 +960,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * @description Story 6.10a — расход HTTP surface: POST issue (single date) + GET by date
-         *     + GET period (read-only page-per-date, no number). Thin views over the
-         *     existing issue/derive services; errors flow through the unified handler.
-         *     «На завтра»-блокировка и override — Story 6.10b.
-         */
+        /** @description Read-only расход за период (страница на дату, без выпуска). 400 инверсия/длина>62/будущее; 404 нет подразделения; 422 дата до начала данных. */
         get: operations["operations_expense_reports_period_retrieve"];
         put?: never;
         post?: never;
@@ -1059,6 +1044,23 @@ export interface paths {
         get: operations["operations_roles_retrieve"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/statuses/bulk/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Массовое создание статусов-отклонений одним вызовом (FR-12). 403 нет права status.manage / сотрудник вне scope оператора; 400 структурная ошибка payload (дубль/пропуск ключа/пустой/тип/cap); 409 soft-пересечение (details.rows[]); 422 hard-пересечение / интервал / уволен (details.rows[]). Успех → {created: N}. */
+        post: operations["operations_statuses_bulk_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1168,6 +1170,31 @@ export interface components {
         };
         /** @enum {unknown} */
         BlankEnum: "";
+        /** @description Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC. */
+        BulkStatusCreateRequest: {
+            /** Format: date */
+            business_date: string;
+            rows: components["schemas"]["BulkStatusCreateRowRequest"][];
+        };
+        BulkStatusCreateResponse: {
+            created: number;
+        };
+        /**
+         * @description Одна строка-отклонение. 4 обязательных ключа зеркалят
+         *     ``_REQUIRED_ROW_KEYS`` сервиса 3.8 (отсутствие → 400 ДО сервиса).
+         */
+        BulkStatusCreateRowRequest: {
+            /** Format: uuid */
+            employee_id: string;
+            status_type_code: string;
+            /** Format: date */
+            date_start: string;
+            /** Format: date */
+            date_end: string;
+            comment?: string;
+            document_basis?: string;
+            source_ref?: string;
+        };
         Division: {
             /** Format: uuid */
             readonly id: string;
@@ -1263,12 +1290,51 @@ export interface components {
          * @enum {string}
          */
         EmploymentStatusEnum: "WORKING" | "FIRED" | "ARCHIVED";
+        ExpensePeriodResponse: {
+            /** @description Страница-на-дату: {business_date, totals, rows} — read-only derive, без номера документа. */
+            pages: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * @description POST-body form (6.10a) — the two kwargs forwarded to
+         *     ``issue_expense_document``: a flat UUID division ref (ARCH-003) and a
+         *     YYYY-MM-DD business date. The actor NEVER comes from the payload
+         *     (ARCH-SEC-030); extra fields are ignored.
+         */
+        ExpenseReportIssueRequest: {
+            /** Format: uuid */
+            division_id: string;
+            /** Format: date */
+            business_date: string;
+        };
         /**
          * @description * `M` - Мужской
          *     * `F` - Женский
          * @enum {string}
          */
         GenderEnum: "M" | "F";
+        /**
+         * @description Issued расход projection (6.10a) — flat metadata + the attachment ref and
+         *     sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here.
+         */
+        IssuedExpenseReport: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly doc_type: string;
+            readonly number: number;
+            readonly year: number;
+            /** Format: date */
+            readonly business_date: string;
+            /** Format: uuid */
+            readonly division_id: string;
+            readonly submission_id: number;
+            readonly submission_version: number;
+            readonly status: components["schemas"]["StatusEnum"];
+            /** Format: uuid */
+            readonly attachment_id: string;
+            readonly sha256: string;
+        };
         /**
          * @description * `SUBMISSION_LAGGING` - Отставание по сдаче
          * @enum {string}
@@ -1562,6 +1628,28 @@ export interface components {
             valid_from: string;
             /** Format: date-time */
             valid_to?: string | null;
+        };
+        /**
+         * @description * `ISSUED` - Выпущен
+         *     * `SUPERSEDED` - Заменён
+         * @enum {string}
+         */
+        StatusEnum: "ISSUED" | "SUPERSEDED";
+        /**
+         * @description POST-body form (6.10b) — the date whose «на завтра» block is legally
+         *     lifted and the mandatory reason. DRF defaults reject a missing/blank reason
+         *     at the boundary (400); the actor never comes from the payload.
+         */
+        TomorrowBlockOverrideRequest: {
+            /** Format: date */
+            business_date: string;
+            reason: string;
+        };
+        TomorrowBlockOverrideResponse: {
+            /** Format: date */
+            business_date: string;
+            overridden_by: string;
+            reason: string;
         };
     };
     responses: never;
@@ -2449,21 +2537,25 @@ export interface operations {
             };
         };
     };
-    operations_expense_reports_retrieve: {
+    operations_expense_reports_list: {
         parameters: {
-            query?: never;
+            query: {
+                business_date: string;
+                division_id: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IssuedExpenseReport"];
+                };
             };
         };
     };
@@ -2474,14 +2566,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseReportIssueRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExpenseReportIssueRequest"];
+                "multipart/form-data": components["schemas"]["ExpenseReportIssueRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IssuedExpenseReport"];
+                };
             };
         };
     };
@@ -2492,32 +2591,44 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TomorrowBlockOverrideRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TomorrowBlockOverrideRequest"];
+                "multipart/form-data": components["schemas"]["TomorrowBlockOverrideRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TomorrowBlockOverrideResponse"];
+                };
             };
         };
     };
     operations_expense_reports_period_retrieve: {
         parameters: {
-            query?: never;
+            query: {
+                date_from: string;
+                date_to: string;
+                division_id: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpensePeriodResponse"];
+                };
             };
         };
     };
@@ -2628,6 +2739,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Role"];
+                };
+            };
+        };
+    };
+    operations_statuses_bulk_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkStatusCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BulkStatusCreateRequest"];
+                "multipart/form-data": components["schemas"]["BulkStatusCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkStatusCreateResponse"];
                 };
             };
         };

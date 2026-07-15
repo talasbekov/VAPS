@@ -55,3 +55,10 @@ export type ValueState = Record<string, RowValue>
 export type ValueAction =
   | { type: 'SET_STATUS'; id: string; statusCode: string }
   | { type: 'SET_PERIOD'; id: string; period: string }
+  /**
+   * Ресинк при смене rows-пропа (refetch/фильтр — источник 9.7/10.2):
+   * нетронутые оператором строки берут новый initial, правки сохраняются,
+   * исчезнувшие id отбрасываются. Сравнение «тронуто ли» — против initials
+   * ПРЕДЫДУЩЕГО состава rows.
+   */
+  | { type: 'RESYNC'; initials: ValueState; prevInitials: ValueState }

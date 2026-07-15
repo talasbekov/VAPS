@@ -3,7 +3,7 @@ from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Min, Q
 
 from apps.core.models import (
     Division,
@@ -125,6 +125,21 @@ class CoreDivisionTreeSelector:
         if division_ids is not None:
             qs = qs.filter(id__in=division_ids)
         return dict(qs.values_list("id", "name"))
+
+    @staticmethod
+    def active_ids(division_ids) -> set:
+        """Subset of the given ids that exist AND are active.
+
+        The laggard filter of the tomorrow gate (6.10b review D1 2026-07-13):
+        a stale (deleted) or deactivated required-id must not hold the day
+        blocked — nobody can submit for it. Cross-context callers read this
+        instead of importing core.models (ARCH-003/004).
+        """
+        return set(
+            Division.objects.filter(
+                id__in=list(division_ids), is_active=True
+            ).values_list("id", flat=True)
+        )
 
     @staticmethod
     def exists(division_id) -> bool:
@@ -303,6 +318,17 @@ class HistoricalEmployeeSelector:
         return Employee.objects.values_list("division_id", flat=True).get(
             id=employee_id
         )
+
+    @staticmethod
+    def earliest_history_start():
+        """Earliest division-history start as a LOCAL business date — the
+        history half of the report data horizon (6.10a review D1 2026-07-13).
+        None while the pilot has zero history rows (E7 backfills intervals).
+        """
+        earliest = EmployeeDivisionHistory.objects.aggregate(m=Min("starts_at"))["m"]
+        if earliest is None:
+            return None
+        return earliest.astimezone(ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)).date()
 
     @classmethod
     def roster_on(cls, business_date, division_ids=None) -> dict:

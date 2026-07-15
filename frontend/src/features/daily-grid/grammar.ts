@@ -17,6 +17,7 @@ import type {
 } from './grammar.types'
 
 function clamp(value: number, max: number): number {
+  if (max < 0) return 0 // вырожденный грид (rows/cols = 0): держимся нуля
   if (value < 0) return 0
   if (value > max) return max
   return value
@@ -49,23 +50,34 @@ function stay(
 /**
  * Единственный публичный вход грамматики: один шаг конечного автомата.
  * Чистая функция — тот же вход даёт тот же выход, без сайд-эффектов.
+ *
+ * Входная позиция вне bounds (грид сжался после refetch/фильтра, фокус
+ * устарел) клампится ДО шага — ни одна ветка, включая стационарные
+ * (NOOP/Esc/CONFLICT), не эхо-возвращает невалидную позицию.
  */
 export function transition(input: TransitionInput): TransitionResult {
-  const { state, position } = input
+  const { state, bounds } = input
+  const position: Position = {
+    row: clamp(input.position.row, bounds.rows - 1),
+    col: clamp(input.position.col, bounds.cols - 1),
+  }
+  const healed: TransitionInput = { ...input, position }
 
   switch (state) {
     case 'NAVIGATE':
-      return navigate(input)
+      return navigate(healed)
     case 'EDIT':
-      return edit(input)
+      return edit(healed)
     case 'PERIOD_EDIT':
-      return periodEdit(input)
+      return periodEdit(healed)
     case 'CONFLICT':
-      return conflict(input)
+      return conflict(healed)
     default: {
       // Исчерпывающая проверка: новый CellState обязан завести ветку.
+      // В рантайме (не-TS вызов) — честный NOOP, а не мусор в результате.
       const never: never = state
-      return { action: 'NOOP', nextState: never, nextPosition: position }
+      void never
+      return { action: 'NOOP', nextState: state, nextPosition: position }
     }
   }
 }
@@ -130,7 +142,8 @@ function navigate({
       return stay('NAVIGATE', position, 'NOOP')
     default: {
       const never: never = key
-      return stay('NAVIGATE', position, never)
+      void never
+      return stay('NAVIGATE', position, 'NOOP')
     }
   }
 }
@@ -176,7 +189,8 @@ function edit({ position, bounds, key }: TransitionInput): TransitionResult {
       return stay('EDIT', position, 'NOOP')
     default: {
       const never: never = key
-      return stay('EDIT', position, never)
+      void never
+      return stay('EDIT', position, 'NOOP')
     }
   }
 }
@@ -219,7 +233,8 @@ function periodEdit({
       return stay('PERIOD_EDIT', position, 'NOOP')
     default: {
       const never: never = key
-      return stay('PERIOD_EDIT', position, never)
+      void never
+      return stay('PERIOD_EDIT', position, 'NOOP')
     }
   }
 }
@@ -251,7 +266,8 @@ function conflict({ position, key }: TransitionInput): TransitionResult {
       return stay('CONFLICT', position, 'NOOP')
     default: {
       const never: never = key
-      return stay('CONFLICT', position, never)
+      void never
+      return stay('CONFLICT', position, 'NOOP')
     }
   }
 }

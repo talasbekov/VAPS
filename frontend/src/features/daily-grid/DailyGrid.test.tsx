@@ -100,6 +100,107 @@ describe('DailyGrid — счётчик и отправка', () => {
   })
 })
 
+describe('DailyGrid — type-ahead seed (ревью 9.4: AC-3, §3.3 инвариант 2)', () => {
+  it('символ в NAVIGATE → EDIT открыт И seed применён (прыжок по префиксу label)', () => {
+    render(
+      <DailyGrid
+        rows={makeRows(3)}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    const grid = screen.getByRole('grid')
+    fireEvent.keyDown(grid, { key: 'Н' }) // «На больничном»
+    const select = screen.getByLabelText('Статус') as HTMLSelectElement
+    expect(select.value).toBe('SICK') // нажатие НЕ потеряно
+  })
+
+  it('символ внутри EDIT фильтрует дальше и НЕ перезатирает pre-edit: Esc возвращает исходное', () => {
+    render(
+      <DailyGrid
+        rows={makeRows(3)}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    const grid = screen.getByRole('grid')
+    fireEvent.keyDown(grid, { key: 'Enter' }) // OPEN_EDIT, снапшот = IN_SERVICE
+    fireEvent.keyDown(grid, { key: 'Н' }) // TYPE_AHEAD в EDIT → SICK
+    let select = screen.getByLabelText('Статус') as HTMLSelectElement
+    expect(select.value).toBe('SICK')
+    fireEvent.keyDown(grid, { key: 'В' }) // ещё прыжок → «В строю»/«В отпуске»
+    fireEvent.keyDown(grid, { key: 'Escape' }) // RESTORE_PRE_EDIT
+    fireEvent.keyDown(grid, { key: 'Enter' }) // снова открыть
+    select = screen.getByLabelText('Статус') as HTMLSelectElement
+    expect(select.value).toBe('IN_SERVICE') // исходное, не промежуточное
+    expect(screen.getByTestId('changed-counter').textContent).toContain(
+      'Изменено 0 из 3',
+    )
+  })
+})
+
+describe('DailyGrid — смена rows-пропа (ревью 9.4: самоисцеление)', () => {
+  it('сжатие rows при устаревшем фокусе → COMMIT не падает, фокус клампится', () => {
+    const { rerender } = render(
+      <DailyGrid
+        rows={makeRows(10)}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    const grid = screen.getByRole('grid')
+    for (let i = 0; i < 7; i++) fireEvent.keyDown(grid, { key: 'ArrowDown' })
+    fireEvent.keyDown(grid, { key: 'Enter' }) // EDIT на строке 7
+    rerender(
+      <DailyGrid
+        rows={makeRows(3)}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    // Enter в EDIT → COMMIT по устаревшей позиции: не должен кидать TypeError
+    expect(() => fireEvent.keyDown(grid, { key: 'Enter' })).not.toThrow()
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
+  it('новый состав rows → новые id рендерятся и редактируемы, правки живут, нетронутые строки берут новый initial', () => {
+    const onSubmit = vi.fn()
+    const before: EmployeeRow[] = [
+      { id: 'a', fullName: 'А', statusCode: 'IN_SERVICE' },
+      { id: 'b', fullName: 'Б', statusCode: 'IN_SERVICE' },
+    ]
+    const { rerender } = render(
+      <DailyGrid rows={before} statusOptions={OPTIONS} onSubmit={onSubmit} />,
+    )
+    const grid = screen.getByRole('grid')
+    // правка строки a: IN_SERVICE → VACATION, Enter = COMMIT
+    fireEvent.keyDown(grid, { key: 'Enter' })
+    fireEvent.change(screen.getByLabelText('Статус'), {
+      target: { value: 'VACATION' },
+    })
+    fireEvent.keyDown(grid, { key: 'Enter' })
+    // refetch: у b сервер сменил статус, появился новый c
+    const after: EmployeeRow[] = [
+      { id: 'a', fullName: 'А', statusCode: 'IN_SERVICE' },
+      { id: 'b', fullName: 'Б', statusCode: 'SICK' },
+      { id: 'c', fullName: 'В', statusCode: 'IN_SERVICE' },
+    ]
+    expect(() =>
+      rerender(
+        <DailyGrid rows={after} statusOptions={OPTIONS} onSubmit={onSubmit} />,
+      ),
+    ).not.toThrow() // новый id не роняет рендер
+    // правка a пережила ресинк; b взял новый initial (не ложно-dirty)
+    expect(screen.getByTestId('changed-counter').textContent).toContain(
+      'Изменено 1 из 3',
+    )
+    fireEvent.click(screen.getByText('Сдать день'))
+    expect(onSubmit.mock.calls[0][0]).toEqual([
+      { id: 'a', statusCode: 'VACATION', period: '' },
+    ])
+  })
+})
+
 describe('DailyGrid — перф-инвариант (БЛОКИРУЮЩИЙ)', () => {
   it('одно нажатие клавиши → РОВНО 1 React-коммит (Profiler)', () => {
     let commits = 0

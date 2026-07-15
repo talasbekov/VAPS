@@ -25,7 +25,10 @@ from apps.core.models import (
 from apps.core.selectors import local_midnight
 from apps.operations.rbac.models import UserRole
 from apps.operations.statuses.models import EmployeeStatus
-from apps.operations.submissions.models import SubmissionControlSettings
+from apps.operations.submissions.models import (
+    SubmissionControlSettings,
+    TomorrowBlockOverride,
+)
 from apps.operations.submissions.services import submit_day
 
 pytestmark = pytest.mark.django_db
@@ -165,7 +168,10 @@ def test_issue_past_date_never_blocked(org_type, storage):
     assert resp.data["error_code"] == "REPORT_NOT_READY_FOR_DATE"
 
 
-def test_stale_laggard_is_filtered_out(org_type, storage):
+def test_stale_only_laggards_lift_the_block(org_type, storage):
+    # Review D1 2026-07-13: the filter runs BEFORE the block decision — a
+    # ghost-only required list must NOT hold an unliftable block with
+    # laggards=[]; the request falls through to the ordinary not-ready 409.
     org, dtp = org_type
     div = _division(org, dtp, "TB-D")
     _populate(div)
@@ -173,28 +179,78 @@ def test_stale_laggard_is_filtered_out(org_type, storage):
     _grant("orgd", div)
     with clock.override(TODAY):
         resp = _issue(_client("orgd"), div, TOMORROW)
+    assert resp.status_code == 409
+    assert resp.data["error_code"] == "REPORT_NOT_READY_FOR_DATE"
+
+
+def test_inactive_required_division_is_filtered(org_type, storage):
+    # AC-5: «неактивного» — a deactivated division must not block either.
+    org, dtp = org_type
+    div = _division(org, dtp, "TB-D2")
+    _populate(div)
+    inactive = _division(org, dtp, "TB-D3")
+    inactive.is_active = False
+    inactive.save(update_fields=["is_active"])
+    _require(inactive.id)
+    _grant("orgd", div)
+    with clock.override(TODAY):
+        resp = _issue(_client("orgd"), div, TOMORROW)
+    assert resp.status_code == 409
+    assert resp.data["error_code"] == "REPORT_NOT_READY_FOR_DATE"
+
+
+def test_mixed_stale_and_live_laggards(org_type, storage):
+    # A live laggard still blocks; only the ghost is filtered from the list.
+    org, dtp = org_type
+    div = _division(org, dtp, "TB-D4")
+    live = _division(org, dtp, "TB-D5")
+    _populate(div)
+    _require(uuid.uuid4(), live.id)
+    _grant("orgd", div)
+    with clock.override(TODAY):
+        resp = _issue(_client("orgd"), div, TOMORROW)
     assert resp.status_code == 422
     assert resp.data["error_code"] == "TOMORROW_BLOCKED"
-    assert resp.data["details"]["laggards"] == []
+    assert resp.data["details"]["laggards"] == [str(live.id)]
+
+
+def test_issue_today_not_blocked(org_type, storage):
+    # The «== today» boundary of the gate's `<=` (review pin): today is never
+    # consulted for a tomorrow-block — falls through to the plain 409.
+    org, dtp = org_type
+    div = _division(org, dtp, "TB-D6")
+    _populate(div)
+    _require(div.id)  # required and NOT submitted — still no tomorrow-block
+    _grant("orgd", div)
+    with clock.override(TODAY):
+        resp = _issue(_client("orgd"), div, TODAY)
+    assert resp.status_code == 409
+    assert resp.data["error_code"] == "REPORT_NOT_READY_FOR_DATE"
 
 
 # --- override endpoint ------------------------------------------------------
 
 
-def test_override_lifts_block(org_type, storage):
+def test_override_lifts_block_and_issue_succeeds(org_type, storage):
+    # Review 2026-07-13: the Task-5 claim «выпуск проходит» must end in a REAL
+    # 201 — two-division setup: A issues (and submitted), B is the laggard.
     org, dtp = org_type
-    div = _division(org, dtp, "TB-E")
-    _populate(div)
-    _require(div.id)
-    _grant("orgd", div)
+    issuing = _division(org, dtp, "TB-E")
+    laggard = _division(org, dtp, "TB-E2")
+    _populate(issuing)
+    _require(laggard.id)
+    _grant("orgd", issuing)
     client = _client("orgd")
     with clock.override(TODAY):
-        assert _issue(client, div, TOMORROW).status_code == 422
+        submit_day(division_id=issuing.id, business_date=TOMORROW, actor="op-1")
+        assert _issue(client, issuing, TOMORROW).status_code == 422
         assert _override(client, TOMORROW).status_code == 201
-        after = _issue(client, div, TOMORROW)
-    # Block lifted → no longer TOMORROW_BLOCKED (now the plain not-ready 409).
-    assert after.status_code == 409
-    assert after.data["error_code"] == "REPORT_NOT_READY_FOR_DATE"
+        after = _issue(client, issuing, TOMORROW)
+    assert after.status_code == 201, after.content
+    # The override is a durable accountability record (review pin).
+    record = TomorrowBlockOverride.objects.get(business_date=TOMORROW)
+    assert record.overridden_by == "orgd"
+    assert record.reason == "приказ №5"
 
 
 def test_override_without_permission_403(org_type, storage):
@@ -215,7 +271,9 @@ def test_override_past_date_400(org_type, storage):
     assert resp.data["error_code"] == "VALIDATION_ERROR"
 
 
-def test_override_duplicate_400(org_type, storage):
+def test_override_duplicate_409(org_type, storage):
+    # Review D2 2026-07-13 (Д2-дефолт): a duplicate is a STATE conflict (409,
+    # distinguished via ValueError.__cause__ IntegrityError), not a form error.
     org, dtp = org_type
     div = _division(org, dtp, "TB-H")
     _grant("orgd", div)
@@ -223,8 +281,49 @@ def test_override_duplicate_400(org_type, storage):
     with clock.override(TODAY):
         assert _override(client, TOMORROW).status_code == 201
         dup = _override(client, TOMORROW)
-    assert dup.status_code == 400
-    assert dup.data["error_code"] == "VALIDATION_ERROR"
+    assert dup.status_code == 409
+    assert dup.data["error_code"] == "TOMORROW_BLOCK_ALREADY_OVERRIDDEN"
+
+
+def test_override_today_400(org_type, storage):
+    # The «== today» boundary of the override validation (review pin).
+    org, dtp = org_type
+    div = _division(org, dtp, "TB-H2")
+    _grant("orgd", div)
+    with clock.override(TODAY):
+        resp = _override(_client("orgd"), TODAY)
+    assert resp.status_code == 400
+    assert resp.data["error_code"] == "VALIDATION_ERROR"
+
+
+def test_override_horizon_boundary_31_ok_32_400(org_type, storage):
+    # Review Д3: irrevocable record → cap at +31 days (a year-off typo must
+    # not silently pre-lift a future block).
+    org, dtp = org_type
+    div = _division(org, dtp, "TB-H3")
+    _grant("orgd", div)
+    client = _client("orgd")
+    with clock.override(TODAY):
+        at_cap = _override(client, TODAY + timedelta(days=31))
+        beyond = _override(client, TODAY + timedelta(days=32))
+    assert at_cap.status_code == 201, at_cap.content
+    assert beyond.status_code == 400
+    assert beyond.data["error_code"] == "VALIDATION_ERROR"
+    assert beyond.data["details"]["max_days_ahead"] == 31
+
+
+def test_override_missing_date_400(org_type, storage):
+    # «пусто» из Task 5: absent business_date dies at the serializer as 400.
+    org, dtp = org_type
+    div = _division(org, dtp, "TB-H4")
+    _grant("orgd", div)
+    with clock.override(TODAY):
+        resp = _client("orgd").post(
+            reverse("ops-expense-report-override-tomorrow-block"),
+            {"reason": "приказ №5"},
+            format="json",
+        )
+    assert resp.status_code == 400
 
 
 def test_override_blank_reason_400(org_type, storage):
