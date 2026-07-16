@@ -169,6 +169,12 @@ MATRIX = {
         {"get": "daily_report.generate", "post": "daily_report.generate"}
     ),
     "ops-expense-report-period": _MethodGate({"get": "daily_report.generate"}),
+    # журнал выпусков расхода (story 10.5, GET /history/): то же право
+    # daily_report.generate (Д2 6.10a: руководство читает то, что выпускает);
+    # scope — сужение видимости visible_division_ids + ensure_division_scope
+    # при ?division_id, матрицей не проверяется (GET без параметров у
+    # держателя = 200 журнала видимого = ALLOW по канону).
+    "ops-expense-report-history": _MethodGate({"get": "daily_report.generate"}),
     # bulk-создание статусов (story 10.1a, POST /statuses/bulk/). Грубый гейт
     # RequirePermissionMixin {"bulk": status.manage}; per-строчный scope
     # (allowed_division_ids) энфорсит сервис 3.8, матрицей не проверяется

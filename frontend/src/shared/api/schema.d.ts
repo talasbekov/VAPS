@@ -955,6 +955,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/expense-reports/history/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Журнал выпусков расхода (10.5): видимые под daily_report.generate подразделения (источник селекта экрана) + ВСЕ выпуски (ISSUED и SUPERSEDED) по выбранному подразделению или по всем видимым, новые сверху (-year, -number); строка несёт цепочку «взамен» (supersedes {id, number, year} | null). Пагинация limit/offset (default 50, max 200) — на issues; дата журнал НЕ фильтрует. 400 мусорный division_id; 403 чужое подразделение (ДО существования); 404 фантомный UUID у глобального гранта; пустая видимость → 200 пустые списки. */
+        get: operations["operations_expense_reports_history_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/expense-reports/override-tomorrow-block/": {
         parameters: {
             query?: never;
@@ -1402,6 +1419,23 @@ export interface components {
          * @enum {string}
          */
         EventEnum: "CONFIRMED_NO_CHANGES" | "CHANGED" | "AMENDED";
+        /**
+         * @description Видимое под daily_report.generate подразделение — источник селекта
+         *     экрана 10.5; имя из core-селектора divisions_map (ARCH-003).
+         */
+        ExpenseHistoryDivision: {
+            /** Format: uuid */
+            division_id: string;
+            name: string;
+        };
+        /**
+         * @description 200-конверт history (10.5): видимые подразделения (селект экрана) +
+         *     страница журнала (limit/offset, канон DailySubmissionPagination).
+         */
+        ExpenseHistoryResponse: {
+            divisions: components["schemas"]["ExpenseHistoryDivision"][];
+            issues: components["schemas"]["IssuedExpenseReportHistory"][];
+        };
         ExpensePeriodResponse: {
             /** @description Страница-на-дату: {business_date, totals, rows} — read-only derive, без номера документа. */
             pages: {
@@ -1490,6 +1524,42 @@ export interface components {
             /** Format: uuid */
             readonly attachment_id: string;
             readonly sha256: string;
+        };
+        /**
+         * @description Строка журнала выпусков (10.5): поля 6.10a + reason (непуст у
+         *     выпусков-замен) + created_at + вложенный supersedes|null (цепочка
+         *     «взамен» прослеживается построчно, AC-4/AC-10).
+         */
+        IssuedExpenseReportHistory: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly doc_type: string;
+            readonly number: number;
+            readonly year: number;
+            /** Format: date */
+            readonly business_date: string;
+            /** Format: uuid */
+            readonly division_id: string;
+            readonly submission_id: number;
+            readonly submission_version: number;
+            readonly status: components["schemas"]["StatusEnum"];
+            /** Format: uuid */
+            readonly attachment_id: string;
+            readonly sha256: string;
+            readonly reason: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            readonly supersedes: components["schemas"]["IssuedExpenseReportSupersedes"] | null;
+        };
+        /**
+         * @description Ссылка «взамен исх.№» (10.5): ровно 3 поля прежнего выпуска — журнал
+         *     рендерит подпись без второго запроса (FK supersedes, select_related).
+         */
+        IssuedExpenseReportSupersedes: {
+            /** Format: uuid */
+            id: string;
+            number: number;
+            year: number;
         };
         /**
          * @description * `SUBMISSION_LAGGING` - Отставание по сдаче
@@ -2809,6 +2879,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IssuedExpenseReport"];
+                };
+            };
+        };
+    };
+    operations_expense_reports_history_retrieve: {
+        parameters: {
+            query?: {
+                division_id?: string;
+                /** @description Страница issues, default 50, max 200. */
+                limit?: number;
+                /** @description Смещение страницы issues. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseHistoryResponse"];
                 };
             };
         };

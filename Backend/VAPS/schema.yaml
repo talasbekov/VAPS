@@ -1425,6 +1425,41 @@ paths:
               schema:
                 $ref: '#/components/schemas/IssuedExpenseReport'
           description: ''
+  /api/operations/expense-reports/history/:
+    get:
+      operationId: operations_expense_reports_history_retrieve
+      description: 'Журнал выпусков расхода (10.5): видимые под daily_report.generate
+        подразделения (источник селекта экрана) + ВСЕ выпуски (ISSUED и SUPERSEDED)
+        по выбранному подразделению или по всем видимым, новые сверху (-year, -number);
+        строка несёт цепочку «взамен» (supersedes {id, number, year} | null). Пагинация
+        limit/offset (default 50, max 200) — на issues; дата журнал НЕ фильтрует.
+        400 мусорный division_id; 403 чужое подразделение (ДО существования); 404
+        фантомный UUID у глобального гранта; пустая видимость → 200 пустые списки.'
+      parameters:
+      - in: query
+        name: division_id
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Страница issues, default 50, max 200.
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Смещение страницы issues.
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseHistoryResponse'
+          description: ''
   /api/operations/expense-reports/override-tomorrow-block/:
     post:
       operationId: operations_expense_reports_override_tomorrow_block_create
@@ -2279,6 +2314,37 @@ components:
         * `CONFIRMED_NO_CHANGES` - Подтверждено без изменений
         * `CHANGED` - Изменено
         * `AMENDED` - Исправлено
+    ExpenseHistoryDivision:
+      type: object
+      description: |-
+        Видимое под daily_report.generate подразделение — источник селекта
+        экрана 10.5; имя из core-селектора divisions_map (ARCH-003).
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - division_id
+      - name
+    ExpenseHistoryResponse:
+      type: object
+      description: |-
+        200-конверт history (10.5): видимые подразделения (селект экрана) +
+        страница журнала (limit/offset, канон DailySubmissionPagination).
+      properties:
+        divisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseHistoryDivision'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssuedExpenseReportHistory'
+      required:
+      - divisions
+      - issues
     ExpensePeriodResponse:
       type: object
       properties:
@@ -2452,6 +2518,95 @@ components:
       - status
       - submission_id
       - submission_version
+      - year
+    IssuedExpenseReportHistory:
+      type: object
+      description: |-
+        Строка журнала выпусков (10.5): поля 6.10a + reason (непуст у
+        выпусков-замен) + created_at + вложенный supersedes|null (цепочка
+        «взамен» прослеживается построчно, AC-4/AC-10).
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        doc_type:
+          type: string
+          readOnly: true
+        number:
+          type: integer
+          readOnly: true
+        year:
+          type: integer
+          readOnly: true
+        business_date:
+          type: string
+          format: date
+          readOnly: true
+        division_id:
+          type: string
+          format: uuid
+          readOnly: true
+        submission_id:
+          type: integer
+          readOnly: true
+        submission_version:
+          type: integer
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusEnum'
+          readOnly: true
+        attachment_id:
+          type: string
+          format: uuid
+          readOnly: true
+        sha256:
+          type: string
+          readOnly: true
+        reason:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        supersedes:
+          allOf:
+          - $ref: '#/components/schemas/IssuedExpenseReportSupersedes'
+          readOnly: true
+          nullable: true
+      required:
+      - attachment_id
+      - business_date
+      - created_at
+      - division_id
+      - doc_type
+      - id
+      - number
+      - reason
+      - sha256
+      - status
+      - submission_id
+      - submission_version
+      - supersedes
+      - year
+    IssuedExpenseReportSupersedes:
+      type: object
+      description: |-
+        Ссылка «взамен исх.№» (10.5): ровно 3 поля прежнего выпуска — журнал
+        рендерит подпись без второго запроса (FK supersedes, select_related).
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: integer
+        year:
+          type: integer
+      required:
+      - id
+      - number
       - year
     KindEnum:
       enum:

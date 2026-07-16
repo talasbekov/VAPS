@@ -50,6 +50,24 @@ class IssuedDocumentSelector:
             status=IssuedDocument.Status.ISSUED,
         ).first()
 
+    @staticmethod
+    def history_for(*, doc_type, division_ids):
+        """Журнал выпусков (Story 10.5): ВСЕ выпуски (ISSUED и SUPERSEDED)
+        данного типа по подразделениям ``division_ids``, новые сверху
+        (``-year, -number`` — номер монотонен внутри года, порядок
+        детерминирован). Потребитель — history-роут ExpenseReportViewSet;
+        NFR-инвариант: ОДИН запрос с ``select_related("attachment",
+        "supersedes")`` (sha256 и цепочка «взамен» без per-row обращений) —
+        никогда не звать в цикле по подразделениям.
+        """
+        return (
+            IssuedDocument.objects.filter(
+                doc_type=doc_type, division_id__in=division_ids
+            )
+            .select_related("attachment", "supersedes")
+            .order_by("-year", "-number")
+        )
+
 
 def lock_sequence(*, doc_type, year):
     """Row-lock строки счётчика (doc_type, year) для выдачи номера (Story 6.2).

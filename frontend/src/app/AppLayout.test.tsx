@@ -235,6 +235,39 @@ describe('Разводка маршрутов: RequirePermission на данны
     ).not.toBeInTheDocument()
   })
 
+  it('прямой заход на /reports БЕЗ daily_report.generate → «Доступ запрещён»', async () => {
+    usePermissionsResponse({ permissions: ['status.view'] })
+    renderApp(ROUTES.reports)
+
+    expect(await screen.findByText(ACCESS_DENIED_TEXT)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Расход' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('с правом → реальный экран «Расход» (10.5: заглушка заменена страницей)', async () => {
+    usePermissionsResponse({ permissions: ['daily_report.generate'] })
+    // Экран 10.5 грузит history на маунте — минимальный валидный ответ
+    // (onUnhandledRequest: 'error' иначе уронит тест).
+    server.use(
+      http.get('*/api/operations/expense-reports/history/', () =>
+        HttpResponse.json({ divisions: [], issues: [] }),
+      ),
+    )
+    renderApp(ROUTES.reports)
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Расход' }),
+    ).toBeInTheDocument()
+    // Реальный экран, не заглушка: есть пресет «На завтра», текста заглушки нет.
+    expect(
+      screen.getByRole('button', { name: 'На завтра' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('Экран появится в E9–E10'),
+    ).not.toBeInTheDocument()
+  })
+
   it('/ (Дашборд «Расход») за status.view: заглушка рендерится в <main> каркаса', async () => {
     usePermissionsResponse(myPermissionsFixture)
     renderApp()

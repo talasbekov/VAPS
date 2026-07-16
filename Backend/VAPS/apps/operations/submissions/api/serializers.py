@@ -222,3 +222,57 @@ class IssuedExpenseReportSerializer(serializers.ModelSerializer):
             "sha256",
         ]
         read_only_fields = fields
+
+
+class ExpenseHistoryFilterSerializer(serializers.Serializer):
+    """GET history query form (10.5) — опциональное подразделение сужает
+    журнал; limit/offset читает пагинатор. Мусор умирает здесь 400
+    VALIDATION_ERROR (канон boundary 5.8c), не в ORM."""
+
+    division_id = serializers.UUIDField(required=False)
+
+
+class ExpenseHistoryDivisionSerializer(serializers.Serializer):
+    """Видимое под daily_report.generate подразделение — источник селекта
+    экрана 10.5; имя из core-селектора divisions_map (ARCH-003)."""
+
+    division_id = serializers.UUIDField()
+    name = serializers.CharField()
+
+
+class IssuedExpenseReportSupersedesSerializer(serializers.Serializer):
+    """Ссылка «взамен исх.№» (10.5): ровно 3 поля прежнего выпуска — журнал
+    рендерит подпись без второго запроса (FK supersedes, select_related)."""
+
+    id = serializers.UUIDField()
+    number = serializers.IntegerField()
+    year = serializers.IntegerField()
+
+
+class IssuedExpenseReportHistorySerializer(IssuedExpenseReportSerializer):
+    """Строка журнала выпусков (10.5): поля 6.10a + reason (непуст у
+    выпусков-замен) + created_at + вложенный supersedes|null (цепочка
+    «взамен» прослеживается построчно, AC-4/AC-10)."""
+
+    # read_only явно: read_only_fields в Meta НЕ действует на объявленные
+    # поля DRF (ревью 10.5) — без него переиспользование на запись сделало бы
+    # supersedes обязательным входом.
+    supersedes = IssuedExpenseReportSupersedesSerializer(
+        allow_null=True, read_only=True
+    )
+
+    class Meta(IssuedExpenseReportSerializer.Meta):
+        fields = IssuedExpenseReportSerializer.Meta.fields + [
+            "reason",
+            "created_at",
+            "supersedes",
+        ]
+        read_only_fields = fields
+
+
+class ExpenseHistoryResponseSerializer(serializers.Serializer):
+    """200-конверт history (10.5): видимые подразделения (селект экрана) +
+    страница журнала (limit/offset, канон DailySubmissionPagination)."""
+
+    divisions = ExpenseHistoryDivisionSerializer(many=True)
+    issues = IssuedExpenseReportHistorySerializer(many=True)

@@ -7,17 +7,13 @@
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
 import { DailyExpensePage } from '../features/daily-grid/DailyExpensePage'
+import { ExpenseReportPage } from '../features/expense-report/ExpenseReportPage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
 import { ReadinessTreePage } from '../features/readiness-tree/ReadinessTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
 import { ROUTES } from '../shared/routes'
 import { AppLayout } from '../shared/ui/AppLayout'
-import {
-  AuditStub,
-  DashboardStub,
-  EmployeesStub,
-  ReportsStub,
-} from './section-stubs'
+import { AuditStub, DashboardStub, EmployeesStub } from './section-stubs'
 
 // Экспорт отдельно от BrowserRouter: E2E-тесты оборачивают AppRoutes в
 // MemoryRouter с initialEntries (BrowserRouter не даёт задать стартовый маршрут)
@@ -80,11 +76,13 @@ export function AppRoutes() {
             </RequirePermission>
           }
         />
+        {/* Story 10.5: экран «Расход» (выпуск + журнал) вместо заглушки;
+            гейт права daily_report.generate НЕ меняется (карта UX L59-68). */}
         <Route
           path={ROUTES.reports}
           element={
             <RequirePermission permission="daily_report.generate">
-              <ReportsStub />
+              <ExpenseReportPage />
             </RequirePermission>
           }
         />

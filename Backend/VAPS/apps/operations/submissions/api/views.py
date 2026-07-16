@@ -17,6 +17,7 @@ from datetime import timedelta
 
 from django.db import IntegrityError
 from drf_spectacular.utils import (
+    OpenApiParameter,
     extend_schema,
     extend_schema_serializer,
     inline_serializer,
@@ -41,9 +42,12 @@ from apps.operations.submissions.api.serializers import (
     DailySubmissionSerializer,
     DayStateFilterSerializer,
     DayStateResponseSerializer,
+    ExpenseHistoryFilterSerializer,
+    ExpenseHistoryResponseSerializer,
     ExpensePeriodFilterSerializer,
     ExpenseReportByDateFilterSerializer,
     ExpenseReportIssueSerializer,
+    IssuedExpenseReportHistorySerializer,
     IssuedExpenseReportSerializer,
     TomorrowBlockOverrideSerializer,
     TrafficTreeFilterSerializer,
@@ -386,6 +390,9 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "create": _EXPENSE_PERMISSION,
         "list": _EXPENSE_PERMISSION,
         "period": _EXPENSE_PERMISSION,
+        # history (10.5) — журнал читает то же право, что выпуск (Д2 6.10a:
+        # руководство читает то, что выпускает); новых кодов/грантов нет.
+        "history": _EXPENSE_PERMISSION,
         "override_block": _OVERRIDE_PERMISSION,
     }
     # No "head": HEAD stays 405 everywhere (mirror of the 5.8a/b minimal
@@ -456,6 +463,72 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 message="Расход за дату не выпущен.",
             )
         return Response(IssuedExpenseReportSerializer(issued).data)
+
+    @extend_schema(
+        parameters=[
+            ExpenseHistoryFilterSerializer,
+            # limit/offset читает пагинатор, а не FilterSerializer — без явной
+            # декларации их не было бы ни в schema.yaml, ни в типах клиента
+            # (ревью 10.5, blind+edge: пагинация словами, а не схемой).
+            OpenApiParameter(
+                name="limit",
+                type=int,
+                description="Страница issues, default 50, max 200.",
+            ),
+            OpenApiParameter(
+                name="offset", type=int, description="Смещение страницы issues."
+            ),
+        ],
+        responses={200: ExpenseHistoryResponseSerializer},
+        description="Журнал выпусков расхода (10.5): видимые под "
+        "daily_report.generate подразделения (источник селекта экрана) + ВСЕ "
+        "выпуски (ISSUED и SUPERSEDED) по выбранному подразделению или по "
+        "всем видимым, новые сверху (-year, -number); строка несёт цепочку "
+        "«взамен» (supersedes {id, number, year} | null). Пагинация "
+        "limit/offset (default 50, max 200) — на issues; дата журнал НЕ "
+        "фильтрует. 400 мусорный division_id; 403 чужое подразделение (ДО "
+        "существования); 404 фантомный UUID у глобального гранта; пустая "
+        "видимость → 200 пустые списки.",
+    )
+    @action(detail=False, methods=["get"], url_path="history", url_name="history")
+    def history(self, request, *args, **kwargs):
+        form = ExpenseHistoryFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data.get("division_id")
+
+        # Видимые = поддеревья грантов generate; None (глобальный/wildcard) →
+        # все из divisions_map (семантика 10.1a/10.3). Имена — только через
+        # core-селектор (ARCH-003); пустая видимость → 200 пустые списки
+        # (Д5-канон 5.8c), не 403.
+        visible = PermissionService.visible_division_ids(
+            request.actor_id, _EXPENSE_PERMISSION
+        )
+        names = CoreDivisionTreeSelector.divisions_map(visible)
+        if division_id is not None:
+            # Порядок = канон 5.8: scope-403 ДО existence-404 (не оракул).
+            ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+            _ensure_division_exists(division_id)
+            # Пересечение с видимыми — defensive: scope-гард уже гарантирует
+            # поддерево, но источник фильтра журнала держим одним (names).
+            issue_division_ids = {division_id} & set(names)
+        else:
+            issue_division_ids = set(names)
+
+        qs = IssuedDocumentSelector.history_for(
+            doc_type=EXPENSE_DOC_TYPE, division_ids=issue_division_ids
+        )
+        paginator = DailySubmissionPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        divisions = [
+            {"division_id": str(did), "name": name}
+            for did, name in sorted(names.items(), key=lambda kv: (kv[1], str(kv[0])))
+        ]
+        return Response(
+            {
+                "divisions": divisions,
+                "issues": IssuedExpenseReportHistorySerializer(page, many=True).data,
+            }
+        )
 
     @extend_schema(
         parameters=[ExpensePeriodFilterSerializer],

@@ -108,16 +108,16 @@ describe('Сайдбар — рабочая навигация, не витри�
   })
 })
 
-// Оставшиеся маршруты карты (/, /daily-expense, /organization — в тестах
-// стори/AppLayout.test: реальные экраны 10.2/10.4 грузят данные на маунте);
-// heading — H1 заглушки раздела (section-stubs), код — seed_operations (AC 6)
+// Оставшиеся маршруты карты (/, /daily-expense, /organization, /reports — в
+// тестах стори/AppLayout.test: реальные экраны 10.2/10.4/10.5 грузят данные
+// на маунте); heading — H1 заглушки раздела (section-stubs), код —
+// seed_operations (AC 6)
 const GATE_MATRIX = [
   {
     route: ROUTES.employees,
     heading: 'Управление персоналом',
     code: 'status.view',
   },
-  { route: ROUTES.reports, heading: 'Отчёты', code: 'daily_report.generate' },
   { route: ROUTES.audit, heading: 'Аудит', code: 'audit.view' },
 ] as const
 
