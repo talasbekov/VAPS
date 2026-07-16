@@ -32,12 +32,15 @@ from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector
 from apps.documents.models import EXPENSE_DOC_TYPE
 from apps.documents.selectors import IssuedDocumentSelector
+from apps.operations.services import PermissionService
 from apps.operations.submissions.api.serializers import (
     DailySubmissionAmendSerializer,
     DailySubmissionCreateSerializer,
     DailySubmissionDetailSerializer,
     DailySubmissionFilterSerializer,
     DailySubmissionSerializer,
+    DayStateFilterSerializer,
+    DayStateResponseSerializer,
     ExpensePeriodFilterSerializer,
     ExpenseReportByDateFilterSerializer,
     ExpenseReportIssueSerializer,
@@ -56,8 +59,10 @@ from apps.operations.submissions.services import (
     ensure_division_scope,
     issue_expense_document,
     override_tomorrow_block,
+    preview_day_event,
     submit_day,
 )
+from apps.operations.submissions.traffic_light import division_traffic_light
 
 # Расход read/issue endpoints gate on the (already-seeded) generation right
 # (Story 6.10a Д2: management reads what it issues; daily_report.view does not
@@ -119,6 +124,9 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "amend": _AMEND_PERMISSION,
         "list": READ_PERMISSION,
         "retrieve": READ_PERMISSION,
+        # day-state (10.3) — то же читающее право, что list/create: новых
+        # permission-кодов и грантов стори не вводит.
+        "day_state": READ_PERMISSION,
     }
     # No "head": HEAD stays 405 everywhere (the 5.8a/b minimal surface).
     http_method_names = ["get", "post", "options"]
@@ -151,6 +159,14 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         ensure_division_scope(request.actor_id, READ_PERMISSION, submission.division_id)
         return Response(DailySubmissionDetailSerializer(submission).data)
 
+    @extend_schema(
+        request=DailySubmissionCreateSerializer,
+        responses={201: DailySubmissionSerializer},
+        description="Сдача дня (5.3b/5.8a): атомарный срез + diff-event + "
+        "late → DailySubmission v1. 403 чужой scope; 404 нет подразделения; "
+        "409 DAY_ALREADY_SUBMITTED; 422 BUSINESS_DATE_OUT_OF_WINDOW "
+        "(detail.allowed).",
+    )
     def create(self, request, *args, **kwargs):
         form = DailySubmissionCreateSerializer(data=request.data)
         form.is_valid(raise_exception=True)
@@ -169,6 +185,80 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
             DailySubmissionSerializer(submission).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @extend_schema(
+        parameters=[DayStateFilterSerializer],
+        responses={200: DayStateResponseSerializer},
+        description="Read-модель панели сдачи (10.3): видимые под "
+        "daily_report.mark_update подразделения + submitted-состояние дня; "
+        "при division_id — detail: preview_event несданного дня (та же "
+        "_diff_key-семантика, что submit_day) либо traffic_light 5.5a "
+        "сданного (drift added/removed/changed). 400 мусорная/отсутствующая "
+        "дата; 403 чужое подразделение (ДО существования); 404 фантомный "
+        "UUID у глобального гранта.",
+    )
+    @action(detail=False, methods=["get"], url_path="day-state", url_name="day-state")
+    def day_state(self, request, *args, **kwargs):
+        form = DayStateFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        business_date = form.validated_data["business_date"]
+        division_id = form.validated_data.get("division_id")
+
+        # Видимые = поддеревья грантов mark_update; None (глобальный/wildcard)
+        # → все подразделения (семантика divisions_map 10.1a; известный defer
+        # is_active расширяет, не сужает — здесь НЕ чинится). Имена — только
+        # через core-селектор (ARCH-003).
+        visible = PermissionService.visible_division_ids(
+            request.actor_id, READ_PERMISSION
+        )
+        names = CoreDivisionTreeSelector.divisions_map(visible)
+        # ОДИН запрос на все submitted-строки (current_for_many) — никогда
+        # current_for в цикле (NFR-4).
+        submissions = DailySubmissionSelector.current_for_many(
+            set(names), business_date
+        )
+        divisions = [
+            {
+                "division_id": str(did),
+                "name": name,
+                "submission": (
+                    DailySubmissionSerializer(submissions[did]).data
+                    if did in submissions
+                    else None
+                ),
+            }
+            for did, name in sorted(names.items(), key=lambda kv: (kv[1], str(kv[0])))
+        ]
+
+        detail = None
+        if division_id is not None:
+            # Порядок = канон 5.8: scope-403 ДО existence-404 (не оракул).
+            ensure_division_scope(request.actor_id, READ_PERMISSION, division_id)
+            _ensure_division_exists(division_id)
+            # Светофор/preview — ТОЛЬКО здесь, по одному подразделению:
+            # по всем видимым это был бы O(N) снапшот-дифф (NFR-4).
+            # Ревью 10.3: submitted-строку читаем из УЖЕ загруженной map —
+            # повторный current_for был бы вторым чтением того же состояния
+            # (лишний запрос + TOCTOU-рассинхрон list vs detail при
+            # конкурентном submit_day). Ключ гарантированно в names: scope
+            # (поддерево visible) и existence проверены выше.
+            current = submissions.get(division_id)
+            if current is None:
+                detail = {
+                    "preview_event": preview_day_event(division_id, business_date),
+                    "traffic_light": None,
+                }
+            else:
+                light = division_traffic_light(division_id, business_date)
+                detail = {
+                    "preview_event": None,
+                    "traffic_light": {
+                        "status": light.status,
+                        "late": light.late,
+                        "drift": light.drift,
+                    },
+                }
+        return Response({"divisions": divisions, "detail": detail})
 
     @action(detail=True, methods=["post"])
     def amend(self, request, pk=None, *args, **kwargs):

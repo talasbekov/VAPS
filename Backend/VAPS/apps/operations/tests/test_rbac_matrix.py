@@ -143,6 +143,12 @@ MATRIX = {
     # detail (story 5.8c, GET /{pk}/): формы у retrieve нет — pk=0 у держателя
     # резолвится селектором by_id в None → 404 = ALLOW по канону матрицы.
     "ops-daily-submission-detail": _MethodGate({"get": "daily_report.mark_update"}),
+    # day-state (story 10.3, GET /day-state/): read-модель панели сдачи. То же
+    # читающее право mark_update, что list/create — новых кодов/грантов нет;
+    # scope — сужение видимости visible_division_ids + ensure_division_scope в
+    # detail-режиме, матрицей не проверяется (GET без business_date у держателя
+    # = 400 формы = ALLOW по канону).
+    "ops-daily-submission-day-state": _MethodGate({"get": "daily_report.mark_update"}),
     # amend сдачи (story 5.8b, POST /{id}/amend/). Гейт mixin {"amend":
     # daily_report.correct}; scope «чужое подразделение → 403» — в сервис-гарде
     # ensure_division_scope (матрицей не проверяется: payloadless POST держателя

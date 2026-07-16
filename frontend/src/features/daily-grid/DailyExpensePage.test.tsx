@@ -18,6 +18,7 @@ import {
   afterAll,
   afterEach,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   it,
@@ -120,6 +121,17 @@ afterAll(() => {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+})
+
+// Панель «Сдача дня» (10.3) живёт на странице и грузит day-state — дефолтный
+// хэндлер, чтобы сюита 10.2 не падала на onUnhandledRequest: 'error'.
+// Глубокие сценарии панели — в DaySubmissionPanel.test.tsx (не дублировать).
+beforeEach(() => {
+  server.use(
+    http.get('*/api/operations/daily-submissions/day-state/', () =>
+      HttpResponse.json({ divisions: [], detail: null }),
+    ),
+  )
 })
 
 // --- Фикстуры ----------------------------------------------------------------
@@ -312,7 +324,9 @@ describe('10.2 DailyExpensePage — данные и состояния (AC-2/AC-
         <DailyExpensePage />
       </Harness>,
     )
-    expect(screen.getByText(/Загрузка/)).toBeInTheDocument()
+    // /Загрузка расстановки/ — не просто /Загрузка/: панель сдачи 10.3 несёт
+    // собственный лоадер «Загрузка состояния сдачи…».
+    expect(screen.getByText(/Загрузка расстановки/)).toBeInTheDocument()
     await screen.findByRole('grid')
   })
 
@@ -383,7 +397,7 @@ describe('10.2 DailyExpensePage — отправка (AC-5/AC-6)', () => {
     const bodies = useBulkHandler('created')
     await renderPageAt()
     editFirstRowTo('SICK')
-    const submit = screen.getByText('Сдать день')
+    const submit = screen.getByText('Сохранить изменения')
     fireEvent.click(submit)
     await waitFor(() => expect(submit).toBeDisabled()) // isPending-гейт
     fireEvent.click(submit) // клик по disabled — запроса нет
@@ -391,19 +405,19 @@ describe('10.2 DailyExpensePage — отправка (AC-5/AC-6)', () => {
     expect(bodies).toEqual([EXPECTED_DELTA_BODY])
   })
 
-  it('успех: счётчик из ОТВЕТА + rebase initials — повторный «Сдать день» без правок запрос НЕ шлёт, beforeunload снят', async () => {
+  it('успех: счётчик из ОТВЕТА + rebase initials — повторный «Сохранить изменения» без правок запрос НЕ шлёт, beforeunload снят', async () => {
     usePrefillHandler()
     const bodies = useBulkHandler({ status: 201, body: { created: 7 } })
     await renderPageAt()
     editFirstRowTo('SICK')
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     // Счётчик — из ответа бэка (7), не из длины запроса (1).
     await screen.findByText(/Применено отклонений: 7/)
     // Rebase: дельты обнулились (введённое стало новым initial).
     expect(screen.getByTestId('changed-counter').textContent).toContain(
       'Изменено 0 из 2',
     )
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     expect(bodies.length).toBe(1) // повторного POST нет
     // beforeunload нейтрален после успеха.
     const ev = new Event('beforeunload', { cancelable: true })
@@ -427,7 +441,7 @@ describe('10.2 DailyExpensePage — отправка (AC-5/AC-6)', () => {
     )
     await renderPageAt()
     editFirstRowTo('SICK') // ячейка A (Асанов); COMMIT уводит фокус на строку 1
-    const submit = screen.getByText('Сдать день')
+    const submit = screen.getByText('Сохранить изменения')
     fireEvent.click(submit)
     await waitFor(() => expect(submit).toBeDisabled()) // bulk в полёте
     // Во время isPending правится ячейка B (Борисов): фокус после COMMIT уже
@@ -454,7 +468,7 @@ describe('10.2 DailyExpensePage — отправка (AC-5/AC-6)', () => {
     usePrefillHandler()
     const bodies = useBulkHandler('created')
     await renderPageAt()
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     expect(bodies.length).toBe(0)
   })
 })
@@ -467,7 +481,7 @@ describe('10.2 DailyExpensePage — конфликты (AC-7/AC-8)', () => {
     const bodies = useBulkHandler({ status: 409, body: conflict409Envelope })
     await renderPageAt()
     editFirstRowTo('SICK')
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     const dialog = await screen.findByRole('dialog')
     // Детализация: ФИО (резолв по employee_id из текущих rows) + message.
     const rows = within(dialog).getByTestId('conflict-rows')
@@ -496,7 +510,7 @@ describe('10.2 DailyExpensePage — конфликты (AC-7/AC-8)', () => {
     )
     await renderPageAt()
     editFirstRowTo('SICK')
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     const dialog = await screen.findByRole('dialog')
     const confirm = within(dialog).getByText('Подтвердить оверрайд')
     const reason = within(dialog).getByLabelText(/Причина/)
@@ -527,7 +541,7 @@ describe('10.2 DailyExpensePage — конфликты (AC-7/AC-8)', () => {
     )
     await renderPageAt()
     editFirstRowTo('SICK')
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     const dialog = await screen.findByRole('dialog')
     fireEvent.change(within(dialog).getByLabelText(/Причина/), {
       target: { value: 'наряд сокращён по приказу №1' },
@@ -535,7 +549,7 @@ describe('10.2 DailyExpensePage — конфликты (AC-7/AC-8)', () => {
     fireEvent.click(within(dialog).getByText('Подтвердить оверрайд'))
     await screen.findByText(/Конфликт не разрешён/)
     // Новая отправка (новый mutate) = новый цикл → диалог открывается опять.
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     await screen.findByRole('dialog')
   })
 })
@@ -548,12 +562,12 @@ describe('10.2 DailyExpensePage — 422-агрегат (AC-9)', () => {
     const bodies = useBulkHandler({ status: 422, body: hard422Envelope })
     await renderPageAt()
     editFirstRowTo('SICK')
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     await screen.findByText(/Отклонено: 1/)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(rowOf('Асанов')).toHaveAttribute('data-marker', 'hard')
     // Существующий гейт: hard блокирует повторный сабмит до правки строк.
-    expect(screen.getByText('Сдать день')).toBeDisabled()
+    expect(screen.getByText('Сохранить изменения')).toBeDisabled()
     expect(bodies.length).toBe(1)
   })
 })
@@ -566,12 +580,12 @@ describe('10.2 DailyExpensePage — каналы ошибок (AC-10)', () => {
     useBulkHandler({ status: 500, body: serverEnvelope })
     await renderPageAt()
     editFirstRowTo('SICK')
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     await screen.findByText(GENERIC_FAILURE_MESSAGE)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(document.querySelectorAll('[data-marker]').length).toBe(0)
     await waitFor(() =>
-      expect(screen.getByText('Сдать день')).toBeEnabled(),
+      expect(screen.getByText('Сохранить изменения')).toBeEnabled(),
     )
   })
 
@@ -580,7 +594,7 @@ describe('10.2 DailyExpensePage — каналы ошибок (AC-10)', () => {
     useBulkHandler({ status: 400, body: validationEnvelope })
     await renderPageAt()
     editFirstRowTo('SICK')
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     await screen.findByText(/Запрос отклонён/)
     expect(document.querySelectorAll('[data-marker]').length).toBe(0)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -591,10 +605,10 @@ describe('10.2 DailyExpensePage — каналы ошибок (AC-10)', () => {
     useBulkHandler({ status: 401, body: authRequiredEnvelope })
     await renderPageAt()
     editFirstRowTo('SICK')
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     // Мутация завершилась ошибкой: pending-гейт снят — канал 401 отработал
     // МИМО экрана (страница его не рендерит и не маппит).
-    await waitFor(() => expect(screen.getByText('Сдать день')).toBeEnabled())
+    await waitFor(() => expect(screen.getByText('Сохранить изменения')).toBeEnabled())
     expect(document.querySelectorAll('[data-marker]').length).toBe(0)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryByText(/Запрос отклонён/)).not.toBeInTheDocument()
@@ -650,7 +664,7 @@ describe('10.2 DailyExpensePage — защита ввода (AC-11)', () => {
     useBulkHandler('created')
     await renderPageAt()
     editFirstRowTo('SICK')
-    fireEvent.click(screen.getByText('Сдать день'))
+    fireEvent.click(screen.getByText('Сохранить изменения'))
     await screen.findByText(/Применено отклонений: 1/)
     // Rebase на СТАРОЙ дате: применённое значение стало новым initial.
     expect(
@@ -679,6 +693,25 @@ describe('10.2 DailyExpensePage — защита ввода (AC-11)', () => {
     expect(
       new URL(urls[urls.length - 1]).searchParams.get('business_date'),
     ).toBe('2026-07-16') // prefill за (2026-07-17 − 1)
+  })
+})
+
+// --- 10.3: композиция страницы — лейбл кнопки + smoke панели -------------------
+
+describe('10.3 DailyExpensePage — панель сдачи (smoke, AC-5/AC-13)', () => {
+  it('bulk-кнопка грида подписана «Сохранить изменения»; панель «Сдача дня» под гридом', async () => {
+    usePrefillHandler()
+    await renderPageAt()
+    expect(
+      screen.getByRole('button', { name: 'Сохранить изменения' }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('day-submission-panel')).toBeInTheDocument()
+    expect(screen.getByText('Сдача дня')).toBeInTheDocument()
+    // «Сдать день» страницы больше не существует вне панели: day-state этой
+    // сюиты пуст (нет видимых подразделений) → кнопки сдачи нет вовсе.
+    expect(
+      screen.queryByRole('button', { name: 'Сдать день' }),
+    ).not.toBeInTheDocument()
   })
 })
 

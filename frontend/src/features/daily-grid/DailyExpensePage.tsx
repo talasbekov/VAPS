@@ -18,6 +18,11 @@ import { useApiMutation } from '../../shared/api/useApiMutation'
 import { Card, CardDescription, CardHeader } from '../../shared/ui/Card'
 import { ConflictDialog } from '../../shared/ui/ConflictDialog'
 import type { ConflictDialogRow } from '../../shared/ui/ConflictDialog'
+// Панель сдачи (10.3) — отдельный модуль ЭТОЙ фичи: матрица ARCH-FE-013
+// банит кросс-фичевые импорты (features → только shared и та же фича),
+// поэтому «отдельная фича day-submission» из спеки размещена соседним
+// модулем daily-grid; контракт связи (только пропсы) сохранён.
+import { DaySubmissionPanel } from './DaySubmissionPanel'
 import type { DailyGridHandle, RowMarker } from './DailyGrid.types'
 import { DailyGridContainer } from './DailyGridContainer'
 import type { RowChange } from './DailyGrid.types'
@@ -180,6 +185,13 @@ export function DailyExpensePage() {
     if (rows.length > 0) gridRef.current?.applyMarkers(rowsToMarkers(rows))
   }, [error])
 
+  // Ленивый опрос дерзости для панели сдачи (10.3 AC-7): та же семантика,
+  // что beforeunload ниже — без реактивной прокидки дельт наружу.
+  const isGridDirty = useCallback(
+    () => gridRef.current?.isDirty() ?? false,
+    [],
+  )
+
   // beforeunload (AC-11): листенер нейтрален без дельт — дерзость грида
   // спрашивается ЛЕНИВО через императивный ref (без реактивной прокидки
   // дельт наружу и лишних коммитов).
@@ -247,8 +259,9 @@ export function DailyExpensePage() {
             Расход дня
           </h1>
           <CardDescription>
-            Утреннее обновление: правятся только отклонения, «Сдать день»
-            отправляет их одним запросом (FR-12).
+            Утреннее обновление: правятся только отклонения, «Сохранить
+            изменения» отправляет их одним запросом (FR-12); сдача дня —
+            отдельное действие в панели ниже (контракт 09-01 §7).
           </CardDescription>
           <label className="flex items-center gap-2 text-sm">
             Дата
@@ -322,9 +335,23 @@ export function DailyExpensePage() {
           onBulkSubmit={handleBulkSubmit}
           gridRef={gridRef}
           submitPending={isPending}
+          // 10.3 (Решение №4): bulk-кнопка честно называется сохранением;
+          // «Сдать день» переехал в панель сдачи (submission-флоу 5.3b).
+          submitLabel="Сохранить изменения"
           emptyLabel="На выбранную дату личный состав пуст"
         />
       ) : null}
+
+      {/* Панель сдачи дня (10.3): связь со страницей — только пропсы
+          (ARCH-FE-013); дерзость грида спрашивается лениво через ref. */}
+      {validDate && (
+        <DaySubmissionPanel
+          businessDate={businessDate}
+          isDirty={isGridDirty}
+          appliedCount={appliedCount ?? 0}
+          employees={mapped?.employees ?? []}
+        />
+      )}
 
       {/* bulk-ConflictDialog: только пока цикл не исчерпан (AC-8). */}
       {!overrideAttempted && (

@@ -183,6 +183,11 @@ describe('Разводка маршрутов: RequirePermission на данны
           status_types: [{ code: 'IN_SERVICE', name: 'В строю' }],
         }),
       ),
+      // Панель «Сдача дня» (10.3) на той же странице грузит day-state —
+      // тот же минимальный валидный ответ по той же причине.
+      http.get('*/api/operations/daily-submissions/day-state/', () =>
+        HttpResponse.json({ divisions: [], detail: null }),
+      ),
     )
     renderApp(ROUTES.dailyExpense)
 

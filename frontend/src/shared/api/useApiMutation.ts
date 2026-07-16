@@ -46,6 +46,9 @@ export interface UseApiMutationResult<
   confirmOverride: (reason: string) => void
   /** «Отмена»: повтора нет, conflict сбрасывается, ошибка остаётся в error. */
   dismissConflict: () => void
+  /** Полный сброс цикла (error/data/conflict) при смене контекста фичей —
+   * прежняя ошибка не должна рендериться в новом контексте (ревью 10.3). */
+  reset: () => void
   data: TData | undefined
 }
 
@@ -115,6 +118,12 @@ export function useApiMutation<
     setConflict(null)
   }, [])
 
+  const { reset: rawReset } = mutation
+  const reset = useCallback(() => {
+    setConflict(null)
+    rawReset()
+  }, [rawReset])
+
   return {
     mutate,
     isPending: mutation.isPending,
@@ -122,6 +131,7 @@ export function useApiMutation<
     conflict,
     confirmOverride,
     dismissConflict,
+    reset,
     data: mutation.data,
   }
 }

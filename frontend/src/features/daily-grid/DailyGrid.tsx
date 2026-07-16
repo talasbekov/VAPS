@@ -276,6 +276,9 @@ export function DailyGrid({
   onSubmit,
   ref,
   submitPending,
+  // Единственное место дефолта лейбла (10.3 AC-13): e2e 9.9 и грид-тесты
+  // находят кнопку по «Сдать день» — харнес монтирует контейнер без пропа.
+  submitLabel = 'Сдать день',
   emptyLabel,
   onCellCommit,
 }: DailyGridProps) {
@@ -728,7 +731,7 @@ export function DailyGrid({
           className="rounded bg-primary px-3 py-1 text-sm text-primary-foreground disabled:opacity-50"
           onClick={() => onSubmit(changed)}
         >
-          Сдать день
+          {submitLabel}
         </button>
       </div>
       {/* aria-live анонс блокировок/конфликтов — слепой ввод получает сигнал,

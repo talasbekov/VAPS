@@ -831,22 +831,7 @@ export interface paths {
          */
         get: operations["operations_daily_submissions_retrieve"];
         put?: never;
-        /**
-         * @description ViewSet mixin: gate each action on an in-house RBAC permission code.
-         *
-         *     Subclasses set ``permission_map = {action_name: permission_code}`` (action
-         *     name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
-         *     custom ``@action`` method like ``archive``/``assign_employee``). The gate
-         *     runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
-         *     authentication, so the operations seam has populated
-         *     ``request.effective_permissions`` (story 2.13). An action absent from the
-         *     map is denied (fail-closed); the rbac-matrix completeness test guarantees
-         *     every served action is mapped, so a gap surfaces at test time, not in prod.
-         *
-         *     MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
-         *     viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
-         *     imports operations — the gate reads only request attributes (ARCH#L585).
-         */
+        /** @description Сдача дня (5.3b/5.8a): атомарный срез + diff-event + late → DailySubmission v1. 403 чужой scope; 404 нет подразделения; 409 DAY_ALREADY_SUBMITTED; 422 BUSINESS_DATE_OUT_OF_WINDOW (detail.allowed). */
         post: operations["operations_daily_submissions_create"];
         delete?: never;
         options?: never;
@@ -912,6 +897,23 @@ export interface paths {
          *     imports operations — the gate reads only request attributes (ARCH#L585).
          */
         post: operations["operations_daily_submissions_amend_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/daily-submissions/day-state/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read-модель панели сдачи (10.3): видимые под daily_report.mark_update подразделения + submitted-состояние дня; при division_id — detail: preview_event несданного дня (та же _diff_key-семантика, что submit_day) либо traffic_light 5.5a сданного (drift added/removed/changed). 400 мусорная/отсутствующая дата; 403 чужое подразделение (ДО существования); 404 фантомный UUID у глобального гранта. */
+        get: operations["operations_daily_submissions_day_state_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1212,6 +1214,75 @@ export interface components {
             document_basis?: string;
             source_ref?: string;
         };
+        /**
+         * @description 201/list projection — flat, snake_case, WITHOUT the heavy snapshot JSON
+         *     (tens–hundreds of KB per row) and without the amend-only fields
+         *     (reason/sanction/triggered_by_status_id — always empty on v1). The list
+         *     selector defers snapshot; this serializer never touching it keeps the
+         *     deferred column from being silently re-fetched.
+         */
+        DailySubmission: {
+            readonly id: number;
+            /** Format: uuid */
+            readonly division_id: string;
+            /** Format: date */
+            readonly business_date: string;
+            /** @default 1 */
+            readonly version: number;
+            /** @default true */
+            readonly is_current: boolean;
+            readonly event: components["schemas"]["EventEnum"];
+            readonly submitted_by: string;
+            /** Format: date-time */
+            readonly submitted_at: string;
+            readonly late: boolean;
+        };
+        /**
+         * @description POST-body form — exactly the two kwargs the API forwards to submit_day:
+         *     a flat UUID division ref (ARCH-003) and a YYYY-MM-DD business date (closes
+         *     the business_date=None defer class for the submit path). The actor NEVER
+         *     comes from the payload (ARCH-SEC-030) — extra fields, including
+         *     submitted_by, are ignored.
+         */
+        DailySubmissionCreateRequest: {
+            /** Format: uuid */
+            division_id: string;
+            /** Format: date */
+            business_date: string;
+        };
+        /**
+         * @description Detail-режим day-state (10.3): ровно одно из полей ненулевое —
+         *     ``preview_event`` у несданного дня (семантика _diff_key submit_day),
+         *     ``traffic_light`` у сданного (5.5a).
+         */
+        DayStateDetail: {
+            preview_event: string | null;
+            traffic_light: components["schemas"]["DayStateTrafficLight"] | null;
+        };
+        /**
+         * @description Строка списка видимых подразделений: имя из core-селектора (ARCH-003)
+         *     + submitted-состояние дня (9 полей списочной проекции) либо null.
+         */
+        DayStateDivision: {
+            /** Format: uuid */
+            division_id: string;
+            name: string;
+            submission: components["schemas"]["DailySubmission"] | null;
+        };
+        /** @description 200-конверт day-state (10.3): видимые подразделения + detail|null. */
+        DayStateResponse: {
+            divisions: components["schemas"]["DayStateDivision"][];
+            detail: components["schemas"]["DayStateDetail"] | null;
+        };
+        /**
+         * @description Светофор 5.5a сданного дня: {status, late, drift} — schema-проекция
+         *     ``DivisionTrafficLight`` (drift — {added, removed, changed}|null).
+         */
+        DayStateTrafficLight: {
+            status: string;
+            late: boolean;
+            drift: unknown;
+        };
         Division: {
             /** Format: uuid */
             readonly id: string;
@@ -1307,6 +1378,13 @@ export interface components {
          * @enum {string}
          */
         EmploymentStatusEnum: "WORKING" | "FIRED" | "ARCHIVED";
+        /**
+         * @description * `CONFIRMED_NO_CHANGES` - Подтверждено без изменений
+         *     * `CHANGED` - Изменено
+         *     * `AMENDED` - Исправлено
+         * @enum {string}
+         */
+        EventEnum: "CONFIRMED_NO_CHANGES" | "CHANGED" | "AMENDED";
         ExpensePeriodResponse: {
             /** @description Страница-на-дату: {business_date, totals, rows} — read-only derive, без номера документа. */
             pages: {
@@ -2547,14 +2625,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailySubmissionCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DailySubmissionCreateRequest"];
+                "multipart/form-data": components["schemas"]["DailySubmissionCreateRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DailySubmission"];
+                };
             };
         };
     };
@@ -2595,6 +2680,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    operations_daily_submissions_day_state_retrieve: {
+        parameters: {
+            query: {
+                business_date: string;
+                division_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayStateResponse"];
+                };
             };
         };
     };

@@ -102,6 +102,21 @@ def _compute_event(snapshot, previous):
     return DailySubmission.Event.CHANGED
 
 
+def preview_day_event(division_id, business_date):
+    """Read-only предпросмотр diff-event несданного дня (Story 10.3, AC-3).
+
+    Ровно та же семантика, что запишет ``submit_day``: ``build_division_snapshot``
+    + ``previous_for`` + ``_compute_event`` (``_diff_key`` НЕ дублируется и не
+    меняется) — предпросмотр честный по построению. БЕЗ окна-422/дубль-409/
+    аудита/транзакционных гарантий: это предпросмотр, не сдача; existence и
+    scope гейтит вызывающая вьюха day-state (канон 5.8). Возвращает значение
+    ``DailySubmission.Event`` (str).
+    """
+    snapshot = build_division_snapshot(division_id, business_date)
+    previous = DailySubmissionSelector.previous_for(division_id, business_date)
+    return _compute_event(snapshot, previous)
+
+
 @transaction.atomic
 def submit_day(*, division_id, business_date, actor, window_dates=None):
     """Сдать день: атомарный срез + diff-event + late + создание DailySubmission v1.

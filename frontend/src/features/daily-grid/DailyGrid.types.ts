@@ -56,6 +56,12 @@ export interface DailyGridProps {
   ref?: Ref<DailyGridHandle>
   /** Полёт bulk-запроса (10.2 AC-5): «Сдать день» disabled, повторного POST нет. */
   submitPending?: boolean
+  /**
+   * Лейбл bulk-кнопки (Story 10.3, Решение №4). Default «Сдать день» —
+   * замороженные сюиты 9.x/e2e 9.9 находят кнопку по имени и НЕ трогаются;
+   * страница 10.2 передаёт «Сохранить изменения», настоящая сдача — панель.
+   */
+  submitLabel?: string
   /** Текст пустого состояния (0 строк). */
   emptyLabel?: string
   /**

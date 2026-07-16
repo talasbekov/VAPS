@@ -90,6 +90,49 @@ class DailySubmissionDetailSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class DayStateFilterSerializer(serializers.Serializer):
+    """GET day-state query form (10.3) — обязательная дата + опциональное
+    подразделение (detail-режим). Мусор умирает здесь 400 VALIDATION_ERROR
+    (канон boundary 5.8c), не в ORM/сервисе."""
+
+    business_date = serializers.DateField()
+    division_id = serializers.UUIDField(required=False)
+
+
+class DayStateTrafficLightSerializer(serializers.Serializer):
+    """Светофор 5.5a сданного дня: {status, late, drift} — schema-проекция
+    ``DivisionTrafficLight`` (drift — {added, removed, changed}|null)."""
+
+    status = serializers.CharField()
+    late = serializers.BooleanField()
+    drift = serializers.JSONField(allow_null=True)
+
+
+class DayStateDetailSerializer(serializers.Serializer):
+    """Detail-режим day-state (10.3): ровно одно из полей ненулевое —
+    ``preview_event`` у несданного дня (семантика _diff_key submit_day),
+    ``traffic_light`` у сданного (5.5a)."""
+
+    preview_event = serializers.CharField(allow_null=True)
+    traffic_light = DayStateTrafficLightSerializer(allow_null=True)
+
+
+class DayStateDivisionSerializer(serializers.Serializer):
+    """Строка списка видимых подразделений: имя из core-селектора (ARCH-003)
+    + submitted-состояние дня (9 полей списочной проекции) либо null."""
+
+    division_id = serializers.UUIDField()
+    name = serializers.CharField()
+    submission = DailySubmissionSerializer(allow_null=True)
+
+
+class DayStateResponseSerializer(serializers.Serializer):
+    """200-конверт day-state (10.3): видимые подразделения + detail|null."""
+
+    divisions = DayStateDivisionSerializer(many=True)
+    detail = DayStateDetailSerializer(allow_null=True)
+
+
 class ExpenseReportIssueSerializer(serializers.Serializer):
     """POST-body form (6.10a) — the two kwargs forwarded to
     ``issue_expense_document``: a flat UUID division ref (ARCH-003) and a

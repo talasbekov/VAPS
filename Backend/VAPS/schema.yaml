@@ -1233,26 +1233,30 @@ paths:
           description: No response body
     post:
       operationId: operations_daily_submissions_create
-      description: |-
-        ViewSet mixin: gate each action on an in-house RBAC permission code.
-
-        Subclasses set ``permission_map = {action_name: permission_code}`` (action
-        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
-        custom ``@action`` method like ``archive``/``assign_employee``). The gate
-        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
-        authentication, so the operations seam has populated
-        ``request.effective_permissions`` (story 2.13). An action absent from the
-        map is denied (fail-closed); the rbac-matrix completeness test guarantees
-        every served action is mapped, so a gap surfaces at test time, not in prod.
-
-        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
-        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
-        imports operations — the gate reads only request attributes (ARCH#L585).
+      description: 'Сдача дня (5.3b/5.8a): атомарный срез + diff-event + late → DailySubmission
+        v1. 403 чужой scope; 404 нет подразделения; 409 DAY_ALREADY_SUBMITTED; 422
+        BUSINESS_DATE_OUT_OF_WINDOW (detail.allowed).'
       tags:
       - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionCreateRequest'
+        required: true
       responses:
         '201':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailySubmission'
+          description: ''
   /api/operations/daily-submissions/{id}/:
     get:
       operationId: operations_daily_submissions_retrieve_2
@@ -1311,6 +1315,36 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/operations/daily-submissions/day-state/:
+    get:
+      operationId: operations_daily_submissions_day_state_retrieve
+      description: 'Read-модель панели сдачи (10.3): видимые под daily_report.mark_update
+        подразделения + submitted-состояние дня; при division_id — detail: preview_event
+        несданного дня (та же _diff_key-семантика, что submit_day) либо traffic_light
+        5.5a сданного (drift added/removed/changed). 400 мусорная/отсутствующая дата;
+        403 чужое подразделение (ДО существования); 404 фантомный UUID у глобального
+        гранта.'
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+          format: date
+        required: true
+      - in: query
+        name: division_id
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DayStateResponse'
+          description: ''
   /api/operations/expense-reports/:
     get:
       operationId: operations_expense_reports_list
@@ -1789,6 +1823,143 @@ components:
       - date_start
       - employee_id
       - status_type_code
+    DailySubmission:
+      type: object
+      description: |-
+        201/list projection — flat, snake_case, WITHOUT the heavy snapshot JSON
+        (tens–hundreds of KB per row) and without the amend-only fields
+        (reason/sanction/triggered_by_status_id — always empty on v1). The list
+        selector defers snapshot; this serializer never touching it keeps the
+        deferred column from being silently re-fetched.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        division_id:
+          type: string
+          format: uuid
+          readOnly: true
+        business_date:
+          type: string
+          format: date
+          readOnly: true
+        version:
+          type: integer
+          readOnly: true
+          default: 1
+        is_current:
+          type: boolean
+          readOnly: true
+          default: true
+        event:
+          allOf:
+          - $ref: '#/components/schemas/EventEnum'
+          readOnly: true
+        submitted_by:
+          type: string
+          readOnly: true
+        submitted_at:
+          type: string
+          format: date-time
+          readOnly: true
+        late:
+          type: boolean
+          readOnly: true
+      required:
+      - business_date
+      - division_id
+      - event
+      - id
+      - is_current
+      - late
+      - submitted_at
+      - submitted_by
+      - version
+    DailySubmissionCreateRequest:
+      type: object
+      description: |-
+        POST-body form — exactly the two kwargs the API forwards to submit_day:
+        a flat UUID division ref (ARCH-003) and a YYYY-MM-DD business date (closes
+        the business_date=None defer class for the submit path). The actor NEVER
+        comes from the payload (ARCH-SEC-030) — extra fields, including
+        submitted_by, are ignored.
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        business_date:
+          type: string
+          format: date
+      required:
+      - business_date
+      - division_id
+    DayStateDetail:
+      type: object
+      description: |-
+        Detail-режим day-state (10.3): ровно одно из полей ненулевое —
+        ``preview_event`` у несданного дня (семантика _diff_key submit_day),
+        ``traffic_light`` у сданного (5.5a).
+      properties:
+        preview_event:
+          type: string
+          nullable: true
+        traffic_light:
+          allOf:
+          - $ref: '#/components/schemas/DayStateTrafficLight'
+          nullable: true
+      required:
+      - preview_event
+      - traffic_light
+    DayStateDivision:
+      type: object
+      description: |-
+        Строка списка видимых подразделений: имя из core-селектора (ARCH-003)
+        + submitted-состояние дня (9 полей списочной проекции) либо null.
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        submission:
+          allOf:
+          - $ref: '#/components/schemas/DailySubmission'
+          nullable: true
+      required:
+      - division_id
+      - name
+      - submission
+    DayStateResponse:
+      type: object
+      description: '200-конверт day-state (10.3): видимые подразделения + detail|null.'
+      properties:
+        divisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DayStateDivision'
+        detail:
+          allOf:
+          - $ref: '#/components/schemas/DayStateDetail'
+          nullable: true
+      required:
+      - detail
+      - divisions
+    DayStateTrafficLight:
+      type: object
+      description: |-
+        Светофор 5.5a сданного дня: {status, late, drift} — schema-проекция
+        ``DivisionTrafficLight`` (drift — {added, removed, changed}|null).
+      properties:
+        status:
+          type: string
+        late:
+          type: boolean
+        drift:
+          nullable: true
+      required:
+      - drift
+      - late
+      - status
     Division:
       type: object
       properties:
@@ -2072,6 +2243,16 @@ components:
         * `WORKING` - Работает
         * `FIRED` - Уволен
         * `ARCHIVED` - В архиве
+    EventEnum:
+      enum:
+      - CONFIRMED_NO_CHANGES
+      - CHANGED
+      - AMENDED
+      type: string
+      description: |-
+        * `CONFIRMED_NO_CHANGES` - Подтверждено без изменений
+        * `CHANGED` - Изменено
+        * `AMENDED` - Исправлено
     ExpensePeriodResponse:
       type: object
       properties:

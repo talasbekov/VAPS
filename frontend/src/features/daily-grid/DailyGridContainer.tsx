@@ -42,6 +42,8 @@ export interface DailyGridContainerProps {
   gridRef?: Ref<DailyGridHandle>
   /** Полёт bulk-запроса (10.2 AC-5) — сквозная прокидка в кнопку грида. */
   submitPending?: boolean
+  /** Лейбл bulk-кнопки (10.3) — сквозная прокидка; default в самом гриде. */
+  submitLabel?: string
   emptyLabel?: string
 }
 
@@ -54,6 +56,7 @@ export function DailyGridContainer({
   onCellCommit,
   gridRef,
   submitPending,
+  submitLabel,
   emptyLabel,
 }: DailyGridContainerProps) {
   const rows = useMemo(
@@ -79,6 +82,7 @@ export function DailyGridContainer({
       statusOptions={statusOptions}
       onSubmit={handleSubmit}
       submitPending={submitPending}
+      submitLabel={submitLabel}
       onCellCommit={onCellCommit}
       emptyLabel={emptyLabel}
     />
