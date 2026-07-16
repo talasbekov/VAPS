@@ -57,6 +57,7 @@ from apps.operations.submissions.selectors import (
     READ_PERMISSION,
     DailySubmissionSelector,
 )
+from apps.operations.submissions.models import DailySubmission
 from apps.operations.submissions.services import (
     amend_day,
     assert_report_date_has_data,
@@ -68,6 +69,10 @@ from apps.operations.submissions.services import (
     preview_day_event,
     submit_day,
 )
+
+# 5.11 сознательно не экспортирует сводку из services/__init__ (Д8: сервис без
+# API); 10.6 добавляет ЕДИНСТВЕННУЮ read-проекцию freshness — точечный импорт.
+from apps.operations.submissions.services.summary_service import summary_freshness
 from apps.operations.submissions.traffic_light import (
     division_traffic_light,
     traffic_light_forest,
@@ -211,7 +216,10 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "daily_report.mark_update подразделения + submitted-состояние дня; "
         "при division_id — detail: preview_event несданного дня (та же "
         "_diff_key-семантика, что submit_day) либо traffic_light 5.5a "
-        "сданного (drift added/removed/changed). 400 мусорная/отсутствующая "
+        "сданного (drift added/removed/changed). 10.6 additive: amendment — "
+        "{reason, sanction} текущей AMENDED-версии (иначе null); summary — "
+        "derived-свежесть сводки 5.11 ({status FRESH|STALE, superseded, "
+        "missing, unpinned}; null у не-сводки). 400 мусорная/отсутствующая "
         "дата; 403 чужое подразделение (ДО существования); 404 фантомный "
         "UUID у глобального гранта.",
     )
@@ -265,9 +273,29 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 detail = {
                     "preview_event": preview_day_event(division_id, business_date),
                     "traffic_light": None,
+                    # Несданный день: ни amendment-строки, ни сводки (10.6) —
+                    # freshness не зовётся (current_for внутри увидел бы то же
+                    # None из этой map; лишний канал чтения — мимо NFR-4).
+                    "amendment": None,
+                    "summary": None,
                 }
             else:
                 light = division_traffic_light(division_id, business_date)
+                # 10.6: причина/санкция ТЕКУЩЕЙ AMENDED-версии — из уже
+                # загруженной map (строки полные, доп. запросов нет);
+                # triggered_by_status_id наружу НЕ едет (provenance-ref 5.4b).
+                amendment = (
+                    {"reason": current.reason, "sanction": current.sanction}
+                    if current.event == DailySubmission.Event.AMENDED
+                    else None
+                )
+                # 10.6: derived-свежесть сводки 5.11 — ОДИН вызов сервиса и
+                # только в detail-режиме (его 4 канала чтения инвариантны
+                # числу детей; по всем видимым это был бы O(N) — NFR-4).
+                # Дубль-чтение current_for внутри сервиса — принято (Д:
+                # самодостаточный сервис 5.11). None (current без sources —
+                # обычная сдача) → null: строка — не сводка.
+                freshness = summary_freshness(division_id, business_date)
                 detail = {
                     "preview_event": None,
                     "traffic_light": {
@@ -275,6 +303,17 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
                         "late": light.late,
                         "drift": light.drift,
                     },
+                    "amendment": amendment,
+                    "summary": (
+                        None
+                        if freshness is None
+                        else {
+                            "status": freshness.status,
+                            "superseded": freshness.superseded,
+                            "missing": freshness.missing,
+                            "unpinned": freshness.unpinned,
+                        }
+                    ),
                 }
         return Response({"divisions": divisions, "detail": detail})
 
@@ -343,6 +382,20 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         return Response({"nodes": nodes})
 
+    @extend_schema(
+        # 10.6: аннотация БЕЗ изменения поведения (роут 5.8b как был) — до неё
+        # amend в схеме был дегенератом (requestBody: never, 200 без тела), и
+        # фронту пришлось бы дублировать контракт руками (ARCH-FE-011/AC-4).
+        request=DailySubmissionAmendSerializer,
+        responses={201: DailySubmissionSerializer},
+        description="Пересдача сданного дня (5.4a/5.8b): свежий снапшот из "
+        "БД, version+1, event=AMENDED, late=false; {id} идентифицирует "
+        "ЦЕПОЧКУ (протухший pk легален — amend_day сам ре-резолвит head). "
+        "400 пустые/пробельные reason/sanction, sanction >255; 403 чужой "
+        "scope (ПОСЛЕ резолва pk — trade-off 5.8b); 404 фантомный pk; 409 "
+        "DAY_ALREADY_SUBMITTED (конкурентная пересдача); 422 "
+        "NO_SUBMISSION_TO_AMEND (ни одной версии).",
+    )
     @action(detail=True, methods=["post"])
     def amend(self, request, pk=None, *args, **kwargs):
         form = DailySubmissionAmendSerializer(data=request.data)

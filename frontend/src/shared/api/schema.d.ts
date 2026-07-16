@@ -880,22 +880,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * @description ViewSet mixin: gate each action on an in-house RBAC permission code.
-         *
-         *     Subclasses set ``permission_map = {action_name: permission_code}`` (action
-         *     name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
-         *     custom ``@action`` method like ``archive``/``assign_employee``). The gate
-         *     runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
-         *     authentication, so the operations seam has populated
-         *     ``request.effective_permissions`` (story 2.13). An action absent from the
-         *     map is denied (fail-closed); the rbac-matrix completeness test guarantees
-         *     every served action is mapped, so a gap surfaces at test time, not in prod.
-         *
-         *     MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
-         *     viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
-         *     imports operations — the gate reads only request attributes (ARCH#L585).
-         */
+        /** @description Пересдача сданного дня (5.4a/5.8b): свежий снапшот из БД, version+1, event=AMENDED, late=false; {id} идентифицирует ЦЕПОЧКУ (протухший pk легален — amend_day сам ре-резолвит head). 400 пустые/пробельные reason/sanction, sanction >255; 403 чужой scope (ПОСЛЕ резолва pk — trade-off 5.8b); 404 фантомный pk; 409 DAY_ALREADY_SUBMITTED (конкурентная пересдача); 422 NO_SUBMISSION_TO_AMEND (ни одной версии). */
         post: operations["operations_daily_submissions_amend_create"];
         delete?: never;
         options?: never;
@@ -910,7 +895,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Read-модель панели сдачи (10.3): видимые под daily_report.mark_update подразделения + submitted-состояние дня; при division_id — detail: preview_event несданного дня (та же _diff_key-семантика, что submit_day) либо traffic_light 5.5a сданного (drift added/removed/changed). 400 мусорная/отсутствующая дата; 403 чужое подразделение (ДО существования); 404 фантомный UUID у глобального гранта. */
+        /** @description Read-модель панели сдачи (10.3): видимые под daily_report.mark_update подразделения + submitted-состояние дня; при division_id — detail: preview_event несданного дня (та же _diff_key-семантика, что submit_day) либо traffic_light 5.5a сданного (drift added/removed/changed). 10.6 additive: amendment — {reason, sanction} текущей AMENDED-версии (иначе null); summary — derived-свежесть сводки 5.11 ({status FRESH|STALE, superseded, missing, unpinned}; null у не-сводки). 400 мусорная/отсутствующая дата; 403 чужое подразделение (ДО существования); 404 фантомный UUID у глобального гранта. */
         get: operations["operations_daily_submissions_day_state_retrieve"];
         put?: never;
         post?: never;
@@ -1272,6 +1257,22 @@ export interface components {
             readonly late: boolean;
         };
         /**
+         * @description POST /{id}/amend/ form (5.8b) — exactly the reason/sanction pair the
+         *     API forwards to amend_day. DRF defaults (required + trim_whitespace +
+         *     allow_blank=False) reject missing/blank/whitespace-only values at the
+         *     boundary; ``sanction`` carries the model's CharField(255) limit — without
+         *     it an oversized value would reach Postgres as a DataError → 500 (the same
+         *     boundary-lets-garbage-through class as 5.8a's whitespace actor header).
+         *     ``triggered_by_status_id`` is NOT accepted: it is the 5.4b system hook's
+         *     provenance ref (manual HTTP amendment stores None); accepting it would let
+         *     a client write arbitrary EmployeeStatus references. Extra payload fields,
+         *     including submitted_by/actor, are ignored (ARCH-SEC-030, DRF-канон 5.8a Д5).
+         */
+        DailySubmissionAmendRequest: {
+            reason: string;
+            sanction: string;
+        };
+        /**
          * @description POST-body form — exactly the two kwargs the API forwards to submit_day:
          *     a flat UUID division ref (ARCH-003) and a YYYY-MM-DD business date (closes
          *     the business_date=None defer class for the submit path). The actor NEVER
@@ -1285,13 +1286,26 @@ export interface components {
             business_date: string;
         };
         /**
-         * @description Detail-режим day-state (10.3): ровно одно из полей ненулевое —
-         *     ``preview_event`` у несданного дня (семантика _diff_key submit_day),
-         *     ``traffic_light`` у сданного (5.5a).
+         * @description Причина/санкция ТЕКУЩЕЙ AMENDED-версии (10.6): ровно два поля из
+         *     строки DailySubmission; ``triggered_by_status_id`` наружу НЕ едет —
+         *     внутренний provenance-ref хука 5.4b.
+         */
+        DayStateAmendment: {
+            reason: string;
+            sanction: string;
+        };
+        /**
+         * @description Detail-режим day-state (10.3): ровно одно из preview_event/traffic_light
+         *     ненулевое — ``preview_event`` у несданного дня (семантика _diff_key
+         *     submit_day), ``traffic_light`` у сданного (5.5a). 10.6 additive:
+         *     ``amendment`` — причина/санкция текущей AMENDED-версии (иначе null),
+         *     ``summary`` — свежесть сводки 5.11 (null у не-сводки).
          */
         DayStateDetail: {
             preview_event: string | null;
             traffic_light: components["schemas"]["DayStateTrafficLight"] | null;
+            amendment: components["schemas"]["DayStateAmendment"] | null;
+            summary: components["schemas"]["DayStateSummary"] | null;
         };
         /**
          * @description Строка списка видимых подразделений: имя из core-селектора (ARCH-003)
@@ -1307,6 +1321,28 @@ export interface components {
         DayStateResponse: {
             divisions: components["schemas"]["DayStateDivision"][];
             detail: components["schemas"]["DayStateDetail"] | null;
+        };
+        /**
+         * @description Derived-свежесть сводки (10.6) — проекция ``SummaryFreshness`` 5.11 как
+         *     есть: status FRESH/STALE + три оси; null (на уровне detail) у обычной
+         *     сдачи без ``sources`` и несданного дня.
+         */
+        DayStateSummary: {
+            status: string;
+            superseded: components["schemas"]["DayStateSummarySuperseded"][];
+            missing: components["schemas"]["DayStateSummaryMissing"][];
+            unpinned: string[];
+        };
+        /** @description Ось missing: у запиненного ребёнка не осталось current («ноль текущих»). */
+        DayStateSummaryMissing: {
+            division_id: string;
+            pinned_version: number;
+        };
+        /** @description Ось superseded свежести сводки 5.11: пин ребёнка вытеснен новой версией. */
+        DayStateSummarySuperseded: {
+            division_id: string;
+            pinned_version: number;
+            current_version: number;
         };
         /**
          * @description Светофор 5.5a сданного дня: {status, late, drift} — schema-проекция
@@ -2782,14 +2818,21 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailySubmissionAmendRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DailySubmissionAmendRequest"];
+                "multipart/form-data": components["schemas"]["DailySubmissionAmendRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DailySubmission"];
+                };
             };
         };
     };

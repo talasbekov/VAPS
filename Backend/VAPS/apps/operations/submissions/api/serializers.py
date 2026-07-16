@@ -108,13 +108,52 @@ class DayStateTrafficLightSerializer(serializers.Serializer):
     drift = serializers.JSONField(allow_null=True)
 
 
+class DayStateAmendmentSerializer(serializers.Serializer):
+    """Причина/санкция ТЕКУЩЕЙ AMENDED-версии (10.6): ровно два поля из
+    строки DailySubmission; ``triggered_by_status_id`` наружу НЕ едет —
+    внутренний provenance-ref хука 5.4b."""
+
+    reason = serializers.CharField()
+    sanction = serializers.CharField()
+
+
+class DayStateSummarySupersededSerializer(serializers.Serializer):
+    """Ось superseded свежести сводки 5.11: пин ребёнка вытеснен новой версией."""
+
+    division_id = serializers.CharField()
+    pinned_version = serializers.IntegerField()
+    current_version = serializers.IntegerField()
+
+
+class DayStateSummaryMissingSerializer(serializers.Serializer):
+    """Ось missing: у запиненного ребёнка не осталось current («ноль текущих»)."""
+
+    division_id = serializers.CharField()
+    pinned_version = serializers.IntegerField()
+
+
+class DayStateSummarySerializer(serializers.Serializer):
+    """Derived-свежесть сводки (10.6) — проекция ``SummaryFreshness`` 5.11 как
+    есть: status FRESH/STALE + три оси; null (на уровне detail) у обычной
+    сдачи без ``sources`` и несданного дня."""
+
+    status = serializers.CharField()
+    superseded = DayStateSummarySupersededSerializer(many=True)
+    missing = DayStateSummaryMissingSerializer(many=True)
+    unpinned = serializers.ListField(child=serializers.CharField())
+
+
 class DayStateDetailSerializer(serializers.Serializer):
-    """Detail-режим day-state (10.3): ровно одно из полей ненулевое —
-    ``preview_event`` у несданного дня (семантика _diff_key submit_day),
-    ``traffic_light`` у сданного (5.5a)."""
+    """Detail-режим day-state (10.3): ровно одно из preview_event/traffic_light
+    ненулевое — ``preview_event`` у несданного дня (семантика _diff_key
+    submit_day), ``traffic_light`` у сданного (5.5a). 10.6 additive:
+    ``amendment`` — причина/санкция текущей AMENDED-версии (иначе null),
+    ``summary`` — свежесть сводки 5.11 (null у не-сводки)."""
 
     preview_event = serializers.CharField(allow_null=True)
     traffic_light = DayStateTrafficLightSerializer(allow_null=True)
+    amendment = DayStateAmendmentSerializer(allow_null=True)
+    summary = DayStateSummarySerializer(allow_null=True)
 
 
 class DayStateDivisionSerializer(serializers.Serializer):

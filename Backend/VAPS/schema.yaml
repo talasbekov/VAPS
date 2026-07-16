@@ -1289,21 +1289,12 @@ paths:
   /api/operations/daily-submissions/{id}/amend/:
     post:
       operationId: operations_daily_submissions_amend_create
-      description: |-
-        ViewSet mixin: gate each action on an in-house RBAC permission code.
-
-        Subclasses set ``permission_map = {action_name: permission_code}`` (action
-        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
-        custom ``@action`` method like ``archive``/``assign_employee``). The gate
-        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
-        authentication, so the operations seam has populated
-        ``request.effective_permissions`` (story 2.13). An action absent from the
-        map is denied (fail-closed); the rbac-matrix completeness test guarantees
-        every served action is mapped, so a gap surfaces at test time, not in prod.
-
-        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
-        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
-        imports operations — the gate reads only request attributes (ARCH#L585).
+      description: 'Пересдача сданного дня (5.4a/5.8b): свежий снапшот из БД, version+1,
+        event=AMENDED, late=false; {id} идентифицирует ЦЕПОЧКУ (протухший pk легален
+        — amend_day сам ре-резолвит head). 400 пустые/пробельные reason/sanction,
+        sanction >255; 403 чужой scope (ПОСЛЕ резолва pk — trade-off 5.8b); 404 фантомный
+        pk; 409 DAY_ALREADY_SUBMITTED (конкурентная пересдача); 422 NO_SUBMISSION_TO_AMEND
+        (ни одной версии).'
       parameters:
       - in: path
         name: id
@@ -1312,18 +1303,36 @@ paths:
         required: true
       tags:
       - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionAmendRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionAmendRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionAmendRequest'
+        required: true
       responses:
-        '200':
-          description: No response body
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailySubmission'
+          description: ''
   /api/operations/daily-submissions/day-state/:
     get:
       operationId: operations_daily_submissions_day_state_retrieve
       description: 'Read-модель панели сдачи (10.3): видимые под daily_report.mark_update
         подразделения + submitted-состояние дня; при division_id — detail: preview_event
         несданного дня (та же _diff_key-семантика, что submit_day) либо traffic_light
-        5.5a сданного (drift added/removed/changed). 400 мусорная/отсутствующая дата;
-        403 чужое подразделение (ДО существования); 404 фантомный UUID у глобального
-        гранта.'
+        5.5a сданного (drift added/removed/changed). 10.6 additive: amendment — {reason,
+        sanction} текущей AMENDED-версии (иначе null); summary — derived-свежесть
+        сводки 5.11 ({status FRESH|STALE, superseded, missing, unpinned}; null у не-сводки).
+        400 мусорная/отсутствующая дата; 403 чужое подразделение (ДО существования);
+        404 фантомный UUID у глобального гранта.'
       parameters:
       - in: query
         name: business_date
@@ -1936,6 +1945,30 @@ components:
       - submitted_at
       - submitted_by
       - version
+    DailySubmissionAmendRequest:
+      type: object
+      description: |-
+        POST /{id}/amend/ form (5.8b) — exactly the reason/sanction pair the
+        API forwards to amend_day. DRF defaults (required + trim_whitespace +
+        allow_blank=False) reject missing/blank/whitespace-only values at the
+        boundary; ``sanction`` carries the model's CharField(255) limit — without
+        it an oversized value would reach Postgres as a DataError → 500 (the same
+        boundary-lets-garbage-through class as 5.8a's whitespace actor header).
+        ``triggered_by_status_id`` is NOT accepted: it is the 5.4b system hook's
+        provenance ref (manual HTTP amendment stores None); accepting it would let
+        a client write arbitrary EmployeeStatus references. Extra payload fields,
+        including submitted_by/actor, are ignored (ARCH-SEC-030, DRF-канон 5.8a Д5).
+      properties:
+        reason:
+          type: string
+          minLength: 1
+        sanction:
+          type: string
+          minLength: 1
+          maxLength: 255
+      required:
+      - reason
+      - sanction
     DailySubmissionCreateRequest:
       type: object
       description: |-
@@ -1954,12 +1987,28 @@ components:
       required:
       - business_date
       - division_id
+    DayStateAmendment:
+      type: object
+      description: |-
+        Причина/санкция ТЕКУЩЕЙ AMENDED-версии (10.6): ровно два поля из
+        строки DailySubmission; ``triggered_by_status_id`` наружу НЕ едет —
+        внутренний provenance-ref хука 5.4b.
+      properties:
+        reason:
+          type: string
+        sanction:
+          type: string
+      required:
+      - reason
+      - sanction
     DayStateDetail:
       type: object
       description: |-
-        Detail-режим day-state (10.3): ровно одно из полей ненулевое —
-        ``preview_event`` у несданного дня (семантика _diff_key submit_day),
-        ``traffic_light`` у сданного (5.5a).
+        Detail-режим day-state (10.3): ровно одно из preview_event/traffic_light
+        ненулевое — ``preview_event`` у несданного дня (семантика _diff_key
+        submit_day), ``traffic_light`` у сданного (5.5a). 10.6 additive:
+        ``amendment`` — причина/санкция текущей AMENDED-версии (иначе null),
+        ``summary`` — свежесть сводки 5.11 (null у не-сводки).
       properties:
         preview_event:
           type: string
@@ -1968,8 +2017,18 @@ components:
           allOf:
           - $ref: '#/components/schemas/DayStateTrafficLight'
           nullable: true
+        amendment:
+          allOf:
+          - $ref: '#/components/schemas/DayStateAmendment'
+          nullable: true
+        summary:
+          allOf:
+          - $ref: '#/components/schemas/DayStateSummary'
+          nullable: true
       required:
+      - amendment
       - preview_event
+      - summary
       - traffic_light
     DayStateDivision:
       type: object
@@ -2005,6 +2064,59 @@ components:
       required:
       - detail
       - divisions
+    DayStateSummary:
+      type: object
+      description: |-
+        Derived-свежесть сводки (10.6) — проекция ``SummaryFreshness`` 5.11 как
+        есть: status FRESH/STALE + три оси; null (на уровне detail) у обычной
+        сдачи без ``sources`` и несданного дня.
+      properties:
+        status:
+          type: string
+        superseded:
+          type: array
+          items:
+            $ref: '#/components/schemas/DayStateSummarySuperseded'
+        missing:
+          type: array
+          items:
+            $ref: '#/components/schemas/DayStateSummaryMissing'
+        unpinned:
+          type: array
+          items:
+            type: string
+      required:
+      - missing
+      - status
+      - superseded
+      - unpinned
+    DayStateSummaryMissing:
+      type: object
+      description: 'Ось missing: у запиненного ребёнка не осталось current («ноль
+        текущих»).'
+      properties:
+        division_id:
+          type: string
+        pinned_version:
+          type: integer
+      required:
+      - division_id
+      - pinned_version
+    DayStateSummarySuperseded:
+      type: object
+      description: 'Ось superseded свежести сводки 5.11: пин ребёнка вытеснен новой
+        версией.'
+      properties:
+        division_id:
+          type: string
+        pinned_version:
+          type: integer
+        current_version:
+          type: integer
+      required:
+      - current_version
+      - division_id
+      - pinned_version
     DayStateTrafficLight:
       type: object
       description: |-

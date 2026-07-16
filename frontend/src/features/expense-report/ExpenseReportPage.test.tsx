@@ -647,14 +647,14 @@ describe('журнал выпусков (AC-10)', () => {
     const row3 = await within(journal).findByTestId(`issue-row-${ISSUE_3}`)
     expect(within(row3).getByText('Исх.№ 3/2026')).toBeInTheDocument()
     expect(within(row3).getByText('Выпущен')).toBeInTheDocument()
-    expect(within(row3).getByText('взамен исх.№ 2')).toBeInTheDocument()
+    expect(within(row3).getByText('взамен исх.№ 2/2026')).toBeInTheDocument()
     expect(
       within(row3).getByText('пересдача после amendment v3'),
     ).toBeInTheDocument()
 
     const row2 = within(journal).getByTestId(`issue-row-${ISSUE_2}`)
     expect(within(row2).getByText('Заменён')).toBeInTheDocument()
-    expect(within(row2).getByText('взамен исх.№ 1')).toBeInTheDocument()
+    expect(within(row2).getByText('взамен исх.№ 1/2026')).toBeInTheDocument()
 
     const row1 = within(journal).getByTestId(`issue-row-${ISSUE_1}`)
     expect(within(row1).getByText('Заменён')).toBeInTheDocument()

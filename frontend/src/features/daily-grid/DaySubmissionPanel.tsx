@@ -26,11 +26,21 @@ import {
   ApiError,
   BusinessRuleError,
   ConflictError,
+  ValidationError,
 } from '../../shared/api/errors'
 import { useApiMutation } from '../../shared/api/useApiMutation'
+import { usePermissions } from '../../shared/auth/usePermissions'
 import { Card } from '../../shared/ui/Card'
-import { driftRows, selectDayState } from './dayState'
+import {
+  driftRows,
+  resolvePanelState,
+  selectDayState,
+  summaryRows,
+} from './dayState'
 import type {
+  AmendDayRequest,
+  AmendDayResponse,
+  AmendmentVM,
   DaySubmission,
   DayStateResponse,
   SelectedDayState,
@@ -61,8 +71,20 @@ function previewLabel(event: string): string {
 function eventLabel(event: string): string {
   if (event === 'CONFIRMED_NO_CHANGES') return 'подтверждение без изменений'
   if (event === 'CHANGED') return 'срез изменён'
+  // 10.6 AC-9: сырой код AMENDED падал в текст панели — человекочитаемо.
+  if (event === 'AMENDED') return 'пересдано (amendment)'
   return event
 }
+
+/** Гейт кнопки пересдачи (AC-5): подсказка disabled-состояния — обнаружимость
+ * вместо скрытия (зеркало download-гейта 10.5). */
+const AMEND_DENIED_HINT =
+  'Нет права на пересдачу (daily_report.correct) — обратитесь к администратору.'
+
+/** Тело amend-мутации + адрес цепочки: submissionId уходит в URL, телом POST
+ * едут ровно reason/sanction (контракт 5.8b, ни actor, ни
+ * triggered_by_status_id). */
+type AmendVariables = { submissionId: number } & AmendDayRequest
 
 /** detail.allowed из 422 BUSINESS_DATE_OUT_OF_WINDOW — defensive. */
 function readAllowed(details: Record<string, unknown>): string[] {
@@ -94,6 +116,14 @@ function DaySubmissionPanelBody({
   const [formError, setFormError] = useState(false)
   // «Сдано» ИЗ 201-ОТВЕТА (AC-8) — не прогноз и не рефетч (тот догоняет drift).
   const [submittedNow, setSubmittedNow] = useState<DaySubmission | null>(null)
+  // Amendment-флоу 10.6: диалог, канал 400 внутри диалога и локальные
+  // причина/санкция только что отправленной формы (201 их не несёт — 9-полевая
+  // проекция; до рефетча detail.amendment строки рендерятся отсюда, AC-7).
+  const [amendOpen, setAmendOpen] = useState(false)
+  const [amendFormError, setAmendFormError] = useState(false)
+  const [amendedMeta, setAmendedMeta] = useState<
+    (AmendmentVM & { version: number }) | null
+  >(null)
 
   const queryClient = useQueryClient()
   // Автовыбор единственного видимого подразделения (AC-5) — ДЕРИВАЦИЯ, не
@@ -108,6 +138,18 @@ function DaySubmissionPanelBody({
     (listData !== undefined && listData.divisions.length === 1
       ? listData.divisions[0].division_id
       : null)
+  // Текущий выбор для колбэков мутаций (AC-11б): 201, прилетевший ПОСЛЕ смены
+  // селекта, сверяется с актуальным выбором, а не с замкнутым в колбэке.
+  // Синхронизация — эффектом (react-hooks/refs банит запись в рендере);
+  // колбэки мутаций асинхронны — эффект коммита успевает раньше ответа сети.
+  const selectedRef = useRef(selected)
+  useEffect(() => {
+    selectedRef.current = selected
+  }, [selected])
+
+  // Гейт пересдачи (AC-5): правом, не ролью (Q-персона — seed не трогаем).
+  const { hasPermission } = usePermissions()
+  const canAmend = hasPermission('daily_report.correct')
 
   const query = useQuery<DayStateResponse, ApiFailure>({
     queryKey: ['day-state', businessDate, selected],
@@ -158,14 +200,61 @@ function DaySubmissionPanelBody({
       }
     },
     onSuccess: (data) => {
-      setSubmittedNow(data)
-      setPreviewOpen(false)
       // Инвалидация day-state (AC-8): рефетч подтянет светофор/строку списка.
       void queryClient.invalidateQueries({ queryKey: ['day-state'] })
+      // Division-гард (10.6 AC-11б, закрытие defer 10.3 L668): ответ,
+      // прилетевший после смены селекта, НЕ красит панель другой дивизии.
+      if (data.division_id !== selectedRef.current) return
+      setSubmittedNow(data)
+      setPreviewOpen(false)
     },
     onFormError: () => setFormError(true),
   })
   const { error, isPending, mutate, reset } = submit
+
+  const amend = useApiMutation<AmendDayResponse, AmendVariables>({
+    // Вторая мутация панели (10.6). Все amend-коды non-overridable →
+    // mutation.error (ConflictDialog не участвует); 400 НЕ закрывает диалог
+    // (ввод не терять), остальные исходы-ошибки закрывают; 409
+    // DAY_ALREADY_SUBMITTED (гонка конкурентных amendments) и 422
+    // NO_SUBMISSION_TO_AMEND — состояние, не тупик: рефетч day-state.
+    mutationFn: async ({ submissionId, reason, sanction }) => {
+      try {
+        return await apiClient.post<AmendDayResponse>(
+          // {id} = текущая submission; протухший pk легален — amend_day сам
+          // ре-резолвит head цепочки через latest_for (view L350-351).
+          `/api/operations/daily-submissions/${submissionId}/amend/`,
+          { reason, sanction } satisfies AmendDayRequest,
+        )
+      } catch (err) {
+        if (!(err instanceof ValidationError)) setAmendOpen(false)
+        if (
+          (err instanceof ConflictError &&
+            err.errorCode === 'DAY_ALREADY_SUBMITTED') ||
+          (err instanceof BusinessRuleError &&
+            err.errorCode === 'NO_SUBMISSION_TO_AMEND')
+        )
+          void queryClient.invalidateQueries({ queryKey: ['day-state'] })
+        throw err
+      }
+    },
+    onSuccess: (data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['day-state'] })
+      // Тот же division-гард, что у submit (AC-11б) — у обеих мутаций.
+      if (data.division_id !== selectedRef.current) return
+      // Причина/санкция — локально из только что отправленной формы (201 их
+      // не несёт); версия привязывает мету к строке — рефетч с amendment
+      // detail её вытеснит, сменившаяся версия её гасит.
+      setAmendedMeta({
+        version: data.version,
+        reason: variables.reason,
+        sanction: variables.sanction,
+      })
+      setSubmittedNow(data)
+      setAmendOpen(false)
+    },
+    onFormError: () => setAmendFormError(true),
+  })
 
   // Сообщение «уже сдан» — деривация из mutation.error (AC-9), не стейт.
   const alreadySubmitted =
@@ -180,15 +269,18 @@ function DaySubmissionPanelBody({
     query.data !== undefined && selected !== null && !query.isPlaceholderData
       ? selectDayState(query.data, selected)
       : null
-  const state: SelectedDayState | null =
-    submittedNow !== null
-      ? {
-          kind: 'submitted',
-          submission: submittedNow,
-          trafficLight:
-            serverState?.kind === 'submitted' ? serverState.trafficLight : null,
-        }
-      : serverState
+  // 10.6 AC-11(а): серверная строка побеждает локальный 201 при
+  // server.version >= local.version (чужой amendment виден после рефетча).
+  const state = resolvePanelState(serverState, submittedNow)
+  // Причина/санкция: серверный detail.amendment; до его прихода — локальная
+  // мета только что отправленной формы, привязанная к версии (AC-7/AC-9).
+  const displayedAmendment: AmendmentVM | null =
+    state?.kind === 'submitted'
+      ? (state.amendment ??
+        (amendedMeta !== null && state.submission.version === amendedMeta.version
+          ? { reason: amendedMeta.reason, sanction: amendedMeta.sanction }
+          : null))
+      : null
 
   const handleSubmitClick = useCallback(() => {
     // Dirty-гейт (AC-7): снапшот сдачи строит БЭК из БД — несохранённые
@@ -206,6 +298,7 @@ function DaySubmissionPanelBody({
   // (setState в обработчике события — легально, в отличие от эффекта).
   // Ревью 10.3: reset() обязателен — иначе баннер 422/«уже сдан» (деривация
   // из mutation.error) переезжает в контекст ДРУГОЙ дивизии.
+  const { reset: amendReset } = amend
   const handleSelectChange = useCallback(
     (event: React.ChangeEvent<HTMLSelectElement>) => {
       setSelectedManual(
@@ -216,8 +309,14 @@ function DaySubmissionPanelBody({
       setDirtyHint(false)
       setFormError(false)
       reset()
+      // Артефакты amend-цикла (10.6) — тоже в мусор: свой reset при смене
+      // селекта (баннер 409/422 не переезжает в контекст другой дивизии).
+      setAmendOpen(false)
+      setAmendFormError(false)
+      setAmendedMeta(null)
+      amendReset()
     },
-    [reset],
+    [reset, amendReset],
   )
 
   const handleConfirm = useCallback(() => {
@@ -229,6 +328,18 @@ function DaySubmissionPanelBody({
 
   const nameById: Record<string, string> = {}
   for (const e of employees) nameById[e.id] = e.fullName
+
+  // Имена детей для осей сводки (AC-10) — словарь divisions ответа day-state;
+  // id вне словаря → показать id (fallback-канон 10.3).
+  const divisionNameById: Record<string, string> = {}
+  for (const d of availableDivisions ?? [])
+    divisionNameById[d.division_id] = d.name
+
+  // Каналы ошибок amend (AC-8) — деривации из mutation.error, не стейт.
+  const amendError = amend.error
+  const amendRaced =
+    amendError instanceof ConflictError &&
+    amendError.errorCode === 'DAY_ALREADY_SUBMITTED'
 
   return (
     <Card
@@ -320,6 +431,33 @@ function DaySubmissionPanelBody({
               </div>
             )}
 
+          {/* Каналы amend-мутации (10.6 AC-8): 409-гонка = состояние (не
+              тупик), 422/403/404 — баннеры; 400 рендерится ВНУТРИ диалога;
+              5xx/сеть — тост хука; 401 — цепь 8.6, панель молчит. */}
+          {amendRaced && (
+            <p role="status" className="text-amber-700">
+              Пересдача уже выполнена (конкурентная пересдача) — состояние
+              обновлено.
+            </p>
+          )}
+          {amendError instanceof BusinessRuleError && (
+            <div role="alert" className="rounded border border-red-300 p-2">
+              {amendError.message}
+            </div>
+          )}
+          {amendError instanceof ConflictError && !amendRaced && (
+            <div role="alert" className="rounded border border-amber-300 p-2">
+              {amendError.message}
+            </div>
+          )}
+          {amendError instanceof ApiError &&
+            amendError.kind === 'api' &&
+            amendError.status !== 401 && (
+              <div role="alert" className="rounded border border-red-300 p-2">
+                {amendError.message}
+              </div>
+            )}
+
           {state === null ? (
             <p role="status" className="text-muted-foreground">
               {selected === null
@@ -356,6 +494,13 @@ function DaySubmissionPanelBody({
               <p role="status">
                 <span>День сдан: {eventLabel(state.submission.event)}</span>{' '}
                 <span>версия {state.submission.version}</span>{' '}
+                {/* Различимость v1/v2+ (AC-9): v1 — без бейджа. */}
+                {(state.submission.version >= 2 ||
+                  state.submission.event === 'AMENDED') && (
+                  <span className="rounded border border-sky-400 px-1">
+                    Пересдача
+                  </span>
+                )}{' '}
                 <span>{formatSubmittedAt(state.submission.submitted_at)}</span>{' '}
                 {state.submission.late && (
                   <span className="rounded border border-amber-400 px-1">
@@ -363,6 +508,31 @@ function DaySubmissionPanelBody({
                   </span>
                 )}
               </p>
+              {displayedAmendment !== null && (
+                <div data-testid="amendment-details">
+                  <p>Причина: {displayedAmendment.reason}</p>
+                  <p>Санкция: {displayedAmendment.sanction}</p>
+                </div>
+              )}
+              {/* Маркер свежести сводки (AC-10): STALE — alert с осями,
+                  FRESH — тихая пометка, null — строка не сводка, молчим. */}
+              {state.summary !== null &&
+                (state.summary.status === 'STALE' ? (
+                  <div role="alert" className="flex flex-col gap-1">
+                    <span>
+                      Сводка протухла — состояние детей разошлось с пинами:
+                    </span>
+                    <ul data-testid="summary-details" className="list-disc pl-5">
+                      {summaryRows(state.summary, divisionNameById).map(
+                        (row) => (
+                          <li key={row.key}>{row.label}</li>
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">Сводка актуальна</p>
+                ))}
               {state.trafficLight !== null &&
                 (state.trafficLight.status === 'YELLOW' ? (
                   <div role="alert" className="flex flex-col gap-1">
@@ -385,14 +555,30 @@ function DaySubmissionPanelBody({
                 ) : state.trafficLight.status === 'GREEN' ? (
                   <p className="text-muted-foreground">Расхождений нет.</p>
                 ) : null)}
-              {/* Ручное обновление (AC-12): polling — 10.4, здесь refetch. */}
-              <button
-                type="button"
-                className="rounded border px-3 py-1"
-                onClick={() => void query.refetch()}
-              >
-                Обновить
-              </button>
+              <div className="flex gap-2">
+                {/* Ручное обновление (AC-12): polling — 10.4, здесь refetch. */}
+                <button
+                  type="button"
+                  className="rounded border px-3 py-1"
+                  onClick={() => void query.refetch()}
+                >
+                  Обновить
+                </button>
+                {/* Запрос пересдачи (AC-5): гейт правом; без права —
+                    disabled с подсказкой, НЕ скрыта (зеркало 10.5). */}
+                <button
+                  type="button"
+                  className="rounded border px-3 py-1 disabled:opacity-50"
+                  disabled={!canAmend}
+                  title={canAmend ? undefined : AMEND_DENIED_HINT}
+                  onClick={() => {
+                    setAmendFormError(false)
+                    setAmendOpen(true)
+                  }}
+                >
+                  Запросить пересдачу
+                </button>
+              </div>
             </div>
           )}
             </>
@@ -409,7 +595,111 @@ function DaySubmissionPanelBody({
           onCancel={() => setPreviewOpen(false)}
         />
       )}
+
+      {amendOpen && state?.kind === 'submitted' && (
+        <AmendRequestDialog
+          pending={amend.isPending}
+          formError={amendFormError}
+          onConfirm={(reason, sanction) => {
+            setAmendFormError(false)
+            amend.mutate({
+              // Протухший pk легален: amend ре-резолвит head цепочки.
+              submissionId: state.submission.id,
+              reason,
+              sanction,
+            })
+          }}
+          onCancel={() => {
+            setAmendOpen(false)
+            setAmendFormError(false)
+          }}
+        />
+      )}
     </Card>
+  )
+}
+
+/** Модальный запрос пересдачи (10.6 AC-6): нативный <dialog> + showModal —
+ * зеркало SubmitPreviewDialog (guard по .open, Esc/onCancel). «Подтвердить»
+ * заперт, пока причина/санкция пусты после trim, и на isPending. */
+function AmendRequestDialog({
+  pending,
+  formError,
+  onConfirm,
+  onCancel,
+}: {
+  pending: boolean
+  formError: boolean
+  onConfirm: (reason: string, sanction: string) => void
+  onCancel: () => void
+}) {
+  const dialogRef = useRef<HTMLDialogElement | null>(null)
+  const titleId = useId()
+  const [reason, setReason] = useState('')
+  const [sanction, setSanction] = useState('')
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (dialog && !dialog.open) dialog.showModal()
+  }, [])
+
+  const filled = reason.trim() !== '' && sanction.trim() !== ''
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={titleId}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          onCancel()
+        }
+      }}
+      onCancel={(event) => {
+        event.preventDefault()
+        onCancel()
+      }}
+    >
+      <h3 id={titleId}>Запрос пересдачи дня</h3>
+      <p>
+        Пересдача создаст версию N+1; снапшот пересобирается из текущей БД;
+        действующий расход потребует нового выпуска «взамен».
+      </p>
+      {formError && (
+        <div role="alert" className="rounded border border-red-300 p-2">
+          Запрос отклонён: проверьте данные формы.
+        </div>
+      )}
+      <label className="flex flex-col gap-1">
+        Причина
+        <textarea
+          aria-label="Причина"
+          className="rounded border px-2 py-1"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        Санкция
+        <input
+          aria-label="Санкция"
+          className="rounded border px-2 py-1"
+          maxLength={255}
+          value={sanction}
+          onChange={(event) => setSanction(event.target.value)}
+        />
+      </label>
+      <button type="button" onClick={onCancel}>
+        Отмена
+      </button>
+      <button
+        type="button"
+        disabled={pending || !filled}
+        onClick={() => onConfirm(reason.trim(), sanction.trim())}
+      >
+        Подтвердить
+      </button>
+    </dialog>
   )
 }
 

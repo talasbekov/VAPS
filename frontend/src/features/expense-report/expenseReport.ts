@@ -21,9 +21,15 @@ export function issueLabel(issue: { number: number; year: number }): string {
   return `Исх.№ ${issue.number}/${issue.year}`
 }
 
-/** «взамен исх.№ 246» — подпись цепочки пересдач (контракт 10-02 §2). */
-export function supersedesLabel(supersedes: { number: number }): string {
-  return `взамен исх.№ ${supersedes.number}`
+/** «взамен исх.№ 246/2026» — подпись цепочки пересдач. Год обязателен (10.6
+ * AC-12, defer 10.5): year-rollover сбрасывает счётчик DocumentSequence, и
+ * кросс-годовая цепочка №5/2026 ← №247/2025 без года была бы двусмысленна;
+ * Д-формат — зеркало issueLabel (Q-формат: подтвердить у Bratan, не стоп). */
+export function supersedesLabel(supersedes: {
+  number: number
+  year: number
+}): string {
+  return `взамен исх.№ ${supersedes.number}/${supersedes.year}`
 }
 
 /** Fallback-имя файла — формат бэка document_release_service.py:288. */

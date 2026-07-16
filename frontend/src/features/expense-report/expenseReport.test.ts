@@ -22,8 +22,21 @@ describe('issueLabel / supersedesLabel', () => {
     expect(issueLabel({ number: 247, year: 2026 })).toBe('Исх.№ 247/2026')
   })
 
-  it('supersedesLabel — «взамен исх.№ N» (контракт 10-02 §2)', () => {
-    expect(supersedesLabel({ number: 246 })).toBe('взамен исх.№ 246')
+  it('supersedesLabel — «взамен исх.№ N/год» (10.6 AC-12, defer 10.5)', () => {
+    expect(supersedesLabel({ number: 246, year: 2026 })).toBe(
+      'взамен исх.№ 246/2026',
+    )
+  })
+
+  it('supersedesLabel различает одноимённые номера смежных лет (кросс-годовая цепочка)', () => {
+    // Year-rollover сбрасывает счётчик DocumentSequence: №5/2026 ← «взамен
+    // №247/2025» — без года подпись была бы двусмысленна.
+    expect(supersedesLabel({ number: 247, year: 2025 })).toBe(
+      'взамен исх.№ 247/2025',
+    )
+    expect(supersedesLabel({ number: 247, year: 2026 })).not.toBe(
+      supersedesLabel({ number: 247, year: 2025 }),
+    )
   })
 })
 
