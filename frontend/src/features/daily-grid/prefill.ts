@@ -40,7 +40,20 @@ export type BulkStatusRequest = {
 /** Дефолт для сотрудника без вчерашней записи (Д1): derived «В строю». */
 export const DEFAULT_STATUS = 'IN_SERVICE'
 
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+/** ISO-дата `YYYY-MM-DD`. Экспорт (ревью 10.2, дедуп): страница гейтит ввод
+ * date-input тем же регэкспом, что и период здесь — не дублировать. */
+export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/** Сегодняшняя ЛОКАЛЬНАЯ дата (дефолт date-input экрана — Решение №6 10.2).
+ * ТОЛЬКО дефолт берёт локальные геттеры (осознанно, НЕ UTC-срез: оператор
+ * живёт в местных сутках); вся АРИФМЕТИКА дат — addDaysIso (UTC, урок
+ * tz-флейка test_vacancies_endpoint). */
+export function todayLocalIso(): string {
+  const now = new Date()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${mm}-${dd}`
+}
 
 // UTC-математика, не local (урок tz-флейка test_vacancies_endpoint): локальный
 // парсер сдвинул бы дату на границе суток в минусовых поясах. Экспорт (10.2):

@@ -411,6 +411,45 @@ describe('10.2 DailyExpensePage — отправка (AC-5/AC-6)', () => {
     expect(ev.defaultPrevented).toBe(false)
   })
 
+  it('ревью №2: правка ВО ВРЕМЯ полёта bulk переживает onSuccess-rebase (edited-ветка RESYNC)', async () => {
+    usePrefillHandler()
+    // Управляемая задержка bulk: ответ уходит ТОЛЬКО после release() — окно
+    // isPending детерминировано открыто для правки «в полёте».
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/operations/statuses/bulk/', async () => {
+        await gate
+        return HttpResponse.json({ created: 1 }, { status: 201 })
+      }),
+    )
+    await renderPageAt()
+    editFirstRowTo('SICK') // ячейка A (Асанов); COMMIT уводит фокус на строку 1
+    const submit = screen.getByText('Сдать день')
+    fireEvent.click(submit)
+    await waitFor(() => expect(submit).toBeDisabled()) // bulk в полёте
+    // Во время isPending правится ячейка B (Борисов): фокус после COMMIT уже
+    // на строке 1 (грамматика: Enter-COMMIT = вниз).
+    const grid = screen.getByRole('grid')
+    fireEvent.keyDown(grid, { key: 'Enter' })
+    fireEvent.change(screen.getByLabelText('Статус'), {
+      target: { value: 'SICK' },
+    })
+    fireEvent.keyDown(grid, { key: 'Enter' })
+    release()
+    await screen.findByText(/Применено отклонений: 1/)
+    // onSuccess-rebase (мерж lastChangesRef → initials → RESYNC) НЕ затёр
+    // введённое в полёте: правка живёт как дельта против нового initial.
+    expect(
+      within(rowOf('Борисов')).getByText('На больничном'),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('changed-counter').textContent).toContain(
+      'Изменено 1 из 2',
+    )
+  })
+
   it('0 дельт → запроса нет (существующее поведение 9.7)', async () => {
     usePrefillHandler()
     const bodies = useBulkHandler('created')
@@ -600,6 +639,42 @@ describe('10.2 DailyExpensePage — защита ввода (AC-11)', () => {
       expect(screen.getByTestId('changed-counter').textContent).toContain(
         'Изменено 0 из 2',
       ),
+    )
+    expect(
+      new URL(urls[urls.length - 1]).searchParams.get('business_date'),
+    ).toBe('2026-07-16') // prefill за (2026-07-17 − 1)
+  })
+
+  it('ревью №3: успех → смена даты → applied-значения старой даты НЕ перетекают в новую (батч сбросов onDateChange)', async () => {
+    const urls = usePrefillHandler()
+    useBulkHandler('created')
+    await renderPageAt()
+    editFirstRowTo('SICK')
+    fireEvent.click(screen.getByText('Сдать день'))
+    await screen.findByText(/Применено отклонений: 1/)
+    // Rebase на СТАРОЙ дате: применённое значение стало новым initial.
+    expect(
+      within(rowOf('Асанов')).getByText('На больничном'),
+    ).toBeInTheDocument()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    fireEvent.change(screen.getByLabelText('Дата'), {
+      target: { value: '2026-07-17' },
+    })
+    // Фактическое поведение: после успеха дельт нет (rebase) → isDirty()
+    // ложен → confirm НЕ спрашивается вовсе.
+    expect(confirmSpy).not.toHaveBeenCalled()
+    await screen.findByRole('grid')
+    // Новая дата: initial — из СВЕЖЕГО prefill; applied старого дня (SICK
+    // Асанова) НЕ перетёк через appliedChanges-мерж в yesterday.
+    await waitFor(() =>
+      expect(within(rowOf('Асанов')).getByText('В строю')).toBeInTheDocument(),
+    )
+    // Счётчик «Применено» сброшен, дельт на новой дате нет.
+    expect(
+      screen.queryByText(/Применено отклонений/),
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('changed-counter').textContent).toContain(
+      'Изменено 0 из 2',
     )
     expect(
       new URL(urls[urls.length - 1]).searchParams.get('business_date'),

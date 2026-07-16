@@ -24,6 +24,8 @@ import type { RowChange } from './DailyGrid.types'
 import {
   addDaysIso,
   fromGridPrefill,
+  ISO_DATE_RE,
+  todayLocalIso,
   type BulkStatusRequest,
   type GridPrefillResponse,
   type YesterdayPlacement,
@@ -36,18 +38,6 @@ type BulkCreateResponse =
 type BulkVariables = BulkStatusRequest & {
   override?: boolean
   override_reason?: string
-}
-
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-
-/** Сегодняшняя ЛОКАЛЬНАЯ дата (дефолт экрана — Решение №6). Только дефолт
- * date-input берёт локальные геттеры; вся АРИФМЕТИКА дат — addDaysIso (UTC,
- * урок tz-флейка). */
-function todayLocalIso(): string {
-  const now = new Date()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  return `${now.getFullYear()}-${mm}-${dd}`
 }
 
 /** Строка details.rows агрегата — defensive (конверт несёт unknown). */
