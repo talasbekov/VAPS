@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1784129293.0773003,
-    "ast_hash": "5d0b3b4d404fbb6ba2b9ffdb97549359",
+    "mtime": 1784185443.0580795,
+    "ast_hash": "855f74ebe41ea9ad04894d2764a1c77d",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1784178235.3520257,
-    "ast_hash": "172b766efba785400d32ab922f52937b",
+    "mtime": 1784185545.1136189,
+    "ast_hash": "df26a7e83d0779616404606f1837e0c1",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -19115,8 +19115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_rbac_matrix.py": {
-    "mtime": 1784127831.7519276,
-    "ast_hash": "bd1c3ed9f5d32319b77105dfb40463c4",
+    "mtime": 1784183537.0105784,
+    "ast_hash": "e841b357a6661418125037436481adfd",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/2-10-admin-\u043f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430-django-auth-\u0432\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435.md": {
@@ -19555,13 +19555,13 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/api/serializers.py": {
-    "mtime": 1783584247.3133576,
-    "ast_hash": "43239325473ca0be0fd520b3ead7a514",
+    "mtime": 1784181824.6215737,
+    "ast_hash": "52b82190f068cec14cea41c493f57fcf",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/api/views.py": {
-    "mtime": 1783961709.7075987,
-    "ast_hash": "e92dbe8e84a38a8ca85e2f50ad24bddf",
+    "mtime": 1784185303.0915298,
+    "ast_hash": "0511a682f0c42d16b40d069c000c5fab",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/management/__init__.py": {
@@ -19615,8 +19615,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/__init__.py": {
-    "mtime": 1783584240.0163267,
-    "ast_hash": "1f2f5cb8e96930e187fb52a21928b77b",
+    "mtime": 1784181810.4107404,
+    "ast_hash": "5b876f4521312389c01060da7b60cdc4",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/amendment_service.py": {
@@ -19630,8 +19630,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/day_submission_service.py": {
-    "mtime": 1783436411.4245818,
-    "ast_hash": "8debce75f091465fa95b671b569f04c8",
+    "mtime": 1784181806.801783,
+    "ast_hash": "4223184be1c35543f207c3be493fd641",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/lagging_check.py": {
@@ -20800,8 +20800,8 @@
     "semantic_hash": ""
   },
   "frontend/src/app/AppLayout.test.tsx": {
-    "mtime": 1784177860.6735291,
-    "ast_hash": "473b3cde1e0dc62afa357afbfc497d97",
+    "mtime": 1784183399.9451027,
+    "ast_hash": "0f348b73a02bc8f7ce4c8dc0fa7845bc",
     "semantic_hash": ""
   },
   "frontend/src/app/app-layout.qa.test.tsx": {
@@ -20870,13 +20870,13 @@
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyGrid.tsx": {
-    "mtime": 1784177209.7351801,
-    "ast_hash": "73847d9eb8638275ad19461812e766e5",
+    "mtime": 1784183017.3266532,
+    "ast_hash": "e854e11d9636473d627745cd3ba176a1",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyGrid.types.ts": {
-    "mtime": 1784177149.6323354,
-    "ast_hash": "952189617d5f8d2129742d68c1ac87f4",
+    "mtime": 1784183009.4126873,
+    "ast_hash": "c44934eca3566c1b03c9c7aa4b05d663",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyGrid.validation.test.tsx": {
@@ -20890,8 +20890,8 @@
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyGridContainer.tsx": {
-    "mtime": 1784177422.1596532,
-    "ast_hash": "d05887bf43bb2dac334ca53533d1d1c4",
+    "mtime": 1784183031.1165943,
+    "ast_hash": "1a5231b9315c3fa55fe8cd0167010cea",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/grammar.properties.test.ts": {
@@ -20920,8 +20920,8 @@
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/prefill.ts": {
-    "mtime": 1784177389.7347317,
-    "ast_hash": "4d672803e64b94f6dafd632d9684913a",
+    "mtime": 1784180326.6128378,
+    "ast_hash": "26fd868f1ac48f91582e21b14a96ed17",
     "semantic_hash": ""
   },
   "frontend/src/features/print-forms/PrintTestPage.test.tsx": {
@@ -20950,13 +20950,13 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/errors.ts": {
-    "mtime": 1783436411.4584737,
+    "mtime": 1784185154.2356963,
     "ast_hash": "61708c2d88a3c1b0419d542e60e498ba",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/schema.d.ts": {
-    "mtime": 1784176963.7218394,
-    "ast_hash": "289c045f5467c8adc233c11d38bc1efd",
+    "mtime": 1784181961.8081172,
+    "ast_hash": "15d1f6472af7c43a3f9180afa54101ad",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/testing/handlers.ts": {
@@ -20980,8 +20980,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/useApiMutation.ts": {
-    "mtime": 1783436411.4587154,
-    "ast_hash": "0465ededff44abbb9353c9bf8c47e24c",
+    "mtime": 1784185267.7295697,
+    "ast_hash": "aac3ddcde3642fc6b0228da4866c5779",
     "semantic_hash": ""
   },
   "frontend/src/shared/auth/AuthContext.tsx": {
@@ -21115,8 +21115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/schema.yaml": {
-    "mtime": 1784176955.898712,
-    "ast_hash": "15025b67deb2d909cab6f6fd181704c5",
+    "mtime": 1784181961.1844323,
+    "ast_hash": "c9bb5142e0616031085da3d9a2e411ea",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/5-10-property-\u0438\u043c\u043c\u0443\u0442\u0430\u0431\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c-\u0441\u043d\u0430\u043f\u0448\u043e\u0442\u0430.md": {
@@ -21480,18 +21480,48 @@
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyExpensePage.test.tsx": {
-    "mtime": 1784177959.4437988,
-    "ast_hash": "63fdb8e86f3dd9a543a691407cb98698",
+    "mtime": 1784183086.381361,
+    "ast_hash": "5f10194ef65e58d39ad946b6466593c3",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyExpensePage.tsx": {
-    "mtime": 1784177766.0419815,
-    "ast_hash": "12cf68261fb532da893dc94897da9ae4",
+    "mtime": 1784183362.9172466,
+    "ast_hash": "e7a17c68b883d77923192cfb00fb505b",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/10-2-\u044d\u043a\u0440\u0430\u043d-\u043c\u0430\u0441\u0441\u043e\u0432\u043e\u0433\u043e-\u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f.md": {
-    "mtime": 1784178206.30513,
-    "ast_hash": "0e404edff3817485ae9eb64e45a43071",
+    "mtime": 1784180549.6910434,
+    "ast_hash": "b201b6a283ecb2e084d795f7bb7bcbe4",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/tests/test_day_state_api.py": {
+    "mtime": 1784183537.0105784,
+    "ast_hash": "d0bae5e5f68256997320e322f66d0b00",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/daily-grid/DaySubmissionPanel.test.tsx": {
+    "mtime": 1784184843.7519054,
+    "ast_hash": "0182011fc1bf63f713df72ac6fae353d",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/daily-grid/DaySubmissionPanel.tsx": {
+    "mtime": 1784185239.66681,
+    "ast_hash": "a78d71e76f2548cb28beca1068c4f6fa",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/daily-grid/dayState.test.ts": {
+    "mtime": 1784182106.34583,
+    "ast_hash": "bbd350335a613e47aca6a8c584cb9643",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/daily-grid/dayState.ts": {
+    "mtime": 1784182134.6566021,
+    "ast_hash": "38abae8f0488ecbd6571006349eca5a8",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/10-3-\u044d\u043a\u0440\u0430\u043d-\u0441\u0434\u0430\u0447\u0438-\u0434\u043d\u044f.md": {
+    "mtime": 1784185535.499662,
+    "ast_hash": "a5b787eff1d87ed5aa2a53e79819eb3b",
     "semantic_hash": ""
   }
 }
