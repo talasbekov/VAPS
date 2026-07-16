@@ -67,6 +67,15 @@ class GridPrefillStatusSerializer(serializers.Serializer):
     date_end = serializers.DateField()
 
 
+class GridPrefillStatusTypeSerializer(serializers.Serializer):
+    """Read-only схема строки справочника статусов (story 10.2 AC-1):
+    {code, name} — ровно ``StatusOption {code, label}`` фронта. Только
+    is_active=True, порядок Meta (priority, code) — кладёт селектор."""
+
+    code = serializers.CharField()
+    name = serializers.CharField()
+
+
 class GridPrefillResponseSerializer(serializers.Serializer):
     """Read-only схема ответа 200 grid-prefill (только для spectacular —
     вьюха отдаёт selector-словарь напрямую, поля 1:1)."""
@@ -74,3 +83,4 @@ class GridPrefillResponseSerializer(serializers.Serializer):
     business_date = serializers.DateField()
     employees = GridPrefillEmployeeSerializer(many=True)
     statuses = GridPrefillStatusSerializer(many=True)
+    status_types = GridPrefillStatusTypeSerializer(many=True)

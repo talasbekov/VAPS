@@ -110,17 +110,21 @@ it('правка → счётчик растёт; «Сдать день» → on
   )
   await user.click(screen.getByText('Сдать день'))
   expect(onBulkSubmit).toHaveBeenCalledTimes(1)
-  expect(onBulkSubmit).toHaveBeenCalledWith({
-    business_date: '2026-07-08',
-    rows: [
-      {
-        employee_id: 'e0',
-        status_type_code: 'VACATION',
-        date_start: '2026-07-08',
-        date_end: '2026-07-09',
-      },
-    ],
-  })
+  // 10.2: вторым аргументом — исходные RowChange (rebase initials страницей).
+  expect(onBulkSubmit).toHaveBeenCalledWith(
+    {
+      business_date: '2026-07-08',
+      rows: [
+        {
+          employee_id: 'e0',
+          status_type_code: 'VACATION',
+          date_start: '2026-07-08',
+          date_end: '2026-07-09',
+        },
+      ],
+    },
+    [{ id: 'e0', statusCode: 'VACATION', period: '' }],
+  )
 })
 
 it('откат правки к базовой линии → счётчик обратно 0; пустая сдача НЕ зовёт onBulkSubmit', async () => {

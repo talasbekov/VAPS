@@ -12,18 +12,31 @@ import type { ConflictError } from '../api/errors'
 export const REASON_MIN = 10
 export const REASON_MAX = 500
 
+/** Строка детализации bulk-агрегата (10.2): ФИО+сообщение резолвит владелец. */
+export interface ConflictDialogRow {
+  key: string
+  label: string
+}
+
 export interface ConflictDialogProps {
   conflict: ConflictError | null
   /** «Подтвердить оверрайд»: причина уже провалидирована (10–500 после trim). */
   onOverride: (reason: string) => void
   /** «Отмена»/Escape: повтора не будет, conflict-state сбрасывает владелец. */
   onCancel: () => void
+  /**
+   * Детализация по строкам bulk-409 (10.2 AC-7): details.rows агрегата несёт
+   * employee_id, а не ФИО — резолв делает владелец (страница), диалог остаётся
+   * общим и данных не знает. Без пропа — прежний рендер details.conflicts.
+   */
+  rows?: ConflictDialogRow[]
 }
 
 export function ConflictDialog({
   conflict,
   onOverride,
   onCancel,
+  rows,
 }: ConflictDialogProps) {
   if (conflict === null) return null
   // размонтирование = закрытие: state причины не переживает смену конфликта
@@ -32,6 +45,7 @@ export function ConflictDialog({
       conflict={conflict}
       onOverride={onOverride}
       onCancel={onCancel}
+      rows={rows}
     />
   )
 }
@@ -40,6 +54,7 @@ function OpenConflictDialog({
   conflict,
   onOverride,
   onCancel,
+  rows,
 }: ConflictDialogProps & { conflict: ConflictError }) {
   const dialogRef = useRef<HTMLDialogElement | null>(null)
   const [reason, setReason] = useState('')
@@ -79,6 +94,13 @@ function OpenConflictDialog({
       }}
     >
       <h2 id={`${reasonId}-title`}>Конфликт: {conflict.message}</h2>
+      {rows !== undefined && rows.length > 0 && (
+        <ul data-testid="conflict-rows">
+          {rows.map((row) => (
+            <li key={row.key}>{row.label}</li>
+          ))}
+        </ul>
+      )}
       <ConflictList details={conflict.details} />
       <p>
         Это мягкий конфликт — продолжить можно, указав причину. Причина попадёт

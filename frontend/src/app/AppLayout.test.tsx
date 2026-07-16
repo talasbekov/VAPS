@@ -168,15 +168,32 @@ describe('Разводка маршрутов: RequirePermission на данны
     ).not.toBeInTheDocument()
   })
 
-  it('с правом → заглушка раздела в card-языке (экраны — E9/E10)', async () => {
+  it('с правом → реальный экран «Расход дня» (10.2: заглушка заменена страницей)', async () => {
     // дефолтная фикстура оператора несёт daily_report.mark_update
     usePermissionsResponse(myPermissionsFixture)
+    // Экран 10.2 грузит grid-prefill на маунте — минимальный валидный ответ
+    // (onUnhandledRequest: 'error' иначе уронит тест).
+    server.use(
+      http.get('*/api/operations/statuses/grid-prefill/', ({ request }) =>
+        HttpResponse.json({
+          business_date:
+            new URL(request.url).searchParams.get('business_date') ?? '',
+          employees: [],
+          statuses: [],
+          status_types: [{ code: 'IN_SERVICE', name: 'В строю' }],
+        }),
+      ),
+    )
     renderApp(ROUTES.dailyExpense)
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Расход дня' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('Экран появится в E9–E10')).toBeInTheDocument()
+    // Реальный экран, не заглушка: есть выбор даты, текста заглушки нет.
+    expect(screen.getByLabelText('Дата')).toBeInTheDocument()
+    expect(
+      screen.queryByText('Экран появится в E9–E10'),
+    ).not.toBeInTheDocument()
   })
 
   it('/ (Дашборд «Расход») за status.view: заглушка рендерится в <main> каркаса', async () => {

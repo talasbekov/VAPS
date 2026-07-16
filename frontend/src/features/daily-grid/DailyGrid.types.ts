@@ -1,5 +1,8 @@
 // Story 9.4 — типы грид-компонента (данные приходят props; реальный источник
 // + prefill = 9.7). Ноль бизнес-логики конфликтов (9.6) / отправки-дельт (9.7).
+// Story 10.2 — DailyGridHandle: императивный обратный канал bulk-ответа.
+
+import type { Ref } from 'react'
 
 import type { ApiError } from '../../shared/api/errors'
 
@@ -28,11 +31,31 @@ export interface RowChange {
   period: string
 }
 
+/**
+ * Императивный канал грида (Story 10.2, Решение №2): per-row ошибки
+ * bulk-ОТВЕТА приходят ПОСЛЕ отправки — направление данных обратно
+ * синхронному onCellCommit-seam, поэтому ref, не проп.
+ */
+export interface DailyGridHandle {
+  /**
+   * Мерж в СУЩЕСТВУЮЩИЙ markers-стейт грида: весь жизненный цикл маркеров
+   * (заливка, aria, RESYNC-прунинг, гейт «Сдать день») переиспользуется без
+   * параллельного источника истины. id вне текущих rows игнорируются.
+   */
+  applyMarkers(map: Record<string, RowMarker>): void
+  /** Есть ли несохранённые дельты (beforeunload/смена даты — 10.2 AC-11). */
+  isDirty(): boolean
+}
+
 export interface DailyGridProps {
   rows: EmployeeRow[]
   statusOptions: StatusOption[]
   /** «Сдать день» — вызывается с изменёнными строками (bulk-контракт 3.8 = 9.7). */
   onSubmit: (changes: RowChange[]) => void
+  /** Императивный канал 10.2 (React 19: ref — обычный проп). */
+  ref?: Ref<DailyGridHandle>
+  /** Полёт bulk-запроса (10.2 AC-5): «Сдать день» disabled, повторного POST нет. */
+  submitPending?: boolean
   /** Текст пустого состояния (0 строк). */
   emptyLabel?: string
   /**

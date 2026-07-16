@@ -3,7 +3,7 @@
 // (Profiler 1 commit/keystroke, БЛОКИРУЮЩИЙ), виртуализация ≤N DOM при 5000.
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { Profiler } from 'react'
+import { Profiler, act, createRef } from 'react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 // TanStack Virtual в jsdom: без ResizeObserver и с нулевым getBoundingClientRect
@@ -33,7 +33,11 @@ beforeAll(() => {
 afterEach(() => cleanup())
 
 import { DailyGrid } from './DailyGrid'
-import type { EmployeeRow, StatusOption } from './DailyGrid.types'
+import type {
+  DailyGridHandle,
+  EmployeeRow,
+  StatusOption,
+} from './DailyGrid.types'
 
 const OPTIONS: StatusOption[] = [
   { code: 'IN_SERVICE', label: 'В строю' },
@@ -238,5 +242,141 @@ describe('DailyGrid — виртуализация', () => {
     expect(rowEls.length).toBeGreaterThan(0) // не вакуумно
     expect(rowEls.length).toBeLessThanOrEqual(60)
     expect(rowEls.length).toBeLessThan(5000)
+  })
+})
+
+// --- Story 10.2 — обратный канал маркеров + Ctrl+Enter выход -----------------
+
+/** Строка грида по ФИО (позиционная привязка — прецедент 9.5). */
+function rowOf(fullName: string): HTMLElement {
+  const row = screen.getByText(fullName).closest<HTMLElement>('[data-grid-row]')
+  if (!row) throw new Error(`Строка «${fullName}» не найдена`)
+  return row
+}
+
+describe('10.2 DailyGrid — императивный канал applyMarkers (AC-7/AC-9)', () => {
+  it('applyMarkers мержит в СУЩЕСТВУЮЩИЙ markers-стейт: заливка + гейт «Сдать день»', () => {
+    const ref = createRef<DailyGridHandle>()
+    render(
+      <DailyGrid
+        ref={ref}
+        rows={makeRows(3)}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    act(() => ref.current!.applyMarkers({ e0: 'hard', e1: 'soft' }))
+    expect(rowOf('Сотрудник 0')).toHaveAttribute('data-marker', 'hard')
+    expect(rowOf('Сотрудник 1')).toHaveAttribute('data-marker', 'soft')
+    // Переиспользован существующий гейт: hard блокирует отправку, soft — нет.
+    expect(screen.getByText('Сдать день')).toBeDisabled()
+    expect(screen.getByTestId('changed-counter').textContent).toContain(
+      'заблокировано 1',
+    )
+  })
+
+  it('id вне текущих rows игнорируется (чужой сотрудник из агрегата)', () => {
+    const ref = createRef<DailyGridHandle>()
+    render(
+      <DailyGrid
+        ref={ref}
+        rows={makeRows(2)}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    act(() => ref.current!.applyMarkers({ ghost: 'hard' }))
+    expect(
+      document.querySelectorAll('[data-marker]').length,
+    ).toBe(0)
+    expect(screen.getByText('Сдать день')).toBeEnabled()
+  })
+
+  it('RESYNC-прунинг переиспользован: маркер строки с обновлённым initial снят', () => {
+    const ref = createRef<DailyGridHandle>()
+    const rows = makeRows(2)
+    const { rerender } = render(
+      <DailyGrid
+        ref={ref}
+        rows={rows}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    act(() => ref.current!.applyMarkers({ e0: 'hard' }))
+    expect(rowOf('Сотрудник 0')).toHaveAttribute('data-marker', 'hard')
+    // Сервер обновил initial e0 (rebase/refetch) → стейл-маркер исцеляется
+    // существующим RESYNC-прунингом (9.6) — параллельного источника нет.
+    const next = [{ ...rows[0], statusCode: 'VACATION' }, rows[1]]
+    rerender(
+      <DailyGrid
+        ref={ref}
+        rows={next}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    expect(rowOf('Сотрудник 0')).not.toHaveAttribute('data-marker')
+  })
+
+  it('isDirty: false на старте, true после правки', () => {
+    const ref = createRef<DailyGridHandle>()
+    render(
+      <DailyGrid
+        ref={ref}
+        rows={makeRows(2)}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    expect(ref.current!.isDirty()).toBe(false)
+    const grid = screen.getByRole('grid')
+    fireEvent.keyDown(grid, { key: 'Enter' })
+    fireEvent.change(screen.getByLabelText('Статус'), {
+      target: { value: 'VACATION' },
+    })
+    expect(ref.current!.isDirty()).toBe(true)
+  })
+})
+
+describe('10.2 DailyGrid — Ctrl+Enter: санкционированный выход (AC-12)', () => {
+  it('Ctrl+Enter в NAVIGATE → фокус НА КНОПКЕ «Сдать день» (направленный ассерт), сабмита нет', () => {
+    const onSubmit = vi.fn()
+    render(
+      <DailyGrid
+        rows={makeRows(3)}
+        statusOptions={OPTIONS}
+        onSubmit={onSubmit}
+      />,
+    )
+    const grid = screen.getByRole('grid')
+    fireEvent.keyDown(grid, { key: 'Enter', ctrlKey: true })
+    expect(document.activeElement).toBe(screen.getByText('Сдать день'))
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('грамматика событие НЕ получила: перехода NAVIGATE→EDIT нет (select не открыт)', () => {
+    render(
+      <DailyGrid
+        rows={makeRows(3)}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    const grid = screen.getByRole('grid')
+    fireEvent.keyDown(grid, { key: 'Enter', ctrlKey: true })
+    expect(screen.queryByLabelText('Статус')).not.toBeInTheDocument()
+  })
+
+  it('submitPending дизейблит «Сдать день» (AC-5: pending-гейт повторного клика)', () => {
+    render(
+      <DailyGrid
+        rows={makeRows(2)}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+        submitPending
+      />,
+    )
+    expect(screen.getByText('Сдать день')).toBeDisabled()
   })
 })

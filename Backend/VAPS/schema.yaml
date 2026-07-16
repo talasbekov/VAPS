@@ -2145,9 +2145,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GridPrefillStatus'
+        status_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/GridPrefillStatusType'
       required:
       - business_date
       - employees
+      - status_types
       - statuses
     GridPrefillStatus:
       type: object
@@ -2171,6 +2176,20 @@ components:
       - date_start
       - employee_id
       - status_type_code
+    GridPrefillStatusType:
+      type: object
+      description: |-
+        Read-only схема строки справочника статусов (story 10.2 AC-1):
+        {code, name} — ровно ``StatusOption {code, label}`` фронта. Только
+        is_active=True, порядок Meta (priority, code) — кладёт селектор.
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+      required:
+      - code
+      - name
     IssuedExpenseReport:
       type: object
       description: |-

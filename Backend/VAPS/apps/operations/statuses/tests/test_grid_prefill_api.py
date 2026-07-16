@@ -209,8 +209,16 @@ def test_prefill_empty_division_200_empty_lists(env):
     _status(outsider)  # живой [06-01, 06-10) — накрывает business_date
     resp = _get(_client("oper"))
     assert resp.status_code == 200, resp.content
+    # status_types НЕ скоупится по roster (справочник глобален, 10.2 AC-1):
+    # присутствует и при пустом подразделении — иначе селект грида пуст.
     assert resp.json() == {
-        "business_date": "2026-06-05", "employees": [], "statuses": [],
+        "business_date": "2026-06-05",
+        "employees": [],
+        "statuses": [],
+        "status_types": [
+            {"code": "VACATION", "name": "Отпуск"},
+            {"code": "STUDY", "name": "Учёба"},
+        ],
     }
 
 
@@ -307,6 +315,28 @@ def test_get_bulk_405_not_403_not_200(env):
     assert _client(None).get(BULK_URL).status_code == 405
 
 
+# --- Story 10.2 AC-1: status_types — справочник статусов в ответе prefill -----
+
+
+def test_prefill_status_types_active_only_meta_order(env):
+    # Справочник едет В ОТВЕТЕ prefill (Решение №5 10.2): только is_active=True,
+    # порядок Meta (priority, code). Ненулевой дискриминатор (урок 10.1a):
+    # неактивный INACTIVE_T (priority=5 — был бы ПЕРВЫМ по сортировке) отсутствует
+    # в том же тесте, где активные ПРИСУТСТВУЮТ в точном порядке.
+    _org, _dtp, div = env
+    _grant("oper", "DIVISION_OPERATOR", division=div)
+    StatusType.objects.create(
+        code="INACTIVE_T", name="Списанный", is_hard_block=False,
+        priority=5, report_column_code="OTHER", is_active=False,
+    )
+    body = _get(_client("oper")).json()
+    # VACATION(priority=20) < STUDY(priority=32) — порядок (priority, code).
+    assert body["status_types"] == [
+        {"code": "VACATION", "name": "Отпуск"},
+        {"code": "STUDY", "name": "Учёба"},
+    ]
+
+
 # --- AC-7 NFR-4: константное число SQL-запросов -------------------------------
 
 
@@ -321,10 +351,11 @@ def test_prefill_constant_query_count(env, django_assert_num_queries):
         _status(e)
     # Пин фактического числа (зафиксировано прогоном): auth-seam=3 (гранты+
     # temp-duty+права) + RBAC-резолв селектора=4 (гранты+temp-duty+права+дерево)
-    # + roster_on=2 + denorm_for=2 + overlapping_on=1 = 12. Рост с числом
+    # + roster_on=2 + denorm_for=2 + overlapping_on=1 + status_types=1 (10.2
+    # AC-1: +1 КОНСТАНТНЫЙ запрос справочника) = 13. Рост с числом
     # сотрудников/статусов = регресс NFR-4 (per-row анти-паттерн).
     client = _client("oper")
-    with django_assert_num_queries(12):
+    with django_assert_num_queries(13):
         resp = _get(client)
     assert resp.status_code == 200, resp.content
     assert len(resp.json()["employees"]) == 12

@@ -2,7 +2,7 @@ from django.db.models import Min
 
 from apps.core.selectors import CoreEmployeeSelector, HistoricalEmployeeSelector
 from apps.operations.services import PermissionService
-from apps.operations.statuses.models import EmployeeStatus
+from apps.operations.statuses.models import EmployeeStatus, StatusType
 from apps.operations.statuses.services.strength_report import resolve_status
 
 # Право чтения статусов — единый источник для гейта вьюхи И сужения видимости
@@ -112,7 +112,19 @@ class EmployeeStatusSelector:
                 str(s["date_start"]),
             )
         )
-        return {"employees": employees, "statuses": statuses}
+        # Story 10.2 AC-1: справочник статусов ЕДЕТ В ОТВЕТЕ (Решение №5 —
+        # отдельного роута справочника нет; +1 КОНСТАНТНЫЙ запрос, NFR-4-пин
+        # обновлён). Только активные; порядок — Meta модели (priority, code).
+        # {code, name} — ровно StatusOption фронта; is_hard_block/color НЕ
+        # тащим (конфликты решает бэк, палитра — FR-39/E10 visual).
+        status_types = list(
+            StatusType.objects.filter(is_active=True).values("code", "name")
+        )
+        return {
+            "employees": employees,
+            "statuses": statuses,
+            "status_types": status_types,
+        }
 
     @classmethod
     def status_on(cls, employee_id, on_date) -> str:

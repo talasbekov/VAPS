@@ -11,6 +11,7 @@ import {
 import {
   memo,
   useCallback,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useReducer,
@@ -273,6 +274,8 @@ export function DailyGrid({
   rows,
   statusOptions,
   onSubmit,
+  ref,
+  submitPending,
   emptyLabel,
   onCellCommit,
 }: DailyGridProps) {
@@ -318,6 +321,8 @@ export function DailyGrid({
 
   const parentRef = useRef<HTMLDivElement>(null)
   const emptyRef = useRef<HTMLDivElement>(null)
+  // Кнопка «Сдать день» — цель санкционированного выхода Ctrl+Enter (AC-12).
+  const submitRef = useRef<HTMLButtonElement>(null)
   const preEditRef = useRef<{
     id: string
     statusCode: string
@@ -527,6 +532,16 @@ export function DailyGrid({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // Story 10.2 AC-12 (Q4 ретро, Решение №4): Ctrl+Enter из NAVIGATE —
+      // санкционированный выход из грида: ТОЛЬКО программный DOM-фокус на
+      // «Сдать день» (БЕЗ setState — ловушка focusRef 9.5; БЕЗ сабмита —
+      // необратимое действие из слепого потока). Ветка ДО грамматики:
+      // grammar.ts заморожен и события не получает (ср. полифилл-гашение 9.5).
+      if (e.key === 'Enter' && e.ctrlKey && focus.mode === 'NAVIGATE') {
+        e.preventDefault()
+        submitRef.current?.focus()
+        return
+      }
       const key = toKey(e)
       if (!key || rows.length === 0) return
       const result = transition({
@@ -655,6 +670,36 @@ export function DailyGrid({
     return list
   }, [rows, values, initials])
 
+  // Story 10.2 (Решение №2): обратный канал bulk-ответа. Мерж в СУЩЕСТВУЮЩИЙ
+  // markers-стейт — заливка/aria/RESYNC-прунинг/гейт отправки переиспользуются
+  // без параллельного источника истины; id вне текущих rows игнорируются
+  // (агрегат мог принести чужую/исчезнувшую строку).
+  const applyMarkers = useCallback(
+    (map: Record<string, RowMarker>) => {
+      const known = new Set(rows.map((r) => r.id))
+      setMarkers((prev) => {
+        let changed = false
+        const next: Record<string, RowMarker> = { ...prev }
+        for (const [id, m] of Object.entries(map)) {
+          if (!known.has(id) || next[id] === m) continue
+          next[id] = m
+          changed = true
+        }
+        return changed ? next : prev
+      })
+    },
+    [rows],
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      applyMarkers,
+      isDirty: () => changed.length > 0,
+    }),
+    [applyMarkers, changed],
+  )
+
   // Гейт отправки (ревью 9.6): hard/invalid-строки БЛОКИРУЮТ «Сдать день» —
   // иначе «коммит блокируется» держал бы только фокус, а отвергнутые бэком /
   // невалидные значения уезжали бы в bulk-дельты. soft не блокирует
@@ -678,7 +723,8 @@ export function DailyGrid({
         </span>
         <button
           type="button"
-          disabled={blockedCount > 0}
+          ref={submitRef}
+          disabled={blockedCount > 0 || submitPending}
           className="rounded bg-primary px-3 py-1 text-sm text-primary-foreground disabled:opacity-50"
           onClick={() => onSubmit(changed)}
         >

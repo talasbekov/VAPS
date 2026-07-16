@@ -1351,6 +1351,7 @@ export interface components {
             business_date: string;
             employees: components["schemas"]["GridPrefillEmployee"][];
             statuses: components["schemas"]["GridPrefillStatus"][];
+            status_types: components["schemas"]["GridPrefillStatusType"][];
         };
         /**
          * @description Read-only схема живого статус-интервала: 4 поля ``overlapping_on``
@@ -1364,6 +1365,15 @@ export interface components {
             date_start: string;
             /** Format: date */
             date_end: string;
+        };
+        /**
+         * @description Read-only схема строки справочника статусов (story 10.2 AC-1):
+         *     {code, name} — ровно ``StatusOption {code, label}`` фронта. Только
+         *     is_active=True, порядок Meta (priority, code) — кладёт селектор.
+         */
+        GridPrefillStatusType: {
+            code: string;
+            name: string;
         };
         /**
          * @description Issued расход projection (6.10a) — flat metadata + the attachment ref and

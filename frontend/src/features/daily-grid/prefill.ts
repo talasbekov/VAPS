@@ -1,8 +1,14 @@
 // Story 9.7 — prefill «вчера» + маппинг дельт в bulk-контракт 3.8. Чистые
 // функции (без React/DOM). BulkStatusRequest выровнен с сервисом 3.8
 // (_REQUIRED_ROW_KEYS: employee_id, status_type_code, date_start, date_end —
-// решение D1 ревью 9.7); HTTP-роут = 10.2/E10 (там же division_id/actor, Q1).
-import type { EmployeeRow, RowChange } from './DailyGrid.types'
+// решение D1 ревью 9.7). Story 10.2 — fromGridPrefill: живой ответ GET
+// grid-prefill (10.1b + status_types 10.2 AC-1) → входы грида.
+import type { paths } from '../../shared/api/schema'
+import type { EmployeeRow, RowChange, StatusOption } from './DailyGrid.types'
+
+/** Живой контракт ответа grid-prefill (ARCH-FE-011: тип — из schema.d.ts). */
+export type GridPrefillResponse =
+  paths['/api/operations/statuses/grid-prefill/']['get']['responses']['200']['content']['application/json']
 
 export interface EmployeeSeed {
   id: string
@@ -16,14 +22,17 @@ export type YesterdayPlacement = Record<
   { statusCode: string; period?: string }
 >
 
-export interface BulkStatusRow {
+// type, не interface (10.2): type-литерал несёт неявную index-сигнатуру и
+// проходит constraint `TVariables extends Record<string, unknown>` хука
+// useApiMutation (interface — нет); форма не изменилась.
+export type BulkStatusRow = {
   employee_id: string
   status_type_code: string
   date_start: string
   date_end: string
 }
 
-export interface BulkStatusRequest {
+export type BulkStatusRequest = {
   business_date: string
   rows: BulkStatusRow[]
 }
@@ -34,11 +43,50 @@ export const DEFAULT_STATUS = 'IN_SERVICE'
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // UTC-математика, не local (урок tz-флейка test_vacancies_endpoint): локальный
-// парсер сдвинул бы дату на границе суток в минусовых поясах.
-function addDaysIso(iso: string, days: number): string {
+// парсер сдвинул бы дату на границе суток в минусовых поясах. Экспорт (10.2):
+// страница считает prefill-дату «выбранная − 1» тем же кодом — не дублировать.
+export function addDaysIso(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00Z`)
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
+}
+
+/** Выходы маппера ответа grid-prefill — ровно входы DailyGridContainer. */
+export interface GridPrefillMapped {
+  employees: EmployeeSeed[]
+  yesterday: YesterdayPlacement
+  statusOptions: StatusOption[]
+}
+
+/**
+ * Живой ответ grid-prefill → входы грида (10.2 AC-3, от raise-сайтов бэка):
+ * - `full_name→fullName`; `rank: ""` → undefined (контракт P4 ревью 10.1b);
+ * - победитель при 2+ строках статусов сотрудника = ПЕРВАЯ строка серверного
+ *   порядка `(employee_id, status_type_code, date_start)` (P2; Решение №3);
+ * - период: полуинтервал `[)` бэка → UI «по … включительно» = `date_end − 1`;
+ *   однодневный интервал (`date_end = date_start + 1`) → period пуст;
+ * - `status_types` → `StatusOption[]` (`name→label`), порядок сервера.
+ */
+export function fromGridPrefill(response: GridPrefillResponse): GridPrefillMapped {
+  const employees: EmployeeSeed[] = (response.employees ?? []).map((e) => ({
+    id: e.id,
+    fullName: e.full_name,
+    // "" и null — одинаково «нет звания» (P4: бэк шлёт "" при пустом коде).
+    rank: e.rank ? e.rank : undefined,
+  }))
+  const yesterday: YesterdayPlacement = {}
+  for (const s of response.statuses ?? []) {
+    if (yesterday[s.employee_id]) continue // первая строка выигрывает (№3)
+    const inclusiveEnd = addDaysIso(s.date_end, -1)
+    yesterday[s.employee_id] = {
+      statusCode: s.status_type_code,
+      period: inclusiveEnd === s.date_start ? undefined : inclusiveEnd,
+    }
+  }
+  const statusOptions: StatusOption[] = (response.status_types ?? []).map(
+    (t) => ({ code: t.code, label: t.name }),
+  )
+  return { employees, yesterday, statusOptions }
 }
 
 /** Строки грида, предзаполненные вчерашней расстановкой (правятся отклонения). */

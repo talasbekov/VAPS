@@ -6,13 +6,13 @@
 // (экраны — E9/E10). /admin/* в карте нет (Д5); catch-all/404 не в карте UX.
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
+import { DailyExpensePage } from '../features/daily-grid/DailyExpensePage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
 import { ROUTES } from '../shared/routes'
 import { AppLayout } from '../shared/ui/AppLayout'
 import {
   AuditStub,
-  DailyExpenseStub,
   DashboardStub,
   EmployeesStub,
   OrganizationStub,
@@ -60,11 +60,13 @@ export function AppRoutes() {
             </RequirePermission>
           }
         />
+        {/* Story 10.2: реальный экран «Расход дня» вместо заглушки; гейт
+            права daily_report.mark_update НЕ меняется (карта UX L59-68). */}
         <Route
           path={ROUTES.dailyExpense}
           element={
             <RequirePermission permission="daily_report.mark_update">
-              <DailyExpenseStub />
+              <DailyExpensePage />
             </RequirePermission>
           }
         />

@@ -1,10 +1,16 @@
 // Story 9.7 — контейнер: prefill «вчера» → DailyGrid → отправка ТОЛЬКО дельт в
-// bulk-3.8-shape через onBulkSubmit-проп. Тонкий: данные/эндпоинт = 10.2/E10.
+// bulk-3.8-shape через onBulkSubmit-проп. Тонкий: данные/эндпоинт — 10.2
+// (DailyExpensePage); здесь только прокидка ref/pending (минимум 10.2).
 import { useCallback, useMemo } from 'react'
+import type { Ref } from 'react'
 
 import type { ApiError } from '../../shared/api/errors'
 import { DailyGrid } from './DailyGrid'
-import type { RowChange, StatusOption } from './DailyGrid.types'
+import type {
+  DailyGridHandle,
+  RowChange,
+  StatusOption,
+} from './DailyGrid.types'
 import {
   buildPrefilledRows,
   toBulkRequest,
@@ -21,11 +27,21 @@ export interface DailyGridContainerProps {
   yesterday: YesterdayPlacement
   businessDate: string
   statusOptions: StatusOption[]
-  /** «Сдать день»: получает bulk-3.8-запрос ТОЛЬКО с дельтами (E10 → apiClient).
-   * При нуле дельт НЕ вызывается (бэк-3.8 отвечает 400 на пустой payload). */
-  onBulkSubmit: (request: BulkStatusRequest) => void | Promise<void>
+  /** «Сдать день»: получает bulk-3.8-запрос ТОЛЬКО с дельтами + исходные
+   * RowChange (10.2: rebase initials после успеха — страница мержит именно
+   * введённые значения, не обратную конверсию date_end∓1, которая теряла бы
+   * period === businessDate). При нуле дельт НЕ вызывается (бэк-3.8 отвечает
+   * 400 на пустой payload). */
+  onBulkSubmit: (
+    request: BulkStatusRequest,
+    changes: RowChange[],
+  ) => void | Promise<void>
   /** 409/422-ответ per-row → маркеры (9.6-seam); реальный маппинг ответа = E10. */
   onCellCommit?: (change: RowChange) => ApiError | null
+  /** Императивный канал грида (10.2): applyMarkers/isDirty — сквозная прокидка. */
+  gridRef?: Ref<DailyGridHandle>
+  /** Полёт bulk-запроса (10.2 AC-5) — сквозная прокидка в кнопку грида. */
+  submitPending?: boolean
   emptyLabel?: string
 }
 
@@ -36,6 +52,8 @@ export function DailyGridContainer({
   statusOptions,
   onBulkSubmit,
   onCellCommit,
+  gridRef,
+  submitPending,
   emptyLabel,
 }: DailyGridContainerProps) {
   const rows = useMemo(
@@ -47,7 +65,7 @@ export function DailyGridContainer({
       // Ноль отклонений — штатный день: bulk-вызова нет (сервис 3.8 отверг бы
       // пустой payload 400); сдача дня без дельт = submission-флоу E10/3.9.
       if (changes.length === 0) return
-      return onBulkSubmit(toBulkRequest(changes, businessDate))
+      return onBulkSubmit(toBulkRequest(changes, businessDate), changes)
     },
     [onBulkSubmit, businessDate],
   )
@@ -56,9 +74,11 @@ export function DailyGridContainer({
       // Правки принадлежат дню: смена businessDate ремоунтит грид — иначе
       // дельты, введённые для старого дня, молча уехали бы с новой датой.
       key={businessDate}
+      ref={gridRef}
       rows={rows}
       statusOptions={statusOptions}
       onSubmit={handleSubmit}
+      submitPending={submitPending}
       onCellCommit={onCellCommit}
       emptyLabel={emptyLabel}
     />
