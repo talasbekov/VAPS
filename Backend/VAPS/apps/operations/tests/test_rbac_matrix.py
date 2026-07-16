@@ -149,6 +149,13 @@ MATRIX = {
     # detail-режиме, матрицей не проверяется (GET без business_date у держателя
     # = 400 формы = ALLOW по канону).
     "ops-daily-submission-day-state": _MethodGate({"get": "daily_report.mark_update"}),
+    # traffic-tree (story 10.4, GET /traffic-tree/): светофор-дерево. Гейт =
+    # читающее право статусов status.view (Д по UX-карте /organization; держат
+    # DIVISION_OPERATOR, VIEWER, ADMIN `*`; ORGD/OMD с generate → DENY —
+    # открытый Q-RBAC, seed стори не трогает); scope — сужение видимости
+    # visible_division_ids во view, матрицей не проверяется (GET без
+    # business_date у держателя = 400 формы = ALLOW по канону).
+    "ops-daily-submission-traffic-tree": _MethodGate({"get": "status.view"}),
     # amend сдачи (story 5.8b, POST /{id}/amend/). Гейт mixin {"amend":
     # daily_report.correct}; scope «чужое подразделение → 403» — в сервис-гарде
     # ensure_division_scope (матрицей не проверяется: payloadless POST держателя

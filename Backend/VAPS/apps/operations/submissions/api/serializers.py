@@ -133,6 +133,36 @@ class DayStateResponseSerializer(serializers.Serializer):
     detail = DayStateDetailSerializer(allow_null=True)
 
 
+class TrafficTreeFilterSerializer(serializers.Serializer):
+    """GET traffic-tree query form (10.4) — обязательная дата. Клиентского
+    ``root_division_id`` НЕТ по контракту (Д2): корни выводятся из RBAC-
+    видимости актора, фантомный/чужой root недостижим конструктивно. Мусор
+    умирает здесь 400 VALIDATION_ERROR (канон boundary 5.8c)."""
+
+    business_date = serializers.DateField()
+
+
+class TrafficTreeNodeSerializer(serializers.Serializer):
+    """Узел светофор-дерева (10.4, контракт 10-01 §5, Д1 — плоский список):
+    ``status``/``late`` — байт-в-байт из каскада 5.5b (``CascadeTrafficLight``),
+    ``name``/``parent_id`` дособраны из core-справочника; ``parent_id = null``
+    у корней видимой области. Ровно 5 полей Д-shape — drift/responsible/
+    счётчиков НЕТ (ловушка ревью 10.1 P2)."""
+
+    division_id = serializers.UUIDField()
+    name = serializers.CharField()
+    parent_id = serializers.UUIDField(allow_null=True)
+    status = serializers.CharField()
+    late = serializers.BooleanField()
+
+
+class TrafficTreeResponseSerializer(serializers.Serializer):
+    """200-конверт traffic-tree (10.4): плоский лес с parent_id-ссылками,
+    порядок узлов детерминирован (name, division_id)."""
+
+    nodes = TrafficTreeNodeSerializer(many=True)
+
+
 class ExpenseReportIssueSerializer(serializers.Serializer):
     """POST-body form (6.10a) — the two kwargs forwarded to
     ``issue_expense_document``: a flat UUID division ref (ARCH-003) and a

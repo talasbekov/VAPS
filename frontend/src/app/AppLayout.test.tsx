@@ -201,6 +201,40 @@ describe('Разводка маршрутов: RequirePermission на данны
     ).not.toBeInTheDocument()
   })
 
+  it('прямой заход на /organization БЕЗ status.view → «Доступ запрещён»', async () => {
+    usePermissionsResponse({ permissions: ['daily_report.mark_update'] })
+    renderApp(ROUTES.organization)
+
+    expect(await screen.findByText(ACCESS_DENIED_TEXT)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Готовность сдачи' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('с правом → реальный экран «Готовность сдачи» (10.4: заглушка заменена)', async () => {
+    // дефолтная фикстура оператора несёт status.view
+    usePermissionsResponse(myPermissionsFixture)
+    // Экран 10.4 грузит traffic-tree на маунте — минимальный валидный ответ
+    // (onUnhandledRequest: 'error' иначе уронит тест).
+    server.use(
+      http.get('*/api/operations/daily-submissions/traffic-tree/', () =>
+        HttpResponse.json({ nodes: [] }),
+      ),
+    )
+    renderApp(ROUTES.organization)
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Готовность сдачи' }),
+    ).toBeInTheDocument()
+    // Реальный экран, не заглушка: есть фильтр отстающих, текста заглушки нет.
+    expect(
+      screen.getByRole('checkbox', { name: 'Только отстающие' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('Экран появится в E9–E10'),
+    ).not.toBeInTheDocument()
+  })
+
   it('/ (Дашборд «Расход») за status.view: заглушка рендерится в <main> каркаса', async () => {
     usePermissionsResponse(myPermissionsFixture)
     renderApp()

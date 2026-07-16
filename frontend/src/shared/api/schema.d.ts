@@ -920,6 +920,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/daily-submissions/traffic-tree/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Светофор-дерево «Готовность сдачи» (10.4): каскад 5.5b по лесу RBAC-видимости актора (status.view) — плоский список узлов с parent_id (Д1 контракта 10-01); status/late байт-в-байт из traffic_light_tree (worst-colour UNKNOWN>RED>YELLOW>GREEN, NEUTRAL нейтрален, late = OR по поддереву), name/parent_id — из core-справочника. Клиентского root_division_id НЕТ (Д2) — корни выводятся из видимости. 400 мусорная/отсутствующая дата; 403 без права; 422 REPORT_NO_DATA_FOR_DATE — дата до горизонта данных (будущая дата легальна: честный RED-лес). */
+        get: operations["operations_daily_submissions_traffic_tree_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/expense-reports/": {
         parameters: {
             query?: never;
@@ -1789,6 +1806,29 @@ export interface components {
             business_date: string;
             overridden_by: string;
             reason: string;
+        };
+        /**
+         * @description Узел светофор-дерева (10.4, контракт 10-01 §5, Д1 — плоский список):
+         *     ``status``/``late`` — байт-в-байт из каскада 5.5b (``CascadeTrafficLight``),
+         *     ``name``/``parent_id`` дособраны из core-справочника; ``parent_id = null``
+         *     у корней видимой области. Ровно 5 полей Д-shape — drift/responsible/
+         *     счётчиков НЕТ (ловушка ревью 10.1 P2).
+         */
+        TrafficTreeNode: {
+            /** Format: uuid */
+            division_id: string;
+            name: string;
+            /** Format: uuid */
+            parent_id: string | null;
+            status: string;
+            late: boolean;
+        };
+        /**
+         * @description 200-конверт traffic-tree (10.4): плоский лес с parent_id-ссылками,
+         *     порядок узлов детерминирован (name, division_id).
+         */
+        TrafficTreeResponse: {
+            nodes: components["schemas"]["TrafficTreeNode"][];
         };
     };
     responses: never;
@@ -2701,6 +2741,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DayStateResponse"];
+                };
+            };
+        };
+    };
+    operations_daily_submissions_traffic_tree_retrieve: {
+        parameters: {
+            query: {
+                business_date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrafficTreeResponse"];
                 };
             };
         };

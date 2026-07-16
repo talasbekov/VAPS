@@ -8,6 +8,7 @@ import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
 import { DailyExpensePage } from '../features/daily-grid/DailyExpensePage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
+import { ReadinessTreePage } from '../features/readiness-tree/ReadinessTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
 import { ROUTES } from '../shared/routes'
 import { AppLayout } from '../shared/ui/AppLayout'
@@ -15,7 +16,6 @@ import {
   AuditStub,
   DashboardStub,
   EmployeesStub,
-  OrganizationStub,
   ReportsStub,
 } from './section-stubs'
 
@@ -70,11 +70,13 @@ export function AppRoutes() {
             </RequirePermission>
           }
         />
+        {/* Story 10.4: экран «Готовность сдачи» (светофор-дерево) вместо
+            заглушки; гейт права status.view НЕ меняется (карта UX L59-68). */}
         <Route
           path={ROUTES.organization}
           element={
             <RequirePermission permission="status.view">
-              <OrganizationStub />
+              <ReadinessTreePage />
             </RequirePermission>
           }
         />

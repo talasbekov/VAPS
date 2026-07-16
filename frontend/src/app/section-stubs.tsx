@@ -25,10 +25,6 @@ export function EmployeesStub() {
   return <SectionStub title="Управление персоналом" />
 }
 
-export function OrganizationStub() {
-  return <SectionStub title="Подразделения" />
-}
-
 export function ReportsStub() {
   return <SectionStub title="Отчёты" />
 }

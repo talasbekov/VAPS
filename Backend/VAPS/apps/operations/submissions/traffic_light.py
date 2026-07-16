@@ -291,20 +291,14 @@ def _subtree_own_states(subtree, business_date) -> dict:
     return own
 
 
-def traffic_light_tree(root_division_id, business_date) -> dict:
-    """Cascade светофор of a subtree → ``{division_id: CascadeTrafficLight}``.
+def _fold_cascade(subtree, children, own) -> dict:
+    """Post-order worst-colour fold over ``subtree`` → ``{id: CascadeTrafficLight}``.
 
-    For every node under ``root_division_id`` (inclusive) the colour is its own
-    state (5.5a, bulk) rolled UP by worst-colour over its descendants, ``late``
-    OR-ed over the subtree. ONE post-order fold over the children adjacency from
-    ``CoreDivisionTreeSelector`` (the single tree channel, ARCH-DATA-024) — never
-    ``division_traffic_light`` / a per-node query (NFR-4).
+    Shared by ``traffic_light_tree`` (one root, 5.5b) and
+    ``traffic_light_forest`` (several roots, 10.4) — the fold itself is
+    root-agnostic: it rolls every node of ``subtree`` up over its in-subtree
+    children, so passing a union of subtrees folds each tree independently.
     """
-    root = uuid.UUID(str(root_division_id))
-    children = CoreDivisionTreeSelector.children_map()
-    subtree = _descendants(root, children)
-    own = _subtree_own_states(subtree, business_date)
-
     result: dict = {}
     folding: set = set()
 
@@ -334,3 +328,40 @@ def traffic_light_tree(root_division_id, business_date) -> dict:
     for node in subtree:
         fold(node)
     return result
+
+
+def traffic_light_tree(root_division_id, business_date) -> dict:
+    """Cascade светофор of a subtree → ``{division_id: CascadeTrafficLight}``.
+
+    For every node under ``root_division_id`` (inclusive) the colour is its own
+    state (5.5a, bulk) rolled UP by worst-colour over its descendants, ``late``
+    OR-ed over the subtree. ONE post-order fold over the children adjacency from
+    ``CoreDivisionTreeSelector`` (the single tree channel, ARCH-DATA-024) — never
+    ``division_traffic_light`` / a per-node query (NFR-4).
+    """
+    root = uuid.UUID(str(root_division_id))
+    children = CoreDivisionTreeSelector.children_map()
+    subtree = _descendants(root, children)
+    own = _subtree_own_states(subtree, business_date)
+    return _fold_cascade(subtree, children, own)
+
+
+def traffic_light_forest(root_division_ids, business_date) -> dict:
+    """Cascade светофор of SEVERAL roots at once (Story 10.4, traffic-tree API).
+
+    The union of the roots' subtrees is computed with the SAME bulk invariants
+    as one ``traffic_light_tree`` call: ONE ``children_map`` + ONE ``roster_on``
+    + ONE ``overlapping_on`` + ONE ``current_for_many`` over the WHOLE forest
+    (NFR-4). Calling ``traffic_light_tree`` per root would multiply every bulk
+    query by K roots — the trap this wrapper exists to close. Consumer: the
+    traffic-tree роут derives the roots from the actor's RBAC visibility
+    (``visible_division_ids``) — K is unbounded input, so the query count must
+    not depend on it. Returns ``{division_id: CascadeTrafficLight}`` over the
+    union; an empty ``root_division_ids`` yields ``{}``.
+    """
+    children = CoreDivisionTreeSelector.children_map()
+    union: set = set()
+    for root in root_division_ids:
+        union |= _descendants(uuid.UUID(str(root)), children)
+    own = _subtree_own_states(union, business_date)
+    return _fold_cascade(union, children, own)

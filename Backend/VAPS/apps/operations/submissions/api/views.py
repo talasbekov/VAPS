@@ -46,6 +46,8 @@ from apps.operations.submissions.api.serializers import (
     ExpenseReportIssueSerializer,
     IssuedExpenseReportSerializer,
     TomorrowBlockOverrideSerializer,
+    TrafficTreeFilterSerializer,
+    TrafficTreeResponseSerializer,
 )
 from apps.operations.submissions.selectors import (
     READ_PERMISSION,
@@ -62,7 +64,10 @@ from apps.operations.submissions.services import (
     preview_day_event,
     submit_day,
 )
-from apps.operations.submissions.traffic_light import division_traffic_light
+from apps.operations.submissions.traffic_light import (
+    division_traffic_light,
+    traffic_light_forest,
+)
 
 # Расход read/issue endpoints gate on the (already-seeded) generation right
 # (Story 6.10a Д2: management reads what it issues; daily_report.view does not
@@ -82,6 +87,12 @@ MAX_OVERRIDE_HORIZON_DAYS = 31
 # read gate share it the same way (reads = mark_update, epics 2026-07-02).
 _SUBMIT_PERMISSION = "daily_report.mark_update"
 _AMEND_PERMISSION = "daily_report.correct"
+# Светофор-дерево (10.4) гейтится читающим правом статусов status.view — Д по
+# UX-карте (EXPERIENCE.md L64: /organization = «status.view · поддерево»); тот
+# же код, что GRID_PREFILL_PERMISSION 10.1b. Литерал с комментарием — зеркало
+# _EXPENSE_PERMISSION. Следствие Q-RBAC: ORGD/OMD (daily_report.generate) без
+# гранта status.view получают 403 — seed стори НЕ меняет (policy Bratan).
+_TREE_PERMISSION = "status.view"
 
 
 def _ensure_division_exists(division_id):
@@ -127,6 +138,9 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # day-state (10.3) — то же читающее право, что list/create: новых
         # permission-кодов и грантов стори не вводит.
         "day_state": READ_PERMISSION,
+        # traffic-tree (10.4) — читающее право статусов (Д по UX-карте
+        # /organization); RBAC-скоуп сужает видимость ниже, во view.
+        "traffic_tree": _TREE_PERMISSION,
     }
     # No "head": HEAD stays 405 everywhere (the 5.8a/b minimal surface).
     http_method_names = ["get", "post", "options"]
@@ -259,6 +273,71 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     },
                 }
         return Response({"divisions": divisions, "detail": detail})
+
+    @extend_schema(
+        parameters=[TrafficTreeFilterSerializer],
+        responses={200: TrafficTreeResponseSerializer},
+        description="Светофор-дерево «Готовность сдачи» (10.4): каскад 5.5b по "
+        "лесу RBAC-видимости актора (status.view) — плоский список узлов с "
+        "parent_id (Д1 контракта 10-01); status/late байт-в-байт из "
+        "traffic_light_tree (worst-colour UNKNOWN>RED>YELLOW>GREEN, NEUTRAL "
+        "нейтрален, late = OR по поддереву), name/parent_id — из core-"
+        "справочника. Клиентского root_division_id НЕТ (Д2) — корни выводятся "
+        "из видимости. 400 мусорная/отсутствующая дата; 403 без права; 422 "
+        "REPORT_NO_DATA_FOR_DATE — дата до горизонта данных (будущая дата "
+        "легальна: честный RED-лес).",
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="traffic-tree",
+        url_name="traffic-tree",
+    )
+    def traffic_tree(self, request, *args, **kwargs):
+        form = TrafficTreeFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        business_date = form.validated_data["business_date"]
+
+        # Корни леса = видимые без видимого родителя; None (глобальный/
+        # wildcard) → top-level всего дерева (children_map()[None]). Один
+        # children_map на запрос — он же кормит parent_id узлов (NFR-4);
+        # обратная смежность derived in-process, не вторым сканом.
+        visible = PermissionService.visible_division_ids(
+            request.actor_id, _TREE_PERMISSION
+        )
+        children = CoreDivisionTreeSelector.children_map()
+        parent_of = {
+            child: parent for parent, kids in children.items() for child in kids
+        }
+        if visible is None:
+            roots = children.get(None, [])
+        else:
+            roots = [did for did in visible if parent_of.get(did) not in visible]
+        # 422 до горизонта — ДО расчёта: дата раньше всех данных дала бы
+        # ложно-«пустой» NEUTRAL/RED-лес (закрытие P6 контракта 10-01).
+        assert_report_date_has_data(business_date=business_date)
+        forest = traffic_light_forest(roots, business_date)
+        # Имена — только через core-селектор (ARCH-003). Узел вне справочника
+        # (грант на удалённое подразделение → фантомный root в visible) тихо
+        # выпадает: рендерить его нечем; пустая видимость → 200 nodes: []
+        # (Д5-канон 5.8c), не 403.
+        names = CoreDivisionTreeSelector.divisions_map(set(forest))
+        nodes = []
+        for did in sorted(names, key=lambda d: (names[d], str(d))):
+            parent = parent_of.get(did)
+            light = forest[did]
+            nodes.append(
+                {
+                    "division_id": str(did),
+                    "name": names[did],
+                    # null у корней ВИДИМОЙ области: родитель вне ответа —
+                    # не ссылка (клиент строит лес по parent_id, Д1/Д3).
+                    "parent_id": str(parent) if parent in names else None,
+                    "status": light.status,
+                    "late": light.late,
+                }
+            )
+        return Response({"nodes": nodes})
 
     @action(detail=True, methods=["post"])
     def amend(self, request, pk=None, *args, **kwargs):

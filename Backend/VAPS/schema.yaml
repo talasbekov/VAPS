@@ -1345,6 +1345,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/DayStateResponse'
           description: ''
+  /api/operations/daily-submissions/traffic-tree/:
+    get:
+      operationId: operations_daily_submissions_traffic_tree_retrieve
+      description: 'Светофор-дерево «Готовность сдачи» (10.4): каскад 5.5b по лесу
+        RBAC-видимости актора (status.view) — плоский список узлов с parent_id (Д1
+        контракта 10-01); status/late байт-в-байт из traffic_light_tree (worst-colour
+        UNKNOWN>RED>YELLOW>GREEN, NEUTRAL нейтрален, late = OR по поддереву), name/parent_id
+        — из core-справочника. Клиентского root_division_id НЕТ (Д2) — корни выводятся
+        из видимости. 400 мусорная/отсутствующая дата; 403 без права; 422 REPORT_NO_DATA_FOR_DATE
+        — дата до горизонта данных (будущая дата легальна: честный RED-лес).'
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+          format: date
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficTreeResponse'
+          description: ''
   /api/operations/expense-reports/:
     get:
       operationId: operations_expense_reports_list
@@ -3105,3 +3131,43 @@ components:
       - business_date
       - overridden_by
       - reason
+    TrafficTreeNode:
+      type: object
+      description: |-
+        Узел светофор-дерева (10.4, контракт 10-01 §5, Д1 — плоский список):
+        ``status``/``late`` — байт-в-байт из каскада 5.5b (``CascadeTrafficLight``),
+        ``name``/``parent_id`` дособраны из core-справочника; ``parent_id = null``
+        у корней видимой области. Ровно 5 полей Д-shape — drift/responsible/
+        счётчиков НЕТ (ловушка ревью 10.1 P2).
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+        late:
+          type: boolean
+      required:
+      - division_id
+      - late
+      - name
+      - parent_id
+      - status
+    TrafficTreeResponse:
+      type: object
+      description: |-
+        200-конверт traffic-tree (10.4): плоский лес с parent_id-ссылками,
+        порядок узлов детерминирован (name, division_id).
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrafficTreeNode'
+      required:
+      - nodes
