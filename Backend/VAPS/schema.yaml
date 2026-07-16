@@ -2444,17 +2444,23 @@ components:
       type: object
       description: |-
         200-конверт history (10.5): видимые подразделения (селект экрана) +
-        страница журнала (limit/offset, канон DailySubmissionPagination).
+        страница журнала (limit/offset, канон DailySubmissionPagination) +
+        count — общее число выпусков по фильтру (ревью 10.6: без него
+        default-limit 50 обрезал бы журнал молча).
       properties:
         divisions:
           type: array
           items:
             $ref: '#/components/schemas/ExpenseHistoryDivision'
+        count:
+          type: integer
+          description: Общее число выпусков по фильтру (не размер страницы).
         issues:
           type: array
           items:
             $ref: '#/components/schemas/IssuedExpenseReportHistory'
       required:
+      - count
       - divisions
       - issues
     ExpensePeriodResponse:

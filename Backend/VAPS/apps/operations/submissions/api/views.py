@@ -239,9 +239,12 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
         names = CoreDivisionTreeSelector.divisions_map(visible)
         # ОДИН запрос на все submitted-строки (current_for_many) — никогда
-        # current_for в цикле (NFR-4).
+        # current_for в цикле (NFR-4). В чистом list-режиме снапшот deferred
+        # (ревью 10.6: 9 лёгких полей проекции, зеркало defer в .list());
+        # в detail-режиме строки полные — светофор ниже читает
+        # current.snapshot, deferred-поле дало бы тихий доп. запрос.
         submissions = DailySubmissionSelector.current_for_many(
-            set(names), business_date
+            set(names), business_date, defer_snapshot=division_id is None
         )
         divisions = [
             {
@@ -280,7 +283,11 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "summary": None,
                 }
             else:
-                light = division_traffic_light(division_id, business_date)
+                # current из map — светофор НЕ перечитывает состояние сам
+                # (ревью 10.6: тот же запрет второго чтения, что выше).
+                light = division_traffic_light(
+                    division_id, business_date, current=current
+                )
                 # 10.6: причина/санкция ТЕКУЩЕЙ AMENDED-версии — из уже
                 # загруженной map (строки полные, доп. запросов нет);
                 # triggered_by_status_id наружу НЕ едет (provenance-ref 5.4b).
@@ -359,7 +366,9 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # 422 до горизонта — ДО расчёта: дата раньше всех данных дала бы
         # ложно-«пустой» NEUTRAL/RED-лес (закрытие P6 контракта 10-01).
         assert_report_date_has_data(business_date=business_date)
-        forest = traffic_light_forest(roots, business_date)
+        # Смежность передаётся внутрь — forest НЕ full-scan'ит Division второй
+        # раз на тот же запрос (ревью 10.6; прецедент subtree_ids).
+        forest = traffic_light_forest(roots, business_date, children_map=children)
         # Имена — только через core-селектор (ARCH-003). Узел вне справочника
         # (грант на удалённое подразделение → фантомный root в visible) тихо
         # выпадает: рендерить его нечем; пустая видимость → 200 nodes: []
@@ -579,6 +588,10 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             {
                 "divisions": divisions,
+                # Итог по ВСЕМУ фильтру (ревью 10.6): без count default-limit
+                # 50 молча обрезал бы журнал — клиенту нечем понять, что
+                # страниц больше одной.
+                "count": paginator.count,
                 "issues": IssuedExpenseReportHistorySerializer(page, many=True).data,
             }
         )

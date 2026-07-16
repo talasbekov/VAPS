@@ -12,7 +12,11 @@ import { useQuery } from '@tanstack/react-query'
 
 import { apiClient } from '../../shared/api/client'
 import type { ApiFailure } from '../../shared/api/errors'
-import { BusinessRuleError, ConflictError } from '../../shared/api/errors'
+import {
+  ApiError,
+  BusinessRuleError,
+  ConflictError,
+} from '../../shared/api/errors'
 import type { paths } from '../../shared/api/schema'
 import { useApiMutation } from '../../shared/api/useApiMutation'
 import { Card, CardDescription, CardHeader } from '../../shared/ui/Card'
@@ -121,7 +125,17 @@ export function DailyExpensePage() {
   }, [mapped, appliedChanges])
 
   const gridRef = useRef<DailyGridHandle>(null)
-  const lastChangesRef = useRef<RowChange[]>([])
+  // Дельты последней отправки ВМЕСТЕ с датой запроса: 201 сверяется с текущей
+  // датой (гард стейл-контекста) перед rebase-ом.
+  const lastChangesRef = useRef<{ date: string; changes: RowChange[] } | null>(
+    null,
+  )
+  // Текущая дата для колбэков мутации (зеркало selectedRef панели 10.3):
+  // колбэки асинхронны — эффект коммита успевает раньше ответа сети.
+  const businessDateRef = useRef(businessDate)
+  useEffect(() => {
+    businessDateRef.current = businessDate
+  }, [businessDate])
   const [appliedCount, setAppliedCount] = useState<number | null>(null)
   const [formError, setFormError] = useState(false)
   // Ограниченный цикл (дефер 9.6): 409 ПОСЛЕ оверрайд-попытки этой же
@@ -136,11 +150,16 @@ export function DailyExpensePage() {
         variables,
       ),
     onSuccess: (data) => {
+      // Гард стейл-контекста (зеркало гарда панели 10.3: «201, прилетевший
+      // ПОСЛЕ смены селекта»): 201, прилетевший ПОСЛЕ смены даты, не должен
+      // ребейзить грид НОВОЙ даты дельтами старой.
+      const last = lastChangesRef.current
+      if (last === null || last.date !== businessDateRef.current) return
       // Счётчик — из ОТВЕТА (created), не из длины запроса (AC-6).
       setAppliedCount(data.created)
       setAppliedChanges((prev) => {
         const next = { ...prev }
-        for (const c of lastChangesRef.current)
+        for (const c of last.changes)
           next[c.id] = { statusCode: c.statusCode, period: c.period }
         return next
       })
@@ -148,11 +167,11 @@ export function DailyExpensePage() {
     onFormError: () => setFormError(true),
   })
   const { conflict, confirmOverride, dismissConflict, error, isPending } = bulk
-  const { mutate } = bulk
+  const { mutate, reset } = bulk
 
   const handleBulkSubmit = useCallback(
     (request: BulkStatusRequest, changes: RowChange[]) => {
-      lastChangesRef.current = changes
+      lastChangesRef.current = { date: request.business_date, changes }
       setAppliedCount(null)
       setFormError(false)
       setOverrideAttempted(false) // новая отправка = новый цикл конфликта
@@ -221,8 +240,14 @@ export function DailyExpensePage() {
       setAppliedCount(null)
       setFormError(false)
       setOverrideAttempted(false)
+      // Полный сброс цикла мутации (зеркало handleSelectChange панели 10.3):
+      // без reset() баннеры 422/409 и открытый ConflictDialog прежней даты
+      // переезжали бы в новый контекст, а «Подтвердить» ре-POST-ил бы payload
+      // СТАРОЙ даты через lastVariables хука. reset() гасит и conflict-state.
+      lastChangesRef.current = null
+      reset()
     },
-    [],
+    [reset],
   )
 
   // Пустой/упавший справочник (AC-4, дефер 9.4): молчаливого select-без-опций
@@ -302,6 +327,16 @@ export function DailyExpensePage() {
             : `Конфликт: ${error.message} Строки помечены в гриде.`}
         </div>
       )}
+      {/* Базовый ApiError (403/404 и прочие конвертные не-спецклассы).
+          401 НЕ рендерится — его обслуживает цепь 8.6 (AC-10); 5xx/сеть
+          сюда не попадают (ServerError/NetworkError — тост хука). */}
+      {error instanceof ApiError &&
+        error.kind === 'api' &&
+        error.status !== 401 && (
+          <div role="alert" className="rounded border border-red-300 p-2 text-sm">
+            {error.message}
+          </div>
+        )}
 
       {!validDate ? (
         <p role="status" className="text-sm text-muted-foreground">
@@ -348,7 +383,10 @@ export function DailyExpensePage() {
         <DaySubmissionPanel
           businessDate={businessDate}
           isDirty={isGridDirty}
-          appliedCount={appliedCount ?? 0}
+          // «За сессию» = КУМУЛЯТИВ appliedChanges (копится по сейвам), не
+          // appliedCount последнего ответа (перетирается каждым сейвом и
+          // null-ится в полёте) — иначе предпросмотр лгал бы после 2-го сейва.
+          appliedCount={Object.keys(appliedChanges).length}
           employees={mapped?.employees ?? []}
         />
       )}

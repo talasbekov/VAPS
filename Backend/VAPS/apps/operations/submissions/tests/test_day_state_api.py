@@ -48,6 +48,12 @@ pytestmark = pytest.mark.django_db
 TODAY = date(2026, 6, 4)
 YESTERDAY = TODAY - timedelta(days=1)
 
+# Абсолютный пин detail-режима (сданный день, без сводки): актор/скоуп +
+# divisions_map + current_for_many + existence + светофор (roster_on 2 SELECT +
+# overlapping_on; current — из map, НЕ перечитывается) + summary_freshness
+# (current_for — принятый дубль, Д 5.11). Меряется тестом ниже.
+DETAIL_QUERY_PIN = 18  # 19 до ревью 10.6 (второй current_for в светофоре)
+
 PROJECTION_FIELDS = {
     "id",
     "division_id",
@@ -229,6 +235,43 @@ def test_list_query_count_constant_in_division_count(global_op, tree):
     with CaptureQueriesContext(connection) as ctx_big:
         _get(global_op)
     assert len(ctx_big) == len(ctx_small)
+
+
+def test_list_current_for_many_select_defers_snapshot(scoped_op, tree):
+    """NFR-4 (ревью 10.6): list-проекция несёт 9 лёгких полей — SELECT
+    current_for_many в чистом list-режиме НЕ тянет снапшот (десятки–сотни КБ
+    на строку × все видимые подразделения; зеркало defer в .list())."""
+    root, _, _ = tree
+    _submit(root, TODAY)
+    with CaptureQueriesContext(connection) as ctx:
+        response = _get(scoped_op)
+    assert response.status_code == 200
+    submission_selects = [
+        q["sql"]
+        for q in ctx.captured_queries
+        if "ops_daily_submissions" in q["sql"] and "is_current" in q["sql"]
+    ]
+    assert submission_selects  # current_for_many обязан был выполниться
+    for sql in submission_selects:
+        assert '"snapshot"' not in sql, sql
+
+
+def test_detail_no_second_current_read_query_pin(scoped_op, tree):
+    """Ревью 10.6: division_traffic_light получает current из УЖЕ загруженной
+    map (комментарий L266-269) — второй current_for был бы лишним запросом +
+    TOCTOU-рассинхроном list vs detail. Абсолютный пин: старый код (внутреннее
+    current_for в светофоре) даёт на 1 запрос больше."""
+    root, _, _ = tree
+    emp = make_employee(root)
+    make_status(emp, "DUTY", date(2026, 5, 1), date(2026, 7, 1))
+    _submit(root, TODAY)
+    assert _get(scoped_op, division_id=root.id).status_code == 200  # прогрев
+    with CaptureQueriesContext(connection) as ctx:
+        response = _get(scoped_op, division_id=root.id)
+    assert response.status_code == 200
+    assert len(ctx) == DETAIL_QUERY_PIN, "\n".join(
+        q["sql"][:120] for q in ctx.captured_queries
+    )
 
 
 # -- AC-3: detail несдано — серверный preview_event -----------------------------

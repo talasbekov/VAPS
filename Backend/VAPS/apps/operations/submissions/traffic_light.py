@@ -144,15 +144,28 @@ def _diff_winners(snap: dict, live: dict) -> dict | None:
     return {"added": added, "removed": removed, "changed": changed}
 
 
-def division_traffic_light(division_id, business_date) -> DivisionTrafficLight:
+_UNSET = object()  # сентинел «current не передан»: None — легитимное значение
+
+
+def division_traffic_light(
+    division_id, business_date, *, current=_UNSET
+) -> DivisionTrafficLight:
     """Светофор of one division on ``business_date`` (own-level drift).
 
     RED = no current submission (the control hour does not gate RED here — it
     already fed ``late`` at submit time); otherwise GREEN/YELLOW from the
     per-employee winner diff of derive(снапшот) vs derive(live).
+
+    ``current`` — уже загруженная current-строка (или ``None`` = «строки
+    нет»), если вызывающий держит её из ``current_for_many`` (day-state
+    detail, ревью 10.6): внутренний ``current_for`` тогда пропускается —
+    повторное чтение того же состояния было бы лишним запросом и
+    TOCTOU-рассинхроном list vs detail при конкурентном submit_day. Сентинел,
+    а не None-дефолт: ``None`` легально означает «current-строки нет».
     """
     division_id = uuid.UUID(str(division_id))
-    current = DailySubmissionSelector.current_for(division_id, business_date)
+    if current is _UNSET:
+        current = DailySubmissionSelector.current_for(division_id, business_date)
     if current is None:
         return DivisionTrafficLight(
             status=TrafficLightStatus.RED.value, late=False, drift=None
@@ -346,7 +359,9 @@ def traffic_light_tree(root_division_id, business_date) -> dict:
     return _fold_cascade(subtree, children, own)
 
 
-def traffic_light_forest(root_division_ids, business_date) -> dict:
+def traffic_light_forest(
+    root_division_ids, business_date, *, children_map=None
+) -> dict:
     """Cascade светофор of SEVERAL roots at once (Story 10.4, traffic-tree API).
 
     The union of the roots' subtrees is computed with the SAME bulk invariants
@@ -358,8 +373,17 @@ def traffic_light_forest(root_division_ids, business_date) -> dict:
     (``visible_division_ids``) — K is unbounded input, so the query count must
     not depend on it. Returns ``{division_id: CascadeTrafficLight}`` over the
     union; an empty ``root_division_ids`` yields ``{}``.
+
+    ``children_map`` — уже собранная смежность, если вызывающий строил её сам
+    (роут 10.4 кормит ею parent_id узлов): повторный full-scan Division внутри
+    был бы вторым сканом на запрос (ревью 10.6; прецедент ``subtree_ids``).
+    ``None`` — собрать самостоятельно (обратная совместимость).
     """
-    children = CoreDivisionTreeSelector.children_map()
+    children = (
+        CoreDivisionTreeSelector.children_map()
+        if children_map is None
+        else children_map
+    )
     union: set = set()
     for root in root_division_ids:
         union |= _descendants(uuid.UUID(str(root)), children)

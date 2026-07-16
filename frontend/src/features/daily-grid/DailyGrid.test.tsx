@@ -368,6 +368,28 @@ describe('10.2 DailyGrid — Ctrl+Enter: санкционированный вы
     expect(screen.queryByLabelText('Статус')).not.toBeInTheDocument()
   })
 
+  it('ревью fix4: Ctrl+Enter при disabled-кнопке (hard-маркер) → фокус ВСЁ РАВНО покидает грид (нет WCAG 2.1.2-ловушки)', () => {
+    const ref = createRef<DailyGridHandle>()
+    render(
+      <DailyGrid
+        ref={ref}
+        rows={makeRows(2)}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+      />,
+    )
+    // hard-маркер → blockedCount > 0 → кнопка disabled (нефокусируема).
+    act(() => ref.current!.applyMarkers({ e0: 'hard' }))
+    expect(screen.getByText('Сдать день')).toBeDisabled()
+    const grid = screen.getByRole('grid')
+    fireEvent.keyDown(grid, { key: 'Enter', ctrlKey: true })
+    // Санкционированный выход обязан состояться: активный элемент ВНЕ грида
+    // (fallback-якорь), не застрявшая ячейка и не body.
+    const active = document.activeElement as HTMLElement
+    expect(grid.contains(active)).toBe(false)
+    expect(active).not.toBe(document.body)
+  })
+
   it('submitPending дизейблит «Сдать день» (AC-5: pending-гейт повторного клика)', () => {
     render(
       <DailyGrid

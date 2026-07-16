@@ -326,6 +326,10 @@ export function DailyGrid({
   const emptyRef = useRef<HTMLDivElement>(null)
   // Кнопка «Сдать день» — цель санкционированного выхода Ctrl+Enter (AC-12).
   const submitRef = useRef<HTMLButtonElement>(null)
+  // Fallback-якорь выхода: disabled-кнопка (blockedCount/pending) нефокусируема
+  // → focus() на ней no-op, а Tab съеден как MOVE = WCAG 2.1.2-ловушка. Якорь —
+  // существующий анонсер-регион (tabIndex −1): выход работает ВСЕГДА.
+  const announceRef = useRef<HTMLSpanElement>(null)
   const preEditRef = useRef<{
     id: string
     statusCode: string
@@ -542,7 +546,11 @@ export function DailyGrid({
       // grammar.ts заморожен и события не получает (ср. полифилл-гашение 9.5).
       if (e.key === 'Enter' && e.ctrlKey && focus.mode === 'NAVIGATE') {
         e.preventDefault()
-        submitRef.current?.focus()
+        // Кнопка disabled (hard-блок/pending) — нефокусируема: выход через
+        // fallback-якорь, иначе Ctrl+Enter — no-op и грид ловит клавиатуру.
+        const submit = submitRef.current
+        if (submit !== null && !submit.disabled) submit.focus()
+        else announceRef.current?.focus()
         return
       }
       const key = toKey(e)
@@ -735,8 +743,15 @@ export function DailyGrid({
         </button>
       </div>
       {/* aria-live анонс блокировок/конфликтов — слепой ввод получает сигнал,
-          что Enter НЕ перешёл дальше (ревью 9.6). */}
-      <span role="status" aria-live="assertive" className="sr-only">
+          что Enter НЕ перешёл дальше (ревью 9.6). tabIndex −1 — fallback-якорь
+          Ctrl+Enter при disabled-кнопке (вне tab-порядка, фокус программный). */}
+      <span
+        ref={announceRef}
+        role="status"
+        aria-live="assertive"
+        tabIndex={-1}
+        className="sr-only"
+      >
         {announce}
       </span>
 

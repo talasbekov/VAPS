@@ -205,8 +205,10 @@ export function selectDayState(
  * закрытие defer 10.3 L667): серверная submitted-строка ПОБЕЖДАЕТ локальный
  * ответ, когда `server.version >= local.version` — чужой amendment после
  * рефетча показывает свежие версию/время/событие, а не застывший 201. Пока
- * сервер отстаёт (инвалидация в полёте) — локальная строка со светофором/
- * сводкой серверного состояния (amendment локального 201 сервер ещё не знает).
+ * сервер отстаёт (инвалидация в полёте) — локальная строка БЕЗ деталей:
+ * светофор/сводка/amendment серверного состояния посчитаны по СТАРОЙ версии
+ * (графт на новую давал бы ложный drift-alert после пересдачи) — null до
+ * прихода рефетча.
  */
 export function resolvePanelState(
   serverState: SelectedDayState | null,
@@ -221,10 +223,9 @@ export function resolvePanelState(
   return {
     kind: 'submitted',
     submission: submittedNow,
-    trafficLight:
-      serverState?.kind === 'submitted' ? serverState.trafficLight : null,
+    trafficLight: null,
     amendment: null,
-    summary: serverState?.kind === 'submitted' ? serverState.summary : null,
+    summary: null,
   }
 }
 

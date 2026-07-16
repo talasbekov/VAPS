@@ -202,6 +202,17 @@ def test_history_pagination_limit_offset(global_orgd, tree, attachment):
     assert [row["number"] for row in rest["issues"]] == [1]
 
 
+def test_history_count_total_survives_pagination(global_orgd, tree, attachment):
+    """Ревью 10.6: конверт несёт count = ОБЩЕЕ число выпусков по фильтру —
+    иначе default-limit 50 молча обрезал бы журнал без сигнала клиенту."""
+    root, _, _ = tree
+    for n in range(1, 4):  # 3 выпуска разных дат — все ISSUED легальны
+        _issue(root, attachment, n, business_date=date(2026, 7, 5 + n))
+    payload = _get(global_orgd, limit=2).json()
+    assert len(payload["issues"]) == 2  # страница обрезана лимитом
+    assert payload["count"] == 3  # но итог — по всему фильтру
+
+
 def test_history_division_filter_narrows_issues_not_divisions(
     global_orgd, tree, attachment
 ):
@@ -255,7 +266,7 @@ def test_history_grant_with_empty_visibility_200_empty_lists(tree, attachment):
     )
     response = _get("orgd-phantom")
     assert response.status_code == 200
-    assert response.json() == {"divisions": [], "issues": []}
+    assert response.json() == {"divisions": [], "count": 0, "issues": []}
 
 
 def test_history_without_permission_403(tree):

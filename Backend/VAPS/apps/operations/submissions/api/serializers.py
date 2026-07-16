@@ -311,7 +311,12 @@ class IssuedExpenseReportHistorySerializer(IssuedExpenseReportSerializer):
 
 class ExpenseHistoryResponseSerializer(serializers.Serializer):
     """200-конверт history (10.5): видимые подразделения (селект экрана) +
-    страница журнала (limit/offset, канон DailySubmissionPagination)."""
+    страница журнала (limit/offset, канон DailySubmissionPagination) +
+    count — общее число выпусков по фильтру (ревью 10.6: без него
+    default-limit 50 обрезал бы журнал молча)."""
 
     divisions = ExpenseHistoryDivisionSerializer(many=True)
+    count = serializers.IntegerField(
+        help_text="Общее число выпусков по фильтру (не размер страницы)."
+    )
     issues = IssuedExpenseReportHistorySerializer(many=True)

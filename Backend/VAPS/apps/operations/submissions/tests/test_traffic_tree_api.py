@@ -55,6 +55,11 @@ HORIZON_START = date(2026, 5, 1)  # earliest status fact → report_data_horizon
 
 NODE_FIELDS = {"division_id", "name", "parent_id", "status", "late"}
 
+# Абсолютный пин запроса traffic-tree: актор/скоуп + ОДИН children_map на весь
+# запрос (роут передаёт смежность в forest) + горизонт + roster_on (2 SELECT) +
+# overlapping_on + current_for_many + divisions_map. Меряется тестом AC-6.
+TREE_QUERY_PIN = 14  # 15 до ревью 10.6 (второй children_map внутри forest)
+
 
 @pytest.fixture(autouse=True)
 def frozen_clock():
@@ -359,6 +364,20 @@ def test_query_count_constant_in_divisions_and_roots(viewer_global, forest):
     assert len(ctx_big) == len(ctx_small), (
         f"NFR-4: {len(ctx_small)} запросов на малом лесу, "
         f"{len(ctx_big)} на большом — эндпоинт растёт по состоянию"
+    )
+
+
+def test_query_count_absolute_pin_single_children_map(viewer_global, forest):
+    """Ревью 10.6: children_map строится ОДИН раз на запрос — роут передаёт
+    уже собранную смежность в traffic_light_forest (прецедент subtree_ids);
+    внутренний повторный скан Division давал бы на 1 запрос больше."""
+    _submit(forest["child_a1"])
+    assert _get(viewer_global).status_code == 200  # прогрев
+    with CaptureQueriesContext(connection) as ctx:
+        response = _get(viewer_global)
+    assert response.status_code == 200
+    assert len(ctx) == TREE_QUERY_PIN, "\n".join(
+        q["sql"][:120] for q in ctx.captured_queries
     )
 
 

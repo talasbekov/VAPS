@@ -288,7 +288,7 @@ describe('resolvePanelState — server-priority деривация (AC-11а)', (
     expect(state).toBe(serverV1)
   })
 
-  it('сервер ещё отстаёт (unsubmitted/старее) → локальный 201 со светофором сервера', () => {
+  it('сервер ещё отстаёт (unsubmitted/старее) → локальный 201 БЕЗ стейл-деталей', () => {
     // Сервер ещё не догнал 201 (keepPreviousData/инвалидация в полёте).
     const state = resolvePanelState(null, { ...local, version: 2 })
     expect(state).toEqual({
@@ -298,21 +298,25 @@ describe('resolvePanelState — server-priority деривация (AC-11а)', (
       amendment: null,
       summary: null,
     })
+    // Светофор/сводка stale-строки посчитаны по v1 — графтить их на v2
+    // нельзя (ложный drift-alert «разошёлся» после пересдачи: снапшот v2
+    // только что пересобран); до прихода рефетча деталей у v2 НЕТ.
     const stale: SelectedDayState = {
       kind: 'submitted',
       submission: { ...submission, version: 1, event: 'CHANGED' },
-      trafficLight: { status: 'GREEN', late: false, drift: null },
+      trafficLight: {
+        status: 'YELLOW',
+        late: false,
+        drift: { added: [], removed: [], changed: [] },
+      },
       amendment: null,
-      summary: null,
+      summary: { status: 'STALE', superseded: [], missing: [], unpinned: [] },
     }
     const after = resolvePanelState(stale, { ...local, version: 2 })
     if (after?.kind !== 'submitted') throw new Error('ожидалось submitted')
     expect(after.submission.version).toBe(2)
-    expect(after.trafficLight).toEqual({
-      status: 'GREEN',
-      late: false,
-      drift: null,
-    })
+    expect(after.trafficLight).toBeNull()
+    expect(after.summary).toBeNull()
   })
 })
 

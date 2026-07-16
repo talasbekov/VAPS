@@ -71,7 +71,7 @@ class DailySubmissionSelector:
         return qs.defer("snapshot").order_by("-business_date", "-version", "id")
 
     @staticmethod
-    def current_for_many(division_ids, business_date) -> dict:
+    def current_for_many(division_ids, business_date, *, defer_snapshot=False) -> dict:
         """Bulk form of ``current_for`` for the 5.5b cascade.
 
         The current (is_current) submission of EACH division on ``business_date``
@@ -79,15 +79,22 @@ class DailySubmissionSelector:
         division with no current submission is simply absent from the map (mirror
         ``current_for`` returning None). Rides ``idx_daily_submission_lookup``;
         never call ``current_for`` in a loop over a subtree (NFR-4).
+
+        ``defer_snapshot`` — для лёгких list-проекций (day-state list, 10.3/
+        ревью 10.6): зеркало defer'а в ``list()`` — снапшот в десятки–сотни КБ
+        на строку × все видимые подразделения не должен ехать в память ради
+        9 полей сериализатора. Дефолт False: каскад 5.5b, сводка 5.11 и
+        tomorrow_block читают ``snapshot`` — deferred-строка дала бы им тихий
+        доп. запрос на обращение к полю.
         """
-        return {
-            row.division_id: row
-            for row in DailySubmission.objects.filter(
-                division_id__in=division_ids,
-                business_date=business_date,
-                is_current=True,
-            )
-        }
+        qs = DailySubmission.objects.filter(
+            division_id__in=division_ids,
+            business_date=business_date,
+            is_current=True,
+        )
+        if defer_snapshot:
+            qs = qs.defer("snapshot")
+        return {row.division_id: row for row in qs}
 
     @staticmethod
     def covering(employee_id, business_dates):

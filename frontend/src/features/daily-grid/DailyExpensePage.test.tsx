@@ -6,6 +6,7 @@
 // (shared/api/testing) через локальную Harness-обвязку shared-примитивов.
 import '@testing-library/jest-dom/vitest'
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -178,6 +179,16 @@ const conflict409Envelope: ErrorEnvelope = {
       },
     ],
   },
+  request_id: null,
+  timestamp: TIMESTAMP,
+}
+
+// Базовый ApiError: seeded DIVISION_OPERATOR несёт status.view (грид грузится),
+// но не status.manage (гейт bulk) → 403 без спец-класса.
+const forbiddenEnvelope: ErrorEnvelope = {
+  error_code: 'PERMISSION_DENIED',
+  message: 'Недостаточно прав для массового обновления статусов.',
+  details: {},
   request_id: null,
   timestamp: TIMESTAMP,
 }
@@ -600,6 +611,23 @@ describe('10.2 DailyExpensePage — каналы ошибок (AC-10)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('ревью fix3: базовый ApiError (403) → баннер с сообщением конверта, НЕ молчаливый провал сохранения', async () => {
+    usePrefillHandler()
+    useBulkHandler({ status: 403, body: forbiddenEnvelope })
+    await renderPageAt()
+    editFirstRowTo('SICK')
+    fireEvent.click(screen.getByText('Сохранить изменения'))
+    // Канонический баннер соседей (DaySubmissionPanel): kind === 'api' и не 401.
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain(
+      'Недостаточно прав для массового обновления статусов.',
+    )
+    // Каналы спец-классов не задеты: ни маркеров, ни диалога, ни баннера формы.
+    expect(document.querySelectorAll('[data-marker]').length).toBe(0)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Запрос отклонён/)).not.toBeInTheDocument()
+  })
+
   it('401 → экран НЕ перехватывает (цепь 8.6 — app-композиция, запинена auth-flow.test.tsx): ни маркеров, ни диалога, ни баннера формы', async () => {
     usePrefillHandler()
     useBulkHandler({ status: 401, body: authRequiredEnvelope })
@@ -694,6 +722,80 @@ describe('10.2 DailyExpensePage — защита ввода (AC-11)', () => {
       new URL(urls[urls.length - 1]).searchParams.get('business_date'),
     ).toBe('2026-07-16') // prefill за (2026-07-17 − 1)
   })
+
+  it('ревью fix1а: баннер «Отклонено: N строк» (422) НЕ переживает смену даты — полный сброс цикла мутации', async () => {
+    usePrefillHandler()
+    useBulkHandler({ status: 422, body: hard422Envelope })
+    await renderPageAt()
+    editFirstRowTo('SICK')
+    fireEvent.click(screen.getByText('Сохранить изменения'))
+    await screen.findByText(/Отклонено: 1/)
+    // Дельта не применена (422) → грид dirty → confirm при смене даты.
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    fireEvent.change(screen.getByLabelText('Дата'), {
+      target: { value: '2026-07-17' },
+    })
+    await screen.findByRole('grid')
+    // Ошибка ПРЕЖНЕЙ даты не рендерится в новом контексте (зеркало
+    // handleSelectChange панели 10.3: reset() при смене контекста).
+    expect(screen.queryByText(/Отклонено:/)).not.toBeInTheDocument()
+  })
+
+  it('ревью fix1б: открытый ConflictDialog (409) закрывается при смене даты, конфликт-баннер не переезжает', async () => {
+    usePrefillHandler()
+    useBulkHandler({ status: 409, body: conflict409Envelope })
+    await renderPageAt()
+    editFirstRowTo('SICK')
+    fireEvent.click(screen.getByText('Сохранить изменения'))
+    await screen.findByRole('dialog')
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    fireEvent.change(screen.getByLabelText('Дата'), {
+      target: { value: '2026-07-17' },
+    })
+    await screen.findByRole('grid')
+    // Диалог старой даты закрыт: «Подтвердить» не может ре-POST-ить payload
+    // ПРЕЖНЕЙ даты (lastVariables хука сброшены reset-ом).
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Конфликт/)).not.toBeInTheDocument()
+  })
+
+  it('ревью fix2: 201 СТАРОЙ даты, прилетевший ПОСЛЕ смены даты, не ребейзит грид новой даты', async () => {
+    usePrefillHandler()
+    // Управляемый bulk: ответ уходит только после release() — 201 гарантированно
+    // догоняет страницу УЖЕ на новой дате (стейл-контекст).
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/operations/statuses/bulk/', async () => {
+        await gate
+        return HttpResponse.json({ created: 1 }, { status: 201 })
+      }),
+    )
+    await renderPageAt()
+    editFirstRowTo('SICK')
+    const submit = screen.getByText('Сохранить изменения')
+    fireEvent.click(submit)
+    await waitFor(() => expect(submit).toBeDisabled()) // bulk в полёте
+    vi.spyOn(window, 'confirm').mockReturnValue(true) // дельта dirty — согласие
+    fireEvent.change(screen.getByLabelText('Дата'), {
+      target: { value: '2026-07-17' },
+    })
+    await screen.findByRole('grid')
+    // 201 старой даты доезжает на новую дату.
+    release()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    // Гард стейл-контекста: ни баннера «Применено», ни appliedChanges-оверлея
+    // старых дельт поверх prefill НОВОЙ даты.
+    expect(screen.queryByText(/Применено отклонений/)).not.toBeInTheDocument()
+    expect(within(rowOf('Асанов')).getByText('В строю')).toBeInTheDocument()
+    expect(screen.getByTestId('changed-counter').textContent).toContain(
+      'Изменено 0 из 2',
+    )
+  })
 })
 
 // --- 10.3: композиция страницы — лейбл кнопки + smoke панели -------------------
@@ -712,6 +814,57 @@ describe('10.3 DailyExpensePage — панель сдачи (smoke, AC-5/AC-13)'
     expect(
       screen.queryByRole('button', { name: 'Сдать день' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('ревью fix5: предпросмотр сдачи несёт КУМУЛЯТИВНЫЙ счётчик сессии (4 после сейвов 3+1), а не created последнего ответа', async () => {
+    usePrefillHandler((bd) => ({
+      ...prefillFixture(bd),
+      employees: [
+        { id: 'e1', full_name: 'Асанов', rank: '' },
+        { id: 'e2', full_name: 'Борисов', rank: '' },
+        { id: 'e3', full_name: 'Волков', rank: '' },
+        { id: 'e4', full_name: 'Громов', rank: '' },
+      ],
+      statuses: [],
+    }))
+    useBulkHandler(
+      { status: 201, body: { created: 3 } },
+      { status: 201, body: { created: 1 } },
+    )
+    // day-state с единственным несданным подразделением → автовыбор, серверная
+    // категория даёт кнопку «Сдать день» (полные сценарии — DaySubmissionPanel).
+    server.use(
+      http.get('*/api/operations/daily-submissions/day-state/', () =>
+        HttpResponse.json({
+          divisions: [
+            { division_id: 'div-1', name: 'Отдел А', submission: null },
+          ],
+          detail: {
+            preview_event: 'CHANGED',
+            traffic_light: null,
+            amendment: null,
+            summary: null,
+          },
+        }),
+      ),
+    )
+    await renderPageAt()
+    // Сейв №1: три строки (фокус после каждого COMMIT съезжает вниз).
+    editFirstRowTo('SICK')
+    editFirstRowTo('SICK')
+    editFirstRowTo('SICK')
+    fireEvent.click(screen.getByText('Сохранить изменения'))
+    await screen.findByText(/Применено отклонений: 3/)
+    // Сейв №2: одна строка — per-save баннер честно показывает created ответа.
+    editFirstRowTo('SICK')
+    fireEvent.click(screen.getByText('Сохранить изменения'))
+    await screen.findByText(/Применено отклонений: 1/)
+    // Предпросмотр сдачи: «за сессию» = накопленные appliedChanges (4), не 1.
+    fireEvent.click(await screen.findByRole('button', { name: 'Сдать день' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByText(/Применено отклонений за сессию: 4/),
+    ).toBeInTheDocument()
   })
 })
 

@@ -291,6 +291,56 @@ describe('состояния экрана (AC-12)', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('очищенная дата → подсказка вместо стейл-дерева; «Обновить» НЕ бьёт в сеть (ревью 10.4)', async () => {
+    const requests = serveTree([node('r1', null, 'Альфа', 'GREEN')])
+    renderPage()
+    await screen.findByTestId('tree-node-r1')
+    expect(requests()).toBe(1)
+
+    // Очистка date-input — валидное действие оператора: дерево прежней даты
+    // (keepPreviousData) не должно висеть как «текущее» при выключенном polling
+    fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '' } })
+    expect(
+      screen.getByText('Укажите дату, чтобы увидеть готовность.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('tree-node-r1')).not.toBeInTheDocument()
+
+    // refetch() в RQ v5 обходит enabled:false → был бы гарантированный 400
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60))
+    })
+    expect(requests()).toBe(1)
+  })
+
+  it('после доменной ошибки интервал 60с НЕ рефетчит детерминированный 4xx (ревью 10.4)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let requests = 0
+    server.use(
+      http.get(TREE_PATH, () => {
+        requests += 1
+        return HttpResponse.json(
+          {
+            error_code: 'REPORT_NO_DATA_FOR_DATE',
+            message: 'Запрошена дата до начала данных.',
+            details: {},
+            request_id: null,
+            timestamp: TIMESTAMP,
+          } satisfies ErrorEnvelope,
+          { status: 422 },
+        )
+      }),
+    )
+    renderPage()
+    await screen.findByRole('alert')
+    expect(requests).toBe(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_INTERVAL_MS + 1000)
+    })
+    expect(requests).toBe(1)
+  })
+
   it('401 НЕ перехватывается экраном (logout-цепь 8.6 — providers)', async () => {
     server.use(
       http.get(TREE_PATH, () =>

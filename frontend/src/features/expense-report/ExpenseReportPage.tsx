@@ -27,6 +27,7 @@ import {
   ConflictError,
 } from '../../shared/api/errors'
 import { useApiMutation } from '../../shared/api/useApiMutation'
+import { handle401 } from '../../shared/auth/handle401'
 import { usePermissions } from '../../shared/auth/usePermissions'
 import { Card } from '../../shared/ui/Card'
 import {
@@ -185,12 +186,16 @@ export function ExpenseReportPage() {
       try {
         await downloadAttachment(attachmentId, fallbackName)
       } catch (err) {
+        // 401 — та же цепь 8.6, что у QueryCache/MutationCache (providers):
+        // прямой fetch мимо React Query, поэтому handle401 зовётся руками;
+        // баннер экрана протухшую сессию не дублирует.
+        if (handle401(err, queryClient)) return
         // Не-2xx/сеть download-канала — сообщение экрана (AC-11, не молчание);
         // тостов у прямого fetch нет — канал мутаций не задействован.
         setDownloadError(err instanceof Error ? err.message : String(err))
       }
     },
-    [],
+    [queryClient],
   )
 
   const divisions = historyQuery.data?.divisions ?? listData?.divisions ?? []
@@ -472,6 +477,15 @@ export function ExpenseReportPage() {
                   ))}
                 </tbody>
               </table>
+              {/* Ревью E10: бэк пагинирует журнал (default_limit 50) — без
+                  индикации первая страница выдаёт себя за полный журнал, и
+                  старые звенья цепочек «взамен» молча пропадают. Листание —
+                  отдельная стори (контракт Q3); здесь только честность. */}
+              {historyQuery.data.count > historyQuery.data.issues.length && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {`Показаны ${historyQuery.data.issues.length} из ${historyQuery.data.count} — старые выпуски за кадром.`}
+                </p>
+              )}
             </div>
           )
         ) : (

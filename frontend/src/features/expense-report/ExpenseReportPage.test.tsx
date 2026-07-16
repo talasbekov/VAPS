@@ -30,6 +30,7 @@ import { GENERIC_FAILURE_MESSAGE } from '../../shared/api/useApiMutation'
 import { server } from '../../shared/api/testing/server'
 import {
   clearCredential,
+  getCredential,
   setCredential,
 } from '../../shared/auth/credential'
 import { ToastProvider } from '../../shared/ui/toast'
@@ -150,8 +151,13 @@ function makeCurrent(
 
 function oneDivisionHistory(
   issues: HistoryIssue[] = [],
+  count: number = issues.length,
 ): ExpenseHistoryResponse {
-  return { divisions: [{ division_id: DIV_A, name: 'Отдел А' }], issues }
+  return {
+    divisions: [{ division_id: DIV_A, name: 'Отдел А' }],
+    count,
+    issues,
+  }
 }
 
 /** Права экрана: generate (роут) + document.view (скачивание) по умолчанию. */
@@ -252,6 +258,7 @@ describe('параметры (AC-6)', () => {
         { division_id: DIV_A, name: 'Отдел А' },
         { division_id: DIV_B, name: 'Отдел Б' },
       ],
+      count: 0,
       issues: [],
     }))
     renderPage()
@@ -671,6 +678,38 @@ describe('журнал выпусков (AC-10)', () => {
       await screen.findByText('Расходы ещё не формировались'),
     ).toBeInTheDocument()
   })
+
+  // Ревью E10: бэк пагинирует журнал (default_limit 50), конверт несёт count —
+  // усечённая страница обязана быть видимой, а не выдавать себя за полный журнал.
+  it('count > issues.length → индикация «Показаны N из M»', async () => {
+    servePermissions()
+    serveHistory(() =>
+      oneDivisionHistory(
+        [makeIssue({ id: ISSUE_2, number: 2 }), makeIssue({ id: ISSUE_1, number: 1 })],
+        5,
+      ),
+    )
+    serveCurrent('not-issued')
+    renderPage()
+
+    const journal = await screen.findByTestId('issues-journal')
+    expect(
+      await within(journal).findByText(
+        'Показаны 2 из 5 — старые выпуски за кадром.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('count == issues.length → индикации усечения нет', async () => {
+    servePermissions()
+    serveHistory(() => oneDivisionHistory([makeIssue()]))
+    serveCurrent('not-issued')
+    renderPage()
+
+    const journal = await screen.findByTestId('issues-journal')
+    await within(journal).findByText('Исх.№ 1/2026')
+    expect(within(journal).queryByText(/Показаны \d+ из/)).not.toBeInTheDocument()
+  })
 })
 
 // --- AC-11: скачивание -------------------------------------------------------------
@@ -724,6 +763,33 @@ describe('скачивание (AC-11)', () => {
     expect(cardButton).toBeDisabled()
     fireEvent.click(rowButton)
     expect(downloads).toBe(0)
+  })
+
+  it('download 401 → цепь 8.6 (credential очищен), НЕ баннер экрана', async () => {
+    servePermissions()
+    serveHistory(() => oneDivisionHistory([makeIssue()]))
+    serveCurrent('not-issued')
+    server.use(
+      http.get(`*/api/documents/attachments/${ATT_1}/download/`, () =>
+        HttpResponse.json(envelope('AUTH_REQUIRED', 'Требуется вход.'), {
+          status: 401,
+        }),
+      ),
+    )
+    renderPage()
+
+    const journal = await screen.findByTestId('issues-journal')
+    fireEvent.click(
+      await within(journal).findByRole('button', {
+        name: 'Скачать Исх.№ 1/2026',
+      }),
+    )
+    // Канон 401 (providers.handle401): clearCredential + сброс ['me'];
+    // сырой баннер «Не удалось скачать файл» цепь дублировать не должен.
+    await waitFor(() => expect(getCredential()).toBeNull())
+    expect(
+      screen.queryByText(/Не удалось скачать файл/),
+    ).not.toBeInTheDocument()
   })
 
   it('download не-2xx → сообщение об ошибке (не молчание)', async () => {

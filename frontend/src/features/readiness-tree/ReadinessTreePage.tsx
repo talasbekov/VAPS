@@ -63,7 +63,10 @@ export function ReadinessTreePage() {
       ),
     enabled: validDate,
     // Интервальное обновление (AC-11, Д4): 60с, константа в одном месте.
-    refetchInterval: REFRESH_INTERVAL_MS,
+    // На errored-запросе polling глушится (ревью 10.4): RQ v5 иначе вечно
+    // долбит детерминированный 4xx; «Повторить»/«Обновить» остаются.
+    refetchInterval: (q) =>
+      q.state.status === 'error' ? false : REFRESH_INTERVAL_MS,
     // Канон L472: без авто-ретраев — ошибка сразу отдаёт явное состояние.
     retry: false,
     // Смена даты меняет queryKey — дерево прежней даты держится до прихода
@@ -118,8 +121,13 @@ export function ReadinessTreePage() {
         </label>
         <button
           type="button"
-          className="rounded border px-3 py-1 text-sm"
-          onClick={() => void query.refetch()}
+          className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+          // refetch() в RQ v5 обходит enabled:false (ревью 10.4) — без даты
+          // кнопка выключена, иначе гарантированный 400 в баннер-цикл.
+          disabled={!validDate}
+          onClick={() => {
+            if (validDate) void query.refetch()
+          }}
         >
           Обновить
         </button>
@@ -133,7 +141,14 @@ export function ReadinessTreePage() {
         )}
       </Card>
 
-      {query.isPending && validDate ? (
+      {!validDate ? (
+        // Очищенный date-input — валидное действие оператора (зеркало 10.5):
+        // подсказка ПЕРЕД data-ветками — дерево прежней даты (keepPreviousData)
+        // не должно висеть как «текущее» при молча выключенном polling.
+        <p role="status" className="text-sm text-muted-foreground">
+          Укажите дату, чтобы увидеть готовность.
+        </p>
+      ) : query.isPending ? (
         <p role="status" className="text-sm text-muted-foreground">
           Загрузка дерева…
         </p>

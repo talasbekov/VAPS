@@ -11,29 +11,23 @@ import {
   QueryClient,
   QueryClientProvider,
 } from '@tanstack/react-query'
-import { ApiError } from '../shared/api/errors'
 import { AuthProvider } from '../shared/auth/AuthContext'
-import { clearCredential } from '../shared/auth/credential'
+import { handle401 } from '../shared/auth/handle401'
 import { ToastProvider } from '../shared/ui/toast'
 
 export function createQueryClient(): QueryClient {
-  // 401-механика (Д7, AC 6): ЛЮБОЙ запрос — query И mutation — с 401
-  // AUTH_REQUIRED чистит credential и сбрасывает ['me']; навигацию делает
-  // RequireAuth реактивно (без window.location). 403 PERMISSION_DENIED
-  // credential НЕ трогает (401 ≠ 403, UX L202-203). Ветвление — по
-  // типизированному ApiError.status (ARCH-FE-015: парсинга Response тут нет).
+  // 401-механика (Д7, AC 6): ЛЮБОЙ запрос — query И mutation — через единую
+  // handle401 (shared/auth; там же — канал прямых fetch вне React Query,
+  // например blob-download 10.5). Ветвление — по типизированному
+  // ApiError.status (ARCH-FE-015: парсинга Response тут нет).
   // chicken-egg «onError нужен client до его создания» — замыкание читает
   // биндинг client, инициализируемый ниже (onError зовётся только после).
-  const handle401 = (error: unknown): void => {
-    if (error instanceof ApiError && error.status === 401) {
-      clearCredential()
-      // removeQueries, НЕ invalidate: рефетч без credential словил бы 403
-      client.removeQueries({ queryKey: ['me'] })
-    }
+  const on401 = (error: unknown): void => {
+    handle401(error, client)
   }
   const client = new QueryClient({
-    queryCache: new QueryCache({ onError: handle401 }),
-    mutationCache: new MutationCache({ onError: handle401 }),
+    queryCache: new QueryCache({ onError: on401 }),
+    mutationCache: new MutationCache({ onError: on401 }),
     defaultOptions: {
       mutations: { retry: false },
     },
