@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1784129294.687296,
-    "ast_hash": "f5cd400359932de87fade666065f3d7c",
+    "mtime": 1784178235.3520257,
+    "ast_hash": "172b766efba785400d32ab922f52937b",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -17930,8 +17930,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/selectors.py": {
-    "mtime": 1784129096.8297575,
-    "ast_hash": "49c51a670cc11d5995a0fdde90c60a56",
+    "mtime": 1784176918.4699686,
+    "ast_hash": "4ac2ce7a7a7ebefe4cfedeada3d98cca",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/services/__init__.py": {
@@ -20795,13 +20795,13 @@
     "semantic_hash": ""
   },
   "frontend/src/app/App.tsx": {
-    "mtime": 1783436411.4579036,
-    "ast_hash": "93e5e5bf19322bcb31ee83f567f7db5f",
+    "mtime": 1784177787.9158735,
+    "ast_hash": "af54febf75e590d64a6053f8a4a8dc0a",
     "semantic_hash": ""
   },
   "frontend/src/app/AppLayout.test.tsx": {
-    "mtime": 1783436411.4579358,
-    "ast_hash": "3c53eb7f497c40bf663cd4a3e271999b",
+    "mtime": 1784177860.6735291,
+    "ast_hash": "473b3cde1e0dc62afa357afbfc497d97",
     "semantic_hash": ""
   },
   "frontend/src/app/app-layout.qa.test.tsx": {
@@ -20840,8 +20840,8 @@
     "semantic_hash": ""
   },
   "frontend/src/app/section-stubs.tsx": {
-    "mtime": 1783436411.4579358,
-    "ast_hash": "8e78c2ea044cafd578933f03b2abdb08",
+    "mtime": 1784177792.6168506,
+    "ast_hash": "3920b831b6541c0e284f8268c8193a39",
     "semantic_hash": ""
   },
   "frontend/src/features/auth/LoginPage.test.tsx": {
@@ -20865,18 +20865,18 @@
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyGrid.test.tsx": {
-    "mtime": 1784005492.5064526,
-    "ast_hash": "5f98ed4fe9cb6bb2e4a703d89b0b4ae4",
+    "mtime": 1784177123.089405,
+    "ast_hash": "1ebaa17d4ce23eb6649522c00da16a88",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyGrid.tsx": {
-    "mtime": 1784031639.3530688,
-    "ast_hash": "ffcfb5b62848c1938c50305f637ce772",
+    "mtime": 1784177209.7351801,
+    "ast_hash": "73847d9eb8638275ad19461812e766e5",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyGrid.types.ts": {
-    "mtime": 1784005289.2568586,
-    "ast_hash": "e16ce8bc7d785523e4222d48960b001a",
+    "mtime": 1784177149.6323354,
+    "ast_hash": "952189617d5f8d2129742d68c1ac87f4",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyGrid.validation.test.tsx": {
@@ -20885,13 +20885,13 @@
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyGridContainer.test.tsx": {
-    "mtime": 1784025923.9934628,
-    "ast_hash": "1c97a19693271fd807ab576bf3e9f782",
+    "mtime": 1784177433.9456248,
+    "ast_hash": "0c4f4b8a14a0dcaf6c7bb422746f0ff9",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyGridContainer.tsx": {
-    "mtime": 1784025715.211238,
-    "ast_hash": "87bef43639f136ed375c2767d60154c9",
+    "mtime": 1784177422.1596532,
+    "ast_hash": "d05887bf43bb2dac334ca53533d1d1c4",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/grammar.properties.test.ts": {
@@ -20915,13 +20915,13 @@
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/prefill.test.ts": {
-    "mtime": 1784025923.9644632,
-    "ast_hash": "9409285c1ab37e6e87def3a0d980472f",
+    "mtime": 1784177002.167732,
+    "ast_hash": "68792b09d1e299f935d8f0b93ccf0cbc",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/prefill.ts": {
-    "mtime": 1784025694.8924139,
-    "ast_hash": "9f5078f10c662bfd815401d7d3c2df92",
+    "mtime": 1784177389.7347317,
+    "ast_hash": "4d672803e64b94f6dafd632d9684913a",
     "semantic_hash": ""
   },
   "frontend/src/features/print-forms/PrintTestPage.test.tsx": {
@@ -20955,8 +20955,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/schema.d.ts": {
-    "mtime": 1784128035.2663803,
-    "ast_hash": "e6f536fe7ca184a199f6a4b1a2805a33",
+    "mtime": 1784176963.7218394,
+    "ast_hash": "289c045f5467c8adc233c11d38bc1efd",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/testing/handlers.ts": {
@@ -21045,8 +21045,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/ui/ConflictDialog.tsx": {
-    "mtime": 1784034129.3323152,
-    "ast_hash": "778a0ca574a4dc8ab58c030475327afe",
+    "mtime": 1784177458.825565,
+    "ast_hash": "b4e4b66cfacd31d469206ec9913b2357",
     "semantic_hash": ""
   },
   "frontend/src/shared/ui/DropdownMenu.tsx": {
@@ -21115,8 +21115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/schema.yaml": {
-    "mtime": 1784128011.2510562,
-    "ast_hash": "57dbf70869d1244a74a88563221a6090",
+    "mtime": 1784176955.898712,
+    "ast_hash": "15025b67deb2d909cab6f6fd181704c5",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/5-10-property-\u0438\u043c\u043c\u0443\u0442\u0430\u0431\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c-\u0441\u043d\u0430\u043f\u0448\u043e\u0442\u0430.md": {
@@ -21375,8 +21375,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/api/serializers.py": {
-    "mtime": 1784127752.3756573,
-    "ast_hash": "98b2aec9924ff78b12ad6a65185cf294",
+    "mtime": 1784176926.8469446,
+    "ast_hash": "c16d75e51e3b7a16c741cc38f5861bf2",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/api/views.py": {
@@ -21390,8 +21390,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/tests/test_grid_prefill_api.py": {
-    "mtime": 1784129016.6761193,
-    "ast_hash": "26c5f561b37d2a6cad28da6b8aa55c10",
+    "mtime": 1784176947.286886,
+    "ast_hash": "9a37b52b63219c9422df114da433d151",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/assets/index-NJQvki5V.js": {
@@ -21477,6 +21477,21 @@
   "frontend/e2e-harness/index.html": {
     "mtime": 1784033551.8925323,
     "ast_hash": "8b90ee03f57d6aa063e93b536861e24a",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/daily-grid/DailyExpensePage.test.tsx": {
+    "mtime": 1784177959.4437988,
+    "ast_hash": "63fdb8e86f3dd9a543a691407cb98698",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/daily-grid/DailyExpensePage.tsx": {
+    "mtime": 1784177766.0419815,
+    "ast_hash": "12cf68261fb532da893dc94897da9ae4",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/10-2-\u044d\u043a\u0440\u0430\u043d-\u043c\u0430\u0441\u0441\u043e\u0432\u043e\u0433\u043e-\u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f.md": {
+    "mtime": 1784178206.30513,
+    "ast_hash": "0e404edff3817485ae9eb64e45a43071",
     "semantic_hash": ""
   }
 }
