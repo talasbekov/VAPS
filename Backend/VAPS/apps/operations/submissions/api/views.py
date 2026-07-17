@@ -305,12 +305,13 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
         names = CoreDivisionTreeSelector.divisions_map(visible)
         # ОДИН запрос на все submitted-строки (current_for_many) — никогда
-        # current_for в цикле (NFR-4). В чистом list-режиме снапшот deferred
-        # (ревью 10.6: 9 лёгких полей проекции, зеркало defer в .list());
-        # в detail-режиме строки полные — светофор ниже читает
-        # current.snapshot, deferred-поле дало бы тихий доп. запрос.
+        # current_for в цикле (NFR-4). Снапшот deferred ВСЕГДА (ревью 10.4,
+        # ужесточение 10.6): проекция несёт 9 лёгких полей, а светофору
+        # detail-режима нужен снапшот ЕДИНСТВЕННОЙ строки — тянуть N полных
+        # JSONB ради одного был бы O(N) по памяти/трафику. Ниже detail-ветка
+        # дочитывает snapshot точечно (тот же pk — TOCTOU нет).
         submissions = DailySubmissionSelector.current_for_many(
-            set(names), business_date, defer_snapshot=division_id is None
+            set(names), business_date, defer_snapshot=True
         )
         divisions = [
             {
@@ -351,6 +352,10 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
             else:
                 # current из map — светофор НЕ перечитывает состояние сам
                 # (ревью 10.6: тот же запрет второго чтения, что выше).
+                # Снапшот deferred — доступ к current.snapshot внутри светофора
+                # дочитает ЕДИНСТВЕННУЮ нужную строку одним точечным SELECT по
+                # pk (ревью 10.4: та же строка — TOCTOU нет; N полных JSONB в
+                # list-запросе выше были бы дороже одного точечного чтения).
                 light = division_traffic_light(
                     division_id, business_date, current=current
                 )
@@ -413,15 +418,21 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         form = TrafficTreeFilterSerializer(data=request.query_params)
         form.is_valid(raise_exception=True)
         business_date = form.validated_data["business_date"]
+        # 422 до горизонта — ДО расчёта (буквально: раньше любого чтения
+        # видимости/дерева): дата раньше всех данных дала бы ложно-«пустой»
+        # NEUTRAL/RED-лес (закрытие P6 контракта 10-01). Coarse-403 остаётся
+        # первичным — он живёт в permission_map до тела экшена.
+        assert_report_date_has_data(business_date=business_date)
 
         # Корни леса = видимые без видимого родителя; None (глобальный/
         # wildcard) → top-level всего дерева (children_map()[None]). Один
-        # children_map на запрос — он же кормит parent_id узлов (NFR-4);
-        # обратная смежность derived in-process, не вторым сканом.
-        visible = PermissionService.visible_division_ids(
-            request.actor_id, _TREE_PERMISSION
-        )
+        # children_map на запрос — он кормит и RBAC-скоуп, и parent_id узлов
+        # (NFR-4): второй скан у scoped-актора был бы и дублем, и
+        # TOCTOU-рассинхроном двух снапшотов смежности (ревью 10.4).
         children = CoreDivisionTreeSelector.children_map()
+        visible = PermissionService.visible_division_ids(
+            request.actor_id, _TREE_PERMISSION, children_map=children
+        )
         parent_of = {
             child: parent for parent, kids in children.items() for child in kids
         }
@@ -429,12 +440,16 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
             roots = children.get(None, [])
         else:
             roots = [did for did in visible if parent_of.get(did) not in visible]
-        # 422 до горизонта — ДО расчёта: дата раньше всех данных дала бы
-        # ложно-«пустой» NEUTRAL/RED-лес (закрытие P6 контракта 10-01).
-        assert_report_date_has_data(business_date=business_date)
         # Смежность передаётся внутрь — forest НЕ full-scan'ит Division второй
         # раз на тот же запрос (ревью 10.6; прецедент subtree_ids).
         forest = traffic_light_forest(roots, business_date, children_map=children)
+        if visible is not None:
+            # Сегодня no-op: forest = union поддеревьев видимых корней, а
+            # видимость замкнута вниз (subtree_ids по грантам). Гвард (ревью
+            # 10.4) на будущие RBAC-эволюции (точечные exclusions, не-замкнутая
+            # видимость): узел вне visible не должен уехать наружу, даже если
+            # каскад его посчитал.
+            forest = {did: state for did, state in forest.items() if did in visible}
         # Имена — только через core-селектор (ARCH-003). Узел вне справочника
         # (грант на удалённое подразделение → фантомный root в visible) тихо
         # выпадает: рендерить его нечем; пустая видимость → 200 nodes: []

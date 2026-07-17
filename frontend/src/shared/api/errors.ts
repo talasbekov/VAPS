@@ -116,6 +116,17 @@ export class NetworkError extends Error {
  */
 export type ApiFailure = ApiError | NetworkError
 
+/**
+ * Канал-политика ARCH-FE-015: доменная ошибка ЭКРАНА — типизированный
+ * ApiError, НЕ 'server' (5xx — канал тоста/клиента) и НЕ 401 (logout-цепь
+ * 8.6 в providers). Только такие ошибки экран рендерит баннером; сеть
+ * (NetworkError) отсекается уже по instanceof. Единая точка предиката —
+ * экраны не дублируют условие руками (ревью 10.4).
+ */
+export function isDomainError(e: unknown): e is ApiError {
+  return e instanceof ApiError && e.kind !== 'server' && e.status !== 401
+}
+
 /** Defensive-чтение конверта: не-JSON тело или JSON без error_code → null. */
 async function readEnvelope(response: Response): Promise<ErrorEnvelope | null> {
   let raw: unknown

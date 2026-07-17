@@ -202,7 +202,14 @@ describe('Разводка маршрутов: RequirePermission на данны
   })
 
   it('прямой заход на /organization БЕЗ status.view → «Доступ запрещён»', async () => {
-    usePermissionsResponse({ permissions: ['daily_report.mark_update'] })
+    // Усиление (ревью 10.4, паттерн qa-матрицы): ВСЕ коды пилота, КРОМЕ
+    // status.view — гейт обязан валить именно по отсутствию своего кода,
+    // а не по бедности набора.
+    usePermissionsResponse({
+      permissions: fullPermissions.permissions.filter(
+        (code) => code !== 'status.view',
+      ),
+    })
     renderApp(ROUTES.organization)
 
     expect(await screen.findByText(ACCESS_DENIED_TEXT)).toBeInTheDocument()
@@ -212,8 +219,9 @@ describe('Разводка маршрутов: RequirePermission на данны
   })
 
   it('с правом → реальный экран «Готовность сдачи» (10.4: заглушка заменена)', async () => {
-    // дефолтная фикстура оператора несёт status.view
-    usePermissionsResponse(myPermissionsFixture)
+    // Усиление (ревью 10.4): РОВНО ['status.view'] — экран обязан открываться
+    // одним своим кодом, без попутных прав фикстуры оператора.
+    usePermissionsResponse({ permissions: ['status.view'] })
     // Экран 10.4 грузит traffic-tree на маунте — минимальный валидный ответ
     // (onUnhandledRequest: 'error' иначе уронит тест).
     server.use(

@@ -25,6 +25,7 @@ import {
   ApiError,
   BusinessRuleError,
   ConflictError,
+  isDomainError,
 } from '../../shared/api/errors'
 import { useApiMutation } from '../../shared/api/useApiMutation'
 import { handle401 } from '../../shared/auth/handle401'
@@ -207,20 +208,13 @@ export function ExpenseReportPage() {
     currentQuery.error.status === 404 &&
     currentQuery.error.errorCode === 'ENTITY_NOT_FOUND'
   // Прочие доменные ошибки point-lookup → баннер; 5xx/сеть/401 — каналы
-  // хука/клиента (ARCH-FE-015), экран их не дублирует.
+  // хука/клиента (единый предикат isDomainError, ARCH-FE-015); !notIssued —
+  // локальная надстройка ЭТОГО экрана поверх общего предиката.
   const currentDomainError =
-    currentQuery.error instanceof ApiError &&
-    !notIssued &&
-    currentQuery.error.kind !== 'server' &&
-    currentQuery.error.status !== 401
-      ? currentQuery.error
-      : null
-  const historyDomainError =
-    historyQuery.error instanceof ApiError &&
-    historyQuery.error.kind !== 'server' &&
-    historyQuery.error.status !== 401
-      ? historyQuery.error
-      : null
+    !notIssued && isDomainError(currentQuery.error) ? currentQuery.error : null
+  const historyDomainError = isDomainError(historyQuery.error)
+    ? historyQuery.error
+    : null
 
   // Гард гонки (ревью 10.5, blind+edge): reset() не отменяет POST в полёте —
   // onSuccess может поставить issuedNow УЖЕ ПОСЛЕ смены даты/подразделения.

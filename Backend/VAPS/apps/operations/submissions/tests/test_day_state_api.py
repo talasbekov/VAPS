@@ -49,10 +49,13 @@ TODAY = date(2026, 6, 4)
 YESTERDAY = TODAY - timedelta(days=1)
 
 # Абсолютный пин detail-режима (сданный день, без сводки): актор/скоуп +
-# divisions_map + current_for_many + existence + светофор (roster_on 2 SELECT +
-# overlapping_on; current — из map, НЕ перечитывается) + summary_freshness
+# divisions_map + current_for_many (снапшот deferred ВСЕГДА) + existence +
+# светофор (точечный snapshot-SELECT по pk deferred-строки + roster_on 2 SELECT
+# + overlapping_on; current — из map, НЕ перечитывается) + summary_freshness
 # (current_for — принятый дубль, Д 5.11). Меряется тестом ниже.
-DETAIL_QUERY_PIN = 18  # 19 до ревью 10.6 (второй current_for в светофоре)
+# Ревью 10.4: N полных JSONB в list-SELECT → 1 точечный snapshot-SELECT
+# единственной нужной строки (пин 18 → 19, но тяжесть N снапшотов ушла).
+DETAIL_QUERY_PIN = 19
 
 PROJECTION_FIELDS = {
     "id",

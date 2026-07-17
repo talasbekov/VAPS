@@ -56,9 +56,14 @@ HORIZON_START = date(2026, 5, 1)  # earliest status fact → report_data_horizon
 NODE_FIELDS = {"division_id", "name", "parent_id", "status", "late"}
 
 # Абсолютный пин запроса traffic-tree: актор/скоуп + ОДИН children_map на весь
-# запрос (роут передаёт смежность в forest) + горизонт + roster_on (2 SELECT) +
-# overlapping_on + current_for_many + divisions_map. Меряется тестом AC-6.
+# запрос (он кормит RBAC-скоуп, forest И parent_id узлов — ревью 10.4) +
+# горизонт + roster_on (2 SELECT) + overlapping_on + current_for_many +
+# divisions_map. Меряется тестом AC-6.
 TREE_QUERY_PIN = 14  # 15 до ревью 10.6 (второй children_map внутри forest)
+# Scoped-вариант пина (ревью 10.4): дубль children_map у scoped-актора —
+# visible_division_ids обязан переиспользовать смежность роута, второй
+# full-scan Division дал бы +1. Значение замерено после патча (тест ниже).
+SCOPED_TREE_QUERY_PIN = 14
 
 
 @pytest.fixture(autouse=True)
@@ -379,6 +384,48 @@ def test_query_count_absolute_pin_single_children_map(viewer_global, forest):
     assert len(ctx) == TREE_QUERY_PIN, "\n".join(
         q["sql"][:120] for q in ctx.captured_queries
     )
+
+
+def test_scoped_query_pin_no_duplicate_children_map(viewer_a, forest):
+    """Дубль children_map у scoped-актора — регресс ревью 10.4: роут строит
+    смежность ОДИН раз и кормит ею и RBAC-скоуп (visible_division_ids), и
+    forest, и parent_id узлов; второй full-scan Division внутри
+    visible_division_ids дал бы +1 запрос (и TOCTOU-рассинхрон снапшотов)."""
+    _submit(forest["child_a1"])
+    assert _get(viewer_a).status_code == 200  # прогрев
+    with CaptureQueriesContext(connection) as ctx:
+        response = _get(viewer_a)
+    assert response.status_code == 200
+    assert len(ctx) == SCOPED_TREE_QUERY_PIN, "\n".join(
+        q["sql"][:120] for q in ctx.captured_queries
+    )
+
+
+# -- инвариант замкнутости parent_id (ревью 10.4) --------------------------------
+
+
+def test_parent_id_closure_invariant_scoped_and_global(viewer_global, forest):
+    """Каждый node.parent_id либо null, либо указывает на division_id ЭТОГО же
+    ответа — клиент строит лес по parent_id, висячая ссылка ломает сборку.
+    Scoped-актор посреди дерева (child_a1): родитель корня видимой области
+    существует в БД, но вне ответа → обязан нормализоваться в null."""
+    UserRole.objects.create(
+        user_id="viewer-mid",
+        role_code_id="VIEWER",
+        scope_division_id=forest["child_a1"].id,
+    )
+    _submit(forest["child_a1"])
+    for actor in ("viewer-mid", viewer_global):
+        response = _get(actor)
+        assert response.status_code == 200
+        nodes = response.json()["nodes"]
+        assert nodes  # непустой сценарий — инвариант не вакуумный
+        ids = {node["division_id"] for node in nodes}
+        for node in nodes:
+            assert node["parent_id"] is None or node["parent_id"] in ids, (
+                f"{actor}: висячий parent_id {node['parent_id']} "
+                f"у узла {node['division_id']}"
+            )
 
 
 # -- unit: traffic_light_forest --------------------------------------------------

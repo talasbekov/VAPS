@@ -10,6 +10,7 @@ normalisation and ISO-date parsing are exercised end-to-end.
 """
 
 import itertools
+import uuid
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -348,3 +349,23 @@ def test_str_division_id_is_accepted(division):
     tl = division_traffic_light(str(division.id), DAY)
     assert tl.status == TrafficLightStatus.GREEN
     assert tl.drift is None
+
+
+# --- guard: current= must belong to (division, date) (review 10.4) -----------
+
+
+def test_current_mismatch_guard_raises(division):
+    """Гвард принадлежности current= (ревью 10.4): строка из map с
+    перепутанным ключом (чужое подразделение или чужая дата) — громкий
+    ValueError, а не молчаливый светофор чужого подразделения."""
+    _submit(division)
+    sub = DailySubmissionSelector.current_for(division.id, DAY)
+    # своя пара — легально (день сдан, фактов нет → GREEN)
+    ok = division_traffic_light(division.id, DAY, current=sub)
+    assert ok.status == TrafficLightStatus.GREEN
+    # чужое подразделение
+    with pytest.raises(ValueError, match="current mismatch"):
+        division_traffic_light(uuid.uuid4(), DAY, current=sub)
+    # чужая дата
+    with pytest.raises(ValueError, match="current mismatch"):
+        division_traffic_light(division.id, DAY + timedelta(days=1), current=sub)

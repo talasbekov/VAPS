@@ -341,6 +341,106 @@ describe('состояния экрана (AC-12)', () => {
     expect(requests).toBe(1)
   })
 
+  it('транзиентный 5xx НЕ глушит интервал — следующий тик уходит (ревью 10.4)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let requests = 0
+    server.use(
+      http.get(TREE_PATH, () => {
+        requests += 1
+        return HttpResponse.json(
+          {
+            error_code: 'INTERNAL_ERROR',
+            message: 'Внутренняя ошибка.',
+            details: {},
+            request_id: null,
+            timestamp: TIMESTAMP,
+          } satisfies ErrorEnvelope,
+          { status: 500 },
+        )
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(requests).toBe(1))
+
+    // Монитор должен сам восстановиться, когда бэк оживёт: глушится только
+    // детерминированная ДОМЕННАЯ ошибка (тест выше), транзиент — нет.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_INTERVAL_MS + 1000)
+    })
+    await waitFor(() => expect(requests).toBe(2))
+  })
+
+  it('полночь перекатывает дату, если оператор её не трогал (ревью 10.4)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 6, 16, 23, 59, 30))
+    const dates: string[] = []
+    server.use(
+      http.get(TREE_PATH, ({ request }) => {
+        dates.push(new URL(request.url).searchParams.get('business_date') ?? '')
+        return HttpResponse.json({ nodes: [] })
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(dates).toHaveLength(1))
+    expect(dates[0]).toBe('2026-07-16')
+
+    // Тик 60с пересекает полночь: фетч прежней даты успешен → rollover
+    // переключает businessDate на новые локальные сутки → свежий фетч.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_INTERVAL_MS)
+    })
+    await waitFor(() => expect(dates.at(-1)).toBe('2026-07-17'))
+    expect(screen.getByLabelText('Дата')).toHaveValue('2026-07-17')
+  })
+
+  it('полночь НЕ перекатывает дату, которую оператор выбрал руками', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 6, 16, 23, 59, 30))
+    const dates: string[] = []
+    server.use(
+      http.get(TREE_PATH, ({ request }) => {
+        dates.push(new URL(request.url).searchParams.get('business_date') ?? '')
+        return HttpResponse.json({ nodes: [] })
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(dates).toHaveLength(1))
+
+    // Оператор сознательно смотрит прошлую дату — dirty-флаг взводится.
+    fireEvent.change(screen.getByLabelText('Дата'), {
+      target: { value: '2026-07-10' },
+    })
+    await waitFor(() => expect(dates.at(-1)).toBe('2026-07-10'))
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_INTERVAL_MS)
+    })
+    // Тик ушёл (интервал жив), но дата осталась выбранной, не «сегодня».
+    await waitFor(() => expect(dates.length).toBeGreaterThanOrEqual(3))
+    expect(dates.at(-1)).toBe('2026-07-10')
+    expect(screen.getByLabelText('Дата')).toHaveValue('2026-07-10')
+  })
+
+  it('промежуточный год при наборе («0002-…») → запрос не уходит (floor-гвард, ревью 10.4)', async () => {
+    const requests = serveTree([node('r1', null, 'Альфа', 'GREEN')])
+    renderPage()
+    await screen.findByTestId('tree-node-r1')
+    expect(requests()).toBe(1)
+
+    // ISO-валидная, но заведомо мусорная дата (год до floor 1970) — enabled
+    // false, экран в нейтральной подсказке, сеть не трогается.
+    fireEvent.change(screen.getByLabelText('Дата'), {
+      target: { value: '0002-07-17' },
+    })
+    expect(
+      screen.getByText('Укажите дату, чтобы увидеть готовность.'),
+    ).toBeInTheDocument()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60))
+    })
+    expect(requests()).toBe(1)
+  })
+
   it('401 НЕ перехватывается экраном (logout-цепь 8.6 — providers)', async () => {
     server.use(
       http.get(TREE_PATH, () =>

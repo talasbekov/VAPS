@@ -162,10 +162,25 @@ def division_traffic_light(
     повторное чтение того же состояния было бы лишним запросом и
     TOCTOU-рассинхроном list vs detail при конкурентном submit_day. Сентинел,
     а не None-дефолт: ``None`` легально означает «current-строки нет».
+    Переданная строка обязана принадлежать ИМЕННО этой паре
+    ``(division_id, business_date)`` и быть current — дешёвый гвард (ревью
+    10.4) против будущего второго вызывающего с перепутанным map-ключом:
+    молчаливый светофор чужого подразделения хуже громкого ValueError.
     """
     division_id = uuid.UUID(str(division_id))
     if current is _UNSET:
         current = DailySubmissionSelector.current_for(division_id, business_date)
+    elif current is not None and not (
+        current.division_id == division_id
+        and current.business_date == business_date
+        and current.is_current
+    ):
+        raise ValueError(
+            "current mismatch: passed submission "
+            f"(division={current.division_id}, date={current.business_date}, "
+            f"is_current={current.is_current}) is not the current row of "
+            f"(division={division_id}, date={business_date})"
+        )
     if current is None:
         return DivisionTrafficLight(
             status=TrafficLightStatus.RED.value, late=False, drift=None
@@ -227,24 +242,6 @@ def _worst(*statuses) -> str:
     )
 
 
-def _descendants(root, children) -> set:
-    """Subtree ids (root + all descendants) folded from a ``children_map``.
-
-    Derived in-process so the whole cascade costs ONE Division scan
-    (``children_map``) — never a second ``subtree_ids`` query (AC-5). Same DFS as
-    ``CoreDivisionTreeSelector.subtree_ids``; the adjacency itself still comes
-    from the one sanctioned tree channel (ARCH-DATA-024).
-    """
-    result, stack = set(), [root]
-    while stack:
-        node = stack.pop()
-        if node in result:
-            continue
-        result.add(node)
-        stack.extend(children.get(node, []))
-    return result
-
-
 def _subtree_own_states(subtree, business_date) -> dict:
     """{division_id: (status, late)} own-state per division, computed BULK.
 
@@ -264,12 +261,23 @@ def _subtree_own_states(subtree, business_date) -> dict:
     hardening), not silently masked as UNKNOWN.
     """
     roster = HistoricalEmployeeSelector.roster_on(business_date, subtree)
-    all_employees = [eid for members in roster.values() for eid in members]
-    rows = EmployeeStatusSelector.overlapping_on(business_date, all_employees)
+    submissions = DailySubmissionSelector.current_for_many(subtree, business_date)
+    # Live-факты нужны ТОЛЬКО ветке «submission is not None» (drift сданного
+    # дня): RED vs NEUTRAL несданного решается по members из roster (по всему
+    # subtree — он остаётся полным). Поэтому overlapping_on грузит факты
+    # только сотрудников подразделений со сданной current-строкой (ревью
+    # 10.4) — не весь subtree; результат byte-identical, число bulk-запросов
+    # то же.
+    submitted_employees = [
+        eid
+        for division_id in subtree
+        if division_id in submissions
+        for eid in roster.get(division_id, [])
+    ]
+    rows = EmployeeStatusSelector.overlapping_on(business_date, submitted_employees)
     facts_by_employee: dict[str, list] = {}
     for row in rows:
         facts_by_employee.setdefault(str(row["employee_id"]), []).append(row)
-    submissions = DailySubmissionSelector.current_for_many(subtree, business_date)
 
     own: dict = {}
     for division_id in subtree:
@@ -323,7 +331,7 @@ def _fold_cascade(subtree, children, own) -> dict:
         # and the memo ``result`` is only written POST-order, so a back-edge to a
         # node still being folded must be skipped here, else the recursion never
         # bottoms out (a RecursionError that takes down the whole call). Mirrors
-        # the visited guard in ``_descendants`` / ``subtree_ids``; for a proper
+        # the visited guard in ``subtree_ids``; for a proper
         # tree this set is never hit, so the result is unchanged.
         folding.add(node)
         own_status, own_late = own[node]
@@ -351,12 +359,12 @@ def traffic_light_tree(root_division_id, business_date) -> dict:
     OR-ed over the subtree. ONE post-order fold over the children adjacency from
     ``CoreDivisionTreeSelector`` (the single tree channel, ARCH-DATA-024) — never
     ``division_traffic_light`` / a per-node query (NFR-4).
+
+    Делегат forest-обёртки с одним корнем (ревью 10.4): параллельная
+    композиция тех же шагов дрейфовала бы от неё — семантику держит ОДНА
+    реализация, тесты 5.5b пинят поведение через этот вход.
     """
-    root = uuid.UUID(str(root_division_id))
-    children = CoreDivisionTreeSelector.children_map()
-    subtree = _descendants(root, children)
-    own = _subtree_own_states(subtree, business_date)
-    return _fold_cascade(subtree, children, own)
+    return traffic_light_forest([root_division_id], business_date)
 
 
 def traffic_light_forest(
@@ -386,6 +394,10 @@ def traffic_light_forest(
     )
     union: set = set()
     for root in root_division_ids:
-        union |= _descendants(uuid.UUID(str(root)), children)
+        # subtree_ids с переданной смежностью — 0 доп. запросов (тот же DFS
+        # и cycle-guard, что жил здесь дублем _descendants до ревью 10.4).
+        union |= CoreDivisionTreeSelector.subtree_ids(
+            uuid.UUID(str(root)), children_map=children
+        )
     own = _subtree_own_states(union, business_date)
     return _fold_cascade(union, children, own)

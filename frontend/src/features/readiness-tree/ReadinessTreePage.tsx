@@ -13,7 +13,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import { apiClient } from '../../shared/api/client'
 import type { ApiFailure } from '../../shared/api/errors'
-import { ApiError } from '../../shared/api/errors'
+import { isDomainError } from '../../shared/api/errors'
 import { Card } from '../../shared/ui/Card'
 import {
   buildForest,
@@ -47,6 +47,9 @@ function formatClock(timestamp: number): string {
 
 export function ReadinessTreePage() {
   const [businessDate, setBusinessDate] = useState(todayLocalIso)
+  // Оператор трогал дату руками — авто-rollover полуночи (ниже) отключается:
+  // сознательно выбранная дата не должна молча «перекатиться» на сегодня.
+  const [dateDirty, setDateDirty] = useState(false)
   const [laggards, setLaggards] = useState(false)
   // Раскрытые узлы (ленивый DOM, Д3): по умолчанию пусто — отрендерен только
   // верхний уровень. UI-стейт оператора, не копия серверных данных.
@@ -54,7 +57,10 @@ export function ReadinessTreePage() {
     () => new Set(),
   )
 
-  const validDate = ISO_DATE_RE.test(businessDate)
+  // Floor-гвард (ревью 10.4): промежуточные годы при наборе руками
+  // («0002-…») — синтаксически валидный ISO, но заведомый мусор; ISO-строки
+  // сравниваются лексикографически корректно, запрос не уходит.
+  const validDate = ISO_DATE_RE.test(businessDate) && businessDate >= '1970-01-01'
   const query = useQuery<TrafficTreeResponse, ApiFailure>({
     queryKey: ['traffic-tree', businessDate],
     queryFn: () =>
@@ -63,10 +69,26 @@ export function ReadinessTreePage() {
       ),
     enabled: validDate,
     // Интервальное обновление (AC-11, Д4): 60с, константа в одном месте.
-    // На errored-запросе polling глушится (ревью 10.4): RQ v5 иначе вечно
-    // долбит детерминированный 4xx; «Повторить»/«Обновить» остаются.
-    refetchInterval: (q) =>
-      q.state.status === 'error' ? false : REFRESH_INTERVAL_MS,
+    // Глушится ТОЛЬКО на детерминированной доменной ошибке (ревью 10.4):
+    // RQ v5 иначе вечно долбит гарантированный 4xx. Транзиент (5xx/сеть/401)
+    // продолжает поллиться — монитор сам восстановится, когда бэк оживёт;
+    // «Повторить»/«Обновить» остаются в обоих случаях.
+    refetchInterval: (q) => {
+      if (q.state.status === 'error') {
+        return isDomainError(q.state.error) ? false : REFRESH_INTERVAL_MS
+      }
+      // Полуночный rollover (ревью 10.4): монитор, живущий на стене, не
+      // должен навсегда застрять на вчера. Колбэк планирования тика RQ зовёт
+      // после каждого завершённого фетча (вне рендера — setState легален):
+      // успешный фетч при перекатившихся локальных сутках и нетронутой
+      // оператором дате переводит дату на сегодня (queryKey сменится →
+      // свежий фетч сегодняшнего леса).
+      if (!dateDirty && q.state.status === 'success') {
+        const today = todayLocalIso()
+        if (businessDate !== today) setBusinessDate(today)
+      }
+      return REFRESH_INTERVAL_MS
+    },
     // Канон L472: без авто-ретраев — ошибка сразу отдаёт явное состояние.
     retry: false,
     // Смена даты меняет queryKey — дерево прежней даты держится до прихода
@@ -84,13 +106,9 @@ export function ReadinessTreePage() {
   }, [])
 
   // Доменная ошибка → баннер экрана; 5xx (kind 'server'), сеть (NetworkError —
-  // не ApiError) и 401 (logout-цепь 8.6 в providers) НЕ перехватываются.
-  const domainError =
-    query.error instanceof ApiError &&
-    query.error.kind !== 'server' &&
-    query.error.status !== 401
-      ? query.error
-      : null
+  // не ApiError) и 401 (logout-цепь 8.6 в providers) НЕ перехватываются —
+  // единый предикат isDomainError (ARCH-FE-015, ревью 10.4).
+  const domainError = isDomainError(query.error) ? query.error : null
 
   const forest = query.data !== undefined ? buildForest(query.data.nodes) : null
   const visibleForest =
@@ -108,7 +126,12 @@ export function ReadinessTreePage() {
             type="date"
             className="rounded border px-2 py-1"
             value={businessDate}
-            onChange={(event) => setBusinessDate(event.target.value)}
+            onChange={(event) => {
+              // Ручная правка даты фиксируется — полуночный rollover выше
+              // больше не трогает выбор оператора.
+              setDateDirty(true)
+              setBusinessDate(event.target.value)
+            }}
           />
         </label>
         <label className="flex items-center gap-2 text-sm">
@@ -123,11 +146,10 @@ export function ReadinessTreePage() {
           type="button"
           className="rounded border px-3 py-1 text-sm disabled:opacity-50"
           // refetch() в RQ v5 обходит enabled:false (ревью 10.4) — без даты
-          // кнопка выключена, иначе гарантированный 400 в баннер-цикл.
+          // кнопка выключена (disabled и есть гвард: onClick недостижим),
+          // иначе гарантированный 400 в баннер-цикл.
           disabled={!validDate}
-          onClick={() => {
-            if (validDate) void query.refetch()
-          }}
+          onClick={() => void query.refetch()}
         >
           Обновить
         </button>
@@ -166,8 +188,12 @@ export function ReadinessTreePage() {
             Повторить
           </button>
         </div>
-      ) : visibleForest !== null ? (
-        query.data !== undefined && query.data.nodes.length === 0 ? (
+      ) : forest !== null && visibleForest !== null ? (
+        // forest пуст = сервер отдал ноль узлов (нет доступных вообще);
+        // visibleForest пуст при непустом forest = фильтр «отстающие» всё
+        // скрыл. Ветвление по уже сузённым значениям — без фантомного
+        // query.data-гварда (ревью 10.4).
+        forest.length === 0 ? (
           <p role="status" className="text-sm text-muted-foreground">
             Нет доступных подразделений
           </p>

@@ -33,8 +33,9 @@ export function buildForest(nodes: TrafficTreeNode[]): TreeVM[] {
   for (const node of nodes) byId.set(node.division_id, { node, children: [] })
   const roots: TreeVM[] = []
   for (const node of nodes) {
-    const vm = byId.get(node.division_id)
-    if (vm === undefined) continue
+    // non-null: каждый node положен в byId первым проходом по ЭТОМУ же
+    // массиву — ветка undefined недостижима (ревью 10.4: мёртвый continue).
+    const vm = byId.get(node.division_id)!
     const parent =
       node.parent_id === null ? undefined : byId.get(node.parent_id)
     if (parent === undefined) roots.push(vm)
@@ -43,8 +44,10 @@ export function buildForest(nodes: TrafficTreeNode[]): TreeVM[] {
   return roots
 }
 
-/** Текст-статус и семантика узла: цвет НИКОГДА не единственный сигнал (AC-8). */
-export interface StatusMeta {
+/** Текст-статус и семантика узла: цвет НИКОГДА не единственный сигнал (AC-8).
+ * Не экспортируется: снаружи тип нужен только как ReturnType statusMeta
+ * (ревью 10.4 — неиспользуемый export снят). */
+interface StatusMeta {
   /** Человекочитаемый статус (5 значений каскада 5.5b). */
   label: string
   /** Tailwind-класс цветового маркера. */
@@ -77,9 +80,14 @@ const STATUS_META: Record<string, StatusMeta> = {
 /**
  * Метаданные статуса; defensive к незнакомой строке (дрейф контракта):
  * трактуется как UNKNOWN — «не знаю» честнее «всё ок» (precedence 5.5b).
+ * Object.hasOwn (ревью 10.4): plain-object лукап без гварда отдаёт унаследо-
+ * ванное поле прототипа на строках вида 'constructor'/'toString' — Function
+ * вместо StatusMeta, и `??` дыру не ловит (значение truthy).
  */
 export function statusMeta(status: string): StatusMeta {
-  return STATUS_META[status] ?? STATUS_META.UNKNOWN
+  return Object.hasOwn(STATUS_META, status)
+    ? STATUS_META[status]
+    : STATUS_META.UNKNOWN
 }
 
 /**

@@ -106,6 +106,14 @@ describe('statusMeta', () => {
     expect(meta.label).toBe('неопределён')
     expect(meta.laggard).toBe(true)
   })
+
+  it('прототипная дыра (ревью 10.4): status="constructor" → UNKNOWN, не Function', () => {
+    // Лукап по plain-object без Object.hasOwn отдал бы унаследованный
+    // Object.prototype.constructor (truthy — `??` дыру не ловит).
+    const meta = statusMeta('constructor')
+    expect(meta.label).toBe('неопределён')
+    expect(meta.laggard).toBe(true)
+  })
 })
 
 describe('REFRESH_INTERVAL_MS', () => {

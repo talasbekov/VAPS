@@ -67,7 +67,7 @@ class PermissionService:
         return permission_code in perms
 
     @classmethod
-    def visible_division_ids(cls, user_id, permission_code):
+    def visible_division_ids(cls, user_id, permission_code, *, children_map=None):
         """The INVERSE question to ``has_permission`` for list selectors
         (architecture.md#L451): which divisions may this user see under
         ``permission_code``? Returns ``None`` for global visibility (an
@@ -80,6 +80,14 @@ class PermissionService:
         enumerate the same grants. One call feeds one ``division_id__in`` —
         never call per division in a loop; one adjacency scan covers all
         scoped grants (``children_map`` reuse).
+
+        ``children_map`` — уже собранная ПОЛНАЯ смежность дерева (ровно
+        ``CoreDivisionTreeSelector.children_map()``, НЕ отфильтрованная:
+        subtree-DFS по усечённой карте молча сузил бы видимость), если
+        вызывающий строил её сам (traffic-tree 10.4 кормит ею и parent_id
+        узлов): второй full-scan Division на тот же запрос был бы и дублем,
+        и TOCTOU-рассинхроном двух снапшотов смежности. ``None`` — собрать
+        самостоятельно (точный прецедент ``subtree_ids``).
         """
         grants = cls._active_grants(user_id)
         if not grants:
@@ -92,7 +100,6 @@ class PermissionService:
             ).values_list("role_code_id", flat=True)
         )
         visible = set()
-        children_map = None
         for scope_division_id, role_code in grants:
             if role_code not in holding_roles:
                 continue
