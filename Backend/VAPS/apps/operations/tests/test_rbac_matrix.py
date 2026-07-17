@@ -143,6 +143,11 @@ MATRIX = {
     # detail (story 5.8c, GET /{pk}/): формы у retrieve нет — pk=0 у держателя
     # резолвится селектором by_id в None → 404 = ALLOW по канону матрицы.
     "ops-daily-submission-detail": _MethodGate({"get": "daily_report.mark_update"}),
+    # export (story 10.8, GET /{pk}/export/): личный экспорт «щит». Гейт mixin
+    # — то же читающее право, что detail; own-guard (submitted_by == actor,
+    # ЖЁСТЧЕ division-scope) — в сервис-гарде ensure_own_submission, матрицей
+    # не проверяется (pk=0 у держателя → 404 by_id = ALLOW по канону).
+    "ops-daily-submission-export": _MethodGate({"get": "daily_report.mark_update"}),
     # day-state (story 10.3, GET /day-state/): read-модель панели сдачи. То же
     # читающее право mark_update, что list/create — новых кодов/грантов нет;
     # scope — сужение видимости visible_division_ids + ensure_division_scope в

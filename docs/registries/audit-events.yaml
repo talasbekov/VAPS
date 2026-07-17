@@ -91,6 +91,11 @@ actions:
     description: "Пересдача/amendment сданного дня (кто/когда/причина/санкция)."
     provenance: derived-from-mutation
     source: "architecture.md ARCH-DATA-021 (amendment-flow)"
+  DAILY_SUBMISSION_EXPORTED:
+    entity_type: daily_submission
+    description: "Личный экспорт .xlsx сданной версии дня оператором-автором сдачи (обязательный аудит)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 10.8; VAPS_7.8.2 BR-DOC-003 (аналог: «скачивание … фиксируется в audit_logs», прецедент DOCUMENT_DOWNLOADED)"
   DAILY_SUMMARY_ASSEMBLED:
     entity_type: daily_submission
     description: "Собрана сводка родительского подразделения (та же DailySubmission + пины sources прямых детей; payload — sources-компакт без снапшота)."

@@ -888,6 +888,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/daily-submissions/{id}/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Личный экспорт оператора («щит», 10.8): .xlsx-копия СВОЕЙ сданной версии дня — эфемерная генерация из иммутабельного снапшота (5.10), без Attachment/sha256 (осознанный контраст с 6.7). Own-guard ЖЁСТЧЕ division-scope: submitted_by == actor буквально — чужая (по автору) сдача в своём поддереве → 403. Точечное чтение (семантика retrieve): устаревшая СВОЯ версия экспортируется именно она. Каждое успешное скачивание аудируется (DAILY_SUBMISSION_EXPORTED, лёгкий payload без снапшота); отказ 403/404 строки не оставляет. 403 чужой scope/чужой автор; 404 фантомный pk. */
+        get: operations["operations_daily_submissions_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/daily-submissions/day-state/": {
         parameters: {
             query?: never;
@@ -2836,6 +2853,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DailySubmission"];
+                };
+            };
+        };
+    };
+    operations_daily_submissions_export_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
                 };
             };
         };

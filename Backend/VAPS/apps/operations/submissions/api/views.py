@@ -16,6 +16,8 @@ the 5.4b enforcement hook calls it with no HTTP actor (Ловушка №1).
 from datetime import timedelta
 
 from django.db import IntegrityError
+from django.http import HttpResponse
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
     extend_schema,
@@ -27,10 +29,12 @@ from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
+from apps.audit.services import record
 from apps.core.api.permissions import RequirePermissionMixin
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector
+from apps.documents.generators import generate_submission_export_xlsx
 from apps.documents.models import EXPENSE_DOC_TYPE
 from apps.documents.selectors import IssuedDocumentSelector
 from apps.operations.services import PermissionService
@@ -64,6 +68,7 @@ from apps.operations.submissions.services import (
     assert_tomorrow_not_blocked,
     derive_period,
     ensure_division_scope,
+    ensure_own_submission,
     issue_expense_document,
     override_tomorrow_block,
     preview_day_event,
@@ -102,6 +107,8 @@ _AMEND_PERMISSION = "daily_report.correct"
 # _EXPENSE_PERMISSION. Следствие Q-RBAC: ORGD/OMD (daily_report.generate) без
 # гранта status.view получают 403 — seed стори НЕ меняет (policy Bratan).
 _TREE_PERMISSION = "status.view"
+# Личный экспорт 10.8 отдаёт .xlsx на лету — MIME контейнера OOXML.
+_XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _ensure_division_exists(division_id):
@@ -150,6 +157,10 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # traffic-tree (10.4) — читающее право статусов (Д по UX-карте
         # /organization); RBAC-скоуп сужает видимость ниже, во view.
         "traffic_tree": _TREE_PERMISSION,
+        # export (10.8) — coarse-гейт то же читающее право, что retrieve;
+        # own-guard (submitted_by == actor) — отдельная проверка внутри
+        # экшена, зеркало паттерна ensure_division_scope (вне матрицы).
+        "export": READ_PERMISSION,
     }
     # No "head": HEAD stays 405 everywhere (the 5.8a/b minimal surface).
     http_method_names = ["get", "post", "options"]
@@ -181,6 +192,61 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # pk resolves first, the 403 carries the server-resolved division_id.
         ensure_division_scope(request.actor_id, READ_PERMISSION, submission.division_id)
         return Response(DailySubmissionDetailSerializer(submission).data)
+
+    @extend_schema(
+        responses={(200, _XLSX_CONTENT_TYPE): OpenApiTypes.BINARY},
+        description="Личный экспорт оператора («щит», 10.8): .xlsx-копия "
+        "СВОЕЙ сданной версии дня — эфемерная генерация из иммутабельного "
+        "снапшота (5.10), без Attachment/sha256 (осознанный контраст с 6.7). "
+        "Own-guard ЖЁСТЧЕ division-scope: submitted_by == actor буквально — "
+        "чужая (по автору) сдача в своём поддереве → 403. Точечное чтение "
+        "(семантика retrieve): устаревшая СВОЯ версия экспортируется именно "
+        "она. Каждое успешное скачивание аудируется "
+        "(DAILY_SUBMISSION_EXPORTED, лёгкий payload без снапшота); отказ "
+        "403/404 строки не оставляет. 403 чужой scope/чужой автор; 404 "
+        "фантомный pk.",
+    )
+    @action(detail=True, methods=["get"])
+    def export(self, request, pk=None, *args, **kwargs):
+        # Порядок гардов = канон 5.8c + own-guard (AC-2): резолв pk → 404;
+        # division-scope 403 первичен (несёт division_id); own-guard валит
+        # «своё поддерево, чужой автор» (несёт submission_id).
+        submission = DailySubmissionSelector.by_id(pk)
+        if submission is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"submission_id": str(pk)},
+                message="Сдача не найдена.",
+            )
+        ensure_division_scope(request.actor_id, READ_PERMISSION, submission.division_id)
+        ensure_own_submission(request.actor_id, submission)
+        payload = generate_submission_export_xlsx(submission)
+        # Аудит ПОСЛЕ успешной генерации, ДО отдачи байт (зеркало порядка
+        # prepare_download 6.7): фиксируем состоявшийся экспорт, не попытку.
+        # GET идёт в autocommit — record() своей транзакции не открывает;
+        # падение аудита (сбой БД) → 500 без выдачи: нет журнала ⇒ нет файла.
+        # entity_id — UUID-ось сущности = division_id (Ловушка №1, канон
+        # DAILY_SUBMISSION_SUBMITTED/AMENDED 5.9: pk сдачи — int, а
+        # AuditLog.entity_id — UUID); точную версию несёт new_value.
+        record(
+            actor=request.actor_id,
+            action="DAILY_SUBMISSION_EXPORTED",
+            entity_type="daily_submission",
+            entity_id=submission.division_id,
+            new_value={
+                "division_id": str(submission.division_id),
+                "business_date": submission.business_date.isoformat(),
+                "version": submission.version,
+            },
+        )
+        filename = (
+            f"submission_{submission.division_id}_"
+            f"{submission.business_date.isoformat()}_v{submission.version}.xlsx"
+        )
+        response = HttpResponse(payload, content_type=_XLSX_CONTENT_TYPE)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     @extend_schema(
         request=DailySubmissionCreateSerializer,

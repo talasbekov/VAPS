@@ -41,3 +41,30 @@ def ensure_division_scope(actor, permission_code, division_id):
         raise DomainError(
             "PERMISSION_DENIED", 403, detail={"division_id": str(division_id)}
         )
+
+
+def ensure_own_submission(actor, submission):
+    """Raise 403 unless *actor* is the literal author of *submission* (10.8).
+
+    A deliberately NARROWER check than ``ensure_division_scope``: the division
+    gate admits any holder of the permission over the subtree («any в scope»),
+    while the personal export is the author's own proof of submission — so the
+    criterion is ``submitted_by == actor``, nothing wider (Q2 decision: the
+    literal epics reading «у МЕНЯ есть личное доказательство»). Called AFTER
+    the division-scope guard (AC-2): a foreign-subtree 403 stays primary and
+    keeps carrying the division_id detail; this one fires on «своё поддерево,
+    чужой автор» and carries the submission_id instead.
+
+    A blank actor is a caller bug (the API path always has one — the mixin
+    rejects anonymous requests first) and fails loud, mirror of
+    ``ensure_division_scope``'s blank-division guard.
+    """
+    if not actor:
+        raise ValueError("ensure_own_submission requires an actor")
+    if submission.submitted_by != actor:
+        raise DomainError(
+            "PERMISSION_DENIED",
+            403,
+            detail={"submission_id": str(submission.pk)},
+            message="Экспорт доступен только автору сдачи.",
+        )

@@ -1322,6 +1322,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/DailySubmission'
           description: ''
+  /api/operations/daily-submissions/{id}/export/:
+    get:
+      operationId: operations_daily_submissions_export_retrieve
+      description: 'Личный экспорт оператора («щит», 10.8): .xlsx-копия СВОЕЙ сданной
+        версии дня — эфемерная генерация из иммутабельного снапшота (5.10), без Attachment/sha256
+        (осознанный контраст с 6.7). Own-guard ЖЁСТЧЕ division-scope: submitted_by
+        == actor буквально — чужая (по автору) сдача в своём поддереве → 403. Точечное
+        чтение (семантика retrieve): устаревшая СВОЯ версия экспортируется именно
+        она. Каждое успешное скачивание аудируется (DAILY_SUBMISSION_EXPORTED, лёгкий
+        payload без снапшота); отказ 403/404 строки не оставляет. 403 чужой scope/чужой
+        автор; 404 фантомный pk.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/operations/daily-submissions/day-state/:
     get:
       operationId: operations_daily_submissions_day_state_retrieve

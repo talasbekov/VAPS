@@ -20,6 +20,9 @@ from apps.documents.generators.expense_docx import (
 from apps.documents.generators.expense_csv import generate_expense_csv
 from apps.documents.generators.expense_pdf import generate_expense_pdf
 from apps.documents.generators.expense_xlsx import generate_expense_xlsx
+from apps.documents.generators.submission_export_xlsx import (
+    generate_submission_export_xlsx,
+)
 
 __all__ = [
     "CELL_MAX_MEMBERS",
@@ -35,4 +38,5 @@ __all__ = [
     "generate_expense_docx",
     "generate_expense_pdf",
     "generate_expense_xlsx",
+    "generate_submission_export_xlsx",
 ]
