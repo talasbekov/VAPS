@@ -34,6 +34,12 @@ export const ROUTES = {
    * printExpenseUrl. Официальный документ остаётся .docx с бэка (6.3/6.5).
    */
   printExpense: '/print/expense',
+  /**
+   * Журнал «сообщено → исправлено» (10.9): вне NAV_SECTIONS (тип секции
+   * требует permission, а журнал бесправный — architecture L145 «доступный
+   * пользователям»); вход — ссылкой из футера AppLayout (Д3).
+   */
+  changelog: '/changelog',
 } as const
 
 /**

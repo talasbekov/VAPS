@@ -21,6 +21,7 @@ import {
   getCredential,
   setCredential,
 } from '../shared/auth/credential'
+import { APP_MANIFEST } from '../shared/lib/appManifest'
 import { ROUTES } from '../shared/routes'
 import { AppRoutes } from './App'
 import { Providers } from './providers'
@@ -286,5 +287,61 @@ describe('Разводка маршрутов: RequirePermission на данны
     // каркас вокруг: сайдбар с лого и nav присутствуют
     expect(screen.getByText('PersonnelStatus')).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'Разделы' })).toBeInTheDocument()
+  })
+})
+
+describe('Футер и журнал «сообщено → исправлено» (10.9, AC-1/AC-2/AC-4)', () => {
+  it('футер: версия ИЗ APP_MANIFEST (импорт, не дубль-литерал), клик ведёт на журнал', async () => {
+    usePermissionsResponse(myPermissionsFixture)
+    const user = userEvent.setup()
+    renderApp()
+
+    // ассерт сверяет текст с импортированным APP_MANIFEST.version (AC-1)
+    const footerLink = await screen.findByRole('link', {
+      name: `PersonnelStatus ${APP_MANIFEST.version}`,
+    })
+    expect(footerLink).toHaveAttribute('href', ROUTES.changelog)
+
+    // переход кликом по футеру (AC-2)
+    await user.click(footerLink)
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Сообщено → исправлено',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('/changelog доступен вовсе БЕЗ прав — RequirePermission отсутствует (AC-4)', async () => {
+    // permissions: [] (не myPermissionsFixture — тот несёт status.view и
+    // прятал бы гейт на это право): ЛЮБОЙ permission-гейт на роуте уронит тест
+    usePermissionsResponse({ permissions: [] })
+    renderApp(ROUTES.changelog)
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Сообщено → исправлено',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(ACCESS_DENIED_TEXT)).not.toBeInTheDocument()
+  })
+
+  it('без credential /changelog → редирект на /login (RequireAuth, AC-4)', async () => {
+    // credential НЕ ставим — RequireAuth обязан увести на вход до запросов
+    render(
+      <Providers>
+        <MemoryRouter initialEntries={[ROUTES.changelog]}>
+          <AppRoutes />
+        </MemoryRouter>
+      </Providers>,
+    )
+
+    expect(
+      await screen.findByLabelText('Идентификатор (X-User-Id)'),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Сообщено → исправлено' }),
+    ).not.toBeInTheDocument()
   })
 })

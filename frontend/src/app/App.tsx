@@ -6,6 +6,7 @@
 // (экраны — E9/E10). /admin/* в карте нет (Д5); catch-all/404 не в карте UX.
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
+import { ChangelogPage } from '../features/changelog/ChangelogPage'
 import { DailyExpensePage } from '../features/daily-grid/DailyExpensePage'
 import { ExpenseReportPage } from '../features/expense-report/ExpenseReportPage'
 import { ExpensePrintPage } from '../features/print-forms/ExpensePrintPage'
@@ -109,6 +110,12 @@ export function AppRoutes() {
             </RequirePermission>
           }
         />
+        {/* Story 10.9: журнал «сообщено → исправлено» — НАМЕРЕННО БЕЗ
+            RequirePermission (единственный такой раздел в карте): architecture
+            L145 и AC 13.4 — журнал «доступный пользователям», т.е. любому
+            авторизованному (credential-гейт RequireAuth на layout-route
+            остаётся). НЕ «чинить» добавлением permission-гейта. */}
+        <Route path={ROUTES.changelog} element={<ChangelogPage />} />
       </Route>
     </Routes>
   )

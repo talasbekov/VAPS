@@ -6,11 +6,12 @@
 // logout() — навигацию на /login делает RequireAuth реактивно (Д7-8.6,
 // window.location запрещён). h-screen, не h-dvh (dvh — FF101+, Ловушка 4).
 import { Bell, LogOut } from 'lucide-react'
-import { NavLink, Outlet } from 'react-router'
+import { Link, NavLink, Outlet } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { usePermissions } from '../auth/usePermissions'
+import { APP_MANIFEST } from '../lib/appManifest'
 import { cn } from '../lib/cn'
-import { NAV_SECTIONS } from '../routes'
+import { NAV_SECTIONS, ROUTES } from '../routes'
 import { Avatar, AvatarFallback } from './Avatar'
 import { Button } from './Button'
 import {
@@ -108,6 +109,19 @@ export function AppLayout() {
         <main className="min-w-0 flex-1 p-6">
           <Outlet />
         </main>
+        {/* Футер (10.9, architecture L143): текущая версия ИЗ manifest-каркаса
+            (единый источник — shared/lib/appManifest), кликом — журнал
+            «сообщено → исправлено». Внутри правой колонки — сайдбар футер не
+            двигает; print-роуты живут вне AppLayout, на бумагу не попадает. */}
+        <footer className="shrink-0 border-t px-6 py-2 text-xs text-muted-foreground">
+          <Link
+            to={ROUTES.changelog}
+            title="Журнал исправлений"
+            className="hover:text-foreground hover:underline"
+          >
+            PersonnelStatus {APP_MANIFEST.version}
+          </Link>
+        </footer>
       </div>
     </div>
   )
