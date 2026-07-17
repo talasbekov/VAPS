@@ -43,5 +43,21 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    // Story 10.10: зеркало server.proxy для ПРОД-сборки (vite preview :4173) —
+    // full-flow e2e ходит в реальный Django через тот же /api-путь. Прокси
+    // пассивен без запросов: офлайн-спеки 8.8/9.9 не затронуты.
+    preview: {
+      proxy: {
+        '/api': {
+          target: proxyTarget,
+          changeOrigin,
+        },
+        '/ws': {
+          target: proxyTarget,
+          ws: true,
+          changeOrigin,
+        },
+      },
+    },
   }
 })

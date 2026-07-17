@@ -331,7 +331,7 @@ development_status:
   10-7-печатная-форма-расхода: done
   10-8-личный-экспорт-оператора-щит: done
   10-9-журнал-сообщено-исправлено-каркас: done
-  10-10-e2e-сдачи-целиком: backlog
+  10-10-e2e-сдачи-целиком: review
   epic-10-retrospective: optional
 
   # Epic 11: Уведомления — центр + WebSocket
