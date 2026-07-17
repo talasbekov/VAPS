@@ -318,7 +318,7 @@ development_status:
 
   # Epic 10: Экраны портала — оператор сдаёт день за минуты
   # 10.1 (бумажные контракты) отправляется вместе с 9.1 сразу после E1
-  epic-10: in-progress
+  epic-10: done
   10-1-бумажные-контракты-экранов-сдачи-и-расхода: done
   # AI-4 (ретро E10 §7): REST-бэкфилл статусов ДО 10.2 — сплит на 10.1a (bulk-POST) + 10.1b (GET вчера)
   10-1a-rest-bulk-роут-статусов: done
@@ -332,7 +332,7 @@ development_status:
   10-8-личный-экспорт-оператора-щит: done
   10-9-журнал-сообщено-исправлено-каркас: done
   10-10-e2e-сдачи-целиком: done
-  epic-10-retrospective: optional
+  epic-10-retrospective: done
 
   # Epic 11: Уведомления — центр + WebSocket
   epic-11: backlog
