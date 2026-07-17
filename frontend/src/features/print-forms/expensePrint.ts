@@ -13,6 +13,7 @@
 // schema.d.ts), поэтому defensive-разбор по фактической форме
 // _serialize_report (expense_read_service.py:77-101); типы руками НЕ
 // дублируются сверх необходимого разбора.
+import { ISO_DATE_RE } from '../../shared/lib/dates'
 
 /** 12 ключей статусных колонок в каноническом порядке DOCX_COLUMNS. */
 export const DOCX_COLUMNS = [
@@ -60,7 +61,6 @@ export const FIXED_HEAD = [
 /** Подпись итоговой строки — зеркало _TOTALS_LABEL (заглавными). */
 export const TOTALS_LABEL = 'ИТОГО'
 
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

@@ -101,21 +101,3 @@ export function issueErrorText(
   return message
 }
 
-/** Сегодняшняя ЛОКАЛЬНАЯ дата — дефолт date-input (оператор живёт в местных
- * сутках). Осознанный дубль todayLocalIso 10.2/10.4: boundaries банят импорт
- * из daily-grid; общий shared date-хелпер — существующий defer, здесь НЕ
- * чинится (зеркало отклонения №3 стори 10.4). */
-export function todayLocalIso(): string {
-  const now = new Date()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  return `${now.getFullYear()}-${mm}-${dd}`
-}
-
-/** Арифметика дат — UTC (урок tz-флейка test_vacancies_endpoint); осознанный
- * дубль addDaysIso 10.2 — та же причина, что todayLocalIso выше. */
-export function addDaysIso(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + days)
-  return d.toISOString().slice(0, 10)
-}

@@ -14,6 +14,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { apiClient } from '../../shared/api/client'
 import type { ApiFailure } from '../../shared/api/errors'
 import { isDomainError } from '../../shared/api/errors'
+import { ISO_DATE_RE, todayLocalIso } from '../../shared/lib/dates'
 import { Card } from '../../shared/ui/Card'
 import {
   buildForest,
@@ -22,18 +23,6 @@ import {
   statusMeta,
 } from './trafficTree'
 import type { TrafficTreeResponse, TreeVM } from './trafficTree'
-
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-
-/** Сегодняшняя ЛОКАЛЬНАЯ дата — дефолт date-input (оператор живёт в местных
- * сутках; зеркало todayLocalIso 10.2 — дубль осознанный: boundaries банят
- * импорт из daily-grid, общий date-хелпер в shared — отдельный defer). */
-function todayLocalIso(): string {
-  const now = new Date()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  return `${now.getFullYear()}-${mm}-${dd}`
-}
 
 /** «Обновлено HH:MM:SS» из dataUpdatedAt — клиентское время (серверный
  * date-форматтер-defer 10.3 не триггерится). */

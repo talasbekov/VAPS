@@ -4,6 +4,7 @@
 // решение D1 ревью 9.7). Story 10.2 — fromGridPrefill: живой ответ GET
 // grid-prefill (10.1b + status_types 10.2 AC-1) → входы грида.
 import type { paths } from '../../shared/api/schema'
+import { addDaysIso, ISO_DATE_RE } from '../../shared/lib/dates'
 import type { EmployeeRow, RowChange, StatusOption } from './DailyGrid.types'
 
 /** Живой контракт ответа grid-prefill (ARCH-FE-011: тип — из schema.d.ts). */
@@ -40,29 +41,6 @@ export type BulkStatusRequest = {
 /** Дефолт для сотрудника без вчерашней записи (Д1): derived «В строю». */
 export const DEFAULT_STATUS = 'IN_SERVICE'
 
-/** ISO-дата `YYYY-MM-DD`. Экспорт (ревью 10.2, дедуп): страница гейтит ввод
- * date-input тем же регэкспом, что и период здесь — не дублировать. */
-export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-
-/** Сегодняшняя ЛОКАЛЬНАЯ дата (дефолт date-input экрана — Решение №6 10.2).
- * ТОЛЬКО дефолт берёт локальные геттеры (осознанно, НЕ UTC-срез: оператор
- * живёт в местных сутках); вся АРИФМЕТИКА дат — addDaysIso (UTC, урок
- * tz-флейка test_vacancies_endpoint). */
-export function todayLocalIso(): string {
-  const now = new Date()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  return `${now.getFullYear()}-${mm}-${dd}`
-}
-
-// UTC-математика, не local (урок tz-флейка test_vacancies_endpoint): локальный
-// парсер сдвинул бы дату на границе суток в минусовых поясах. Экспорт (10.2):
-// страница считает prefill-дату «выбранная − 1» тем же кодом — не дублировать.
-export function addDaysIso(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + days)
-  return d.toISOString().slice(0, 10)
-}
 
 /** Выходы маппера ответа grid-prefill — ровно входы DailyGridContainer. */
 export interface GridPrefillMapped {

@@ -1,6 +1,7 @@
 // Story 9.7 — чистые мапперы prefill/bulk (node-env). 10.2 — fromGridPrefill.
 import { describe, expect, it } from 'vitest'
 
+import { addDaysIso } from '../../shared/lib/dates'
 import type {
   EmployeeSeed,
   GridPrefillResponse,
@@ -8,7 +9,6 @@ import type {
 } from './prefill'
 import {
   DEFAULT_STATUS,
-  addDaysIso,
   buildPrefilledRows,
   fromGridPrefill,
   toBulkRequest,

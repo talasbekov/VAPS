@@ -10,7 +10,7 @@
 // выпуска non-overridable → mutation.error; ConflictDialog НЕ участвует;
 // 5xx/сеть — тост хука; 401 — цепь 8.6, экран не перехватывает).
 // ARCH-FE-013: своя фича-директория; из daily-grid/readiness-tree НИЧЕГО не
-// импортируется (date-хелперы — осознанный дубль в expenseReport.ts).
+// импортируется (date-хелперы — hoisted в shared/lib/dates.ts).
 import { useCallback, useState } from 'react'
 import {
   keepPreviousData,
@@ -30,10 +30,10 @@ import {
 import { useApiMutation } from '../../shared/api/useApiMutation'
 import { handle401 } from '../../shared/auth/handle401'
 import { usePermissions } from '../../shared/auth/usePermissions'
+import { addDaysIso, ISO_DATE_RE, todayLocalIso } from '../../shared/lib/dates'
 import { printExpenseUrl } from '../../shared/routes'
 import { Card } from '../../shared/ui/Card'
 import {
-  addDaysIso,
   buildFileName,
   issueErrorText,
   issueLabel,
@@ -41,7 +41,6 @@ import {
   readLaggards,
   statusLabel,
   supersedesLabel,
-  todayLocalIso,
 } from './expenseReport'
 import type {
   ExpenseHistoryResponse,
@@ -49,8 +48,6 @@ import type {
   IssueExpenseRequest,
   IssuedExpenseReport,
 } from './expenseReport'
-
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 const DOWNLOAD_DENIED_HINT = 'Нет права на скачивание'
 

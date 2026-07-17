@@ -38,10 +38,10 @@ import {
   validationEnvelope,
 } from '../../shared/api/testing/handlers'
 import { server } from '../../shared/api/testing/server'
+import { addDaysIso } from '../../shared/lib/dates'
 import { ToastProvider } from '../../shared/ui/toast'
 import { DailyExpensePage, rowsToMarkers } from './DailyExpensePage'
 import type { GridPrefillResponse } from './prefill'
-import { addDaysIso } from './prefill'
 
 // Локальная обвязка из shared-примитивов (ARCH-FE-013: features → app
 // забанен, Providers сюда не импортировать). 401-цепь 8.6 (QueryCache/

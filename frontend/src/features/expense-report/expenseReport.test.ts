@@ -5,8 +5,8 @@
 // из daily-grid).
 import { describe, expect, it } from 'vitest'
 
+import { addDaysIso, todayLocalIso } from '../../shared/lib/dates'
 import {
-  addDaysIso,
   buildFileName,
   issueErrorText,
   issueLabel,
@@ -14,7 +14,6 @@ import {
   readLaggards,
   statusLabel,
   supersedesLabel,
-  todayLocalIso,
 } from './expenseReport'
 
 describe('issueLabel / supersedesLabel', () => {
