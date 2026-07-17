@@ -8,6 +8,7 @@ import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
 import { DailyExpensePage } from '../features/daily-grid/DailyExpensePage'
 import { ExpenseReportPage } from '../features/expense-report/ExpenseReportPage'
+import { ExpensePrintPage } from '../features/print-forms/ExpensePrintPage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
 import { ReadinessTreePage } from '../features/readiness-tree/ReadinessTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -30,6 +31,20 @@ export function AppRoutes() {
         element={
           <RequireAuth>
             <PrintTestPage />
+          </RequireAuth>
+        }
+      />
+      {/* Story 10.7: печатная форма расхода — сиблинг layout-route (на бумагу
+          сайдбар/шапка не попадают), но в отличие от тест-страницы 8.8 здесь
+          РЕАЛЬНЫЕ данные → RequirePermission("daily_report.generate") —
+          зеркало backend-гейта period (_EXPENSE_PERMISSION, api/views.py:84). */}
+      <Route
+        path={ROUTES.printExpense}
+        element={
+          <RequireAuth>
+            <RequirePermission permission="daily_report.generate">
+              <ExpensePrintPage />
+            </RequirePermission>
           </RequireAuth>
         }
       />

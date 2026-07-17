@@ -94,3 +94,76 @@ test('(д) негативный контроль утечки: /login БЕЗ PT 
   expect(families.body).not.toContain('PT Serif')
   expect(families.heading).not.toContain('PT Serif')
 })
+
+// --- Story 10.7: печатная форма расхода /print/expense -----------------------
+
+const EXPENSE_DIVISION = '7a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9'
+
+// Фактическая форма _serialize_report (expense_read_service.py:77-101);
+// columns — 11 ключей REPORT_COLUMNS (ATTACHED — отдельным полем attached).
+const EXPENSE_COLUMNS = {
+  SICK: 1,
+  VACATION: 0,
+  COMMAND: 0,
+  TRAINING: 0,
+  OTHER: 0,
+  DETACHED: 0,
+  AFTER_DUTY: 0,
+  BEFORE_DUTY: 0,
+  ON_DUTY: 2,
+  PENDING: 0,
+  IN_SERVICE: 3,
+}
+
+const EXPENSE_PERIOD_FIXTURE = {
+  pages: [
+    {
+      business_date: '2026-07-15',
+      totals: {
+        staff_total: 9,
+        list_total: 6,
+        vacancies: 3,
+        attached: 1,
+        columns: EXPENSE_COLUMNS,
+      },
+      rows: [
+        {
+          division_id: EXPENSE_DIVISION,
+          name: 'Басқарма А',
+          staff_total: 9,
+          list_total: 6,
+          vacancies: 3,
+          attached: 1,
+          columns: EXPENSE_COLUMNS,
+        },
+      ],
+    },
+  ],
+}
+
+test('(е) DOM-скан /print/expense (10.7): ни одного класса вне print-*', async ({
+  page,
+}) => {
+  // Роут за RequirePermission + реальные данные — харнес 4173 живёт без бэка,
+  // права и period мокаются page.route.
+  await page.route('**/api/operations/my-permissions/**', (route) =>
+    route.fulfill({ json: { permissions: ['daily_report.generate'] } }),
+  )
+  await page.route('**/api/operations/expense-reports/period/**', (route) =>
+    route.fulfill({ json: EXPENSE_PERIOD_FIXTURE }),
+  )
+  await page.goto(
+    `/print/expense?division_id=${EXPENSE_DIVISION}&date=2026-07-15`,
+  )
+  // заголовок секции 77 отрендерен из мока (страница дождалась данных)
+  await expect(page.locator('.print-root h1')).toHaveText(
+    'Басқарма А ЖЕКЕ ҚҰРАМЫНЫҢ САПТЫҚ ТІЗІМІ 15.07.2026 ЖЫЛҒЫ',
+  )
+  await expect(page.locator('.print-root table')).toBeVisible()
+  const offenders = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('*'))
+      .flatMap((el) => Array.from(el.classList))
+      .filter((cls) => !cls.startsWith('print-')),
+  )
+  expect(offenders).toEqual([])
+})

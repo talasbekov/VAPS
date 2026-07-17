@@ -29,6 +29,7 @@ import {
 import { useApiMutation } from '../../shared/api/useApiMutation'
 import { handle401 } from '../../shared/auth/handle401'
 import { usePermissions } from '../../shared/auth/usePermissions'
+import { printExpenseUrl } from '../../shared/routes'
 import { Card } from '../../shared/ui/Card'
 import {
   addDaysIso,
@@ -281,6 +282,30 @@ export function ExpenseReportPage() {
         <span className="text-sm text-muted-foreground">
           Формат: .docx (официальный)
         </span>
+        {/* Story 10.7 (AC-6): контрольная печать /print/expense в новой
+            вкладке — активна при выбранном подразделении, валидной дате И
+            дате не позже сегодняшней: period ВСЕГДА 400-ит будущее
+            (views.py:630-636), пресет «На завтра» вёл бы на гарантированную
+            ошибку (ревью 10.7 ECH#4). Официальный .docx-канал выше не
+            заменяет. */}
+        {selected !== null && validDate && businessDate <= todayLocalIso() ? (
+          <a
+            className="rounded border px-3 py-1 text-sm"
+            href={printExpenseUrl(selected, businessDate)}
+            target="_blank"
+            rel="noopener"
+          >
+            Контрольная печать
+          </a>
+        ) : (
+          <span
+            className="rounded border px-3 py-1 text-sm text-muted-foreground opacity-50"
+            aria-disabled="true"
+            title="Выберите подразделение и дату не позже сегодняшней"
+          >
+            Контрольная печать
+          </span>
+        )}
       </Card>
 
       <Card className="flex flex-col gap-2 p-3" data-testid="current-issue">

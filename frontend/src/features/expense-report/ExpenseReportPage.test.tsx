@@ -28,6 +28,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ErrorEnvelope } from '../../shared/api/errors'
 import { GENERIC_FAILURE_MESSAGE } from '../../shared/api/useApiMutation'
 import { server } from '../../shared/api/testing/server'
+import { printExpenseUrl } from '../../shared/routes'
 import {
   clearCredential,
   getCredential,
@@ -872,5 +873,88 @@ describe('каналы и состояния (AC-12)', () => {
       await screen.findByText(GENERIC_FAILURE_MESSAGE),
     ).toBeInTheDocument()
     expect(screen.queryByText('Внутренняя ошибка.')).not.toBeInTheDocument()
+  })
+})
+
+// --- Story 10.7 (AC-6): точка входа «Контрольная печать» ---------------------
+
+describe('ссылка «Контрольная печать» (10.7, AC-6)', () => {
+  it('выбранное подразделение + валидная дата → ссылка на /print/expense в новой вкладке', async () => {
+    servePermissions()
+    serveHistory(() => oneDivisionHistory())
+    serveCurrent('not-issued')
+    renderPage()
+
+    // автовыбор единственного видимого подразделения
+    await waitFor(() =>
+      expect(screen.getByLabelText('Подразделение')).toHaveValue(DIV_A),
+    )
+    const link = screen.getByRole('link', { name: 'Контрольная печать' })
+    expect(link).toHaveAttribute('href', printExpenseUrl(DIV_A, TODAY))
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener')
+  })
+
+  it('будущая дата (пресет «На завтра») → ссылка неактивна: period 400-ит будущее (ревью ECH#4)', async () => {
+    servePermissions()
+    serveHistory(() => oneDivisionHistory())
+    serveCurrent('not-issued')
+    renderPage()
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Подразделение')).toHaveValue(DIV_A),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'На завтра' }))
+    await waitFor(() =>
+      expect(screen.getByLabelText('Дата')).toHaveValue(TOMORROW),
+    )
+    expect(
+      screen.queryByRole('link', { name: 'Контрольная печать' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('Контрольная печать')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('без выбранного подразделения ссылка неактивна (не <a href>)', async () => {
+    servePermissions()
+    serveHistory(() => ({
+      divisions: [
+        { division_id: DIV_A, name: 'Отдел А' },
+        { division_id: DIV_B, name: 'Отдел Б' },
+      ],
+      count: 0,
+      issues: [],
+    }))
+    renderPage()
+
+    await screen.findByLabelText('Подразделение')
+    expect(
+      screen.queryByRole('link', { name: 'Контрольная печать' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('Контрольная печать')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('битая дата (очищенный input) → ссылка неактивна', async () => {
+    servePermissions()
+    serveHistory(() => oneDivisionHistory())
+    serveCurrent('not-issued')
+    renderPage()
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Подразделение')).toHaveValue(DIV_A),
+    )
+    fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '' } })
+    expect(
+      screen.queryByRole('link', { name: 'Контрольная печать' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('Контрольная печать')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   })
 })

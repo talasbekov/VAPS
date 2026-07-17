@@ -28,7 +28,22 @@ export const ROUTES = {
    * в NAV_SECTIONS не живёт. Фабрики реальных печатных форм — со сториями E10.
    */
   printTest: '/print/test',
+  /**
+   * Печатная форма расхода (10.7): контрольная печать секции 77 через Ctrl+P;
+   * вне AppLayout и NAV_SECTIONS (зеркало printTest), параметры — через
+   * printExpenseUrl. Официальный документ остаётся .docx с бэка (6.3/6.5).
+   */
+  printExpense: '/print/expense',
 } as const
+
+/**
+ * Билдер URL печатной формы расхода (10.7, ARCH-FE-012: literal-пути в JSX
+ * запрещены): query кодируется URLSearchParams — мусор не ломает URL.
+ */
+export function printExpenseUrl(divisionId: string, date: string): string {
+  const query = new URLSearchParams({ division_id: divisionId, date })
+  return `${ROUTES.printExpense}?${query.toString()}`
+}
 
 export interface NavSection {
   route: (typeof ROUTES)[keyof typeof ROUTES]
