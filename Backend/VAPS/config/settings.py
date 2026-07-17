@@ -67,6 +67,34 @@ TEMPLATES = [
 ]
 WSGI_APPLICATION = None
 
+# Story 11.1: ASGI-приложение (config/asgi.py) — ProtocolTypeRouter для HTTP +
+# WebSocket (/ws/notifications/). WSGI_APPLICATION остаётся None (существующий
+# задел) — ASGI — единственный путь входа, зеркалируя architecture.md L337
+# ("ASGI-монопроцесс... HTTP + WS").
+ASGI_APPLICATION = "config.asgi.application"
+
+# Story 11.1: channel_layer для channels_redis (WS-транспорт уведомлений).
+# RedisChannelLayer — ВСЕГДА дефолт здесь (architecture.md L337:
+# "channels_redis обязателен; InMemoryChannelLayer = fail в CI" — group_send из
+# будущего Celery worker'а через InMemory уходит в никуда молча). Узкие
+# unit-тесты routing/consumer-логики, не проверяющие межпроцессную доставку,
+# МОГУТ override'ить на InMemoryChannelLayer через @override_settings — но
+# НИКОГДА как дефолт/gate-конфиг (AC 3, покрыто test_ws_consumer.py). Host/port
+# — тот же паттерн env, что VAPS_DB_HOST/VAPS_DB_PORT.
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [
+                (
+                    os.environ.get("VAPS_REDIS_HOST", "localhost"),
+                    int(os.environ.get("VAPS_REDIS_PORT", "6379")),
+                )
+            ],
+        },
+    },
+}
+
 # Postgres in prod via env. SQLite remains the no-env default, but since
 # ops_statuses migrations use Postgres-only features (ExclusionConstraint,
 # GeneratedField daterange), the full suite runs only with VAPS_DB=postgres

@@ -15,3 +15,19 @@ services:
       timeout: 5s
       retries: 15
       start_period: 30s
+
+  # Story 11.1: первый Redis в проекте (не переиспользование — Celery тоже
+  # отсутствует). dev/test channel_layer для channels_redis (AC эпика:
+  # "InMemoryChannelLayer в конфиге = fail CI" — гейт обязан гонять реальный
+  # Redis). Прод-топология (Story 12.1) заведёт свой redis-контейнер отдельно
+  # по architecture.md — этот сервис её не предвосхищает.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${VAPS_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
