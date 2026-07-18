@@ -6,13 +6,13 @@
 // (экраны — E9/E10). /admin/* в карте нет (Д5); catch-all/404 не в карте UX.
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
+import { DailyUpdatePage } from '../features/daily-grid/DailyUpdatePage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
 import { ROUTES } from '../shared/routes'
 import { AppLayout } from '../shared/ui/AppLayout'
 import {
   AuditStub,
-  DailyExpenseStub,
   DashboardStub,
   EmployeesStub,
   OrganizationStub,
@@ -64,7 +64,7 @@ export function AppRoutes() {
           path={ROUTES.dailyExpense}
           element={
             <RequirePermission permission="daily_report.mark_update">
-              <DailyExpenseStub />
+              <DailyUpdatePage />
             </RequirePermission>
           }
         />

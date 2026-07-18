@@ -11,6 +11,7 @@ import {
 import {
   memo,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useReducer,
@@ -275,6 +276,7 @@ export function DailyGrid({
   onSubmit,
   emptyLabel,
   onCellCommit,
+  onDirtyChange,
 }: DailyGridProps) {
   const initials = useMemo(() => initValues(rows), [rows])
   const [values, dispatch] = useReducer(valueReducer, undefined, () =>
@@ -654,6 +656,15 @@ export function DailyGrid({
     }
     return list
   }, [rows, values, initials])
+
+  // Канал грязного состояния экрану (10.2): читает УЖЕ посчитанное мемо
+  // `changed` — новых ре-рендеров строк не вносит, перф-инвариант «1 commit на
+  // нажатие» не трогает (проп не передан → эффект — no-op). Зависимость —
+  // changed.length, а не changed: правка внутри одной и той же дельты грязного
+  // состояния не меняет.
+  useEffect(() => {
+    onDirtyChange?.(changed.length)
+  }, [changed.length, onDirtyChange])
 
   // Гейт отправки (ревью 9.6): hard/invalid-строки БЛОКИРУЮТ «Сдать день» —
   // иначе «коммит блокируется» держал бы только фокус, а отвергнутые бэком /

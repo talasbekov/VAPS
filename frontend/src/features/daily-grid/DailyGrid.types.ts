@@ -36,6 +36,13 @@ export interface DailyGridProps {
   /** Текст пустого состояния (0 строк). */
   emptyLabel?: string
   /**
+   * Канал ГРЯЗНОГО СОСТОЯНИЯ для beforeunload экрана (стори 10.2): отдаёт
+   * ЧИСЛО дельт, значений не отдаёт. Считает отклонения (мемо `changed`), а не
+   * нажатия — навигация стрелками dirty НЕ поднимает. Колбэк должен быть
+   * стабилен (useCallback у парента), иначе эффект зациклится.
+   */
+  onDirtyChange?: (changedCount: number) => void
+  /**
    * Seam коммита ячейки (Story 9.5/9.6): вернул ApiError → грид маппит на
    * маркер строки и ветвит soft (ConflictError.overridable → жёлтый +
    * ConflictDialog + оверрайд) / hard (BusinessRuleError 422 / non-overridable
