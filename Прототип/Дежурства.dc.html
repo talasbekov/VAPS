@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/styles.css">
+<script src="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/_ds_bundle.js"></script>
+<style>
+body{margin:0;background:hsl(210 40% 97.5%);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
+a{color:hsl(221.2 83.2% 53.3%);text-decoration:none}a:hover{color:hsl(221.2 75% 44%)}
+button{font:inherit;cursor:pointer}input,select,textarea{font:inherit}
+@keyframes vapsToast{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes cascIn{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:none}}
+@keyframes panelIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div style="min-height:{{ rootMinH }};padding:{{ rootPad }};color:hsl(var(--foreground))">
+<main style="max-width:1360px;margin:0 auto">
+
+<header style="display:flex;justify-content:space-between;align-items:flex-end;margin:4px 0 18px;gap:16px;flex-wrap:wrap">
+<div>
+<p style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.12em;color:hsl(var(--primary));font-size:10.5px;font-weight:700">Повседневная служба</p>
+<h1 style="font-size:25px;line-height:1.15;margin:0 0 6px;letter-spacing:-.02em;font-weight:700">План дежурств</h1>
+<span style="color:hsl(215.4 16.3% 46.9%);font-size:12.5px">{{ objName }} · суточный наряд поверх охранных мероприятий · планирование на месяц вперёд</span>
+</div>
+<div style="display:flex;gap:8px">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:hsl(var(--card));border:1px solid hsl(var(--border));color:hsl(var(--foreground));font-size:13px;font-weight:500;white-space:nowrap" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ fExport }}">Экспорт XLSX</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%);white-space:nowrap" onClick="{{ goNewPlan }}">+ Новый план</button>
+</div>
+</header>
+
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+<sc-for list="{{ ovStats }}" as="c" hint-placeholder-count="4">
+<div style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;padding:13px 16px"><div style="font-size:12px;font-weight:500;color:hsl(215.4 16.3% 46.9%)">{{ c.label }}</div><div style="font-size:24px;font-weight:800;margin-top:5px;font-variant-numeric:tabular-nums;color:{{ c.color }}">{{ c.val }}</div></div>
+</sc-for>
+</div>
+
+<sc-if value="{{ noPlanOpen }}" hint-placeholder-val="{{ true }}">
+<nav style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:20px;border-bottom:1px solid hsl(var(--border));padding-bottom:0">
+<sc-for list="{{ subTabs }}" as="t" hint-placeholder-count="7">
+<button style="{{ t.st }}" onClick="{{ t.pick }}"><span>{{ t.label }}</span><sc-if value="{{ t.locked }}" hint-placeholder-val="{{ false }}"><span style="opacity:.6;font-size:11px">🔒</span></sc-if></button>
+</sc-for>
+</nav>
+
+<sc-if value="{{ isPlans }}" hint-placeholder-val="{{ true }}">
+<div data-screen-label="Планы дежурств">
+<div style="display:grid;grid-template-columns:1.55fr 1fr;gap:16px;align-items:start" class="dutyTwoCol">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+<div><div style="font-size:13.5px;font-weight:600">Планы дежурств по объекту</div><div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">Один план на объект / год / месяц · ops_duty_plans</div></div>
+<span class="bg-secondary" style="display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;color:hsl(var(--secondary-foreground))">{{ plans.length }}</span>
+</div>
+<sc-for list="{{ plans }}" as="p" hint-placeholder-count="4">
+<button style="{{ p.st }}" onClick="{{ p.open }}">
+<div style="min-width:44px;height:44px;border-radius:10px;display:grid;place-items:center;background:hsl(var(--primary) / .09);color:hsl(var(--primary));font-weight:800;font-size:12px;flex:0 0 auto;line-height:1.1;text-align:center">{{ p.mon }}<br>{{ p.year }}</div>
+<div style="flex:1;min-width:0">
+<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.title }}</div>
+<div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.meta }}</div>
+</div>
+<span class="{{ p.stCls }}" style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:600;flex:0 0 auto">{{ p.statusLabel }}</span>
+</button>
+</sc-for>
+<p style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin:12px 2px 0;line-height:1.5">Жизненный цикл статусов плана в источниках задан частично — специфицирован только <b>DRAFT</b>, остальные значения не документированы.</p>
+</section>
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:3px">{{ planFormTitle }}</div>
+<div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-bottom:14px">Уникальность: объект + год + месяц</div>
+<label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Объект</label>
+<div style="height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 12px;display:flex;align-items:center;font-size:13px;background:hsl(210 40% 98%);color:hsl(215.4 16.3% 36%);margin-bottom:13px">{{ objName }}</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:13px">
+<div><label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Год</label><div style="height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 12px;display:flex;align-items:center;font-size:13px">2026</div></div>
+<div><label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Месяц</label><div style="height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 12px;display:flex;align-items:center;font-size:13px">Август</div></div>
+</div>
+<label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Статус плана</label>
+<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;font-size:11.5px;font-weight:600;background:hsl(210 40% 94%);color:hsl(215.4 16.3% 40%);margin-bottom:16px"><span style="width:7px;height:7px;border-radius:99px;background:#94a3b8"></span>DRAFT · по умолчанию</div>
+<button style="width:100%;height:40px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ createPlan }}">Создать план на август</button>
+</section>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isTypes }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Виды дежурств объекта">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+<div><div style="font-size:13.5px;font-weight:600">Справочник видов дежурств</div><div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">Вид дежурства создаётся вокруг объекта и определяет, какие дежурства на нём несутся</div></div>
+<button style="height:34px;padding:0 13px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:12.5px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ fAddType }}">+ Вид дежурства</button>
+</section>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+<sc-for list="{{ dutyTypes }}" as="d" hint-placeholder-count="4">
+<div style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:15px">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+<div style="width:36px;height:36px;border-radius:9px;display:grid;place-items:center;font-size:16px;flex:0 0 auto;{{ d.icoSt }}">{{ d.icon }}</div>
+<div style="min-width:0"><div style="font-size:13px;font-weight:600">{{ d.name }}</div><div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-top:1px">{{ d.window }}</div></div>
+</div>
+<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:5px 0;border-top:1px solid hsl(210 40% 95%)"><span style="color:hsl(215.4 16.3% 46.9%)">Длительность смены</span><b style="font-weight:600">{{ d.len }}</b></div>
+<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:5px 0;border-top:1px solid hsl(210 40% 95%)"><span style="color:hsl(215.4 16.3% 46.9%)">Постов задействовано</span><b style="font-weight:600">{{ d.posts }}</b></div>
+<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:5px 0;border-top:1px solid hsl(210 40% 95%)"><span style="color:hsl(215.4 16.3% 46.9%)">Отдых после</span><b style="font-weight:600">{{ d.rest }}</b></div>
+</div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMap }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Карта и схема" style="display:grid;grid-template-columns:1.2fr 1fr;gap:16px;align-items:start" class="dutyTwoCol">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:3px">Схема объекта · посты</div>
+<div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-bottom:12px">{{ objName }} · загрузите план объекта, метки постов накладываются поверх</div>
+<div style="position:relative;width:100%;aspect-ratio:16/10;border-radius:10px;overflow:hidden">
+<x-import component-from-global-scope="image-slot" from="./image-slot.js" id="objScheme" shape="rect" placeholder="Схема объекта / поэтажный план" hint-size="100%,100%"></x-import>
+</div>
+</section>
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:12px">Посты на схеме</div>
+<sc-for list="{{ mapPosts }}" as="p" hint-placeholder-count="6">
+<div style="display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid hsl(210 40% 95%)">
+<b style="width:26px;height:26px;border-radius:99px;background:hsl(var(--primary) / .1);color:hsl(var(--primary));display:grid;place-items:center;font-size:11px;flex:0 0 auto">{{ p.n }}</b>
+<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">{{ p.name }}</div><div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">{{ p.zone }}</div></div>
+<span style="font-size:11px;font-weight:700;color:hsl(215.4 16.3% 40%)">{{ p.cov }}</span>
+</div>
+</sc-for>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{ isReplace }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Замена сотрудника на посту">
+<sc-if value="{{ canReplace }}" hint-placeholder-val="{{ true }}">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start" class="dutyTwoCol">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:3px">Замена сотрудника на посту</div>
+<div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-bottom:14px">Право дежурного по объекту, действует весь период суточного дежурства</div>
+<label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Пост</label>
+<select style="width:100%;height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 10px;font-size:13px;background:hsl(var(--background));color:hsl(var(--foreground));margin-bottom:12px" onChange="{{ setRepPost }}" value="{{ repPost }}"><sc-for list="{{ repPostOpts }}" as="o" hint-placeholder-count="6"><option value="{{ o }}">{{ o }}</option></sc-for></select>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+<div><label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Снять с поста</label><div style="height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 10px;display:flex;align-items:center;font-size:12.5px;background:hsl(210 40% 98%)">{{ repFrom }}</div></div>
+<div><label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Заменить на</label><select style="width:100%;height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 10px;font-size:12.5px;background:hsl(var(--background));color:hsl(var(--foreground))" onChange="{{ setRepTo }}" value="{{ repTo }}"><sc-for list="{{ repToOpts }}" as="o" hint-placeholder-count="5"><option value="{{ o }}">{{ o }}</option></sc-for></select></div>
+</div>
+<label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Комментарий к замене <span style="color:#dc2626">*</span></label>
+<textarea style="width:100%;box-sizing:border-box;min-height:76px;border:1px solid hsl(var(--border));border-radius:8px;padding:9px 11px;font-size:12.5px;resize:vertical;background:hsl(var(--background));color:hsl(var(--foreground));margin-bottom:12px" placeholder="Обязательное поле — причина замены фиксируется в аудите" onInput="{{ setRepComment }}" value="{{ repComment }}"></textarea>
+<div class="bg-blue-100 text-blue-800" style="border-radius:9px;padding:10px 12px;font-size:11px;line-height:1.5;margin-bottom:14px">Автоуведомление уйдёт руководителям управления <b>обоих</b> сотрудников: {{ repFromHead }} и {{ repToHead }}.</div>
+<button style="{{ repSaveSt }}" onClick="{{ saveReplace }}">Провести замену</button>
+</section>
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:12px">История замен · аудит</div>
+<sc-for list="{{ repLog }}" as="r" hint-placeholder-count="3">
+<div style="display:flex;gap:11px;padding:11px 0;border-top:1px solid hsl(210 40% 95%)">
+<span style="width:30px;height:30px;border-radius:8px;background:hsl(var(--primary) / .09);color:hsl(var(--primary));display:grid;place-items:center;font-size:13px;flex:0 0 auto">⇄</span>
+<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600">{{ r.title }}</div><div style="font-size:11px;color:hsl(215.4 16.3% 46.9%);margin-top:2px;line-height:1.45">{{ r.detail }}</div><div style="font-size:10.5px;color:hsl(215.4 16.3% 55%);margin-top:3px">{{ r.time }} · уведомлены: {{ r.notified }}</div></div>
+</div>
+</sc-for>
+</section>
+</div>
+</sc-if>
+<sc-if value="{{ cantReplace }}" hint-placeholder-val="{{ false }}">
+<div style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:40px 24px;text-align:center;max-width:520px;margin:0 auto">
+<div style="width:52px;height:52px;border-radius:14px;background:hsl(210 40% 96%);display:grid;place-items:center;margin:0 auto 14px;font-size:22px">🔒</div>
+<div style="font-size:15px;font-weight:700;margin-bottom:6px">Замена доступна дежурному по объекту</div>
+<div style="font-size:12.5px;color:hsl(215.4 16.3% 46.9%);line-height:1.55;margin-bottom:16px">Единственное действие сверх просмотра для роли «Дежурный по объекту». Переключитесь на эту роль, чтобы провести замену на посту.</div>
+<button style="height:38px;padding:0 18px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ becomeDuty }}">Стать дежурным по объекту</button>
+</div>
+</sc-if>
+</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{ hasPlanOpen }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Назначение на посты">
+<div style="display:grid;grid-template-columns:auto minmax(300px,1fr) auto;align-items:center;gap:20px;background:linear-gradient(135deg,hsl(var(--card)) 60%,hsl(221.2 83.2% 53.3% / .06));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:20px;margin-bottom:14px">
+<div style="width:64px;height:64px;border-radius:16px;display:grid;place-items:center;background:hsl(var(--primary));color:#fff;font-size:22px;font-weight:800">◫</div>
+<div>
+<div style="display:flex;align-items:center;gap:9px"><h2 style="font-size:19px;margin:0;font-weight:700">{{ planTitle }}</h2><span class="bg-amber-100 text-amber-800" style="display:inline-flex;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600">DRAFT</span></div>
+<p style="font-size:12.5px;color:hsl(215.4 16.3% 36.9%);margin:6px 0 0">{{ objName }} · назначение сотрудников на посты на весь месяц</p>
+</div>
+<button style="height:36px;padding:0 14px;border-radius:8px;background:hsl(var(--card));border:1px solid hsl(var(--border));font-size:13px;font-weight:500;white-space:nowrap" style-hover="background:hsl(210 40% 96.1%)" onClick="{{ planClose }}">← Назад к планам</button>
+</div>
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:3px">Назначение на посты</div>
+<div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-bottom:12px">Один сотрудник на пост на весь месяц плана · изменения сохраняются как DRAFT</div>
+<table style="width:100%;border-collapse:collapse">
+<thead><tr>
+<th style="text-align:left;padding:9px 10px;font-size:10.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);border-bottom:1px solid hsl(var(--border))">Пост</th>
+<th style="text-align:left;padding:9px 10px;font-size:10.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);border-bottom:1px solid hsl(var(--border))">Зона</th>
+<th style="text-align:left;padding:9px 10px;font-size:10.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);border-bottom:1px solid hsl(var(--border))">Назначен на месяц</th>
+<th style="padding:9px 10px;font-size:10.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);border-bottom:1px solid hsl(var(--border));text-align:center">Покрытие</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ assignRows }}" as="r" hint-placeholder-count="6">
+<tr>
+<td style="padding:10px;border-bottom:1px solid hsl(210 40% 95%);font-size:12.5px;font-weight:600">{{ r.name }}</td>
+<td style="padding:10px;border-bottom:1px solid hsl(210 40% 95%);font-size:12px;color:hsl(215.4 16.3% 46.9%)">{{ r.zone }}</td>
+<td style="padding:10px;border-bottom:1px solid hsl(210 40% 95%)">
+<select style="height:34px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 8px;font-size:12.5px;background:hsl(var(--background));color:hsl(var(--foreground))" value="{{ r.who }}" onChange="{{ r.onPick }}">
+<sc-for list="{{ r.opts }}" as="o" hint-placeholder-count="5"><option value="{{ o }}">{{ o }}</option></sc-for>
+</select>
+</td>
+<td style="padding:10px;border-bottom:1px solid hsl(210 40% 95%);text-align:center;font-size:11.5px;font-weight:700;color:hsl(var(--primary))">{{ r.covered }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</section>
+</div>
+</sc-if>
+
+</main>
+</div>
+<sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+<div role="status" style="position:fixed;right:28px;bottom:28px;z-index:80;background:hsl(222.2 47% 13%);color:#fff;border-radius:10px;padding:13px 17px;box-shadow:0 14px 40px rgba(12,29,57,.3);font-size:12.5px;font-weight:500;max-width:340px;animation:vapsToast .3s ease">{{ toast }}</div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:900},&quot;embedded&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  state = {tab:"plans",role:"role4",selShift:null,asgOpen:false,asgEmp:"",asgReason:"",repPost:"КПП-1 · Периметр A",repTo:"",repComment:"",toast:null,myFilter:"all",planOpen:null,asgMonth:{}};
+  objName = "Дворец Независимости";
+  emps = [
+    {name:"К. Абдрахманов",rank:"капитан",unit:"Управление №1",tone:"green"},
+    {name:"Д. Оспанов",rank:"майор",unit:"Управление №1",tone:"blue"},
+    {name:"М. Есенова",rank:"майор",unit:"Группа досмотра",tone:"green"},
+    {name:"Н. Жумабеков",rank:"ст. лейтенант",unit:"Управление №3",tone:"amber"},
+    {name:"Р. Бекенов",rank:"капитан",unit:"Управление №1",tone:"green"},
+    {name:"А. Сериков",rank:"лейтенант",unit:"Управление №3",tone:"blue"},
+    {name:"Г. Сулейменова",rank:"майор",unit:"Группа досмотра",tone:"amber"}
+  ];
+  shifts = {
+    "К. Абдрахманов":{day:15,post:"КПП-1 · Периметр A"},
+    "Д. Оспанов":{day:15,post:"Атриум-2 · Внутренний контур"},
+    "М. Есенова":{day:16,post:"Пост фасада"},
+    "Н. Жумабеков":{day:17,post:"Атриум-1 · Внутренний контур"},
+    "Р. Бекенов":{day:18,post:"Тех-узел"},
+    "А. Сериков":{day:19,post:"КПП-2 · Периметр A"}
+  };
+  vac = {"Г. Сулейменова":{from:14,to:20}};
+  headMap = {"Управление №1":"полковник Б. Тулегенов","Управление №3":"полковник Н. Ержанов","Группа досмотра":"капитан М. Есенова"};
+  roles = [
+    {id:"role1",label:"Роль-1 · Наблюдатель организации",scope:"ORGANIZATION",edit:false,replace:false,title:"Просмотр по всей организации",text:"Read-only доступ ко всем планам дежурств без права редактирования смен и статусов."},
+    {id:"role2",label:"Роль-2 · Наблюдатель департамента",scope:"DEPARTMENT",edit:false,replace:false,title:"Просмотр расхода департамента",text:"Только просмотр расхода и дежурств своего департамента."},
+    {id:"role3",label:"Роль-3 · Оператор управления",scope:"OWN_DIVISION",edit:true,replace:false,title:"Планирование смен своего управления",text:"Редактирует статусы и дежурства своего управления заранее и в течение рабочего дня (PS §16.4)."},
+    {id:"role4",label:"Роль-4 · Администратор",scope:"ORGANIZATION",edit:true,replace:true,title:"Полный доступ по организации",text:"Полный доступ ко всем дежурствам, статусам и заменам по всей организации."},
+    {id:"duty",label:"Дежурный по объекту",scope:"OBJECT_DUTY",edit:false,replace:true,title:"Суточный наряд · один на весь объект",text:"Заступает на сутки, все посты и сектора объекта подчиняются ему. В нерабочее время — старший на объекте. Сверх просмотра доступно одно действие: замена сотрудника на посту."}
+  ];
+  dutyTypes = [
+    {name:"Суточное дежурство",window:"круглосуточно",len:"24 ч",posts:"6 постов",rest:"24 ч",icon:"🕛",tone:"blue"},
+    {name:"Дневная смена",window:"07:00 – 19:00",len:"12 ч",posts:"4 поста",rest:"—",icon:"☀",tone:"amber"},
+    {name:"Ночная смена",window:"19:00 – 07:00",len:"12 ч",posts:"4 поста",rest:"12 ч",icon:"🌙",tone:"indigo"},
+    {name:"Усиленный наряд",window:"по приказу",len:"переменная",posts:"все посты",rest:"по графику",icon:"⚑",tone:"red"}
+  ];
+  mapPosts = [
+    {n:1,name:"КПП-1 · Периметр A",zone:"Внешний периметр",cov:"100%"},
+    {n:2,name:"КПП-2 · Периметр A",zone:"Внешний периметр",cov:"100%"},
+    {n:3,name:"Пост фасада",zone:"Главный вход",cov:"100%"},
+    {n:4,name:"Атриум-1 · Внутренний контур",zone:"Внутренний контур",cov:"75%"},
+    {n:5,name:"Атриум-2 · Внутренний контур",zone:"Внутренний контур",cov:"100%"},
+    {n:6,name:"Резерв №1",zone:"Штаб и резерв",cov:"50%"}
+  ];
+  plans = [
+    {mon:"ИЮЛ",monN:7,year:"2026",status:"active",author:"майор С. Ахметов",created:"28.06.2026"},
+    {mon:"ИЮН",monN:6,year:"2026",status:"closed",author:"майор С. Ахметов",created:"29.05.2026"},
+    {mon:"МАЙ",monN:5,year:"2026",status:"closed",author:"майор С. Ахметов",created:"27.04.2026"},
+    {mon:"АВГ",monN:8,year:"2026",status:"draft",author:"—",created:"черновик"}
+  ];
+  repLog = [
+    {title:"Р. Бекенов → замена на КПП-2",detail:"Сектор B · Пост 5 · плановая замена по болезни",time:"15.07 · 03:20",notified:"полковник Б. Тулегенов, полковник Н. Ержанов"},
+    {title:"А. Сериков → замена на Пост фасада",detail:"Внеплановое усиление периметра",time:"14.07 · 22:05",notified:"полковник Н. Ержанов"}
+  ];
+  ini(n){return n.split(" ").map(p=>p[0]).join("").slice(0,2).toUpperCase();}
+  badge(t){return ({green:"bg-green-100 text-green-800",amber:"bg-amber-100 text-amber-800",blue:"bg-blue-100 text-blue-800",indigo:"bg-indigo-100 text-indigo-800",red:"bg-red-100 text-red-800"})[t]||"bg-secondary text-secondary-foreground";}
+  say(m){clearTimeout(this._t);this.setState({toast:m});this._t=setTimeout(()=>this.setState({toast:null}),2800);}
+  curRole(){return this.roles.find(r=>r.id===this.state.role)||this.roles[2];}
+  meta(st){return ({
+    before:{label:"До дежурства",short:"ДО",code:"BEFORE_DUTY",solid:"#6366f1",bg:"rgb(224 231 255)",fg:"#3730a3",badge:"bg-indigo-100 text-indigo-800"},
+    duty:{label:"На дежурстве",short:"ДЕЖ",code:"DUTY",solid:"#2563eb",bg:"rgb(219 234 254)",fg:"#1e40af",badge:"bg-blue-100 text-blue-800"},
+    rest:{label:"После дежурства",short:"ОТД",code:"REST_AFTER_DUTY",solid:"#d97706",bg:"rgb(254 243 199)",fg:"#92400e",badge:"bg-amber-100 text-amber-800"},
+    service:{label:"В строю",short:"",code:"IN_SERVICE",solid:"#16a34a",bg:"transparent",fg:"#166534",badge:"bg-green-100 text-green-800"},
+    vac:{label:"В отпуске",short:"ОТП",code:"VACATION",solid:"#94a3b8",bg:"hsl(210 40% 94%)",fg:"hsl(215 16% 40%)",badge:"bg-secondary text-secondary-foreground"}
+  })[st];}
+  project(name){
+    const days=[14,15,16,17,18,19,20], map={};
+    days.forEach(d=>map[d]="service");
+    const v=this.vac[name]; if(v){days.forEach(d=>{if(d>=v.from&&d<=v.to)map[d]="vac";});}
+    const sh=this.shifts[name];
+    if(sh){ if(map[sh.day]!=="vac")map[sh.day]="duty";
+      if(map[sh.day-1]&&map[sh.day-1]!=="vac")map[sh.day-1]="before";
+      if(map[sh.day+1]&&map[sh.day+1]!=="vac")map[sh.day+1]="rest"; }
+    return map;
+  }
+  conflictFor(name){
+    if(this.vac[name])return {kind:"hard",code:"VACATION",http:422,icon:"⛔",title:"Жёсткий блок",msg:"Сотрудник в отпуске 14–20.07.2026. Назначение на дежурство невозможно — обход недоступен."};
+    if(name==="Н. Жумабеков")return {kind:"soft",code:"REST_VIOLATION_CONFLICT",http:409,icon:"⚠",title:"Нарушение отдыха",msg:"Назначение нарушает обязательный отдых после суточного дежурства (17→18.07).",oq:"OQ-3: жёсткость правила уточняется у заказчика — сейчас soft-warning."};
+    if(name==="Р. Бекенов")return {kind:"soft",code:"DUTY_OVERLAP_CONFLICT",http:409,icon:"⚠",title:"Пересечение смен",msg:"Пересечение с уже назначенной сменой 18.07 (Тех-узел)."};
+    return null;
+  }
+  renderVals(){
+    const s=this.state, R=this.curRole(), emb=!!this.props.embedded;
+    const days=[{d:14,wd:"Пн",we:false},{d:15,wd:"Вт",we:false},{d:16,wd:"Ср",we:false},{d:17,wd:"Чт",we:false},{d:18,wd:"Пт",we:false},{d:19,wd:"Сб",we:true},{d:20,wd:"Вс",we:true}];
+    const dayCol=d=>d.we?"#dc2626":"hsl(215.4 16.3% 46.9%)";
+    const legend=[{label:"До дежурства",color:"#6366f1"},{label:"На дежурстве",color:"#2563eb"},{label:"После дежурства",color:"#d97706"},{label:"В строю",color:"#16a34a"}];
+    const roleTabs=this.roles.map(r=>{const on=r.id===s.role;return{label:r.label.split(" · ")[0],
+      st:{height:"30px",padding:"0 12px",borderRadius:"99px",border:on?"0":"1px solid hsl(var(--border))",fontSize:"11.5px",fontWeight:600,background:on?"hsl(var(--primary))":"hsl(var(--card))",color:on?"#fff":"hsl(215.4 16.3% 40%)"},
+      pick:()=>this.setState({role:r.id,selShift:null,asgOpen:false})};});
+    const permTone=R.edit?"blue":R.replace?"amber":"gray";
+    const permMap={blue:{bg:"rgb(219 234 254)",fg:"#1e40af",ic:"✎"},amber:{bg:"rgb(254 243 199)",fg:"#92400e",ic:"⇄"},gray:{bg:"hsl(210 40% 96%)",fg:"hsl(215 16% 40%)",ic:"👁"}};
+    const pm=permMap[R.replace&&!R.edit?"amber":R.edit?"blue":"gray"];
+    const tabDefs=[{id:"plans",label:"Планы"},{id:"types",label:"Виды дежурств"},{id:"map",label:"Карта и схема"},{id:"replace",label:"Замена на посту"}];
+    const subTabs=tabDefs.map(t=>{const on=t.id===s.tab, locked=t.id==="replace"&&!R.replace;return{label:t.label,locked,
+      st:{display:"inline-flex",alignItems:"center",gap:"6px",height:"36px",padding:"0 14px",border:"0",borderBottom:on?"2px solid hsl(var(--primary))":"2px solid transparent",background:"transparent",fontSize:"13px",fontWeight:on?700:500,color:on?"hsl(var(--primary))":"hsl(215.4 16.3% 46.9%)",marginBottom:"-1px"},
+      pick:()=>this.setState({tab:t.id,selShift:null,asgOpen:false})};});
+    // grid rows
+    const cellBase={position:"relative",width:"52px",height:"34px",borderRadius:"8px",border:"0",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:"10px",fontWeight:800,letterSpacing:".03em"};
+    const gridRows=this.emps.map(e=>{const proj=this.project(e.name);
+      const cells=days.map(dd=>{const st=proj[dd.d], m=this.meta(st), sh=this.shifts[e.name];
+        const isDuty=st==="duty", clickable=isDuty;
+        const warn=(e.name==="Н. Жумабеков"&&dd.d===18);
+        return {short:m.short, aria:e.name+" "+dd.d+".07 "+m.label,
+          st:{...cellBase,background:st==="service"?"hsl(210 40% 97%)":m.bg,color:m.fg,cursor:clickable?"pointer":"default",boxShadow:isDuty?"inset 0 0 0 1.5px "+m.solid:"none",opacity:st==="vac"?.85:1},
+          warn, warnColor:"#d97706",
+          onClick:clickable?(()=>this.setState({selShift:e.name,asgOpen:false})):(()=>{}),
+          calSt:{...cellBase,width:"46px",height:"28px",fontSize:"9.5px",background:st==="service"?"hsl(210 40% 97%)":m.bg,color:m.fg}};});
+      return {name:e.name,unit:e.unit,ini:this.ini(e.name),avCls:this.badge(e.tone),cells};});
+    // totals per day
+    const cnt=st=>days.map(dd=>this.emps.filter(e=>this.project(e.name)[dd.d]===st).length);
+    const totalRows=[
+      {label:"До дежурства",color:"#4338ca",vals:cnt("before")},
+      {label:"На дежурстве",color:"#1e40af",vals:cnt("duty")},
+      {label:"После дежурства",color:"#92400e",vals:cnt("rest")},
+      {label:"В строю",color:"#166534",vals:cnt("service")}
+    ];
+    // shift card
+    let sc=null;
+    if(s.selShift){const sh=this.shifts[s.selShift], e=this.emps.find(x=>x.name===s.selShift);
+      sc={emp:s.selShift,rank:e.rank,unit:e.unit,post:sh.post,shift:"07:00 "+sh.day+".07 → 07:00 "+(sh.day+1)+".07",beforeNote:true,
+        proj:[
+          {label:"До дежурства",range:(sh.day-1)+".07 · 24 ч (условно)",code:"BEFORE_DUTY",solid:"#6366f1",badge:"bg-indigo-100 text-indigo-800"},
+          {label:"На дежурстве",range:sh.day+".07 · 24 ч",code:"DUTY",solid:"#2563eb",badge:"bg-blue-100 text-blue-800"},
+          {label:"После дежурства",range:(sh.day+1)+".07 · 24 ч",code:"REST_AFTER_DUTY",solid:"#d97706",badge:"bg-amber-100 text-amber-800"}
+        ]};}
+    // assignment
+    const asgEmpOpts=this.emps.map(e=>e.name);
+    const asgEmp=s.asgEmp||asgEmpOpts[0];
+    const conf=this.conflictFor(asgEmp);
+    const confTones={hard:{bg:"rgb(254 226 226)",fg:"#991b1b"},soft:{bg:"rgb(254 243 199)",fg:"#92400e"}};
+    const ct=conf?confTones[conf.kind]:null;
+    const asgSoft=conf&&conf.kind==="soft";
+    const asgHard=conf&&conf.kind==="hard";
+    const reasonOk=s.asgReason.trim().length>=10&&s.asgReason.trim().length<=500;
+    const saveEnabled=!asgHard&&(!asgSoft||reasonOk);
+    // my calendar (июль 2026: 1 июля = вторник; offset 1)
+    const wdHead=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+    const myMap={};[15,16].forEach(d=>myMap[d]="duty");myMap[14]="before";myMap[17]="rest";[20,21,22].forEach(d=>myMap[d]="om");[25,26,27,28,29].forEach(d=>myMap[d]="trip");
+    const dotFor={duty:"#2563eb",before:"#6366f1",rest:"#d97706",om:"#9333ea",trip:"#9333ea"};
+    const myDays=[];for(let i=0;i<3;i++)myDays.push({n:"",st:{minHeight:"46px"},dot:null});
+    for(let d=1;d<=31;d++){const k=myMap[d];myDays.push({n:d,dot:k?dotFor[k]:null,
+      st:{minHeight:"46px",borderRadius:"8px",border:"1px solid hsl(210 40% 94%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:k?"hsl(210 40% 98%)":"hsl(var(--card))",color:"hsl(var(--foreground))"}});}
+    const myPeriods=[
+      {status:"Суточное дежурство",range:"15.07 – 16.07.2026",solid:"#2563eb",phase:"ACTIVE",phaseCls:"bg-blue-100 text-blue-800",overlap:false},
+      {status:"Участие в ОМ-2026-041",range:"20.07 – 22.07.2026",solid:"#9333ea",phase:"PLANNED",phaseCls:"bg-purple-100 text-purple-800",overlap:true},
+      {status:"Командировка",range:"25.07 – 29.07.2026",solid:"#9333ea",phase:"PLANNED",phaseCls:"bg-purple-100 text-purple-800",overlap:false},
+      {status:"Суточное дежурство",range:"05.07 – 06.07.2026",solid:"#2563eb",phase:"COMPLETED",phaseCls:"bg-secondary text-secondary-foreground",overlap:false}
+    ];
+    // load dashboard (date 15.07)
+    const at=d=>st=>this.emps.filter(e=>this.project(e.name)[d]===st).length;
+    const a=at(15);
+    const loadCards=[
+      {label:"До дежурства",code:"BEFORE_DUTY",val:a("before"),solid:"#6366f1"},
+      {label:"На дежурстве",code:"ON_DUTY",val:a("duty"),solid:"#2563eb"},
+      {label:"После дежурства",code:"AFTER_DUTY",val:a("rest"),solid:"#d97706"},
+      {label:"В строю",code:"IN_SERVICE",val:a("service"),solid:"#16a34a"},
+      {label:"Недоступны",code:"HARD_BLOCK",val:a("vac"),solid:"#94a3b8"}
+    ];
+    const unitAgg={};
+    this.emps.forEach(e=>{const st=this.project(e.name)[15];const u=unitAgg[e.unit]||(unitAgg[e.unit]={name:e.unit,before:0,duty:0,rest:0,service:0});
+      if(st==="before")u.before++;else if(st==="duty")u.duty++;else if(st==="rest")u.rest++;else if(st==="service")u.service++;});
+    const loadUnits=Object.values(unitAgg);
+    const loadBars=this.emps.filter(e=>this.shifts[e.name]).map(e=>{const over=e.name==="Н. Жумабеков";const hrs=over?32:24;
+      return {name:e.name,hours:hrs,pct:Math.min(100,hrs/32*100)+"%",color:over?"#dc2626":"#2563eb",flag:over};});
+    // replace
+    const repPostOpts=["КПП-1 · Периметр A","КПП-2 · Периметр A","Пост фасада","Атриум-1 · Внутренний контур","Атриум-2 · Внутренний контур","Тех-узел"];
+    const postEmp={"КПП-1 · Периметр A":"К. Абдрахманов","КПП-2 · Периметр A":"А. Сериков","Пост фасада":"М. Есенова","Атриум-1 · Внутренний контур":"Н. Жумабеков","Атриум-2 · Внутренний контур":"Д. Оспанов","Тех-узел":"Р. Бекенов"};
+    const repFrom=postEmp[s.repPost]||"—";
+    const repToOpts=this.emps.map(e=>e.name).filter(n=>n!==repFrom);
+    const repTo=s.repTo||repToOpts[0];
+    const repFromHead=this.headMap[(this.emps.find(e=>e.name===repFrom)||{}).unit]||"—";
+    const repToHead=this.headMap[(this.emps.find(e=>e.name===repTo)||{}).unit]||"—";
+    const repOk=s.repComment.trim().length>=1;
+    return {
+      objName:this.objName, rootMinH:emb?"auto":"100vh", rootPad:emb?"0":"24px 28px 64px",
+      roleTabs, subTabs, legend, days:days.map(d=>({d:d.d,wd:d.wd,col:dayCol(d)})),
+      permIcon:pm.ic, permTitle:R.title, permText:R.text, permStyle:"background:"+pm.bg+";color:"+pm.fg,
+      isPlans:s.tab==="plans", isTypes:s.tab==="types", isGrid:s.tab==="grid", isMap:s.tab==="map",
+      isReplace:s.tab==="replace",
+      noPlanOpen:!s.planOpen, hasPlanOpen:!!s.planOpen,
+      ovStats:[
+        {label:"Активных постов",val:"12",color:"hsl(var(--primary))"},
+        {label:"Дежурств сегодня",val:"6",color:"#2563eb"},
+        {label:"Свободных слотов",val:"3",color:"#b45309"},
+        {label:"Просрочено отчётов",val:"1",color:"#b91c1c"}
+      ],
+      mapPosts:this.mapPosts.map(p=>({...p})),
+      plans:this.plans.map(p=>{const smap={active:["Активен","bg-green-100 text-green-800"],closed:["Закрыт","bg-secondary text-secondary-foreground"],draft:["DRAFT","bg-amber-100 text-amber-800"]};
+        const mn=["","Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"][p.monN];
+        return {mon:p.mon,year:p.year,title:this.objName+" · "+mn+" "+p.year,meta:"Автор: "+p.author+" · "+p.created,statusLabel:smap[p.status][0],stCls:smap[p.status][1],
+          st:{width:"100%",display:"flex",alignItems:"center",gap:"12px",padding:"10px 11px",borderRadius:"10px",border:"1px solid hsl(var(--border))",background:"hsl(var(--card))",textAlign:"left",marginTop:"8px",cursor:"pointer"},
+          open:()=>this.setState({planOpen:mn+" "+p.year})};}),
+      planTitle:s.planOpen, planClose:()=>this.setState({planOpen:null}),
+      assignRows:this.mapPosts.map((p,i)=>{const cand=this.emps.map(e=>e.name);
+        const cur=s.asgMonth[p.n]??i%cand.length;
+        return {n:p.n,name:p.name,zone:p.zone,who:cand[cur],covered:p.cov,opts:cand,
+          onPick:(e)=>this.setState(st=>({asgMonth:{...st.asgMonth,[p.n]:cand.indexOf(e.target.value)}}))};}),
+      planFormTitle:"Новый план дежурств", createPlan:()=>this.say("План на август 2026 создан со статусом DRAFT"),
+      dutyTypes:this.dutyTypes.map(d=>({...d,icoSt:"background:"+this.meta("service").bg+";",icoSt:"background:hsl(var(--primary) / .09);color:hsl(var(--primary))"})),
+      fAddType:()=>this.say("Форма нового вида дежурства"),
+      gridRows, totalRows,
+      assignBtnSt:{height:"34px",padding:"0 14px",borderRadius:"8px",border:"0",fontSize:"12.5px",fontWeight:600,background:R.edit?"hsl(var(--primary))":"hsl(210 40% 92%)",color:R.edit?"#fff":"hsl(215 16% 55%)",cursor:R.edit?"pointer":"not-allowed"},
+      openAssign:()=>{if(!R.edit){this.say("Назначение доступно оператору управления и администратору");return;}this.setState({asgOpen:true,selShift:null,asgEmp:"",asgReason:""});},
+      selShift:!!s.selShift, sc, closeShift:()=>this.setState({selShift:null}),
+      asgOpen:s.asgOpen, closeAssign:()=>this.setState({asgOpen:false}),
+      asgEmpOpts, asgEmp, setAsgEmp:e=>this.setState({asgEmp:e.target.value,asgReason:""}),
+      asgConflict:!!conf, asgConfStyle:conf?("background:"+ct.bg+";color:"+ct.fg):"", asgConfIcon:conf?conf.icon:"", asgConfTitle:conf?conf.title:"", asgConfMsg:conf?conf.msg:"", asgCode:conf?conf.code:"", asgHttp:conf?conf.http:"", asgOq:conf&&conf.oq?conf.oq:"",
+      asgSoft, asgReason:s.asgReason, setAsgReason:e=>this.setState({asgReason:e.target.value}), asgReasonLen:s.asgReason.trim().length,
+      asgSaveSt:{width:"100%",height:"40px",borderRadius:"8px",border:"0",fontSize:"13px",fontWeight:600,background:saveEnabled?"hsl(var(--primary))":"hsl(210 40% 92%)",color:saveEnabled?"#fff":"hsl(215 16% 55%)",cursor:saveEnabled?"pointer":"not-allowed"},
+      asgSaveLabel:asgHard?"Обход невозможен":asgSoft?"Сохранить с обоснованием":"Назначить смену",
+      saveAssign:()=>{if(asgHard){this.say("Hard-block: назначение "+asgEmp+" невозможно");return;}if(asgSoft&&!reasonOk){this.say("Укажите причину обхода (10–500 символов)");return;}this.setState({asgOpen:false,asgReason:""});this.say(asgSoft?"Смена назначена с обоснованием — конфликт зафиксирован в аудите":"Смена назначена: "+asgEmp);},
+      wdHead, myDays, myPeriods,
+      loadCards, loadUnits, loadBars,
+      canReplace:R.replace, cantReplace:!R.replace,
+      repPostOpts, repPost:s.repPost, setRepPost:e=>this.setState({repPost:e.target.value,repTo:""}),
+      repFrom, repToOpts, repTo, setRepTo:e=>this.setState({repTo:e.target.value}),
+      repComment:s.repComment, setRepComment:e=>this.setState({repComment:e.target.value}),
+      repFromHead, repToHead,
+      repSaveSt:{width:"100%",height:"40px",borderRadius:"8px",border:"0",fontSize:"13px",fontWeight:600,background:repOk?"hsl(var(--primary))":"hsl(210 40% 92%)",color:repOk?"#fff":"hsl(215 16% 55%)",cursor:repOk?"pointer":"not-allowed"},
+      saveReplace:()=>{if(!repOk){this.say("Комментарий к замене обязателен");return;}this.setState({repComment:""});this.say("Замена проведена · уведомлены "+repFromHead+" и "+repToHead);},
+      repLog:this.repLog,
+      becomeDuty:()=>this.setState({role:"duty"}),
+      fExport:()=>this.say("Экспорт графика дежурств XLSX сформирован"),
+      goNewPlan:()=>this.setState({tab:"plans"}),
+      toast:s.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

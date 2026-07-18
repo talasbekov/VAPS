@@ -1,0 +1,344 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "components/dashboard/StatsCards/**",
+              "components/general/Alert/**",
+              "components/general/Avatar/**",
+              "components/general/Badge/**",
+              "components/general/Button/**",
+              "components/general/Calendar/**",
+              "components/general/Card/**",
+              "components/general/Checkbox/**",
+              "components/general/Dialog/**",
+              "components/general/DropdownMenu/**",
+              "components/general/Input/**",
+              "components/general/Label/**",
+              "components/general/Popover/**",
+              "components/general/Progress/**",
+              "components/general/Select/**",
+              "components/general/Separator/**",
+              "components/general/Table/**",
+              "components/general/Tabs/**",
+              "components/general/Textarea/**",
+              "components/general/Toast/**",
+              "components/general/Tooltip/**",
+              "components/organization-structure/OrgNode/**",
+              "components/theme/ThemeToggle/**"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {
+      "Alert": {
+        "replaces": []
+      },
+      "Avatar": {
+        "replaces": []
+      },
+      "Badge": {
+        "replaces": []
+      },
+      "Button": {
+        "replaces": []
+      },
+      "Calendar": {
+        "replaces": []
+      },
+      "Card": {
+        "replaces": []
+      },
+      "Checkbox": {
+        "replaces": []
+      },
+      "Dialog": {
+        "replaces": []
+      },
+      "DropdownMenu": {
+        "replaces": []
+      },
+      "Input": {
+        "replaces": []
+      },
+      "Label": {
+        "replaces": []
+      },
+      "OrgNode": {
+        "replaces": []
+      },
+      "Popover": {
+        "replaces": []
+      },
+      "Progress": {
+        "replaces": []
+      },
+      "Select": {
+        "replaces": []
+      },
+      "Separator": {
+        "replaces": []
+      },
+      "StatsCards": {
+        "replaces": []
+      },
+      "Table": {
+        "replaces": []
+      },
+      "Tabs": {
+        "replaces": []
+      },
+      "Textarea": {
+        "replaces": []
+      },
+      "ThemeToggle": {
+        "replaces": []
+      },
+      "Toast": {
+        "replaces": []
+      },
+      "Tooltip": {
+        "replaces": []
+      }
+    },
+    "tokens": [
+      "--accent",
+      "--accent-foreground",
+      "--background",
+      "--border",
+      "--card",
+      "--card-foreground",
+      "--cell-size",
+      "--chart-1",
+      "--chart-2",
+      "--chart-3",
+      "--chart-4",
+      "--chart-5",
+      "--destructive",
+      "--destructive-foreground",
+      "--foreground",
+      "--input",
+      "--muted",
+      "--muted-foreground",
+      "--popover",
+      "--popover-foreground",
+      "--primary",
+      "--primary-foreground",
+      "--radius",
+      "--ring",
+      "--secondary",
+      "--secondary-foreground",
+      "--sidebar",
+      "--sidebar-accent",
+      "--sidebar-accent-foreground",
+      "--sidebar-border",
+      "--sidebar-foreground",
+      "--sidebar-primary",
+      "--sidebar-primary-foreground",
+      "--sidebar-ring",
+      "--tw-backdrop-blur",
+      "--tw-backdrop-brightness",
+      "--tw-backdrop-contrast",
+      "--tw-backdrop-grayscale",
+      "--tw-backdrop-hue-rotate",
+      "--tw-backdrop-invert",
+      "--tw-backdrop-opacity",
+      "--tw-backdrop-saturate",
+      "--tw-backdrop-sepia",
+      "--tw-bg-opacity",
+      "--tw-blur",
+      "--tw-border-opacity",
+      "--tw-border-spacing-x",
+      "--tw-border-spacing-y",
+      "--tw-brightness",
+      "--tw-contain-layout",
+      "--tw-contain-paint",
+      "--tw-contain-size",
+      "--tw-contain-style",
+      "--tw-contrast",
+      "--tw-drop-shadow",
+      "--tw-enter-opacity",
+      "--tw-enter-rotate",
+      "--tw-enter-scale",
+      "--tw-enter-translate-x",
+      "--tw-enter-translate-y",
+      "--tw-gradient-from",
+      "--tw-gradient-from-position",
+      "--tw-gradient-stops",
+      "--tw-gradient-to",
+      "--tw-gradient-to-position",
+      "--tw-gradient-via-position",
+      "--tw-grayscale",
+      "--tw-hue-rotate",
+      "--tw-invert",
+      "--tw-numeric-figure",
+      "--tw-numeric-fraction",
+      "--tw-numeric-spacing",
+      "--tw-ordinal",
+      "--tw-pan-x",
+      "--tw-pan-y",
+      "--tw-pinch-zoom",
+      "--tw-ring-color",
+      "--tw-ring-inset",
+      "--tw-ring-offset-color",
+      "--tw-ring-offset-shadow",
+      "--tw-ring-offset-width",
+      "--tw-ring-opacity",
+      "--tw-ring-shadow",
+      "--tw-rotate",
+      "--tw-saturate",
+      "--tw-scale-x",
+      "--tw-scale-y",
+      "--tw-scroll-snap-strictness",
+      "--tw-sepia",
+      "--tw-shadow",
+      "--tw-shadow-color",
+      "--tw-shadow-colored",
+      "--tw-skew-x",
+      "--tw-skew-y",
+      "--tw-slashed-zero",
+      "--tw-text-opacity",
+      "--tw-translate-x",
+      "--tw-translate-y"
+    ],
+    "tokenKinds": {
+      "--tw-border-spacing-x": "spacing",
+      "--tw-border-spacing-y": "spacing",
+      "--tw-translate-x": "spacing",
+      "--tw-translate-y": "spacing",
+      "--tw-rotate": "other",
+      "--tw-skew-x": "other",
+      "--tw-skew-y": "other",
+      "--tw-scale-x": "other",
+      "--tw-scale-y": "other",
+      "--tw-pan-x": "other",
+      "--tw-pan-y": "other",
+      "--tw-pinch-zoom": "other",
+      "--tw-scroll-snap-strictness": "other",
+      "--tw-gradient-from-position": "other",
+      "--tw-gradient-via-position": "other",
+      "--tw-gradient-to-position": "other",
+      "--tw-ordinal": "other",
+      "--tw-slashed-zero": "other",
+      "--tw-numeric-figure": "other",
+      "--tw-numeric-spacing": "spacing",
+      "--tw-numeric-fraction": "other",
+      "--tw-ring-inset": "spacing",
+      "--tw-ring-offset-width": "spacing",
+      "--tw-ring-offset-color": "color",
+      "--tw-ring-color": "color",
+      "--tw-ring-offset-shadow": "shadow",
+      "--tw-ring-shadow": "shadow",
+      "--tw-shadow": "shadow",
+      "--tw-shadow-colored": "shadow",
+      "--tw-blur": "other",
+      "--tw-brightness": "other",
+      "--tw-contrast": "other",
+      "--tw-grayscale": "other",
+      "--tw-hue-rotate": "other",
+      "--tw-invert": "other",
+      "--tw-saturate": "other",
+      "--tw-sepia": "other",
+      "--tw-drop-shadow": "shadow",
+      "--tw-backdrop-blur": "other",
+      "--tw-backdrop-brightness": "other",
+      "--tw-backdrop-contrast": "other",
+      "--tw-backdrop-grayscale": "other",
+      "--tw-backdrop-hue-rotate": "other",
+      "--tw-backdrop-invert": "other",
+      "--tw-backdrop-opacity": "other",
+      "--tw-backdrop-saturate": "other",
+      "--tw-backdrop-sepia": "other",
+      "--tw-contain-size": "spacing",
+      "--tw-contain-layout": "other",
+      "--tw-contain-paint": "other",
+      "--tw-contain-style": "other",
+      "--tw-border-opacity": "other",
+      "--tw-bg-opacity": "color",
+      "--tw-gradient-from": "color",
+      "--tw-gradient-to": "color",
+      "--tw-gradient-stops": "color",
+      "--tw-text-opacity": "font",
+      "--tw-shadow-color": "shadow",
+      "--tw-ring-opacity": "other",
+      "--tw-enter-opacity": "color",
+      "--tw-enter-scale": "color",
+      "--tw-enter-rotate": "color",
+      "--tw-enter-translate-x": "color",
+      "--tw-enter-translate-y": "color",
+      "--cell-size": "spacing",
+      "--background": "other",
+      "--foreground": "other",
+      "--card": "other",
+      "--card-foreground": "other",
+      "--popover": "other",
+      "--popover-foreground": "other",
+      "--primary": "other",
+      "--primary-foreground": "other",
+      "--secondary": "other",
+      "--secondary-foreground": "other",
+      "--muted": "other",
+      "--muted-foreground": "other",
+      "--accent": "other",
+      "--accent-foreground": "other",
+      "--destructive": "other",
+      "--destructive-foreground": "other",
+      "--border": "other",
+      "--input": "other",
+      "--ring": "other",
+      "--chart-1": "other",
+      "--chart-2": "other",
+      "--chart-3": "other",
+      "--chart-4": "other",
+      "--chart-5": "other",
+      "--radius": "radius",
+      "--sidebar": "other",
+      "--sidebar-foreground": "other",
+      "--sidebar-primary": "other",
+      "--sidebar-primary-foreground": "other",
+      "--sidebar-accent": "other",
+      "--sidebar-accent-foreground": "other",
+      "--sidebar-border": "other",
+      "--sidebar-ring": "other"
+    },
+    "fontFamilies": []
+  }
+}

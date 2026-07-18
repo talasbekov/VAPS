@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/styles.css">
+<script src="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/_ds_bundle.js"></script>
+<style>
+body{margin:0;background:hsl(210 40% 97.5%);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
+button{font:inherit;cursor:pointer}input,select,textarea{font:inherit}
+@keyframes panelIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+@keyframes vapsToast{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div style="color:hsl(var(--foreground))">
+<section style="background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:15px 18px;margin-bottom:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+<div style="display:grid;grid-template-columns:32px 1fr 32px;align-items:center;text-align:center;min-width:170px;gap:4px">
+<button style="width:30px;height:30px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;border-radius:7px;color:hsl(215.4 16.3% 46.9%)" aria-label="Предыдущая неделя" onClick="{{ fWeek }}">‹</button>
+<b style="font-size:13px">14–20 июля 2026</b>
+<button style="width:30px;height:30px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;border-radius:7px;color:hsl(215.4 16.3% 46.9%)" aria-label="Следующая неделя" onClick="{{ fWeek }}">›</button>
+</div>
+<div><div style="font-size:13.5px;font-weight:600">Календарь дежурств</div><div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-top:2px">Сотрудники × дни · клик по смене — карточка · авто-проекция статусов до / на / после дежурства</div></div>
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-left:auto;align-items:center">
+<sc-for list="{{ legend }}" as="l" hint-placeholder-count="4">
+<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:hsl(215.4 16.3% 40%)"><span style="width:11px;height:11px;border-radius:3px;background:{{ l.color }}"></span>{{ l.label }}</span>
+</sc-for>
+</div>
+<button style="height:34px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ openAssign }}">+ Назначить смену</button>
+</section>
+<div style="display:flex;gap:14px;align-items:flex-start" class="calWrap">
+<section style="flex:1 1 620px;min-width:0;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:6px;overflow-x:auto">
+<table style="width:100%;border-collapse:separate;border-spacing:0;min-width:600px">
+<thead><tr>
+<th style="position:sticky;left:0;background:#fff;text-align:left;padding:9px 10px;font-size:11px;font-weight:700;color:hsl(215.4 16.3% 46.9%);z-index:2">Сотрудник</th>
+<sc-for list="{{ days }}" as="d" hint-placeholder-count="7">
+<th style="padding:7px 4px;text-align:center;font-size:10.5px;font-weight:600;color:{{ d.col }};min-width:64px"><span style="display:block;font-size:9px;text-transform:uppercase;letter-spacing:.05em;opacity:.7">{{ d.wd }}</span>{{ d.d }}</th>
+</sc-for>
+</tr></thead>
+<tbody>
+<sc-for list="{{ gridRows }}" as="row" hint-placeholder-count="7">
+<tr>
+<td style="position:sticky;left:0;background:#fff;padding:6px 10px;border-top:1px solid hsl(210 40% 95%);z-index:1">
+<div style="display:flex;align-items:center;gap:8px"><span class="{{ row.avCls }}" style="width:28px;height:28px;border-radius:99px;display:grid;place-items:center;font-size:9.5px;font-weight:700;flex:0 0 auto">{{ row.ini }}</span><div style="min-width:0"><div style="font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">{{ row.name }}</div><div style="font-size:10px;color:hsl(215.4 16.3% 46.9%);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">{{ row.unit }}</div></div></div>
+</td>
+<sc-for list="{{ row.cells }}" as="c" hint-placeholder-count="7">
+<td style="padding:4px 4px;border-top:1px solid hsl(210 40% 95%);text-align:center"><button style="{{ c.st }}" onClick="{{ c.onClick }}" aria-label="{{ c.aria }}"><sc-if value="{{ c.short }}" hint-placeholder-val="{{ false }}"><span>{{ c.short }}</span></sc-if><sc-if value="{{ c.warn }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:-3px;right:-3px;width:13px;height:13px;border-radius:99px;background:{{ c.warnColor }};color:#fff;font-size:8px;display:grid;place-items:center;font-weight:800">!</span></sc-if></button></td>
+</sc-for>
+</tr>
+</sc-for>
+<sc-for list="{{ totalRows }}" as="tr" hint-placeholder-count="4">
+<tr>
+<td style="position:sticky;left:0;background:hsl(210 40% 98%);padding:7px 10px;border-top:2px solid hsl(214.3 31.8% 91.4%);z-index:1;font-size:11px;font-weight:700;color:{{ tr.color }};white-space:nowrap">{{ tr.label }}</td>
+<sc-for list="{{ tr.vals }}" as="v" hint-placeholder-count="7"><td style="padding:7px 4px;border-top:2px solid hsl(214.3 31.8% 91.4%);background:hsl(210 40% 98%);text-align:center;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:{{ tr.color }}">{{ v }}</td></sc-for>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</section>
+<sc-if value="{{ selShift }}" hint-placeholder-val="{{ false }}">
+<aside style="flex:0 0 320px;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 8px 30px rgba(16,24,40,.09);padding:17px;animation:panelIn .22s ease" class="calPanel">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px"><div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:hsl(var(--primary));font-weight:700;margin-bottom:4px">Карточка смены</div><div style="font-size:15px;font-weight:700">{{ sc.emp }}</div><div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-top:1px">{{ sc.rank }} · {{ sc.unit }}</div></div><button style="width:26px;height:26px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 46.9%);font-size:14px" onClick="{{ closeShift }}">✕</button></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+<div style="background:hsl(210 40% 97%);border-radius:9px;padding:9px 11px"><div style="font-size:10px;color:hsl(215.4 16.3% 46.9%);margin-bottom:3px">Пост</div><div style="font-size:12.5px;font-weight:600">{{ sc.post }}</div></div>
+<div style="background:hsl(210 40% 97%);border-radius:9px;padding:9px 11px"><div style="font-size:10px;color:hsl(215.4 16.3% 46.9%);margin-bottom:3px">Смена</div><div style="font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums">{{ sc.shift }}</div></div>
+</div>
+<div style="font-size:11px;font-weight:700;color:hsl(215.4 16.3% 46.9%);text-transform:uppercase;letter-spacing:.08em;margin:6px 0 8px">Проекция статусов</div>
+<sc-for list="{{ sc.proj }}" as="pr" hint-placeholder-count="3">
+<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid hsl(210 40% 95%)">
+<span style="width:9px;height:9px;border-radius:99px;flex:0 0 auto;background:{{ pr.solid }}"></span>
+<div style="flex:1"><div style="font-size:12px;font-weight:600">{{ pr.label }}</div><div style="font-size:10.5px;color:hsl(215.4 16.3% 46.9%);margin-top:1px">{{ pr.range }}</div></div>
+<span class="{{ pr.badge }}" style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600">{{ pr.code }}</span>
+</div>
+</sc-for>
+<div class="bg-indigo-100 text-indigo-800" style="border-radius:8px;padding:9px 11px;font-size:10.5px;line-height:1.45;margin-top:10px">Статус «До дежурства» проецируется на 24 ч до смены <b>(условно)</b> — точная длительность уточняется у заказчика.</div>
+</aside>
+</sc-if>
+<sc-if value="{{ asgOpen }}" hint-placeholder-val="{{ false }}">
+<aside style="flex:0 0 340px;background:#fff;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:12px;box-shadow:0 8px 30px rgba(16,24,40,.09);padding:17px;animation:panelIn .22s ease" class="calPanel">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px"><div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:hsl(var(--primary));font-weight:700;margin-bottom:4px">Назначение смены</div><div style="font-size:15px;font-weight:700">Новая смена</div><div style="font-size:11.5px;color:hsl(215.4 16.3% 46.9%);margin-top:1px">Проверка конфликтов при сохранении</div></div><button style="width:26px;height:26px;border-radius:7px;border:1px solid hsl(214.3 31.8% 91.4%);background:#fff;color:hsl(215.4 16.3% 46.9%);font-size:14px" onClick="{{ closeAssign }}">✕</button></div>
+<label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Сотрудник</label>
+<select style="width:100%;height:40px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 10px;font-size:13px;background:#fff;color:hsl(var(--foreground));margin-bottom:12px" onChange="{{ setAsgEmp }}" value="{{ asgEmp }}">
+<sc-for list="{{ asgEmpOpts }}" as="o" hint-placeholder-count="7"><option value="{{ o }}">{{ o }}</option></sc-for>
+</select>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+<div><label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Пост</label><div style="height:40px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 10px;display:flex;align-items:center;font-size:12.5px">Сектор B · Пост 5</div></div>
+<div><label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Дата</label><div style="height:40px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:0 10px;display:flex;align-items:center;font-size:12.5px">18.07.2026</div></div>
+</div>
+<sc-if value="{{ asgConflict }}" hint-placeholder-val="{{ false }}">
+<div style="border-radius:10px;padding:12px 13px;margin-bottom:13px;{{ asgConfStyle }}">
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:14px">{{ asgConfIcon }}</span><b style="font-size:12.5px">{{ asgConfTitle }}</b><span style="margin-left:auto;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(255,255,255,.6)">HTTP {{ asgHttp }}</span></div>
+<div style="font-size:11.5px;line-height:1.5;margin-bottom:4px">{{ asgConfMsg }}</div>
+<div style="font-size:10.5px;opacity:.85;font-family:ui-monospace,monospace">{{ asgCode }}</div>
+<sc-if value="{{ asgOq }}" hint-placeholder-val="{{ false }}"><div style="font-size:10.5px;margin-top:7px;padding-top:7px;border-top:1px solid rgba(0,0,0,.08);font-weight:600">⚠ {{ asgOq }}</div></sc-if>
+</div>
+</sc-if>
+<sc-if value="{{ asgSoft }}" hint-placeholder-val="{{ false }}">
+<label style="display:block;font-size:11.5px;font-weight:700;color:hsl(215.4 16.3% 46.9%);margin-bottom:6px">Причина обхода <span style="font-weight:400;color:hsl(215.4 16.3% 60%)">(10–500 символов)</span></label>
+<textarea style="width:100%;box-sizing:border-box;min-height:72px;border:1px solid hsl(214.3 31.8% 91.4%);border-radius:8px;padding:9px 11px;font-size:12.5px;resize:vertical;background:#fff;color:hsl(var(--foreground));margin-bottom:6px" placeholder="Обоснование назначения при soft-конфликте — фиксируется в аудите" onInput="{{ setAsgReason }}" value="{{ asgReason }}"></textarea>
+<div style="font-size:10.5px;color:hsl(215.4 16.3% 55%);margin-bottom:12px;text-align:right">{{ asgReasonLen }} / 500</div>
+</sc-if>
+<button style="{{ asgSaveSt }}" onClick="{{ saveAssign }}">{{ asgSaveLabel }}</button>
+<p style="font-size:10.5px;color:hsl(215.4 16.3% 55%);margin:10px 2px 0;line-height:1.45">Hard-block (422): SICK_LEAVE, LEAVE_BY_REPORT, VACATION, COMMAND — обход невозможен. Soft-warning (409) обходится полем причины.</p>
+</aside>
+</sc-if>
+</div>
+</div>
+<sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+<div role="status" style="position:fixed;right:28px;bottom:28px;z-index:80;background:hsl(222.2 47% 13%);color:#fff;border-radius:10px;padding:13px 17px;box-shadow:0 14px 40px rgba(12,29,57,.3);font-size:12.5px;font-weight:500;max-width:340px;animation:vapsToast .3s ease">{{ toast }}</div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:560}}">
+class Component extends DCLogic {
+  state = {selShift:null,asgOpen:false,asgEmp:"",asgReason:"",toast:null};
+  emps = [
+    {name:"К. Абдрахманов",rank:"капитан",unit:"Управление №1",tone:"green"},
+    {name:"Д. Оспанов",rank:"майор",unit:"Управление №1",tone:"blue"},
+    {name:"М. Есенова",rank:"майор",unit:"Группа досмотра",tone:"green"},
+    {name:"Н. Жумабеков",rank:"ст. лейтенант",unit:"Управление №3",tone:"amber"},
+    {name:"Р. Бекенов",rank:"капитан",unit:"Управление №1",tone:"green"},
+    {name:"А. Сериков",rank:"лейтенант",unit:"Управление №3",tone:"blue"},
+    {name:"Г. Сулейменова",rank:"майор",unit:"Группа досмотра",tone:"amber"}
+  ];
+  shifts = {
+    "К. Абдрахманов":{day:15,post:"КПП-1 · Периметр A"},
+    "Д. Оспанов":{day:15,post:"Атриум-2 · Внутренний контур"},
+    "М. Есенова":{day:16,post:"Пост фасада"},
+    "Н. Жумабеков":{day:17,post:"Атриум-1 · Внутренний контур"},
+    "Р. Бекенов":{day:18,post:"Тех-узел"},
+    "А. Сериков":{day:19,post:"КПП-2 · Периметр A"}
+  };
+  vac = {"Г. Сулейменова":{from:14,to:20}};
+  ini(n){return n.split(" ").map(p=>p[0]).join("").slice(0,2).toUpperCase();}
+  badge(t){return ({green:"bg-green-100 text-green-800",amber:"bg-amber-100 text-amber-800",blue:"bg-blue-100 text-blue-800",indigo:"bg-indigo-100 text-indigo-800",red:"bg-red-100 text-red-800"})[t]||"bg-secondary text-secondary-foreground";}
+  say(m){clearTimeout(this._t);this.setState({toast:m});this._t=setTimeout(()=>this.setState({toast:null}),2800);}
+  meta(st){return ({
+    before:{label:"До дежурства",short:"ДО",code:"BEFORE_DUTY",solid:"#6366f1",bg:"rgb(224 231 255)",fg:"#3730a3",badge:"bg-indigo-100 text-indigo-800"},
+    duty:{label:"На дежурстве",short:"ДЕЖ",code:"DUTY",solid:"#2563eb",bg:"rgb(219 234 254)",fg:"#1e40af",badge:"bg-blue-100 text-blue-800"},
+    rest:{label:"После дежурства",short:"ОТД",code:"REST_AFTER_DUTY",solid:"#d97706",bg:"rgb(254 243 199)",fg:"#92400e",badge:"bg-amber-100 text-amber-800"},
+    service:{label:"В строю",short:"",code:"IN_SERVICE",solid:"#16a34a",bg:"transparent",fg:"#166534",badge:"bg-green-100 text-green-800"},
+    vac:{label:"В отпуске",short:"ОТП",code:"VACATION",solid:"#94a3b8",bg:"hsl(210 40% 94%)",fg:"hsl(215 16% 40%)",badge:"bg-secondary text-secondary-foreground"}
+  })[st];}
+  project(name){
+    const days=[14,15,16,17,18,19,20], map={};
+    days.forEach(d=>map[d]="service");
+    const v=this.vac[name]; if(v){days.forEach(d=>{if(d>=v.from&&d<=v.to)map[d]="vac";});}
+    const sh=this.shifts[name];
+    if(sh){ if(map[sh.day]!=="vac")map[sh.day]="duty";
+      if(map[sh.day-1]&&map[sh.day-1]!=="vac")map[sh.day-1]="before";
+      if(map[sh.day+1]&&map[sh.day+1]!=="vac")map[sh.day+1]="rest"; }
+    return map;
+  }
+  conflictFor(name){
+    if(this.vac[name])return {kind:"hard",code:"VACATION",http:422,icon:"⛔",title:"Жёсткий блок",msg:"Сотрудник в отпуске 14–20.07.2026. Назначение на дежурство невозможно — обход недоступен."};
+    if(name==="Н. Жумабеков")return {kind:"soft",code:"REST_VIOLATION_CONFLICT",http:409,icon:"⚠",title:"Нарушение отдыха",msg:"Назначение нарушает обязательный отдых после суточного дежурства (17→18.07).",oq:"OQ-3: жёсткость правила уточняется у заказчика — сейчас soft-warning."};
+    if(name==="Р. Бекенов")return {kind:"soft",code:"DUTY_OVERLAP_CONFLICT",http:409,icon:"⚠",title:"Пересечение смен",msg:"Пересечение с уже назначенной сменой 18.07 (Тех-узел)."};
+    return null;
+  }
+  renderVals(){
+    const s=this.state;
+    const days=[{d:14,wd:"Пн",we:false},{d:15,wd:"Вт",we:false},{d:16,wd:"Ср",we:false},{d:17,wd:"Чт",we:false},{d:18,wd:"Пт",we:false},{d:19,wd:"Сб",we:true},{d:20,wd:"Вс",we:true}];
+    const dayCol=d=>d.we?"#dc2626":"hsl(215.4 16.3% 46.9%)";
+    const legend=[{label:"До дежурства",color:"#6366f1"},{label:"На дежурстве",color:"#2563eb"},{label:"После дежурства",color:"#d97706"},{label:"В строю",color:"#16a34a"}];
+    const cellBase={position:"relative",width:"52px",height:"34px",borderRadius:"8px",border:"0",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:"10px",fontWeight:800,letterSpacing:".03em"};
+    const gridRows=this.emps.map(e=>{const proj=this.project(e.name);
+      const cells=days.map(dd=>{const st=proj[dd.d], m=this.meta(st);
+        const isDuty=st==="duty", clickable=isDuty;
+        const warn=(e.name==="Н. Жумабеков"&&dd.d===18);
+        return {short:m.short, aria:e.name+" "+dd.d+".07 "+m.label,
+          st:{...cellBase,background:st==="service"?"hsl(210 40% 97%)":m.bg,color:m.fg,cursor:clickable?"pointer":"default",boxShadow:isDuty?"inset 0 0 0 1.5px "+m.solid:"none",opacity:st==="vac"?.85:1},
+          warn, warnColor:"#d97706",
+          onClick:clickable?(()=>this.setState({selShift:e.name,asgOpen:false})):(()=>{})};});
+      return {name:e.name,unit:e.unit,ini:this.ini(e.name),avCls:this.badge(e.tone),cells};});
+    const cnt=st=>days.map(dd=>this.emps.filter(e=>this.project(e.name)[dd.d]===st).length);
+    const totalRows=[
+      {label:"До дежурства",color:"#4338ca",vals:cnt("before")},
+      {label:"На дежурстве",color:"#1e40af",vals:cnt("duty")},
+      {label:"После дежурства",color:"#92400e",vals:cnt("rest")},
+      {label:"В строю",color:"#166534",vals:cnt("service")}
+    ];
+    let sc=null;
+    if(s.selShift){const sh=this.shifts[s.selShift], e=this.emps.find(x=>x.name===s.selShift);
+      sc={emp:s.selShift,rank:e.rank,unit:e.unit,post:sh.post,shift:"07:00 "+sh.day+".07 → 07:00 "+(sh.day+1)+".07",
+        proj:[
+          {label:"До дежурства",range:(sh.day-1)+".07 · 24 ч (условно)",code:"BEFORE_DUTY",solid:"#6366f1",badge:"bg-indigo-100 text-indigo-800"},
+          {label:"На дежурстве",range:sh.day+".07 · 24 ч",code:"DUTY",solid:"#2563eb",badge:"bg-blue-100 text-blue-800"},
+          {label:"После дежурства",range:(sh.day+1)+".07 · 24 ч",code:"REST_AFTER_DUTY",solid:"#d97706",badge:"bg-amber-100 text-amber-800"}
+        ]};}
+    const asgEmpOpts=this.emps.map(e=>e.name);
+    const asgEmp=s.asgEmp||asgEmpOpts[0];
+    const conf=this.conflictFor(asgEmp);
+    const confTones={hard:{bg:"rgb(254 226 226)",fg:"#991b1b"},soft:{bg:"rgb(254 243 199)",fg:"#92400e"}};
+    const ct=conf?confTones[conf.kind]:null;
+    const asgSoft=conf&&conf.kind==="soft";
+    const asgHard=conf&&conf.kind==="hard";
+    const reasonOk=s.asgReason.trim().length>=10&&s.asgReason.trim().length<=500;
+    const saveEnabled=!asgHard&&(!asgSoft||reasonOk);
+    return {
+      legend, days:days.map(d=>({d:d.d,wd:d.wd,col:dayCol(d)})),
+      gridRows, totalRows,
+      fWeek:()=>this.say("Навигация по неделям — демо"),
+      openAssign:()=>this.setState({asgOpen:true,selShift:null,asgEmp:"",asgReason:""}),
+      selShift:!!s.selShift, sc, closeShift:()=>this.setState({selShift:null}),
+      asgOpen:s.asgOpen, closeAssign:()=>this.setState({asgOpen:false}),
+      asgEmpOpts, asgEmp, setAsgEmp:e=>this.setState({asgEmp:e.target.value,asgReason:""}),
+      asgConflict:!!conf, asgConfStyle:conf?("background:"+ct.bg+";color:"+ct.fg):"", asgConfIcon:conf?conf.icon:"", asgConfTitle:conf?conf.title:"", asgConfMsg:conf?conf.msg:"", asgCode:conf?conf.code:"", asgHttp:conf?conf.http:"", asgOq:conf&&conf.oq?conf.oq:"",
+      asgSoft, asgReason:s.asgReason, setAsgReason:e=>this.setState({asgReason:e.target.value}), asgReasonLen:s.asgReason.trim().length,
+      asgSaveSt:{width:"100%",height:"40px",borderRadius:"8px",border:"0",fontSize:"13px",fontWeight:600,background:saveEnabled?"hsl(var(--primary))":"hsl(210 40% 92%)",color:saveEnabled?"#fff":"hsl(215 16% 55%)",cursor:saveEnabled?"pointer":"not-allowed"},
+      asgSaveLabel:asgHard?"Обход невозможен":asgSoft?"Сохранить с обоснованием":"Назначить смену",
+      saveAssign:()=>{if(asgHard){this.say("Hard-block: назначение "+asgEmp+" невозможно");return;}if(asgSoft&&!reasonOk){this.say("Укажите причину обхода (10–500 символов)");return;}this.setState({asgOpen:false,asgReason:""});this.say(asgSoft?"Смена назначена с обоснованием — конфликт зафиксирован в аудите":"Смена назначена: "+asgEmp);},
+      toast:s.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

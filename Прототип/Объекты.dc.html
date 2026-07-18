@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/styles.css">
+<script src="_ds/vaps-design-system-73608d4f-cf62-41a0-a954-53ab820a98c3/_ds_bundle.js"></script>
+<style>
+body{margin:0;background:hsl(210 40% 97.5%);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
+a{color:hsl(221.2 83.2% 53.3%);text-decoration:none}a:hover{color:hsl(221.2 75% 44%)}
+button{font:inherit;cursor:pointer}input,select,textarea{font:inherit}
+@keyframes vapsToast{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes vapsPulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes cascIn{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div class="{{ rootCls }}" style="min-height:{{ rootMinH }};color:hsl(var(--foreground))">
+<sc-if value="{{ chrome }}" hint-placeholder-val="{{ true }}">
+<div class="dark" style="position:fixed;top:0;bottom:0;left:0;width:256px;z-index:30">
+<aside class="bg-sidebar" style="height:100%;display:flex;flex-direction:column;border-right:1px solid hsl(var(--sidebar-border))">
+<div style="height:64px;display:flex;align-items:center;gap:11px;padding:0 18px;border-bottom:1px solid hsl(var(--sidebar-border));flex:0 0 auto">
+<div style="width:36px;height:36px;border-radius:10px;background:hsl(var(--primary));display:grid;place-items:center;color:#fff;font-weight:800;font-size:13px">SЖ</div>
+<div>
+<div style="font-weight:700;font-size:15px;letter-spacing:.06em;color:hsl(var(--sidebar-foreground))">Smart Жоспарлау</div>
+<div style="font-size:10.5px;color:hsl(var(--sidebar-foreground) / .55);margin-top:1px">Силы и мероприятия</div>
+</div>
+</div>
+<nav style="flex:1;overflow:auto;padding:14px 10px">
+<p style="margin:0 10px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.12em;font-weight:700;color:hsl(var(--sidebar-foreground) / .45)">Обзор</p>
+<a href="VAPS Prototype.dc.html" style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:hsl(var(--sidebar-foreground) / .72)" style-hover="background:hsl(var(--sidebar-accent) / .5)"><span style="width:20px;text-align:center">⌂</span>Командный центр</a>
+<p style="margin:14px 10px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.12em;font-weight:700;color:hsl(var(--sidebar-foreground) / .45)">Личный состав</p>
+<a href="VAPS Prototype.dc.html" style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:hsl(var(--sidebar-foreground) / .72)" style-hover="background:hsl(var(--sidebar-accent) / .5)"><span style="width:20px;text-align:center">◎</span>Сотрудники и штат</a>
+<a href="VAPS Prototype.dc.html" style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:hsl(var(--sidebar-foreground) / .72)" style-hover="background:hsl(var(--sidebar-accent) / .5)"><span style="width:20px;text-align:center">●</span>Расход и светофор</a>
+<p style="margin:14px 10px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.12em;font-weight:700;color:hsl(var(--sidebar-foreground) / .45)">Служба</p>
+<button style="display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:8px;font-size:13px;font-weight:600;text-align:left;background:hsl(var(--primary));color:hsl(var(--primary-foreground))" onClick="{{ goList }}"><span style="width:20px;text-align:center">◇</span>Объекты и паспорта</button>
+<a href="VAPS Prototype.dc.html" style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:hsl(var(--sidebar-foreground) / .72)" style-hover="background:hsl(var(--sidebar-accent) / .5)"><span style="width:20px;text-align:center">◫</span>План дежурств</a>
+<p style="margin:14px 10px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.12em;font-weight:700;color:hsl(var(--sidebar-foreground) / .45)">Охранные мероприятия</p>
+<a href="VAPS Prototype.dc.html" style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:hsl(var(--sidebar-foreground) / .72)" style-hover="background:hsl(var(--sidebar-accent) / .5)"><span style="width:20px;text-align:center">◆</span>Реестр ОМ</a>
+<a href="VAPS Prototype.dc.html" style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:hsl(var(--sidebar-foreground) / .72)" style-hover="background:hsl(var(--sidebar-accent) / .5)"><span style="width:20px;text-align:center">⇄</span>Потребность</a>
+<p style="margin:14px 10px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.12em;font-weight:700;color:hsl(var(--sidebar-foreground) / .45)">Контроль</p>
+<a href="VAPS Prototype.dc.html" style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:hsl(var(--sidebar-foreground) / .72)" style-hover="background:hsl(var(--sidebar-accent) / .5)"><span style="width:20px;text-align:center">◌</span>Аудит и настройки</a>
+</nav>
+<div style="padding:12px;border-top:1px solid hsl(var(--sidebar-border));flex:0 0 auto">
+<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:hsl(var(--sidebar-foreground) / .55);padding:0 6px 10px"><span style="width:7px;height:7px;border-radius:99px;background:#22c55e;animation:vapsPulse 2.5s infinite"></span>Закрытый контур · связь есть</div>
+<div style="display:flex;align-items:center;gap:9px;padding:6px">
+<span class="bg-blue-100 text-blue-800" style="width:32px;height:32px;border-radius:99px;display:grid;place-items:center;font-size:11px;font-weight:700;flex:0 0 auto">{{ userInitials }}</span>
+<span style="flex:1;min-width:0"><span style="display:block;font-size:12px;font-weight:600;color:hsl(var(--sidebar-foreground))">{{ userName }}</span><span style="display:block;font-size:10px;color:hsl(var(--sidebar-foreground) / .55);margin-top:1px">{{ roleLabel }}</span></span>
+</div>
+</div>
+</aside>
+</div>
+</sc-if>
+<div style="min-width:0;margin-left:{{ mainOffset }}">
+<sc-if value="{{ chrome }}" hint-placeholder-val="{{ true }}">
+<header style="height:56px;background:hsl(var(--card));border-bottom:1px solid hsl(var(--border));display:flex;justify-content:space-between;align-items:center;padding:0 24px;position:sticky;top:0;z-index:20">
+<div style="display:flex;align-items:center;gap:8px;font-size:12.5px">
+<span style="color:hsl(var(--muted-foreground))">Smart Жоспарлау</span><span style="color:hsl(var(--muted-foreground) / .5)">/</span><button style="border:0;background:none;padding:0;color:hsl(var(--muted-foreground));font-size:12.5px" onClick="{{ goList }}">Объекты и паспорта</button>
+<sc-if value="{{ crumb2 }}" hint-placeholder-val="{{ false }}"><span style="color:hsl(var(--muted-foreground) / .5)">/</span><strong style="font-weight:600">{{ crumb2 }}</strong></sc-if>
+</div>
+<span class="bg-secondary" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;font-size:11.5px;font-weight:600;color:hsl(var(--secondary-foreground))">Роль: {{ roleLabel }}</span>
+</header>
+</sc-if>
+<main style="max-width:1360px;margin:0 auto;padding:{{ mainPad }}">
+
+<sc-if value="{{ scrList }}" hint-placeholder-val="{{ true }}">
+<div data-screen-label="Список объектов">
+<header style="display:flex;justify-content:space-between;align-items:flex-end;margin:4px 0 20px;gap:16px;flex-wrap:wrap">
+<div>
+<p style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.12em;color:hsl(var(--primary));font-size:10.5px;font-weight:700">Объектно-центричная модель</p>
+<h1 style="font-size:25px;line-height:1.15;margin:0 0 6px;letter-spacing:-.02em;font-weight:700">Объекты и паспорта</h1>
+<span style="color:hsl(var(--muted-foreground));font-size:12.5px">Электронный паспорт каждого охраняемого места — чтобы не готовиться с нуля перед каждым ОМ</span>
+</div>
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ fNewObject }}">Новый объект</button>
+</header>
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+<input style="flex:1;min-width:260px;border:1px solid hsl(var(--border));background:hsl(var(--card));color:hsl(var(--foreground));border-radius:8px;height:36px;padding:0 12px;outline:none;font-size:13px" style-focus="border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(221.2 83.2% 53.3% / .15)" placeholder="Поиск по названию, типу или ответственному" value="{{ q }}" onChange="{{ onQ }}" aria-label="Поиск объектов">
+<sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+<button class="{{ f.cls }}" style="{{ f.st }}" onClick="{{ f.pick }}">
+<sc-if value="{{ f.dot }}" hint-placeholder-val="{{ false }}"><span style="width:8px;height:8px;border-radius:99px;background:{{ f.dot }}"></span></sc-if>
+{{ f.label }}<span style="opacity:.65;font-weight:700">{{ f.count }}</span>
+</button>
+</sc-for>
+</div>
+<div style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:15px 16px 12px">
+<div><div style="font-size:13.5px;font-weight:600">Список объектов</div><div style="font-size:11.5px;color:hsl(var(--muted-foreground));margin-top:2px">Показано {{ shownCount }} из {{ totalCount }}</div></div>
+</div>
+<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+<thead><tr>
+<th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:600;color:hsl(var(--muted-foreground));border-bottom:1px solid hsl(var(--border));background:hsl(var(--muted) / .4)">Объект</th>
+<th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:600;color:hsl(var(--muted-foreground));border-bottom:1px solid hsl(var(--border));background:hsl(var(--muted) / .4)">Ответственное лицо</th>
+<th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:600;color:hsl(var(--muted-foreground));border-bottom:1px solid hsl(var(--border));background:hsl(var(--muted) / .4)">Статус паспорта</th>
+<th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:600;color:hsl(var(--muted-foreground));border-bottom:1px solid hsl(var(--border));background:hsl(var(--muted) / .4)">Посты / секторы</th>
+<th style="text-align:left;padding:10px 14px;font-size:11px;font-weight:600;color:hsl(var(--muted-foreground));border-bottom:1px solid hsl(var(--border));background:hsl(var(--muted) / .4)">Последняя проверка</th>
+<th style="border-bottom:1px solid hsl(var(--border));background:hsl(var(--muted) / .4)"></th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ rows }}" as="o" hint-placeholder-count="5">
+<tr style="cursor:pointer" style-hover="background:hsl(var(--muted) / .35)" onClick="{{ o.open }}">
+<td style="padding:12px 14px;border-bottom:1px solid hsl(var(--border) / .6)"><strong style="display:block;font-weight:600">{{ o.name }}</strong><span style="font-size:11.5px;color:hsl(var(--muted-foreground))">{{ o.type }} · {{ o.addr }}</span></td>
+<td style="padding:12px 14px;border-bottom:1px solid hsl(var(--border) / .6)">{{ o.resp }}</td>
+<td style="padding:12px 14px;border-bottom:1px solid hsl(var(--border) / .6)"><span class="{{ o.stCls }}" style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600"><span style="width:7px;height:7px;border-radius:99px;background:{{ o.stDot }}"></span>{{ o.stLabel }}</span></td>
+<td style="padding:12px 14px;border-bottom:1px solid hsl(var(--border) / .6);font-variant-numeric:tabular-nums">{{ o.posts }} / {{ o.sectors }}</td>
+<td style="padding:12px 14px;border-bottom:1px solid hsl(var(--border) / .6);color:hsl(var(--muted-foreground))">{{ o.checked }}</td>
+<td style="padding:12px 14px;border-bottom:1px solid hsl(var(--border) / .6);text-align:center;color:hsl(var(--muted-foreground) / .7);font-size:16px">›</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+<sc-if value="{{ emptyRows }}" hint-placeholder-val="{{ false }}">
+<div style="padding:40px;display:flex;flex-direction:column;align-items:center;gap:9px;color:hsl(var(--muted-foreground))">
+<b style="color:hsl(var(--foreground))">Ничего не найдено</b>
+<span style="font-size:12px">Измените запрос или сбросьте фильтры.</span>
+<button style="height:34px;padding:0 13px;border-radius:8px;background:hsl(var(--card));border:1px solid hsl(var(--border));color:hsl(var(--foreground));font-size:12.5px;font-weight:500" style-hover="background:hsl(var(--muted) / .5)" onClick="{{ resetFilters }}">Сбросить фильтры</button>
+</div>
+</sc-if>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ scrPass }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Паспорт объекта">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:hsl(var(--card));border:1px solid hsl(var(--border));color:hsl(var(--foreground));font-size:13px;font-weight:500;margin-bottom:12px" style-hover="background:hsl(var(--muted) / .5)" onClick="{{ goList }}">← К списку объектов</button>
+<header style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+<div>
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+<h1 style="font-size:23px;margin:0;letter-spacing:-.02em;font-weight:700">{{ obj.name }}</h1>
+<span class="{{ obj.stCls }}" style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600"><span style="width:7px;height:7px;border-radius:99px;background:{{ obj.stDot }}"></span>{{ obj.stLabel }}</span>
+</div>
+<span style="color:hsl(var(--muted-foreground));font-size:12.5px">{{ obj.type }} · {{ obj.addr }} · Старший объекта: {{ obj.resp }} · проверка {{ obj.checked }}</span>
+</div>
+<div style="display:flex;gap:8px">
+<sc-if value="{{ isSup }}" hint-placeholder-val="{{ false }}">
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" onClick="{{ fConfirmCalc }}">Подтвердить расчёт</button>
+</sc-if>
+<sc-if value="{{ isSenior }}" hint-placeholder-val="{{ true }}">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:hsl(var(--card));border:1px solid hsl(var(--border));color:hsl(var(--foreground));font-size:13px;font-weight:500" style-hover="background:hsl(var(--muted) / .5)" onClick="{{ fEditPassport }}">Редактировать</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ startCheck }}">Пройти проверку</button>
+</sc-if>
+</div>
+</header>
+<sc-if value="{{ redBanner }}" hint-placeholder-val="{{ false }}">
+<div style="border:1px solid hsl(0 72% 85%);background:hsl(0 86% 97%);border-radius:12px;padding:14px 16px;margin-bottom:14px">
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:9px;height:9px;border-radius:99px;background:#dc2626"></span><strong style="font-size:13px;color:hsl(0 63% 31%)">Паспорт не готов — заполните обязательные поля</strong></div>
+<ul style="margin:0;padding-left:22px">
+<sc-for list="{{ missing }}" as="m" hint-placeholder-count="3">
+<li style="font-size:12.5px;color:hsl(0 50% 35%);margin:3px 0">{{ m.t }}</li>
+</sc-for>
+</ul>
+</div>
+</sc-if>
+<sc-if value="{{ depBanner }}" hint-placeholder-val="{{ false }}">
+<div style="border:1px solid hsl(38 80% 78%);background:hsl(45 90% 96%);border-radius:12px;padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+<span style="font-size:12.5px;color:hsl(28 60% 30%)"><strong>Ваш раздел — «Инфраструктура».</strong> Обновите данные до ОМ «Международный экономический форум», 17 июля.</span>
+<button style="height:32px;padding:0 12px;border-radius:8px;border:1px solid hsl(38 70% 70%);background:#fff;color:hsl(28 60% 30%);font-size:12px;font-weight:600" onClick="{{ goInfra }}">Перейти к разделу</button>
+</div>
+</sc-if>
+<div role="tablist" style="display:flex;gap:2px;border-bottom:1px solid hsl(var(--border));margin-bottom:18px;overflow-x:auto">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="7">
+<button role="tab" style="{{ t.st }}" onClick="{{ t.pick }}">{{ t.label }}</button>
+</sc-for>
+</div>
+
+<sc-if value="{{ tGeneral }}" hint-placeholder-val="{{ true }}">
+<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;align-items:start">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:10px">Общие данные</div>
+<sc-for list="{{ genFields }}" as="g" hint-placeholder-count="5">
+<div style="display:grid;grid-template-columns:190px 1fr;align-items:center;padding:11px 0;border-bottom:1px solid hsl(var(--border) / .5)"><span style="font-size:11.5px;color:hsl(var(--muted-foreground))">{{ g.k }}</span><span style="font-size:13px;font-weight:500">{{ g.v }}</span></div>
+</sc-for>
+</section>
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:10px">Схемы и фотографии</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+<sc-for list="{{ docs }}" as="d" hint-placeholder-count="4">
+<button style="{{ d.st }}" onClick="{{ d.pick }}">
+<span style="font-size:18px">{{ d.icon }}</span>
+<span style="font-size:11.5px;font-weight:600">{{ d.t }}</span>
+<span style="font-size:10.5px;color:hsl(var(--muted-foreground))">{{ d.note }}</span>
+</button>
+</sc-for>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{ tInfra }}" hint-placeholder-val="{{ false }}">
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:start">
+<sc-for list="{{ infra }}" as="c" hint-placeholder-count="6">
+<section style="{{ c.st }}">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:9px"><span style="font-size:13px;font-weight:600">{{ c.title }}</span>
+<sc-if value="{{ c.warn }}" hint-placeholder-val="{{ false }}"><span class="bg-amber-100 text-amber-800" style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700">Внимание</span></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:6px">
+<sc-for list="{{ c.rows }}" as="i" hint-placeholder-count="3">
+<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:hsl(var(--foreground) / .85)"><span style="width:5px;height:5px;border-radius:99px;background:{{ i.dot }};flex:0 0 auto"></span>{{ i.t }}</div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ tPosts }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+<span style="font-size:12.5px;color:hsl(var(--muted-foreground))">{{ postsNote }}</span>
+<div style="display:flex;gap:8px">
+<button style="height:34px;padding:0 13px;border-radius:8px;border:1px solid hsl(var(--border));background:hsl(var(--card));color:hsl(var(--foreground));font-size:12.5px;font-weight:500" style-hover="background:hsl(var(--muted) / .5)" onClick="{{ newSector }}">Добавить сектор</button>
+<button style="height:34px;padding:0 13px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:12.5px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ newPost }}">Добавить пост</button>
+</div>
+</div>
+<div style="max-width:760px">
+<sc-for list="{{ secCasc }}" as="sc" hint-placeholder-count="4">
+<div>
+<button style="{{ sc.st }}" style-hover="border-color:hsl(var(--primary) / .5);box-shadow:0 3px 10px rgba(37,99,235,.09)" onClick="{{ sc.pick }}">
+<span style="{{ sc.icoSt }}">▦</span>
+<span style="flex:1;min-width:0"><span style="display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Сектор «{{ sc.name }}»</span><span style="display:block;font-size:10.5px;color:hsl(var(--muted-foreground));margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ sc.sub }}</span></span>
+<span style="{{ sc.chevSt }}">›</span>
+</button>
+<sc-if value="{{ sc.open }}" hint-placeholder-val="{{ false }}">
+<div style="margin-left:24px;padding-left:16px;border-left:2px solid hsl(var(--primary) / .22);margin-top:2px">
+<sc-for list="{{ sc.postRows }}" as="p" hint-placeholder-count="2">
+<button style="{{ p.st }}" style-hover="border-color:hsl(var(--primary) / .5);box-shadow:0 3px 10px rgba(37,99,235,.09)" onClick="{{ p.edit }}">
+<span style="{{ p.icoSt }}">{{ p.n }}</span>
+<span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.title }}</span><span style="display:block;font-size:10.5px;color:hsl(var(--muted-foreground));margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.sub }}</span></span>
+<span class="{{ p.typeCls }}" style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:600;white-space:nowrap">{{ p.type }}</span>
+<span style="font-size:11px;color:hsl(var(--muted-foreground));white-space:nowrap;font-variant-numeric:tabular-nums">{{ p.max }}</span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ tCheck }}" hint-placeholder-val="{{ false }}">
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:2px">Контрольные вопросы</div>
+<div style="font-size:11.5px;color:hsl(var(--muted-foreground));margin-bottom:12px">Типовой набор + дополнения под этот объект</div>
+<sc-for list="{{ checkRows }}" as="q" hint-placeholder-count="8">
+<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid hsl(var(--border) / .5)">
+<span style="font-size:11px;color:hsl(var(--muted-foreground));font-variant-numeric:tabular-nums;min-width:20px;padding-top:1px">{{ q.n }}</span>
+<span style="font-size:12.5px;flex:1">{{ q.t }}</span>
+<sc-if value="{{ q.extra }}" hint-placeholder-val="{{ false }}"><span class="bg-purple-100 text-purple-800" style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;flex:0 0 auto">Этот объект</span></sc-if>
+</div>
+</sc-for>
+</section>
+<aside style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px">
+<div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Проверка объекта</div>
+<p style="font-size:12px;color:hsl(var(--muted-foreground));line-height:1.55;margin:0 0 12px">Пошаговое прохождение чек-листа. В конце — решение по расчёту постов и секторов с обоснованием.</p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+<div style="border:1px solid hsl(var(--border));border-radius:8px;padding:10px"><span style="display:block;font-size:10.5px;color:hsl(var(--muted-foreground))">Последняя</span><strong style="font-size:13px">{{ obj.checked }}</strong></div>
+<div style="border:1px solid hsl(var(--border));border-radius:8px;padding:10px"><span style="display:block;font-size:10.5px;color:hsl(var(--muted-foreground))">Вопросов</span><strong style="font-size:13px">{{ qTotal }}</strong></div>
+</div>
+<sc-if value="{{ isSenior }}" hint-placeholder-val="{{ true }}">
+<button style="width:100%;height:38px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ startCheck }}">Пройти проверку</button>
+</sc-if>
+<sc-if value="{{ notSenior }}" hint-placeholder-val="{{ false }}">
+<p style="font-size:11.5px;color:hsl(var(--muted-foreground));margin:0">Проверку проходит старший объекта. Вам доступен просмотр результатов.</p>
+</sc-if>
+</aside>
+</div>
+</sc-if>
+
+<sc-if value="{{ tGroups }}" hint-placeholder-val="{{ false }}">
+<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+<sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+<div><div style="font-size:13.5px;font-weight:600">{{ g.name }}</div><div style="font-size:11.5px;color:hsl(var(--muted-foreground));margin-top:3px">{{ g.note }}</div></div>
+<span class="bg-secondary" style="padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;color:hsl(var(--secondary-foreground));flex:0 0 auto">{{ g.tag }}</span>
+</section>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ tHistory }}" hint-placeholder-val="{{ false }}">
+<div style="display:inline-flex;background:hsl(var(--muted) / .6);border-radius:9px;padding:3px;gap:2px;margin-bottom:14px">
+<button style="{{ histAst }}" onClick="{{ histA }}">Изменения паспорта</button>
+<button style="{{ histBst }}" onClick="{{ histB }}">Мероприятия и инциденты</button>
+</div>
+<sc-if value="{{ histChanges }}" hint-placeholder-val="{{ true }}">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:6px 17px">
+<sc-for list="{{ changes }}" as="h" hint-placeholder-count="4">
+<div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid hsl(var(--border) / .5)">
+<span class="bg-blue-100 text-blue-800" style="width:28px;height:28px;border-radius:99px;display:grid;place-items:center;font-size:10px;font-weight:700;flex:0 0 auto">{{ h.ini }}</span>
+<div style="flex:1"><div style="font-size:12.5px;line-height:1.5"><strong style="font-weight:600">{{ h.who }}</strong> — {{ h.what }}</div><div style="font-size:11px;color:hsl(var(--muted-foreground));margin-top:2px">{{ h.when }}</div></div>
+</div>
+</sc-for>
+</section>
+</sc-if>
+<sc-if value="{{ histEvents }}" hint-placeholder-val="{{ false }}">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:6px 17px">
+<sc-for list="{{ events }}" as="e" hint-placeholder-count="3">
+<div style="display:flex;gap:14px;align-items:flex-start;padding:13px 0;border-bottom:1px solid hsl(var(--border) / .5)">
+<span style="font-size:11.5px;color:hsl(var(--muted-foreground));font-variant-numeric:tabular-nums;min-width:78px;padding-top:2px">{{ e.d }}</span>
+<div style="flex:1"><div style="font-size:13px;font-weight:600">{{ e.t }}</div><div style="font-size:11.5px;color:hsl(var(--muted-foreground));margin-top:2px">{{ e.note }}</div></div>
+<span class="{{ e.bCls }}" style="padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:600;flex:0 0 auto">{{ e.b }}</span>
+</div>
+</sc-for>
+</section>
+</sc-if>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ scrCheck }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Прохождение чек-листа" style="max-width:720px;margin:0 auto">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:hsl(var(--card));border:1px solid hsl(var(--border));color:hsl(var(--foreground));font-size:13px;font-weight:500;margin-bottom:12px" style-hover="background:hsl(var(--muted) / .5)" onClick="{{ backToPass }}">← Вернуться в паспорт (прогресс сохранится)</button>
+<header style="margin-bottom:16px">
+<h1 style="font-size:23px;margin:0 0 4px;letter-spacing:-.02em;font-weight:700">Проверка объекта · {{ obj.name }}</h1>
+<span style="color:hsl(var(--muted-foreground));font-size:12.5px">{{ stepNote }}</span>
+</header>
+<div style="height:6px;border-radius:99px;background:hsl(var(--muted));overflow:hidden;margin-bottom:18px" aria-label="Прогресс проверки"><div style="height:100%;border-radius:99px;background:hsl(var(--primary));width:{{ pct }};transition:width .3s"></div></div>
+<sc-if value="{{ notFinal }}" hint-placeholder-val="{{ true }}">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:22px">
+<sc-if value="{{ qExtra }}" hint-placeholder-val="{{ false }}"><span class="bg-purple-100 text-purple-800" style="display:inline-flex;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;margin-bottom:10px">Дополнение для этого объекта</span></sc-if>
+<h2 style="font-size:16.5px;margin:0 0 16px;line-height:1.45;font-weight:600">{{ qText }}</h2>
+<div style="display:flex;gap:8px;margin-bottom:14px">
+<sc-for list="{{ ansOpts }}" as="a" hint-placeholder-count="3">
+<button style="{{ a.st }}" onClick="{{ a.pick }}">{{ a.label }}</button>
+</sc-for>
+</div>
+<textarea style="width:100%;box-sizing:border-box;border:1px solid hsl(var(--border));border-radius:8px;padding:10px 12px;font-size:12.5px;min-height:64px;resize:vertical;background:hsl(var(--background));color:hsl(var(--foreground))" style-focus="border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(221.2 83.2% 53.3% / .15)" placeholder="Комментарий (обязателен при ответе «Нет»)" value="{{ qComment }}" onChange="{{ onComment }}"></textarea>
+</section>
+<div style="display:flex;justify-content:space-between;margin-top:14px">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:hsl(var(--card));border:1px solid hsl(var(--border));color:hsl(var(--foreground));font-size:13px;font-weight:500" onClick="{{ stepBack }}" disabled="{{ backDisabled }}">Назад</button>
+<button style="{{ nextSt }}" onClick="{{ stepNext }}" disabled="{{ nextDisabled }}">{{ nextLabel }}</button>
+</div>
+</sc-if>
+<sc-if value="{{ isFinal }}" hint-placeholder-val="{{ false }}">
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:22px;margin-bottom:14px">
+<h2 style="font-size:16px;margin:0 0 12px;font-weight:700">Итоги проверки</h2>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
+<div style="border:1px solid hsl(var(--border));border-radius:8px;padding:11px"><span style="display:block;font-size:10.5px;color:hsl(var(--muted-foreground))">Да</span><strong style="font-size:19px;color:#15803d">{{ cntYes }}</strong></div>
+<div style="border:1px solid hsl(var(--border));border-radius:8px;padding:11px"><span style="display:block;font-size:10.5px;color:hsl(var(--muted-foreground))">Нет</span><strong style="font-size:19px;color:#b91c1c">{{ cntNo }}</strong></div>
+<div style="border:1px solid hsl(var(--border));border-radius:8px;padding:11px"><span style="display:block;font-size:10.5px;color:hsl(var(--muted-foreground))">Не применимо</span><strong style="font-size:19px">{{ cntNa }}</strong></div>
+</div>
+<sc-if value="{{ hasNo }}" hint-placeholder-val="{{ false }}">
+<div style="border:1px solid hsl(0 72% 88%);background:hsl(0 86% 97.5%);border-radius:10px;padding:12px 14px;margin-bottom:4px">
+<strong style="font-size:12px;color:hsl(0 63% 31%);display:block;margin-bottom:6px">Замечания («Нет»):</strong>
+<sc-for list="{{ noList }}" as="n" hint-placeholder-count="2">
+<div style="font-size:12px;color:hsl(0 50% 35%);margin:3px 0">• {{ n.t }}<sc-if value="{{ n.c }}" hint-placeholder-val="{{ false }}"> — {{ n.c }}</sc-if></div>
+</sc-for>
+</div>
+</sc-if>
+</section>
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:22px">
+<h2 style="font-size:15px;margin:0 0 4px;font-weight:700">Решение по расчёту постов и секторов</h2>
+<p style="font-size:12px;color:hsl(var(--muted-foreground));margin:0 0 12px">Обоснование обязательно и попадёт в историю паспорта</p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+<sc-for list="{{ decOpts }}" as="d" hint-placeholder-count="2">
+<button style="{{ d.st }}" onClick="{{ d.pick }}"><strong style="display:block;font-size:13px;margin-bottom:4px">{{ d.t }}</strong><span style="font-size:11.5px;color:hsl(var(--muted-foreground));line-height:1.45">{{ d.note }}</span></button>
+</sc-for>
+</div>
+<textarea style="width:100%;box-sizing:border-box;border:1px solid hsl(var(--border));border-radius:8px;padding:10px 12px;font-size:12.5px;min-height:84px;resize:vertical;background:hsl(var(--background));color:hsl(var(--foreground))" style-focus="border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(221.2 83.2% 53.3% / .15)" placeholder="Обоснование решения…" value="{{ why }}" onChange="{{ onWhy }}"></textarea>
+<div style="display:flex;justify-content:space-between;margin-top:14px">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:hsl(var(--card));border:1px solid hsl(var(--border));color:hsl(var(--foreground));font-size:13px;font-weight:500" onClick="{{ stepBack }}">Назад</button>
+<button style="{{ finishSt }}" onClick="{{ finish }}" disabled="{{ finishDisabled }}">Завершить проверку</button>
+</div>
+</section>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ scrForm }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Форма поста и сектора" style="max-width:680px;margin:0 auto">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:hsl(var(--card));border:1px solid hsl(var(--border));color:hsl(var(--foreground));font-size:13px;font-weight:500;margin-bottom:12px" style-hover="background:hsl(var(--muted) / .5)" onClick="{{ cancelForm }}">← Отмена, вернуться в паспорт</button>
+<h1 style="font-size:23px;margin:0 0 16px;letter-spacing:-.02em;font-weight:700">{{ formTitle }}</h1>
+<section style="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:22px;display:flex;flex-direction:column;gap:16px">
+<div style="display:grid;grid-template-columns:130px 1fr;gap:10px">
+<label style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;font-weight:700;color:hsl(var(--muted-foreground))">Номер
+<input style="height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 11px;font-size:13px;background:hsl(var(--background));color:hsl(var(--foreground))" style-focus="border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(221.2 83.2% 53.3% / .15)" value="{{ fv.num }}" onChange="{{ fNum }}" placeholder="П-8">
+</label>
+<label style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;font-weight:700;color:hsl(var(--muted-foreground))">Название поста
+<input style="height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 11px;font-size:13px;background:hsl(var(--background));color:hsl(var(--foreground))" style-focus="border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(221.2 83.2% 53.3% / .15)" value="{{ fv.title }}" onChange="{{ fTitle }}" placeholder="Например: Восточный вход">
+</label>
+</div>
+<div>
+<span style="display:block;font-size:11.5px;font-weight:700;color:hsl(var(--muted-foreground));margin-bottom:6px">Тип поста</span>
+<div style="display:flex;gap:8px">
+<sc-for list="{{ typeOpts }}" as="t" hint-placeholder-count="2">
+<button style="{{ t.st }}" onClick="{{ t.pick }}">{{ t.label }}</button>
+</sc-for>
+</div>
+</div>
+<label style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;font-weight:700;color:hsl(var(--muted-foreground))">Задачи поста
+<textarea style="border:1px solid hsl(var(--border));border-radius:8px;padding:10px 11px;font-size:13px;min-height:64px;resize:vertical;background:hsl(var(--background));color:hsl(var(--foreground))" style-focus="border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(221.2 83.2% 53.3% / .15)" value="{{ fv.tasks }}" onChange="{{ fTasks }}" placeholder="Что контролирует пост, порядок действий"></textarea>
+</label>
+<label style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;font-weight:700;color:hsl(var(--muted-foreground))">Особенности
+<textarea style="border:1px solid hsl(var(--border));border-radius:8px;padding:10px 11px;font-size:13px;min-height:52px;resize:vertical;background:hsl(var(--background));color:hsl(var(--foreground))" style-focus="border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(221.2 83.2% 53.3% / .15)" value="{{ fv.notes }}" onChange="{{ fNotes }}" placeholder="Слепые зоны, соседние посты, особые указания"></textarea>
+</label>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+<label style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;font-weight:700;color:hsl(var(--muted-foreground))">Максимальное время без смены
+<select style="height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 8px;font-size:13px;background:hsl(var(--background));color:hsl(var(--foreground))" style-focus="border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(221.2 83.2% 53.3% / .15)" value="{{ fv.max }}" onChange="{{ fMax }}">
+<option value="2 ч">2 часа</option><option value="4 ч">4 часа</option><option value="6 ч">6 часов</option><option value="8 ч">8 часов</option>
+</select>
+</label>
+<label style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;font-weight:700;color:hsl(var(--muted-foreground))">Сектор
+<select style="height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 8px;font-size:13px;background:hsl(var(--background));color:hsl(var(--foreground))" style-focus="border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(221.2 83.2% 53.3% / .15)" value="{{ fv.sector }}" onChange="{{ fSector }}">
+<option value="Периметр">Периметр</option><option value="Фасад">Фасад</option><option value="Атриум">Атриум</option><option value="Технический">Технический</option><option value="—">Без сектора</option>
+</select>
+</label>
+</div>
+<div>
+<span style="display:block;font-size:11.5px;font-weight:700;color:hsl(var(--muted-foreground));margin-bottom:6px">Требования к сотруднику</span>
+<div style="display:flex;flex-wrap:wrap;gap:7px">
+<sc-for list="{{ reqOpts }}" as="r" hint-placeholder-count="5">
+<button style="{{ r.st }}" onClick="{{ r.pick }}">{{ r.label }}</button>
+</sc-for>
+</div>
+</div>
+<div style="border-top:1px solid hsl(var(--border));padding-top:16px">
+<span style="display:block;font-size:11.5px;font-weight:700;color:hsl(var(--muted-foreground));margin-bottom:6px">Старший сектора «{{ fv.sector }}»</span>
+<select style="width:100%;height:40px;border:1px solid hsl(var(--border));border-radius:8px;padding:0 8px;font-size:13px;background:hsl(var(--background));color:hsl(var(--foreground))" style-focus="border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(221.2 83.2% 53.3% / .15)" value="{{ fv.chief }}" onChange="{{ fChief }}" aria-label="Назначить старшего сектора">
+<option value="">— не назначен —</option>
+<option value="майор Р. Алиев">майор Р. Алиев</option>
+<option value="капитан Е. Досжан">капитан Е. Досжан</option>
+<option value="майор Г. Сулейменова">майор Г. Сулейменова</option>
+<option value="капитан А. Бекетов">капитан А. Бекетов</option>
+</select>
+<p style="font-size:11px;color:hsl(var(--muted-foreground));margin:6px 0 0">Смена старшего применяется ко всему сектору и попадает в историю паспорта</p>
+</div>
+<div style="display:flex;justify-content:flex-end;gap:8px;border-top:1px solid hsl(var(--border));padding-top:16px">
+<button style="height:36px;padding:0 14px;border-radius:8px;background:hsl(var(--card));border:1px solid hsl(var(--border));color:hsl(var(--foreground));font-size:13px;font-weight:500" onClick="{{ cancelForm }}">Отмена</button>
+<button style="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600" style-hover="background:hsl(221.2 75% 46%)" onClick="{{ saveForm }}">Сохранить</button>
+</div>
+</section>
+</div>
+</sc-if>
+
+</main>
+</div>
+<sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+<div role="status" style="position:fixed;right:28px;bottom:28px;z-index:80;background:hsl(222.2 47% 13%);color:#fff;border-radius:10px;padding:13px 17px;box-shadow:0 14px 40px rgba(12,29,57,.3);font-size:12.5px;font-weight:600;animation:vapsToast .25s ease">✓ {{ toast }}</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;Старший объекта&quot;,&quot;options&quot;:[&quot;Старший объекта&quot;,&quot;Контролирующий руководитель&quot;,&quot;Представитель департамента&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Сценарий&quot;},&quot;darkTheme&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Вид&quot;},&quot;embedded&quot;:{&quot;editor&quot;:null,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  state = {screen:"list",q:"",filter:"all",objId:"ob5",tab:"general",secOpen:"",step:0,answers:{},comments:{},decision:"",why:"",toast:null,histMode:"changes",form:this.blankForm(),formEdit:false};
+  componentDidMount(){if(!this.props.embedded){location.replace("VAPS Prototype.dc.html#facilities");}}
+  blankForm(){return {num:"",title:"",type:"Наружный",tasks:"",notes:"",max:"4 ч",sector:"Периметр",chief:"майор Р. Алиев",reqs:[]};}
+  objects = [
+    {id:"ob1",name:"Дворец Независимости",type:"Конгресс-центр",addr:"пр. Тәуелсіздік, 52",resp:"полковник С. Нуртаев",status:"green",checked:"12.07.2026",posts:14,sectors:4,missing:[]},
+    {id:"ob2",name:"Гостиница «Rixos President»",type:"Гостиница",addr:"ул. Кунаева, 7",resp:"подполковник А. Омаров",status:"yellow",checked:"28.06.2026",posts:9,sectors:3,missing:["Схема эвакуации устарела после перепланировки"]},
+    {id:"ob3",name:"Аэропорт, терминал 1",type:"Транспортный узел",addr:"пр. Кабанбай батыра, 119",resp:"полковник Д. Ким",status:"green",checked:"10.07.2026",posts:22,sectors:6,missing:[]},
+    {id:"ob4",name:"Резиденция «Карлыгаш»",type:"Резиденция",addr:"закрытая территория",resp:"полковник М. Абенов",status:"green",checked:"14.07.2026",posts:11,sectors:3,missing:[]},
+    {id:"ob5",name:"Конгресс-центр «EXPO»",type:"Конгресс-центр",addr:"пр. Мәңгілік Ел, 53",resp:"подполковник Т. Жаксылыков",status:"red",checked:"03.06.2026",posts:12,sectors:4,missing:["Схема объекта не прикреплена","Раздел «Уязвимые места» пуст","Сектор «Технический» — старший не назначен","Пост П-7 — требования к сотруднику не заполнены"]},
+    {id:"ob6",name:"Театр «Астана Опера»",type:"Общественное здание",addr:"ул. Қонаев, 1",resp:"майор Б. Сапаров",status:"yellow",checked:"20.06.2026",posts:8,sectors:2,missing:["Фотографии зон посадки-высадки старше 6 месяцев"]}
+  ];
+  postRows = [
+    {n:"П-1",title:"Главный вход",tasks:"Контроль пропускного режима, досмотр посетителей",type:"Наружный",max:"4 ч",reqs:["Допуск «Объект D»","Оружие"],sector:"Фасад"},
+    {n:"П-2",title:"КПП транспорта",tasks:"Досмотр автотранспорта, сверка списков",type:"Наружный",max:"4 ч",reqs:["Оружие","Опыт 2+ ОМ"],sector:"Периметр"},
+    {n:"П-3",title:"Фойе, ярус 1",tasks:"Наблюдение, сопровождение делегаций",type:"Внутренний",max:"6 ч",reqs:["Допуск «Объект D»"],sector:"Атриум"},
+    {n:"П-4",title:"Атриум, ярус 2",tasks:"Контроль верхнего яруса и переходов",type:"Внутренний",max:"6 ч",reqs:["Опыт 2+ ОМ"],sector:"Атриум"},
+    {n:"П-5",title:"Служебный вход",tasks:"Пропуск персонала и технических служб",type:"Наружный",max:"4 ч",reqs:["Допуск «Объект D»"],sector:"Периметр"},
+    {n:"П-7",title:"Крыша пресс-центра",tasks:"Контроль доступа на кровлю",type:"Наружный",max:"2 ч",reqs:[],sector:"Технический"}
+  ];
+  sectorRows = [
+    {name:"Периметр",chief:"майор Р. Алиев",posts:"П-2, П-5 и ещё 3",cnt:5},
+    {name:"Фасад",chief:"капитан Е. Досжан",posts:"П-1 и ещё 2",cnt:3},
+    {name:"Атриум",chief:"майор Г. Сулейменова",posts:"П-3, П-4",cnt:2},
+    {name:"Технический",chief:"",posts:"П-7 и ещё 1",cnt:2,warn:"Старший не назначен"}
+  ];
+  questions = [
+    {t:"Периметр и ограждение целостны, повреждений и посторонних предметов нет"},
+    {t:"Все входы, выходы и служебные входы под контролем или заблокированы"},
+    {t:"Камеры видеонаблюдения исправны, слепые зоны перекрыты постами"},
+    {t:"Связь и радиостанции на всех постах проверены"},
+    {t:"Схема эвакуации соответствует текущей планировке"},
+    {t:"Подъездные пути и зоны посадки-высадки свободны и под контролем"},
+    {t:"Подвалы и технические помещения осмотрены и опечатаны"},
+    {t:"Электроснабжение и резервное питание исправны"},
+    {t:"Доступ на крышу пресс-центра закрыт, датчики активны",extra:true},
+    {t:"Ремонтная зона западного крыла ограждена и под наблюдением",extra:true},
+    {t:"Посты П-3 и П-7 у стеклянного атриума усилены",extra:true}
+  ];
+  infraCats = [
+    {title:"Входы и выходы",items:["Главный вход","Служебные входы ×2","Эвакуационные выходы ×6","Зона посадки-высадки делегаций"]},
+    {title:"Транспорт и подъезды",items:["Подъездные пути ×3","Парковка на 120 мест","Стоянка спецтранспорта"]},
+    {title:"Вертикальные коммуникации",items:["Лифты ×8","Лестницы ×6","Крыша (пресс-центр)","Подвал","Технические помещения ×12"]},
+    {title:"Инженерные системы",items:["Камеры видеонаблюдения ×84","Электроснабжение + резерв","Вентиляция","Связь и интернет — закрытый канал"]},
+    {title:"Уязвимые места",warn:true,items:["Стеклянный атриум — обзор с улицы","Крыша пресс-центра","Высотное здание в 200 м (БЦ «Талан»)","Общественная зона: набережная"]},
+    {title:"Текущие ремонтные работы",warn:true,items:["Западное крыло — до 25 июля, подрядчик по спискам"]}
+  ];
+  groupRows = [
+    {name:"Кинологическая группа",note:"Досмотр помещений до открытия объекта",tag:"2 расчёта"},
+    {name:"Группа быстрого реагирования",note:"Дежурство у западного крыла на время ремонта",tag:"1 экипаж"},
+    {name:"Инженерно-сапёрная группа",note:"Осмотр за 6 часов до начала ОМ",tag:"по регламенту"},
+    {name:"Группа сопровождения",note:"Численность — по количеству делегаций",tag:"переменная"}
+  ];
+  changeRows = [
+    {who:"подполковник Т. Жаксылыков",what:"обновил раздел «Посты»: добавлен П-7 «Крыша пресс-центра»",when:"11 июля, 16:42",ini:"ТЖ"},
+    {who:"Департамент инженерии",what:"отметил ремонтные работы в западном крыле (до 25 июля)",when:"9 июля, 10:15",ini:"ДИ"},
+    {who:"майор Г. Сулейменова",what:"изменила время несения службы на П-3: 8 ч → 6 ч",when:"2 июля, 14:03",ini:"ГС"},
+    {who:"капитан Е. Досжан",what:"прикрепил фотографии главного входа (4 шт.)",when:"28 июня, 09:30",ini:"ЕД"}
+  ];
+  eventRows = [
+    {d:"17.07.2026",t:"Международный экономический форум",note:"Расстановка: 32 позиции · дефицит 3 сотрудника",b:"Подготовка",bCls:"bg-blue-100 text-blue-800"},
+    {d:"12.05.2026",t:"Саммит глав делегаций",note:"28 позиций · инцидентов нет",b:"Завершено",bCls:"bg-green-100 text-green-800"},
+    {d:"03.03.2026",t:"Национальный форум педагогов",note:"1 инцидент: сработка датчика на крыше, ложная",b:"Завершено",bCls:"bg-green-100 text-green-800"}
+  ];
+  say(m){clearTimeout(this._t);this.setState({toast:m});this._t=setTimeout(()=>this.setState({toast:null}),2600);}
+  role(){const r=this.props.role??"Старший объекта";return r[0]==="К"?"sup":r[0]==="П"?"dep":"senior";}
+  renderVals(){
+    const s=this.state, role=this.role();
+    const stMap={green:["bg-green-100 text-green-800","Паспорт заполнен","#16a34a"],yellow:["bg-amber-100 text-amber-800","Требует обновления","#d97706"],red:["bg-red-100 text-red-800","Не готов","#dc2626"]};
+    const chipBase="display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:999px;font-size:12px;font-weight:500;border:1px solid hsl(var(--border));background:hsl(var(--card));color:hsl(var(--foreground))";
+    const chipOn="display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid hsl(var(--primary));background:hsl(var(--primary) / .08);color:hsl(var(--primary))";
+    const filters=[["all","Все",null],["green","Заполнены","#16a34a"],["yellow","Требуют обновления","#d97706"],["red","Не готовы","#dc2626"]].map(([id,label,dot])=>({
+      label,dot,cls:"",st:s.filter===id?chipOn:chipBase,
+      count:id==="all"?this.objects.length:this.objects.filter(o=>o.status===id).length,
+      pick:()=>this.setState({filter:id})
+    }));
+    const qq=s.q.trim().toLowerCase();
+    const rows=this.objects.filter(o=>(s.filter==="all"||o.status===s.filter)&&(!qq||(o.name+" "+o.type+" "+o.resp).toLowerCase().includes(qq))).map(o=>({
+      ...o,stCls:stMap[o.status][0],stLabel:stMap[o.status][1],stDot:stMap[o.status][2],
+      open:()=>this.setState({screen:"pass",objId:o.id,tab:"general"})
+    }));
+    const obj0=this.objects.find(o=>o.id===s.objId)||this.objects[0];
+    const obj={...obj0,stCls:stMap[obj0.status][0],stLabel:stMap[obj0.status][1],stDot:stMap[obj0.status][2]};
+    const tabBase="padding:10px 14px;border:0;background:none;font-size:13px;font-weight:500;color:hsl(var(--muted-foreground));border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap";
+    const tabOn="padding:10px 14px;border:0;background:none;font-size:13px;font-weight:600;color:hsl(var(--primary));border-bottom:2px solid hsl(var(--primary));margin-bottom:-1px;white-space:nowrap";
+    const tabs=[["general","Общие данные"],["infra","Инфраструктура"],["posts","Посты и секторы"],["check","Чек-лист"],["groups","Привлекаемые группы"],["history","История"]].map(([id,label])=>({
+      label,st:s.tab===id?tabOn:tabBase,pick:()=>this.setState({tab:id})
+    }));
+    const cardSt="background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px";
+    const warnSt="background:hsl(45 90% 97%);border:1px solid hsl(38 80% 82%);border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px";
+    const infra=this.infraCats.map(c=>({title:c.title,warn:!!c.warn,st:c.warn?warnSt:cardSt,
+      rows:c.items.map(t=>({t,dot:c.warn?"#d97706":"hsl(var(--muted-foreground) / .5)"}))}));
+    const editVerb=role==="sup"?"Скорректировать":"Изменить";
+    const posts=this.postRows.map(p=>({...p,
+      typeCls:p.type==="Наружный"?"bg-cyan-100 text-cyan-800":"bg-indigo-100 text-indigo-800",
+      reqsView:p.reqs.length?p.reqs.join(" · "):"— не заполнены",
+      edit:()=>this.setState({screen:"form",formEdit:true,form:{num:p.n,title:p.title,type:p.type,tasks:p.tasks,notes:p.notes||"",max:p.max,sector:p.sector,chief:(this.sectorRows.find(x=>x.name===p.sector)||{}).chief||"",reqs:[...p.reqs]}})
+    }));
+    const secCasc=this.sectorRows.map((sc,si)=>{const open=s.secOpen===sc.name;return{name:sc.name,open,
+      sub:sc.cnt+" пост"+(sc.cnt===1?"":sc.cnt<5?"а":"ов")+": "+sc.posts,
+      icoSt:{width:"32px",height:"32px",borderRadius:"9px",display:"grid",placeItems:"center",fontSize:"14px",flex:"0 0 auto",background:open?"hsl(var(--primary) / .14)":"hsl(var(--muted))",color:open?"hsl(var(--primary))":"hsl(var(--muted-foreground))",transition:"background .2s,color .2s"},
+      chevSt:{width:"22px",height:"22px",borderRadius:"99px",display:"grid",placeItems:"center",fontSize:"14px",lineHeight:"1",flex:"0 0 auto",color:open?"hsl(var(--primary))":"hsl(var(--muted-foreground))",background:open?"hsl(var(--primary) / .12)":"hsl(var(--muted))",transform:open?"rotate(90deg)":"none",transition:"transform .25s cubic-bezier(.22,.7,.3,1),background .2s,color .2s"},
+      st:{width:"100%",boxSizing:"border-box",display:"flex",alignItems:"center",gap:"11px",padding:"10px 12px",borderRadius:"10px",marginTop:"7px",textAlign:"left",border:open?"1px solid hsl(var(--primary) / .45)":"1px solid hsl(var(--border))",background:open?"hsl(var(--primary) / .07)":"hsl(var(--card))",boxShadow:open?"0 2px 8px rgba(37,99,235,.10)":"0 1px 2px rgba(16,24,40,.04)",transition:"border-color .2s,background .2s,box-shadow .2s",animation:"cascIn .3s cubic-bezier(.22,.7,.3,1) both",animationDelay:(si*45)+"ms"},
+      pick:()=>this.setState({secOpen:open?"":sc.name}),
+      postRows:this.postRows.filter(p=>p.sector===sc.name).map((p,pi)=>({n:p.n,title:p.title,type:p.type,max:p.max,
+        typeCls:p.type==="Наружный"?"bg-cyan-100 text-cyan-800":"bg-indigo-100 text-indigo-800",
+        sub:p.tasks+" · "+(p.reqs.length?p.reqs.join(", "):"требования не заполнены"),
+        icoSt:{minWidth:"32px",height:"32px",borderRadius:"9px",display:"grid",placeItems:"center",fontSize:"10.5px",fontWeight:700,flex:"0 0 auto",padding:"0 4px",background:"hsl(var(--primary) / .09)",color:"hsl(var(--primary))"},
+        st:{width:"100%",boxSizing:"border-box",display:"flex",alignItems:"center",gap:"11px",padding:"9px 12px",borderRadius:"10px",marginTop:"7px",textAlign:"left",border:"1px solid hsl(var(--border))",background:"hsl(var(--card))",boxShadow:"0 1px 2px rgba(16,24,40,.04)",transition:"border-color .2s,box-shadow .2s",animation:"cascIn .3s cubic-bezier(.22,.7,.3,1) both",animationDelay:(pi*45)+"ms"},
+        edit:()=>this.setState({screen:"form",formEdit:true,form:{num:p.n,title:p.title,type:p.type,tasks:p.tasks,notes:p.notes||"",max:p.max,sector:p.sector,chief:(this.sectorRows.find(x=>x.name===p.sector)||{}).chief||"",reqs:[...p.reqs]}})}))
+    };});
+    const checkRows=this.questions.map((q,i)=>({n:i+1,t:q.t,extra:!!q.extra}));
+    const total=this.questions.length, isFinal=s.step>=total, q=this.questions[Math.min(s.step,total-1)];
+    const ans=s.answers, curA=ans[s.step];
+    const ansBase="height:38px;padding:0 18px;border-radius:8px;border:1px solid hsl(var(--border));background:hsl(var(--card));font-size:13px;font-weight:500;color:hsl(var(--foreground))";
+    const ansOpts=["Да","Нет","Не применимо"].map(a=>({label:a,
+      st:curA===a?(a==="Нет"?"height:38px;padding:0 18px;border-radius:8px;border:1px solid #dc2626;background:hsl(0 86% 97%);font-size:13px;font-weight:700;color:#b91c1c":"height:38px;padding:0 18px;border-radius:8px;border:1px solid hsl(var(--primary));background:hsl(var(--primary) / .08);font-size:13px;font-weight:700;color:hsl(var(--primary))"):ansBase,
+      pick:()=>this.setState({answers:{...ans,[s.step]:a}})
+    }));
+    const canNext=curA!=null&&(curA!=="Нет"||(s.comments[s.step]||"").trim());
+    const vals=Object.values(ans);
+    const cntYes=vals.filter(v=>v==="Да").length,cntNo=vals.filter(v=>v==="Нет").length,cntNa=vals.filter(v=>v==="Не применимо").length;
+    const noList=this.questions.map((qq,i)=>ans[i]==="Нет"?{t:qq.t,c:s.comments[i]||""}:null).filter(Boolean);
+    const decBase="text-align:left;border:1px solid hsl(var(--border));border-radius:10px;padding:14px;background:hsl(var(--card));color:hsl(var(--foreground))";
+    const decOn="text-align:left;border:1px solid hsl(var(--primary));border-radius:10px;padding:14px;background:hsl(var(--primary) / .06);color:hsl(var(--foreground))";
+    const decOpts=[
+      {id:"confirm",t:"Подтвердить текущий расчёт",note:"Посты и секторы соответствуют обстановке, изменения не требуются"},
+      {id:"amend",t:"Внести правки в расчёт",note:"Требуется корректировка постов или секторов — правки после завершения"}
+    ].map(d=>({...d,st:s.decision===d.id?decOn:decBase,pick:()=>this.setState({decision:d.id})}));
+    const finishOk=s.decision&&s.why.trim();
+    const btnOn="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--primary));color:#fff;font-size:13px;font-weight:600";
+    const btnOff="height:36px;padding:0 14px;border-radius:8px;border:0;background:hsl(var(--muted));color:hsl(var(--muted-foreground));font-size:13px;font-weight:600;cursor:not-allowed";
+    const f=s.form;
+    const setF=(k)=>(e)=>this.setState({form:{...this.state.form,[k]:e.target.value}});
+    const reqAll=["Оружие","Допуск «Объект D»","Рост от 175 см","Опыт 2+ ОМ","Кинологическая подготовка","Навыки высотных работ"];
+    const reqOpts=reqAll.map(r=>({label:r,st:f.reqs.includes(r)?chipOn:chipBase,
+      pick:()=>{const on=f.reqs.includes(r);this.setState({form:{...f,reqs:on?f.reqs.filter(x=>x!==r):[...f.reqs,r]}});}
+    }));
+    const typeOpts=["Наружный","Внутренний"].map(t=>({label:t,st:f.type===t?chipOn:chipBase,pick:()=>this.setState({form:{...f,type:t}})}));
+    const roleLabel=this.props.role??"Старший объекта";
+    const emb=!!this.props.embedded;
+    return {
+      chrome:!emb,mainOffset:emb?"0":"256px",mainPad:emb?"0":"24px 28px 64px",rootMinH:emb?"0":"100vh",
+      rootCls:(this.props.darkTheme?"dark ":"")+(emb?"":"bg-background"),
+      userName:role==="sup"?"полковник Н. Ержанов":role==="dep"?"А. Байжанова":"подполк. Т. Жаксылыков",
+      userInitials:role==="sup"?"НЕ":role==="dep"?"АБ":"ТЖ",
+      roleLabel,
+      crumb2:s.screen==="list"?"":s.screen==="check"?"Проверка объекта":s.screen==="form"?"Форма поста":obj.name,
+      scrList:s.screen==="list",scrPass:s.screen==="pass",scrCheck:s.screen==="check",scrForm:s.screen==="form",
+      goList:()=>this.setState({screen:"list"}),
+      fNewObject:()=>this.say("Создание объекта — заполните паспорт по разделам"),
+      filters,rows,obj,tabs,
+      q:s.q,onQ:(e)=>this.setState({q:e.target.value}),
+      shownCount:String(rows.length),totalCount:String(this.objects.length),
+      emptyRows:rows.length===0,resetFilters:()=>this.setState({q:"",filter:"all"}),
+      isSenior:role==="senior",isSup:role==="sup",notSenior:role!=="senior",
+      redBanner:s.screen==="pass"&&obj0.status==="red",
+      missing:obj0.missing.map(t=>({t})),
+      depBanner:role==="dep",
+      goInfra:()=>this.setState({tab:"infra"}),
+      fConfirmCalc:()=>this.say("Расчёт постов и секторов подтверждён"),
+      fEditPassport:()=>this.say("Режим редактирования паспорта"),
+      tGeneral:s.tab==="general",tInfra:s.tab==="infra",tPosts:s.tab==="posts"||s.tab==="sectors",tCheck:s.tab==="check",tGroups:s.tab==="groups",tHistory:s.tab==="history",
+      genFields:[{k:"Название",v:obj0.name},{k:"Тип объекта",v:obj0.type},{k:"Адрес",v:obj0.addr},{k:"Ответственное лицо",v:obj0.resp},{k:"Телефон дежурной части",v:"вн. 4-217"},{k:"Вместимость",v:"до 3 000 человек"}],
+      docs:[["◱","Схема объекта",obj0.status==="red"?"не прикреплена":"обновлена 11.07",obj0.status==="red"],["⇲","Схема эвакуации","обновлена 04.07",false],["▣","Фотографии","24 файла",false],["✚","Добавить файл","схема или фото",false]].map(([icon,t,note,warn])=>({
+        icon,t,note,
+        st:"display:flex;flex-direction:column;align-items:flex-start;gap:3px;border:1px dashed "+(warn?"#dc2626":"hsl(var(--border))")+";border-radius:10px;padding:12px;background:"+(warn?"hsl(0 86% 97.5%)":"hsl(var(--muted) / .3)")+";text-align:left;color:hsl(var(--foreground))",
+        pick:()=>this.say(t+" — просмотр файлов в этом прототипе не подключён")
+      })),
+      infra,editVerb,posts,
+      postsNote:this.sectorRows.length+" сектора · "+this.postRows.length+" постов — клик по сектору раскрывает его посты",
+      newPost:()=>this.setState({screen:"form",formEdit:false,form:this.blankForm()}),
+      secCasc,
+      newSector:()=>this.setState({screen:"form",formEdit:false,form:{...this.blankForm(),sector:"—",chief:""}}),
+      checkRows,qTotal:total,
+      startCheck:()=>this.setState({screen:"check",step:0,answers:{},comments:{},decision:"",why:""}),
+      groups:this.groupRows,
+      histAst:s.histMode==="changes"?"height:30px;padding:0 13px;border-radius:7px;border:0;background:hsl(var(--card));box-shadow:0 1px 2px rgba(16,24,40,.1);font-size:12.5px;font-weight:600;color:hsl(var(--foreground))":"height:30px;padding:0 13px;border-radius:7px;border:0;background:none;font-size:12.5px;font-weight:500;color:hsl(var(--muted-foreground))",
+      histBst:s.histMode==="events"?"height:30px;padding:0 13px;border-radius:7px;border:0;background:hsl(var(--card));box-shadow:0 1px 2px rgba(16,24,40,.1);font-size:12.5px;font-weight:600;color:hsl(var(--foreground))":"height:30px;padding:0 13px;border-radius:7px;border:0;background:none;font-size:12.5px;font-weight:500;color:hsl(var(--muted-foreground))",
+      histA:()=>this.setState({histMode:"changes"}),histB:()=>this.setState({histMode:"events"}),
+      histChanges:s.histMode==="changes",histEvents:s.histMode==="events",
+      changes:this.changeRows,events:this.eventRows,
+      backToPass:()=>this.setState({screen:"pass",tab:"check"}),
+      stepNote:isFinal?"Все вопросы пройдены — примите решение":"Вопрос "+(s.step+1)+" из "+total+(q.extra?" · дополнение под объект":""),
+      pct:Math.round(Math.min(s.step,total)/total*100)+"%",
+      notFinal:!isFinal,isFinal,
+      qText:q.t,qExtra:!isFinal&&!!q.extra,
+      qComment:s.comments[s.step]||"",
+      onComment:(e)=>this.setState({comments:{...s.comments,[s.step]:e.target.value}}),
+      ansOpts,
+      backDisabled:s.step===0,
+      stepBack:()=>this.setState({step:Math.max(0,s.step-1)}),
+      stepNext:()=>{if(canNext)this.setState({step:s.step+1});},
+      nextDisabled:!canNext,
+      nextSt:canNext?btnOn:btnOff,
+      nextLabel:s.step===total-1?"К решению":"Далее",
+      cntYes,cntNo,cntNa,hasNo:cntNo>0,noList,decOpts,
+      why:s.why,onWhy:(e)=>this.setState({why:e.target.value}),
+      finishDisabled:!finishOk,finishSt:finishOk?btnOn:btnOff,
+      finish:()=>{if(!finishOk)return;
+        obj0.checked="16.07.2026";
+        if(s.decision==="confirm"&&cntNo===0&&obj0.status!=="red")obj0.status="green";
+        this.changeRows.unshift({who:obj0.resp,what:"провёл проверку по чек-листу: "+(s.decision==="confirm"?"расчёт подтверждён":"требуются правки расчёта")+". Обоснование: "+s.why.trim(),when:"16 июля, "+new Date().toTimeString().slice(0,5),ini:"ТЖ"});
+        this.say(s.decision==="confirm"?"Проверка завершена — расчёт подтверждён":"Проверка завершена — расчёт отправлен на корректировку");
+        this.setState({screen:"pass",tab:"history",histMode:"changes"});},
+      formTitle:s.formEdit?"Пост "+(f.num||"")+" — редактирование":"Новый пост",
+      fv:f,fNum:setF("num"),fTitle:setF("title"),fTasks:setF("tasks"),fNotes:setF("notes"),fMax:setF("max"),fSector:setF("sector"),fChief:setF("chief"),
+      typeOpts,reqOpts,
+      cancelForm:()=>this.setState({screen:"pass",tab:"posts"}),
+      saveForm:()=>{
+        if(!f.title.trim()){this.say("Укажите название поста");return;}
+        const i=this.postRows.findIndex(p=>p.n===f.num);
+        const rec={n:f.num||"П-"+(this.postRows.length+2),title:f.title||"Новый пост",tasks:f.tasks||"—",type:f.type,max:f.max,reqs:[...f.reqs],sector:f.sector,notes:f.notes};
+        if(i>=0)this.postRows[i]=rec;else this.postRows.push(rec);
+        const sec=this.sectorRows.find(x=>x.name===f.sector);
+        if(sec&&f.chief){sec.chief=f.chief;delete sec.warn;}
+        this.say(s.formEdit?"Пост сохранён":"Пост добавлен в паспорт объекта");
+        this.setState({screen:"pass",tab:"posts"});},
+      toast:s.toast
+    };
+  }
+}
+</script>
+</body>
+</html>
