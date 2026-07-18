@@ -73,9 +73,10 @@ test-full:
 	VAPS_DB_PASSWORD=vaps \
 	VAPS_DB_HOST=localhost \
 	VAPS_DB_PORT=5433 \
+	VAPS_REDIS_URL=redis://127.0.0.1:6380/0 \
 	HYPOTHESIS_PROFILE=full \
 	timeout 1500 sh -c '\
-		docker compose up -d --wait db && \
+		docker compose up -d --wait db redis && \
 		$(PYTEST) \
 	'; \
 	status=$$?; \
@@ -97,8 +98,9 @@ gate:
 	VAPS_DB_PASSWORD=vaps \
 	VAPS_DB_HOST=localhost \
 	VAPS_DB_PORT=5433 \
+	VAPS_REDIS_URL=redis://127.0.0.1:6380/0 \
 	timeout 300 sh -c '\
-		docker compose up -d --wait db && \
+		docker compose up -d --wait db redis && \
 		$(RUFF) check . && \
 		$(PYTEST) -m "not property and not concurrency and not slow and not golden" && \
 		$(PYTHON) manage.py makemigrations --check --dry-run \

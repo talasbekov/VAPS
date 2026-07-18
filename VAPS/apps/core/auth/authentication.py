@@ -37,6 +37,53 @@ def _jwt_config():
     return cfg
 
 
+def verify_jwt_sub(token, cfg) -> str:
+    """Verify *token* against *cfg* and return the actor id (``sub``); raise
+    ``AuthenticationFailed("INVALID_TOKEN")`` on anything invalid.
+
+    Extracted verbatim from ``JWTAuthentication.authenticate`` in story 11.1 so
+    the WebSocket handshake (``apps/core/auth/ws.py``) verifies tokens with the
+    SAME code as REST. Duplicating the rules (``require`` claims, ``aud``/``iss``,
+    leeway, ``sub`` hygiene) across two auth paths guarantees drift — one path
+    would eventually accept what the other rejects. Pure: no request, no I/O.
+    """
+    require = ["exp", "sub"]
+    if cfg.get("audience"):
+        require.append("aud")
+    if cfg.get("issuer"):
+        require.append("iss")
+    try:
+        payload = jwt.decode(
+            token,
+            cfg["key"],
+            algorithms=cfg["algorithms"],
+            audience=cfg.get("audience"),
+            issuer=cfg.get("issuer"),
+            leeway=cfg.get("leeway", 0),
+            options={
+                "require": require,
+                "verify_aud": cfg.get("audience") is not None,
+            },
+        )
+    except jwt.PyJWTError as exc:
+        # PyJWTError (not only InvalidTokenError) also catches a misconfigured-key
+        # InvalidKeyError → hard 401, no downgrade to X-User-Id, no unhandled 500.
+        raise AuthenticationFailed("INVALID_TOKEN") from exc
+    sub = payload.get("sub")
+    if not isinstance(sub, str):
+        raise AuthenticationFailed("INVALID_TOKEN")
+    sub = sub.strip()
+    if (
+        not sub
+        or len(sub) > 100
+        or not sub.isprintable()
+        or any(c.isspace() for c in sub)
+    ):
+        # exact actor id only — no padded / whitespace-bearing / non-printable sub
+        raise AuthenticationFailed("INVALID_TOKEN")
+    return sub
+
+
 class JWTAuthentication(BaseAuthentication):
     """External-Auth JWT identity (ARCH-SEC-030). First in the chain; the X-User-Id
     stand-in is present ONLY when JWT is not configured (dev) — review D1 in settings.
@@ -78,39 +125,7 @@ class JWTAuthentication(BaseAuthentication):
         if len(parts) != 2:
             # our scheme but malformed ("Bearer", "Bearer a b") → 401, NOT a downgrade
             raise AuthenticationFailed("INVALID_TOKEN")
-        require = ["exp", "sub"]
-        if cfg.get("audience"):
-            require.append("aud")
-        if cfg.get("issuer"):
-            require.append("iss")
-        try:
-            payload = jwt.decode(
-                parts[1],
-                cfg["key"],
-                algorithms=cfg["algorithms"],
-                audience=cfg.get("audience"),
-                issuer=cfg.get("issuer"),
-                leeway=cfg.get("leeway", 0),
-                options={
-                    "require": require,
-                    "verify_aud": cfg.get("audience") is not None,
-                },
-            )
-        except jwt.PyJWTError as exc:
-            # PyJWTError (not only InvalidTokenError) also catches a misconfigured-key
-            # InvalidKeyError → hard 401, no downgrade to X-User-Id, no unhandled 500.
-            raise AuthenticationFailed("INVALID_TOKEN") from exc
-        sub = payload.get("sub")
-        if not isinstance(sub, str):
-            raise AuthenticationFailed("INVALID_TOKEN")
-        sub = sub.strip()
-        if (
-            not sub
-            or len(sub) > 100
-            or not sub.isprintable()
-            or any(c.isspace() for c in sub)
-        ):
-            # exact actor id only — no padded / whitespace-bearing / non-printable sub
-            raise AuthenticationFailed("INVALID_TOKEN")
-        request.actor_id = sub
+        # Verification body lives in verify_jwt_sub (story 11.1) — shared verbatim
+        # with the WebSocket handshake so the two auth paths cannot drift.
+        request.actor_id = verify_jwt_sub(parts[1], cfg)
         return None
