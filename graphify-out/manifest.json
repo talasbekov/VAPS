@@ -2355,8 +2355,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/config/settings.py": {
-    "mtime": 1784415148.8918586,
-    "ast_hash": "46b1a7aff67c236918a8ffa431a1e6b3",
+    "mtime": 1784470409.467854,
+    "ast_hash": "4854b9749eb6d472dca6683f3c2bbfdf",
     "semantic_hash": ""
   },
   "Backend/VAPS/config/urls.py": {
@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1784460803.0879636,
-    "ast_hash": "6bb09ce4a57357c64bbef15cfdfe367b",
+    "mtime": 1784471677.964873,
+    "ast_hash": "cdcbdd8b00f1f2f6c075729b838ad575",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -19370,8 +19370,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/notifications/services.py": {
-    "mtime": 1784452565.1929095,
-    "ast_hash": "cb2d75fededf08a3f681000c5da8d6d0",
+    "mtime": 1784470457.2231586,
+    "ast_hash": "c2864a68f651d053b066a8e6d23a1fd8",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/notifications/tests/__init__.py": {
@@ -20745,8 +20745,8 @@
     "semantic_hash": ""
   },
   "frontend/eslint.config.js": {
-    "mtime": 1784398653.3975291,
-    "ast_hash": "feee966a66ed0b0856fc7022c77bdd40",
+    "mtime": 1784468956.7314258,
+    "ast_hash": "7e31b2dbfabf337f51dc1939517df172",
     "semantic_hash": ""
   },
   "frontend/package.json": {
@@ -20795,18 +20795,18 @@
     "semantic_hash": ""
   },
   "frontend/src/app/App.tsx": {
-    "mtime": 1784411842.0297427,
-    "ast_hash": "b2991ba5a1d9442d0dd86bb2e2ee0bda",
+    "mtime": 1784468782.6333501,
+    "ast_hash": "ca964c53eaedd594099e94a024379b72",
     "semantic_hash": ""
   },
   "frontend/src/app/AppLayout.test.tsx": {
-    "mtime": 1784412181.4371817,
-    "ast_hash": "eace013e7ad2e4fccb1a99e4c0fe4774",
+    "mtime": 1784463508.8290179,
+    "ast_hash": "a3472690d016151ea1704a65455c88d4",
     "semantic_hash": ""
   },
   "frontend/src/app/app-layout.qa.test.tsx": {
-    "mtime": 1784398653.400162,
-    "ast_hash": "04cf633d4bd7431b5cd756b6a4086182",
+    "mtime": 1784463508.8298836,
+    "ast_hash": "654bbd619172ee23d360fa5adcaca941",
     "semantic_hash": ""
   },
   "frontend/src/app/auth-flow.qa.test.tsx": {
@@ -20840,8 +20840,8 @@
     "semantic_hash": ""
   },
   "frontend/src/app/section-stubs.tsx": {
-    "mtime": 1784411845.374822,
-    "ast_hash": "3920b831b6541c0e284f8268c8193a39",
+    "mtime": 1784466955.4881127,
+    "ast_hash": "e2846467322fe33949651bad00117956",
     "semantic_hash": ""
   },
   "frontend/src/features/auth/LoginPage.test.tsx": {
@@ -20935,13 +20935,13 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/client.test.ts": {
-    "mtime": 1784398653.4031212,
-    "ast_hash": "3010598142e306925294ccd65305f11e",
+    "mtime": 1784466580.4786873,
+    "ast_hash": "e0ee16dbe2fc3b91e577a16a6df7f6ab",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/client.ts": {
-    "mtime": 1784398653.4031782,
-    "ast_hash": "8ebbaf1dbd1c6a26aadf791e8a6308b6",
+    "mtime": 1784469288.2722025,
+    "ast_hash": "39664fe1a611f66ce506d2be25783292",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/errors.test.ts": {
@@ -20960,8 +20960,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/testing/handlers.ts": {
-    "mtime": 1784449823.4609437,
-    "ast_hash": "3abfcdce561afc21997acaef1a3de566",
+    "mtime": 1784466526.5824378,
+    "ast_hash": "dc8eb6bbac5089a009d1cba6e5de4595",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/testing/server.ts": {
@@ -21020,8 +21020,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/ui/AppLayout.tsx": {
-    "mtime": 1784457377.7687075,
-    "ast_hash": "39b7f73903ce29580ecd02979bc7fe3a",
+    "mtime": 1784465111.264375,
+    "ast_hash": "89f83acbd325c5cfc174318059310900",
     "semantic_hash": ""
   },
   "frontend/src/shared/ui/Avatar.tsx": {
@@ -21375,8 +21375,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/notifications/consumers.py": {
-    "mtime": 1784415158.8600726,
-    "ast_hash": "c7cd0c2f5802663032f6448651866d8d",
+    "mtime": 1784470441.1054404,
+    "ast_hash": "b29e7f54fc067844936c083ecacf8404",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/notifications/groups.py": {
@@ -21490,8 +21490,8 @@
     "semantic_hash": ""
   },
   "frontend/vite.e2e.config.ts": {
-    "mtime": 1784451865.2744734,
-    "ast_hash": "01a1bb97109e363c68706cb3f6c7bef5",
+    "mtime": 1784468497.0172567,
+    "ast_hash": "cc65cf67663fbb13ccd985c80a1b89a7",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/10-1-\u0431\u0443\u043c\u0430\u0436\u043d\u044b\u0435-\u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442\u044b-\u044d\u043a\u0440\u0430\u043d\u043e\u0432-\u0441\u0434\u0430\u0447\u0438-\u0438-\u0440\u0430\u0441\u0445\u043e\u0434\u0430.md": {
@@ -21530,8 +21530,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/agents/agents-orchestration-10-11-20260718-210324.md": {
-    "mtime": 1784459830.7055027,
-    "ast_hash": "f3f12e2673b8af123a3ededcb9acb320",
+    "mtime": 1784471300.8968155,
+    "ast_hash": "3e5ba5cb33253aca27d825cecf30816a",
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/init-log-20260718-203719.md": {
@@ -21540,8 +21540,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/orchestration-10-11-20260718-210324.md": {
-    "mtime": 1784460397.7028794,
-    "ast_hash": "5ff551b4cd5ee26b5bdf0c500553a8f6",
+    "mtime": 1784471294.7990487,
+    "ast_hash": "cfdf41e7f844b65d278fbe4ff7a1503e",
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/preflight-11-20260718-205729.md": {
@@ -21567,21 +21567,6 @@
   "Backend/VAPS/apps/notifications/tests/test_ws_notify.py": {
     "mtime": 1784451587.011371,
     "ast_hash": "a840f5ee21f940c85272ce62f65552dd",
-    "semantic_hash": ""
-  },
-  "frontend/dist-e2e/assets/daySubmission-BpMZ75gt.js": {
-    "mtime": 1784452138.9864523,
-    "ast_hash": "6559c78bf1f6fa413d6bae9217aae494",
-    "semantic_hash": ""
-  },
-  "frontend/dist-e2e/assets/grid-BEnnGkhS.js": {
-    "mtime": 1784452138.9864523,
-    "ast_hash": "4d25f6c495c4a27dcf6ab737f8ab6f55",
-    "semantic_hash": ""
-  },
-  "frontend/dist-e2e/assets/index-BjspXJBO.js": {
-    "mtime": 1784452138.9864523,
-    "ast_hash": "44b29aa14cbea9f9149062a166583e4f",
     "semantic_hash": ""
   },
   "frontend/e2e-harness/day-submission.tsx": {
@@ -21615,13 +21600,13 @@
     "semantic_hash": ""
   },
   "frontend/test-results/.last-run.json": {
-    "mtime": 1784452145.674148,
+    "mtime": 1784469455.6927674,
     "ast_hash": "f196824657d8858bc7fa44eecbba38b1",
     "semantic_hash": ""
   },
   "frontend/test-results/perf-trend.json": {
-    "mtime": 1784452142.0843058,
-    "ast_hash": "e7b9e4004672a6f39198faadde49c691",
+    "mtime": 1784469449.027237,
+    "ast_hash": "b6a53da1a2a9685d67975cdfd348e48c",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/10-3-\u044d\u043a\u0440\u0430\u043d-\u0441\u0434\u0430\u0447\u0438-\u0434\u043d\u044f.md": {
@@ -21645,22 +21630,22 @@
     "semantic_hash": ""
   },
   "frontend/dist-e2e/e2e-harness/day-submission.html": {
-    "mtime": 1784452138.9864523,
-    "ast_hash": "f0c5eb796a2849b9e57e2aeb43c9ac60",
+    "mtime": 1784469445.332657,
+    "ast_hash": "62af9a75e76eef3a6aabc789499f7b4d",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/e2e-harness/index.html": {
-    "mtime": 1784452138.9864523,
-    "ast_hash": "26c238ab6c2026b4bd351f28aa81d68f",
+    "mtime": 1784469445.332657,
+    "ast_hash": "1a270f821a9efcb9bfa75a126d6c92ab",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/fonts/LICENSE-PT-Serif.txt": {
-    "mtime": 1784452138.8575926,
+    "mtime": 1784469445.169668,
     "ast_hash": "cc3f0246396ef08bd6dd4ccaa9372488",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/fonts/README.md": {
-    "mtime": 1784452138.8576665,
+    "mtime": 1784469445.1697445,
     "ast_hash": "49b2699fe2ccefbd64c19b9f88e8a5b4",
     "semantic_hash": ""
   },
@@ -21675,8 +21660,8 @@
     "semantic_hash": ""
   },
   "frontend/src/app/connection-indicator-wiring.test.tsx": {
-    "mtime": 1784459093.5516617,
-    "ast_hash": "64cee725a8a657a3f19c0b57836f05f3",
+    "mtime": 1784463508.8306425,
+    "ast_hash": "7ae587d5ee0c7b0ba623321abc034126",
     "semantic_hash": ""
   },
   "frontend/src/shared/notifications/notificationsSocket.test.ts": {
@@ -21705,8 +21690,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/10-4-\u0441\u0432\u0435\u0442\u043e\u0444\u043e\u0440-\u0434\u0435\u0440\u0435\u0432\u043e.md": {
-    "mtime": 1784456188.0212276,
-    "ast_hash": "06795ec31d7b3b28f64d89dbba0bf17d",
+    "mtime": 1784464099.653656,
+    "ast_hash": "493458de1e65be8955b02667dc9e7bc1",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/tests/test-summary-10-3a.md": {
@@ -21717,6 +21702,271 @@
   "_bmad-output/implementation-artifacts/tests/test-summary-11-3.md": {
     "mtime": 1784459349.0212226,
     "ast_hash": "889c30298d9954c999d209d09d5d89f9",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/notifications/tests/test_ws_kill_switch.py": {
+    "mtime": 1784470499.113817,
+    "ast_hash": "a9adf618f5e5d2511c473fdb1ef396e6",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/AppLayout-BwkQGHc2.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "a7040a8d92d386893caf24abfdd836ac",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/Button-DdAX3Zd6.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "cfc47bcd684315e54752e40e4d466120",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/Card-DX2xp2yF.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "8845a7cdf805eb61e82ac6956fde6981",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/DailyGridContainer-DF3tjSHS.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "102cfa19a77bc9ba1c0af24fd3074604",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/DailyUpdatePage-gp-lYV03.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "18d141bf15d2a4d61d242fd6a83019be",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/Label-YR9zjomS.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "518823478ed10c65438eb3d0f751e7db",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/TrafficLightTreePage-CaY7yskT.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "dbf8c0ac09e178f14a270fc6ef4fe799",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/daySubmission-oAlbOyW2.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "5beeeabee06dd3156b44cdb437362a3e",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/expense-BOOZNt1A.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "1562cc0cc4dc106184c5cdd51c77c571",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/grid-DFAPZ3oR.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "9731565fba0237f4e7beaeb344deb0fd",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/index-BA4DyKqn.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "2977abf588bbc270ae374e4ed5a17f7d",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/index-BdqvoXuE.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "043f2ade79a2551394814fd8dfc7da24",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/index-fjexKJh2.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "8124022f577dec5c884e8c27c89124ca",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/notifications-D0M83GF8.js": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "00689fe6680e7262f5d86c7bfebb10b0",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/trafficLight-tq_-hxW7.js": {
+    "mtime": 1784469445.3335006,
+    "ast_hash": "ce92fbeef3a81f5e417fcaaa368a8c8f",
+    "semantic_hash": ""
+  },
+  "frontend/e2e-harness/expense.tsx": {
+    "mtime": 1784468487.2688417,
+    "ast_hash": "a0b7712491151ba805ed95bbdadab218",
+    "semantic_hash": ""
+  },
+  "frontend/e2e-harness/notifications.tsx": {
+    "mtime": 1784464446.1423626,
+    "ast_hash": "ac417489691ea57bc2b7de8636b974bf",
+    "semantic_hash": ""
+  },
+  "frontend/e2e-harness/traffic-light.tsx": {
+    "mtime": 1784462607.095698,
+    "ast_hash": "9ee2c5835f322eeecb075642f93abbce",
+    "semantic_hash": ""
+  },
+  "frontend/e2e/expense.spec.ts": {
+    "mtime": 1784469362.0471196,
+    "ast_hash": "02502939268608baf8718c2ca6e361ad",
+    "semantic_hash": ""
+  },
+  "frontend/e2e/notifications.spec.ts": {
+    "mtime": 1784464743.648547,
+    "ast_hash": "8596d2024502dab2b45c0b6b409f09f7",
+    "semantic_hash": ""
+  },
+  "frontend/e2e/traffic-light.spec.ts": {
+    "mtime": 1784463173.9547307,
+    "ast_hash": "a9389325a60d829eea0a024300bb60f7",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/expense/ExpenseReportPage.download.test.tsx": {
+    "mtime": 1784467318.1065829,
+    "ast_hash": "2ad87270caf01a48510ee595904821c8",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/expense/ExpenseReportPage.test.tsx": {
+    "mtime": 1784469940.0900772,
+    "ast_hash": "641b8f7985dbf88807aea921e7841480",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/expense/ExpenseReportPage.tsx": {
+    "mtime": 1784469975.0338948,
+    "ast_hash": "70533c5175176e59be4824e88e716a1d",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/expense/expense.test.ts": {
+    "mtime": 1784469928.0452714,
+    "ast_hash": "d980049195ca572d897765fa3c6922d4",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/expense/expense.ts": {
+    "mtime": 1784469992.549916,
+    "ast_hash": "1bd52629980b8202e4930ef45e177781",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/traffic-light/TrafficLightNode.tsx": {
+    "mtime": 1784463713.5210562,
+    "ast_hash": "79fb6ae25e3cbf41b1a0c70d385885ef",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/traffic-light/TrafficLightTreePage.perfsmoke.test.tsx": {
+    "mtime": 1784461861.1050646,
+    "ast_hash": "23bf00ba74fa96543fb0c52a787d7279",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/traffic-light/TrafficLightTreePage.polling.test.tsx": {
+    "mtime": 1784462729.714807,
+    "ast_hash": "e5d6be7e656a95e4068cbf7ddff69f32",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/traffic-light/TrafficLightTreePage.test.tsx": {
+    "mtime": 1784463914.2136884,
+    "ast_hash": "8efbc8315c4858b3a51a61e7ac23a949",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/traffic-light/TrafficLightTreePage.tsx": {
+    "mtime": 1784463934.9986062,
+    "ast_hash": "eae31ed6696e9d240e001c709684c59a",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/traffic-light/trafficLight.test.ts": {
+    "mtime": 1784461412.91879,
+    "ast_hash": "30e5ad821fc1d7af15220a89b92a94f5",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/traffic-light/trafficLight.ts": {
+    "mtime": 1784463725.156816,
+    "ast_hash": "a4a80e84f3e18aab14d50867aa205bb7",
+    "semantic_hash": ""
+  },
+  "frontend/src/shared/notifications/useNotificationsFeed.test.tsx": {
+    "mtime": 1784464657.7850425,
+    "ast_hash": "4b349689b855127708333ae1e07a03fd",
+    "semantic_hash": ""
+  },
+  "frontend/src/shared/notifications/useNotificationsFeed.ts": {
+    "mtime": 1784466161.030731,
+    "ast_hash": "fa3089beaf252e40d00dcecc771e7870",
+    "semantic_hash": ""
+  },
+  "frontend/src/shared/ui/NotificationBell.test.tsx": {
+    "mtime": 1784463257.5245845,
+    "ast_hash": "c8e693bd04627fcc478111e9468f00ca",
+    "semantic_hash": ""
+  },
+  "frontend/src/shared/ui/NotificationBell.tsx": {
+    "mtime": 1784466181.6576564,
+    "ast_hash": "a0e4849141b490acdc299fc6479d706a",
+    "semantic_hash": ""
+  },
+  "test-results/.last-run.json": {
+    "mtime": 1784469224.722308,
+    "ast_hash": "ff6d5dab1dfd50cea584142bc288ce9e",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/10-5-\u044d\u043a\u0440\u0430\u043d-\u0440\u0430\u0441\u0445\u043e\u0434\u0430.md": {
+    "mtime": 1784470127.0311835,
+    "ast_hash": "7cbb39aa233ab6f6707b2d4e2cda22ba",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/10-6-amendment-\u0444\u043b\u043e\u0443-ui.md": {
+    "mtime": 1784471429.8006518,
+    "ast_hash": "79334ff1a930174f73a28a0a4a971ff4",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/11-4-\u0446\u0435\u043d\u0442\u0440-\u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0439-ui.md": {
+    "mtime": 1784466347.6849124,
+    "ast_hash": "c2441d3a6d8ee7bf8848b8af98c1fd93",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/11-5-kill-switch-ws.md": {
+    "mtime": 1784471677.7178762,
+    "ast_hash": "5104f5fb78fe8f1388b1290ba898cf5f",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/tests/test-summary-10-4.md": {
+    "mtime": 1784463240.656502,
+    "ast_hash": "6c42f204e189ae92f2cc6fcfaa00fcbc",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/tests/test-summary-10-5.md": {
+    "mtime": 1784469398.007098,
+    "ast_hash": "2497e49006d626fe119c7c5c55f30112",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/tests/test-summary-11-4.md": {
+    "mtime": 1784465317.7471507,
+    "ast_hash": "6672ec2fcf8b770e72564ee384d67c40",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/tests/test-summary-11-5.md": {
+    "mtime": 1784470645.0690746,
+    "ast_hash": "2cd8e756e8f4ac533b6b8903328dcc6d",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/e2e-harness/expense.html": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "98edff708da38e4d971d22999c8ac580",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/e2e-harness/notifications.html": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "1fa45627799e5f43177cd28b1f5de753",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/e2e-harness/traffic-light.html": {
+    "mtime": 1784469445.332657,
+    "ast_hash": "fb180a04737c656f7639843a764a6040",
+    "semantic_hash": ""
+  },
+  "frontend/e2e-harness/expense.html": {
+    "mtime": 1784468460.5147007,
+    "ast_hash": "875d9d8becdfa2d955e764806944b359",
+    "semantic_hash": ""
+  },
+  "frontend/e2e-harness/notifications.html": {
+    "mtime": 1784464452.2555258,
+    "ast_hash": "178ccb3aacf54982daa317d490326392",
+    "semantic_hash": ""
+  },
+  "frontend/e2e-harness/traffic-light.html": {
+    "mtime": 1784462593.9569387,
+    "ast_hash": "51b8868733e5146aac5a6993c7b08f42",
     "semantic_hash": ""
   }
 }
