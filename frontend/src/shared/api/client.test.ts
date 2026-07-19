@@ -309,3 +309,99 @@ describe('DomainError-парсинг конверта §36 (AC 2–6)', () => {
     expect(e.details).toEqual({})
   })
 })
+
+// ── Бинарный канал getBlob (стори 10.5, AC-7) ───────────────────────────────
+// Первый бинарный путь в проекте: `get` безусловно делает response.json()
+// (client.ts:57) и на .docx упал бы SyntaxError'ом вместо файла.
+describe('getBlob: бинарное тело мимо response.json() (10.5 AC-7)', () => {
+  const DOWNLOAD_PATH = '/api/documents/attachments/abc/download/'
+
+  it('200 → blob с телом и имя файла из Content-Disposition filename* (UTF-8)', async () => {
+    server.use(
+      http.get(
+        `*${DOWNLOAD_PATH}`,
+        () =>
+          // Кириллица на проводе приезжает percent-encoded — ровно так её
+          // ставит content_disposition_header(True, attachment.original_name).
+          new HttpResponse(new Blob(['PKdocx-bytes']), {
+            status: 200,
+            headers: {
+              'Content-Disposition':
+                "attachment; filename=\"expense.docx\"; filename*=UTF-8''%D1%80%D0%B0%D1%81%D1%85%D0%BE%D0%B4_2026-07-19.docx",
+            },
+          }),
+      ),
+    )
+    const result = await client.getBlob(DOWNLOAD_PATH)
+    expect(result.blob).toBeInstanceOf(Blob)
+    expect(await result.blob.text()).toBe('PKdocx-bytes')
+    // decodeURIComponent обязателен: без него файл сохранится с процентами
+    expect(result.filename).toBe('расход_2026-07-19.docx')
+  })
+
+  it('Content-Disposition без filename* → null (фолбэк строит фича, не транспорт)', async () => {
+    server.use(
+      http.get(
+        `*${DOWNLOAD_PATH}`,
+        () =>
+          new HttpResponse(new Blob(['x']), {
+            status: 200,
+            headers: { 'Content-Disposition': 'attachment' },
+          }),
+      ),
+    )
+    expect((await client.getBlob(DOWNLOAD_PATH)).filename).toBeNull()
+  })
+
+  it('заголовка Content-Disposition нет вовсе → null, а не исключение', async () => {
+    server.use(
+      http.get(`*${DOWNLOAD_PATH}`, () => new HttpResponse(new Blob(['x']))),
+    )
+    expect((await client.getBlob(DOWNLOAD_PATH)).filename).toBeNull()
+  })
+
+  it('403 → типизированный ApiError через parseErrorResponse, НЕ пустой блоб', async () => {
+    // Живой разрыв прав: роль OMD имеет daily_report.generate, но не
+    // document.view (seed_operations.py:51-55) — 403 обязан приехать ошибкой.
+    server.use(
+      http.get(`*${DOWNLOAD_PATH}`, () =>
+        HttpResponse.json(envelope('PERMISSION_DENIED', 'Недостаточно прав.'), {
+          status: 403,
+        }),
+      ),
+    )
+    const err = await expectRejection(client.getBlob(DOWNLOAD_PATH))
+    expect(err).toBeInstanceOf(ApiError)
+    const e = err as ApiError
+    expect(e.status).toBe(403)
+    expect(e.errorCode).toBe('PERMISSION_DENIED')
+  })
+
+  it('обрыв сети → NetworkError (вне иерархии ApiError)', async () => {
+    server.use(http.get(`*${DOWNLOAD_PATH}`, () => HttpResponse.error()))
+    const err = await expectRejection(client.getBlob(DOWNLOAD_PATH))
+    expect(err).toBeInstanceOf(NetworkError)
+    expect(err).not.toBeInstanceOf(ApiError)
+  })
+
+  it('шлёт мутабельные defaultHeaders: X-User-Id подхватывается на КАЖДЫЙ запрос', async () => {
+    // Голый <a href> этих заголовков не несёт и дал бы 403 — поэтому канал
+    // обязан идти через тот же спред {...defaultHeaders}, что и `get`.
+    const headers: Record<string, string> = {}
+    const authed = createApiClient({
+      baseUrl: 'http://localhost',
+      defaultHeaders: headers,
+    })
+    let seen: string | null = 'not-called'
+    server.use(
+      http.get(`*${DOWNLOAD_PATH}`, ({ request }) => {
+        seen = request.headers.get('X-User-Id')
+        return new HttpResponse(new Blob(['x']))
+      }),
+    )
+    // Заголовок появляется ПОСЛЕ создания клиента — как это делает credential.ts
+    headers['X-User-Id'] = 'user-42'
+    await authed.getBlob(DOWNLOAD_PATH)
+    expect(seen).toBe('user-42')
+  })
+})

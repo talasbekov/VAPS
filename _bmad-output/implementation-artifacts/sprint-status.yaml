@@ -368,7 +368,37 @@ development_status:
   #    10.3a создана 2026-07-19 (ready-for-dev): гейт снимется её Task 6 (regen
   #    schema.yaml + schema.d.ts). ДО этого 10.4 не стартует.
   10-4-светофор-дерево: done
-  10-5-экран-расхода: backlog
+  # Вынесено из скоупа 10.5 (create-story 2026-07-19) с поимённым преемником —
+  # хвост не «зависает намерением» (урок ретро E8/E9: AI без ключа не исполняется).
+  # 10.5 = выпуск + чтение за дату + скачивание .docx + экран 422-блокировки
+  # «кто не сдал» (read-only). Макет key-rashod.html рисует СЕМЬ элементов без
+  # поверхности — AC-0 стори это анти-фантомный гейт (не HALT: пути в схеме есть).
+  #   10.5a — UI обхода «на завтра»: ОТДЕЛЬНЫЙ эндпоинт override-tomorrow-block,
+  #           ОТДЕЛЬНОЕ право daily_report.override_block, тело {business_date,
+  #           reason}, горизонт +31д, 409 ALREADY_OVERRIDDEN. useApiMutation.
+  #           confirmOverride НЕ подходит (он ретраит то же тело с override:true
+  #           на тот же путь; TOMORROW_BLOCKED = 422, не 409) ⇒ свой диалог
+  #           причины. Действие необратимо и org-wide — своя стори, не абзац.
+  #   10.5b — БЭК: журнал выпусков. Сегодня `supersedes` живёт в модели
+  #           (documents/models.py:184-190) и НЕТ ни в одном сериализаторе, а
+  #           GET /expense-reports/ — point-lookup, не список. Нужны list-
+  #           семантика (закрывает deferred-work.md:572, там прямо назван 10.5)
+  #           + supersedes_number/reason в IssuedExpenseReportSerializer + regen.
+  #           ⚠️ БЕЗ НЕЁ epic-AC 10.5 «цепочка "взамен" прослеживается» НЕ закрыт
+  #           — закрывать до epic-10-retrospective.
+  #   10.5c — UI журнала выпусков «взамен исх.№» (пререквизит 10.5b).
+  #   10.5d — БЭК: .xlsx. generate_expense_xlsx существует, но issue_expense_
+  #           document зовёт generate_expense_docx БЕЗУСЛОВНО; format-параметра
+  #           нет. Вторая половина epic-AC «.docx/.xlsx».
+  #   10.5e — UI чтения за период + типизация ExpensePeriodResponse.pages
+  #           (сегодня {[k:string]:unknown}[] — долг класса 10.1c).
+  # Порядок: 10.5 → 10.5a → 10.5b → 10.5c ; 10.5d, 10.5e — независимы.
+  10-5-экран-расхода: done
+  10-5a-ui-обхода-блокировки-на-завтра: backlog
+  10-5b-журнал-выпусков-бэк: backlog
+  10-5c-журнал-выпусков-ui: backlog
+  10-5d-выпуск-xlsx-бэк: backlog
+  10-5e-чтение-за-период-ui: backlog
   10-6-amendment-флоу-ui: backlog
   10-7-печатная-форма-расхода: backlog
   10-8-личный-экспорт-оператора-щит: backlog

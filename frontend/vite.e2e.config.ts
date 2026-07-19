@@ -13,10 +13,11 @@ export default defineConfig({
     target: 'firefox100',
     outDir: 'dist-e2e',
     rollupOptions: {
-      // Четыре входа одной сборки: грид 9.9, экран сдачи дня 10.3,
-      // светофор-дерево 10.4 и центр уведомлений 11.4 (три последних —
-      // QA-добор). Общий чанк react/react-dom делится между ними — прод-dist
-      // по-прежнему не задет, size-gate суммирует только dist/.
+      // Пять входов одной сборки: грид 9.9, экран сдачи дня 10.3,
+      // светофор-дерево 10.4, центр уведомлений 11.4 и экран расхода 10.5
+      // (четыре последних — QA-добор). Общий чанк react/react-dom делится
+      // между ними — прод-dist по-прежнему не задет, size-gate суммирует
+      // только dist/.
       input: {
         grid: fileURLToPath(new URL('./e2e-harness/index.html', import.meta.url)),
         daySubmission: fileURLToPath(
@@ -27,6 +28,9 @@ export default defineConfig({
         ),
         notifications: fileURLToPath(
           new URL('./e2e-harness/notifications.html', import.meta.url),
+        ),
+        expense: fileURLToPath(
+          new URL('./e2e-harness/expense.html', import.meta.url),
         ),
       },
     },

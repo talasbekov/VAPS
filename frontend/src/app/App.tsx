@@ -7,12 +7,13 @@
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
 import { DailyUpdatePage } from '../features/daily-grid/DailyUpdatePage'
+import { ExpenseReportPage } from '../features/expense/ExpenseReportPage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
 import { ROUTES } from '../shared/routes'
 import { AppLayout } from '../shared/ui/AppLayout'
-import { AuditStub, DashboardStub, EmployeesStub, ReportsStub } from './section-stubs'
+import { AuditStub, DashboardStub, EmployeesStub } from './section-stubs'
 
 // Экспорт отдельно от BrowserRouter: E2E-тесты оборачивают AppRoutes в
 // MemoryRouter с initialEntries (BrowserRouter не даёт задать стартовый маршрут)
@@ -75,7 +76,7 @@ export function AppRoutes() {
           path={ROUTES.reports}
           element={
             <RequirePermission permission="daily_report.generate">
-              <ReportsStub />
+              <ExpenseReportPage />
             </RequirePermission>
           }
         />

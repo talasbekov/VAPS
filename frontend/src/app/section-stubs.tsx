@@ -27,10 +27,7 @@ export function EmployeesStub() {
 
 // OrganizationStub переехал в features/traffic-light (стори 10.4): «переезд
 // заглушки = часть той стори» — см. шапку файла.
-
-export function ReportsStub() {
-  return <SectionStub title="Отчёты" />
-}
+// ReportsStub переехал в features/expense (стори 10.5), там же H1 «Отчёты».
 
 export function AuditStub() {
   return <SectionStub title="Аудит" />

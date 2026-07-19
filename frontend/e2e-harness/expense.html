@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="data:," />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VAPS e2e-харнес — экран расхода (10.5)</title>
+  </head>
+  <body>
+    <!--
+      ПЯТЫЙ вход того же dist-e2e (грид 9.9, сдача дня 10.3, светофор 10.4,
+      уведомления 11.4, расход 10.5). Прод-dist и size-gate не задеты — они
+      суммируют только dist/ (Ловушка №3 стори 9.9).
+
+      Здесь монтируется НАСТОЯЩАЯ таблица маршрутов (AppRoutes), а не сам
+      экран: QA-проба показала, что `<ExpenseReportPage />` можно целиком
+      вынуть из маршрута `/reports`, заменив мёртвым `<h1>Отчёты</h1>`, и все
+      622 vitest-теста останутся зелёными. Врезку не проверял никто.
+    -->
+    <div id="root"></div>
+    <script type="module" src="/e2e-harness/expense.tsx"></script>
+  </body>
+</html>
