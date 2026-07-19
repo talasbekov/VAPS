@@ -141,6 +141,16 @@ export const handlers = [
   http.post('*/api/operations/daily-submissions/', () =>
     HttpResponse.json(businessRuleEnvelope, { status: 422 }),
   ),
+  // 200 (стори 10.3): состояние дня — НЕЙТРАЛЬНЫЙ дефолт «день не сдан».
+  // Обязателен, а не опционален: панель сдачи монтирует useQuery на этот путь,
+  // и при onUnhandledRequest: 'error' без дефолта падают все тесты экрана,
+  // которые выбирают подразделение (16 штук) — по инфраструктуре, а не по
+  // логике. Конверт — LimitOffsetPagination (limit/offset, НЕ page).
+  // Типом paths[...] не аннотируется намеренно: схема этих путей тел не несёт
+  // («No response body», Решение №3 стори) — аннотировать нечем.
+  http.get('*/api/operations/daily-submissions/', () =>
+    HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+  ),
   // 409 overridable: протокольная фикстура на существующем пути (Д8).
   // Override-aware (8.5): повтор с ДВУМЯ полями протокола (Д1, зеркало kwargs
   // status_service) → 201 c echo-телом; иначе — 409. Живого override-эндпоинта

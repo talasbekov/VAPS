@@ -277,6 +277,9 @@ export function DailyGrid({
   emptyLabel,
   onCellCommit,
   onDirtyChange,
+  // Дефолт = прежняя канон-строка ⇒ тесты E9, рендерящие грид напрямую,
+  // остаются зелёными без единой правки (доказательство аддитивности, AC-12).
+  submitLabel = 'Сдать день',
 }: DailyGridProps) {
   const initials = useMemo(() => initValues(rows), [rows])
   const [values, dispatch] = useReducer(valueReducer, undefined, () =>
@@ -693,7 +696,7 @@ export function DailyGrid({
           className="rounded bg-primary px-3 py-1 text-sm text-primary-foreground disabled:opacity-50"
           onClick={() => onSubmit(changed)}
         >
-          Сдать день
+          {submitLabel}
         </button>
       </div>
       {/* aria-live анонс блокировок/конфликтов — слепой ввод получает сигнал,

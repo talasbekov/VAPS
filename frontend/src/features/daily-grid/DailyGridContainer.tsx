@@ -29,6 +29,9 @@ export interface DailyGridContainerProps {
   emptyLabel?: string
   /** Число дельт → экрану (10.2): beforeunload и подтверждение смены даты. */
   onDirtyChange?: (changedCount: number) => void
+  /** Транзитный проброс надписи кнопки отправки дельт (10.3): контейнер
+   * значение не читает — решение о надписи принимает экран. */
+  submitLabel?: string
 }
 
 export function DailyGridContainer({
@@ -40,6 +43,7 @@ export function DailyGridContainer({
   onCellCommit,
   emptyLabel,
   onDirtyChange,
+  submitLabel,
 }: DailyGridContainerProps) {
   const rows = useMemo(
     () => buildPrefilledRows(employees, yesterday),
@@ -65,6 +69,7 @@ export function DailyGridContainer({
       onCellCommit={onCellCommit}
       emptyLabel={emptyLabel}
       onDirtyChange={onDirtyChange}
+      submitLabel={submitLabel}
     />
   )
 }

@@ -13,9 +13,15 @@ export default defineConfig({
     target: 'firefox100',
     outDir: 'dist-e2e',
     rollupOptions: {
-      input: fileURLToPath(
-        new URL('./e2e-harness/index.html', import.meta.url),
-      ),
+      // Два входа одной сборки: грид 9.9 и экран сдачи дня 10.3 (QA-добор).
+      // Общий чанк react/react-dom делится между ними — прод-dist по-прежнему
+      // не задет, size-gate суммирует только dist/.
+      input: {
+        grid: fileURLToPath(new URL('./e2e-harness/index.html', import.meta.url)),
+        daySubmission: fileURLToPath(
+          new URL('./e2e-harness/day-submission.html', import.meta.url),
+        ),
+      },
     },
   },
   preview: {

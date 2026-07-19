@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="data:," />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VAPS e2e-харнес — сдача дня (10.3)</title>
+  </head>
+  <body>
+    <!--
+      ВТОРОЙ вход того же dist-e2e (первый — index.html, грид 9.9). Своего
+      DevTools-hook здесь НЕТ намеренно: перф-бюджет коммитов — предмет спеки
+      9.9, а сдача дня измеряется поведением, а не счётчиком коммитов.
+    -->
+    <div id="root"></div>
+    <script type="module" src="/e2e-harness/day-submission.tsx"></script>
+  </body>
+</html>

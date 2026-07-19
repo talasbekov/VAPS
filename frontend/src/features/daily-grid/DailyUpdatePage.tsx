@@ -31,6 +31,9 @@ import {
   parseValidationDetails,
 } from './bulkErrors'
 import { DailyGridContainer } from './DailyGridContainer'
+import { currentSubmission, parseSubmissionList } from './daySubmission'
+import { DaySubmissionPanel } from './DaySubmissionPanel'
+import type { DriftEntry } from './DaySubmissionPanel'
 import type { BulkStatusRequest, EmployeeSeed, YesterdayPlacement } from './prefill'
 import { STATUS_TYPE_OPTIONS } from './statusTypes'
 
@@ -51,8 +54,17 @@ const MAX_BULK_ROWS = 1000
 const PAGE_SIZE = 50
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-/** Канон-строка кнопки сдачи (живёт ВНУТРИ грида) — EXPERIENCE.md#L103. */
-const SUBMIT_BUTTON_LABEL = 'Сдать день'
+/**
+ * Надпись кнопки ГРИДА (стори 10.3). Кнопка грида шлёт дельты статусов в
+ * bulk-роут и день НЕ сдаёт — канон-строку «Сдать день» забрала панель сдачи,
+ * которая действительно создаёт ряд в ops_daily_submissions. Две одинаковые
+ * надписи означали бы, что одна из них лжёт.
+ *
+ * ⚠️ ОДНА константа на два употребления: она же ищет кнопку для Ctrl+Enter
+ * (handleKeyDownCapture). Разъедься они — Ctrl+Enter МОЛЧА перестал бы
+ * находить кнопку, и клавиатурный путь отвалился бы без единой ошибки.
+ */
+const GRID_SUBMIT_LABEL = 'Сохранить правки'
 /** Канон-строка пустого состава — EXPERIENCE.md#L110. */
 const EMPTY_LABEL = 'Личный состав не загружен'
 
@@ -141,6 +153,12 @@ export function DailyUpdatePage() {
   const [dirtyCount, setDirtyCount] = useState(0)
   const [appliedCount, setAppliedCount] = useState<number | null>(null)
   const [pending, setPending] = useState<PendingChange | null>(null)
+  /**
+   * Локальное расхождение (10.3 AC-10): правки, отправленные с ЭТОГО экрана уже
+   * ПОСЛЕ сдачи дня — живое состояние разошлось со снапшотом. Это подмножество
+   * серверного YELLOW, а не он сам (полная истина — 10.3a/10.3b).
+   */
+  const [localDrift, setLocalDrift] = useState<DriftEntry[]>([])
 
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -163,6 +181,46 @@ export function DailyUpdatePage() {
     [employeesQuery.data],
   )
 
+  // Объявлено ДО мутации: её onSuccess читает ФИО для маркера drift (10.3).
+  const nameById = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const employee of employees) map[employee.id] = employee.fullName
+    return map
+  }, [employees])
+
+  const dateInvalid = !ISO_DATE_RE.test(businessDate)
+
+  /**
+   * Состояние дня (10.3 AC-2). Владелец запроса — ЭКРАН, а не панель
+   * (Решение №7): состояние нужно обеим сторонам — панели, чтобы рендерить, и
+   * экрану, чтобы решать, писать ли localDrift. Два useQuery с ОДНИМ ключом,
+   * но разными enabled — известная ловушка react-query (поведение записи кэша
+   * определяет тот, кто смонтировался первым). Один владелец, вниз — данные.
+   *
+   * Оба фильтра — точное равенство (DailySubmissionFilterSerializer); строку
+   * собираем вручную: схема параметров этих путей не эмитит вовсе.
+   * Конверт — LimitOffset (limit/offset), НЕ page: у /api/core/employees/
+   * пагинация другая, и скопированный оттуда код дочитки здесь не подошёл бы
+   * (дочитка тут и не нужна — фильтр точечный).
+   */
+  const daySubmissionQuery = useQuery({
+    queryKey: ['day-submission', divisionId, businessDate],
+    queryFn: () =>
+      apiClient.get<unknown>(
+        `/api/operations/daily-submissions/?division_id=${encodeURIComponent(
+          divisionId as string,
+        )}&business_date=${encodeURIComponent(businessDate)}`,
+      ),
+    enabled: divisionId !== null && !dateInvalid,
+  })
+
+  // Селектор бэка по is_current НЕ фильтрует — решение «день сдан» принимает
+  // ФЛАГ, а не results.length (AC-2: три состояния, не два).
+  const daySubmission = useMemo(
+    () => currentSubmission(parseSubmissionList(daySubmissionQuery.data)),
+    [daySubmissionQuery.data],
+  )
+
   const mutation = useApiMutation<BulkResponse, BulkRequestBody>({
     mutationFn: (variables) =>
       apiClient.post<BulkResponse>(
@@ -172,6 +230,25 @@ export function DailyUpdatePage() {
     onSuccess: (data, variables) => {
       // Счётчик — ИЗ ТЕЛА ОТВЕТА, не из локальной длины дельт (AC-8).
       setAppliedCount(data.created)
+      // 10.3 AC-10: маркер расхождения пишем ТОЛЬКО если день уже сдан —
+      // до сдачи расходиться не с чем. Накапливаем, а не перетираем: две
+      // отправки подряд после сдачи разошлись с ней обеими.
+      if (daySubmission !== null) {
+        setLocalDrift((prev) => {
+          const byEmployee = new Map(prev.map((entry) => [entry.employeeId, entry]))
+          for (const row of variables.rows) {
+            byEmployee.set(row.employee_id, {
+              employeeId: row.employee_id,
+              fullName: nameById[row.employee_id] ?? row.employee_id,
+              statusLabel:
+                STATUS_TYPE_OPTIONS.find(
+                  (option) => option.code === row.status_type_code,
+                )?.label ?? row.status_type_code,
+            })
+          }
+          return Array.from(byEmployee.values())
+        })
+      }
       // База сдвигается по ФАКТУ 201 (оптимистичных апдейтов нет): применённые
       // строки вливаются в yesterday ⇒ buildPrefilledRows пересобирает базовую
       // линию, введённые значения остаются, счётчик грида уходит в 0.
@@ -227,7 +304,6 @@ export function DailyUpdatePage() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [dirtyCount])
 
-  const dateInvalid = !ISO_DATE_RE.test(businessDate)
   const catalogEmpty = STATUS_TYPE_OPTIONS.length === 0
 
   const handleBulkSubmit = useCallback(
@@ -260,6 +336,10 @@ export function DailyUpdatePage() {
     // onDirtyChange(0) сообщить некому: beforeunload остался бы взведён на
     // экране без грида, а следующая смена допрашивала бы про «Изменено N из 0».
     setDirtyCount(0)
+    // Маркер drift принадлежит КОНКРЕТНОМУ дню и подразделению: без сброса он
+    // приехал бы на чужой день — ровно тот класс, что фантомный dirtyCount,
+    // найденный ревью 10.2.
+    setLocalDrift([])
   }, [])
 
   // Смена даты ремаунтит грид (key={businessDate}), смена подразделения меняет
@@ -291,12 +371,14 @@ export function DailyUpdatePage() {
       if (event.key !== 'Enter' || !event.ctrlKey) return
       event.preventDefault()
       event.stopPropagation()
-      // Дельты живут в гриде — отправку инициирует его же кнопка (канон-строка
-      // «Сдать день»); disabled-кнопка (hard/invalid-строки) клик проигнорирует,
-      // ноль дельт контейнер отсечёт сам.
+      // Дельты живут в гриде — отправку инициирует его же кнопка («Сохранить
+      // правки»); disabled-кнопка (hard/invalid-строки) клик проигнорирует,
+      // ноль дельт контейнер отсечёт сам. Ctrl+Enter СОХРАНЯЕТ правки и день
+      // НЕ сдаёт: сдача клавиатурного шортката не получает намеренно —
+      // «сдача — осознанное действие» (epic-AC 10.3).
       const button = Array.from(
         rootRef.current?.querySelectorAll('button') ?? [],
-      ).find((candidate) => candidate.textContent?.trim() === SUBMIT_BUTTON_LABEL)
+      ).find((candidate) => candidate.textContent?.trim() === GRID_SUBMIT_LABEL)
       button?.click()
     },
     [],
@@ -313,12 +395,6 @@ export function DailyUpdatePage() {
     mutationError.kind !== 'network' &&
     mutationError.status === 422
 
-  const nameById = useMemo(() => {
-    const map: Record<string, string> = {}
-    for (const employee of employees) map[employee.id] = employee.fullName
-    return map
-  }, [employees])
-
   const divisions = divisionsQuery.data?.results ?? []
 
   return (
@@ -333,8 +409,12 @@ export function DailyUpdatePage() {
             Расход дня
           </h1>
           <CardDescription>
-            Правьте отклонения и сдавайте день одной отправкой. Ctrl+Enter —
-            сдать день с клавиатуры.
+            {/* Ритуал ДВУХФАЗНЫЙ (10.3): сначала правки уходят в статусы,
+                потом день сдаётся отдельным осознанным действием. Прежний
+                текст обещал сдачу по Ctrl+Enter — она туда никогда не
+                уходила. */}
+            Правьте отклонения и сохраняйте их одной отправкой, затем сдайте
+            день. Ctrl+Enter — сохранить правки с клавиатуры.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -464,6 +544,26 @@ export function DailyUpdatePage() {
         </CardContent>
       </Card>
 
+      {/* Панель сдачи — НАД гридом, под шапкой. Живёт ВНЕ DailyGrid и его
+          ре-рендеров не вызывает: перф-инвариант «ровно 1 React-commit на
+          нажатие» (§9 контракта) не задет. */}
+      <DaySubmissionPanel
+        // Ремаунт на смене контекста: снимает ответ прошлой сдачи, открытое
+        // подтверждение и ошибку мутации разом. Тот же приём, что key на гриде
+        // (правки принадлежат дню) — и он же заменяет запрещённый линтом
+        // setState-в-эффекте внутри панели.
+        key={`${divisionId ?? 'none'}-${businessDate}`}
+        divisionId={divisionId}
+        businessDate={businessDate}
+        dateValid={!dateInvalid}
+        rowCount={employees.length}
+        dirtyCount={dirtyCount}
+        localDrift={localDrift}
+        submission={daySubmission}
+        isLoading={daySubmissionQuery.isPending && divisionId !== null && !dateInvalid}
+        isError={daySubmissionQuery.isError}
+      />
+
       {failure !== null && failure.kind === 'permission' ? (
         <p role="alert" className="rounded-md bg-red-100 p-3 text-sm text-red-800">
           {failure.message}
@@ -553,6 +653,7 @@ export function DailyUpdatePage() {
           emptyLabel={EMPTY_LABEL}
           onBulkSubmit={handleBulkSubmit}
           onDirtyChange={handleDirtyChange}
+          submitLabel={GRID_SUBMIT_LABEL}
         />
       )}
     </div>

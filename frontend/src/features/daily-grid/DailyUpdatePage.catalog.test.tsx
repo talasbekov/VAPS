@@ -150,7 +150,7 @@ it('пустой каталог: role="alert" + отправка ЗАПРЕЩЕ�
     'Изменено 1 из 2',
   )
 
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
 
   // (б) отправки не было и не будет: ждём и убеждаемся, что тишина устойчива
   await waitFor(() => expect(screen.queryByText('Отправка…')).toBeNull())

@@ -18,6 +18,8 @@ import { employeesListFixture } from '../../shared/api/testing/handlers'
 import { server } from '../../shared/api/testing/server'
 import { GENERIC_FAILURE_MESSAGE } from '../../shared/api/useApiMutation'
 import { ToastProvider } from '../../shared/ui/toast'
+import { todayLocalIso } from './daySubmission'
+import type { DaySubmission } from './daySubmission'
 import { DailyUpdatePage } from './DailyUpdatePage'
 
 type DivisionsResponse =
@@ -135,6 +137,53 @@ function captureBulk(
   return bodies
 }
 
+// ── Стори 10.3: сдача дня ────────────────────────────────────────────────────
+// Дефолтный MSW-хендлер GET daily-submissions отдаёт «день не сдан» — тесты,
+// которым нужен сданный день, перекрывают его явно.
+
+const TODAY_ISO = todayLocalIso()
+
+function daySubmissionFixture(over: Partial<DaySubmission> = {}): DaySubmission {
+  return {
+    id: 77,
+    division_id: DIVISION_ID,
+    business_date: TODAY_ISO,
+    version: 1,
+    is_current: true,
+    event: 'CHANGED',
+    submitted_by: 'operator-1',
+    submitted_at: '2026-07-19T08:15:00+05:00',
+    late: false,
+    ...over,
+  }
+}
+
+/** Состояние дня: сдан (строка с is_current) либо не сдан (пустой конверт). */
+function mockDayState(rows: DaySubmission[]) {
+  server.use(
+    http.get('*/api/operations/daily-submissions/', () =>
+      HttpResponse.json({
+        count: rows.length,
+        next: null,
+        previous: null,
+        results: rows,
+      }),
+    ),
+  )
+}
+
+/** Тела POST daily-submissions — «сдача дня реально ушла или нет». */
+function captureSubmissions(): Record<string, unknown>[] {
+  const bodies: Record<string, unknown>[] = []
+  server.use(
+    http.post('*/api/operations/daily-submissions/', async ({ request }) => {
+      bodies.push((await request.json()) as Record<string, unknown>)
+      return HttpResponse.json(daySubmissionFixture(), { status: 201 })
+    }),
+  )
+  return bodies
+}
+
 function envelope(
   errorCode: string,
   message: string,
@@ -219,7 +268,7 @@ it('загрузка: селект подразделений заполнен; 
   ).toBeInTheDocument()
 })
 
-it('отправка: правка 2 строк → «Сдать день» → РОВНО один POST с телом из двух дельт', async () => {
+it('отправка: правка 2 строк → «Сохранить правки» → РОВНО один POST с телом из двух дельт', async () => {
   mockDivisions()
   mockEmployees()
   const bodies = captureBulk(() =>
@@ -234,7 +283,7 @@ it('отправка: правка 2 строк → «Сдать день» → 
     'Изменено 2 из 3',
   )
 
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
 
   await waitFor(() => expect(bodies).toHaveLength(1))
   const body = bodies[0] as { business_date: string; rows: unknown[] }
@@ -269,7 +318,7 @@ it('успех: счётчик «Применено N» из ТЕЛА ОТВЕТ
 
   await editCurrentRow(user, 'VACATION')
   await editCurrentRow(user, 'SICK_LEAVE')
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
 
   expect(await screen.findByText('Применено 7 отклонений')).toBeInTheDocument()
   // База сдвинулась ⇒ грязного состояния больше нет…
@@ -319,7 +368,7 @@ it('409: инлайн-панель со ФИО и причинами; ConflictDi
 
   await editCurrentRow(user, 'VACATION')
   await editCurrentRow(user, 'SICK_LEAVE')
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
 
   // Построчная детализация: номер строки 1-based + ФИО, резолвнутое по id
   expect(
@@ -368,14 +417,14 @@ it('403 → инлайн про status.manage; 500 → инлайна НЕТ, т
   const user = await selectDivision()
 
   await editCurrentRow(user, 'VACATION')
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
 
   expect(
     await screen.findByText(/Требуется право status\.manage/),
   ).toBeInTheDocument()
 
   // Второй заход — 5xx: канал уже обслужен тостом, экран НЕ дублирует
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
   expect(await screen.findByText(GENERIC_FAILURE_MESSAGE)).toBeInTheDocument()
   expect(screen.queryByText(/Требуется право status\.manage/)).not.toBeInTheDocument()
   expect(screen.queryByText(/Ничего не сохранено/)).not.toBeInTheDocument()
@@ -392,7 +441,7 @@ it('двойная отправка при isPending → РОВНО один POS
   const user = await selectDivision()
 
   await editCurrentRow(user, 'VACATION')
-  const submit = screen.getByText('Сдать день')
+  const submit = screen.getByText('Сохранить правки')
   await user.click(submit)
   expect(await screen.findByText('Отправка…')).toBeInTheDocument()
   await user.click(submit)
@@ -407,6 +456,7 @@ it('клавиатурный путь: правка + Ctrl+Enter → POST ушё
   const bodies = captureBulk(() =>
     HttpResponse.json({ created: 1 }, { status: 201 }),
   )
+  const submissions = captureSubmissions()
   const user = userEvent.setup()
   renderPage()
 
@@ -423,6 +473,11 @@ it('клавиатурный путь: правка + Ctrl+Enter → POST ушё
   // Ctrl+Enter перехвачен экраном в capture-фазе: грид НЕ получил Enter и не
   // вошёл в правку (select статуса рендерится только в режиме EDIT).
   expect(screen.queryByLabelText('Статус')).not.toBeInTheDocument()
+  // 10.3 AC-11: Ctrl+Enter СОХРАНЯЕТ правки и день НЕ сдаёт — сдача
+  // клавиатурного шортката не получает намеренно («сдача — осознанное
+  // действие»). Кнопка сдачи на месте и день по-прежнему не сдан.
+  expect(submissions).toHaveLength(0)
+  expect(screen.getByRole('button', { name: 'Сдать день' })).toBeInTheDocument()
 })
 
 it('смена даты при dirty: подтверждение; отказ → дата прежняя и дельты целы; согласие → грид чист', async () => {
@@ -553,6 +608,9 @@ it('пустая дата: рантайм-гард запрещает отпра
   // toBulkRequest ДО onBulkSubmit, а тот на пустой дате падает RangeError
   // (prefill.ts:96, addDaysIso('')). Нет грида — нет ни кнопки, ни падения.
   expect(screen.queryByTestId('changed-counter')).not.toBeInTheDocument()
+  expect(screen.queryByText('Сохранить правки')).not.toBeInTheDocument()
+  // И панель сдачи при негодной дате тоже молчит целиком (10.3 AC-2): сдавать
+  // нечего, а канон-кнопка на экране без даты была бы обманкой.
   expect(screen.queryByText('Сдать день')).not.toBeInTheDocument()
   await user.keyboard('{Control>}{Enter}{/Control}')
 
@@ -560,7 +618,7 @@ it('пустая дата: рантайм-гард запрещает отпра
   // отличить от «запрос ещё в полёте»: ставим годную дату и сдаём по-настоящему.
   fireEvent.change(dateInput, { target: { value: '2026-07-25' } })
   await editCurrentRow(user, 'VACATION')
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
 
   await waitFor(() => expect(bodies).toHaveLength(1))
   // Ровно ОДИН POST, и он — с валидной датой: на пустой дате не ушло ничего
@@ -721,7 +779,7 @@ it('успех: строка с ЯВНЫМ периодом не остаётс�
     'Изменено 1 из 3',
   )
 
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
 
   await waitFor(() => expect(bodies).toHaveLength(1))
   const body = bodies[0] as { rows: { date_end: string }[] }
@@ -775,7 +833,7 @@ it('422 hard: метка «Нельзя», неизвестный employee_id п
 
   await editCurrentRow(user, 'VACATION')
   await editCurrentRow(user, 'SICK_LEAVE')
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
 
   // hard-отказ маркируется ИНАЧЕ, чем soft: цвет не единственный сигнал, метка
   // обязана меняться вместе с ним (EXPERIENCE.md#L238)
@@ -815,7 +873,7 @@ it('400 VALIDATION_ERROR → инлайн-список причин из details
   const user = await selectDivision()
 
   await editCurrentRow(user, 'VACATION')
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
 
   expect(
     await screen.findByText(/^Нельзя: Проверьте заполнение формы\./),
@@ -853,7 +911,7 @@ it('beforeunload: навешан при dirty > 0 и СНЯТ после усп�
   await editCurrentRow(user, 'VACATION')
   expect(unloadBlocked()).toBe(true)
 
-  await user.click(screen.getByText('Сдать день'))
+  await user.click(screen.getByText('Сохранить правки'))
   expect(await screen.findByText('Применено 1 отклонений')).toBeInTheDocument()
   await waitFor(() =>
     expect(screen.getByTestId('changed-counter')).toHaveTextContent(
@@ -1034,4 +1092,254 @@ it('состояния загрузки — из Query, оба с role="status" 
   expect(await screen.findByTestId('changed-counter')).toHaveTextContent(
     'Изменено 0 из 3',
   )
+})
+
+// ── Стори 10.3 — экран сдачи дня ─────────────────────────────────────────────
+
+it('10.3: две кнопки — два РАЗНЫХ действия (кнопка грида день не сдаёт)', async () => {
+  mockDivisions()
+  mockEmployees()
+  const bulkBodies = captureBulk(() =>
+    HttpResponse.json({ created: 1 }, { status: 201 }),
+  )
+  const submissions = captureSubmissions()
+  renderPage()
+  const user = await selectDivision()
+
+  // Обе кнопки на экране одновременно, и надписи РАЗНЫЕ — иначе одна из них
+  // лгала бы (главное открытие стори).
+  expect(screen.getByText('Сохранить правки')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Сдать день' })).toBeInTheDocument()
+
+  await editCurrentRow(user, 'VACATION')
+  await user.click(screen.getByText('Сохранить правки'))
+
+  await waitFor(() => expect(bulkBodies).toHaveLength(1))
+  // Кнопка грида шлёт ТОЛЬКО дельты статусов: ряд в ops_daily_submissions от
+  // неё не появляется.
+  expect(submissions).toHaveLength(0)
+})
+
+it('10.3: живая сдача с экрана → POST daily-submissions, день переходит в «сдан»', async () => {
+  mockDivisions()
+  mockEmployees()
+  const submissions = captureSubmissions()
+  renderPage()
+  const user = await selectDivision()
+
+  await user.click(screen.getByRole('button', { name: 'Сдать день' }))
+  await user.click(screen.getByRole('button', { name: 'Подтвердить сдачу' }))
+
+  await waitFor(() => expect(submissions).toHaveLength(1))
+  expect(submissions[0]).toEqual({
+    division_id: DIVISION_ID,
+    business_date: TODAY_ISO,
+  })
+  expect(await screen.findByTestId('day-submission-state')).toHaveTextContent(
+    'День сдан',
+  )
+})
+
+it('10.3 AC-4: несохранённые правки блокируют сдачу (POST сдачи не уходит)', async () => {
+  mockDivisions()
+  mockEmployees()
+  captureBulk(() => HttpResponse.json({ created: 1 }, { status: 201 }))
+  const submissions = captureSubmissions()
+  renderPage()
+  const user = await selectDivision()
+
+  await editCurrentRow(user, 'VACATION')
+  expect(screen.getByTestId('changed-counter')).toHaveTextContent('Изменено 1 из 3')
+
+  await user.click(screen.getByRole('button', { name: 'Сдать день' }))
+
+  expect(screen.getByText('Сначала сохраните правки: изменено 1')).toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByText('Отправка…')).toBeNull())
+  expect(submissions).toHaveLength(0)
+})
+
+it('10.3 AC-10: drift появляется ТОЛЬКО на сданном дне; смена даты его снимает', async () => {
+  mockDivisions()
+  mockEmployees()
+  // День уже сдан — значит последующая правка статусов расходится со снапшотом.
+  mockDayState([daySubmissionFixture()])
+  captureBulk(() => HttpResponse.json({ created: 1 }, { status: 201 }))
+  renderPage()
+  const user = await selectDivision()
+  await screen.findByTestId('day-submission-state')
+
+  await editCurrentRow(user, 'VACATION')
+  await user.click(screen.getByText('Сохранить правки'))
+
+  const drift = await screen.findByTestId('day-submission-drift')
+  // ФИО — из nameById, подпись статуса — из STATUS_TYPE_OPTIONS (не код).
+  expect(drift).toHaveTextContent('Абдуллаев Асхат Маратович')
+  expect(drift).toHaveTextContent('В отпуске')
+
+  // Смена даты уносит маркер: он принадлежит КОНКРЕТНОМУ дню (класс
+  // «фантомный флаг переживает смену контекста», ревью 10.2).
+  fireEvent.change(screen.getByLabelText('Дата'), {
+    target: { value: '2026-07-25' },
+  })
+  await waitFor(() =>
+    expect(screen.queryByTestId('day-submission-drift')).not.toBeInTheDocument(),
+  )
+})
+
+it('10.3 AC-10: на НЕсданном дне успешная отправка дельт drift НЕ поднимает', async () => {
+  mockDivisions()
+  mockEmployees()
+  // Дефолтный хендлер уже отдаёт «день не сдан» — фиксируем это явно.
+  mockDayState([])
+  captureBulk(() => HttpResponse.json({ created: 1 }, { status: 201 }))
+  renderPage()
+  const user = await selectDivision()
+
+  await editCurrentRow(user, 'VACATION')
+  await user.click(screen.getByText('Сохранить правки'))
+
+  // Положительный контроль: отправка РЕАЛЬНО прошла — значит отсутствие
+  // маркера объясняется несданным днём, а не тем, что ничего не отправлялось.
+  expect(await screen.findByText(/Применено 1 отклонений/)).toBeInTheDocument()
+  expect(screen.queryByTestId('day-submission-drift')).not.toBeInTheDocument()
+})
+
+it('10.3 AC-10: правки, сохранённые ДО сдачи, drift-ом не становятся (они внутри снапшота)', async () => {
+  mockDivisions()
+  mockEmployees()
+  // День ещё не сдан — сохраняем правки, и лишь ПОТОМ сдаём день.
+  let daySubmitted = false
+  server.use(
+    http.get('*/api/operations/daily-submissions/', () =>
+      HttpResponse.json({
+        count: daySubmitted ? 1 : 0,
+        next: null,
+        previous: null,
+        results: daySubmitted ? [daySubmissionFixture()] : [],
+      }),
+    ),
+    http.post('*/api/operations/daily-submissions/', () => {
+      daySubmitted = true
+      return HttpResponse.json(daySubmissionFixture(), { status: 201 })
+    }),
+  )
+  const bulkBodies = captureBulk(() =>
+    HttpResponse.json({ created: 1 }, { status: 201 }),
+  )
+  renderPage()
+  const user = await selectDivision()
+
+  await editCurrentRow(user, 'VACATION')
+  await user.click(screen.getByText('Сохранить правки'))
+  await waitFor(() => expect(bulkBodies).toHaveLength(1))
+
+  // Теперь сдаём день: submit_day снимет снапшот с УЖЕ СОХРАНЁННЫМ статусом —
+  // расходиться не с чем.
+  await user.click(screen.getByRole('button', { name: 'Сдать день' }))
+  await user.click(screen.getByRole('button', { name: 'Подтвердить сдачу' }))
+  await screen.findByTestId('day-submission-state')
+
+  // Маркер «расход разошёлся» здесь был бы ЛОЖНОЙ тревогой.
+  expect(screen.queryByTestId('day-submission-drift')).not.toBeInTheDocument()
+})
+
+// ── QA-добор покрытия (qa-generate-e2e-tests, 2026-07-19) ────────────────────
+// Сцепка «экран → parseSubmissionList → currentSubmission → панель» и
+// enabled-гарды: юнит проверяет функции, панель — рендер по пропу, а провод
+// между ними до этих тестов не проверял никто.
+
+it('10.3 AC-2: строки ЕСТЬ, но is_current нет ни у одной → «День не сдан» (три состояния, не два)', async () => {
+  mockDivisions()
+  mockEmployees()
+  // Селектор бэка по is_current НЕ фильтрует — после цепочки amendment
+  // приходят ВСЕ версии дня. Решение принимает ФЛАГ, а не results.length:
+  // иначе исторические версии читались бы как «день сдан», кнопка сдачи
+  // исчезла бы, и день остался бы несданным молча.
+  mockDayState([
+    daySubmissionFixture({ id: 1, version: 1, is_current: false }),
+    daySubmissionFixture({ id: 2, version: 2, is_current: false }),
+  ])
+  renderPage()
+  await selectDivision()
+
+  expect(await screen.findByText(/День не сдан/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Сдать день' })).toBeInTheDocument()
+  expect(screen.queryByTestId('day-submission-state')).not.toBeInTheDocument()
+})
+
+it('10.3 AC-2: до выбора подразделения запрос состояния дня НЕ уходит (enabled-гард)', async () => {
+  mockDivisions()
+  mockEmployees()
+  let dayStateCalls = 0
+  server.use(
+    http.get('*/api/operations/daily-submissions/', () => {
+      dayStateCalls += 1
+      return HttpResponse.json({ count: 0, next: null, previous: null, results: [] })
+    }),
+  )
+  renderPage()
+  await screen.findByRole('option', { name: 'Первый отдел' })
+
+  // divisionId === null ⇒ строка запроса собралась бы с «null» в фильтре и
+  // ушла бы на сервер мусором.
+  expect(dayStateCalls).toBe(0)
+
+  // Положительный контроль: после выбора запрос ВСЁ-ТАКИ уходит — без него
+  // ноль объяснялся бы тем, что запроса нет вовсе (вакуум).
+  const user = userEvent.setup()
+  await user.selectOptions(screen.getByLabelText('Подразделение'), DIVISION_ID)
+  await waitFor(() => expect(dayStateCalls).toBeGreaterThan(0))
+})
+
+it('10.3 AC-2: 403 по ПРАВУ на чтении состояния дня → role="alert", а не молчаливый «день не сдан»', async () => {
+  mockDivisions()
+  mockEmployees()
+  // 403 по СКОУПУ на списке не бывает (селектор сужает видимость молча), но
+  // 403 по ПРАВУ бывает: гейт миксина (views.py:120) отсекает актора без
+  // daily_report.mark_update. Трактовать отказ чтения как пустой день значило
+  // бы показать кнопку сдачи там, где читать нельзя вовсе.
+  server.use(
+    http.get('*/api/operations/daily-submissions/', () =>
+      HttpResponse.json(envelope('PERMISSION_DENIED', 'PERMISSION_DENIED', {}), {
+        status: 403,
+      }),
+    ),
+  )
+  renderPage()
+  await selectDivision()
+
+  const alert = await screen.findByText(/Не удалось прочитать состояние дня/)
+  expect(alert).toHaveAttribute('role', 'alert')
+  expect(screen.queryByRole('button', { name: 'Сдать день' })).not.toBeInTheDocument()
+})
+
+it('10.3 AC-11: Ctrl+Enter при фокусе ВНУТРИ панели сохраняет правки (квирк зафиксирован, а не «починен»)', async () => {
+  mockDivisions()
+  mockEmployees()
+  const bulkBodies = captureBulk(() =>
+    HttpResponse.json({ created: 1 }, { status: 201 }),
+  )
+  const submissions = captureSubmissions()
+  renderPage()
+  const user = await selectDivision()
+
+  await editCurrentRow(user, 'VACATION')
+
+  // handleKeyDownCapture висит на КОРНЕВОМ div экрана, который теперь
+  // оборачивает и панель ⇒ Ctrl+Enter при фокусе в панели тоже сохраняет
+  // правки. Это согласовано с AC-4 (сдавать при несохранённых правках всё
+  // равно нельзя) и специально не «чинится» — но обязано быть зафиксировано
+  // тестом: без него завтрашняя правка обработчика уедет молча, а сдача
+  // получила бы клавиатурный шорткат, которого ей намеренно не дали
+  // (epic-AC: «сдача — осознанное действие»).
+  const submitDay = screen.getByRole('button', { name: 'Сдать день' })
+  submitDay.focus()
+  expect(document.activeElement).toBe(submitDay)
+
+  await user.keyboard('{Control>}{Enter}{/Control}')
+
+  await waitFor(() => expect(bulkBodies).toHaveLength(1))
+  expect(submissions).toHaveLength(0)
+  // И подтверждение сдачи от шортката не открылось.
+  expect(screen.queryByRole('button', { name: 'Подтвердить сдачу' })).not.toBeInTheDocument()
 })
