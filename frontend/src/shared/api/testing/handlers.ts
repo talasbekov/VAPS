@@ -16,6 +16,9 @@ type EmployeesListResponse =
 type MyPermissionsResponse =
   paths['/api/operations/my-permissions/']['get']['responses']['200']['content']['application/json']
 
+type TrafficLightTreeResponse =
+  paths['/api/operations/traffic-light/tree/']['get']['responses']['200']['content']['application/json']
+
 const TIMESTAMP = '2026-07-07T12:00:00+05:00'
 
 // Права оператора (коды — из seed_operations.py, 8.6)
@@ -48,6 +51,17 @@ export const employeesListFixture: EmployeesListResponse = {
       employment_status: 'WORKING',
     },
   ],
+}
+
+// Дефолт светофора (стори 10.4): ПУСТОЕ дерево. Обязателен, а не опционален —
+// `app-layout.qa.test.tsx:140-151` монтирует `/organization`, и после подмены
+// заглушки живым экраном незамоканный GET валит чужой тест по
+// onUnhandledRequest: 'error' (по инфраструктуре, не по логике; тот же урок,
+// что дал GET daily-submissions в 10.3). Пустой список = «нет данных» —
+// нейтральный дефолт, который ничего не утверждает про цвета.
+export const trafficLightTreeFixture: TrafficLightTreeResponse = {
+  business_date: '2026-07-19',
+  nodes: [],
 }
 
 export const validationEnvelope: ErrorEnvelope = {
@@ -150,6 +164,12 @@ export const handlers = [
   // («No response body», Решение №3 стори) — аннотировать нечем.
   http.get('*/api/operations/daily-submissions/', () =>
     HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+  ),
+  // 200 (стори 10.4): каскадное дерево светофора — пустой дефолт (см. выше).
+  // Предикат с '*' обязателен: в env node без location относительный
+  // '/api/…' МОЛЧА не матчится против абсолютного URL запроса.
+  http.get('*/api/operations/traffic-light/tree/', () =>
+    HttpResponse.json(trafficLightTreeFixture),
   ),
   // 409 overridable: протокольная фикстура на существующем пути (Д8).
   // Override-aware (8.5): повтор с ДВУМЯ полями протокола (Д1, зеркало kwargs

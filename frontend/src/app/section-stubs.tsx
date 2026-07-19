@@ -25,9 +25,8 @@ export function EmployeesStub() {
   return <SectionStub title="Управление персоналом" />
 }
 
-export function OrganizationStub() {
-  return <SectionStub title="Подразделения" />
-}
+// OrganizationStub переехал в features/traffic-light (стори 10.4): «переезд
+// заглушки = часть той стори» — см. шапку файла.
 
 export function ReportsStub() {
   return <SectionStub title="Отчёты" />

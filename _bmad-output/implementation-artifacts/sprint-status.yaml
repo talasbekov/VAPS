@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-08
+# last_updated: 2026-07-19
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -367,7 +367,7 @@ development_status:
   #    Порядок: 10.3a (роут дерева) → 10.4. Механизм — тот же AI-4, что провёл 10.1a до 10.2.
   #    10.3a создана 2026-07-19 (ready-for-dev): гейт снимется её Task 6 (regen
   #    schema.yaml + schema.d.ts). ДО этого 10.4 не стартует.
-  10-4-светофор-дерево: ready-for-dev
+  10-4-светофор-дерево: done
   10-5-экран-расхода: backlog
   10-6-amendment-флоу-ui: backlog
   10-7-печатная-форма-расхода: backlog
