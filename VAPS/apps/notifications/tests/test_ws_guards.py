@@ -319,20 +319,37 @@ def test_ws_transport_declares_its_own_dependencies():
 
 
 def test_no_server_or_worker_stack_is_introduced():
-    """AC-9 boundary: 11.1 ships a transport, not a deployment.
+    """AC-9 boundary: 11.1 ships a transport, not a DEPLOYMENT.
 
-    ``daphne``/``uvicorn`` belong to 12.1 and ``celery`` is forbidden outright
-    (epics.md#L759, ARCH-DEFERRED-048). Each of them also drags C-extensions into
-    the offline mirror of the контур, so «it came in transitively» is not a
-    detail that can be noticed later — hence a test rather than a code review.
+    ``daphne`` is refused outright (11.1 AC-1, решение Bratan: +14 transitive
+    packages and 3 C-extensions into the offline mirror) and ``celery`` likewise
+    (epics.md#L759, ARCH-DEFERRED-048) — in ANY dependency group. A server in the
+    RUNTIME dependencies is still 12.1's call, not this epic's.
+
+    Story 11.6 (решение Bratan 2026-07-19) narrows the uvicorn clause to the
+    runtime group only. The boundary this guard defends is «no deployment ships
+    with the transport», and a dev-extra does not ship: it is a test tool for the
+    live browser e2e (`npm run test:e2e:live`), which is the ONLY way to exercise
+    the wire between the Django process and the operator's tab — `runserver`
+    without daphne is plain WSGI and serves no WebSocket at all. uvicorn is not
+    being CHOSEN here either; architecture already picked it (config/asgi.py:1-22,
+    epics.md#L1280). What stays forbidden is exactly what the guard was written
+    for: a server in the runtime deps, i.e. in the прод-образ. That move is 12.1.
     """
     runtime, dev = _declared_dependencies()
     declared = set(runtime) | set(dev)
     assert declared, "no dependencies parsed from pyproject.toml"
-    intruders = declared & {"daphne", "uvicorn", "celery"}
+
+    # daphne/celery — nowhere, in any group.
+    intruders = declared & {"daphne", "celery"}
     assert intruders == set(), (
         f"out-of-scope dependencies declared: {sorted(intruders)} — "
-        "servers are 12.1, Celery is forbidden (AC-9)"
+        "daphne refused (11.1 AC-1), Celery is forbidden (AC-9)"
+    )
+    # uvicorn — dev-extra only (11.6); the прод-образ stays server-free until 12.1.
+    assert "uvicorn" not in set(runtime), (
+        "uvicorn declared in RUNTIME dependencies — the прод-сервер is Story "
+        "12.1; 11.6 allows it in the [dev] extra only (live e2e tooling)"
     )
 
 
