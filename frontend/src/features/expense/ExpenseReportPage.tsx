@@ -33,8 +33,10 @@
 // ОБЪЯСНЯЕТ блокировку.
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router'
 
 import { apiClient } from '../../shared/api/client'
+import { ROUTES } from '../../shared/routes'
 import { useApiMutation } from '../../shared/api/useApiMutation'
 import type { ApiFailure } from '../../shared/api/errors'
 import type { paths } from '../../shared/api/schema'
@@ -68,6 +70,8 @@ const CHOOSE_DIVISION_TEXT = 'Выберите подразделение'
 const READ_ERROR_TEXT = 'Не удалось загрузить сведения о расходе.'
 const LOADING_TEXT = 'Загрузка сведений о расходе…'
 const BLOCKED_HEADING = 'Не готово'
+/** Вход в контрольную печатную форму (10.7) — не официальный документ. */
+const PRINT_FORM_LINK_LABEL = 'Печатная форма'
 
 /** Подписи `IssuedExpenseReportStatusEnum` — дословно из схемы. */
 const STATUS_LABELS: Record<IssuedExpenseReport['status'], string> = {
@@ -270,6 +274,21 @@ function ExpenseReportPanel({
             </div>
           </div>
         )}
+
+        {/* Вход в печатную форму (10.7): контрольная печать не зависит от
+            выпуска .docx, поэтому ссылка видна и до выпуска. Новая вкладка —
+            экран расхода не теряет выбранный контекст. ⚠️ Только <Link> с
+            фабрикой ROUTES: голый href это literal-путь и eslint error
+            (ARCH-FE-012). */}
+        <div>
+          <Link
+            to={ROUTES.printExpenseTo(divisionId, businessDate)}
+            target="_blank"
+            className="text-sm underline"
+          >
+            {PRINT_FORM_LINK_LABEL}
+          </Link>
+        </div>
 
         {issuedMessage !== null ? (
           <p role="status" className="text-sm font-medium">

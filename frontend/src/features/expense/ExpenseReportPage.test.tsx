@@ -18,6 +18,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { server } from '../../shared/api/testing/server'
@@ -76,7 +77,12 @@ function renderPage() {
     return (
       <QueryClientProvider client={queryClient}>
         {/* useApiMutation зовёт useToast — без провайдера падает на монтаже */}
-        <ToastProvider>{children}</ToastProvider>
+        {/* MemoryRouter добавлен стори 10.7: ссылка «Печатная форма» это
+            <Link> (ARCH-FE-012 запрещает голый href), а он без Router-контекста
+            падает на монтаже. Ассерты сюиты не менялись. */}
+        <ToastProvider>
+          <MemoryRouter>{children}</MemoryRouter>
+        </ToastProvider>
       </QueryClientProvider>
     )
   }

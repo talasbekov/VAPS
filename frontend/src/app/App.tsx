@@ -8,6 +8,7 @@ import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
 import { DailyUpdatePage } from '../features/daily-grid/DailyUpdatePage'
 import { ExpenseReportPage } from '../features/expense/ExpenseReportPage'
+import { ExpensePrintPage } from '../features/print-forms/ExpensePrintPage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -30,6 +31,21 @@ export function AppRoutes() {
         element={
           <RequireAuth>
             <PrintTestPage />
+          </RequireAuth>
+        }
+      />
+      {/* Печатная форма расхода (10.7): тоже сиблинг layout-route — сайдбар и
+          шапка на бумагу не попадают. В отличие от каркаса 8.8 здесь ЕСТЬ
+          RequirePermission: страница читает реальные данные расхода, и гейт
+          зеркалит бэковое `_EXPENSE_PERMISSION` (views.py:74). В NAV_SECTIONS
+          маршрут не добавляется — печатная форма не раздел портала. */}
+      <Route
+        path={ROUTES.printExpense}
+        element={
+          <RequireAuth>
+            <RequirePermission permission="daily_report.generate">
+              <ExpensePrintPage />
+            </RequirePermission>
           </RequireAuth>
         }
       />

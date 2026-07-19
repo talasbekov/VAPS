@@ -28,10 +28,31 @@ export const ROUTES = {
    * в NAV_SECTIONS не живёт. Фабрики реальных печатных форм — со сториями E10.
    */
   printTest: '/print/test',
+  /**
+   * Печатная форма расхода (10.7): вне AppLayout, за правом
+   * `daily_report.generate`, в NAV_SECTIONS не живёт (печатная форма — не
+   * раздел портала). Параметры — query, зеркалит форму запроса API.
+   */
+  printExpense: '/print/expense',
+  /**
+   * ПЕРВАЯ фабрика в файле (шапка выше её и предвидела). Нужна, потому что
+   * literal-путь вне этого файла — eslint error (ARCH-FE-012): голый
+   * `<a href="/print/expense?...">` красный, легален только `<Link to={...}>`
+   * с этой фабрикой.
+   */
+  printExpenseTo: (divisionId: string, businessDate: string) =>
+    `/print/expense?division_id=${encodeURIComponent(divisionId)}&business_date=${encodeURIComponent(businessDate)}`,
 } as const
 
 export interface NavSection {
-  route: (typeof ROUTES)[keyof typeof ROUTES]
+  /**
+   * ⚠️ `Extract<…, string>`, а не весь union значений ROUTES: с появлением
+   * фабрики `printExpenseTo` union включает функциональный тип, и без Extract
+   * навигация начала бы принимать функцию как маршрут. `tsc` сам по себе не
+   * покраснел бы (`Object.values(ROUTES)` в репозитории не используется) —
+   * поэтому сужение сознательное.
+   */
+  route: Extract<(typeof ROUTES)[keyof typeof ROUTES], string>
   /** Русская подпись раздела (порядок и имена — прототип, бриф 1 L44-46). */
   label: string
   icon: LucideIcon

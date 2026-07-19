@@ -17,6 +17,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setCredential, clearCredential } from '../../shared/auth/credential'
@@ -100,7 +101,11 @@ function renderPage() {
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <ToastProvider>{children}</ToastProvider>
+        {/* MemoryRouter добавлен стори 10.7 — см. ExpenseReportPage.test.tsx:
+            <Link> печатной формы без Router-контекста падает на монтаже. */}
+        <ToastProvider>
+          <MemoryRouter>{children}</MemoryRouter>
+        </ToastProvider>
       </QueryClientProvider>
     )
   }
