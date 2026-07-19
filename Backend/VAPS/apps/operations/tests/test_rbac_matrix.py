@@ -143,6 +143,12 @@ MATRIX = {
     # detail (story 5.8c, GET /{pk}/): формы у retrieve нет — pk=0 у держателя
     # резолвится селектором by_id в None → 404 = ALLOW по канону матрицы.
     "ops-daily-submission-detail": _MethodGate({"get": "daily_report.mark_update"}),
+    # личная копия сдачи (story 10.8, GET /{pk}/export/): экспорт видит ровно
+    # то, что и так отдаёт retrieve, поэтому гейт — тот же READ-код, новых
+    # прав не заводим. pk=0 у держателя резолвится by_id в None → 404 = ALLOW
+    # по канону матрицы; scope — в ensure_division_scope, матрицей не
+    # проверяется. GET-only ⇒ в AUDIT_MATRIX эта строка НЕ нужна.
+    "ops-daily-submission-export": _MethodGate({"get": "daily_report.mark_update"}),
     # amend сдачи (story 5.8b, POST /{id}/amend/). Гейт mixin {"amend":
     # daily_report.correct}; scope «чужое подразделение → 403» — в сервис-гарде
     # ensure_division_scope (матрицей не проверяется: payloadless POST держателя

@@ -444,7 +444,25 @@ development_status:
   # Порядок: 10.7 → 10.7a.
   10-7-печатная-форма-расхода: done
   10-7a-json-поверхность-тела-расхода: backlog
-  10-8-личный-экспорт-оператора-щит: backlog
+  # Разделено на create-story 2026-07-19 с поимённым преемником.
+  # Факт: байтовой .xlsx-поверхности НЕТ — grep "xlsx" в schema.d.ts даёт 0,
+  # permission_map DailySubmissionViewSet = {create, amend, list, retrieve},
+  # единственный байтовый роут (documents/attachments/{id}/download/) отдаёт
+  # файл С ДИСКА. Генератор expense_xlsx.py (6.4) есть, но по HTTP не зовётся.
+  #   ЧТО ДЕЛАЕТСЯ В 10.8: БЭК — GET /api/operations/daily-submissions/{id}/export/,
+  #   чистый билдер снапшот→.xlsx (паспорт сдачи: версия + время + событие;
+  #   поимённый состав roster⋈rows), аудит SUBMISSION_EXPORTED, regen схемы.
+  #   Право — daily_report.mark_update (тот же READ_PERMISSION, что у retrieve).
+  #   ЧЕГО НЕТ: кнопки. Оператор файл забрать из интерфейса не может.
+  #   10.8a — ФРОНТ: кнопка «моя копия» в DaySubmissionPanel под current !== null,
+  #           apiClient.getBlob + ЛОКАЛЬНЫЙ saveBlob (импорт из features/expense
+  #           запрещён ARCH-FE-013), useApiMutation (сырой useMutation в
+  #           features/** забанен), 403/404/422, RTL + Playwright-ассерт БАЙТОВ.
+  # ⚠️ БЕЗ 10.8a epic-AC 10.8 закрыт ЧАСТИЧНО: файл отдаётся и аудируется,
+  #   но из UI недоступен.
+  # Порядок: 10.8 → 10.8a.
+  10-8-личный-экспорт-оператора-щит: done
+  10-8a-ui-кнопка-моя-копия: backlog
   10-9-журнал-сообщено-исправлено-каркас: backlog
   10-10-e2e-сдачи-целиком: backlog
   epic-10-retrospective: optional

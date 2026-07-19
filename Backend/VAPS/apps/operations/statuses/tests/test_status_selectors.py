@@ -12,8 +12,13 @@ from datetime import date
 import pytest
 from django.utils import timezone
 
+from django.core.management import call_command
+
 from apps.operations.statuses.models import EmployeeStatus
-from apps.operations.statuses.selectors import EmployeeStatusSelector
+from apps.operations.statuses.selectors import (
+    EmployeeStatusSelector,
+    StatusTypeSelector,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -93,3 +98,21 @@ def test_snapshot_facts_on_scopes_to_employee_ids():
         )
     facts = EmployeeStatusSelector.snapshot_facts_on(date(2026, 6, 4), [keep])
     assert [f["employee_id"] for f in facts] == [keep]
+
+
+# --- StatusTypeSelector (Story 10.8) ----------------------------------------
+
+
+def test_names_map_returns_the_seeded_catalog():
+    """Вакуум-гвард нового селектора: пустой словарь не должен быть успехом."""
+    call_command("seed_statuses")
+    names = StatusTypeSelector.names_map()
+    assert names
+    assert names["IN_SERVICE"] == "В строю"
+    assert names["SICK_LEAVE"]
+
+
+def test_names_map_is_empty_without_the_seed():
+    # Знаменатель гварда выше: словарь непуст ИМЕННО из-за посева, а не
+    # потому, что селектор возвращает что-то само по себе.
+    assert StatusTypeSelector.names_map() == {}
