@@ -1311,6 +1311,26 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/operations/daily-submissions/{id}/export/:
+    get:
+      operationId: operations_daily_submissions_export_retrieve
+      description: 'Личная копия сданного дня (.xlsx): паспорт сдачи + состав из снапшота.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/operations/expense-reports/:
     get:
       operationId: operations_expense_reports_list

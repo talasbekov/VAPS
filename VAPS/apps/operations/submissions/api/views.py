@@ -17,6 +17,9 @@ import logging
 from datetime import timedelta
 
 from django.db import IntegrityError
+from django.http import HttpResponse
+from django.utils.http import content_disposition_header
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     extend_schema,
     extend_schema_serializer,
@@ -57,6 +60,7 @@ from apps.operations.submissions.services import (
     assert_tomorrow_not_blocked,
     derive_period,
     ensure_division_scope,
+    export_submission,
     issue_expense_document,
     override_tomorrow_block,
     submit_day,
@@ -90,6 +94,12 @@ _AMEND_PERMISSION = "daily_report.correct"
 # заводим (реестры прав и ошибок — закрытые списки). Тот же код стоит на
 # фронт-маршруте /organization, так что гейт бэка и гард фронта совпадают.
 _TRAFFIC_LIGHT_PERMISSION = "status.view"
+# Личная копия сдачи (10.8) отдаётся байтами прямо из памяти — сосед
+# _DOCX_CONTENT_TYPE живёт в document_release_service (там он описывает
+# СОХРАНЯЕМОЕ вложение), здесь тип нужен вью для ответа.
+_XLSX_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
 
 def _ensure_division_exists(division_id):
@@ -132,6 +142,9 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "amend": _AMEND_PERMISSION,
         "list": READ_PERMISSION,
         "retrieve": READ_PERMISSION,
+        # Личная копия (10.8) видит РОВНО то, что и так отдаёт retrieve —
+        # значит и гейтится тем же кодом; нового права не заводим.
+        "export": READ_PERMISSION,
     }
     # No "head": HEAD stays 405 everywhere (the 5.8a/b minimal surface).
     http_method_names = ["get", "post", "options"]
@@ -182,6 +195,38 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
             DailySubmissionSerializer(submission).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @extend_schema(
+        responses={(200, _XLSX_CONTENT_TYPE): OpenApiTypes.BINARY},
+        description=(
+            "Личная копия сданного дня (.xlsx): паспорт сдачи + состав из "
+            "снапшота."
+        ),
+    )
+    @action(detail=True, methods=["get"])
+    def export(self, request, pk=None, *args, **kwargs):
+        # Точечное чтение, как retrieve: экспортируется ЗАПРОШЕННАЯ версия,
+        # stale или current. Голова цепочки не подставляется — «щит»
+        # доказывает конкретную версию, а не последнюю.
+        submission = DailySubmissionSelector.by_id(pk)
+        if submission is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"submission_id": str(pk)},
+                message="Сдача не найдена.",
+            )
+        # Скоуп-гвард ПОСЛЕ резолва pk (порядок retrieve): 403 обязан нести
+        # уже серверно-разрешённый division_id.
+        ensure_division_scope(request.actor_id, READ_PERMISSION, submission.division_id)
+        payload, filename = export_submission(
+            submission=submission, actor=request.actor_id
+        )
+        # X-Accel не применяется: отдавать с диска нечего, файл существует
+        # только в памяти (осознанное отличие от documents/api/views.py).
+        response = HttpResponse(payload, content_type=_XLSX_CONTENT_TYPE)
+        response["Content-Disposition"] = content_disposition_header(True, filename)
+        return response
 
     @action(detail=True, methods=["post"])
     def amend(self, request, pk=None, *args, **kwargs):
