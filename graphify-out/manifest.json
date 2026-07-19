@@ -2190,8 +2190,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/api/urls.py": {
-    "mtime": 1784398653.3456845,
-    "ast_hash": "bc0054d27498daff48af08f7d08cdc32",
+    "mtime": 1784458428.628755,
+    "ast_hash": "55c5f5298776f26ad10d9b631b6cc84e",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/api/views.py": {
@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1784398653.3791087,
-    "ast_hash": "5c379485e469994b6f237e6cfef772fa",
+    "mtime": 1784460737.9130907,
+    "ast_hash": "ff3f4cfc5d6de7ea1b305a0c9c340cd8",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1784453988.3630378,
-    "ast_hash": "67d1443c3d5695801b197e937d6e57f7",
+    "mtime": 1784460803.0879636,
+    "ast_hash": "6bb09ce4a57357c64bbef15cfdfe367b",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -19115,8 +19115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_rbac_matrix.py": {
-    "mtime": 1784398653.3541865,
-    "ast_hash": "e84769f4db2fe7fd4b31d7a37e68f958",
+    "mtime": 1784458436.0128577,
+    "ast_hash": "44898d15618e747f92012896f89eeb1d",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/2-10-admin-\u043f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430-django-auth-\u0432\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435.md": {
@@ -19270,7 +19270,7 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/api/exception_handler.py": {
-    "mtime": 1784398653.3374703,
+    "mtime": 1784459682.6390996,
     "ast_hash": "caf2e3fcb14150f42e4d8919a90d83a4",
     "semantic_hash": ""
   },
@@ -19555,13 +19555,13 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/api/serializers.py": {
-    "mtime": 1784398653.3488448,
-    "ast_hash": "43239325473ca0be0fd520b3ead7a514",
+    "mtime": 1784458360.7637346,
+    "ast_hash": "a01df89dfae4c69be24f30c6e8596952",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/api/views.py": {
-    "mtime": 1784398653.3488448,
-    "ast_hash": "e92dbe8e84a38a8ca85e2f50ad24bddf",
+    "mtime": 1784459727.2408643,
+    "ast_hash": "dedfd592fa066d6a7ed33a34f3cf24c6",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/management/__init__.py": {
@@ -20955,8 +20955,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/schema.d.ts": {
-    "mtime": 1784398653.4031782,
-    "ast_hash": "1a00fcc54b6cda625479f8213a4c867e",
+    "mtime": 1784458513.520843,
+    "ast_hash": "4cd07939db8b2ec6ea67679a50bebd32",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/testing/handlers.ts": {
@@ -20970,8 +20970,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/testing/vitest.setup.ts": {
-    "mtime": 1784398653.4037285,
-    "ast_hash": "32d1822f4661217d0b33641c79b42dcc",
+    "mtime": 1784457418.9631982,
+    "ast_hash": "8b1434a040d322541859a34f0ae9b4ea",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/useApiMutation.test.tsx": {
@@ -21020,8 +21020,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/ui/AppLayout.tsx": {
-    "mtime": 1784398653.4038765,
-    "ast_hash": "842601d29210b5ec2d24bc10f6236587",
+    "mtime": 1784457377.7687075,
+    "ast_hash": "39b7f73903ce29580ecd02979bc7fe3a",
     "semantic_hash": ""
   },
   "frontend/src/shared/ui/Avatar.tsx": {
@@ -21115,8 +21115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/schema.yaml": {
-    "mtime": 1784398653.3558297,
-    "ast_hash": "d86e85057656a0e8cae28342b6a28598",
+    "mtime": 1784459736.8158917,
+    "ast_hash": "1daeabc01e774f736e43da964923aef2",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/5-10-property-\u0438\u043c\u043c\u0443\u0442\u0430\u0431\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c-\u0441\u043d\u0430\u043f\u0448\u043e\u0442\u0430.md": {
@@ -21530,8 +21530,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/agents/agents-orchestration-10-11-20260718-210324.md": {
-    "mtime": 1784452114.425549,
-    "ast_hash": "fc8357aac1167a23896f3fe49976dd92",
+    "mtime": 1784459830.7055027,
+    "ast_hash": "f3f12e2673b8af123a3ededcb9acb320",
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/init-log-20260718-203719.md": {
@@ -21540,8 +21540,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/orchestration-10-11-20260718-210324.md": {
-    "mtime": 1784454554.277081,
-    "ast_hash": "58f7b67e7c0e5d39dd4aa97926606c5e",
+    "mtime": 1784460397.7028794,
+    "ast_hash": "5ff551b4cd5ee26b5bdf0c500553a8f6",
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/preflight-11-20260718-205729.md": {
@@ -21635,8 +21635,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/11-3-ws-\u043a\u043b\u0438\u0435\u043d\u0442-\u0441-reconnect.md": {
-    "mtime": 1784454508.9444823,
-    "ast_hash": "2d5dab0045116dd0d1eb46af39084e07",
+    "mtime": 1784460526.9068139,
+    "ast_hash": "07db279adc50b57b881f443dc47b5f63",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/tests/test-summary-11-2.md": {
@@ -21667,6 +21667,56 @@
   "frontend/e2e-harness/day-submission.html": {
     "mtime": 1784451840.9391534,
     "ast_hash": "a0f5b9948baca2756405f6c77d795aa8",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/tests/test_traffic_light_api.py": {
+    "mtime": 1784459765.8305023,
+    "ast_hash": "3f9a94e05b280ecab6641412cb4f127e",
+    "semantic_hash": ""
+  },
+  "frontend/src/app/connection-indicator-wiring.test.tsx": {
+    "mtime": 1784459093.5516617,
+    "ast_hash": "64cee725a8a657a3f19c0b57836f05f3",
+    "semantic_hash": ""
+  },
+  "frontend/src/shared/notifications/notificationsSocket.test.ts": {
+    "mtime": 1784460353.4197938,
+    "ast_hash": "bc5e8b163cd60da14a9c430734a13fc9",
+    "semantic_hash": ""
+  },
+  "frontend/src/shared/notifications/notificationsSocket.ts": {
+    "mtime": 1784460333.3323245,
+    "ast_hash": "bead94cc536c893a1f6b405b3061390d",
+    "semantic_hash": ""
+  },
+  "frontend/src/shared/ui/ConnectionIndicator.test.tsx": {
+    "mtime": 1784457880.2665539,
+    "ast_hash": "321d49f1e3fce2c03ee39039c0cd4a18",
+    "semantic_hash": ""
+  },
+  "frontend/src/shared/ui/ConnectionIndicator.tsx": {
+    "mtime": 1784458020.558878,
+    "ast_hash": "00e02ef893e8470ec39e8093fc725ab4",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/10-3a-\u0440\u043e\u0443\u0442-\u0441\u0432\u0435\u0442\u043e\u0444\u043e\u0440\u0430.md": {
+    "mtime": 1784460797.902546,
+    "ast_hash": "636fb6bd7ed92aa34ca62b4d56fedf3f",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/10-4-\u0441\u0432\u0435\u0442\u043e\u0444\u043e\u0440-\u0434\u0435\u0440\u0435\u0432\u043e.md": {
+    "mtime": 1784456188.0212276,
+    "ast_hash": "06795ec31d7b3b28f64d89dbba0bf17d",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/tests/test-summary-10-3a.md": {
+    "mtime": 1784459928.8439264,
+    "ast_hash": "07fb5a20ec4d3b59a1162938163287b0",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/tests/test-summary-11-3.md": {
+    "mtime": 1784459349.0212226,
+    "ast_hash": "889c30298d9954c999d209d09d5d89f9",
     "semantic_hash": ""
   }
 }
