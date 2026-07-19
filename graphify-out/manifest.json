@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1784471677.964873,
-    "ast_hash": "cdcbdd8b00f1f2f6c075729b838ad575",
+    "mtime": 1784478204.9670837,
+    "ast_hash": "8bedace58960475890bd220edfa6461f",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -20750,8 +20750,8 @@
     "semantic_hash": ""
   },
   "frontend/package.json": {
-    "mtime": 1784398653.398109,
-    "ast_hash": "ca8e668901ab80245bf0f37b0298d671",
+    "mtime": 1784474192.694266,
+    "ast_hash": "9aa242251bb272bc78492b923286bba9",
     "semantic_hash": ""
   },
   "frontend/playwright.config.ts": {
@@ -20975,13 +20975,13 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/useApiMutation.test.tsx": {
-    "mtime": 1784398653.4037285,
-    "ast_hash": "85bab0ed77cc230f5425ea6abd69a0b4",
+    "mtime": 1784476563.9374719,
+    "ast_hash": "2876078338173dce98e7a56df0882682",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/useApiMutation.ts": {
-    "mtime": 1784398653.4037285,
-    "ast_hash": "0465ededff44abbb9353c9bf8c47e24c",
+    "mtime": 1784476293.0696557,
+    "ast_hash": "dea8bfb2a463de86383b254b1a33c309",
     "semantic_hash": ""
   },
   "frontend/src/shared/auth/AuthContext.tsx": {
@@ -21400,8 +21400,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/notifications/tests/test_ws_guards.py": {
-    "mtime": 1784451746.1503835,
-    "ast_hash": "7971a173459cfb7380462b97ee7c907a",
+    "mtime": 1784475833.8624957,
+    "ast_hash": "6e9de9942dfd87728cd7d5ae3632a964",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/api/__init__.py": {
@@ -21460,13 +21460,13 @@
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyUpdatePage.test.tsx": {
-    "mtime": 1784451664.8496695,
-    "ast_hash": "dfd214b72baa5ee9e28b01be16fec83f",
+    "mtime": 1784476390.216169,
+    "ast_hash": "320b1551d426140dcdb81a59d507d82e",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DailyUpdatePage.tsx": {
-    "mtime": 1784452071.3170085,
-    "ast_hash": "87c95026e4f64857029db9717aaa3f5f",
+    "mtime": 1784475418.9679902,
+    "ast_hash": "71c3765d9a1803b1206ddf1dd00501c3",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/bulkErrors.test.ts": {
@@ -21490,8 +21490,8 @@
     "semantic_hash": ""
   },
   "frontend/vite.e2e.config.ts": {
-    "mtime": 1784468497.0172567,
-    "ast_hash": "cc65cf67663fbb13ccd985c80a1b89a7",
+    "mtime": 1784474453.6163018,
+    "ast_hash": "7c24e6ae4a6f98e5bde8583dec7bc3fb",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/10-1-\u0431\u0443\u043c\u0430\u0436\u043d\u044b\u0435-\u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442\u044b-\u044d\u043a\u0440\u0430\u043d\u043e\u0432-\u0441\u0434\u0430\u0447\u0438-\u0438-\u0440\u0430\u0441\u0445\u043e\u0434\u0430.md": {
@@ -21530,8 +21530,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/agents/agents-orchestration-10-11-20260718-210324.md": {
-    "mtime": 1784471300.8968155,
-    "ast_hash": "3e5ba5cb33253aca27d825cecf30816a",
+    "mtime": 1784477675.2548974,
+    "ast_hash": "734c6733e60e13603543870561e66bf6",
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/init-log-20260718-203719.md": {
@@ -21540,8 +21540,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/orchestration-10-11-20260718-210324.md": {
-    "mtime": 1784471294.7990487,
-    "ast_hash": "cfdf41e7f844b65d278fbe4ff7a1503e",
+    "mtime": 1784477669.1504385,
+    "ast_hash": "f6bd11cc11d1afbe08fa0cda40e8ed51",
     "semantic_hash": ""
   },
   "_bmad-output/story-automator/preflight-11-20260718-205729.md": {
@@ -21575,18 +21575,18 @@
     "semantic_hash": ""
   },
   "frontend/e2e/day-submission.spec.ts": {
-    "mtime": 1784451973.758739,
-    "ast_hash": "8b724bb75a662ab60d6b77294d0b9885",
+    "mtime": 1784475284.0693457,
+    "ast_hash": "bc67efa216470d60fad2e74479909f95",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DaySubmissionPanel.test.tsx": {
-    "mtime": 1784453858.6427195,
-    "ast_hash": "9c8b0f3f0d67bcda851f3de118867a2b",
+    "mtime": 1784476265.28181,
+    "ast_hash": "0813ecd03e5d4dbb5830f7fab9527455",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/DaySubmissionPanel.tsx": {
-    "mtime": 1784453885.9371917,
-    "ast_hash": "005b2b4d36d20c482678515131950a69",
+    "mtime": 1784476303.1186016,
+    "ast_hash": "7d6f23fa706b33022e9dc566410aaddb",
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/daySubmission.test.ts": {
@@ -21595,18 +21595,13 @@
     "semantic_hash": ""
   },
   "frontend/src/features/daily-grid/daySubmission.ts": {
-    "mtime": 1784451795.0275092,
-    "ast_hash": "869538342a3abee27e0ef234cbd49bc2",
+    "mtime": 1784473037.1153517,
+    "ast_hash": "4c1e2eb2359200decb7a83bed20d2a5d",
     "semantic_hash": ""
   },
   "frontend/test-results/.last-run.json": {
-    "mtime": 1784469455.6927674,
+    "mtime": 1784477980.5102134,
     "ast_hash": "f196824657d8858bc7fa44eecbba38b1",
-    "semantic_hash": ""
-  },
-  "frontend/test-results/perf-trend.json": {
-    "mtime": 1784469449.027237,
-    "ast_hash": "b6a53da1a2a9685d67975cdfd348e48c",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/10-3-\u044d\u043a\u0440\u0430\u043d-\u0441\u0434\u0430\u0447\u0438-\u0434\u043d\u044f.md": {
@@ -21630,22 +21625,22 @@
     "semantic_hash": ""
   },
   "frontend/dist-e2e/e2e-harness/day-submission.html": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "62af9a75e76eef3a6aabc789499f7b4d",
+    "mtime": 1784477977.8653612,
+    "ast_hash": "5359c5ae3b5f586c39bcb919e81c7c10",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/e2e-harness/index.html": {
-    "mtime": 1784469445.332657,
+    "mtime": 1784477977.8653612,
     "ast_hash": "1a270f821a9efcb9bfa75a126d6c92ab",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/fonts/LICENSE-PT-Serif.txt": {
-    "mtime": 1784469445.169668,
+    "mtime": 1784477977.715234,
     "ast_hash": "cc3f0246396ef08bd6dd4ccaa9372488",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/fonts/README.md": {
-    "mtime": 1784469445.1697445,
+    "mtime": 1784477977.7153063,
     "ast_hash": "49b2699fe2ccefbd64c19b9f88e8a5b4",
     "semantic_hash": ""
   },
@@ -21709,79 +21704,34 @@
     "ast_hash": "a9adf618f5e5d2511c473fdb1ef396e6",
     "semantic_hash": ""
   },
-  "frontend/dist-e2e/assets/AppLayout-BwkQGHc2.js": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "a7040a8d92d386893caf24abfdd836ac",
-    "semantic_hash": ""
-  },
-  "frontend/dist-e2e/assets/Button-DdAX3Zd6.js": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "cfc47bcd684315e54752e40e4d466120",
-    "semantic_hash": ""
-  },
   "frontend/dist-e2e/assets/Card-DX2xp2yF.js": {
-    "mtime": 1784469445.332657,
+    "mtime": 1784477977.8653612,
     "ast_hash": "8845a7cdf805eb61e82ac6956fde6981",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/assets/DailyGridContainer-DF3tjSHS.js": {
-    "mtime": 1784469445.332657,
+    "mtime": 1784477977.8653612,
     "ast_hash": "102cfa19a77bc9ba1c0af24fd3074604",
     "semantic_hash": ""
   },
-  "frontend/dist-e2e/assets/DailyUpdatePage-gp-lYV03.js": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "18d141bf15d2a4d61d242fd6a83019be",
-    "semantic_hash": ""
-  },
   "frontend/dist-e2e/assets/Label-YR9zjomS.js": {
-    "mtime": 1784469445.332657,
+    "mtime": 1784477977.8653612,
     "ast_hash": "518823478ed10c65438eb3d0f751e7db",
     "semantic_hash": ""
   },
-  "frontend/dist-e2e/assets/TrafficLightTreePage-CaY7yskT.js": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "dbf8c0ac09e178f14a270fc6ef4fe799",
-    "semantic_hash": ""
-  },
-  "frontend/dist-e2e/assets/daySubmission-oAlbOyW2.js": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "5beeeabee06dd3156b44cdb437362a3e",
-    "semantic_hash": ""
-  },
-  "frontend/dist-e2e/assets/expense-BOOZNt1A.js": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "1562cc0cc4dc106184c5cdd51c77c571",
-    "semantic_hash": ""
-  },
   "frontend/dist-e2e/assets/grid-DFAPZ3oR.js": {
-    "mtime": 1784469445.332657,
+    "mtime": 1784477977.8653612,
     "ast_hash": "9731565fba0237f4e7beaeb344deb0fd",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/assets/index-BA4DyKqn.js": {
-    "mtime": 1784469445.332657,
+    "mtime": 1784477977.8653612,
     "ast_hash": "2977abf588bbc270ae374e4ed5a17f7d",
     "semantic_hash": ""
   },
-  "frontend/dist-e2e/assets/index-BdqvoXuE.js": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "043f2ade79a2551394814fd8dfc7da24",
-    "semantic_hash": ""
-  },
   "frontend/dist-e2e/assets/index-fjexKJh2.js": {
-    "mtime": 1784469445.332657,
+    "mtime": 1784477977.8653612,
     "ast_hash": "8124022f577dec5c884e8c27c89124ca",
-    "semantic_hash": ""
-  },
-  "frontend/dist-e2e/assets/notifications-D0M83GF8.js": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "00689fe6680e7262f5d86c7bfebb10b0",
-    "semantic_hash": ""
-  },
-  "frontend/dist-e2e/assets/trafficLight-tq_-hxW7.js": {
-    "mtime": 1784469445.3335006,
-    "ast_hash": "ce92fbeef3a81f5e417fcaaa368a8c8f",
     "semantic_hash": ""
   },
   "frontend/e2e-harness/expense.tsx": {
@@ -21905,8 +21855,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/10-6-amendment-\u0444\u043b\u043e\u0443-ui.md": {
-    "mtime": 1784471429.8006518,
-    "ast_hash": "79334ff1a930174f73a28a0a4a971ff4",
+    "mtime": 1784476685.6370854,
+    "ast_hash": "a1bc0bd853393c9ceb8cad9f19084403",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/11-4-\u0446\u0435\u043d\u0442\u0440-\u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0439-ui.md": {
@@ -21940,18 +21890,18 @@
     "semantic_hash": ""
   },
   "frontend/dist-e2e/e2e-harness/expense.html": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "98edff708da38e4d971d22999c8ac580",
+    "mtime": 1784477977.8653612,
+    "ast_hash": "a0bffa69da31a00838d40f2d305e5194",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/e2e-harness/notifications.html": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "1fa45627799e5f43177cd28b1f5de753",
+    "mtime": 1784477977.8653612,
+    "ast_hash": "3a35ef57be63a1a3737fa9bc2ed7e264",
     "semantic_hash": ""
   },
   "frontend/dist-e2e/e2e-harness/traffic-light.html": {
-    "mtime": 1784469445.332657,
-    "ast_hash": "fb180a04737c656f7639843a764a6040",
+    "mtime": 1784477977.8653612,
+    "ast_hash": "9c40579dd5c7fd20cb00b0d12e4b4352",
     "semantic_hash": ""
   },
   "frontend/e2e-harness/expense.html": {
@@ -21967,6 +21917,136 @@
   "frontend/e2e-harness/traffic-light.html": {
     "mtime": 1784462593.9569387,
     "ast_hash": "51b8868733e5146aac5a6993c7b08f42",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/management/commands/seed_e2e_lagging.py": {
+    "mtime": 1784476935.651196,
+    "ast_hash": "33f6c536da8e9550bb215c3926c71211",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/tests/test_seed_e2e_lagging.py": {
+    "mtime": 1784476921.9085057,
+    "ast_hash": "aad79faf0b07f7f86f65fa71c92aa275",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/AppLayout-CVcDYDeX.js": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "9f95efa865a42f4c215039ac901638ed",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/Button-BBcQXeKP.js": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "7939c2adf648772658ba6b8517cb5669",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/DailyUpdatePage-BTCZkk_9.js": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "6f39c3d5548429e61758fbfac5696779",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/TrafficLightTreePage-Z7BmwJrV.js": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "3d446fdde8ecd617470bded6ea7d54c5",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/dayAmendment-GXkabyO9.js": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "ca076960edba60b632394320dc554d3a",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/daySubmission-AJiLls08.js": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "8699c53e76ae8cf9ce10e5367cdcacf8",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/expense-wdmmtFB5.js": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "d31a59b542c89a4955c596f45b679dfe",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/index-Cx1FS3ox.js": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "6a9b3e98ce92d34cc5c58ad194f97dcc",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/notifications-Czc2SYGp.js": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "8f651f57bc829f51af12bb7f5be88fc6",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/assets/trafficLight-CZ8xX00K.js": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "ae1a971c27948bf4470ee69c920706f8",
+    "semantic_hash": ""
+  },
+  "frontend/e2e-harness/day-amendment.tsx": {
+    "mtime": 1784474418.377591,
+    "ast_hash": "65bcce03d619e26b475280cb8fa8aac1",
+    "semantic_hash": ""
+  },
+  "frontend/e2e-live/notifications-live.spec.ts": {
+    "mtime": 1784474837.5610607,
+    "ast_hash": "1ba66e40c4d874a524c4724e36f76a3d",
+    "semantic_hash": ""
+  },
+  "frontend/e2e/day-amendment.spec.ts": {
+    "mtime": 1784474936.6185083,
+    "ast_hash": "846fb419fb2359df192e9d4581e110ea",
+    "semantic_hash": ""
+  },
+  "frontend/playwright.live.config.ts": {
+    "mtime": 1784474865.5692832,
+    "ast_hash": "35ec4044bca34382dfcbdd051eca8893",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/daily-grid/DayAmendmentForm.test.tsx": {
+    "mtime": 1784476341.9754007,
+    "ast_hash": "80cc267eb79bbd0e9e223e26e24c75ac",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/daily-grid/DayAmendmentForm.tsx": {
+    "mtime": 1784476377.4433985,
+    "ast_hash": "8d5982bfde068c492fbbe8e5d387d17c",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/daily-grid/amendment.test.ts": {
+    "mtime": 1784472541.5934122,
+    "ast_hash": "0acf61307088b2890c43f115e094728f",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/daily-grid/amendment.ts": {
+    "mtime": 1784475418.96794,
+    "ast_hash": "7375a807218b15ff2f7f8ec989f24b57",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/10-7-\u043f\u0435\u0447\u0430\u0442\u043d\u0430\u044f-\u0444\u043e\u0440\u043c\u0430-\u0440\u0430\u0441\u0445\u043e\u0434\u0430.md": {
+    "mtime": 1784478722.6764467,
+    "ast_hash": "a9744208fa30a77e1593613f9f6167d6",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/11-6-e2e-\u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u044f.md": {
+    "mtime": 1784478203.8681314,
+    "ast_hash": "de036b20fcc7da1debe369adec058d43",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/tests/test-summary-10-6.md": {
+    "mtime": 1784475638.2743998,
+    "ast_hash": "f5e78ef0a0fa19d60b126ce7633b76f2",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/tests/test-summary-11-6.md": {
+    "mtime": 1784477157.0570815,
+    "ast_hash": "6ee86791b232bb9b69dd91146f29e3bd",
+    "semantic_hash": ""
+  },
+  "frontend/dist-e2e/e2e-harness/day-amendment.html": {
+    "mtime": 1784477977.8653612,
+    "ast_hash": "808ef719b379da41b45605e1030b212a",
+    "semantic_hash": ""
+  },
+  "frontend/e2e-harness/day-amendment.html": {
+    "mtime": 1784474397.5905433,
+    "ast_hash": "7bf9f459f5ba8cb7bf6bd97b16bdfd3a",
     "semantic_hash": ""
   }
 }
