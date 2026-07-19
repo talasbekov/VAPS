@@ -1,16 +1,28 @@
-"""Story 11.1 — architectural guards for the WS transport.
+"""Stories 11.1/11.2 — architectural guards for WS transport and delivery.
 
-Two invariants the epic calls out explicitly, both enforced as pytest tests
-rather than CI steps: the only CI workflow in the repo runs the DONOR
+Invariants the epic calls out explicitly, all enforced as pytest tests rather
+than CI steps: the only CI workflow in the repo runs the DONOR
 (``Backend/PersonnelStatus``), so the de-facto gate for VAPS is the local
 ``make gate`` (README.md:15, architecture.md#L341). «fail CI» therefore means
 «fail inside gate» (Решение №5).
+
+From 11.1 (the transport):
 
 1. The channel layer is Redis-backed and cannot be swapped by configuration —
    an in-memory layer drops ``group_send`` from any other process silently.
 2. Consumers never touch the ORM outside ``database_sync_to_async``. Forward
    protection: today's consumer has no ORM access at all; the guard stands
    before 11.2/11.4 want to read ``Notification`` inside the socket.
+
+From 11.2 (the first sender):
+
+3. Every ``Notification.Kind`` exists in ``docs/registries/ws-message-types.yaml``
+   — the registry declares a СТОП-rule for itself but, until now, no test made it
+   binding, which is exactly how the one kind the product emits came to be
+   missing from it.
+4. ``group_send`` is only ever reached from a ``transaction.on_commit`` callback
+   (architecture.md#L459). An inline send passes every happy-path test and fails
+   only on a rollback, in production, announcing a row that no longer exists.
 
 Style mirrors ``apps/notifications/tests/test_isolation.py``: AST-based (never
 grep — see below), with an anti-vacuum ``assert files`` so a layout move fails
@@ -33,6 +45,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[3]
 APPS_DIR = BACKEND_DIR / "apps"
 CONFIG_DIR = BACKEND_DIR / "config"
 TESTS_DIR = Path(__file__).resolve().parent
+WS_REGISTRY = BACKEND_DIR.parent.parent / "docs/registries/ws-message-types.yaml"
 
 _FORBIDDEN_LAYER = "InMemoryChannelLayer"
 _WRAPPER = "database_sync_to_async"
@@ -363,6 +376,111 @@ def test_gate_starts_redis_and_points_the_suite_at_it():
     )
 
 
+# ---------------------------------------------------------------------------
+# The message-type registry is a CONTRACT, not a document (11.2 AC-2)
+# ---------------------------------------------------------------------------
+
+
+def _registry_types():
+    """UPPER_SNAKE codes from the ``types:`` section of ``ws-message-types.yaml``.
+
+    Indent-aware parse, no PyYAML — mirror of
+    ``test_audit_coverage._registry_actions``. ``import yaml`` does work in the
+    venv (PyYAML rides in transitively as a hard dependency of drf-spectacular),
+    but it is NOT declared in pyproject.toml: pinning a gate test to an
+    undeclared transitive dependency makes it disappear the day drf-spectacular
+    changes its own deps.
+
+    Reading ONLY ``types:`` matters — ``meta:`` carries ``priorities`` and
+    ``payload_fields`` lists that are not message types.
+    """
+    types, in_types = set(), False
+    for line in WS_REGISTRY.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line.startswith(" "):
+            in_types = stripped == "types:"
+            continue
+        if in_types:
+            m = re.match(r"^  ([A-Z][A-Z0-9_]*):", line)
+            if m:
+                types.add(m.group(1))
+    return types
+
+
+def test_notification_kinds_subset_of_ws_registry():
+    """code ⊆ registry. The reverse («no orphans») is deliberately NOT asserted:
+    the other 24 codes are forward seeds for epics 14-20 with no emitter today,
+    so registry ⊆ code would be red on arrival — exact mirror of решение №3 in
+    ``test_audit_coverage.test_emitted_actions_subset_of_registry``.
+
+    Until 11.2 the registry was referenced by ZERO tests, which is precisely how
+    ``SUBMISSION_LAGGING`` — the one kind the product actually emits — lived
+    outside it for two epics. The СТОП-rule the file declares for itself only
+    binds anything once something enforces it.
+    """
+    from apps.notifications.models import Notification
+
+    missing = set(Notification.Kind.values) - _registry_types()
+    assert not missing, (
+        f"Notification.Kind вне ws-message-types.yaml: {sorted(missing)} "
+        "(growth_rule: «Тип не в реестре → СТОП. Новые типы — тем же PR.»)"
+    )
+
+
+def test_registry_parse_is_not_vacuous():
+    # Anti-green-vacuum: an empty set passes the subset check above trivially.
+    # Floor = 24 donor seeds + SUBMISSION_LAGGING (11.2). Deliberately 25, not
+    # 24: a floor of 24 would still be met by a parser that silently loses
+    # exactly one entry.
+    types = _registry_types()
+    assert len(types) >= 25, types
+    # The section boundary holds — `meta:` keys must not leak in as «types».
+    assert "PRIORITIES" not in types and "PAYLOAD_FIELDS" not in types
+
+
+def test_registry_has_no_misindented_type_blocks():
+    """Ловушка №8: the parser above matches UPPER_SNAKE keys at EXACTLY two
+    spaces, so a type block added one level deeper is invisible to it.
+
+    Direction matters, and it is why this is a separate test. Re-indenting an
+    EXISTING type is caught by the floor above — the parsed count drops to 24.
+    Adding a NEW one at the wrong indent is not: the count never moves, so the
+    floor is still met, the subset check still passes and the guard-the-guard
+    still rejects a made-up code, while the type just declared silently does not
+    exist as far as the СТОП-rule is concerned. YAML loads the file without
+    complaint either way — verified by red probe, this test is the only one that
+    goes red on that shape, which is exactly the one Task 1 warns about
+    («лишний пробел = невидимый тип»).
+    """
+    stray, in_types = [], False
+    for line in WS_REGISTRY.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line.startswith(" "):
+            in_types = stripped == "types:"
+            continue
+        if not in_types:
+            continue
+        deeper = re.match(r"^( +)([A-Z][A-Z0-9_]*):\s*$", line)
+        if deeper and len(deeper.group(1)) != 2:
+            stray.append((deeper.group(2), len(deeper.group(1))))
+    assert stray == [], (
+        f"type blocks at a non-standard indent: {stray} — invisible to "
+        "_registry_types(), so the СТОП-rule would not cover them"
+    )
+
+
+def test_registry_parse_rejects_unknown_kind():
+    # Guards the guard (pattern: test_audit_coverage::test_scan_detects_both_
+    # emission_forms). A parser matching everything — or the comparison being
+    # done in the wrong direction — would keep the subset test forever-green.
+    synthetic = {"SUBMISSION_LAGGING", "TOTALLY_MADE_UP"}
+    assert synthetic - _registry_types() == {"TOTALLY_MADE_UP"}
+
+
 def test_ws_tests_are_never_skipped():
     """AC-8, anti-vacuum: «skip = зелёно» is the exact hole ретро E9 AI-1 closed.
 
@@ -384,3 +502,118 @@ def test_ws_tests_are_never_skipped():
             }:
                 offenders.append((path.name, _dotted(node)))
     assert offenders == [], f"skips found in WS tests: {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# group_send travels ONLY through transaction.on_commit (11.2 AC-10)
+# ---------------------------------------------------------------------------
+
+
+def _on_commit_targets(tree):
+    """Names of functions whose OBJECT is handed to ``transaction.on_commit``.
+
+    Resolves the ``partial(fn, ...)`` form as well as a bare ``on_commit(fn)``.
+    A lambda deliberately resolves to nothing: ``on_commit(lambda: _publish(n))``
+    passes a function that merely CALLS the sender, and this guard is about the
+    sender itself being the registered callback.
+    """
+    targets = set()
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call) and _dotted(node.func).endswith("on_commit")
+        ):
+            continue
+        for arg in node.args:
+            if isinstance(arg, ast.Name):
+                targets.add(arg.id)
+            elif isinstance(arg, ast.Call) and _dotted(arg.func).endswith("partial"):
+                if arg.args and isinstance(arg.args[0], ast.Name):
+                    targets.add(arg.args[0].id)
+    return targets
+
+
+def _group_send_sites(tree):
+    """Innermost enclosing named function for every ``group_send`` reference.
+
+    An ATTRIBUTE scan, not a call scan: the sender is written
+    ``async_to_sync(layer.group_send)(...)``, where ``group_send`` is passed as a
+    value and never appears as the func of a Call. ``None`` means the reference
+    sits at module level (or only inside a lambda) — inline by definition.
+    """
+    sites = set()
+
+    def visit(node, enclosing):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                visit(child, child.name)
+                continue
+            if isinstance(child, ast.Attribute) and child.attr == "group_send":
+                sites.add(enclosing)
+            visit(child, enclosing)
+
+    visit(tree, None)
+    return sites
+
+
+def _group_send_outside_on_commit(tree):
+    targets = _on_commit_targets(tree)
+    return {site for site in _group_send_sites(tree) if site not in targets}
+
+
+def test_group_send_only_inside_on_commit():
+    """architecture.md#L459: «отправка ТОЛЬКО через transaction.on_commit».
+
+    Forward protection. Today there is exactly one sender (``notify()``), but
+    11.4 (mark-as-read) and 11.5 (kill-switch) add more, and an inline
+    ``group_send`` is the failure that passes every happy-path test and only
+    shows up on a rollback in production — announcing a row that no longer
+    exists. The rule has to outlive the author who learned it.
+    """
+    files = [p for p in APPS_DIR.rglob("*.py") if "tests" not in p.parts]
+    assert files, f"no production modules scanned under {APPS_DIR}"
+
+    offenders, sites = [], 0
+    for path in files:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        sites += len(_group_send_sites(tree))
+        offenders.extend(
+            (str(path), name) for name in _group_send_outside_on_commit(tree)
+        )
+
+    # Anti-vacuum, second layer: `assert files` proves the scan saw modules, this
+    # proves it still recognises a sender. Were group_send renamed upstream, the
+    # guard would otherwise keep passing while enforcing nothing at all.
+    assert sites >= 1, "no group_send site found in production code at all"
+    assert offenders == [], (
+        f"group_send outside a transaction.on_commit callback: {offenders} — "
+        "an inline send announces rows a rollback then removes "
+        "(architecture.md#L459)"
+    )
+
+
+def test_scan_detects_group_send_outside_on_commit():
+    # Guards the guard. Covers all four shapes that matter: the partial form used
+    # by notify(), a bare function reference, a plain inline call, and the lambda
+    # — which is NOT accepted, because what reaches on_commit there is the
+    # lambda, not the sender (`partial` also avoids the late-binding trap).
+    snippet = (
+        "from functools import partial\n"
+        "from django.db import transaction\n"
+        "def _partial_target(n):\n"
+        "    async_to_sync(get_channel_layer().group_send)(g, m)\n"
+        "def _bare_target(n):\n"
+        "    layer.group_send(g, m)\n"
+        "def _inline(n):\n"
+        "    async_to_sync(get_channel_layer().group_send)(g, m)\n"
+        "def _lambda_target(n):\n"
+        "    layer.group_send(g, m)\n"
+        "def caller(n):\n"
+        "    transaction.on_commit(partial(_partial_target, n))\n"
+        "    transaction.on_commit(_bare_target)\n"
+        "    transaction.on_commit(lambda: _lambda_target(n))\n"
+        "    _inline(n)\n"
+    )
+    assert _group_send_outside_on_commit(ast.parse(snippet)) == {
+        "_inline",
+        "_lambda_target",
+    }
