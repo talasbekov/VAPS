@@ -380,7 +380,15 @@ development_status:
   epic-11: in-progress
   11-1-channels-и-channels-redis: done
   11-2-публикация-в-ws-из-notify: done
-  11-3-ws-клиент-с-reconnect: backlog
+  11-3-ws-клиент-с-reconnect: done
+  # Вынесено из скоупа 11.3 (create-story 2026-07-19) с поимённым преемником —
+  # хвост не «зависает намерением» (урок ретро E8/E9: AI без ключа не исполняется):
+  #   11.3a — eslint: бан глобала `WebSocket` вне src/shared/notifications/**
+  #           + красная фикстура в scripts/lint-canon.test.mjs. Второй слой
+  #           enforcement по прецеденту 8.4 (бан `fetch` пришёл тем же PR, что
+  #           и apiClient). Дыра проверена: `WebSocket` в banned-списке нет,
+  #           `new WebSocket` сегодня легален в любом слое.
+  11-3a-бан-глобала-websocket: backlog
   11-4-центр-уведомлений-ui: backlog
   11-5-kill-switch-ws: backlog
   11-6-e2e-уведомления: backlog

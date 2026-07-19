@@ -13,6 +13,7 @@ import { cn } from '../lib/cn'
 import { NAV_SECTIONS } from '../routes'
 import { Avatar, AvatarFallback } from './Avatar'
 import { Button } from './Button'
+import { ConnectionIndicator } from './ConnectionIndicator'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,6 +68,9 @@ export function AppLayout() {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-end gap-1 border-b px-4">
+          {/* «нет связи» — рендерится только при reconnecting (11.3); он же
+              владеет жизненным циклом WS-клиента */}
+          <ConnectionIndicator />
           {/* колокольчик — disabled-заглушка БЕЗ фейкового счётчика; центр
               уведомлений — E11 */}
           <Button
