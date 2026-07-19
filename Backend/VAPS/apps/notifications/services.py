@@ -26,8 +26,9 @@ back.
 
 Scope (5.7a/11.2): the write-primitive plus its WS signal. Lagging detection and
 recipient resolution are Story 5.7b; the read-API is 5.7c; the WS client is 11.3;
-the notification centre UI and mark-as-read are 11.4; the WS kill-switch is 11.5
-(``notify()`` publishes unconditionally today).
+the notification centre UI and mark-as-read are 11.4. The WS kill-switch landed
+in 11.5: ``settings.VAPS_WS_ENABLED=0`` silences ``_publish`` entirely (see its
+docstring) while leaving the row, the return value and the read-API untouched.
 """
 
 import logging
@@ -35,6 +36,7 @@ from functools import partial
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -84,7 +86,22 @@ def _publish(notification: Notification) -> None:
     ``GET /api/notifications/`` (11.4). ``api.serializers`` is deliberately NOT
     imported — that would invert the layer contract (architecture.md#L444-454);
     the parity is held by a test instead.
+
+    Story 11.5 — the kill-switch (``settings.VAPS_WS_ENABLED``) is checked as the
+    very FIRST statement, deliberately before the ``try`` below. The point of the
+    switch is to not touch the risky infrastructure at all — not to swallow its
+    failure neatly, which this function already does. A guard placed after
+    ``get_channel_layer()`` would still open a connection to Redis and would be
+    indistinguishable, in every green test, from one that works. Silence here is
+    also the whole log policy for the disabled state: an administrator's decision
+    is not an error, and ``notify()`` is called on the catch-up schedule, so a
+    warning per call would flood the journal. ``notify()`` itself is untouched by
+    the flag (AC-5): switching off the SIGNAL must never stop the BUSINESS
+    operation that ``lagging_check`` runs on its return value.
     """
+    if not settings.VAPS_WS_ENABLED:
+        return
+
     try:
         # Two different «type» fields live here (groups.py, consumers.py): the
         # OUTER one below is channel-layer routing, THIS one is the registry code
