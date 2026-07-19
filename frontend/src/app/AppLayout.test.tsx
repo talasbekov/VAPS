@@ -125,15 +125,15 @@ describe('AppLayout: роль-фильтрованный сайдбар (AC 5, 6
     }
   })
 
-  it('шапка: колокольчик — disabled-заглушка (центр уведомлений — E11)', async () => {
+  it('шапка: колокольчик — рабочая кнопка центра уведомлений (11.4)', async () => {
     usePermissionsResponse(fullPermissions)
     renderApp()
 
     expect(
       await screen.findByRole('button', {
-        name: 'Уведомления (появятся в E11)',
+        name: 'Уведомления',
       }),
-    ).toBeDisabled()
+    ).toBeEnabled()
   })
 })
 

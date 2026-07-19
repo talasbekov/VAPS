@@ -90,7 +90,7 @@ describe('AppLayout: разводка индикатора связи (AC-10)', 
     // дожидаемся самой шапки — по её постоянному элементу, а не по таймауту
     expect(
       await screen.findByRole('button', {
-        name: 'Уведомления (появятся в E11)',
+        name: 'Уведомления',
       }),
     ).toBeInTheDocument()
 

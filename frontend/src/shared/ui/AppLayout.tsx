@@ -5,7 +5,7 @@
 // из useQuery(['me']) (ARCH-FE-010, копий в state нет). «Выйти» зовёт
 // logout() — навигацию на /login делает RequireAuth реактивно (Д7-8.6,
 // window.location запрещён). h-screen, не h-dvh (dvh — FF101+, Ловушка 4).
-import { Bell, LogOut } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { usePermissions } from '../auth/usePermissions'
@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './DropdownMenu'
+import { NotificationBell } from './NotificationBell'
 
 export function AppLayout() {
   const { userId, logout } = useAuth()
@@ -71,16 +72,11 @@ export function AppLayout() {
           {/* «нет связи» — рендерится только при reconnecting (11.3); он же
               владеет жизненным циклом WS-клиента */}
           <ConnectionIndicator />
-          {/* колокольчик — disabled-заглушка БЕЗ фейкового счётчика; центр
-              уведомлений — E11 */}
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled
-            aria-label="Уведомления (появятся в E11)"
-          >
-            <Bell />
-          </Button>
+          {/* центр уведомлений (11.4): счётчик непрочитанных + панель; данные
+              живут в его собственном useQuery, WS обновляет их через
+              setQueryData. Пермишен-гарды НЕТ: /api/notifications/ гейтится
+              только аутентификацией, аудитория — «любой авторизованный» */}
+          <NotificationBell />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
