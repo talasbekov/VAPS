@@ -25,11 +25,11 @@ export default defineConfig({
     target: 'firefox100',
     outDir: 'dist-e2e',
     rollupOptions: {
-      // Шесть входов одной сборки: грид 9.9, экран сдачи дня 10.3,
-      // светофор-дерево 10.4, центр уведомлений 11.4, экран расхода 10.5 и
-      // исправление сдачи 10.6 (пять последних — QA-добор). Общий чанк
-      // react/react-dom делится между ними — прод-dist по-прежнему не задет,
-      // size-gate суммирует только dist/.
+      // Семь входов одной сборки: грид 9.9, экран сдачи дня 10.3,
+      // светофор-дерево 10.4, центр уведомлений 11.4, экран расхода 10.5,
+      // исправление сдачи 10.6 (пять последних — QA-добор) и цепочка сдачи
+      // целиком 10.10. Общий чанк react/react-dom делится между ними —
+      // прод-dist по-прежнему не задет, size-gate суммирует только dist/.
       input: {
         grid: fileURLToPath(new URL('./e2e-harness/index.html', import.meta.url)),
         daySubmission: fileURLToPath(
@@ -49,6 +49,10 @@ export default defineConfig({
         expense: fileURLToPath(
           new URL('./e2e-harness/expense.html', import.meta.url),
         ),
+        // 10.10: ЕДИНСТВЕННЫЙ вход против живого бэкенда. Отдельный, а не
+        // правка `expense` — тот захардкожен на ROUTES.reports и чужой
+        // userId, и от него зависит мокнутая e2e/expense.spec.ts.
+        chain: fileURLToPath(new URL('./e2e-harness/chain.html', import.meta.url)),
       },
     },
   },

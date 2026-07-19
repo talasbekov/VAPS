@@ -24,6 +24,14 @@ export const LIVE_ENV = {
   VAPS_DB_HOST: 'localhost',
   VAPS_DB_PORT: '5433',
   VAPS_REDIS_URL: 'redis://127.0.0.1:6380/0',
+  // 🔴 Story 10.10 — без этой строки цепочка не может выполниться в принципе.
+  // `config/settings.py:292` даёт дефолт "1", и тогда `AttachmentViewSet
+  // .download` (documents/api/views.py:79-81) отвечает 200 с ПУСТЫМ телом и
+  // заголовком `X-Accel-Redirect`, исполнять который в этой топологии некому:
+  // nginx появится только в 12.1. Байты приезжают только по ветке
+  // `FileResponse` (:83-86). Самый вероятный способ получить «зелёное
+  // скачивание нулевого файла» — отсюда ассерт на длину байтов в спеке.
+  VAPS_XACCEL_ENABLED: '0',
 }
 
 const BACKEND_DIR = fileURLToPath(new URL('../Backend/VAPS', import.meta.url))
