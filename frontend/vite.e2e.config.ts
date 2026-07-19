@@ -43,5 +43,29 @@ export default defineConfig({
   preview: {
     port: 4174,
     strictPort: true,
+    // Story 11.6 — SAME-ORIGIN для live-сьюта (`npm run test:e2e:live`).
+    //
+    // Почему прокси, а не абсолютный URL бэкенда в коде фронта: apiClient ходит
+    // по baseUrl = '' (client.ts:67), то есть same-origin, а buildSocketUrl
+    // собирает адрес из location.host (notificationsSocket.ts:145-152) —
+    // литерального хоста в прод-коде нет и быть не может: size-gate.mjs:88-93
+    // безусловно валит бандл на схемах ws:/wss:. Единственный способ свести
+    // браузер с uvicorn — сделать их одним origin.
+    //
+    // Для 35 спек `npm run test:e2e` прокси ИНЕРТЕН: они перехватывают сеть на
+    // уровне браузера (page.route/routeWebSocket), до прокси запрос не доходит.
+    // Форма — зеркало dev-прокси vite.config.ts:33-45.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8001',
+      },
+      '/ws': {
+        target: 'http://localhost:8001',
+        // 🔴 Без ws:true апгрейд не проксируется: /ws/... уедет обычным HTTP,
+        // сокет не откроется, а UI будет выглядеть «почти работающим» —
+        // лента-то грузится по REST.
+        ws: true,
+      },
+    },
   },
 })
