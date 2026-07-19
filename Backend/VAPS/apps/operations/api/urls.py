@@ -11,6 +11,7 @@ from apps.operations.statuses.api.views import StatusViewSet
 from apps.operations.submissions.api.views import (
     DailySubmissionViewSet,
     ExpenseReportViewSet,
+    TrafficLightViewSet,
 )
 
 router = DefaultRouter()
@@ -24,6 +25,9 @@ router.register(
 )
 router.register(
     "expense-reports", ExpenseReportViewSet, basename="ops-expense-report"
+)
+router.register(
+    "traffic-light", TrafficLightViewSet, basename="ops-traffic-light"
 )
 router.register("statuses", StatusViewSet, basename="ops-status")
 
