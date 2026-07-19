@@ -258,13 +258,20 @@ test('AC-8: 409 → путь пересдачи назван, модальног
   await page.getByRole('button', { name: 'Сдать день' }).click()
   await page.getByRole('button', { name: 'Подтвердить сдачу' }).click()
 
+  // ⚠️ Текст обновлён стори 10.6 (QA-добор 10.6): пока amendment-флоу не было,
+  // строка звучала «Пересдача — через исправление (amendment)» — путь был НАЗВАН,
+  // но не проходим. 10.6 сделала его проходимым и переписала строку; три
+  // jsdom-ассерта она обновила синхронно, а ЭТОТ, четвёртый, — нет, потому что
+  // e2e в `npm run gate` не входит и красным не стал ни разу.
   await expect(page.getByTestId('day-submission-failure')).toContainText(
-    'День уже сдан. Пересдача — через исправление (amendment).',
+    'День уже сдан. Исправить его можно кнопкой «Исправить сдачу».',
   )
   expect(traffic.submits).toHaveLength(1)
   // DAY_ALREADY_SUBMITTED нет в OVERRIDABLE_CODES ⇒ ConflictDialog не поднимется.
   await expect(page.locator('dialog')).toHaveCount(0)
-  // И поля причины оверрайда тоже нет — amendment это 10.6, не здесь.
+  // Поля причины ОВЕРРАЙДА здесь по-прежнему нет: 10.6 добавила форму причины
+  // на СВОЁМ пути (кнопка «Исправить сдачу»), а этот харнес credential не
+  // ставит ⇒ право не загружено и кнопка тут не появляется.
   await expect(page.getByLabel(/причин/i)).toHaveCount(0)
 })
 

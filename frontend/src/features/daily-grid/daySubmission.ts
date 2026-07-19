@@ -248,8 +248,12 @@ export function describeSubmitFailure(error: ApiFailure): SubmitFailureDescripti
   if (error.status === 409 && error.errorCode === 'DAY_ALREADY_SUBMITTED') {
     return {
       kind: 'already-submitted',
-      // Путь пересдачи НАЗВАН, но кнопки под него здесь нет — это 10.6.
-      message: 'День уже сдан. Пересдача — через исправление (amendment).',
+      // 10.6: путь пересдачи теперь не только НАЗВАН, но и ПРОХОДИМ — кнопка
+      // «Исправить сдачу» есть в панели (при праве daily_report.correct).
+      // Префикс «День уже сдан» сохранён намеренно: текст запинен тремя
+      // ассертами (DaySubmissionPanel.test.tsx:309,362 — дословно;
+      // daySubmission.test.ts:262 — toContain).
+      message: 'День уже сдан. Исправить его можно кнопкой «Исправить сдачу».',
     }
   }
   if (error.status === 422 && error.errorCode === 'BUSINESS_DATE_OUT_OF_WINDOW') {

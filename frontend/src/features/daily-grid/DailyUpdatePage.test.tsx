@@ -14,6 +14,7 @@ import type { ReactNode } from 'react'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 
 import type { paths } from '../../shared/api/schema'
+import { clearCredential, setCredential } from '../../shared/auth/credential'
 import { employeesListFixture } from '../../shared/api/testing/handlers'
 import { server } from '../../shared/api/testing/server'
 import { GENERIC_FAILURE_MESSAGE } from '../../shared/api/useApiMutation'
@@ -63,7 +64,12 @@ afterAll(() => {
     Object.defineProperty(HTMLElement.prototype, 'offsetWidth', origOffsetWidth)
 })
 
-afterEach(() => cleanup())
+// clearCredential — в afterEach, а не в хвосте теста (ревью 10.6): упавший до
+// своей последней строки тест иначе протащил бы credential в соседей файла.
+afterEach(() => {
+  cleanup()
+  clearCredential()
+})
 
 const DIVISION_ID = '7a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9'
 const SECOND_DIVISION_ID = 'b1b2b3b4-c5c6-d7d8-e9ea-fbfcfdfe0102'
@@ -1342,4 +1348,86 @@ it('10.3 AC-11: Ctrl+Enter при фокусе ВНУТРИ панели сох�
   expect(submissions).toHaveLength(0)
   // И подтверждение сдачи от шортката не открылось.
   expect(screen.queryByRole('button', { name: 'Подтвердить сдачу' })).not.toBeInTheDocument()
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 10.6 AC-8, мутация №3 — единственная точка, где ИНВАЛИДАЦИЯ наблюдаема.
+//
+// Почему тест живёт здесь, а не в DaySubmissionPanel.test.tsx: владелец
+// запроса дня — ЭКРАН (Решение №7 стори 10.3). В панельном тесте список версий
+// приходит статичным пропом, и «перечитку» пришлось бы имитировать ручным
+// rerender — такая проба осталась бы ЗЕЛЁНОЙ после удаления `invalidateQueries`
+// (тест сам двигал бы данные). Красит только настоящий рефетч.
+//
+// И красит именно СПИСОК, а не шапку: «День сдан: v2» рисуется из локального
+// ответа мутации (AC-4) и от инвалидации не зависит вовсе.
+// ───────────────────────────────────────────────────────────────────────────
+it('10.6 AC-4/AC-8: после 201 состояние дня ПЕРЕЧИТАНО — в списке версий видны ОБЕ версии', async () => {
+  const v1 = daySubmissionFixture({ id: 77, version: 1, is_current: true })
+  const v2 = daySubmissionFixture({
+    id: 78,
+    version: 2,
+    is_current: true,
+    event: 'AMENDED',
+    submitted_by: 'operator-9',
+    submitted_at: '2026-07-19T17:40:00+05:00',
+  })
+
+  // Последовательная фикстура (счётчик вызовов): до POST день — [v1], после —
+  // [v2(действующая), v1]. Без счётчика перечитка вернула бы дефолтный ПУСТОЙ
+  // конверт (handlers.ts:200), и тест покраснел бы по инфраструктуре, а не по
+  // логике — ровно та ложная улика, которую AC-8 запрещает.
+  mockDivisions()
+  mockEmployees()
+
+  let dayReads = 0
+  server.use(
+    http.get('*/api/operations/daily-submissions/', ({ request }) => {
+      const url = new URL(request.url)
+      // История подразделения (без business_date) — отдельный запрос панели:
+      // счётчик дня он трогать не должен.
+      if (url.searchParams.get('business_date') === null) {
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] })
+      }
+      dayReads += 1
+      const rows = dayReads === 1 ? [v1] : [v2, { ...v1, is_current: false }]
+      return HttpResponse.json({
+        count: rows.length,
+        next: null,
+        previous: null,
+        results: rows,
+      })
+    }),
+    http.post('*/api/operations/daily-submissions/:id/amend/', () =>
+      HttpResponse.json(v2, { status: 201 }),
+    ),
+    http.get('*/api/operations/my-permissions/', () =>
+      HttpResponse.json({
+        permissions: ['daily_report.mark_update', 'status.view', 'daily_report.correct'],
+      }),
+    ),
+  )
+  setCredential({ kind: 'dev', userId: 'operator-1' })
+
+  renderPage()
+  const user = await selectDivision()
+
+  await user.click(await screen.findByRole('button', { name: 'Исправить сдачу' }))
+  await user.type(screen.getByLabelText('Причина'), 'Ошибка в ростере')
+  await user.type(screen.getByLabelText(/Санкция/), 'Выговор')
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  // Ассерты скоуплены (ловушка №8): подпись версии совпала бы с блоком
+  // состояния дня, и незаскоупленный запрос упал бы «found multiple».
+  const versions = await screen.findByTestId('day-versions')
+  await waitFor(() =>
+    expect(within(versions).getAllByRole('listitem')).toHaveLength(2),
+  )
+  const rows = within(versions).getAllByRole('listitem')
+  expect(rows[0]).toHaveTextContent('v2 · Исправлено')
+  expect(rows[0]).toHaveTextContent('действующая')
+  expect(rows[1]).toHaveTextContent('v1 · Изменено')
+  expect(rows[1]).not.toHaveTextContent('действующая')
+  // День реально перечитан, а не показан из локального ответа мутации.
+  expect(dayReads).toBeGreaterThanOrEqual(2)
 })

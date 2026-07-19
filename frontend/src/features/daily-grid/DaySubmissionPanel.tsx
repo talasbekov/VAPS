@@ -17,18 +17,31 @@
 //   ЛОКАЛЬНЫЙ drift, и текст прямо называет его границу;
 // - полного diff против снапшота: требует клиентского resolve_status —
 //   реинвент серверной логики (→ 10.1b);
-// - amendment/пересдачи: отдельное право daily_report.correct → 10.6. Отказ 409
-//   НАЗЫВАЕТ путь, но не притворяется, что умеет его пройти;
 // - модалки: модальность в jsdom не эмулируется (дефер 9.5/9.9), модальный
 //   ассерт был бы вакуумным до e2e 10.10 → инлайн-панель (Решение №5).
+//
+// Story 10.6 добавила сюда amendment-флоу (право daily_report.correct): вход,
+// форма причины+санкции и список версий дня. Чего в 10.6 осознанно НЕТ:
+// - метки ПРОТУХШЕЙ СВОДКИ (третья треть epic-AC): `summary_freshness` (5.11)
+//   существует сервисом БЕЗ HTTP-поверхности — не в `__all__`, не в роутах, в
+//   схеме нет ни `summary`, ни `freshness`. Тянуть неоткуда → 10.6a (роут) +
+//   10.6b (UI). Выводить свежесть из светофора НЕЛЬЗЯ: это отдельная ось
+//   (`5-11:97`) — сводка, которая есть, не RED, а пины при этом могут быть
+//   протухшими;
+// - причины/санкции ИСТОРИЧЕСКИХ версий: список даёт 9 полей без них, нужен
+//   GET /{id}/ на каждую версию (N+1) → 10.6c.
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient } from '../../shared/api/client'
 import { useApiMutation } from '../../shared/api/useApiMutation'
+import { usePermissions } from '../../shared/auth/usePermissions'
 import { Button } from '../../shared/ui/Button'
 import { Card, CardContent } from '../../shared/ui/Card'
+import { describeAmendFailure } from './amendment'
+import type { DayAmendBody } from './amendment'
 import { parseValidationDetails } from './bulkErrors'
+import { DayAmendmentForm } from './DayAmendmentForm'
 import {
   describeSubmitFailure,
   EVENT_LABELS,
@@ -58,12 +71,23 @@ export interface DaySubmissionPanelProps {
   localDrift: DriftEntry[]
   /** Текущая сдача дня. Владелец запроса — ЭКРАН (Решение №7), не панель. */
   submission: DaySubmission | null
+  /**
+   * ВСЕ версии из того же запроса дня (10.6 AC-5). Отдельного запроса истории
+   * здесь нет и быть не должно: `?division_id&business_date` уже возвращает
+   * все версии (селектор по `is_current` НЕ фильтрует), а второй `useQuery` с
+   * тем же ключом — известная ловушка react-query (запись кэша определяет
+   * тот, кто смонтировался первым).
+   */
+  submissions: DaySubmission[]
   isLoading: boolean
   isError: boolean
 }
 
 /** Канон-строка кнопки сдачи — EXPERIENCE.md#L103. */
 const SUBMIT_LABEL = 'Сдать день'
+
+/** Канон-строка входа в amendment-флоу (10.6, открытый вопрос №1). */
+const AMEND_LABEL = 'Исправить сдачу'
 
 /** Дата-время сдачи в локальной зоне читателя (submitted_at приходит с офсетом). */
 function formatSubmittedAt(value: string): string {
@@ -80,10 +104,12 @@ export function DaySubmissionPanel({
   dirtyCount,
   localDrift,
   submission,
+  submissions,
   isLoading,
   isError,
 }: DaySubmissionPanelProps) {
   const queryClient = useQueryClient()
+  const { hasPermission } = usePermissions()
   const [confirming, setConfirming] = useState(false)
   // Ответ ПОСЛЕДНЕЙ успешной сдачи — «результат действия» для мгновенного
   // показа события (ARCH-FE-010 это разрешает); истина о дне всё равно
@@ -92,6 +118,10 @@ export function DaySubmissionPanel({
   // Причина отказа ДО отправки (гарды AC-4/AC-5): пишется по клику, чтобы
   // объяснение появлялось в ответ на действие, а не висело фоном.
   const [blockedReason, setBlockedReason] = useState<string | null>(null)
+  // 10.6: форма исправления открыта; ответ ПОСЛЕДНЕГО исправления — то же
+  // разрешённое ARCH-FE-010 исключение, что и `submitted` выше.
+  const [amending, setAmending] = useState(false)
+  const [amended, setAmended] = useState<DaySubmission | null>(null)
 
   /**
    * История сдач ПОДРАЗДЕЛЕНИЯ (без фильтра по дате) — нужна предпросмотру:
@@ -139,6 +169,65 @@ export function DaySubmissionPanel({
 
   const failure = mutationError === null ? null : describeSubmitFailure(mutationError)
 
+  // ⚠️ Действующая версия дня считается ДО мутации исправления: её `id`
+  // адресует ЦЕПОЧКУ (Д1 5.8b) — `amend_day` сам переразрешает голову цепочки
+  // через `latest_for`, поэтому даже устаревший pk амендит ТОТ ЖЕ день.
+  const current = amended ?? submitted ?? submission
+
+  const amendMutation = useApiMutation<DaySubmission, DayAmendBody>({
+    mutationFn: (variables) =>
+      apiClient.post<DaySubmission>(
+        `/api/operations/daily-submissions/${String(current?.id)}/amend/`,
+        variables,
+      ),
+    onSuccess: (data) => {
+      setAmended(data)
+      setAmending(false)
+      queryClient.invalidateQueries({
+        queryKey: ['day-submission', divisionId, businessDate],
+      })
+      queryClient.invalidateQueries({ queryKey: ['division-submissions', divisionId] })
+    },
+  })
+
+  const amendFailure =
+    amendMutation.error === null ? null : describeAmendFailure(amendMutation.error)
+
+  // 409 (гонка двух amendment) и 404 (сдача исчезла) — оба означают, что
+  // состояние дня под формой устарело: перечитываем. Без этого форма зависла
+  // бы над устаревшим состоянием — ровно тот HIGH, что ревью поймало на 10.5.
+  const amendStale = amendFailure?.kind === 'conflict' || amendFailure?.kind === 'not-found'
+  useEffect(() => {
+    if (!amendStale) return
+    queryClient.invalidateQueries({
+      queryKey: ['day-submission', divisionId, businessDate],
+    })
+  }, [amendStale, queryClient, divisionId, businessDate])
+
+  /**
+   * Форма открыта — ЧИСТАЯ ПРОИЗВОДНАЯ в рендере, не стейт.
+   *
+   * ⚠️ Гард `current === null` из панели сдачи здесь НЕприменим: после гонки
+   * версий день остаётся сданным (`current !== null`), и форма не закрылась бы
+   * никогда. А `setState` для закрытия нельзя ни в эффекте, ни в рендере —
+   * `react-hooks/set-state-in-effect` и его рендер-близнец оба eslint **error**.
+   * 400 сюда НЕ входит намеренно: это правимый отказ, форму надо оставить
+   * открытой, чтобы было что исправлять.
+   */
+  const amendFormOpen = amending && !amendStale
+
+  /**
+   * Версии ЭТОГО дня (AC-5). Фильтр по дате явный, хотя запрос уже точечный, —
+   * это защита от смены пропа, а не пересказ контракта API.
+   * Порядок — КАК ОТДАЁТ БЭК (`-business_date, -version, id`): своей
+   * сортировки не заводим, иначе экран и сервер разошлись бы в понимании
+   * «какая версия последняя».
+   */
+  const dayVersions = useMemo(
+    () => submissions.filter((row) => row.business_date === businessDate),
+    [submissions, businessDate],
+  )
+
   // ⚠️ Сброс стейта при смене дня/подразделения делает НЕ эффект, а ремаунт по
   // `key={divisionId}-{businessDate}` на экране. Эффект с setState здесь и
   // писался, и падал линтом (react-hooks/set-state-in-effect) — и правильно:
@@ -161,8 +250,6 @@ export function DaySubmissionPanel({
   // DailyUpdatePage.test.tsx:556 инвертированным ассертом проверяет, что при
   // негодной дате «Сдать день» на экране нет.
   if (!dateValid) return null
-
-  const current = submitted ?? submission
 
   /**
    * Причина, по которой отправка невозможна, — считается ДО открытия
@@ -220,6 +307,30 @@ export function DaySubmissionPanel({
       ? parseValidationDetails(mutationError)
       : []
 
+  const amendValidationDetails =
+    amendFailure?.kind === 'validation' && amendMutation.error !== null
+      ? parseValidationDetails(amendMutation.error)
+      : []
+
+  function handleAmendSubmit(body: DayAmendBody) {
+    // ⚠️ Гарда `isPending` здесь СОЗНАТЕЛЬНО НЕТ, хотя прецедент
+    // `handleConfirm` (сдача) его держит. Причина — красная проба AC-8: пока
+    // гард стоял и тут, и в форме (`canSubmit = complete && !isPending`), они
+    // взаимно перекрывались, и удаление ЛЮБОГО из двух оставляло тест
+    // двойного клика ЗЕЛЁНЫМ. Гард, который не краснеет ни от одной мутации,
+    // не защищён ни одним тестом. Единственный владелец — форма: она владеет
+    // и кнопкой, и implicit submission, а сюда тело приходит уже только от
+    // неё.
+    // Амендить нечего, если день не сдан: без действующей версии нет и pk.
+    if (current === null) return
+    amendMutation.mutate(body)
+  }
+
+  // AC-1: вход в флоу есть РОВНО там, где он законен — на сданном дне и при
+  // праве. Скрытие кнопки НЕ заменяет обработку 403 (AC-6): гейт живёт и на
+  // сервере, а `hasPermission` до загрузки `['me']` честно отдаёт false.
+  const canAmend = current !== null && hasPermission('daily_report.correct')
+
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 p-6">
@@ -258,6 +369,86 @@ export function DaySubmissionPanel({
             {current.late ? (
               <span>сдано с опозданием (после контрольного часа)</span>
             ) : null}
+          </div>
+        ) : null}
+
+        {/* AC-1: вход в amendment. Кнопка прячется, пока форма открыта, —
+            иначе рядом висели бы открывашка и уже открытая форма. */}
+        {!isLoading && !isError && canAmend && !amendFormOpen ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              // ⚠️ reset() обязателен (ревью 10.6): после 409/404 форму держит
+              // закрытой производная от error (`amendStale`), а error сам
+              // очищается только следующим mutate — который возможен только из
+              // этой же формы. Без сброса `setAmending(true)` бэйлаутится на
+              // уже-true и кнопка МЁРТВАЯ до смены дня/подразделения, хотя её
+              // же текст 409 зовёт «откройте исправление заново».
+              onClick={() => {
+                amendMutation.reset()
+                setAmending(true)
+              }}
+            >
+              {AMEND_LABEL}
+            </Button>
+          </div>
+        ) : null}
+
+        {amendFormOpen ? (
+          <DayAmendmentForm
+            businessDate={businessDate}
+            isPending={amendMutation.isPending}
+            onSubmit={handleAmendSubmit}
+            onCancel={() => setAmending(false)}
+          />
+        ) : null}
+
+        {/* 5xx, обрыв сети и 401 сюда НЕ доходят (kind === 'silent'). */}
+        {amendFailure !== null && amendFailure.kind !== 'silent' ? (
+          <div
+            data-testid="day-amend-failure"
+            role="alert"
+            className="flex flex-col gap-1 rounded-md bg-red-100 p-3 text-sm text-red-800"
+          >
+            <span className="font-medium">{amendFailure.message}</span>
+            {amendValidationDetails.length > 0 ? (
+              <ul className="list-disc pl-5">
+                {amendValidationDetails.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* AC-5: версии дня различимы. Причины/санкции здесь НЕТ — список даёт
+            9 полей без них, а GET /{id}/ на каждую версию был бы N+1 (→10.6c);
+            обещать основание, которого не читали, экран не станет. */}
+        {!isLoading && !isError && dayVersions.length > 0 ? (
+          <div data-testid="day-versions" className="flex flex-col gap-1 text-sm">
+            <h3 className="font-medium">Версии за {businessDate}</h3>
+            <ul className="flex flex-col gap-1">
+              {dayVersions.map((version) => (
+                <li
+                  key={version.id}
+                  className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-2"
+                >
+                  <span>
+                    v{version.version} · {EVENT_LABELS[version.event]} ·{' '}
+                    {formatSubmittedAt(version.submitted_at)} · {version.submitted_by}
+                  </span>
+                  {/* Цвет НИКОГДА не единственный сигнал (DESIGN.md:366,371):
+                      действующая версия помечена СЛОВОМ. */}
+                  {version.is_current ? (
+                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">
+                      действующая
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 

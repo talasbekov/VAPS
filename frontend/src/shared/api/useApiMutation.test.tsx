@@ -351,4 +351,27 @@ describe('conflict-state: граничные переходы (AC 1, 2)', () => 
     expect(result.current.isPending).toBe(false)
     expect(captured).toHaveLength(0)
   })
+
+  it('reset: error и conflict сброшены к idle БЕЗ нового запроса (10.6: повторный вход в путь, гардящийся производной от error)', async () => {
+    // Без reset ошибка отказа живёт до следующего mutate — а фиче, которая
+    // ДЕРЖИТ путь закрытым по error (10.6: форма исправления после 409/404),
+    // новый mutate взять неоткуда. Ровно этот замкнутый круг reset размыкает.
+    const captured = captureTemporaryDuty()
+    const { result } = renderApiMutation({
+      mutationFn: (vars) => client.post('/api/operations/temporary-duty/', vars),
+    })
+
+    // дефолт captureTemporaryDuty: без override-полей приходит 409 overridable
+    act(() => result.current.mutate(ORIGINAL_BODY))
+    await waitFor(() => expect(result.current.conflict).not.toBeNull())
+    expect(result.current.error).not.toBeNull()
+    expect(captured).toHaveLength(1)
+
+    act(() => result.current.reset())
+    expect(result.current.conflict).toBeNull()
+    expect(result.current.error).toBeNull()
+    expect(result.current.isPending).toBe(false)
+    // сброс — локальный: повторного запроса reset не порождает
+    expect(captured).toHaveLength(1)
+  })
 })

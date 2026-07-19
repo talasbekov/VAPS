@@ -46,6 +46,13 @@ export interface UseApiMutationResult<
   confirmOverride: (reason: string) => void
   /** «Отмена»: повтора нет, conflict сбрасывается, ошибка остаётся в error. */
   dismissConflict: () => void
+  /**
+   * Полный сброс к idle: error, data и conflict. Нужен фичам, где ПОВТОРНЫЙ
+   * вход в путь гардится производной от `error` (10.6: форма исправления
+   * закрыта, пока висит 409/404) — без сброса ошибка держала бы путь закрытым
+   * до ремаунта, т.к. сама очищается только следующим mutate.
+   */
+  reset: () => void
   data: TData | undefined
 }
 
@@ -115,6 +122,13 @@ export function useApiMutation<
     setConflict(null)
   }, [])
 
+  const { reset: rawReset } = mutation
+
+  const reset = useCallback(() => {
+    setConflict(null)
+    rawReset()
+  }, [rawReset])
+
   return {
     mutate,
     isPending: mutation.isPending,
@@ -122,6 +136,7 @@ export function useApiMutation<
     conflict,
     confirmOverride,
     dismissConflict,
+    reset,
     data: mutation.data,
   }
 }

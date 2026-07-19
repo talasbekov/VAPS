@@ -214,11 +214,22 @@ export function DailyUpdatePage() {
     enabled: divisionId !== null && !dateInvalid,
   })
 
+  /**
+   * Разбор — ОДИН на оба потребителя (10.6): панели нужен и весь список
+   * версий дня (AC-5), и действующая версия. Два отдельных мемо давали бы два
+   * разбора и две идентичности массива на каждый ответ — лишние ре-рендеры
+   * панели без единого выигрыша.
+   */
+  const daySubmissions = useMemo(
+    () => parseSubmissionList(daySubmissionQuery.data),
+    [daySubmissionQuery.data],
+  )
+
   // Селектор бэка по is_current НЕ фильтрует — решение «день сдан» принимает
   // ФЛАГ, а не results.length (AC-2: три состояния, не два).
   const daySubmission = useMemo(
-    () => currentSubmission(parseSubmissionList(daySubmissionQuery.data)),
-    [daySubmissionQuery.data],
+    () => currentSubmission(daySubmissions),
+    [daySubmissions],
   )
 
   const mutation = useApiMutation<BulkResponse, BulkRequestBody>({
@@ -560,6 +571,7 @@ export function DailyUpdatePage() {
         dirtyCount={dirtyCount}
         localDrift={localDrift}
         submission={daySubmission}
+        submissions={daySubmissions}
         isLoading={daySubmissionQuery.isPending && divisionId !== null && !dateInvalid}
         isError={daySubmissionQuery.isError}
       />

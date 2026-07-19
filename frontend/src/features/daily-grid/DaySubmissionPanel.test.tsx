@@ -17,16 +17,44 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
+import { clearCredential, setCredential } from '../../shared/auth/credential'
 import { server } from '../../shared/api/testing/server'
 import { ToastProvider } from '../../shared/ui/toast'
+import { AMEND_PERMISSION_MESSAGE } from './amendment'
 import { todayLocalIso } from './daySubmission'
 import type { DaySubmission } from './daySubmission'
 import { DaySubmissionPanel } from './DaySubmissionPanel'
 import type { DaySubmissionPanelProps } from './DaySubmissionPanel'
 
-afterEach(() => cleanup())
+// Ловушка окружения №0 (стори 10.6): право в тестах НЕ появляется само —
+// нужны ДВЕ вещи. `useMe` гейтится `enabled: credential !== null`, поэтому без
+// credential запрос прав вообще не уходит и `hasPermission` всегда false. А
+// дефолтная фикстура прав (`handlers.ts:29`) содержит только
+// `daily_report.mark_update` и `status.view` — `daily_report.correct` в ней
+// НЕТ. Здесь ставится ТОЛЬКО credential: список прав по умолчанию остаётся
+// «без correct», и это ровно то, что нужно негативному тесту AC-1;
+// позитивные перекрывают список точечно через `server.use`.
+beforeEach(() => {
+  setCredential({ kind: 'dev', userId: 'operator-1' })
+})
+
+afterEach(() => {
+  cleanup()
+  clearCredential()
+})
+
+/** Права оператора с правом на исправление — перекрывает дефолт точечно. */
+function grantCorrectPermission() {
+  server.use(
+    http.get('*/api/operations/my-permissions/', () =>
+      HttpResponse.json({
+        permissions: ['daily_report.mark_update', 'status.view', 'daily_report.correct'],
+      }),
+    ),
+  )
+}
 
 const DIVISION_ID = '7a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9'
 const TODAY = todayLocalIso()
@@ -86,11 +114,41 @@ function renderPanel(
     dirtyCount: 0,
     localDrift: [],
     submission: null,
+    submissions: [],
     isLoading: false,
     isError: false,
     ...over,
   }
   return render(<DaySubmissionPanel {...props} />, { wrapper: Wrapper })
+}
+
+/** Тела ушедших POST на amend-роут — «сколько отправок и с чем» (AC-3, AC-7). */
+function captureAmendPost(
+  respond: () => Response | Promise<Response>,
+): Record<string, unknown>[] {
+  const bodies: Record<string, unknown>[] = []
+  server.use(
+    http.post('*/api/operations/daily-submissions/:id/amend/', async ({ request }) => {
+      bodies.push((await request.json()) as Record<string, unknown>)
+      return respond()
+    }),
+  )
+  return bodies
+}
+
+/** Открывает форму исправления на сданном дне и возвращает user-события. */
+async function openAmendForm(over: Partial<DaySubmissionPanelProps> = {}) {
+  grantCorrectPermission()
+  const user = userEvent.setup()
+  renderPanel({ submission: submissionFixture(), ...over })
+  await user.click(await screen.findByRole('button', { name: 'Исправить сдачу' }))
+  return user
+}
+
+/** Заполняет оба поля формы исправления. */
+async function fillAmendForm(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText('Причина'), 'Ошибка в ростере')
+  await user.type(screen.getByLabelText(/Санкция/), 'Выговор')
 }
 
 /** Тела ушедших POST — источник истины «сколько отправок и с чем». */
@@ -306,7 +364,7 @@ it('AC-8: 409 → путь назван, ConflictDialog НЕ поднимает�
   await user.click(screen.getByRole('button', { name: 'Подтвердить сдачу' }))
 
   expect(
-    await screen.findByText('День уже сдан. Пересдача — через исправление (amendment).'),
+    await screen.findByText('День уже сдан. Исправить его можно кнопкой «Исправить сдачу».'),
   ).toBeInTheDocument()
   // DAY_ALREADY_SUBMITTED нет в OVERRIDABLE_CODES ⇒ диалога быть не может.
   expect(document.querySelector('dialog')).toBeNull()
@@ -352,6 +410,7 @@ it('AC-8: перечитка после 409 принесла «День сдан
     dirtyCount: 0,
     localDrift: [],
     submission: null,
+    submissions: [],
     isLoading: false,
     isError: false,
   }
@@ -359,7 +418,7 @@ it('AC-8: перечитка после 409 принесла «День сдан
 
   await user.click(await screen.findByRole('button', { name: 'Сдать день' }))
   await user.click(screen.getByRole('button', { name: 'Подтвердить сдачу' }))
-  await screen.findByText('День уже сдан. Пересдача — через исправление (amendment).')
+  await screen.findByText('День уже сдан. Исправить его можно кнопкой «Исправить сдачу».')
   expect(bodies).toHaveLength(1)
 
   // Экран перечитал состояние дня (инвалидация из AC-8-эффекта) и передал
@@ -549,6 +608,7 @@ it('смена подразделения/даты снимает ответ п�
     dirtyCount: 0,
     localDrift: [],
     submission: null,
+    submissions: [],
     isLoading: false,
     isError: false,
   }
@@ -745,4 +805,433 @@ it('тон деловой: ни эмодзи, ни празднования в �
   const text = container.textContent ?? ''
   expect(text).not.toMatch(/\p{Extended_Pictographic}/u)
   expect(text).not.toMatch(/Готово!|Отлично|Поздравля/)
+})
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 10.6 — amendment-флоу.
+//
+// Ловушка №2: дефолтный хендлер `POST */api/operations/daily-submissions/
+// :id/amend/` отдаёт 409 (протокольная фикстура 8.4/8.5, её используют
+// `useApiMutation.test.tsx:208` и `client.test.ts:196`). Менять дефолт нельзя —
+// каждый успешный сценарий ОБЯЗАН перекрыть его через `server.use`.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Версия дня для списка (AC-5). Оси различия — version, event, автор. */
+function versionFixture(over: Partial<DaySubmission> = {}): DaySubmission {
+  return submissionFixture({
+    id: 12,
+    version: 1,
+    is_current: false,
+    event: 'CHANGED',
+    submitted_by: 'operator-1',
+    submitted_at: '2026-07-19T08:15:00+05:00',
+    ...over,
+  })
+}
+
+it('AC-1: день сдан + право daily_report.correct → кнопка «Исправить сдачу» есть', async () => {
+  grantCorrectPermission()
+  renderPanel({ submission: submissionFixture() })
+
+  expect(
+    await screen.findByRole('button', { name: 'Исправить сдачу' }),
+  ).toBeInTheDocument()
+})
+
+it('AC-1: день НЕ сдан → кнопки исправления нет (амендить нечего)', async () => {
+  grantCorrectPermission()
+  renderPanel({ submission: null })
+
+  // Положительный контроль: право ЕСТЬ и загрузилось — «кнопки нет»
+  // объясняется несданным днём, а не невыполненным сетапом прав.
+  expect(await screen.findByRole('button', { name: 'Сдать день' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Исправить сдачу' })).not.toBeInTheDocument()
+})
+
+it('AC-1: права daily_report.correct НЕТ → кнопки нет (credential стоит, список без права)', async () => {
+  // credential ставит beforeEach, список прав — дефолтный (`mark_update` +
+  // `status.view`). Без credential тест был бы зелёным по отсутствию запроса
+  // прав и про гейт не доказывал бы ничего.
+  renderPanel({ submission: submissionFixture() })
+
+  expect(await screen.findByTestId('day-submission-state')).toBeInTheDocument()
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: 'Исправить сдачу' })).not.toBeInTheDocument(),
+  )
+})
+
+it('AC-3: тело POST — РОВНО {reason, sanction}, обрезанные trim()', async () => {
+  const bodies = captureAmendPost(() =>
+    HttpResponse.json(submissionFixture({ version: 2, event: 'AMENDED' }), { status: 201 }),
+  )
+  const user = await openAmendForm()
+
+  await user.type(screen.getByLabelText('Причина'), '  Ошибка в ростере  ')
+  await user.type(screen.getByLabelText(/Санкция/), '  Выговор  ')
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  await waitFor(() => expect(bodies).toHaveLength(1))
+  expect(bodies[0]).toEqual({ reason: 'Ошибка в ростере', sanction: 'Выговор' })
+  // Провенанс и личность НЕ отправляются: `triggered_by_status_id` бэк не
+  // принимает вовсе (ЛОВУШКА №4 5.8b), остальные — из auth-контракта и pk.
+  expect(bodies[0]).not.toHaveProperty('triggered_by_status_id')
+  expect(bodies[0]).not.toHaveProperty('submitted_by')
+  expect(bodies[0]).not.toHaveProperty('division_id')
+  expect(bodies[0]).not.toHaveProperty('business_date')
+})
+
+it('AC-3: URL адресует id ДЕЙСТВУЮЩЕЙ версии дня', async () => {
+  const urls: string[] = []
+  server.use(
+    http.post('*/api/operations/daily-submissions/:id/amend/', ({ request, params }) => {
+      urls.push(String(params.id))
+      void request
+      return HttpResponse.json(submissionFixture({ version: 2, event: 'AMENDED' }), {
+        status: 201,
+      })
+    }),
+  )
+  const user = await openAmendForm({ submission: submissionFixture({ id: 77 }) })
+
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  await waitFor(() => expect(urls).toEqual(['77']))
+})
+
+it('AC-3: двойное подтверждение при isPending → РОВНО один POST', async () => {
+  let resolveResponse!: () => void
+  const gate = new Promise<void>((resolve) => {
+    resolveResponse = resolve
+  })
+  const bodies = captureAmendPost(async () => {
+    await gate
+    return HttpResponse.json(submissionFixture({ version: 2, event: 'AMENDED' }), {
+      status: 201,
+    })
+  })
+  const user = await openAmendForm()
+
+  await fillAmendForm(user)
+  const confirm = screen.getByRole('button', { name: 'Подтвердить исправление' })
+  await user.click(confirm)
+  await user.click(confirm)
+  await user.click(confirm)
+
+  expect(bodies).toHaveLength(1)
+  resolveResponse()
+  await screen.findByTestId('day-submission-state')
+  expect(bodies).toHaveLength(1)
+})
+
+it('AC-4: 201 → «День сдан: v2 · Исправлено» с автором и временем ИЗ ОТВЕТА; форма закрыта', async () => {
+  // Фикстура 201 отличается от пропа v1 по ВСЕМ трём осям (version, event,
+  // автор) — иначе ассерт сравнивал бы состояние с самим собой и пережил бы
+  // удаление onSuccess (класс «сравнение с самим собой», ретро E9).
+  captureAmendPost(() =>
+    HttpResponse.json(
+      submissionFixture({
+        id: 13,
+        version: 2,
+        event: 'AMENDED',
+        submitted_by: 'operator-9',
+        submitted_at: '2026-07-19T17:40:00+05:00',
+      }),
+      { status: 201 },
+    ),
+  )
+  const user = await openAmendForm({
+    submission: submissionFixture({ version: 1, event: 'CHANGED', submitted_by: 'operator-1' }),
+  })
+
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  const state = await screen.findByTestId('day-submission-state')
+  await waitFor(() => expect(state).toHaveTextContent('День сдан: v2 · Исправлено'))
+  expect(state).toHaveTextContent('operator-9')
+  expect(state).not.toHaveTextContent('operator-1')
+  // Форма закрыта — открытая форма над применённым исправлением была бы
+  // «активной обманкой» (ревью 10.3 HIGH).
+  expect(screen.queryByRole('form', { name: 'Исправление сдачи' })).not.toBeInTheDocument()
+})
+
+it('AC-4: 201 → инвалидированы ОБА ключа кэша', async () => {
+  captureAmendPost(() =>
+    HttpResponse.json(submissionFixture({ version: 2, event: 'AMENDED' }), { status: 201 }),
+  )
+  grantCorrectPermission()
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+  const user = userEvent.setup()
+  renderPanel({ submission: submissionFixture() }, queryClient)
+
+  await user.click(await screen.findByRole('button', { name: 'Исправить сдачу' }))
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  await screen.findByTestId('day-submission-state')
+  await waitFor(() =>
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['day-submission', DIVISION_ID, TODAY],
+    }),
+  )
+  expect(invalidate).toHaveBeenCalledWith({
+    queryKey: ['division-submissions', DIVISION_ID],
+  })
+})
+
+it('AC-4: экран НЕ обещает reason/sanction в ответе (201 их не возвращает, Д2 5.8b)', async () => {
+  captureAmendPost(() =>
+    HttpResponse.json(submissionFixture({ version: 2, event: 'AMENDED' }), { status: 201 }),
+  )
+  const user = await openAmendForm()
+
+  await user.type(screen.getByLabelText('Причина'), 'Ошибка в ростере')
+  await user.type(screen.getByLabelText(/Санкция/), 'Выговор')
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  const state = await screen.findByTestId('day-submission-state')
+  // Блок состояния дня строится из 9-полевой проекции — причины там нет и
+  // быть не может; выдумать её значило бы обещать поле, которого нет в ответе.
+  expect(state).not.toHaveTextContent('Ошибка в ростере')
+  expect(state).not.toHaveTextContent('Выговор')
+})
+
+it('AC-5: список версий за дату — v{n} · событие · время · автор, действующая помечена СЛОВОМ', async () => {
+  grantCorrectPermission()
+  renderPanel({
+    submission: versionFixture({ id: 13, version: 2, is_current: true, event: 'AMENDED', submitted_by: 'operator-9' }),
+    submissions: [
+      versionFixture({ id: 13, version: 2, is_current: true, event: 'AMENDED', submitted_by: 'operator-9' }),
+      versionFixture({ id: 12, version: 1, is_current: false, event: 'CHANGED', submitted_by: 'operator-1' }),
+    ],
+  })
+
+  // Ассерты скоуплены (ловушка №8): подпись версии легко совпадёт с блоком
+  // состояния дня, и незаскоупленный findByText упал бы «found multiple».
+  const versions = await screen.findByTestId('day-versions')
+  const rows = within(versions).getAllByRole('listitem')
+  expect(rows).toHaveLength(2)
+  // Порядок — КАК ОТДАЁТ БЭК (-business_date, -version, id); своей сортировки нет.
+  expect(rows[0]).toHaveTextContent('v2 · Исправлено')
+  expect(rows[0]).toHaveTextContent('operator-9')
+  expect(rows[1]).toHaveTextContent('v1 · Изменено')
+  expect(rows[1]).toHaveTextContent('operator-1')
+  // Цвет НИКОГДА не единственный сигнал (DESIGN.md:366,371).
+  expect(rows[0]).toHaveTextContent('действующая')
+  expect(rows[1]).not.toHaveTextContent('действующая')
+})
+
+it('AC-5: версии ЧУЖОГО дня в списке не показываются', async () => {
+  // Фикстура намеренно противоречит бэку (сервер фильтрует по дате сам): она
+  // пинит клиентский гард от смены пропа, а не поведение API — в контрактных
+  // утверждениях её использовать нельзя.
+  grantCorrectPermission()
+  renderPanel({
+    submission: versionFixture({ version: 2, is_current: true, event: 'AMENDED' }),
+    submissions: [
+      versionFixture({ id: 13, version: 2, is_current: true, event: 'AMENDED' }),
+      versionFixture({ id: 9, version: 7, is_current: false, business_date: '2026-07-01', submitted_by: 'operator-foreign' }),
+    ],
+  })
+
+  const versions = await screen.findByTestId('day-versions')
+  expect(within(versions).getAllByRole('listitem')).toHaveLength(1)
+  expect(versions).not.toHaveTextContent('operator-foreign')
+  expect(versions).not.toHaveTextContent('v7')
+})
+
+it('AC-6: 403 → ФИКС-текст про daily_report.correct, не «PERMISSION_DENIED» из конверта', async () => {
+  captureAmendPost(() =>
+    HttpResponse.json(
+      // Как на проводе: DomainError.message = message or code.
+      errorEnvelope('PERMISSION_DENIED', 'PERMISSION_DENIED'),
+      { status: 403 },
+    ),
+  )
+  const user = await openAmendForm()
+
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  const failure = await screen.findByTestId('day-amend-failure')
+  expect(failure).toHaveTextContent(AMEND_PERMISSION_MESSAGE)
+  expect(failure).toHaveTextContent('daily_report.correct')
+  expect(failure).not.toHaveTextContent('PERMISSION_DENIED')
+})
+
+it('AC-6: 404 → «Сдача не найдена.», форма ЗАКРЫТА, состояние дня перечитано', async () => {
+  captureAmendPost(() =>
+    HttpResponse.json(
+      errorEnvelope('ENTITY_NOT_FOUND', 'Сдача не найдена.', { submission_id: '12' }),
+      { status: 404 },
+    ),
+  )
+  grantCorrectPermission()
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+  const user = userEvent.setup()
+  renderPanel({ submission: submissionFixture() }, queryClient)
+
+  await user.click(await screen.findByRole('button', { name: 'Исправить сдачу' }))
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  expect(await screen.findByTestId('day-amend-failure')).toHaveTextContent('Сдача не найдена.')
+  expect(screen.queryByRole('form', { name: 'Исправление сдачи' })).not.toBeInTheDocument()
+  await waitFor(() =>
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['day-submission', DIVISION_ID, TODAY],
+    }),
+  )
+})
+
+it('AC-6: 400 → сообщение конверта + детали по полям', async () => {
+  captureAmendPost(() =>
+    HttpResponse.json(
+      errorEnvelope('VALIDATION_ERROR', 'Проверьте заполнение формы.', {
+        sanction: ['Убедитесь, что это значение содержит не более 255 символов.'],
+      }),
+      { status: 400 },
+    ),
+  )
+  const user = await openAmendForm()
+
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  const failure = await screen.findByTestId('day-amend-failure')
+  expect(failure).toHaveTextContent('Проверьте заполнение формы.')
+  expect(failure).toHaveTextContent('sanction: Убедитесь, что это значение содержит не более 255 символов.')
+  // 400 — правимый отказ: форма остаётся открытой, чтобы было что исправить.
+  expect(screen.getByRole('form', { name: 'Исправление сдачи' })).toBeInTheDocument()
+})
+
+it('AC-6: 409 → перечитка, форма закрыта, ConflictDialog НЕ открыт', async () => {
+  // Дефолтный хендлер уже отдаёт 409 (протокольная фикстура 8.4/8.5) —
+  // перекрывать не нужно, но счётчик POST всё равно нужен.
+  const bodies = captureAmendPost(() =>
+    HttpResponse.json(
+      errorEnvelope('DAY_ALREADY_SUBMITTED', 'Подразделение уже сдало этот день.', {
+        division_id: DIVISION_ID,
+        business_date: TODAY,
+      }),
+      { status: 409 },
+    ),
+  )
+  grantCorrectPermission()
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+  const user = userEvent.setup()
+  renderPanel({ submission: submissionFixture() }, queryClient)
+
+  await user.click(await screen.findByRole('button', { name: 'Исправить сдачу' }))
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  expect(await screen.findByTestId('day-amend-failure')).toHaveTextContent('появилась новая версия')
+  expect(bodies).toHaveLength(1)
+  // ⚠️ Гард `current === null` из панели сдачи здесь НЕприменим: после гонки
+  // день остаётся сданным, и форма не закрылась бы никогда. Закрытие — чистой
+  // производной в рендере, не стейтом.
+  expect(screen.queryByRole('form', { name: 'Исправление сдачи' })).not.toBeInTheDocument()
+  // DAY_ALREADY_SUBMITTED нет в OVERRIDABLE_CODES ⇒ диалога быть не может.
+  expect(document.querySelector('dialog')).toBeNull()
+  await waitFor(() =>
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['day-submission', DIVISION_ID, TODAY],
+    }),
+  )
+})
+
+it('AC-6: после 409 кнопка «Исправить сдачу» открывает форму ЗАНОВО — путь не тупик', async () => {
+  // Ревью 10.6: без сброса ошибки мутации кнопка после гонки была бы МЁРТВОЙ —
+  // `amending` уже true (setState бэйлаутится), `amendMutation.error` очищается
+  // только новым mutate, а новый mutate возможен только из формы, которую
+  // держит закрытой производная `amending && !amendStale`. Замкнутый круг:
+  // текст 409 зовёт «откройте исправление заново», а открыть нечем до смены
+  // дня/подразделения. Тот же класс, что «активная обманка» ревью 10.3.
+  captureAmendPost(() =>
+    HttpResponse.json(
+      errorEnvelope('DAY_ALREADY_SUBMITTED', 'Подразделение уже сдало этот день.', {
+        division_id: DIVISION_ID,
+        business_date: TODAY,
+      }),
+      { status: 409 },
+    ),
+  )
+  const user = await openAmendForm()
+
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  await screen.findByTestId('day-amend-failure')
+  expect(screen.queryByRole('form', { name: 'Исправление сдачи' })).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'Исправить сдачу' }))
+
+  expect(await screen.findByRole('form', { name: 'Исправление сдачи' })).toBeInTheDocument()
+  // Прежний отказ снят: свежая попытка не стартует под чужим сообщением о гонке.
+  expect(screen.queryByTestId('day-amend-failure')).not.toBeInTheDocument()
+})
+
+it('AC-6: 5xx → инлайна НЕТ (silent), но тост есть — положительный контроль', async () => {
+  captureAmendPost(() =>
+    HttpResponse.json(errorEnvelope('INTERNAL_ERROR', 'Внутренняя ошибка.'), { status: 500 }),
+  )
+  const user = await openAmendForm()
+
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  expect(await screen.findByText(/сервис временно недоступен/)).toBeInTheDocument()
+  expect(screen.queryByTestId('day-amend-failure')).not.toBeInTheDocument()
+})
+
+it('AC-7: клавиатурный путь — MSW-счётчик POST равен 1, тело равно {reason, sanction}', async () => {
+  // ⚠️ Ассерт на ОТПРАВЛЕННОМ запросе, не на document.activeElement: «фокус
+  // куда-то встал» — известная вакуумная форма (инциденты 9.9, 11.4).
+  const bodies = captureAmendPost(() =>
+    HttpResponse.json(submissionFixture({ version: 2, event: 'AMENDED' }), { status: 201 }),
+  )
+  grantCorrectPermission()
+  const user = userEvent.setup()
+  renderPanel({ submission: submissionFixture() })
+
+  const openButton = await screen.findByRole('button', { name: 'Исправить сдачу' })
+  openButton.focus()
+  await user.keyboard('{Enter}')
+
+  await screen.findByRole('form', { name: 'Исправление сдачи' })
+  await user.tab() // → «Причина»
+  await user.keyboard('Ошибка в ростере')
+  await user.tab() // → «Санкция»
+  await user.keyboard('Выговор')
+  await user.tab() // → «Подтвердить исправление»
+  await user.keyboard('{Enter}')
+
+  await waitFor(() => expect(bodies).toHaveLength(1))
+  expect(bodies[0]).toEqual({ reason: 'Ошибка в ростере', sanction: 'Выговор' })
+})
+
+it('«Отмена» закрывает форму исправления и POST не шлёт', async () => {
+  const bodies = captureAmendPost(() =>
+    HttpResponse.json(submissionFixture({ version: 2, event: 'AMENDED' }), { status: 201 }),
+  )
+  const user = await openAmendForm()
+
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Отмена' }))
+
+  expect(screen.queryByRole('form', { name: 'Исправление сдачи' })).not.toBeInTheDocument()
+  expect(bodies).toHaveLength(0)
+  // Кнопка-открывашка вернулась: путь не стал тупиком.
+  expect(screen.getByRole('button', { name: 'Исправить сдачу' })).toBeInTheDocument()
 })

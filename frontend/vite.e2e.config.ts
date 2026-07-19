@@ -13,15 +13,20 @@ export default defineConfig({
     target: 'firefox100',
     outDir: 'dist-e2e',
     rollupOptions: {
-      // Пять входов одной сборки: грид 9.9, экран сдачи дня 10.3,
-      // светофор-дерево 10.4, центр уведомлений 11.4 и экран расхода 10.5
-      // (четыре последних — QA-добор). Общий чанк react/react-dom делится
-      // между ними — прод-dist по-прежнему не задет, size-gate суммирует
-      // только dist/.
+      // Шесть входов одной сборки: грид 9.9, экран сдачи дня 10.3,
+      // светофор-дерево 10.4, центр уведомлений 11.4, экран расхода 10.5 и
+      // исправление сдачи 10.6 (пять последних — QA-добор). Общий чанк
+      // react/react-dom делится между ними — прод-dist по-прежнему не задет,
+      // size-gate суммирует только dist/.
       input: {
         grid: fileURLToPath(new URL('./e2e-harness/index.html', import.meta.url)),
         daySubmission: fileURLToPath(
           new URL('./e2e-harness/day-submission.html', import.meta.url),
+        ),
+        // 10.6: отдельный вход, а не правка day-submission — тот харнес
+        // намеренно без credential (см. шапку day-amendment.tsx).
+        dayAmendment: fileURLToPath(
+          new URL('./e2e-harness/day-amendment.html', import.meta.url),
         ),
         trafficLight: fileURLToPath(
           new URL('./e2e-harness/traffic-light.html', import.meta.url),
