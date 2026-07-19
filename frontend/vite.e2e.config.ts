@@ -5,10 +5,22 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+// Расширение .ts ОБЯЗАТЕЛЬНО (module: nodenext) — иначе TS2835 на `tsc -b`.
+import { buildDefine } from './scripts/build-constants.ts'
 
 // fileURLToPath, не URL.pathname — путь репо содержит кириллицу (ловушка 7 из 8.8)
 export default defineConfig({
   plugins: [react()],
+  // 🔴 Стори 10.9: ТОТ ЖЕ define, что в vite.config.ts — и это не копия ради
+  // симметрии. Харнес notifications.tsx монтирует НАСТОЯЩИЙ AppLayout, а в
+  // футере каркаса живёт __APP_VERSION__. Забыть здесь define = собрать харнес,
+  // падающий ReferenceError при монтировании, причём ЗЕЛЁНЫМИ останутся и
+  // `npm run gate` (build:e2e в цепочку не входит), и сам `npm run build:e2e`
+  // (vite не считает необъявленный идентификатор ошибкой — выходит с кодом 0
+  // и оставляет голый идентификатор в бандле). Единственный детектор —
+  // Playwright: playwright.config.ts:32 пересобирает харнес на КАЖДОМ прогоне
+  // (reuseExistingServer: false) и сразу открывает его в браузере.
+  define: buildDefine(),
   build: {
     target: 'firefox100',
     outDir: 'dist-e2e',

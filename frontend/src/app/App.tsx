@@ -6,6 +6,7 @@
 // (экраны — E9/E10). /admin/* в карте нет (Д5); catch-all/404 не в карте UX.
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
+import { ChangelogPage } from '../features/changelog/ChangelogPage'
 import { DailyUpdatePage } from '../features/daily-grid/DailyUpdatePage'
 import { ExpenseReportPage } from '../features/expense/ExpenseReportPage'
 import { ExpensePrintPage } from '../features/print-forms/ExpensePrintPage'
@@ -104,6 +105,15 @@ export function AppRoutes() {
             </RequirePermission>
           }
         />
+        {/* Журнал «сообщено → исправлено» (10.9): вложен в layout-route, то
+            есть за RequireAuth родителя — своей обёртки НЕ добавляем. БЕЗ
+            RequirePermission, и это не упущение: журнал доступен ЛЮБОМУ
+            авторизованному (AC 13.4, epics.md#L1378) — читать «система живёт и
+            чинится» должны и те, у кого прав нет вовсе. Прецедент безправного
+            роута за RequireAuth — printTest (:29-36), прецедент безправной
+            аудитории в каркасе — NotificationBell (AppLayout.tsx:75-78).
+            В NAV_SECTIONS маршрут не добавляется — вход через футер (AC-7). */}
+        <Route path={ROUTES.changelog} element={<ChangelogPage />} />
       </Route>
     </Routes>
   )

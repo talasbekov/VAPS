@@ -463,7 +463,21 @@ development_status:
   # Порядок: 10.8 → 10.8a.
   10-8-личный-экспорт-оператора-щит: done
   10-8a-ui-кнопка-моя-копия: backlog
-  10-9-журнал-сообщено-исправлено-каркас: backlog
+  # 10.9 — ФРОНТ целиком, бэка нет вовсе. Два деливерабла одной петли:
+  #   (1) шов версии: build-time `define` __APP_VERSION__/__BUILD_SHA__ из
+  #       frontend/scripts/build-constants.ts (env VAPS_APP_VERSION /
+  #       VAPS_BUILD_SHA → фолбэк package.json + git rev-parse) + <footer>
+  #       в shared/ui/AppLayout.tsx;
+  #   (2) features/changelog/: роут /changelog БЕЗ RequirePermission
+  #       («доступно всем» — AC 13.4), вход — ссылка версии в футере.
+  # ⚠️ AC эпика «версия из manifest» закрывается ШВОМ, а не источником:
+  #   manifest.json — артефакт 12.2 (backlog), эндпоинта версии нет.
+  #   12.2 подставит env — фронт не меняется. Наполнение журнала — 13.4.
+  # Ловушки, стоившие бы дня: define без JSON.stringify молча уезжает в бандл
+  #   идентификатором/числом; vite.e2e.config.ts — ВТОРОЙ конфиг, и ни gate,
+  #   ни build:e2e его пропуск не ловят (только Playwright); <li> в футере
+  #   ломает 4 чужих e2e-счётчика listitem (один — в e2e-live/, вне прогона).
+  10-9-журнал-сообщено-исправлено-каркас: done
   10-10-e2e-сдачи-целиком: backlog
   epic-10-retrospective: optional
 

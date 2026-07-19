@@ -6,11 +6,12 @@
 // logout() — навигацию на /login делает RequireAuth реактивно (Д7-8.6,
 // window.location запрещён). h-screen, не h-dvh (dvh — FF101+, Ловушка 4).
 import { LogOut } from 'lucide-react'
-import { NavLink, Outlet } from 'react-router'
+import { Link, NavLink, Outlet } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { usePermissions } from '../auth/usePermissions'
 import { cn } from '../lib/cn'
-import { NAV_SECTIONS } from '../routes'
+import { NAV_SECTIONS, ROUTES } from '../routes'
+import { APP_VERSION, BUILD_SHA, buildLabel, versionLabel } from '../version'
 import { Avatar, AvatarFallback } from './Avatar'
 import { Button } from './Button'
 import { ConnectionIndicator } from './ConnectionIndicator'
@@ -108,7 +109,57 @@ export function AppLayout() {
         <main className="min-w-0 flex-1 p-6">
           <Outlet />
         </main>
+        <AppFooter />
       </div>
     </div>
+  )
+}
+
+/**
+ * Футер каркаса (10.9): версия приложения на КАЖДОМ экране портала + вход в
+ * журнал «сообщено → исправлено». Живёт инлайном в AppLayout, а не в
+ * `features/changelog/`, и это по построению: `shared → features` запрещено
+ * (ARCH-FE-013) — импорт был бы недостижим. Тот же довод, что у 11.4 AC-10.
+ *
+ * 🔴 НИ ОДНОГО ЗАПРОСА. В этом весь смысл AC для NFR-8: версию читают ровно
+ * тогда, когда что-то сломалось, — при 500 на my-permissions сайдбар пуст и
+ * разделы недоступны, а версия обязана остаться видимой.
+ *
+ * 🔴 РАЗМЕТКА БЕЗ <ul>/<ol>/<li>. Естественная разметка «Версия X · сборка Y» —
+ * это список, и она МОЛЧА сломала бы четыре чужих e2e-ассерта: харнес
+ * e2e-harness/notifications.tsx монтирует настоящий AppLayout, а спеки считают
+ * `listitem` ПО ВСЕЙ СТРАНИЦЕ, без скоупа (notifications.spec.ts:313,322-323,374
+ * и e2e-live/notifications-live.spec.ts:195-196). Последний живёт в e2e-live/,
+ * который отдельным конфигом и в прогоне этой стори не участвует вовсе —
+ * значит запрет обязан держаться по построению. Раскладка — <span>-ами.
+ *
+ * 🔴 НИКАКИХ role="status"/role="alert". Их в DOM уже четыре источника
+ * (toast.tsx:54, ConnectionIndicator.tsx:46, guards.tsx:48,
+ * NotificationBell.tsx:191) — пятый сделал бы чужие app-тесты неоднозначными.
+ * `role="contentinfo"` от <footer>, наоборот, новый и уникальный: это и есть
+ * надёжная ручка для ассертов.
+ */
+function AppFooter() {
+  const build = buildLabel(BUILD_SHA)
+
+  return (
+    <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t px-6 py-3 text-xs text-muted-foreground">
+      {/* <Link>, а не голый <a href>: literal-пути вне routes.ts — eslint error
+          (ARCH-FE-012). Подпись версии — она же доступное имя ссылки. */}
+      <Link
+        to={ROUTES.changelog}
+        className="underline-offset-4 hover:text-foreground hover:underline"
+      >
+        {versionLabel(APP_VERSION)}
+      </Link>
+      {/* метка сборки только при непустом sha: пустой = сборка вне git,
+          «неизвестно» пользователю не рендерим (см. buildLabel) */}
+      {build === '' ? null : (
+        <>
+          <span aria-hidden="true">·</span>
+          <span>{build}</span>
+        </>
+      )}
+    </footer>
   )
 }
