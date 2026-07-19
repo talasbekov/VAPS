@@ -29,6 +29,7 @@ import json
 import logging
 
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.conf import settings
 
 from apps.notifications.groups import group_name_for
 
@@ -39,6 +40,26 @@ logger = logging.getLogger(__name__)
 # 11.3 client could not tell "not allowed" from "no events yet" and would
 # reconnect into the void forever.
 CLOSE_UNAUTHENTICATED = 4403
+
+# Story 11.5 — kill-switch (settings.VAPS_WS_ENABLED). Same private range, same
+# convention as 4403 above: the code mirrors its HTTP status, here 503 «service
+# unavailable» — the socket is off by an administrator's decision, not broken.
+#
+# ⚠️ THIS ONE IS SENT AFTER accept(), UNLIKE THE 4403 BRANCH BELOW, and the
+# asymmetry is deliberate — 11.3's Открытый вопрос №1 named this very spot.
+# ASGI says a `websocket.close` sent BEFORE `websocket.accept` makes the server
+# answer HTTP 403: the handshake never completes, so the browser gets
+# CloseEvent{code: 1006, wasClean: false} and the private code never reaches the
+# wire at all (proven in 11.3 Решение №4; only the Python tests, which read ASGI
+# messages directly, ever see 4403). A client could not tell that from a dead
+# network — it would back off forever while notifications kept arriving over
+# REST. The epic's «silent switch to polling» is unreachable without accepting
+# first: after accept() the connection exists and the close frame carries its
+# code honestly, as CloseEvent{code: 4503, wasClean: true}.
+# Converting the 4403 branch to the same shape is NOT done here — accepting a
+# socket from an unauthenticated peer is a security-level behaviour change,
+# pinned by six tests of 11.1, and needs its own story (11.5 Решение №4).
+CLOSE_WS_DISABLED = 4503
 
 
 class NotificationConsumer(AsyncWebsocketConsumer):
@@ -57,6 +78,18 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         if not actor:
             # Refuse the handshake itself — no accept() first.
             await self.close(code=CLOSE_UNAUTHENTICATED)
+            return
+        # Identity FIRST, flag SECOND — never the other way round. The cheap
+        # check looks like it belongs on top, but putting it there would accept
+        # unauthenticated peers whenever WS is off, i.e. turn the kill-switch
+        # into a hole in access control (pinned by
+        # test_anonymous_is_still_refused_before_accept_when_ws_disabled).
+        # Read through `settings.` at call time, never copied into a module
+        # constant: override_settings patches the settings object, and a copy
+        # taken at import would make every disabled-state test vacuous.
+        if not settings.VAPS_WS_ENABLED:
+            await self.accept()
+            await self.close(code=CLOSE_WS_DISABLED)
             return
         self.group = group_name_for(actor)
         await self.channel_layer.group_add(self.group, self.channel_name)

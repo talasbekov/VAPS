@@ -291,3 +291,21 @@ VAPS_PRIVATE_STORAGE_ROOT = Path(
 # VAPS_XACCEL_ENABLED=0 — dev-fallback без nginx (FileResponse).
 VAPS_XACCEL_ENABLED = os.environ.get("VAPS_XACCEL_ENABLED", "1") == "1"
 VAPS_XACCEL_LOCATION = os.environ.get("VAPS_XACCEL_LOCATION", "/protected")
+
+# Story 11.5 — kill-switch WebSocket (architecture.md#L56/#L95/#L338).
+# VAPS_WS_ENABLED=0 гасит рисковую инфраструктуру (Channels + Redis) целиком:
+# consumer перестаёт принимать соединения, notify() перестаёт трогать channel
+# layer. Уведомления при этом продолжают писаться в БД и читаться по REST —
+# «событие в БД истина, WS сигнал» (architecture.md#L327).
+# Выключение = смена env + перезапуск контейнера, НЕ редеплой (в этом контуре
+# редеплой означает перенос носителя с новым образом, и MTTR kill-switch'а
+# обязан быть меньше времени доставки релиза).
+# Дефолт "1" — по двум причинам сразу: прод-состояние фичи «включено», а
+# выключение обязано быть явным действием администратора; и make gate
+# (Makefile:95-101) НЕ экспортирует эту переменную, поэтому дефолт есть
+# единственное, что задаёт состояние всего WS-сьюта — "0" увёл бы его в
+# красное. Выключенное состояние проверяется только через override_settings.
+# Форма — зеркало VAPS_XACCEL_ENABLED выше и DEBUG (:9); ветвление по if DEBUG
+# запрещено каноном «конфиг — env, без веток по окружению» (architecture.md#L339,
+# комментарий :256).
+VAPS_WS_ENABLED = os.environ.get("VAPS_WS_ENABLED", "1") == "1"
