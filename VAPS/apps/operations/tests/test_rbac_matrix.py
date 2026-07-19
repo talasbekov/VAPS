@@ -156,6 +156,13 @@ MATRIX = {
         {"get": "daily_report.generate", "post": "daily_report.generate"}
     ),
     "ops-expense-report-period": _MethodGate({"get": "daily_report.generate"}),
+    # светофор-дерево (story 10.3a), GET-only. Гейт mixin {"tree": status.view};
+    # scope — в ensure_division_scope (явный корень) / visible_division_ids
+    # (корень опущен), матрицей не проверяется: запрос держателя без параметров
+    # = 200 = ALLOW по канону. Держатели status.view по seed — ADMIN (*),
+    # DIVISION_OPERATOR, VIEWER; ORGD/OMD → DENY (открытый policy-вопрос:
+    # руководству назначили именно это дерево, но право у них не стоит).
+    "ops-traffic-light-tree": _MethodGate({"get": "status.view"}),
     # bulk-создание статусов (story 10.1a, POST /statuses/bulk/). Грубый гейт
     # RequirePermissionMixin {"bulk": status.manage}; per-строчный scope
     # (allowed_division_ids) энфорсит сервис 3.8, матрицей не проверяется
