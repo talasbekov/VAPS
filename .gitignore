@@ -70,6 +70,10 @@ private_storage/
 # (dev default {BASE_DIR}/staticfiles) — build artifact, not a repo artifact.
 staticfiles/
 
+# VAPS release bundles (story 12.2): multi-GB docker-save archives + manifests
+# produced by deploy/scripts/bundle.sh — carried by removable media, not git.
+deploy/bundles/
+
 # Flask stuff:
 instance/
 .webassets-cache
