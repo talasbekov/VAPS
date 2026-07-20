@@ -304,7 +304,7 @@ development_status:
 
   # Epic 9: Клавиатурный грид — слепой ввод оператора
   # 9.1 (бумажный контракт) отправляется по вертикали сразу после E1
-  epic-9: in-progress
+  epic-9: done
   9-1-бумажный-контракт-экрана-1: done
   9-2-state-machine-грамматики: done
   9-3-property-based-грамматики: done
