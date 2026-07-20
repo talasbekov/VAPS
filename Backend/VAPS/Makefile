@@ -2,7 +2,13 @@ PYTHON  := .venv/bin/python
 RUFF    := .venv/bin/ruff
 PYTEST  := .venv/bin/pytest
 
-.PHONY: gate test-full schema golden-update parallel-run-diff
+.PHONY: gate test-full schema golden-update parallel-run-diff deploy-rehearsal
+
+# Story 12.5: ручная, ИНТЕРАКТИВНАЯ деплой-репетиция — проводник по
+# deploy/CHECKLIST.md с логом шагов и времени. Без venv/Django/БД.
+# ARGS проброс: make deploy-rehearsal ARGS=--first-time
+deploy-rehearsal:
+	bash ../../deploy/scripts/deploy-rehearsal.sh $(ARGS)
 
 # Story 8.3: единственная команда обновления бэк-половины контракта (ARCH-FE-011).
 # Regen in place; drift ловит pytest-тест test_schema_drift.py внутри gate.
