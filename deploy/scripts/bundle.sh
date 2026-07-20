@@ -17,7 +17,8 @@
 # Секреты в бандл НЕ входят (architecture.md#L567) — .env доставляется
 # отдельной процедурой. Сборка на online dev-машине (канон 12.1); в контур
 # едут только файлы deploy/bundles/ + install-обвязка 12.3.
-set -euo pipefail
+# -E: ERR-trap наследуется функциями (без него trap-очистка do_build мертва).
+set -Eeuo pipefail
 
 # Корень репо от расположения скрипта: пути ниже кавычены ВСЕ — путь
 # репозитория содержит кириллицу (ловушка 7 из 8.8/10.9).
@@ -42,25 +43,58 @@ RELEASE_SHA_FULL="$(git rev-parse HEAD)"
 RELEASE_SHA="$(git rev-parse --short HEAD)"
 RELEASE_TAG="$(date -u +%Y%m%d)-${RELEASE_SHA}"   # дата UTC — зеркало спайка 1.9
 BUNDLE_DIR="${REPO_ROOT}/deploy/bundles"
-TAR_NAME="vaps-${RELEASE_TAG}.tar"
-MANIFEST_NAME="manifest-${RELEASE_TAG}.json"
-SUMS_NAME="sha256sums-${RELEASE_TAG}.txt"
 # Статичное поле релизной политики (Решение №3): первый релиз — null;
 # breaking-релиз правит значение осознанно. Потребитель — install.sh (12.3).
 MIN_UPGRADE_FROM="null"
 
 MODE="${1:-build}"
 
+# --verify-repro [тег]: без аргумента верифицируется сегодняшний тег; с
+# аргументом — существующий бандл (напр. вчерашний того же sha: тег несёт
+# UTC-дату, и «завтра» имя манифеста иначе не совпадёт — ревью 12.2). git_sha
+# манифеста сверяется с HEAD — репро чужого коммита невозможен по построению.
+if [ "$MODE" = "--verify-repro" ] && [ -n "${2:-}" ]; then
+  RELEASE_TAG="$2"
+fi
+
+TAR_NAME="vaps-${RELEASE_TAG}.tar"
+MANIFEST_NAME="manifest-${RELEASE_TAG}.json"
+SUMS_NAME="sha256sums-${RELEASE_TAG}.txt"
+
+# Один прогон на каталог: имена артефактов детерминированы (дата+sha), два
+# параллельных запуска рвали бы docker save друг друга и подчищали чужие
+# файлы (ревью 12.2).
+mkdir -p "$BUNDLE_DIR"
+exec 9>"${BUNDLE_DIR}/.lock"
+if ! flock -n 9; then
+  echo "ОТКАЗ: другой bundle.sh уже работает с ${BUNDLE_DIR} (flock занят)." >&2
+  exit 1
+fi
+
 build_frontend() {
   echo "[1/4] npm run build (шов версии 10.9: VAPS_APP_VERSION=${RELEASE_TAG})..."
   # РОВНО те значения, что уйдут в manifest.json — контракт
-  # frontend/scripts/build-constants.ts:16-24 (AC-3).
+  # frontend/scripts/build-constants.ts:16-24 (AC-3). Вывод НЕ глушится:
+  # tsc пишет ошибки компиляции в stdout — >/dev/null прятал бы причину
+  # провала (ревью 12.2).
   ( cd "${REPO_ROOT}/frontend" \
     && VAPS_APP_VERSION="${RELEASE_TAG}" VAPS_BUILD_SHA="${RELEASE_SHA_FULL}" \
-       npm run build >/dev/null )
-  # Версия реально доехала до бандла, а не потерялась в фолбэке.
-  if ! grep -q "${RELEASE_TAG}" "${REPO_ROOT}"/frontend/dist/assets/*.js; then
-    echo "ОТКАЗ: RELEASE_TAG не найден в frontend/dist — шов версии не сработал." >&2
+       npm run build )
+  # Оба значения шва реально доехали до бандла, а не потерялись в фолбэке
+  # (фолбэк build-constants молча подставил бы короткий git-sha — вакуумная
+  # зелень; ревью 12.2). Явный чек наличия ассетов — незаэкспанденный глоб
+  # дал бы grep-у «No such file» и ложный диагноз «шов не сработал».
+  local js_assets
+  shopt -s nullglob
+  js_assets=("${REPO_ROOT}"/frontend/dist/assets/*.js)
+  shopt -u nullglob
+  if [ "${#js_assets[@]}" -eq 0 ]; then
+    echo "ОТКАЗ: frontend/dist/assets без .js — сборка фронта не дала ассетов." >&2
+    exit 1
+  fi
+  if ! grep -q "${RELEASE_TAG}" "${js_assets[@]}" \
+     || ! grep -q "${RELEASE_SHA_FULL}" "${js_assets[@]}"; then
+    echo "ОТКАЗ: RELEASE_TAG/полный sha не найдены в frontend/dist — шов версии не сработал." >&2
     exit 1
   fi
 }
@@ -77,6 +111,11 @@ build_images() {
     -f "${REPO_ROOT}/deploy/nginx/Dockerfile" "${REPO_ROOT}" >/dev/null
 }
 
+# «digests» эпика реализованы полем image_id = .Id (ревью 12.2, декларация):
+# .Id — content-addressable sha256 манифеста образа; RepoDigests у локально
+# собранных не-push-нутых образов не существует (реестра нет), а при
+# containerd-store .Id и есть тот же digest. Потребитель — install.sh 12.3
+# (image-identity-verify, deferred-work.md:103).
 image_id() { docker image inspect --format '{{.Id}}' "$1"; }
 
 # Список миграций из СОБРАННОГО образа (Решение №2): без VAPS_DB-env settings
@@ -122,33 +161,41 @@ print(json.dumps(manifest, ensure_ascii=False, indent=2))
 }
 
 do_build() {
-  build_frontend
-  build_images
-
-  mkdir -p "$BUNDLE_DIR"
   local tar_path="${BUNDLE_DIR}/${TAR_NAME}"
   local manifest_path="${BUNDLE_DIR}/${MANIFEST_NAME}"
   local sums_path="${BUNDLE_DIR}/${SUMS_NAME}"
 
+  # Любой провал ниже (упавший docker save на полном диске, оборванный
+  # docker run в манифест-пайпе — pipefail добьёт скрипт ПОСЛЕ того, как
+  # python успел дописать правдоподобный манифест, ревью 12.2) не имеет
+  # права оставить в bundles/ частичную тройку, маскирующуюся под релиз.
+  # shellcheck disable=SC2317
+  _build_cleanup() {
+    echo "ОТКАЗ: сборка бандла прервана — частичные артефакты тега ${RELEASE_TAG} удалены." >&2
+    rm -f "$tar_path" "$manifest_path" "$sums_path"
+  }
+  trap _build_cleanup ERR
+
+  build_frontend
+  build_images
+
   echo "[3/4] docker save (оба образа одним архивом) + manifest + sha256sums..."
   docker save "vaps-app:${RELEASE_TAG}" "vaps-nginx:${RELEASE_TAG}" -o "$tar_path"
-  write_manifest "$tar_path" "$manifest_path"
+  # Манифест — во временное имя с атомарным mv: наблюдатель каталога никогда
+  # не видит полуфабрикат под финальным именем.
+  write_manifest "$tar_path" "${manifest_path}.tmp"
+  mv "${manifest_path}.tmp" "$manifest_path"
   ( cd "$BUNDLE_DIR" && sha256sum "$TAR_NAME" "$MANIFEST_NAME" > "$SUMS_NAME" )
 
   # --- AC-7: самопроверка продукта (deferred-work.md:115) -------------------
   # docker save на полном диске пишет усечённый tar, чей sha «зелёный» по
   # факту записи: sha-чек контура ПРОЙДЁТ, а load упадёт после изменений.
   # Контрольный load здесь (идемпотентен — образы резидентны) ловит это на
-  # dev-машине, до носителя.
+  # dev-машине, до носителя. Провал → ERR-trap выше подчистит тройку.
   echo "[4/4] контрольный docker load собранного архива..."
-  local size
-  size="$(stat -c%s "$tar_path")"
-  if [ "$size" -eq 0 ] || ! docker load -i "$tar_path" >/dev/null; then
-    echo "ОТКАЗ: архив бит (size=${size}) — артефакты удалены, бандл НЕ собран." >&2
-    rm -f "$tar_path" "$manifest_path" "$sums_path"
-    exit 1
-  fi
+  docker load -i "$tar_path" >/dev/null
 
+  trap - ERR
   echo
   echo "ГОТОВО. Перенести носителем (вместе с install-обвязкой 12.3):"
   echo "  ${tar_path}"
@@ -165,11 +212,20 @@ do_build() {
 # (холодный кэш легитимно меняет id при том же составе).
 do_verify_repro() {
   local manifest_path="${BUNDLE_DIR}/${MANIFEST_NAME}"
-  if [ ! -f "$manifest_path" ]; then
-    echo "ОТКАЗ: нет ${manifest_path} — сначала полная сборка (./bundle.sh)." >&2
+  local tar_path="${BUNDLE_DIR}/${TAR_NAME}"
+  if [ ! -f "$manifest_path" ] || [ ! -f "$tar_path" ]; then
+    echo "ОТКАЗ: нет ${MANIFEST_NAME}/${TAR_NAME} в ${BUNDLE_DIR}." >&2
+    echo "Сначала полная сборка (./bundle.sh); для бандла другого UTC-дня укажите тег: ./bundle.sh --verify-repro <тег>." >&2
     exit 1
   fi
-  echo "verify-repro: пересборка на ${RELEASE_SHA} и сверка манифеста..."
+  # Репро имеет смысл только на том же коммите: тег мог прийти аргументом.
+  local manifest_sha
+  manifest_sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["git_sha"])' "$manifest_path")"
+  if [ "$manifest_sha" != "$RELEASE_SHA_FULL" ]; then
+    echo "ОТКАЗ: манифест ${RELEASE_TAG} собран с ${manifest_sha}, HEAD = ${RELEASE_SHA_FULL} — checkout нужного коммита обязателен." >&2
+    exit 1
+  fi
+  echo "verify-repro: пересборка тега ${RELEASE_TAG} и сверка манифеста..."
   build_frontend
   build_images
   local repro_manifest="${BUNDLE_DIR}/.repro-${MANIFEST_NAME}"
@@ -178,6 +234,12 @@ do_verify_repro() {
   local app_id nginx_id
   app_id="$(image_id "vaps-app:${RELEASE_TAG}")"
   nginx_id="$(image_id "vaps-nginx:${RELEASE_TAG}")"
+  # Вердикт снимается БЕЗ set -e: после сравнения теги ОБЯЗАНЫ быть
+  # восстановлены из бандла независимо от исхода — пересборка перетегнула
+  # vaps-*:<тег> на новые id, и без restore резидентный тег расходился бы
+  # с содержимым tar при зелёном exit 0 (ревью 12.2, HIGH).
+  local verdict=0
+  set +e
   migrations_from_image | RELEASE_TAG="$RELEASE_TAG" RELEASE_SHA_FULL="$RELEASE_SHA_FULL" \
     APP_ID="$app_id" NGINX_ID="$nginx_id" MIN_UPGRADE_FROM="$MIN_UPGRADE_FROM" \
     BASE_MANIFEST="$manifest_path" REPRO_MANIFEST="$repro_manifest" \
@@ -208,14 +270,25 @@ if fails:
 base_ids = {i["name"]: i["image_id"] for i in base.get("images", [])}
 for i in repro["images"]:
     if base_ids.get(i["name"]) != i["image_id"]:
-        print("WARNING: image_id разошёлся для " + i["name"] + " (холодный кэш? состав при этом идентичен)")
-print("OK: повторная сборка того же sha дала тот же состав.")
+        # Текст НЕ утверждает идентичность состава образа: без лок-файлов
+        # (pip range-пины, npm run build без ci) холодный кэш легитимно
+        # тянет другие версии зависимостей — скрипту это не видно.
+        print("WARNING: image_id разошёлся для " + i["name"]
+              + " — сравненные поля совпали, но образ собрался иначе"
+              + " (холодный кэш / дрейф незапинованных зависимостей)."
+              + " Эталон — бандл; локальные теги будут восстановлены из архива.")
+print("OK: детерминированные поля манифеста совпали (тот же состав).")
 '
+  verdict=$?
+  set -e
+  # Restore: вернуть резидентные теги на образы ИЗ БАНДЛА (идемпотентно).
+  docker load -i "$tar_path" >/dev/null
   rm -f "$repro_manifest"
+  exit "$verdict"
 }
 
 case "$MODE" in
   build) do_build ;;
   --verify-repro) do_verify_repro ;;
-  *) echo "Использование: bundle.sh [--verify-repro]" >&2; exit 2 ;;
+  *) echo "Использование: bundle.sh [--verify-repro [тег]]" >&2; exit 2 ;;
 esac
