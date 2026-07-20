@@ -38,6 +38,9 @@ CONSTRAINT_ERROR_MAP = {
     # 14.1: create_facility pre-checks the duplicate (sequential 409); this is
     # the race backstop — two concurrent creates trip the unique, mapped here.
     "uq_facility_code": ("FACILITY_ALREADY_EXISTS", 409, False),
+    # 14.2: те же pre-check+race-бэкстоп для топологии объекта.
+    "uq_sector_facility_name": ("SECTOR_ALREADY_EXISTS", 409, False),
+    "uq_post_facility_code": ("POST_ALREADY_EXISTS", 409, False),
 }
 
 # DRF-handled HTTP status → registry code (re-shaped into the §36 envelope).

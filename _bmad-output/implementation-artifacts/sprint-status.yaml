@@ -623,7 +623,7 @@ development_status:
   # Epic 14: Объекты и дежурства (этап 2 — каркас, полные AC при старте этапа)
   epic-14: in-progress
   14-1-app-operations-facilities-facility-паспорт: done
-  14-2-post-и-sector-со-старшим: backlog
+  14-2-post-и-sector-со-старшим: done
   14-3-чек-лист-объекта: backlog
   14-4-справочник-видов-дежурств: backlog
   14-5-план-дежурств-на-месяц: backlog

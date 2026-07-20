@@ -16,7 +16,7 @@ from django.test.utils import CaptureQueriesContext
 
 from apps.audit.models import AuditLog
 from apps.core.exceptions import DomainError
-from apps.operations.facilities import services
+from apps.operations.facilities.services import facility_service as services
 from apps.operations.facilities.models import (
     Facility,
     FacilityPassport,

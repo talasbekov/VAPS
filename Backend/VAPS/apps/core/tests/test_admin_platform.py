@@ -13,6 +13,7 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.core.models import Division, DivisionType, Employee, Position, Rank
+from apps.operations.facilities.models import PostType
 from apps.operations.rbac.models import Role
 from apps.operations.statuses.models import EmployeeStatus, StatusType
 from apps.operations.submissions.models import (
@@ -32,6 +33,9 @@ CATALOG_MODELS = {
     StatusType,
     SubmissionControlSettings,
     DivisionNotifyRecipient,
+    # 14.2: справочник типов постов (facilities); Facility/Sector/Post —
+    # бизнес-модели, в admin им нельзя.
+    PostType,
 }
 ALLOWED_IN_ADMIN = {Group} | CATALOG_MODELS
 

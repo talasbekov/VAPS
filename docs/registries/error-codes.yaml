@@ -145,8 +145,32 @@ codes:
     http_status: 409
     overridable: false
     category: state
-    description: "Объект деактивирован: повторная деактивация и правки паспорта — конфликт состояния (soft-delete замораживает агрегат, ARCH-DATA-025)."
-    source: "Story 14.1 (ревью: state-ошибка не может ехать form-кодом); facilities.services.deactivate_facility"
+    description: "Объект деактивирован: повторная деактивация, правки паспорта и топологии — конфликт состояния (soft-delete замораживает агрегат, ARCH-DATA-025)."
+    source: "Story 14.1 (ревью: state-ошибка не может ехать form-кодом); facilities.services.deactivate_facility; 14.2 services_topology"
+  SECTOR_ALREADY_EXISTS:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Сектор с таким именем на объекте уже существует (uq_sector_facility_name, регистронезависимо)."
+    source: "Story 14.2; facilities.services_topology.create_sector/update_sector"
+  SECTOR_ALREADY_INACTIVE:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Сектор деактивирован: повторная деактивация, правки и привязка постов — конфликт состояния."
+    source: "Story 14.2; facilities.services_topology"
+  POST_ALREADY_EXISTS:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Пост с таким кодом на объекте уже существует (uq_post_facility_code, регистронезависимо)."
+    source: "Story 14.2; facilities.services_topology.create_post"
+  POST_ALREADY_INACTIVE:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Пост деактивирован: повторная деактивация и правки — конфликт состояния."
+    source: "Story 14.2; facilities.services_topology"
   NOT_READY:
     http_status: 409
     overridable: false
