@@ -106,6 +106,15 @@ actions:
     description: "Легальный обход блокировки «на завтра» (кто/когда/почему; 5.6b override)."
     provenance: derived-from-mutation
     source: "epics.md Story 5.9; architecture.md ARCH-DATA-021 (блокировка следующего дня)"
+  # Story 10.8 (growth_rule: action дописывается тем же PR, что вводит выдачу).
+  # GET-роут ⇒ строки в AUDIT_MATRIX НЕТ — она отбирает только мутирующие
+  # глаголы (прецедент DOCUMENT_DOWNLOADED). entity_id = division_id (UUID),
+  # int-pk сдачи — в new_value.submission_id.
+  SUBMISSION_EXPORTED:
+    entity_type: daily_submission
+    description: "Оператор выгрузил личную копию сданного дня (.xlsx «щит»; обязательный аудит — нет журнала, нет выдачи)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 10.8 (§ «скачивание в аудите»); ARCH-SEC-032 (аудит в сервисе)"
 
   # --- Story 4.4: мутации статусов из сервисов E3 (синхронно-на-мутации, before/after) ---
   # entity_id = employee_id (UUID) — AuditLog.entity_id это UUIDField, а PK статус-сущностей

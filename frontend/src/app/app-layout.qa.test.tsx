@@ -196,8 +196,8 @@ describe('Шапка не зависит от состояния прав (Task 
         screen.getByRole('button', { name: 'Меню пользователя' }),
       ).toBeInTheDocument()
       expect(
-        screen.getByRole('button', { name: 'Уведомления (появятся в E11)' }),
-      ).toBeDisabled()
+        screen.getByRole('button', { name: 'Уведомления' }),
+      ).toBeEnabled()
     },
   )
 })

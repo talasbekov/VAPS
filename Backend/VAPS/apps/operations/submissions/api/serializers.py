@@ -117,6 +117,19 @@ class ExpensePeriodFilterSerializer(serializers.Serializer):
     date_to = serializers.DateField()
 
 
+class TrafficLightTreeFilterSerializer(serializers.Serializer):
+    """GET query form (10.3a) — оба параметра НЕОБЯЗАТЕЛЬНЫ: корень дефолтится
+    в скоуп актора (``visible_division_ids``), дата — в ``Clock.today_local()``.
+
+    Граница ловит мусор как 400 VALIDATION_ERROR: не-UUID корень (иначе сырой
+    ``ValueError`` из ``uuid.UUID`` внутри сервиса — дефер 5.5b) и не-ISO дату.
+    Параметра глубины нет: каскад отдаёт поддерево целиком.
+    """
+
+    root_division_id = serializers.UUIDField(required=False)
+    business_date = serializers.DateField(required=False)
+
+
 class TomorrowBlockOverrideSerializer(serializers.Serializer):
     """POST-body form (6.10b) — the date whose «на завтра» block is legally
     lifted and the mandatory reason. DRF defaults reject a missing/blank reason

@@ -1311,6 +1311,26 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/operations/daily-submissions/{id}/export/:
+    get:
+      operationId: operations_daily_submissions_export_retrieve
+      description: 'Личная копия сданного дня (.xlsx): паспорт сдачи + состав из снапшота.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/operations/expense-reports/:
     get:
       operationId: operations_expense_reports_list
@@ -1583,6 +1603,31 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/operations/traffic-light/tree/:
+    get:
+      operationId: operations_traffic_light_tree_retrieve
+      description: Каскадный светофор поддерева (5.5b), плоский список. 400 не-UUID/не-ISO/будущая
+        дата; 403 чужой корень; 404 нет подразделения; 422 дата до начала данных.
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: root_division_id
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficLightTreeResponse'
+          description: ''
   /api/operations/user-roles/:
     get:
       operationId: operations_user_roles_retrieve
@@ -2120,7 +2165,7 @@ components:
           readOnly: true
         status:
           allOf:
-          - $ref: '#/components/schemas/StatusEnum'
+          - $ref: '#/components/schemas/IssuedExpenseReportStatusEnum'
           readOnly: true
         attachment_id:
           type: string
@@ -2141,6 +2186,14 @@ components:
       - submission_id
       - submission_version
       - year
+    IssuedExpenseReportStatusEnum:
+      enum:
+      - ISSUED
+      - SUPERSEDED
+      type: string
+      description: |-
+        * `ISSUED` - Выпущен
+        * `SUPERSEDED` - Заменён
     KindEnum:
       enum:
       - SUBMISSION_LAGGING
@@ -2781,14 +2834,6 @@ components:
       - division
       - position_code
       - valid_from
-    StatusEnum:
-      enum:
-      - ISSUED
-      - SUPERSEDED
-      type: string
-      description: |-
-        * `ISSUED` - Выпущен
-        * `SUPERSEDED` - Заменён
     TomorrowBlockOverrideRequest:
       type: object
       description: |-
@@ -2819,3 +2864,52 @@ components:
       - business_date
       - overridden_by
       - reason
+    TrafficLightNode:
+      type: object
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: '#/components/schemas/TrafficLightNodeStatusEnum'
+        late:
+          type: boolean
+      required:
+      - division_id
+      - late
+      - name
+      - parent_id
+      - status
+    TrafficLightNodeStatusEnum:
+      enum:
+      - GREEN
+      - YELLOW
+      - RED
+      - NEUTRAL
+      - UNKNOWN
+      type: string
+      description: |-
+        * `GREEN` - Зелёный
+        * `YELLOW` - Жёлтый
+        * `RED` - Красный
+        * `NEUTRAL` - Нет данных
+        * `UNKNOWN` - Неопределён
+    TrafficLightTreeResponse:
+      type: object
+      properties:
+        business_date:
+          type: string
+          format: date
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrafficLightNode'
+      required:
+      - business_date
+      - nodes

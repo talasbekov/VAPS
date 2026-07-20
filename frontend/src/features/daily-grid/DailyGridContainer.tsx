@@ -27,6 +27,11 @@ export interface DailyGridContainerProps {
   /** 409/422-ответ per-row → маркеры (9.6-seam); реальный маппинг ответа = E10. */
   onCellCommit?: (change: RowChange) => ApiError | null
   emptyLabel?: string
+  /** Число дельт → экрану (10.2): beforeunload и подтверждение смены даты. */
+  onDirtyChange?: (changedCount: number) => void
+  /** Транзитный проброс надписи кнопки отправки дельт (10.3): контейнер
+   * значение не читает — решение о надписи принимает экран. */
+  submitLabel?: string
 }
 
 export function DailyGridContainer({
@@ -37,6 +42,8 @@ export function DailyGridContainer({
   onBulkSubmit,
   onCellCommit,
   emptyLabel,
+  onDirtyChange,
+  submitLabel,
 }: DailyGridContainerProps) {
   const rows = useMemo(
     () => buildPrefilledRows(employees, yesterday),
@@ -61,6 +68,8 @@ export function DailyGridContainer({
       onSubmit={handleSubmit}
       onCellCommit={onCellCommit}
       emptyLabel={emptyLabel}
+      onDirtyChange={onDirtyChange}
+      submitLabel={submitLabel}
     />
   )
 }

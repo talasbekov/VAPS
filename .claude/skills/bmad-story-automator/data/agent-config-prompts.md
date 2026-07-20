@@ -48,10 +48,12 @@ Your stories by complexity:
 
 | Complexity | create | dev | auto | review | Rationale |
 |------------|--------|-----|------|--------|-----------|
-| Low | claude | claude | claude | claude | Claude handles simple tasks well |
-| Medium | codex | codex | codex | codex | Codex for moderate complexity (Claude fallback) |
-| High | codex | codex | codex | codex | Codex for complex work (Claude fallback) |
+| Low | claude | claude | claude | claude (`model: claude-fable-5`) | Claude handles simple tasks well; review runs on a different model than dev by default (AI-2, epic-9 retro — same-model review is not accepted) |
+| Medium | codex | codex | codex | claude (`model: claude-fable-5`) | Codex for moderate complexity (Claude fallback); review stays cross-model regardless of dev's agent |
+| High | codex | codex | codex | claude (`model: claude-fable-5`) | Codex for complex work (Claude fallback); review stays cross-model regardless of dev's agent |
 | Retro | inherits default | - | - | - | Retrospectives follow the configured primary agent unless overridden |
+
+**Why review always differs from dev:** two epics running (E9, E10/11), "same-model review isn't accepted" kept getting satisfied by the orchestrator manually patching `review.model` onto every single story's agent-config entry after the fact — a discipline that worked only because someone remembered to do it every time. Baking `claude-fable-5` into the suggested defaults here means `[S]uggested` produces a cross-model review setup with zero manual patching. `ultra` (the paid multi-agent cloud review) still can't be triggered autonomously — treat it as Bratan's manual escalation lever for a story on the epic's named-critical list when cross-model review returns anything other than a clean APPROVE.
 
 **Options:**
 1. **[S]uggested** - Apply complexity-based defaults above
@@ -82,9 +84,9 @@ Your stories by complexity:
 
 | Complexity | create | dev | review | Rationale |
 |------------|--------|-----|--------|-----------|
-| Low | claude | claude | claude | Claude handles simple tasks well |
-| Medium | codex | codex | codex | Codex for moderate complexity (Claude fallback) |
-| High | codex | codex | codex | Codex for complex work (Claude fallback) |
+| Low | claude | claude | claude (`model: claude-fable-5`) | Claude handles simple tasks well; review runs on a different model than dev by default (AI-2, epic-9 retro — same-model review is not accepted) |
+| Medium | codex | codex | claude (`model: claude-fable-5`) | Codex for moderate complexity (Claude fallback); review stays cross-model regardless of dev's agent |
+| High | codex | codex | claude (`model: claude-fable-5`) | Codex for complex work (Claude fallback); review stays cross-model regardless of dev's agent |
 | Retro | inherits default | - | - | Retrospectives follow the configured primary agent unless overridden |
 
 **Options:**

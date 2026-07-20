@@ -143,6 +143,12 @@ MATRIX = {
     # detail (story 5.8c, GET /{pk}/): формы у retrieve нет — pk=0 у держателя
     # резолвится селектором by_id в None → 404 = ALLOW по канону матрицы.
     "ops-daily-submission-detail": _MethodGate({"get": "daily_report.mark_update"}),
+    # личная копия сдачи (story 10.8, GET /{pk}/export/): экспорт видит ровно
+    # то, что и так отдаёт retrieve, поэтому гейт — тот же READ-код, новых
+    # прав не заводим. pk=0 у держателя резолвится by_id в None → 404 = ALLOW
+    # по канону матрицы; scope — в ensure_division_scope, матрицей не
+    # проверяется. GET-only ⇒ в AUDIT_MATRIX эта строка НЕ нужна.
+    "ops-daily-submission-export": _MethodGate({"get": "daily_report.mark_update"}),
     # amend сдачи (story 5.8b, POST /{id}/amend/). Гейт mixin {"amend":
     # daily_report.correct}; scope «чужое подразделение → 403» — в сервис-гарде
     # ensure_division_scope (матрицей не проверяется: payloadless POST держателя
@@ -156,6 +162,13 @@ MATRIX = {
         {"get": "daily_report.generate", "post": "daily_report.generate"}
     ),
     "ops-expense-report-period": _MethodGate({"get": "daily_report.generate"}),
+    # светофор-дерево (story 10.3a), GET-only. Гейт mixin {"tree": status.view};
+    # scope — в ensure_division_scope (явный корень) / visible_division_ids
+    # (корень опущен), матрицей не проверяется: запрос держателя без параметров
+    # = 200 = ALLOW по канону. Держатели status.view по seed — ADMIN (*),
+    # DIVISION_OPERATOR, VIEWER; ORGD/OMD → DENY (открытый policy-вопрос:
+    # руководству назначили именно это дерево, но право у них не стоит).
+    "ops-traffic-light-tree": _MethodGate({"get": "status.view"}),
     # bulk-создание статусов (story 10.1a, POST /statuses/bulk/). Грубый гейт
     # RequirePermissionMixin {"bulk": status.manage}; per-строчный scope
     # (allowed_division_ids) энфорсит сервис 3.8, матрицей не проверяется

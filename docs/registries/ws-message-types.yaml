@@ -8,8 +8,16 @@
 #   {"type": "<UPPER_SNAKE из реестра>", "payload": {...}}
 #   - отправка ТОЛЬКО через transaction.on_commit;
 #   - WS — сигнал «обнови», ИСТИНА — REST/БД; после reconnect фронт дочитывает REST;
-#   - доставка best-effort; уведомление всегда персистится в notifications_messages (DB-first).
-#   type_code здесь = и тип WS-конверта, и notifications_messages.type_code (§4.5 / §33).
+#   - доставка best-effort; уведомление всегда персистится в БД (DB-first) — таблица
+#     `notifications`, колонка `kind` (story 5.7a).
+#   type_code здесь = и тип WS-конверта, и значение колонки `notifications.kind`
+#   (§4.5 / §33). Ранее шапка называла таблицу `notifications_messages` — донорское
+#   имя, в VAPS такой таблицы нет (story 11.2, AC-1).
+#
+# СТАТУС РЕАЛИЗАЦИИ: эмитируется сегодня ровно ОДИН тип — SUBMISSION_LAGGING
+#   (5.7a/5.7b пишут строку, 11.2 шлёт её в WS). Остальные 24 — форвард-семена
+#   эпиков 14-20: в коде VAPS не эмитируется НИ ОДИН. Поэтому гвард реестра
+#   (test_ws_guards.py) однонаправлен — code ⊆ registry, а не наоборот.
 
 meta:
   registry: ws-message-types
@@ -22,6 +30,17 @@ meta:
   payload_fields: [type_code, title, body, entity_type, entity_id, action_url, priority, expires_at]
 
 types:
+  # Единственный тип, у которого есть живой эмиттер (lagging_check._emit_lagging →
+  # notifications.services.notify). Семантически НЕ дубль DAILY_MARK_MISSING ниже:
+  # там «09:00 нет INITIAL-отметки» операторам подразделения, здесь — catch-up
+  # несдачи за ПРОШЕДШИЙ день по watermark, адресат резолвится NotifyRecipient.
+  SUBMISSION_LAGGING:
+    priority: WARNING
+    recipients: "division submission recipients"
+    repeat: "daily until submitted"
+    action_url: "/daily-expense"
+    trigger: "catch-up несдачи за прошедший день (lagging_check)"
+    source: "VAPS story 5.7a/5.7b — реальный эмиттер, не донор"
   DAILY_MARK_MISSING:
     priority: WARNING
     recipients: "division operators"

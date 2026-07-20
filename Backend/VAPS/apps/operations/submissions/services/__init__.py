@@ -8,6 +8,9 @@ from apps.operations.submissions.services.expense_read_service import (
     assert_report_date_has_data,
     derive_period,
 )
+from apps.operations.submissions.services.personal_export_service import (
+    export_submission,
+)
 from apps.operations.submissions.services.scope_gate import ensure_division_scope
 from apps.operations.submissions.services.snapshot import build_division_snapshot
 from apps.operations.submissions.services.tomorrow_gate import (
@@ -21,6 +24,7 @@ __all__ = [
     "build_division_snapshot",
     "derive_period",
     "ensure_division_scope",
+    "export_submission",
     "issue_expense_document",
     "override_tomorrow_block",
     "submit_day",

@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "engines": {
     "node": ">=22.12"
@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:property-full": "FC_PROFILE=full vitest run src/features/daily-grid/grammar.properties.test.ts",
     "test:e2e": "playwright test",
-    "gate": "node scripts/deps-gate.mjs && node scripts/schema-check.mjs && tsc -b && eslint . && node scripts/lint-canon.test.mjs && node scripts/schema-check.test.mjs && vitest run && vite build && node scripts/size-gate.mjs",
+    "test:e2e:live": "playwright test --config playwright.live.config.ts",
+    "gate": "node scripts/deps-gate.mjs && node scripts/schema-check.mjs && tsc -b && eslint . && node scripts/lint-canon.test.mjs && node scripts/schema-check.test.mjs && node scripts/build-constants.test.mjs && vitest run && vite build && node scripts/size-gate.mjs",
     "generate:api": "openapi-typescript ../Backend/VAPS/schema.yaml -o src/shared/api/schema.d.ts"
   },
   "dependencies": {

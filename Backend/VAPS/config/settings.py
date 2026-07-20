@@ -19,6 +19,10 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.postgres",
+    # Story 11.1: ASGI/WebSocket-транспорт уведомлений (FR-35). `daphne` НЕ
+    # добавляем: в Channels 4 он нужен только ради ASGI-варианта `runserver`,
+    # а прод-сервер — задача 12.1.
+    "channels",
     "rest_framework",
     # Story 8.3: только CLI-генерация схемы (manage.py spectacular) — runtime-роутов
     # /api/schema нет (закрытый контур), urls.py не трогается.
@@ -66,6 +70,51 @@ TEMPLATES = [
     },
 ]
 WSGI_APPLICATION = None
+
+
+# Story 11.1 — channel layer для WS-транспорта уведомлений (FR-35).
+#
+# Бэкенд ЗАХАРДКОЖЕН, env выбирает только адрес. Причина (architecture.md#L337):
+# in-memory-слой Channels живёт внутри одного интерпретатора, поэтому
+# `group_send` из ЛЮБОГО другого процесса (management-команда, beat, будущий
+# воркер) уходит в никуда — без ошибки, без лога. Такая деградация неотличима
+# от «событий просто не было», поэтому выбор слоя не отдаётся в конфиг вовсе.
+# Гвард `apps/notifications/tests/test_ws_guards.py` держит это утверждение.
+#
+# Скоуп Redis: architecture.md#L311 фиксирует «Redis — только брокер, кэш не
+# вводится». Здесь Redis выступает channel layer'ом — это второе назначение,
+# третьего (CACHES) не появляется.
+def channel_layers_from_env(env):
+    """Парсинг VAPS_REDIS_URL с валидацией схемы (паттерн max_upload_mb_from_env):
+    пустой или не-redis URL валит старт, а не деградирует молча в нерабочую
+    доставку. Возвращает готовый CHANNEL_LAYERS-словарь."""
+    url = env.get("VAPS_REDIS_URL")
+    if url is None:
+        # Не задана вовсе — санкционированный dev-дефолт (AC-2). Задана, но
+        # пустая/пробельная — ошибка оператора (пустой секрет), fail-closed:
+        # молчаливый откат на loopback в проде хуже падения на старте.
+        url = "redis://127.0.0.1:6379/0"
+    url = url.strip()
+    if not url:
+        raise ImproperlyConfigured(
+            "VAPS_REDIS_URL must not be blank — the WS channel layer needs a broker."
+        )
+    if not url.startswith(("redis://", "rediss://")):
+        raise ImproperlyConfigured(
+            "VAPS_REDIS_URL must start with redis:// or rediss:// "
+            f"(got {url.split('://', 1)[0]!r})."
+        )
+    return {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [url]},
+        }
+    }
+
+
+CHANNEL_LAYERS = channel_layers_from_env(os.environ)
+
+ASGI_APPLICATION = "config.asgi.application"
 
 # Postgres in prod via env. SQLite remains the no-env default, but since
 # ops_statuses migrations use Postgres-only features (ExclusionConstraint,
@@ -242,3 +291,21 @@ VAPS_PRIVATE_STORAGE_ROOT = Path(
 # VAPS_XACCEL_ENABLED=0 — dev-fallback без nginx (FileResponse).
 VAPS_XACCEL_ENABLED = os.environ.get("VAPS_XACCEL_ENABLED", "1") == "1"
 VAPS_XACCEL_LOCATION = os.environ.get("VAPS_XACCEL_LOCATION", "/protected")
+
+# Story 11.5 — kill-switch WebSocket (architecture.md#L56/#L95/#L338).
+# VAPS_WS_ENABLED=0 гасит рисковую инфраструктуру (Channels + Redis) целиком:
+# consumer перестаёт принимать соединения, notify() перестаёт трогать channel
+# layer. Уведомления при этом продолжают писаться в БД и читаться по REST —
+# «событие в БД истина, WS сигнал» (architecture.md#L327).
+# Выключение = смена env + перезапуск контейнера, НЕ редеплой (в этом контуре
+# редеплой означает перенос носителя с новым образом, и MTTR kill-switch'а
+# обязан быть меньше времени доставки релиза).
+# Дефолт "1" — по двум причинам сразу: прод-состояние фичи «включено», а
+# выключение обязано быть явным действием администратора; и make gate
+# (Makefile:95-101) НЕ экспортирует эту переменную, поэтому дефолт есть
+# единственное, что задаёт состояние всего WS-сьюта — "0" увёл бы его в
+# красное. Выключенное состояние проверяется только через override_settings.
+# Форма — зеркало VAPS_XACCEL_ENABLED выше и DEBUG (:9); ветвление по if DEBUG
+# запрещено каноном «конфиг — env, без веток по окружению» (architecture.md#L339,
+# комментарий :256).
+VAPS_WS_ENABLED = os.environ.get("VAPS_WS_ENABLED", "1") == "1"

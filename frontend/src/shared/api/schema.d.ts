@@ -918,6 +918,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/daily-submissions/{id}/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Личная копия сданного дня (.xlsx): паспорт сдачи + состав из снапшота. */
+        get: operations["operations_daily_submissions_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/expense-reports/": {
         parameters: {
             query?: never;
@@ -1093,6 +1110,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["operations_temporary_duty_expire_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/traffic-light/tree/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Каскадный светофор поддерева (5.5b), плоский список. 400 не-UUID/не-ISO/будущая дата; 403 чужой корень; 404 нет подразделения; 422 дата до начала данных. */
+        get: operations["operations_traffic_light_tree_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1330,11 +1364,17 @@ export interface components {
             readonly division_id: string;
             readonly submission_id: number;
             readonly submission_version: number;
-            readonly status: components["schemas"]["StatusEnum"];
+            readonly status: components["schemas"]["IssuedExpenseReportStatusEnum"];
             /** Format: uuid */
             readonly attachment_id: string;
             readonly sha256: string;
         };
+        /**
+         * @description * `ISSUED` - Выпущен
+         *     * `SUPERSEDED` - Заменён
+         * @enum {string}
+         */
+        IssuedExpenseReportStatusEnum: "ISSUED" | "SUPERSEDED";
         /**
          * @description * `SUBMISSION_LAGGING` - Отставание по сдаче
          * @enum {string}
@@ -1630,12 +1670,6 @@ export interface components {
             valid_to?: string | null;
         };
         /**
-         * @description * `ISSUED` - Выпущен
-         *     * `SUPERSEDED` - Заменён
-         * @enum {string}
-         */
-        StatusEnum: "ISSUED" | "SUPERSEDED";
-        /**
          * @description POST-body form (6.10b) — the date whose «на завтра» block is legally
          *     lifted and the mandatory reason. DRF defaults reject a missing/blank reason
          *     at the boundary (400); the actor never comes from the payload.
@@ -1650,6 +1684,29 @@ export interface components {
             business_date: string;
             overridden_by: string;
             reason: string;
+        };
+        TrafficLightNode: {
+            /** Format: uuid */
+            division_id: string;
+            name: string;
+            /** Format: uuid */
+            parent_id: string | null;
+            status: components["schemas"]["TrafficLightNodeStatusEnum"];
+            late: boolean;
+        };
+        /**
+         * @description * `GREEN` - Зелёный
+         *     * `YELLOW` - Жёлтый
+         *     * `RED` - Красный
+         *     * `NEUTRAL` - Нет данных
+         *     * `UNKNOWN` - Неопределён
+         * @enum {string}
+         */
+        TrafficLightNodeStatusEnum: "GREEN" | "YELLOW" | "RED" | "NEUTRAL" | "UNKNOWN";
+        TrafficLightTreeResponse: {
+            /** Format: date */
+            business_date: string;
+            nodes: components["schemas"]["TrafficLightNode"][];
         };
     };
     responses: never;
@@ -2537,6 +2594,27 @@ export interface operations {
             };
         };
     };
+    operations_daily_submissions_export_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+        };
+    };
     operations_expense_reports_list: {
         parameters: {
             query: {
@@ -2821,6 +2899,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    operations_traffic_light_tree_retrieve: {
+        parameters: {
+            query?: {
+                business_date?: string;
+                root_division_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrafficLightTreeResponse"];
+                };
             };
         };
     };

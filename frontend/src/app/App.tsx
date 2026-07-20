@@ -6,18 +6,16 @@
 // (экраны — E9/E10). /admin/* в карте нет (Д5); catch-all/404 не в карте UX.
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
+import { ChangelogPage } from '../features/changelog/ChangelogPage'
+import { DailyUpdatePage } from '../features/daily-grid/DailyUpdatePage'
+import { ExpenseReportPage } from '../features/expense/ExpenseReportPage'
+import { ExpensePrintPage } from '../features/print-forms/ExpensePrintPage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
+import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
 import { ROUTES } from '../shared/routes'
 import { AppLayout } from '../shared/ui/AppLayout'
-import {
-  AuditStub,
-  DailyExpenseStub,
-  DashboardStub,
-  EmployeesStub,
-  OrganizationStub,
-  ReportsStub,
-} from './section-stubs'
+import { AuditStub, DashboardStub, EmployeesStub } from './section-stubs'
 
 // Экспорт отдельно от BrowserRouter: E2E-тесты оборачивают AppRoutes в
 // MemoryRouter с initialEntries (BrowserRouter не даёт задать стартовый маршрут)
@@ -34,6 +32,21 @@ export function AppRoutes() {
         element={
           <RequireAuth>
             <PrintTestPage />
+          </RequireAuth>
+        }
+      />
+      {/* Печатная форма расхода (10.7): тоже сиблинг layout-route — сайдбар и
+          шапка на бумагу не попадают. В отличие от каркаса 8.8 здесь ЕСТЬ
+          RequirePermission: страница читает реальные данные расхода, и гейт
+          зеркалит бэковое `_EXPENSE_PERMISSION` (views.py:74). В NAV_SECTIONS
+          маршрут не добавляется — печатная форма не раздел портала. */}
+      <Route
+        path={ROUTES.printExpense}
+        element={
+          <RequireAuth>
+            <RequirePermission permission="daily_report.generate">
+              <ExpensePrintPage />
+            </RequirePermission>
           </RequireAuth>
         }
       />
@@ -64,7 +77,7 @@ export function AppRoutes() {
           path={ROUTES.dailyExpense}
           element={
             <RequirePermission permission="daily_report.mark_update">
-              <DailyExpenseStub />
+              <DailyUpdatePage />
             </RequirePermission>
           }
         />
@@ -72,7 +85,7 @@ export function AppRoutes() {
           path={ROUTES.organization}
           element={
             <RequirePermission permission="status.view">
-              <OrganizationStub />
+              <TrafficLightTreePage />
             </RequirePermission>
           }
         />
@@ -80,7 +93,7 @@ export function AppRoutes() {
           path={ROUTES.reports}
           element={
             <RequirePermission permission="daily_report.generate">
-              <ReportsStub />
+              <ExpenseReportPage />
             </RequirePermission>
           }
         />
@@ -92,6 +105,15 @@ export function AppRoutes() {
             </RequirePermission>
           }
         />
+        {/* Журнал «сообщено → исправлено» (10.9): вложен в layout-route, то
+            есть за RequireAuth родителя — своей обёртки НЕ добавляем. БЕЗ
+            RequirePermission, и это не упущение: журнал доступен ЛЮБОМУ
+            авторизованному (AC 13.4, epics.md#L1378) — читать «система живёт и
+            чинится» должны и те, у кого прав нет вовсе. Прецедент безправного
+            роута за RequireAuth — printTest (:29-36), прецедент безправной
+            аудитории в каркасе — NotificationBell (AppLayout.tsx:75-78).
+            В NAV_SECTIONS маршрут не добавляется — вход через футер (AC-7). */}
+        <Route path={ROUTES.changelog} element={<ChangelogPage />} />
       </Route>
     </Routes>
   )

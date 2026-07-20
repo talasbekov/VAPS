@@ -125,15 +125,15 @@ describe('AppLayout: роль-фильтрованный сайдбар (AC 5, 6
     }
   })
 
-  it('шапка: колокольчик — disabled-заглушка (центр уведомлений — E11)', async () => {
+  it('шапка: колокольчик — рабочая кнопка центра уведомлений (11.4)', async () => {
     usePermissionsResponse(fullPermissions)
     renderApp()
 
     expect(
       await screen.findByRole('button', {
-        name: 'Уведомления (появятся в E11)',
+        name: 'Уведомления',
       }),
-    ).toBeDisabled()
+    ).toBeEnabled()
   })
 })
 
@@ -168,7 +168,7 @@ describe('Разводка маршрутов: RequirePermission на данны
     ).not.toBeInTheDocument()
   })
 
-  it('с правом → заглушка раздела в card-языке (экраны — E9/E10)', async () => {
+  it('с правом → ЖИВОЙ экран массового обновления (10.2 сняла заглушку)', async () => {
     // дефолтная фикстура оператора несёт daily_report.mark_update
     usePermissionsResponse(myPermissionsFixture)
     renderApp(ROUTES.dailyExpense)
@@ -176,7 +176,11 @@ describe('Разводка маршрутов: RequirePermission на данны
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Расход дня' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('Экран появится в E9–E10')).toBeInTheDocument()
+    // Стори 10.2 (AC-1): DailyExpenseStub удалён — на маршруте живой экран с
+    // шапкой «подразделение + дата», а не card-заглушка E9/E10
+    expect(screen.queryByText('Экран появится в E9–E10')).not.toBeInTheDocument()
+    expect(await screen.findByLabelText('Подразделение')).toBeInTheDocument()
+    expect(screen.getByLabelText('Дата')).toBeInTheDocument()
   })
 
   it('/ (Дашборд «Расход») за status.view: заглушка рендерится в <main> каркаса', async () => {

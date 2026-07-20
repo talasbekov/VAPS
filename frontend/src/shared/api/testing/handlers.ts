@@ -16,6 +16,12 @@ type EmployeesListResponse =
 type MyPermissionsResponse =
   paths['/api/operations/my-permissions/']['get']['responses']['200']['content']['application/json']
 
+type TrafficLightTreeResponse =
+  paths['/api/operations/traffic-light/tree/']['get']['responses']['200']['content']['application/json']
+
+type IssuedExpenseReportResponse =
+  paths['/api/operations/expense-reports/']['get']['responses']['200']['content']['application/json']
+
 const TIMESTAMP = '2026-07-07T12:00:00+05:00'
 
 // Права оператора (коды — из seed_operations.py, 8.6)
@@ -48,6 +54,49 @@ export const employeesListFixture: EmployeesListResponse = {
       employment_status: 'WORKING',
     },
   ],
+}
+
+// Дефолт светофора (стори 10.4): ПУСТОЕ дерево. Обязателен, а не опционален —
+// `app-layout.qa.test.tsx:140-151` монтирует `/organization`, и после подмены
+// заглушки живым экраном незамоканный GET валит чужой тест по
+// onUnhandledRequest: 'error' (по инфраструктуре, не по логике; тот же урок,
+// что дал GET daily-submissions в 10.3). Пустой список = «нет данных» —
+// нейтральный дефолт, который ничего не утверждает про цвета.
+export const trafficLightTreeFixture: TrafficLightTreeResponse = {
+  business_date: '2026-07-19',
+  nodes: [],
+}
+
+// Выпущенный расход (стори 10.5) — РОВНО 11 полей `IssuedExpenseReportSerializer`.
+// Типизация против paths[…] держит фикстуру честной: `supersedes`/`reason`/
+// `superseded_by` в проекции НЕТ, и дописать их сюда `tsc` не даст (AC-0 «б»).
+export const issuedExpenseReportFixture: IssuedExpenseReportResponse = {
+  id: 'b2c3d4e5-f607-4819-a2b3-c4d5e6f70819',
+  doc_type: 'EXPENSE',
+  number: 247,
+  year: 2026,
+  business_date: '2026-07-19',
+  division_id: '7a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9',
+  submission_id: 512,
+  submission_version: 3,
+  status: 'ISSUED',
+  attachment_id: 'c3d4e5f6-0718-492a-b3c4-d5e6f7081920',
+  sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+}
+
+// 404 чтения — ШТАТНЫЙ ответ «за эту дату не выпускалось» (views.py:293-301),
+// а НЕ отказ. Тот же код `ENTITY_NOT_FOUND` бэк отдаёт и на фантомный
+// division_id — на POST это «Подразделение не найдено», на GET «не выпускался»;
+// разводит их не код, а метод (AC-3/AC-5).
+export const expenseNotIssuedEnvelope: ErrorEnvelope = {
+  error_code: 'ENTITY_NOT_FOUND',
+  message: 'Расход за дату не выпущен.',
+  details: {
+    division_id: '7a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9',
+    business_date: '2026-07-19',
+  },
+  request_id: null,
+  timestamp: TIMESTAMP,
 }
 
 export const validationEnvelope: ErrorEnvelope = {
@@ -140,6 +189,30 @@ export const handlers = [
   // 422: бизнес — живой код этого пути (BUSINESS_DATE_OUT_OF_WINDOW)
   http.post('*/api/operations/daily-submissions/', () =>
     HttpResponse.json(businessRuleEnvelope, { status: 422 }),
+  ),
+  // 200 (стори 10.3): состояние дня — НЕЙТРАЛЬНЫЙ дефолт «день не сдан».
+  // Обязателен, а не опционален: панель сдачи монтирует useQuery на этот путь,
+  // и при onUnhandledRequest: 'error' без дефолта падают все тесты экрана,
+  // которые выбирают подразделение (16 штук) — по инфраструктуре, а не по
+  // логике. Конверт — LimitOffsetPagination (limit/offset, НЕ page).
+  // Типом paths[...] не аннотируется намеренно: схема этих путей тел не несёт
+  // («No response body», Решение №3 стори) — аннотировать нечем.
+  http.get('*/api/operations/daily-submissions/', () =>
+    HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+  ),
+  // 200 (стори 10.4): каскадное дерево светофора — пустой дефолт (см. выше).
+  // Предикат с '*' обязателен: в env node без location относительный
+  // '/api/…' МОЛЧА не матчится против абсолютного URL запроса.
+  http.get('*/api/operations/traffic-light/tree/', () =>
+    HttpResponse.json(trafficLightTreeFixture),
+  ),
+  // 404 (стори 10.5): расход за дату НЕ выпускался — нейтральный дефолт.
+  // Обязателен, а не опционален: `app-layout.qa.test.tsx` монтирует `/reports`,
+  // и после подмены заглушки живым экраном любой незамоканный GET валит чужой
+  // тест по onUnhandledRequest: 'error' (урок 10.3/10.4). Дефолт «не выпущен»
+  // ничего не утверждает про выпуск и не рисует кнопку скачивания.
+  http.get('*/api/operations/expense-reports/', () =>
+    HttpResponse.json(expenseNotIssuedEnvelope, { status: 404 }),
   ),
   // 409 overridable: протокольная фикстура на существующем пути (Д8).
   // Override-aware (8.5): повтор с ДВУМЯ полями протокола (Д1, зеркало kwargs

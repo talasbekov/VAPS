@@ -1,7 +1,28 @@
 from django.db.models import Min
 
-from apps.operations.statuses.models import EmployeeStatus
+from apps.operations.statuses.models import EmployeeStatus, StatusType
 from apps.operations.statuses.services.strength_report import resolve_status
+
+
+class StatusTypeSelector:
+    """Read-only access to the status-type reference catalog.
+
+    The read channel for modules OUTSIDE ``statuses``: submissions reaches
+    statuses only through ``selectors``/``services``, never by importing the
+    models across the module seam (story 10.8 Д6). Mirrors the shape of
+    ``CoreDivisionTreeSelector.divisions_map`` — one query, a flat map.
+    """
+
+    @staticmethod
+    def names_map() -> dict:
+        """``code -> name`` for report/export rows, ONE query.
+
+        Includes deactivated types on purpose: an immutable snapshot legally
+        cites a type that was renamed or deactivated after сдача, and the
+        export must still resolve its human-readable name. The caller falls
+        back to the code itself when a type is absent entirely.
+        """
+        return dict(StatusType.objects.values_list("code", "name"))
 
 
 class EmployeeStatusSelector:

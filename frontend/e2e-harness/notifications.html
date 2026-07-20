@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="data:," />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VAPS e2e-харнес — центр уведомлений (11.4)</title>
+  </head>
+  <body>
+    <!--
+      ЧЕТВЁРТЫЙ вход того же dist-e2e (грид 9.9, сдача дня 10.3, светофор 10.4,
+      уведомления 11.4). Прод-dist и size-gate не задеты — они суммируют только
+      dist/ (Ловушка №3 стори 9.9).
+
+      Здесь монтируется вся шапка целиком, поэтому спека меряет ГЕОМЕТРИЮ
+      (перекрытие панелью, отсутствие сдвига колокольчика) и ВЫЧИСЛЕННЫЙ стиль
+      бейджа — ровно то, чего jsdom не умеет в принципе: он сверяет имена
+      классов, не применяя ни одного правила CSS.
+    -->
+    <div id="root"></div>
+    <script type="module" src="/e2e-harness/notifications.tsx"></script>
+  </body>
+</html>

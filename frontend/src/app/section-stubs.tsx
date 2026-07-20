@@ -25,17 +25,9 @@ export function EmployeesStub() {
   return <SectionStub title="Управление персоналом" />
 }
 
-export function DailyExpenseStub() {
-  return <SectionStub title="Расход дня" />
-}
-
-export function OrganizationStub() {
-  return <SectionStub title="Подразделения" />
-}
-
-export function ReportsStub() {
-  return <SectionStub title="Отчёты" />
-}
+// OrganizationStub переехал в features/traffic-light (стори 10.4): «переезд
+// заглушки = часть той стори» — см. шапку файла.
+// ReportsStub переехал в features/expense (стори 10.5), там же H1 «Отчёты».
 
 export function AuditStub() {
   return <SectionStub title="Аудит" />
