@@ -13,6 +13,7 @@ import re
 from apps.core.exceptions import DomainError
 from apps.operations.facilities.models import (
     ChecklistBinding,
+    DutyType,
     Facility,
     FacilityPassport,
     Post,
@@ -196,6 +197,45 @@ class ChecklistBindingSelector:
         return ChecklistBinding.objects.filter(
             facility_id=canonical, is_active=True
         ).order_by("template_id", "id")
+
+
+class DutyTypeSelector:
+    @staticmethod
+    def get(pk) -> DutyType:
+        canonical = _canonize_pk(pk, "duty_type_id")
+        duty_type = (
+            DutyType.objects.select_related("facility", "default_post_type")
+            .filter(pk=canonical)
+            .first()
+        )
+        if duty_type is None:
+            raise _not_found(canonical, "duty_type_id")
+        return duty_type
+
+    @staticmethod
+    def get_for_update(pk) -> DutyType:
+        # of= must exclude default_post_type (nullable side of the LEFT JOIN —
+        # Postgres forbids FOR UPDATE there; and locking the shared catalog
+        # row would serialize unrelated facilities) but MUST include facility:
+        # the frozen-aggregate guard reads facility.is_active and needs it
+        # locked against a concurrent deactivate_facility.
+        canonical = _canonize_pk(pk, "duty_type_id")
+        duty_type = (
+            DutyType.objects.select_for_update(of=("self", "facility"))
+            .select_related("facility", "default_post_type")
+            .filter(pk=canonical)
+            .first()
+        )
+        if duty_type is None:
+            raise _not_found(canonical, "duty_type_id")
+        return duty_type
+
+    @staticmethod
+    def list_for_facility(actor, facility_pk):
+        canonical = _canonize_pk(facility_pk, "facility_id")
+        return DutyType.objects.filter(
+            facility_id=canonical, is_active=True
+        ).order_by("code", "id")
 
 
 def _binding_inactive(pk) -> DomainError:

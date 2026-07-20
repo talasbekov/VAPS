@@ -195,6 +195,18 @@ codes:
     category: state
     description: "У пункта уже есть оверрайд в этой привязке (uq_checklist_override_binding_source — один оверрайд на пункт, детерминизм резолвера)."
     source: "Story 14.3a; facilities.checklist_service.add_override"
+  DUTY_TYPE_ALREADY_EXISTS:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Вид дежурства с таким кодом на объекте уже существует (uq_duty_type_facility_code, регистронезависимо)."
+    source: "Story 14.4; facilities.duty_type_service.create_duty_type"
+  DUTY_TYPE_ALREADY_INACTIVE:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Вид дежурства деактивирован: повторная деактивация и правки — конфликт состояния."
+    source: "Story 14.4; facilities.duty_type_service"
   NOT_READY:
     http_status: 409
     overridable: false

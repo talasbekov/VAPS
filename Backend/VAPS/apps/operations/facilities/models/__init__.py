@@ -6,6 +6,7 @@ from apps.operations.facilities.models.checklist_binding import (
     ChecklistBinding,
     ChecklistOverride,
 )
+from apps.operations.facilities.models.duty_type import DutyType
 from apps.operations.facilities.models.facility import Facility
 from apps.operations.facilities.models.passport import (
     FacilityPassport,
@@ -20,6 +21,7 @@ __all__ = [
     "ChecklistItem",
     "ChecklistOverride",
     "ChecklistTemplate",
+    "DutyType",
     "Facility",
     "FacilityPassport",
     "FacilityPassportHistory",

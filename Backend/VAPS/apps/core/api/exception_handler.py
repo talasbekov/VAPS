@@ -57,6 +57,8 @@ CONSTRAINT_ERROR_MAP = {
         409,
         False,
     ),
+    # 14.4: pre-check + race-бэкстоп видов дежурств.
+    "uq_duty_type_facility_code": ("DUTY_TYPE_ALREADY_EXISTS", 409, False),
 }
 
 # DRF-handled HTTP status → registry code (re-shaped into the §36 envelope).
