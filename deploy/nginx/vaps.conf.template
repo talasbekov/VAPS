@@ -1,0 +1,99 @@
+# Story 12.1 — прод-nginx VAPS (architecture.md#L337: static alias, X-Accel
+# internal, WS upgrade + 3600s). ШАБЛОН: официальный nginx-образ прогоняет
+# /etc/nginx/templates/*.template через envsubst на СТАРТЕ контейнера →
+# /etc/nginx/conf.d/vaps.conf. Подставляются ТОЛЬКО ${ИМЕНА} из env контейнера
+# (deploy/docker-compose.yml, сервис nginx) — nginx-переменные ($host, $uri…)
+# не трогаются. Механизм выбран ревью 12.1: body-лимит должен меняться env'ом
+# БЕЗ пересборки образа (в контуре пересборка = новый перенос носителем).
+#
+# HTTPS/HSTS/rate-limiting НЕ здесь — отдельный эпик production-hardening
+# (architecture.md#L321: закрытый LAN не блокирует первый релиз).
+
+# Лог WS-хендшейков БЕЗ query string: токен приходит в ?token=<JWT>
+# (apps/core/auth/ws.py:23 — «cost … is paid in 12.1, where nginx logs $uri
+# without $args for /ws/»). $request в стандартном combined-логе слил бы
+# replayable-токен в access.log на каждом reconnect.
+log_format ws_noargs '$remote_addr - $remote_user [$time_local] '
+                     '"$request_method $uri" $status $body_bytes_sent';
+
+# CSWSH-guard (эстафета config/asgi.py Решение №6 стори 11.1: «Origin
+# filtering belongs to nginx in 12.1»). Составной ключ origin@host с
+# PCRE-бэкреференсом: 0 (пропустить) — Origin отсутствует (не-браузерные
+# клиенты: curl, smoke, e2e-харнессы) ИЛИ Origin совпадает с Host запроса
+# (same-origin браузер); 1 (блок) — присутствует и НЕ совпадает.
+# Защита — defense-in-depth: identity WS и так не ambient (явный токен,
+# чужая страница его не получит — asgi.py:19-21).
+map "$http_origin@$http_host" $ws_cross_origin {
+    default 1;
+    "~^@" 0;
+    "~*^https?://([^@]+)@\1$" 0;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # Пара к VAPS_MAX_UPLOAD_MB (settings.py, default 20 МБ): держать
+    # СТРОГО БОЛЬШЕ него (multipart-обвязка), иначе валидный upload умрёт
+    # в nginx с HTML-413 вместо §36-конверта Django. Обе ручки — env,
+    # правятся вместе (deploy/.env.example).
+    client_max_body_size ${VAPS_NGINX_MAX_BODY};
+
+    # Django admin-ассеты: collectstatic кладёт в shared-volume
+    # (VAPS_STATIC_ROOT=/data/staticfiles у app — тот же volume, ro здесь).
+    location /static/ {
+        alias /data/staticfiles/;
+    }
+
+    # X-Accel-Redirect: контракт ДОСЛОВНО из apps/documents/services.py:7-8 —
+    # «location {VAPS_XACCEL_LOCATION}/ { internal; alias {root}/; }».
+    # internal обязателен: прямой GET клиента сюда → 404, байты уходят только
+    # после PermissionService-проверки в Django (X-Accel-Redirect: /protected/{uuid}).
+    location /protected/ {
+        internal;
+        alias /data/private_storage/;
+    }
+
+    # WS-апгрейд + длинный read_timeout (architecture.md#L337). Активного
+    # ping/pong на приложении нет (Решение №4 стори) — 3600s и клиентский
+    # reconnect (11.3) несут устойчивость.
+    location /ws/ {
+        if ($ws_cross_origin) {
+            return 403;
+        }
+        access_log /var/log/nginx/access.log ws_noargs;
+        proxy_pass http://app:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+        # $http_host, НЕ $host: $host отбрасывает порт (см. блок admin|api).
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Все Django HTTP-роуты (config/urls.py: admin/, api/core/, api/operations/,
+    # api/audit/, api/notifications/, api/documents/). (/|$) — голый /admin без
+    # слеша тоже уходит в Django (APPEND_SLASH-редирект), а не проваливается
+    # в SPA-фолбэк с «пустой» страницей 200. X-Forwarded-* — задел: Django
+    # сегодня читает REMOTE_ADDR сырым (deferred-work.md:400), потребление
+    # заголовков — отдельная работа с trusted-proxy решением.
+    location ~ ^/(admin|api)(/|$) {
+        proxy_pass http://app:8000;
+        # $http_host сохраняет порт браузера: с $host (без порта) Django 5
+        # реконструирует good_origin без :8080 и режет ВСЕ admin-POST'ы
+        # «Origin checking failed» — логин в admin был бы невозможен на
+        # любом опубликованном порту, кроме 80.
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # SPA (frontend/dist запечён в образ). try_files → index.html: клиентский
+    # роутер (React Router) разруливает пути сам.
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri /index.html;
+    }
+}

@@ -245,9 +245,12 @@ SPECTACULAR_SETTINGS = {
     "COMPONENT_SPLIT_REQUEST": True,
 }
 
-# Admin-ассеты под DEBUG/runserver через staticfiles. STATIC_ROOT +
-# collectstatic + nginx-alias — прод-статика, отложено в E12 (ARCH#L335).
+# Admin-ассеты: под DEBUG/runserver — staticfiles, в проде — collectstatic в
+# STATIC_ROOT + nginx-alias (стори 12.1, ARCH#L335). collectstatic гоняет CMD
+# прод-контейнера на старте: STATIC_ROOT — shared-volume с nginx, на build-time
+# он пуст. Форма env-переменной — зеркало VAPS_PRIVATE_STORAGE_ROOT ниже.
 STATIC_URL = "static/"
+STATIC_ROOT = Path(os.environ.get("VAPS_STATIC_ROOT", BASE_DIR / "staticfiles"))
 
 
 # Story 6.1 — приватное файловое хранилище (Attachment). Файлы живут ВНЕ

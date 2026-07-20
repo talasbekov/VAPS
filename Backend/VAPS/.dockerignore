@@ -1,0 +1,20 @@
+# Story 12.1 — контекст сборки прод-образа (Dockerfile рядом).
+# Без этого файла COPY . . утащил бы в образ хостовый .venv (гигабайты, битые
+# абсолютные пути), локальную БД и private_storage (байты вложений = ПДн).
+.venv/
+# **/ — паттерны .dockerignore нерекурсивны (ревью 12.1): голый __pycache__/
+# исключил бы только корневой, а apps/**/__pycache__ уехал бы в образ
+# (хостовый байткод, пути dev-машины в трейсбеках).
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+**/*.egg-info/
+db.sqlite3
+db.sqlite3-journal
+private_storage/
+staticfiles/
+Dockerfile
+.dockerignore
+.gitignore

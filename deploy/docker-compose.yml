@@ -1,0 +1,125 @@
+# Story 12.1 — ПРОД-топология VAPS (architecture.md#L337): nginx → app(uvicorn),
+# postgres, redis. Это НЕ гейт-харнес — тот живёт в Backend/VAPS/docker-compose.yml
+# (db+redis для make gate) и этой топологией не заменяется.
+#
+# Образы адресуются ТОЛЬКО по тегу, `build:` ЗАПРЕЩЁН (находка спайка 1.9,
+# RUNBOOK.md §4): в контуре образы приходят через docker load из .tar (12.2/12.3),
+# compose up сети не касается. Сборка на dev-машине:
+#   docker build -t vaps-app:dev -f Backend/VAPS/Dockerfile Backend/VAPS
+#   cd frontend && npm run build && cd .. && docker build -t vaps-nginx:dev -f deploy/nginx/Dockerfile .
+#
+# worker/beat ОТСУТСТВУЮТ намеренно: Celery в проекте нет (ARCH-DEFERRED-048);
+# периодические джобы — management-команды, планировщик регистрирует 12.6.
+#
+# Секреты (${VAR:?...}) в файл НЕ пишутся и в бандл не едут — доставляются
+# отдельной процедурой (epic-AC 12.1). Пример env: deploy/.env.example.
+# Запуск: docker compose --env-file <реальный .env> -f deploy/docker-compose.yml up -d
+
+services:
+  nginx:
+    image: vaps-nginx:${VAPS_IMAGE_TAG:-dev}
+    ports:
+      # Единственный публикуемый наружу порт. Параметризация — прецедент
+      # спайка 1.9 (${PORT:-8080}: 8080 может быть закрыт периметром).
+      - "${VAPS_HTTP_PORT:-8080}:80"
+    environment:
+      # envsubst-подстановка в vaps.conf.template на старте контейнера.
+      # Держать СТРОГО БОЛЬШЕ VAPS_MAX_UPLOAD_MB (multipart-обвязка) — обе
+      # ручки правятся парой (deploy/.env.example).
+      VAPS_NGINX_MAX_BODY: "${VAPS_NGINX_MAX_BODY:-25m}"
+    volumes:
+      # Пути СОВПАДАЮТ с alias-директивами deploy/nginx/vaps.conf.template — менять только парой.
+      - static_files:/data/staticfiles:ro
+      - private_storage:/data/private_storage:ro
+    depends_on:
+      # service_healthy, не service_started (ревью 12.1): иначе на холодном
+      # старте nginx отдаёт 502 на /admin|/api и 404 на /static/, пока app
+      # гоняет collectstatic и uvicorn ещё не слушает.
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  app:
+    image: vaps-app:${VAPS_IMAGE_TAG:-dev}
+    environment:
+      VAPS_DEBUG: "${VAPS_DEBUG:-0}"
+      VAPS_SECRET_KEY: "${VAPS_SECRET_KEY:?VAPS_SECRET_KEY required — секреты доставляются отдельно от бандла}"
+      VAPS_DB: postgres
+      VAPS_DB_NAME: "${VAPS_DB_NAME:-vaps}"
+      VAPS_DB_USER: "${VAPS_DB_USER:-vaps}"
+      VAPS_DB_PASSWORD: "${VAPS_DB_PASSWORD:?VAPS_DB_PASSWORD required}"
+      VAPS_DB_HOST: db
+      VAPS_DB_PORT: "5432"
+      VAPS_REDIS_URL: redis://redis:6379/0
+      # Прод fail-closed (settings.py jwt_config_from_env): без ключа и audience
+      # при DEBUG=0 приложение НЕ стартует — поэтому required прямо здесь.
+      VAPS_JWT_KEY: "${VAPS_JWT_KEY:?VAPS_JWT_KEY required (публичный ключ издателя)}"
+      VAPS_JWT_ALGORITHMS: "${VAPS_JWT_ALGORITHMS:-RS256}"
+      VAPS_JWT_AUDIENCE: "${VAPS_JWT_AUDIENCE:?VAPS_JWT_AUDIENCE required (audience-confusion guard)}"
+      VAPS_JWT_ISSUER: "${VAPS_JWT_ISSUER:-}"
+      VAPS_JWT_LEEWAY: "${VAPS_JWT_LEEWAY:-0}"
+      VAPS_XACCEL_ENABLED: "1"
+      VAPS_XACCEL_LOCATION: /protected
+      VAPS_MAX_UPLOAD_MB: "${VAPS_MAX_UPLOAD_MB:-20}"
+      # Пути внутри контейнера = вторая половина shared-volumes (rw здесь, ro у nginx).
+      VAPS_PRIVATE_STORAGE_ROOT: /data/private_storage
+      VAPS_STATIC_ROOT: /data/staticfiles
+      VAPS_WS_ENABLED: "${VAPS_WS_ENABLED:-1}"
+    volumes:
+      - static_files:/data/staticfiles
+      - private_storage:/data/private_storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Готовность = uvicorn отвечает на реальный роут (ревью 12.1: nginx ждёт
+      # именно этого). urllib из stdlib — curl/wget в python:slim нет; urlopen
+      # кидает и на connection refused (collectstatic ещё идёт), и на HTTP>=400.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/core/', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+    restart: unless-stopped
+
+  db:
+    # Тот же тег, что у гейт-харнеса (Backend/VAPS/docker-compose.yml) — одна
+    # мажорная версия Postgres в dev и prod.
+    image: postgres:16
+    environment:
+      POSTGRES_DB: "${VAPS_DB_NAME:-vaps}"
+      POSTGRES_USER: "${VAPS_DB_USER:-vaps}"
+      POSTGRES_PASSWORD: "${VAPS_DB_PASSWORD:?VAPS_DB_PASSWORD required}"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      # Форма — зеркало гейт-харнеса: -h 127.0.0.1 исключает ложный healthy
+      # от temp-сервера initdb-фазы (слушает только unix-socket).
+      test: ["CMD-SHELL", "pg_isready -U ${VAPS_DB_USER:-vaps} -d ${VAPS_DB_NAME:-vaps} -h 127.0.0.1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    # Тот же тег, что у гейт-харнеса. Порт наружу НЕ публикуется — брокер
+    # доступен только сервисам этой сети.
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  redis_data:
+  static_files:
+  private_storage:

@@ -323,18 +323,17 @@ def test_no_server_or_worker_stack_is_introduced():
 
     ``daphne`` is refused outright (11.1 AC-1, решение Bratan: +14 transitive
     packages and 3 C-extensions into the offline mirror) and ``celery`` likewise
-    (epics.md#L759, ARCH-DEFERRED-048) — in ANY dependency group. A server in the
-    RUNTIME dependencies is still 12.1's call, not this epic's.
+    (epics.md#L759, ARCH-DEFERRED-048) — in ANY dependency group.
 
-    Story 11.6 (решение Bratan 2026-07-19) narrows the uvicorn clause to the
-    runtime group only. The boundary this guard defends is «no deployment ships
-    with the transport», and a dev-extra does not ship: it is a test tool for the
-    live browser e2e (`npm run test:e2e:live`), which is the ONLY way to exercise
-    the wire between the Django process and the operator's tab — `runserver`
-    without daphne is plain WSGI and serves no WebSocket at all. uvicorn is not
-    being CHOSEN here either; architecture already picked it (config/asgi.py:1-22,
-    epics.md#L1280). What stays forbidden is exactly what the guard was written
-    for: a server in the runtime deps, i.e. in the прод-образ. That move is 12.1.
+    The uvicorn clause has HISTORY, and the guard changed with it by design:
+    11.6 allowed uvicorn in the dev-extra only (live e2e tooling), and this
+    guard's own docstring named the expiry: «a server in the runtime deps …
+    That move is 12.1». Story 12.1 executed exactly that move (прод-образ
+    ``Backend/VAPS/Dockerfile`` installs without [dev] and runs uvicorn), so
+    the clause INVERTED rather than vanished — the boundary defended now is:
+    uvicorn+websockets live in RUNTIME (dropping either silently breaks the
+    прод-образ: без websockets uvicorn МОЛЧА отклоняет WS-апгрейд), and the
+    dev-extra carries no duplicate pins to drift apart from the runtime ones.
     """
     runtime, dev = _declared_dependencies()
     declared = set(runtime) | set(dev)
@@ -346,10 +345,15 @@ def test_no_server_or_worker_stack_is_introduced():
         f"out-of-scope dependencies declared: {sorted(intruders)} — "
         "daphne refused (11.1 AC-1), Celery is forbidden (AC-9)"
     )
-    # uvicorn — dev-extra only (11.6); the прод-образ stays server-free until 12.1.
-    assert "uvicorn" not in set(runtime), (
-        "uvicorn declared in RUNTIME dependencies — the прод-сервер is Story "
-        "12.1; 11.6 allows it in the [dev] extra only (live e2e tooling)"
+    # uvicorn + websockets — runtime, exactly once (12.1: прод-образ contract).
+    assert {"uvicorn", "websockets"} <= set(runtime), (
+        "uvicorn/websockets missing from RUNTIME dependencies — the прод-образ "
+        "(Backend/VAPS/Dockerfile, story 12.1) installs without [dev] and "
+        "starts uvicorn; without websockets WS upgrades are refused SILENTLY"
+    )
+    assert {"uvicorn", "websockets"} & set(dev) == set(), (
+        "uvicorn/websockets duplicated in the [dev] extra — single pin lives "
+        "in runtime since 12.1; duplicates drift apart silently"
     )
 
 

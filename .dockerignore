@@ -1,0 +1,10 @@
+# Story 12.1 (ревью) — контекст КОРНЕВЫХ docker-сборок. Единственная такая
+# сборка — nginx-образ (deploy/nginx/Dockerfile, context = корень репо).
+# Allowlist: без него docker тарит в контекст ВЕСЬ репозиторий — node_modules,
+# Backend/VAPS/.venv, spikes/, graphify-out/ и private_storage (байты вложений
+# = ПДн) — гигабайты и утечка за пределы дерева на каждую сборку.
+# Сборка app-образа сюда НЕ смотрит (её context = Backend/VAPS, там свой
+# .dockerignore).
+*
+!deploy/nginx/
+!frontend/dist/

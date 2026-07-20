@@ -66,6 +66,10 @@ db.sqlite3-journal
 # version control (files carry PII, they are not repo artifacts).
 private_storage/
 
+# VAPS collected static (story 12.1): collectstatic output under STATIC_ROOT
+# (dev default {BASE_DIR}/staticfiles) — build artifact, not a repo artifact.
+staticfiles/
+
 # Flask stuff:
 instance/
 .webassets-cache
