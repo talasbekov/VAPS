@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1784544923.2778273,
-    "ast_hash": "0398f380cdddc3fc875e2a0fb7fa7a63",
+    "mtime": 1784546480.8051686,
+    "ast_hash": "8a8e1dc04c61c3fb2b540a2b2e13606e",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -19070,8 +19070,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/tests/test_admin_platform.py": {
-    "mtime": 1784543353.0781996,
-    "ast_hash": "24c123164d706ef976412c7a4c2e0433",
+    "mtime": 1784545553.8976977,
+    "ast_hash": "642f957f28320d91fdbad016f6986cdd",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/tests/test_api_gate.py": {
@@ -22105,8 +22105,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/models/__init__.py": {
-    "mtime": 1784543178.9177716,
-    "ast_hash": "770a1a0808747b388ed56e724b63329d",
+    "mtime": 1784545543.0774138,
+    "ast_hash": "0941b1dcae931faa292b6833803f27a1",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/models/facility.py": {
@@ -22235,8 +22235,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/admin.py": {
-    "mtime": 1784543321.9109454,
-    "ast_hash": "8d0d3235225c0bb671a1678621502f5c",
+    "mtime": 1784546212.9615216,
+    "ast_hash": "1d30a2ec42ebf9efd850dc97fc722157",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/management/__init__.py": {
@@ -22332,6 +22332,31 @@
   "_bmad-output/implementation-artifacts/14-2-post-\u0438-sector-\u0441\u043e-\u0441\u0442\u0430\u0440\u0448\u0438\u043c.md": {
     "mtime": 1784544923.2745006,
     "ast_hash": "78c1f9634b13c801fe6cd910b78f2e0d",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/migrations/0007_checklist_template.py": {
+    "mtime": 1784546231.2306614,
+    "ast_hash": "123af9ac19dc628a2398d8e4b79fb069",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/migrations/0008_checklist_item.py": {
+    "mtime": 1784546231.2306614,
+    "ast_hash": "8c35668031df55ce068a563f12216ea5",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/models/checklist.py": {
+    "mtime": 1784546219.1255689,
+    "ast_hash": "a548b87fefbeec4d0de1b3729e3e61a9",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/tests/test_checklist_models.py": {
+    "mtime": 1784546261.8378954,
+    "ast_hash": "36c0ac885e87776c74b58896b7b883a3",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/14-3-\u0447\u0435\u043a-\u043b\u0438\u0441\u0442-\u043e\u0431\u044a\u0435\u043a\u0442\u0430.md": {
+    "mtime": 1784546490.3666444,
+    "ast_hash": "1c07e1c055d3e6fed98e82190ac645c2",
     "semantic_hash": ""
   }
 }
