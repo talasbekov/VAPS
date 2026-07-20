@@ -1,0 +1,18 @@
+# Story 12.6 — таймер периодических catch-up задач. Пара к vaps-beat.service
+# (установка — там).
+[Unit]
+Description=VAPS beat timer — periodic catch-up jobs (story 12.6)
+
+[Timer]
+# Каждые 15 минут: обе задачи — идемпотентный catch-up от watermark под
+# advisory lock (3.12/5.7b2), частый запуск безопасен; контрольный час 17:00
+# накрывается с запасом ≤15 мин.
+OnCalendar=*:00/15
+# 🔴 Persistent=true — catch-up семантика NFR-5 (зеркало vaps-backup.timer):
+# выключенный сервер догоняет пропуск при ближайшей загрузке.
+Persistent=true
+# Небольшой рандом — не совпадать секунда-в-секунду с другими джобами.
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

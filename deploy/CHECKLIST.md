@@ -31,8 +31,9 @@
       `install.sh`, `smoke.sh`, `backup-nightly.sh`, `restore-rehearsal.sh`.
 - [ ] **A4.** `.env` доставлен **ОТДЕЛЬНО от бандла**, заполнен по `.env.example`.
       Секреты на этот лист **не выписывать**.
-- [ ] **A5.** systemd-юниты бэкапа установлены: `vaps-backup.service` + `vaps-backup.timer`
-      (cp в /etc/systemd/system, поправить INSTALL_DIR, `systemctl enable --now vaps-backup.timer`).
+- [ ] **A5.** systemd-юниты бэкапа И beat установлены: `vaps-backup.{service,timer}` +
+      `vaps-beat.{service,timer}` (cp в /etc/systemd/system, поправить INSTALL_DIR в обоих
+      .service, `systemctl enable --now vaps-backup.timer vaps-beat.timer`).
 
 ---
 

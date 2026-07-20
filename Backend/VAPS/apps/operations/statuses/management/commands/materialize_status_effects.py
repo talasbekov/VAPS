@@ -1,8 +1,8 @@
 """Story 3.12 — beat-ready entrypoint for the status-effects catch-up engine.
 
-Runnable and testable WITHOUT Celery. Story 12.1/12.6 wrap
-``materialize_status_effects`` in a Celery ``@shared_task`` and register it in
-the beat schedule — Celery is NOT imported here.
+Runnable and testable WITHOUT Celery. Registered in the contour scheduler as
+a systemd timer (deploy/systemd/vaps-beat.*, Story 12.6); Celery is NOT used
+(ARCH-DEFERRED-048).
 """
 
 from datetime import date
@@ -17,7 +17,8 @@ class Command(BaseCommand):
     help = (
         "Run the status-effects catch-up engine (Story 3.12, FR-41 core): "
         "materialize transition effects from the watermark, chronologically, "
-        "idempotently, under an advisory lock. Beat-ready (12.1/12.6 register it)."
+        "idempotently, under an advisory lock. Scheduled by the vaps-beat "
+        "systemd timer (12.6)."
     )
 
     def add_arguments(self, parser):

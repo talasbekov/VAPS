@@ -1,8 +1,8 @@
 """Story 5.7b2 — beat-ready entrypoint for the lagging-submission catch-up job.
 
-Runnable and testable WITHOUT Celery. Story 12.6 wraps
-``check_lagging_submissions`` in a Celery ``@shared_task`` and registers it in the
-beat schedule — Celery is NOT imported here and is NOT a dependency.
+Runnable and testable WITHOUT Celery. Registered in the contour scheduler as
+a systemd timer (deploy/systemd/vaps-beat.*, Story 12.6); Celery is NOT used
+(ARCH-DEFERRED-048) and is NOT a dependency.
 """
 
 from datetime import date
@@ -20,8 +20,8 @@ class Command(BaseCommand):
         "Run the lagging-submission catch-up job (Story 5.7b2, FR-13): from the "
         "watermark, once a day's control hour has passed, find the required "
         "divisions that have not submitted and notify their recipient, "
-        "chronologically, idempotently, under an advisory lock. Beat-ready "
-        "(12.6 registers it); Celery is NOT imported."
+        "chronologically, idempotently, under an advisory lock. Scheduled by "
+        "the vaps-beat systemd timer (12.6); Celery is NOT imported."
     )
 
     def add_arguments(self, parser):

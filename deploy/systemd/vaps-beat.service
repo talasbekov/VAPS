@@ -1,0 +1,36 @@
+# Story 12.6 — «beat» VAPS: периодические management-команды по расписанию.
+# Celery в проекте НЕТ (ARCH-DEFERRED-048, deploy/docker-compose.yml:11-12) —
+# планировщик контура = systemd-таймер, прецедент 12.4. Пара к vaps-beat.timer.
+#
+# Установка (root, разово; INSTALL_DIR правится в ОДНОМ месте — Environment
+# ниже):
+#   cp deploy/systemd/vaps-beat.{service,timer} /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now vaps-beat.timer
+# Проверка:  systemctl list-timers vaps-beat.timer
+# Журнал:    journalctl -u vaps-beat.service
+#
+# Регистрацию задач охраняет gate-тест (Backend/VAPS/apps/core/tests/
+# test_beat_registration.py): он парсит ExecStart этого файла — несуществующая
+# команда manage.py краснит gate. Новую периодическую задачу добавлять СЮДА
+# (и она автоматически попадёт в test-full smoke).
+[Unit]
+Description=VAPS beat — periodic catch-up jobs (story 12.6)
+# Джоба целиком живёт в контейнере app — Docker и стек обязаны быть подняты.
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+# Правь ТОЛЬКО эту строку под фактический каталог установки.
+Environment=INSTALL_DIR=/opt/vaps
+# Порядок: статус-эффекты раньше lagging-проверки (уведомления об отставании
+# поверх материализованных эффектов дня). && — провал первой не запускает
+# вторую и даёт failed unit (systemctl --failed; зеркало алерт-семантики 12.4).
+# exec -T — юнит без TTY; --env-file обязателен (required-переменные compose).
+# exec, НЕ run --rm (форма install.sh для migrate): периодика идёт в ЖИВОЙ app
+# (restart: unless-stopped поднимает стек на буте; лишний контейнер каждые
+# 15 мин на 4ГБ-машине не нужен); остановленный стек = честный failed unit.
+ExecStart=/bin/bash -c 'cd "$INSTALL_DIR" && docker compose --env-file .env -f docker-compose.yml exec -T app python manage.py materialize_status_effects && docker compose --env-file .env -f docker-compose.yml exec -T app python manage.py check_lagging_submissions'
+
+[Install]
+WantedBy=multi-user.target

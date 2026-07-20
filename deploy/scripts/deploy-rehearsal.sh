@@ -35,7 +35,7 @@ STEPS_A=(
   "A2|Базовые образы загружены: docker load -i postgres-16.tar и -i redis-7-alpine.tar (НЕ в бандле 12.2)"
   "A3|Install-каталог создан, compose и скрипты (install/smoke/backup/restore) на месте"
   "A4|.env доставлен ОТДЕЛЬНО от бандла и заполнен по .env.example"
-  "A5|systemd-юниты vaps-backup.{service,timer} установлены и включены"
+  "A5|systemd-юниты vaps-backup.{service,timer} И vaps-beat.{service,timer} установлены и включены"
 )
 STEPS_BC=(
   "B1|bash bundle.sh отработал; тег релиза записан в шапку чеклиста"
