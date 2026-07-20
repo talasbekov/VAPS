@@ -502,7 +502,7 @@ development_status:
   #            🔴 Красная проба №5 подтвердила таблицу прав AC-3 прогоном:
   #            DIVISION_OPERATOR действительно не проходит массовое обновление.
   10-10a-многоакторный-прогон-цепочки: backlog
-  epic-10-retrospective: optional
+  epic-10-retrospective: done
 
   # Epic 11: Уведомления — центр + WebSocket
   epic-11: in-progress
@@ -594,7 +594,7 @@ development_status:
   # эпике — см. Открытый вопрос №4), №3 (10.10), №5 (12.x).
   11-6-e2e-уведомления: done
   11-6a-гигиена-live-e2e: backlog
-  epic-11-retrospective: optional
+  epic-11-retrospective: done
 
   # Epic 12: Деплой в контур и пилот
   # Анти-каскад: 12.8 (пилот) НЕ стартует без работающих 13.1–13.3
