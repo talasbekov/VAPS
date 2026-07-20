@@ -1,0 +1,27 @@
+# Story 12.4 — ночная джоба бэкапа VAPS: снять бэкап И ТУТ ЖЕ доказать
+# восстановимость репетицией. Пара к vaps-backup.timer.
+#
+# Установка (root, разово; INSTALL_DIR правится в ОДНОМ месте — Environment
+# ниже):
+#   cp deploy/systemd/vaps-backup.{service,timer} /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now vaps-backup.timer
+# Проверка:  systemctl list-timers vaps-backup.timer
+# Журнал:    journalctl -u vaps-backup.service  (+ backups/{backup,rehearsal}.log)
+#
+# Скрипты лежат в КОРНЕ INSTALL_DIR рядом с install.sh — их туда кладёт
+# перенос носителем (чек-лист 12.5), как и install.sh/smoke.sh.
+[Unit]
+Description=VAPS nightly backup + restore rehearsal (story 12.4)
+# Docker обязан быть поднят — джоба целиком живёт в контейнерах.
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+# Правь ТОЛЬКО эту строку под фактический каталог установки.
+Environment=INSTALL_DIR=/opt/vaps
+# && — репетиция НЕ запускается по несвежему бэкапу, если сам бэкап упал.
+# Провал ЛЮБОГО шага = failed unit (systemctl --failed) + СВОЙ ALERT-маркер:
+# backups/ALERT-backup-nightly (бэкап) / backups/ALERT-restore-rehearsal
+# (репетиция). Утренний ритуал оператора: ls backups/ALERT-* (пусто = ок).
+ExecStart=/bin/bash -c 'cd "$INSTALL_DIR" && bash backup-nightly.sh && bash restore-rehearsal.sh'

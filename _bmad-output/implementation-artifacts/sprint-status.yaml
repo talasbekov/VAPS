@@ -602,7 +602,7 @@ development_status:
   12-1-прод-compose: done
   12-2-bundle-sh-и-manifest: done
   12-3-install-sh-и-smoke-sh: done
-  12-4-бэкапы-и-restore-репетиция: backlog
+  12-4-бэкапы-и-restore-репетиция: done
   12-5-checklist-переноса-и-deploy-rehearsal: backlog
   12-6-регистрация-beat-задач-и-smoke-брокера: backlog
   12-7-полная-деплой-репетиция: backlog

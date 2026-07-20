@@ -1,0 +1,15 @@
+# Story 12.4 — таймер ночной джобы. Пара к vaps-backup.service (установка — там).
+[Unit]
+Description=VAPS nightly backup timer (story 12.4)
+
+[Timer]
+OnCalendar=*-*-* 02:30
+# 🔴 Persistent=true — БУКВАЛЬНАЯ catch-up семантика epic-AC 12.4: «при
+# выключенном ночью сервере джоба исполняется при ближайшей доступности».
+# systemd хранит отметку последнего срабатывания и догоняет пропуск на загрузке.
+Persistent=true
+# Небольшой рандом — не совпадать секунда-в-секунду с другими ночными джобами.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
