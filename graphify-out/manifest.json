@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1784546480.8051686,
-    "ast_hash": "8a8e1dc04c61c3fb2b540a2b2e13606e",
+    "mtime": 1784553803.874235,
+    "ast_hash": "0ee34a09c1e823920432a515e3d353ce",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -18820,13 +18820,13 @@
     "semantic_hash": ""
   },
   "docs/registries/audit-events.yaml": {
-    "mtime": 1784543367.0733137,
-    "ast_hash": "0cdb79efa43924a9878423a2a684bb64",
+    "mtime": 1784553611.1286578,
+    "ast_hash": "af1289832f355885883c2bcb8efe2c1a",
     "semantic_hash": ""
   },
   "docs/registries/error-codes.yaml": {
-    "mtime": 1784543374.130371,
-    "ast_hash": "bfb9a0827808ee311ede88df409f0801",
+    "mtime": 1784552700.5407522,
+    "ast_hash": "7fdd820836fef9882b15bb91b9264617",
     "semantic_hash": ""
   },
   "docs/registries/ws-message-types.yaml": {
@@ -19270,8 +19270,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/api/exception_handler.py": {
-    "mtime": 1784543376.8833935,
-    "ast_hash": "02709bcbecea8c0314af5b35bacec768",
+    "mtime": 1784552656.580682,
+    "ast_hash": "9eb43f961cf1ef289bf078715d608a55",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/exceptions.py": {
@@ -22105,8 +22105,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/models/__init__.py": {
-    "mtime": 1784545543.0774138,
-    "ast_hash": "0941b1dcae931faa292b6833803f27a1",
+    "mtime": 1784552499.4654996,
+    "ast_hash": "e1eb0abc7068447df6da9cc661f53f69",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/models/facility.py": {
@@ -22120,8 +22120,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/selectors.py": {
-    "mtime": 1784544490.818617,
-    "ast_hash": "f804ade6d2047306e46f4d1f174c59a9",
+    "mtime": 1784553468.030047,
+    "ast_hash": "493f5f1f336dadb87e080556f20ff30f",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/tests/__init__.py": {
@@ -22285,13 +22285,13 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/services/__init__.py": {
-    "mtime": 1784544308.5243528,
-    "ast_hash": "d263c76c8b720f32e2479851c8b448a7",
+    "mtime": 1784552669.699781,
+    "ast_hash": "a3552c82b663bc3aa1c5972cb6a29d86",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/services/facility_service.py": {
-    "mtime": 1784535877.7147057,
-    "ast_hash": "fb2afd4d1746072978bfa6a4df08a56f",
+    "mtime": 1784553475.166542,
+    "ast_hash": "e81004c41412b5e1e92dd64342d7fca2",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/facilities/services/topology_service.py": {
@@ -22357,6 +22357,46 @@
   "_bmad-output/implementation-artifacts/14-3-\u0447\u0435\u043a-\u043b\u0438\u0441\u0442-\u043e\u0431\u044a\u0435\u043a\u0442\u0430.md": {
     "mtime": 1784546490.3666444,
     "ast_hash": "1c07e1c055d3e6fed98e82190ac645c2",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/migrations/0009_checklist_binding.py": {
+    "mtime": 1784552528.266716,
+    "ast_hash": "e92295fa89f31c83d31a4118e8e586ef",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/migrations/0010_checklist_override.py": {
+    "mtime": 1784552773.5175648,
+    "ast_hash": "802026f08a2e6faa50d73d42e572ee97",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/models/checklist_binding.py": {
+    "mtime": 1784552770.7695441,
+    "ast_hash": "94808fa66162d239d4dcd09f7d13f961",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/services/checklist_service.py": {
+    "mtime": 1784553447.3739996,
+    "ast_hash": "2ec594e56153d39c6f50e7735a022986",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/tests/test_checklist_binding_models.py": {
+    "mtime": 1784553584.9463792,
+    "ast_hash": "6c2bd34f4204722c95281c1da3061c68",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/tests/test_checklist_resolver.py": {
+    "mtime": 1784552798.1047506,
+    "ast_hash": "1075d2acc9af362c6af724f97bdb0562",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/facilities/tests/test_checklist_services.py": {
+    "mtime": 1784553634.79555,
+    "ast_hash": "f218e7b36501a9e5660794971369d5bc",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/14-3a-\u043f\u0440\u0438\u0432\u044f\u0437\u043a\u0430-\u0447\u0435\u043a-\u043b\u0438\u0441\u0442\u0430-\u0438-\u043e\u0432\u0435\u0440\u0440\u0430\u0439\u0434\u044b.md": {
+    "mtime": 1784553802.2092276,
+    "ast_hash": "a73877c3c182e6794f1137b0383130fa",
     "semantic_hash": ""
   }
 }
