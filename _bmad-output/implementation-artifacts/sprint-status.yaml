@@ -600,7 +600,7 @@ development_status:
   # Анти-каскад: 12.8 (пилот) НЕ стартует без работающих 13.1–13.3
   epic-12: in-progress
   12-1-прод-compose: done
-  12-2-bundle-sh-и-manifest: backlog
+  12-2-bundle-sh-и-manifest: done
   12-3-install-sh-и-smoke-sh: backlog
   12-4-бэкапы-и-restore-репетиция: backlog
   12-5-checklist-переноса-и-deploy-rehearsal: backlog
