@@ -624,7 +624,16 @@ development_status:
   epic-14: in-progress
   14-1-app-operations-facilities-facility-паспорт: done
   14-2-post-и-sector-со-старшим: done
-  14-3-чек-лист-объекта: backlog
+  14-3-чек-лист-объекта: done
+  # 14.3a (хвост 14.3, ревью 2026-07-20): бизнес-слой чек-листов — bindings
+  #   (объект↔шаблон, UNIQUE(object,template), template PROTECT) + overrides
+  #   ADD/MODIFY/DISABLE (conditional-CHECKs формы: ADD→source NULL+text \S;
+  #   MODIFY/DISABLE→source NOT NULL) + резолвер BR-CHECKLIST-003 (items+
+  #   overrides) + сервисы/аудит/локи по канону 14.2. ПИН РЕВЬЮ: source_item
+  #   у MODIFY-оверрайдов — PROTECT (не донорский SET_NULL) ЛИБО guard
+  #   удаления пункта при живых ссылках: осиротевший MODIFY = неопределённое
+  #   поведение резолвера; admin-delete пункта побочку SET_NULL не показывает.
+  14-3a-привязка-чек-листа-и-оверрайды: backlog
   14-4-справочник-видов-дежурств: backlog
   14-5-план-дежурств-на-месяц: backlog
   14-6-сервис-проекции-om-auto: backlog

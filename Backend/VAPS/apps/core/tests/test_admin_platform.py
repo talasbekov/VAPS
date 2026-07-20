@@ -13,7 +13,7 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.core.models import Division, DivisionType, Employee, Position, Rank
-from apps.operations.facilities.models import PostType
+from apps.operations.facilities.models import ChecklistTemplate, PostType
 from apps.operations.rbac.models import Role
 from apps.operations.statuses.models import EmployeeStatus, StatusType
 from apps.operations.submissions.models import (
@@ -36,6 +36,9 @@ CATALOG_MODELS = {
     # 14.2: справочник типов постов (facilities); Facility/Sector/Post —
     # бизнес-модели, в admin им нельзя.
     PostType,
+    # 14.3: типовой чек-лист — admin-managed справочник; пункты редактируются
+    # ТОЛЬКО инлайном шаблона (standalone-регистрации нет).
+    ChecklistTemplate,
 }
 ALLOWED_IN_ADMIN = {Group} | CATALOG_MODELS
 
