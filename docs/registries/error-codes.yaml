@@ -135,6 +135,18 @@ codes:
     category: state
     description: "Обход блокировки «на завтра» для этой даты уже существует (unique по дате, отзыва нет). Повторный POST override — конфликт состояния, не ошибка входа."
     source: "Story 6.10b (ревью 2026-07-13, Д2: дубль → 409, различение через __cause__ IntegrityError)"
+  FACILITY_ALREADY_EXISTS:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Объект с таким кодом уже существует (uq_facility_code). Дубль создания — конфликт состояния; сервис различает по имени constraint в IntegrityError."
+    source: "Story 14.1 (прецедент 6.10b: дубль → структурный 409); facilities.services.create_facility"
+  FACILITY_ALREADY_INACTIVE:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Объект деактивирован: повторная деактивация и правки паспорта — конфликт состояния (soft-delete замораживает агрегат, ARCH-DATA-025)."
+    source: "Story 14.1 (ревью: state-ошибка не может ехать form-кодом); facilities.services.deactivate_facility"
   NOT_READY:
     http_status: 409
     overridable: false

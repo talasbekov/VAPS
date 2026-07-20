@@ -182,6 +182,23 @@ actions:
     provenance: derived-from-mutation
     source: "Story 4.7 (named-дефер 4.4 №6=B); operations dismissal.dismiss_employee (FR-36, AR-9)"
 
+  # --- Story 14.1: объекты и паспорта (E14, FR-19) ---
+  FACILITY_CREATED:
+    entity_type: facility
+    description: "Охраняемый объект создан (Facility + паспорт атомарно, BR-OBJECT-001; паспорт стартует RED)."
+    provenance: derived-from-mutation
+    source: "Story 14.1; facilities.services.create_facility (FR-19, VAPS_7.8.2 DB-OPS-005/014)"
+  FACILITY_PASSPORT_UPDATED:
+    entity_type: facility
+    description: "Паспорт объекта изменён — дифф изменённых полей в old/new. Доменная история (ops_facility_passport_history) пишется ТОЙ ЖЕ транзакцией: AC-041 требует history И audit, это разные механизмы."
+    provenance: derived-from-mutation
+    source: "Story 14.1; facilities.services.update_passport (VAPS_7.8.2 AC-041, BR-OBJECT-004)"
+  FACILITY_DEACTIVATED:
+    entity_type: facility
+    description: "Объект деактивирован (soft-delete: is_active=False; физического удаления в сервисах нет, ARCH-DATA-025)."
+    provenance: derived-from-mutation
+    source: "Story 14.1; facilities.services.deactivate_facility"
+
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.
 status_history_action_codes:

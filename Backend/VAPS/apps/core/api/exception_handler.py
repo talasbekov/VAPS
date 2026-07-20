@@ -35,6 +35,9 @@ CONSTRAINT_ERROR_MAP = {
     # index check order — NOT contractual (pg_dump/restore reorders OIDs). Map the
     # version index to the same 409 so the race surfaces consistently, never 500.
     "unique_daily_submission_version": ("DAY_ALREADY_SUBMITTED", 409, False),
+    # 14.1: create_facility pre-checks the duplicate (sequential 409); this is
+    # the race backstop — two concurrent creates trip the unique, mapped here.
+    "uq_facility_code": ("FACILITY_ALREADY_EXISTS", 409, False),
 }
 
 # DRF-handled HTTP status → registry code (re-shaped into the §36 envelope).
