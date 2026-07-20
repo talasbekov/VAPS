@@ -341,14 +341,31 @@ def deactivate_facility(*, actor, facility_id) -> Facility:
                 detail={"facility_id": facility.pk},
                 message="Объект уже деактивирован.",
             )
+        # Каскад чек-листов (ревью 14.3a): активные привязки замороженного
+        # объекта недостижимы для cleanup-мутаций (гвард 409), а их
+        # оверрайды через PROTECT навсегда запирали бы удаление пунктов
+        # шаблона. Каждая привязка деактивируется со своей audit-строкой.
+        # Ленивый импорт: checklist_service сам импортирует этот модуль.
+        from apps.operations.facilities.services.checklist_service import (
+            deactivate_bindings_for_facility,
+        )
+
+        deactivated_binding_ids = deactivate_bindings_for_facility(
+            actor, facility
+        )
         facility.is_active = False
         facility.save(update_fields=["is_active", "updated_at"])
+        new_value = {"is_active": False}
+        if deactivated_binding_ids:
+            new_value["deactivated_checklist_binding_ids"] = (
+                deactivated_binding_ids
+            )
         record(
             actor=actor,
             action="FACILITY_DEACTIVATED",
             entity_type="facility",
             entity_id=_audit_entity_id(facility.pk),
             old_value={"is_active": True},
-            new_value={"is_active": False},
+            new_value=new_value,
         )
     return facility

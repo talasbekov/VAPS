@@ -195,9 +195,9 @@ actions:
     source: "Story 14.1; facilities.services.update_passport (VAPS_7.8.2 AC-041, BR-OBJECT-004)"
   FACILITY_DEACTIVATED:
     entity_type: facility
-    description: "Объект деактивирован (soft-delete: is_active=False; физического удаления в сервисах нет, ARCH-DATA-025)."
+    description: "Объект деактивирован (soft-delete: is_active=False; физического удаления в сервисах нет, ARCH-DATA-025). С 14.3a каскадно деактивирует привязки чек-листов (deactivated_checklist_binding_ids в new_value — каждая привязка со своей CHECKLIST_BINDING_DEACTIVATED-строкой)."
     provenance: derived-from-mutation
-    source: "Story 14.1; facilities.services.deactivate_facility"
+    source: "Story 14.1; facilities.services.deactivate_facility; каскад — Story 14.3a"
 
   # --- Story 14.2: топология объекта — секторы и посты (FR-5.2…5.4) ---
   SECTOR_CREATED:
@@ -230,6 +230,33 @@ actions:
     description: "Пост деактивирован (POST_IN_USE-гвард — named-defer до 14.5: дежурств ещё нет)."
     provenance: derived-from-mutation
     source: "Story 14.2; facilities.services_topology.deactivate_post"
+
+  # --- Story 14.3a: бизнес-слой чек-листов — привязки и оверрайды (FR-5.5) ---
+  CHECKLIST_BINDING_CREATED:
+    entity_type: checklist_binding
+    description: "Типовой чек-лист привязан к объекту (BR-CHECKLIST-001)."
+    provenance: derived-from-mutation
+    source: "Story 14.3a; facilities.checklist_service.create_binding"
+  CHECKLIST_BINDING_UPDATED:
+    entity_type: checklist_binding
+    description: "Привязка изменена (дифф name/is_default в old/new; смена дефолта — двухшаговая)."
+    provenance: derived-from-mutation
+    source: "Story 14.3a; facilities.checklist_service.update_binding"
+  CHECKLIST_BINDING_DEACTIVATED:
+    entity_type: checklist_binding
+    description: "Привязка деактивирована; её оверрайды удалены (removed_override_ids в new_value — сервисное зеркало донорского CASCADE)."
+    provenance: derived-from-mutation
+    source: "Story 14.3a; facilities.checklist_service.deactivate_binding"
+  CHECKLIST_OVERRIDE_CREATED:
+    entity_type: checklist_override
+    description: "Оверрайд пункта чек-листа создан (ADD/MODIFY/DISABLE, BR-CHECKLIST-002; permission BR-CHECKLIST-004 — named-defer до API-стори)."
+    provenance: derived-from-mutation
+    source: "Story 14.3a; facilities.checklist_service.add_override"
+  CHECKLIST_OVERRIDE_REMOVED:
+    entity_type: checklist_override
+    description: "Оверрайд удалён (hard-delete конфиг-строки; полный снимок в old_value)."
+    provenance: derived-from-mutation
+    source: "Story 14.3a; facilities.checklist_service.remove_override"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

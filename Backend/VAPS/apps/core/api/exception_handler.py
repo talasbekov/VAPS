@@ -41,6 +41,22 @@ CONSTRAINT_ERROR_MAP = {
     # 14.2: те же pre-check+race-бэкстоп для топологии объекта.
     "uq_sector_facility_name": ("SECTOR_ALREADY_EXISTS", 409, False),
     "uq_post_facility_code": ("POST_ALREADY_EXISTS", 409, False),
+    # 14.3a: pre-check + race-бэкстопы бизнес-слоя чек-листов.
+    "uq_checklist_binding_facility_template": (
+        "CHECKLIST_BINDING_ALREADY_EXISTS",
+        409,
+        False,
+    ),
+    "uq_checklist_binding_default_per_facility": (
+        "CHECKLIST_DEFAULT_ALREADY_SET",
+        409,
+        False,
+    ),
+    "uq_checklist_override_binding_source": (
+        "CHECKLIST_OVERRIDE_ALREADY_EXISTS",
+        409,
+        False,
+    ),
 }
 
 # DRF-handled HTTP status → registry code (re-shaped into the §36 envelope).

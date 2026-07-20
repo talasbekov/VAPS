@@ -171,6 +171,30 @@ codes:
     category: state
     description: "Пост деактивирован: повторная деактивация и правки — конфликт состояния."
     source: "Story 14.2; facilities.services_topology"
+  CHECKLIST_BINDING_ALREADY_EXISTS:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Шаблон уже привязан к объекту (uq_checklist_binding_facility_template, среди активных привязок)."
+    source: "Story 14.3a; facilities.checklist_service.create_binding"
+  CHECKLIST_BINDING_ALREADY_INACTIVE:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Привязка чек-листа деактивирована: повторная деактивация, правки, оверрайды и резолв — конфликт состояния."
+    source: "Story 14.3a; facilities.checklist_service; selectors.resolve_checklist"
+  CHECKLIST_DEFAULT_ALREADY_SET:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "У объекта уже есть дефолтная привязка (uq_checklist_binding_default_per_facility); смена дефолта — двухшаговая: снять старый, поставить новый."
+    source: "Story 14.3a; facilities.checklist_service.create_binding/update_binding"
+  CHECKLIST_OVERRIDE_ALREADY_EXISTS:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "У пункта уже есть оверрайд в этой привязке (uq_checklist_override_binding_source — один оверрайд на пункт, детерминизм резолвера)."
+    source: "Story 14.3a; facilities.checklist_service.add_override"
   NOT_READY:
     http_status: 409
     overridable: false

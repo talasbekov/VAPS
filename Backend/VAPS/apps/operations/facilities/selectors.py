@@ -12,6 +12,7 @@ import re
 
 from apps.core.exceptions import DomainError
 from apps.operations.facilities.models import (
+    ChecklistBinding,
     Facility,
     FacilityPassport,
     Post,
@@ -154,3 +155,153 @@ class PostSelector:
         return Post.objects.filter(
             facility_id=canonical, is_active=True
         ).order_by("code", "id")
+
+
+class ChecklistBindingSelector:
+    @staticmethod
+    def get(pk) -> ChecklistBinding:
+        canonical = _canonize_pk(pk, "binding_id")
+        binding = (
+            ChecklistBinding.objects.select_related("facility", "template")
+            .filter(pk=canonical)
+            .first()
+        )
+        if binding is None:
+            raise _not_found(canonical, "binding_id")
+        return binding
+
+    @staticmethod
+    def get_for_update(pk) -> ChecklistBinding:
+        # of= must include facility (frozen-aggregate guard reads
+        # facility.is_active — needs it locked against a concurrent
+        # deactivate_facility) and excludes template: for mutations of an
+        # EXISTING binding PROTECT covers the catalog row, and locking the
+        # shared template here would serialize unrelated facilities'
+        # checklist mutations. (create_binding deliberately DOES lock the
+        # template row separately — its FK is not inserted yet.)
+        canonical = _canonize_pk(pk, "binding_id")
+        binding = (
+            ChecklistBinding.objects.select_for_update(of=("self", "facility"))
+            .select_related("facility", "template")
+            .filter(pk=canonical)
+            .first()
+        )
+        if binding is None:
+            raise _not_found(canonical, "binding_id")
+        return binding
+
+    @staticmethod
+    def list_for_facility(actor, facility_pk):
+        canonical = _canonize_pk(facility_pk, "facility_id")
+        return ChecklistBinding.objects.filter(
+            facility_id=canonical, is_active=True
+        ).order_by("template_id", "id")
+
+
+def _binding_inactive(pk) -> DomainError:
+    return DomainError(
+        "CHECKLIST_BINDING_ALREADY_INACTIVE",
+        409,
+        detail={"binding_id": pk},
+        message="Привязка чек-листа деактивирована.",
+    )
+
+
+def resolve_checklist(actor, binding_id) -> list[dict]:
+    """BR-CHECKLIST-003: активные пункты шаблона + оверрайды привязки.
+
+    DISABLE исключает пункт, MODIFY патчит (NULL payload-поля = «не менять»,
+    Д3), ADD добавляет (дефолты при NULL: is_required=True, sort_order=0).
+    Глобально-неактивный пункт исключён ВСЕГДА — его оверрайды игнорируются
+    (is_active пункта = глобальный выключатель, Д6-14.3). Активность ШАБЛОНА
+    не перепроверяется (гейт стоит на create_binding, Д6). Порядок:
+    (sort_order, added-флаг, id) — при равном sort_order стандартные раньше
+    добавленных.
+    """
+    canonical = _canonize_pk(binding_id, "binding_id")
+    binding = (
+        ChecklistBinding.objects.select_related("template")
+        .filter(pk=canonical)
+        .first()
+    )
+    if binding is None:
+        raise _not_found(canonical, "binding_id")
+    if not binding.is_active:
+        raise _binding_inactive(binding.pk)
+
+    overrides = list(binding.overrides.all())
+    by_source = {
+        o.source_item_id: o for o in overrides if o.source_item_id is not None
+    }
+
+    resolved = []
+    for item in binding.template.items.filter(is_active=True):
+        override = by_source.get(item.pk)
+        if override is not None and override.override_type == "DISABLE":
+            continue
+        if override is not None:  # MODIFY (единственный оставшийся bound-тип)
+            resolved.append(
+                {
+                    "origin": "MODIFIED",
+                    "source_item_id": item.pk,
+                    "override_id": override.pk,
+                    "text": (
+                        item.text if override.text is None else override.text
+                    ),
+                    "category": (
+                        item.category
+                        if override.category is None
+                        else override.category
+                    ),
+                    "is_required": (
+                        item.is_required
+                        if override.is_required is None
+                        else override.is_required
+                    ),
+                    "sort_order": (
+                        item.sort_order
+                        if override.sort_order is None
+                        else override.sort_order
+                    ),
+                }
+            )
+        else:
+            resolved.append(
+                {
+                    "origin": "STANDARD",
+                    "source_item_id": item.pk,
+                    "override_id": None,
+                    "text": item.text,
+                    "category": item.category,
+                    "is_required": item.is_required,
+                    "sort_order": item.sort_order,
+                }
+            )
+    for override in overrides:
+        if override.override_type != "ADD":
+            continue
+        resolved.append(
+            {
+                "origin": "ADDED",
+                "source_item_id": None,
+                "override_id": override.pk,
+                "text": override.text,
+                "category": override.category,
+                "is_required": (
+                    True
+                    if override.is_required is None
+                    else override.is_required
+                ),
+                "sort_order": (
+                    0 if override.sort_order is None else override.sort_order
+                ),
+            }
+        )
+    resolved.sort(
+        key=lambda r: (
+            r["sort_order"],
+            r["origin"] == "ADDED",
+            r["source_item_id"] or r["override_id"],
+        )
+    )
+    return resolved
