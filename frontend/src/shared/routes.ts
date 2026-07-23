@@ -5,11 +5,14 @@
 // нет, Django Admin живёт отдельно). Фабрик с параметрами пока нет —
 // детальные маршруты приедут со своими сториями.
 import {
+  Building2,
   ClipboardList,
   FileText,
   LayoutDashboard,
   Network,
+  Radar,
   ScrollText,
+  ShieldAlert,
   Users,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -54,6 +57,24 @@ export const ROUTES = {
    */
   printExpenseTo: (divisionId: string, businessDate: string) =>
     `/print/expense?division_id=${encodeURIComponent(divisionId)}&business_date=${encodeURIComponent(businessDate)}`,
+  /**
+   * Smart Josparlau (мастер-промпт §11, Этап 2): «Командный центр» — ОТДЕЛЬНЫЙ
+   * дашборд от `home` (тот занят существующим «Расход», E10, за `status.view`).
+   * Оба дашборда сосуществуют — свой раздел, своё право, свой NAV_SECTIONS-пункт.
+   */
+  commandCenter: '/command-center',
+  securityEvents: '/security-events',
+  /** `:id` — литерал маршрута для `<Route path>`, НЕ ссылка; ссылка — фабрика ниже. */
+  securityEventDetail: '/security-events/:id',
+  securityEventDetailTo: (id: string) =>
+    `/security-events/${encodeURIComponent(id)}`,
+  /** Этап 4 (мастер-промпт §20): карточка сотрудника — read-only оперативный профиль. */
+  employeeDetail: '/employees/:id',
+  employeeDetailTo: (id: string) => `/employees/${encodeURIComponent(id)}`,
+  /** Этап 5 (мастер-промпт §21): «Служба» → Объекты и паспорта. */
+  objects: '/objects',
+  objectDetail: '/objects/:id',
+  objectDetailTo: (id: string) => `/objects/${encodeURIComponent(id)}`,
 } as const
 
 export interface NavSection {
@@ -82,10 +103,28 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     permission: 'status.view',
   },
   {
+    route: ROUTES.commandCenter,
+    label: 'Командный центр',
+    icon: Radar,
+    permission: 'ops.dashboard.view',
+  },
+  {
+    route: ROUTES.securityEvents,
+    label: 'Реестр ОМ',
+    icon: ShieldAlert,
+    permission: 'ops.security_event.view',
+  },
+  {
     route: ROUTES.employees,
     label: 'Управление персоналом',
     icon: Users,
     permission: 'status.view',
+  },
+  {
+    route: ROUTES.objects,
+    label: 'Объекты и паспорта',
+    icon: Building2,
+    permission: 'ops.object.view',
   },
   {
     route: ROUTES.dailyExpense,

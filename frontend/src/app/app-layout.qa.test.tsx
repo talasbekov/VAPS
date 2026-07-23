@@ -109,11 +109,12 @@ describe('Сайдбар — рабочая навигация, не витри�
 })
 
 // Оставшиеся 4 маршрута карты (/, /daily-expense — в тестах стори); heading —
-// H1 заглушки раздела (section-stubs), код — seed_operations дословно (AC 6)
+// H1 заглушки раздела (section-stubs) либо реального экрана (employees —
+// features/personnel, Этап 4), код — seed_operations дословно (AC 6)
 const GATE_MATRIX = [
   {
     route: ROUTES.employees,
-    heading: 'Управление персоналом',
+    heading: 'Сотрудники',
     code: 'status.view',
   },
   { route: ROUTES.organization, heading: 'Подразделения', code: 'status.view' },

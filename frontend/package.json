@@ -8,6 +8,9 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:mock": "vite --mode mock",
+    "build:mock": "tsc -b && vite build --mode mock",
+    "preview:mock": "vite preview --mode mock",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -33,6 +36,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.23.0",
+    "msw": "^2.14.6",
     "postcss": "^8.5.16",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -62,7 +66,6 @@
     "fast-check": "^4.9.0",
     "globals": "^16.0.0",
     "jsdom": "^29.1.1",
-    "msw": "^2.14.6",
     "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.4",
     "prettier-plugin-tailwindcss": "^0.8.0",
@@ -71,5 +74,10 @@
     "vite": "^7.3.6",
     "vitest": "^4.1.10",
     "yaml": "^2.9.0"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }
