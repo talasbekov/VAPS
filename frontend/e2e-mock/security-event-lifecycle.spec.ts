@@ -3,20 +3,8 @@
 // До этой спеки цепочка была проверена ТОЛЬКО вручную через preview-инструмент
 // в каждой сессии — ни одного автотеста, доказывающего persist-through-reload
 // в РЕАЛЬНОМ браузере (IndexedDB, не in-memory adapter юнит-тестов).
-import { expect, test, type Page } from '@playwright/test'
-
-/** Сид credential ДО скриптов страницы (прецедент changelog.spec.ts, Ловушка 6
- * стори 8.8): addInitScript исполняется раньше init credential.ts. userId —
- * demo-admin (wildcard `*` в demo-personas.ts), чтобы спека не зависела от
- * разделения обязанностей между persona (см. FRONTEND_ROLE_MATRIX). */
-async function seedCredential(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    sessionStorage.setItem(
-      'vaps.credential',
-      JSON.stringify({ kind: 'dev', userId: 'demo-admin' }),
-    )
-  })
-}
+import { expect, test } from '@playwright/test'
+import { seedCredential } from './testUtils'
 
 test.describe('Реестр ОМ: создание → бюллетень → reload (mock-режим)', () => {
   test('создать ОМ, сохранить бюллетень, обновить страницу — данные на месте', async ({

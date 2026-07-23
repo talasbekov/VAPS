@@ -304,10 +304,11 @@ function BulletinForm({
         className="flex flex-col gap-1"
         onSubmit={(e) => void handleSubmit((values) => mutation.mutate(values))(e)}
       >
-        <label className="text-[11.5px] font-bold text-muted-foreground">
+        <label htmlFor="briefDescription" className="text-[11.5px] font-bold text-muted-foreground">
           Краткое описание *
         </label>
         <textarea
+          id="briefDescription"
           className="min-h-20 rounded-md border border-input bg-transparent p-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
           {...register('briefDescription')}
         />
@@ -317,10 +318,11 @@ function BulletinForm({
           </p>
         )}
 
-        <label className="mt-3.5 text-[11.5px] font-bold text-muted-foreground">
+        <label htmlFor="initialTasks" className="mt-3.5 text-[11.5px] font-bold text-muted-foreground">
           Первичные задачи *
         </label>
         <textarea
+          id="initialTasks"
           className="min-h-20 rounded-md border border-input bg-transparent p-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
           {...register('initialTasks')}
         />
@@ -1135,10 +1137,11 @@ function ApprovalPanel({ event }: { event: SecurityEvent }) {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <label className="text-xs font-semibold text-muted-foreground">
+          <label htmlFor="returnComment" className="text-xs font-semibold text-muted-foreground">
             Причина возврата *
           </label>
           <input
+            id="returnComment"
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
             value={returnComment}
             onChange={(e) => setReturnComment(e.target.value)}
@@ -1269,8 +1272,9 @@ function ConductJournal({ event }: { event: SecurityEvent }) {
             })(e)
           }
         >
-          <label className="text-[11.5px] font-bold text-muted-foreground">Тип *</label>
+          <label htmlFor="journalType" className="text-[11.5px] font-bold text-muted-foreground">Тип *</label>
           <select
+            id="journalType"
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
             {...register('type')}
           >
@@ -1281,10 +1285,11 @@ function ConductJournal({ event }: { event: SecurityEvent }) {
             ))}
           </select>
 
-          <label className="mt-3 text-[11.5px] font-bold text-muted-foreground">
+          <label htmlFor="journalTitle" className="mt-3 text-[11.5px] font-bold text-muted-foreground">
             Заголовок *
           </label>
           <input
+            id="journalTitle"
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
             {...register('title')}
           />
@@ -1292,8 +1297,9 @@ function ConductJournal({ event }: { event: SecurityEvent }) {
             <p className="text-[11px] font-semibold text-destructive">{errors.title.message}</p>
           )}
 
-          <label className="mt-3 text-[11.5px] font-bold text-muted-foreground">Описание *</label>
+          <label htmlFor="journalDescription" className="mt-3 text-[11.5px] font-bold text-muted-foreground">Описание *</label>
           <textarea
+            id="journalDescription"
             className="min-h-20 rounded-md border border-input bg-transparent p-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
             {...register('description')}
           />
@@ -1369,20 +1375,24 @@ function ClosureTrigger({ event }: { event: SecurityEvent }) {
             Итоги по направлениям (обязательны все)
           </div>
           <div className="flex flex-col gap-2">
-            {directions.map((direction) => (
-              <div key={direction}>
-                <label className="text-[11.5px] font-bold text-muted-foreground">
-                  {direction} *
-                </label>
-                <textarea
-                  className="min-h-16 w-full rounded-md border border-input bg-transparent p-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  value={summaries[direction] ?? ''}
-                  onChange={(e) =>
-                    setSummaries((prev) => ({ ...prev, [direction]: e.target.value }))
-                  }
-                />
-              </div>
-            ))}
+            {directions.map((direction) => {
+              const fieldId = `closure-direction-${direction}`
+              return (
+                <div key={direction}>
+                  <label htmlFor={fieldId} className="text-[11.5px] font-bold text-muted-foreground">
+                    {direction} *
+                  </label>
+                  <textarea
+                    id={fieldId}
+                    className="min-h-16 w-full rounded-md border border-input bg-transparent p-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={summaries[direction] ?? ''}
+                    onChange={(e) =>
+                      setSummaries((prev) => ({ ...prev, [direction]: e.target.value }))
+                    }
+                  />
+                </div>
+              )
+            })}
           </div>
           {closeMutation.error !== null && (
             <p className="mt-2 text-sm text-destructive" role="alert">

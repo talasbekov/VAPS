@@ -13,6 +13,11 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   use: {
     baseURL: 'http://localhost:4176',
+    // Больше дефолтных 1280×720: DemoToolbar — fixed bottom-4 right-4
+    // виджет (только dev-furniture, не продуктовый UI) — на маленьком
+    // вьюпорте перекрывает нижние кнопки страницы (например «Закрыть
+    // мероприятие» у длинного журнала штаба).
+    viewport: { width: 1600, height: 1000 },
   },
   webServer: {
     // ВСЕГДА пересобирать (прецедент 9.9 P10): залипший preview со старым
