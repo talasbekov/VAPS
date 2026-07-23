@@ -39,6 +39,7 @@ const OPS_CODES = [
   'ops.security_event.view',
   'status.view',
   'ops.object.view',
+  'ops.analytics.view',
 ] as const
 
 function usePermissionsResponse(payload: { permissions: string[] }) {
@@ -66,6 +67,7 @@ const ROUTE_MATRIX = [
   { route: ROUTES.employeeDetailTo('does-not-exist'), code: 'status.view' },
   { route: ROUTES.objects, code: 'ops.object.view' },
   { route: ROUTES.objectDetailTo('does-not-exist'), code: 'ops.object.view' },
+  { route: ROUTES.serviceAnalytics, code: 'ops.analytics.view' },
 ] as const
 
 describe('Карта гейтов Smart Josparlau-маршрутов (§34 route audit)', () => {

@@ -78,7 +78,9 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     label: 'Аналитик',
     description: 'Дашборды, отчёты, экспорт',
     permissions: ['ops.analytics.view', 'ops.export.run'],
-    homeRoute: ROUTES.home,
+    // Этап 7 реализовал реестр аналитики службы — реальная посадочная
+    // страница этой persona (`status.view`, которого у неё нет, home не подходит).
+    homeRoute: ROUTES.serviceAnalytics,
   },
   {
     id: 'admin',

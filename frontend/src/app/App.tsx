@@ -18,6 +18,7 @@ import { EmployeesListPage } from '../features/personnel/pages/EmployeesListPage
 import { ObjectPassportPage } from '../features/objects/pages/ObjectPassportPage'
 import { ObjectsListPage } from '../features/objects/pages/ObjectsListPage'
 import { AuditLogPage } from '../features/audit/pages/AuditLogPage'
+import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
 import { ROUTES } from '../shared/routes'
@@ -190,6 +191,14 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="audit.view">
               <AuditLogPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.serviceAnalytics}
+          element={
+            <RequirePermission permission="ops.analytics.view">
+              <ServiceAnalyticsPage />
             </RequirePermission>
           }
         />

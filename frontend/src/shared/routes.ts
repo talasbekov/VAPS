@@ -5,6 +5,7 @@
 // нет, Django Admin живёт отдельно). Фабрик с параметрами пока нет —
 // детальные маршруты приедут со своими сториями.
 import {
+  BarChart3,
   Building2,
   ClipboardList,
   FileText,
@@ -75,6 +76,8 @@ export const ROUTES = {
   objects: '/objects',
   objectDetail: '/objects/:id',
   objectDetailTo: (id: string) => `/objects/${encodeURIComponent(id)}`,
+  /** Этап 6/7 (мастер-промпт §22): аналитика службы. */
+  serviceAnalytics: '/analytics',
 } as const
 
 export interface NavSection {
@@ -143,6 +146,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Отчёты',
     icon: FileText,
     permission: 'daily_report.generate',
+  },
+  {
+    route: ROUTES.serviceAnalytics,
+    label: 'Аналитика службы',
+    icon: BarChart3,
+    permission: 'ops.analytics.view',
   },
   {
     route: ROUTES.audit,
