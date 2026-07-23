@@ -7,6 +7,7 @@
 import {
   BarChart3,
   Building2,
+  CalendarClock,
   ClipboardList,
   FileText,
   LayoutDashboard,
@@ -78,6 +79,8 @@ export const ROUTES = {
   objectDetailTo: (id: string) => `/objects/${encodeURIComponent(id)}`,
   /** Этап 6/7 (мастер-промпт §22): аналитика службы. */
   serviceAnalytics: '/analytics',
+  /** Мастер-промпт §21/§24: «Служба» → План дежурств. */
+  duties: '/duties',
 } as const
 
 export interface NavSection {
@@ -128,6 +131,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Объекты и паспорта',
     icon: Building2,
     permission: 'ops.object.view',
+  },
+  {
+    route: ROUTES.duties,
+    label: 'План дежурств',
+    icon: CalendarClock,
+    permission: 'ops.duty.view',
   },
   {
     route: ROUTES.dailyExpense,

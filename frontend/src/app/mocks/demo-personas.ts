@@ -66,8 +66,14 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     id: 'objects_admin',
     userId: 'demo-objects-admin',
     label: 'Ведение объектов',
-    description: 'Паспорта объектов, сектора, посты',
-    permissions: ['ops.object.view', 'ops.object.manage', 'ops.passport.publish'],
+    description: 'Паспорта объектов, сектора, посты, план дежурств',
+    permissions: [
+      'ops.object.view',
+      'ops.object.manage',
+      'ops.passport.publish',
+      'ops.duty.view',
+      'ops.duty.manage',
+    ],
     // Этап 5 реализовал реестр объектов/паспорт — реальная посадочная
     // страница этой persona (`ops.dashboard.view`, которого у неё нет, home не подходит).
     homeRoute: ROUTES.objects,
