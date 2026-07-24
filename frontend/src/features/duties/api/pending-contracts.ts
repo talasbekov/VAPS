@@ -5,6 +5,7 @@ import type {
   CombatDutyTypeDefinition,
   CombatRosterCandidate,
   DutyRoute,
+  DutyRouteCoverageMode,
   DutyShift,
   DutyTypeDefinition,
 } from '../model/types'
@@ -109,3 +110,15 @@ export interface RequestCombatDutyReplacementRequest {
 }
 
 export type RequestCombatDutyReplacementResponse = CombatDutyShift
+
+/** §24.1 «формирование потребности на период» — заводит новую смену со
+ * `submission: null` (сразу попадает в очередь «Требует подачи»). */
+export interface CreateCombatDutyShiftRequest {
+  businessDate: string
+  dutyTypeCode: string
+  routeIds: string[]
+  coverageMode: DutyRouteCoverageMode
+  requiredEmployees: number
+}
+
+export type CreateCombatDutyShiftResponse = CombatDutyShift

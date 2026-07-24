@@ -12,6 +12,7 @@ import {
   useCombatDutyTypes,
   useCombatRosterCandidates,
   useCompleteCombatDuty,
+  useCreateCombatDutyShift,
   useDutyRoutes,
   useRequestCombatDutyReplacement,
   useReviewCombatGroup,
@@ -21,8 +22,11 @@ import type {
   CombatDutyExecution,
   CombatDutyExecutionState,
   CombatDutyShift,
+  CombatDutyTypeDefinition,
   CombatSubmissionState,
+  DutyRoute,
   DutyReplacementRecord,
+  DutyRouteCoverageMode,
 } from '../model/types'
 
 const SUBMISSION_STATE_LABEL: Record<CombatSubmissionState, string> = {
@@ -52,6 +56,7 @@ export function CombatDutyGroupsSection() {
   const canCheckIn = hasPermission('ops.combat_group.checkin')
   const canComplete = hasPermission('ops.combat_group.complete')
   const canReplace = hasPermission('ops.combat_group.replace')
+  const canPlan = hasPermission('ops.duty.manage')
 
   const dutyTypesQuery = useCombatDutyTypes()
   const routesQuery = useDutyRoutes()
@@ -83,6 +88,12 @@ export function CombatDutyGroupsSection() {
 
   return (
     <div className="flex flex-col gap-3.5">
+      {canPlan && (
+        <CreateRequirementSection
+          dutyTypes={dutyTypesQuery.data?.results ?? []}
+          routes={routesQuery.data?.results ?? []}
+        />
+      )}
       {shifts.length === 0 && (
         <section className="rounded-xl border bg-card p-9 text-center text-sm text-muted-foreground">
           Смен боевых групп не найдено
@@ -147,6 +158,11 @@ function CombatShiftCard({
           <div className="mt-1 text-xs text-muted-foreground">
             Трассы: {shift.routeSet.routeIds.map((id) => routeLabel.get(id) ?? id).join(', ')}
           </div>
+          {shift.requiredEmployees !== null && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              Требуется: {shift.requiredEmployees} чел.
+            </div>
+          )}
         </div>
         {submission !== null && (
           <span className={SUBMISSION_STATE_CLASS[submission.stateCode]}>
@@ -630,5 +646,154 @@ function SubmitForm({
         {submitMutation.isPending ? 'Отправка…' : 'Подать состав'}
       </Button>
     </div>
+  )
+}
+
+// §24.1 «формирование потребности на период» — упрощено до одной формы:
+// создаёт новую смену (submission: null, сразу «Требует подачи») без
+// отдельного шага публикации графика комплектования (см. model/types.ts
+// шапку, FRONTEND_DECISIONS A54).
+function CreateRequirementSection({
+  dutyTypes,
+  routes,
+}: {
+  dutyTypes: CombatDutyTypeDefinition[]
+  routes: DutyRoute[]
+}) {
+  const [showForm, setShowForm] = useState(false)
+  const [businessDate, setBusinessDate] = useState('')
+  const [dutyTypeCode, setDutyTypeCode] = useState('')
+  const [routeIds, setRouteIds] = useState<string[]>([])
+  const [coverageMode, setCoverageMode] = useState<DutyRouteCoverageMode>('RESERVE')
+  const [requiredEmployees, setRequiredEmployees] = useState(2)
+  const createMutation = useCreateCombatDutyShift()
+
+  function toggleRoute(routeId: string): void {
+    setRouteIds((list) => (list.includes(routeId) ? list.filter((id) => id !== routeId) : [...list, routeId]))
+  }
+
+  if (!showForm) {
+    return (
+      <div className="flex flex-col gap-1">
+        {createMutation.error !== null && (
+          <p className="text-xs text-destructive">{createMutation.error.message}</p>
+        )}
+        <Button size="sm" variant="outline" className="self-start" onClick={() => setShowForm(true)}>
+          Сформировать потребность
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+      <h3 className="text-sm font-semibold">Сформировать потребность на смену</h3>
+      {createMutation.error !== null && (
+        <p className="text-xs text-destructive">{createMutation.error.message}</p>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="req-business-date">
+            Дата
+          </label>
+          <input
+            id="req-business-date"
+            type="date"
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            value={businessDate}
+            onChange={(e) => setBusinessDate(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="req-duty-type">
+            Вид дежурства
+          </label>
+          <select
+            id="req-duty-type"
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            value={dutyTypeCode}
+            onChange={(e) => setDutyTypeCode(e.target.value)}
+          >
+            <option value="">— выбрать —</option>
+            {dutyTypes.map((t) => (
+              <option key={t.dutyTypeCode} value={t.dutyTypeCode}>
+                {t.safeLabel}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="req-coverage-mode">
+            Режим покрытия
+          </label>
+          <select
+            id="req-coverage-mode"
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            value={coverageMode}
+            onChange={(e) => setCoverageMode(e.target.value as DutyRouteCoverageMode)}
+          >
+            <option value="RESERVE">Основная/резервная</option>
+            <option value="SEQUENTIAL">Последовательно</option>
+            <option value="PARALLEL">Параллельно</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="req-required-employees">
+            Требуемая численность
+          </label>
+          <input
+            id="req-required-employees"
+            type="number"
+            min={1}
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            value={requiredEmployees}
+            onChange={(e) => setRequiredEmployees(Number(e.target.value))}
+          />
+        </div>
+      </div>
+      <fieldset>
+        <legend className="mb-1 text-xs font-medium text-muted-foreground">Трассы</legend>
+        <div className="flex flex-wrap gap-3">
+          {routes.map((r) => (
+            <label key={r.routeId} className="flex items-center gap-1.5 text-sm">
+              <input
+                type="checkbox"
+                checked={routeIds.includes(r.routeId)}
+                onChange={() => toggleRoute(r.routeId)}
+              />
+              {r.safeLabel}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          disabled={
+            createMutation.isPending ||
+            businessDate === '' ||
+            dutyTypeCode === '' ||
+            routeIds.length === 0 ||
+            requiredEmployees < 1
+          }
+          onClick={() => {
+            createMutation.mutate({
+              body: { businessDate, dutyTypeCode, routeIds, coverageMode, requiredEmployees },
+            })
+            setShowForm(false)
+            setBusinessDate('')
+            setDutyTypeCode('')
+            setRouteIds([])
+            setCoverageMode('RESERVE')
+            setRequiredEmployees(2)
+          }}
+        >
+          {createMutation.isPending ? 'Создание…' : 'Создать'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setShowForm(false)}>
+          Отмена
+        </Button>
+      </div>
+    </section>
   )
 }

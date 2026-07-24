@@ -29,6 +29,8 @@ import type {
   ClockOutDutyShiftResponse,
   CompleteCombatDutyRequest,
   CompleteCombatDutyResponse,
+  CreateCombatDutyShiftRequest,
+  CreateCombatDutyShiftResponse,
   ListCombatDutyShiftsResponse,
   ListCombatDutyTypesResponse,
   ListCombatRosterCandidatesResponse,
@@ -120,6 +122,17 @@ export function useCombatDutyShifts() {
   return useQuery<ListCombatDutyShiftsResponse, ApiFailure>({
     queryKey: ['duties', 'combat-shifts'],
     queryFn: () => apiClient.get<ListCombatDutyShiftsResponse>(COMBAT_DUTY_SHIFTS_PATH),
+  })
+}
+
+export function useCreateCombatDutyShift() {
+  const queryClient = useQueryClient()
+  return useApiMutation<CreateCombatDutyShiftResponse, { body: CreateCombatDutyShiftRequest }>({
+    mutationFn: ({ body }) =>
+      apiClient.post<CreateCombatDutyShiftResponse>(COMBAT_DUTY_SHIFTS_PATH, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'combat-shifts'] })
+    },
   })
 }
 

@@ -17,6 +17,7 @@ const ACKNOWLEDGER = 'acknowledger-user'
 const CHECKER = 'checker-user'
 const COMPLETER = 'completer-user'
 const REPLACER = 'replacer-user'
+const PLANNER = 'planner-user'
 const NOBODY = 'no-permissions-user'
 
 const AWAITING_SHIFT: CombatDutyShift = {
@@ -31,6 +32,7 @@ const AWAITING_SHIFT: CombatDutyShift = {
   },
   submission: null,
   updatedAt: '2026-07-24T08:00:00+05:00',
+  requiredEmployees: 2,
 }
 
 const SUBMITTED_SHIFT: CombatDutyShift = {
@@ -56,6 +58,7 @@ const SUBMITTED_SHIFT: CombatDutyShift = {
     replacements: [],
   },
   updatedAt: '2026-07-24T08:00:00+05:00',
+  requiredEmployees: 2,
 }
 
 const ACCEPTED_SAME_DAY_SHIFT: CombatDutyShift = {
@@ -87,6 +90,7 @@ const ACCEPTED_SAME_DAY_SHIFT: CombatDutyShift = {
     replacements: [],
   },
   updatedAt: '2026-07-24T08:00:00+05:00',
+  requiredEmployees: 2,
 }
 
 const READY_SHIFT: CombatDutyShift = {
@@ -150,6 +154,7 @@ const CONFLICT_SHIFT: CombatDutyShift = {
     replacements: [],
   },
   updatedAt: '2026-07-24T08:00:00+05:00',
+  requiredEmployees: 2,
 }
 
 function seedEnvelope(combatShifts: CombatDutyShift[]): DemoStateEnvelope {
@@ -165,7 +170,18 @@ function seedEnvelope(combatShifts: CombatDutyShift[]): DemoStateEnvelope {
       duties: {
         dutyTypes: [],
         shifts: [],
-        combatDutyTypes: [],
+        combatDutyTypes: [
+          {
+            dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+            safeLabel: 'Дежурство боевой группы на одной Трассе',
+            supportsMultipleRoutes: false,
+          },
+          {
+            dutyTypeCode: 'COMBAT_GROUP_MULTI_ROUTE',
+            safeLabel: 'Дежурство боевой группы на нескольких Трассах',
+            supportsMultipleRoutes: true,
+          },
+        ],
         routes: [
           { routeId: 'route-1', safeLabel: 'Трасса №1' },
           { routeId: 'route-2', safeLabel: 'Трасса №2' },
@@ -192,6 +208,7 @@ describe('createDutiesRepository — боевые группы на Трассе
       { userId: CHECKER, permissions: ['ops.duty.view', 'ops.combat_group.checkin'] },
       { userId: COMPLETER, permissions: ['ops.duty.view', 'ops.combat_group.complete'] },
       { userId: REPLACER, permissions: ['ops.duty.view', 'ops.combat_group.replace'] },
+      { userId: PLANNER, permissions: ['ops.duty.view', 'ops.duty.manage'] },
       { userId: NOBODY, permissions: [] },
     ])
   })
@@ -696,6 +713,172 @@ describe('createDutiesRepository — боевые группы на Трассе
           REPLACER,
         ),
       ).rejects.toThrow(RepositoryNotFoundError)
+    })
+  })
+
+  describe('createCombatDutyShift (§24.1)', () => {
+    it('требует ops.duty.manage', async () => {
+      const { repository } = await setup([])
+      await expect(
+        repository.createCombatDutyShift(
+          {
+            businessDate: '2026-08-01',
+            dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+            routeIds: ['route-1'],
+            coverageMode: 'RESERVE',
+            requiredEmployees: 3,
+          },
+          VIEWER,
+        ),
+      ).rejects.toThrow(RepositoryPermissionError)
+    })
+
+    it('INVALID_BUSINESS_DATE на некорректный формат даты', async () => {
+      const { repository } = await setup([])
+      await expect(
+        repository.createCombatDutyShift(
+          {
+            businessDate: '01.08.2026',
+            dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+            routeIds: ['route-1'],
+            coverageMode: 'RESERVE',
+            requiredEmployees: 3,
+          },
+          PLANNER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'INVALID_BUSINESS_DATE' })
+    })
+
+    it('EMPTY_ROUTE_SET без Трасс', async () => {
+      const { repository } = await setup([])
+      await expect(
+        repository.createCombatDutyShift(
+          {
+            businessDate: '2026-08-01',
+            dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+            routeIds: [],
+            coverageMode: 'RESERVE',
+            requiredEmployees: 3,
+          },
+          PLANNER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'EMPTY_ROUTE_SET' })
+    })
+
+    it('INVALID_REQUIREMENT при requiredEmployees < 1', async () => {
+      const { repository } = await setup([])
+      await expect(
+        repository.createCombatDutyShift(
+          {
+            businessDate: '2026-08-01',
+            dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+            routeIds: ['route-1'],
+            coverageMode: 'RESERVE',
+            requiredEmployees: 0,
+          },
+          PLANNER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'INVALID_REQUIREMENT' })
+    })
+
+    it('UNKNOWN_DUTY_TYPE на неизвестный код вида дежурства', async () => {
+      const { repository } = await setup([])
+      await expect(
+        repository.createCombatDutyShift(
+          {
+            businessDate: '2026-08-01',
+            dutyTypeCode: 'NOT_A_REAL_TYPE',
+            routeIds: ['route-1'],
+            coverageMode: 'RESERVE',
+            requiredEmployees: 3,
+          },
+          PLANNER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'UNKNOWN_DUTY_TYPE' })
+    })
+
+    it('UNKNOWN_ROUTE на неизвестную Трассу', async () => {
+      const { repository } = await setup([])
+      await expect(
+        repository.createCombatDutyShift(
+          {
+            businessDate: '2026-08-01',
+            dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+            routeIds: ['route-unknown'],
+            coverageMode: 'RESERVE',
+            requiredEmployees: 3,
+          },
+          PLANNER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'UNKNOWN_ROUTE' })
+    })
+
+    it('TOO_MANY_ROUTES: одна Трасса — вид не поддерживает несколько', async () => {
+      const { repository } = await setup([])
+      await expect(
+        repository.createCombatDutyShift(
+          {
+            businessDate: '2026-08-01',
+            dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+            routeIds: ['route-1', 'route-2'],
+            coverageMode: 'PARALLEL',
+            requiredEmployees: 3,
+          },
+          PLANNER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'TOO_MANY_ROUTES' })
+    })
+
+    it('успешное создание заводит смену со submission:null, «Требует подачи»', async () => {
+      const { repository } = await setup([])
+      const created = await repository.createCombatDutyShift(
+        {
+          businessDate: '2026-08-01',
+          dutyTypeCode: 'COMBAT_GROUP_MULTI_ROUTE',
+          routeIds: ['route-2', 'route-3'],
+          coverageMode: 'PARALLEL',
+          requiredEmployees: 4,
+        },
+        PLANNER,
+      )
+      expect(created.submission).toBeNull()
+      expect(created.requiredEmployees).toBe(4)
+      expect(created.businessDate).toBe('2026-08-01')
+      expect(created.routeSet.routeIds).toEqual(['route-2', 'route-3'])
+      expect(created.routeSet.safeLabel).toBe('Трасса №2, Трасса №3')
+    })
+
+    it('успешное создание персистентно из БД (перечитано через listCombatShifts)', async () => {
+      const { repository } = await setup([])
+      const created = await repository.createCombatDutyShift(
+        {
+          businessDate: '2026-08-02',
+          dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+          routeIds: ['route-1'],
+          coverageMode: 'RESERVE',
+          requiredEmployees: 2,
+        },
+        PLANNER,
+      )
+      const list = await repository.listCombatShifts(VIEWER)
+      const reread = list.results.find((s) => s.id === created.id)
+      expect(reread).toMatchObject({ businessDate: '2026-08-02', submission: null })
+    })
+
+    it('созданная смена появляется рядом с фикстурными, не затирает их', async () => {
+      const { repository } = await setup([AWAITING_SHIFT, SUBMITTED_SHIFT])
+      await repository.createCombatDutyShift(
+        {
+          businessDate: '2026-08-03',
+          dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+          routeIds: ['route-1'],
+          coverageMode: 'RESERVE',
+          requiredEmployees: 1,
+        },
+        PLANNER,
+      )
+      const list = await repository.listCombatShifts(VIEWER)
+      expect(list.results).toHaveLength(3)
     })
   })
 })

@@ -10,6 +10,7 @@ import type {
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
 import type {
   CompleteCombatDutyRequest,
+  CreateCombatDutyShiftRequest,
   ListCombatDutyShiftsResponse,
   ListCombatDutyTypesResponse,
   ListCombatRosterCandidatesResponse,
@@ -179,6 +180,80 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
       (a, b) => a.businessDate.localeCompare(b.businessDate) || a.id.localeCompare(b.id),
     )
     return { results: sorted }
+  }
+
+  // §24.1 «формирование потребности на период» — заводит новую смену
+  // (submission: null, сразу «Требует подачи»). Упрощено до одного шага, без
+  // отдельной публикации графика комплектования (см. model/types.ts шапку).
+  async function createCombatDutyShift(
+    request: CreateCombatDutyShiftRequest,
+    actorUserId: string | null,
+  ): Promise<CombatDutyShift> {
+    if (!hasPermission(actorUserId, MANAGE_PERMISSION)) {
+      throw new RepositoryPermissionError(MANAGE_PERMISSION)
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(request.businessDate)) {
+      throw new RepositoryBusinessRuleError(
+        'INVALID_BUSINESS_DATE',
+        'Укажите дату в формате ГГГГ-ММ-ДД.',
+      )
+    }
+    if (request.routeIds.length === 0) {
+      throw new RepositoryBusinessRuleError('EMPTY_ROUTE_SET', 'Укажите хотя бы одну Трассу.')
+    }
+    if (request.requiredEmployees < 1) {
+      throw new RepositoryBusinessRuleError(
+        'INVALID_REQUIREMENT',
+        'Требуемая численность должна быть не менее 1.',
+      )
+    }
+    let created!: CombatDutyShift
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const dutyType = slice.combatDutyTypes.find((t) => t.dutyTypeCode === request.dutyTypeCode)
+      if (dutyType === undefined) {
+        throw new RepositoryBusinessRuleError('UNKNOWN_DUTY_TYPE', 'Неизвестный вид дежурства.')
+      }
+      if (!dutyType.supportsMultipleRoutes && request.routeIds.length > 1) {
+        throw new RepositoryBusinessRuleError(
+          'TOO_MANY_ROUTES',
+          'Этот вид дежурства не поддерживает несколько Трасс.',
+        )
+      }
+      const unknownRoute = request.routeIds.find(
+        (routeId) => !slice.routes.some((r) => r.routeId === routeId),
+      )
+      if (unknownRoute !== undefined) {
+        throw new RepositoryBusinessRuleError('UNKNOWN_ROUTE', 'Неизвестная Трасса.')
+      }
+      const seq = slice.combatShifts.length + 1
+      const id = `combat-duty-shift-${current.revision + 1}-${seq}`
+      const routeLabels = request.routeIds.map(
+        (routeId) => slice.routes.find((r) => r.routeId === routeId)?.safeLabel ?? routeId,
+      )
+      created = {
+        id,
+        businessDate: request.businessDate,
+        dutyTypeCode: request.dutyTypeCode,
+        routeSet: {
+          routeSetId: `duty-route-set-${current.revision + 1}-${seq}`,
+          safeLabel: routeLabels.join(', '),
+          coverageMode: request.coverageMode,
+          routeIds: request.routeIds,
+        },
+        submission: null,
+        updatedAt: clock.now(),
+        requiredEmployees: request.requiredEmployees,
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          combatShifts: [...slice.combatShifts, created],
+        } satisfies DutiesSlice,
+      }
+    })
+    return created
   }
 
   async function submitCombatGroup(
@@ -598,6 +673,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     listRoutes,
     listRosterCandidates,
     listCombatShifts,
+    createCombatDutyShift,
     submitCombatGroup,
     reviewCombatGroup,
     acknowledgeCombatDuty,

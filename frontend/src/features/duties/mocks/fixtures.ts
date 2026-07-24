@@ -139,6 +139,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       },
       submission: null,
       updatedAt: now,
+      requiredEmployees: 2,
     },
     {
       id: ctx.ids.next('combat-duty-shift'),
@@ -163,6 +164,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
         replacements: [],
       },
       updatedAt: now,
+      requiredEmployees: 2,
     },
     {
       id: ctx.ids.next('combat-duty-shift'),
@@ -199,6 +201,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
         replacements: [],
       },
       updatedAt: now,
+      requiredEmployees: 2,
     },
   ]
 

@@ -23,6 +23,7 @@ import {
 import type {
   AcknowledgeCombatDutyRequest,
   CompleteCombatDutyRequest,
+  CreateCombatDutyShiftRequest,
   RequestCombatDutyReplacementRequest,
   ReviewCombatGroupRequest,
   SubmitCombatGroupRequest,
@@ -148,6 +149,15 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
       const actorUserId = request.headers.get('X-User-Id')
       try {
         return HttpResponse.json(await repository.listCombatShifts(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${COMBAT_DUTY_SHIFTS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        const body = (await request.json()) as CreateCombatDutyShiftRequest
+        return HttpResponse.json(await repository.createCombatDutyShift(body, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
       }
