@@ -19,7 +19,7 @@
 | Рекогносцировка: материалы (фото/файлы) | securityEventDetail (stage=RECON) | features/security-events | — | — | Not started (требует blob-хранилища, см. FRONTEND_DECISIONS) |
 | Потребность: строки расчёта (сектор/пост/смена/группа), сохранение+утверждение одной операцией | securityEventDetail (stage=DEMAND) | features/security-events | approveDemand | mocks/repository.test.ts + ручная проверка | Verified |
 | Выделение сил: авто-агрегация запросов по группам, ручное выделение (allocatedCount), статус NOT_SENT→PARTIALLY→ALLOCATED | securityEventDetail (stage=FORCES) | features/security-events | updateForceAllocation, completeForces | mocks/repository.test.ts + ручная проверка | Verified |
-| Расстановка: назначение/снятие сотрудников на посты, hard-правило двойного назначения внутри ОМ, укомплектованность постов | securityEventDetail (stage=PLACEMENT) | features/security-events | assignPlacement, unassignPlacement, completePlacement | mocks/repository.test.ts + ручная проверка | Verified (упрощённое правило «≥1 назначение», не точный need — FRONTEND_DECISIONS) |
+| Расстановка: назначение/снятие сотрудников на посты, hard-правило двойного назначения внутри ОМ, укомплектованность постов | securityEventDetail (stage=PLACEMENT) | features/security-events | assignPlacement, unassignPlacement, completePlacement | mocks/repository.test.ts + e2e-mock/security-event-placement.spec.ts | Verified (упрощённое правило «≥1 назначение», не точный need — FRONTEND_DECISIONS) |
 | Согласование: утверждение / возврат на доработку с причиной (откат на PLACEMENT) | securityEventDetail (stage=APPROVAL) | features/security-events | approvePlacement, returnPlacement | mocks/repository.test.ts + ручная проверка | Verified |
 | Полный цикл ОМ (все 6 стадий: Бюллетень→Рекогносцировка→Потребность→Запрос сил→Расстановка→Согласование) кликабелен от создания до утверждения | securityEvents → securityEventDetail | features/security-events | (весь набор выше) | ручная браузерная проверка полного цикла, 2026-07-24 | Verified end-to-end |
 | Обновление паспорта объекта до ОМ | objectPassport | features/objects | publishPassportVersion | — | Not started |
@@ -59,8 +59,8 @@
 
 | Экран/действие | Route | Feature | Статус |
 |---|---|---|---|
-| Список сотрудников (поиск+фильтр) | employees | features/personnel | Verified (ручная браузерная проверка) |
-| Карточка сотрудника (кадровая принадлежность) | employeeDetail | features/personnel | Verified (ручная браузерная проверка) |
+| Список сотрудников (поиск+фильтр) | employees | features/personnel | Verified (ручная браузерная проверка + e2e-mock/personnel-registry.spec.ts) |
+| Карточка сотрудника (кадровая принадлежность) | employeeDetail | features/personnel | Verified (ручная браузерная проверка + e2e-mock/personnel-registry.spec.ts) |
 | Оперативный профиль (availability/nextAssignment/rating) | employeeDetail | features/personnel | Not started (честная секция-заглушка, см. FRONTEND_DECISIONS A28) |
 | Мой профиль | (план) | features/personnel | Not started |
 | Календарь сотрудника × месяц | (план, Epic 19.4) | features/calendar | Not started |
@@ -69,8 +69,8 @@
 
 | Экран/действие | Route | Feature | Статус |
 |---|---|---|---|
-| Реестр объектов (поиск) | objects | features/objects | Verified (ручная браузерная проверка) |
-| Паспорт объекта (секторы+посты, редактирование) | objectDetail | features/objects | Verified (ручная браузерная проверка, persist-through-reload) |
+| Реестр объектов (поиск) | objects | features/objects | Verified (ручная браузерная проверка + e2e-mock/objects-passport.spec.ts) |
+| Паспорт объекта (секторы+посты, редактирование) | objectDetail | features/objects | Verified (ручная браузерная проверка + e2e-mock/objects-passport.spec.ts, persist-through-reload) |
 | KPI реестра объектов (§21.7) | objects | features/objects | Not started (см. FRONTEND_DECISIONS A30) |
 | Схемы/документы/чек-листы объекта | objectDetail | features/objects | Not started |
 | План дежурств на месяц | duties | features/duties | Not started (см. FRONTEND_DECISIONS A31) |
@@ -118,8 +118,8 @@
 | Экран/действие | Route | Feature | Статус |
 |---|---|---|---|
 | Реестр справочников (карточки со счётчиком active/total) | dictionaries | features/dictionaries | Verified (ручная браузерная проверка) |
-| Значения справочника (таблица, добавление, деактивация) | dictionaryDetail | features/dictionaries | Verified (ручная браузерная проверка + unit-тесты repository) |
-| Блокировка деактивации используемого значения (409, причина дословно) | dictionaryDetail | features/dictionaries | Verified (ручная проверка + unit-тест) |
+| Значения справочника (таблица, добавление, деактивация) | dictionaryDetail | features/dictionaries | Verified (ручная браузерная проверка + unit-тесты repository + e2e-mock/dictionaries.spec.ts) |
+| Блокировка деактивации используемого значения (409, причина дословно) | dictionaryDetail | features/dictionaries | Verified (ручная проверка + unit-тест + e2e-mock/dictionaries.spec.ts) |
 | Типы записей журнала (JOURNAL_ENTRY_TYPES, §30 «типы статусов») | dictionaryDetail | features/dictionaries | Verified (ручная браузерная проверка + unit-тесты repository) |
 | Группы требований постов (POST_REQUIREMENT_GROUPS, §30 «группы») + колонка «Группа»/select в POST_REQUIREMENTS | dictionaryDetail | features/dictionaries | Verified (ручная браузерная проверка + unit-тесты repository) |
 | Должности/звания (§30 остальные 2 пункта) | — | — | Not started (уже реальные donor-справочники через personnel, см. A40) |
@@ -128,11 +128,11 @@
 
 | Экран/действие | Route | Feature | Статус |
 |---|---|---|---|
-| Календарь по дням (список дежурств+расстановок ОМ за день, навигация по дате) | calendar | app/CalendarPage.tsx | Verified (ручная браузерная проверка) |
+| Календарь по дням (список дежурств+расстановок ОМ за день, навигация по дате) | calendar | app/CalendarPage.tsx | Verified (ручная браузерная проверка + e2e-mock/calendar.spec.ts) |
 | «Мой календарь», представление по сотруднику/подразделению, боевые группы, конфликты, отдых, нагрузка, статусы (отпуск/больничный/командировка) | — | — | Not started — требует Employee Status/Conflict/Workload repositories и общий employeeId между дежурствами/ОМ, которых в demo-срезе нет (см. FRONTEND_DECISIONS A44-A46) |
 
 ## Покрытие
 Итог (после разрешения продолжить): **24 из ~70 экранов Verified** (12 — жизненный цикл ОМ, 2 — сотрудники, 2 — объекты/паспорт, 1 — аудит, 1 — аналитика службы, 1 — план дежурств, 4 — справочники, 1 — календарь по дням). Остальные ~46 экранов (notifications/feedback/мой профиль/KPI/схемы/нагрузка/рейтинг/боевые группы/должности-звания как отдельный справочник/остальные режимы календаря) — Not started. Ложным «Done» не помечать (запрет §35).
 
 ## NEXT ACTION
-Расширить `e2e-mock/` на personnel/objects/audit/analytics/duties/dictionaries/calendar и на середину жизненного цикла ОМ (Рекогносцировка→Потребность→Запрос сил→Расстановка); либо продолжить функциональный объём (уведомления/боевые группы/оперативный профиль) по решению пользователя.
+`e2e-mock/` расширен на personnel/objects/dictionaries/calendar и стадию PLACEMENT (Этап 11). Осталось: RECON/DEMAND/FORCES стадии ОМ, audit, analytics, duties — только ручная QA; либо продолжить функциональный объём (уведомления/боевые группы/оперативный профиль) по решению пользователя.
