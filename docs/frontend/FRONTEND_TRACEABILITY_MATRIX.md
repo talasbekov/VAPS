@@ -61,7 +61,7 @@
 |---|---|---|---|
 | Список сотрудников (поиск+фильтр) | employees | features/personnel | Verified (ручная браузерная проверка + e2e-mock/personnel-registry.spec.ts) |
 | Карточка сотрудника (кадровая принадлежность) | employeeDetail | features/personnel | Verified (ручная браузерная проверка + e2e-mock/personnel-registry.spec.ts) |
-| Оперативный профиль (availability/nextAssignment/rating) | employeeDetail | features/personnel | Not started (честная секция-заглушка, см. FRONTEND_DECISIONS A28) |
+| Оперативный профиль (availability/nextAssignment/rating) — структура вкладок §20.15 | employeeDetail | features/personnel | Implemented (структура; данные Not started — каждая вкладка честно объясняет причину, см. FRONTEND_DECISIONS A50), покрыто e2e-mock/personnel-registry.spec.ts |
 | Мой профиль | (план) | features/personnel | Not started |
 | Календарь сотрудника × месяц | (план, Epic 19.4) | features/calendar | Not started |
 
@@ -135,4 +135,4 @@
 Итог (после разрешения продолжить): **24 из ~70 экранов Verified** (12 — жизненный цикл ОМ, 2 — сотрудники, 2 — объекты/паспорт, 1 — аудит, 1 — аналитика службы, 1 — план дежурств, 4 — справочники, 1 — календарь по дням). Остальные ~46 экранов (notifications/feedback/мой профиль/KPI/схемы/нагрузка/рейтинг/боевые группы/должности-звания как отдельный справочник/остальные режимы календаря) — Not started. Ложным «Done» не помечать (запрет §35).
 
 ## NEXT ACTION
-`e2e-mock/` теперь покрывает ВСЕ реализованные экраны (Этапы 11-13, 11 спек) — весь жизненный цикл ОМ, personnel, objects, dictionaries, calendar, audit, analytics, duties. Дальше — только функциональный объём: оперативный профиль/уведомления/боевые группы/accessibility-tablet-Firefox (не реализованы, а не «не покрыты тестами»), по решению пользователя.
+`e2e-mock/` покрывает ВСЕ реализованные экраны (Этапы 11-13, 11 спек, расширены Этапом 14) — весь жизненный цикл ОМ, personnel (включая структуру вкладок оперативного профиля), objects, dictionaries, calendar, audit, analytics, duties. Оперативный профиль сотрудника (§20.5) теперь Implemented в объёме структуры (A50) — данные Not started. Дальше — только функциональный объём: уведомления/боевые группы/accessibility-tablet-Firefox (не реализованы, а не «не покрыты тестами»), по решению пользователя.

@@ -1,12 +1,62 @@
 // Карточка сотрудника (§20.5 EmployeeOperationalProfile — упрощённая
 // проекция, идентичность+кадровая принадлежность read-only из донора).
 // Оперативные Smart Josparlau поля (availability/nextAssignment/
-// workloadSummary/ratingSummary) — Not started в этом срезе: честная
-// секция "не подключено" вместо придуманных цифр (§35).
+// workloadSummary/ratingSummary) — Not started в этом срезе, но структура
+// вкладок §20.15 реализована: каждая вкладка честно объясняет, ПОЧЕМУ данных
+// нет (§35 запрет придумывать цифры), а не одна общая заглушка-абзац.
+// Причина, ПОЧЕМУ нельзя честно вычислить доступность/назначения из уже
+// существующих features/duties и features/security-events: у этих фич нет
+// общего стабильного employeeId с features/personnel (разные ID-схемы,
+// намеренно раздельные bounded context, см. FRONTEND_DECISIONS A44-A46/A28) —
+// тот же вывод, что уже был сделан для календаря "по сотруднику".
+import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { ROUTES } from '../../../shared/routes'
 import { useDivisions, useEmployee, usePositions, useRanks } from '../api/queries'
 import { EMPLOYMENT_STATUS_LABEL } from '../model/types'
+
+const OPERATIONAL_TABS = [
+  { key: 'availability', label: 'Доступность' },
+  { key: 'assignments', label: 'Назначения' },
+  { key: 'clearances', label: 'Подготовка и допуски' },
+  { key: 'workload', label: 'Нагрузка' },
+  { key: 'rating', label: 'Рейтинг' },
+  { key: 'documents', label: 'Документы' },
+] as const
+
+type OperationalTabKey = (typeof OPERATIONAL_TABS)[number]['key']
+
+const OPERATIONAL_TAB_NOT_CONNECTED: Record<OperationalTabKey, { message: string; source: string }> = {
+  availability: {
+    message: 'Доступность сотрудника не подключена.',
+    source:
+      'Источник: Smart Josparlau. Repository доступности недоступен в этом срезе — не показываем расчётное состояние без него (§35).',
+  },
+  assignments: {
+    message:
+      'Предстоящие, активные, завершённые и отменённые назначения не подключены к карточке.',
+    source:
+      'Источник: features/duties и features/security-events не имеют общего стабильного employeeId с личным составом в этом демо-срезе — честнее не собирать историю по ФИО (см. A44-A46).',
+  },
+  clearances: {
+    message: 'Сведения о подготовке и допусках пока недоступны.',
+    source: 'Источник учёта допусков не подключён (§20.22).',
+  },
+  workload: {
+    message: 'Нагрузка (плановая/фактическая, дневные/ночные часы, дежурства, ОМ) не подключена.',
+    source:
+      'Период и методика должны приходить от API — локальный подсчёт по загруженной странице запрещён (§20.21).',
+  },
+  rating: {
+    message: 'Оперативный рейтинг не реализован в этом проекте.',
+    source:
+      'Сознательный scope cut: оценки участников/hidden-score требуют отдельной честной реализации (Epic 18.3/19, см. FRONTEND_DECISIONS A24).',
+  },
+  documents: {
+    message: 'Документы, связанные с назначением, допуском или обучением, не подключены.',
+    source: 'Карточка сотрудника не является произвольным файловым хранилищем (§20.24).',
+  },
+}
 
 export function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -14,6 +64,7 @@ export function EmployeeDetailPage() {
   const divisionsQuery = useDivisions()
   const positionsQuery = usePositions()
   const ranksQuery = useRanks()
+  const [activeTab, setActiveTab] = useState<'summary' | OperationalTabKey>('summary')
 
   if (employeeQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Загрузка сотрудника…</p>
@@ -89,14 +140,64 @@ export function EmployeeDetailPage() {
         </section>
 
         <section className="rounded-xl border bg-card p-4">
-          <div className="mb-3 text-sm font-semibold">Оперативные данные Smart Josparlau</div>
-          <p className="text-sm text-muted-foreground">
-            Дежурства, участие в ОМ, назначения, ознакомление и оперативный рейтинг — Not
-            started в текущем срезе: честно не показываем без реального read model (§35).
-          </p>
+          <div className="mb-3 text-sm font-semibold">Оперативный профиль (Smart Josparlau)</div>
+          <div role="tablist" aria-label="Оперативный профиль" className="mb-3 flex flex-wrap gap-1 border-b">
+            <TabButton tabKey="summary" activeTab={activeTab} onSelect={setActiveTab} label="Сводка" />
+            {OPERATIONAL_TABS.map((tab) => (
+              <TabButton key={tab.key} tabKey={tab.key} activeTab={activeTab} onSelect={setActiveTab} label={tab.label} />
+            ))}
+          </div>
+
+          {activeTab === 'summary' ? (
+            <div role="tabpanel" aria-label="Сводка">
+              <p className="text-sm text-muted-foreground">
+                Доступность, назначения, подготовка и допуски, нагрузка, рейтинг и документы —
+                Not started в текущем срезе: честно не показываем без реального read model (§35).
+                Причина см. на соответствующих вкладках.
+              </p>
+            </div>
+          ) : (
+            <div role="tabpanel" aria-label={OPERATIONAL_TABS.find((t) => t.key === activeTab)?.label}>
+              <p className="text-sm text-muted-foreground">
+                {OPERATIONAL_TAB_NOT_CONNECTED[activeTab].message}
+              </p>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {OPERATIONAL_TAB_NOT_CONNECTED[activeTab].source}
+              </p>
+            </div>
+          )}
         </section>
       </div>
     </div>
+  )
+}
+
+function TabButton({
+  tabKey,
+  activeTab,
+  onSelect,
+  label,
+}: {
+  tabKey: 'summary' | OperationalTabKey
+  activeTab: 'summary' | OperationalTabKey
+  onSelect: (tab: 'summary' | OperationalTabKey) => void
+  label: string
+}) {
+  const isActive = activeTab === tabKey
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={isActive}
+      className={
+        isActive
+          ? 'rounded-t-md border-b-2 border-primary px-2.5 py-1.5 text-xs font-semibold text-primary'
+          : 'rounded-t-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground'
+      }
+      onClick={() => onSelect(tabKey)}
+    >
+      {label}
+    </button>
   )
 }
 

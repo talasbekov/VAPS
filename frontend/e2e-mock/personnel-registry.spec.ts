@@ -2,7 +2,9 @@
 // «Сотрудники» (§20.2) не были покрыты ни одной E2E-спекой — только ручная
 // browser-QA. Проверяет реальный путь: реестр (поиск + фильтр по
 // подразделению, оба в URL) → карточка сотрудника (кадровые данные из донора,
-// честная секция "Not started" для оперативных данных Smart Josparlau).
+// оперативный профиль §20.5/20.15 — вкладки Сводка/Доступность/Назначения/
+// Подготовка и допуски/Нагрузка/Рейтинг/Документы, каждая честно объясняет
+// отсутствие подключения вместо одной общей заглушки).
 import { expect, test } from '@playwright/test'
 import { seedCredential } from './testUtils'
 
@@ -42,11 +44,24 @@ test.describe('Сотрудники: реестр → поиск/фильтр �
 
     await expect(page.getByRole('heading', { name: /Нуртаев/ })).toBeVisible()
     await expect(page.getByText('Кадровая принадлежность')).toBeVisible()
-    await expect(
-      page.getByText(
-        'Дежурства, участие в ОМ, назначения, ознакомление и оперативный рейтинг — Not',
-      ),
-    ).toBeVisible()
+    await expect(page.getByText('Оперативный профиль (Smart Josparlau)')).toBeVisible()
+
+    // Вкладка «Сводка» открыта по умолчанию.
+    await expect(page.getByRole('tabpanel', { name: 'Сводка' })).toContainText(
+      'Not started в текущем срезе',
+    )
+
+    // Каждая вкладка честно объясняет отсутствие подключения (не одна заглушка).
+    await page.getByRole('tab', { name: 'Назначения' }).click()
+    await expect(page.getByRole('tabpanel', { name: 'Назначения' })).toContainText(
+      'не подключены к карточке',
+    )
+    await expect(page.getByRole('tabpanel', { name: 'Назначения' })).toContainText('A44-A46')
+
+    await page.getByRole('tab', { name: 'Рейтинг' }).click()
+    await expect(page.getByRole('tabpanel', { name: 'Рейтинг' })).toContainText(
+      'не реализован в этом проекте',
+    )
 
     await page.getByRole('link', { name: '← Назад к списку' }).click()
     await expect(page.getByRole('heading', { name: 'Сотрудники' })).toBeVisible()
