@@ -6,6 +6,7 @@
 // детальные маршруты приедут со своими сториями.
 import {
   BarChart3,
+  BookOpen,
   Building2,
   CalendarClock,
   ClipboardList,
@@ -81,6 +82,10 @@ export const ROUTES = {
   serviceAnalytics: '/analytics',
   /** Мастер-промпт §21/§24: «Служба» → План дежурств. */
   duties: '/duties',
+  /** Мастер-промпт §30: «Настройки» → Справочники. */
+  dictionaries: '/dictionaries',
+  dictionaryDetail: '/dictionaries/:code',
+  dictionaryDetailTo: (code: string) => `/dictionaries/${encodeURIComponent(code)}`,
 } as const
 
 export interface NavSection {
@@ -167,5 +172,11 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Аудит',
     icon: ScrollText,
     permission: 'audit.view',
+  },
+  {
+    route: ROUTES.dictionaries,
+    label: 'Справочники',
+    icon: BookOpen,
+    permission: 'ops.dictionary.view',
   },
 ]

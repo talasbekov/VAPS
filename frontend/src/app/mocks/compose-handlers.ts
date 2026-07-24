@@ -9,6 +9,7 @@ import { personnelHandlers } from '../../features/personnel/mocks/handlers'
 import { createObjectsHandlers } from '../../features/objects/mocks/handlers'
 import { auditHandlers } from '../../features/audit/mocks/handlers'
 import { createDutiesHandlers } from '../../features/duties/mocks/handlers'
+import { createDictionariesHandlers } from '../../features/dictionaries/mocks/handlers'
 import { getDemoClock, getPersistenceAdapter } from './demo-runtime'
 import { identityHandlers } from './identity-handlers'
 
@@ -22,5 +23,6 @@ export function composeHandlers(): HttpHandler[] {
     ...createObjectsHandlers(adapter, clock),
     ...auditHandlers,
     ...createDutiesHandlers(adapter, clock),
+    ...createDictionariesHandlers(adapter, clock),
   ]
 }

@@ -26,12 +26,14 @@
 | securityEventDetail | /security-events/:id | ops.security_event.view | 2 | Verified (только этап BULLETIN; остальные 5 стадий — визуальный tracker без функционала) |
 | protectedPersons | /protected-persons | ops.protected_person.view | 2 | Not started |
 | placementWorkspace | /security-events/:id/placement | ops.placement.view | 2 | Not started |
-| objects | /objects | ops.object.view | 5 | Not started |
-| objectPassport | /objects/:id | ops.object.view | 5 | Not started |
-| duties | /duties | ops.duty.view | 5 | Not started |
+| objects | /objects | ops.object.view | 5 | Verified |
+| objectPassport (объектDetail в коде) | /objects/:id | ops.object.view | 5 | Verified |
+| duties | /duties | ops.duty.view | 7 | Verified |
 | shiftCalendar | /calendar | ops.calendar.view | 5 | Not started |
-| serviceAnalytics | /analytics | ops.analytics.view | 6 | Not started |
+| serviceAnalytics | /analytics | ops.analytics.view | 6/7 | Verified |
 | feedback | /feedback | (RequireAuth only, по образцу changelog) | 6 | Not started |
+| dictionaries | /dictionaries | ops.dictionary.view | 8 | Verified |
+| dictionaryDetail | /dictionaries/:code | ops.dictionary.view | 8 | Verified |
 
 Правило: ни один route выше не добавляется в `ROUTES`/`NAV_SECTIONS` раньше, чем появится реальная страница за ним (запрет §35 «нет пустых routes»).
 

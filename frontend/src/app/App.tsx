@@ -19,6 +19,8 @@ import { ObjectPassportPage } from '../features/objects/pages/ObjectPassportPage
 import { ObjectsListPage } from '../features/objects/pages/ObjectsListPage'
 import { AuditLogPage } from '../features/audit/pages/AuditLogPage'
 import { DutyPlanPage } from '../features/duties/pages/DutyPlanPage'
+import { DictionariesListPage } from '../features/dictionaries/pages/DictionariesListPage'
+import { DictionaryDetailPage } from '../features/dictionaries/pages/DictionaryDetailPage'
 import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -200,6 +202,22 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="audit.view">
               <AuditLogPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.dictionaries}
+          element={
+            <RequirePermission permission="ops.dictionary.view">
+              <DictionariesListPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.dictionaryDetail}
+          element={
+            <RequirePermission permission="ops.dictionary.view">
+              <DictionaryDetailPage />
             </RequirePermission>
           }
         />

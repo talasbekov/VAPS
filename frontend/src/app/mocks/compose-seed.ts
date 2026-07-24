@@ -13,6 +13,7 @@ import type {
 import { buildSecurityEventsSeed } from '../../features/security-events/mocks/fixtures'
 import { buildObjectsSeed } from '../../features/objects/mocks/fixtures'
 import { buildDutiesSeed } from '../../features/duties/mocks/fixtures'
+import { buildDictionariesSeed } from '../../features/dictionaries/mocks/fixtures'
 import type { DemoScenarioDefinition } from './scenario-manifest'
 
 export type { SeedContext, FeatureSeedBuilder }
@@ -21,6 +22,7 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
   buildSecurityEventsSeed,
   buildObjectsSeed,
   buildDutiesSeed,
+  buildDictionariesSeed,
 ]
 
 // Бампается при КАЖДОМ изменении формы существующего feature-слайса (не

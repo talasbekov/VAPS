@@ -55,9 +55,22 @@ Baseline полностью зелёный — все ошибки ниже эт
 | E2E: Согласование → авто-переход Ознакомление → Проведение (журнал штаба) → Закрыто (итоги по направлениям, обязательны все) → persist-through-reload → реестр отражает «Закрыто» | e2e-mock/security-event-approval-to-closure.spec.ts | Verified |
 | Ручная браузерная проверка: personnel (поиск/фильтр/карточка), objects (паспорт, persist-through-reload), audit (поиск), analytics (агрегаты) | — (нет Playwright-теста) | Verified вручную, Not started как автотест |
 
+## Smart Josparlau — Этап 8 (справочники, §30)
+
+| Проверка | Файл | Статус |
+|---|---|---|
+| listDefinitions()/listEntries() без прав/с null credential кидает RepositoryPermissionError; createEntry()/setEntryActive() требуют manage отдельно от view | features/dictionaries/mocks/repository.test.ts | Verified |
+| listDefinitions() возвращает корректные totalCount/activeCount по справочнику | features/dictionaries/mocks/repository.test.ts | Verified |
+| listEntries() фильтрует по dictionaryCode, сортирует по code; неизвестный dictionaryCode → RepositoryNotFoundError | features/dictionaries/mocks/repository.test.ts | Verified |
+| createEntry(): пустой code/label → RepositoryValidationError по нужному полю; дубликат code (без учёта регистра) внутри справочника → RepositoryValidationError; неизвестный dictionaryCode → RepositoryNotFoundError | features/dictionaries/mocks/repository.test.ts | Verified |
+| createEntry() успешный — персистентен (перечитан из адаптера, не из памяти вызова) | features/dictionaries/mocks/repository.test.ts | Verified |
+| setEntryActive(false) на значении с referencedCount>0 → RepositoryConflictError (§30 «понятная зависимость»); referencedCount=0 — деактивация проходит и персистентна; реактивация (isActive=true) НЕ блокируется referencedCount; неизвестный id → RepositoryNotFoundError | features/dictionaries/mocks/repository.test.ts | Verified |
+| Route guard: `/dictionaries` и `/dictionaries/:code` добавлены в ROUTE_MATRIX/OPS_CODES | app/smart-josparlau-routing.qa.test.tsx | Verified (16 тестов, было 14) |
+| Ручная браузерная проверка (dev:mock, 2026-07-24, persona admin): реестр справочников со счётчиками → детальная страница → 409 на деактивации используемого значения (текст причины показан дословно) → успешная деактивация неиспользуемого → блокировка дубликата code при создании → успешное создание, персистентное через `location.reload()` | — (нет Playwright-теста) | Verified вручную, Not started как автотест |
+
 ## Найдено при написании E2E (не гипотетически — реальные баги/пробелы)
 - 8 полей форм в `SecurityEventDetailPage.tsx` (бюллетень/возврат на доработку/журнал штаба/итоги закрытия) использовали `<label>` БЕЗ `htmlFor`/`id` — визуально выглядели связанными, но `getByLabel`/screen reader не находили поле. Исправлено (`htmlFor`+`id` на всех восьми). Реальный accessibility-дефект, не тестовая условность — не был бы пойман без попытки написать E2E через семантические локаторы (préview-инструмент в ручной QA использовал `querySelector`, который не проверяет ассоциацию).
 - `DemoToolbar` (fixed bottom-4 right-4, dev-only) физически перекрывает кнопки действий на страницах с длинным контентом снизу (журнал штаба, итоги закрытия) — не влияет на продакшн (Rollup исключает chunk), но потребовал `hideDemoToolbar()` хелпера в `e2e-mock/testUtils.ts` для устойчивых E2E-кликов.
 
 ## NEXT ACTION
-Расширить `e2e-mock/` на personnel/objects/audit/analytics и на раннюю часть жизненного цикла (Рекогносцировка→Потребность→Запрос сил→Расстановка) — сейчас E2E покрывает создание+бюллетень и согласование→закрытие, середина цикла проверена только вручную.
+Расширить `e2e-mock/` на personnel/objects/audit/analytics/duties/dictionaries и на раннюю часть жизненного цикла (Рекогносцировка→Потребность→Запрос сил→Расстановка) — сейчас E2E покрывает создание+бюллетень и согласование→закрытие, середина цикла проверена только вручную.
