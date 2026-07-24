@@ -97,5 +97,19 @@ Baseline полностью зелёный — все ошибки ниже эт
 
 **Не найдено новых дефектов при написании этих 5 спек** (в отличие от Этапов 7/9) — 3 итерации по мелочам самих тестов (не продукта): `DemoToolbar` перекрывал «Сохранить паспорт» (нужен `hideDemoToolbar()`, тот же паттерн, что Этап 7), `getByText('Ахметов Б.')` без `exact: true` матчил и `<span>`, и `<option>` (строгий режим Playwright), `selectOption({ label: RegExp })` не поддерживается для `<select>` (заменено на `{ value: 'emp-2' }`).
 
+## Smart Josparlau — Этап 12 (e2e-mock: RECON→DEMAND→FORCES→PLACEMENT, продолжение Этапа 11)
+
+Последний непокрытый участок жизненного цикла ОМ между bulletin (Этап 7) и approval→closed (Этап 3): `security-event-lifecycle.spec.ts` идёт только BULLETIN, `security-event-approval-to-closure.spec.ts` — только APPROVAL→CLOSED, `security-event-placement.spec.ts` (Этап 11) — только внутри уже готовой PLACEMENT. Ни одна спека не проходила через RECON/DEMAND/FORCES.
+
+| Проверка | Файл | Статус |
+|---|---|---|
+| Рекогносцировка: довести чек-лист до 6/6 → «Сохранить расчёт» → «Завершить этап» становится доступен → переход RECON→DEMAND | e2e-mock/security-event-recon-to-placement.spec.ts | Verified |
+| Потребность: добавление строки (сектор/задача) → «Сохранить и утвердить» переводит стадию СРАЗУ в FORCES (без промежуточного «заблокированного» вида DEMAND — см. `approveDemand` в repository.ts) | e2e-mock/security-event-recon-to-placement.spec.ts | Verified |
+| Запрос сил: авто-агрегированный запрос группе (need из строки потребности) → ручное выделение (allocatedCount=requestedCount) → «Завершить этап» доступен только когда ВСЕ запросы полностью выделены → переход FORCES→PLACEMENT | e2e-mock/security-event-recon-to-placement.spec.ts | Verified |
+
+Найдено при написании (тестовая, не продуктовая неточность): изначальное предположение, что DEMAND-стадия после `approveDemand` покажет заблокированный вид со значком «Потребность утверждена» перед переходом на FORCES, оказалось неверным — `approveDemand` меняет `stage` на `'FORCES'` в ОДНОЙ атомарной мутации (см. `repository.ts:approveDemand`), промежуточного состояния нет. Заголовок стадии у DEMAND и FORCES дословно совпадает («Потребность и выделение сил») — различает их только содержимое панели.
+
+Прогнано дважды подряд (детерминизм) — `npm run test:e2e:mock`, 8/8 оба раза. `npm run gate` (892/892, 213.2 KB gzip) и `npm run test:e2e` (62/62) не задеты.
+
 ## NEXT ACTION
-E2E покрывает: создание+бюллетень, середину цикла ОМ (PLACEMENT), согласование→закрытие, personnel, objects, dictionaries, calendar. Не покрыто автотестами: Рекогносцировка/Потребность/Запрос сил (RECON/DEMAND/FORCES стадии ОМ), audit, analytics, duties (план дежурств) — только ручная QA. Решение о следующем направлении — за пользователем.
+E2E теперь покрывает ВЕСЬ жизненный цикл ОМ (все 9 стадий, распределённые по 4 спекам) плюс personnel, objects, dictionaries, calendar. Не покрыто автотестами: audit, analytics, duties (план дежурств) — только ручная QA + unit-тесты репозитория. Решение о следующем направлении — за пользователем.
