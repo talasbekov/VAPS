@@ -35,3 +35,21 @@ export const stageBadgeVariants = cva(
     },
   },
 )
+
+/** Заливка полосы готовности — та же цветовая семья, что бейдж стадии
+ * (`stageBadgeVariants`), но сплошной тон вместо светлого фона. */
+export const stageProgressVariants = cva('h-full rounded-full', {
+  variants: {
+    stage: {
+      BULLETIN: 'bg-purple-600',
+      RECON: 'bg-purple-600',
+      DEMAND: 'bg-amber-600',
+      FORCES: 'bg-amber-600',
+      PLACEMENT: 'bg-primary',
+      APPROVAL: 'bg-green-600',
+      ACKNOWLEDGEMENT: 'bg-primary',
+      CONDUCT: 'bg-green-600',
+      CLOSED: 'bg-muted-foreground/40',
+    } satisfies Record<SecurityEventStage, string>,
+  },
+})
