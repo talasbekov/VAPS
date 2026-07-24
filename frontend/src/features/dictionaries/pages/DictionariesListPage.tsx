@@ -16,7 +16,8 @@ export function DictionariesListPage() {
         </p>
         <h1 className="text-2xl font-bold tracking-tight">Справочники</h1>
         <span className="text-sm text-muted-foreground">
-          Причины, требования постов, сезонные поправки — управление за отдельным правом
+          Причины, требования постов, сезонные поправки, типы записей журнала, группы требований —
+          управление за отдельным правом
         </span>
       </header>
 

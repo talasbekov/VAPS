@@ -29,6 +29,8 @@ export interface CreateDictionaryEntryRequest extends Record<string, unknown> {
   code: string
   label: string
   description: string
+  /** Только для `POST_REQUIREMENTS` — код записи `POST_REQUIREMENT_GROUPS`. */
+  groupCode?: string | null
 }
 
 export type CreateDictionaryEntryResponse = DictionaryEntry

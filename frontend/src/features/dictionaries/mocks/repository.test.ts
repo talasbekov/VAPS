@@ -28,6 +28,11 @@ const DEFINITIONS: DictionariesSlice['definitions'] = [
     label: 'Требования постов',
     description: 'test',
   },
+  {
+    code: 'POST_REQUIREMENT_GROUPS',
+    label: 'Группы требований постов',
+    description: 'test',
+  },
 ]
 
 const ENTRY_UNUSED: DictionaryEntry = {
@@ -38,6 +43,7 @@ const ENTRY_UNUSED: DictionaryEntry = {
   description: '',
   isActive: true,
   referencedCount: 0,
+  groupCode: null,
   updatedAt: '2026-07-20T08:00:00+05:00',
 }
 
@@ -49,6 +55,31 @@ const ENTRY_REFERENCED: DictionaryEntry = {
   description: '',
   isActive: true,
   referencedCount: 3,
+  groupCode: null,
+  updatedAt: '2026-07-20T08:00:00+05:00',
+}
+
+const GROUP_ACTIVE: DictionaryEntry = {
+  id: 'group-1',
+  dictionaryCode: 'POST_REQUIREMENT_GROUPS',
+  code: 'ACCESS',
+  label: 'Допуски',
+  description: '',
+  isActive: true,
+  referencedCount: 0,
+  groupCode: null,
+  updatedAt: '2026-07-20T08:00:00+05:00',
+}
+
+const GROUP_INACTIVE: DictionaryEntry = {
+  id: 'group-2',
+  dictionaryCode: 'POST_REQUIREMENT_GROUPS',
+  code: 'EQUIPMENT',
+  label: 'Экипировка',
+  description: '',
+  isActive: false,
+  referencedCount: 0,
+  groupCode: null,
   updatedAt: '2026-07-20T08:00:00+05:00',
 }
 
@@ -180,6 +211,41 @@ describe('createDictionariesRepository', () => {
       await expect(
         repository.createEntry('NOT_A_DICTIONARY', { code: 'X', label: 'Y', description: '' }, MANAGER),
       ).rejects.toThrow(RepositoryNotFoundError)
+    })
+  })
+
+  describe('createEntry — groupCode (POST_REQUIREMENT_GROUPS)', () => {
+    it('groupCode на несуществующую/неактивную группу кидает RepositoryValidationError по полю groupCode', async () => {
+      const { repository } = await setup([ENTRY_UNUSED, ENTRY_REFERENCED, GROUP_INACTIVE])
+      const error = await repository
+        .createEntry(
+          'POST_REQUIREMENTS',
+          { code: 'NEW_REQ', label: 'Новое требование', description: '', groupCode: 'EQUIPMENT' },
+          MANAGER,
+        )
+        .catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(RepositoryValidationError)
+      expect((error as RepositoryValidationError).fieldErrors.groupCode).toBeDefined()
+    })
+
+    it('groupCode на действующую группу сохраняется на созданной записи', async () => {
+      const { repository } = await setup([ENTRY_UNUSED, ENTRY_REFERENCED, GROUP_ACTIVE])
+      const created = await repository.createEntry(
+        'POST_REQUIREMENTS',
+        { code: 'NEW_REQ', label: 'Новое требование', description: '', groupCode: 'ACCESS' },
+        MANAGER,
+      )
+      expect(created.groupCode).toBe('ACCESS')
+    })
+
+    it('groupCode в справочнике, отличном от POST_REQUIREMENTS, игнорируется (сохраняется null)', async () => {
+      const { repository } = await setup([ENTRY_UNUSED, ENTRY_REFERENCED, GROUP_ACTIVE])
+      const created = await repository.createEntry(
+        'RETURN_REASONS',
+        { code: 'NEW_REASON', label: 'Новая причина', description: '', groupCode: 'ACCESS' },
+        MANAGER,
+      )
+      expect(created.groupCode).toBeNull()
     })
   })
 

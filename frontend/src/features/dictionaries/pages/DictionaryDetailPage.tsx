@@ -26,16 +26,24 @@ const formSchema = z.object({
   code: z.string().trim().min(1, 'Обязательное поле.'),
   label: z.string().trim().min(1, 'Обязательное поле.'),
   description: z.string(),
+  groupCode: z.string(),
 })
 
 type FormValues = z.infer<typeof formSchema>
 
+const POST_REQUIREMENT_GROUPS_CODE = 'POST_REQUIREMENT_GROUPS'
+
 export function DictionaryDetailPage() {
   const { code } = useParams<{ code: string }>()
   const dictionaryCode = code ?? ''
+  const isPostRequirements = dictionaryCode === 'POST_REQUIREMENTS'
   const definitionsQuery = useDictionaryDefinitions()
   const entriesQuery = useDictionaryEntries(dictionaryCode)
+  const groupsQuery = useDictionaryEntries(
+    isPostRequirements ? POST_REQUIREMENT_GROUPS_CODE : '',
+  )
   const definition = definitionsQuery.data?.results.find((d) => d.code === dictionaryCode)
+  const groups = groupsQuery.data?.results ?? []
 
   return (
     <div>
@@ -64,8 +72,12 @@ export function DictionaryDetailPage() {
 
       {!entriesQuery.isLoading && !entriesQuery.isError && (
         <>
-          <EntriesTable entries={entriesQuery.data?.results ?? []} dictionaryCode={dictionaryCode} />
-          <CreateEntryForm dictionaryCode={dictionaryCode} />
+          <EntriesTable
+            entries={entriesQuery.data?.results ?? []}
+            dictionaryCode={dictionaryCode}
+            groups={groups}
+          />
+          <CreateEntryForm dictionaryCode={dictionaryCode} groups={groups} />
         </>
       )}
     </div>
@@ -75,11 +87,14 @@ export function DictionaryDetailPage() {
 function EntriesTable({
   entries,
   dictionaryCode,
+  groups,
 }: {
   entries: DictionaryEntry[]
   dictionaryCode: string
+  groups: DictionaryEntry[]
 }) {
   const mutation = useSetDictionaryEntryActive(dictionaryCode)
+  const showGroupColumn = dictionaryCode === 'POST_REQUIREMENTS'
 
   if (entries.length === 0) {
     return (
@@ -97,6 +112,9 @@ function EntriesTable({
             <th className="p-3 text-[11px] font-semibold text-muted-foreground">Код</th>
             <th className="p-3 text-[11px] font-semibold text-muted-foreground">Наименование</th>
             <th className="p-3 text-[11px] font-semibold text-muted-foreground">Описание</th>
+            {showGroupColumn && (
+              <th className="p-3 text-[11px] font-semibold text-muted-foreground">Группа</th>
+            )}
             <th className="p-3 text-[11px] font-semibold text-muted-foreground">Статус</th>
             <th className="p-3 text-[11px] font-semibold text-muted-foreground" />
           </tr>
@@ -107,6 +125,13 @@ function EntriesTable({
               <td className="p-3 text-sm font-mono">{entry.code}</td>
               <td className="p-3 text-sm font-semibold">{entry.label}</td>
               <td className="p-3 text-sm text-muted-foreground">{entry.description}</td>
+              {showGroupColumn && (
+                <td className="p-3 text-sm text-muted-foreground">
+                  {entry.groupCode === null
+                    ? '—'
+                    : (groups.find((g) => g.code === entry.groupCode)?.label ?? entry.groupCode)}
+                </td>
+              )}
               <td className="p-3">
                 <span
                   className={
@@ -141,7 +166,14 @@ function EntriesTable({
   )
 }
 
-function CreateEntryForm({ dictionaryCode }: { dictionaryCode: string }) {
+function CreateEntryForm({
+  dictionaryCode,
+  groups,
+}: {
+  dictionaryCode: string
+  groups: DictionaryEntry[]
+}) {
+  const isPostRequirements = dictionaryCode === 'POST_REQUIREMENTS'
   const mutation = useCreateDictionaryEntry(dictionaryCode)
   const {
     register,
@@ -151,7 +183,7 @@ function CreateEntryForm({ dictionaryCode }: { dictionaryCode: string }) {
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { code: '', label: '', description: '' },
+    defaultValues: { code: '', label: '', description: '', groupCode: '' },
   })
 
   useEffect(() => {
@@ -164,19 +196,23 @@ function CreateEntryForm({ dictionaryCode }: { dictionaryCode: string }) {
 
   useEffect(() => {
     if (mutation.data !== undefined) {
-      reset({ code: '', label: '', description: '' })
+      reset({ code: '', label: '', description: '', groupCode: '' })
     }
   }, [mutation.data, reset])
 
   function submit(values: FormValues): void {
-    mutation.mutate(values)
+    mutation.mutate({ ...values, groupCode: values.groupCode === '' ? null : values.groupCode })
   }
 
   return (
     <section className="rounded-xl border bg-card p-4">
       <h2 className="mb-3 font-semibold">Добавить значение</h2>
       <form
-        className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1.4fr_1.8fr_auto] md:items-end"
+        className={
+          isPostRequirements
+            ? 'grid grid-cols-1 gap-3 md:grid-cols-[1fr_1.4fr_1.4fr_1.4fr_auto] md:items-end'
+            : 'grid grid-cols-1 gap-3 md:grid-cols-[1fr_1.4fr_1.8fr_auto] md:items-end'
+        }
         onSubmit={(e) => void handleSubmit(submit)(e)}
       >
         <div>
@@ -193,6 +229,28 @@ function CreateEntryForm({ dictionaryCode }: { dictionaryCode: string }) {
           <Label htmlFor="description">Описание</Label>
           <Input id="description" {...register('description')} />
         </div>
+        {isPostRequirements && (
+          <div>
+            <Label htmlFor="groupCode">Группа</Label>
+            <select
+              id="groupCode"
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              {...register('groupCode')}
+            >
+              <option value="">Без группы</option>
+              {groups
+                .filter((g) => g.isActive)
+                .map((g) => (
+                  <option key={g.code} value={g.code}>
+                    {g.label}
+                  </option>
+                ))}
+            </select>
+            {errors.groupCode && (
+              <p className="mt-1 text-xs text-destructive">{errors.groupCode.message}</p>
+            )}
+          </div>
+        )}
         <Button type="submit" disabled={mutation.isPending}>
           {mutation.isPending ? 'Сохранение…' : 'Добавить'}
         </Button>

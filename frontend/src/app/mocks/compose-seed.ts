@@ -31,7 +31,7 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // `SecurityEvent` — 1→2. `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)

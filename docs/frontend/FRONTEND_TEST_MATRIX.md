@@ -68,6 +68,15 @@ Baseline полностью зелёный — все ошибки ниже эт
 | Route guard: `/dictionaries` и `/dictionaries/:code` добавлены в ROUTE_MATRIX/OPS_CODES | app/smart-josparlau-routing.qa.test.tsx | Verified (16 тестов, было 14) |
 | Ручная браузерная проверка (dev:mock, 2026-07-24, persona admin): реестр справочников со счётчиками → детальная страница → 409 на деактивации используемого значения (текст причины показан дословно) → успешная деактивация неиспользуемого → блокировка дубликата code при создании → успешное создание, персистентное через `location.reload()` | — (нет Playwright-теста) | Verified вручную, Not started как автотест |
 
+## Smart Josparlau — Этап 10 (справочники «типы статусов»/«группы», §30 остаток)
+
+| Проверка | Файл | Статус |
+|---|---|---|
+| createEntry() с groupCode на несуществующую/неактивную запись POST_REQUIREMENT_GROUPS → RepositoryValidationError по полю groupCode | features/dictionaries/mocks/repository.test.ts | Verified |
+| createEntry() с groupCode на действующую группу — сохраняется на созданной записи | features/dictionaries/mocks/repository.test.ts | Verified |
+| createEntry() с groupCode в справочнике, отличном от POST_REQUIREMENTS — groupCode игнорируется (persist null) | features/dictionaries/mocks/repository.test.ts | Verified |
+| Ручная браузерная проверка (dev:mock, 2026-07-24, persona admin): реестр из 5 справочников со счётчиками → JOURNAL_ENTRY_TYPES (4 значения, без колонки «Группа») → POST_REQUIREMENTS (колонка «Группа» показывает label по groupCode, select «Группа» в форме создания заполнен активными записями POST_REQUIREMENT_GROUPS) → создание нового требования с group=DOCUMENTS, персистентно, форма сброшена | — (нет Playwright-теста) | Verified вручную, Not started как автотест |
+
 ## Найдено при написании E2E (не гипотетически — реальные баги/пробелы)
 - 8 полей форм в `SecurityEventDetailPage.tsx` (бюллетень/возврат на доработку/журнал штаба/итоги закрытия) использовали `<label>` БЕЗ `htmlFor`/`id` — визуально выглядели связанными, но `getByLabel`/screen reader не находили поле. Исправлено (`htmlFor`+`id` на всех восьми). Реальный accessibility-дефект, не тестовая условность — не был бы пойман без попытки написать E2E через семантические локаторы (préview-инструмент в ручной QA использовал `querySelector`, который не проверяет ассоциацию).
 - `DemoToolbar` (fixed bottom-4 right-4, dev-only) физически перекрывает кнопки действий на страницах с длинным контентом снизу (журнал штаба, итоги закрытия) — не влияет на продакшн (Rollup исключает chunk), но потребовал `hideDemoToolbar()` хелпера в `e2e-mock/testUtils.ts` для устойчивых E2E-кликов.

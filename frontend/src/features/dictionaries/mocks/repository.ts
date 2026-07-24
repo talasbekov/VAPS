@@ -106,6 +106,10 @@ export function createDictionariesRepository(adapter: PersistenceAdapter, clock:
 
     const code = request.code.trim()
     const label = request.label.trim()
+    const groupCode =
+      dictionaryCode === 'POST_REQUIREMENTS' && request.groupCode != null && request.groupCode !== ''
+        ? request.groupCode
+        : null
     const fieldErrors: Record<string, string[]> = {}
     if (code === '') {
       fieldErrors.code = ['Укажите код значения.']
@@ -118,6 +122,14 @@ export function createDictionariesRepository(adapter: PersistenceAdapter, clock:
     }
     if (label === '') {
       fieldErrors.label = ['Укажите наименование значения.']
+    }
+    if (
+      groupCode !== null &&
+      !currentSlice.entries.some(
+        (e) => e.dictionaryCode === 'POST_REQUIREMENT_GROUPS' && e.code === groupCode && e.isActive,
+      )
+    ) {
+      fieldErrors.groupCode = ['Выберите действующую группу требований.']
     }
     if (Object.keys(fieldErrors).length > 0) {
       throw new RepositoryValidationError(fieldErrors)
@@ -134,6 +146,7 @@ export function createDictionariesRepository(adapter: PersistenceAdapter, clock:
         description: request.description.trim(),
         isActive: true,
         referencedCount: 0,
+        groupCode,
         updatedAt: clock.now(),
       }
       return {
