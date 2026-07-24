@@ -232,6 +232,12 @@ docs/*
 # (грид/расход/чек-лист) = версионируемые дизайн-артефакты на согласование по
 # вертикали (стори 9.1/10.1), не PII/донор-материал.
 !docs/contracts/
+# ИСКЛЮЧЕНИЕ: docs/frontend/ трекается — рабочие memory-файлы Smart Josparlau
+# frontend-only реализации (прогресс/решения/traceability/тест-матрица/API-
+# контракт/роль-матрица/маршруты/source-индекс), только синтетические demo-
+# данные и архитектурные решения, без ПДн/донор-материала — нужны следующей
+# сессии, чтобы продолжить работу без потери контекста.
+!docs/frontend/
 # graphify-out/ is tracked so the server can navigate the knowledge graph,
 # but its regenerable cache and the dated curated-graph backups stay local.
 graphify-out/cache/
