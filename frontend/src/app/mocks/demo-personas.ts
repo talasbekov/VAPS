@@ -33,6 +33,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       'ops.conduct.manage',
       'ops.closure.manage',
       'ops.dictionary.view',
+      'ops.calendar.view',
     ],
     // Этап 2 реализовал только реестр/бюллетень ОМ — реальная посадочная
     // страница этой persona, не «/» (там status.view, которого нет ни у одной
@@ -44,7 +45,12 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     userId: 'demo-recon-officer',
     label: 'Офицер рекогносцировки',
     description: 'Проводит рекогносцировку назначенных ОМ',
-    permissions: ['ops.security_event.view', 'ops.recon.manage', 'ops.dictionary.view'],
+    permissions: [
+      'ops.security_event.view',
+      'ops.recon.manage',
+      'ops.dictionary.view',
+      'ops.calendar.view',
+    ],
     homeRoute: ROUTES.securityEvents,
   },
   {
@@ -76,6 +82,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       'ops.duty.manage',
       'ops.dictionary.view',
       'ops.dictionary.manage',
+      'ops.calendar.view',
     ],
     // Этап 5 реализовал реестр объектов/паспорт — реальная посадочная
     // страница этой persona (`ops.dashboard.view`, которого у неё нет, home не подходит).
@@ -86,7 +93,12 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     userId: 'demo-analyst',
     label: 'Аналитик',
     description: 'Дашборды, отчёты, экспорт',
-    permissions: ['ops.analytics.view', 'ops.export.run', 'ops.dictionary.view'],
+    permissions: [
+      'ops.analytics.view',
+      'ops.export.run',
+      'ops.dictionary.view',
+      'ops.calendar.view',
+    ],
     // Этап 7 реализовал реестр аналитики службы — реальная посадочная
     // страница этой persona (`status.view`, которого у неё нет, home не подходит).
     homeRoute: ROUTES.serviceAnalytics,

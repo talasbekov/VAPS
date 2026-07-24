@@ -67,13 +67,17 @@ function toQueryString(params: ListSecurityEventsParams): string {
   return search.toString()
 }
 
-export function useSecurityEventsList(params: ListSecurityEventsParams) {
+export function useSecurityEventsList(
+  params: ListSecurityEventsParams,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery<ListSecurityEventsResponse, ApiFailure>({
     queryKey: securityEventKeys.list(params),
     queryFn: () =>
       apiClient.get<ListSecurityEventsResponse>(
         `${SECURITY_EVENTS_PATH}?${toQueryString(params)}`,
       ),
+    enabled: options.enabled ?? true,
   })
 }
 

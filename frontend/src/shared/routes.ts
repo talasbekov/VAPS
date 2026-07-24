@@ -9,6 +9,7 @@ import {
   BookOpen,
   Building2,
   CalendarClock,
+  CalendarDays,
   ClipboardList,
   FileText,
   LayoutDashboard,
@@ -86,6 +87,8 @@ export const ROUTES = {
   dictionaries: '/dictionaries',
   dictionaryDetail: '/dictionaries/:code',
   dictionaryDetailTo: (code: string) => `/dictionaries/${encodeURIComponent(code)}`,
+  /** Мастер-промпт §25: единый календарь смен (read model, см. FRONTEND_DECISIONS A44+). */
+  calendar: '/calendar',
 } as const
 
 export interface NavSection {
@@ -178,5 +181,11 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Справочники',
     icon: BookOpen,
     permission: 'ops.dictionary.view',
+  },
+  {
+    route: ROUTES.calendar,
+    label: 'Календарь смен',
+    icon: CalendarDays,
+    permission: 'ops.calendar.view',
   },
 ]

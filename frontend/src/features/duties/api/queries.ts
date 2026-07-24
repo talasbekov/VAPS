@@ -26,10 +26,11 @@ export function useDutyTypes() {
   })
 }
 
-export function useDutyShifts() {
+export function useDutyShifts(options: { enabled?: boolean } = {}) {
   return useQuery<ListDutyShiftsResponse, ApiFailure>({
     queryKey: ['duties', 'shifts'],
     queryFn: () => apiClient.get<ListDutyShiftsResponse>(DUTY_SHIFTS_PATH),
+    enabled: options.enabled ?? true,
   })
 }
 

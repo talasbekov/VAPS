@@ -22,6 +22,7 @@ import { DutyPlanPage } from '../features/duties/pages/DutyPlanPage'
 import { DictionariesListPage } from '../features/dictionaries/pages/DictionariesListPage'
 import { DictionaryDetailPage } from '../features/dictionaries/pages/DictionaryDetailPage'
 import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
+import { CalendarPage } from './CalendarPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
 import { ROUTES } from '../shared/routes'
@@ -226,6 +227,14 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.analytics.view">
               <ServiceAnalyticsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.calendar}
+          element={
+            <RequirePermission permission="ops.calendar.view">
+              <CalendarPage />
             </RequirePermission>
           }
         />

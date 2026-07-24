@@ -280,8 +280,8 @@ describe('доступ к журналу (AC-6)', () => {
     ).toBe(false)
     // 6 существующих + 2 Smart Josparlau (commandCenter, securityEvents, Этап 2)
     // + 1 (objects, Этап 5) + 1 (serviceAnalytics, Этап 7) + 1 (duties, Этап 7)
-    // + 1 (dictionaries, §30) — changelog среди них нет
-    expect(NAV_SECTIONS).toHaveLength(12)
+    // + 1 (dictionaries, §30) + 1 (calendar, §25) — changelog среди них нет
+    expect(NAV_SECTIONS).toHaveLength(13)
   })
 })
 

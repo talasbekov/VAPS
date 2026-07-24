@@ -29,7 +29,7 @@
 | objects | /objects | ops.object.view | 5 | Verified |
 | objectPassport (объектDetail в коде) | /objects/:id | ops.object.view | 5 | Verified |
 | duties | /duties | ops.duty.view | 7 | Verified |
-| shiftCalendar | /calendar | ops.calendar.view | 5 | Not started |
+| shiftCalendar | /calendar | ops.calendar.view | 9 | Verified (в объёме «Календарь по дням», см. FRONTEND_DECISIONS A44-A46) |
 | serviceAnalytics | /analytics | ops.analytics.view | 6/7 | Verified |
 | feedback | /feedback | (RequireAuth only, по образцу changelog) | 6 | Not started |
 | dictionaries | /dictionaries | ops.dictionary.view | 8 | Verified |
