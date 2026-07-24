@@ -81,7 +81,7 @@
 | Экран/действие | Route | Feature | Статус |
 |---|---|---|---|
 | Журнал аудита (read-only) | audit | features/audit | Verified (ручная браузерная проверка + e2e-mock/audit.spec.ts) |
-| Аналитика службы: ОМ по этапам + объекты по паспорту (честные агрегаты по видимым записям) | serviceAnalytics | app/ServiceAnalyticsPage.tsx | Verified (ручная браузерная проверка + e2e-mock/analytics.spec.ts) |
+| Аналитика службы: ОМ по этапам + объекты по паспорту + дежурства по состоянию + боевые группы по состоянию (честные агрегаты по видимым записям) | serviceAnalytics | app/ServiceAnalyticsPage.tsx | Verified (ручная браузерная проверка + e2e-mock/analytics.spec.ts) |
 | Дашборд нагрузки/перегрузки личного состава | serviceAnalytics | — | Not started (нет read model) |
 | Экспорт с маскированием | serviceAnalytics | — | Not started |
 
@@ -132,7 +132,7 @@
 
 | Экран/действие | Route | Feature | Статус |
 |---|---|---|---|
-| Календарь по дням (список дежурств+расстановок ОМ за день, навигация по дате) | calendar | app/CalendarPage.tsx | Verified (ручная браузерная проверка + e2e-mock/calendar.spec.ts) |
+| Календарь по дням (список дежурств+расстановок ОМ+боевых групп за день, навигация по дате) | calendar | app/CalendarPage.tsx | Verified (ручная браузерная проверка + e2e-mock/calendar.spec.ts) |
 | «Мой календарь», представление по сотруднику/подразделению, боевые группы, конфликты, отдых, нагрузка, статусы (отпуск/больничный/командировка) | — | — | Not started — требует Employee Status/Conflict/Workload repositories и общий employeeId между дежурствами/ОМ, которых в demo-срезе нет (см. FRONTEND_DECISIONS A44-A46) |
 
 ## Покрытие
