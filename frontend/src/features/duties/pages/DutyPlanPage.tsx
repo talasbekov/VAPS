@@ -1,9 +1,10 @@
 // План дежурств (§21.4/§24 мастер-промпта). §21.4: «По объектам»/«По
 // сотрудникам» — представления ОДНОГО набора данных (useDutyShifts), НЕ
 // отдельные источники истины — переключатель вида группирует один и тот же
-// список, второй запрос не делается. «Боевые группы на Трассе», подача/
-// утверждение состава, история/revisions — Not started (см. model/types.ts
-// шапку и FRONTEND_DECISIONS).
+// список, второй запрос не делается. Третья вкладка «Боевые группы и Трассы»
+// (§24.15) — ОТДЕЛЬНЫЙ набор данных (CombatDutyShift, не DutyShift, см.
+// model/types.ts) — своя подача/рассмотрение, не переключатель вида. История/
+// revisions, месячное планирование — Not started (см. FRONTEND_DECISIONS).
 import { useMemo, useState } from 'react'
 import { Button } from '../../../shared/ui/Button'
 import {
@@ -14,8 +15,9 @@ import {
   useDutyTypes,
 } from '../api/queries'
 import type { DutyShift, DutyShiftState } from '../model/types'
+import { CombatDutyGroupsSection } from './CombatDutyGroupsSection'
 
-type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE'
+type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE' | 'COMBAT_GROUPS'
 
 const STATE_LABEL: Record<DutyShiftState, string> = {
   PLANNED: 'Запланировано',
@@ -85,17 +87,26 @@ export function DutyPlanPage() {
           >
             По сотрудникам
           </Button>
+          <Button
+            size="sm"
+            variant={view === 'COMBAT_GROUPS' ? 'default' : 'ghost'}
+            onClick={() => setView('COMBAT_GROUPS')}
+          >
+            Боевые группы и Трассы
+          </Button>
         </div>
       </header>
 
-      {isLoading && (
+      {view === 'COMBAT_GROUPS' && <CombatDutyGroupsSection />}
+
+      {view !== 'COMBAT_GROUPS' && isLoading && (
         <p className="text-sm text-muted-foreground">Загрузка плана дежурств…</p>
       )}
-      {isError && (
+      {view !== 'COMBAT_GROUPS' && isError && (
         <p className="text-sm text-destructive">Не удалось загрузить план дежурств.</p>
       )}
 
-      {!isLoading && !isError && (
+      {view !== 'COMBAT_GROUPS' && !isLoading && !isError && (
         <div className="flex flex-col gap-3.5">
           {groups.length === 0 && (
             <section className="rounded-xl border bg-card p-9 text-center text-sm text-muted-foreground">

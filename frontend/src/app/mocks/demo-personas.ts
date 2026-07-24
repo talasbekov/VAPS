@@ -80,6 +80,10 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       'ops.passport.publish',
       'ops.duty.view',
       'ops.duty.manage',
+      // §24.5 «уполномоченный согласующий»/«руководитель боевого
+      // департамента» — тематически ближайший текущий владелец плана
+      // дежурств, тот же принцип, что ops.dictionary.manage (A40).
+      'ops.combat_group.review',
       'ops.dictionary.view',
       'ops.dictionary.manage',
       'ops.calendar.view',
@@ -87,6 +91,14 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     // Этап 5 реализовал реестр объектов/паспорт — реальная посадочная
     // страница этой persona (`ops.dashboard.view`, которого у неё нет, home не подходит).
     homeRoute: ROUTES.objects,
+  },
+  {
+    id: 'combat_department_chief',
+    userId: 'demo-combat-department-chief',
+    label: 'Начальник боевого управления',
+    description: 'Подаёт состав боевой группы на Трассу (§24.5-24.6)',
+    permissions: ['ops.duty.view', 'ops.combat_group.submit', 'ops.dictionary.view'],
+    homeRoute: ROUTES.duties,
   },
   {
     id: 'analyst',

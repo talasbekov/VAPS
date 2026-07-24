@@ -77,6 +77,14 @@
 | acknowledgeDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/acknowledge/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
 | clockInDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/clock-in/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
 | clockOutDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/clock-out/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
+| listCombatDutyTypes | features/duties | backend-contract-pending | GET /api/ops/combat-duty-types/ | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts |
+| listDutyRoutes | features/duties | backend-contract-pending | GET /api/ops/duty-routes/ | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts |
+| listCombatRosterCandidates | features/duties | backend-contract-pending | GET /api/ops/combat-roster-candidates/ | ops.combat_group.submit | mocks/handlers.ts | mocks/repository.test.ts |
+| listCombatDutyShifts | features/duties | backend-contract-pending | GET /api/ops/combat-duty-shifts/ | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts |
+| submitCombatGroup | features/duties | backend-contract-pending | POST /api/ops/combat-duty-shifts/:id/submit/ | ops.combat_group.submit | mocks/handlers.ts | mocks/repository.test.ts (EMPTY_GROUP/ALREADY_SUBMITTED/DOUBLE_ASSIGNMENT) |
+| reviewCombatGroup | features/duties | backend-contract-pending | POST /api/ops/combat-duty-shifts/:id/review/ | ops.combat_group.review | mocks/handlers.ts | mocks/repository.test.ts (REASON_REQUIRED/INVALID_STATE_TRANSITION) |
+
+«Боевые группы на Трассе» (§24.5-24.10, по запросу «боевые группы на Трассе») — сокращённое подмножество §24.1: подача состава (leader+members+reserve) → рассмотрение (принять/вернуть с причиной). `submittedByUnitName` присваивается СЕРВЕРНО (repository), не берётся из тела запроса — тот же принцип атрибуции по актору, что и остальные mutation'ы проекта. Полный список того, что НЕ реализовано — см. `features/duties/model/types.ts` шапку и FRONTEND_DECISIONS A51.
 
 ## Dictionaries (namespace `/api/ops/dictionaries/…`, mock-only-demo — backend-contract-pending, §30)
 

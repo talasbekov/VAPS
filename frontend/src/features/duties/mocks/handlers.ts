@@ -4,12 +4,19 @@ import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import type { ErrorEnvelope } from '../../../shared/api/errors'
 import {
+  COMBAT_DUTY_SHIFTS_PATH,
+  COMBAT_DUTY_TYPES_PATH,
+  COMBAT_ROSTER_CANDIDATES_PATH,
+  DUTY_ROUTES_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
+  combatDutyShiftReviewPath,
+  combatDutyShiftSubmitPath,
   dutyShiftAcknowledgePath,
   dutyShiftClockInPath,
   dutyShiftClockOutPath,
 } from '../api/pending-contracts'
+import type { ReviewCombatGroupRequest, SubmitCombatGroupRequest } from '../api/pending-contracts'
 import {
   createDutiesRepository,
   RepositoryBusinessRuleError,
@@ -99,6 +106,58 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
       const id = params.id as string
       try {
         return HttpResponse.json(await repository.clockOut(id, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${COMBAT_DUTY_TYPES_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.listCombatDutyTypes(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${DUTY_ROUTES_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.listRoutes(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${COMBAT_ROSTER_CANDIDATES_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.listRosterCandidates(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${COMBAT_DUTY_SHIFTS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.listCombatShifts(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${combatDutyShiftSubmitPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        const body = (await request.json()) as SubmitCombatGroupRequest
+        return HttpResponse.json(await repository.submitCombatGroup(id, body, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${combatDutyShiftReviewPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        const body = (await request.json()) as ReviewCombatGroupRequest
+        return HttpResponse.json(await repository.reviewCombatGroup(id, body, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
       }
