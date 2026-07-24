@@ -1,25 +1,29 @@
 // Единый календарь смен (§25 мастер-промпта). Живёт в app/, НЕ в
 // features/calendar — по тому же принципу, что ServiceAnalyticsPage (A33):
-// экран композирует данные ДВУХ независимых фич (duties, security-events),
+// экран композирует данные ТРЁХ независимых фич (duties, security-events),
 // а ARCH-FE-013 запрещает features→features.
 //
 // §25 целиком описывает Calendar Repository, объединяющий 9 контуров
 // (Employee Status/Duty/Security Event/Route/Facility/Secondment/Conflict/
 // Workload/Acknowledgement) в ЕДИНУЮ проекцию по стабильному employeeId,
-// с конфликтами, нагрузкой, отдыхом, боевыми группами и режимами
-// «Мой календарь»/«Сотрудник»/«Подразделение»/«Боевые группы». Ничего из
-// этого честно не реализуемо в текущем demo-срезе — см.
-// FRONTEND_DECISIONS A44-A46 для полного разбора причин (сотрудники в
+// с конфликтами, нагрузкой, отдыхом и режимами «Мой календарь»/«Сотрудник»/
+// «Подразделение». Ничего из ЭТОГО честно не реализуемо в текущем demo-срезе
+// — см. FRONTEND_DECISIONS A44-A46 для полного разбора причин (сотрудники в
 // duties/security-events НЕ имеют общего стабильного идентификатора —
 // объединение по имени дало бы ложные совпадения, см. A44).
 //
-// Реализован ТОЛЬКО «Календарь по дням» (§25.12) в честном урезанном виде:
-// список назначений (дежурства + расстановки ОМ) за один календарный день,
-// каждая запись подписана СВОИМ источником (не объединена в одну карточку
-// сотрудника), без конфликтов/нагрузки/отдыха/боевых групп (Not started).
+// Реализован «Календарь по дням» (§25.12) в честном урезанном виде: список
+// назначений (дежурства + расстановки ОМ + боевые группы на Трассах, §24.5-
+// §24.10, добавлено по запросу «продолжай разрабатывать») за один
+// календарный день, каждая запись подписана СВОИМ источником (не объединена
+// в одну карточку сотрудника). Боевые группы НЕ требуют A44-A46 обхода — в
+// отличие от «по сотруднику», список «по дням» уже сегодня не объединяет
+// записи, только перечисляет их (тот же принцип, что дежурства/ОМ выше), так
+// что добавление третьего источника ничего не ломает. Без конфликтов/
+// нагрузки/отдыха/остальных режимов (Not started, см. A44-A46).
 import { useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { useDutyShifts } from '../features/duties/api/queries'
+import { useCombatDutyShifts, useDutyShifts } from '../features/duties/api/queries'
 import { STAGE_LABEL } from '../features/security-events/lib/stageMeta'
 import { useSecurityEventsList } from '../features/security-events/api/queries'
 import { usePermissions } from '../shared/auth/usePermissions'
@@ -27,11 +31,26 @@ import { ROUTES } from '../shared/routes'
 
 type CalendarRow = {
   key: string
-  sourceType: 'DUTY_SHIFT' | 'SECURITY_EVENT'
+  sourceType: 'DUTY_SHIFT' | 'SECURITY_EVENT' | 'COMBAT_DUTY'
   employeeName: string
   what: string
   stateLabel: string
   href: string | null
+}
+
+// §24.5-24.10/§24.19-24.23 — состояние подачи + пост-акцептного incidence,
+// сплющено в одну строку для календаря (та же честность, что DUTY_STATE_LABEL
+// ниже: НЕ объединение по сотруднику — А44, каждая запись от СВОЕГО источника).
+const COMBAT_SUBMISSION_STATE_LABEL: Record<string, string> = {
+  SUBMITTED: 'Подано',
+  RETURNED: 'Возвращено на доработку',
+  ACCEPTED: 'Принято',
+}
+const COMBAT_EXECUTION_STATE_LABEL: Record<string, string> = {
+  PENDING_ACKNOWLEDGEMENT: 'Ожидает ознакомления',
+  READY: 'Готовы к заступлению',
+  ACTIVE: 'На посту',
+  COMPLETED: 'Завершено',
 }
 
 function shiftDate(dateStr: string, deltaDays: number): string {
@@ -61,19 +80,28 @@ export function CalendarPage() {
   const canSeeDuties = hasPermission('ops.duty.view')
   const canSeeEvents = hasPermission('ops.security_event.view')
   const shiftsQuery = useDutyShifts({ enabled: canSeeDuties })
+  const combatShiftsQuery = useCombatDutyShifts({ enabled: canSeeDuties })
   const eventsQuery = useSecurityEventsList(
     { search: '', stage: 'ALL', page: 1, pageSize: 100 },
     { enabled: canSeeEvents },
   )
 
-  const isLoading = (canSeeDuties && shiftsQuery.isLoading) || (canSeeEvents && eventsQuery.isLoading)
-  const isError = (canSeeDuties && shiftsQuery.isError) || (canSeeEvents && eventsQuery.isError)
+  const isLoading =
+    (canSeeDuties && (shiftsQuery.isLoading || combatShiftsQuery.isLoading)) ||
+    (canSeeEvents && eventsQuery.isLoading)
+  const isError =
+    (canSeeDuties && (shiftsQuery.isError || combatShiftsQuery.isError)) ||
+    (canSeeEvents && eventsQuery.isError)
 
   // §25.19: фильтры (здесь — выбранный день) хранятся в URL. Дефолт берётся
   // из уже загруженных данных (businessDate дежурств), а не из `new Date()`
   // — репозитории demo-runtime сами живут по DemoClock (§8.8), и локальные
   // wall-clock часы могли бы разойтись с датой сидированных данных.
-  const defaultDate = shiftsQuery.data?.results[0]?.businessDate ?? eventsQuery.data?.results[0]?.businessDate ?? ''
+  const defaultDate =
+    shiftsQuery.data?.results[0]?.businessDate ??
+    eventsQuery.data?.results[0]?.businessDate ??
+    combatShiftsQuery.data?.results[0]?.businessDate ??
+    ''
   const selectedDate = searchParams.get('date') || defaultDate
 
   function goToDate(next: string) {
@@ -106,8 +134,32 @@ export function CalendarPage() {
           href: ROUTES.securityEventDetailTo(e.id),
         })),
       )
-    return [...dutyRows, ...eventRows].sort((a, b) => a.employeeName.localeCompare(b.employeeName))
-  }, [shiftsQuery.data, eventsQuery.data, selectedDate])
+    // §24.5-24.10: боевые группы на Трассах — ТОЛЬКО поданные составы
+    // (submission !== null), leader+members (без резерва, тот же принцип,
+    // что acknowledgeCombatDuty). Каждая запись — от СВОЕГО источника, без
+    // объединения по сотруднику (см. заголовок файла, A44).
+    const combatRows: CalendarRow[] = (combatShiftsQuery.data?.results ?? [])
+      .filter((s) => s.businessDate === selectedDate && s.submission !== null)
+      .flatMap((s) => {
+        const submission = s.submission!
+        const stateLabel =
+          submission.execution !== null
+            ? COMBAT_EXECUTION_STATE_LABEL[submission.execution.stateCode] ?? submission.execution.stateCode
+            : COMBAT_SUBMISSION_STATE_LABEL[submission.stateCode] ?? submission.stateCode
+        const names = [submission.groupLeaderEmployeeName, ...submission.memberEmployeeNames]
+        return names.map((employeeName) => ({
+          key: `combat-${s.id}-${employeeName}`,
+          sourceType: 'COMBAT_DUTY' as const,
+          employeeName,
+          what: `Боевая группа · ${s.routeSet.safeLabel}`,
+          stateLabel,
+          href: ROUTES.duties,
+        }))
+      })
+    return [...dutyRows, ...eventRows, ...combatRows].sort((a, b) =>
+      a.employeeName.localeCompare(b.employeeName),
+    )
+  }, [shiftsQuery.data, eventsQuery.data, combatShiftsQuery.data, selectedDate])
 
   return (
     <div>
@@ -203,11 +255,11 @@ export function CalendarPage() {
             <div className="mb-1 text-sm font-semibold">Не реализовано в этом срезе</div>
             <p className="text-xs text-muted-foreground">
               Объединение записей по сотруднику, «Мой календарь», представление по
-              подразделению, боевые группы на Трассах, статусы (отпуск/больничный/
-              командировка), конфликты, отдых после дежурства и нагрузка (план/факт
-              часов) — §25 требует отдельные Employee Status/Conflict/Workload
-              repositories, которых в этом срезе нет. Сотрудники в дежурствах и ОМ не
-              имеют общего стабильного идентификатора в demo-данных — объединение по
+              подразделению, статусы (отпуск/больничный/командировка), конфликты,
+              отдых после дежурства и нагрузка (план/факт часов) — §25 требует
+              отдельные Employee Status/Conflict/Workload repositories, которых в
+              этом срезе нет. Сотрудники в дежурствах и ОМ не имеют общего
+              стабильного идентификатора в demo-данных — объединение по
               совпадению ФИО дало бы ложные совпадения (см. FRONTEND_DECISIONS A44),
               поэтому каждая запись показана как есть, от своего источника.
             </p>

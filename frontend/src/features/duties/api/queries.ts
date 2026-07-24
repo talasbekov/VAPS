@@ -118,10 +118,11 @@ export function useCombatRosterCandidates(options: { enabled?: boolean } = {}) {
   })
 }
 
-export function useCombatDutyShifts() {
+export function useCombatDutyShifts(options: { enabled?: boolean } = {}) {
   return useQuery<ListCombatDutyShiftsResponse, ApiFailure>({
     queryKey: ['duties', 'combat-shifts'],
     queryFn: () => apiClient.get<ListCombatDutyShiftsResponse>(COMBAT_DUTY_SHIFTS_PATH),
+    enabled: options.enabled ?? true,
   })
 }
 
