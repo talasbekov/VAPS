@@ -1,9 +1,11 @@
 // Smart Josparlau E2E (§33, NEXT ACTION Этап 12): «Аналитика службы» (§22)
 // не была покрыта E2E — только ручная browser-QA (FRONTEND_PROGRESS Этап 7).
 // Проверяет честные агрегаты, вычисленные из РЕАЛЬНЫХ read model
-// (useSecurityEventsList/useObjectsList), не выдуманные показатели — demo-seed
-// содержит 5 ОМ (по одному на каждой из стадий BULLETIN/RECON/DEMAND/
-// PLACEMENT/APPROVAL) и 3 объекта (по одному на GREEN/YELLOW/RED).
+// (useSecurityEventsList/useObjectsList/useDutyShifts), не выдуманные
+// показатели — demo-seed содержит 5 ОМ (по одному на каждой из стадий
+// BULLETIN/RECON/DEMAND/PLACEMENT/APPROVAL), 3 объекта (по одному на
+// GREEN/YELLOW/RED) и 4 индивидуальных дежурства (по одному на PLANNED/
+// ACKNOWLEDGED/ACTIVE/COMPLETED, добавлено по запросу «продолжай разрабатывать»).
 import { expect, test } from '@playwright/test'
 import { seedCredential } from './testUtils'
 
@@ -29,6 +31,14 @@ test.describe('Аналитика службы: агрегаты ОМ-по-эт�
     }
 
     for (const label of ['Актуален', 'Требует проверки', 'Требует внимания']) {
+      await expect(page.locator(stageRowClass, { hasText: label })).toContainText('1')
+    }
+
+    // «Ознакомлен» — substring подстрока «Ознакомление» (стадия ОМ выше) —
+    // hasText делает подстроковый матч, поэтому здесь нужен ТОЧНЫЙ regex
+    // (инцидент feedback_vaps_label_substring_vacuous_assert, тот же класс бага).
+    await expect(page.getByText('Дежурства по состоянию (4)')).toBeVisible()
+    for (const label of ['Запланировано', /^Ознакомлен\d/, 'На посту', 'Завершено']) {
       await expect(page.locator(stageRowClass, { hasText: label })).toContainText('1')
     }
   })

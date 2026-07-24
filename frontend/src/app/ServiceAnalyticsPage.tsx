@@ -1,8 +1,8 @@
 // Аналитика службы (§22 мастер-промпта). Живёт в app/, НЕ в features/analytics
-// — экран композирует данные ДВУХ независимых фич (security-events, objects),
-// а ARCH-FE-013 запрещает features→features (та же матрица, что не даёт
-// personnel импортировать objects). app→features разрешён (та же матрица),
-// это законная композиция на уровне приложения, не побег от границ.
+// — экран композирует данные ТРЁХ независимых фич (security-events, objects,
+// duties), а ARCH-FE-013 запрещает features→features (та же матрица, что не
+// даёт personnel импортировать objects). app→features разрешён (та же
+// матрица), это законная композиция на уровне приложения, не побег от границ.
 //
 // Честные агрегаты, вычисленные из РЕАЛЬНЫХ read model, а НЕ выдуманные
 // показатели — §35 запрет «не считай KPI, если это выдаёт себя за серверный
@@ -13,6 +13,8 @@ import { STAGE_LABEL } from '../features/security-events/lib/stageMeta'
 import { SECURITY_EVENT_STAGES } from '../features/security-events/model/types'
 import { useObjectsList } from '../features/objects/api/queries'
 import type { PassportState } from '../features/objects/model/types'
+import { useDutyShifts } from '../features/duties/api/queries'
+import type { DutyShiftState } from '../features/duties/model/types'
 
 const PASSPORT_LABEL: Record<PassportState, string> = {
   GREEN: 'Актуален',
@@ -20,12 +22,21 @@ const PASSPORT_LABEL: Record<PassportState, string> = {
   RED: 'Требует внимания',
 }
 
+const DUTY_STATE_LABEL: Record<DutyShiftState, string> = {
+  PLANNED: 'Запланировано',
+  ACKNOWLEDGED: 'Ознакомлен',
+  ACTIVE: 'На посту',
+  COMPLETED: 'Завершено',
+}
+const DUTY_SHIFT_STATES: readonly DutyShiftState[] = ['PLANNED', 'ACKNOWLEDGED', 'ACTIVE', 'COMPLETED']
+
 export function ServiceAnalyticsPage() {
   const eventsQuery = useSecurityEventsList({ search: '', stage: 'ALL', page: 1, pageSize: 100 })
   const objectsQuery = useObjectsList()
+  const dutyShiftsQuery = useDutyShifts()
 
-  const isLoading = eventsQuery.isLoading || objectsQuery.isLoading
-  const isError = eventsQuery.isError || objectsQuery.isError
+  const isLoading = eventsQuery.isLoading || objectsQuery.isLoading || dutyShiftsQuery.isLoading
+  const isError = eventsQuery.isError || objectsQuery.isError || dutyShiftsQuery.isError
 
   return (
     <div>
@@ -104,12 +115,41 @@ export function ServiceAnalyticsPage() {
             </div>
           </section>
 
-          <section className="rounded-xl border bg-card p-4 lg:col-span-2">
+          <section className="rounded-xl border bg-card p-4">
+            <div className="mb-3 text-sm font-semibold">
+              Дежурства по состоянию ({dutyShiftsQuery.data?.results.length ?? 0})
+            </div>
+            <div className="flex flex-col gap-2">
+              {DUTY_SHIFT_STATES.map((state) => {
+                const count =
+                  dutyShiftsQuery.data?.results.filter((s) => s.stateCode === state).length ?? 0
+                const total = dutyShiftsQuery.data?.results.length ?? 0
+                const pct = total === 0 ? 0 : Math.round((count / total) * 100)
+                return (
+                  <div key={state} className="grid grid-cols-[140px_1fr_50px] items-center gap-2">
+                    <span className="text-xs">{DUTY_STATE_LABEL[state]}</span>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-right text-xs tabular-nums text-muted-foreground">
+                      {count}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="rounded-xl border bg-card p-4">
             <div className="mb-1 text-sm font-semibold">Не реализовано в этом срезе</div>
             <p className="text-xs text-muted-foreground">
-              Нагрузка личного состава, оперативный рейтинг, дежурства, экспорт с
-              маскированием (§22, Epic 19-20) — Not started: нет read model на
-              стороне Smart Josparlau для честного расчёта.
+              Нагрузка личного состава, оперативный рейтинг, боевые группы на
+              Трассах (§24.5-24.10 — свой набор состояний, отдельный read model),
+              экспорт с маскированием (§22, Epic 19-20) — Not started: нет read
+              model на стороне Smart Josparlau для честного расчёта.
             </p>
           </section>
         </div>
