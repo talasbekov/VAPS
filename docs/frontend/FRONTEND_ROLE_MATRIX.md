@@ -35,3 +35,5 @@ Persona — `mock-only-demo` runtime-переключатель (`app/mocks/demo
 `ops.combat_group.acknowledge`/`checkin`/`complete` (§24.19-24.23, по запросу «Полный §24 боевых групп», FRONTEND_DECISIONS A52) — все три у `combat_department_chief` (начальник управления ведёт исполнение своей же группы от подачи до факта, тот же принцип, что `submit`, ответственность не передаётся `objects_admin`/центральному оператору). Все три проверяются в `mocks/repository.ts` (403 на отказ).
 
 `ops.combat_group.replace` (§24.21, по запросу «Продолжение §24», FRONTEND_DECISIONS A53) — у `combat_department_chief` (тот же принцип: замена участника своей группы — ответственность начальника управления, не передаётся `objects_admin`). Проверяется в `mocks/repository.ts` (403 на отказ).
+
+`createCombatDutyShift` (§24.1, по запросу «Продолжение §24», FRONTEND_DECISIONS A54) — новое право не заводилось, использует существующий `ops.duty.manage` (`objects_admin`): тот же владелец, что общий план дежурств, формирует и потребность на боевые смены. Проверяется в `mocks/repository.ts` (403 на отказ).
