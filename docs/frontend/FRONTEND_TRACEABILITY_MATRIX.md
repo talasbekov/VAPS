@@ -92,7 +92,8 @@
 | План дежурств: По объектам / По сотрудникам (общий datasource) | duties | features/duties | Verified (ручная браузерная проверка + e2e-mock/duties.spec.ts) |
 | Ознакомление → Заступление → Завершение (переходы смены) | duties | features/duties | Verified (ручная браузерная проверка + e2e-mock/duties.spec.ts) |
 | Боевые группы на Трассе: подача состава → рассмотрение (принять/вернуть с причиной) — сокращённое подмножество §24.1 | duties (вкладка «Боевые группы и Трассы») | features/duties | Verified (ручная браузерная проверка + mocks/repository.test.ts + e2e-mock/combat-duty-groups.spec.ts, см. FRONTEND_DECISIONS A51) |
-| Боевые группы: потребность на период, ознакомление по каждому члену, заступление/несение/замены/факт, Conflict Repository, revision | — | — | Not started (см. A51) |
+| Боевые группы: ознакомление по каждому члену → заступление → факт (§24.19-24.23) | duties (вкладка «Боевые группы и Трассы») | features/duties | Verified (ручная браузерная проверка + mocks/repository.test.ts + e2e-mock/combat-duty-execution.spec.ts, см. FRONTEND_DECISIONS A52) |
+| Боевые группы: потребность на период, замены, передача смены/HANDOVER, Conflict Repository (§24.17 за пределами DOUBLE_ASSIGNMENT), revision | — | — | Not started (см. A51/A52) |
 | Месячное планирование, история/revisions | — | — | Not started |
 | Уведомления (полноценный экран) | notifications | features/notifications | Not started |
 | Обратная связь | feedback | features/feedback | Not started |

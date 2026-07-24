@@ -9,6 +9,7 @@ import type {
 } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
 import type {
+  CompleteCombatDutyRequest,
   ListCombatDutyShiftsResponse,
   ListCombatDutyTypesResponse,
   ListCombatRosterCandidatesResponse,
@@ -36,6 +37,9 @@ const VIEW_PERMISSION = 'ops.duty.view'
 const MANAGE_PERMISSION = 'ops.duty.manage'
 const COMBAT_SUBMIT_PERMISSION = 'ops.combat_group.submit'
 const COMBAT_REVIEW_PERMISSION = 'ops.combat_group.review'
+const COMBAT_ACKNOWLEDGE_PERMISSION = 'ops.combat_group.acknowledge'
+const COMBAT_CHECKIN_PERMISSION = 'ops.combat_group.checkin'
+const COMBAT_COMPLETE_PERMISSION = 'ops.combat_group.complete'
 
 function readSlice(envelope: DemoStateEnvelope): DutiesSlice {
   const slice = envelope.slices[SLICE_NAME]
@@ -235,6 +239,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
           returnReason: null,
           submittedAt: clock.now(),
           updatedAt: clock.now(),
+          execution: null,
         },
         updatedAt: clock.now(),
       }
@@ -279,6 +284,180 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
           ...existing.submission,
           stateCode: request.decision === 'ACCEPT' ? 'ACCEPTED' : 'RETURNED',
           returnReason: request.decision === 'RETURN' ? request.returnReason : null,
+          // §24.19-24.23: принятие открывает пост-lifecycle ознакомления;
+          // возврат оставляет execution нетронутым (RETURNED не имеет своего).
+          execution:
+            request.decision === 'ACCEPT'
+              ? {
+                  stateCode: 'PENDING_ACKNOWLEDGEMENT',
+                  acknowledgedMemberNames: [],
+                  actualStart: null,
+                  actualEnd: null,
+                  actualMemberNames: null,
+                }
+              : existing.submission.execution,
+          updatedAt: clock.now(),
+        },
+        updatedAt: clock.now(),
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          combatShifts: slice.combatShifts.map((s) => (s.id === id ? updated : s)),
+        } satisfies DutiesSlice,
+      }
+    })
+    return updated
+  }
+
+  async function acknowledgeCombatDuty(
+    id: string,
+    employeeName: string,
+    actorUserId: string | null,
+  ): Promise<CombatDutyShift> {
+    if (!hasPermission(actorUserId, COMBAT_ACKNOWLEDGE_PERMISSION)) {
+      throw new RepositoryPermissionError(COMBAT_ACKNOWLEDGE_PERMISSION)
+    }
+    let updated!: CombatDutyShift
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.combatShifts.find((s) => s.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
+      }
+      const submission = existing.submission
+      if (submission === null || submission.stateCode !== 'ACCEPTED' || submission.execution === null) {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STATE_TRANSITION',
+          'Ознакомиться можно только с принятым составом.',
+        )
+      }
+      if (submission.execution.stateCode !== 'PENDING_ACKNOWLEDGEMENT') {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STATE_TRANSITION',
+          'Ознакомление уже завершено для всего состава.',
+        )
+      }
+      const requiredNames = [submission.groupLeaderEmployeeName, ...submission.memberEmployeeNames]
+      if (!requiredNames.includes(employeeName)) {
+        throw new RepositoryBusinessRuleError(
+          'NOT_IN_ROSTER',
+          'Ознакомиться может только старший или участник основного состава.',
+        )
+      }
+      if (submission.execution.acknowledgedMemberNames.includes(employeeName)) {
+        throw new RepositoryBusinessRuleError(
+          'ALREADY_ACKNOWLEDGED',
+          'Этот сотрудник уже подтвердил ознакомление.',
+        )
+      }
+      const acknowledgedMemberNames = [...submission.execution.acknowledgedMemberNames, employeeName]
+      const allAcknowledged = requiredNames.every((name) => acknowledgedMemberNames.includes(name))
+      updated = {
+        ...existing,
+        submission: {
+          ...submission,
+          execution: {
+            ...submission.execution,
+            acknowledgedMemberNames,
+            stateCode: allAcknowledged ? 'READY' : 'PENDING_ACKNOWLEDGEMENT',
+          },
+          updatedAt: clock.now(),
+        },
+        updatedAt: clock.now(),
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          combatShifts: slice.combatShifts.map((s) => (s.id === id ? updated : s)),
+        } satisfies DutiesSlice,
+      }
+    })
+    return updated
+  }
+
+  async function checkInCombatDuty(id: string, actorUserId: string | null): Promise<CombatDutyShift> {
+    if (!hasPermission(actorUserId, COMBAT_CHECKIN_PERMISSION)) {
+      throw new RepositoryPermissionError(COMBAT_CHECKIN_PERMISSION)
+    }
+    let updated!: CombatDutyShift
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.combatShifts.find((s) => s.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
+      }
+      const submission = existing.submission
+      if (
+        submission === null ||
+        submission.stateCode !== 'ACCEPTED' ||
+        submission.execution === null ||
+        submission.execution.stateCode !== 'READY'
+      ) {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STATE_TRANSITION',
+          'Заступить можно только после ознакомления всего состава.',
+        )
+      }
+      updated = {
+        ...existing,
+        submission: {
+          ...submission,
+          execution: { ...submission.execution, stateCode: 'ACTIVE', actualStart: clock.now() },
+          updatedAt: clock.now(),
+        },
+        updatedAt: clock.now(),
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          combatShifts: slice.combatShifts.map((s) => (s.id === id ? updated : s)),
+        } satisfies DutiesSlice,
+      }
+    })
+    return updated
+  }
+
+  async function completeCombatDuty(
+    id: string,
+    request: CompleteCombatDutyRequest,
+    actorUserId: string | null,
+  ): Promise<CombatDutyShift> {
+    if (!hasPermission(actorUserId, COMBAT_COMPLETE_PERMISSION)) {
+      throw new RepositoryPermissionError(COMBAT_COMPLETE_PERMISSION)
+    }
+    let updated!: CombatDutyShift
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.combatShifts.find((s) => s.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
+      }
+      const submission = existing.submission
+      if (
+        submission === null ||
+        submission.stateCode !== 'ACCEPTED' ||
+        submission.execution === null ||
+        submission.execution.stateCode !== 'ACTIVE'
+      ) {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STATE_TRANSITION',
+          'Завершить можно только начатое дежурство.',
+        )
+      }
+      updated = {
+        ...existing,
+        submission: {
+          ...submission,
+          execution: {
+            ...submission.execution,
+            stateCode: 'COMPLETED',
+            actualEnd: clock.now(),
+            actualMemberNames: request.actualMemberNames,
+          },
           updatedAt: clock.now(),
         },
         updatedAt: clock.now(),
@@ -306,5 +485,8 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     listCombatShifts,
     submitCombatGroup,
     reviewCombatGroup,
+    acknowledgeCombatDuty,
+    checkInCombatDuty,
+    completeCombatDuty,
   }
 }

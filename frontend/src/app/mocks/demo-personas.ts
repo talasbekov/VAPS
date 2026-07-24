@@ -96,8 +96,18 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     id: 'combat_department_chief',
     userId: 'demo-combat-department-chief',
     label: 'Начальник боевого управления',
-    description: 'Подаёт состав боевой группы на Трассу (§24.5-24.6)',
-    permissions: ['ops.duty.view', 'ops.combat_group.submit', 'ops.dictionary.view'],
+    description: 'Подаёт состав боевой группы на Трассу и ведёт его несение (§24.5-24.6, §24.19-24.23)',
+    permissions: [
+      'ops.duty.view',
+      'ops.combat_group.submit',
+      // §24.19-24.23 — начальник управления отвечает за ознакомление,
+      // заступление и факт несения службы СВОЕГО состава (тот же принцип,
+      // что submit: ответственность не передаётся центральному оператору).
+      'ops.combat_group.acknowledge',
+      'ops.combat_group.checkin',
+      'ops.combat_group.complete',
+      'ops.dictionary.view',
+    ],
     homeRoute: ROUTES.duties,
   },
   {

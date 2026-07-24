@@ -10,6 +10,9 @@ import {
   DUTY_ROUTES_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
+  combatDutyShiftAcknowledgePath,
+  combatDutyShiftCheckInPath,
+  combatDutyShiftCompletePath,
   combatDutyShiftReviewPath,
   combatDutyShiftSubmitPath,
   dutyShiftAcknowledgePath,
@@ -17,9 +20,14 @@ import {
   dutyShiftClockOutPath,
 } from './pending-contracts'
 import type {
+  AcknowledgeCombatDutyRequest,
+  AcknowledgeCombatDutyResponse,
   AcknowledgeDutyShiftResponse,
+  CheckInCombatDutyResponse,
   ClockInDutyShiftResponse,
   ClockOutDutyShiftResponse,
+  CompleteCombatDutyRequest,
+  CompleteCombatDutyResponse,
   ListCombatDutyShiftsResponse,
   ListCombatDutyTypesResponse,
   ListCombatRosterCandidatesResponse,
@@ -128,6 +136,42 @@ export function useReviewCombatGroup() {
   return useApiMutation<ReviewCombatGroupResponse, { id: string; body: ReviewCombatGroupRequest }>({
     mutationFn: ({ id, body }) =>
       apiClient.post<ReviewCombatGroupResponse>(combatDutyShiftReviewPath(id), body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'combat-shifts'] })
+    },
+  })
+}
+
+export function useAcknowledgeCombatDuty() {
+  const queryClient = useQueryClient()
+  return useApiMutation<
+    AcknowledgeCombatDutyResponse,
+    { id: string; body: AcknowledgeCombatDutyRequest }
+  >({
+    mutationFn: ({ id, body }) =>
+      apiClient.post<AcknowledgeCombatDutyResponse>(combatDutyShiftAcknowledgePath(id), body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'combat-shifts'] })
+    },
+  })
+}
+
+export function useCheckInCombatDuty() {
+  const queryClient = useQueryClient()
+  return useApiMutation<CheckInCombatDutyResponse, { id: string }>({
+    mutationFn: ({ id }) =>
+      apiClient.post<CheckInCombatDutyResponse>(combatDutyShiftCheckInPath(id), {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'combat-shifts'] })
+    },
+  })
+}
+
+export function useCompleteCombatDuty() {
+  const queryClient = useQueryClient()
+  return useApiMutation<CompleteCombatDutyResponse, { id: string; body: CompleteCombatDutyRequest }>({
+    mutationFn: ({ id, body }) =>
+      apiClient.post<CompleteCombatDutyResponse>(combatDutyShiftCompletePath(id), body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'combat-shifts'] })
     },

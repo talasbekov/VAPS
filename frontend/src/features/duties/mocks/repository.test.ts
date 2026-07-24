@@ -13,6 +13,9 @@ import type { CombatDutyShift } from '../model/types'
 const VIEWER = 'viewer-user'
 const SUBMITTER = 'submitter-user'
 const REVIEWER = 'reviewer-user'
+const ACKNOWLEDGER = 'acknowledger-user'
+const CHECKER = 'checker-user'
+const COMPLETER = 'completer-user'
 const NOBODY = 'no-permissions-user'
 
 const AWAITING_SHIFT: CombatDutyShift = {
@@ -48,6 +51,7 @@ const SUBMITTED_SHIFT: CombatDutyShift = {
     returnReason: null,
     submittedAt: '2026-07-24T08:00:00+05:00',
     updatedAt: '2026-07-24T08:00:00+05:00',
+    execution: null,
   },
   updatedAt: '2026-07-24T08:00:00+05:00',
 }
@@ -71,8 +75,45 @@ const ACCEPTED_SAME_DAY_SHIFT: CombatDutyShift = {
     returnReason: null,
     submittedAt: '2026-07-24T08:00:00+05:00',
     updatedAt: '2026-07-24T08:00:00+05:00',
+    execution: {
+      stateCode: 'PENDING_ACKNOWLEDGEMENT',
+      acknowledgedMemberNames: [],
+      actualStart: null,
+      actualEnd: null,
+      actualMemberNames: null,
+    },
   },
   updatedAt: '2026-07-24T08:00:00+05:00',
+}
+
+const READY_SHIFT: CombatDutyShift = {
+  ...ACCEPTED_SAME_DAY_SHIFT,
+  id: 'combat-shift-4',
+  submission: {
+    ...ACCEPTED_SAME_DAY_SHIFT.submission!,
+    execution: {
+      stateCode: 'READY',
+      acknowledgedMemberNames: ['Байжанов С.', 'Дюсенов М.'],
+      actualStart: null,
+      actualEnd: null,
+      actualMemberNames: null,
+    },
+  },
+}
+
+const ACTIVE_SHIFT: CombatDutyShift = {
+  ...ACCEPTED_SAME_DAY_SHIFT,
+  id: 'combat-shift-5',
+  submission: {
+    ...ACCEPTED_SAME_DAY_SHIFT.submission!,
+    execution: {
+      stateCode: 'ACTIVE',
+      acknowledgedMemberNames: ['Байжанов С.', 'Дюсенов М.'],
+      actualStart: '2026-07-24T08:00:00+05:00',
+      actualEnd: null,
+      actualMemberNames: null,
+    },
+  },
 }
 
 function seedEnvelope(combatShifts: CombatDutyShift[]): DemoStateEnvelope {
@@ -110,6 +151,9 @@ describe('createDutiesRepository — боевые группы на Трассе
       { userId: VIEWER, permissions: ['ops.duty.view'] },
       { userId: SUBMITTER, permissions: ['ops.duty.view', 'ops.combat_group.submit'] },
       { userId: REVIEWER, permissions: ['ops.duty.view', 'ops.combat_group.review'] },
+      { userId: ACKNOWLEDGER, permissions: ['ops.duty.view', 'ops.combat_group.acknowledge'] },
+      { userId: CHECKER, permissions: ['ops.duty.view', 'ops.combat_group.checkin'] },
+      { userId: COMPLETER, permissions: ['ops.duty.view', 'ops.combat_group.complete'] },
       { userId: NOBODY, permissions: [] },
     ])
   })
@@ -288,6 +332,145 @@ describe('createDutiesRepository — боевые группы на Трассе
       const list = await repository.listCombatShifts(VIEWER)
       const reread = list.results.find((s) => s.id === SUBMITTED_SHIFT.id)
       expect(reread?.submission?.stateCode).toBe('ACCEPTED')
+    })
+
+    it('ACCEPT инициализирует execution в PENDING_ACKNOWLEDGEMENT', async () => {
+      const { repository } = await setup([SUBMITTED_SHIFT])
+      const result = await repository.reviewCombatGroup(
+        SUBMITTED_SHIFT.id,
+        { decision: 'ACCEPT', returnReason: null },
+        REVIEWER,
+      )
+      expect(result.submission?.execution).toMatchObject({
+        stateCode: 'PENDING_ACKNOWLEDGEMENT',
+        acknowledgedMemberNames: [],
+      })
+    })
+  })
+
+  describe('acknowledgeCombatDuty (§24.19)', () => {
+    it('требует ops.combat_group.acknowledge', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      await expect(
+        repository.acknowledgeCombatDuty(ACCEPTED_SAME_DAY_SHIFT.id, 'Байжанов С.', VIEWER),
+      ).rejects.toThrow(RepositoryPermissionError)
+    })
+
+    it('сотрудник вне leader+members — RepositoryBusinessRuleError NOT_IN_ROSTER', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      await expect(
+        repository.acknowledgeCombatDuty(ACCEPTED_SAME_DAY_SHIFT.id, 'Рахимов Т.', ACKNOWLEDGER),
+      ).rejects.toMatchObject({ errorCode: 'NOT_IN_ROSTER' })
+    })
+
+    it('повторное ознакомление того же сотрудника — ALREADY_ACKNOWLEDGED', async () => {
+      const partiallyAcked: CombatDutyShift = {
+        ...ACCEPTED_SAME_DAY_SHIFT,
+        submission: {
+          ...ACCEPTED_SAME_DAY_SHIFT.submission!,
+          execution: {
+            ...ACCEPTED_SAME_DAY_SHIFT.submission!.execution!,
+            acknowledgedMemberNames: ['Байжанов С.'],
+          },
+        },
+      }
+      const { repository } = await setup([partiallyAcked])
+      await expect(
+        repository.acknowledgeCombatDuty(partiallyAcked.id, 'Байжанов С.', ACKNOWLEDGER),
+      ).rejects.toMatchObject({ errorCode: 'ALREADY_ACKNOWLEDGED' })
+    })
+
+    it('ознакомление одного из двух оставляет execution PENDING_ACKNOWLEDGEMENT', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      const result = await repository.acknowledgeCombatDuty(
+        ACCEPTED_SAME_DAY_SHIFT.id,
+        'Байжанов С.',
+        ACKNOWLEDGER,
+      )
+      expect(result.submission?.execution).toMatchObject({
+        stateCode: 'PENDING_ACKNOWLEDGEMENT',
+        acknowledgedMemberNames: ['Байжанов С.'],
+      })
+    })
+
+    it('ознакомление ПОСЛЕДНЕГО из leader+members переводит execution в READY', async () => {
+      const almostReady: CombatDutyShift = {
+        ...ACCEPTED_SAME_DAY_SHIFT,
+        submission: {
+          ...ACCEPTED_SAME_DAY_SHIFT.submission!,
+          execution: {
+            ...ACCEPTED_SAME_DAY_SHIFT.submission!.execution!,
+            acknowledgedMemberNames: ['Байжанов С.'],
+          },
+        },
+      }
+      const { repository } = await setup([almostReady])
+      const result = await repository.acknowledgeCombatDuty(almostReady.id, 'Дюсенов М.', ACKNOWLEDGER)
+      expect(result.submission?.execution?.stateCode).toBe('READY')
+    })
+  })
+
+  describe('checkInCombatDuty (§24.20)', () => {
+    it('требует ops.combat_group.checkin', async () => {
+      const { repository } = await setup([READY_SHIFT])
+      await expect(repository.checkInCombatDuty(READY_SHIFT.id, VIEWER)).rejects.toThrow(
+        RepositoryPermissionError,
+      )
+    })
+
+    it('заступить можно только из READY — не из PENDING_ACKNOWLEDGEMENT', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      await expect(
+        repository.checkInCombatDuty(ACCEPTED_SAME_DAY_SHIFT.id, CHECKER),
+      ).rejects.toMatchObject({ errorCode: 'INVALID_STATE_TRANSITION' })
+    })
+
+    it('успешное заступление переводит execution в ACTIVE и проставляет actualStart', async () => {
+      const { repository, clock } = await setup([READY_SHIFT])
+      const result = await repository.checkInCombatDuty(READY_SHIFT.id, CHECKER)
+      expect(result.submission?.execution).toMatchObject({ stateCode: 'ACTIVE' })
+      expect(result.submission?.execution?.actualStart).toBe(clock.now())
+    })
+  })
+
+  describe('completeCombatDuty (§24.23)', () => {
+    it('требует ops.combat_group.complete', async () => {
+      const { repository } = await setup([ACTIVE_SHIFT])
+      await expect(
+        repository.completeCombatDuty(ACTIVE_SHIFT.id, { actualMemberNames: [] }, VIEWER),
+      ).rejects.toThrow(RepositoryPermissionError)
+    })
+
+    it('завершить можно только из ACTIVE — не из READY', async () => {
+      const { repository } = await setup([READY_SHIFT])
+      await expect(
+        repository.completeCombatDuty(READY_SHIFT.id, { actualMemberNames: [] }, COMPLETER),
+      ).rejects.toMatchObject({ errorCode: 'INVALID_STATE_TRANSITION' })
+    })
+
+    it('успешное завершение сохраняет фактический состав, отдельный от плана', async () => {
+      const { repository, clock } = await setup([ACTIVE_SHIFT])
+      const result = await repository.completeCombatDuty(
+        ACTIVE_SHIFT.id,
+        { actualMemberNames: ['Байжанов С.'] },
+        COMPLETER,
+      )
+      expect(result.submission?.execution).toMatchObject({
+        stateCode: 'COMPLETED',
+        actualMemberNames: ['Байжанов С.'],
+      })
+      expect(result.submission?.execution?.actualEnd).toBe(clock.now())
+    })
+
+    it('успешное завершение персистентно из БД (перечитано через listCombatShifts)', async () => {
+      const { repository } = await setup([ACTIVE_SHIFT])
+      await repository.completeCombatDuty(ACTIVE_SHIFT.id, { actualMemberNames: ['Дюсенов М.'] }, COMPLETER)
+      const list = await repository.listCombatShifts(VIEWER)
+      const reread = list.results.find((s) => s.id === ACTIVE_SHIFT.id)
+      expect(reread?.submission?.execution).toMatchObject({
+        stateCode: 'COMPLETED',
+        actualMemberNames: ['Дюсенов М.'],
+      })
     })
   })
 })

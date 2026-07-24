@@ -4,18 +4,20 @@
 // assignmentMode=INDIVIDUAL) — см. `DutyShift` ниже.
 //
 // «Боевые группы на Трассе» (assignmentMode=COMBAT_GROUP, targetType=
-// ROUTE_SET, §24.5-24.10, по запросу «боевые группы на Трассе») — реализована
-// СОКРАЩЁННАЯ подмножество процесса §24.1: подача составом (leader+members+
-// reserve) начальником управления → рассмотрение (принять/вернуть с
-// причиной). НЕ реализовано (см. FRONTEND_DECISIONS A51): формирование
-// потребности на период (§24.1 первый шаг — Трассы/составы в этом срезе
-// заведены фикстурой заранее, не создаются в UI), ознакомление КАЖДОГО члена
-// группы отдельно (§24.19, у INDIVIDUAL-подмножества тоже упрощено до одной
-// смены целиком), заступление/несение/замены/сдача/факт (§24.13 ACTIVE→
-// COMPLETED lifecycle), Conflict Repository (§24.17 — пересечение с ОМ/другим
-// дежурством), представление подачи от имени другого лица (§24.5), режимы
-// покрытия SEQUENTIAL/PARALLEL пересчитываются НЕ на frontend (только
-// хранятся, backend бы проверял состав — здесь просто demo-фикстура).
+// ROUTE_SET, §24.5-24.10, по запросу «боевые группы на Трассе») — реализован
+// процесс §24.1 от подачи до факта: подача составом (leader+members+reserve)
+// начальником управления → рассмотрение (принять/вернуть с причиной) →
+// ПОСЛЕ принятия (§24.19-24.23, FRONTEND_DECISIONS A52): индивидуальное
+// ознакомление каждого (leader+members, БЕЗ резерва) → заступление →
+// факт несения (фактический состав может отличаться от планового). НЕ
+// реализовано (см. A51/A52): формирование потребности на период (§24.1
+// первый шаг — Трассы/составы в этом срезе заведены фикстурой заранее, не
+// создаются в UI), замены (DutyReplacement, §24.21), передача смены
+// (§24.22), Conflict Repository (§24.17 — пересечение с ОМ/другим
+// дежурством, только внутрифичевый DOUBLE_ASSIGNMENT), revision/
+// expectedRevision (оптимистичная конкурентность), представление подачи от
+// имени другого лица (§24.5), режимы покрытия SEQUENTIAL/PARALLEL
+// пересчитываются НЕ на frontend (только хранятся, demo-фикстура).
 export type DutyTargetType = 'OWN_OBJECT' | 'PROTECTED_OBJECT'
 
 /** §24.9-24.10 — Трасса и набор Трасс, СОБСТВЕННЫЙ реестр `features/duties`
@@ -45,6 +47,26 @@ export interface CombatRosterCandidate {
 
 export type CombatSubmissionState = 'SUBMITTED' | 'RETURNED' | 'ACCEPTED'
 
+/** §24.13 sub-lifecycle ПОСЛЕ принятия состава (§24.19 ознакомление → §24.20
+ * заступление → §24.23 факт). `null`, пока `submission.stateCode !== 'ACCEPTED'`.
+ * Упрощено относительно §24.13 полного workflow смены: нет HANDOVER/BLOCKED/
+ * EXPIRED — только линейный READY-путь, см. FRONTEND_DECISIONS A52. */
+export type CombatDutyExecutionState = 'PENDING_ACKNOWLEDGEMENT' | 'READY' | 'ACTIVE' | 'COMPLETED'
+
+export interface CombatDutyExecution {
+  stateCode: CombatDutyExecutionState
+  /** §24.19 — каждый сотрудник (старший+состав, БЕЗ резерва) подтверждает
+   * ознакомление отдельно. `stateCode` переходит в READY, когда список
+   * покрывает leader+members целиком. */
+  acknowledgedMemberNames: string[]
+  actualStart: string | null
+  actualEnd: string | null
+  /** §24.23 «Плановое назначение нельзя автоматически считать фактическим
+   * участием» — фактический состав задаётся отдельно при завершении, может
+   * отличаться от `memberEmployeeNames`. `null`, пока не COMPLETED. */
+  actualMemberNames: string[] | null
+}
+
 /** Упрощённая проекция `CombatDutyRosterSubmission` (§24.6) — без revision/
  * представительства/оснований, только состав+состояние+причина возврата. */
 export interface CombatDutyRosterSubmission {
@@ -56,6 +78,7 @@ export interface CombatDutyRosterSubmission {
   returnReason: string | null
   submittedAt: string
   updatedAt: string
+  execution: CombatDutyExecution | null
 }
 
 /** Смена боевой группы на Трассе/наборе Трасс. `submission === null` —

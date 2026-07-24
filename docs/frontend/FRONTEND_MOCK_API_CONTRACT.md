@@ -83,8 +83,13 @@
 | listCombatDutyShifts | features/duties | backend-contract-pending | GET /api/ops/combat-duty-shifts/ | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts |
 | submitCombatGroup | features/duties | backend-contract-pending | POST /api/ops/combat-duty-shifts/:id/submit/ | ops.combat_group.submit | mocks/handlers.ts | mocks/repository.test.ts (EMPTY_GROUP/ALREADY_SUBMITTED/DOUBLE_ASSIGNMENT) |
 | reviewCombatGroup | features/duties | backend-contract-pending | POST /api/ops/combat-duty-shifts/:id/review/ | ops.combat_group.review | mocks/handlers.ts | mocks/repository.test.ts (REASON_REQUIRED/INVALID_STATE_TRANSITION) |
+| acknowledgeCombatDuty | features/duties | backend-contract-pending | POST /api/ops/combat-duty-shifts/:id/acknowledge/ | ops.combat_group.acknowledge | mocks/handlers.ts | mocks/repository.test.ts (NOT_IN_ROSTER/ALREADY_ACKNOWLEDGED/READY-переход) |
+| checkInCombatDuty | features/duties | backend-contract-pending | POST /api/ops/combat-duty-shifts/:id/check-in/ | ops.combat_group.checkin | mocks/handlers.ts | mocks/repository.test.ts (INVALID_STATE_TRANSITION вне READY) |
+| completeCombatDuty | features/duties | backend-contract-pending | POST /api/ops/combat-duty-shifts/:id/complete/ | ops.combat_group.complete | mocks/handlers.ts | mocks/repository.test.ts (INVALID_STATE_TRANSITION вне ACTIVE, факт≠план) |
 
-«Боевые группы на Трассе» (§24.5-24.10, по запросу «боевые группы на Трассе») — сокращённое подмножество §24.1: подача состава (leader+members+reserve) → рассмотрение (принять/вернуть с причиной). `submittedByUnitName` присваивается СЕРВЕРНО (repository), не берётся из тела запроса — тот же принцип атрибуции по актору, что и остальные mutation'ы проекта. Полный список того, что НЕ реализовано — см. `features/duties/model/types.ts` шапку и FRONTEND_DECISIONS A51.
+«Боевые группы на Трассе» (§24.5-24.10, по запросу «боевые группы на Трассе») — подача состава (leader+members+reserve) → рассмотрение (принять/вернуть с причиной). `submittedByUnitName` присваивается СЕРВЕРНО (repository), не берётся из тела запроса — тот же принцип атрибуции по актору, что и остальные mutation'ы проекта.
+
+ПОСЛЕ принятия (§24.19-24.23, по запросу «Полный §24 боевых групп», FRONTEND_DECISIONS A52): `CombatDutyRosterSubmission.execution` (`PENDING_ACKNOWLEDGEMENT→READY→ACTIVE→COMPLETED`) — `acknowledgeCombatDuty` требует `employeeName` в теле (индивидуальное подтверждение КАЖДОГО leader+members, БЕЗ резерва), `checkInCombatDuty` без тела (только из READY), `completeCombatDuty` требует `actualMemberNames: string[]` (фактический состав, может отличаться от планового `memberEmployeeNames`). Полный список того, что НЕ реализовано во всём §24 — см. `features/duties/model/types.ts` шапку и FRONTEND_DECISIONS A51/A52.
 
 ## Dictionaries (namespace `/api/ops/dictionaries/…`, mock-only-demo — backend-contract-pending, §30)
 

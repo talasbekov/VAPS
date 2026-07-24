@@ -10,13 +10,21 @@ import {
   DUTY_ROUTES_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
+  combatDutyShiftAcknowledgePath,
+  combatDutyShiftCheckInPath,
+  combatDutyShiftCompletePath,
   combatDutyShiftReviewPath,
   combatDutyShiftSubmitPath,
   dutyShiftAcknowledgePath,
   dutyShiftClockInPath,
   dutyShiftClockOutPath,
 } from '../api/pending-contracts'
-import type { ReviewCombatGroupRequest, SubmitCombatGroupRequest } from '../api/pending-contracts'
+import type {
+  AcknowledgeCombatDutyRequest,
+  CompleteCombatDutyRequest,
+  ReviewCombatGroupRequest,
+  SubmitCombatGroupRequest,
+} from '../api/pending-contracts'
 import {
   createDutiesRepository,
   RepositoryBusinessRuleError,
@@ -158,6 +166,37 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
       try {
         const body = (await request.json()) as ReviewCombatGroupRequest
         return HttpResponse.json(await repository.reviewCombatGroup(id, body, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${combatDutyShiftAcknowledgePath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        const body = (await request.json()) as AcknowledgeCombatDutyRequest
+        return HttpResponse.json(
+          await repository.acknowledgeCombatDuty(id, body.employeeName, actorUserId),
+        )
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${combatDutyShiftCheckInPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        return HttpResponse.json(await repository.checkInCombatDuty(id, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${combatDutyShiftCompletePath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        const body = (await request.json()) as CompleteCombatDutyRequest
+        return HttpResponse.json(await repository.completeCombatDuty(id, body, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
       }

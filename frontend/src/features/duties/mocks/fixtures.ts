@@ -159,6 +159,42 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
         returnReason: null,
         submittedAt: now,
         updatedAt: now,
+        execution: null,
+      },
+      updatedAt: now,
+    },
+    {
+      id: ctx.ids.next('combat-duty-shift'),
+      businessDate,
+      dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+      routeSet: {
+        routeSetId: ctx.ids.next('duty-route-set'),
+        safeLabel: 'Трасса №2 (принятый состав)',
+        coverageMode: 'RESERVE',
+        routeIds: ['route-2'],
+      },
+      // §24.19-24.23: принятая группа с открытым execution — демонстрирует
+      // ознакомление/заступление/факт без необходимости сначала подавать и
+      // рассматривать состав вручную в каждом ручном/e2e прогоне. Состав
+      // НЕ пересекается ни с «Трасса №1» (e2e подаёт Байжанов С./Дюсенов М.),
+      // ни с «Трассы №2-3» (Рахимов Т./Сарсенов Б.) — иначе DOUBLE_ASSIGNMENT
+      // (§24.17) заблокировал бы e2e-подачу на ту же businessDate.
+      submission: {
+        submittedByUnitName: '1-е боевое управление',
+        groupLeaderEmployeeName: 'Кенжебаев А.',
+        memberEmployeeNames: ['Тастанова Г.'],
+        reserveEmployeeNames: [],
+        stateCode: 'ACCEPTED',
+        returnReason: null,
+        submittedAt: now,
+        updatedAt: now,
+        execution: {
+          stateCode: 'PENDING_ACKNOWLEDGEMENT',
+          acknowledgedMemberNames: [],
+          actualStart: null,
+          actualEnd: null,
+          actualMemberNames: null,
+        },
       },
       updatedAt: now,
     },

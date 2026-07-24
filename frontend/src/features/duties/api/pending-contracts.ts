@@ -31,6 +31,15 @@ export function combatDutyShiftSubmitPath(id: string): string {
 export function combatDutyShiftReviewPath(id: string): string {
   return `${COMBAT_DUTY_SHIFTS_PATH}${id}/review/`
 }
+export function combatDutyShiftAcknowledgePath(id: string): string {
+  return `${COMBAT_DUTY_SHIFTS_PATH}${id}/acknowledge/`
+}
+export function combatDutyShiftCheckInPath(id: string): string {
+  return `${COMBAT_DUTY_SHIFTS_PATH}${id}/check-in/`
+}
+export function combatDutyShiftCompletePath(id: string): string {
+  return `${COMBAT_DUTY_SHIFTS_PATH}${id}/complete/`
+}
 
 export interface ListDutyTypesResponse {
   results: DutyTypeDefinition[]
@@ -74,3 +83,17 @@ export interface ReviewCombatGroupRequest {
 }
 
 export type ReviewCombatGroupResponse = CombatDutyShift
+
+export interface AcknowledgeCombatDutyRequest {
+  employeeName: string
+}
+
+export type AcknowledgeCombatDutyResponse = CombatDutyShift
+
+export type CheckInCombatDutyResponse = CombatDutyShift
+
+export interface CompleteCombatDutyRequest {
+  actualMemberNames: string[]
+}
+
+export type CompleteCombatDutyResponse = CombatDutyShift

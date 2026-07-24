@@ -6,14 +6,22 @@ import { useMemo, useState } from 'react'
 import { usePermissions } from '../../../shared/auth/usePermissions'
 import { Button } from '../../../shared/ui/Button'
 import {
+  useAcknowledgeCombatDuty,
+  useCheckInCombatDuty,
   useCombatDutyShifts,
   useCombatDutyTypes,
   useCombatRosterCandidates,
+  useCompleteCombatDuty,
   useDutyRoutes,
   useReviewCombatGroup,
   useSubmitCombatGroup,
 } from '../api/queries'
-import type { CombatDutyShift, CombatSubmissionState } from '../model/types'
+import type {
+  CombatDutyExecution,
+  CombatDutyExecutionState,
+  CombatDutyShift,
+  CombatSubmissionState,
+} from '../model/types'
 
 const SUBMISSION_STATE_LABEL: Record<CombatSubmissionState, string> = {
   SUBMITTED: 'Подано, ожидает рассмотрения',
@@ -27,10 +35,20 @@ const SUBMISSION_STATE_CLASS: Record<CombatSubmissionState, string> = {
   ACCEPTED: 'inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-800',
 }
 
+const EXECUTION_STATE_LABEL: Record<CombatDutyExecutionState, string> = {
+  PENDING_ACKNOWLEDGEMENT: 'Ожидает ознакомления состава',
+  READY: 'Ознакомлены, готовы к заступлению',
+  ACTIVE: 'Заступили, несут службу',
+  COMPLETED: 'Дежурство завершено',
+}
+
 export function CombatDutyGroupsSection() {
   const { hasPermission } = usePermissions()
   const canSubmit = hasPermission('ops.combat_group.submit')
   const canReview = hasPermission('ops.combat_group.review')
+  const canAcknowledge = hasPermission('ops.combat_group.acknowledge')
+  const canCheckIn = hasPermission('ops.combat_group.checkin')
+  const canComplete = hasPermission('ops.combat_group.complete')
 
   const dutyTypesQuery = useCombatDutyTypes()
   const routesQuery = useDutyRoutes()
@@ -75,6 +93,9 @@ export function CombatDutyGroupsSection() {
           routeLabel={routeLabel}
           canSubmit={canSubmit}
           canReview={canReview}
+          canAcknowledge={canAcknowledge}
+          canCheckIn={canCheckIn}
+          canComplete={canComplete}
           rosterCandidates={rosterQuery.data?.results ?? []}
         />
       ))}
@@ -88,6 +109,9 @@ function CombatShiftCard({
   routeLabel,
   canSubmit,
   canReview,
+  canAcknowledge,
+  canCheckIn,
+  canComplete,
   rosterCandidates,
 }: {
   shift: CombatDutyShift
@@ -95,6 +119,9 @@ function CombatShiftCard({
   routeLabel: Map<string, string>
   canSubmit: boolean
   canReview: boolean
+  canAcknowledge: boolean
+  canCheckIn: boolean
+  canComplete: boolean
   rosterCandidates: { employeeName: string; unitName: string }[]
 }) {
   const submission = shift.submission
@@ -160,11 +187,151 @@ function CombatShiftCard({
           <ReviewControls shiftId={shift.id} />
         )}
 
+        {submission !== null && submission.stateCode === 'ACCEPTED' && submission.execution !== null && (
+          <ExecutionControls
+            shiftId={shift.id}
+            groupLeaderEmployeeName={submission.groupLeaderEmployeeName}
+            memberEmployeeNames={submission.memberEmployeeNames}
+            execution={submission.execution}
+            canAcknowledge={canAcknowledge}
+            canCheckIn={canCheckIn}
+            canComplete={canComplete}
+          />
+        )}
+
         {canSubmit && needsSubmission && (
           <SubmitForm shiftId={shift.id} rosterCandidates={rosterCandidates} />
         )}
       </div>
     </section>
+  )
+}
+
+// §24.19-24.23: пост-акцептный lifecycle принятого состава — ознакомление
+// каждого (leader+members), заступление, факт (может отличаться от плана).
+function ExecutionControls({
+  shiftId,
+  groupLeaderEmployeeName,
+  memberEmployeeNames,
+  execution,
+  canAcknowledge,
+  canCheckIn,
+  canComplete,
+}: {
+  shiftId: string
+  groupLeaderEmployeeName: string
+  memberEmployeeNames: string[]
+  execution: CombatDutyExecution
+  canAcknowledge: boolean
+  canCheckIn: boolean
+  canComplete: boolean
+}) {
+  const acknowledgeMutation = useAcknowledgeCombatDuty()
+  const checkInMutation = useCheckInCombatDuty()
+  const completeMutation = useCompleteCombatDuty()
+  const [actualMembers, setActualMembers] = useState<string[]>([
+    groupLeaderEmployeeName,
+    ...memberEmployeeNames,
+  ])
+
+  const requiredNames = [groupLeaderEmployeeName, ...memberEmployeeNames]
+  const error = acknowledgeMutation.error ?? checkInMutation.error ?? completeMutation.error
+
+  function toggleActualMember(name: string): void {
+    setActualMembers((list) => (list.includes(name) ? list.filter((n) => n !== name) : [...list, name]))
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border-t pt-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground">Несение службы</span>
+        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-800">
+          {EXECUTION_STATE_LABEL[execution.stateCode]}
+        </span>
+      </div>
+      {error !== null && <p className="text-xs text-destructive">{error.message}</p>}
+
+      {(execution.stateCode === 'PENDING_ACKNOWLEDGEMENT' || execution.stateCode === 'READY') && (
+        <div className="flex flex-col gap-1.5">
+          {requiredNames.map((name) => {
+            const acknowledged = execution.acknowledgedMemberNames.includes(name)
+            return (
+              <div key={name} className="flex items-center justify-between gap-2 text-sm">
+                <span>{name}</span>
+                {acknowledged ? (
+                  <span className="text-xs font-medium text-green-700">Ознакомлен</span>
+                ) : canAcknowledge ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={acknowledgeMutation.isPending}
+                    onClick={() =>
+                      acknowledgeMutation.mutate({ id: shiftId, body: { employeeName: name } })
+                    }
+                  >
+                    Отметить ознакомление
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Ожидает ознакомления</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {execution.stateCode === 'READY' && canCheckIn && (
+        <Button
+          size="sm"
+          className="self-start"
+          disabled={checkInMutation.isPending}
+          onClick={() => checkInMutation.mutate({ id: shiftId })}
+        >
+          {checkInMutation.isPending ? 'Заступление…' : 'Заступить'}
+        </Button>
+      )}
+
+      {execution.stateCode === 'ACTIVE' && (
+        <div className="flex flex-col gap-2">
+          <fieldset>
+            <legend className="mb-1 text-xs font-medium text-muted-foreground">
+              Фактически несли службу
+            </legend>
+            <div className="flex flex-wrap gap-3">
+              {requiredNames.map((name) => (
+                <label key={name} className="flex items-center gap-1.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={actualMembers.includes(name)}
+                    onChange={() => toggleActualMember(name)}
+                    disabled={!canComplete}
+                  />
+                  {name}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          {canComplete && (
+            <Button
+              size="sm"
+              className="self-start"
+              disabled={completeMutation.isPending}
+              onClick={() =>
+                completeMutation.mutate({ id: shiftId, body: { actualMemberNames: actualMembers } })
+              }
+            >
+              {completeMutation.isPending ? 'Завершение…' : 'Завершить дежурство'}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {execution.stateCode === 'COMPLETED' && execution.actualMemberNames !== null && (
+        <p className="text-sm text-muted-foreground">
+          Фактически несли службу: {execution.actualMemberNames.join(', ') || '—'}
+        </p>
+      )}
+    </div>
   )
 }
 

@@ -12,7 +12,7 @@ Persona — `mock-only-demo` runtime-переключатель (`app/mocks/demo
 | placement_approver | Утверждающий расстановку | ops.placement.view, ops.placement.approve, ops.dictionary.view | своё управление | — |
 | omd_temp | Сотрудник с временными полномочиями ОМД | ops.security_event.view, ops.assignment.replace (ВРЕМЕННО, TemporaryPermissionGrant) | конкретное ОМ, на время его проведения | да — не постоянная роль (D6) |
 | objects_admin | Ведение объектов/паспортов/дежурств/справочников/рассмотрение боевых групп | ops.object.view, ops.object.manage, ops.passport.publish, ops.duty.view, ops.duty.manage, ops.combat_group.review, ops.dictionary.view, ops.dictionary.manage, ops.calendar.view | свои объекты | — |
-| combat_department_chief | Начальник боевого управления (§24.5-24.6) | ops.duty.view, ops.combat_group.submit, ops.dictionary.view | своё управление | — |
+| combat_department_chief | Начальник боевого управления (§24.5-24.6, §24.19-24.23) | ops.duty.view, ops.combat_group.submit, ops.combat_group.acknowledge, ops.combat_group.checkin, ops.combat_group.complete, ops.dictionary.view | своё управление | — |
 | analyst | Аналитика/дашборды/экспорт | ops.analytics.view, ops.export.run, ops.dictionary.view, ops.calendar.view | по scope должности | — |
 | admin | Полный доступ (эталон) | `*` (wildcard, как существующий admin) | всё | — |
 
@@ -31,3 +31,5 @@ Persona — `mock-only-demo` runtime-переключатель (`app/mocks/demo
 **Известный пробел**: `placement_approver` имеет `ops.placement.approve`, но НЕ `ops.security_event.view` — route guard реестра/детали ОМ требует `ops.security_event.view`, поэтому эта persona физически не может открыть карточку ОМ, чтобы согласовать расстановку. Не проверено, задумано ли это как «approve делается из отдельного экрана-очереди» (Not started) или это упущенный код — не чинить вслепую, уточнить перед Этапом 6. Для ручного end-to-end прогона всего жизненного цикла одной persona использовать `admin` (wildcard).
 
 `ops.combat_group.submit`/`ops.combat_group.review` (§24.5-24.10, по запросу «боевые группы на Трассе») — новая persona `combat_department_chief` подаёт состав; `objects_admin` рассматривает (тематически ближайший текущий владелец плана дежурств, тот же принцип, что `ops.dictionary.manage`). Оба права проверяются в `features/duties/mocks/repository.ts` (403 на отказ), не только скрытием формы/кнопок на UI.
+
+`ops.combat_group.acknowledge`/`checkin`/`complete` (§24.19-24.23, по запросу «Полный §24 боевых групп», FRONTEND_DECISIONS A52) — все три у `combat_department_chief` (начальник управления ведёт исполнение своей же группы от подачи до факта, тот же принцип, что `submit`, ответственность не передаётся `objects_admin`/центральному оператору). Все три проверяются в `mocks/repository.ts` (403 на отказ).
