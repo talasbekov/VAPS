@@ -1,0 +1,107 @@
+// MSW handlers — feature-owned (§8.2).
+import { http, HttpResponse } from 'msw'
+import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
+import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
+import type { ErrorEnvelope } from '../../../shared/api/errors'
+import {
+  DUTY_SHIFTS_PATH,
+  DUTY_TYPES_PATH,
+  dutyShiftAcknowledgePath,
+  dutyShiftClockInPath,
+  dutyShiftClockOutPath,
+} from '../api/pending-contracts'
+import {
+  createDutiesRepository,
+  RepositoryBusinessRuleError,
+  RepositoryNotFoundError,
+  RepositoryPermissionError,
+} from './repository'
+
+function permissionDeniedEnvelope(clock: DemoClock): ErrorEnvelope {
+  return {
+    error_code: 'PERMISSION_DENIED',
+    message: 'Недостаточно прав.',
+    details: {},
+    request_id: null,
+    timestamp: clock.now(),
+  }
+}
+
+function notFoundEnvelope(clock: DemoClock, id: string): ErrorEnvelope {
+  return {
+    error_code: 'ENTITY_NOT_FOUND',
+    message: 'Дежурство не найдено.',
+    details: { id },
+    request_id: null,
+    timestamp: clock.now(),
+  }
+}
+
+function businessRuleEnvelope(clock: DemoClock, errorCode: string, message: string): ErrorEnvelope {
+  return { error_code: errorCode, message, details: {}, request_id: null, timestamp: clock.now() }
+}
+
+function mapRepositoryError(error: unknown, clock: DemoClock, entityId: string): Response | null {
+  if (error instanceof RepositoryPermissionError) {
+    return HttpResponse.json(permissionDeniedEnvelope(clock), { status: 403 })
+  }
+  if (error instanceof RepositoryNotFoundError) {
+    return HttpResponse.json(notFoundEnvelope(clock, entityId), { status: 404 })
+  }
+  if (error instanceof RepositoryBusinessRuleError) {
+    return HttpResponse.json(businessRuleEnvelope(clock, error.errorCode, error.message), {
+      status: 422,
+    })
+  }
+  return null
+}
+
+export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClock) {
+  const repository = createDutiesRepository(adapter, clock)
+
+  return [
+    http.get(`*${DUTY_TYPES_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.listDutyTypes(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${DUTY_SHIFTS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.listShifts(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${dutyShiftAcknowledgePath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        return HttpResponse.json(await repository.acknowledge(id, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${dutyShiftClockInPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        return HttpResponse.json(await repository.clockIn(id, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${dutyShiftClockOutPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        return HttpResponse.json(await repository.clockOut(id, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+  ]
+}

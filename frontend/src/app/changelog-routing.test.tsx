@@ -278,8 +278,10 @@ describe('доступ к журналу (AC-6)', () => {
     expect(
       NAV_SECTIONS.some((section) => section.route === ROUTES.changelog),
     ).toBe(false)
-    // чужой исчерпывающий перечень разделов не тронут — их по-прежнему 6
-    expect(NAV_SECTIONS).toHaveLength(6)
+    // 6 существующих + 2 Smart Josparlau (commandCenter, securityEvents, Этап 2)
+    // + 1 (objects, Этап 5) + 1 (serviceAnalytics, Этап 7) + 1 (duties, Этап 7) —
+    // changelog среди них нет
+    expect(NAV_SECTIONS).toHaveLength(11)
   })
 })
 

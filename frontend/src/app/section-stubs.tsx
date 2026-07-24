@@ -21,14 +21,10 @@ export function DashboardStub() {
   return <SectionStub title="Дашборд «Расход»" />
 }
 
-export function EmployeesStub() {
-  return <SectionStub title="Управление персоналом" />
-}
-
+// EmployeesStub переехал в features/personnel (Этап 4, Smart Josparlau §20):
+// «переезд заглушки = часть той стори» — см. шапку файла.
 // OrganizationStub переехал в features/traffic-light (стори 10.4): «переезд
 // заглушки = часть той стори» — см. шапку файла.
 // ReportsStub переехал в features/expense (стори 10.5), там же H1 «Отчёты».
-
-export function AuditStub() {
-  return <SectionStub title="Аудит" />
-}
+// AuditStub переехал в features/audit (Этап 6, Smart Josparlau §29): «переезд
+// заглушки = часть той стори» — см. шапку файла.
