@@ -40,6 +40,9 @@ export function combatDutyShiftCheckInPath(id: string): string {
 export function combatDutyShiftCompletePath(id: string): string {
   return `${COMBAT_DUTY_SHIFTS_PATH}${id}/complete/`
 }
+export function combatDutyShiftReplacePath(id: string): string {
+  return `${COMBAT_DUTY_SHIFTS_PATH}${id}/replace/`
+}
 
 export interface ListDutyTypesResponse {
   results: DutyTypeDefinition[]
@@ -97,3 +100,12 @@ export interface CompleteCombatDutyRequest {
 }
 
 export type CompleteCombatDutyResponse = CombatDutyShift
+
+export interface RequestCombatDutyReplacementRequest {
+  outgoingEmployeeName: string
+  incomingEmployeeName: string
+  reasonCode: string
+  safeComment: string | null
+}
+
+export type RequestCombatDutyReplacementResponse = CombatDutyShift

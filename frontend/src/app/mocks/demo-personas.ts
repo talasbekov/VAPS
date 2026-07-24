@@ -96,7 +96,8 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     id: 'combat_department_chief',
     userId: 'demo-combat-department-chief',
     label: 'Начальник боевого управления',
-    description: 'Подаёт состав боевой группы на Трассу и ведёт его несение (§24.5-24.6, §24.19-24.23)',
+    description:
+      'Подаёт состав боевой группы на Трассу и ведёт его несение (§24.5-24.6, §24.19-24.23, §24.21)',
     permissions: [
       'ops.duty.view',
       'ops.combat_group.submit',
@@ -106,6 +107,9 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       'ops.combat_group.acknowledge',
       'ops.combat_group.checkin',
       'ops.combat_group.complete',
+      // §24.21 — замена участника ДО заступления/во время READY, тот же
+      // принцип: свой состав, своя ответственность.
+      'ops.combat_group.replace',
       'ops.dictionary.view',
     ],
     homeRoute: ROUTES.duties,

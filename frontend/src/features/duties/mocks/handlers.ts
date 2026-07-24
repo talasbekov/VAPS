@@ -13,6 +13,7 @@ import {
   combatDutyShiftAcknowledgePath,
   combatDutyShiftCheckInPath,
   combatDutyShiftCompletePath,
+  combatDutyShiftReplacePath,
   combatDutyShiftReviewPath,
   combatDutyShiftSubmitPath,
   dutyShiftAcknowledgePath,
@@ -22,6 +23,7 @@ import {
 import type {
   AcknowledgeCombatDutyRequest,
   CompleteCombatDutyRequest,
+  RequestCombatDutyReplacementRequest,
   ReviewCombatGroupRequest,
   SubmitCombatGroupRequest,
 } from '../api/pending-contracts'
@@ -197,6 +199,16 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
       try {
         const body = (await request.json()) as CompleteCombatDutyRequest
         return HttpResponse.json(await repository.completeCombatDuty(id, body, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${combatDutyShiftReplacePath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        const body = (await request.json()) as RequestCombatDutyReplacementRequest
+        return HttpResponse.json(await repository.requestReplacement(id, body, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
       }

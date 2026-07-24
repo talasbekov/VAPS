@@ -16,10 +16,11 @@ import type {
   ListDutyRoutesResponse,
   ListDutyShiftsResponse,
   ListDutyTypesResponse,
+  RequestCombatDutyReplacementRequest,
   ReviewCombatGroupRequest,
   SubmitCombatGroupRequest,
 } from '../api/pending-contracts'
-import type { CombatDutyShift, DutyShift } from '../model/types'
+import type { CombatDutyShift, DutyReplacementRecord, DutyShift } from '../model/types'
 import type { DutiesSlice } from './fixtures'
 
 export class RepositoryPermissionError extends Error {}
@@ -40,6 +41,7 @@ const COMBAT_REVIEW_PERMISSION = 'ops.combat_group.review'
 const COMBAT_ACKNOWLEDGE_PERMISSION = 'ops.combat_group.acknowledge'
 const COMBAT_CHECKIN_PERMISSION = 'ops.combat_group.checkin'
 const COMBAT_COMPLETE_PERMISSION = 'ops.combat_group.complete'
+const COMBAT_REPLACE_PERMISSION = 'ops.combat_group.replace'
 
 function readSlice(envelope: DemoStateEnvelope): DutiesSlice {
   const slice = envelope.slices[SLICE_NAME]
@@ -240,6 +242,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
           submittedAt: clock.now(),
           updatedAt: clock.now(),
           execution: null,
+          replacements: [],
         },
         updatedAt: clock.now(),
       }
@@ -473,6 +476,118 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     return updated
   }
 
+  // §24.21 «после утверждения нельзя просто поменять сотрудника в массиве» —
+  // упрощено до одной атомарной команды (без отдельного approval-шага для
+  // замены внутри своего управления, см. model/types.ts шапку): доступна
+  // только пока состав ещё не заступил (PENDING_ACKNOWLEDGEMENT/READY).
+  async function requestReplacement(
+    id: string,
+    request: RequestCombatDutyReplacementRequest,
+    actorUserId: string | null,
+  ): Promise<CombatDutyShift> {
+    if (!hasPermission(actorUserId, COMBAT_REPLACE_PERMISSION)) {
+      throw new RepositoryPermissionError(COMBAT_REPLACE_PERMISSION)
+    }
+    if (request.reasonCode.trim() === '') {
+      throw new RepositoryBusinessRuleError('REASON_REQUIRED', 'Причина замены обязательна.')
+    }
+    let updated!: CombatDutyShift
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.combatShifts.find((s) => s.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
+      }
+      const submission = existing.submission
+      if (
+        submission === null ||
+        submission.stateCode !== 'ACCEPTED' ||
+        submission.execution === null ||
+        (submission.execution.stateCode !== 'PENDING_ACKNOWLEDGEMENT' &&
+          submission.execution.stateCode !== 'READY')
+      ) {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STATE_TRANSITION',
+          'Замена возможна только до заступления принятого состава.',
+        )
+      }
+      const { outgoingEmployeeName, incomingEmployeeName } = request
+      const currentRoster = [submission.groupLeaderEmployeeName, ...submission.memberEmployeeNames]
+      if (!currentRoster.includes(outgoingEmployeeName)) {
+        throw new RepositoryBusinessRuleError(
+          'NOT_IN_ROSTER',
+          'Заменяемый сотрудник не состоит в основном составе.',
+        )
+      }
+      if (currentRoster.includes(incomingEmployeeName)) {
+        throw new RepositoryBusinessRuleError(
+          'ALREADY_IN_ROSTER',
+          'Указанный сотрудник уже состоит в основном составе.',
+        )
+      }
+      // §24.17 hard-rule (тот же принцип, что submitCombatGroup): заменяющий
+      // не может быть уже принят в другую боевую группу на эту дату.
+      const conflict = slice.combatShifts.find((s) => {
+        if (s.id === id || s.businessDate !== existing.businessDate) return false
+        if (s.submission === null || s.submission.stateCode !== 'ACCEPTED') return false
+        const acceptedNames = [s.submission.groupLeaderEmployeeName, ...s.submission.memberEmployeeNames]
+        return acceptedNames.includes(incomingEmployeeName)
+      })
+      if (conflict !== undefined) {
+        throw new RepositoryBusinessRuleError(
+          'DOUBLE_ASSIGNMENT',
+          'Заменяющий сотрудник уже принят в другую боевую группу на эту дату.',
+        )
+      }
+      const groupLeaderEmployeeName =
+        submission.groupLeaderEmployeeName === outgoingEmployeeName
+          ? incomingEmployeeName
+          : submission.groupLeaderEmployeeName
+      const memberEmployeeNames = submission.memberEmployeeNames.map((name) =>
+        name === outgoingEmployeeName ? incomingEmployeeName : name,
+      )
+      const requiredNames = [groupLeaderEmployeeName, ...memberEmployeeNames]
+      // Заменённый участник выбывает из списка ознакомившихся — новый
+      // человек должен подтвердить ознакомление сам (§24.19 остаётся в силе).
+      const acknowledgedMemberNames = submission.execution.acknowledgedMemberNames.filter(
+        (name) => name !== outgoingEmployeeName,
+      )
+      const allAcknowledged = requiredNames.every((name) => acknowledgedMemberNames.includes(name))
+      const replacementRecord: DutyReplacementRecord = {
+        replacementId: `${id}-replacement-${submission.replacements.length + 1}`,
+        outgoingEmployeeName,
+        incomingEmployeeName,
+        reasonCode: request.reasonCode,
+        safeComment: request.safeComment,
+        appliedAt: clock.now(),
+      }
+      updated = {
+        ...existing,
+        submission: {
+          ...submission,
+          groupLeaderEmployeeName,
+          memberEmployeeNames,
+          execution: {
+            ...submission.execution,
+            acknowledgedMemberNames,
+            stateCode: allAcknowledged ? 'READY' : 'PENDING_ACKNOWLEDGEMENT',
+          },
+          replacements: [...submission.replacements, replacementRecord],
+          updatedAt: clock.now(),
+        },
+        updatedAt: clock.now(),
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          combatShifts: slice.combatShifts.map((s) => (s.id === id ? updated : s)),
+        } satisfies DutiesSlice,
+      }
+    })
+    return updated
+  }
+
   return {
     listDutyTypes,
     listShifts,
@@ -488,5 +603,6 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     acknowledgeCombatDuty,
     checkInCombatDuty,
     completeCombatDuty,
+    requestReplacement,
   }
 }

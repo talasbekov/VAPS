@@ -9,15 +9,16 @@
 // начальником управления → рассмотрение (принять/вернуть с причиной) →
 // ПОСЛЕ принятия (§24.19-24.23, FRONTEND_DECISIONS A52): индивидуальное
 // ознакомление каждого (leader+members, БЕЗ резерва) → заступление →
-// факт несения (фактический состав может отличаться от планового). НЕ
-// реализовано (см. A51/A52): формирование потребности на период (§24.1
-// первый шаг — Трассы/составы в этом срезе заведены фикстурой заранее, не
-// создаются в UI), замены (DutyReplacement, §24.21), передача смены
-// (§24.22), Conflict Repository (§24.17 — пересечение с ОМ/другим
-// дежурством, только внутрифичевый DOUBLE_ASSIGNMENT), revision/
-// expectedRevision (оптимистичная конкурентность), представление подачи от
-// имени другого лица (§24.5), режимы покрытия SEQUENTIAL/PARALLEL
-// пересчитываются НЕ на frontend (только хранятся, demo-фикстура).
+// факт несения (фактический состав может отличаться от планового) → замена
+// участника ДО заступления/во время READY (§24.21, упрощено — см.
+// DutyReplacementRecord). НЕ реализовано (см. A51/A52): формирование
+// потребности на период (§24.1 первый шаг — Трассы/составы в этом срезе
+// заведены фикстурой заранее, не создаются в UI), передача смены (§24.22),
+// Conflict Repository (§24.17 — пересечение с ОМ/другим дежурством, только
+// внутрифичевый DOUBLE_ASSIGNMENT), revision/expectedRevision (оптимистичная
+// конкурентность), представление подачи от имени другого лица (§24.5),
+// режимы покрытия SEQUENTIAL/PARALLEL пересчитываются НЕ на frontend (только
+// хранятся, demo-фикстура).
 export type DutyTargetType = 'OWN_OBJECT' | 'PROTECTED_OBJECT'
 
 /** §24.9-24.10 — Трасса и набор Трасс, СОБСТВЕННЫЙ реестр `features/duties`
@@ -67,6 +68,19 @@ export interface CombatDutyExecution {
   actualMemberNames: string[] | null
 }
 
+/** §24.21 «после утверждения нельзя просто поменять сотрудника в массиве» —
+ * запись истории замены (упрощено: без approval-статуса/revision-конфликтов,
+ * см. FRONTEND_DECISIONS A5x — заменяющий состоит в том же управлении и
+ * применяется атомарно, авторизация — только permission `ops.combat_group.replace`). */
+export interface DutyReplacementRecord {
+  replacementId: string
+  outgoingEmployeeName: string
+  incomingEmployeeName: string
+  reasonCode: string
+  safeComment: string | null
+  appliedAt: string
+}
+
 /** Упрощённая проекция `CombatDutyRosterSubmission` (§24.6) — без revision/
  * представительства/оснований, только состав+состояние+причина возврата. */
 export interface CombatDutyRosterSubmission {
@@ -79,6 +93,8 @@ export interface CombatDutyRosterSubmission {
   submittedAt: string
   updatedAt: string
   execution: CombatDutyExecution | null
+  /** §24.21 — история замен, самая свежая последней; см. `DutyReplacementRecord`. */
+  replacements: DutyReplacementRecord[]
 }
 
 /** Смена боевой группы на Трассе/наборе Трасс. `submission === null` —

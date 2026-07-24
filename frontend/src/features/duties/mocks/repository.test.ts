@@ -16,6 +16,7 @@ const REVIEWER = 'reviewer-user'
 const ACKNOWLEDGER = 'acknowledger-user'
 const CHECKER = 'checker-user'
 const COMPLETER = 'completer-user'
+const REPLACER = 'replacer-user'
 const NOBODY = 'no-permissions-user'
 
 const AWAITING_SHIFT: CombatDutyShift = {
@@ -52,6 +53,7 @@ const SUBMITTED_SHIFT: CombatDutyShift = {
     submittedAt: '2026-07-24T08:00:00+05:00',
     updatedAt: '2026-07-24T08:00:00+05:00',
     execution: null,
+    replacements: [],
   },
   updatedAt: '2026-07-24T08:00:00+05:00',
 }
@@ -82,6 +84,7 @@ const ACCEPTED_SAME_DAY_SHIFT: CombatDutyShift = {
       actualEnd: null,
       actualMemberNames: null,
     },
+    replacements: [],
   },
   updatedAt: '2026-07-24T08:00:00+05:00',
 }
@@ -116,6 +119,39 @@ const ACTIVE_SHIFT: CombatDutyShift = {
   },
 }
 
+// §24.17 hard-rule fixture для DOUBLE_ASSIGNMENT-теста requestReplacement:
+// «Кенжебаев А.» уже ПРИНЯТ в ДРУГУЮ группу на ту же businessDate.
+const CONFLICT_SHIFT: CombatDutyShift = {
+  id: 'combat-shift-6',
+  businessDate: '2026-07-24',
+  dutyTypeCode: 'COMBAT_GROUP_SINGLE_ROUTE',
+  routeSet: {
+    routeSetId: 'route-set-6',
+    safeLabel: 'Трасса №3',
+    coverageMode: 'RESERVE',
+    routeIds: ['route-3'],
+  },
+  submission: {
+    submittedByUnitName: '1-е боевое управление',
+    groupLeaderEmployeeName: 'Кенжебаев А.',
+    memberEmployeeNames: [],
+    reserveEmployeeNames: [],
+    stateCode: 'ACCEPTED',
+    returnReason: null,
+    submittedAt: '2026-07-24T08:00:00+05:00',
+    updatedAt: '2026-07-24T08:00:00+05:00',
+    execution: {
+      stateCode: 'PENDING_ACKNOWLEDGEMENT',
+      acknowledgedMemberNames: [],
+      actualStart: null,
+      actualEnd: null,
+      actualMemberNames: null,
+    },
+    replacements: [],
+  },
+  updatedAt: '2026-07-24T08:00:00+05:00',
+}
+
 function seedEnvelope(combatShifts: CombatDutyShift[]): DemoStateEnvelope {
   return {
     application: 'smart-josparlau',
@@ -138,6 +174,7 @@ function seedEnvelope(combatShifts: CombatDutyShift[]): DemoStateEnvelope {
         rosterCandidates: [
           { employeeName: 'Байжанов С.', unitName: '1-е боевое управление' },
           { employeeName: 'Дюсенов М.', unitName: '1-е боевое управление' },
+          { employeeName: 'Кенжебаев А.', unitName: '1-е боевое управление' },
         ],
         combatShifts,
       },
@@ -154,6 +191,7 @@ describe('createDutiesRepository — боевые группы на Трассе
       { userId: ACKNOWLEDGER, permissions: ['ops.duty.view', 'ops.combat_group.acknowledge'] },
       { userId: CHECKER, permissions: ['ops.duty.view', 'ops.combat_group.checkin'] },
       { userId: COMPLETER, permissions: ['ops.duty.view', 'ops.combat_group.complete'] },
+      { userId: REPLACER, permissions: ['ops.duty.view', 'ops.combat_group.replace'] },
       { userId: NOBODY, permissions: [] },
     ])
   })
@@ -471,6 +509,193 @@ describe('createDutiesRepository — боевые группы на Трассе
         stateCode: 'COMPLETED',
         actualMemberNames: ['Дюсенов М.'],
       })
+    })
+  })
+
+  describe('requestReplacement (§24.21)', () => {
+    it('требует ops.combat_group.replace', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      await expect(
+        repository.requestReplacement(
+          ACCEPTED_SAME_DAY_SHIFT.id,
+          {
+            outgoingEmployeeName: 'Дюсенов М.',
+            incomingEmployeeName: 'Кенжебаев А.',
+            reasonCode: 'Болезнь',
+            safeComment: null,
+          },
+          VIEWER,
+        ),
+      ).rejects.toThrow(RepositoryPermissionError)
+    })
+
+    it('REASON_REQUIRED на пустую причину', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      await expect(
+        repository.requestReplacement(
+          ACCEPTED_SAME_DAY_SHIFT.id,
+          {
+            outgoingEmployeeName: 'Дюсенов М.',
+            incomingEmployeeName: 'Кенжебаев А.',
+            reasonCode: '  ',
+            safeComment: null,
+          },
+          REPLACER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'REASON_REQUIRED' })
+    })
+
+    it('замена недоступна после заступления (ACTIVE)', async () => {
+      const { repository } = await setup([ACTIVE_SHIFT])
+      await expect(
+        repository.requestReplacement(
+          ACTIVE_SHIFT.id,
+          {
+            outgoingEmployeeName: 'Дюсенов М.',
+            incomingEmployeeName: 'Кенжебаев А.',
+            reasonCode: 'Болезнь',
+            safeComment: null,
+          },
+          REPLACER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'INVALID_STATE_TRANSITION' })
+    })
+
+    it('NOT_IN_ROSTER на заменяемого, который не в составе', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      await expect(
+        repository.requestReplacement(
+          ACCEPTED_SAME_DAY_SHIFT.id,
+          {
+            outgoingEmployeeName: 'Кенжебаев А.',
+            incomingEmployeeName: 'Тастанова Г.',
+            reasonCode: 'Болезнь',
+            safeComment: null,
+          },
+          REPLACER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'NOT_IN_ROSTER' })
+    })
+
+    it('ALREADY_IN_ROSTER на заменяющего, который уже в составе', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      await expect(
+        repository.requestReplacement(
+          ACCEPTED_SAME_DAY_SHIFT.id,
+          {
+            outgoingEmployeeName: 'Дюсенов М.',
+            incomingEmployeeName: 'Байжанов С.',
+            reasonCode: 'Болезнь',
+            safeComment: null,
+          },
+          REPLACER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'ALREADY_IN_ROSTER' })
+    })
+
+    it('DOUBLE_ASSIGNMENT на заменяющего, уже принятого в другую группу на ту же дату', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT, CONFLICT_SHIFT])
+      await expect(
+        repository.requestReplacement(
+          ACCEPTED_SAME_DAY_SHIFT.id,
+          {
+            outgoingEmployeeName: 'Дюсенов М.',
+            incomingEmployeeName: 'Кенжебаев А.',
+            reasonCode: 'Болезнь',
+            safeComment: null,
+          },
+          REPLACER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'DOUBLE_ASSIGNMENT' })
+    })
+
+    it('успешная замена участника меняет состав и пишет историю', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      const result = await repository.requestReplacement(
+        ACCEPTED_SAME_DAY_SHIFT.id,
+        {
+          outgoingEmployeeName: 'Дюсенов М.',
+          incomingEmployeeName: 'Кенжебаев А.',
+          reasonCode: 'Болезнь',
+          safeComment: 'Заменён по устной договорённости',
+        },
+        REPLACER,
+      )
+      expect(result.submission?.groupLeaderEmployeeName).toBe('Байжанов С.')
+      expect(result.submission?.memberEmployeeNames).toEqual(['Кенжебаев А.'])
+      expect(result.submission?.replacements).toMatchObject([
+        {
+          outgoingEmployeeName: 'Дюсенов М.',
+          incomingEmployeeName: 'Кенжебаев А.',
+          reasonCode: 'Болезнь',
+        },
+      ])
+    })
+
+    it('успешная замена старшего группы обновляет groupLeaderEmployeeName', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      const result = await repository.requestReplacement(
+        ACCEPTED_SAME_DAY_SHIFT.id,
+        {
+          outgoingEmployeeName: 'Байжанов С.',
+          incomingEmployeeName: 'Кенжебаев А.',
+          reasonCode: 'Отпуск',
+          safeComment: null,
+        },
+        REPLACER,
+      )
+      expect(result.submission?.groupLeaderEmployeeName).toBe('Кенжебаев А.')
+      expect(result.submission?.memberEmployeeNames).toEqual(['Дюсенов М.'])
+    })
+
+    it('замена уже ознакомленного участника снимает READY обратно в PENDING_ACKNOWLEDGEMENT', async () => {
+      const { repository } = await setup([READY_SHIFT])
+      const result = await repository.requestReplacement(
+        READY_SHIFT.id,
+        {
+          outgoingEmployeeName: 'Дюсенов М.',
+          incomingEmployeeName: 'Кенжебаев А.',
+          reasonCode: 'Болезнь',
+          safeComment: null,
+        },
+        REPLACER,
+      )
+      expect(result.submission?.execution?.stateCode).toBe('PENDING_ACKNOWLEDGEMENT')
+      expect(result.submission?.execution?.acknowledgedMemberNames).toEqual(['Байжанов С.'])
+    })
+
+    it('успешная замена персистентна из БД (перечитано через listCombatShifts)', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      await repository.requestReplacement(
+        ACCEPTED_SAME_DAY_SHIFT.id,
+        {
+          outgoingEmployeeName: 'Дюсенов М.',
+          incomingEmployeeName: 'Кенжебаев А.',
+          reasonCode: 'Болезнь',
+          safeComment: null,
+        },
+        REPLACER,
+      )
+      const list = await repository.listCombatShifts(VIEWER)
+      const reread = list.results.find((s) => s.id === ACCEPTED_SAME_DAY_SHIFT.id)
+      expect(reread?.submission?.memberEmployeeNames).toEqual(['Кенжебаев А.'])
+      expect(reread?.submission?.replacements).toHaveLength(1)
+    })
+
+    it('shift не найден — RepositoryNotFoundError', async () => {
+      const { repository } = await setup([ACCEPTED_SAME_DAY_SHIFT])
+      await expect(
+        repository.requestReplacement(
+          'unknown-id',
+          {
+            outgoingEmployeeName: 'Дюсенов М.',
+            incomingEmployeeName: 'Кенжебаев А.',
+            reasonCode: 'Болезнь',
+            safeComment: null,
+          },
+          REPLACER,
+        ),
+      ).rejects.toThrow(RepositoryNotFoundError)
     })
   })
 })

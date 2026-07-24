@@ -13,6 +13,7 @@ import {
   combatDutyShiftAcknowledgePath,
   combatDutyShiftCheckInPath,
   combatDutyShiftCompletePath,
+  combatDutyShiftReplacePath,
   combatDutyShiftReviewPath,
   combatDutyShiftSubmitPath,
   dutyShiftAcknowledgePath,
@@ -34,6 +35,8 @@ import type {
   ListDutyRoutesResponse,
   ListDutyShiftsResponse,
   ListDutyTypesResponse,
+  RequestCombatDutyReplacementRequest,
+  RequestCombatDutyReplacementResponse,
   ReviewCombatGroupRequest,
   ReviewCombatGroupResponse,
   SubmitCombatGroupRequest,
@@ -172,6 +175,20 @@ export function useCompleteCombatDuty() {
   return useApiMutation<CompleteCombatDutyResponse, { id: string; body: CompleteCombatDutyRequest }>({
     mutationFn: ({ id, body }) =>
       apiClient.post<CompleteCombatDutyResponse>(combatDutyShiftCompletePath(id), body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'combat-shifts'] })
+    },
+  })
+}
+
+export function useRequestCombatDutyReplacement() {
+  const queryClient = useQueryClient()
+  return useApiMutation<
+    RequestCombatDutyReplacementResponse,
+    { id: string; body: RequestCombatDutyReplacementRequest }
+  >({
+    mutationFn: ({ id, body }) =>
+      apiClient.post<RequestCombatDutyReplacementResponse>(combatDutyShiftReplacePath(id), body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'combat-shifts'] })
     },

@@ -13,6 +13,7 @@ import {
   useCombatRosterCandidates,
   useCompleteCombatDuty,
   useDutyRoutes,
+  useRequestCombatDutyReplacement,
   useReviewCombatGroup,
   useSubmitCombatGroup,
 } from '../api/queries'
@@ -21,6 +22,7 @@ import type {
   CombatDutyExecutionState,
   CombatDutyShift,
   CombatSubmissionState,
+  DutyReplacementRecord,
 } from '../model/types'
 
 const SUBMISSION_STATE_LABEL: Record<CombatSubmissionState, string> = {
@@ -49,6 +51,7 @@ export function CombatDutyGroupsSection() {
   const canAcknowledge = hasPermission('ops.combat_group.acknowledge')
   const canCheckIn = hasPermission('ops.combat_group.checkin')
   const canComplete = hasPermission('ops.combat_group.complete')
+  const canReplace = hasPermission('ops.combat_group.replace')
 
   const dutyTypesQuery = useCombatDutyTypes()
   const routesQuery = useDutyRoutes()
@@ -96,6 +99,7 @@ export function CombatDutyGroupsSection() {
           canAcknowledge={canAcknowledge}
           canCheckIn={canCheckIn}
           canComplete={canComplete}
+          canReplace={canReplace}
           rosterCandidates={rosterQuery.data?.results ?? []}
         />
       ))}
@@ -112,6 +116,7 @@ function CombatShiftCard({
   canAcknowledge,
   canCheckIn,
   canComplete,
+  canReplace,
   rosterCandidates,
 }: {
   shift: CombatDutyShift
@@ -122,6 +127,7 @@ function CombatShiftCard({
   canAcknowledge: boolean
   canCheckIn: boolean
   canComplete: boolean
+  canReplace: boolean
   rosterCandidates: { employeeName: string; unitName: string }[]
 }) {
   const submission = shift.submission
@@ -193,9 +199,12 @@ function CombatShiftCard({
             groupLeaderEmployeeName={submission.groupLeaderEmployeeName}
             memberEmployeeNames={submission.memberEmployeeNames}
             execution={submission.execution}
+            replacements={submission.replacements}
             canAcknowledge={canAcknowledge}
             canCheckIn={canCheckIn}
             canComplete={canComplete}
+            canReplace={canReplace}
+            rosterCandidates={rosterCandidates}
           />
         )}
 
@@ -214,17 +223,23 @@ function ExecutionControls({
   groupLeaderEmployeeName,
   memberEmployeeNames,
   execution,
+  replacements,
   canAcknowledge,
   canCheckIn,
   canComplete,
+  canReplace,
+  rosterCandidates,
 }: {
   shiftId: string
   groupLeaderEmployeeName: string
   memberEmployeeNames: string[]
   execution: CombatDutyExecution
+  replacements: DutyReplacementRecord[]
   canAcknowledge: boolean
   canCheckIn: boolean
   canComplete: boolean
+  canReplace: boolean
+  rosterCandidates: { employeeName: string; unitName: string }[]
 }) {
   const acknowledgeMutation = useAcknowledgeCombatDuty()
   const checkInMutation = useCheckInCombatDuty()
@@ -280,6 +295,26 @@ function ExecutionControls({
         </div>
       )}
 
+      {(execution.stateCode === 'PENDING_ACKNOWLEDGEMENT' || execution.stateCode === 'READY') &&
+        canReplace && (
+          <ReplaceControls
+            shiftId={shiftId}
+            currentRoster={requiredNames}
+            rosterCandidates={rosterCandidates}
+          />
+        )}
+
+      {replacements.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">История замен</span>
+          {replacements.map((r) => (
+            <div key={r.replacementId}>
+              {r.outgoingEmployeeName} → {r.incomingEmployeeName} ({r.reasonCode})
+            </div>
+          ))}
+        </div>
+      )}
+
       {execution.stateCode === 'READY' && canCheckIn && (
         <Button
           size="sm"
@@ -331,6 +366,120 @@ function ExecutionControls({
           Фактически несли службу: {execution.actualMemberNames.join(', ') || '—'}
         </p>
       )}
+    </div>
+  )
+}
+
+// §24.21 «после утверждения нельзя просто поменять сотрудника в массиве» —
+// упрощённая одношаговая замена (доступна только ДО заступления, см.
+// model/types.ts DutyReplacementRecord).
+function ReplaceControls({
+  shiftId,
+  currentRoster,
+  rosterCandidates,
+}: {
+  shiftId: string
+  currentRoster: string[]
+  rosterCandidates: { employeeName: string; unitName: string }[]
+}) {
+  const [outgoing, setOutgoing] = useState('')
+  const [incoming, setIncoming] = useState('')
+  const [reasonCode, setReasonCode] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const replaceMutation = useRequestCombatDutyReplacement()
+
+  const incomingCandidates = rosterCandidates.filter((c) => !currentRoster.includes(c.employeeName))
+
+  if (!showForm) {
+    return (
+      <div className="flex flex-col gap-1">
+        {replaceMutation.error !== null && (
+          <p className="text-xs text-destructive">{replaceMutation.error.message}</p>
+        )}
+        <Button size="sm" variant="outline" className="self-start" onClick={() => setShowForm(true)}>
+          Заменить участника
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border p-2.5">
+      {replaceMutation.error !== null && (
+        <p className="text-xs text-destructive">{replaceMutation.error.message}</p>
+      )}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor={`outgoing-${shiftId}`}>
+            Кого заменить
+          </label>
+          <select
+            id={`outgoing-${shiftId}`}
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            value={outgoing}
+            onChange={(e) => setOutgoing(e.target.value)}
+          >
+            <option value="">— выбрать —</option>
+            {currentRoster.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor={`incoming-${shiftId}`}>
+            Кем заменить
+          </label>
+          <select
+            id={`incoming-${shiftId}`}
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            value={incoming}
+            onChange={(e) => setIncoming(e.target.value)}
+          >
+            <option value="">— выбрать —</option>
+            {incomingCandidates.map((c) => (
+              <option key={c.employeeName} value={c.employeeName}>
+                {c.employeeName} ({c.unitName})
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <input
+        className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        placeholder="Причина замены…"
+        value={reasonCode}
+        onChange={(e) => setReasonCode(e.target.value)}
+      />
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          disabled={
+            replaceMutation.isPending || outgoing === '' || incoming === '' || reasonCode.trim() === ''
+          }
+          onClick={() => {
+            replaceMutation.mutate({
+              id: shiftId,
+              body: {
+                outgoingEmployeeName: outgoing,
+                incomingEmployeeName: incoming,
+                reasonCode,
+                safeComment: null,
+              },
+            })
+            setShowForm(false)
+            setOutgoing('')
+            setIncoming('')
+            setReasonCode('')
+          }}
+        >
+          {replaceMutation.isPending ? 'Замена…' : 'Подтвердить замену'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setShowForm(false)}>
+          Отмена
+        </Button>
+      </div>
     </div>
   )
 }
