@@ -229,7 +229,9 @@ export function CalendarPage() {
                     <th className="p-3 text-[11px] font-semibold text-muted-foreground">Сотрудник</th>
                     <th className="p-3 text-[11px] font-semibold text-muted-foreground">Назначение</th>
                     <th className="p-3 text-[11px] font-semibold text-muted-foreground">Состояние</th>
-                    <th className="p-3 text-[11px] font-semibold text-muted-foreground" />
+                    <th className="p-3 text-[11px] font-semibold text-muted-foreground">
+                      <span className="sr-only">Действия</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

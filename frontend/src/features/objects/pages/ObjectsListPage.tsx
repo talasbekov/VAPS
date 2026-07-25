@@ -114,7 +114,9 @@ function ResultsTable({
             <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">Тип</th>
             <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">Адрес</th>
             <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">Паспорт</th>
-            <th className="p-3.5 text-[11px] font-semibold text-muted-foreground" />
+            <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">
+              <span className="sr-only">Действия</span>
+            </th>
           </tr>
         </thead>
         <tbody>

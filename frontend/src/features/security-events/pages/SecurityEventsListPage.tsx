@@ -147,7 +147,9 @@ function ResultsTable({
             <Th>Потребность</Th>
             <Th>Конфликты</Th>
             <Th>Ответственный</Th>
-            <Th />
+            <Th>
+              <span className="sr-only">Действия</span>
+            </Th>
           </tr>
         </thead>
         <tbody>

@@ -168,7 +168,9 @@ function ResultsTable({
             <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">Должность</th>
             <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">Подразделение</th>
             <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">Статус</th>
-            <th className="p-3.5 text-[11px] font-semibold text-muted-foreground" />
+            <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">
+              <span className="sr-only">Действия</span>
+            </th>
           </tr>
         </thead>
         <tbody>

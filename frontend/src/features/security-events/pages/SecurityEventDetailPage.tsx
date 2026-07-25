@@ -955,7 +955,7 @@ function PlacementWorkspace({ event }: { event: SecurityEvent }) {
   return (
     <>
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[260px_1fr]">
-        <aside className="rounded-xl border bg-card p-3">
+        <aside className="rounded-xl border bg-card p-3" aria-label="Посты">
           <div className="mb-2 text-sm font-semibold">Посты</div>
           <div className="flex flex-col gap-1">
             {event.reconSectorPosts.map((post) => {

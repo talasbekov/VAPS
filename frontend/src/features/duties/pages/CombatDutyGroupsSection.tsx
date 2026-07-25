@@ -590,7 +590,7 @@ function SubmitForm({
 
   return (
     <div className="flex flex-col gap-3 border-t pt-3">
-      <h3 className="text-sm font-semibold">Подать состав боевой группы</h3>
+      <h2 className="text-sm font-semibold">Подать состав боевой группы</h2>
       {submitMutation.error !== null && (
         <p className="text-xs text-destructive">{submitMutation.error.message}</p>
       )}
@@ -705,7 +705,7 @@ function CreateRequirementSection({
 
   return (
     <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-      <h3 className="text-sm font-semibold">Сформировать потребность на смену</h3>
+      <h2 className="text-sm font-semibold">Сформировать потребность на смену</h2>
       {createMutation.error !== null && (
         <p className="text-xs text-destructive">{createMutation.error.message}</p>
       )}

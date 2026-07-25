@@ -40,7 +40,12 @@ async function assertNoSeriousViolations(page: Page, screenLabel: string): Promi
   if (rest.length > 0) {
     console.log(
       `[axe:${screenLabel}] ${rest.length} moderate/minor находок (не гейтят):`,
-      rest.map((v) => `${v.id} (${v.impact})`).join(', '),
+      rest
+        .map(
+          (v) =>
+            `${v.id} (${v.impact}) — ${v.nodes.map((n) => `[${n.target.join(' ')}] ${n.html}`).join(' | ')}`,
+        )
+        .join(' ;;; '),
     )
   }
   expect(
@@ -68,7 +73,12 @@ test.describe('Accessibility (axe-core): второй слой аудита по
 
     for (const [path, label] of topLevelScreens) {
       await page.goto(path)
-      await expect(page.locator('main, [role="main"]').first()).toBeVisible()
+      // Routes are React.lazy-code-split (RouteChunkBoundary, §5.2) — `main`
+      // становится visible СРАЗУ через Suspense-фолбэк «Загрузка раздела…»,
+      // раньше, чем догрузится реальный chunk с h1. Ждать нужно h1, а не
+      // просто наличие каркаса `main` — иначе axe сканирует фолбэк-состояние
+      // и ложно репортит page-has-heading-one (найдено этим же аудитом).
+      await expect(page.locator('h1').first()).toBeVisible()
       await assertNoSeriousViolations(page, label)
     }
   })
