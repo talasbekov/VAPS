@@ -15,7 +15,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-primary text-primary-foreground shadow hover:bg-primary/90',
+          // hover/90 давал ~4.13:1 против text-primary-foreground (провал AA 4.5:1,
+          // axe-core); /95 держит ~4.52:1 при сохранении заметного затемнения
+          'bg-primary text-primary-foreground shadow hover:bg-primary/95',
         destructive:
           'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90',
         outline:
