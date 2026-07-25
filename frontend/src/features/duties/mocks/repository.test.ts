@@ -86,6 +86,7 @@ const ACCEPTED_SAME_DAY_SHIFT: CombatDutyShift = {
       actualStart: null,
       actualEnd: null,
       actualMemberNames: null,
+      handover: null,
     },
     replacements: [],
   },
@@ -104,10 +105,13 @@ const READY_SHIFT: CombatDutyShift = {
       actualStart: null,
       actualEnd: null,
       actualMemberNames: null,
+      handover: null,
     },
   },
 }
 
+// §24.22 — уже оформленная сдача смены, чтобы существующие completeCombatDuty
+// тесты остались про ЗАВЕРШЕНИЕ, не про handover-гард (тот — отдельно, ниже).
 const ACTIVE_SHIFT: CombatDutyShift = {
   ...ACCEPTED_SAME_DAY_SHIFT,
   id: 'combat-shift-5',
@@ -119,6 +123,29 @@ const ACTIVE_SHIFT: CombatDutyShift = {
       actualStart: '2026-07-24T08:00:00+05:00',
       actualEnd: null,
       actualMemberNames: null,
+      handover: {
+        unresolvedIncidents: '',
+        remarks: '',
+        confirmedByEmployeeName: 'Байжанов С.',
+        confirmedAt: '2026-07-24T08:00:00+05:00',
+      },
+    },
+  },
+}
+
+// Тот же ACTIVE, но БЕЗ сдачи смены — для handover-тестов и MISSING_HANDOVER.
+const ACTIVE_SHIFT_NO_HANDOVER: CombatDutyShift = {
+  ...ACCEPTED_SAME_DAY_SHIFT,
+  id: 'combat-shift-7',
+  submission: {
+    ...ACCEPTED_SAME_DAY_SHIFT.submission!,
+    execution: {
+      stateCode: 'ACTIVE',
+      acknowledgedMemberNames: ['Байжанов С.', 'Дюсенов М.'],
+      actualStart: '2026-07-24T08:00:00+05:00',
+      actualEnd: null,
+      actualMemberNames: null,
+      handover: null,
     },
   },
 }
@@ -150,6 +177,7 @@ const CONFLICT_SHIFT: CombatDutyShift = {
       actualStart: null,
       actualEnd: null,
       actualMemberNames: null,
+      handover: null,
     },
     replacements: [],
   },
@@ -526,6 +554,115 @@ describe('createDutiesRepository — боевые группы на Трассе
         stateCode: 'COMPLETED',
         actualMemberNames: ['Дюсенов М.'],
       })
+    })
+
+    it('MISSING_HANDOVER — без оформленной сдачи смены завершить нельзя', async () => {
+      const { repository } = await setup([ACTIVE_SHIFT_NO_HANDOVER])
+      await expect(
+        repository.completeCombatDuty(
+          ACTIVE_SHIFT_NO_HANDOVER.id,
+          { actualMemberNames: [] },
+          COMPLETER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'MISSING_HANDOVER' })
+    })
+  })
+
+  describe('submitCombatDutyHandover (§24.22)', () => {
+    it('требует ops.combat_group.complete', async () => {
+      const { repository } = await setup([ACTIVE_SHIFT_NO_HANDOVER])
+      await expect(
+        repository.submitCombatDutyHandover(
+          ACTIVE_SHIFT_NO_HANDOVER.id,
+          { unresolvedIncidents: '', remarks: '', confirmedByEmployeeName: 'Байжанов С.' },
+          VIEWER,
+        ),
+      ).rejects.toThrow(RepositoryPermissionError)
+    })
+
+    it('CONFIRMER_REQUIRED на пустое имя сдающего', async () => {
+      const { repository } = await setup([ACTIVE_SHIFT_NO_HANDOVER])
+      await expect(
+        repository.submitCombatDutyHandover(
+          ACTIVE_SHIFT_NO_HANDOVER.id,
+          { unresolvedIncidents: '', remarks: '', confirmedByEmployeeName: '  ' },
+          COMPLETER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'CONFIRMER_REQUIRED' })
+    })
+
+    it('сдать смену можно только из ACTIVE — не из READY', async () => {
+      const { repository } = await setup([READY_SHIFT])
+      await expect(
+        repository.submitCombatDutyHandover(
+          READY_SHIFT.id,
+          { unresolvedIncidents: '', remarks: '', confirmedByEmployeeName: 'Байжанов С.' },
+          COMPLETER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'INVALID_STATE_TRANSITION' })
+    })
+
+    it('NOT_IN_ROSTER на сдающего вне leader+members', async () => {
+      const { repository } = await setup([ACTIVE_SHIFT_NO_HANDOVER])
+      await expect(
+        repository.submitCombatDutyHandover(
+          ACTIVE_SHIFT_NO_HANDOVER.id,
+          { unresolvedIncidents: '', remarks: '', confirmedByEmployeeName: 'Кенжебаев А.' },
+          COMPLETER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'NOT_IN_ROSTER' })
+    })
+
+    it('успешная сдача смены сохраняет данные и открывает завершение', async () => {
+      const { repository, clock } = await setup([ACTIVE_SHIFT_NO_HANDOVER])
+      const result = await repository.submitCombatDutyHandover(
+        ACTIVE_SHIFT_NO_HANDOVER.id,
+        {
+          unresolvedIncidents: 'Не закрыт наряд на Трассе №1',
+          remarks: 'Всё штатно',
+          confirmedByEmployeeName: 'Байжанов С.',
+        },
+        COMPLETER,
+      )
+      expect(result.submission?.execution?.handover).toMatchObject({
+        unresolvedIncidents: 'Не закрыт наряд на Трассе №1',
+        remarks: 'Всё штатно',
+        confirmedByEmployeeName: 'Байжанов С.',
+        confirmedAt: clock.now(),
+      })
+      // После сдачи завершение больше не блокируется MISSING_HANDOVER.
+      const completed = await repository.completeCombatDuty(
+        ACTIVE_SHIFT_NO_HANDOVER.id,
+        { actualMemberNames: ['Байжанов С.', 'Дюсенов М.'] },
+        COMPLETER,
+      )
+      expect(completed.submission?.execution?.stateCode).toBe('COMPLETED')
+    })
+
+    it('успешная сдача смены персистентна из БД (перечитано через listCombatShifts)', async () => {
+      const { repository } = await setup([ACTIVE_SHIFT_NO_HANDOVER])
+      await repository.submitCombatDutyHandover(
+        ACTIVE_SHIFT_NO_HANDOVER.id,
+        { unresolvedIncidents: '', remarks: 'Проверено', confirmedByEmployeeName: 'Дюсенов М.' },
+        COMPLETER,
+      )
+      const list = await repository.listCombatShifts(VIEWER)
+      const reread = list.results.find((s) => s.id === ACTIVE_SHIFT_NO_HANDOVER.id)
+      expect(reread?.submission?.execution?.handover).toMatchObject({
+        remarks: 'Проверено',
+        confirmedByEmployeeName: 'Дюсенов М.',
+      })
+    })
+
+    it('shift не найден — RepositoryNotFoundError', async () => {
+      const { repository } = await setup([ACTIVE_SHIFT_NO_HANDOVER])
+      await expect(
+        repository.submitCombatDutyHandover(
+          'unknown-id',
+          { unresolvedIncidents: '', remarks: '', confirmedByEmployeeName: 'Байжанов С.' },
+          COMPLETER,
+        ),
+      ).rejects.toThrow(RepositoryNotFoundError)
     })
   })
 

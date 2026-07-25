@@ -55,6 +55,22 @@ export type CombatSubmissionState = 'SUBMITTED' | 'RETURNED' | 'ACCEPTED'
  * EXPIRED — только линейный READY-путь, см. FRONTEND_DECISIONS A52. */
 export type CombatDutyExecutionState = 'PENDING_ACKNOWLEDGEMENT' | 'READY' | 'ACTIVE' | 'COMPLETED'
 
+/** §24.22 «Передача и завершение смены», СОКРАЩЕНО до честного подмножества
+ * под текущую модель (см. FRONTEND_DECISIONS A55): мастер-промпт описывает
+ * РОТАЦИЮ экипажей (сдающий состав передаёт принимающему), а модель проекта —
+ * один экипаж на businessDate, без ротации внутри дня. Реализована только
+ * часть «сдающий фиксирует данные передачи» — БЕЗ выдуманного принимающего
+ * экипажа. Обязательный checkpoint ПЕРЕД `completeCombatDuty` (§24.23). */
+export interface CombatDutyHandover {
+  /** Пустая строка — сдающий явно отметил «нет незакрытых происшествий», не
+   * пропущенное поле (тот же принцип честного пустого состояния, что везде
+   * в проекте). */
+  unresolvedIncidents: string
+  remarks: string
+  confirmedByEmployeeName: string
+  confirmedAt: string
+}
+
 export interface CombatDutyExecution {
   stateCode: CombatDutyExecutionState
   /** §24.19 — каждый сотрудник (старший+состав, БЕЗ резерва) подтверждает
@@ -67,6 +83,9 @@ export interface CombatDutyExecution {
    * участием» — фактический состав задаётся отдельно при завершении, может
    * отличаться от `memberEmployeeNames`. `null`, пока не COMPLETED. */
   actualMemberNames: string[] | null
+  /** §24.22 — `null`, пока сдача смены не оформлена; `completeCombatDuty`
+   * требует `handover !== null` (MISSING_HANDOVER иначе). */
+  handover: CombatDutyHandover | null
 }
 
 /** §24.21 «после утверждения нельзя просто поменять сотрудника в массиве» —

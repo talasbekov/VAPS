@@ -44,6 +44,9 @@ export function combatDutyShiftCompletePath(id: string): string {
 export function combatDutyShiftReplacePath(id: string): string {
   return `${COMBAT_DUTY_SHIFTS_PATH}${id}/replace/`
 }
+export function combatDutyShiftHandoverPath(id: string): string {
+  return `${COMBAT_DUTY_SHIFTS_PATH}${id}/handover/`
+}
 
 export interface ListDutyTypesResponse {
   results: DutyTypeDefinition[]
@@ -122,3 +125,13 @@ export interface CreateCombatDutyShiftRequest {
 }
 
 export type CreateCombatDutyShiftResponse = CombatDutyShift
+
+/** §24.22 «Передача и завершение смены», сокращённая до checkpoint'а сдачи
+ * (см. FRONTEND_DECISIONS A55) — обязательна ДО `completeCombatDuty`. */
+export interface SubmitCombatDutyHandoverRequest {
+  unresolvedIncidents: string
+  remarks: string
+  confirmedByEmployeeName: string
+}
+
+export type SubmitCombatDutyHandoverResponse = CombatDutyShift

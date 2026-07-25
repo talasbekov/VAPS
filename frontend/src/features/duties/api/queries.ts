@@ -13,6 +13,7 @@ import {
   combatDutyShiftAcknowledgePath,
   combatDutyShiftCheckInPath,
   combatDutyShiftCompletePath,
+  combatDutyShiftHandoverPath,
   combatDutyShiftReplacePath,
   combatDutyShiftReviewPath,
   combatDutyShiftSubmitPath,
@@ -41,6 +42,8 @@ import type {
   RequestCombatDutyReplacementResponse,
   ReviewCombatGroupRequest,
   ReviewCombatGroupResponse,
+  SubmitCombatDutyHandoverRequest,
+  SubmitCombatDutyHandoverResponse,
   SubmitCombatGroupRequest,
   SubmitCombatGroupResponse,
 } from './pending-contracts'
@@ -189,6 +192,20 @@ export function useCompleteCombatDuty() {
   return useApiMutation<CompleteCombatDutyResponse, { id: string; body: CompleteCombatDutyRequest }>({
     mutationFn: ({ id, body }) =>
       apiClient.post<CompleteCombatDutyResponse>(combatDutyShiftCompletePath(id), body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'combat-shifts'] })
+    },
+  })
+}
+
+export function useSubmitCombatDutyHandover() {
+  const queryClient = useQueryClient()
+  return useApiMutation<
+    SubmitCombatDutyHandoverResponse,
+    { id: string; body: SubmitCombatDutyHandoverRequest }
+  >({
+    mutationFn: ({ id, body }) =>
+      apiClient.post<SubmitCombatDutyHandoverResponse>(combatDutyShiftHandoverPath(id), body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'combat-shifts'] })
     },

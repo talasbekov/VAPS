@@ -197,6 +197,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
           actualStart: null,
           actualEnd: null,
           actualMemberNames: null,
+          handover: null,
         },
         replacements: [],
       },

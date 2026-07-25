@@ -19,6 +19,7 @@ import type {
   ListDutyTypesResponse,
   RequestCombatDutyReplacementRequest,
   ReviewCombatGroupRequest,
+  SubmitCombatDutyHandoverRequest,
   SubmitCombatGroupRequest,
 } from '../api/pending-contracts'
 import type { CombatDutyShift, DutyReplacementRecord, DutyShift } from '../model/types'
@@ -372,6 +373,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
                   actualStart: null,
                   actualEnd: null,
                   actualMemberNames: null,
+                  handover: null,
                 }
               : existing.submission.execution,
           updatedAt: clock.now(),
@@ -526,6 +528,14 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
           'Завершить можно только начатое дежурство.',
         )
       }
+      // §24.22 (сокращённо, A55): сдача смены — обязательный checkpoint ДО
+      // завершения, независимо от completeCombatDuty.
+      if (submission.execution.handover === null) {
+        throw new RepositoryBusinessRuleError(
+          'MISSING_HANDOVER',
+          'Перед завершением нужно оформить сдачу смены.',
+        )
+      }
       updated = {
         ...existing,
         submission: {
@@ -535,6 +545,80 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
             stateCode: 'COMPLETED',
             actualEnd: clock.now(),
             actualMemberNames: request.actualMemberNames,
+          },
+          updatedAt: clock.now(),
+        },
+        updatedAt: clock.now(),
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          combatShifts: slice.combatShifts.map((s) => (s.id === id ? updated : s)),
+        } satisfies DutiesSlice,
+      }
+    })
+    return updated
+  }
+
+  // §24.22 «Передача и завершение смены», сокращённо до checkpoint'а сдачи
+  // (см. model/types.ts CombatDutyHandover, FRONTEND_DECISIONS A55) — БЕЗ
+  // принимающего экипажа, которого модель не поддерживает. Доступна только
+  // из ACTIVE (сдавать смену, которая ещё не началась или уже завершена,
+  // бессмысленно); повторная подача перезаписывает предыдущую (сдающий может
+  // поправить данные до самого завершения).
+  async function submitCombatDutyHandover(
+    id: string,
+    request: SubmitCombatDutyHandoverRequest,
+    actorUserId: string | null,
+  ): Promise<CombatDutyShift> {
+    if (!hasPermission(actorUserId, COMBAT_COMPLETE_PERMISSION)) {
+      throw new RepositoryPermissionError(COMBAT_COMPLETE_PERMISSION)
+    }
+    if (request.confirmedByEmployeeName.trim() === '') {
+      throw new RepositoryBusinessRuleError(
+        'CONFIRMER_REQUIRED',
+        'Укажите, кто сдаёт смену.',
+      )
+    }
+    let updated!: CombatDutyShift
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.combatShifts.find((s) => s.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
+      }
+      const submission = existing.submission
+      if (
+        submission === null ||
+        submission.stateCode !== 'ACCEPTED' ||
+        submission.execution === null ||
+        submission.execution.stateCode !== 'ACTIVE'
+      ) {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STATE_TRANSITION',
+          'Сдать смену можно только во время несения службы.',
+        )
+      }
+      const requiredNames = [submission.groupLeaderEmployeeName, ...submission.memberEmployeeNames]
+      if (!requiredNames.includes(request.confirmedByEmployeeName)) {
+        throw new RepositoryBusinessRuleError(
+          'NOT_IN_ROSTER',
+          'Сдать смену может только старший или участник основного состава.',
+        )
+      }
+      updated = {
+        ...existing,
+        submission: {
+          ...submission,
+          execution: {
+            ...submission.execution,
+            handover: {
+              unresolvedIncidents: request.unresolvedIncidents,
+              remarks: request.remarks,
+              confirmedByEmployeeName: request.confirmedByEmployeeName,
+              confirmedAt: clock.now(),
+            },
           },
           updatedAt: clock.now(),
         },
@@ -679,6 +763,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     acknowledgeCombatDuty,
     checkInCombatDuty,
     completeCombatDuty,
+    submitCombatDutyHandover,
     requestReplacement,
   }
 }

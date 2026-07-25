@@ -1,9 +1,10 @@
 // Smart Josparlau E2E: «Боевые группы и Трассы» — пост-акцептный lifecycle
 // (§24.19-24.23, продолжение combat-duty-groups.spec.ts): ознакомление
-// каждого члена состава → заступление → факт несения службы, отдельный от
-// планового состава. Использует demo-фикстуру «Трасса №2 (принятый
-// состав)» — уже ACCEPTED с execution=PENDING_ACKNOWLEDGEMENT (см.
-// mocks/fixtures.ts), чтобы не дублировать подачу/рассмотрение.
+// каждого члена состава → заступление → сдача смены (§24.22, checkpoint,
+// FRONTEND_DECISIONS A55) → факт несения службы, отдельный от планового
+// состава. Использует demo-фикстуру «Трасса №2 (принятый состав)» — уже
+// ACCEPTED с execution=PENDING_ACKNOWLEDGEMENT (см. mocks/fixtures.ts),
+// чтобы не дублировать подачу/рассмотрение.
 import { expect, test } from '@playwright/test'
 import { seedCredential } from './testUtils'
 
@@ -32,6 +33,16 @@ test.describe('Боевые группы и Трассы: ознакомлени
 
     await card.getByRole('button', { name: 'Заступить' }).click()
     await expect(card.getByText('Заступили, несут службу')).toBeVisible()
+
+    // §24.22: завершить нельзя, пока не оформлена сдача смены. Незакрытые
+    // происшествия оставляем пустыми (честное «нет» — не текст-заглушка) —
+    // проверяем, что строка в сводке тогда НЕ рисуется.
+    await card.getByLabel('Замечания по сдаче смены').fill('Служба прошла штатно')
+    await card.getByLabel('Кто сдаёт смену').selectOption('Кенжебаев А.')
+    await card.getByRole('button', { name: 'Оформить сдачу смены' }).click()
+    await expect(card.getByText('Сдача смены оформлена')).toBeVisible()
+    await expect(card.getByText('Замечания: Служба прошла штатно')).toBeVisible()
+    await expect(card.getByText('Незакрытые происшествия:', { exact: false })).toHaveCount(0)
 
     // Факт может отличаться от плана — снимаем одну галочку.
     await card.getByLabel('Тастанова Г.').uncheck()

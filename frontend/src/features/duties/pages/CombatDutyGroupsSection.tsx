@@ -16,6 +16,7 @@ import {
   useDutyRoutes,
   useRequestCombatDutyReplacement,
   useReviewCombatGroup,
+  useSubmitCombatDutyHandover,
   useSubmitCombatGroup,
 } from '../api/queries'
 import type {
@@ -344,6 +345,20 @@ function ExecutionControls({
 
       {execution.stateCode === 'ACTIVE' && (
         <div className="flex flex-col gap-2">
+          {execution.handover === null ? (
+            canComplete && <HandoverForm shiftId={shiftId} rosterNames={requiredNames} />
+          ) : (
+            <div className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Сдача смены оформлена</span> —{' '}
+              {execution.handover.confirmedByEmployeeName}
+              {execution.handover.unresolvedIncidents.trim() !== '' && (
+                <div>Незакрытые происшествия: {execution.handover.unresolvedIncidents}</div>
+              )}
+              {execution.handover.remarks.trim() !== '' && (
+                <div>Замечания: {execution.handover.remarks}</div>
+              )}
+            </div>
+          )}
           <fieldset>
             <legend className="mb-1 text-xs font-medium text-muted-foreground">
               Фактически несли службу
@@ -366,7 +381,8 @@ function ExecutionControls({
             <Button
               size="sm"
               className="self-start"
-              disabled={completeMutation.isPending}
+              disabled={completeMutation.isPending || execution.handover === null}
+              title={execution.handover === null ? 'Сначала оформите сдачу смены' : undefined}
               onClick={() =>
                 completeMutation.mutate({ id: shiftId, body: { actualMemberNames: actualMembers } })
               }
@@ -797,5 +813,70 @@ function CreateRequirementSection({
         </Button>
       </div>
     </section>
+  )
+}
+
+// §24.22 «Передача и завершение смены», сокращённо до checkpoint'а сдачи
+// (FRONTEND_DECISIONS A55) — БЕЗ принимающего экипажа (модель — один экипаж
+// на businessDate, не ротация). Обязательна ДО «Завершить дежурство».
+function HandoverForm({
+  shiftId,
+  rosterNames,
+}: {
+  shiftId: string
+  rosterNames: string[]
+}) {
+  const [unresolvedIncidents, setUnresolvedIncidents] = useState('')
+  const [remarks, setRemarks] = useState('')
+  const [confirmedBy, setConfirmedBy] = useState('')
+  const handoverMutation = useSubmitCombatDutyHandover()
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border p-2.5">
+      <span className="text-xs font-medium text-muted-foreground">Сдача смены</span>
+      {handoverMutation.error !== null && (
+        <p className="text-xs text-destructive">{handoverMutation.error.message}</p>
+      )}
+      <textarea
+        className="min-h-14 rounded-md border border-input bg-background p-2 text-sm"
+        placeholder="Незакрытые происшествия (если нет — оставьте пустым)"
+        aria-label="Незакрытые происшествия"
+        value={unresolvedIncidents}
+        onChange={(e) => setUnresolvedIncidents(e.target.value)}
+      />
+      <textarea
+        className="min-h-14 rounded-md border border-input bg-background p-2 text-sm"
+        placeholder="Замечания"
+        aria-label="Замечания по сдаче смены"
+        value={remarks}
+        onChange={(e) => setRemarks(e.target.value)}
+      />
+      <select
+        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+        value={confirmedBy}
+        onChange={(e) => setConfirmedBy(e.target.value)}
+        aria-label="Кто сдаёт смену"
+      >
+        <option value="">— кто сдаёт смену —</option>
+        {rosterNames.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
+      <Button
+        size="sm"
+        className="self-start"
+        disabled={handoverMutation.isPending || confirmedBy === ''}
+        onClick={() =>
+          handoverMutation.mutate({
+            id: shiftId,
+            body: { unresolvedIncidents, remarks, confirmedByEmployeeName: confirmedBy },
+          })
+        }
+      >
+        {handoverMutation.isPending ? 'Оформление…' : 'Оформить сдачу смены'}
+      </Button>
+    </div>
   )
 }
