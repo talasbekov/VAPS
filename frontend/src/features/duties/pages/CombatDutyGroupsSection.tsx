@@ -171,7 +171,7 @@ function CombatShiftCard({
           </span>
         )}
         {submission === null && (
-          <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+          <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600">
             Требует подачи
           </span>
         )}

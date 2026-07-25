@@ -184,6 +184,7 @@ export function CalendarPage() {
             </button>
             <input
               type="date"
+              aria-label="Выбранная дата календаря"
               className="rounded-md border px-3 py-1.5 text-sm tabular-nums"
               value={selectedDate}
               onChange={(e) => goToDate(e.target.value)}

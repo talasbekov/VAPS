@@ -142,7 +142,7 @@ export function EmployeeDetailPage() {
                 className={
                   employee.employment_status === 'WORKING'
                     ? 'inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-800'
-                    : 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground'
+                    : 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600'
                 }
               >
                 {EMPLOYMENT_STATUS_LABEL[employee.employment_status]}

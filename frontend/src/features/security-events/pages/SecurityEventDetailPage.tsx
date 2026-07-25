@@ -829,7 +829,7 @@ const FORCE_STATUS_LABEL: Record<ForceRequest['status'], string> = {
 }
 
 const FORCE_STATUS_CLASS: Record<ForceRequest['status'], string> = {
-  NOT_SENT: 'bg-muted text-muted-foreground',
+  NOT_SENT: 'bg-muted text-slate-600',
   SENT: 'bg-blue-100 text-blue-800',
   PARTIALLY_ALLOCATED: 'bg-amber-100 text-amber-800',
   ALLOCATED: 'bg-green-100 text-green-800',
@@ -969,14 +969,20 @@ function PlacementWorkspace({ event }: { event: SecurityEvent }) {
                   onClick={() => setSelectedPostId(post.id)}
                   className={
                     post.id === selectedPostId
-                      ? 'rounded-md bg-primary/10 px-2.5 py-2 text-left text-sm font-semibold text-primary'
+                      ? 'rounded-md bg-primary/10 px-2.5 py-2 text-left text-sm font-semibold text-blue-800'
                       : 'rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted/50'
                   }
                 >
                   <span className="block">
                     {post.sector} · {post.post}
                   </span>
-                  <span className="block text-xs text-muted-foreground">
+                  <span
+                    className={
+                      post.id === selectedPostId
+                        ? 'block text-xs text-slate-600'
+                        : 'block text-xs text-muted-foreground'
+                    }
+                  >
                     {count > 0 ? `Укомплектован (${count})` : 'Не укомплектован'}
                   </span>
                 </button>
@@ -1035,6 +1041,7 @@ function PlacementWorkspace({ event }: { event: SecurityEvent }) {
 
                 <div className="flex gap-2">
                   <select
+                    aria-label="Сотрудник для назначения на пост"
                     className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
                     value={pickedEmployeeId}
                     onChange={(e) => setPickedEmployeeId(e.target.value)}

@@ -27,10 +27,10 @@ const STATE_LABEL: Record<DutyShiftState, string> = {
 }
 
 const STATE_CLASS: Record<DutyShiftState, string> = {
-  PLANNED: 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground',
+  PLANNED: 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600',
   ACKNOWLEDGED: 'inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800',
   ACTIVE: 'inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-800',
-  COMPLETED: 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground',
+  COMPLETED: 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600',
 }
 
 export function DutyPlanPage() {
