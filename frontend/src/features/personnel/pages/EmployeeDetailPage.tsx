@@ -9,7 +9,7 @@
 // общего стабильного employeeId с features/personnel (разные ID-схемы,
 // намеренно раздельные bounded context, см. FRONTEND_DECISIONS A44-A46/A28) —
 // тот же вывод, что уже был сделан для календаря "по сотруднику".
-import { useState } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { Link, useParams } from 'react-router'
 import { ROUTES } from '../../../shared/routes'
 import { useDivisions, useEmployee, usePositions, useRanks } from '../api/queries'
@@ -25,6 +25,12 @@ const OPERATIONAL_TABS = [
 ] as const
 
 type OperationalTabKey = (typeof OPERATIONAL_TABS)[number]['key']
+type ProfileTabKey = 'summary' | OperationalTabKey
+
+const PROFILE_TABS: { key: ProfileTabKey; label: string }[] = [
+  { key: 'summary', label: 'Сводка' },
+  ...OPERATIONAL_TABS,
+]
 
 const OPERATIONAL_TAB_NOT_CONNECTED: Record<OperationalTabKey, { message: string; source: string }> = {
   availability: {
@@ -64,7 +70,36 @@ export function EmployeeDetailPage() {
   const divisionsQuery = useDivisions()
   const positionsQuery = usePositions()
   const ranksQuery = useRanks()
-  const [activeTab, setActiveTab] = useState<'summary' | OperationalTabKey>('summary')
+  const [activeTab, setActiveTab] = useState<ProfileTabKey>('summary')
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+
+  function focusTab(index: number): void {
+    const wrapped = (index + PROFILE_TABS.length) % PROFILE_TABS.length
+    const tab = PROFILE_TABS[wrapped]
+    setActiveTab(tab.key)
+    tabRefs.current[tab.key]?.focus()
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number): void {
+    switch (event.key) {
+      case 'ArrowRight':
+        event.preventDefault()
+        focusTab(index + 1)
+        break
+      case 'ArrowLeft':
+        event.preventDefault()
+        focusTab(index - 1)
+        break
+      case 'Home':
+        event.preventDefault()
+        focusTab(0)
+        break
+      case 'End':
+        event.preventDefault()
+        focusTab(PROFILE_TABS.length - 1)
+        break
+    }
+  }
 
   if (employeeQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Загрузка сотрудника…</p>
@@ -142,14 +177,38 @@ export function EmployeeDetailPage() {
         <section className="rounded-xl border bg-card p-4">
           <div className="mb-3 text-sm font-semibold">Оперативный профиль (Smart Josparlau)</div>
           <div role="tablist" aria-label="Оперативный профиль" className="mb-3 flex flex-wrap gap-1 border-b">
-            <TabButton tabKey="summary" activeTab={activeTab} onSelect={setActiveTab} label="Сводка" />
-            {OPERATIONAL_TABS.map((tab) => (
-              <TabButton key={tab.key} tabKey={tab.key} activeTab={activeTab} onSelect={setActiveTab} label={tab.label} />
+            {PROFILE_TABS.map((tab, index) => (
+              <button
+                key={tab.key}
+                ref={(el) => {
+                  tabRefs.current[tab.key] = el
+                }}
+                type="button"
+                role="tab"
+                id={`profile-tab-${tab.key}`}
+                aria-selected={activeTab === tab.key}
+                aria-controls={`profile-tabpanel-${tab.key}`}
+                tabIndex={activeTab === tab.key ? 0 : -1}
+                className={
+                  activeTab === tab.key
+                    ? 'rounded-t-md border-b-2 border-primary px-2.5 py-1.5 text-xs font-semibold text-primary'
+                    : 'rounded-t-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground'
+                }
+                onClick={() => setActiveTab(tab.key)}
+                onKeyDown={(e) => handleTabKeyDown(e, index)}
+              >
+                {tab.label}
+              </button>
             ))}
           </div>
 
           {activeTab === 'summary' ? (
-            <div role="tabpanel" aria-label="Сводка">
+            <div
+              role="tabpanel"
+              id="profile-tabpanel-summary"
+              aria-labelledby="profile-tab-summary"
+              tabIndex={0}
+            >
               <p className="text-sm text-muted-foreground">
                 Доступность, назначения, подготовка и допуски, нагрузка, рейтинг и документы —
                 Not started в текущем срезе: честно не показываем без реального read model (§35).
@@ -157,7 +216,12 @@ export function EmployeeDetailPage() {
               </p>
             </div>
           ) : (
-            <div role="tabpanel" aria-label={OPERATIONAL_TABS.find((t) => t.key === activeTab)?.label}>
+            <div
+              role="tabpanel"
+              id={`profile-tabpanel-${activeTab}`}
+              aria-labelledby={`profile-tab-${activeTab}`}
+              tabIndex={0}
+            >
               <p className="text-sm text-muted-foreground">
                 {OPERATIONAL_TAB_NOT_CONNECTED[activeTab].message}
               </p>
@@ -169,35 +233,6 @@ export function EmployeeDetailPage() {
         </section>
       </div>
     </div>
-  )
-}
-
-function TabButton({
-  tabKey,
-  activeTab,
-  onSelect,
-  label,
-}: {
-  tabKey: 'summary' | OperationalTabKey
-  activeTab: 'summary' | OperationalTabKey
-  onSelect: (tab: 'summary' | OperationalTabKey) => void
-  label: string
-}) {
-  const isActive = activeTab === tabKey
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={isActive}
-      className={
-        isActive
-          ? 'rounded-t-md border-b-2 border-primary px-2.5 py-1.5 text-xs font-semibold text-primary'
-          : 'rounded-t-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground'
-      }
-      onClick={() => onSelect(tabKey)}
-    >
-      {label}
-    </button>
   )
 }
 

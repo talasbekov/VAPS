@@ -66,4 +66,45 @@ test.describe('Сотрудники: реестр → поиск/фильтр �
     await page.getByRole('link', { name: '← Назад к списку' }).click()
     await expect(page.getByRole('heading', { name: 'Сотрудники' })).toBeVisible()
   })
+
+  // Второй проход accessibility-аудита (Этап 20 закрыл только aria-label) —
+  // role="tab" требует WAI-ARIA Tabs Pattern: roving tabindex + стрелки/
+  // Home/End, не только клик мышью.
+  test('вкладки оперативного профиля управляются с клавиатуры (roving tabindex)', async ({
+    page,
+  }) => {
+    await seedCredential(page)
+    await page.goto('/employees')
+    await page.getByRole('link', { name: /Нуртаев/ }).click()
+    await expect(page.getByRole('heading', { name: /Нуртаев/ })).toBeVisible()
+
+    const summaryTab = page.getByRole('tab', { name: 'Сводка' })
+    const availabilityTab = page.getByRole('tab', { name: 'Доступность' })
+    const documentsTab = page.getByRole('tab', { name: 'Документы' })
+
+    // Только активная вкладка в последовательности Tab (остальные tabindex=-1).
+    await expect(summaryTab).toHaveAttribute('tabindex', '0')
+    await expect(availabilityTab).toHaveAttribute('tabindex', '-1')
+
+    await summaryTab.focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(availabilityTab).toBeFocused()
+    await expect(availabilityTab).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tabpanel', { name: 'Доступность' })).toContainText(
+      'не подключена',
+    )
+    await expect(summaryTab).toHaveAttribute('tabindex', '-1')
+
+    await page.keyboard.press('ArrowLeft')
+    await expect(summaryTab).toBeFocused()
+    await expect(summaryTab).toHaveAttribute('aria-selected', 'true')
+
+    await page.keyboard.press('End')
+    await expect(documentsTab).toBeFocused()
+    await expect(documentsTab).toHaveAttribute('aria-selected', 'true')
+
+    await page.keyboard.press('Home')
+    await expect(summaryTab).toBeFocused()
+    await expect(summaryTab).toHaveAttribute('aria-selected', 'true')
+  })
 })
