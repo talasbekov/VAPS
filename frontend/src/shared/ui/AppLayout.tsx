@@ -38,6 +38,16 @@ export function AppLayout() {
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
+      {/* WCAG 2.4.1 Bypass Blocks: сайдбар — ~13 пунктов навигации, без этой
+          ссылки клавиатурный пользователь проходит их все на КАЖДОЙ странице
+          прежде чем добраться до контента. sr-only до фокуса, видима при Tab
+          (первый элемент в DOM-порядке). */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
+      >
+        Перейти к содержимому
+      </a>
       <aside className="flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
         <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
           {/* лого-заглушка «PS» (бриф 1) */}
@@ -106,7 +116,7 @@ export function AppLayout() {
         </header>
         {/* нейтральный контейнер: умеренный padding, плотность рабочих
             таблиц E9/E10 не съедается каркасом */}
-        <main className="min-w-0 flex-1 p-6">
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-6 focus:outline-none">
           <Outlet />
         </main>
         <AppFooter />
