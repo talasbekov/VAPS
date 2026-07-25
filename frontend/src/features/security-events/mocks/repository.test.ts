@@ -27,6 +27,7 @@ const DEMAND_PLANNER = 'demand-planner-user'
 const PLACEMENT_MANAGER = 'placement-manager-user'
 const PLACEMENT_APPROVER = 'placement-approver-user'
 const BROKER = 'broker-user'
+const CONDUCT_MANAGER = 'conduct-manager-user'
 
 function seedEnvelope(events: SecurityEventsSlice['events']): DemoStateEnvelope {
   return {
@@ -87,6 +88,7 @@ describe('createSecurityEventsRepository', () => {
       { userId: BROKER, permissions: ['ops.security_event.view', 'ops.force_allocation.manage'] },
       { userId: PLACEMENT_MANAGER, permissions: ['ops.security_event.view', 'ops.placement.manage'] },
       { userId: PLACEMENT_APPROVER, permissions: ['ops.security_event.view', 'ops.placement.approve'] },
+      { userId: CONDUCT_MANAGER, permissions: ['ops.security_event.view', 'ops.conduct.manage'] },
     ])
   })
 
@@ -581,5 +583,127 @@ describe('createSecurityEventsRepository', () => {
 
     const reread = await repo.get(APPROVAL_EVENT.id, VIEWER)
     expect(reread.stage).toBe('PLACEMENT')
+  })
+
+  const CONDUCT_EVENT = {
+    ...APPROVAL_EVENT,
+    id: 'evt-conduct',
+    stage: 'CONDUCT' as const,
+  }
+
+  describe('replaceAssignment (§9.11)', () => {
+    it('требует ops.conduct.manage', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await expect(
+        repo.replaceAssignment(
+          CONDUCT_EVENT.id,
+          { assignmentId: 'pa1', incomingEmployeeId: 'emp-3', reasonCode: 'Заболел' },
+          PLACEMENT_MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(RepositoryPermissionError)
+    })
+
+    it('требует непустую причину', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await expect(
+        repo.replaceAssignment(
+          CONDUCT_EVENT.id,
+          { assignmentId: 'pa1', incomingEmployeeId: 'emp-3', reasonCode: '' },
+          CONDUCT_MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(RepositoryValidationError)
+    })
+
+    it('неизвестный сотрудник — RepositoryValidationError', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await expect(
+        repo.replaceAssignment(
+          CONDUCT_EVENT.id,
+          { assignmentId: 'pa1', incomingEmployeeId: 'emp-unknown', reasonCode: 'Заболел' },
+          CONDUCT_MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(RepositoryValidationError)
+    })
+
+    it('доступна только на этапе «Проведение»', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([APPROVAL_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await expect(
+        repo.replaceAssignment(
+          APPROVAL_EVENT.id,
+          { assignmentId: 'pa1', incomingEmployeeId: 'emp-3', reasonCode: 'Заболел' },
+          CONDUCT_MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
+    })
+
+    it('несуществующее назначение — RepositoryNotFoundError', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await expect(
+        repo.replaceAssignment(
+          CONDUCT_EVENT.id,
+          { assignmentId: 'unknown-assignment', incomingEmployeeId: 'emp-3', reasonCode: 'Заболел' },
+          CONDUCT_MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(RepositoryNotFoundError)
+    })
+
+    it('DOUBLE_ASSIGNMENT: заменяющий уже назначен на другой пост', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      // emp-2 уже на посте B (ASSIGNMENTS) — заменить pa1 (пост A) на emp-2 нельзя.
+      await expect(
+        repo.replaceAssignment(
+          CONDUCT_EVENT.id,
+          { assignmentId: 'pa1', incomingEmployeeId: 'emp-2', reasonCode: 'Заболел' },
+          CONDUCT_MANAGER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'DOUBLE_ASSIGNMENT' })
+    })
+
+    it('успешная замена меняет назначение и пишет journal entry типа REPLACEMENT', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      const result = await repo.replaceAssignment(
+        CONDUCT_EVENT.id,
+        { assignmentId: 'pa1', incomingEmployeeId: 'emp-3', reasonCode: 'Заболел' },
+        CONDUCT_MANAGER,
+      )
+      expect(result.placementAssignments.find((a) => a.postId === POST_A.id)?.employeeName).toBe(
+        'Ерланов Д.',
+      )
+      expect(result.placementAssignments).toHaveLength(2)
+      expect(result.journalEntries[0]).toMatchObject({
+        type: 'REPLACEMENT',
+        description: 'Ахметов Б. → Ерланов Д. — причина: Заболел',
+      })
+    })
+
+    it('успешная замена персистентна из БД (перечитано через get)', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await repo.replaceAssignment(
+        CONDUCT_EVENT.id,
+        { assignmentId: 'pa2', incomingEmployeeId: 'emp-4', reasonCode: 'Травма' },
+        CONDUCT_MANAGER,
+      )
+      const reread = await repo.get(CONDUCT_EVENT.id, VIEWER)
+      expect(reread.placementAssignments.find((a) => a.postId === POST_B.id)?.employeeName).toBe(
+        'Жаксыбеков Т.',
+      )
+      expect(reread.journalEntries).toHaveLength(1)
+    })
   })
 })

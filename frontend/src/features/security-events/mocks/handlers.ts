@@ -24,6 +24,7 @@ import {
   securityEventPlacementUnassignPath,
   securityEventReconCompletePath,
   securityEventReconPath,
+  securityEventReplaceAssignmentPath,
 } from '../api/pending-contracts'
 import type {
   AddJournalEntryRequest,
@@ -32,6 +33,7 @@ import type {
   CreateSecurityEventRequest,
   ListPersonnelResponse,
   ListSecurityEventsParams,
+  ReplaceAssignmentRequest,
   ReturnPlacementRequest,
   UpdateBulletinRequest,
   UpdateDemandRequest,
@@ -549,6 +551,27 @@ export function createSecurityEventsHandlers(
       }
       try {
         const updated = await repository.addJournalEntry(id, normalized, actorUserId)
+        return HttpResponse.json(updated)
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock, id)
+        if (mapped) return mapped
+        throw error
+      }
+    }),
+
+    http.post(`*${securityEventReplaceAssignmentPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = String(params.id)
+      const body = (await request.json().catch(() => ({}))) as Partial<
+        Record<keyof ReplaceAssignmentRequest, unknown>
+      >
+      const normalized: ReplaceAssignmentRequest = {
+        assignmentId: typeof body.assignmentId === 'string' ? body.assignmentId : '',
+        incomingEmployeeId: typeof body.incomingEmployeeId === 'string' ? body.incomingEmployeeId : '',
+        reasonCode: typeof body.reasonCode === 'string' ? body.reasonCode : '',
+      }
+      try {
+        const updated = await repository.replaceAssignment(id, normalized, actorUserId)
         return HttpResponse.json(updated)
       } catch (error) {
         const mapped = mapRepositoryError(error, clock, id)

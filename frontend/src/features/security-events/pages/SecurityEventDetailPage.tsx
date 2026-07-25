@@ -24,6 +24,7 @@ import {
   useCompletePlacement,
   useCompleteRecon,
   usePersonnelRoster,
+  useReplaceAssignment,
   useReturnPlacement,
   useSecurityEvent,
   useUnassignPlacement,
@@ -35,6 +36,7 @@ import { SECURITY_EVENT_STAGES } from '../model/types'
 import type {
   ForceRequest,
   JournalEntryType,
+  PlacementAssignment,
   ReconChecklistItem,
   ReconSectorPost,
   SecurityEvent,
@@ -1347,8 +1349,123 @@ function ConductJournal({ event }: { event: SecurityEvent }) {
         )}
       </section>
 
+      <ReplacementPanel event={event} />
+
       <ClosureTrigger event={event} />
     </div>
+  )
+}
+
+// §9.11 «Замена выбывшего сотрудника», сокращённо (FRONTEND_DECISIONS A56):
+// БЕЗ авто-подбора кандидата (алгоритм подбора не утверждён заказчиком по
+// мастер-промпту — REPLACEMENT-SUGGESTION-001 = business-policy-pending) —
+// только ручной выбор из ростера, одна атомарная замена + journal entry.
+function ReplacementPanel({ event }: { event: SecurityEvent }) {
+  const rosterQuery = usePersonnelRoster()
+  const replaceMutation = useReplaceAssignment(event.id)
+  const [replacingId, setReplacingId] = useState<string | null>(null)
+  const [incomingEmployeeId, setIncomingEmployeeId] = useState('')
+  const [reasonCode, setReasonCode] = useState('')
+
+  const assignedElsewhere = (postId: string) =>
+    new Set(
+      event.placementAssignments.filter((a) => a.postId !== postId).map((a) => a.employeeId),
+    )
+
+  function startReplacing(assignment: PlacementAssignment): void {
+    setReplacingId(assignment.id)
+    setIncomingEmployeeId('')
+    setReasonCode('')
+  }
+
+  return (
+    <section className="rounded-xl border bg-card p-4">
+      <div className="mb-2 text-sm font-semibold">Замена выбывшего сотрудника</div>
+      {replaceMutation.error !== null && (
+        <p className="mb-2 text-xs text-destructive" role="alert">
+          {replaceMutation.error.message}
+        </p>
+      )}
+      {event.placementAssignments.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Назначений на посты нет.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {event.placementAssignments.map((a) => {
+            const post = event.reconSectorPosts.find((p) => p.id === a.postId)
+            const excluded = assignedElsewhere(a.postId)
+            return (
+              <div key={a.id} className="rounded-md border p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm">
+                    {a.employeeName} · {post?.sector ?? '—'} · {post?.post ?? a.postId}
+                  </span>
+                  {replacingId !== a.id && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => startReplacing(a)}
+                    >
+                      Заменить
+                    </Button>
+                  )}
+                </div>
+                {replacingId === a.id && (
+                  <div className="mt-2.5 flex flex-col gap-1.5 border-t pt-2.5">
+                    <select
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                      value={incomingEmployeeId}
+                      onChange={(e) => setIncomingEmployeeId(e.target.value)}
+                      aria-label="Кем заменить"
+                    >
+                      <option value="">Выберите сотрудника…</option>
+                      {(rosterQuery.data?.results ?? []).map((emp) => (
+                        <option key={emp.id} value={emp.id} disabled={excluded.has(emp.id)}>
+                          {emp.rankLabel} {emp.name} · {emp.unit}
+                          {excluded.has(emp.id) ? ' (занят на другом посту)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                      placeholder="Причина замены"
+                      aria-label="Причина замены"
+                      value={reasonCode}
+                      onChange={(e) => setReasonCode(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={
+                          incomingEmployeeId === '' ||
+                          reasonCode.trim() === '' ||
+                          replaceMutation.isPending
+                        }
+                        onClick={() => {
+                          replaceMutation.mutate({ assignmentId: a.id, incomingEmployeeId, reasonCode })
+                          setReplacingId(null)
+                        }}
+                      >
+                        {replaceMutation.isPending ? 'Замена…' : 'Подтвердить замену'}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setReplacingId(null)}
+                      >
+                        Отмена
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 

@@ -151,6 +151,21 @@ export interface CloseSecurityEventRequest extends Record<string, unknown> {
 }
 export type CloseSecurityEventResponse = SecurityEvent
 
+/** §9.11 «Замена выбывшего сотрудника», сокращённо (см. FRONTEND_DECISIONS
+ * A56): БЕЗ авто-подбора кандидата (REPLACEMENT-SUGGESTION-001 =
+ * business-policy-pending по мастер-промпту, алгоритм не утверждён
+ * заказчиком) — только ручной выбор, атомарная замена одной мутацией. */
+export interface ReplaceAssignmentRequest extends Record<string, unknown> {
+  assignmentId: string
+  incomingEmployeeId: string
+  reasonCode: string
+}
+export type ReplaceAssignmentResponse = SecurityEvent
+
+export function securityEventReplaceAssignmentPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/conduct/replace/`
+}
+
 // Раздельные сегменты ("acknowledge" vs "acknowledgement/complete") — иначе
 // path-to-regexp у MSW матчит /acknowledgement/complete/ через более ранний
 // :assignmentId-роут (assignmentId="complete") и отдаёт 404 от НЕ того handler'а.

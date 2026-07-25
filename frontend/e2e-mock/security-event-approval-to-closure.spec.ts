@@ -5,6 +5,10 @@
 // (не создаваемое в спеке) мероприятие «Городской спортивный форум» —
 // единственный seed-объект в стадии APPROVAL (fixtures.ts), с ровно 1
 // назначением на 1 пост, чтобы не дублировать Расстановку/Рекогносцировку.
+// Проведение также включает замену выбывшего (§9.11, FRONTEND_DECISIONS
+// A56, добавлено по запросу «продолжай разрабатывать») — seed-назначение
+// «Ахметов Б.» (PERSONNEL_ROSTER[0], i=0 в assignedPostIndexes) заменяется
+// на «Бекова А.».
 import { expect, test } from '@playwright/test'
 import { hideDemoToolbar, seedCredential } from './testUtils'
 
@@ -50,6 +54,18 @@ test.describe('ОМ: Согласование → Ознакомление → �
     await page.getByLabel('Описание *').fill('Проведён инструктаж всех постов, замечаний нет.')
     await page.getByRole('button', { name: 'Добавить запись' }).click()
     await expect(page.getByText('Инструктаж перед началом').or(page.getByText('E2E инструктаж'))).toBeVisible()
+
+    // §9.11 «Замена выбывшего сотрудника», сокращённо (A56) — ручной выбор,
+    // атомарная замена + автоматическая запись в журнал типа «Замена».
+    const replacementPanel = page.locator('section', { hasText: 'Замена выбывшего сотрудника' })
+    await expect(replacementPanel.getByText('Ахметов Б.', { exact: false })).toBeVisible()
+    await replacementPanel.getByRole('button', { name: 'Заменить' }).click()
+    await replacementPanel.getByLabel('Кем заменить').selectOption('emp-2')
+    await replacementPanel.getByLabel('Причина замены').fill('Заболел (E2E)')
+    await replacementPanel.getByRole('button', { name: 'Подтвердить замену' }).click()
+    await expect(replacementPanel.getByText('Бекова А.', { exact: false })).toBeVisible()
+    await expect(replacementPanel.getByText('Ахметов Б.', { exact: false })).toHaveCount(0)
+    await expect(page.getByText('Ахметов Б. → Бекова А.', { exact: false })).toBeVisible()
 
     await page.getByRole('button', { name: 'Закрыть мероприятие' }).click()
     await expect(page.getByText('Итоги по направлениям (обязательны все)')).toBeVisible()

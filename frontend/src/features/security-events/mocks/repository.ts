@@ -16,6 +16,7 @@ import type {
   CreateSecurityEventRequest,
   ListSecurityEventsParams,
   ListSecurityEventsResponse,
+  ReplaceAssignmentRequest,
   ReturnPlacementRequest,
   UpdateDemandRequest,
   UpdateForceAllocationRequest,
@@ -866,6 +867,91 @@ export function createSecurityEventsRepository(
     return updated
   }
 
+  /** §9.11 «Замена выбывшего сотрудника», сокращённо (FRONTEND_DECISIONS
+   * A56) — БЕЗ авто-подбора кандидата (алгоритм не утверждён заказчиком,
+   * REPLACEMENT-SUGGESTION-001 = business-policy-pending). Одна атомарная
+   * мутация: снимает исходное назначение, создаёт новое на ТОТ ЖЕ пост,
+   * пишет journal entry типа REPLACEMENT. */
+  async function replaceAssignment(
+    id: string,
+    request: ReplaceAssignmentRequest,
+    actorUserId: string | null,
+  ): Promise<SecurityEvent> {
+    if (!hasPermission(actorUserId, CONDUCT_PERMISSION)) {
+      throw new RepositoryPermissionError(CONDUCT_PERMISSION)
+    }
+    if (request.reasonCode.trim() === '') {
+      throw new RepositoryValidationError({ reasonCode: ['Обязательное поле.'] })
+    }
+    const incomingEmployee = findPersonnel(request.incomingEmployeeId)
+    if (incomingEmployee === undefined) {
+      throw new RepositoryValidationError({
+        incomingEmployeeId: ['Сотрудник не найден.'],
+      })
+    }
+
+    let updated!: SecurityEvent
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.events.find((e) => e.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
+      }
+      if (existing.stage !== 'CONDUCT') {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STAGE_TRANSITION',
+          'Замена доступна только на этапе «Проведение».',
+        )
+      }
+      const outgoing = existing.placementAssignments.find((a) => a.id === request.assignmentId)
+      if (outgoing === undefined) {
+        throw new RepositoryNotFoundError(request.assignmentId)
+      }
+      const alreadyOnAnotherPost = existing.placementAssignments.some(
+        (a) => a.employeeId === request.incomingEmployeeId && a.postId !== outgoing.postId,
+      )
+      if (alreadyOnAnotherPost) {
+        throw new RepositoryBusinessRuleError(
+          'DOUBLE_ASSIGNMENT',
+          `${incomingEmployee.name} уже назначен(а) на другой пост этого мероприятия.`,
+        )
+      }
+      const post = existing.reconSectorPosts.find((p) => p.id === outgoing.postId)
+      const incoming: PlacementAssignment = {
+        id: `${id}-assignment-${existing.placementAssignments.length + 1}`,
+        postId: outgoing.postId,
+        employeeId: request.incomingEmployeeId,
+        employeeName: incomingEmployee.name,
+        acknowledgedAt: null,
+      }
+      const journalEntry: JournalEntry = {
+        id: `${id}-journal-${existing.journalEntries.length + 1}`,
+        type: 'REPLACEMENT',
+        title: `Замена: ${post?.post ?? outgoing.postId}`,
+        // ФИО в ростере оканчиваются на «.» (инициалы) — разделитель " — ",
+        // а не точка сразу после имени, иначе получалось бы «Д.. Причина».
+        description: `${outgoing.employeeName} → ${incomingEmployee.name} — причина: ${request.reasonCode.trim()}`,
+        createdAt: clock.now(),
+      }
+      updated = {
+        ...existing,
+        placementAssignments: [
+          ...existing.placementAssignments.filter((a) => a.id !== request.assignmentId),
+          incoming,
+        ],
+        journalEntries: [journalEntry, ...existing.journalEntries],
+        updatedAt: clock.now(),
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          events: slice.events.map((e) => (e.id === id ? updated : e)),
+        } satisfies SecurityEventsSlice,
+      }
+    })
+    return updated
+  }
+
   /** Закрытие ОМ (Epic 18.1 FR-30): итоги ВСЕХ направлений обязательны — не частичное закрытие. */
   async function closeSecurityEvent(
     id: string,
@@ -945,6 +1031,7 @@ export function createSecurityEventsRepository(
     acknowledgePlacement,
     completeAcknowledgement,
     addJournalEntry,
+    replaceAssignment,
     closeSecurityEvent,
   }
 }

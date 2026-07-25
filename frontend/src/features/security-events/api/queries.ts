@@ -25,6 +25,7 @@ import {
   securityEventPlacementUnassignPath,
   securityEventReconCompletePath,
   securityEventReconPath,
+  securityEventReplaceAssignmentPath,
 } from './pending-contracts'
 import type {
   AcknowledgePlacementResponse,
@@ -45,6 +46,8 @@ import type {
   ListPersonnelResponse,
   ListSecurityEventsParams,
   ListSecurityEventsResponse,
+  ReplaceAssignmentRequest,
+  ReplaceAssignmentResponse,
   ReturnPlacementRequest,
   ReturnPlacementResponse,
   UnassignPlacementResponse,
@@ -275,6 +278,17 @@ export function useAddJournalEntry(id: string) {
   return useApiMutation<AddJournalEntryResponse, AddJournalEntryRequest>({
     mutationFn: (body) =>
       apiClient.post<AddJournalEntryResponse>(securityEventJournalPath(id), body),
+    onSuccess: (data) => {
+      queryClient.setQueryData(securityEventKeys.detail(id), data)
+    },
+  })
+}
+
+export function useReplaceAssignment(id: string) {
+  const queryClient = useQueryClient()
+  return useApiMutation<ReplaceAssignmentResponse, ReplaceAssignmentRequest>({
+    mutationFn: (body) =>
+      apiClient.post<ReplaceAssignmentResponse>(securityEventReplaceAssignmentPath(id), body),
     onSuccess: (data) => {
       queryClient.setQueryData(securityEventKeys.detail(id), data)
     },

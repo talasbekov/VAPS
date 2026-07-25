@@ -48,12 +48,12 @@
 
 | Экран/действие | Route | Feature | Mock op | Тест | Статус |
 |---|---|---|---|---|---|
-| Журнал штаба (инструктаж/указания) | securityEventDetail | features/conduct | recordJournalEntry | — | Not started |
-| Инциденты с фото | securityEventDetail | features/conduct | recordIncident | — | Not started |
-| Каскадная замена выбывшего | securityEventDetail | features/conduct | replaceAssignment | — | Not started |
-| Закрытие (итоги направлений обязательны) | securityEventDetail | features/conduct | closeSecurityEvent | — | Not started |
-| Опрос по факту (ServiceHours) | securityEventDetail | features/conduct | recordActuals | — | Not started |
-| Архив ОМ | securityEventDetail | features/conduct | archiveSecurityEvent | — | Not started |
+| Журнал штаба (инструктаж/указания/инциденты/замены — append-only, тип+заголовок+описание) | securityEventDetail (stage=CONDUCT) | features/security-events (`ConductJournal`) | useAddJournalEntry | e2e-mock/security-event-approval-to-closure.spec.ts | Verified (была ошибочно помечена Not started — матрица сверена с кодом заново) |
+| Инциденты с фото | securityEventDetail | features/security-events | — | — | Not started (требует blob-хранилища, тот же вывод, что «Рекогносцировка: материалы» выше) |
+| Каскадная замена выбывшего | securityEventDetail | features/security-events | — | — | Not started |
+| Закрытие (итоги направлений обязательны) | securityEventDetail (stage=CONDUCT→CLOSED) | features/security-events (`ClosureTrigger`) | useCloseSecurityEvent | e2e-mock/security-event-approval-to-closure.spec.ts | Verified (была ошибочно помечена Not started — матрица сверена с кодом заново) |
+| Опрос по факту (ServiceHours) | securityEventDetail | features/security-events | — | — | Not started |
+| Архив ОМ (отдельный список закрытых) | — | features/security-events | — | — | Not started (см. строку ниже, дубль) |
 
 ## Домен: Личный состав (Этап 4)
 
@@ -95,7 +95,8 @@
 | Боевые группы: ознакомление по каждому члену → заступление → факт (§24.19-24.23) | duties (вкладка «Боевые группы и Трассы») | features/duties | Verified (ручная браузерная проверка + mocks/repository.test.ts + e2e-mock/combat-duty-execution.spec.ts, см. FRONTEND_DECISIONS A52) |
 | Боевые группы: замена участника до заступления (§24.21) | duties (вкладка «Боевые группы и Трассы») | features/duties | Verified (ручная браузерная проверка + mocks/repository.test.ts + e2e-mock/combat-duty-replacement.spec.ts, см. FRONTEND_DECISIONS A53) |
 | Боевые группы: формирование потребности на смену (§24.1) | duties (вкладка «Боевые группы и Трассы») | features/duties | Verified (ручная браузерная проверка + mocks/repository.test.ts + e2e-mock/combat-duty-requirement.spec.ts, см. FRONTEND_DECISIONS A54) |
-| Боевые группы: передача смены/HANDOVER (§24.22), Conflict Repository (§24.17 за пределами DOUBLE_ASSIGNMENT), формальный revision, requiredGroups/requiredPosts | — | — | Not started (см. A51/A52/A53/A54) |
+| Боевые группы: сдача смены — checkpoint (§24.22, сокращённо, без принимающего экипажа) | duties (вкладка «Боевые группы и Трассы») | features/duties | Verified (см. FRONTEND_DECISIONS A55) |
+| Боевые группы: принимающий экипаж/ротация (§24.22 полностью), Conflict Repository (§24.17 за пределами DOUBLE_ASSIGNMENT), формальный revision, requiredGroups/requiredPosts | — | — | Not started (см. A51-A55) |
 | Месячное планирование, история/revisions | — | — | Not started |
 | Уведомления (полноценный экран) | notifications | features/notifications | Not started |
 | Обратная связь | feedback | features/feedback | Not started |
