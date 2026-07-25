@@ -465,6 +465,7 @@ function ReplaceControls({
       <input
         className="h-9 rounded-md border border-input bg-background px-2 text-sm"
         placeholder="Причина замены…"
+        aria-label="Причина замены"
         value={reasonCode}
         onChange={(e) => setReasonCode(e.target.value)}
       />
@@ -534,6 +535,7 @@ function ReviewControls({ shiftId }: { shiftId: string }) {
           <input
             className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
             placeholder="Причина возврата…"
+            aria-label="Причина возврата"
             value={returnReason}
             onChange={(e) => setReturnReason(e.target.value)}
           />

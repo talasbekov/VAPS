@@ -110,6 +110,7 @@ function PassportForm({ objectId, sectors: initial }: { objectId: string; sector
               <input
                 className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm font-semibold"
                 placeholder="Название сектора"
+                aria-label="Название сектора"
                 value={sector.name}
                 onChange={(e) => updateSector(sector.id, { name: e.target.value })}
               />
@@ -127,18 +128,21 @@ function PassportForm({ objectId, sectors: initial }: { objectId: string; sector
                   <input
                     className="h-8 rounded-md border border-input bg-background px-2 text-xs"
                     placeholder="Название поста"
+                    aria-label="Название поста"
                     value={post.name}
                     onChange={(e) => updatePost(sector.id, post.id, { name: e.target.value })}
                   />
                   <input
                     className="h-8 rounded-md border border-input bg-background px-2 text-xs"
                     placeholder="Задача"
+                    aria-label="Задача поста"
                     value={post.task}
                     onChange={(e) => updatePost(sector.id, post.id, { task: e.target.value })}
                   />
                   <input
                     className="h-8 rounded-md border border-input bg-background px-2 text-xs"
                     placeholder="Требования к назначению"
+                    aria-label="Требования к назначению"
                     value={post.requirements}
                     onChange={(e) => updatePost(sector.id, post.id, { requirements: e.target.value })}
                   />
@@ -146,6 +150,7 @@ function PassportForm({ objectId, sectors: initial }: { objectId: string; sector
                     variant="outline"
                     size="sm"
                     type="button"
+                    aria-label="Удалить пост"
                     onClick={() => removePost(sector.id, post.id)}
                   >
                     ✕

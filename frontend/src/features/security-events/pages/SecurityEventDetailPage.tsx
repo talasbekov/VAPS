@@ -902,12 +902,14 @@ function ForceRequestRow({
         type="number"
         min={0}
         className="h-8 w-16 rounded border border-input bg-background px-1.5 text-sm"
+        aria-label={`Выделено, ${request.group}`}
         value={allocated}
         onChange={(e) => setAllocated(Number(e.target.value) || 0)}
       />
       <input
         className="h-8 rounded border border-input bg-background px-2 text-sm"
         placeholder="—"
+        aria-label={`Комментарий, ${request.group}`}
         value={comment}
         onChange={(e) => setComment(e.target.value)}
       />
