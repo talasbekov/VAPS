@@ -20,7 +20,11 @@ test.describe('Реестр ОМ: создание → бюллетень → re
     const dialog = page.getByRole('dialog')
     const title = `E2E мероприятие ${Date.now()}`
     await dialog.getByLabel('Название').fill(title)
-    await dialog.getByLabel('Объект').fill('E2E Объект')
+    // §9.6 (Этап 29): объект больше не свободный текст — выбирается из реестра,
+    // иначе ОМ не к чему привязать версию паспорта.
+    // `selectOption` не принимает RegExp для label (проверено), а id объекта
+    // генерируется сидом — поэтому выбор по ТОЧНОЙ подписи опции.
+    await dialog.getByLabel('Объект').selectOption({ label: 'OBJ-001 · Дворец Независимости' })
     await dialog.getByLabel('Дата проведения').fill('2026-08-01')
     await dialog.getByRole('button', { name: 'Создать' }).click()
 

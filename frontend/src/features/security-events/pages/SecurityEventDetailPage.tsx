@@ -23,7 +23,9 @@ import {
   useCompleteForces,
   useCompletePlacement,
   useCompleteRecon,
+  useImportReconPostsFromPassport,
   usePersonnelRoster,
+  useSecurityEventPassport,
   useReplaceAssignment,
   useReturnPlacement,
   useSecurityEvent,
@@ -43,6 +45,11 @@ import type {
   StaffingDemandRow,
 } from '../model/types'
 import { JOURNAL_TYPE_LABEL, STAGE_LABEL, stageBadgeVariants } from '../lib/stageMeta'
+import {
+  NO_OBJECT_TEXT,
+  NO_PUBLISHED_VERSION_TEXT,
+  staleBindingText,
+} from '../lib/passportBinding'
 
 const bulletinSchema = z.object({
   briefDescription: z.string().trim().min(1, 'Обязательное поле'),
@@ -134,9 +141,55 @@ export function SecurityEventDetailPage() {
           )}
         </div>
         <StageTracker current={event.stage} />
+        <PassportBindingBar eventId={event.id} />
       </section>
 
       <StageContent event={event} />
+    </div>
+  )
+}
+
+/**
+ * §9.6: к какой опубликованной версии паспорта привязано планирование. Живёт
+ * в шапке карточки, а не только на рекогносцировке, потому что от версии
+ * зависят и расстановка, и печатная форма, и архив дела.
+ *
+ * Все три «пустых» исхода названы словами (§35): объекта нет в реестре,
+ * опубликованной версии на дату нет, версия устарела. Молчание здесь читалось
+ * бы как «привязка есть, просто её не показали».
+ */
+function PassportBindingBar({ eventId }: { eventId: string }) {
+  const query = useSecurityEventPassport(eventId)
+  if (query.isPending || query.isError || query.data === undefined) {
+    // Ошибку не показываем отдельной плашкой: карточка ОМ уже загружена и
+    // работоспособна, а вторая красная строка про вспомогательный запрос
+    // сбивала бы с толку. Отсутствие строки = нет данных о привязке.
+    return null
+  }
+  const view = query.data
+  if (view.binding === null) {
+    return (
+      <p className="mt-3 rounded-md border border-dashed px-3 py-2 text-[11.5px] text-slate-600">
+        {view.objectKnown ? NO_PUBLISHED_VERSION_TEXT : NO_OBJECT_TEXT}
+      </p>
+    )
+  }
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11.5px]">
+      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">
+        Паспорт: версия {view.binding.versionNumber}
+      </span>
+      <span className="text-slate-600">
+        действует с {view.binding.effectiveFrom} · {view.binding.objectName}
+      </span>
+      {view.stale && view.applicableVersionNumber !== null && (
+        <span
+          role="status"
+          className="inline-flex rounded-md bg-amber-100 px-2 py-0.5 font-semibold text-amber-900"
+        >
+          {staleBindingText(view.binding.versionNumber, view.applicableVersionNumber)}
+        </span>
+      )}
     </div>
   )
 }
@@ -384,9 +437,57 @@ function nextLocalId(): string {
   return `local-${sectorPostSeq}`
 }
 
+function ImportFromPassportButton({
+  eventId,
+  dirty,
+  mutation,
+  importableCount,
+  hasBinding,
+}: {
+  eventId: string
+  dirty: boolean
+  mutation: ReturnType<typeof useImportReconPostsFromPassport>
+  importableCount: number
+  hasBinding: boolean
+}) {
+  // Без привязки кнопки нет вовсе: причина уже названа в шапке карточки
+  // (`PassportBindingBar`), а задизейбленная кнопка без объяснения читалась бы
+  // как поломка.
+  if (!hasBinding) {
+    return null
+  }
+  // Импорт — серверная мутация над сохранённым расчётом, а на экране могут
+  // лежать несохранённые правки: выполнить его поверх них значило бы молча
+  // потерять работу. Поэтому при dirty кнопка заблокирована с причиной.
+  const blockedByDirty = dirty
+  const nothingToImport = importableCount === 0
+  const title = blockedByDirty
+    ? 'Сначала сохраните расчёт — импорт работает с сохранёнными строками.'
+    : nothingToImport
+      ? 'Все посты привязанной версии паспорта уже в расчёте.'
+      : undefined
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      type="button"
+      title={title}
+      disabled={blockedByDirty || nothingToImport || mutation.isPending}
+      onClick={() => mutation.mutate({})}
+      data-testid={`import-from-passport-${eventId}`}
+    >
+      {mutation.isPending
+        ? 'Импорт…'
+        : `Импортировать посты из паспорта${nothingToImport ? '' : ` (${importableCount})`}`}
+    </Button>
+  )
+}
+
 function ReconForm({ event }: { event: SecurityEvent }) {
   const updateMutation = useUpdateRecon(event.id)
   const completeMutation = useCompleteRecon(event.id)
+  const importMutation = useImportReconPostsFromPassport(event.id)
+  const passportQuery = useSecurityEventPassport(event.id)
   const [checklist, setChecklist] = useState<ReconChecklistItem[]>(event.reconChecklist)
   const [rows, setRows] = useState<ReconSectorPost[]>(event.reconSectorPosts)
 
@@ -414,6 +515,10 @@ function ReconForm({ event }: { event: SecurityEvent }) {
         requirements: '',
         result: null,
         comment: '',
+        // Ручная строка: источника в паспорте у неё нет (§9.6 разрешает
+        // event-specific расчёт), и подставлять сюда чужой id было бы ложью.
+        sourceSectorId: null,
+        sourcePostId: null,
       },
     ])
   }
@@ -486,7 +591,17 @@ function ReconForm({ event }: { event: SecurityEvent }) {
             <div className="text-sm font-semibold">Посты и секторы</div>
             <div className="text-xs text-muted-foreground">Расчёт для текущего ОМ</div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {/* §9.6 «рекогносцировка может создать event-specific расчёт на
+                основе паспорта». Кнопка живёт РЯДОМ с «Добавить пост», а не
+                вместо неё: ручной пост остаётся законным способом. */}
+            <ImportFromPassportButton
+              eventId={event.id}
+              dirty={dirty}
+              mutation={importMutation}
+              importableCount={passportQuery.data?.importablePostCount ?? 0}
+              hasBinding={passportQuery.data?.binding != null}
+            />
             <Button variant="outline" size="sm" type="button" onClick={addRow}>
               + Добавить пост
             </Button>
@@ -536,6 +651,15 @@ function ReconForm({ event }: { event: SecurityEvent }) {
                         value={row.post}
                         onChange={(e) => updateRow(row.id, { post: e.target.value })}
                       />
+                      {/* Строку из паспорта РАЗРЕШЕНО править: §9.6
+                          «event-specific изменение поста не редактирует
+                          паспорт автоматически». Метка говорит об источнике,
+                          а не запрещает правку. */}
+                      {row.sourcePostId !== null && (
+                        <span className="mt-0.5 block text-[10px] text-slate-600">
+                          из паспорта
+                        </span>
+                      )}
                     </td>
                     <td className="py-1.5 pr-1.5">
                       <input
@@ -1012,6 +1136,10 @@ function PlacementWorkspace({ event }: { event: SecurityEvent }) {
                     }
                   >
                     {count > 0 ? `Укомплектован (${count})` : 'Не укомплектован'}
+                    {/* §9.6: расстановка обязана быть прослеживаемой до поста
+                        версии паспорта. Метка ставится только у строк, реально
+                        пришедших из паспорта — у ручных её нет, и это честно. */}
+                    {post.sourcePostId !== null && ' · из паспорта'}
                   </span>
                 </button>
               )

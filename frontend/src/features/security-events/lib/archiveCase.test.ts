@@ -13,7 +13,9 @@ function makeEvent(overrides: Partial<SecurityEvent> = {}): SecurityEvent {
     id: 'se-1',
     code: 'ОМ-2026-001',
     title: 'Форум',
+    objectId: null,
     objectName: 'Дворец',
+    passportBinding: null,
     businessDate: '2026-07-22',
     stage: 'CLOSED',
     readinessPercent: 100,
@@ -36,6 +38,8 @@ function makeEvent(overrides: Partial<SecurityEvent> = {}): SecurityEvent {
         requirements: 'Досмотровая подготовка',
         result: 'MATCHES',
         comment: '',
+        sourceSectorId: null,
+        sourcePostId: null,
       },
     ],
     demandRows: [],
@@ -125,8 +129,8 @@ describe('buildArchiveCase — итоги закрытия', () => {
     const archive = buildArchiveCase(
       makeEvent({
         reconSectorPosts: [
-          { id: 'p-1', sector: 'A', post: 'Вход', task: '', need: 1, requirements: '', result: null, comment: '' },
-          { id: 'p-2', sector: 'B', post: 'Пресс-зона', task: '', need: 1, requirements: '', result: null, comment: '' },
+          { id: 'p-1', sector: 'A', post: 'Вход', task: '', need: 1, requirements: '', result: null, comment: '', sourceSectorId: null, sourcePostId: null },
+          { id: 'p-2', sector: 'B', post: 'Пресс-зона', task: '', need: 1, requirements: '', result: null, comment: '', sourceSectorId: null, sourcePostId: null },
         ],
         closureDirectionSummaries: [{ direction: 'A', summary: 'Без происшествий' }],
       }),
@@ -145,7 +149,7 @@ describe('buildArchiveCase — итоги закрытия', () => {
     const archive = buildArchiveCase(
       makeEvent({
         reconSectorPosts: [
-          { id: 'p-1', sector: '  ', post: 'Вход', task: '', need: 1, requirements: '', result: null, comment: '' },
+          { id: 'p-1', sector: '  ', post: 'Вход', task: '', need: 1, requirements: '', result: null, comment: '', sourceSectorId: null, sourcePostId: null },
         ],
         closureDirectionSummaries: [],
       }),

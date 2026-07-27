@@ -18,9 +18,19 @@ import type { DemoScenarioDefinition } from './scenario-manifest'
 
 export type { SeedContext, FeatureSeedBuilder }
 
+// ⚠️ ПОРЯДОК ЗНАЧИМ. Builder видит через `ctx.builtSlices` только те слайсы,
+// что построены РАНЬШЕ него. `objects` идёт первым, потому что сид ОМ
+// привязывается к объекту и опубликованной версии его паспорта по id (§9.6);
+// перестановка местами не сломает сид — привязка просто станет `null`, что
+// карточка ОМ и так обязана обрабатывать явно. Гвард на порядок — тест
+// `compose-seed.test.ts`, а не комментарий.
+//
+// Идентификаторы этой перестановкой не смещаются: `StableIdGenerator` ведёт
+// СВОЙ счётчик на каждый префикс, а `ctx.random` не используется ни одним
+// builder'ом (последовательный PRNG был бы чувствителен к порядку).
 const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
-  buildSecurityEventsSeed,
   buildObjectsSeed,
+  buildSecurityEventsSeed,
   buildDutiesSeed,
   buildDictionariesSeed,
 ]
@@ -31,16 +41,18 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // `SecurityEvent` — 1→2. `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 11
+export const SCHEMA_VERSION = 12
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)
   const ids = new StableIdGenerator(scenario.id)
   const random = new SeededRandom(scenario.id)
-  const ctx: SeedContext = { clock, ids, random, scenario }
-
   const slices: Record<string, unknown> = {}
   for (const build of FEATURE_SEED_BUILDERS) {
+    // Свежий ctx на каждый шаг: `builtSlices` — снимок уже построенного, а не
+    // живая ссылка на накапливаемый объект (иначе builder мог бы прочитать
+    // собственный слайс «из будущего» через мутацию).
+    const ctx: SeedContext = { clock, ids, random, scenario, builtSlices: { ...slices } }
     const { sliceName, data } = build(ctx)
     slices[sliceName] = data
   }

@@ -10,7 +10,9 @@ import type {
   SecurityEventStage,
   StaffingDemandRow,
 } from '../model/types'
+import { bindPassportVersion, resolveApplicableVersion } from '../lib/passportBinding'
 import { aggregateForceRequests } from './demandLogic'
+import { findObjectByCode } from './objectsSlice'
 import { PERSONNEL_ROSTER } from './personnelRoster'
 
 export interface SecurityEventsSlice {
@@ -39,9 +41,19 @@ function buildChecklist(ctx: SeedContext, doneCount: number): ReconChecklistItem
 
 function buildSectorPosts(
   ctx: SeedContext,
-  rows: ReadonlyArray<Omit<ReconSectorPost, 'id'>>,
+  rows: ReadonlyArray<Omit<ReconSectorPost, 'id' | 'sourceSectorId' | 'sourcePostId'>>,
 ): ReconSectorPost[] {
-  return rows.map((row) => ({ id: ctx.ids.next('recon-sector-post'), ...row }))
+  // Сеяные строки расчёта — РУЧНЫЕ (`source*` = null). Это не упущение: они
+  // заведены до того, как появился импорт из паспорта, и §9.6 прямо разрешает
+  // event-specific расчёт. Импорт демонстрируется живьём на RECON-мероприятии
+  // (e2e-mock/security-event-passport-binding.spec.ts) — сеять уже
+  // импортированные строки значило бы показать результат, минуя операцию.
+  return rows.map((row) => ({
+    id: ctx.ids.next('recon-sector-post'),
+    ...row,
+    sourceSectorId: null,
+    sourcePostId: null,
+  }))
 }
 
 function buildDemandRows(
@@ -54,6 +66,18 @@ function buildDemandRows(
 const SEED_EVENTS: ReadonlyArray<{
   title: string
   objectName: string
+  /**
+   * Код объекта в реестре `features/objects` — по нему сид находит `objectId`
+   * (§9.6). Именно КОД, а не имя: код уникален и является доменным ключом, а
+   * склейка по имени — ровно то, что запрещено в A44-A46. `null` — ОМ на
+   * объекте, которого в реестре нет (легальное состояние: объекты заводятся
+   * не всем скопом).
+   *
+   * Разрешение кода в id происходит ОДИН РАЗ, в момент сидирования; дальше ОМ
+   * держит id и снимок привязки — переименование или перекодировка объекта
+   * связь не рвёт.
+   */
+  objectCode: string | null
   daysFromStart: number
   stage: SecurityEventStage
   readinessPercent: number
@@ -65,7 +89,7 @@ const SEED_EVENTS: ReadonlyArray<{
   /** Сколько пунктов чек-листа уже отмечены выполненными (0 = ещё не начата). */
   checklistDone: number
   /** Начальные строки «Посты и секторы» (пусто = ещё не рассчитано). */
-  sectorPosts: ReadonlyArray<Omit<ReconSectorPost, 'id'>>
+  sectorPosts: ReadonlyArray<Omit<ReconSectorPost, 'id' | 'sourceSectorId' | 'sourcePostId'>>
   /** Строки потребности (пусто = этап ещё не начат). */
   demandRows: ReadonlyArray<Omit<StaffingDemandRow, 'id'>>
   demandApproved: boolean
@@ -75,6 +99,7 @@ const SEED_EVENTS: ReadonlyArray<{
   {
     title: 'Международный экономический форум',
     objectName: 'Дворец Независимости',
+    objectCode: 'OBJ-001',
     daysFromStart: 2,
     stage: 'PLACEMENT',
     readinessPercent: 82,
@@ -117,6 +142,9 @@ const SEED_EVENTS: ReadonlyArray<{
   {
     title: 'Официальный визит делегации',
     objectName: 'Резиденция',
+    // Объекта нет в реестре — привязка не установится, карточка обязана
+    // сказать об этом словами, а не показать пустое место.
+    objectCode: null,
     daysFromStart: 3,
     stage: 'DEMAND',
     readinessPercent: 61,
@@ -146,6 +174,7 @@ const SEED_EVENTS: ReadonlyArray<{
   {
     title: 'Городской спортивный форум',
     objectName: 'Астана Арена',
+    objectCode: 'OBJ-003',
     daysFromStart: 5,
     stage: 'APPROVAL',
     readinessPercent: 94,
@@ -177,6 +206,7 @@ const SEED_EVENTS: ReadonlyArray<{
   {
     title: 'Рабочее совещание акимата',
     objectName: 'Дом Министерств',
+    objectCode: 'OBJ-002',
     daysFromStart: 1,
     stage: 'BULLETIN',
     readinessPercent: 12,
@@ -193,7 +223,10 @@ const SEED_EVENTS: ReadonlyArray<{
   },
   {
     title: 'Культурный форум приграничных регионов',
-    objectName: 'Дворец Мира и Согласия',
+    objectName: 'Дворец Независимости',
+    // Второе мероприятие на том же объекте, но на стадии рекогносцировки —
+    // именно на нём демонстрируется импорт постов из привязанной версии.
+    objectCode: 'OBJ-001',
     daysFromStart: 9,
     stage: 'RECON',
     readinessPercent: 28,
@@ -233,6 +266,15 @@ export function buildSecurityEventsSeed(ctx: SeedContext): {
       .toISOString()
       .slice(0, 10)
     const id = ctx.ids.next('security-event')
+    // §9.6: привязка решается на БИЗНЕС-ДАТУ мероприятия, а не на «сегодня» —
+    // версия, вступающая в силу позже дня проведения, к этому ОМ отношения не
+    // имеет. Три исхода, и все три должны встретиться в demo-сиде: объект не
+    // найден (`null`/нет кода), объект есть — опубликованной версии нет,
+    // объект есть и версия действует.
+    const boundObject =
+      seed.objectCode === null ? null : findObjectByCode(ctx.builtSlices, seed.objectCode)
+    const applicableVersion =
+      boundObject === null ? null : resolveApplicableVersion(boundObject, businessDate)
     const demandRows = buildDemandRows(ctx, seed.demandRows)
     const sectorPosts = buildSectorPosts(ctx, seed.sectorPosts)
     const placementAssignments = seed.assignedPostIndexes.map((postIndex, i) => {
@@ -250,7 +292,12 @@ export function buildSecurityEventsSeed(ctx: SeedContext): {
       id,
       code: `ОМ-${businessDate.slice(0, 4)}-${id.split('-').pop()}`,
       title: seed.title,
+      objectId: boundObject?.id ?? null,
       objectName: seed.objectName,
+      passportBinding:
+        boundObject !== null && applicableVersion !== null
+          ? bindPassportVersion(boundObject, applicableVersion, now)
+          : null,
       businessDate,
       stage: seed.stage,
       readinessPercent: seed.readinessPercent,

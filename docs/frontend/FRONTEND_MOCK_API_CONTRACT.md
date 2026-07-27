@@ -113,5 +113,20 @@
 
 `ops.calendar.view` гейтит только route (`RequirePermission` в `App.tsx`) — новых mock-эндпоинтов/операций НЕТ, страница composитит уже зарегистрированные `listDutyShifts`/`listSecurityEvents` (см. таблицы выше), каждый со своей проверкой прав внутри repository (`ops.duty.view`/`ops.security_event.view`, независимо от `ops.calendar.view`) — см. FRONTEND_DECISIONS A47.
 
+## Привязка ОМ к версии паспорта (§9.6, Этап 29)
+
+| Метод | Путь | Операция | Право | Примечание |
+|---|---|---|---|---|
+| GET | `/api/ops/security-events/bindable-objects/` | `listBindableObjects` | `ops.security_event.view` | Узкий read model реестра объектов для формы создания ОМ. Регистрируется ДО `:id/` — иначе MSW разберёт сегмент как id. |
+| GET | `/api/ops/security-events/:id/passport/` | `getPassportView` | `ops.security_event.view` | ПРОИЗВОДНЫЙ взгляд: хранимый снимок + пересчитанные `applicableVersion*`/`stale`/`importablePostCount`. |
+| POST | `/api/ops/security-events/:id/recon/import-from-passport/` | `importReconPostsFromPassport` | `ops.recon.manage` | 422 `RECON_STAGE_REQUIRED` / `NO_PASSPORT_VERSION` / `PASSPORT_VERSION_NOT_FOUND` / `NOTHING_TO_IMPORT`. |
+
+`POST /api/ops/security-events/` изменён: `objectName` (свободный текст) → `objectId`
+(идентификатор объекта реестра); имя объекта снимает сервер.
+
+Все три читают чужой слайс `objects` из общего снапшота через рукописную узкую
+проекцию (`features/security-events/mocks/objectsSlice.ts`) — серверный join, а не
+кросс-фичевый импорт (ARCH-FE-013). Запись в чужой слайс запрещена, покрыта тестом.
+
 ## NEXT ACTION
 Регистрировать первые операции `features/analytics`/дальнейшее расширение duties (боевые группы, месячное планирование) — по решению пользователя.

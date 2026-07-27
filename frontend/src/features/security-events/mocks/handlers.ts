@@ -8,6 +8,7 @@ import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/pe
 import { hasPermission } from '../../../shared/testing/mock-runtime/rbac-directory'
 import type { ErrorEnvelope } from '../../../shared/api/errors'
 import {
+  BINDABLE_OBJECTS_PATH,
   PERSONNEL_PATH,
   SECURITY_EVENTS_PATH,
   securityEventAcknowledgePath,
@@ -19,10 +20,12 @@ import {
   securityEventForceAllocationPath,
   securityEventForcesCompletePath,
   securityEventJournalPath,
+  securityEventPassportPath,
   securityEventPlacementAssignPath,
   securityEventPlacementCompletePath,
   securityEventPlacementUnassignPath,
   securityEventReconCompletePath,
+  securityEventReconImportPath,
   securityEventReconPath,
   securityEventReplaceAssignmentPath,
 } from '../api/pending-contracts'
@@ -98,6 +101,12 @@ function normalizeSectorPosts(raw: unknown): ReconSectorPost[] {
           ? record.result
           : null,
       comment: typeof record.comment === 'string' ? record.comment : '',
+      // Источник строки в паспорте переживает сохранение расчёта. Если его
+      // здесь потерять, §9.6-цепочка «расстановка → пост версии паспорта»
+      // рвётся при первом же «Сохранить расчёт» — молча и без ошибки.
+      sourceSectorId:
+        typeof record.sourceSectorId === 'string' ? record.sourceSectorId : null,
+      sourcePostId: typeof record.sourcePostId === 'string' ? record.sourcePostId : null,
     }
   })
 }
@@ -187,6 +196,45 @@ export function createSecurityEventsHandlers(
       }
     }),
 
+    // ⚠️ ПОРЯДОК: этот маршрут обязан стоять ДО `:id/` — иначе MSW разберёт
+    // «bindable-objects» как идентификатор ОМ и вернёт 404.
+    http.get(`*${BINDABLE_OBJECTS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.listBindableObjects(actorUserId))
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock, '')
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.get(`*${securityEventPassportPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = String(params.id)
+      try {
+        return HttpResponse.json(await repository.getPassportView(id, actorUserId))
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock, id)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.post(`*${securityEventReconImportPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = String(params.id)
+      try {
+        return HttpResponse.json(
+          await repository.importReconPostsFromPassport(id, actorUserId),
+        )
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock, id)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
     http.get(`*${SECURITY_EVENTS_PATH}:id/`, async ({ request, params }) => {
       const actorUserId = request.headers.get('X-User-Id')
       const id = String(params.id)
@@ -215,7 +263,7 @@ export function createSecurityEventsHandlers(
       >
       const normalized: CreateSecurityEventRequest = {
         title: typeof body.title === 'string' ? body.title : '',
-        objectName: typeof body.objectName === 'string' ? body.objectName : '',
+        objectId: typeof body.objectId === 'string' ? body.objectId : '',
         businessDate:
           typeof body.businessDate === 'string' ? body.businessDate : '',
       }

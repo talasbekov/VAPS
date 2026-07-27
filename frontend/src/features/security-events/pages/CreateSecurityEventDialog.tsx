@@ -11,11 +11,14 @@ import { Input } from '../../../shared/ui/Input'
 import { Label } from '../../../shared/ui/Label'
 import { ROUTES } from '../../../shared/routes'
 import { ApiError } from '../../../shared/api/errors'
-import { useCreateSecurityEvent } from '../api/queries'
+import { useBindableObjects, useCreateSecurityEvent } from '../api/queries'
 
 const formSchema = z.object({
   title: z.string().trim().min(1, 'Обязательное поле.'),
-  objectName: z.string().trim().min(1, 'Обязательное поле.'),
+  // §9.6: ОМ заводится НА ОБЪЕКТ реестра — только так есть к чему привязать
+  // версию паспорта. Свободный текст здесь стоял до Этапа 29 и делал привязку
+  // принципиально невозможной.
+  objectId: z.string().trim().min(1, 'Обязательное поле.'),
   businessDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Укажите дату в формате ГГГГ-ММ-ДД.'),
@@ -41,6 +44,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
   const titleId = useId()
   const navigate = useNavigate()
   const mutation = useCreateSecurityEvent()
+  const objectsQuery = useBindableObjects()
 
   const {
     register,
@@ -107,11 +111,37 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
           )}
         </div>
         <div>
-          <Label htmlFor="objectName">Объект</Label>
-          <Input id="objectName" {...register('objectName')} />
-          {errors.objectName && (
+          <Label htmlFor="objectId">Объект</Label>
+          <select
+            id="objectId"
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            defaultValue=""
+            disabled={objectsQuery.isPending}
+            {...register('objectId')}
+          >
+            <option value="">
+              {objectsQuery.isPending ? 'Загрузка реестра…' : '— выберите объект —'}
+            </option>
+            {(objectsQuery.data?.results ?? []).map((object) => (
+              <option key={object.id} value={object.id}>
+                {/* Отсутствие опубликованного паспорта названо ПРЯМО В СПИСКЕ:
+                    §9.6 «отсутствие подходящей опубликованной версии
+                    обрабатывается явно» — узнать об этом после создания ОМ
+                    поздно, выбор уже сделан. Выбирать такой объект при этом
+                    можно: мероприятие вести не запрещено. */}
+                {object.code} · {object.name}
+                {object.publishedVersionCount === 0 ? ' — паспорт не опубликован' : ''}
+              </option>
+            ))}
+          </select>
+          {objectsQuery.isError && (
+            <p className="mt-1 text-xs text-destructive" role="alert">
+              Реестр объектов недоступен — мероприятие нельзя привязать к объекту.
+            </p>
+          )}
+          {errors.objectId && (
             <p className="mt-1 text-xs text-destructive">
-              {errors.objectName.message}
+              {errors.objectId.message}
             </p>
           )}
         </div>
