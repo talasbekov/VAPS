@@ -4,7 +4,7 @@ baseline_commit: 73ea5ac («chore(sprint-status): вынести заблоки�
 
 # Story 10.1b: GET списка статусов на дату
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -315,3 +315,43 @@ bulk-скан `EmployeeDivisionHistory`, который этим роутом п
 - 2026-07-27 — реализация 10.1b: `GET /api/operations/statuses/`, 18 новых
   API-тестов, строка `ops-status-list` в RBAC-матрице, обе схемы
   регенерированы. 4 красные пробы. Оба гейта зелёные.
+- 2026-07-27 — cross-model code review (Fable 5): APPROVE, 0 исправлений.
+
+## Senior Developer Review (AI)
+
+**Дата:** 2026-07-27 · **Ревьюер:** Fable 5 (CROSS-MODEL к спеке и коду Opus 5 —
+AI-2 ретро E9 выполнен) · **Вердикт: APPROVE**, 0 High, 0 Medium, 3 Low.
+
+**Что ревьюер перепроверил своими руками, а не поверил на слово:**
+- Полная гейт-выборка на своей БД — 2518 passed / 56 deselected / 94s (совпало с
+  заявленным), `makemigrations --check` «No changes detected», `ruff` чисто,
+  `grep -c 'operations/statuses/' schema.d.ts` = 2.
+- **Пять СВОИХ красных проб**, все покраснели: (1) утечка пустого ростера — упало
+  ДВА теста, не один; (2) own-level → subtree; (3) 403 → пустой 200 — упало два;
+  (4) снятие `sorted()` — упало 5 прогонов из 5 (ревьюер подозревал ~50%
+  вакуумности из-за случайных UUID, проверил повторами); (5) `period__contains`
+  → инклюзивные границы.
+- Все 41 чекбокс сверены с кодом — **дрейфа нет**. Единственное отклонение
+  (3 сериализатора вместо 2) признано вынужденным и честно эскалированным.
+- Инвариант «inline scope-гейт = побайтовое зеркало `ensure_division_scope`»
+  подтверждён посимвольно, включая отсутствие `message`.
+
+**Low (не исправлялись, зафиксированы):**
+1. Runtime-конверт ответа строится вручную, а `EmployeeStatusListResponseSerializer`
+   живёт только для схемы — две независимые записи одной формы. Сейчас совпадают;
+   `test_schema_drift` расхождение не поймает (сверяет yaml сам с собой).
+2. `test_anonymous_forbidden` и `test_phantom_division_is_403_for_scoped_stranger`
+   ассертят только код, без `error_code` — слабее соседей, но не вакуумно.
+3. `is_active=False` + `WORKING` покрыт этажом ниже
+   (`core/tests/test_roster_selector.py`), у роута своего теста нет — дыры нет,
+   но покрытие живёт в чужом файле.
+
+**Ревьюер уточнил ОБА открытых вопроса — оба стали стори:**
+1. **Цена рефактора 403-конверта переоценена мной.** `views.py` УЖЕ импортирует
+   `apps.operations.services` ради `PermissionService`, поэтому перенос
+   `ensure_division_scope` туда с ре-экспортом — **3 файла, не 6+**, и ни один
+   вызов в submissions не меняется. → стори **10.1g**.
+2. **Перф-вопрос назван не в том месте.** Тяжело не сканирование истории (она
+   пуста), а то, что `roster_on` тянет **всех WORKING-сотрудников всей БД** на
+   каждый вызов (`core/selectors.py:359-364`, без фильтра по дивизиону) — и это
+   болит УЖЕ СЕЙЧАС, на каждом префилле, а не после E7. → стори **10.1h**.

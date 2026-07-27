@@ -341,10 +341,31 @@ development_status:
   #           statusTypes.ts:7 сам называет точку подключения; тянет судьбу
   #           statusTypes.test.ts (зеркало 17 типов) и DailyUpdatePage.catalog.test.tsx.
   # Порядок: 10.1b → 10.1e ; 10.1d → 10.1f. Бэк-пара независима между собой.
-  10-1b-get-списка-статусов-на-дату: review
+  10-1b-get-списка-статусов-на-дату: done
   10-1d-справочник-статус-типов: backlog
   10-1e-префилл-вчера-от-живого-get: backlog
   10-1f-справочник-статус-типов-во-фронте: backlog
+  # Вынесено cross-model ревью 10.1b (Fable 5, 2026-07-27, APPROVE 0 исправлений).
+  # Оба пункта — уточнение открытых вопросов спеки самим ревьюером, поимённо,
+  # чтобы не «зависли намерением» (урок E8/E9/E10):
+  #   10.1g — поднять ensure_division_scope из submissions/services/scope_gate.py
+  #           в нейтральный apps/operations/services с ре-экспортом. Сейчас у
+  #           403-конверта ДВЕ реализации: statuses не может импортировать
+  #           submissions (test_statuses_does_not_import_submissions), поэтому
+  #           гейт продублирован inline. Оценка стори «6+ файлов» была НЕВЕРНА:
+  #           views.py уже импортирует apps.operations.services ради
+  #           PermissionService ⇒ 3 файла, вызовы в submissions не меняются.
+  #   10.1h — roster_on тянет ВСЕХ WORKING-сотрудников всей БД на каждый вызов
+  #           (core/selectors.py:359-364 — Employee.objects.filter без фильтра по
+  #           дивизиону). С 10.1b это интерактивный путь: запрос на КАЖДЫЙ
+  #           префилл. Болит уже сейчас, при пустой истории — то есть НЕ ждёт
+  #           бэкфилла E7, в отличие от индекса на EmployeeDivisionHistory.
+  #           Направление: пуш division_id в SQL с сохранением фолбэк-ветки
+  #           BR-CORE-HISTORY-003 (division_id=запрошенный OR employee_id IN covered).
+  #           ⚠️ Трогает core-селектор — задет расход и снапшот сдачи, не только
+  #           этот роут. Мерить до и после, не «оптимизировать вслепую».
+  10-1g-scope-гейт-в-нейтральный-модуль: backlog
+  10-1h-roster-on-пуш-дивизиона-в-sql: backlog
   10-2a-bulk-override-и-ретрай-с-причиной: backlog
   10-2b-обратный-канал-маркеров-в-грид: backlog
   10-3-экран-сдачи-дня: done
