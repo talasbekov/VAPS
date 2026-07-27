@@ -90,7 +90,7 @@ export function SecurityEventDetailPage() {
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-[11px] bg-purple-100 text-sm font-black text-purple-800">
             ОМ
           </div>
-          <div>
+          <div className="flex-1">
             <div className="mb-1 flex gap-1.5">
               <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800">
                 {event.code}
@@ -104,6 +104,25 @@ export function SecurityEventDetailPage() {
               {event.businessDate} · {event.objectName} · {event.ownerName}
             </p>
           </div>
+          {/* Вход в печатную форму расстановки (§9.15). Показывается ТОЛЬКО
+              когда есть что печатать: ссылка на пустой документ — мёртвый жест.
+
+              ⚠️ БЕЗ `target="_blank"` — СОЗНАТЕЛЬНОЕ отступление от прецедента
+              `ExpenseReportPage.tsx:285-288`, и вот почему: credential живёт в
+              `sessionStorage`, а Chromium ≥88 трактует безымянный
+              `target="_blank"` как implicit `noopener` — новая вкладка не
+              auxiliary, sessionStorage в неё НЕ клонируется, и печатная форма
+              открывается на экране входа. Поймано e2e
+              (`e2e-mock/placement-print.spec.ts`), не гипотеза: попап реально
+              отрендерил «Вход». Возврат — кнопкой браузера. */}
+          {event.placementAssignments.length > 0 && (
+            <Link
+              to={ROUTES.printPlacementTo(event.id)}
+              className="shrink-0 self-start rounded-md border px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-accent"
+            >
+              Печатная форма расстановки
+            </Link>
+          )}
         </div>
         <StageTracker current={event.stage} />
       </section>

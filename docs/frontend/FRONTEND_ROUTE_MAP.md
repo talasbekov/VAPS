@@ -15,6 +15,7 @@
 | audit | /audit | audit.view | да | app/section-stubs (AuditStub) |
 | printTest | /print/test | (RequireAuth only) | нет | features/print-forms |
 | printExpense | /print/expense | daily_report.generate | нет | features/print-forms |
+| printPlacement | /print/placement | ops.security_event.view | нет | features/print-forms |
 | changelog | /changelog | (RequireAuth only, без RequirePermission) | нет | features/changelog |
 
 ## Smart Josparlau — планируемые разделы (Этап 2+, статус Not started если не отмечено)

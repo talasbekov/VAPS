@@ -89,6 +89,16 @@ export const ROUTES = {
   dictionaryDetailTo: (code: string) => `/dictionaries/${encodeURIComponent(code)}`,
   /** Мастер-промпт §25: единый календарь смен (read model, см. FRONTEND_DECISIONS A44+). */
   calendar: '/calendar',
+  /**
+   * Smart Josparlau §9.15 — печатная форма расстановки: вне AppLayout (сайдбар
+   * и шапка на бумагу не попадают), за `ops.security_event.view` — гейт
+   * зеркалит право чтения карточки в repository. В NAV_SECTIONS не живёт:
+   * печатная форма — не раздел портала, вход — ссылка на карточке ОМ (правило
+   * «роут без входа — мёртвый продукт»). Параметр — query, как у формы расхода.
+   */
+  printPlacement: '/print/placement',
+  printPlacementTo: (securityEventId: string) =>
+    `/print/placement?security_event_id=${encodeURIComponent(securityEventId)}`,
 } as const
 
 export interface NavSection {

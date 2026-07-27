@@ -13,6 +13,10 @@ import { DailyUpdatePage } from '../features/daily-grid/DailyUpdatePage'
 import { ExpenseReportPage } from '../features/expense/ExpenseReportPage'
 import { ExpensePrintPage } from '../features/print-forms/ExpensePrintPage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
+// Статический импорт (как ExpensePrintPage), НЕ lazy: фолбэк
+// RouteChunkBoundary — UI-разметка, она отрендерилась бы вне `.print-root` и
+// покрасила бы DOM-скан печатного канона.
+import { PlacementPrintPage } from '../features/print-forms/PlacementPrintPage'
 import { EmployeeDetailPage } from '../features/personnel/pages/EmployeeDetailPage'
 import { EmployeesListPage } from '../features/personnel/pages/EmployeesListPage'
 import { ObjectPassportPage } from '../features/objects/pages/ObjectPassportPage'
@@ -85,6 +89,21 @@ export function AppRoutes() {
           <RequireAuth>
             <RequirePermission permission="daily_report.generate">
               <ExpensePrintPage />
+            </RequirePermission>
+          </RequireAuth>
+        }
+      />
+      {/* Печатная форма расстановки (Smart Josparlau §9.15): сиблинг
+          layout-route по тем же причинам, что форма расхода. Гейт
+          `ops.security_event.view` зеркалит право чтения карточки в
+          repository — иначе страница показала бы 403-текст вместо честного
+          «нет доступа» экрана гварда. */}
+      <Route
+        path={ROUTES.printPlacement}
+        element={
+          <RequireAuth>
+            <RequirePermission permission="ops.security_event.view">
+              <PlacementPrintPage />
             </RequirePermission>
           </RequireAuth>
         }

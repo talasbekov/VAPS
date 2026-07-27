@@ -216,5 +216,23 @@ Baseline полностью зелёный — все ошибки ниже эт
 
 Риск-анализ перед правкой общего компонента: 2 существующих e2e-теста используют постраничный `Tab` от старта (`day-amendment`/`day-submission`) — оба через `tabUntilFocused`-цикл (лимит 20, устойчив к новому первому tab-стопу); остальные Tab-тесты идут через изолированный `e2e-harness/*.html`, минующий `AppLayout`. `npm run test:e2e` (63/63, было 62/62, +1 спека — весь E10-донор-суит не задет). `npm run test:e2e:mock` — 19/19 трижды подряд, без новых axe-находок. `tsc -b`/`eslint`/`vitest` (923/923)/`vite build`/`size-gate` (220.5 KB gzip) — все зелёные.
 
+## Печатная форма расстановки (§9.15, Этап 26)
+
+| Что проверяется | Где | Статус |
+| --- | --- | --- |
+| Разбор ответа: шапка/посты/назначения, битые тела → null, нечисловая потребность → 0 | src/features/print-forms/placementPrint.test.ts | Verified |
+| Оценочные поля постов (`result`/`comment`) НЕ разбираются вовсе (§19.24) — красная проба на ключах | placementPrint.test.ts | Verified |
+| Строки: дырка «не назначен», N назначений → N строк (потребность в первой), осиротевшее назначение в хвосте | placementPrint.test.ts, PlacementPrintPage.test.tsx | Verified (красная проба ×2) |
+| Итоги: потребность и назначено — независимы | placementPrint.test.ts, PlacementPrintPage.test.tsx | Verified |
+| `sentence()` не удваивает точку у ФИО «Ерланов Д.» | placementPrint.test.ts, PlacementPrintPage.test.tsx | Verified (красная проба) |
+| Карта отказов: 401 silent, 403/404 фикс-тексты, 5xx и сеть получают ТЕКСТ | placementPrint.test.ts | Verified |
+| Состояния без документа: нет параметра / не-карточка / нет постов — разные тексты, шапка только где уместна | PlacementPrintPage.test.tsx | Verified |
+| В документе только `print-*`-классы (UI-слой не протекает) | PlacementPrintPage.test.tsx, e2e-mock/placement-print.spec.ts | Verified (красная проба) |
+| Маркер demo печатается на бумаге, экранная подсказка — нет (`emulateMedia print`) | e2e-mock/placement-print.spec.ts | Verified |
+| PT Serif применён (Tailwind preflight не подменяет шрифт документа) | e2e-mock/placement-print.spec.ts | Verified |
+| Разводка: гейт `ops.security_event.view`, вне AppLayout, редирект на /login без credential, не в NAV_SECTIONS | src/app/print-placement-routing.test.tsx | Verified |
+| Ссылка с карточки открывает документ В ТОЙ ЖЕ вкладке (иначе теряется sessionStorage-credential) | e2e-mock/placement-print.spec.ts | Verified |
+
+
 ## NEXT ACTION
 E2E теперь покрывает ВЕСЬ жизненный цикл ОМ (все 9 стадий, 4 спеки), personnel (включая клавиатурную навигацию вкладок), objects, dictionaries, calendar, audit, analytics, duties (индивидуальные + боевые группы: потребность→подача→рассмотрение→ознакомление→заступление→факт→замена), плюс сквозной axe-core аудит всех экранов и skip-to-content каркаса — 19 e2e-mock спек + 63 прод e2e, ноль экранов без хотя бы одного e2e-прохода. Весь §24-конвейер боевых групп достижим целиком из UI. Accessibility: ручной аудит + клавиатурная навигация + количественный contrast/ARIA-аудит + skip-to-content (четыре слоя, все закрыты, стабильно на 3 прогонах подряд). Оставшиеся Not started пункты (передача смены §24.22 — частично реализована как checkpoint, Conflict Repository, формальный revision, месячное планирование дежурств, уведомления, оперативный профиль данные, tablet/Firefox) — не экраны с существующей реализацией, а нереализованный функционал; решение о следующем направлении — за пользователем.

@@ -42,7 +42,7 @@
 | Конфликт-детектор (двойное назначение/отдых/перегрузка/пост) | placementWorkspace | features/placement | validatePlacement | — | Not started |
 | Согласование/утверждение (return / approve) | placementWorkspace | features/placement | submitForApproval / approvePlacement / returnPlacement | — | Not started |
 | Ознакомление + уведомление | placementWorkspace | features/placement | acknowledgePlacement | — | Not started |
-| Печатная форма расстановки | placementWorkspace | features/placement (print-forms canon) | — | — | Not started |
+| Печатная форма расстановки | /print/placement | features/print-forms | GET /api/ops/security-events/:id/ | placementPrint.test.ts, PlacementPrintPage.test.tsx, print-placement-routing.test.tsx, e2e-mock/placement-print.spec.ts | Verified (demo-предпросмотр §9.15 с печатаемым маркером demo; официальный .docx — за бэком, см. FRONTEND_DECISIONS A57) |
 
 ## Домен: Проведение / Закрытие / Архив (Epic 17–18, Этап 3)
 
@@ -137,7 +137,7 @@
 | «Мой календарь», представление по сотруднику/подразделению, боевые группы, конфликты, отдых, нагрузка, статусы (отпуск/больничный/командировка) | — | — | Not started — требует Employee Status/Conflict/Workload repositories и общий employeeId между дежурствами/ОМ, которых в demo-срезе нет (см. FRONTEND_DECISIONS A44-A46) |
 
 ## Покрытие
-Итог: **25 из ~70 экранов Verified** (12 — жизненный цикл ОМ, 2 — сотрудники, 2 — объекты/паспорт, 1 — аудит, 1 — аналитика службы, 2 — план дежурств [индивидуальные дежурства + боевые группы на Трассе], 4 — справочники, 1 — календарь по дням). Остальные ~45 экранов (notifications/feedback/мой профиль/KPI/схемы/нагрузка/рейтинг/должности-звания как отдельный справочник/остальные режимы календаря/полный §24 боевых групп) — Not started. Ложным «Done» не помечать (запрет §35).
+Итог: **26 из ~70 экранов Verified** (12 — жизненный цикл ОМ, 2 — сотрудники, 2 — объекты/паспорт, 1 — аудит, 1 — аналитика службы, 2 — план дежурств [индивидуальные дежурства + боевые группы на Трассе], 4 — справочники, 1 — календарь по дням, 1 — печатная форма расстановки). Остальные ~44 экрана (notifications/feedback/мой профиль/KPI/схемы/нагрузка/рейтинг/должности-звания как отдельный справочник/остальные режимы календаря/полный §24 боевых групп) — Not started. Ложным «Done» не помечать (запрет §35).
 
 ## NEXT ACTION
 `e2e-mock/` покрывает ВСЕ реализованные экраны (Этапы 11-13, расширены Этапом 14 — оперативный профиль, Этапом 15 — боевые группы на Трассе, Этапом 16 — execution-lifecycle, Этапом 17 — замены §24.21, Этапом 18 — потребность §24.1, 16 спек) — весь жизненный цикл ОМ, personnel, objects, dictionaries, calendar, audit, analytics, duties (включая боевые группы: потребность→подача→рассмотрение→ознакомление→заступление→факт→замена, весь §24-конвейер теперь достижим целиком из UI). Дальше — только функциональный объём: уведомления/передача смены §24.22 (требует обсуждения модели ротации смен внутри дня, см. FRONTEND_PROGRESS Этап 18 NEXT ACTION)/Conflict Repository/формальный revision/accessibility-tablet-Firefox (не реализованы, а не «не покрыты тестами»), по решению пользователя.

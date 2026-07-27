@@ -180,6 +180,23 @@
   font-size: 8pt;
 }
 
+/*
+ * Маркер demo-предпросмотра (Smart Josparlau §9.15). В ОТЛИЧИЕ от
+ * .print-screen-hint печатается НА БУМАГЕ: распечатанный лист без маркера
+ * неотличим от официального артефакта — ровно то, что §9.15 запрещает
+ * («preview не называется официальным документом»). Поэтому под @media print
+ * он НЕ скрывается.
+ */
+.print-root .print-demo {
+  margin: 0 0 6pt;
+  padding: 3pt 6pt;
+  border: 1.5pt solid #000;
+  font-size: 9pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .print-root .print-screen-hint {
   margin: 0 0 8pt;
   padding: 4pt 8pt;
