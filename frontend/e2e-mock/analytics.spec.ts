@@ -22,7 +22,7 @@ test.describe('Аналитика службы: агрегаты ОМ-по-эт�
     ).toBeVisible()
 
     await expect(page.getByText('ОМ по этапам (5 из 5)')).toBeVisible()
-    await expect(page.getByText('Объекты по состоянию паспорта (3)')).toBeVisible()
+    await expect(page.getByText('Объекты по состоянию паспорта (5)')).toBeVisible()
 
     const stageRowClass = '[class*="140px_1fr_50px"]'
     for (const label of ['Бюллетень', 'Рекогносцировка', 'Потребность', 'Расстановка', 'Согласование']) {
@@ -32,8 +32,14 @@ test.describe('Аналитика службы: агрегаты ОМ-по-эт�
       await expect(page.locator(stageRowClass, { hasText: label })).toContainText('0')
     }
 
-    for (const label of ['Актуален', 'Требует проверки', 'Требует внимания']) {
-      await expect(page.locator(stageRowClass, { hasText: label })).toContainText('1')
+    // Счётчики сверены с demo-сидом (Этап 37 добавил два объекта с
+    // датированными публикациями — «Резиденция» GREEN и «Казмедиа» YELLOW).
+    for (const [label, count] of [
+      ['Актуален', '2'],
+      ['Требует проверки', '2'],
+      ['Требует внимания', '1'],
+    ] as const) {
+      await expect(page.locator(stageRowClass, { hasText: label })).toContainText(count)
     }
 
     // «Ознакомлен» — substring подстрока «Ознакомление» (стадия ОМ выше) —

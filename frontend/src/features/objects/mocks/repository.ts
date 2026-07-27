@@ -14,6 +14,8 @@ import type {
 } from '../api/pending-contracts'
 import type { PassportVersion, SecurityObject } from '../model/types'
 import type { ObjectsSlice } from './fixtures'
+import { buildObjectsKpi, resolveFreshness } from '../lib/passportFreshness'
+import type { UnavailableMetric } from '../lib/passportFreshness'
 
 export class RepositoryPermissionError extends Error {}
 export class RepositoryNotFoundError extends Error {}
@@ -39,15 +41,47 @@ function readSlice(envelope: DemoStateEnvelope): ObjectsSlice {
   return slice as ObjectsSlice
 }
 
+/** §21.7, KPI прототипа, которых модель объекта не даёт (§35). */
+const UNAVAILABLE_OBJECT_KPI: readonly UnavailableMetric[] = [
+  {
+    code: 'OPEN_REMARKS',
+    label: 'Есть открытые замечания',
+    reason:
+      'Замечания по объекту не моделируются: у объекта есть паспорт, секторы и посты, но нет журнала замечаний — считать было бы нечего.',
+  },
+  {
+    code: 'MISSING_REQUIRED_SCHEME',
+    label: 'Нет обязательной схемы',
+    reason:
+      'Схемы и документы объекта требуют blob-хранилища, которого в demo-срезе нет (тот же вывод, что для материалов рекогносцировки).',
+  },
+]
+
+/** Fallback на случай снапшота без политики (старый сид): показать «нет
+ * политики» было бы честнее, но контракт §21.7 требует версию всегда —
+ * поэтому версия говорит сама за себя. */
+const DEFAULT_FRESHNESS_POLICY = { version: 'unset', verificationIntervalDays: 0 }
+
 export function createObjectsRepository(adapter: PersistenceAdapter, clock: DemoClock) {
   async function list(actorUserId: string | null): Promise<ListObjectsResponse> {
     if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
       throw new RepositoryPermissionError(VIEW_PERMISSION)
     }
     const envelope = await adapter.load()
-    const objects = envelope === null ? [] : readSlice(envelope).objects
-    const sorted = [...objects].sort((a, b) => a.code.localeCompare(b.code))
-    return { results: sorted }
+    const slice = envelope === null ? null : readSlice(envelope)
+    const sorted = [...(slice?.objects ?? [])].sort((a, b) => a.code.localeCompare(b.code))
+    // §21.7: политика — из данных, срок и состояние считаются ЗДЕСЬ (на
+    // «сервере»), KPI — по ВСЕМУ реестру, а не по отрисованной странице.
+    const policy = slice?.freshnessPolicy ?? DEFAULT_FRESHNESS_POLICY
+    const businessDate = clock.businessDate()
+    const freshness = sorted.map((object) => resolveFreshness(object, policy, businessDate))
+    return {
+      results: sorted,
+      freshness,
+      kpi: buildObjectsKpi(sorted, freshness),
+      freshnessPolicy: policy,
+      unavailableKpi: [...UNAVAILABLE_OBJECT_KPI],
+    }
   }
 
   async function get(id: string, actorUserId: string | null): Promise<SecurityObject> {
@@ -97,6 +131,7 @@ export function createObjectsRepository(adapter: PersistenceAdapter, clock: Demo
       return {
         ...current.slices,
         [SLICE_NAME]: {
+          ...slice,
           objects: slice.objects.map((o) => (o.id === id ? updated : o)),
         } satisfies ObjectsSlice,
       }
@@ -176,6 +211,7 @@ export function createObjectsRepository(adapter: PersistenceAdapter, clock: Demo
       return {
         ...current.slices,
         [SLICE_NAME]: {
+          ...slice,
           objects: slice.objects.map((o) => (o.id === id ? updated : o)),
         } satisfies ObjectsSlice,
       }

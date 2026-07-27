@@ -62,7 +62,12 @@ function envelope(object: SecurityObject): DemoStateEnvelope {
     revision: 0,
     created_at: '2026-07-20T08:00:00+05:00',
     updated_at: '2026-07-20T08:00:00+05:00',
-    slices: { objects: { objects: [object] } satisfies ObjectsSlice },
+    slices: {
+      objects: {
+        objects: [object],
+        freshnessPolicy: { version: 'test-policy-v1', verificationIntervalDays: 120 },
+      } satisfies ObjectsSlice,
+    },
   }
 }
 

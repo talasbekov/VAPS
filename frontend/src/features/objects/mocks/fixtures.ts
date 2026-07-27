@@ -1,9 +1,26 @@
 // Demo-сид «Объекты и паспорта» (§8.7: только синтетические данные).
 import type { SeedContext } from '../../../shared/testing/mock-runtime/seed-context'
-import type { ObjectSector, SecurityObject, SecurityPost } from '../model/types'
+import { addDays } from '../lib/passportFreshness'
+import type {
+  ObjectSector,
+  PassportFreshnessPolicy,
+  SecurityObject,
+  SecurityPost,
+} from '../model/types'
 
 export interface ObjectsSlice {
   objects: SecurityObject[]
+  /** §21.7 «срок актуальности приходит от policy» — настройка живёт в ДАННЫХ,
+   * а не константой в коде, и у неё есть версия (см. `PassportFreshness`). */
+  freshnessPolicy: PassportFreshnessPolicy
+}
+
+/** Интервал НАМЕРЕННО не 90 дней: §21.7 приводит «Паспорт старше 90 дней»
+ * как пример того, чего делать нельзя, и совпадение значения скрыло бы
+ * захардкоженный период, если бы он где-то остался. */
+export const PASSPORT_FRESHNESS_POLICY: PassportFreshnessPolicy = {
+  version: 'passport-freshness-v1',
+  verificationIntervalDays: 120,
 }
 
 function buildPosts(
@@ -108,5 +125,89 @@ export function buildObjectsSeed(ctx: SeedContext): { sliceName: string; data: O
       updatedAt: now,
     },
   ]
-  return { sliceName: 'objects', data: { objects } }
+
+  // §21.7: все ЧЕТЫРЕ состояния актуальности должны быть достижимы в демо, а
+  // не только те, что вышли случайно. «Дворец» опубликован сегодня → FRESH,
+  // два объекта без публикаций → NO_PUBLISHED_VERSION; эти два добавлены с
+  // ДАТИРОВАННЫМИ публикациями под DUE_SOON и OVERDUE.
+  //
+  // ⚠️ Даты считаются от бизнес-даты через `addDays`, а не литералами: при
+  // смене сценария демо literal-даты разъехались бы с DemoClock молча.
+  const dueSoonId = ctx.ids.next('object')
+  const overdueId = ctx.ids.next('object')
+  const dueSoonSectors = buildSectors(ctx, [
+    {
+      name: 'Сектор A',
+      posts: [{ name: 'КПП-1', task: 'Контроль въезда', requirements: 'Допуск «Резиденция»' }],
+    },
+  ])
+  const overdueSectors = buildSectors(ctx, [
+    {
+      name: 'Периметр',
+      posts: [{ name: 'Пост 1', task: 'Наблюдение', requirements: 'Допуск «Комплекс»' }],
+    },
+  ])
+  objects.push(
+    {
+      id: dueSoonId,
+      name: 'Резиденция «Ак Орда»',
+      code: 'OBJ-004',
+      type: 'Государственное учреждение',
+      region: 'г. Астана',
+      address: 'ул. Мангилик Ел, 1',
+      objectState: 'ACTIVE',
+      passportState: 'GREEN',
+      sectors: dueSoonSectors,
+      passportVersions: [
+        {
+          id: `${dueSoonId}-passport-v1`,
+          versionNumber: 1,
+          // 110 суток назад при интервале политики 120 → срок близко.
+          effectiveFrom: addDays(now.slice(0, 10), -110),
+          publishedAt: now,
+          publishedBy: 'demo-seed',
+          note: 'Плановая публикация паспорта.',
+          sectors: dueSoonSectors.map((sector) => ({
+            ...sector,
+            posts: sector.posts.map((post) => ({ ...post })),
+          })),
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: overdueId,
+      name: 'Комплекс «Казмедиа»',
+      code: 'OBJ-005',
+      type: 'Медиа-объект',
+      region: 'г. Астана',
+      address: 'ул. Кунаева, 4',
+      objectState: 'ACTIVE',
+      passportState: 'YELLOW',
+      sectors: overdueSectors,
+      passportVersions: [
+        {
+          id: `${overdueId}-passport-v1`,
+          versionNumber: 1,
+          // 200 суток назад при интервале 120 → срок проверки прошёл.
+          effectiveFrom: addDays(now.slice(0, 10), -200),
+          publishedAt: now,
+          publishedBy: 'demo-seed',
+          note: 'Публикация прошлого периода.',
+          sectors: overdueSectors.map((sector) => ({
+            ...sector,
+            posts: sector.posts.map((post) => ({ ...post })),
+          })),
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    },
+  )
+
+  return {
+    sliceName: 'objects',
+    data: { objects, freshnessPolicy: PASSPORT_FRESHNESS_POLICY },
+  }
 }

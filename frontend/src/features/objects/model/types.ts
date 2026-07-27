@@ -7,6 +7,38 @@ export type ObjectState = 'ACTIVE' | 'ARCHIVED'
 /** §21.5: красный/жёлтый/зелёный — паспорт, НЕ состояние объекта. */
 export type PassportState = 'RED' | 'YELLOW' | 'GREEN'
 
+/**
+ * §21.7 «Срок актуальности должен приходить от policy», с ПРЯМЫМ запретом
+ * фиксированного frontend-периода («Паспорт старше 90 дней»). Поэтому интервал —
+ * ХРАНИМАЯ настройка со своей версией, а не константа в коде: политику можно
+ * поменять, и каждый посчитанный по ней результат несёт `freshnessPolicyVersion`,
+ * по которой видно, чем именно он посчитан.
+ */
+export interface PassportFreshnessPolicy {
+  version: string
+  verificationIntervalDays: number
+}
+
+/**
+ * §21.7 — ПРОИЗВОДНОЕ состояние актуальности паспорта. У объекта не хранится:
+ * пересчитывается на каждом чтении от бизнес-даты (хранимый флаг протух бы
+ * молча ровно в тот день, когда он и должен был измениться — тот же принцип,
+ * что `DutyPassportStatus.stale` в features/duties).
+ *
+ * `NO_PUBLISHED_VERSION` — отдельный исход, а не «просрочен»: паспорт, который
+ * ни разу не публиковали, не устарел — у него другой дефект, и лечится он
+ * иначе.
+ */
+export type PassportFreshnessState = 'FRESH' | 'DUE_SOON' | 'OVERDUE' | 'NO_PUBLISHED_VERSION'
+
+export interface PassportFreshness {
+  objectId: string
+  state: PassportFreshnessState
+  /** Дата следующей обязательной проверки; `null` — публикаций не было. */
+  verificationDueAt: string | null
+  freshnessPolicyVersion: string
+}
+
 /** Пост постоянного дежурства на секторе объекта (§21.2 «секторы, постоянные посты»). */
 export interface SecurityPost {
   id: string
