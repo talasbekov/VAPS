@@ -78,15 +78,53 @@ export interface UnavailableMetric {
   reason: string
 }
 
+/**
+ * §21.30 «По сотрудникам — матрица доступности». Промпт называет ШЕСТЬ слоёв:
+ * дежурство, отдых после дежурства, ОМ, кадровая недоступность, конфликт,
+ * неполные данные. Модель проекта даёт ЧЕТЫРЕ — они и рисуются; недостающие
+ * два приходят в `unavailableLayers` с причиной (§35), а не молчат.
+ *
+ * `DUTY` доминирует над `REST`: если в день и дежурство, и «хвост» отдыха от
+ * предыдущего, сотрудник прежде всего дежурит — а нарушение отдыха при этом уже
+ * названо конфликтом, вторым способом его показывать не нужно.
+ */
+export type DutyEmployeeDayLayer = 'DUTY' | 'REST' | 'FREE'
+
+export interface MonthlyDutyEmployeeCell {
+  date: string
+  layer: DutyEmployeeDayLayer
+  /** Сколько дежурств у сотрудника в этот день (без отменённых). */
+  dutyCount: number
+  hardConflictCount: number
+  softConflictCount: number
+  /**
+   * §21.30 «неполные данные» — у дежурства этого дня нет привязки к версии
+   * паспорта (§9.6). Это факт планирования, а не пустая клетка.
+   */
+  incompleteData: boolean
+}
+
+export interface MonthlyDutyEmployeeRow {
+  employeeName: string
+  cells: MonthlyDutyEmployeeCell[]
+}
+
 export interface MonthlyDutyPlan {
   /** YYYY-MM. */
   month: string
   /** Все календарные дни месяца, YYYY-MM-DD. */
   days: string[]
   rows: MonthlyDutyPlanRow[]
+  /** §21.30, второе представление ТОГО ЖЕ набора смен (§21.4 «представления
+   * одного набора данных»). Приходит в том же ответе, а не отдельным запросом:
+   * два представления одного месяца обязаны быть посчитаны по ОДНОМУ снимку,
+   * иначе они разойдутся между собой. */
+  employeeRows: MonthlyDutyEmployeeRow[]
   kpi: MonthlyDutyPlanKpi
   conflicts: MonthlyDutyPlanConflict[]
   unavailableMetrics: UnavailableMetric[]
+  /** §35: слои §21.30, которых модель не даёт. */
+  unavailableLayers: UnavailableMetric[]
 }
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -248,6 +286,89 @@ export const UNAVAILABLE_MONTHLY_METRICS: readonly UnavailableMetric[] = [
   },
 ]
 
+/** §21.30, слои матрицы доступности, которых в demo-модели нет НИ В КАКОМ виде. */
+export const UNAVAILABLE_EMPLOYEE_LAYERS: readonly UnavailableMetric[] = [
+  {
+    code: 'SECURITY_EVENT_LAYER',
+    label: 'Занятость охранным мероприятием',
+    reason:
+      'Расстановка ОМ живёт в другой фиче и в другом ID-пространстве сотрудников: склейка по ФИО дала бы ложные совпадения (см. FRONTEND_DECISIONS A44-A46/A50), а не «нет занятости».',
+  },
+  {
+    code: 'HR_UNAVAILABILITY_LAYER',
+    label: 'Кадровая недоступность (отпуск, больничный, командировка)',
+    reason:
+      'Employee Status Repository в demo-срезе отсутствует. §21.30 при этом требует заменять чувствительную причину подписью «Недоступен» — маскировать нечего, слоя нет вовсе.',
+  },
+]
+
+/**
+ * §21.30 «Сотрудник × календарный день».
+ *
+ * Отдых считается ОТ ДЕЖУРСТВА: смена на дне D закрывает следующие
+ * `ceil(restAfterMinutes / сутки)` дней. Длительность берётся у вида ДЕЖУРСТВА,
+ * а не константой (§21.35 «не хардкодь 24 часа»); вид вне реестра отдыха не
+ * навязывает. Хвост отдыха, попавший в соседний месяц, обрезается на выдаче —
+ * ровно как у конфликтов, поэтому вход тут ВЕСЬ набор смен, а не месячный срез.
+ */
+export function buildEmployeeRows(
+  month: string,
+  shifts: readonly DutyShift[],
+  dutyTypes: readonly DutyTypeDefinition[],
+  conflicts: readonly MonthlyDutyPlanConflict[],
+): MonthlyDutyEmployeeRow[] {
+  const days = daysInMonth(month)
+  const typeByCode = new Map(dutyTypes.map((type) => [type.dutyTypeCode, type]))
+  const active = shifts.filter((shift) => shift.stateCode !== 'CANCELLED')
+
+  const byEmployee = new Map<string, DutyShift[]>()
+  for (const shift of active) {
+    const bucket = byEmployee.get(shift.employeeName) ?? []
+    bucket.push(shift)
+    byEmployee.set(shift.employeeName, bucket)
+  }
+
+  const conflictCounts = new Map<string, { hard: number; soft: number }>()
+  for (const conflict of conflicts) {
+    const key = `${conflict.employeeName}|${conflict.businessDate}`
+    const current = conflictCounts.get(key) ?? { hard: 0, soft: 0 }
+    if (conflict.severity === 'HARD') current.hard += 1
+    else current.soft += 1
+    conflictCounts.set(key, current)
+  }
+
+  return [...byEmployee.entries()]
+    // В матрицу попадает только сотрудник, у которого В ЭТОМ месяце есть
+    // дежурство или хвост отдыха: строка из одних «свободен» не сообщает
+    // ничего, а полный список личного состава фича и не знает (A26/A35).
+    .map(([employeeName, employeeShifts]) => {
+      const restDays = new Set<string>()
+      for (const shift of employeeShifts) {
+        const type = typeByCode.get(shift.dutyTypeCode)
+        if (type === undefined || type.restAfterMinutes <= 0) continue
+        const restLength = Math.ceil(type.restAfterMinutes / (24 * 60))
+        for (let offset = 1; offset <= restLength; offset += 1) {
+          restDays.add(addDays(shift.businessDate, offset))
+        }
+      }
+      const cells: MonthlyDutyEmployeeCell[] = days.map((date) => {
+        const dayShifts = employeeShifts.filter((shift) => shift.businessDate === date)
+        const counts = conflictCounts.get(`${employeeName}|${date}`)
+        return {
+          date,
+          layer: dayShifts.length > 0 ? 'DUTY' : restDays.has(date) ? 'REST' : 'FREE',
+          dutyCount: dayShifts.length,
+          hardConflictCount: counts?.hard ?? 0,
+          softConflictCount: counts?.soft ?? 0,
+          incompleteData: dayShifts.some((shift) => shift.passportBinding === null),
+        }
+      })
+      return { employeeName, cells }
+    })
+    .filter((row) => row.cells.some((cell) => cell.layer !== 'FREE'))
+    .sort((a, b) => a.employeeName.localeCompare(b.employeeName))
+}
+
 export function buildMonthlyPlan(
   month: string,
   shifts: readonly DutyShift[],
@@ -326,5 +447,9 @@ export function buildMonthlyPlan(
     },
     conflicts,
     unavailableMetrics: [...UNAVAILABLE_MONTHLY_METRICS],
+    // Конфликты сюда передаются УЖЕ обрезанные месяцем — матрица показывает
+    // ровно те, что видны в этом же ответе, а не пересчитывает их заново.
+    employeeRows: buildEmployeeRows(month, shifts, dutyTypes, conflicts),
+    unavailableLayers: [...UNAVAILABLE_EMPLOYEE_LAYERS],
   }
 }

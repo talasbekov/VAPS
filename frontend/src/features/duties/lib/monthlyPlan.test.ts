@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addDays,
+  buildEmployeeRows,
   buildMonthlyPlan,
   daysBetween,
   daysInMonth,
@@ -246,5 +247,204 @@ describe('месячный план (§21.29-21.30)', () => {
     for (const metric of plan.unavailableMetrics) {
       expect(metric.reason.length).toBeGreaterThan(0)
     }
+  })
+})
+
+// §21.30 «По сотрудникам — матрица доступности». Из шести слоёв промпта модель
+// даёт четыре; проверяется и то, что они посчитаны верно, и то, что остальные
+// два названы, а не молчат.
+describe('buildEmployeeRows (§21.30)', () => {
+  const REST_TYPES: DutyTypeDefinition[] = [
+    {
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      safeLabel: 'Собственный объект',
+      targetType: 'OWN_OBJECT',
+      defaultDurationMinutes: 1440,
+      requiresSenior: true,
+      restAfterMinutes: 1440,
+      restPolicy: 'HARD_BLOCK',
+      requiresCurrentPassport: false,
+    },
+    {
+      dutyTypeCode: 'LONG_REST',
+      safeLabel: 'Вид с трёхсуточным отдыхом',
+      targetType: 'PROTECTED_OBJECT',
+      defaultDurationMinutes: 1440,
+      requiresSenior: false,
+      // 3 суток: если бы отдых был захардкожен сутками, хвост был бы короче.
+      restAfterMinutes: 3 * 24 * 60,
+      restPolicy: 'SOFT_OVERRIDE',
+      requiresCurrentPassport: false,
+    },
+  ]
+
+  function empShift(
+    id: string,
+    businessDate: string,
+    employeeName: string,
+    overrides: Partial<DutyShift> = {},
+  ): DutyShift {
+    return {
+      id,
+      businessDate,
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      target: { targetType: 'OWN_OBJECT', objectId: 'object-1', safeLabel: 'Штаб управления' },
+      employeeName,
+      stateCode: 'PLANNED',
+      acknowledgedAt: null,
+      actualStart: null,
+      actualEnd: null,
+      updatedAt: `${businessDate}T08:00:00+05:00`,
+      passportBinding: null,
+      note: null,
+      cancellation: null,
+      overrideReason: null,
+      ...overrides,
+    }
+  }
+
+  function cellOf(rows: ReturnType<typeof buildEmployeeRows>, name: string, date: string) {
+    return rows.find((row) => row.employeeName === name)?.cells.find((cell) => cell.date === date)
+  }
+
+  it('день дежурства — слой DUTY, следующий день — хвост обязательного отдыха', () => {
+    const rows = buildEmployeeRows(
+      '2026-07',
+      [empShift('duty-1', '2026-07-10', 'Ахметов Б.')],
+      REST_TYPES,
+      [],
+    )
+    expect(cellOf(rows, 'Ахметов Б.', '2026-07-10')).toMatchObject({ layer: 'DUTY', dutyCount: 1 })
+    expect(cellOf(rows, 'Ахметов Б.', '2026-07-11')).toMatchObject({ layer: 'REST' })
+    expect(cellOf(rows, 'Ахметов Б.', '2026-07-12')).toMatchObject({ layer: 'FREE' })
+  })
+
+  it('длина отдыха читается у ВИДА дежурства, а не равна суткам', () => {
+    const rows = buildEmployeeRows(
+      '2026-07',
+      [empShift('duty-1', '2026-07-10', 'Ахметов Б.', { dutyTypeCode: 'LONG_REST' })],
+      REST_TYPES,
+      [],
+    )
+    for (const date of ['2026-07-11', '2026-07-12', '2026-07-13']) {
+      expect(cellOf(rows, 'Ахметов Б.', date)).toMatchObject({ layer: 'REST' })
+    }
+    expect(cellOf(rows, 'Ахметов Б.', '2026-07-14')).toMatchObject({ layer: 'FREE' })
+  })
+
+  it('вид дежурства вне реестра отдыха не навязывает', () => {
+    const rows = buildEmployeeRows(
+      '2026-07',
+      [empShift('duty-1', '2026-07-10', 'Ахметов Б.', { dutyTypeCode: 'UNKNOWN' })],
+      REST_TYPES,
+      [],
+    )
+    expect(cellOf(rows, 'Ахметов Б.', '2026-07-11')).toMatchObject({ layer: 'FREE' })
+  })
+
+  it('хвост отдыха из ПРЕДЫДУЩЕГО месяца попадает в первые дни текущего', () => {
+    const rows = buildEmployeeRows(
+      '2026-07',
+      [empShift('duty-1', '2026-06-30', 'Ахметов Б.')],
+      REST_TYPES,
+      [],
+    )
+    expect(cellOf(rows, 'Ахметов Б.', '2026-07-01')).toMatchObject({ layer: 'REST' })
+  })
+
+  it('дежурство доминирует над отдыхом: в день второй смены слой DUTY, не REST', () => {
+    const rows = buildEmployeeRows(
+      '2026-07',
+      [
+        empShift('duty-1', '2026-07-10', 'Ахметов Б.'),
+        empShift('duty-2', '2026-07-11', 'Ахметов Б.'),
+      ],
+      REST_TYPES,
+      [],
+    )
+    expect(cellOf(rows, 'Ахметов Б.', '2026-07-11')).toMatchObject({ layer: 'DUTY' })
+  })
+
+  it('конфликты приходят ГОТОВЫМИ и раскладываются по клеткам, а не выводятся заново', () => {
+    const rows = buildEmployeeRows(
+      '2026-07',
+      [empShift('duty-1', '2026-07-10', 'Ахметов Б.')],
+      REST_TYPES,
+      // Конфликт, которого сама матрица вывести НЕ могла бы: одна смена в дне.
+      [
+        {
+          conflictId: 'x',
+          code: 'DUTY_OVERLAP',
+          severity: 'SOFT',
+          employeeName: 'Ахметов Б.',
+          businessDate: '2026-07-10',
+          message: 'внешний конфликт',
+        },
+      ],
+    )
+    expect(cellOf(rows, 'Ахметов Б.', '2026-07-10')).toMatchObject({
+      hardConflictCount: 0,
+      softConflictCount: 1,
+    })
+  })
+
+  it('«неполные данные» — смена без привязки к версии паспорта', () => {
+    const bound = empShift('duty-2', '2026-07-12', 'Оразов К.', {
+      passportBinding: {
+        objectId: 'object-1',
+        objectName: 'Штаб управления',
+        versionId: 'v1',
+        versionNumber: 1,
+        effectiveFrom: '2026-01-01',
+        sectorId: 'sector-a',
+        sectorName: 'Сектор A',
+        postId: 'post-1',
+        postName: 'КПП-1',
+        boundAt: '2026-07-12T08:00:00+05:00',
+      },
+    })
+    const rows = buildEmployeeRows(
+      '2026-07',
+      [empShift('duty-1', '2026-07-10', 'Ахметов Б.'), bound],
+      REST_TYPES,
+      [],
+    )
+    expect(cellOf(rows, 'Ахметов Б.', '2026-07-10')?.incompleteData).toBe(true)
+    expect(cellOf(rows, 'Оразов К.', '2026-07-12')?.incompleteData).toBe(false)
+  })
+
+  it('отменённая смена не занимает сотрудника и не тянет за собой отдых', () => {
+    const rows = buildEmployeeRows(
+      '2026-07',
+      [
+        empShift('duty-1', '2026-07-10', 'Ахметов Б.', {
+          stateCode: 'CANCELLED',
+          cancellation: { reason: 'x', cancelledAt: '2026-07-09T10:00:00+05:00' },
+        }),
+        empShift('duty-2', '2026-07-20', 'Оразов К.'),
+      ],
+      REST_TYPES,
+      [],
+    )
+    expect(rows.map((row) => row.employeeName)).toEqual(['Оразов К.'])
+  })
+
+  it('сотрудник без занятости в месяце строки не получает', () => {
+    const rows = buildEmployeeRows(
+      '2026-07',
+      [empShift('duty-1', '2026-05-10', 'Ахметов Б.')],
+      REST_TYPES,
+      [],
+    )
+    expect(rows).toEqual([])
+  })
+
+  it('§35: два невыводимых слоя §21.30 названы с причиной', () => {
+    const plan = buildMonthlyPlan('2026-07', [], [])
+    expect(plan.unavailableLayers.map((layer) => layer.code)).toEqual([
+      'SECURITY_EVENT_LAYER',
+      'HR_UNAVAILABILITY_LAYER',
+    ])
+    expect(plan.unavailableLayers.every((layer) => layer.reason.length > 0)).toBe(true)
   })
 })

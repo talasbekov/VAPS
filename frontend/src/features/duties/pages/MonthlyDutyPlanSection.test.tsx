@@ -50,6 +50,8 @@ function plan(month: string, overrides: Partial<MonthlyDutyPlan> = {}): MonthlyD
       hardConflicts: 1,
       softConflicts: 0,
     },
+    employeeRows: [],
+    unavailableLayers: [],
     conflicts: [
       {
         conflictId: 'overlap:Жумабаев Р.:2026-07-22',
@@ -195,5 +197,92 @@ describe('Месячный план дежурств', () => {
     expect(await screen.findByText('Показатели, которых нет в модели')).toBeInTheDocument()
     expect(screen.getByText('Укомплектовано')).toBeInTheDocument()
     expect(screen.getByText(/Нет требуемой численности\./)).toBeInTheDocument()
+  })
+
+  it('§21.30: матрица «по сотрудникам» рисует СЕРВЕРНЫЕ слои, а не выводит их сама', async () => {
+    server.use(
+      http.get(PLAN_URL, () =>
+        HttpResponse.json(
+          plan('2026-07', {
+            employeeRows: [
+              {
+                employeeName: 'Ахметов Б.',
+                cells: daysInMonth('2026-07').map((date) => ({
+                  date,
+                  // Заведомо «неправильная» раскладка: в день дежурства сервер
+                  // прислал REST, а конфликт стоит в дне БЕЗ дежурства. Матрица
+                  // обязана нарисовать это как есть — своей логики у неё нет.
+                  layer: date === '2026-07-10' ? 'REST' : 'FREE',
+                  dutyCount: 0,
+                  hardConflictCount: date === '2026-07-11' ? 1 : 0,
+                  softConflictCount: 0,
+                  incompleteData: date === '2026-07-12',
+                })),
+              },
+            ],
+            unavailableLayers: [
+              {
+                code: 'HR_UNAVAILABILITY_LAYER',
+                label: 'Кадровая недоступность',
+                reason: 'Employee Status Repository отсутствует.',
+              },
+            ],
+          }),
+        ),
+      ),
+    )
+    renderSection()
+    await screen.findByRole('group', { name: 'Дежурств' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Сотрудники × дни' }))
+    expect(await screen.findByText('Ахметов Б.')).toBeInTheDocument()
+    // Клетка читается словами, а не только цветом (WCAG 1.4.1).
+    expect(
+      screen.getByText('2026-07-10, обязательный отдых после дежурства'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('2026-07-11, дежурств нет, жёстких конфликтов: 1')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        '2026-07-12, дежурств нет, неполные данные: нет привязки к версии паспорта',
+      ),
+    ).toBeInTheDocument()
+    // §35: невыводимые слои названы с причиной.
+    expect(screen.getByText('Слои, которых нет в модели')).toBeInTheDocument()
+    expect(screen.getByText(/Employee Status Repository отсутствует\./)).toBeInTheDocument()
+  })
+
+  it('переключение представлений не делает второго запроса за месяцем', async () => {
+    let requests = 0
+    server.use(
+      http.get(PLAN_URL, () => {
+        requests += 1
+        return HttpResponse.json(
+          plan('2026-07', {
+            employeeRows: [
+              {
+                employeeName: 'Ахметов Б.',
+                cells: daysInMonth('2026-07').map((date) => ({
+                  date,
+                  layer: 'FREE' as const,
+                  dutyCount: 0,
+                  hardConflictCount: 0,
+                  softConflictCount: 0,
+                  incompleteData: false,
+                })),
+              },
+            ],
+          }),
+        )
+      }),
+    )
+    renderSection()
+    await screen.findByRole('group', { name: 'Дежурств' })
+    expect(requests).toBe(1)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Сотрудники × дни' }))
+    expect(await screen.findByText('Ахметов Б.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Объекты × дни' }))
+    // §21.4/§21.30 — это ПРЕДСТАВЛЕНИЯ одного ответа, а не два источника.
+    expect(requests).toBe(1)
   })
 })

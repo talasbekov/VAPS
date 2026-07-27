@@ -139,5 +139,14 @@ test.describe('Accessibility (axe-core): второй слой аудита по
     await page.locator('tr', { hasText: 'Жумабаев Р.' }).first().getByRole('link').click()
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     await assertNoSeriousViolations(page, 'Карточка дежурства')
+
+    // Матрица доступности §21.30 — новая таблица, где значение клетки несут
+    // ЦВЕТОВЫЕ слои: контраст и наличие текстовой альтернативы здесь важнее,
+    // чем где-либо ещё на экране.
+    await page.goto('/duties')
+    await page.getByRole('button', { name: 'Месяц' }).click()
+    await page.getByRole('button', { name: 'Сотрудники × дни' }).click()
+    await expect(page.getByText('Слои, которых нет в модели')).toBeVisible()
+    await assertNoSeriousViolations(page, 'Месячный план — матрица по сотрудникам')
   })
 })
