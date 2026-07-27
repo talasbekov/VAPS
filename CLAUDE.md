@@ -55,6 +55,11 @@ preserve.
 - `graphify-out/` — generated knowledge graph (see section 6).
 - `spikes/`, `Прототип/`, `Smart Josparlau (Прототип HTML)/` — prototypes and
   visual references.
+- Smart Josparlau (named in section 1) is a UI being built against the HTML
+  prototype above; its frontend work lives on a separate branch
+  (`claude/gifted-hertz-ebe729`, worktree under `.claude/worktrees/`), not in
+  mainline `frontend/`. Check `git worktree list` before assuming where an
+  epic's predecessors live — worktrees diverge.
 
 ### 1.2 Backend Architecture (`Backend/VAPS/`)
 
@@ -108,6 +113,11 @@ Layers (ARCH-FE-013), enforced by eslint-plugin-boundaries:
 
 Forbidden imports: `features/A → features/B`, `shared → features/app`.
 
+This three-layer set is the deliberate, complete layout (ARCH-FE-013) — a
+reduced FSD. Do not "complete" it toward classic FSD by adding `entities/`,
+`widgets/`, or `pages/` layers; new top-level layers require an explicit
+architecture decision.
+
 Playwright e2e (`e2e/`) is deliberately outside `npm run gate`: a broken e2e
 assertion does not turn the gate red, so run e2e explicitly when touching
 flows it covers.
@@ -117,7 +127,15 @@ flows it covers.
 When product documents contradict each other, seniority is defined in
 `docs/README.md`: `RECONCILIATION.md` (arbiter) → `ПланРасстановка` (MASTER)
 → `VAPS_7.8.2.md` (canon detail) → use cases → superseded/historical docs.
-When documents contradict code, apply section 1 above: surface the mismatch.
+Within `VAPS_7.8.2.md` itself, override sections 44–81 (v7.8/v7.8.2) beat the
+earlier v7.5–v7.7 layers. When documents contradict code, apply section 1
+above: surface the mismatch.
+
+Note: `docs/` is deliberately untracked (`.gitignore`: `docs/*` with the sole
+exception `!docs/registries/` — donor material and PII stay off the remote).
+A clone or tarball of the remote therefore contains only the registries. Do
+not conclude from remote contents that the documentation hierarchy is missing
+or stale, and never "fix" this by committing `docs/` content.
 
 ## 2. Instruction Priority
 
@@ -239,6 +257,10 @@ verification fix.
 - Mention unrelated defects when important, but do not fix them without scope.
 - Remove only imports, variables, functions, and files made obsolete by the
   current change.
+- Work only on top of the current HEAD and produce delta patches against it.
+  Never regenerate a file from an older baseline, an earlier snapshot, or
+  memory of a previous version — that silently reverts commits that landed in
+  between.
 
 If a necessary change expands the original scope materially, stop and explain
 why before proceeding.
@@ -369,6 +391,11 @@ unrelated files.
 
 Do not manually edit generated Graphify output unless its documentation
 explicitly requires it.
+
+Commit discipline: a Graphify update is always its own separate `chore`
+commit — never mixed into a commit with code changes, and never applied via
+history rewrite or force-push. A graph regeneration must not be able to
+revert or absorb anyone's code.
 
 ## 7. BMAD Planning Mode
 
@@ -519,6 +546,11 @@ Separate reusable components or infrastructure only when they have a clear
 independent contract and more than one current consumer.
 
 ### 8.5 Telegram Bot
+
+No Telegram bot exists in the repository today; it appears only in product
+documents as future scope. This subsection is planning guidance for when that
+module is actually commissioned — do not create bot stories or scaffolding
+before then.
 
 Split by complete command or conversation flow.
 
@@ -676,6 +708,12 @@ When finishing implementation work, report:
 - which tests and checks ran;
 - any checks that could not run;
 - remaining risks, limitations, or follow-up work.
+
+When the work includes commits or pushes, verify them before reporting:
+confirm the commit exists by SHA in `git log`, and when pushing, confirm the
+SHA is present on the remote (`git ls-remote` / branch tracking status).
+Report the SHA itself, not just "committed". Trust the diff and the log, not
+an execution transcript.
 
 Keep the report factual. Do not claim tests, compatibility, or completion that
 was not verified.
