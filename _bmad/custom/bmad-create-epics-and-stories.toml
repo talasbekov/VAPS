@@ -1,0 +1,36 @@
+# Team-оверрайд bmad-create-epics-and-stories для VAPS.
+# Мержится поверх {skill-root}/customize.toml резолвером
+# _bmad/scripts/resolve_customization.py (массивы — append).
+#
+# Парный к _bmad/custom/bmad-create-story.toml: тот ловит крупную стори на
+# выходе, этот — на входе, при нарезке эпика. Правила общие,
+# _bmad/custom/decomposition-rules.md.
+
+[workflow]
+
+persistent_facts = [
+  "file:{project-root}/_bmad/custom/decomposition-rules.md",
+]
+
+activation_steps_append = [
+  """
+ГЕЙТ ДЕКОМПОЗИЦИИ (VAPS) — обязателен на Step 4 (Final Validation).
+
+В блоке «3. Story Quality Validation» дополнительно прогони КАЖДУЮ стори по
+загруженным правилам `_bmad/custom/decomposition-rules.md`:
+
+1. Критерии «A story is too large» — все семь.
+2. Порядок декомпозиции по слоям: стори, где слой не назван явно
+   (модель / миграция / сериализатор / сервис / вью / роутинг / права /
+   валидация / аудит / тесты), считается непроверенной → FAIL.
+3. «Each endpoint with business logic must be a separate story» — стори с
+   несколькими эндпоинтами дробится.
+
+Выведи таблицу: стори → нарушенный критерий → PASS/FAIL. Стори без строки в
+таблице считается непроверенной, а не прошедшей.
+
+Финальное меню «[C] Complete Workflow» НЕ показывать, пока есть хотя бы одна
+FAIL-стори. Вместо меню предложи разбиение (границы, зависимости, порядок) и
+HALT. Сохранять epics.md с FAIL-стори запрещено.
+""",
+]
