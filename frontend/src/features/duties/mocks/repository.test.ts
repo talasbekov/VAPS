@@ -1701,3 +1701,221 @@ describe('createDutiesRepository — создание дежурства (§21.3
     expect(orazov?.nearestDutyDate).toBeNull()
   })
 })
+
+// §21.32 «Карточка дежурства». Ключевое свойство: страница получает
+// СОГЛАСОВАННЫЙ срез одним ответом и ничего не выводит сама — severity
+// конфликта, актуальность версии паспарта и список недоступных блоков считает
+// сервер.
+describe('createDutiesRepository — карточка дежурства (§21.32)', () => {
+  beforeEach(() => {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.duty.view'] },
+      { userId: NOBODY, permissions: [] },
+    ])
+  })
+
+  const CARD_OBJECT = {
+    id: 'object-card',
+    name: 'Дворец Независимости',
+    code: 'OBJ-001',
+    passportState: 'GREEN',
+    passportVersions: [
+      {
+        id: 'card-v1',
+        versionNumber: 1,
+        effectiveFrom: '2026-01-01',
+        sectors: [
+          {
+            id: 'sector-a',
+            name: 'Сектор A',
+            posts: [{ id: 'post-1', name: 'КПП-1', task: 'Контроль', requirements: 'Допуск A' }],
+          },
+        ],
+      },
+    ],
+  }
+
+  const CARD_DUTY_TYPES = [
+    {
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      safeLabel: 'Суточное дежурство на собственном объекте',
+      targetType: 'OWN_OBJECT',
+      defaultDurationMinutes: 1440,
+      requiresSenior: true,
+      restAfterMinutes: 1440,
+      restPolicy: 'HARD_BLOCK',
+      requiresCurrentPassport: false,
+    },
+  ]
+
+  function cardShift(id: string, businessDate: string, overrides: Partial<DutyShift> = {}): DutyShift {
+    return {
+      id,
+      businessDate,
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      target: { targetType: 'OWN_OBJECT', objectId: CARD_OBJECT.id, safeLabel: CARD_OBJECT.name },
+      employeeName: 'Ахметов Б.',
+      stateCode: 'PLANNED',
+      acknowledgedAt: null,
+      actualStart: null,
+      actualEnd: null,
+      updatedAt: `${businessDate}T08:00:00+05:00`,
+      passportBinding: {
+        objectId: CARD_OBJECT.id,
+        objectName: CARD_OBJECT.name,
+        versionId: 'card-v1',
+        versionNumber: 1,
+        effectiveFrom: '2026-01-01',
+        sectorId: 'sector-a',
+        sectorName: 'Сектор A',
+        postId: 'post-1',
+        postName: 'КПП-1',
+        boundAt: '2026-07-24T08:00:00+05:00',
+      },
+      note: null,
+      overrideReason: null,
+      ...overrides,
+    }
+  }
+
+  async function setupCard(shifts: DutyShift[], objects: unknown[] = [CARD_OBJECT]) {
+    const envelope = seedEnvelope([])
+    const adapter = createMemoryPersistence()
+    await adapter.reset({
+      ...envelope,
+      slices: {
+        ...envelope.slices,
+        objects: { objects },
+        duties: {
+          ...(envelope.slices.duties as object),
+          shifts,
+          dutyTypes: CARD_DUTY_TYPES,
+        },
+      },
+    })
+    return {
+      repository: createDutiesRepository(adapter, new DemoClock('2026-07-24T09:00:00+05:00')),
+      adapter,
+    }
+  }
+
+  it('getShiftDetail() без ops.duty.view кидает RepositoryPermissionError', async () => {
+    const { repository } = await setupCard([cardShift('duty-1', '2026-07-24')])
+    await expect(repository.getShiftDetail('duty-1', NOBODY)).rejects.toThrow(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('несуществующая смена — 404, а не пустая карточка', async () => {
+    const { repository } = await setupCard([cardShift('duty-1', '2026-07-24')])
+    await expect(repository.getShiftDetail('duty-999', VIEWER)).rejects.toThrow(
+      RepositoryNotFoundError,
+    )
+  })
+
+  it('отдаёт смену, вид дежурства и статус паспорта одним согласованным срезом', async () => {
+    const { repository } = await setupCard([
+      cardShift('duty-1', '2026-07-24', { note: 'Усиление', stateCode: 'ACTIVE' }),
+    ])
+    const detail = await repository.getShiftDetail('duty-1', VIEWER)
+    expect(detail.shift.id).toBe('duty-1')
+    expect(detail.shift.note).toBe('Усиление')
+    // Вид дежурства целиком — карточка показывает продолжительность и отдых
+    // ИЗ реестра, а не своими константами (§21.35).
+    expect(detail.dutyType).toMatchObject({ restAfterMinutes: 1440, restPolicy: 'HARD_BLOCK' })
+    expect(detail.passportStatus).toMatchObject({
+      shiftId: 'duty-1',
+      objectKnown: true,
+      applicableVersionNumber: 1,
+      stale: false,
+    })
+    // §35: блоки §21.32 без данных названы С ПРИЧИНОЙ, а не пропущены молча.
+    expect(detail.unavailableBlocks.length).toBeGreaterThan(0)
+    expect(detail.unavailableBlocks.every((block) => block.reason.length > 0)).toBe(true)
+    expect(detail.unavailableBlocks.map((block) => block.code)).toContain('JOURNAL')
+  })
+
+  it('вид дежурства вне реестра приходит null — карточка не подставит дефолт', async () => {
+    const { repository } = await setupCard([
+      cardShift('duty-1', '2026-07-24', { dutyTypeCode: 'RETIRED_TYPE' }),
+    ])
+    const detail = await repository.getShiftDetail('duty-1', VIEWER)
+    expect(detail.dutyType).toBeNull()
+  })
+
+  it('объект вне реестра: карточка получает objectKnown=false, а не падает', async () => {
+    const { repository } = await setupCard([cardShift('duty-1', '2026-07-24')], [])
+    const detail = await repository.getShiftDetail('duty-1', VIEWER)
+    expect(detail.passportStatus).toMatchObject({
+      objectKnown: false,
+      applicableVersionNumber: null,
+    })
+  })
+
+  it('устаревшая привязка помечается stale, снимок поста НЕ переписывается', async () => {
+    const { repository } = await setupCard(
+      [cardShift('duty-1', '2026-07-24')],
+      [
+        {
+          ...CARD_OBJECT,
+          passportVersions: [
+            ...CARD_OBJECT.passportVersions,
+            {
+              id: 'card-v2',
+              versionNumber: 2,
+              effectiveFrom: '2026-07-01',
+              sectors: [
+                {
+                  id: 'sector-b',
+                  name: 'Сектор B',
+                  posts: [{ id: 'post-9', name: 'КПП-9', task: 'x', requirements: 'y' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    )
+    const detail = await repository.getShiftDetail('duty-1', VIEWER)
+    expect(detail.passportStatus).toMatchObject({ stale: true, applicableVersionNumber: 2 })
+    expect(detail.shift.passportBinding).toMatchObject({ versionNumber: 1, postName: 'КПП-1' })
+  })
+
+  it('§21.34: конфликт приходит с СЕРВЕРНОЙ severity, не выводится карточкой', async () => {
+    const { repository } = await setupCard([
+      cardShift('duty-1', '2026-07-24'),
+      cardShift('duty-2', '2026-07-24', { id: 'duty-2' }),
+    ])
+    const detail = await repository.getShiftDetail('duty-1', VIEWER)
+    expect(detail.conflicts).toHaveLength(1)
+    expect(detail.conflicts[0]).toMatchObject({ code: 'DUTY_OVERLAP', severity: 'HARD' })
+  })
+
+  it('конфликт отдыха виден смене, В ДЕНЬ которой он проявляется, и не виден первой из пары', async () => {
+    const { repository } = await setupCard([
+      cardShift('duty-1', '2026-07-24'),
+      cardShift('duty-2', '2026-07-25', { id: 'duty-2' }),
+    ])
+    const second = await repository.getShiftDetail('duty-2', VIEWER)
+    expect(second.conflicts.map((conflict) => conflict.code)).toEqual(['REST_AFTER_DUTY'])
+    const first = await repository.getShiftDetail('duty-1', VIEWER)
+    expect(first.conflicts).toEqual([])
+  })
+
+  it('конфликт ДРУГОГО сотрудника в тот же день в карточку не попадает', async () => {
+    const { repository } = await setupCard([
+      cardShift('duty-1', '2026-07-24'),
+      cardShift('duty-2', '2026-07-24', { id: 'duty-2', employeeName: 'Оразов К.' }),
+      cardShift('duty-3', '2026-07-24', { id: 'duty-3', employeeName: 'Оразов К.' }),
+    ])
+    const detail = await repository.getShiftDetail('duty-1', VIEWER)
+    expect(detail.conflicts).toEqual([])
+  })
+
+  it('карточка — чтение: вызов не поднимает ревизию состояния', async () => {
+    const { repository, adapter } = await setupCard([cardShift('duty-1', '2026-07-24')])
+    const before = (await adapter.load())?.revision
+    await repository.getShiftDetail('duty-1', VIEWER)
+    expect((await adapter.load())?.revision).toBe(before)
+  })
+})

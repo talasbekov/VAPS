@@ -1,6 +1,10 @@
 // Pending-контракты «План дежурств» (§7.5): backend Smart Josparlau не
 // существует — статус `backend-contract-pending`.
-import type { MonthlyDutyPlan, UnavailableMetric } from '../lib/monthlyPlan'
+import type {
+  MonthlyDutyPlan,
+  MonthlyDutyPlanConflict,
+  UnavailableMetric,
+} from '../lib/monthlyPlan'
 import type {
   CombatDutyShift,
   CombatDutyTypeDefinition,
@@ -32,6 +36,10 @@ export const DUTY_PLAN_OBJECTS_PATH = '/api/ops/duty-plan-objects/'
 /** §21.33 «Подбор кандидатов». */
 export const DUTY_CANDIDATES_PATH = '/api/ops/duty-candidates/'
 
+/** §21.32 «Карточка дежурства» — deep link на одну смену. */
+export function dutyShiftDetailPath(id: string): string {
+  return `${DUTY_SHIFTS_PATH}${id}/`
+}
 export function dutyShiftAcknowledgePath(id: string): string {
   return `${DUTY_SHIFTS_PATH}${id}/acknowledge/`
 }
@@ -181,6 +189,35 @@ export type CreateDutyShiftRequest = {
 }
 
 export type CreateDutyShiftResponse = DutyShift
+
+/**
+ * §21.32 «Карточка дежурства», ОДНИМ ответом: сама смена, производный статус
+ * паспорта, конфликты с СЕРВЕРНОЙ severity (§21.34 — frontend её не выводит),
+ * вид дежурства целиком (продолжительность и правила отдыха — его атрибуты,
+ * §21.35) и явный список блоков прототипа, которых модель не даёт (§35).
+ *
+ * Почему одним ответом, а не четырьмя запросами со страницы: карточка обязана
+ * показать согласованный срез (конфликт, посчитанный по другому снимку смен,
+ * чем показанная смена, — хуже, чем его отсутствие).
+ */
+export interface DutyShiftDetail {
+  shift: DutyShift
+  passportStatus: DutyPassportStatus
+  /** Вид дежурства этой смены; `null` — вида нет в реестре (смена старше
+   * реестра либо вид выведен из обращения): карточка обязана это показать,
+   * а не подставить дефолтные 24 часа (§21.35). */
+  dutyType: DutyTypeDefinition | null
+  /**
+   * Конфликты сотрудника, ПРОЯВЛЯЮЩИЕСЯ в день этой смены. Именно
+   * «проявляющиеся»: у нарушения отдыха `businessDate` — день ВТОРОГО
+   * дежурства (см. MonthlyDutyPlanConflict), поэтому карточка первой из пары
+   * смен конфликта не покажет, и это не потеря — конфликт принадлежит той
+   * смене, которая его создала.
+   */
+  conflicts: MonthlyDutyPlanConflict[]
+  /** §35: блоки §21.32, которых в модели суточного дежурства нет. */
+  unavailableBlocks: UnavailableMetric[]
+}
 
 export type AcknowledgeDutyShiftResponse = DutyShift
 export type ClockInDutyShiftResponse = DutyShift

@@ -21,6 +21,7 @@ import {
   combatDutyShiftReviewPath,
   combatDutyShiftSubmitPath,
   dutyShiftAcknowledgePath,
+  dutyShiftDetailPath,
   dutyShiftClockInPath,
   dutyShiftClockOutPath,
 } from './pending-contracts'
@@ -31,6 +32,7 @@ import type {
   CheckInCombatDutyResponse,
   ClockInDutyShiftResponse,
   ClockOutDutyShiftResponse,
+  DutyShiftDetail,
   CompleteCombatDutyRequest,
   CompleteCombatDutyResponse,
   CreateCombatDutyShiftRequest,
@@ -79,6 +81,15 @@ export function useDutyShifts(options: { enabled?: boolean } = {}) {
  * явным индикатором обновления». Индикатор рисует страница по
  * `isPlaceholderData`.
  */
+/** §21.32 «Карточка дежурства» — согласованный срез одним запросом. */
+export function useDutyShiftDetail(id: string) {
+  return useQuery<DutyShiftDetail, ApiFailure>({
+    queryKey: ['duties', 'shift-detail', id],
+    queryFn: () => apiClient.get<DutyShiftDetail>(dutyShiftDetailPath(id)),
+    enabled: id !== '',
+  })
+}
+
 export function useMonthlyDutyPlan(month: string, options: { enabled?: boolean } = {}) {
   return useQuery<MonthlyDutyPlanResponse, ApiFailure>({
     queryKey: ['duties', 'monthly-plan', month],
@@ -156,6 +167,7 @@ export function useAcknowledgeDutyShift() {
       apiClient.post<AcknowledgeDutyShiftResponse>(dutyShiftAcknowledgePath(id), {}),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
     },
   })
 }
@@ -166,6 +178,7 @@ export function useClockInDutyShift() {
     mutationFn: ({ id }) => apiClient.post<ClockInDutyShiftResponse>(dutyShiftClockInPath(id), {}),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
     },
   })
 }
@@ -177,6 +190,7 @@ export function useClockOutDutyShift() {
       apiClient.post<ClockOutDutyShiftResponse>(dutyShiftClockOutPath(id), {}),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
     },
   })
 }

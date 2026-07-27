@@ -131,5 +131,13 @@ test.describe('Accessibility (axe-core): второй слой аудита по
     // формы просто не отрендерена и сканирование было бы неполным.
     await expect(createForm.getByLabel('Пост')).toBeVisible()
     await assertNoSeriousViolations(page, 'План дежурств — форма создания дежурства')
+
+    // Карточка дежурства (§21.32) — свой маршрут, сканированием /duties не
+    // покрыт. Берём смену с конфликтом: цветные бейджи severity — ровно тот
+    // класс разметки, где прошлые проходы находили contrast-нарушения.
+    await page.goto('/duties')
+    await page.locator('tr', { hasText: 'Жумабаев Р.' }).first().getByRole('link').click()
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await assertNoSeriousViolations(page, 'Карточка дежурства')
   })
 })

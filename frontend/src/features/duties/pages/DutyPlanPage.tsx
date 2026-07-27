@@ -9,6 +9,8 @@
 // не пересчитывает (§21.29/§21.34, см. MonthlyDutyPlanSection). История/
 // revisions и lifecycle плана — Not started (см. FRONTEND_DECISIONS A63).
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router'
+import { ROUTES } from '../../../shared/routes'
 import { Button } from '../../../shared/ui/Button'
 import {
   useAcknowledgeDutyShift,
@@ -231,7 +233,13 @@ function ShiftRow({
 
   return (
     <tr className="border-t">
-      <td className="p-3 text-sm tabular-nums">{shift.businessDate}</td>
+      <td className="p-3 text-sm tabular-nums">
+        {/* Вход в карточку §21.32 — с даты: она уникальна в строке и не
+            конкурирует с кнопками действий справа. */}
+        <Link className="text-primary underline" to={ROUTES.dutyShiftDetailTo(shift.id)}>
+          {shift.businessDate}
+        </Link>
+      </td>
       <td className="p-3 text-sm">
         <span>{dutyTypeLabel}</span>
         {/* §21.31: примечание и §21.34: обоснование обхода — хранимые данные

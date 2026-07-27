@@ -28,6 +28,7 @@ import type {
   DutyPassportStatus,
   DutyPlanObjectOption,
   DutyPlanSectorOption,
+  DutyShiftDetail,
   ListDutyCandidatesResponse,
   ListDutyPlanObjectsResponse,
   ListCombatDutyShiftsResponse,
@@ -87,6 +88,64 @@ const COMBAT_REPLACE_PERMISSION = 'ops.combat_group.replace'
 const REST_OVERRIDE_PERMISSION = 'ops.duty.override_rest'
 
 const BUSINESS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * §21.32 перечисляет одиннадцать блоков карточки. Пять выводимы из модели
+ * (пост и исполнитель, конфликты, ознакомление, фактическое участие, паспорт)
+ * и нарисованы; остальные приходят СЮДА с причиной — тот же приём, что в
+ * архиве дела закрытого ОМ (FRONTEND_DECISIONS A59): пустой блок читался бы
+ * как «данных нет», а не «поля нет в модели».
+ */
+const UNAVAILABLE_SHIFT_CARD_BLOCKS: readonly UnavailableMetric[] = [
+  {
+    code: 'RESPONSIBLE_FOR_OBJECT',
+    label: 'Ответственный по объекту',
+    reason:
+      'Реестр объектов не хранит ответственного: у объекта есть паспорт, секторы и посты, но не назначенное на него должностное лицо.',
+  },
+  {
+    code: 'RESERVE',
+    label: 'Резерв',
+    reason:
+      'Резерв заведён только у боевых групп (§24.6). Индивидуальное дежурство — один сотрудник на один пост, подменять его некем по модели.',
+  },
+  {
+    code: 'REPLACEMENTS',
+    label: 'Замены',
+    reason:
+      'История замен ведётся только у боевых групп (§24.21); у суточных дежурств замена не реализована — см. FRONTEND_DECISIONS.',
+  },
+  {
+    code: 'INCIDENTS',
+    label: 'Инциденты',
+    reason:
+      'Инциденты требуют blob-хранилища для фотоматериалов, которого в demo-срезе нет (тот же вывод, что для материалов рекогносцировки).',
+  },
+  {
+    code: 'RESULTS_AND_RATING',
+    label: 'Итоги и оценивание',
+    reason:
+      'Оценки участников — hidden-score (§D3), сознательный scope cut; итог дежурства отдельным полем не моделируется.',
+  },
+  {
+    code: 'JOURNAL',
+    label: 'Журнал',
+    reason:
+      'Журнал ведётся у стадии «Проведение» охранного мероприятия (§9.10); у суточного дежурства своего журнала нет.',
+  },
+  {
+    code: 'REVISION',
+    label: 'Revision смены',
+    reason:
+      'Оптимистичная конкурентность (revision/expectedRevision) в demo-срезе не реализована ни у одной сущности — показывать было бы нечего.',
+  },
+  {
+    code: 'TIME_WINDOW',
+    label: 'Время начала и окончания',
+    reason:
+      'Модель проекта — «одна смена = один календарный день»: время начала у смены не хранится, продолжительность задаёт вид дежурства.',
+  },
+]
 
 /** §21.33 перечисляет факторы подбора, которых в demo-модели нет НИ В КАКОМ
  * виде. Список отдаётся клиенту, а не пишется в вёрстке: причина принадлежит
@@ -161,6 +220,51 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
       }
     })
     return { results: sorted, passportStatuses }
+  }
+
+  /**
+   * §21.32 «Карточка дежурства». Собирается ЦЕЛИКОМ здесь по тем же причинам,
+   * что месячный план: severity конфликта — серверная (§21.34), а согласованный
+   * срез (смена + её конфликты, посчитанные по ОДНОМУ снимку) страница из
+   * нескольких запросов не соберёт.
+   */
+  async function getShiftDetail(
+    id: string,
+    actorUserId: string | null,
+  ): Promise<DutyShiftDetail> {
+    if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    const slice = envelope === null ? null : readSlice(envelope)
+    const shift = slice?.shifts.find((candidate) => candidate.id === id)
+    if (shift === undefined || slice === null || envelope === null) {
+      throw new RepositoryNotFoundError(id)
+    }
+    const object = findObjectById(envelope.slices, shift.target.objectId)
+    const applicable =
+      object === null ? null : resolveApplicableVersion(object, shift.businessDate)
+    const conflicts = detectConflicts(slice.shifts, slice.dutyTypes).filter(
+      (conflict) =>
+        conflict.employeeName === shift.employeeName &&
+        conflict.businessDate === shift.businessDate,
+    )
+    return {
+      shift,
+      passportStatus: {
+        shiftId: shift.id,
+        objectKnown: object !== null,
+        applicableVersionId: applicable?.id ?? null,
+        applicableVersionNumber: applicable?.versionNumber ?? null,
+        stale:
+          shift.passportBinding === null
+            ? false
+            : isBindingStale(shift.passportBinding, applicable),
+      },
+      dutyType: slice.dutyTypes.find((t) => t.dutyTypeCode === shift.dutyTypeCode) ?? null,
+      conflicts,
+      unavailableBlocks: [...UNAVAILABLE_SHIFT_CARD_BLOCKS],
+    }
   }
 
   /**
@@ -1113,6 +1217,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
   return {
     listDutyTypes,
     listShifts,
+    getShiftDetail,
     getMonthlyPlan,
     listDutyPlanObjects,
     listDutyCandidates,

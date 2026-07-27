@@ -99,6 +99,14 @@ export const ROUTES = {
   serviceAnalytics: '/analytics',
   /** Мастер-промпт §21/§24: «Служба» → План дежурств. */
   duties: '/duties',
+  /**
+   * §21.32 «Карточка дежурства» — deep link на одну смену. Право то же, что у
+   * плана (`ops.duty.view`): карточка ничего не открывает сверх строки плана,
+   * она её разворачивает. Действия смены (ознакомление/заступление/завершение)
+   * внутри неё гардятся отдельно — `ops.duty.manage`, как и в таблице.
+   */
+  dutyShiftDetail: '/duties/:id',
+  dutyShiftDetailTo: (id: string) => `/duties/${encodeURIComponent(id)}`,
   /** Мастер-промпт §30: «Настройки» → Справочники. */
   dictionaries: '/dictionaries',
   dictionaryDetail: '/dictionaries/:code',

@@ -21,6 +21,7 @@ import {
   combatDutyShiftReviewPath,
   combatDutyShiftSubmitPath,
   dutyShiftAcknowledgePath,
+  dutyShiftDetailPath,
   dutyShiftClockInPath,
   dutyShiftClockOutPath,
 } from '../api/pending-contracts'
@@ -157,6 +158,18 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
         return HttpResponse.json(await repository.createDutyShift(body, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    // §21.32. Регистрируется ПОСЛЕ коллекционных GET-ов: `:id` — обязательный
+    // сегмент, поэтому `/duty-shifts/` этим паттерном не матчится, но порядок
+    // держим явным, чтобы правило было видно, а не подразумевалось.
+    http.get(`*${dutyShiftDetailPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        return HttpResponse.json(await repository.getShiftDetail(id, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
       }
     }),
     http.post(`*${dutyShiftAcknowledgePath(':id')}`, async ({ request, params }) => {

@@ -78,6 +78,7 @@
 | acknowledgeDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/acknowledge/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
 | clockInDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/clock-in/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
 | clockOutDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/clock-out/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
+| getDutyShiftDetail | features/duties | backend-contract-pending | GET /api/ops/duty-shifts/:id/ | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts (403/404, конфликты по сотруднику и дню, stale, dutyType=null) |
 | listDutyPlanObjects | features/duties | backend-contract-pending | GET /api/ops/duty-plan-objects/?business_date=&duty_type_code= | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts (три причины блокировки, INVALID_BUSINESS_DATE/UNKNOWN_DUTY_TYPE) |
 | listDutyCandidates | features/duties | backend-contract-pending | GET /api/ops/duty-candidates/?business_date= | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts (занятость по реальным сменам, unavailableAttributes) |
 | createDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/ | ops.duty.manage (+ ops.duty.override_rest для обхода) | mocks/handlers.ts | mocks/repository.test.ts (PASSPORT_NOT_READY/PASSPORT_VERSION_MISSING/UNKNOWN_POST/UNKNOWN_OBJECT/UNKNOWN_DUTY_TYPE/DUTY_CONFLICT_HARD 422, DUTY_CONFLICT_DETECTED 409) |

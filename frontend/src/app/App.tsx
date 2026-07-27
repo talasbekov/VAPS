@@ -24,6 +24,7 @@ import { ObjectPassportVersionPage } from '../features/objects/pages/ObjectPassp
 import { ObjectsListPage } from '../features/objects/pages/ObjectsListPage'
 import { AuditLogPage } from '../features/audit/pages/AuditLogPage'
 import { DutyPlanPage } from '../features/duties/pages/DutyPlanPage'
+import { DutyShiftDetailPage } from '../features/duties/pages/DutyShiftDetailPage'
 import { DictionariesListPage } from '../features/dictionaries/pages/DictionariesListPage'
 import { DictionaryDetailPage } from '../features/dictionaries/pages/DictionaryDetailPage'
 import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
@@ -177,6 +178,17 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.duty.view">
               <DutyPlanPage />
+            </RequirePermission>
+          }
+        />
+        {/* §21.32 «Карточка дежурства». Право то же, что у плана: карточка
+            ничего не открывает сверх строки плана — она её разворачивает.
+            Действия внутри гардятся отдельно (`ops.duty.manage`). */}
+        <Route
+          path={ROUTES.dutyShiftDetail}
+          element={
+            <RequirePermission permission="ops.duty.view">
+              <DutyShiftDetailPage />
             </RequirePermission>
           }
         />
