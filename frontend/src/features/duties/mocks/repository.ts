@@ -9,7 +9,7 @@ import type {
 } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
 import { buildMonthlyPlan, detectConflicts, isValidMonth } from '../lib/monthlyPlan'
-import type { UnavailableMetric } from '../lib/monthlyPlan'
+import type { MonthlyDutyPlanConflict, UnavailableMetric } from '../lib/monthlyPlan'
 import {
   NO_POSTS_IN_VERSION_TEXT,
   NO_VERSION_FOR_DATE_TEXT,
@@ -21,6 +21,7 @@ import {
 } from '../lib/passportBinding'
 import { findObjectById, readObjectsProjection } from './objectsSlice'
 import type {
+  CancelDutyShiftRequest,
   CompleteCombatDutyRequest,
   CreateCombatDutyShiftRequest,
   CreateDutyShiftRequest,
@@ -42,6 +43,7 @@ import type {
   ReviewCombatGroupRequest,
   SubmitCombatDutyHandoverRequest,
   SubmitCombatGroupRequest,
+  UpdateDutyShiftRequest,
 } from '../api/pending-contracts'
 import type { CombatDutyShift, DutyReplacementRecord, DutyShift } from '../model/types'
 import type { DutiesSlice } from './fixtures'
@@ -180,6 +182,54 @@ function readSlice(envelope: DemoStateEnvelope): DutiesSlice {
     )
   }
   return slice as DutiesSlice
+}
+
+/**
+ * §21.34, ОБЩИЙ гейт конфликтов для создания и правки смены.
+ *
+ * Берётся разница «после − до», где «до» считается по набору БЕЗ самой
+ * смены-кандидата: при правке она уже лежит в слайсе, и без исключения по id
+ * смена конфликтовала бы сама с собой. Уже существовавшие в данных конфликты
+ * (чужие пары смен) новую операцию не блокируют.
+ *
+ * Возвращает мягкий конфликт, если он появился и был обойдён, иначе `null`;
+ * жёсткий и необойдённый мягкий выбрасывает.
+ */
+function assertNoNewConflicts(
+  slice: DutiesSlice,
+  candidate: DutyShift,
+  overrideReason: string,
+): MonthlyDutyPlanConflict | null {
+  const others = slice.shifts.filter((shift) => shift.id !== candidate.id)
+  const before = new Set(
+    detectConflicts(others, slice.dutyTypes).map((conflict) => conflict.conflictId),
+  )
+  const introduced = detectConflicts([...others, candidate], slice.dutyTypes).filter(
+    (conflict) => !before.has(conflict.conflictId),
+  )
+
+  const hard = introduced.find((conflict) => conflict.severity === 'HARD')
+  if (hard !== undefined) {
+    throw new RepositoryBusinessRuleError('DUTY_CONFLICT_HARD', hard.message)
+  }
+  const soft = introduced.find((conflict) => conflict.severity === 'SOFT')
+  if (soft !== undefined && overrideReason === '') {
+    // Код НЕ выдуман: `DUTY_CONFLICT_DETECTED` уже в
+    // `docs/registries/error-codes.yaml` как overridable/conflict_soft — ровно
+    // он включает канонический путь `useApiMutation.conflict` → общий
+    // `ConflictDialog` → повтор с override (ARCH-FE-015). Свой код сюда завёл
+    // бы второй, параллельный протокол обхода.
+    throw new RepositoryConflictError('DUTY_CONFLICT_DETECTED', soft.message, {
+      conflicts: introduced.map((conflict) => ({
+        conflict_code: conflict.code,
+        severity: conflict.severity,
+        employee_id: conflict.employeeName,
+        business_date: conflict.businessDate,
+        message: conflict.message,
+      })),
+    })
+  }
+  return soft ?? null
 }
 
 export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoClock) {
@@ -492,44 +542,17 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
         updatedAt: clock.now(),
         passportBinding: binding,
         note: request.note?.trim() === '' ? null : (request.note?.trim() ?? null),
+        cancellation: null,
         // Заполняется НИЖЕ и только если обход действительно понадобился:
         // обоснование при отсутствии конфликта — шум в данных, который потом
         // читался бы как «здесь что-то обходили».
         overrideReason: null,
       }
 
-      const before = new Set(
-        detectConflicts(slice.shifts, slice.dutyTypes).map((conflict) => conflict.conflictId),
-      )
-      const introduced = detectConflicts(
-        [...slice.shifts, candidate],
-        slice.dutyTypes,
-      ).filter((conflict) => !before.has(conflict.conflictId))
-
-      const hard = introduced.find((conflict) => conflict.severity === 'HARD')
-      if (hard !== undefined) {
-        throw new RepositoryBusinessRuleError('DUTY_CONFLICT_HARD', hard.message)
-      }
-      const soft = introduced.find((conflict) => conflict.severity === 'SOFT')
-      if (soft !== undefined && overrideReason === '') {
-        // Код НЕ выдуман: `DUTY_CONFLICT_DETECTED` уже в
-        // `docs/registries/error-codes.yaml` как overridable/conflict_soft —
-        // ровно он включает канонический путь `useApiMutation.conflict` →
-        // общий `ConflictDialog` → повтор с override (ARCH-FE-015). Свой код
-        // сюда завёл бы второй, параллельный протокол обхода.
-        throw new RepositoryConflictError('DUTY_CONFLICT_DETECTED', soft.message, {
-          conflicts: introduced.map((conflict) => ({
-            conflict_code: conflict.code,
-            severity: conflict.severity,
-            employee_id: conflict.employeeName,
-            business_date: conflict.businessDate,
-            message: conflict.message,
-          })),
-        })
-      }
+      const soft = assertNoNewConflicts(slice, candidate, overrideReason)
       const stored: DutyShift = {
         ...candidate,
-        overrideReason: soft === undefined ? null : overrideReason,
+        overrideReason: soft === null ? null : overrideReason,
       }
 
       created = stored
@@ -542,6 +565,153 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
       }
     })
     return created
+  }
+
+  /** Состояния, в которых смену ещё можно править и отменять: до заступления.
+   * После него правка сотрудника или поста была бы подлогом — факт уже есть. */
+  const EDITABLE_STATES: readonly DutyShift['stateCode'][] = ['PLANNED', 'ACKNOWLEDGED']
+
+  /**
+   * §21.31, правка заведённой смены. Дата и вид дежурства НЕ меняются (см.
+   * `UpdateDutyShiftRequest`), поэтому действующая версия паспорта остаётся
+   * той же — переназначается только пост внутри неё.
+   */
+  async function updateDutyShift(
+    id: string,
+    request: UpdateDutyShiftRequest,
+    actorUserId: string | null,
+  ): Promise<DutyShift> {
+    if (!hasPermission(actorUserId, MANAGE_PERMISSION)) {
+      throw new RepositoryPermissionError(MANAGE_PERMISSION)
+    }
+    if (request.employeeName.trim() === '') {
+      throw new RepositoryBusinessRuleError('EMPTY_EMPLOYEE', 'Выберите сотрудника.')
+    }
+    const overrideReason =
+      request.override === true ? (request.override_reason ?? '').trim() : ''
+    if (overrideReason !== '' && !hasPermission(actorUserId, REST_OVERRIDE_PERMISSION)) {
+      throw new RepositoryPermissionError(REST_OVERRIDE_PERMISSION)
+    }
+    let updated!: DutyShift
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.shifts.find((shift) => shift.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
+      }
+      if (!EDITABLE_STATES.includes(existing.stateCode)) {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STATE_TRANSITION',
+          'Править можно только дежурство, на которое ещё не заступили.',
+        )
+      }
+      const object = findObjectById(current.slices, existing.target.objectId)
+      if (object === null) {
+        throw new RepositoryBusinessRuleError(
+          'UNKNOWN_OBJECT',
+          'Объект дежурства не найден в реестре объектов.',
+        )
+      }
+      const version = resolveApplicableVersion(object, existing.businessDate)
+      if (version === null) {
+        throw new RepositoryBusinessRuleError('PASSPORT_VERSION_MISSING', NO_VERSION_FOR_DATE_TEXT)
+      }
+      const binding = bindDutyPost(
+        object,
+        version,
+        request.sectorId,
+        request.postId,
+        clock.now(),
+      )
+      if (binding === null) {
+        throw new RepositoryBusinessRuleError(
+          'UNKNOWN_POST',
+          'Выбранного поста нет в действующей на эту дату версии паспорта.',
+        )
+      }
+
+      const employeeName = request.employeeName.trim()
+      // §24.21-принцип: подтверждал ознакомление ПРЕЖНИЙ сотрудник. Новый его
+      // не подтверждал, поэтому смена откатывается в PLANNED, а отметка
+      // ознакомления снимается — иначе она приписывала бы согласие человеку,
+      // который его не давал.
+      const employeeChanged = employeeName !== existing.employeeName
+      const candidate: DutyShift = {
+        ...existing,
+        employeeName,
+        passportBinding: binding,
+        note: request.note?.trim() === '' ? null : (request.note?.trim() ?? null),
+        stateCode: employeeChanged ? 'PLANNED' : existing.stateCode,
+        acknowledgedAt: employeeChanged ? null : existing.acknowledgedAt,
+        updatedAt: clock.now(),
+      }
+
+      const soft = assertNoNewConflicts(slice, candidate, overrideReason)
+      updated = {
+        ...candidate,
+        // Обоснование относится к КОНФЛИКТУ, а не к смене навсегда: правка без
+        // конфликта снимает прежнюю пометку, иначе она пережила бы причину.
+        overrideReason: soft === null ? null : overrideReason,
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          shifts: slice.shifts.map((shift) => (shift.id === id ? updated : shift)),
+        } satisfies DutiesSlice,
+      }
+    })
+    return updated
+  }
+
+  /**
+   * Отмена смены. Удаления нет намеренно: отменённая смена остаётся в плане с
+   * причиной — стереть её значило бы стереть след планирования, а он и есть
+   * предмет §21. Из счётчиков и конфликтов она при этом выбывает
+   * (см. `detectConflicts`/`buildMonthlyPlan`).
+   */
+  async function cancelDutyShift(
+    id: string,
+    request: CancelDutyShiftRequest,
+    actorUserId: string | null,
+  ): Promise<DutyShift> {
+    if (!hasPermission(actorUserId, MANAGE_PERMISSION)) {
+      throw new RepositoryPermissionError(MANAGE_PERMISSION)
+    }
+    const reason = request.reason.trim()
+    if (reason === '') {
+      throw new RepositoryBusinessRuleError('REASON_REQUIRED', 'Укажите причину отмены.')
+    }
+    let updated!: DutyShift
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.shifts.find((shift) => shift.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
+      }
+      if (!EDITABLE_STATES.includes(existing.stateCode)) {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STATE_TRANSITION',
+          existing.stateCode === 'CANCELLED'
+            ? 'Дежурство уже отменено.'
+            : 'Отменить можно только дежурство, на которое ещё не заступили.',
+        )
+      }
+      updated = {
+        ...existing,
+        stateCode: 'CANCELLED',
+        cancellation: { reason, cancelledAt: clock.now() },
+        updatedAt: clock.now(),
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          shifts: slice.shifts.map((shift) => (shift.id === id ? updated : shift)),
+        } satisfies DutiesSlice,
+      }
+    })
+    return updated
   }
 
   async function transitionShift(
@@ -1222,6 +1392,8 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     listDutyPlanObjects,
     listDutyCandidates,
     createDutyShift,
+    updateDutyShift,
+    cancelDutyShift,
     acknowledge,
     clockIn,
     clockOut,

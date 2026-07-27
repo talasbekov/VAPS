@@ -27,8 +27,18 @@ const DUTY_STATE_LABEL: Record<DutyShiftState, string> = {
   ACKNOWLEDGED: 'Ознакомлен',
   ACTIVE: 'На посту',
   COMPLETED: 'Завершено',
+  CANCELLED: 'Отменено',
 }
-const DUTY_SHIFT_STATES: readonly DutyShiftState[] = ['PLANNED', 'ACKNOWLEDGED', 'ACTIVE', 'COMPLETED']
+// Отменённые — ОТДЕЛЬНЫЙ бакет, а не вычет из общего числа: «дежурства по
+// состоянию» отвечает на вопрос «что с планом», и молча выброшенная отмена
+// сделала бы разницу между запланированным и оставшимся невидимой.
+const DUTY_SHIFT_STATES: readonly DutyShiftState[] = [
+  'PLANNED',
+  'ACKNOWLEDGED',
+  'ACTIVE',
+  'COMPLETED',
+  'CANCELLED',
+]
 
 // §24.5-24.10/§24.19-24.23 — сплющивает submission+execution в ОДНУ шкалу
 // бакетов для агрегата (та же честность, что COMBAT_*_STATE_LABEL в

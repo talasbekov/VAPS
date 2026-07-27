@@ -38,7 +38,12 @@ export interface MonthlyDutyPlanConflict {
 
 export interface MonthlyDutyPlanCell {
   date: string
+  /** БЕЗ отменённых: отменённая смена никого не занимает. */
   shiftCount: number
+  /** Отменённые считаются ОТДЕЛЬНО, а не отбрасываются молча: пустая клетка
+   * там, где планирование было и было отменено, читалась бы как «не
+   * планировали» (§35). */
+  cancelledCount: number
   /** Дежурства в состоянии PLANNED — §21.29 «Без ознакомления». */
   notAcknowledgedCount: number
   completedCount: number
@@ -56,7 +61,9 @@ export interface MonthlyDutyPlanRow {
  * в `unavailableMetrics`, а не нулём и не прочерком. */
 export interface MonthlyDutyPlanKpi {
   objectsInPlan: number
+  /** БЕЗ отменённых — см. `MonthlyDutyPlanCell.shiftCount`. */
   shifts: number
+  cancelled: number
   notAcknowledged: number
   completed: number
   hardConflicts: number
@@ -156,7 +163,10 @@ export function detectConflicts(
 ): MonthlyDutyPlanConflict[] {
   const typeByCode = new Map(dutyTypes.map((type) => [type.dutyTypeCode, type]))
   const byEmployee = new Map<string, DutyShift[]>()
-  for (const shift of shifts) {
+  // Отменённая смена не занимает сотрудника: она не пересекается с другой и не
+  // требует отдыха после себя. Иначе отмена «лечила» бы план на экране, но
+  // продолжала блокировать планирование — худший из возможных исходов.
+  for (const shift of shifts.filter((candidate) => candidate.stateCode !== 'CANCELLED')) {
     const bucket = byEmployee.get(shift.employeeName) ?? []
     bucket.push(shift)
     byEmployee.set(shift.employeeName, bucket)
@@ -247,6 +257,9 @@ export function buildMonthlyPlan(
   const allConflicts = detectConflicts(shifts, dutyTypes)
   const conflicts = allConflicts.filter((conflict) => monthOf(conflict.businessDate) === month)
   const monthShifts = shifts.filter((shift) => monthOf(shift.businessDate) === month)
+  // Отменённые остаются в `rowsByObject` (строка объекта не должна исчезать
+  // из сетки), но во ВСЕ счётчики идёт только активная часть.
+  const activeMonthShifts = monthShifts.filter((shift) => shift.stateCode !== 'CANCELLED')
 
   const conflictCounts = new Map<string, { hard: number; soft: number }>()
   for (const conflict of conflicts) {
@@ -285,11 +298,13 @@ export function buildMonthlyPlan(
           hard += counts.hard
           soft += counts.soft
         }
+        const active = dayShifts.filter((shift) => shift.stateCode !== 'CANCELLED')
         return {
           date,
-          shiftCount: dayShifts.length,
-          notAcknowledgedCount: dayShifts.filter((shift) => shift.stateCode === 'PLANNED').length,
-          completedCount: dayShifts.filter((shift) => shift.stateCode === 'COMPLETED').length,
+          shiftCount: active.length,
+          cancelledCount: dayShifts.length - active.length,
+          notAcknowledgedCount: active.filter((shift) => shift.stateCode === 'PLANNED').length,
+          completedCount: active.filter((shift) => shift.stateCode === 'COMPLETED').length,
           hardConflictCount: hard,
           softConflictCount: soft,
         }
@@ -302,9 +317,10 @@ export function buildMonthlyPlan(
     rows,
     kpi: {
       objectsInPlan: rows.length,
-      shifts: monthShifts.length,
-      notAcknowledged: monthShifts.filter((shift) => shift.stateCode === 'PLANNED').length,
-      completed: monthShifts.filter((shift) => shift.stateCode === 'COMPLETED').length,
+      shifts: activeMonthShifts.length,
+      cancelled: monthShifts.length - activeMonthShifts.length,
+      notAcknowledged: activeMonthShifts.filter((shift) => shift.stateCode === 'PLANNED').length,
+      completed: activeMonthShifts.filter((shift) => shift.stateCode === 'COMPLETED').length,
       hardConflicts: conflicts.filter((conflict) => conflict.severity === 'HARD').length,
       softConflicts: conflicts.filter((conflict) => conflict.severity === 'SOFT').length,
     },

@@ -33,6 +33,7 @@ function plan(month: string, overrides: Partial<MonthlyDutyPlan> = {}): MonthlyD
         cells: days.map((date) => ({
           date,
           shiftCount: date === `${month}-22` ? 1 : 0,
+          cancelledCount: 0,
           notAcknowledgedCount: date === `${month}-22` ? 1 : 0,
           completedCount: 0,
           hardConflictCount: date === `${month}-22` ? 1 : 0,
@@ -43,6 +44,7 @@ function plan(month: string, overrides: Partial<MonthlyDutyPlan> = {}): MonthlyD
     kpi: {
       objectsInPlan: 1,
       shifts: 1,
+      cancelled: 0,
       notAcknowledged: 1,
       completed: 0,
       hardConflicts: 1,
@@ -109,6 +111,7 @@ describe('Месячный план дежурств', () => {
       '2026-07': plan('2026-07', {
         kpi: {
           objectsInPlan: 7,
+          cancelled: 0,
           shifts: 42,
           notAcknowledged: 5,
           completed: 3,
@@ -141,6 +144,7 @@ describe('Месячный план дежурств', () => {
       '2026-08': plan('2026-08', {
         kpi: {
           objectsInPlan: 2,
+          cancelled: 0,
           shifts: 9,
           notAcknowledged: 5,
           completed: 4,
@@ -170,6 +174,7 @@ describe('Месячный план дежурств', () => {
         conflicts: [],
         kpi: {
           objectsInPlan: 0,
+          cancelled: 0,
           shifts: 0,
           notAcknowledged: 0,
           completed: 0,

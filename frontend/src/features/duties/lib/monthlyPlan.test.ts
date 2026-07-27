@@ -65,6 +65,7 @@ function shift(
     updatedAt: `${businessDate}T08:00:00+05:00`,
     passportBinding: null,
   note: null,
+  cancellation: null,
   overrideReason: null,
   }
 }
@@ -187,6 +188,7 @@ describe('месячный план (§21.29-21.30)', () => {
     expect(plan.kpi).toEqual({
       objectsInPlan: 2,
       shifts: 4,
+      cancelled: 0,
       notAcknowledged: 2,
       completed: 2,
       hardConflicts: 1,

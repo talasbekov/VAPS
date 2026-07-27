@@ -92,6 +92,9 @@ export function MonthlyDutyPlanSection({ initialMonth }: { initialMonth: string 
     return [
       { label: 'Объектов в плане', value: plan.kpi.objectsInPlan },
       { label: 'Дежурств', value: plan.kpi.shifts },
+      // Отменённые — ОТДЕЛЬНЫЙ показатель, а не вычет из «Дежурств»: без него
+      // отмена выглядела бы как исчезновение смены из плана.
+      { label: 'Отменено', value: plan.kpi.cancelled },
       { label: 'Без ознакомления', value: plan.kpi.notAcknowledged },
       { label: 'Завершено', value: plan.kpi.completed },
       { label: 'Hard-конфликтов', value: plan.kpi.hardConflicts },
@@ -133,9 +136,16 @@ export function MonthlyDutyPlanSection({ initialMonth }: { initialMonth: string 
 
       {plan !== null && (
         <div className="flex flex-col gap-3.5">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
             {kpiItems.map((item) => (
-              <div key={item.label} className="rounded-xl border bg-card p-3">
+              // Именованная группа: даёт показателю доступное имя и адресуемость
+              // (иначе значение KPI отличимо от чисел сетки только по позиции).
+              <div
+                key={item.label}
+                role="group"
+                aria-label={item.label}
+                className="rounded-xl border bg-card p-3"
+              >
                 <p className="text-[11px] font-semibold text-slate-600">{item.label}</p>
                 <p className="text-xl font-bold tabular-nums">{item.value}</p>
               </div>

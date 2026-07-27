@@ -57,6 +57,7 @@ const BOUND_SHIFT: DutyShift = {
     boundAt: '2026-07-24T08:00:00+05:00',
   },
   note: null,
+  cancellation: null,
   overrideReason: null,
 }
 

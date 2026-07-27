@@ -198,6 +198,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       updatedAt: now,
       passportBinding: hq.passportBinding,
       note: null,
+      cancellation: null,
       overrideReason: null,
     },
     {
@@ -217,6 +218,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       updatedAt: now,
       passportBinding: palace.passportBinding,
       note: null,
+      cancellation: null,
       overrideReason: null,
     },
     {
@@ -236,6 +238,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       updatedAt: now,
       passportBinding: ministries.passportBinding,
       note: null,
+      cancellation: null,
       overrideReason: null,
     },
     {
@@ -251,6 +254,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       updatedAt: now,
       passportBinding: hq.passportBinding,
       note: null,
+      cancellation: null,
       overrideReason: null,
     },
   ]
@@ -294,6 +298,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       updatedAt: now,
       passportBinding: target.passportBinding,
       note: null,
+      cancellation: null,
       overrideReason: null,
     }
   }

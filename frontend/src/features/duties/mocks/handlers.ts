@@ -22,6 +22,8 @@ import {
   combatDutyShiftSubmitPath,
   dutyShiftAcknowledgePath,
   dutyShiftDetailPath,
+  dutyShiftUpdatePath,
+  dutyShiftCancelPath,
   dutyShiftClockInPath,
   dutyShiftClockOutPath,
 } from '../api/pending-contracts'
@@ -29,11 +31,13 @@ import type {
   AcknowledgeCombatDutyRequest,
   CompleteCombatDutyRequest,
   CreateCombatDutyShiftRequest,
+  CancelDutyShiftRequest,
   CreateDutyShiftRequest,
   RequestCombatDutyReplacementRequest,
   ReviewCombatGroupRequest,
   SubmitCombatDutyHandoverRequest,
   SubmitCombatGroupRequest,
+  UpdateDutyShiftRequest,
 } from '../api/pending-contracts'
 import {
   createDutiesRepository,
@@ -168,6 +172,26 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
       const id = params.id as string
       try {
         return HttpResponse.json(await repository.getShiftDetail(id, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${dutyShiftUpdatePath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        const body = (await request.json()) as UpdateDutyShiftRequest
+        return HttpResponse.json(await repository.updateDutyShift(id, body, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${dutyShiftCancelPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        const body = (await request.json()) as CancelDutyShiftRequest
+        return HttpResponse.json(await repository.cancelDutyShift(id, body, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
       }

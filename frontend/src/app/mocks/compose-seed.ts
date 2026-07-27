@@ -42,11 +42,12 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // в ensureSeeded()). Пример: добавление `reconChecklist`/`reconSectorPosts` в
 // `SecurityEvent` — 1→2; добавление `passportBinding` в `DutyShift` — 12→13;
 // добавление `note`/`restOverrideReason` в `DutyShift`, `requiresCurrentPassport`
-// в `DutyTypeDefinition` и нового списка `dutyCandidates` — 14→15.
+// в `DutyTypeDefinition` и нового списка `dutyCandidates` — 14→15;
+// добавление состояния CANCELLED и поля `cancellation` в `DutyShift` — 15→16.
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 15
+export const SCHEMA_VERSION = 16
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)

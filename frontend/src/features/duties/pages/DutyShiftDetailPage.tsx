@@ -31,12 +31,14 @@ import {
 } from '../lib/passportBinding'
 import type { DutyShiftDetail } from '../api/pending-contracts'
 import type { DutyShiftState } from '../model/types'
+import { EditDutyShiftSection } from './EditDutyShiftSection'
 
 const STATE_LABEL: Record<DutyShiftState, string> = {
   PLANNED: 'Запланировано',
   ACKNOWLEDGED: 'Ознакомлен',
   ACTIVE: 'На посту',
   COMPLETED: 'Завершено',
+  CANCELLED: 'Отменено',
 }
 
 function durationLabel(minutes: number): string {
@@ -211,6 +213,15 @@ function ShiftCard({ detail }: { detail: DutyShiftDetail }) {
           </dl>
         </Section>
 
+        {shift.cancellation !== null && (
+          <Section title="Отмена">
+            <p className="text-sm">{shift.cancellation.reason}</p>
+            <p className="mt-1 text-[11px] text-slate-600 tabular-nums">
+              Отменено {shift.cancellation.cancelledAt}
+            </p>
+          </Section>
+        )}
+
         {shift.note !== null && (
           <Section title="Примечание">
             <p className="text-sm">{shift.note}</p>
@@ -232,7 +243,16 @@ function ShiftCard({ detail }: { detail: DutyShiftDetail }) {
         </Section>
       </div>
 
-      {canManage && shift.stateCode !== 'COMPLETED' && (
+      {/* Правка и отмена — только до заступления: после него смена уже несётся,
+          и подмена сотрудника или поста была бы подлогом. Тот же список
+          состояний держит и репозиторий (403/422 при обходе UI). */}
+      {canManage && (shift.stateCode === 'PLANNED' || shift.stateCode === 'ACKNOWLEDGED') && (
+        <div className="mt-4">
+          <EditDutyShiftSection shift={shift} />
+        </div>
+      )}
+
+      {canManage && shift.stateCode !== 'COMPLETED' && shift.stateCode !== 'CANCELLED' && (
         <div className="mt-5 flex items-center gap-3">
           {shift.stateCode === 'PLANNED' && (
             <Button

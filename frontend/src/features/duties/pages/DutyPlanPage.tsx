@@ -38,6 +38,7 @@ const STATE_LABEL: Record<DutyShiftState, string> = {
   ACKNOWLEDGED: 'Ознакомлен',
   ACTIVE: 'На посту',
   COMPLETED: 'Завершено',
+  CANCELLED: 'Отменено',
 }
 
 const STATE_CLASS: Record<DutyShiftState, string> = {
@@ -45,6 +46,7 @@ const STATE_CLASS: Record<DutyShiftState, string> = {
   ACKNOWLEDGED: 'inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800',
   ACTIVE: 'inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-800',
   COMPLETED: 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600',
+  CANCELLED: 'inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800',
 }
 
 export function DutyPlanPage() {
@@ -247,6 +249,11 @@ function ShiftRow({
             не видит; прочерка при отсутствии нет — их просто не бывает. */}
         {shift.note !== null && (
           <span className="mt-1 block text-[11px] text-slate-600">{shift.note}</span>
+        )}
+        {shift.cancellation !== null && (
+          <span className="mt-1 block text-[11px] text-red-800">
+            Отменено: {shift.cancellation.reason}
+          </span>
         )}
         {shift.overrideReason !== null && (
           <span className="mt-1 block text-[11px] font-semibold text-amber-700">

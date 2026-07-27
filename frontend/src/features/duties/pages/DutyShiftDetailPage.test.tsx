@@ -8,7 +8,7 @@
 // MonthlyDutyPlanSection.test.tsx.
 import '@testing-library/jest-dom/vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
@@ -23,6 +23,66 @@ import type { DutyShiftDetail } from '../api/pending-contracts'
 
 const ME_URL = '*/api/operations/my-permissions/'
 const DETAIL_URL = '*/api/ops/duty-shifts/duty-1/'
+const UPDATE_URL = '*/api/ops/duty-shifts/duty-1/update/'
+const CANCEL_URL = '*/api/ops/duty-shifts/duty-1/cancel/'
+const PLAN_OBJECTS_URL = '*/api/ops/duty-plan-objects/'
+const CANDIDATES_URL = '*/api/ops/duty-candidates/'
+
+/** Ресурсы, которые нужны ТОЛЬКО секции правки. Отдельно от `mockDetail`,
+ * чтобы прежние тесты карточки не зависели от них. */
+function mockEditSources(): void {
+  server.use(
+    http.get(PLAN_OBJECTS_URL, () =>
+      HttpResponse.json({
+        businessDate: '2026-07-24',
+        results: [
+          {
+            objectId: 'object-1',
+            objectName: 'Дворец Независимости',
+            objectCode: 'OBJ-001',
+            passportState: 'GREEN',
+            applicableVersionId: 'v1',
+            applicableVersionNumber: 1,
+            applicableVersionEffectiveFrom: '2026-01-01',
+            sectors: [
+              {
+                sectorId: 'sector-a',
+                sectorName: 'Сектор A',
+                posts: [
+                  { postId: 'post-1', postName: 'КПП-1', task: 'x', requirements: 'y' },
+                  { postId: 'post-2', postName: 'Пост 2', task: 'x', requirements: 'y' },
+                ],
+              },
+            ],
+            blockReason: null,
+          },
+        ],
+      }),
+    ),
+    http.get(CANDIDATES_URL, () =>
+      HttpResponse.json({
+        businessDate: '2026-07-24',
+        results: [
+          {
+            employeeName: 'Ахметов Б.',
+            unitName: '1-й отдел',
+            positionName: 'Инспектор',
+            nearestDutyDate: '2026-07-24',
+            busyOnRequestedDate: true,
+          },
+          {
+            employeeName: 'Оразов К.',
+            unitName: '2-й отдел',
+            positionName: 'Инспектор',
+            nearestDutyDate: null,
+            busyOnRequestedDate: false,
+          },
+        ],
+        unavailableAttributes: [],
+      }),
+    ),
+  )
+}
 
 const BASE_DETAIL: DutyShiftDetail = {
   shift: {
@@ -53,6 +113,7 @@ const BASE_DETAIL: DutyShiftDetail = {
       boundAt: '2026-07-24T08:00:00+05:00',
     },
     note: null,
+    cancellation: null,
     overrideReason: null,
   },
   passportStatus: {
@@ -315,5 +376,123 @@ describe('DutyShiftDetailPage — §21.32 карточка дежурства', 
     // Карточка перечитывается после мутации — состояние на экране новое.
     expect(await screen.findByRole('button', { name: 'Заступить' })).toBeInTheDocument()
     expect(screen.getByText('Ознакомлен')).toBeInTheDocument()
+  })
+
+  it('§21.31: правка и отмена доступны только до заступления', async () => {
+    mockDetail(BASE_DETAIL, ['ops.duty.view', 'ops.duty.manage'])
+    mockEditSources()
+    renderCard()
+    expect(await screen.findByRole('button', { name: 'Изменить' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Отменить дежурство' })).toBeInTheDocument()
+
+    cleanup()
+    mockDetail(
+      { ...BASE_DETAIL, shift: { ...BASE_DETAIL.shift, stateCode: 'ACTIVE' } },
+      ['ops.duty.view', 'ops.duty.manage'],
+    )
+    mockEditSources()
+    renderCard()
+    expect(await screen.findByText('На посту')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Изменить' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Отменить дежурство' })).not.toBeInTheDocument()
+  })
+
+  it('правка отправляет пост и сотрудника; дата и вид в тело НЕ попадают', async () => {
+    let body: Record<string, unknown> | null = null
+    mockDetail(BASE_DETAIL, ['ops.duty.view', 'ops.duty.manage'])
+    mockEditSources()
+    server.use(
+      http.post(UPDATE_URL, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(BASE_DETAIL.shift)
+      }),
+    )
+    renderCard()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Изменить' }))
+    const form = screen.getByRole('group', { name: 'Правка дежурства' })
+    await waitFor(() =>
+      expect(within(form).getByRole('option', { name: /Пост 2/ })).toBeInTheDocument(),
+    )
+    await userEvent.selectOptions(within(form).getByLabelText('Пост'), 'sector-a::post-2')
+    await userEvent.click(within(form).getByRole('button', { name: 'Сохранить изменения' }))
+
+    await waitFor(() => expect(body).not.toBeNull())
+    expect(body).toEqual({
+      employeeName: 'Ахметов Б.',
+      sectorId: 'sector-a',
+      postId: 'post-2',
+      note: null,
+    })
+  })
+
+  it('смена сотрудника у ознакомленной смены предупреждает о снятии ознакомления', async () => {
+    mockDetail(
+      {
+        ...BASE_DETAIL,
+        shift: {
+          ...BASE_DETAIL.shift,
+          stateCode: 'ACKNOWLEDGED',
+          acknowledgedAt: '2026-07-24T08:30:00+05:00',
+        },
+      },
+      ['ops.duty.view', 'ops.duty.manage'],
+    )
+    mockEditSources()
+    renderCard()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Изменить' }))
+    const form = screen.getByRole('group', { name: 'Правка дежурства' })
+    await waitFor(() =>
+      expect(within(form).getByRole('option', { name: /Оразов К\./ })).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/Ознакомление будет снято/)).not.toBeInTheDocument()
+    await userEvent.selectOptions(within(form).getByLabelText('Сотрудник'), 'Оразов К.')
+    expect(screen.getByText(/Ознакомление будет снято/)).toBeInTheDocument()
+  })
+
+  it('отмена требует причину и отправляет её', async () => {
+    let body: Record<string, unknown> | null = null
+    mockDetail(BASE_DETAIL, ['ops.duty.view', 'ops.duty.manage'])
+    mockEditSources()
+    server.use(
+      http.post(CANCEL_URL, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ ...BASE_DETAIL.shift, stateCode: 'CANCELLED' })
+      }),
+    )
+    renderCard()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Отменить дежурство' }))
+    const form = screen.getByRole('group', { name: 'Отмена дежурства' })
+    // Без причины подтвердить нельзя — отмена без объяснения неотличима от
+    // ошибки данных.
+    expect(within(form).getByRole('button', { name: 'Подтвердить отмену' })).toBeDisabled()
+    await userEvent.type(within(form).getByLabelText('Причина отмены'), 'Объект снят с охраны')
+    await userEvent.click(within(form).getByRole('button', { name: 'Подтвердить отмену' }))
+
+    await waitFor(() => expect(body).not.toBeNull())
+    expect(body).toEqual({ reason: 'Объект снят с охраны' })
+  })
+
+  it('отменённая смена показывает причину и не предлагает ни действий, ни правки', async () => {
+    mockDetail(
+      {
+        ...BASE_DETAIL,
+        shift: {
+          ...BASE_DETAIL.shift,
+          stateCode: 'CANCELLED',
+          cancellation: { reason: 'Объект снят с охраны', cancelledAt: '2026-07-24T10:00:00+05:00' },
+        },
+      },
+      ['ops.duty.view', 'ops.duty.manage'],
+    )
+    mockEditSources()
+    renderCard()
+
+    expect(await screen.findByText('Отменено')).toBeInTheDocument()
+    expect(screen.getByText('Объект снят с охраны')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ознакомиться' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Изменить' })).not.toBeInTheDocument()
   })
 })

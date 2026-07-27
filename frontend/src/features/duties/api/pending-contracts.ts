@@ -40,6 +40,12 @@ export const DUTY_CANDIDATES_PATH = '/api/ops/duty-candidates/'
 export function dutyShiftDetailPath(id: string): string {
   return `${DUTY_SHIFTS_PATH}${id}/`
 }
+export function dutyShiftUpdatePath(id: string): string {
+  return `${DUTY_SHIFTS_PATH}${id}/update/`
+}
+export function dutyShiftCancelPath(id: string): string {
+  return `${DUTY_SHIFTS_PATH}${id}/cancel/`
+}
 export function dutyShiftAcknowledgePath(id: string): string {
   return `${DUTY_SHIFTS_PATH}${id}/acknowledge/`
 }
@@ -218,6 +224,38 @@ export interface DutyShiftDetail {
   /** §35: блоки §21.32, которых в модели суточного дежурства нет. */
   unavailableBlocks: UnavailableMetric[]
 }
+
+/**
+ * §21.31 «Создание дежурства» отвечает и за его правку: заведённая смена не
+ * должна быть неисправимой.
+ *
+ * ЧТО МЕНЯТЬ НЕЛЬЗЯ и почему — дата и вид дежурства. Оба задают, какая версия
+ * паспорта действует и какие правила отдыха применяются; смена с другой датой —
+ * это ДРУГАЯ смена, и «правка» подменила бы её молча. Для этого есть отмена +
+ * создание, где конфликты пересчитываются с нуля и видны человеку.
+ *
+ * Смена сотрудника СБРАСЫВАЕТ ознакомление (ACKNOWLEDGED → PLANNED): подтвердил
+ * прежний, новый ещё нет — тот же принцип, что §24.21 у боевых групп.
+ */
+export type UpdateDutyShiftRequest = {
+  employeeName: string
+  /** Пост из версии паспорта, действующей на дату смены (она не меняется). */
+  sectorId: string
+  postId: string
+  note: string | null
+  /** §21.34 — те же два ключа канонического протокола обхода, что у создания. */
+  override?: boolean
+  override_reason?: string
+}
+
+export type UpdateDutyShiftResponse = DutyShift
+
+/** Отмена смены. Причина обязательна — см. `DutyShiftCancellation`. */
+export interface CancelDutyShiftRequest {
+  reason: string
+}
+
+export type CancelDutyShiftResponse = DutyShift
 
 export type AcknowledgeDutyShiftResponse = DutyShift
 export type ClockInDutyShiftResponse = DutyShift

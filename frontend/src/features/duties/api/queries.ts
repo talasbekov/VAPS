@@ -22,6 +22,8 @@ import {
   combatDutyShiftSubmitPath,
   dutyShiftAcknowledgePath,
   dutyShiftDetailPath,
+  dutyShiftUpdatePath,
+  dutyShiftCancelPath,
   dutyShiftClockInPath,
   dutyShiftClockOutPath,
 } from './pending-contracts'
@@ -32,7 +34,11 @@ import type {
   CheckInCombatDutyResponse,
   ClockInDutyShiftResponse,
   ClockOutDutyShiftResponse,
+  CancelDutyShiftRequest,
+  CancelDutyShiftResponse,
   DutyShiftDetail,
+  UpdateDutyShiftRequest,
+  UpdateDutyShiftResponse,
   CompleteCombatDutyRequest,
   CompleteCombatDutyResponse,
   CreateCombatDutyShiftRequest,
@@ -154,6 +160,42 @@ export function useCreateDutyShift() {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
       // Месячный план и список кандидатов зависят от того же набора смен:
       // новая смена меняет и сетку/KPI/конфликты, и «ближайшую занятость».
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'monthly-plan'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'candidates'] })
+    },
+  })
+}
+
+/**
+ * §21.31, правка смены. Переменные — само тело (как у создания): повтор с
+ * обходом дописывает `override`/`override_reason` в КОРЕНЬ переменных, и при
+ * обёртке `{ body }` они уехали бы мимо тела (см. FRONTEND_DECISIONS A64).
+ * `id` живёт в замыкании, а не в переменных, чтобы не попасть в тело запроса.
+ */
+export function useUpdateDutyShift(id: string) {
+  const queryClient = useQueryClient()
+  return useApiMutation<UpdateDutyShiftResponse, UpdateDutyShiftRequest>({
+    mutationFn: (body) =>
+      apiClient.post<UpdateDutyShiftResponse>(dutyShiftUpdatePath(id), body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'monthly-plan'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'candidates'] })
+    },
+  })
+}
+
+export function useCancelDutyShift() {
+  const queryClient = useQueryClient()
+  return useApiMutation<CancelDutyShiftResponse, { id: string; body: CancelDutyShiftRequest }>({
+    mutationFn: ({ id, body }) =>
+      apiClient.post<CancelDutyShiftResponse>(dutyShiftCancelPath(id), body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
+      // Отменённая смена выбывает из KPI и конфликтов месяца, и сотрудник
+      // перестаёт быть занят — оба списка обязаны перечитаться.
       void queryClient.invalidateQueries({ queryKey: ['duties', 'monthly-plan'] })
       void queryClient.invalidateQueries({ queryKey: ['duties', 'candidates'] })
     },

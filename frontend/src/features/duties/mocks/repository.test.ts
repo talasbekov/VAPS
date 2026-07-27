@@ -1061,6 +1061,7 @@ describe('createDutiesRepository — привязка дежурства к ве
       updatedAt: '2026-07-24T08:00:00+05:00',
       passportBinding: BINDING,
       note: null,
+      cancellation: null,
       overrideReason: null,
       ...overrides,
     }
@@ -1214,6 +1215,7 @@ describe('createDutiesRepository — месячный план дежурств 
       updatedAt: `${businessDate}T08:00:00+05:00`,
       passportBinding: null,
       note: null,
+      cancellation: null,
       overrideReason: null,
     }
   }
@@ -1398,6 +1400,7 @@ describe('createDutiesRepository — создание дежурства (§21.3
       updatedAt: `${businessDate}T08:00:00+05:00`,
       passportBinding: null,
       note: null,
+      cancellation: null,
       overrideReason: null,
     }
   }
@@ -1773,6 +1776,7 @@ describe('createDutiesRepository — карточка дежурства (§21.3
         boundAt: '2026-07-24T08:00:00+05:00',
       },
       note: null,
+      cancellation: null,
       overrideReason: null,
       ...overrides,
     }
@@ -1917,5 +1921,358 @@ describe('createDutiesRepository — карточка дежурства (§21.3
     const before = (await adapter.load())?.revision
     await repository.getShiftDetail('duty-1', VIEWER)
     expect((await adapter.load())?.revision).toBe(before)
+  })
+})
+
+// §21.31, правка и отмена заведённой смены (Этап 34). Ключевые инварианты:
+// дата и вид неизменны, смена сотрудника снимает ознакомление, отменённая
+// смена выбывает из конфликтов, но остаётся в данных.
+describe('createDutiesRepository — правка и отмена дежурства (§21.31)', () => {
+  const OVERRIDER = 'overrider-user'
+
+  beforeEach(() => {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.duty.view'] },
+      { userId: PLANNER, permissions: ['ops.duty.view', 'ops.duty.manage'] },
+      {
+        userId: OVERRIDER,
+        permissions: ['ops.duty.view', 'ops.duty.manage', 'ops.duty.override_rest'],
+      },
+      { userId: NOBODY, permissions: [] },
+    ])
+  })
+
+  const EDIT_OBJECT = {
+    id: 'object-edit',
+    name: 'Дворец Независимости',
+    code: 'OBJ-001',
+    passportState: 'GREEN',
+    passportVersions: [
+      {
+        id: 'edit-v1',
+        versionNumber: 1,
+        effectiveFrom: '2026-01-01',
+        sectors: [
+          {
+            id: 'sector-a',
+            name: 'Сектор A',
+            posts: [
+              { id: 'post-1', name: 'КПП-1', task: 'Контроль', requirements: 'Допуск A' },
+              { id: 'post-2', name: 'Пост 2', task: 'Периметр', requirements: 'Допуск A' },
+            ],
+          },
+        ],
+      },
+    ],
+  }
+
+  const EDIT_DUTY_TYPES = [
+    {
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      safeLabel: 'Суточное дежурство на собственном объекте',
+      targetType: 'OWN_OBJECT',
+      defaultDurationMinutes: 1440,
+      requiresSenior: true,
+      restAfterMinutes: 1440,
+      restPolicy: 'HARD_BLOCK',
+      requiresCurrentPassport: false,
+    },
+    {
+      dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
+      safeLabel: 'Суточное дежурство на охраняемом объекте',
+      targetType: 'PROTECTED_OBJECT',
+      defaultDurationMinutes: 1440,
+      requiresSenior: false,
+      restAfterMinutes: 1440,
+      restPolicy: 'SOFT_OVERRIDE',
+      requiresCurrentPassport: true,
+    },
+  ]
+
+  function editShift(
+    id: string,
+    businessDate: string,
+    overrides: Partial<DutyShift> = {},
+  ): DutyShift {
+    return {
+      id,
+      businessDate,
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      target: { targetType: 'OWN_OBJECT', objectId: EDIT_OBJECT.id, safeLabel: EDIT_OBJECT.name },
+      employeeName: 'Ахметов Б.',
+      stateCode: 'PLANNED',
+      acknowledgedAt: null,
+      actualStart: null,
+      actualEnd: null,
+      updatedAt: `${businessDate}T08:00:00+05:00`,
+      passportBinding: {
+        objectId: EDIT_OBJECT.id,
+        objectName: EDIT_OBJECT.name,
+        versionId: 'edit-v1',
+        versionNumber: 1,
+        effectiveFrom: '2026-01-01',
+        sectorId: 'sector-a',
+        sectorName: 'Сектор A',
+        postId: 'post-1',
+        postName: 'КПП-1',
+        boundAt: '2026-07-24T08:00:00+05:00',
+      },
+      note: null,
+      cancellation: null,
+      overrideReason: null,
+      ...overrides,
+    }
+  }
+
+  async function setupEdit(shifts: DutyShift[]) {
+    const envelope = seedEnvelope([])
+    const adapter = createMemoryPersistence()
+    await adapter.reset({
+      ...envelope,
+      slices: {
+        ...envelope.slices,
+        objects: { objects: [EDIT_OBJECT] },
+        duties: {
+          ...(envelope.slices.duties as object),
+          shifts,
+          dutyTypes: EDIT_DUTY_TYPES,
+        },
+      },
+    })
+    return {
+      repository: createDutiesRepository(adapter, new DemoClock('2026-07-26T09:00:00+05:00')),
+      adapter,
+    }
+  }
+
+  const VALID_UPDATE = {
+    employeeName: 'Ахметов Б.',
+    sectorId: 'sector-a',
+    postId: 'post-2',
+    note: null,
+  }
+
+  it('updateDutyShift() без ops.duty.manage кидает RepositoryPermissionError', async () => {
+    const { repository } = await setupEdit([editShift('duty-1', '2026-07-24')])
+    await expect(repository.updateDutyShift('duty-1', VALID_UPDATE, VIEWER)).rejects.toThrow(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('переназначает пост в ТОЙ ЖЕ версии паспорта и пишет изменения в хранилище', async () => {
+    const { repository } = await setupEdit([editShift('duty-1', '2026-07-24')])
+    const updated = await repository.updateDutyShift(
+      'duty-1',
+      { ...VALID_UPDATE, note: '  Перевод на периметр  ' },
+      PLANNER,
+    )
+    expect(updated.passportBinding).toMatchObject({ versionNumber: 1, postName: 'Пост 2' })
+    expect(updated.note).toBe('Перевод на периметр')
+    // Дата и вид дежурства неизменны — правка не подменяет смену другой.
+    expect(updated.businessDate).toBe('2026-07-24')
+    expect(updated.dutyTypeCode).toBe('OWN_OBJECT_DAILY')
+
+    const detail = await repository.getShiftDetail('duty-1', VIEWER)
+    expect(detail.shift.passportBinding?.postName).toBe('Пост 2')
+    expect(detail.shift.note).toBe('Перевод на периметр')
+  })
+
+  it('смена сотрудника СНИМАЕТ ознакомление и откатывает состояние в PLANNED', async () => {
+    const { repository } = await setupEdit([
+      editShift('duty-1', '2026-07-24', {
+        stateCode: 'ACKNOWLEDGED',
+        acknowledgedAt: '2026-07-24T08:30:00+05:00',
+      }),
+    ])
+    const updated = await repository.updateDutyShift(
+      'duty-1',
+      { ...VALID_UPDATE, employeeName: 'Оразов К.' },
+      PLANNER,
+    )
+    expect(updated.employeeName).toBe('Оразов К.')
+    expect(updated.stateCode).toBe('PLANNED')
+    expect(updated.acknowledgedAt).toBeNull()
+  })
+
+  it('правка БЕЗ смены сотрудника ознакомление сохраняет', async () => {
+    const { repository } = await setupEdit([
+      editShift('duty-1', '2026-07-24', {
+        stateCode: 'ACKNOWLEDGED',
+        acknowledgedAt: '2026-07-24T08:30:00+05:00',
+      }),
+    ])
+    const updated = await repository.updateDutyShift('duty-1', VALID_UPDATE, PLANNER)
+    expect(updated.stateCode).toBe('ACKNOWLEDGED')
+    expect(updated.acknowledgedAt).toBe('2026-07-24T08:30:00+05:00')
+  })
+
+  it('править начатую и завершённую смену нельзя', async () => {
+    const { repository } = await setupEdit([
+      editShift('duty-1', '2026-07-24', { stateCode: 'ACTIVE' }),
+      editShift('duty-2', '2026-07-25', { stateCode: 'COMPLETED' }),
+    ])
+    for (const id of ['duty-1', 'duty-2']) {
+      await expect(repository.updateDutyShift(id, VALID_UPDATE, PLANNER)).rejects.toMatchObject({
+        errorCode: 'INVALID_STATE_TRANSITION',
+      })
+    }
+  })
+
+  it('пост не из действующей версии — отказ, привязка не подменяется', async () => {
+    const { repository } = await setupEdit([editShift('duty-1', '2026-07-24')])
+    await expect(
+      repository.updateDutyShift('duty-1', { ...VALID_UPDATE, postId: 'post-999' }, PLANNER),
+    ).rejects.toMatchObject({ errorCode: 'UNKNOWN_POST' })
+    const detail = await repository.getShiftDetail('duty-1', VIEWER)
+    expect(detail.shift.passportBinding?.postName).toBe('КПП-1')
+  })
+
+  it('§21.34: правка, создающая пересечение, отклоняется как жёсткий конфликт', async () => {
+    const { repository } = await setupEdit([
+      editShift('duty-1', '2026-07-24'),
+      editShift('duty-2', '2026-07-24', { id: 'duty-2', employeeName: 'Оразов К.' }),
+    ])
+    await expect(
+      repository.updateDutyShift('duty-2', { ...VALID_UPDATE, employeeName: 'Ахметов Б.' }, PLANNER),
+    ).rejects.toMatchObject({ errorCode: 'DUTY_CONFLICT_HARD' })
+  })
+
+  it('правка НЕ конфликтует смены сама с собой (иначе любое сохранение падало бы)', async () => {
+    // Единственная смена сотрудника: сохранение без смены сотрудника не должно
+    // увидеть «пересечение» с собственной прежней редакцией.
+    const { repository } = await setupEdit([editShift('duty-1', '2026-07-24')])
+    const updated = await repository.updateDutyShift('duty-1', VALID_UPDATE, PLANNER)
+    expect(updated.id).toBe('duty-1')
+  })
+
+  it('§21.34: правка с мягким конфликтом — 409, повтор с override сохраняет обоснование', async () => {
+    const shifts = [
+      editShift('duty-1', '2026-07-25', { dutyTypeCode: 'PROTECTED_OBJECT_DAILY' }),
+      editShift('duty-2', '2026-07-26', {
+        id: 'duty-2',
+        dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
+        employeeName: 'Оразов К.',
+      }),
+    ]
+    const { repository } = await setupEdit(shifts)
+    await expect(
+      repository.updateDutyShift('duty-2', { ...VALID_UPDATE, employeeName: 'Ахметов Б.' }, PLANNER),
+    ).rejects.toBeInstanceOf(RepositoryConflictError)
+
+    const { repository: second } = await setupEdit(shifts)
+    const updated = await second.updateDutyShift(
+      'duty-2',
+      {
+        ...VALID_UPDATE,
+        employeeName: 'Ахметов Б.',
+        override: true,
+        override_reason: 'Некем заменить',
+      },
+      OVERRIDER,
+    )
+    expect(updated.overrideReason).toBe('Некем заменить')
+  })
+
+  it('правка БЕЗ конфликта снимает прежнюю пометку обхода', async () => {
+    const { repository } = await setupEdit([
+      editShift('duty-1', '2026-07-24', { overrideReason: 'Старое обоснование' }),
+    ])
+    const updated = await repository.updateDutyShift('duty-1', VALID_UPDATE, PLANNER)
+    expect(updated.overrideReason).toBeNull()
+  })
+
+  it('cancelDutyShift(): причина обязательна, права проверяются', async () => {
+    const { repository } = await setupEdit([editShift('duty-1', '2026-07-24')])
+    await expect(
+      repository.cancelDutyShift('duty-1', { reason: 'x' }, VIEWER),
+    ).rejects.toThrow(RepositoryPermissionError)
+    await expect(
+      repository.cancelDutyShift('duty-1', { reason: '   ' }, PLANNER),
+    ).rejects.toMatchObject({ errorCode: 'REASON_REQUIRED' })
+  })
+
+  it('отменяет смену с причиной; смена ОСТАЁТСЯ в данных', async () => {
+    const { repository } = await setupEdit([editShift('duty-1', '2026-07-24')])
+    const cancelled = await repository.cancelDutyShift(
+      'duty-1',
+      { reason: '  Объект снят с охраны  ' },
+      PLANNER,
+    )
+    expect(cancelled.stateCode).toBe('CANCELLED')
+    expect(cancelled.cancellation).toMatchObject({ reason: 'Объект снят с охраны' })
+
+    const listed = await repository.listShifts(VIEWER)
+    expect(listed.results.map((shift) => shift.id)).toContain('duty-1')
+  })
+
+  it('повторная отмена и отмена начатой смены отклоняются', async () => {
+    const { repository } = await setupEdit([
+      editShift('duty-1', '2026-07-24'),
+      editShift('duty-2', '2026-07-25', { id: 'duty-2', stateCode: 'ACTIVE' }),
+    ])
+    await repository.cancelDutyShift('duty-1', { reason: 'Причина' }, PLANNER)
+    await expect(
+      repository.cancelDutyShift('duty-1', { reason: 'Ещё раз' }, PLANNER),
+    ).rejects.toMatchObject({ errorCode: 'INVALID_STATE_TRANSITION' })
+    await expect(
+      repository.cancelDutyShift('duty-2', { reason: 'Причина' }, PLANNER),
+    ).rejects.toMatchObject({ errorCode: 'INVALID_STATE_TRANSITION' })
+  })
+
+  it('отменённая смена ОСВОБОЖДАЕТ сотрудника: на её место можно поставить другую', async () => {
+    const { repository } = await setupEdit([editShift('duty-1', '2026-07-24')])
+    // До отмены — пересечение.
+    await expect(
+      repository.createDutyShift(
+        {
+          businessDate: '2026-07-24',
+          dutyTypeCode: 'OWN_OBJECT_DAILY',
+          objectId: EDIT_OBJECT.id,
+          sectorId: 'sector-a',
+          postId: 'post-2',
+          employeeName: 'Ахметов Б.',
+          note: null,
+        },
+        PLANNER,
+      ),
+    ).rejects.toMatchObject({ errorCode: 'DUTY_CONFLICT_HARD' })
+
+    await repository.cancelDutyShift('duty-1', { reason: 'Объект снят с охраны' }, PLANNER)
+
+    const created = await repository.createDutyShift(
+      {
+        businessDate: '2026-07-24',
+        dutyTypeCode: 'OWN_OBJECT_DAILY',
+        objectId: EDIT_OBJECT.id,
+        sectorId: 'sector-a',
+        postId: 'post-2',
+        employeeName: 'Ахметов Б.',
+        note: null,
+      },
+      PLANNER,
+    )
+    expect(created.employeeName).toBe('Ахметов Б.')
+  })
+
+  it('отменённая смена выбывает из KPI месяца, но строка объекта остаётся', async () => {
+    const { repository } = await setupEdit([
+      editShift('duty-1', '2026-07-24'),
+      editShift('duty-2', '2026-07-26', { id: 'duty-2', employeeName: 'Оразов К.' }),
+    ])
+    await repository.cancelDutyShift('duty-1', { reason: 'Объект снят с охраны' }, PLANNER)
+    const plan = await repository.getMonthlyPlan('2026-07', VIEWER)
+    expect(plan.kpi).toMatchObject({ shifts: 1, cancelled: 1 })
+    expect(plan.rows).toHaveLength(1)
+    const day24 = plan.rows[0].cells.find((cell) => cell.date === '2026-07-24')
+    expect(day24).toMatchObject({ shiftCount: 0, cancelledCount: 1 })
+  })
+
+  it('карточка отменённой смены несёт причину отмены', async () => {
+    const { repository } = await setupEdit([editShift('duty-1', '2026-07-24')])
+    await repository.cancelDutyShift('duty-1', { reason: 'Объект снят с охраны' }, PLANNER)
+    const detail = await repository.getShiftDetail('duty-1', VIEWER)
+    expect(detail.shift.stateCode).toBe('CANCELLED')
+    expect(detail.shift.cancellation?.reason).toBe('Объект снят с охраны')
+    expect(detail.conflicts).toEqual([])
   })
 })
