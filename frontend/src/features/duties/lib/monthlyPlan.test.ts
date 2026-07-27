@@ -21,6 +21,7 @@ const OWN_TYPE: DutyTypeDefinition = {
   requiresSenior: true,
   restAfterMinutes: 1440,
   restPolicy: 'HARD_BLOCK',
+    requiresCurrentPassport: false,
 }
 
 const PROTECTED_TYPE: DutyTypeDefinition = {
@@ -31,6 +32,7 @@ const PROTECTED_TYPE: DutyTypeDefinition = {
   requiresSenior: false,
   restAfterMinutes: 1440,
   restPolicy: 'SOFT_OVERRIDE',
+    requiresCurrentPassport: true,
 }
 
 const TYPES = [OWN_TYPE, PROTECTED_TYPE]
@@ -62,6 +64,8 @@ function shift(
     actualEnd: null,
     updatedAt: `${businessDate}T08:00:00+05:00`,
     passportBinding: null,
+  note: null,
+  overrideReason: null,
   }
 }
 

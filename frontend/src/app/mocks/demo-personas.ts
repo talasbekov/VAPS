@@ -80,6 +80,11 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       'ops.passport.publish',
       'ops.duty.view',
       'ops.duty.manage',
+      // §21.34 «SOFT_OVERRIDE — возможно с обоснованием и отдельным
+      // permission»: обход обязательного отдыха при планировании дежурства.
+      // Отдельное право, а не часть ops.duty.manage — иначе «отдельный
+      // permission» промпта был бы формальностью.
+      'ops.duty.override_rest',
       // §24.5 «уполномоченный согласующий»/«руководитель боевого
       // департамента» — тематически ближайший текущий владелец плана
       // дежурств, тот же принцип, что ops.dictionary.manage (A40).

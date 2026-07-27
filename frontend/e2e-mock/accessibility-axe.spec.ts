@@ -118,5 +118,18 @@ test.describe('Accessibility (axe-core): второй слой аудита по
     await page.goto('/duties')
     await page.getByRole('button', { name: 'Боевые группы и Трассы' }).click()
     await assertNoSeriousViolations(page, 'План дежурств — Боевые группы и Трассы')
+
+    // Форма создания дежурства (§21.31). Она СВЁРНУТА по умолчанию — сканируя
+    // /duties как экран верхнего уровня, axe её не видит вовсе; раскрываем
+    // явно, иначе покрытие было бы мнимым.
+    await page.goto('/duties')
+    await page.getByRole('button', { name: 'Создать дежурство' }).click()
+    const createForm = page.getByRole('group', { name: 'Форма нового дежурства' })
+    await expect(createForm).toBeVisible()
+    await createForm.getByLabel('Объект').selectOption({ label: 'Дворец Независимости (OBJ-001)' })
+    // С выбранным объектом появляется селект поста — без выбора часть контролов
+    // формы просто не отрендерена и сканирование было бы неполным.
+    await expect(createForm.getByLabel('Пост')).toBeVisible()
+    await assertNoSeriousViolations(page, 'План дежурств — форма создания дежурства')
   })
 })

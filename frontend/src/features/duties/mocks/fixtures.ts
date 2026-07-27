@@ -11,6 +11,7 @@ import type {
   CombatDutyShift,
   CombatDutyTypeDefinition,
   CombatRosterCandidate,
+  DutyCandidate,
   DutyPassportBinding,
   DutyRoute,
   DutyShift,
@@ -32,6 +33,8 @@ export interface DutiesSlice {
   routes: DutyRoute[]
   rosterCandidates: CombatRosterCandidate[]
   combatShifts: CombatDutyShift[]
+  /** §21.33 — кандидаты на ИНДИВИДУАЛЬНОЕ дежурство (см. `DUTY_CANDIDATES`). */
+  dutyCandidates: DutyCandidate[]
 }
 
 export const DUTY_TYPES: readonly DutyTypeDefinition[] = [
@@ -46,6 +49,9 @@ export const DUTY_TYPES: readonly DutyTypeDefinition[] = [
     // REST_AFTER_DUTY_POLICY=HARD_BLOCK)…
     restAfterMinutes: 24 * 60,
     restPolicy: 'HARD_BLOCK',
+    // §21.31: собственный объект — свой периметр, красный паспорт заступление
+    // не блокирует…
+    requiresCurrentPassport: false,
   },
   {
     dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
@@ -58,7 +64,31 @@ export const DUTY_TYPES: readonly DutyTypeDefinition[] = [
     // severity он не выводит сам.
     restAfterMinutes: 24 * 60,
     restPolicy: 'SOFT_OVERRIDE',
+    // …а охраняемый объект без актуального паспорта под охрану не берут.
+    requiresCurrentPassport: true,
   },
+]
+
+/**
+ * §21.33 — кандидаты на индивидуальное дежурство. Список НАМЕРЕННО включает
+ * всех сотрудников уже засеянных смен: иначе «ближайшая занятость» у каждого
+ * кандидата была бы пустой и признак выглядел бы нерабочим. Два последних
+ * никуда не назначены — ровно на них проверяется исход «занятости нет».
+ *
+ * ⚠️ Не пересекается с `ROSTER_CANDIDATES` (боевые группы): §24.11 требует
+ * различать боевые группы и суточные дежурства, и общий список склеил бы два
+ * разных процесса по ФИО (та же ловушка, что A44-A46/A50).
+ */
+export const DUTY_CANDIDATES: readonly DutyCandidate[] = [
+  { employeeName: 'Ахметов Б.', unitName: '1-й отдел охраны', positionName: 'Старший инспектор' },
+  { employeeName: 'Ерланов Д.', unitName: '1-й отдел охраны', positionName: 'Инспектор' },
+  { employeeName: 'Сагинова А.', unitName: '2-й отдел охраны', positionName: 'Инспектор' },
+  { employeeName: 'Оразов К.', unitName: '2-й отдел охраны', positionName: 'Старший инспектор' },
+  { employeeName: 'Нурланов Е.', unitName: '2-й отдел охраны', positionName: 'Инспектор' },
+  { employeeName: 'Жумабаев Р.', unitName: '3-й отдел охраны', positionName: 'Инспектор' },
+  { employeeName: 'Сейтказы М.', unitName: '3-й отдел охраны', positionName: 'Инспектор' },
+  { employeeName: 'Абишев Н.', unitName: '3-й отдел охраны', positionName: 'Инспектор' },
+  { employeeName: 'Мукашева Л.', unitName: '1-й отдел охраны', positionName: 'Инспектор' },
 ]
 
 // §24.3: два минимальных вида дежурства боевой группы.
@@ -167,6 +197,8 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       actualEnd: null,
       updatedAt: now,
       passportBinding: hq.passportBinding,
+      note: null,
+      overrideReason: null,
     },
     {
       id: ctx.ids.next('duty-shift'),
@@ -184,6 +216,8 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       actualEnd: null,
       updatedAt: now,
       passportBinding: palace.passportBinding,
+      note: null,
+      overrideReason: null,
     },
     {
       id: ctx.ids.next('duty-shift'),
@@ -201,6 +235,8 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       actualEnd: null,
       updatedAt: now,
       passportBinding: ministries.passportBinding,
+      note: null,
+      overrideReason: null,
     },
     {
       id: ctx.ids.next('duty-shift'),
@@ -214,6 +250,8 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       actualEnd: now,
       updatedAt: now,
       passportBinding: hq.passportBinding,
+      note: null,
+      overrideReason: null,
     },
   ]
 
@@ -255,6 +293,8 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       actualEnd: completed ? now : null,
       updatedAt: now,
       passportBinding: target.passportBinding,
+      note: null,
+      overrideReason: null,
     }
   }
 
@@ -366,6 +406,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       routes: [...ROUTES],
       rosterCandidates: [...ROSTER_CANDIDATES],
       combatShifts,
+      dutyCandidates: [...DUTY_CANDIDATES],
     },
   }
 }

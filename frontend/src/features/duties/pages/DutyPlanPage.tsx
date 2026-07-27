@@ -26,6 +26,7 @@ import {
 import type { DutyPassportStatus } from '../api/pending-contracts'
 import type { DutyShift, DutyShiftState } from '../model/types'
 import { CombatDutyGroupsSection } from './CombatDutyGroupsSection'
+import { CreateDutyShiftForm } from './CreateDutyShiftForm'
 import { MonthlyDutyPlanSection } from './MonthlyDutyPlanSection'
 
 type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE' | 'MONTH' | 'COMBAT_GROUPS'
@@ -149,6 +150,16 @@ export function DutyPlanPage() {
         <p className="text-sm text-destructive">Не удалось загрузить план дежурств.</p>
       )}
 
+      {/* §21.31. Форма живёт на табличных представлениях, а не на «Месяце»:
+          месячная сетка — сводка, заводить смену логично там, где виден
+          пообъектный список. Дефолтная дата — та же, что дефолтный месяц. */}
+      {isTableView && !isLoading && !isError && defaultMonth !== null && (
+        <CreateDutyShiftForm
+          dutyTypes={dutyTypesQuery.data?.results ?? []}
+          defaultBusinessDate={shiftsQuery.data?.results[0]?.businessDate ?? ''}
+        />
+      )}
+
       {isTableView && !isLoading && !isError && (
         <div className="flex flex-col gap-3.5">
           {groups.length === 0 && (
@@ -221,7 +232,20 @@ function ShiftRow({
   return (
     <tr className="border-t">
       <td className="p-3 text-sm tabular-nums">{shift.businessDate}</td>
-      <td className="p-3 text-sm">{dutyTypeLabel}</td>
+      <td className="p-3 text-sm">
+        <span>{dutyTypeLabel}</span>
+        {/* §21.31: примечание и §21.34: обоснование обхода — хранимые данные
+            смены. Не показать их значило бы завести поля, которых потом никто
+            не видит; прочерка при отсутствии нет — их просто не бывает. */}
+        {shift.note !== null && (
+          <span className="mt-1 block text-[11px] text-slate-600">{shift.note}</span>
+        )}
+        {shift.overrideReason !== null && (
+          <span className="mt-1 block text-[11px] font-semibold text-amber-700">
+            Конфликт обойдён: {shift.overrideReason}
+          </span>
+        )}
+      </td>
       {view === 'BY_OBJECT' && <td className="p-3 text-sm">{shift.employeeName}</td>}
       {view === 'BY_EMPLOYEE' && <td className="p-3 text-sm">{shift.target.safeLabel}</td>}
       <td className="p-3">

@@ -8,13 +8,28 @@ import type {
   PersistenceAdapter,
 } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
-import { buildMonthlyPlan, isValidMonth } from '../lib/monthlyPlan'
-import { isBindingStale, resolveApplicableVersion } from '../lib/passportBinding'
-import { findObjectById } from './objectsSlice'
+import { buildMonthlyPlan, detectConflicts, isValidMonth } from '../lib/monthlyPlan'
+import type { UnavailableMetric } from '../lib/monthlyPlan'
+import {
+  NO_POSTS_IN_VERSION_TEXT,
+  NO_VERSION_FOR_DATE_TEXT,
+  PASSPORT_RED_BLOCK_TEXT,
+  bindDutyPost,
+  isBindingStale,
+  isPassportBlocking,
+  resolveApplicableVersion,
+} from '../lib/passportBinding'
+import { findObjectById, readObjectsProjection } from './objectsSlice'
 import type {
   CompleteCombatDutyRequest,
   CreateCombatDutyShiftRequest,
+  CreateDutyShiftRequest,
+  DutyCandidateOption,
   DutyPassportStatus,
+  DutyPlanObjectOption,
+  DutyPlanSectorOption,
+  ListDutyCandidatesResponse,
+  ListDutyPlanObjectsResponse,
   ListCombatDutyShiftsResponse,
   ListCombatDutyTypesResponse,
   ListCombatRosterCandidatesResponse,
@@ -39,6 +54,23 @@ export class RepositoryBusinessRuleError extends Error {
     this.errorCode = errorCode
   }
 }
+/**
+ * §21.34 «Soft conflict → 409»: сохранение возможно, но требует явного
+ * обхода — это КОНФЛИКТ состояния, а не нарушенное бизнес-правило (422,
+ * обойти нельзя). Разные коды состояния здесь несут разный смысл для формы:
+ * на 422 она показывает отказ, на 409 — предлагает обоснование.
+ */
+export class RepositoryConflictError extends Error {
+  readonly errorCode: string
+  /** Конверт §36 несёт `details.conflicts[]` — общий `ConflictDialog` их
+   * перечисляет. Пустой объект тут был бы диалогом без содержания. */
+  readonly details: Record<string, unknown>
+  constructor(errorCode: string, message: string, details: Record<string, unknown> = {}) {
+    super(message)
+    this.errorCode = errorCode
+    this.details = details
+  }
+}
 
 const SLICE_NAME = 'duties'
 const VIEW_PERMISSION = 'ops.duty.view'
@@ -49,6 +81,37 @@ const COMBAT_ACKNOWLEDGE_PERMISSION = 'ops.combat_group.acknowledge'
 const COMBAT_CHECKIN_PERMISSION = 'ops.combat_group.checkin'
 const COMBAT_COMPLETE_PERMISSION = 'ops.combat_group.complete'
 const COMBAT_REPLACE_PERMISSION = 'ops.combat_group.replace'
+/** §21.34 «SOFT_OVERRIDE — возможно с обоснованием И ОТДЕЛЬНЫМ permission».
+ * Отдельным: право планировать дежурства (`ops.duty.manage`) не то же самое,
+ * что право обойти обязательный отдых. */
+const REST_OVERRIDE_PERMISSION = 'ops.duty.override_rest'
+
+const BUSINESS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/** §21.33 перечисляет факторы подбора, которых в demo-модели нет НИ В КАКОМ
+ * виде. Список отдаётся клиенту, а не пишется в вёрстке: причина принадлежит
+ * серверу, который знает, чего у него нет (§35, тот же приём, что
+ * `UNAVAILABLE_MONTHLY_METRICS`). */
+const UNAVAILABLE_CANDIDATE_ATTRIBUTES: readonly UnavailableMetric[] = [
+  {
+    code: 'AVAILABILITY',
+    label: 'Доступность и текущий статус (отпуск, больничный, командировка)',
+    reason:
+      'Employee Status Repository в demo-срезе отсутствует; §21.33 при этом прямо запрещает раскрывать причину недоступности — показывать нечего и нечем.',
+  },
+  {
+    code: 'POST_REQUIREMENTS_MATCH',
+    label: 'Соответствие требованиям поста и допуски',
+    reason:
+      'Требования поста хранятся текстом в паспорте объекта, допуски сотрудника не моделируются — сопоставление было бы разбором свободного текста.',
+  },
+  {
+    code: 'WORKLOAD_AND_RATING',
+    label: 'Нагрузка и агрегированный рейтинг',
+    reason:
+      'Workload Repository нет, а рейтинг — hidden-score (§D3): показывать его без включённой политики §21.33 запрещает.',
+  },
+]
 
 function readSlice(envelope: DemoStateEnvelope): DutiesSlice {
   const slice = envelope.slices[SLICE_NAME]
@@ -123,6 +186,258 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     const envelope = await adapter.load()
     const slice = envelope === null ? null : readSlice(envelope)
     return buildMonthlyPlan(month, slice?.shifts ?? [], slice?.dutyTypes ?? [])
+  }
+
+  /**
+   * §21.31 «После выбора объекта загружай… действующие секторы, активные
+   * посты, требования, readiness паспорта». Разрешение «какая версия действует
+   * на эту дату» и server policy §21.31 живут ЗДЕСЬ, а не в форме: форма
+   * получает готовый список с готовой причиной блокировки и ничего не выводит
+   * сама. Поэтому вид дежурства — обязательный параметр запроса: без него
+   * правило «красный паспорт + вид требует актуального» неприменимо, а
+   * применить его наполовину хуже, чем потребовать параметр.
+   */
+  async function listDutyPlanObjects(
+    businessDate: string,
+    dutyTypeCode: string,
+    actorUserId: string | null,
+  ): Promise<ListDutyPlanObjectsResponse> {
+    if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_PERMISSION)
+    }
+    if (!BUSINESS_DATE_RE.test(businessDate)) {
+      throw new RepositoryBusinessRuleError(
+        'INVALID_BUSINESS_DATE',
+        'Укажите дату в формате ГГГГ-ММ-ДД.',
+      )
+    }
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      return { businessDate, results: [] }
+    }
+    const dutyType = readSlice(envelope).dutyTypes.find((t) => t.dutyTypeCode === dutyTypeCode)
+    if (dutyType === undefined) {
+      throw new RepositoryBusinessRuleError('UNKNOWN_DUTY_TYPE', 'Неизвестный вид дежурства.')
+    }
+    const results: DutyPlanObjectOption[] = readObjectsProjection(envelope.slices)
+      .map((object) => {
+        const version = resolveApplicableVersion(object, businessDate)
+        const sectors: DutyPlanSectorOption[] =
+          version === null
+            ? []
+            : version.sectors.map((sector) => ({
+                sectorId: sector.id,
+                sectorName: sector.name,
+                posts: sector.posts.map((post) => ({
+                  postId: post.id,
+                  postName: post.name,
+                  task: post.task,
+                  requirements: post.requirements,
+                })),
+              }))
+        const hasPost = sectors.some((sector) => sector.posts.length > 0)
+        const blockReason =
+          dutyType.requiresCurrentPassport && isPassportBlocking(object.passportState)
+            ? PASSPORT_RED_BLOCK_TEXT
+            : version === null
+              ? NO_VERSION_FOR_DATE_TEXT
+              : !hasPost
+                ? NO_POSTS_IN_VERSION_TEXT
+                : null
+        return {
+          objectId: object.id,
+          objectName: object.name,
+          objectCode: object.code,
+          passportState: object.passportState,
+          applicableVersionId: version?.id ?? null,
+          applicableVersionNumber: version?.versionNumber ?? null,
+          applicableVersionEffectiveFrom: version?.effectiveFrom ?? null,
+          sectors,
+          blockReason,
+        }
+      })
+      .sort((a, b) => a.objectName.localeCompare(b.objectName))
+    return { businessDate, results }
+  }
+
+  /**
+   * §21.33 «Подбор кандидатов». Из перечисленных промптом факторов модель
+   * выдаёт РОВНО ОДИН — уже запланированные дежурства; он и считается здесь.
+   * Остальные (доступность, статус, отдых как отдельный фактор, ОМ, нагрузка,
+   * требования поста, допуски, рейтинг) не подменяются нулём и не молчат:
+   * ответ несёт их списком с причиной (§35).
+   */
+  async function listDutyCandidates(
+    businessDate: string,
+    actorUserId: string | null,
+  ): Promise<ListDutyCandidatesResponse> {
+    if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_PERMISSION)
+    }
+    if (!BUSINESS_DATE_RE.test(businessDate)) {
+      throw new RepositoryBusinessRuleError(
+        'INVALID_BUSINESS_DATE',
+        'Укажите дату в формате ГГГГ-ММ-ДД.',
+      )
+    }
+    const envelope = await adapter.load()
+    const slice = envelope === null ? null : readSlice(envelope)
+    const shifts = slice?.shifts ?? []
+    const results: DutyCandidateOption[] = (slice?.dutyCandidates ?? [])
+      .map((candidate) => {
+        const own = shifts
+          .filter((shift) => shift.employeeName === candidate.employeeName)
+          .map((shift) => shift.businessDate)
+          .sort()
+        return {
+          employeeName: candidate.employeeName,
+          unitName: candidate.unitName,
+          positionName: candidate.positionName,
+          nearestDutyDate: own.find((date) => date >= businessDate) ?? null,
+          busyOnRequestedDate: own.includes(businessDate),
+        }
+      })
+      .sort((a, b) => a.employeeName.localeCompare(b.employeeName))
+    return { businessDate, results, unavailableAttributes: [...UNAVAILABLE_CANDIDATE_ATTRIBUTES] }
+  }
+
+  /**
+   * §21.31 «Создание дежурства» + §21.34 конфликты.
+   *
+   * Конфликты считаются НЕ отдельной проверкой «а нет ли уже смены в этот
+   * день», а тем же `detectConflicts`, что строит месячный план: иначе форма
+   * и месячный план разошлись бы в том, что считается конфликтом. Берётся
+   * РАЗНИЦА «после − до»: конфликты, которые уже существовали в данных, эта
+   * смена не создавала и блокировать её не должны.
+   */
+  async function createDutyShift(
+    request: CreateDutyShiftRequest,
+    actorUserId: string | null,
+  ): Promise<DutyShift> {
+    if (!hasPermission(actorUserId, MANAGE_PERMISSION)) {
+      throw new RepositoryPermissionError(MANAGE_PERMISSION)
+    }
+    if (!BUSINESS_DATE_RE.test(request.businessDate)) {
+      throw new RepositoryBusinessRuleError(
+        'INVALID_BUSINESS_DATE',
+        'Укажите дату в формате ГГГГ-ММ-ДД.',
+      )
+    }
+    if (request.employeeName.trim() === '') {
+      throw new RepositoryBusinessRuleError('EMPTY_EMPLOYEE', 'Выберите сотрудника.')
+    }
+    // Обход засчитывается только при обоих признаках протокола: флаг без
+    // причины — не обоснованный обход, причина без флага — не обход вовсе.
+    const overrideReason =
+      request.override === true ? (request.override_reason ?? '').trim() : ''
+    if (overrideReason !== '' && !hasPermission(actorUserId, REST_OVERRIDE_PERMISSION)) {
+      throw new RepositoryPermissionError(REST_OVERRIDE_PERMISSION)
+    }
+    let created!: DutyShift
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const dutyType = slice.dutyTypes.find((t) => t.dutyTypeCode === request.dutyTypeCode)
+      if (dutyType === undefined) {
+        throw new RepositoryBusinessRuleError('UNKNOWN_DUTY_TYPE', 'Неизвестный вид дежурства.')
+      }
+      const object = findObjectById(current.slices, request.objectId)
+      if (object === null) {
+        throw new RepositoryBusinessRuleError(
+          'UNKNOWN_OBJECT',
+          'Объект не найден в реестре объектов.',
+        )
+      }
+      if (dutyType.requiresCurrentPassport && isPassportBlocking(object.passportState)) {
+        throw new RepositoryBusinessRuleError('PASSPORT_NOT_READY', PASSPORT_RED_BLOCK_TEXT)
+      }
+      const version = resolveApplicableVersion(object, request.businessDate)
+      if (version === null) {
+        throw new RepositoryBusinessRuleError('PASSPORT_VERSION_MISSING', NO_VERSION_FOR_DATE_TEXT)
+      }
+      // §9.6/§21.32: снимок берётся из ЗАФИКСИРОВАННОЙ версии. `null` здесь —
+      // пост назвали, но в этой версии его нет: молча привязать к другому
+      // посту нельзя.
+      const binding = bindDutyPost(
+        object,
+        version,
+        request.sectorId,
+        request.postId,
+        clock.now(),
+      )
+      if (binding === null) {
+        throw new RepositoryBusinessRuleError(
+          'UNKNOWN_POST',
+          'Выбранного поста нет в действующей на эту дату версии паспорта.',
+        )
+      }
+
+      const candidate: DutyShift = {
+        id: `duty-shift-${current.revision + 1}-${slice.shifts.length + 1}`,
+        businessDate: request.businessDate,
+        dutyTypeCode: request.dutyTypeCode,
+        target: {
+          targetType: dutyType.targetType,
+          objectId: object.id,
+          safeLabel: object.name,
+        },
+        employeeName: request.employeeName.trim(),
+        stateCode: 'PLANNED',
+        acknowledgedAt: null,
+        actualStart: null,
+        actualEnd: null,
+        updatedAt: clock.now(),
+        passportBinding: binding,
+        note: request.note?.trim() === '' ? null : (request.note?.trim() ?? null),
+        // Заполняется НИЖЕ и только если обход действительно понадобился:
+        // обоснование при отсутствии конфликта — шум в данных, который потом
+        // читался бы как «здесь что-то обходили».
+        overrideReason: null,
+      }
+
+      const before = new Set(
+        detectConflicts(slice.shifts, slice.dutyTypes).map((conflict) => conflict.conflictId),
+      )
+      const introduced = detectConflicts(
+        [...slice.shifts, candidate],
+        slice.dutyTypes,
+      ).filter((conflict) => !before.has(conflict.conflictId))
+
+      const hard = introduced.find((conflict) => conflict.severity === 'HARD')
+      if (hard !== undefined) {
+        throw new RepositoryBusinessRuleError('DUTY_CONFLICT_HARD', hard.message)
+      }
+      const soft = introduced.find((conflict) => conflict.severity === 'SOFT')
+      if (soft !== undefined && overrideReason === '') {
+        // Код НЕ выдуман: `DUTY_CONFLICT_DETECTED` уже в
+        // `docs/registries/error-codes.yaml` как overridable/conflict_soft —
+        // ровно он включает канонический путь `useApiMutation.conflict` →
+        // общий `ConflictDialog` → повтор с override (ARCH-FE-015). Свой код
+        // сюда завёл бы второй, параллельный протокол обхода.
+        throw new RepositoryConflictError('DUTY_CONFLICT_DETECTED', soft.message, {
+          conflicts: introduced.map((conflict) => ({
+            conflict_code: conflict.code,
+            severity: conflict.severity,
+            employee_id: conflict.employeeName,
+            business_date: conflict.businessDate,
+            message: conflict.message,
+          })),
+        })
+      }
+      const stored: DutyShift = {
+        ...candidate,
+        overrideReason: soft === undefined ? null : overrideReason,
+      }
+
+      created = stored
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          shifts: [...slice.shifts, stored],
+        } satisfies DutiesSlice,
+      }
+    })
+    return created
   }
 
   async function transitionShift(
@@ -799,6 +1114,9 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     listDutyTypes,
     listShifts,
     getMonthlyPlan,
+    listDutyPlanObjects,
+    listDutyCandidates,
+    createDutyShift,
     acknowledge,
     clockIn,
     clockOut,

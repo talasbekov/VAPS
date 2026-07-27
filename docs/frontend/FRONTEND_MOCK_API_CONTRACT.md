@@ -78,6 +78,9 @@
 | acknowledgeDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/acknowledge/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
 | clockInDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/clock-in/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
 | clockOutDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/clock-out/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
+| listDutyPlanObjects | features/duties | backend-contract-pending | GET /api/ops/duty-plan-objects/?business_date=&duty_type_code= | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts (три причины блокировки, INVALID_BUSINESS_DATE/UNKNOWN_DUTY_TYPE) |
+| listDutyCandidates | features/duties | backend-contract-pending | GET /api/ops/duty-candidates/?business_date= | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts (занятость по реальным сменам, unavailableAttributes) |
+| createDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/ | ops.duty.manage (+ ops.duty.override_rest для обхода) | mocks/handlers.ts | mocks/repository.test.ts (PASSPORT_NOT_READY/PASSPORT_VERSION_MISSING/UNKNOWN_POST/UNKNOWN_OBJECT/UNKNOWN_DUTY_TYPE/DUTY_CONFLICT_HARD 422, DUTY_CONFLICT_DETECTED 409) |
 | listCombatDutyTypes | features/duties | backend-contract-pending | GET /api/ops/combat-duty-types/ | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts |
 | listDutyRoutes | features/duties | backend-contract-pending | GET /api/ops/duty-routes/ | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts |
 | listCombatRosterCandidates | features/duties | backend-contract-pending | GET /api/ops/combat-roster-candidates/ | ops.combat_group.submit | mocks/handlers.ts | mocks/repository.test.ts |
@@ -170,3 +173,18 @@ join, а не кросс-фичевый импорт (ARCH-FE-013). Запись
 
 ## NEXT ACTION
 Регистрировать первые операции `features/analytics`/дальнейшее расширение duties (боевые группы, месячное планирование) — по решению пользователя.
+
+`POST /api/ops/duty-shifts/` (`createDutyShift`, §21.31) — ЕДИНСТВЕННАЯ операция Smart
+Josparlau, которая отвечает **409**, а не только 422. Это не разнобой, а канон §36
+(400 = форма, 422 = бизнес-правило, 409 = конфликт): мягкий конфликт §21.34 — состояние,
+которое можно пройти с обоснованием, и код ответа обязан это различать. Код ошибки
+`DUTY_CONFLICT_DETECTED` взят из `docs/registries/error-codes.yaml` (`overridable: true`),
+а не выдуман: именно он включает `useApiMutation.conflict` → общий `shared/ui/ConflictDialog`
+→ повтор с `override: true` + `override_reason` (snake_case, канон L429) В ТЕЛЕ запроса.
+Тело повтора — исходное плюс эти два ключа; жёсткий конфликт (`DUTY_CONFLICT_HARD`)
+остаётся 422 и обходу не подлежит.
+
+`GET /api/ops/duty-plan-objects/` — оба query-параметра ОБЯЗАТЕЛЬНЫ (422 иначе): без
+`business_date` не выбрать действующую версию паспорта, без `duty_type_code` не применить
+политику §21.31 «красный паспорт + вид, требующий актуального». Ответ несёт `blockReason`
+уже сформулированной строкой — форма причину не выводит (см. FRONTEND_DECISIONS A64).

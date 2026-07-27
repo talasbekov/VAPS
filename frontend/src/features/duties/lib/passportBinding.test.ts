@@ -13,13 +13,14 @@ const OBJECT: DutyObjectProjection = {
   id: 'object-1',
   name: 'Дворец Независимости',
   code: 'OBJ-001',
+  passportState: 'GREEN',
   passportVersions: [
     {
       id: 'v1',
       versionNumber: 1,
       effectiveFrom: '2026-01-01',
       sectors: [
-        { id: 'sector-a', name: 'Сектор A', posts: [{ id: 'post-1', name: 'КПП-1' }] },
+        { id: 'sector-a', name: 'Сектор A', posts: [{ id: 'post-1', name: 'КПП-1', task: 'Контроль', requirements: 'Допуск' }] },
       ],
     },
     {
@@ -27,7 +28,7 @@ const OBJECT: DutyObjectProjection = {
       versionNumber: 2,
       effectiveFrom: '2026-07-01',
       sectors: [
-        { id: 'sector-a', name: 'Сектор A', posts: [{ id: 'post-9', name: 'КПП-1 (новый)' }] },
+        { id: 'sector-a', name: 'Сектор A', posts: [{ id: 'post-9', name: 'КПП-1 (новый)', task: 'Контроль', requirements: 'Допуск' }] },
       ],
     },
   ],
@@ -63,7 +64,7 @@ describe('firstPostOfVersion', () => {
       effectiveFrom: '2026-01-01',
       sectors: [
         { id: 'sector-empty', name: 'Пустой', posts: [] },
-        { id: 'sector-b', name: 'Сектор B', posts: [{ id: 'post-5', name: 'Пост 5' }] },
+        { id: 'sector-b', name: 'Сектор B', posts: [{ id: 'post-5', name: 'Пост 5', task: 'Контроль', requirements: 'Допуск' }] },
       ],
     }
     expect(firstPostOfVersion(version)).toEqual({

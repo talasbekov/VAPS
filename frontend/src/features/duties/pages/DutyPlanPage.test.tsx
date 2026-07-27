@@ -56,6 +56,8 @@ const BOUND_SHIFT: DutyShift = {
     postName: 'КПП-1',
     boundAt: '2026-07-24T08:00:00+05:00',
   },
+  note: null,
+  overrideReason: null,
 }
 
 const UNBOUND_SHIFT: DutyShift = {

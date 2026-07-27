@@ -21,6 +21,12 @@ import type { DutyPassportBinding } from '../model/types'
 export interface DutyPostProjection {
   id: string
   name: string
+  /** §21.31 «После выбора объекта загружай… требования, инструкции»: снимок
+   * несёт их текстом ровно в том виде, в каком они лежат в паспорте — форма
+   * их ПОКАЗЫВАЕТ, но не разбирает (тот же принцип, что §19.24 в печатной
+   * форме: оценочный текст не парсится). */
+  task: string
+  requirements: string
 }
 
 export interface DutySectorProjection {
@@ -37,11 +43,27 @@ export interface DutyPassportVersionProjection {
   sectors: DutySectorProjection[]
 }
 
+/** Проекция «светофора» паспорта из реестра объектов. Разбирается здесь как
+ * СТРОКА, а не как union чужой фичи: любое незнакомое значение трактуется
+ * как «не зелёный» — это безопасная сторона (см. `isPassportBlocking`). */
+export type DutyObjectPassportState = string
+
 export interface DutyObjectProjection {
   id: string
   name: string
   code: string
+  passportState: DutyObjectPassportState
   passportVersions: DutyPassportVersionProjection[]
+}
+
+/**
+ * §21.31 «Если паспорт красный и выбранный вид требует актуального паспорта,
+ * создание… блокируется согласно server policy». Красный — единственное
+ * блокирующее состояние: жёлтый прототип трактует как «требует внимания», а
+ * не как запрет, и превращать предупреждение в запрет фронт не вправе.
+ */
+export function isPassportBlocking(state: DutyObjectPassportState): boolean {
+  return state === 'RED'
 }
 
 /**
@@ -137,6 +159,17 @@ export const NO_PUBLISHED_VERSION_TEXT =
 
 export const NO_BINDABLE_POST_TEXT =
   'В действующей версии паспорта нет постов — привязать дежурство не к чему.'
+
+/** §21.31, причины, по которым объект недоступен для НОВОГО дежурства.
+ * Формулируются на «сервере» и приходят в ответе — форма их только рисует. */
+export const PASSPORT_RED_BLOCK_TEXT =
+  'Паспорт объекта в красном состоянии — вид дежурства требует актуального паспорта.'
+
+export const NO_VERSION_FOR_DATE_TEXT =
+  'На выбранную дату нет опубликованной версии паспорта — посты назначать не из чего.'
+
+export const NO_POSTS_IN_VERSION_TEXT =
+  'В действующей на дату версии паспорта нет ни одного поста.'
 
 export function stalePostBindingText(
   bindingVersion: number,

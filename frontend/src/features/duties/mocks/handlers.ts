@@ -7,7 +7,9 @@ import {
   COMBAT_DUTY_SHIFTS_PATH,
   COMBAT_DUTY_TYPES_PATH,
   COMBAT_ROSTER_CANDIDATES_PATH,
+  DUTY_CANDIDATES_PATH,
   DUTY_MONTHLY_PLAN_PATH,
+  DUTY_PLAN_OBJECTS_PATH,
   DUTY_ROUTES_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
@@ -26,6 +28,7 @@ import type {
   AcknowledgeCombatDutyRequest,
   CompleteCombatDutyRequest,
   CreateCombatDutyShiftRequest,
+  CreateDutyShiftRequest,
   RequestCombatDutyReplacementRequest,
   ReviewCombatGroupRequest,
   SubmitCombatDutyHandoverRequest,
@@ -34,6 +37,7 @@ import type {
 import {
   createDutiesRepository,
   RepositoryBusinessRuleError,
+  RepositoryConflictError,
   RepositoryNotFoundError,
   RepositoryPermissionError,
 } from './repository'
@@ -74,6 +78,18 @@ function mapRepositoryError(error: unknown, clock: DemoClock, entityId: string):
       status: 422,
     })
   }
+  // §21.34: soft-конфликт — 409, а не 422. Форма различает их по коду
+  // состояния: 422 — отказ, 409 — «сохранить можно, нужно обоснование».
+  if (error instanceof RepositoryConflictError) {
+    const envelope: ErrorEnvelope = {
+      error_code: error.errorCode,
+      message: error.message,
+      details: error.details,
+      request_id: null,
+      timestamp: clock.now(),
+    }
+    return HttpResponse.json(envelope, { status: 409 })
+  }
   return null
 }
 
@@ -105,6 +121,40 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
       const month = new URL(request.url).searchParams.get('month') ?? ''
       try {
         return HttpResponse.json(await repository.getMonthlyPlan(month, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${DUTY_PLAN_OBJECTS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const params = new URL(request.url).searchParams
+      // Оба параметра обязательны по той же причине, что месяц у плана: без
+      // даты нельзя выбрать действующую версию, без вида дежурства — применить
+      // политику §21.31. Молчаливый дефолт разошёлся бы с формой невидимо.
+      const businessDate = params.get('business_date') ?? ''
+      const dutyTypeCode = params.get('duty_type_code') ?? ''
+      try {
+        return HttpResponse.json(
+          await repository.listDutyPlanObjects(businessDate, dutyTypeCode, actorUserId),
+        )
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${DUTY_CANDIDATES_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const businessDate = new URL(request.url).searchParams.get('business_date') ?? ''
+      try {
+        return HttpResponse.json(await repository.listDutyCandidates(businessDate, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${DUTY_SHIFTS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        const body = (await request.json()) as CreateDutyShiftRequest
+        return HttpResponse.json(await repository.createDutyShift(body, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
       }

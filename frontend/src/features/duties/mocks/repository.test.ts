@@ -5,9 +5,11 @@ import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac
 import type { DemoStateEnvelope } from '../../../shared/testing/mock-runtime/persistence'
 import {
   createDutiesRepository,
+  RepositoryConflictError,
   RepositoryNotFoundError,
   RepositoryPermissionError,
 } from './repository'
+import { NO_VERSION_FOR_DATE_TEXT, PASSPORT_RED_BLOCK_TEXT } from '../lib/passportBinding'
 import type { CombatDutyShift, DutyPassportBinding, DutyShift } from '../model/types'
 
 const VIEWER = 'viewer-user'
@@ -1058,6 +1060,8 @@ describe('createDutiesRepository — привязка дежурства к ве
       actualEnd: null,
       updatedAt: '2026-07-24T08:00:00+05:00',
       passportBinding: BINDING,
+      note: null,
+      overrideReason: null,
       ...overrides,
     }
   }
@@ -1209,6 +1213,8 @@ describe('createDutiesRepository — месячный план дежурств 
       actualEnd: null,
       updatedAt: `${businessDate}T08:00:00+05:00`,
       passportBinding: null,
+      note: null,
+      overrideReason: null,
     }
   }
 
@@ -1281,5 +1287,417 @@ describe('createDutiesRepository — месячный план дежурств 
     const before = (await adapter.load())?.revision
     await repository.getMonthlyPlan('2026-07', VIEWER)
     expect((await adapter.load())?.revision).toBe(before)
+  })
+})
+
+// §21.31 создание индивидуального дежурства + §21.33 подбор + §21.34 конфликты.
+// Ключевое, что здесь проверяется: НИ ОДНО решение (какая версия паспорта
+// действует, доступен ли объект, какой severity у конфликта) не принимается
+// формой — всё приходит готовым отсюда.
+describe('createDutiesRepository — создание дежурства (§21.31/§21.33/§21.34)', () => {
+  const OVERRIDER = 'overrider-user'
+
+  beforeEach(() => {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.duty.view'] },
+      { userId: PLANNER, permissions: ['ops.duty.view', 'ops.duty.manage'] },
+      {
+        userId: OVERRIDER,
+        permissions: ['ops.duty.view', 'ops.duty.manage', 'ops.duty.override_rest'],
+      },
+      { userId: NOBODY, permissions: [] },
+    ])
+  })
+
+  const GREEN_OBJECT = {
+    id: 'object-green',
+    name: 'Дворец Независимости',
+    code: 'OBJ-001',
+    passportState: 'GREEN',
+    passportVersions: [
+      {
+        id: 'green-v1',
+        versionNumber: 1,
+        effectiveFrom: '2026-01-01',
+        sectors: [
+          {
+            id: 'sector-a',
+            name: 'Сектор A',
+            posts: [{ id: 'post-1', name: 'КПП-1', task: 'Контроль въезда', requirements: 'Допуск A' }],
+          },
+        ],
+      },
+    ],
+  }
+  // Жёлтый паспорт без опубликованных версий — блокируется НЕ цветом, а
+  // отсутствием версии: разные причины не должны схлопываться в одну.
+  const YELLOW_OBJECT = {
+    id: 'object-yellow',
+    name: 'Дом Министерств',
+    code: 'OBJ-002',
+    passportState: 'YELLOW',
+    passportVersions: [],
+  }
+  // Красный, НО с опубликованной версией и постом: без такого объекта правило
+  // §21.31 было бы неотличимо от правила «нет версии» и тест был бы вакуумным.
+  const RED_OBJECT = {
+    id: 'object-red',
+    name: 'Астана Арена',
+    code: 'OBJ-003',
+    passportState: 'RED',
+    passportVersions: [
+      {
+        id: 'red-v1',
+        versionNumber: 1,
+        effectiveFrom: '2026-01-01',
+        sectors: [
+          {
+            id: 'sector-r',
+            name: 'Сектор R',
+            posts: [{ id: 'post-r', name: 'Пост R', task: 'Периметр', requirements: 'Допуск R' }],
+          },
+        ],
+      },
+    ],
+  }
+
+  const CREATE_DUTY_TYPES = [
+    {
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      safeLabel: 'Суточное дежурство на собственном объекте',
+      targetType: 'OWN_OBJECT',
+      defaultDurationMinutes: 1440,
+      requiresSenior: true,
+      restAfterMinutes: 1440,
+      restPolicy: 'HARD_BLOCK',
+      requiresCurrentPassport: false,
+    },
+    {
+      dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
+      safeLabel: 'Суточное дежурство на охраняемом объекте',
+      targetType: 'PROTECTED_OBJECT',
+      defaultDurationMinutes: 1440,
+      requiresSenior: false,
+      restAfterMinutes: 1440,
+      restPolicy: 'SOFT_OVERRIDE',
+      requiresCurrentPassport: true,
+    },
+  ]
+
+  function createShift(id: string, businessDate: string, employeeName: string, dutyTypeCode: string): DutyShift {
+    return {
+      id,
+      businessDate,
+      dutyTypeCode,
+      target: { targetType: 'OWN_OBJECT', objectId: GREEN_OBJECT.id, safeLabel: GREEN_OBJECT.name },
+      employeeName,
+      stateCode: 'PLANNED',
+      acknowledgedAt: null,
+      actualStart: null,
+      actualEnd: null,
+      updatedAt: `${businessDate}T08:00:00+05:00`,
+      passportBinding: null,
+      note: null,
+      overrideReason: null,
+    }
+  }
+
+  async function setupCreate(shifts: DutyShift[] = []) {
+    const envelope = seedEnvelope([])
+    const adapter = createMemoryPersistence()
+    await adapter.reset({
+      ...envelope,
+      slices: {
+        ...envelope.slices,
+        objects: { objects: [GREEN_OBJECT, YELLOW_OBJECT, RED_OBJECT] },
+        duties: {
+          ...(envelope.slices.duties as object),
+          shifts,
+          dutyTypes: CREATE_DUTY_TYPES,
+          dutyCandidates: [
+            { employeeName: 'Ахметов Б.', unitName: '1-й отдел', positionName: 'Инспектор' },
+            { employeeName: 'Оразов К.', unitName: '2-й отдел', positionName: 'Инспектор' },
+          ],
+        },
+      },
+    })
+    return createDutiesRepository(adapter, new DemoClock('2026-07-24T09:00:00+05:00'))
+  }
+
+  const VALID_REQUEST = {
+    businessDate: '2026-07-24',
+    dutyTypeCode: 'OWN_OBJECT_DAILY',
+    objectId: GREEN_OBJECT.id,
+    sectorId: 'sector-a',
+    postId: 'post-1',
+    employeeName: 'Ахметов Б.',
+    note: null,
+  }
+
+  it('createDutyShift() без ops.duty.manage кидает RepositoryPermissionError', async () => {
+    const repository = await setupCreate()
+    await expect(repository.createDutyShift(VALID_REQUEST, VIEWER)).rejects.toThrow(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('создаёт смену PLANNED со СНИМКОМ поста из действующей версии паспорта', async () => {
+    const repository = await setupCreate()
+    const created = await repository.createDutyShift(
+      { ...VALID_REQUEST, note: '  Усиление на период визита  ' },
+      PLANNER,
+    )
+    expect(created.stateCode).toBe('PLANNED')
+    expect(created.target).toMatchObject({ objectId: GREEN_OBJECT.id, targetType: 'OWN_OBJECT' })
+    expect(created.passportBinding).toMatchObject({
+      versionId: 'green-v1',
+      versionNumber: 1,
+      sectorName: 'Сектор A',
+      postName: 'КПП-1',
+    })
+    // Примечание сохраняется обрезанным, а не как ввели.
+    expect(created.note).toBe('Усиление на период визита')
+    expect(created.overrideReason).toBeNull()
+
+    // Персистентность: смена читается ИЗ ХРАНИЛИЩА, а не только из ответа.
+    const listed = await repository.listShifts(VIEWER)
+    expect(listed.results.map((shift) => shift.id)).toContain(created.id)
+  })
+
+  it('пустое примечание сохраняется как null, а не как пустая строка', async () => {
+    const repository = await setupCreate()
+    const created = await repository.createDutyShift({ ...VALID_REQUEST, note: '   ' }, PLANNER)
+    expect(created.note).toBeNull()
+  })
+
+  it('targetType берётся у ВИДА дежурства, а не приходит из запроса', async () => {
+    const repository = await setupCreate()
+    const created = await repository.createDutyShift(
+      { ...VALID_REQUEST, dutyTypeCode: 'PROTECTED_OBJECT_DAILY' },
+      PLANNER,
+    )
+    expect(created.target.targetType).toBe('PROTECTED_OBJECT')
+  })
+
+  it('§21.31: красный паспорт + вид, требующий актуального, — отказ 422', async () => {
+    const repository = await setupCreate()
+    await expect(
+      repository.createDutyShift(
+        {
+          ...VALID_REQUEST,
+          dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
+          objectId: RED_OBJECT.id,
+          sectorId: 'sector-r',
+          postId: 'post-r',
+        },
+        PLANNER,
+      ),
+    ).rejects.toMatchObject({ errorCode: 'PASSPORT_NOT_READY' })
+  })
+
+  it('§21.31: тот же красный объект под видом, НЕ требующим паспорта, создаётся', async () => {
+    const repository = await setupCreate()
+    const created = await repository.createDutyShift(
+      {
+        ...VALID_REQUEST,
+        dutyTypeCode: 'OWN_OBJECT_DAILY',
+        objectId: RED_OBJECT.id,
+        sectorId: 'sector-r',
+        postId: 'post-r',
+      },
+      PLANNER,
+    )
+    expect(created.passportBinding?.postName).toBe('Пост R')
+  })
+
+  it('объект без опубликованной версии на дату — отдельный код, не PASSPORT_NOT_READY', async () => {
+    const repository = await setupCreate()
+    await expect(
+      repository.createDutyShift({ ...VALID_REQUEST, objectId: YELLOW_OBJECT.id }, PLANNER),
+    ).rejects.toMatchObject({ errorCode: 'PASSPORT_VERSION_MISSING' })
+  })
+
+  it('пост не из этой версии паспорта — отказ, а не привязка «к какому-нибудь»', async () => {
+    const repository = await setupCreate()
+    await expect(
+      repository.createDutyShift({ ...VALID_REQUEST, postId: 'post-999' }, PLANNER),
+    ).rejects.toMatchObject({ errorCode: 'UNKNOWN_POST' })
+  })
+
+  it('объект вне реестра и неизвестный вид дежурства различаются кодами', async () => {
+    const repository = await setupCreate()
+    await expect(
+      repository.createDutyShift({ ...VALID_REQUEST, objectId: 'object-missing' }, PLANNER),
+    ).rejects.toMatchObject({ errorCode: 'UNKNOWN_OBJECT' })
+    await expect(
+      repository.createDutyShift({ ...VALID_REQUEST, dutyTypeCode: 'NOPE' }, PLANNER),
+    ).rejects.toMatchObject({ errorCode: 'UNKNOWN_DUTY_TYPE' })
+  })
+
+  it('§21.34 HARD: второе дежурство сотрудника в тот же день — 422, обойти нельзя', async () => {
+    const repository = await setupCreate([
+      createShift('existing-1', '2026-07-24', 'Ахметов Б.', 'OWN_OBJECT_DAILY'),
+    ])
+    await expect(repository.createDutyShift(VALID_REQUEST, PLANNER)).rejects.toMatchObject({
+      errorCode: 'DUTY_CONFLICT_HARD',
+    })
+    // Даже с обоснованием и правом обхода: hard — это hard.
+    await expect(
+      repository.createDutyShift(
+        { ...VALID_REQUEST, override: true, override_reason: 'Приказ №5' },
+        OVERRIDER,
+      ),
+    ).rejects.toMatchObject({ errorCode: 'DUTY_CONFLICT_HARD' })
+  })
+
+  it('§21.34 SOFT: нарушение отдыха — 409 с деталями конфликтов, смена НЕ создана', async () => {
+    const repository = await setupCreate([
+      createShift('existing-1', '2026-07-23', 'Ахметов Б.', 'PROTECTED_OBJECT_DAILY'),
+    ])
+    let caught: unknown
+    try {
+      await repository.createDutyShift(
+        { ...VALID_REQUEST, dutyTypeCode: 'PROTECTED_OBJECT_DAILY' },
+        PLANNER,
+      )
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(RepositoryConflictError)
+    // Код — канонический overridable из docs/registries/error-codes.yaml, а не
+    // свой: именно он включает путь ConflictDialog.
+    expect(caught).toMatchObject({ errorCode: 'DUTY_CONFLICT_DETECTED' })
+    const conflicts = (caught as RepositoryConflictError).details.conflicts as unknown[]
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0]).toMatchObject({ conflict_code: 'REST_AFTER_DUTY', severity: 'SOFT' })
+
+    const listed = await repository.listShifts(VIEWER)
+    expect(listed.results).toHaveLength(1)
+  })
+
+  it('§21.34 SOFT: повтор с override сохраняет смену И обоснование', async () => {
+    const repository = await setupCreate([
+      createShift('existing-1', '2026-07-23', 'Ахметов Б.', 'PROTECTED_OBJECT_DAILY'),
+    ])
+    const created = await repository.createDutyShift(
+      {
+        ...VALID_REQUEST,
+        dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
+        override: true,
+        override_reason: '  Некем заменить, приказ №5  ',
+      },
+      OVERRIDER,
+    )
+    expect(created.overrideReason).toBe('Некем заменить, приказ №5')
+    const listed = await repository.listShifts(VIEWER)
+    expect(listed.results.find((shift) => shift.id === created.id)?.overrideReason).toBe(
+      'Некем заменить, приказ №5',
+    )
+  })
+
+  it('§21.34: обход БЕЗ отдельного permission — отказ по правам, а не тихое сохранение', async () => {
+    const repository = await setupCreate([
+      createShift('existing-1', '2026-07-23', 'Ахметов Б.', 'PROTECTED_OBJECT_DAILY'),
+    ])
+    await expect(
+      repository.createDutyShift(
+        {
+          ...VALID_REQUEST,
+          dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
+          override: true,
+          override_reason: 'Некем заменить',
+        },
+        PLANNER,
+      ),
+    ).rejects.toThrow(RepositoryPermissionError)
+  })
+
+  it('обоснование без конфликта НЕ записывается — обход должен быть следом, а не шумом', async () => {
+    const repository = await setupCreate()
+    const created = await repository.createDutyShift(
+      { ...VALID_REQUEST, override: true, override_reason: 'Просто так' },
+      OVERRIDER,
+    )
+    expect(created.overrideReason).toBeNull()
+  })
+
+  it('УЖЕ СУЩЕСТВОВАВШИЙ конфликт чужой пары смен не блокирует создание', async () => {
+    // Оразов К. и так конфликтует сам с собой два дня подряд; новая смена
+    // ДРУГОГО сотрудника не должна падать из-за чужого конфликта в данных.
+    const repository = await setupCreate([
+      createShift('existing-1', '2026-07-23', 'Оразов К.', 'OWN_OBJECT_DAILY'),
+      createShift('existing-2', '2026-07-24', 'Оразов К.', 'OWN_OBJECT_DAILY'),
+    ])
+    const created = await repository.createDutyShift(VALID_REQUEST, PLANNER)
+    expect(created.employeeName).toBe('Ахметов Б.')
+  })
+
+  it('§21.31: список объектов формы несёт причину блокировки, а не прячет объект', async () => {
+    const repository = await setupCreate()
+    const response = await repository.listDutyPlanObjects(
+      '2026-07-24',
+      'PROTECTED_OBJECT_DAILY',
+      VIEWER,
+    )
+    expect(response.results.map((option) => option.objectName)).toEqual([
+      'Астана Арена',
+      'Дворец Независимости',
+      'Дом Министерств',
+    ])
+    const byName = new Map(response.results.map((option) => [option.objectName, option]))
+    expect(byName.get('Дворец Независимости')?.blockReason).toBeNull()
+    expect(byName.get('Дворец Независимости')?.sectors[0]?.posts[0]).toMatchObject({
+      postName: 'КПП-1',
+      task: 'Контроль въезда',
+      requirements: 'Допуск A',
+    })
+    expect(byName.get('Астана Арена')?.blockReason).toBe(PASSPORT_RED_BLOCK_TEXT)
+    expect(byName.get('Дом Министерств')?.blockReason).toBe(NO_VERSION_FOR_DATE_TEXT)
+  })
+
+  it('§21.31: тот же красный объект под видом без требования паспорта — доступен', async () => {
+    const repository = await setupCreate()
+    const response = await repository.listDutyPlanObjects('2026-07-24', 'OWN_OBJECT_DAILY', VIEWER)
+    const red = response.results.find((option) => option.objectName === 'Астана Арена')
+    expect(red?.blockReason).toBeNull()
+  })
+
+  it('список объектов формы требует и дату, и известный вид дежурства', async () => {
+    const repository = await setupCreate()
+    await expect(repository.listDutyPlanObjects('2026-7-4', 'OWN_OBJECT_DAILY', VIEWER)).rejects.toMatchObject({
+      errorCode: 'INVALID_BUSINESS_DATE',
+    })
+    await expect(repository.listDutyPlanObjects('2026-07-24', '', VIEWER)).rejects.toMatchObject({
+      errorCode: 'UNKNOWN_DUTY_TYPE',
+    })
+  })
+
+  it('§21.33: занятость кандидата считается по РЕАЛЬНЫМ сменам, недоступное — с причиной', async () => {
+    const repository = await setupCreate([
+      createShift('existing-1', '2026-07-24', 'Ахметов Б.', 'OWN_OBJECT_DAILY'),
+      createShift('existing-2', '2026-08-01', 'Оразов К.', 'OWN_OBJECT_DAILY'),
+    ])
+    const response = await repository.listDutyCandidates('2026-07-24', VIEWER)
+    const byName = new Map(response.results.map((option) => [option.employeeName, option]))
+    expect(byName.get('Ахметов Б.')).toMatchObject({
+      busyOnRequestedDate: true,
+      nearestDutyDate: '2026-07-24',
+    })
+    expect(byName.get('Оразов К.')).toMatchObject({
+      busyOnRequestedDate: false,
+      nearestDutyDate: '2026-08-01',
+    })
+    // §35: чего подбор не учитывает — списком с причиной, а не молчанием.
+    expect(response.unavailableAttributes.length).toBeGreaterThan(0)
+    expect(response.unavailableAttributes.every((item) => item.reason.length > 0)).toBe(true)
+  })
+
+  it('§21.33: прошедшее дежурство не считается «ближайшим»', async () => {
+    const repository = await setupCreate([
+      createShift('existing-1', '2026-07-01', 'Оразов К.', 'OWN_OBJECT_DAILY'),
+    ])
+    const response = await repository.listDutyCandidates('2026-07-24', VIEWER)
+    const orazov = response.results.find((option) => option.employeeName === 'Оразов К.')
+    expect(orazov?.nearestDutyDate).toBeNull()
   })
 })

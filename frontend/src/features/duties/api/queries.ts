@@ -7,7 +7,9 @@ import {
   COMBAT_DUTY_SHIFTS_PATH,
   COMBAT_DUTY_TYPES_PATH,
   COMBAT_ROSTER_CANDIDATES_PATH,
+  DUTY_CANDIDATES_PATH,
   DUTY_MONTHLY_PLAN_PATH,
+  DUTY_PLAN_OBJECTS_PATH,
   DUTY_ROUTES_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
@@ -33,9 +35,13 @@ import type {
   CompleteCombatDutyResponse,
   CreateCombatDutyShiftRequest,
   CreateCombatDutyShiftResponse,
+  CreateDutyShiftRequest,
+  CreateDutyShiftResponse,
   ListCombatDutyShiftsResponse,
   ListCombatDutyTypesResponse,
   ListCombatRosterCandidatesResponse,
+  ListDutyCandidatesResponse,
+  ListDutyPlanObjectsResponse,
   ListDutyRoutesResponse,
   ListDutyShiftsResponse,
   ListDutyTypesResponse,
@@ -82,6 +88,64 @@ export function useMonthlyDutyPlan(month: string, options: { enabled?: boolean }
       ),
     enabled: options.enabled ?? true,
     placeholderData: keepPreviousData,
+  })
+}
+
+/**
+ * §21.31 «После выбора объекта загружай…» — но грузим НЕ после выбора объекта,
+ * а после выбора даты и вида: именно от них зависит, какие объекты вообще
+ * доступны и какая версия паспорта действует. Запрос выключен, пока вид не
+ * выбран (`enabled`), иначе форма дёрнула бы сервер с пустым видом и получила
+ * 422 на каждое открытие.
+ */
+export function useDutyPlanObjects(
+  businessDate: string,
+  dutyTypeCode: string,
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery<ListDutyPlanObjectsResponse, ApiFailure>({
+    queryKey: ['duties', 'plan-objects', businessDate, dutyTypeCode],
+    queryFn: () =>
+      apiClient.get<ListDutyPlanObjectsResponse>(
+        `${DUTY_PLAN_OBJECTS_PATH}?business_date=${encodeURIComponent(businessDate)}&duty_type_code=${encodeURIComponent(dutyTypeCode)}`,
+      ),
+    enabled: (options.enabled ?? true) && businessDate !== '' && dutyTypeCode !== '',
+    placeholderData: keepPreviousData,
+  })
+}
+
+/** §21.33 «Подбор кандидатов» — занятость считается на запрошенную дату. */
+export function useDutyCandidates(businessDate: string, options: { enabled?: boolean } = {}) {
+  return useQuery<ListDutyCandidatesResponse, ApiFailure>({
+    queryKey: ['duties', 'candidates', businessDate],
+    queryFn: () =>
+      apiClient.get<ListDutyCandidatesResponse>(
+        `${DUTY_CANDIDATES_PATH}?business_date=${encodeURIComponent(businessDate)}`,
+      ),
+    enabled: (options.enabled ?? true) && businessDate !== '',
+    placeholderData: keepPreviousData,
+  })
+}
+
+/**
+ * §21.31 создание + §21.34 обход soft-конфликта.
+ *
+ * Переменные мутации — САМО ТЕЛО запроса, а не `{ body }`, как у остальных
+ * мутаций фичи. Это не разнобой: `confirmOverride` дописывает
+ * `override`/`override_reason` в КОРЕНЬ переменных, и при обёртке `{ body }`
+ * они уехали бы рядом с телом, а не в него — сервер их бы не увидел.
+ */
+export function useCreateDutyShift() {
+  const queryClient = useQueryClient()
+  return useApiMutation<CreateDutyShiftResponse, CreateDutyShiftRequest>({
+    mutationFn: (body) => apiClient.post<CreateDutyShiftResponse>(DUTY_SHIFTS_PATH, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
+      // Месячный план и список кандидатов зависят от того же набора смен:
+      // новая смена меняет и сетку/KPI/конфликты, и «ближайшую занятость».
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'monthly-plan'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'candidates'] })
+    },
   })
 }
 
