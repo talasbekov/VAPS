@@ -2276,3 +2276,174 @@ describe('createDutiesRepository — правка и отмена дежурст
     expect(detail.conflicts).toEqual([])
   })
 })
+
+// §21.30 «Список дежурств» и «История» (Этап 36). Ключевое: «прошедшее»
+// определяет СЕРВЕР по DemoClock, а не фронт по часам машины, и история
+// требует ОБА признака — завершённый факт И прошедшую дату.
+describe('createDutiesRepository — список дежурств и история (§21.30)', () => {
+  beforeEach(() => {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.duty.view'] },
+      { userId: NOBODY, permissions: [] },
+    ])
+  })
+
+  const LIST_TYPES = [
+    {
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      safeLabel: 'Суточное дежурство на собственном объекте',
+      targetType: 'OWN_OBJECT',
+      defaultDurationMinutes: 1440,
+      requiresSenior: true,
+      restAfterMinutes: 1440,
+      restPolicy: 'HARD_BLOCK',
+      requiresCurrentPassport: false,
+    },
+  ]
+
+  function listShiftFixture(
+    id: string,
+    businessDate: string,
+    overrides: Partial<DutyShift> = {},
+  ): DutyShift {
+    return {
+      id,
+      businessDate,
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      target: { targetType: 'OWN_OBJECT', objectId: 'object-1', safeLabel: 'Штаб управления' },
+      employeeName: 'Ахметов Б.',
+      stateCode: 'PLANNED',
+      acknowledgedAt: null,
+      actualStart: null,
+      actualEnd: null,
+      updatedAt: `${businessDate}T08:00:00+05:00`,
+      passportBinding: null,
+      note: null,
+      cancellation: null,
+      overrideReason: null,
+      ...overrides,
+    }
+  }
+
+  async function setupList(shifts: DutyShift[]) {
+    const envelope = seedEnvelope([])
+    const adapter = createMemoryPersistence()
+    await adapter.reset({
+      ...envelope,
+      slices: {
+        ...envelope.slices,
+        duties: { ...(envelope.slices.duties as object), shifts, dutyTypes: LIST_TYPES },
+      },
+    })
+    // Бизнес-дата сценария — 2026-07-24.
+    return createDutiesRepository(adapter, new DemoClock('2026-07-24T09:00:00+05:00'))
+  }
+
+  it('listShiftList() без ops.duty.view кидает RepositoryPermissionError', async () => {
+    const repository = await setupList([])
+    await expect(repository.listShiftList('ALL', NOBODY)).rejects.toThrow(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('ALL: все смены по возрастанию даты, с подписью вида и серверными конфликтами', async () => {
+    const repository = await setupList([
+      listShiftFixture('duty-2', '2026-07-25'),
+      listShiftFixture('duty-1', '2026-07-24'),
+    ])
+    const response = await repository.listShiftList('ALL', VIEWER)
+    expect(response.results.map((row) => row.id)).toEqual(['duty-1', 'duty-2'])
+    expect(response.results[0].dutyTypeLabel).toBe('Суточное дежурство на собственном объекте')
+    // Две смены подряд у одного сотрудника — нарушение отдыха, severity из
+    // политики вида (HARD_BLOCK). Счётчик считает СЕРВЕР.
+    expect(response.results[1].hardConflictCount).toBe(1)
+    // §35: невыводимые колонки названы с причиной.
+    expect(response.unavailableColumns.map((column) => column.code)).toContain('TIME_INTERVAL')
+    expect(response.unavailableColumns.every((column) => column.reason.length > 0)).toBe(true)
+  })
+
+  it('бизнес-дата приходит В ОТВЕТЕ — экран не берёт её из часов машины', async () => {
+    const repository = await setupList([])
+    expect((await repository.listShiftList('ALL', VIEWER)).businessDate).toBe('2026-07-24')
+  })
+
+  it('HISTORY: только ЗАВЕРШЁННЫЕ смены ПРОШЕДШИХ дней, свежие первыми', async () => {
+    const repository = await setupList([
+      // прошедшая и завершённая — попадает
+      listShiftFixture('past-done', '2026-07-20', {
+        stateCode: 'COMPLETED',
+        actualEnd: '2026-07-21T08:00:00+05:00',
+      }),
+      listShiftFixture('past-done-2', '2026-07-22', {
+        stateCode: 'COMPLETED',
+        actualEnd: '2026-07-23T08:00:00+05:00',
+        employeeName: 'Оразов К.',
+      }),
+      // прошедшая, но НЕ завершённая — факта нет
+      listShiftFixture('past-active', '2026-07-21', {
+        stateCode: 'ACTIVE',
+        employeeName: 'Сагинова А.',
+      }),
+      // завершённая СЕГОДНЯ — ещё не прошедшее
+      listShiftFixture('today-done', '2026-07-24', {
+        stateCode: 'COMPLETED',
+        actualEnd: '2026-07-24T08:00:00+05:00',
+        employeeName: 'Нурланов Е.',
+      }),
+      // будущая
+      listShiftFixture('future', '2026-07-30', { employeeName: 'Жумабаев Р.' }),
+    ])
+    const response = await repository.listShiftList('HISTORY', VIEWER)
+    expect(response.results.map((row) => row.id)).toEqual(['past-done-2', 'past-done'])
+    expect(response.scope).toBe('HISTORY')
+  })
+
+  it('отменённая смена видна в списке с причиной, но в историю не попадает', async () => {
+    const repository = await setupList([
+      listShiftFixture('cancelled', '2026-07-20', {
+        stateCode: 'CANCELLED',
+        cancellation: { reason: 'Объект снят с охраны', cancelledAt: '2026-07-19T10:00:00+05:00' },
+      }),
+    ])
+    const all = await repository.listShiftList('ALL', VIEWER)
+    expect(all.results[0]).toMatchObject({
+      stateCode: 'CANCELLED',
+      cancellationReason: 'Объект снят с охраны',
+    })
+    expect((await repository.listShiftList('HISTORY', VIEWER)).results).toEqual([])
+  })
+
+  it('отсутствие привязки к паспорту приходит как null, а не пустой строкой', async () => {
+    const repository = await setupList([
+      listShiftFixture('unbound', '2026-07-24'),
+      listShiftFixture('bound', '2026-07-26', {
+        employeeName: 'Оразов К.',
+        passportBinding: {
+          objectId: 'object-1',
+          objectName: 'Штаб управления',
+          versionId: 'v1',
+          versionNumber: 1,
+          effectiveFrom: '2026-01-01',
+          sectorId: 'sector-a',
+          sectorName: 'Сектор A',
+          postId: 'post-1',
+          postName: 'КПП-1',
+          boundAt: '2026-07-24T08:00:00+05:00',
+        },
+      }),
+    ])
+    const response = await repository.listShiftList('ALL', VIEWER)
+    expect(response.results.find((row) => row.id === 'unbound')?.postLabel).toBeNull()
+    expect(response.results.find((row) => row.id === 'bound')?.postLabel).toBe('Сектор A · КПП-1')
+  })
+
+  it('список — чтение: вызов не поднимает ревизию состояния', async () => {
+    const envelope = seedEnvelope([])
+    const adapter = createMemoryPersistence()
+    await adapter.reset(envelope)
+    const repository = createDutiesRepository(adapter, new DemoClock('2026-07-24T09:00:00+05:00'))
+    const before = (await adapter.load())?.revision
+    await repository.listShiftList('ALL', VIEWER)
+    expect((await adapter.load())?.revision).toBe(before)
+  })
+})

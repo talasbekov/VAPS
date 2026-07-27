@@ -10,6 +10,7 @@ import {
   DUTY_CANDIDATES_PATH,
   DUTY_MONTHLY_PLAN_PATH,
   DUTY_PLAN_OBJECTS_PATH,
+  DUTY_SHIFT_LIST_PATH,
   DUTY_ROUTES_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
@@ -37,6 +38,8 @@ import type {
   CancelDutyShiftRequest,
   CancelDutyShiftResponse,
   DutyShiftDetail,
+  DutyShiftListScope,
+  ListDutyShiftListResponse,
   UpdateDutyShiftRequest,
   UpdateDutyShiftResponse,
   CompleteCombatDutyRequest,
@@ -93,6 +96,18 @@ export function useDutyShiftDetail(id: string) {
     queryKey: ['duties', 'shift-detail', id],
     queryFn: () => apiClient.get<DutyShiftDetail>(dutyShiftDetailPath(id)),
     enabled: id !== '',
+  })
+}
+
+/** §21.30 «Список дежурств»/«История». */
+export function useDutyShiftList(scope: DutyShiftListScope) {
+  return useQuery<ListDutyShiftListResponse, ApiFailure>({
+    queryKey: ['duties', 'shift-list', scope],
+    queryFn: () =>
+      apiClient.get<ListDutyShiftListResponse>(
+        scope === 'HISTORY' ? `${DUTY_SHIFT_LIST_PATH}?scope=history` : DUTY_SHIFT_LIST_PATH,
+      ),
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -158,6 +173,7 @@ export function useCreateDutyShift() {
     mutationFn: (body) => apiClient.post<CreateDutyShiftResponse>(DUTY_SHIFTS_PATH, body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-list'] })
       // Месячный план и список кандидатов зависят от того же набора смен:
       // новая смена меняет и сетку/KPI/конфликты, и «ближайшую занятость».
       void queryClient.invalidateQueries({ queryKey: ['duties', 'monthly-plan'] })
@@ -180,6 +196,7 @@ export function useUpdateDutyShift(id: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-list'] })
       void queryClient.invalidateQueries({ queryKey: ['duties', 'monthly-plan'] })
       void queryClient.invalidateQueries({ queryKey: ['duties', 'candidates'] })
     },
@@ -194,6 +211,7 @@ export function useCancelDutyShift() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-list'] })
       // Отменённая смена выбывает из KPI и конфликтов месяца, и сотрудник
       // перестаёт быть занят — оба списка обязаны перечитаться.
       void queryClient.invalidateQueries({ queryKey: ['duties', 'monthly-plan'] })
@@ -210,6 +228,7 @@ export function useAcknowledgeDutyShift() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-list'] })
     },
   })
 }
@@ -221,6 +240,7 @@ export function useClockInDutyShift() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-list'] })
     },
   })
 }
@@ -233,6 +253,7 @@ export function useClockOutDutyShift() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
       void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-list'] })
     },
   })
 }

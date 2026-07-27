@@ -148,5 +148,12 @@ test.describe('Accessibility (axe-core): второй слой аудита по
     await page.getByRole('button', { name: 'Сотрудники × дни' }).click()
     await expect(page.getByText('Слои, которых нет в модели')).toBeVisible()
     await assertNoSeriousViolations(page, 'Месячный план — матрица по сотрудникам')
+
+    // Список дежурств §21.30 — ещё одна широкая таблица в прокручиваемой
+    // области, тот же класс разметки, где нашёлся scrollable-region-focusable.
+    await page.goto('/duties')
+    await page.getByRole('button', { name: 'Список' }).click()
+    await expect(page.getByText('Колонки, которых нет в модели')).toBeVisible()
+    await assertNoSeriousViolations(page, 'План дежурств — список дежурств')
   })
 })

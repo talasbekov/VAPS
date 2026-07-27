@@ -35,6 +35,9 @@ export const DUTY_MONTHLY_PLAN_PATH = '/api/ops/duty-monthly-plan/'
 export const DUTY_PLAN_OBJECTS_PATH = '/api/ops/duty-plan-objects/'
 /** §21.33 «Подбор кандидатов». */
 export const DUTY_CANDIDATES_PATH = '/api/ops/duty-candidates/'
+/** §21.30 «Список дежурств» и «История» — плоский список с серверными
+ * счётчиками конфликтов (§21.34) и явным списком невыводимых колонок (§35). */
+export const DUTY_SHIFT_LIST_PATH = '/api/ops/duty-shift-list/'
 
 /** §21.32 «Карточка дежурства» — deep link на одну смену. */
 export function dutyShiftDetailPath(id: string): string {
@@ -223,6 +226,48 @@ export interface DutyShiftDetail {
   conflicts: MonthlyDutyPlanConflict[]
   /** §35: блоки §21.32, которых в модели суточного дежурства нет. */
   unavailableBlocks: UnavailableMetric[]
+}
+
+/**
+ * §21.30 «Список дежурств». Строка несёт то, что модель даёт; недостающие
+ * колонки промпта перечислены в `unavailableColumns` (§35).
+ *
+ * Счётчики конфликтов приходят СЕРВЕРНЫЕ (§21.34) — список их не выводит,
+ * иначе он разошёлся бы с месячным планом и карточкой, где они уже считаются.
+ */
+export interface DutyShiftListRow {
+  id: string
+  businessDate: string
+  objectLabel: string
+  dutyTypeCode: string
+  dutyTypeLabel: string
+  /** §21.30 «состав»: у индивидуального дежурства это один исполнитель. */
+  employeeName: string
+  /** Пост из зафиксированной версии паспорта; `null` — привязки нет (§9.6). */
+  postLabel: string | null
+  hardConflictCount: number
+  softConflictCount: number
+  /** ISO момент ознакомления либо `null` — «не подтверждено». */
+  acknowledgedAt: string | null
+  stateCode: DutyShift['stateCode']
+  /** §21.30 «фактическое завершение»; `null` — смена не завершена. */
+  actualEnd: string | null
+  cancellationReason: string | null
+}
+
+export type DutyShiftListScope = 'ALL' | 'HISTORY'
+
+export interface ListDutyShiftListResponse {
+  scope: DutyShiftListScope
+  /**
+   * Бизнес-дата, ОТ КОТОРОЙ сервер отделяет прошедшее. Приходит в ответе, а не
+   * берётся фронтом из `new Date()`: demo-runtime живёт по DemoClock (§8.8), и
+   * «сегодня» по часам машины разошлось бы с данными.
+   */
+  businessDate: string
+  results: DutyShiftListRow[]
+  /** §35: колонки §21.30, которых в модели суточного дежурства нет. */
+  unavailableColumns: UnavailableMetric[]
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   DUTY_CANDIDATES_PATH,
   DUTY_MONTHLY_PLAN_PATH,
   DUTY_PLAN_OBJECTS_PATH,
+  DUTY_SHIFT_LIST_PATH,
   DUTY_ROUTES_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
@@ -142,6 +143,18 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
         return HttpResponse.json(
           await repository.listDutyPlanObjects(businessDate, dutyTypeCode, actorUserId),
         )
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${DUTY_SHIFT_LIST_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      // Единственный допустимый второй режим — история; любое иное значение
+      // трактуется как полный список, а не как ошибка: это фильтр показа, а не
+      // бизнес-правило.
+      const scope = new URL(request.url).searchParams.get('scope') === 'history' ? 'HISTORY' : 'ALL'
+      try {
+        return HttpResponse.json(await repository.listShiftList(scope, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
       }

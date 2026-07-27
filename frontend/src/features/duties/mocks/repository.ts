@@ -30,8 +30,11 @@ import type {
   DutyPlanObjectOption,
   DutyPlanSectorOption,
   DutyShiftDetail,
+  DutyShiftListRow,
+  DutyShiftListScope,
   ListDutyCandidatesResponse,
   ListDutyPlanObjectsResponse,
+  ListDutyShiftListResponse,
   ListCombatDutyShiftsResponse,
   ListCombatDutyTypesResponse,
   ListCombatRosterCandidatesResponse,
@@ -146,6 +149,35 @@ const UNAVAILABLE_SHIFT_CARD_BLOCKS: readonly UnavailableMetric[] = [
     label: 'Время начала и окончания',
     reason:
       'Модель проекта — «одна смена = один календарный день»: время начала у смены не хранится, продолжительность задаёт вид дежурства.',
+  },
+]
+
+/** §21.30 «Список дежурств» перечисляет одиннадцать колонок. Четыре модель не
+ * даёт — они приходят с причиной, а не пустыми ячейками (§35). */
+const UNAVAILABLE_LIST_COLUMNS: readonly UnavailableMetric[] = [
+  {
+    code: 'TIME_INTERVAL',
+    label: 'Интервал (время начала и окончания)',
+    reason:
+      'Модель проекта — «одна смена = один календарный день»: время начала у смены не хранится, продолжительность задаёт вид дежурства.',
+  },
+  {
+    code: 'RESPONSIBLE',
+    label: 'Ответственный',
+    reason:
+      'Реестр объектов не хранит ответственного должностного лица, а у индивидуального дежурства исполнитель и есть весь состав — отдельной роли «ответственный» в модели нет.',
+  },
+  {
+    code: 'OPEN_POSTS',
+    label: 'Открытые посты',
+    reason:
+      'Требуемая численность заведена только у боевых групп (requiredEmployees); у суточного дежурства «сколько постов не закрыто» вычислять не из чего.',
+  },
+  {
+    code: 'PLAN_CONFIRMATION',
+    label: 'Подтверждение плана',
+    reason:
+      'Lifecycle месячного плана (DRAFT→VALIDATED→APPROVED, §21.28) не реализован — «подтверждённого плана» как состояния не существует, поэтому История отбирает смены по завершённому ФАКТУ и прошедшей дате.',
   },
 ]
 
@@ -270,6 +302,80 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
       }
     })
     return { results: sorted, passportStatuses }
+  }
+
+  /**
+   * §21.30 «Список дежурств» и «История».
+   *
+   * `HISTORY` — «только прошедшие дежурства с подтверждённым планом и фактом»:
+   * COMPLETED (факт есть) И бизнес-дата уже прошла. Оба условия обязательны —
+   * смена, завершённая досрочно сегодня, ещё не история, а завершённого факта
+   * у будущей смены не бывает вовсе. Граница «прошедшего» берётся у DemoClock,
+   * а не у часов машины (§8.8).
+   */
+  async function listShiftList(
+    scope: DutyShiftListScope,
+    actorUserId: string | null,
+  ): Promise<ListDutyShiftListResponse> {
+    if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_PERMISSION)
+    }
+    const businessDate = clock.businessDate()
+    const envelope = await adapter.load()
+    const slice = envelope === null ? null : readSlice(envelope)
+    const shifts = slice?.shifts ?? []
+    const dutyTypes = slice?.dutyTypes ?? []
+    const typeLabel = new Map(dutyTypes.map((type) => [type.dutyTypeCode, type.safeLabel]))
+
+    const conflictCounts = new Map<string, { hard: number; soft: number }>()
+    for (const conflict of detectConflicts(shifts, dutyTypes)) {
+      const key = `${conflict.employeeName}|${conflict.businessDate}`
+      const current = conflictCounts.get(key) ?? { hard: 0, soft: 0 }
+      if (conflict.severity === 'HARD') current.hard += 1
+      else current.soft += 1
+      conflictCounts.set(key, current)
+    }
+
+    const selected =
+      scope === 'HISTORY'
+        ? shifts.filter(
+            (shift) => shift.stateCode === 'COMPLETED' && shift.businessDate < businessDate,
+          )
+        : shifts
+    const results: DutyShiftListRow[] = [...selected]
+      // История читается от свежего к старому, план — от ближайшего вперёд.
+      .sort((a, b) =>
+        scope === 'HISTORY'
+          ? b.businessDate.localeCompare(a.businessDate) || a.id.localeCompare(b.id)
+          : a.businessDate.localeCompare(b.businessDate) || a.id.localeCompare(b.id),
+      )
+      .map((shift) => {
+        const counts = conflictCounts.get(`${shift.employeeName}|${shift.businessDate}`)
+        return {
+          id: shift.id,
+          businessDate: shift.businessDate,
+          objectLabel: shift.target.safeLabel,
+          dutyTypeCode: shift.dutyTypeCode,
+          dutyTypeLabel: typeLabel.get(shift.dutyTypeCode) ?? shift.dutyTypeCode,
+          employeeName: shift.employeeName,
+          postLabel:
+            shift.passportBinding === null
+              ? null
+              : `${shift.passportBinding.sectorName} · ${shift.passportBinding.postName}`,
+          hardConflictCount: counts?.hard ?? 0,
+          softConflictCount: counts?.soft ?? 0,
+          acknowledgedAt: shift.acknowledgedAt,
+          stateCode: shift.stateCode,
+          actualEnd: shift.actualEnd,
+          cancellationReason: shift.cancellation?.reason ?? null,
+        }
+      })
+    return {
+      scope,
+      businessDate,
+      results,
+      unavailableColumns: [...UNAVAILABLE_LIST_COLUMNS],
+    }
   }
 
   /**
@@ -1387,6 +1493,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
   return {
     listDutyTypes,
     listShifts,
+    listShiftList,
     getShiftDetail,
     getMonthlyPlan,
     listDutyPlanObjects,

@@ -25,13 +25,14 @@ import {
   NO_REGISTRY_OBJECT_TEXT,
   stalePostBindingText,
 } from '../lib/passportBinding'
-import type { DutyPassportStatus } from '../api/pending-contracts'
+import type { DutyPassportStatus, DutyShiftListScope } from '../api/pending-contracts'
 import type { DutyShift, DutyShiftState } from '../model/types'
 import { CombatDutyGroupsSection } from './CombatDutyGroupsSection'
 import { CreateDutyShiftForm } from './CreateDutyShiftForm'
+import { DutyShiftListSection } from './DutyShiftListSection'
 import { MonthlyDutyPlanSection } from './MonthlyDutyPlanSection'
 
-type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE' | 'MONTH' | 'COMBAT_GROUPS'
+type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE' | 'MONTH' | 'LIST' | 'COMBAT_GROUPS'
 
 const STATE_LABEL: Record<DutyShiftState, string> = {
   PLANNED: 'Запланировано',
@@ -51,6 +52,7 @@ const STATE_CLASS: Record<DutyShiftState, string> = {
 
 export function DutyPlanPage() {
   const [view, setView] = useState<ViewMode>('BY_OBJECT')
+  const [listScope, setListScope] = useState<DutyShiftListScope>('ALL')
   const dutyTypesQuery = useDutyTypes()
   const shiftsQuery = useDutyShifts()
 
@@ -128,6 +130,13 @@ export function DutyPlanPage() {
           </Button>
           <Button
             size="sm"
+            variant={view === 'LIST' ? 'default' : 'ghost'}
+            onClick={() => setView('LIST')}
+          >
+            Список
+          </Button>
+          <Button
+            size="sm"
             variant={view === 'COMBAT_GROUPS' ? 'default' : 'ghost'}
             onClick={() => setView('COMBAT_GROUPS')}
           >
@@ -137,6 +146,13 @@ export function DutyPlanPage() {
       </header>
 
       {view === 'COMBAT_GROUPS' && <CombatDutyGroupsSection />}
+
+      {/* §21.30 «Список дежурств»/«История» — плоское представление того же
+          набора смен. Область показа живёт ЗДЕСЬ, а не внутри секции: иначе
+          переключение вкладок сбрасывало бы выбор «Все»/«История». */}
+      {view === 'LIST' && (
+        <DutyShiftListSection scope={listScope} onScopeChange={setListScope} />
+      )}
 
       {view === 'MONTH' &&
         (defaultMonth === null ? (
