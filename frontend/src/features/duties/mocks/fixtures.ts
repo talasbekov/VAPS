@@ -16,6 +16,7 @@ import type {
   DutyShift,
   DutyTypeDefinition,
 } from '../model/types'
+import { addDays } from '../lib/monthlyPlan'
 import type { DutyObjectProjection } from '../lib/passportBinding'
 import {
   bindDutyPost,
@@ -40,6 +41,11 @@ export const DUTY_TYPES: readonly DutyTypeDefinition[] = [
     targetType: 'OWN_OBJECT',
     defaultDurationMinutes: 24 * 60,
     requiresSenior: true,
+    // §21.35: обязательный отдых — атрибут вида дежурства, а не константа в
+    // коде. Собственные объекты держат жёсткую политику (дефолт промпта
+    // REST_AFTER_DUTY_POLICY=HARD_BLOCK)…
+    restAfterMinutes: 24 * 60,
+    restPolicy: 'HARD_BLOCK',
   },
   {
     dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
@@ -47,6 +53,11 @@ export const DUTY_TYPES: readonly DutyTypeDefinition[] = [
     targetType: 'PROTECTED_OBJECT',
     defaultDurationMinutes: 24 * 60,
     requiresSenior: false,
+    // …а охраняемые — мягкую: нарушение отдыха здесь soft-конфликт, который
+    // §21.34 разрешает обойти с обоснованием. Оба значения ЧИТАЮТСЯ фронтом,
+    // severity он не выводит сам.
+    restAfterMinutes: 24 * 60,
+    restPolicy: 'SOFT_OVERRIDE',
   },
 ]
 
@@ -205,6 +216,66 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       passportBinding: hq.passportBinding,
     },
   ]
+
+  // §21.27-21.30: месячный план обязан показывать МЕСЯЦ, а не единственный
+  // день, а §21.29 требует непустых KPI по конфликтам — поэтому кроме четырёх
+  // смен на бизнес-дату сид раскладывает ещё шесть по соседним дням, давая
+  // оба класса конфликтов §21.34: пересечение (всегда hard) и нарушение
+  // обязательного отдыха (hard на собственном объекте, soft на охраняемом —
+  // политика читается у вида дежурства, см. DUTY_TYPES выше).
+  //
+  // ⚠️ Сотрудники этих смен НЕ пересекаются с четвёркой выше и объект «Дом
+  // Министерств» здесь не используется: e2e-локаторы вида
+  // `locator('tr', { hasText: 'Дом Министерств' })` обязаны остаться
+  // однозначными.
+  const monthShift = (
+    dayOffset: number,
+    dutyTypeCode: 'OWN_OBJECT_DAILY' | 'PROTECTED_OBJECT_DAILY',
+    objectName: string,
+    fallbackObjectId: string,
+    employeeName: string,
+    stateCode: DutyShift['stateCode'],
+  ): DutyShift => {
+    const date = addDays(businessDate, dayOffset)
+    const target = resolveSeedTarget(objects, objectName, fallbackObjectId, date, now)
+    const completed = stateCode === 'COMPLETED'
+    return {
+      id: ctx.ids.next('duty-shift'),
+      businessDate: date,
+      dutyTypeCode,
+      target: {
+        targetType: dutyTypeCode === 'OWN_OBJECT_DAILY' ? 'OWN_OBJECT' : 'PROTECTED_OBJECT',
+        objectId: target.objectId,
+        safeLabel: objectName,
+      },
+      employeeName,
+      stateCode,
+      acknowledgedAt: stateCode === 'PLANNED' ? null : now,
+      actualStart: completed ? now : null,
+      actualEnd: completed ? now : null,
+      updatedAt: now,
+      passportBinding: target.passportBinding,
+    }
+  }
+
+  const monthPlanShifts: DutyShift[] = [
+    // Два дня подряд на охраняемом объекте → soft-конфликт отдыха.
+    //
+    // ⚠️ Все смены месячного плана лежат ПОСЛЕ бизнес-даты намеренно: дефолтный
+    // день «Календаря смен» и дефолтный месяц этой вкладки берутся из первой по
+    // дате загруженной смены (реального «сегодня» у фронта нет — demo-runtime
+    // живёт по DemoClock). Смена раньше бизнес-даты увела бы дефолт календаря в
+    // прошлое. Настоящий backend прислал бы бизнес-дату явно.
+    monthShift(7, 'PROTECTED_OBJECT_DAILY', 'Дворец Независимости', 'duty-object-2', 'Нурланов Е.', 'COMPLETED'),
+    monthShift(8, 'PROTECTED_OBJECT_DAILY', 'Дворец Независимости', 'duty-object-2', 'Нурланов Е.', 'COMPLETED'),
+    // Два дежурства в ОДИН день на разных объектах → hard-конфликт.
+    monthShift(2, 'OWN_OBJECT_DAILY', 'Штаб управления', 'duty-object-1', 'Жумабаев Р.', 'PLANNED'),
+    monthShift(2, 'PROTECTED_OBJECT_DAILY', 'Дворец Независимости', 'duty-object-2', 'Жумабаев Р.', 'PLANNED'),
+    // Два дня подряд на собственном объекте → hard-конфликт отдыха.
+    monthShift(4, 'OWN_OBJECT_DAILY', 'Штаб управления', 'duty-object-1', 'Сейтказы М.', 'PLANNED'),
+    monthShift(5, 'OWN_OBJECT_DAILY', 'Штаб управления', 'duty-object-1', 'Сейтказы М.', 'PLANNED'),
+  ]
+  shifts.push(...monthPlanShifts)
 
   const combatShifts: CombatDutyShift[] = [
     {

@@ -1,5 +1,6 @@
 // Pending-контракты «План дежурств» (§7.5): backend Smart Josparlau не
 // существует — статус `backend-contract-pending`.
+import type { MonthlyDutyPlan } from '../lib/monthlyPlan'
 import type {
   CombatDutyShift,
   CombatDutyTypeDefinition,
@@ -16,6 +17,11 @@ export const COMBAT_DUTY_TYPES_PATH = '/api/ops/combat-duty-types/'
 export const DUTY_ROUTES_PATH = '/api/ops/duty-routes/'
 export const COMBAT_ROSTER_CANDIDATES_PATH = '/api/ops/combat-roster-candidates/'
 export const COMBAT_DUTY_SHIFTS_PATH = '/api/ops/combat-duty-shifts/'
+/** §21.27-21.30 — месячный план отдельным ресурсом, а не фильтром по сменам:
+ * §21.29 требует СЕРВЕРНЫЕ KPI, а §21.34 — серверную severity конфликтов;
+ * и то и другое приходит в этом ответе вместе с сеткой, чтобы страница не
+ * могла посчитать итог «по отрисованной части». */
+export const DUTY_MONTHLY_PLAN_PATH = '/api/ops/duty-monthly-plan/'
 
 export function dutyShiftAcknowledgePath(id: string): string {
   return `${DUTY_SHIFTS_PATH}${id}/acknowledge/`
@@ -82,6 +88,11 @@ export interface ListDutyShiftsResponse {
 export type AcknowledgeDutyShiftResponse = DutyShift
 export type ClockInDutyShiftResponse = DutyShift
 export type ClockOutDutyShiftResponse = DutyShift
+
+/** §21.28-21.30 — весь месячный план одним ответом: сетка «объект × день»,
+ * серверные KPI (§21.29), конфликты с серверной severity (§21.34) и явный
+ * список показателей, которых у модели нет (§35). */
+export type MonthlyDutyPlanResponse = MonthlyDutyPlan
 
 export interface ListCombatDutyTypesResponse {
   results: CombatDutyTypeDefinition[]

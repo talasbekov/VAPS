@@ -7,6 +7,7 @@ import {
   COMBAT_DUTY_SHIFTS_PATH,
   COMBAT_DUTY_TYPES_PATH,
   COMBAT_ROSTER_CANDIDATES_PATH,
+  DUTY_MONTHLY_PLAN_PATH,
   DUTY_ROUTES_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
@@ -92,6 +93,18 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
       const actorUserId = request.headers.get('X-User-Id')
       try {
         return HttpResponse.json(await repository.listShifts(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${DUTY_MONTHLY_PLAN_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      // Месяц — обязательный query-параметр: молчаливый дефолт «текущий
+      // месяц» разошёлся бы с месяцем, который выбрал пользователь, и разница
+      // была бы невидима — лучше явная 422.
+      const month = new URL(request.url).searchParams.get('month') ?? ''
+      try {
+        return HttpResponse.json(await repository.getMonthlyPlan(month, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
       }

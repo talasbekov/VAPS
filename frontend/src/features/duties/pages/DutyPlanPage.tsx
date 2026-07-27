@@ -3,8 +3,11 @@
 // отдельные источники истины — переключатель вида группирует один и тот же
 // список, второй запрос не делается. Третья вкладка «Боевые группы и Трассы»
 // (§24.15) — ОТДЕЛЬНЫЙ набор данных (CombatDutyShift, не DutyShift, см.
-// model/types.ts) — своя подача/рассмотрение, не переключатель вида. История/
-// revisions, месячное планирование — Not started (см. FRONTEND_DECISIONS).
+// model/types.ts) — своя подача/рассмотрение, не переключатель вида.
+// Вкладка «Месяц» (§21.27-21.30) — тот же DutyShift, но СЕРВЕРНАЯ проекция:
+// сетка/KPI/конфликты приходят готовыми из `useMonthlyDutyPlan`, страница их
+// не пересчитывает (§21.29/§21.34, см. MonthlyDutyPlanSection). История/
+// revisions и lifecycle плана — Not started (см. FRONTEND_DECISIONS A63).
 import { useMemo, useState } from 'react'
 import { Button } from '../../../shared/ui/Button'
 import {
@@ -23,8 +26,9 @@ import {
 import type { DutyPassportStatus } from '../api/pending-contracts'
 import type { DutyShift, DutyShiftState } from '../model/types'
 import { CombatDutyGroupsSection } from './CombatDutyGroupsSection'
+import { MonthlyDutyPlanSection } from './MonthlyDutyPlanSection'
 
-type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE' | 'COMBAT_GROUPS'
+type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE' | 'MONTH' | 'COMBAT_GROUPS'
 
 const STATE_LABEL: Record<DutyShiftState, string> = {
   PLANNED: 'Запланировано',
@@ -74,6 +78,14 @@ export function DutyPlanPage() {
 
   const isLoading = dutyTypesQuery.isLoading || shiftsQuery.isLoading
   const isError = dutyTypesQuery.isError || shiftsQuery.isError
+  const isTableView = view === 'BY_OBJECT' || view === 'BY_EMPLOYEE'
+
+  // §21.28: месяц по умолчанию берётся из УЖЕ ЗАГРУЖЕННЫХ данных, а не из
+  // `new Date()` — demo-runtime живёт по DemoClock (§8.8), и wall-clock часы
+  // машины показали бы пустой месяц (тот же приём, что дефолтный день
+  // CalendarPage). `results` отсортирован по дате, поэтому это месяц самой
+  // ранней смены.
+  const defaultMonth = shiftsQuery.data?.results[0]?.businessDate.slice(0, 7) ?? null
 
   return (
     <div>
@@ -104,6 +116,13 @@ export function DutyPlanPage() {
           </Button>
           <Button
             size="sm"
+            variant={view === 'MONTH' ? 'default' : 'ghost'}
+            onClick={() => setView('MONTH')}
+          >
+            Месяц
+          </Button>
+          <Button
+            size="sm"
             variant={view === 'COMBAT_GROUPS' ? 'default' : 'ghost'}
             onClick={() => setView('COMBAT_GROUPS')}
           >
@@ -114,14 +133,23 @@ export function DutyPlanPage() {
 
       {view === 'COMBAT_GROUPS' && <CombatDutyGroupsSection />}
 
-      {view !== 'COMBAT_GROUPS' && isLoading && (
+      {view === 'MONTH' &&
+        (defaultMonth === null ? (
+          <p className="text-sm text-muted-foreground">
+            {isLoading ? 'Загрузка плана дежурств…' : 'Дежурств не найдено — месяц не выбран.'}
+          </p>
+        ) : (
+          <MonthlyDutyPlanSection key={defaultMonth} initialMonth={defaultMonth} />
+        ))}
+
+      {isTableView && isLoading && (
         <p className="text-sm text-muted-foreground">Загрузка плана дежурств…</p>
       )}
-      {view !== 'COMBAT_GROUPS' && isError && (
+      {isTableView && isError && (
         <p className="text-sm text-destructive">Не удалось загрузить план дежурств.</p>
       )}
 
-      {view !== 'COMBAT_GROUPS' && !isLoading && !isError && (
+      {isTableView && !isLoading && !isError && (
         <div className="flex flex-col gap-3.5">
           {groups.length === 0 && (
             <section className="rounded-xl border bg-card p-9 text-center text-sm text-muted-foreground">

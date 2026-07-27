@@ -53,7 +53,7 @@
 |---|---|---|---|---|---|
 | Журнал штаба (инструктаж/указания/инциденты/замены — append-only, тип+заголовок+описание) | securityEventDetail (stage=CONDUCT) | features/security-events (`ConductJournal`) | useAddJournalEntry | e2e-mock/security-event-approval-to-closure.spec.ts | Verified (была ошибочно помечена Not started — матрица сверена с кодом заново) |
 | Инциденты с фото | securityEventDetail | features/security-events | — | — | Not started (требует blob-хранилища, тот же вывод, что «Рекогносцировка: материалы» выше) |
-| Каскадная замена выбывшего | securityEventDetail | features/security-events | — | — | Not started |
+| Каскадная замена выбывшего (§9.11, ручная) | securityEventDetail (stage=CONDUCT) | features/security-events | replaceAssignment | e2e-mock/security-event-approval-to-closure.spec.ts | Verified (автоподбор кандидата — business-policy-pending, см. A56) |
 | Закрытие (итоги направлений обязательны) | securityEventDetail (stage=CONDUCT→CLOSED) | features/security-events (`ClosureTrigger`) | useCloseSecurityEvent | e2e-mock/security-event-approval-to-closure.spec.ts | Verified (была ошибочно помечена Not started — матрица сверена с кодом заново) |
 | Опрос по факту (ServiceHours) | securityEventDetail | features/security-events | — | — | Not started |
 | Архив дела закрытого ОМ (read-only) | securityEventArchive | features/security-events (`SecurityEventArchivePage` + `lib/archiveCase.ts`) | — (read model поверх `useSecurityEvent`) | lib/archiveCase.test.ts, pages/SecurityEventArchivePage.test.tsx, e2e-mock/security-event-approval-to-closure.spec.ts | Verified |
@@ -76,7 +76,7 @@
 | Паспорт объекта (секторы+посты, редактирование) | objectDetail | features/objects | Verified (ручная браузерная проверка + e2e-mock/objects-passport.spec.ts, persist-through-reload) |
 | KPI реестра объектов (§21.7) | objects | features/objects | Not started (см. FRONTEND_DECISIONS A30) |
 | Схемы/документы/чек-листы объекта | objectDetail | features/objects | Not started |
-| План дежурств на месяц | duties | features/duties | Not started (см. FRONTEND_DECISIONS A31) |
+| План дежурств на месяц (сетка «объект × день», серверные KPI §21.29, конфликты §21.34) | duties (вкладка «Месяц») | features/duties | getMonthlyPlan | e2e-mock/duty-monthly-plan.spec.ts | Verified (lifecycle плана DRAFT→APPROVED и «По сотрудникам» — Not started, см. A63) |
 | Единый календарь (сотрудник/подразделение) | shiftCalendar | features/calendar | Not started |
 
 ## Домен: Контроль и аналитика (§22/§27-30, Этап 6)
@@ -140,7 +140,7 @@
 | «Мой календарь», представление по сотруднику/подразделению, боевые группы, конфликты, отдых, нагрузка, статусы (отпуск/больничный/командировка) | — | — | Not started — требует Employee Status/Conflict/Workload repositories и общий employeeId между дежурствами/ОМ, которых в demo-срезе нет (см. FRONTEND_DECISIONS A44-A46) |
 
 ## Покрытие
-Итог: **31 из ~70 экранов Verified** (12 — жизненный цикл ОМ, 2 — сотрудники, 2 — объекты/паспорт, 1 — аудит, 1 — аналитика службы, 2 — план дежурств [индивидуальные дежурства + боевые группы на Трассе], 4 — справочники, 1 — календарь по дням, 1 — печатная форма расстановки, 1 — архив дела закрытого ОМ, 1 — версия паспорта объекта, 2 — привязка ОМ к версии паспорта и импорт постов §9.6, 1 — привязка дежурства к версии паспорта §9.6). Остальные ~40 экранов (notifications/feedback/мой профиль/KPI/схемы/нагрузка/рейтинг/должности-звания как отдельный справочник/остальные режимы календаря/полный §24 боевых групп) — Not started. Ложным «Done» не помечать (запрет §35).
+Итог: **32 из ~70 экранов Verified** (12 — жизненный цикл ОМ, 2 — сотрудники, 2 — объекты/паспорт, 1 — аудит, 1 — аналитика службы, 2 — план дежурств [индивидуальные дежурства + боевые группы на Трассе], 4 — справочники, 1 — календарь по дням, 1 — печатная форма расстановки, 1 — архив дела закрытого ОМ, 1 — версия паспорта объекта, 2 — привязка ОМ к версии паспорта и импорт постов §9.6, 1 — привязка дежурства к версии паспорта §9.6, 1 — месячный план дежурств §21.27-21.30). Остальные ~40 экранов (notifications/feedback/мой профиль/KPI/схемы/нагрузка/рейтинг/должности-звания как отдельный справочник/остальные режимы календаря/полный §24 боевых групп) — Not started. Ложным «Done» не помечать (запрет §35).
 
 ## NEXT ACTION
 `e2e-mock/` покрывает ВСЕ реализованные экраны (Этапы 11-13, расширены Этапом 14 — оперативный профиль, Этапом 15 — боевые группы на Трассе, Этапом 16 — execution-lifecycle, Этапом 17 — замены §24.21, Этапом 18 — потребность §24.1, 16 спек) — весь жизненный цикл ОМ, personnel, objects, dictionaries, calendar, audit, analytics, duties (включая боевые группы: потребность→подача→рассмотрение→ознакомление→заступление→факт→замена, весь §24-конвейер теперь достижим целиком из UI). Дальше — только функциональный объём: уведомления/передача смены §24.22 (требует обсуждения модели ротации смен внутри дня, см. FRONTEND_PROGRESS Этап 18 NEXT ACTION)/Conflict Repository/формальный revision/accessibility-tablet-Firefox (не реализованы, а не «не покрыты тестами»), по решению пользователя.

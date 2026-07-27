@@ -1,0 +1,314 @@
+// Месячный план дежурств (§21.27-21.30, §21.34-21.35). Чистая модель: ни
+// React, ни apiClient — тестируется в env node.
+//
+// ⚠️ ЧТО ЭТОТ МОДУЛЬ СОЗНАТЕЛЬНО НЕ ДЕЛАЕТ. §21.29 требует показывать
+// СЕРВЕРНЫЕ значения KPI и прямо запрещает «вычислять итог по отрисованной
+// части календаря», §21.34 — «frontend не определяет severity самостоятельно».
+// Поэтому и KPI, и конфликты считаются ЗДЕСЬ, а вызывается это из
+// mock-repository (наш «сервер»), не из компонента: страница получает готовые
+// числа и готовую severity и только рисует их. Если однажды появится
+// настоящий backend, этот модуль уезжает на него целиком, а контракт ответа
+// (`MonthlyDutyPlanResponse`) остаётся тем же.
+//
+// Арифметика дат — только через `Date.UTC`, без локального `new Date(строка)`:
+// businessDate — календарный день канона (+05), а не момент времени, и разбор
+// его в локальной зоне сдвигал бы день на машинах в минусовых таймзонах
+// (см. feedback-vaps-date-guard-needs-negative-tz).
+import type { DutyShift, DutyTypeDefinition } from '../model/types'
+
+/** §21.34: severity назначает сервер. Три уровня промпта — HARD (нельзя
+ * обойти), SOFT (обход по отдельному permission с обоснованием), Warning
+ * (сохранение возможно без override). Warning в этом срезе не заводится:
+ * единственный его кандидат — устаревшая версия паспорта — уже показан
+ * построчно в «Плане дежурств» (§9.6), дублировать его в конфликтах значило
+ * бы завести второго владельца одного и того же факта. */
+export type DutyConflictSeverity = 'HARD' | 'SOFT'
+
+export type DutyConflictCode = 'DUTY_OVERLAP' | 'REST_AFTER_DUTY'
+
+export interface MonthlyDutyPlanConflict {
+  conflictId: string
+  code: DutyConflictCode
+  severity: DutyConflictSeverity
+  employeeName: string
+  /** День, В КОТОРОМ конфликт проявляется (для отдыха — день второго дежурства). */
+  businessDate: string
+  message: string
+}
+
+export interface MonthlyDutyPlanCell {
+  date: string
+  shiftCount: number
+  /** Дежурства в состоянии PLANNED — §21.29 «Без ознакомления». */
+  notAcknowledgedCount: number
+  completedCount: number
+  hardConflictCount: number
+  softConflictCount: number
+}
+
+export interface MonthlyDutyPlanRow {
+  objectId: string
+  objectLabel: string
+  cells: MonthlyDutyPlanCell[]
+}
+
+/** §21.29. Ровно те показатели, которые выводимы из модели; всё остальное —
+ * в `unavailableMetrics`, а не нулём и не прочерком. */
+export interface MonthlyDutyPlanKpi {
+  objectsInPlan: number
+  shifts: number
+  notAcknowledged: number
+  completed: number
+  hardConflicts: number
+  softConflicts: number
+}
+
+/** §35: показатель, который прототип называет, а модель не выдаёт. Показывается
+ * текстом с причиной — молчаливый ноль читался бы как «посчитали, вышло 0». */
+export interface UnavailableMetric {
+  code: string
+  label: string
+  reason: string
+}
+
+export interface MonthlyDutyPlan {
+  /** YYYY-MM. */
+  month: string
+  /** Все календарные дни месяца, YYYY-MM-DD. */
+  days: string[]
+  rows: MonthlyDutyPlanRow[]
+  kpi: MonthlyDutyPlanKpi
+  conflicts: MonthlyDutyPlanConflict[]
+  unavailableMetrics: UnavailableMetric[]
+}
+
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
+
+export function isValidMonth(month: string): boolean {
+  return MONTH_RE.test(month)
+}
+
+/** Месяц (YYYY-MM), которому принадлежит календарный день. */
+export function monthOf(date: string): string {
+  return date.slice(0, 7)
+}
+
+export function daysInMonth(month: string): string[] {
+  const year = Number(month.slice(0, 4))
+  const monthIndex = Number(month.slice(5, 7))
+  // День 0 следующего месяца = последний день этого (UTC — см. шапку файла).
+  const count = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate()
+  const days: string[] = []
+  for (let day = 1; day <= count; day += 1) {
+    days.push(`${month}-${String(day).padStart(2, '0')}`)
+  }
+  return days
+}
+
+/** Сдвиг календарного дня на N суток. Используется и сидом демо-данных. */
+export function addDays(date: string, amount: number): string {
+  const year = Number(date.slice(0, 4))
+  const monthIndex = Number(date.slice(5, 7)) - 1
+  const day = Number(date.slice(8, 10))
+  const shifted = new Date(Date.UTC(year, monthIndex, day + amount))
+  return shifted.toISOString().slice(0, 10)
+}
+
+/** Полных суток между двумя календарными днями (b - a). */
+export function daysBetween(a: string, b: string): number {
+  const toUtc = (date: string) =>
+    Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)))
+  return Math.round((toUtc(b) - toUtc(a)) / 86_400_000)
+}
+
+function hoursLabel(minutes: number): string {
+  const hours = minutes / 60
+  return Number.isInteger(hours) ? `${hours} ч` : `${minutes} мин`
+}
+
+export function overlapMessage(employeeName: string, date: string, shiftCount: number): string {
+  return `${employeeName}: ${shiftCount} дежурства в один день (${date}).`
+}
+
+export function restMessage(
+  employeeName: string,
+  previousDate: string,
+  nextDate: string,
+  restAfterMinutes: number,
+): string {
+  return `${employeeName}: дежурство ${nextDate} начинается до конца обязательного отдыха (${hoursLabel(restAfterMinutes)}) после дежурства ${previousDate}.`
+}
+
+/**
+ * §21.34/§21.35. Считается по ВСЕМУ набору смен, а не по выбранному месяцу:
+ * дежурство 1-го числа конфликтует с дежурством последнего числа предыдущего
+ * месяца, и обрезав вход месяцем, мы бы такой конфликт молча потеряли.
+ * Фильтрация по месяцу — только на выдаче.
+ *
+ * `restPolicy` берётся у вида дежурства ПРЕДЫДУЩЕЙ смены: обязательный отдых —
+ * свойство отработанного дежурства, а не следующего. Вид дежурства, которого
+ * нет в реестре, отдыха не навязывает (нечего читать — не выдумываем 24 часа,
+ * §21.35 «не хардкодь 24 часа»).
+ */
+export function detectConflicts(
+  shifts: readonly DutyShift[],
+  dutyTypes: readonly DutyTypeDefinition[],
+): MonthlyDutyPlanConflict[] {
+  const typeByCode = new Map(dutyTypes.map((type) => [type.dutyTypeCode, type]))
+  const byEmployee = new Map<string, DutyShift[]>()
+  for (const shift of shifts) {
+    const bucket = byEmployee.get(shift.employeeName) ?? []
+    bucket.push(shift)
+    byEmployee.set(shift.employeeName, bucket)
+  }
+
+  const conflicts: MonthlyDutyPlanConflict[] = []
+  for (const [employeeName, employeeShifts] of [...byEmployee.entries()].sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    const byDate = new Map<string, DutyShift[]>()
+    for (const shift of employeeShifts) {
+      const bucket = byDate.get(shift.businessDate) ?? []
+      bucket.push(shift)
+      byDate.set(shift.businessDate, bucket)
+    }
+    const dates = [...byDate.keys()].sort()
+
+    for (const date of dates) {
+      const sameDay = byDate.get(date) ?? []
+      if (sameDay.length > 1) {
+        conflicts.push({
+          conflictId: `overlap:${employeeName}:${date}`,
+          code: 'DUTY_OVERLAP',
+          // §21.34 «пересечение с другим дежурством» — hard, обойти нельзя:
+          // тот же принцип, что hard-rule двойного назначения в расстановке ОМ
+          // и в боевых группах (§24.17).
+          severity: 'HARD',
+          employeeName,
+          businessDate: date,
+          message: overlapMessage(employeeName, date, sameDay.length),
+        })
+      }
+    }
+
+    for (let index = 1; index < dates.length; index += 1) {
+      const previousDate = dates[index - 1]
+      const nextDate = dates[index]
+      // Отдых отсчитывается от КОНЦА предыдущего дня дежурства, следующее
+      // дежурство начинается в начале своего дня: между ними ровно
+      // (разница в сутках − 1) полных суток.
+      const freeMinutes = (daysBetween(previousDate, nextDate) - 1) * 24 * 60
+      for (const previous of byDate.get(previousDate) ?? []) {
+        const type = typeByCode.get(previous.dutyTypeCode)
+        if (type === undefined || type.restAfterMinutes <= 0) continue
+        if (freeMinutes >= type.restAfterMinutes) continue
+        conflicts.push({
+          conflictId: `rest:${employeeName}:${previousDate}:${nextDate}`,
+          code: 'REST_AFTER_DUTY',
+          severity: type.restPolicy === 'HARD_BLOCK' ? 'HARD' : 'SOFT',
+          employeeName,
+          businessDate: nextDate,
+          message: restMessage(employeeName, previousDate, nextDate, type.restAfterMinutes),
+        })
+        break
+      }
+    }
+  }
+
+  return conflicts.sort(
+    (a, b) => a.businessDate.localeCompare(b.businessDate) || a.conflictId.localeCompare(b.conflictId),
+  )
+}
+
+/** §35: показатели прототипа (§21.30 «укомплектовано 4/4», «были замены»),
+ * которых нет в модели суточного дежурства. Список — часть ответа, а не текст
+ * в вёрстке: причина принадлежит серверу, который знает, чего у него нет. */
+export const UNAVAILABLE_MONTHLY_METRICS: readonly UnavailableMetric[] = [
+  {
+    code: 'STAFFING_COMPLETENESS',
+    label: 'Укомплектовано / частично / не укомплектовано',
+    reason:
+      'У суточного дежурства нет требуемой численности на объект (requiredEmployees заведён только у боевых групп) — доля укомплектованности была бы выдумана.',
+  },
+  {
+    code: 'REPLACEMENTS',
+    label: 'Были замены',
+    reason:
+      'История замен ведётся только у боевых групп (§24.21); у суточных дежурств замены не реализованы.',
+  },
+]
+
+export function buildMonthlyPlan(
+  month: string,
+  shifts: readonly DutyShift[],
+  dutyTypes: readonly DutyTypeDefinition[],
+): MonthlyDutyPlan {
+  const days = daysInMonth(month)
+  const allConflicts = detectConflicts(shifts, dutyTypes)
+  const conflicts = allConflicts.filter((conflict) => monthOf(conflict.businessDate) === month)
+  const monthShifts = shifts.filter((shift) => monthOf(shift.businessDate) === month)
+
+  const conflictCounts = new Map<string, { hard: number; soft: number }>()
+  for (const conflict of conflicts) {
+    const key = `${conflict.employeeName}|${conflict.businessDate}`
+    const current = conflictCounts.get(key) ?? { hard: 0, soft: 0 }
+    if (conflict.severity === 'HARD') current.hard += 1
+    else current.soft += 1
+    conflictCounts.set(key, current)
+  }
+
+  const rowsByObject = new Map<string, { objectLabel: string; shifts: DutyShift[] }>()
+  for (const shift of monthShifts) {
+    const existing = rowsByObject.get(shift.target.objectId)
+    if (existing === undefined) {
+      rowsByObject.set(shift.target.objectId, {
+        objectLabel: shift.target.safeLabel,
+        shifts: [shift],
+      })
+    } else {
+      existing.shifts.push(shift)
+    }
+  }
+
+  const rows: MonthlyDutyPlanRow[] = [...rowsByObject.entries()]
+    .sort(([, a], [, b]) => a.objectLabel.localeCompare(b.objectLabel))
+    .map(([objectId, { objectLabel, shifts: objectShifts }]) => ({
+      objectId,
+      objectLabel,
+      cells: days.map((date) => {
+        const dayShifts = objectShifts.filter((shift) => shift.businessDate === date)
+        let hard = 0
+        let soft = 0
+        for (const shift of dayShifts) {
+          const counts = conflictCounts.get(`${shift.employeeName}|${date}`)
+          if (counts === undefined) continue
+          hard += counts.hard
+          soft += counts.soft
+        }
+        return {
+          date,
+          shiftCount: dayShifts.length,
+          notAcknowledgedCount: dayShifts.filter((shift) => shift.stateCode === 'PLANNED').length,
+          completedCount: dayShifts.filter((shift) => shift.stateCode === 'COMPLETED').length,
+          hardConflictCount: hard,
+          softConflictCount: soft,
+        }
+      }),
+    }))
+
+  return {
+    month,
+    days,
+    rows,
+    kpi: {
+      objectsInPlan: rows.length,
+      shifts: monthShifts.length,
+      notAcknowledged: monthShifts.filter((shift) => shift.stateCode === 'PLANNED').length,
+      completed: monthShifts.filter((shift) => shift.stateCode === 'COMPLETED').length,
+      hardConflicts: conflicts.filter((conflict) => conflict.severity === 'HARD').length,
+      softConflicts: conflicts.filter((conflict) => conflict.severity === 'SOFT').length,
+    },
+    conflicts,
+    unavailableMetrics: [...UNAVAILABLE_MONTHLY_METRICS],
+  }
+}

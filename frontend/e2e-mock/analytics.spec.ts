@@ -39,9 +39,17 @@ test.describe('Аналитика службы: агрегаты ОМ-по-эт�
     // «Ознакомлен» — substring подстрока «Ознакомление» (стадия ОМ выше) —
     // hasText делает подстроковый матч, поэтому здесь нужен ТОЧНЫЙ regex
     // (инцидент feedback_vaps_label_substring_vacuous_assert, тот же класс бага).
-    await expect(page.getByText('Дежурства по состоянию (4)')).toBeVisible()
-    for (const label of ['Запланировано', /^Ознакомлен\d/, 'На посту', 'Завершено']) {
-      await expect(page.locator(stageRowClass, { hasText: label })).toContainText('1')
+    // 10 индивидуальных дежурств: четвёрка «по одному на состояние» на
+    // бизнес-дату плюс шесть смен месячного плана на соседних днях
+    // (§21.27-21.30, Этап 31 — 4 PLANNED и 2 COMPLETED).
+    await expect(page.getByText('Дежурства по состоянию (10)')).toBeVisible()
+    for (const [label, count] of [
+      ['Запланировано', '5'],
+      [/^Ознакомлен\d/, '1'],
+      ['На посту', '1'],
+      ['Завершено', '3'],
+    ] as const) {
+      await expect(page.locator(stageRowClass, { hasText: label })).toContainText(count)
     }
 
     // §24.5-24.10: 3 боевые группы — «Требует подачи»/SUBMITTED/ACCEPTED

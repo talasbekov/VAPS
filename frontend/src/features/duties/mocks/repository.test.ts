@@ -1184,3 +1184,102 @@ describe('createDutiesRepository — привязка дежурства к ве
     expect(after).toContain('"v1"')
   })
 })
+
+// §21.27-21.30: месячный план. Проверяется ИМЕННО проводка репозитория —
+// права, валидация месяца и то, что политика отдыха читается из СОХРАНЁННОГО
+// реестра видов дежурств (сама арифметика месяца покрыта lib/monthlyPlan.test.ts).
+describe('createDutiesRepository — месячный план дежурств (§21.27-21.30)', () => {
+  beforeEach(() => {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.duty.view'] },
+      { userId: NOBODY, permissions: [] },
+    ])
+  })
+
+  function planShift(id: string, businessDate: string, dutyTypeCode: string): DutyShift {
+    return {
+      id,
+      businessDate,
+      dutyTypeCode,
+      target: { targetType: 'OWN_OBJECT', objectId: 'object-1', safeLabel: 'Штаб управления' },
+      employeeName: 'Сейтказы М.',
+      stateCode: 'PLANNED',
+      acknowledgedAt: null,
+      actualStart: null,
+      actualEnd: null,
+      updatedAt: `${businessDate}T08:00:00+05:00`,
+      passportBinding: null,
+    }
+  }
+
+  async function setupPlan(shifts: DutyShift[], restPolicy: 'HARD_BLOCK' | 'SOFT_OVERRIDE') {
+    const envelope = seedEnvelope([])
+    const adapter = createMemoryPersistence()
+    await adapter.reset({
+      ...envelope,
+      slices: {
+        ...envelope.slices,
+        duties: {
+          ...(envelope.slices.duties as object),
+          shifts,
+          dutyTypes: [
+            {
+              dutyTypeCode: 'OWN_OBJECT_DAILY',
+              safeLabel: 'Суточное дежурство на собственном объекте',
+              targetType: 'OWN_OBJECT',
+              defaultDurationMinutes: 1440,
+              requiresSenior: true,
+              restAfterMinutes: 1440,
+              restPolicy,
+            },
+          ],
+        },
+      },
+    })
+    const clock = new DemoClock('2026-07-24T09:00:00+05:00')
+    return createDutiesRepository(adapter, clock)
+  }
+
+  it('getMonthlyPlan() без ops.duty.view кидает RepositoryPermissionError', async () => {
+    const repository = await setupPlan([], 'HARD_BLOCK')
+    await expect(repository.getMonthlyPlan('2026-07', NOBODY)).rejects.toThrow(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('месяц вне формата YYYY-MM — бизнес-ошибка, а не пустой план', async () => {
+    const repository = await setupPlan([], 'HARD_BLOCK')
+    await expect(repository.getMonthlyPlan('2026-13', VIEWER)).rejects.toMatchObject({
+      errorCode: 'INVALID_MONTH',
+    })
+    await expect(repository.getMonthlyPlan('', VIEWER)).rejects.toMatchObject({
+      errorCode: 'INVALID_MONTH',
+    })
+  })
+
+  it('severity конфликта отдыха приходит из СОХРАНЁННОЙ политики вида дежурства', async () => {
+    const shifts = [
+      planShift('duty-1', '2026-07-24', 'OWN_OBJECT_DAILY'),
+      planShift('duty-2', '2026-07-25', 'OWN_OBJECT_DAILY'),
+    ]
+    const hardRepository = await setupPlan(shifts, 'HARD_BLOCK')
+    const hardPlan = await hardRepository.getMonthlyPlan('2026-07', VIEWER)
+    expect(hardPlan.conflicts.map((c) => c.severity)).toEqual(['HARD'])
+    expect(hardPlan.kpi).toMatchObject({ shifts: 2, hardConflicts: 1, softConflicts: 0 })
+
+    const softRepository = await setupPlan(shifts, 'SOFT_OVERRIDE')
+    const softPlan = await softRepository.getMonthlyPlan('2026-07', VIEWER)
+    expect(softPlan.conflicts.map((c) => c.severity)).toEqual(['SOFT'])
+    expect(softPlan.kpi).toMatchObject({ hardConflicts: 0, softConflicts: 1 })
+  })
+
+  it('план — чтение: повторный вызов не меняет ревизию состояния', async () => {
+    const envelope = seedEnvelope([])
+    const adapter = createMemoryPersistence()
+    await adapter.reset(envelope)
+    const repository = createDutiesRepository(adapter, new DemoClock('2026-07-24T09:00:00+05:00'))
+    const before = (await adapter.load())?.revision
+    await repository.getMonthlyPlan('2026-07', VIEWER)
+    expect((await adapter.load())?.revision).toBe(before)
+  })
+})

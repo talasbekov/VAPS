@@ -134,6 +134,11 @@ export interface CombatDutyShift {
   requiredEmployees: number | null
 }
 
+/** §21.35 «Отдых после дежурства»: действующее значение политики читается,
+ * а не предполагается. HARD_BLOCK — назначение в период отдыха невозможно,
+ * SOFT_OVERRIDE — возможно с обоснованием и отдельным permission (§21.34). */
+export type DutyRestPolicy = 'HARD_BLOCK' | 'SOFT_OVERRIDE'
+
 /** §24.3 «Виды дежурств не должны быть захардкожены во frontend» — Duty Type Registry. */
 export interface DutyTypeDefinition {
   dutyTypeCode: string
@@ -141,6 +146,13 @@ export interface DutyTypeDefinition {
   targetType: DutyTargetType
   defaultDurationMinutes: number
   requiresSenior: boolean
+  /** §21.35 «не хардкодь 24 часа: используй restAfterMinutes вида дежурства». */
+  restAfterMinutes: number
+  /** §21.35 называет политику отдыха глобальной серверной настройкой
+   * (`REST_AFTER_DUTY_POLICY`), здесь она — атрибут ВИДА дежурства: там же,
+   * где `restAfterMinutes`, к которому она относится. Frontend в любом случае
+   * читает действующее значение и никогда не выводит severity сам (§21.34). */
+  restPolicy: DutyRestPolicy
 }
 
 /** Duty Type Registry для боевых групп (§24.3, отдельный список — targetType

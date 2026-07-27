@@ -8,6 +8,7 @@ import type {
   PersistenceAdapter,
 } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
+import { buildMonthlyPlan, isValidMonth } from '../lib/monthlyPlan'
 import { isBindingStale, resolveApplicableVersion } from '../lib/passportBinding'
 import { findObjectById } from './objectsSlice'
 import type {
@@ -20,6 +21,7 @@ import type {
   ListDutyRoutesResponse,
   ListDutyShiftsResponse,
   ListDutyTypesResponse,
+  MonthlyDutyPlanResponse,
   RequestCombatDutyReplacementRequest,
   ReviewCombatGroupRequest,
   SubmitCombatDutyHandoverRequest,
@@ -96,6 +98,31 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
       }
     })
     return { results: sorted, passportStatuses }
+  }
+
+  /**
+   * §21.27-21.30. Ответ собирается ЦЕЛИКОМ здесь (на «сервере»): страница
+   * получает и сетку, и KPI, и severity конфликтов готовыми — §21.29 прямо
+   * запрещает считать итог по отрисованной части календаря, §21.34 — выводить
+   * severity на frontend. Конфликты ищутся по ВСЕМ сменам, а не по сменам
+   * месяца (см. `detectConflicts`), и лишь потом обрезаются месяцем.
+   */
+  async function getMonthlyPlan(
+    month: string,
+    actorUserId: string | null,
+  ): Promise<MonthlyDutyPlanResponse> {
+    if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_PERMISSION)
+    }
+    if (!isValidMonth(month)) {
+      throw new RepositoryBusinessRuleError(
+        'INVALID_MONTH',
+        'Месяц плана указывается в формате YYYY-MM.',
+      )
+    }
+    const envelope = await adapter.load()
+    const slice = envelope === null ? null : readSlice(envelope)
+    return buildMonthlyPlan(month, slice?.shifts ?? [], slice?.dutyTypes ?? [])
   }
 
   async function transitionShift(
@@ -771,6 +798,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
   return {
     listDutyTypes,
     listShifts,
+    getMonthlyPlan,
     acknowledge,
     clockIn,
     clockOut,

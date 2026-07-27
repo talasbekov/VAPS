@@ -1,5 +1,5 @@
 // Query/mutation hooks (§7.10, §5.4).
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../../shared/api/client'
 import { useApiMutation } from '../../../shared/api/useApiMutation'
 import type { ApiFailure } from '../../../shared/api/errors'
@@ -7,6 +7,7 @@ import {
   COMBAT_DUTY_SHIFTS_PATH,
   COMBAT_DUTY_TYPES_PATH,
   COMBAT_ROSTER_CANDIDATES_PATH,
+  DUTY_MONTHLY_PLAN_PATH,
   DUTY_ROUTES_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
@@ -38,6 +39,7 @@ import type {
   ListDutyRoutesResponse,
   ListDutyShiftsResponse,
   ListDutyTypesResponse,
+  MonthlyDutyPlanResponse,
   RequestCombatDutyReplacementRequest,
   RequestCombatDutyReplacementResponse,
   ReviewCombatGroupRequest,
@@ -61,6 +63,25 @@ export function useDutyShifts(options: { enabled?: boolean } = {}) {
     queryKey: ['duties', 'shifts'],
     queryFn: () => apiClient.get<ListDutyShiftsResponse>(DUTY_SHIFTS_PATH),
     enabled: options.enabled ?? true,
+  })
+}
+
+/**
+ * §21.27-21.30 «месячный план». `placeholderData: keepPreviousData` — прямое
+ * требование §19.х мастер-промпта: «при смене месяца не очищай весь экран до
+ * белого состояния, сохраняй предыдущие данные до получения нового ответа с
+ * явным индикатором обновления». Индикатор рисует страница по
+ * `isPlaceholderData`.
+ */
+export function useMonthlyDutyPlan(month: string, options: { enabled?: boolean } = {}) {
+  return useQuery<MonthlyDutyPlanResponse, ApiFailure>({
+    queryKey: ['duties', 'monthly-plan', month],
+    queryFn: () =>
+      apiClient.get<MonthlyDutyPlanResponse>(
+        `${DUTY_MONTHLY_PLAN_PATH}?month=${encodeURIComponent(month)}`,
+      ),
+    enabled: options.enabled ?? true,
+    placeholderData: keepPreviousData,
   })
 }
 
