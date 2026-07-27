@@ -5,8 +5,8 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { Button } from '../../../shared/ui/Button'
 import { ROUTES } from '../../../shared/routes'
-import { useObject, useUpdatePassport } from '../api/queries'
-import type { ObjectSector, SecurityPost } from '../model/types'
+import { useObject, usePublishPassportVersion, useUpdatePassport } from '../api/queries'
+import type { ObjectSector, PassportVersion, SecurityPost } from '../model/types'
 
 let localSeq = 0
 function nextLocalId(): string {
@@ -53,7 +53,121 @@ export function ObjectPassportPage() {
       </section>
 
       <PassportForm key={object.updatedAt} objectId={object.id} sectors={object.sectors} />
+
+      <PassportVersionsPanel
+        key={`versions-${object.updatedAt}`}
+        objectId={object.id}
+        versions={object.passportVersions}
+        hasPosts={object.sectors.some((sector) => sector.posts.length > 0)}
+      />
     </div>
+  )
+}
+
+export const NOTHING_TO_PUBLISH_TEXT =
+  'В паспорте нет ни одного поста — публиковать нечего.'
+
+/**
+ * История публикаций паспорта (§8.5 `publishPassportVersion`). Публикует
+ * ДЕЙСТВУЮЩУЮ редакцию — ту, что показывает форма выше; секторы в запрос не
+ * кладутся, снимок делает repository (иначе можно было бы опубликовать не то,
+ * что видно). Опубликованные версии здесь только читаются: ни правки, ни
+ * удаления не предусмотрено — §8.10 «версия паспорта неизменяема».
+ */
+function PassportVersionsPanel({
+  objectId,
+  versions,
+  hasPosts,
+}: {
+  objectId: string
+  versions: PassportVersion[]
+  hasPosts: boolean
+}) {
+  const mutation = usePublishPassportVersion(objectId)
+  const [effectiveFrom, setEffectiveFrom] = useState('')
+  const [note, setNote] = useState('')
+
+  return (
+    <section className="rounded-xl border bg-card p-4">
+      <h2 className="mb-2.5 text-sm font-semibold">Версии паспорта</h2>
+
+      {versions.length === 0 ? (
+        <p className="mb-3 text-xs text-slate-600">
+          Паспорт ещё не публиковался. Дежурства и расстановки опираются на
+          опубликованную версию, а не на черновик.
+        </p>
+      ) : (
+        <ul className="mb-3 flex flex-col gap-1.5">
+          {[...versions]
+            .sort((a, b) => b.versionNumber - a.versionNumber)
+            .map((version) => (
+              <li key={version.id} className="rounded-md border p-2.5 text-xs">
+                <Link
+                  to={ROUTES.objectPassportVersionTo(objectId, version.id)}
+                  className="font-semibold text-primary"
+                >
+                  Версия {version.versionNumber}
+                </Link>{' '}
+                <span className="text-slate-600">
+                  действует с {version.effectiveFrom} · опубликовано{' '}
+                  {version.publishedAt}
+                  {version.note !== '' ? ` · ${version.note}` : ''}
+                </span>
+              </li>
+            ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label
+            htmlFor="passport-version-effective-from"
+            className="block text-[11.5px] font-bold text-slate-600"
+          >
+            Действует с *
+          </label>
+          <input
+            id="passport-version-effective-from"
+            type="date"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={effectiveFrom}
+            onChange={(e) => setEffectiveFrom(e.target.value)}
+          />
+        </div>
+        <div className="min-w-56 flex-1">
+          <label
+            htmlFor="passport-version-note"
+            className="block text-[11.5px] font-bold text-slate-600"
+          >
+            Примечание к публикации
+          </label>
+          <input
+            id="passport-version-note"
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </div>
+        <Button
+          type="button"
+          disabled={effectiveFrom === '' || !hasPosts || mutation.isPending}
+          title={hasPosts ? undefined : NOTHING_TO_PUBLISH_TEXT}
+          onClick={() => mutation.mutate({ effectiveFrom, note })}
+        >
+          {mutation.isPending ? 'Публикация…' : 'Опубликовать версию'}
+        </Button>
+      </div>
+
+      {!hasPosts && (
+        <p className="mt-2 text-xs text-slate-600">{NOTHING_TO_PUBLISH_TEXT}</p>
+      )}
+      {mutation.error !== null && (
+        <p className="mt-2 text-sm text-destructive" role="alert">
+          Не удалось опубликовать версию: на эту дату версия уже есть либо
+          паспорт пуст.
+        </p>
+      )}
+    </section>
   )
 }
 

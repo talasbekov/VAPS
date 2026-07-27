@@ -30,6 +30,7 @@
 | placementWorkspace | /security-events/:id/placement | ops.placement.view | 2 | Not started |
 | objects | /objects | ops.object.view | 5 | Verified |
 | objectPassport (объектDetail в коде) | /objects/:id | ops.object.view | 5 | Verified |
+| objectPassportVersion | /objects/:id/passports/:versionId | ops.object.view | 28 | Verified (read-only снимок опубликованной версии, deep link по мастер-промпту L5562) |
 | duties | /duties | ops.duty.view | 7 | Verified |
 | shiftCalendar | /calendar | ops.calendar.view | 9 | Verified (в объёме «Календарь по дням», см. FRONTEND_DECISIONS A44-A46) |
 | serviceAnalytics | /analytics | ops.analytics.view | 6/7 | Verified |

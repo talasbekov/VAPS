@@ -3,8 +3,16 @@ import { http, HttpResponse } from 'msw'
 import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import type { ErrorEnvelope } from '../../../shared/api/errors'
-import { OBJECTS_PATH, objectDetailPath, objectPassportPath } from '../api/pending-contracts'
-import type { UpdatePassportRequest } from '../api/pending-contracts'
+import {
+  OBJECTS_PATH,
+  objectDetailPath,
+  objectPassportPath,
+  objectPassportVersionsPath,
+} from '../api/pending-contracts'
+import type {
+  PublishPassportVersionRequest,
+  UpdatePassportRequest,
+} from '../api/pending-contracts'
 import {
   createObjectsRepository,
   RepositoryNotFoundError,
@@ -79,6 +87,19 @@ export function createObjectsHandlers(adapter: PersistenceAdapter, clock: DemoCl
       const body = (await request.json()) as UpdatePassportRequest
       try {
         return HttpResponse.json(await repository.updatePassport(id, body, actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${objectPassportVersionsPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      const body = (await request.json()) as PublishPassportVersionRequest
+      try {
+        return HttpResponse.json(
+          await repository.publishPassportVersion(id, body, actorUserId),
+          { status: 201 },
+        )
       } catch (error) {
         return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
       }

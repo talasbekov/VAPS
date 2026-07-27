@@ -21,6 +21,28 @@ export interface ObjectSector {
   posts: SecurityPost[]
 }
 
+/**
+ * Опубликованная версия паспорта (§8.5 `publishPassportVersion`, §8.10
+ * «версия паспорта неизменяема после публикации», «у паспорта определена не
+ * более чем одна действующая опубликованная версия на дату»).
+ *
+ * `sectors` — СНИМОК на момент публикации, а не ссылка на живой паспорт:
+ * дальнейшее редактирование объекта версию не трогает (мастер-промпт L4475
+ * «историческая версия паспорта сохраняется», L3787 «публикация новой версии
+ * паспорта не переписывает действующую расстановку»).
+ */
+export interface PassportVersion {
+  id: string
+  versionNumber: number
+  /** Дата, с которой версия действует (YYYY-MM-DD). */
+  effectiveFrom: string
+  publishedAt: string
+  /** Идентификатор опубликовавшего (actorUserId) — ФИО в demo-модели нет. */
+  publishedBy: string
+  note: string
+  sectors: ObjectSector[]
+}
+
 export interface SecurityObject {
   id: string
   name: string
@@ -30,7 +52,10 @@ export interface SecurityObject {
   address: string
   objectState: ObjectState
   passportState: PassportState
+  /** Действующая редакция (черновик): её и правит форма паспорта. */
   sectors: ObjectSector[]
+  /** История публикаций, по возрастанию номера версии. Неизменяема. */
+  passportVersions: PassportVersion[]
   createdAt: string
   updatedAt: string
 }

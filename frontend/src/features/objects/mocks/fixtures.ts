@@ -26,9 +26,27 @@ function buildSectors(
 
 export function buildObjectsSeed(ctx: SeedContext): { sliceName: string; data: ObjectsSlice } {
   const now = ctx.clock.now()
+  // Паспорт «Дворца Независимости» уже публиковался — история версий не должна
+  // начинаться с нуля у КАЖДОГО объекта (иначе read-only просмотр версии
+  // недостижим, пока кто-нибудь не опубликует руками). Снимок — та же
+  // редакция, что действует: ровно это и делает `publishPassportVersion`.
+  const palaceSectors = buildSectors(ctx, [
+    {
+      name: 'Сектор A',
+      posts: [
+        { name: 'КПП-1', task: 'Контроль въезда/выезда', requirements: 'Допуск «Объект A», рост от 175 см' },
+        { name: 'Пост 2', task: 'Периметр, южная сторона', requirements: 'Допуск «Объект A»' },
+      ],
+    },
+    {
+      name: 'Штаб',
+      posts: [{ name: 'Офицер связи', task: 'Координация постов', requirements: 'Звание не ниже капитана' }],
+    },
+  ])
+  const palaceId = ctx.ids.next('object')
   const objects: SecurityObject[] = [
     {
-      id: ctx.ids.next('object'),
+      id: palaceId,
       name: 'Дворец Независимости',
       code: 'OBJ-001',
       type: 'Государственное учреждение',
@@ -36,19 +54,23 @@ export function buildObjectsSeed(ctx: SeedContext): { sliceName: string; data: O
       address: 'пр. Мангилик Ел, 55',
       objectState: 'ACTIVE',
       passportState: 'GREEN',
-      sectors: buildSectors(ctx, [
+      sectors: palaceSectors,
+      passportVersions: [
         {
-          name: 'Сектор A',
-          posts: [
-            { name: 'КПП-1', task: 'Контроль въезда/выезда', requirements: 'Допуск «Объект A», рост от 175 см' },
-            { name: 'Пост 2', task: 'Периметр, южная сторона', requirements: 'Допуск «Объект A»' },
-          ],
+          id: `${palaceId}-passport-v1`,
+          versionNumber: 1,
+          effectiveFrom: now.slice(0, 10),
+          publishedAt: now,
+          publishedBy: 'demo-seed',
+          note: 'Первичная публикация паспорта объекта.',
+          // Глубокая копия — тот же инвариант неизменяемости, что в repository:
+          // правка действующей редакции не должна переписывать версию.
+          sectors: palaceSectors.map((sector) => ({
+            ...sector,
+            posts: sector.posts.map((post) => ({ ...post })),
+          })),
         },
-        {
-          name: 'Штаб',
-          posts: [{ name: 'Офицер связи', task: 'Координация постов', requirements: 'Звание не ниже капитана' }],
-        },
-      ]),
+      ],
       createdAt: now,
       updatedAt: now,
     },
@@ -67,6 +89,7 @@ export function buildObjectsSeed(ctx: SeedContext): { sliceName: string; data: O
           posts: [{ name: 'КПП-1', task: 'Контроль въезда/выезда', requirements: 'Допуск «Объект B»' }],
         },
       ]),
+      passportVersions: [],
       createdAt: now,
       updatedAt: now,
     },
@@ -80,6 +103,7 @@ export function buildObjectsSeed(ctx: SeedContext): { sliceName: string; data: O
       objectState: 'ACTIVE',
       passportState: 'RED',
       sectors: [],
+      passportVersions: [],
       createdAt: now,
       updatedAt: now,
     },

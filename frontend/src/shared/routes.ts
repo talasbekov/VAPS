@@ -87,6 +87,14 @@ export const ROUTES = {
   objects: '/objects',
   objectDetail: '/objects/:id',
   objectDetailTo: (id: string) => `/objects/${encodeURIComponent(id)}`,
+  /**
+   * Мастер-промпт L5562 `/objects/:objectId/passports/:passportVersionId`:
+   * «версия паспорта имеет собственный deep link» (L6038) и открывается
+   * только для чтения — опубликованная версия неизменяема (§8.10).
+   */
+  objectPassportVersion: '/objects/:id/passports/:versionId',
+  objectPassportVersionTo: (id: string, versionId: string) =>
+    `/objects/${encodeURIComponent(id)}/passports/${encodeURIComponent(versionId)}`,
   /** Этап 6/7 (мастер-промпт §22): аналитика службы. */
   serviceAnalytics: '/analytics',
   /** Мастер-промпт §21/§24: «Служба» → План дежурств. */

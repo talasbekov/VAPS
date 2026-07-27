@@ -7,8 +7,12 @@ import type {
   PersistenceAdapter,
 } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
-import type { ListObjectsResponse, UpdatePassportRequest } from '../api/pending-contracts'
-import type { SecurityObject } from '../model/types'
+import type {
+  ListObjectsResponse,
+  PublishPassportVersionRequest,
+  UpdatePassportRequest,
+} from '../api/pending-contracts'
+import type { PassportVersion, SecurityObject } from '../model/types'
 import type { ObjectsSlice } from './fixtures'
 
 export class RepositoryPermissionError extends Error {}
@@ -100,5 +104,84 @@ export function createObjectsRepository(adapter: PersistenceAdapter, clock: Demo
     return updated
   }
 
-  return { list, get, updatePassport }
+  /**
+   * §8.5 `publishPassportVersion` — публикация действующей редакции паспорта
+   * как НЕИЗМЕНЯЕМОЙ версии (§8.10).
+   *
+   * Снимок — глубокая копия. ⚠️ Честно: красная проба показала, что СЕГОДНЯ
+   * unit-тест неизменяемости зелёный и без неё — `updatePassport` заменяет
+   * `sectors` целиком новым массивом из запроса, поэтому общая ссылка ничего
+   * не портит. Копия оставлена как защита от будущей правки, которая начнёт
+   * менять секторы НА МЕСТЕ (тогда версия переписалась бы задним числом), и
+   * сознательно является вторым гардом, а не проверяемым тестом инвариантом.
+   */
+  async function publishPassportVersion(
+    id: string,
+    request: PublishPassportVersionRequest,
+    actorUserId: string | null,
+  ): Promise<SecurityObject> {
+    if (!hasPermission(actorUserId, MANAGE_PERMISSION)) {
+      throw new RepositoryPermissionError(MANAGE_PERMISSION)
+    }
+
+    let updated!: SecurityObject
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.objects.find((o) => o.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
+      }
+
+      const fieldErrors: Record<string, string[]> = {}
+      const effectiveFrom = request.effectiveFrom.trim()
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
+        fieldErrors.effectiveFrom = ['Укажите дату вступления в силу.']
+      } else if (
+        existing.passportVersions.some((v) => v.effectiveFrom === effectiveFrom)
+      ) {
+        // §8.10: «не более чем одна действующая опубликованная версия на дату».
+        fieldErrors.effectiveFrom = [
+          'На эту дату версия паспорта уже опубликована.',
+        ]
+      }
+      // Публиковать нечего, если ни на одном секторе нет ни одного поста:
+      // пустой паспорт как «версия» — документ ни о чём.
+      if (!existing.sectors.some((sector) => sector.posts.length > 0)) {
+        fieldErrors.sectors = [
+          'В паспорте нет ни одного поста — публиковать нечего.',
+        ]
+      }
+      if (Object.keys(fieldErrors).length > 0) {
+        throw new RepositoryValidationError(fieldErrors)
+      }
+
+      const versionNumber = existing.passportVersions.length + 1
+      const version: PassportVersion = {
+        id: `${existing.id}-passport-v${versionNumber}`,
+        versionNumber,
+        effectiveFrom,
+        publishedAt: clock.now(),
+        publishedBy: actorUserId ?? '',
+        note: request.note.trim(),
+        sectors: existing.sectors.map((sector) => ({
+          ...sector,
+          posts: sector.posts.map((post) => ({ ...post })),
+        })),
+      }
+      updated = {
+        ...existing,
+        passportVersions: [...existing.passportVersions, version],
+        updatedAt: clock.now(),
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          objects: slice.objects.map((o) => (o.id === id ? updated : o)),
+        } satisfies ObjectsSlice,
+      }
+    })
+    return updated
+  }
+
+  return { list, get, updatePassport, publishPassportVersion }
 }

@@ -61,6 +61,7 @@
 | listObjects | features/objects | backend-contract-pending | GET /api/ops/objects/ | ops.object.view | mocks/handlers.ts | ручная проверка (3 синтетических объекта, fixtures.ts) |
 | getObject | features/objects | backend-contract-pending | GET /api/ops/objects/:id/ | ops.object.view | mocks/handlers.ts | ручная проверка |
 | updatePassport | features/objects | backend-contract-pending | PATCH /api/ops/objects/:id/passport/ | ops.object.manage | mocks/handlers.ts | ручная проверка |
+| publishPassportVersion | features/objects | backend-contract-pending | POST /api/ops/objects/:id/passport/versions/ | ops.object.manage | mocks/handlers.ts | mocks/repository.test.ts (10 тестов), e2e-mock/objects-passport.spec.ts |
 
 ## Audit (namespace `/api/audit/…`, existing donor-схема)
 

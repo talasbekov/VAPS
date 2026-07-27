@@ -71,6 +71,7 @@ const ROUTE_MATRIX = [
   { route: ROUTES.employeeDetailTo('does-not-exist'), code: 'status.view' },
   { route: ROUTES.objects, code: 'ops.object.view' },
   { route: ROUTES.objectDetailTo('does-not-exist'), code: 'ops.object.view' },
+  { route: ROUTES.objectPassportVersionTo('does-not-exist', 'v1'), code: 'ops.object.view' },
   { route: ROUTES.serviceAnalytics, code: 'ops.analytics.view' },
   { route: ROUTES.duties, code: 'ops.duty.view' },
   { route: ROUTES.dictionaries, code: 'ops.dictionary.view' },

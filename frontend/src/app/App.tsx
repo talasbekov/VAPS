@@ -20,6 +20,7 @@ import { PlacementPrintPage } from '../features/print-forms/PlacementPrintPage'
 import { EmployeeDetailPage } from '../features/personnel/pages/EmployeeDetailPage'
 import { EmployeesListPage } from '../features/personnel/pages/EmployeesListPage'
 import { ObjectPassportPage } from '../features/objects/pages/ObjectPassportPage'
+import { ObjectPassportVersionPage } from '../features/objects/pages/ObjectPassportVersionPage'
 import { ObjectsListPage } from '../features/objects/pages/ObjectsListPage'
 import { AuditLogPage } from '../features/audit/pages/AuditLogPage'
 import { DutyPlanPage } from '../features/duties/pages/DutyPlanPage'
@@ -157,6 +158,17 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.object.view">
               <ObjectPassportPage />
+            </RequirePermission>
+          }
+        />
+        {/* Deep link опубликованной версии паспорта (§8.10, мастер-промпт
+            L5562/L6038): право то же, что у паспорта — версия не открывает
+            ничего сверх того, что читатель объекта уже видит. */}
+        <Route
+          path={ROUTES.objectPassportVersion}
+          element={
+            <RequirePermission permission="ops.object.view">
+              <ObjectPassportVersionPage />
             </RequirePermission>
           }
         />

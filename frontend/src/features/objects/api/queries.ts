@@ -6,10 +6,13 @@ import type { ApiFailure } from '../../../shared/api/errors'
 import {
   objectDetailPath,
   objectPassportPath,
+  objectPassportVersionsPath,
   OBJECTS_PATH,
 } from './pending-contracts'
 import type {
   ListObjectsResponse,
+  PublishPassportVersionRequest,
+  PublishPassportVersionResponse,
   UpdatePassportRequest,
   UpdatePassportResponse,
 } from './pending-contracts'
@@ -34,6 +37,24 @@ export function useUpdatePassport(id: string) {
   return useApiMutation<UpdatePassportResponse, UpdatePassportRequest>({
     mutationFn: (body) =>
       apiClient.patch<UpdatePassportResponse>(objectPassportPath(id), body),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['objects', id], data)
+      void queryClient.invalidateQueries({ queryKey: ['objects'] })
+    },
+  })
+}
+
+export function usePublishPassportVersion(id: string) {
+  const queryClient = useQueryClient()
+  return useApiMutation<
+    PublishPassportVersionResponse,
+    PublishPassportVersionRequest
+  >({
+    mutationFn: (body) =>
+      apiClient.post<PublishPassportVersionResponse>(
+        objectPassportVersionsPath(id),
+        body,
+      ),
     onSuccess: (data) => {
       queryClient.setQueryData(['objects', id], data)
       void queryClient.invalidateQueries({ queryKey: ['objects'] })
