@@ -319,7 +319,32 @@ development_status:
   #           не создавалась; без неё преднабор «вчера» и combobox живут на заглушках)
   #   10.2a — bulk-override на бэке + UI-ретрай с причиной (BR-003; закрывает букву epic-AC 10.2)
   #   10.2b — обратный канал bulk-ответ → маркеры строк грида (serverMarkers-проп)
-  10-1b-get-статусов-на-дату-и-справочник: backlog
+  # РАЗДЕЛЕНО гейтом декомпозиции при create-story 10.1b (2026-07-27): исходный
+  # ключ «GET статусов на дату И справочник» = ДВА эндпоинта в одной стори —
+  # прямой запрет правил проекта («If one story contains multiple endpoints,
+  # split it», _bmad/custom/decomposition-rules.md:135). Тот же разрез, что у
+  # 10.3a (2026-07-19). Гейт также насчитал 9 файлов при потолке 5.
+  #   10.1b — БЭК: GET /api/operations/statuses/?business_date=&division_id= —
+  #           живые записи на дату под YesterdayPlacement. Право status.view
+  #           (в сиде, у DIVISION_OPERATOR); scope из RBAC, payload дивизиону
+  #           не верим (ARCH-SEC-030, прецедент 10.1a AC-4/AC-7). Нужен селектор
+  #           с фильтром по дивизиону: overlapping_on фильтрует по employee_ids
+  #           и о дивизионе не знает. Матрица: ops-status-list.
+  #   10.1d — БЭК: GET /api/operations/status-types/ — плоский каталог
+  #           (code,name,is_hard_block,priority,report_column_code,color).
+  #           Открытый вопрос стори: деактивированные типы — names_map их
+  #           намеренно включает для снапшотов, но combobox не снапшот.
+  #           Матрица: ops-status-type-list. Независима от 10.1b.
+  #   10.1e — ФРОНТ: префилл «вчера» от живого GET. ⚠️ ПРЕРЕКВИЗИТ 10.1b.
+  #           Точка врезки помечена в коде: DailyUpdatePage.tsx:9-11.
+  #   10.1f — ФРОНТ: справочник вместо константы. ⚠️ ПРЕРЕКВИЗИТ 10.1d.
+  #           statusTypes.ts:7 сам называет точку подключения; тянет судьбу
+  #           statusTypes.test.ts (зеркало 17 типов) и DailyUpdatePage.catalog.test.tsx.
+  # Порядок: 10.1b → 10.1e ; 10.1d → 10.1f. Бэк-пара независима между собой.
+  10-1b-get-списка-статусов-на-дату: ready-for-dev
+  10-1d-справочник-статус-типов: backlog
+  10-1e-префилл-вчера-от-живого-get: backlog
+  10-1f-справочник-статус-типов-во-фронте: backlog
   10-2a-bulk-override-и-ретрай-с-причиной: backlog
   10-2b-обратный-канал-маркеров-в-грид: backlog
   10-3-экран-сдачи-дня: done
