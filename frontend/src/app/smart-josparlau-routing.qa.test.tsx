@@ -66,6 +66,7 @@ const ROUTE_MATRIX = [
   { route: ROUTES.commandCenter, code: 'ops.dashboard.view' },
   { route: ROUTES.securityEvents, code: 'ops.security_event.view' },
   { route: ROUTES.securityEventDetailTo('does-not-exist'), code: 'ops.security_event.view' },
+  { route: ROUTES.securityEventArchiveTo('does-not-exist'), code: 'ops.security_event.view' },
   { route: ROUTES.employees, code: 'status.view' },
   { route: ROUTES.employeeDetailTo('does-not-exist'), code: 'status.view' },
   { route: ROUTES.objects, code: 'ops.object.view' },

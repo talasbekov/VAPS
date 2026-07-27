@@ -72,6 +72,14 @@ export const ROUTES = {
   securityEventDetail: '/security-events/:id',
   securityEventDetailTo: (id: string) =>
     `/security-events/${encodeURIComponent(id)}`,
+  /**
+   * Smart Josparlau «Архив дела» (прототип Smart Josparlau.dc.html:1459):
+   * read-only дело закрытого ОМ. Вложенный маршрут карточки, а не отдельный
+   * раздел — в NAV_SECTIONS не живёт, вход — ссылка в шапке закрытой карточки.
+   */
+  securityEventArchive: '/security-events/:id/archive',
+  securityEventArchiveTo: (id: string) =>
+    `/security-events/${encodeURIComponent(id)}/archive`,
   /** Этап 4 (мастер-промпт §20): карточка сотрудника — read-only оперативный профиль. */
   employeeDetail: '/employees/:id',
   employeeDetailTo: (id: string) => `/employees/${encodeURIComponent(id)}`,

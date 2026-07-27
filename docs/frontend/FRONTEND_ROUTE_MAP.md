@@ -25,6 +25,7 @@
 | commandCenter | /command-center | ops.dashboard.view | 2 | Implemented (только «Готовность ОМ», см. FRONTEND_DECISIONS A12) |
 | securityEvents | /security-events | ops.security_event.view | 2 | Verified |
 | securityEventDetail | /security-events/:id | ops.security_event.view | 2 | Verified (только этап BULLETIN; остальные 5 стадий — визуальный tracker без функционала) |
+| securityEventArchive | /security-events/:id/archive | ops.security_event.view | 27 | Verified (read-only «Архив дела» закрытого ОМ; в NAV_SECTIONS не живёт — вход ссылкой из шапки закрытой карточки) |
 | protectedPersons | /protected-persons | ops.protected_person.view | 2 | Not started |
 | placementWorkspace | /security-events/:id/placement | ops.placement.view | 2 | Not started |
 | objects | /objects | ops.object.view | 5 | Verified |

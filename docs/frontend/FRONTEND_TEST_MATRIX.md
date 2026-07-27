@@ -234,5 +234,22 @@ Baseline полностью зелёный — все ошибки ниже эт
 | Ссылка с карточки открывает документ В ТОЙ ЖЕ вкладке (иначе теряется sessionStorage-credential) | e2e-mock/placement-print.spec.ts | Verified |
 
 
+## Архив дела закрытого ОМ (Этап 27)
+
+| Что проверяется | Где | Статус |
+| --- | --- | --- |
+| Дело открыто ТОЛЬКО у стадии CLOSED; иначе — названная причина, без содержимого | lib/archiveCase.test.ts, pages/SecurityEventArchivePage.test.tsx, e2e-mock/security-event-approval-to-closure.spec.ts | Verified (красная проба: `isArchiveOpen → true` краснит) |
+| Read-only: ни кнопки, ни поля, ни селекта в теле дела (ссылки — можно) | SecurityEventArchivePage.test.tsx, e2e-mock (локатор сужен до `<main>`) | Verified (красная проба: `<button>` в Panel краснит) |
+| Осиротевшее назначение (пост удалён из расчёта) показано, потребность не выдумана (`need: null`) | archiveCase.test.ts, SecurityEventArchivePage.test.tsx | Verified (красная проба: отключение ветки краснит оба уровня) |
+| Замены §9.11 и журнал штаба — разные разделы, каждая запись ровно в одном | archiveCase.test.ts, e2e-mock | Verified |
+| Направление расчёта без итога закрытия названо явно; пустой сектор не считается направлением | archiveCase.test.ts | Verified |
+| Оценки участников не получают числа вовсе (`count: null`, не `0`) | archiveCase.test.ts | Verified |
+| Пустые разделы объясняют причину, а не показывают голый ноль | archiveCase.test.ts | Verified |
+| Потребность и назначено — два независимых числа (не «X из Y») | archiveCase.test.ts | Verified |
+| Вход в архив есть в шапке ТОЛЬКО у закрытого ОМ | e2e-mock/security-event-approval-to-closure.spec.ts | Verified |
+| Гейт `ops.security_event.view` на маршруте | src/app/smart-josparlau-routing.qa.test.tsx (ROUTE_MATRIX) | Verified |
+| Мероприятие не найдено (404) — отказ с возвратом в реестр | SecurityEventArchivePage.test.tsx | Verified |
+
+
 ## NEXT ACTION
 E2E теперь покрывает ВЕСЬ жизненный цикл ОМ (все 9 стадий, 4 спеки), personnel (включая клавиатурную навигацию вкладок), objects, dictionaries, calendar, audit, analytics, duties (индивидуальные + боевые группы: потребность→подача→рассмотрение→ознакомление→заступление→факт→замена), плюс сквозной axe-core аудит всех экранов и skip-to-content каркаса — 19 e2e-mock спек + 63 прод e2e, ноль экранов без хотя бы одного e2e-прохода. Весь §24-конвейер боевых групп достижим целиком из UI. Accessibility: ручной аудит + клавиатурная навигация + количественный contrast/ARIA-аудит + skip-to-content (четыре слоя, все закрыты, стабильно на 3 прогонах подряд). Оставшиеся Not started пункты (передача смены §24.22 — частично реализована как checkpoint, Conflict Repository, формальный revision, месячное планирование дежурств, уведомления, оперативный профиль данные, tablet/Firefox) — не экраны с существующей реализацией, а нереализованный функционал; решение о следующем направлении — за пользователем.

@@ -59,6 +59,11 @@ const SecurityEventDetailPage = lazy(() =>
     (m) => ({ default: m.SecurityEventDetailPage }),
   ),
 )
+const SecurityEventArchivePage = lazy(() =>
+  import('../features/security-events/pages/SecurityEventArchivePage').then(
+    (m) => ({ default: m.SecurityEventArchivePage }),
+  ),
+)
 
 // Экспорт отдельно от BrowserRouter: E2E-тесты оборачивают AppRoutes в
 // MemoryRouter с initialEntries (BrowserRouter не даёт задать стартовый маршрут)
@@ -189,6 +194,19 @@ export function AppRoutes() {
             <RequirePermission permission="ops.security_event.view">
               <RouteChunkBoundary>
                 <SecurityEventDetailPage />
+              </RouteChunkBoundary>
+            </RequirePermission>
+          }
+        />
+        {/* Архив дела закрытого ОМ — read-only. Право то же, что у карточки
+            (`ops.security_event.view`): архив ничего не открывает сверх того,
+            что читатель карточки уже видит, — он это перекладывает. */}
+        <Route
+          path={ROUTES.securityEventArchive}
+          element={
+            <RequirePermission permission="ops.security_event.view">
+              <RouteChunkBoundary>
+                <SecurityEventArchivePage />
               </RouteChunkBoundary>
             </RequirePermission>
           }

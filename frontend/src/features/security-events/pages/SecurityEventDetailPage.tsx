@@ -35,7 +35,6 @@ import {
 import { SECURITY_EVENT_STAGES } from '../model/types'
 import type {
   ForceRequest,
-  JournalEntryType,
   PlacementAssignment,
   ReconChecklistItem,
   ReconSectorPost,
@@ -43,7 +42,7 @@ import type {
   SecurityEventStage,
   StaffingDemandRow,
 } from '../model/types'
-import { STAGE_LABEL, stageBadgeVariants } from '../lib/stageMeta'
+import { JOURNAL_TYPE_LABEL, STAGE_LABEL, stageBadgeVariants } from '../lib/stageMeta'
 
 const bulletinSchema = z.object({
   briefDescription: z.string().trim().min(1, 'Обязательное поле'),
@@ -115,6 +114,16 @@ export function SecurityEventDetailPage() {
               открывается на экране входа. Поймано e2e
               (`e2e-mock/placement-print.spec.ts`), не гипотеза: попап реально
               отрендерил «Вход». Возврат — кнопкой браузера. */}
+          {/* Вход в архив дела (прототип «Архив дела»): только у закрытого ОМ —
+              до закрытия дела не существует, и ссылка вела бы на экран отказа. */}
+          {event.stage === 'CLOSED' && (
+            <Link
+              to={ROUTES.securityEventArchiveTo(event.id)}
+              className="shrink-0 self-start rounded-md border px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-accent"
+            >
+              Архив дела
+            </Link>
+          )}
           {event.placementAssignments.length > 0 && (
             <Link
               to={ROUTES.printPlacementTo(event.id)}
@@ -1198,13 +1207,6 @@ function ApprovalPanel({ event }: { event: SecurityEvent }) {
       )}
     </section>
   )
-}
-
-const JOURNAL_TYPE_LABEL: Record<JournalEntryType, string> = {
-  INSTRUCTION: 'Инструктаж',
-  ORDER: 'Распоряжение',
-  INCIDENT: 'Инцидент',
-  REPLACEMENT: 'Замена',
 }
 
 function AcknowledgementPanel({ event }: { event: SecurityEvent }) {

@@ -53,7 +53,7 @@
 | Каскадная замена выбывшего | securityEventDetail | features/security-events | — | — | Not started |
 | Закрытие (итоги направлений обязательны) | securityEventDetail (stage=CONDUCT→CLOSED) | features/security-events (`ClosureTrigger`) | useCloseSecurityEvent | e2e-mock/security-event-approval-to-closure.spec.ts | Verified (была ошибочно помечена Not started — матрица сверена с кодом заново) |
 | Опрос по факту (ServiceHours) | securityEventDetail | features/security-events | — | — | Not started |
-| Архив ОМ (отдельный список закрытых) | — | features/security-events | — | — | Not started (см. строку ниже, дубль) |
+| Архив дела закрытого ОМ (read-only) | securityEventArchive | features/security-events (`SecurityEventArchivePage` + `lib/archiveCase.ts`) | — (read model поверх `useSecurityEvent`) | lib/archiveCase.test.ts, pages/SecurityEventArchivePage.test.tsx, e2e-mock/security-event-approval-to-closure.spec.ts | Verified |
 
 ## Домен: Личный состав (Этап 4)
 
@@ -116,7 +116,7 @@
 | Проведение (журнал штаба) | securityEventDetail | features/security-events | Verified (unit + ручная проверка) |
 | Закрытие (итоги по направлениям) | securityEventDetail | features/security-events | Verified (unit + ручная проверка) |
 | Опрос по факту, оценки участников | — | — | Not started (Epic 18.3, сознательный scope cut, см. FRONTEND_DECISIONS A24) |
-| Архив ОМ (отдельный список закрытых) | — | — | Not started |
+| Архив ОМ отдельным СПИСКОМ закрытых | — | — | Not started (дело каждого закрытого ОМ реализовано, см. securityEventArchive; отдельный список закрытых как раздел — нет, фильтр «Этап: Закрыто» в реестре его заменяет) |
 
 ## Домен: Справочники (§30, по запросу «Справочники/настройки»)
 
@@ -137,7 +137,7 @@
 | «Мой календарь», представление по сотруднику/подразделению, боевые группы, конфликты, отдых, нагрузка, статусы (отпуск/больничный/командировка) | — | — | Not started — требует Employee Status/Conflict/Workload repositories и общий employeeId между дежурствами/ОМ, которых в demo-срезе нет (см. FRONTEND_DECISIONS A44-A46) |
 
 ## Покрытие
-Итог: **26 из ~70 экранов Verified** (12 — жизненный цикл ОМ, 2 — сотрудники, 2 — объекты/паспорт, 1 — аудит, 1 — аналитика службы, 2 — план дежурств [индивидуальные дежурства + боевые группы на Трассе], 4 — справочники, 1 — календарь по дням, 1 — печатная форма расстановки). Остальные ~44 экрана (notifications/feedback/мой профиль/KPI/схемы/нагрузка/рейтинг/должности-звания как отдельный справочник/остальные режимы календаря/полный §24 боевых групп) — Not started. Ложным «Done» не помечать (запрет §35).
+Итог: **27 из ~70 экранов Verified** (12 — жизненный цикл ОМ, 2 — сотрудники, 2 — объекты/паспорт, 1 — аудит, 1 — аналитика службы, 2 — план дежурств [индивидуальные дежурства + боевые группы на Трассе], 4 — справочники, 1 — календарь по дням, 1 — печатная форма расстановки, 1 — архив дела закрытого ОМ). Остальные ~44 экрана (notifications/feedback/мой профиль/KPI/схемы/нагрузка/рейтинг/должности-звания как отдельный справочник/остальные режимы календаря/полный §24 боевых групп) — Not started. Ложным «Done» не помечать (запрет §35).
 
 ## NEXT ACTION
 `e2e-mock/` покрывает ВСЕ реализованные экраны (Этапы 11-13, расширены Этапом 14 — оперативный профиль, Этапом 15 — боевые группы на Трассе, Этапом 16 — execution-lifecycle, Этапом 17 — замены §24.21, Этапом 18 — потребность §24.1, 16 спек) — весь жизненный цикл ОМ, personnel, objects, dictionaries, calendar, audit, analytics, duties (включая боевые группы: потребность→подача→рассмотрение→ознакомление→заступление→факт→замена, весь §24-конвейер теперь достижим целиком из UI). Дальше — только функциональный объём: уведомления/передача смены §24.22 (требует обсуждения модели ротации смен внутри дня, см. FRONTEND_PROGRESS Этап 18 NEXT ACTION)/Conflict Repository/формальный revision/accessibility-tablet-Firefox (не реализованы, а не «не покрыты тестами»), по решению пользователя.

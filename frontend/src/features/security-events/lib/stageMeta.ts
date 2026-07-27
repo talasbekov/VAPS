@@ -3,7 +3,7 @@
 // feature `traffic-light` (TrafficLightNode.tsx): токен-классы Tailwind,
 // НЕ собранный литерал (JIT-сканер видит только целые классы в исходнике).
 import { cva } from 'class-variance-authority'
-import type { SecurityEventStage } from '../model/types'
+import type { JournalEntryType, SecurityEventStage } from '../model/types'
 
 export const STAGE_LABEL: Record<SecurityEventStage, string> = {
   BULLETIN: 'Бюллетень',
@@ -15,6 +15,16 @@ export const STAGE_LABEL: Record<SecurityEventStage, string> = {
   ACKNOWLEDGEMENT: 'Ознакомление',
   CONDUCT: 'Проведение',
   CLOSED: 'Закрыто',
+}
+
+/** Подписи типов записей журнала штаба. Живут здесь, а не в карточке ОМ:
+ * тот же словарь читает «Архив дела» (`lib/archiveCase.ts` его раскладывает,
+ * страницы — рисуют), а два независимых литерала разъехались бы. */
+export const JOURNAL_TYPE_LABEL: Record<JournalEntryType, string> = {
+  INSTRUCTION: 'Инструктаж',
+  ORDER: 'Распоряжение',
+  INCIDENT: 'Инцидент',
+  REPLACEMENT: 'Замена',
 }
 
 export const stageBadgeVariants = cva(
