@@ -4,28 +4,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**VAPS** — Personnel Records, VisitX (visitor management), and Accreditation system. Python project (inferred from `.gitignore`).
+**VAPS** — веб-система кадрового учёта: оргструктура, штатное расписание,
+статусы сотрудников и ежедневный расход личного состава. Реализуемый контур —
+PersonnelStatus; исходная спека — `docs/VisitX/VAPS_7.8.2.md`.
 
-## Status
-
-This repository is freshly initialized. No source code, build configuration, or test framework has been added yet. Commands below will need to be updated as the project takes shape.
+- **Backend** — `Backend/VAPS`: Django 5.1 + DRF, PostgreSQL 16, Redis/Channels.
+  Приложения: `core`, `operations`, `audit`, `notifications`, `documents`,
+  `parallel_run`, `migration_legacy`.
+- **Frontend** — `frontend`: Vite + React + TypeScript, типы API кодогенерятся
+  из `Backend/VAPS/schema.yaml`.
+- Планирование — BMAD, артефакты в `_bmad-output/`.
 
 ## Common Commands
 
-_Not yet configured — add build, lint, test, and run commands here as the project is set up._
-
-Likely candidates once scaffolded:
+Оба гейта запускаются **из своих папок** — не из корня репозитория.
 
 ```bash
-# Install dependencies
-pip install -e ".[dev]"
+# Backend (из Backend/VAPS) — ruff + pytest + makemigrations --check, бюджет 300s
+make gate
+make test-full        # полная сюита: property/concurrency/slow/golden
+make schema           # регенерация schema.yaml после изменения API
 
-# Run tests
-pytest
-
-# Lint
-ruff check .
+# Frontend (из frontend) — tsc + eslint + vitest + build + size-gate
+npm run gate
+npm run generate:api  # после make schema
+npm run test:e2e      # Playwright, вне npm run gate
 ```
+
+Первый запуск бэка: `python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'`.
+Гейт сам поднимает `docker compose up -d --wait db redis`.
 
 # BMAD Epic and Story Decomposition Rules
 
@@ -41,7 +48,6 @@ Bad examples:
 
 * Build authentication
 * Build admin panel
-* Build Telegram bot
 * Build user management
 * Build CRUD
 * Build integration
@@ -69,7 +75,6 @@ A story is too large if:
 * it mixes database and API logic
 * it mixes implementation and review
 * it contains several endpoints
-* it contains several bot commands
 * it cannot be tested independently
 * it cannot be implemented in one focused coding session
 
@@ -177,42 +182,6 @@ Split frontend work into separate stories:
 10. Tests
 
 Do not create a story called “Build page”. Split it into smaller stories.
-
-## Telegram Bot Decomposition
-
-Split Telegram bot work into separate stories:
-
-1. Bot initialization
-2. Command registry
-3. Each command separately
-4. Conversation state
-5. Callback handlers
-6. Message templates
-7. Backend API integration
-8. Logs and status tracking
-9. Error handling
-10. Tests
-
-Each bot command must be its own story.
-
-## Claude Code / Shell Execution Decomposition
-
-Split Claude Code, Codex, shell, SSH, and tmux work into separate stories:
-
-1. Command validation
-2. Execution adapter
-3. Non-interactive execution
-4. Interactive/tmux session handling
-5. Output parsing
-6. Status tracking
-7. Log collection
-8. Timeout handling
-9. Error handling
-10. Security restrictions
-11. Audit log
-12. Tests
-
-Do not mix command execution, logs, status tracking, and security in one story.
 
 ## Database Decomposition
 
