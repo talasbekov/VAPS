@@ -128,5 +128,25 @@
 проекцию (`features/security-events/mocks/objectsSlice.ts`) — серверный join, а не
 кросс-фичевый импорт (ARCH-FE-013). Запись в чужой слайс запрещена, покрыта тестом.
 
+## Привязка дежурства к версии паспорта (§9.6, Этап 30)
+
+`GET /api/ops/duty-shifts/` (`listShifts`, право `ops.duty.view`) — БЕЗ нового
+эндпоинта: ответ расширен блоком `passportStatuses` рядом с `results`, по одной
+записи на строку и в том же порядке.
+
+| Поле `DutyPassportStatus` | Смысл |
+|---|---|
+| `shiftId` | ключ соединения со строкой `results` |
+| `objectKnown` | объект дежурства найден в реестре объектов |
+| `applicableVersionId` / `applicableVersionNumber` | версия, действующая на `businessDate` дежурства (`null` — нет такой) |
+| `stale` | действует версия НОВЕЕ привязанной (предупреждение, не ошибка) |
+
+Сам снимок `passportBinding` (objectId/versionId/versionNumber/effectiveFrom/
+sectorId/sectorName/postId/postName/boundAt) — ХРАНИМОЕ поле `DutyShift`, приходит
+внутри `results`. Статус читает чужой слайс `objects` из общего снапшота через
+рукописную узкую проекцию (`features/duties/mocks/objectsSlice.ts`) — серверный
+join, а не кросс-фичевый импорт (ARCH-FE-013). Запись в чужой слайс запрещена и
+покрыта тестом (снимок слайса до/после переходов дежурства).
+
 ## NEXT ACTION
 Регистрировать первые операции `features/analytics`/дальнейшее расширение duties (боевые группы, месячное планирование) — по решению пользователя.

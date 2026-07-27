@@ -52,8 +52,31 @@ export interface ListDutyTypesResponse {
   results: DutyTypeDefinition[]
 }
 
+/**
+ * §9.6, ПРОИЗВОДНЫЙ (не хранимый) взгляд на привязку дежурства: сам снимок
+ * лежит в `DutyShift.passportBinding`, а «какая версия действует прямо
+ * сейчас» пересчитывается на каждом чтении. Хранить `stale` было бы ошибкой —
+ * публикация новой версии паспорта дежурства не трогает, и флаг молча
+ * устарел бы.
+ *
+ * Отдельным блоком рядом с `results`, а не полем внутри `DutyShift`: так по
+ * форме ответа видно, что хранимое и вычисленное — разные вещи (и наоборот,
+ * отдельный endpoint на КАЖДУЮ строку таблицы плана был бы N+1).
+ */
+export interface DutyPassportStatus {
+  shiftId: string
+  /** Объект дежурства найден в реестре объектов. */
+  objectKnown: boolean
+  applicableVersionId: string | null
+  applicableVersionNumber: number | null
+  /** Действует версия НОВЕЕ привязанной — предупреждение, не ошибка. */
+  stale: boolean
+}
+
 export interface ListDutyShiftsResponse {
   results: DutyShift[]
+  /** По одной записи на каждую строку `results`, тот же порядок. */
+  passportStatuses: DutyPassportStatus[]
 }
 
 export type AcknowledgeDutyShiftResponse = DutyShift

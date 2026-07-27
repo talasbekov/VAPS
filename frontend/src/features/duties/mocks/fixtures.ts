@@ -1,17 +1,28 @@
 // Demo-сид «Плана дежурств» (§8.7: только синтетические данные). Реестр
 // видов дежурств — НЕ хардкод в UI (§24.3), но и НЕ отдельный API-справочник:
 // живёт в seed вместе со сменами (тот же demo-only статус, что весь runtime).
-// Названия объектов — независимый набор от features/objects (ARCH-FE-013 не
-// даёт фичам шарить mocks/, тот же принцип, что A26 у personnel/security-events).
+// Названия объектов задаются здесь (ARCH-FE-013 не даёт фичам шарить mocks/,
+// тот же принцип, что A26 у personnel/security-events), но с §9.6 сид
+// ДОСВЯЗЫВАЕТ их с реальными объектами реестра по имени через
+// `ctx.builtSlices` — иначе дежурство ссылалось бы на выдуманный objectId и
+// привязка к версии паспорта была бы недостижима в демо.
 import type { SeedContext } from '../../../shared/testing/mock-runtime/seed-context'
 import type {
   CombatDutyShift,
   CombatDutyTypeDefinition,
   CombatRosterCandidate,
+  DutyPassportBinding,
   DutyRoute,
   DutyShift,
   DutyTypeDefinition,
 } from '../model/types'
+import type { DutyObjectProjection } from '../lib/passportBinding'
+import {
+  bindDutyPost,
+  firstPostOfVersion,
+  resolveApplicableVersion,
+} from '../lib/passportBinding'
+import { findObjectByName, readObjectsProjection } from './objectsSlice'
 
 export interface DutiesSlice {
   dutyTypes: DutyTypeDefinition[]
@@ -71,58 +82,127 @@ export const ROSTER_CANDIDATES: readonly CombatRosterCandidate[] = [
   { employeeName: 'Тастанова Г.', unitName: '2-е боевое управление' },
 ]
 
+interface SeedTarget {
+  objectId: string
+  passportBinding: DutyPassportBinding | null
+}
+
+/**
+ * §9.6 для demo-сида: объект ищется в реестре по имени, дальше — действующая
+ * на дату версия и её первый пост. Все три исхода остаются достижимыми и ни
+ * один не роняет сид: объекта нет в реестре (остаётся демонстрационный
+ * `fallbackObjectId`), объект есть без опубликованной версии, объект с
+ * действующей версией. Гвард на присутствие всех трёх — compose-seed.test.ts.
+ */
+function resolveSeedTarget(
+  objects: readonly DutyObjectProjection[],
+  objectName: string,
+  fallbackObjectId: string,
+  businessDate: string,
+  boundAt: string,
+): SeedTarget {
+  const object = findObjectByName(objects, objectName)
+  if (object === null) {
+    return { objectId: fallbackObjectId, passportBinding: null }
+  }
+  const version = resolveApplicableVersion(object, businessDate)
+  const first = version === null ? null : firstPostOfVersion(version)
+  return {
+    objectId: object.id,
+    passportBinding:
+      version === null || first === null
+        ? null
+        : bindDutyPost(object, version, first.sector.id, first.post.id, boundAt),
+  }
+}
+
 export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: DutiesSlice } {
   const now = ctx.clock.now()
   const businessDate = ctx.clock.businessDate()
+
+  // ⚠️ Читает ЧУЖОЙ слайс — работает только пока `objects` построен РАНЬШЕ
+  // duties в реестре compose-seed.ts (порядок держит тест, не комментарий).
+  const objects = readObjectsProjection(ctx.builtSlices)
+  // «Штаб управления» — собственный объект, в реестре объектов его нет:
+  // демонстрирует исход «объект вне реестра».
+  const hq = resolveSeedTarget(objects, 'Штаб управления', 'duty-object-1', businessDate, now)
+  // Паспорт опубликован → дежурство привязано к версии, сектору и посту.
+  const palace = resolveSeedTarget(
+    objects,
+    'Дворец Независимости',
+    'duty-object-2',
+    businessDate,
+    now,
+  )
+  // Объект в реестре есть, опубликованных версий нет → привязки нет.
+  const ministries = resolveSeedTarget(
+    objects,
+    'Дом Министерств',
+    'duty-object-3',
+    businessDate,
+    now,
+  )
 
   const shifts: DutyShift[] = [
     {
       id: ctx.ids.next('duty-shift'),
       businessDate,
       dutyTypeCode: 'OWN_OBJECT_DAILY',
-      target: { targetType: 'OWN_OBJECT', objectId: 'duty-object-1', safeLabel: 'Штаб управления' },
+      target: { targetType: 'OWN_OBJECT', objectId: hq.objectId, safeLabel: 'Штаб управления' },
       employeeName: 'Ахметов Б.',
       stateCode: 'ACTIVE',
       acknowledgedAt: now,
       actualStart: now,
       actualEnd: null,
       updatedAt: now,
+      passportBinding: hq.passportBinding,
     },
     {
       id: ctx.ids.next('duty-shift'),
       businessDate,
       dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
-      target: { targetType: 'PROTECTED_OBJECT', objectId: 'duty-object-2', safeLabel: 'Дворец Независимости' },
+      target: {
+        targetType: 'PROTECTED_OBJECT',
+        objectId: palace.objectId,
+        safeLabel: 'Дворец Независимости',
+      },
       employeeName: 'Ерланов Д.',
       stateCode: 'ACKNOWLEDGED',
       acknowledgedAt: now,
       actualStart: null,
       actualEnd: null,
       updatedAt: now,
+      passportBinding: palace.passportBinding,
     },
     {
       id: ctx.ids.next('duty-shift'),
       businessDate,
       dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
-      target: { targetType: 'PROTECTED_OBJECT', objectId: 'duty-object-3', safeLabel: 'Дом Министерств' },
+      target: {
+        targetType: 'PROTECTED_OBJECT',
+        objectId: ministries.objectId,
+        safeLabel: 'Дом Министерств',
+      },
       employeeName: 'Сагинова А.',
       stateCode: 'PLANNED',
       acknowledgedAt: null,
       actualStart: null,
       actualEnd: null,
       updatedAt: now,
+      passportBinding: ministries.passportBinding,
     },
     {
       id: ctx.ids.next('duty-shift'),
       businessDate,
       dutyTypeCode: 'OWN_OBJECT_DAILY',
-      target: { targetType: 'OWN_OBJECT', objectId: 'duty-object-1', safeLabel: 'Штаб управления' },
+      target: { targetType: 'OWN_OBJECT', objectId: hq.objectId, safeLabel: 'Штаб управления' },
       employeeName: 'Оразов К.',
       stateCode: 'COMPLETED',
       acknowledgedAt: now,
       actualStart: now,
       actualEnd: now,
       updatedAt: now,
+      passportBinding: hq.passportBinding,
     },
   ]
 

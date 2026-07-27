@@ -8,7 +8,7 @@ import {
   RepositoryNotFoundError,
   RepositoryPermissionError,
 } from './repository'
-import type { CombatDutyShift } from '../model/types'
+import type { CombatDutyShift, DutyPassportBinding, DutyShift } from '../model/types'
 
 const VIEWER = 'viewer-user'
 const SUBMITTER = 'submitter-user'
@@ -1017,5 +1017,170 @@ describe('createDutiesRepository — боевые группы на Трассе
       const list = await repository.listCombatShifts(VIEWER)
       expect(list.results).toHaveLength(3)
     })
+  })
+})
+
+// §9.6: производный статус привязки дежурства к версии паспорта. Слайс
+// `objects` здесь сеется РУКАМИ — repository обязан читать его как чужой
+// снимок, а не зависеть от demo-сида.
+describe('createDutiesRepository — привязка дежурства к версии паспорта (§9.6)', () => {
+  beforeEach(() => {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.duty.view'] },
+      { userId: PLANNER, permissions: ['ops.duty.view', 'ops.duty.manage'] },
+      { userId: NOBODY, permissions: [] },
+    ])
+  })
+
+  const BINDING: DutyPassportBinding = {
+    objectId: 'object-1',
+    objectName: 'Дворец Независимости',
+    versionId: 'v1',
+    versionNumber: 1,
+    effectiveFrom: '2026-01-01',
+    sectorId: 'sector-a',
+    sectorName: 'Сектор A',
+    postId: 'post-1',
+    postName: 'КПП-1',
+    boundAt: '2026-07-24T08:00:00+05:00',
+  }
+
+  function shift(id: string, overrides: Partial<DutyShift> = {}): DutyShift {
+    return {
+      id,
+      businessDate: '2026-07-24',
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      target: { targetType: 'OWN_OBJECT', objectId: 'object-1', safeLabel: 'Дворец Независимости' },
+      employeeName: 'Ахметов Б.',
+      stateCode: 'PLANNED',
+      acknowledgedAt: null,
+      actualStart: null,
+      actualEnd: null,
+      updatedAt: '2026-07-24T08:00:00+05:00',
+      passportBinding: BINDING,
+      ...overrides,
+    }
+  }
+
+  function objectSlice(versions: Array<{ id: string; versionNumber: number; effectiveFrom: string }>) {
+    return {
+      objects: [
+        {
+          id: 'object-1',
+          name: 'Дворец Независимости',
+          code: 'OBJ-001',
+          passportVersions: versions.map((version) => ({
+            ...version,
+            sectors: [{ id: 'sector-a', name: 'Сектор A', posts: [{ id: 'post-1', name: 'КПП-1' }] }],
+          })),
+        },
+      ],
+    }
+  }
+
+  async function setupShifts(shifts: DutyShift[], objects: unknown) {
+    const envelope = seedEnvelope([])
+    const adapter = createMemoryPersistence()
+    await adapter.reset({
+      ...envelope,
+      slices: {
+        ...envelope.slices,
+        duties: { ...(envelope.slices.duties as object), shifts },
+        ...(objects === undefined ? {} : { objects }),
+      },
+    })
+    const clock = new DemoClock('2026-07-24T09:00:00+05:00')
+    return { repository: createDutiesRepository(adapter, clock), adapter, clock }
+  }
+
+  it('статус приходит по одному на строку, в том же порядке', async () => {
+    const { repository } = await setupShifts(
+      [shift('duty-2'), shift('duty-1')],
+      objectSlice([{ id: 'v1', versionNumber: 1, effectiveFrom: '2026-01-01' }]),
+    )
+    const list = await repository.listShifts(VIEWER)
+    expect(list.passportStatuses.map((s) => s.shiftId)).toEqual(list.results.map((s) => s.id))
+    expect(list.results.map((s) => s.id)).toEqual(['duty-1', 'duty-2'])
+  })
+
+  it('привязка к действующей версии — не устарела', async () => {
+    const { repository } = await setupShifts(
+      [shift('duty-1')],
+      objectSlice([{ id: 'v1', versionNumber: 1, effectiveFrom: '2026-01-01' }]),
+    )
+    const [status] = (await repository.listShifts(VIEWER)).passportStatuses
+    expect(status).toEqual({
+      shiftId: 'duty-1',
+      objectKnown: true,
+      applicableVersionId: 'v1',
+      applicableVersionNumber: 1,
+      stale: false,
+    })
+  })
+
+  it('публикация более новой версии делает привязку устаревшей БЕЗ мутации дежурства', async () => {
+    const { repository } = await setupShifts(
+      [shift('duty-1')],
+      objectSlice([
+        { id: 'v1', versionNumber: 1, effectiveFrom: '2026-01-01' },
+        { id: 'v2', versionNumber: 2, effectiveFrom: '2026-07-01' },
+      ]),
+    )
+    const list = await repository.listShifts(VIEWER)
+    expect(list.passportStatuses[0]).toMatchObject({
+      applicableVersionId: 'v2',
+      applicableVersionNumber: 2,
+      stale: true,
+    })
+    // Снимок в самой смене не переписан — §9.6 «не переписывается автоматически».
+    expect(list.results[0].passportBinding).toEqual(BINDING)
+  })
+
+  it('версия, вступающая в силу ПОСЛЕ даты дежурства, не считается действующей', async () => {
+    const { repository } = await setupShifts(
+      [shift('duty-1')],
+      objectSlice([
+        { id: 'v1', versionNumber: 1, effectiveFrom: '2026-01-01' },
+        { id: 'v2', versionNumber: 2, effectiveFrom: '2026-08-01' },
+      ]),
+    )
+    expect((await repository.listShifts(VIEWER)).passportStatuses[0]).toMatchObject({
+      applicableVersionId: 'v1',
+      stale: false,
+    })
+  })
+
+  it('объект вне реестра: objectKnown=false, действующей версии нет, устаревания нет', async () => {
+    const { repository } = await setupShifts([shift('duty-1', { passportBinding: null })], undefined)
+    expect((await repository.listShifts(VIEWER)).passportStatuses[0]).toEqual({
+      shiftId: 'duty-1',
+      objectKnown: false,
+      applicableVersionId: null,
+      applicableVersionNumber: null,
+      stale: false,
+    })
+  })
+
+  it('объект есть, опубликованных версий нет — objectKnown=true, версии нет', async () => {
+    const { repository } = await setupShifts(
+      [shift('duty-1', { passportBinding: null })],
+      objectSlice([]),
+    )
+    expect((await repository.listShifts(VIEWER)).passportStatuses[0]).toMatchObject({
+      objectKnown: true,
+      applicableVersionNumber: null,
+      stale: false,
+    })
+  })
+
+  it('переходы дежурства НЕ пишут в чужой слайс objects', async () => {
+    const objects = objectSlice([{ id: 'v1', versionNumber: 1, effectiveFrom: '2026-01-01' }])
+    const { repository, adapter } = await setupShifts([shift('duty-1')], objects)
+    const before = JSON.stringify((await adapter.load())?.slices.objects)
+    await repository.acknowledge('duty-1', PLANNER)
+    await repository.clockIn('duty-1', PLANNER)
+    const after = JSON.stringify((await adapter.load())?.slices.objects)
+    expect(after).toBe(before)
+    expect(after).toContain('"v1"')
   })
 })

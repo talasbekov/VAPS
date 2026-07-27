@@ -156,6 +156,31 @@ export interface CombatDutyTypeDefinition {
  * PLANNED сразу назначен, дальше ознакомление→заступление→завершение. */
 export type DutyShiftState = 'PLANNED' | 'ACKNOWLEDGED' | 'ACTIVE' | 'COMPLETED'
 
+/**
+ * §9.6 «дежурство должно ссылаться минимум на objectId / passportVersionId /
+ * sectorId / postId» — ХРАНИМЫЙ снимок привязки на момент планирования.
+ * Именно снимок, а не ссылка: публикация новой редакции паспорта не
+ * переписывает уже спланированные дежурства (§9.6), поэтому имена сектора и
+ * поста копируются сюда, а не резолвятся при чтении.
+ *
+ * Производное «какая версия действует ПРЯМО СЕЙЧАС» здесь НЕ хранится — это
+ * `DutyPassportStatus` в api/pending-contracts.ts, пересчитываемый на каждом
+ * чтении (хранимый флаг устаревания молча протух бы).
+ */
+export interface DutyPassportBinding {
+  objectId: string
+  objectName: string
+  versionId: string
+  versionNumber: number
+  /** Дата, с которой действует привязанная версия (YYYY-MM-DD). */
+  effectiveFrom: string
+  sectorId: string
+  sectorName: string
+  postId: string
+  postName: string
+  boundAt: string
+}
+
 export interface DutyShift {
   id: string
   businessDate: string
@@ -171,4 +196,7 @@ export interface DutyShift {
   actualStart: string | null
   actualEnd: string | null
   updatedAt: string
+  /** §9.6. `null` — объекта нет в реестре ЛИБО на дату нет опубликованной
+   * версии/постов: причину различает `DutyPassportStatus`, а не это поле. */
+  passportBinding: DutyPassportBinding | null
 }

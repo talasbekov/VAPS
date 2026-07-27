@@ -87,3 +87,78 @@ describe('composeSeed — привязка ОМ к версии паспорта
     expect(second).toEqual(first)
   })
 })
+
+// То же требование §9.6 для дежурств: план дежурств привязывается к объекту
+// реестра и его версии паспорта — сид обязан давать РЕАЛЬНЫЕ id, иначе
+// колонка «Пост по паспорту» в демо всегда пустая.
+interface SeededDutyShift {
+  id: string
+  businessDate: string
+  target: { objectId: string; safeLabel: string }
+  passportBinding: {
+    objectId: string
+    versionId: string
+    versionNumber: number
+    sectorId: string
+    postId: string
+  } | null
+}
+
+interface SeededObjectWithSectors {
+  id: string
+  code: string
+  passportVersions: Array<{
+    id: string
+    versionNumber: number
+    effectiveFrom: string
+    sectors: Array<{ id: string; posts: Array<{ id: string }> }>
+  }>
+}
+
+function readDutySeed() {
+  const envelope = composeSeed(scenario)
+  const shifts = (envelope.slices.duties as { shifts: SeededDutyShift[] }).shifts
+  const objects = (envelope.slices.objects as { objects: SeededObjectWithSectors[] }).objects
+  return { shifts, objects }
+}
+
+describe('composeSeed — привязка дежурства к версии паспорта (§9.6)', () => {
+  it('привязанное дежурство ссылается на реальные объект, версию, сектор и пост', () => {
+    const { shifts, objects } = readDutySeed()
+    const bound = shifts.filter((shift) => shift.passportBinding !== null)
+    expect(bound.length).toBeGreaterThan(0)
+
+    for (const shift of bound) {
+      const binding = shift.passportBinding!
+      // Привязка и цель смены обязаны указывать на ОДИН объект.
+      expect(binding.objectId).toBe(shift.target.objectId)
+      const object = objects.find((o) => o.id === binding.objectId)
+      expect(object, `объект ${binding.objectId} для «${shift.target.safeLabel}»`).toBeDefined()
+      const version = object?.passportVersions.find((v) => v.id === binding.versionId)
+      expect(version, `версия ${binding.versionId}`).toBeDefined()
+      expect(version!.effectiveFrom.localeCompare(shift.businessDate)).toBeLessThanOrEqual(0)
+      const sector = version?.sectors.find((s) => s.id === binding.sectorId)
+      expect(sector, `сектор ${binding.sectorId}`).toBeDefined()
+      expect(sector?.posts.map((p) => p.id)).toContain(binding.postId)
+    }
+  })
+
+  it('в сиде дежурств встречаются все три исхода §9.6', () => {
+    const { shifts, objects } = readDutySeed()
+    const known = (shift: SeededDutyShift) =>
+      objects.some((object) => object.id === shift.target.objectId)
+
+    // 1. Объекта нет в реестре вовсе.
+    expect(shifts.some((shift) => !known(shift))).toBe(true)
+    // 2. Объект есть, опубликованной версии на дату нет.
+    const withoutVersion = shifts.find(
+      (shift) => known(shift) && shift.passportBinding === null,
+    )
+    expect(withoutVersion).toBeDefined()
+    expect(
+      objects.find((object) => object.id === withoutVersion?.target.objectId)?.passportVersions,
+    ).toEqual([])
+    // 3. Объект есть и версия действует.
+    expect(shifts.some((shift) => shift.passportBinding !== null)).toBe(true)
+  })
+})

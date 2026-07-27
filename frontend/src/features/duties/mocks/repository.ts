@@ -8,9 +8,12 @@ import type {
   PersistenceAdapter,
 } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
+import { isBindingStale, resolveApplicableVersion } from '../lib/passportBinding'
+import { findObjectById } from './objectsSlice'
 import type {
   CompleteCombatDutyRequest,
   CreateCombatDutyShiftRequest,
+  DutyPassportStatus,
   ListCombatDutyShiftsResponse,
   ListCombatDutyTypesResponse,
   ListCombatRosterCandidatesResponse,
@@ -74,7 +77,25 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     const sorted = [...shifts].sort(
       (a, b) => a.businessDate.localeCompare(b.businessDate) || a.id.localeCompare(b.id),
     )
-    return { results: sorted }
+    // §9.6: серверный join с реестром объектов. Статус считается по КАЖДОЙ
+    // строке на чтении — см. `DutyPassportStatus` в pending-contracts.
+    const passportStatuses: DutyPassportStatus[] = sorted.map((shift) => {
+      const object =
+        envelope === null ? null : findObjectById(envelope.slices, shift.target.objectId)
+      const applicable =
+        object === null ? null : resolveApplicableVersion(object, shift.businessDate)
+      return {
+        shiftId: shift.id,
+        objectKnown: object !== null,
+        applicableVersionId: applicable?.id ?? null,
+        applicableVersionNumber: applicable?.versionNumber ?? null,
+        stale:
+          shift.passportBinding === null
+            ? false
+            : isBindingStale(shift.passportBinding, applicable),
+      }
+    })
+    return { results: sorted, passportStatuses }
   }
 
   async function transitionShift(
