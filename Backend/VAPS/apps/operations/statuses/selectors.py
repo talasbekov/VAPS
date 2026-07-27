@@ -1,5 +1,6 @@
 from django.db.models import Min
 
+from apps.core.selectors import HistoricalEmployeeSelector
 from apps.operations.statuses.models import EmployeeStatus, StatusType
 from apps.operations.statuses.services.strength_report import resolve_status
 
@@ -78,6 +79,42 @@ class EmployeeStatusSelector:
                 "date_end",
                 "source",
             )
+        )
+
+    @classmethod
+    def for_division_on(cls, business_date, division_id) -> list:
+        """Живые записи ОДНОГО подразделения на дату — read-канал 10.1b.
+
+        Композиция двух bulk-чтений: дата-версионный ростер (core, story 2.4)
+        даёт состав, ``overlapping_on`` — интервалы, содержащие дату. Каналом
+        в core служит селектор, не модели (ARCH-003).
+
+        OWN-LEVEL, без поддерева: множество ровно ``{division_id}``. Scope-гейт
+        вьюхи subtree-aware, и симметрия тут кажется естественной — но канон
+        расхода и грида own-level (submissions/services/snapshot.py, фронтовый
+        ``/api/core/employees/?division_id=``), и поддерево развело бы строки
+        грида с префиллом.
+
+        ``roster_on`` берёт только WORKING и ``is_active`` — уволенный со
+        статусом на дату сюда не попадёт. Пока ``EmployeeDivisionHistory``
+        пуст (бэкфилл — E7), членство резолвится фолбэком «текущий дивизион»
+        (BR-CORE-HISTORY-003).
+
+        ⚠️ ``employee_ids=[]`` и ``employee_ids=None`` — РАЗНОЕ: ``None``
+        означает «без фильтра», то есть статусы всей базы. Дивизион без
+        сотрудников обязан дать ``[]``, поэтому ранний выход, а не
+        ``roster.get(division_id)`` в аргументе.
+
+        Порядок явный — без него порядок строк из БД не гарантирован, и
+        потребитель/тест зависели бы от плана запроса.
+        """
+        roster = HistoricalEmployeeSelector.roster_on(business_date, {division_id})
+        employee_ids = roster.get(division_id, [])
+        if not employee_ids:
+            return []
+        rows = cls.overlapping_on(business_date, employee_ids=employee_ids)
+        return sorted(
+            rows, key=lambda row: (str(row["employee_id"]), row["date_start"])
         )
 
     @classmethod

@@ -175,6 +175,11 @@ MATRIX = {
     # (payloadless POST держателя = 400 сериализатора = ALLOW по канону).
     # Держатели status.manage выводятся из seed (ADMIN, INTEGRATION_USER).
     "ops-status-bulk": _MethodGate({"post": "status.manage"}),
+    # чтение статусов на дату (story 10.1b, GET /statuses/) — существующее
+    # право status.view, то же, что на светофор-дереве. Scope дивизиона вьюха
+    # энфорсит сама (403, а НЕ пустой список); матрицей это не проверяется:
+    # безпараметрический GET держателя = 400 сериализатора = ALLOW по канону.
+    "ops-status-list": _MethodGate({"get": "status.view"}),
     # override «на завтра»-блока (story 6.10b, POST-only) — своё право
     # daily_report.override_block (обход ≠ выпуск); scope не применяется (обход
     # уровня дня, без division). ValueError сервиса → 400 = ALLOW по канону.

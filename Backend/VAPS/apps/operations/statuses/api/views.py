@@ -1,14 +1,22 @@
-"""Story 10.1a — REST bulk-роут статусов (POST /api/operations/statuses/bulk/).
+"""REST-поверхность статусов (/api/operations/statuses/).
 
-Тонкая вьюха поверх готового сервиса 3.8 (bulk_create_statuses): сериализатор →
-резолв scope из RBAC → вызов сервиса → 201 {created}. Никакой бизнес-логики/
-конфликт-детекта здесь (всё в 3.8). DomainError сервиса (400/403/404/409/422)
-течёт через unified handler (§36-envelope) — вьюха НЕ ловит и НЕ фильтрует по
-правам вручную (layer contract, зеркало DailySubmissionViewSet 5.8).
+Story 10.1a — POST bulk. Тонкая вьюха поверх готового сервиса 3.8
+(bulk_create_statuses): сериализатор → резолв scope из RBAC → вызов сервиса →
+201 {created}. Никакой бизнес-логики/конфликт-детекта здесь (всё в 3.8).
+DomainError сервиса (400/403/404/409/422) течёт через unified handler
+(§36-envelope) — вьюха НЕ ловит и НЕ фильтрует по правам вручную (layer
+contract, зеркало DailySubmissionViewSet 5.8). Грубый гейт права —
+RequirePermissionMixin; тонкий per-строчный scope энфорсит сервис по
+allowed_division_ids, которое вьюха резолвит из RBAC актора (Решение №2 3.8 —
+фронту не доверяем).
 
-Грубый гейт права — RequirePermissionMixin ({"bulk": "status.manage"}); тонкий
-per-строчный scope энфорсит сервис по allowed_division_ids, которое вьюха
-резолвит из RBAC актора (Решение №2 3.8 — фронту не доверяем).
+Story 10.1b — GET списка на дату (префилл «вчера»). Здесь scope энфорсит САМА
+вьюха: `division_id` обязателен, и чужой обязан дать 403, а не пустой список —
+пустой ответ потребитель прочитал бы как «отклонений не было» и предзаполнил бы
+весь дивизион «В строю». Готовый хелпер `ensure_division_scope` живёт в
+submissions и импорту НЕ подлежит (test_statuses_does_not_import_submissions;
+поток подобластей односторонний вниз, architecture.md#L587), поэтому проверка
+написана на месте зеркалом его семантики.
 """
 
 from drf_spectacular.utils import extend_schema, inline_serializer
@@ -17,20 +25,70 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.api.permissions import RequirePermissionMixin
+from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector
 from apps.operations.services import PermissionService
-from apps.operations.statuses.api.serializers import BulkStatusCreateSerializer
+from apps.operations.statuses.api.serializers import (
+    BulkStatusCreateSerializer,
+    EmployeeStatusListResponseSerializer,
+    EmployeeStatusRowSerializer,
+    StatusListFilterSerializer,
+)
+from apps.operations.statuses.selectors import EmployeeStatusSelector
 from apps.operations.statuses.services import bulk_create_statuses
 
 _BULK_PERMISSION = "status.manage"
+# Чтение — существующий код прав, новых не заводим (реестр прав — закрытый
+# список). Тот же код гейтит светофор-дерево 10.3a.
+_READ_PERMISSION = "status.view"
 
 
 class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """POST /api/operations/statuses/bulk/ — массовое создание статусов."""
+    """POST bulk — массовое создание; GET list — живые статусы на дату."""
 
-    permission_map = {"bulk": _BULK_PERMISSION}
-    # Минимальная поверхность: только POST bulk. GET-загрузка «вчера» — 10.1b.
-    http_method_names = ["post", "options"]
+    permission_map = {"bulk": _BULK_PERMISSION, "list": _READ_PERMISSION}
+    # Экшен вне карты — 403 (миксин fail-closed), а не открытый роут.
+    http_method_names = ["get", "post", "options"]
+
+    @extend_schema(
+        parameters=[StatusListFilterSerializer],
+        responses={200: EmployeeStatusListResponseSerializer},
+        description=(
+            "Живые статусные записи подразделения на дату — источник "
+            "предзаполнения грида. Отдаёт ТОЛЬКО реальные записи: сотрудник "
+            "без строки трактуется потребителем как derived «В строю». "
+            "400 нет/невалидны business_date|division_id; 403 нет права "
+            "status.view / дивизион вне scope; 404 дивизион не существует."
+        ),
+    )
+    def list(self, request, *args, **kwargs):
+        form = StatusListFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        business_date = form.validated_data["business_date"]
+        division_id = form.validated_data["division_id"]
+        # Порядок гейтов: право (миксин) → scope (403) → существование (404).
+        # Обратный порядок сделал бы 404 оракулом существования дивизионов для
+        # скоупнутого чужака.
+        if not PermissionService.has_permission(
+            request.actor_id, _READ_PERMISSION, division_id=division_id
+        ):
+            # message не передаём — буквальное зеркало ensure_division_scope,
+            # иначе 403-конверт разъедется между двумя реализациями.
+            raise DomainError(
+                "PERMISSION_DENIED", 403, detail={"division_id": str(division_id)}
+            )
+        if not CoreDivisionTreeSelector.exists(division_id):
+            raise DomainError(
+                "ENTITY_NOT_FOUND", 404, detail={"division_id": str(division_id)}
+            )
+        rows = EmployeeStatusSelector.for_division_on(business_date, division_id)
+        return Response(
+            {
+                "business_date": business_date.isoformat(),
+                "division_id": str(division_id),
+                "rows": EmployeeStatusRowSerializer(rows, many=True).data,
+            }
+        )
 
     @extend_schema(
         request=BulkStatusCreateSerializer,

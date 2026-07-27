@@ -1545,6 +1545,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/Role'
           description: ''
+  /api/operations/statuses/:
+    get:
+      operationId: operations_statuses_list
+      description: 'Живые статусные записи подразделения на дату — источник предзаполнения
+        грида. Отдаёт ТОЛЬКО реальные записи: сотрудник без строки трактуется потребителем
+        как derived «В строю». 400 нет/невалидны business_date|division_id; 403 нет
+        права status.view / дивизион вне scope; 404 дивизион не существует.'
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+          format: date
+        required: true
+      - in: query
+        name: division_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeStatusListResponse'
+          description: ''
   /api/operations/statuses/bulk/:
     post:
       operationId: operations_statuses_bulk_create
@@ -2083,6 +2112,54 @@ components:
       - iin
       - position_code
       - rank_code
+    EmployeeStatusListResponse:
+      type: object
+      description: |-
+        Тело 200. Эхо ``business_date``/``division_id`` — дешёвая защита от
+        гонки: ответ, приехавший после смены даты на экране, распознаётся как
+        чужой. Ключ ``rows`` (не ``results``): ``results`` в этом проекте означает
+        пагинационный конверт, которого здесь нет.
+      properties:
+        business_date:
+          type: string
+          format: date
+        division_id:
+          type: string
+          format: uuid
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmployeeStatusRow'
+      required:
+      - business_date
+      - division_id
+      - rows
+    EmployeeStatusRow:
+      type: object
+      description: |-
+        Одна живая запись на дату — ровно 4 поля.
+
+        Форма зеркалит ``EmployeeStatusSelector.overlapping_on`` и ровно то, что
+        потребляет ``YesterdayPlacement`` фронта. ``id``/``source`` НЕ отдаём:
+        у снапшота сдачи (``snapshot_facts_on``, 6 полей) другой владелец, а
+        расширять контракт вперёд спроса — потом не сузить.
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+        status_type_code:
+          type: string
+        date_start:
+          type: string
+          format: date
+        date_end:
+          type: string
+          format: date
+      required:
+      - date_end
+      - date_start
+      - employee_id
+      - status_type_code
     EmploymentStatusEnum:
       enum:
       - WORKING

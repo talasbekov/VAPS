@@ -4,7 +4,7 @@ baseline_commit: 73ea5ac («chore(sprint-status): вынести заблоки�
 
 # Story 10.1b: GET списка статусов на дату
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -55,42 +55,42 @@ so that **префилл «вчера» на экране массового о�
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Сериализаторы чтения** (`apps/operations/statuses/api/serializers.py`, MOD) (AC: 1,9)
-  - [ ] `StatusListFilterSerializer(serializers.Serializer)`: `business_date = DateField()`, `division_id = UUIDField()` — **оба обязательные** (AC-9). Зеркало `ExpensePeriodFilterSerializer`.
-  - [ ] `EmployeeStatusRowSerializer(serializers.Serializer)`: `employee_id = UUIDField()`, `status_type_code = CharField()`, `date_start = DateField()`, `date_end = DateField()`. Ровно 4 поля — форма `EmployeeStatusSelector.overlapping_on` и ровно то, что ест `YesterdayPlacement`. `source`/`id` НЕ отдаём (Решение №3).
-- [ ] **Task 2 — Селектор списка на дату** (`apps/operations/statuses/selectors.py`, MOD) (AC: 2,3,4,13,14)
-  - [ ] `EmployeeStatusSelector.for_division_on(business_date, division_id) -> list[dict]`: `roster_on(business_date, {division_id})` → плоский список `employee_ids` → `cls.overlapping_on(business_date, employee_ids=employee_ids)`.
-  - [ ] 🚨 **Пустой ростер обязан давать `[]`, а не «всю базу».** `roster.get(division_id)` вернёт `None`, а `overlapping_on(date, employee_ids=None)` фильтр **не применяет** → утечка чужих статусов под видом 200. Писать `roster.get(division_id, [])` и выходить рано; если выходишь рано — второго запроса нет вовсе (AC-14).
-  - [ ] **Own-level, без `subtree_ids`** — множество ровно `{division_id}` (AC-13).
-  - [ ] `from apps.core.selectors import HistoricalEmployeeSelector` — санкционированный канал чтения core (ARCH-003; `core.models` импортировать нельзя).
-  - [ ] Докстрингом зафиксировать: `roster_on` даёт `{division_id: [employee_id]}` и берёт ТОЛЬКО `WORKING & is_active`; фолбэк BR-CORE-HISTORY-003 действует до бэкфилла E7 (AC-4).
-  - [ ] Детерминированный порядок: отсортировать результат по `(employee_id, date_start)` — без явного `order_by` порядок строк из БД не гарантирован, а тест на список стал бы флейком.
-- [ ] **Task 3 — list-экшен на StatusViewSet** (`apps/operations/statuses/api/views.py`, MOD) (AC: 1,5,6,7,8)
-  - [ ] `permission_map = {"bulk": _BULK_PERMISSION, "list": _READ_PERMISSION}`, где `_READ_PERMISSION = "status.view"`; `http_method_names = ["get", "post", "options"]` (было `["post", "options"]`).
-  - [ ] `def list(self, request, *args, **kwargs)`: фильтры → `is_valid(raise_exception=True)` → **scope-гейт** (Решение №1) → **404-гейт** `CoreDivisionTreeSelector.exists(division_id)` → селектор → `Response({"business_date":…, "division_id":…, "rows": EmployeeStatusRowSerializer(rows, many=True).data})`.
-  - [ ] Порядок гейтов ровно: право (mixin) → scope (403) → существование (404) → чтение. Комментарием — почему именно так (AC-8, oracle-утечка).
-  - [ ] **`parameters` — сериализатором фильтров, не списком `OpenApiParameter`:** `@extend_schema(parameters=[StatusListFilterSerializer], …)`. Канон проекта — [views.py:350](../../Backend/VAPS/apps/operations/submissions/api/views.py) (`parameters=[ExpensePeriodFilterSerializer]`), результат в `schema.yaml` идентичен ручному списку. Без явных `parameters` spectacular не увидит query-параметры у `ViewSet.list` вовсе (AC-10а).
-  - [ ] 🚨 **`responses={200: ...}` обязан нести `many=False`** — см. Решение №5. Иначе AC-10б красный, а рантайм зелёный.
-  - [ ] Обновить **оба** устаревших текста: модуль-докстринг (`"""Story 10.1a — REST bulk-роут статусов…"""`, теперь модуль несёт два роута) И inline-комментарий над `http_method_names` ([views.py:31](../../Backend/VAPS/apps/operations/statuses/api/views.py): «Минимальная поверхность: только POST bulk. GET-загрузка "вчера" — 10.1b») — второй становится прямо ложным.
-- [ ] **Task 4 — RBAC-матрица** (`apps/operations/tests/test_rbac_matrix.py`, MOD) (AC: 11)
-  - [ ] `"ops-status-list": _MethodGate({"get": "status.view"})` рядом с `"ops-status-bulk"`. Reverse-имя даёт `DefaultRouter` для `basename="ops-status"` — `urls.py` НЕ меняется (роут уже зарегистрирован 10.1a).
-  - [ ] Сид не трогать (AC-11).
-- [ ] **Task 5 — API-тесты** (`apps/operations/statuses/tests/test_status_read_api.py`, NEW) (AC: 1–9,13,14)
-  - [ ] **Копировать поимённо из [test_bulk_status_api.py:33-77](../../Backend/VAPS/apps/operations/statuses/tests/test_bulk_status_api.py)** (общего `conftest.py` для `operations` НЕТ — только корневой и `apps/core/tests/`, так что хелперы придётся продублировать): фикстура `env` (`call_command("seed_operations")` + org/DivisionType/Division + два `StatusType`), `_division`, `_emp`, `_grant(user_id, role_code, division=None)` — именно он даёт актора С ролью И scope, что нужно AC-6/AC-7, `_client(actor)` (с `raise_request_exception = False`).
-  - [ ] **Роли берутся из живого сида, не выдумываются** ([seed_operations.py](../../Backend/VAPS/apps/operations/management/commands/seed_operations.py)): `status.view` держат `DIVISION_OPERATOR` (L66) и `VIEWER` (L77) → акторы для AC-1/AC-6/AC-7; `INTEGRATION_USER` держит **только** `status.manage` (L80) → идеальный актор для AC-5; `ADMIN` через `*` → AC-7.
-  - [ ] AC-1 happy path + сравнение СПИСКА целиком (порядок); AC-2 обе границы интервала (`date_end` исключающая — **обязательный тест**, не рассуждение); AC-3 отменённый + чужой дивизион; AC-4 уволенный; AC-5 без права + аноним; AC-6 чужой scope → 403 (а не пустой 200 — ассертить именно код и `error_code`); AC-7 глобальный грант; AC-8 фантомный UUID → 404 И скоупнутый чужак на фантомном → **403, не 404**; AC-9 четыре формы 400; **AC-13 дочерний (не сиблинг!) дивизион не виден**; **AC-14 пустой дивизион → `rows == []` при живых статусах в других дивизионах**.
-  - [ ] 🔴 **Три красные пробы (обязательны, AI-1 ретро E10)** — каждая должна покраснеть, зелёная = ассерт вакуумен:
+- [x] **Task 1 — Сериализаторы чтения** (`apps/operations/statuses/api/serializers.py`, MOD) (AC: 1,9)
+  - [x] `StatusListFilterSerializer(serializers.Serializer)`: `business_date = DateField()`, `division_id = UUIDField()` — **оба обязательные** (AC-9). Зеркало `ExpensePeriodFilterSerializer`.
+  - [x] `EmployeeStatusRowSerializer(serializers.Serializer)`: `employee_id = UUIDField()`, `status_type_code = CharField()`, `date_start = DateField()`, `date_end = DateField()`. Ровно 4 поля — форма `EmployeeStatusSelector.overlapping_on` и ровно то, что ест `YesterdayPlacement`. `source`/`id` НЕ отдаём (Решение №3).
+- [x] **Task 2 — Селектор списка на дату** (`apps/operations/statuses/selectors.py`, MOD) (AC: 2,3,4,13,14)
+  - [x] `EmployeeStatusSelector.for_division_on(business_date, division_id) -> list[dict]`: `roster_on(business_date, {division_id})` → плоский список `employee_ids` → `cls.overlapping_on(business_date, employee_ids=employee_ids)`.
+  - [x] 🚨 **Пустой ростер обязан давать `[]`, а не «всю базу».** `roster.get(division_id)` вернёт `None`, а `overlapping_on(date, employee_ids=None)` фильтр **не применяет** → утечка чужих статусов под видом 200. Писать `roster.get(division_id, [])` и выходить рано; если выходишь рано — второго запроса нет вовсе (AC-14).
+  - [x] **Own-level, без `subtree_ids`** — множество ровно `{division_id}` (AC-13).
+  - [x] `from apps.core.selectors import HistoricalEmployeeSelector` — санкционированный канал чтения core (ARCH-003; `core.models` импортировать нельзя).
+  - [x] Докстрингом зафиксировать: `roster_on` даёт `{division_id: [employee_id]}` и берёт ТОЛЬКО `WORKING & is_active`; фолбэк BR-CORE-HISTORY-003 действует до бэкфилла E7 (AC-4).
+  - [x] Детерминированный порядок: отсортировать результат по `(employee_id, date_start)` — без явного `order_by` порядок строк из БД не гарантирован, а тест на список стал бы флейком.
+- [x] **Task 3 — list-экшен на StatusViewSet** (`apps/operations/statuses/api/views.py`, MOD) (AC: 1,5,6,7,8)
+  - [x] `permission_map = {"bulk": _BULK_PERMISSION, "list": _READ_PERMISSION}`, где `_READ_PERMISSION = "status.view"`; `http_method_names = ["get", "post", "options"]` (было `["post", "options"]`).
+  - [x] `def list(self, request, *args, **kwargs)`: фильтры → `is_valid(raise_exception=True)` → **scope-гейт** (Решение №1) → **404-гейт** `CoreDivisionTreeSelector.exists(division_id)` → селектор → `Response({"business_date":…, "division_id":…, "rows": EmployeeStatusRowSerializer(rows, many=True).data})`.
+  - [x] Порядок гейтов ровно: право (mixin) → scope (403) → существование (404) → чтение. Комментарием — почему именно так (AC-8, oracle-утечка).
+  - [x] **`parameters` — сериализатором фильтров, не списком `OpenApiParameter`:** `@extend_schema(parameters=[StatusListFilterSerializer], …)`. Канон проекта — [views.py:350](../../Backend/VAPS/apps/operations/submissions/api/views.py) (`parameters=[ExpensePeriodFilterSerializer]`), результат в `schema.yaml` идентичен ручному списку. Без явных `parameters` spectacular не увидит query-параметры у `ViewSet.list` вовсе (AC-10а).
+  - [x] 🚨 **`responses={200: ...}` обязан нести `many=False`** — см. Решение №5. Иначе AC-10б красный, а рантайм зелёный.
+  - [x] Обновить **оба** устаревших текста: модуль-докстринг (`"""Story 10.1a — REST bulk-роут статусов…"""`, теперь модуль несёт два роута) И inline-комментарий над `http_method_names` ([views.py:31](../../Backend/VAPS/apps/operations/statuses/api/views.py): «Минимальная поверхность: только POST bulk. GET-загрузка "вчера" — 10.1b») — второй становится прямо ложным.
+- [x] **Task 4 — RBAC-матрица** (`apps/operations/tests/test_rbac_matrix.py`, MOD) (AC: 11)
+  - [x] `"ops-status-list": _MethodGate({"get": "status.view"})` рядом с `"ops-status-bulk"`. Reverse-имя даёт `DefaultRouter` для `basename="ops-status"` — `urls.py` НЕ меняется (роут уже зарегистрирован 10.1a).
+  - [x] Сид не трогать (AC-11).
+- [x] **Task 5 — API-тесты** (`apps/operations/statuses/tests/test_status_read_api.py`, NEW) (AC: 1–9,13,14)
+  - [x] **Копировать поимённо из [test_bulk_status_api.py:33-77](../../Backend/VAPS/apps/operations/statuses/tests/test_bulk_status_api.py)** (общего `conftest.py` для `operations` НЕТ — только корневой и `apps/core/tests/`, так что хелперы придётся продублировать): фикстура `env` (`call_command("seed_operations")` + org/DivisionType/Division + два `StatusType`), `_division`, `_emp`, `_grant(user_id, role_code, division=None)` — именно он даёт актора С ролью И scope, что нужно AC-6/AC-7, `_client(actor)` (с `raise_request_exception = False`).
+  - [x] **Роли берутся из живого сида, не выдумываются** ([seed_operations.py](../../Backend/VAPS/apps/operations/management/commands/seed_operations.py)): `status.view` держат `DIVISION_OPERATOR` (L66) и `VIEWER` (L77) → акторы для AC-1/AC-6/AC-7; `INTEGRATION_USER` держит **только** `status.manage` (L80) → идеальный актор для AC-5; `ADMIN` через `*` → AC-7.
+  - [x] AC-1 happy path + сравнение СПИСКА целиком (порядок); AC-2 обе границы интервала (`date_end` исключающая — **обязательный тест**, не рассуждение); AC-3 отменённый + чужой дивизион; AC-4 уволенный; AC-5 без права + аноним; AC-6 чужой scope → 403 (а не пустой 200 — ассертить именно код и `error_code`); AC-7 глобальный грант; AC-8 фантомный UUID → 404 И скоупнутый чужак на фантомном → **403, не 404**; AC-9 четыре формы 400; **AC-13 дочерний (не сиблинг!) дивизион не виден**; **AC-14 пустой дивизион → `rows == []` при живых статусах в других дивизионах**.
+  - [x] 🔴 **Три красные пробы (обязательны, AI-1 ретро E10)** — каждая должна покраснеть, зелёная = ассерт вакуумен:
     1. вернуть в AC-6 пустой 200 вместо 403;
     2. заменить `roster.get(division_id, [])` на `roster.get(division_id)` — AC-14 обязан упасть (проба против утечки);
     3. заменить `{division_id}` на `CoreDivisionTreeSelector.subtree_ids(division_id)` — AC-13 обязан упасть.
-  - [ ] Перед пробами убедиться, что незакоммиченных правок нет — `git checkout` после пробы стирает несохранённое ([инцидент 9.6](../../CLAUDE.md)).
-- [ ] **Task 6 — Регенерация схем** (AC: 10)
-  - [ ] Бэк: `make schema` из `Backend/VAPS`; проверить наличие `GET /api/operations/statuses/` и обоих параметров; `test_schema_drift.py` зелёный.
-  - [ ] Фронт: `cd frontend && npm run generate:api`; `node scripts/schema-check.mjs`; выполнить гейт-грep AC-10.
-- [ ] **Task 7 — Гейт обеих сторон** (AC: 12)
-  - [ ] `make gate` из `Backend/VAPS` (ruff + pytest + `makemigrations --check`, бюджет 300s). Отдельно убедиться, что `test_isolation.py` и `test_rbac_matrix.py` в выборке.
-  - [ ] `npm run gate` из `frontend` (⚠️ из своей папки — из корня vitest берёт чужой конфиг).
-  - [ ] ⚠️ Известный пред-существующий флейк `daily-grid/DailyUpdatePage.test.tsx` на системной дате 2026-07-25+ — **не регресс этой стори**; подтвердить `git stash`-пробой, если упадёт, и не чинить здесь.
+  - [x] Перед пробами убедиться, что незакоммиченных правок нет — `git checkout` после пробы стирает несохранённое ([инцидент 9.6](../../CLAUDE.md)).
+- [x] **Task 6 — Регенерация схем** (AC: 10)
+  - [x] Бэк: `make schema` из `Backend/VAPS`; проверить наличие `GET /api/operations/statuses/` и обоих параметров; `test_schema_drift.py` зелёный.
+  - [x] Фронт: `cd frontend && npm run generate:api`; `node scripts/schema-check.mjs`; выполнить гейт-грep AC-10.
+- [x] **Task 7 — Гейт обеих сторон** (AC: 12)
+  - [x] `make gate` из `Backend/VAPS` (ruff + pytest + `makemigrations --check`, бюджет 300s). Отдельно убедиться, что `test_isolation.py` и `test_rbac_matrix.py` в выборке.
+  - [x] `npm run gate` из `frontend` (⚠️ из своей папки — из корня vitest берёт чужой конфиг).
+  - [x] ⚠️ Известный пред-существующий флейк `daily-grid/DailyUpdatePage.test.tsx` на системной дате 2026-07-25+ — **не регресс этой стори**; подтвердить `git stash`-пробой, если упадёт, и не чинить здесь.
 
 ## Files To Create
 
@@ -121,14 +121,14 @@ so that **префилл «вчера» на экране массового о�
 
 ## Definition of Done
 
-- [ ] Код реализован
-- [ ] Тесты добавлены (включая красную пробу Task 5)
-- [ ] `make gate` зелёный из `Backend/VAPS`
-- [ ] `npm run gate` зелёный из `frontend`
-- [ ] `makemigrations --check` → «No changes detected»
-- [ ] Обе схемы регенерированы, гейт-грep AC-10 проходит
-- [ ] Нет захардкоженных секретов
-- [ ] Докстринг `views.py` обновлён (устаревшее «только POST bulk» вычищено)
+- [x] Код реализован
+- [x] Тесты добавлены (включая красную пробу Task 5)
+- [x] `make gate` зелёный из `Backend/VAPS`
+- [x] `npm run gate` зелёный из `frontend`
+- [x] `makemigrations --check` → «No changes detected»
+- [x] Обе схемы регенерированы, гейт-грep AC-10 проходит
+- [x] Нет захардкоженных секретов
+- [x] Докстринг `views.py` обновлён (устаревшее «только POST bulk» вычищено)
 
 ## Dev Notes
 
@@ -230,8 +230,88 @@ _StatusListResponse = extend_schema_serializer(many=False)(
 
 ### Agent Model Used
 
+claude-opus-5 (спека, реализация и adversarial-ревью спеки — один и тот же
+инструмент; ⚠️ cross-model ревью кода ОБЯЗАТЕЛЬНО другой моделью, AI-2 ретро E9).
+
 ### Debug Log References
+
+- Дев стартовал с `0f901bf` (коммит спеки), `baseline_commit` во фронтматтере
+  оставлен исходным (`73ea5ac`) по правилу «не перезаписывать существующий».
+- venv worktree был неполным (не было `channels` — эпик 11): выполнен
+  `pip install -e '.[dev]'`. Новых зависимостей НЕ добавлялось.
+- Порт 5433 держал контейнер чужого проекта (`masterqalakz-db_test-1`).
+  Реализация и промежуточные прогоны шли на своём postgres:16 (5434); финальный
+  `make gate` прогнан ДОСЛОВНО на 5433 с разрешения Bratan, чужой контейнер
+  восстановлен. Побочный эффект и его починка — см. Completion Notes.
 
 ### Completion Notes List
 
+**Реализовано ровно то, что в задачах.** Один роут `GET
+/api/operations/statuses/`, 5 авторских файлов + 2 регенерированных — как и
+обещал гейт декомпозиции.
+
+**4 красные пробы, все покраснели** (не 3 — четвёртая появилась по ходу):
+1. AC-6 «пустой 200 вместо 403» → упали `test_foreign_scope_is_403_not_empty_list`
+   и `test_phantom_division_is_403_for_scoped_stranger`.
+2. `roster.get(division_id, [])` → `roster.get(division_id)` → упал
+   `test_empty_division_does_not_leak_other_divisions`. **Утечка подтверждена
+   как реальная**, не гипотетическая.
+3. `{division_id}` → `subtree_ids(division_id)` → упал
+   `test_child_division_rows_absent`. Own-level подтверждён тестом.
+4. Снятие `@extend_schema_serializer(many=False)` → `schema.yaml` объявил 200
+   как `type: array`. Гард несущий, а не декоративный; `schema.yaml` после
+   восстановления побайтово совпал с прогоном до пробы.
+
+Перед пробами сделан бэкоп трёх файлов в scratchpad; восстановление сверено по
+md5 (`views.py` 54a09957…, `selectors.py` ac804d1e…) — правки не потерялись.
+
+**Отклонение от буквы задачи (одно, сознательное).** Task 1 называл два
+сериализатора, добавлено три: `EmployeeStatusListResponseSerializer` понадобился
+как отдельный КЛАСС, потому что `extend_schema_serializer(many=False)` — декоратор
+класса, а `inline_serializer` возвращает экземпляр. Без него AC-10б не
+выполняется. Форма ответа не изменилась.
+
+**Гейты.** `make gate` дословно: **2518 passed, 56 deselected, «No changes
+detected», 91s** из бюджета 300s, exit 0. `npm run gate` из `frontend`: **exit 0,
+59 файлов / 866 тестов, 208.9 KB gzip** из 300. Известный флейк
+`DailyUpdatePage.test.tsx` на дате 2026-07-25+ на этой ветке **не воспроизвёлся**
+(его код живёт на ветке Smart Josparlau, здесь мейнлайн).
+
+**AC-10 гейты:** `grep -c 'operations/statuses/' schema.d.ts` = 2 (было 1);
+ответ 200 в `schema.yaml` — `$ref` на объект, не массив.
+
+**Побочный эффект вне репозитория (закрыт).** Остановка чужого контейнера ради
+порта 5433 привела к потере его сетевого sandbox: контейнер работал, но публикация
+на хост пропала, и `restart`/`stop+start` её не вернули. По решению Bratan
+контейнер пересоздан (`docker compose up -d --force-recreate db_test` в
+`MasterQala.kz`) — проброс `0.0.0.0:5433->5432` восстановлен, ценой анонимного
+тома тестовой БД. Урок на будущее: не занимать порт, который держит чужой
+проект, — дешевле поднять свой на свободном.
+
+**Открытые вопросы спеки остаются открытыми** (оба — к ревью, не блокеры):
+дрейф 403-конверта между `ensure_division_scope` и inline-проверкой; индекс под
+bulk-скан `EmployeeDivisionHistory`, который этим роутом попадает в
+интерактивный путь.
+
 ### File List
+
+Авторские:
+- `Backend/VAPS/apps/operations/statuses/tests/test_status_read_api.py` (NEW)
+- `Backend/VAPS/apps/operations/statuses/api/serializers.py` (MOD)
+- `Backend/VAPS/apps/operations/statuses/api/views.py` (MOD)
+- `Backend/VAPS/apps/operations/statuses/selectors.py` (MOD)
+- `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (MOD)
+
+Регенерированные:
+- `Backend/VAPS/schema.yaml` (`make schema`)
+- `frontend/src/shared/api/schema.d.ts` (`npm run generate:api`)
+
+Планировочные:
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/10-1b-get-списка-статусов-на-дату.md`
+
+### Change Log
+
+- 2026-07-27 — реализация 10.1b: `GET /api/operations/statuses/`, 18 новых
+  API-тестов, строка `ops-status-list` в RBAC-матрице, обе схемы
+  регенерированы. 4 красные пробы. Оба гейта зелёные.

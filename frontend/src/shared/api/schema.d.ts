@@ -1067,6 +1067,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/statuses/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Живые статусные записи подразделения на дату — источник предзаполнения грида. Отдаёт ТОЛЬКО реальные записи: сотрудник без строки трактуется потребителем как derived «В строю». 400 нет/невалидны business_date|division_id; 403 нет права status.view / дивизион вне scope; 404 дивизион не существует. */
+        get: operations["operations_statuses_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/statuses/bulk/": {
         parameters: {
             query?: never;
@@ -1316,6 +1333,36 @@ export interface components {
             personal_email?: string | null;
             notes?: string | null;
             employment_status?: components["schemas"]["EmploymentStatusEnum"];
+        };
+        /**
+         * @description Тело 200. Эхо ``business_date``/``division_id`` — дешёвая защита от
+         *     гонки: ответ, приехавший после смены даты на экране, распознаётся как
+         *     чужой. Ключ ``rows`` (не ``results``): ``results`` в этом проекте означает
+         *     пагинационный конверт, которого здесь нет.
+         */
+        EmployeeStatusListResponse: {
+            /** Format: date */
+            business_date: string;
+            /** Format: uuid */
+            division_id: string;
+            rows: components["schemas"]["EmployeeStatusRow"][];
+        };
+        /**
+         * @description Одна живая запись на дату — ровно 4 поля.
+         *
+         *     Форма зеркалит ``EmployeeStatusSelector.overlapping_on`` и ровно то, что
+         *     потребляет ``YesterdayPlacement`` фронта. ``id``/``source`` НЕ отдаём:
+         *     у снапшота сдачи (``snapshot_facts_on``, 6 полей) другой владелец, а
+         *     расширять контракт вперёд спроса — потом не сузить.
+         */
+        EmployeeStatusRow: {
+            /** Format: uuid */
+            employee_id: string;
+            status_type_code: string;
+            /** Format: date */
+            date_start: string;
+            /** Format: date */
+            date_end: string;
         };
         /**
          * @description * `WORKING` - Работает
@@ -2817,6 +2864,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Role"];
+                };
+            };
+        };
+    };
+    operations_statuses_list: {
+        parameters: {
+            query: {
+                business_date: string;
+                division_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeStatusListResponse"];
                 };
             };
         };

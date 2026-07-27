@@ -341,7 +341,7 @@ development_status:
   #           statusTypes.ts:7 сам называет точку подключения; тянет судьбу
   #           statusTypes.test.ts (зеркало 17 типов) и DailyUpdatePage.catalog.test.tsx.
   # Порядок: 10.1b → 10.1e ; 10.1d → 10.1f. Бэк-пара независима между собой.
-  10-1b-get-списка-статусов-на-дату: ready-for-dev
+  10-1b-get-списка-статусов-на-дату: review
   10-1d-справочник-статус-типов: backlog
   10-1e-префилл-вчера-от-живого-get: backlog
   10-1f-справочник-статус-типов-во-фронте: backlog
