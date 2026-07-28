@@ -201,15 +201,109 @@ export default tseslint.config(
       ],
     },
   },
+  // ARCH-FE-015 (стори 8.4) + Story 11.3a: HTTP — только через apiClient из
+  // shared/api, WS-транспорт — только через shared/notifications. Оба канона
+  // банят глобал + property-каналы (window.X/globalThis.X — ревью 8.4: бан
+  // глобала обходился через window.XMLHttpRequest, тот же приём применим и
+  // к WebSocket). ВНИМАНИЕ: flat config НЕ мержит значение правила между
+  // блоками с overlapping files — второй матчащий блок для того же имени
+  // правила ПОЛНОСТЬЮ заменяет набор ограничений первого (не объединяет).
+  // Поэтому запреты не размазаны по двум независимым `ignores`-блокам (как
+  // было в первой версии этой правки — молча гасило fetch/XHR-бан на всех
+  // src-файлах), а явно расщеплены на три непересекающихся среза:
+  // 1) весь остальной src — оба канона разом; 2) shared/api — только WS-бан
+  // (HTTP там легален по определению); 3) shared/notifications — только
+  // HTTP-бан (WS там легален по определению).
   {
-    // ARCH-FE-015 (стори 8.4): HTTP — только через apiClient из shared/api.
-    // Глобалы fetch/XMLHttpRequest и window/globalThis.{fetch,XMLHttpRequest} вне
-    // src/shared/api забанены (property-каналы XHR — ревью 8.4: бан глобала обходился
-    // через window.XMLHttpRequest); block-scoped ignores живут и под ignore:false
-    // самотеста (Ловушка 8), краснота по каждому каналу + негативный контроль
-    // (fetch ВНУТРИ shared/api зелёный) — lint-canon.
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/shared/api/**'],
+    ignores: ['src/shared/api/**', 'src/shared/notifications/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'fetch',
+          message:
+            'HTTP только через apiClient из shared/api (ARCH-FE-015: парсинг статусов и конверта ошибок — в одной точке)',
+        },
+        {
+          name: 'XMLHttpRequest',
+          message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
+        },
+        {
+          name: 'WebSocket',
+          message:
+            'WS-транспорт только через shared/notifications (Story 11.3a): reconnect/backoff/kill-switch уже реализованы там, второй клиент — риск расхождения поведения',
+        },
+      ],
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'window',
+          property: 'fetch',
+          message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
+        },
+        {
+          object: 'globalThis',
+          property: 'fetch',
+          message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
+        },
+        {
+          object: 'window',
+          property: 'XMLHttpRequest',
+          message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
+        },
+        {
+          object: 'globalThis',
+          property: 'XMLHttpRequest',
+          message: 'HTTP только через apiClient из shared/api (ARCH-FE-015)',
+        },
+        {
+          object: 'window',
+          property: 'WebSocket',
+          message:
+            'WS-транспорт только через shared/notifications (Story 11.3a)',
+        },
+        {
+          object: 'globalThis',
+          property: 'WebSocket',
+          message:
+            'WS-транспорт только через shared/notifications (Story 11.3a)',
+        },
+      ],
+    },
+  },
+  {
+    // shared/api: HTTP легален (это его канонный владелец), WS всё равно забанен.
+    files: ['src/shared/api/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'WebSocket',
+          message:
+            'WS-транспорт только через shared/notifications (Story 11.3a): reconnect/backoff/kill-switch уже реализованы там, второй клиент — риск расхождения поведения',
+        },
+      ],
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'window',
+          property: 'WebSocket',
+          message:
+            'WS-транспорт только через shared/notifications (Story 11.3a)',
+        },
+        {
+          object: 'globalThis',
+          property: 'WebSocket',
+          message:
+            'WS-транспорт только через shared/notifications (Story 11.3a)',
+        },
+      ],
+    },
+  },
+  {
+    // shared/notifications: WS легален (это его канонный владелец), HTTP всё равно забанен.
+    files: ['src/shared/notifications/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-globals': [
         'error',

@@ -30,6 +30,7 @@ const APP_NAME = `__canon_app_${PID}__`
 const X_NAME = `__canon_x_${PID}__` // намеренно ВНЕ app/features/shared
 const API_NAME = `__canon_api_${PID}__` // ВНУТРИ shared/api: негативный контроль банов HTTP
 const PRINT_NAME = `__canon_print_${PID}__` // ВНУТРИ features/print-forms: печатный канон 8.8
+const WS_NAME = `__canon_ws_${PID}__` // ВНУТРИ shared/notifications: негативный контроль бана WebSocket (11.3a)
 const A = join(SRC, 'features', A_NAME)
 const B = join(SRC, 'features', B_NAME)
 const S = join(SRC, 'shared', S_NAME)
@@ -37,6 +38,7 @@ const APP = join(SRC, 'app', APP_NAME)
 const X = join(SRC, X_NAME)
 const API = join(SRC, 'shared', 'api', API_NAME)
 const PRINT = join(SRC, 'features', 'print-forms', PRINT_NAME)
+const WS = join(SRC, 'shared', 'notifications', WS_NAME)
 
 const failures = []
 
@@ -110,6 +112,7 @@ try {
   mkdirSync(X, { recursive: true })
   mkdirSync(API, { recursive: true })
   mkdirSync(PRINT, { recursive: true })
+  mkdirSync(WS, { recursive: true })
   writeFileSync(join(B, 'x.ts'), 'export const b = 1\n')
   writeFileSync(join(S, 'x.ts'), 'export const s = 1\n')
   writeFileSync(join(A, 'base.ts'), 'export const base = 1\n')
@@ -196,6 +199,37 @@ try {
   writeFileSync(
     join(API, 'probe.ts'),
     'export const probe = () => fetch("/api/x")\n',
+  )
+  // Story 11.3a: WebSocket вне shared/notifications забанен — глобал + оба
+  // property-канала (тот же обходной приём, что уже пойман ревью 8.4 для XHR)
+  writeFileSync(
+    join(A, 'websocket.ts'),
+    'export const ws = new WebSocket("wss://x")\n',
+  )
+  writeFileSync(
+    join(A, 'winwebsocket.ts'),
+    'export const w = new window.WebSocket("wss://x")\n' +
+      'export const g = new globalThis.WebSocket("wss://x")\n',
+  )
+  // негативный контроль: WebSocket ВНУТРИ shared/notifications легален
+  writeFileSync(
+    join(WS, 'probe.ts'),
+    'export const probe = () => new WebSocket("wss://x")\n',
+  )
+  // ревью 11.3a (Blind Hunter + Edge Case Hunter): доказать ОБЕ стороны
+  // расщепления на три блока, не только «свой канон легален у владельца» —
+  // иначе молчаливая потеря «чужого» бана при будущей правке (ровно та
+  // ловушка non-merge flat config, которую описывает комментарий в
+  // eslint.config.js) прошла бы этот самотест незамеченной.
+  // WebSocket ВСЁ РАВНО забанен внутри shared/api (HTTP там легален, WS — нет)
+  writeFileSync(
+    join(API, 'ws-banned.ts'),
+    'export const w = new WebSocket("wss://x")\n',
+  )
+  // fetch ВСЁ РАВНО забанен внутри shared/notifications (WS там легален, HTTP — нет)
+  writeFileSync(
+    join(WS, 'fetch-banned.ts'),
+    'export const f = fetch("/api/x")\n',
   )
   // негативный контроль ARCH-FE-015 (8.5): useMutation в features красный
   // (mutation.ts выше), а канонная замена — useApiMutation из shared/api
@@ -369,6 +403,7 @@ try {
     join(X, '*.ts'),
     join(API, '*.ts'),
     join(PRINT, '*.{ts,tsx}'),
+    join(WS, '*.ts'),
   ])
 
   // красные: запрещённые рёбра и баны
@@ -407,6 +442,14 @@ try {
     `${A_NAME}/axios.ts`,
     '@typescript-eslint/no-restricted-imports',
   )
+  // красные: WebSocket вне shared/notifications (Story 11.3a)
+  expectRule(results, `${A_NAME}/websocket.ts`, 'no-restricted-globals')
+  expectRule(results, `${A_NAME}/winwebsocket.ts`, 'no-restricted-properties')
+  // красные: перекрёстная сторона расщепления 11.3a — «чужой» бан не должен
+  // теряться у владельца (WebSocket всё ещё красный в shared/api, fetch всё
+  // ещё красный в shared/notifications)
+  expectRule(results, `${API_NAME}/ws-banned.ts`, 'no-restricted-globals')
+  expectRule(results, `${WS_NAME}/fetch-banned.ts`, 'no-restricted-globals')
   // красные: literal-пути вне routes.ts (ARCH-FE-012, стори 8.7)
   expectRule(results, `${APP_NAME}/nav-literal.tsx`, 'no-restricted-syntax')
   expectRule(results, `${APP_NAME}/link-literal.tsx`, 'no-restricted-syntax')
@@ -448,6 +491,7 @@ try {
   expectClean(results, `${A_NAME}/same.ts`) // та же фича
   expectClean(results, `${APP_NAME}/probe.ts`) // app → features + shared
   expectClean(results, `${API_NAME}/probe.ts`) // fetch внутри shared/api легален
+  expectClean(results, `${WS_NAME}/probe.ts`) // WebSocket внутри shared/notifications легален (11.3a)
   expectClean(results, `${A_NAME}/uses-api-mutation.ts`) // канонный хук из features (8.5)
   expectClean(results, `${A_NAME}/uses-permissions.ts`) // канонный auth-хук из features (8.6)
   expectClean(results, `${APP_NAME}/nav-const.tsx`) // navigate(ROUTES.*) и шаблон С подстановкой легальны (8.7)
@@ -471,6 +515,7 @@ try {
   rmSync(X, { recursive: true, force: true })
   rmSync(API, { recursive: true, force: true })
   rmSync(PRINT, { recursive: true, force: true })
+  rmSync(WS, { recursive: true, force: true })
 }
 
 // реальное дерево (фикстуры параллельных прогонов не считаем):
@@ -494,5 +539,5 @@ if (failures.length) {
   process.exit(1)
 }
 console.log(
-  'lint-canon: 24 красных фикстур + 9 негативных контролей + barrel/TS-only-сканы — канон доказан',
+  'lint-canon: 28 красных фикстур + 10 негативных контролей + barrel/TS-only-сканы — канон доказан',
 )

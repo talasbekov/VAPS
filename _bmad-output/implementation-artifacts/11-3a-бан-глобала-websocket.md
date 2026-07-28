@@ -4,7 +4,7 @@ baseline_commit: 7211f18
 
 # Story 11.3a: Бан глобала WebSocket
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -24,25 +24,21 @@ so that **WS-транспорт остаётся единой точкой (`not
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Конфиг ESLint (`frontend/eslint.config.js`, MOD) (AC: 1, 2, 3)
-  - [ ] Добавить новый блок объекта конфигурации СРАЗУ после существующего ARCH-FE-015 блока (`fetch`/`XMLHttpRequest`, строки ~204-250) — тот же `files: ['src/**/*.{ts,tsx}']`, но `ignores: ['src/shared/notifications/**']` (вместо `src/shared/api/**`).
-  - [ ] `no-restricted-globals`: `{ name: 'WebSocket', message: 'WS-транспорт только через shared/notifications (ARCH-FE-015-подобный канон, Story 11.3a): reconnect/backoff/kill-switch уже реализованы там, второй клиент — риск расхождения поведения' }`.
-  - [ ] `no-restricted-properties`: `{ object: 'window', property: 'WebSocket', message: '...' }` и `{ object: 'globalThis', property: 'WebSocket', message: '...' }` — тот же текст сообщения, что глобал-бан, для консистентности с существующим XHR-паттерном.
-  - [ ] Комментарий-обоснование над блоком: зеркало комментария у ARCH-FE-015 блока — почему этот канон существует (см. Dev Notes ниже), явная ссылка на Story 11.3a и epic-11-retro §1.
-- [ ] Task 2 — Самотест канона (`frontend/scripts/lint-canon.test.mjs`, MOD) (AC: 4)
-  - [ ] Новая константа `WS_NAME = \`__canon_ws_${PID}__\`` и путь `const WS = join(SRC, 'shared', 'notifications', WS_NAME)` (зеркало `API`/`API_NAME` для fetch-негатива).
-  - [ ] `mkdirSync(WS, { recursive: true })` в try-блоке, `rmSync(WS, ...)` в finally.
-  - [ ] Красная фикстура в `A` (существующая features-директория): `writeFileSync(join(A, 'websocket.ts'), 'export const ws = new WebSocket("wss://x")\n')`.
-  - [ ] Красная фикстура property-канала: `writeFileSync(join(A, 'winwebsocket.ts'), 'export const w = new window.WebSocket("wss://x")\nexport const g = new globalThis.WebSocket("wss://x")\n')` — зеркало `winxhr.ts` (строки 185-189).
-  - [ ] Зелёная фикстура: `writeFileSync(join(WS, 'probe.ts'), 'export const probe = () => new WebSocket("wss://x")\n')`.
-  - [ ] Добавить `join(WS, '*.ts')` в массив путей `eslint.lintFiles([...])`.
-  - [ ] `expectRule(results, \`${A_NAME}/websocket.ts\`, 'no-restricted-globals')`.
-  - [ ] `expectRule(results, \`${A_NAME}/winwebsocket.ts\`, 'no-restricted-properties')`.
-  - [ ] `expectClean(results, \`${WS_NAME}/probe.ts\`)`.
-  - [ ] Обновить финальный `console.log` со счётчиком фикстур/негативных контролей (было «24 красных фикстур + 9 негативных контролей» → станет 26 + 10).
-- [ ] Task 3 — Валидация (AC: 5)
-  - [ ] `npm run gate` (frontend, из `frontend/`, не из корня — project convention) — зелёный целиком, включая `lint-canon.test.mjs`.
-  - [ ] Убедиться, что `frontend/src/shared/notifications/notificationsSocket.ts` и `frontend/e2e-harness/notifications.tsx` (единственный файл вне `src/`, содержащий строку `WebSocket` — только в комментарии) не задеты — `e2e-harness/**` не под `src/**`, глоб их не матчит в принципе, задача — подтвердить, что это осталось так и не потребовалось точечного `ignores`.
+- [x] Task 1 — Конфиг ESLint (`frontend/eslint.config.js`, MOD) (AC: 1, 2, 3)
+  - [x] **Отклонение от исходного плана (обнаружено при реализации):** простое добавление отдельного блока `{ files: ['src/**/*.{ts,tsx}'], ignores: ['src/shared/notifications/**'], rules: {...WebSocket...} }` СРАЗУ после ARCH-FE-015-блока сломало сам ARCH-FE-015 — flat config НЕ мержит значение правила между блоками с overlapping `files`: второй матчащий блок для того же имени правила (`no-restricted-globals`/`no-restricted-properties`) полностью ЗАМЕНЯЕТ набор ограничений первого, а не объединяет. `lint-canon.test.mjs` немедленно поймал регресс (fetch/XHR-фикстуры внезапно позеленели). Исправлено расщеплением на 3 непересекающихся блока: (1) весь `src/**` кроме `shared/api/**` и `shared/notifications/**` — оба канона разом; (2) `shared/api/**` — только WS-бан (HTTP легален); (3) `shared/notifications/**` — только HTTP-бан (WS легален). Комментарий-предупреждение об этой ловушке flat config оставлен прямо в конфиге.
+  - [x] `no-restricted-globals`: `{ name: 'WebSocket', message: '...' }` — во всех трёх блоках, где применимо.
+  - [x] `no-restricted-properties`: `window.WebSocket`/`globalThis.WebSocket` — во всех трёх блоках, где применимо.
+  - [x] Комментарий-обоснование над блоком — ссылка на Story 11.3a и epic-11-retro §1, плюс явное предупреждение о non-merge ловушке flat config (для будущих канонов).
+- [x] Task 2 — Самотест канона (`frontend/scripts/lint-canon.test.mjs`, MOD) (AC: 4)
+  - [x] `WS_NAME`/`WS` (зеркало `API`/`API_NAME`), `mkdirSync`/`rmSync` в try/finally.
+  - [x] Красная фикстура `websocket.ts` (глобал) и `winwebsocket.ts` (property-канал, оба object) в `A`.
+  - [x] Зелёная фикстура `WS/probe.ts`.
+  - [x] `join(WS, '*.ts')` добавлен в `eslint.lintFiles([...])`.
+  - [x] `expectRule` на оба красных канала, `expectClean` на зелёный.
+  - [x] Счётчик в финальном `console.log` обновлён: 24→26 фикстур, 9→10 негативных контролей.
+- [x] Task 3 — Валидация (AC: 5)
+  - [x] `npm run gate` (frontend) — зелёный целиком: deps-gate, schema-check, tsc, eslint, lint-canon (26+10), schema-check.test, build-constants.test, vitest (63 files/993 tests passed), vite build, size-gate (212.4 KB / 300 KB бюджет).
+  - [x] Подтверждено: `notificationsSocket.ts` (внутри `shared/notifications`) и `e2e-harness/notifications.tsx` (вне `src/`, строка `WebSocket` только в комментарии) не затронуты — gate зелёный без единого точечного `ignores` сверх трёх канон-блоков.
 
 ## Dev Notes
 
@@ -68,14 +64,23 @@ so that **WS-транспорт остаётся единой точкой (`not
 
 ### Completion Notes
 
-_(заполняется dev-агентом по завершении)_
+Реализовано по плану с одним значимым отклонением, обнаруженным в процессе (см. Task 1): наивное добавление отдельного `{files, ignores, rules}`-блока после ARCH-FE-015 сломало сам ARCH-FE-015, потому что flat config ESLint НЕ мержит значения правил (`no-restricted-globals`/`no-restricted-properties`) между блоками с overlapping `files` — второй матчащий блок для того же имени правила ПОЛНОСТЬЮ заменяет набор ограничений первого. `lint-canon.test.mjs` немедленно поймал регресс (fetch/XHR-фикстуры внезапно позеленели на существующих файлах). Исправлено расщеплением на три непересекающихся блока (общий src / shared/api-владелец / shared/notifications-владелец), с явным предупреждающим комментарием в конфиге — задокументировано как урок для будущих ESLint-канонов.
+
+**Ревью (3 агента, cross-model):**
+- **Blind Hunter** (diff-only) и **Edge Case Hunter** (полный доступ к проекту) НЕЗАВИСИМО пришли к одной и той же находке: самотест доказывал только «свой канон легален у владельца» (WebSocket легален в shared/notifications, fetch легален в shared/api), но НЕ доказывал обратную сторону — что «чужой» бан не потерялся у владельца (WebSocket всё ещё красный в shared/api, fetch всё ещё красный в shared/notifications). Ровно та ловушка non-merge flat config, которую сама правка призвана предотвращать, — прошла бы регресс незамеченной. Исправлено: добавлены 2 красные фикстуры (`API/ws-banned.ts`, `WS/fetch-banned.ts`) + 2 assertion'а; счётчик самотеста обновлён 26→28 красных фикстур (негативные контроли остались 10 — обе новые фикстуры красные, не зелёные).
+- Edge Case Hunter также отметил (не блокер, задокументировано как открытый trade-off): три новых блока, в отличие от соседних ARCH-FE-012/печатного канона, не исключают `*.test.{ts,tsx}` — сегодня это безвредно (ни один тестовый файл не создаёт `new WebSocket(...)` напрямую, все идут через мокнутую фабрику), но будущий тест, которому понадобится реальный `new WebSocket(...)` вне `shared/notifications` (например, против реального mock WS-сервера), будет заблокирован линтом без явного carve-out. Осознанно не расширяю поверхность правки под гипотетический будущий тест — при необходимости добавляется отдельной точечной правкой.
+- **Acceptance Auditor** независимо перепрочитал код, сам прогнал `lint-canon.test.mjs` и полный `npm run gate` (993 теста / 63 файла, size-gate 212.4 KB / 300 KB) — все 5 AC подтверждены удовлетворёнными без расхождений с заявлениями стори.
+
+Финальный прогон `npm run gate` (после фикса находок ревью) — зелёный целиком.
 
 ### File List
 
-_(заполняется dev-агентом по завершении)_
+- `frontend/eslint.config.js` (MOD) — три блока вместо одного (ARCH-FE-015 + Story 11.3a, WS-бан).
+- `frontend/scripts/lint-canon.test.mjs` (MOD) — 28 красных фикстур + 10 негативных контролей (было 24+9 до стори).
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-28 | Story создана (create-story) |
+| 2026-07-28 | dev-story: реализация + фикс flat-config non-merge ловушки + фикс находок ревью (перекрёстные негативные контроли) → done |
