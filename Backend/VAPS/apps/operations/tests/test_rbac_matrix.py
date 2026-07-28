@@ -208,6 +208,9 @@ MATRIX = {
     # что list/period; division_id ОБЯЗАТЕЛЕН — payloadless GET держателя =
     # 400 сериализатора = ALLOW по канону.
     "ops-expense-report-journal": _MethodGate({"get": "daily_report.generate"}),
+    # JSON-поверхность тела документа (story 10.7a), READ-ONLY, GET-only. Тот
+    # же гейт-код, что list/period/journal — тот же расход-домен.
+    "ops-expense-report-document": _MethodGate({"get": "daily_report.generate"}),
     # audit — read-only журнал, загейчен RequirePermissionMixin("audit.view")
     # (story 4.5). GET-only (list+retrieve); ORGD/ADMIN → ALLOW, прочие/аноним
     # → DENY (из seed).

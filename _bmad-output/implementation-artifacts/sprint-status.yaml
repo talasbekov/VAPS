@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-28 (10.6c → done, 10.7a → ready-for-dev)
+# last_updated: 2026-07-28 (10.7a → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -448,7 +448,7 @@ development_status:
   #   числа соответствуют, ячейки — без членов.
   # Порядок: 10.7 → 10.7a.
   10-7-печатная-форма-расхода: done
-  10-7a-json-поверхность-тела-расхода: ready-for-dev
+  10-7a-json-поверхность-тела-расхода: done
   # Разделено на create-story 2026-07-19 с поимённым преемником.
   # Факт: байтовой .xlsx-поверхности НЕТ — grep "xlsx" в schema.d.ts даёт 0,
   # permission_map DailySubmissionViewSet = {create, amend, list, retrieve},

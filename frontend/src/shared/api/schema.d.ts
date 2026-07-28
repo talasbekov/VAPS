@@ -955,6 +955,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/expense-reports/document/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Story 10.7a: ПОЛНОЕ тело документа расхода (`build_expense_document`, 6.3) — числа + члены ячеек (звание/ФИО/период), БЕЗ cap 20 (cap — только рендер .docx/.xlsx). READ-ONLY: не выпускает, не консьюмит номер, не пишет аудит. 409 нет сдачи за дату; 422 неподдерживаемая схема снапшота ИЛИ несходящийся расход; 403 чужой scope; 404 нет подразделения. */
+        get: operations["operations_expense_reports_document_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/expense-reports/journal/": {
         parameters: {
             query?: never;
@@ -1517,6 +1534,56 @@ export interface components {
          * @enum {string}
          */
         EventEnum: "CONFIRMED_NO_CHANGES" | "CHANGED" | "AMENDED";
+        ExpenseDocumentAttachedCell: {
+            count: number;
+            members: components["schemas"]["ExpenseDocumentAttachedCellMember"][];
+        };
+        ExpenseDocumentAttachedCellMember: {
+            rank: string;
+            full_name: string;
+            /** Format: date */
+            date_start: string;
+            /** Format: date */
+            date_end: string;
+        };
+        ExpenseDocumentCell: {
+            count: number;
+            members: components["schemas"]["ExpenseDocumentCellMember"][];
+        };
+        ExpenseDocumentCellMember: {
+            rank: string;
+            full_name: string;
+            /** Format: date */
+            date_start: string;
+            /** Format: date */
+            date_end: string;
+        };
+        ExpenseDocumentResponse: {
+            division_title: string;
+            /** Format: date */
+            business_date: string;
+            rows: components["schemas"]["ExpenseDocumentRow"][];
+            totals: components["schemas"]["ExpenseDocumentTotals"];
+        };
+        ExpenseDocumentRow: {
+            name: string;
+            staff_total: number;
+            list_total: number;
+            vacancies: number;
+            cells: {
+                [key: string]: components["schemas"]["ExpenseDocumentCell"];
+            };
+            attached: components["schemas"]["ExpenseDocumentAttachedCell"];
+        };
+        ExpenseDocumentTotals: {
+            staff_total: number;
+            list_total: number;
+            vacancies: number;
+            columns: {
+                [key: string]: number;
+            };
+            attached: number;
+        };
         ExpenseJournalListResponse: {
             count: number;
             next: string | null;
@@ -3007,6 +3074,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IssuedExpenseReport"];
+                };
+            };
+        };
+    };
+    operations_expense_reports_document_retrieve: {
+        parameters: {
+            query: {
+                business_date: string;
+                division_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseDocumentResponse"];
                 };
             };
         };

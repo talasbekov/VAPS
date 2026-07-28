@@ -67,6 +67,8 @@ from apps.operations.submissions.services import (
     export_submission,
     issue_expense_document,
     override_tomorrow_block,
+    read_expense_document,
+    serialize_expense_document,
     submit_day,
     summary_freshness,
 )
@@ -392,6 +394,7 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "period": _EXPENSE_PERMISSION,
         "override_block": _OVERRIDE_PERMISSION,
         "journal": _EXPENSE_PERMISSION,
+        "document": _EXPENSE_PERMISSION,
     }
     # No "head": HEAD stays 405 everywhere (mirror of the 5.8a/b minimal
     # surface above — a deliberate project-wide canon, not an omission).
@@ -657,6 +660,93 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return paginator.get_paginated_response(
             IssuedExpenseReportSerializer(page, many=True).data
         )
+
+    @extend_schema(
+        parameters=[ExpenseReportByDateFilterSerializer],
+        responses={
+            200: inline_serializer(
+                name="ExpenseDocumentResponse",
+                fields={
+                    "division_title": serializers.CharField(),
+                    "business_date": serializers.DateField(),
+                    "rows": inline_serializer(
+                        name="ExpenseDocumentRow",
+                        many=True,
+                        fields={
+                            "name": serializers.CharField(),
+                            "staff_total": serializers.IntegerField(),
+                            "list_total": serializers.IntegerField(),
+                            "vacancies": serializers.IntegerField(),
+                            "cells": serializers.DictField(
+                                child=inline_serializer(
+                                    name="ExpenseDocumentCell",
+                                    fields={
+                                        "count": serializers.IntegerField(),
+                                        "members": inline_serializer(
+                                            name="ExpenseDocumentCellMember",
+                                            many=True,
+                                            fields={
+                                                "rank": serializers.CharField(),
+                                                "full_name": serializers.CharField(),
+                                                "date_start": serializers.DateField(),
+                                                "date_end": serializers.DateField(),
+                                            },
+                                        ),
+                                    },
+                                )
+                            ),
+                            "attached": inline_serializer(
+                                name="ExpenseDocumentAttachedCell",
+                                fields={
+                                    "count": serializers.IntegerField(),
+                                    "members": inline_serializer(
+                                        name="ExpenseDocumentAttachedCellMember",
+                                        many=True,
+                                        fields={
+                                            "rank": serializers.CharField(),
+                                            "full_name": serializers.CharField(),
+                                            "date_start": serializers.DateField(),
+                                            "date_end": serializers.DateField(),
+                                        },
+                                    ),
+                                },
+                            ),
+                        },
+                    ),
+                    "totals": inline_serializer(
+                        name="ExpenseDocumentTotals",
+                        fields={
+                            "staff_total": serializers.IntegerField(),
+                            "list_total": serializers.IntegerField(),
+                            "vacancies": serializers.IntegerField(),
+                            "columns": serializers.DictField(
+                                child=serializers.IntegerField()
+                            ),
+                            "attached": serializers.IntegerField(),
+                        },
+                    ),
+                },
+            )
+        },
+        description="Story 10.7a: ПОЛНОЕ тело документа расхода "
+        "(`build_expense_document`, 6.3) — числа + члены ячеек "
+        "(звание/ФИО/период), БЕЗ cap 20 (cap — только рендер .docx/.xlsx). "
+        "READ-ONLY: не выпускает, не консьюмит номер, не пишет аудит. "
+        "409 нет сдачи за дату; 422 неподдерживаемая схема снапшота ИЛИ "
+        "несходящийся расход; 403 чужой scope; 404 нет подразделения.",
+    )
+    @action(detail=False, methods=["get"], url_path="document")
+    def document(self, request, *args, **kwargs):
+        form = ExpenseReportByDateFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        business_date = form.validated_data["business_date"]
+        ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        _ensure_division_exists(division_id)
+        data = read_expense_document(
+            division_id=division_id, business_date=business_date
+        )
+        return Response(serialize_expense_document(data))
 
 
 class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):

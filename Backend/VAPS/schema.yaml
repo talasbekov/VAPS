@@ -1451,6 +1451,36 @@ paths:
               schema:
                 $ref: '#/components/schemas/IssuedExpenseReport'
           description: ''
+  /api/operations/expense-reports/document/:
+    get:
+      operationId: operations_expense_reports_document_retrieve
+      description: 'Story 10.7a: ПОЛНОЕ тело документа расхода (`build_expense_document`,
+        6.3) — числа + члены ячеек (звание/ФИО/период), БЕЗ cap 20 (cap — только рендер
+        .docx/.xlsx). READ-ONLY: не выпускает, не консьюмит номер, не пишет аудит.
+        409 нет сдачи за дату; 422 неподдерживаемая схема снапшота ИЛИ несходящийся
+        расход; 403 чужой scope; 404 нет подразделения.'
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+          format: date
+        required: true
+      - in: query
+        name: division_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseDocumentResponse'
+          description: ''
   /api/operations/expense-reports/journal/:
     get:
       operationId: operations_expense_reports_journal_retrieve
@@ -2473,6 +2503,130 @@ components:
         * `CONFIRMED_NO_CHANGES` - Подтверждено без изменений
         * `CHANGED` - Изменено
         * `AMENDED` - Исправлено
+    ExpenseDocumentAttachedCell:
+      type: object
+      properties:
+        count:
+          type: integer
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseDocumentAttachedCellMember'
+      required:
+      - count
+      - members
+    ExpenseDocumentAttachedCellMember:
+      type: object
+      properties:
+        rank:
+          type: string
+        full_name:
+          type: string
+        date_start:
+          type: string
+          format: date
+        date_end:
+          type: string
+          format: date
+      required:
+      - date_end
+      - date_start
+      - full_name
+      - rank
+    ExpenseDocumentCell:
+      type: object
+      properties:
+        count:
+          type: integer
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseDocumentCellMember'
+      required:
+      - count
+      - members
+    ExpenseDocumentCellMember:
+      type: object
+      properties:
+        rank:
+          type: string
+        full_name:
+          type: string
+        date_start:
+          type: string
+          format: date
+        date_end:
+          type: string
+          format: date
+      required:
+      - date_end
+      - date_start
+      - full_name
+      - rank
+    ExpenseDocumentResponse:
+      type: object
+      properties:
+        division_title:
+          type: string
+        business_date:
+          type: string
+          format: date
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseDocumentRow'
+        totals:
+          $ref: '#/components/schemas/ExpenseDocumentTotals'
+      required:
+      - business_date
+      - division_title
+      - rows
+      - totals
+    ExpenseDocumentRow:
+      type: object
+      properties:
+        name:
+          type: string
+        staff_total:
+          type: integer
+        list_total:
+          type: integer
+        vacancies:
+          type: integer
+        cells:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ExpenseDocumentCell'
+        attached:
+          $ref: '#/components/schemas/ExpenseDocumentAttachedCell'
+      required:
+      - attached
+      - cells
+      - list_total
+      - name
+      - staff_total
+      - vacancies
+    ExpenseDocumentTotals:
+      type: object
+      properties:
+        staff_total:
+          type: integer
+        list_total:
+          type: integer
+        vacancies:
+          type: integer
+        columns:
+          type: object
+          additionalProperties:
+            type: integer
+        attached:
+          type: integer
+      required:
+      - attached
+      - columns
+      - list_total
+      - staff_total
+      - vacancies
     ExpenseJournalListResponse:
       type: object
       properties:

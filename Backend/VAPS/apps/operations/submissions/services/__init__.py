@@ -4,6 +4,10 @@ from apps.operations.submissions.services.day_submission_service import submit_d
 from apps.operations.submissions.services.document_release_service import (
     issue_expense_document,
 )
+from apps.operations.submissions.services.expense_document_read_service import (
+    read_expense_document,
+    serialize_expense_document,
+)
 from apps.operations.submissions.services.expense_read_service import (
     assert_report_date_has_data,
     derive_period,
@@ -28,6 +32,8 @@ __all__ = [
     "export_submission",
     "issue_expense_document",
     "override_tomorrow_block",
+    "read_expense_document",
+    "serialize_expense_document",
     "submit_day",
     "summary_freshness",
 ]
