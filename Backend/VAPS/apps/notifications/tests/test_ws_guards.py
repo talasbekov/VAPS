@@ -318,23 +318,25 @@ def test_ws_transport_declares_its_own_dependencies():
     assert "pytest-asyncio" in dev
 
 
-def test_no_server_or_worker_stack_is_introduced():
-    """AC-9 boundary: 11.1 ships a transport, not a DEPLOYMENT.
+def test_no_disallowed_server_or_worker_stack_is_introduced():
+    """AC-9 boundary: 11.1 ships a transport, not the full DEPLOYMENT stack.
 
     ``daphne`` is refused outright (11.1 AC-1, решение Bratan: +14 transitive
     packages and 3 C-extensions into the offline mirror) and ``celery`` likewise
-    (epics.md#L759, ARCH-DEFERRED-048) — in ANY dependency group. A server in the
-    RUNTIME dependencies is still 12.1's call, not this epic's.
+    (epics.md#L759, ARCH-DEFERRED-048) — in ANY dependency group, still today:
+    12.1 fixed the prod TOPOLOGY (nginx+uvicorn-app+postgres+redis) but
+    explicitly deferred worker/beat containers to 12.6 (no Celery task exists
+    anywhere in the codebase yet — see 12.1's own Dev Notes) — Celery staying
+    absent from pyproject.toml is exactly what proves that deferral held.
 
-    Story 11.6 (решение Bratan 2026-07-19) narrows the uvicorn clause to the
-    runtime group only. The boundary this guard defends is «no deployment ships
-    with the transport», and a dev-extra does not ship: it is a test tool for the
-    live browser e2e (`npm run test:e2e:live`), which is the ONLY way to exercise
-    the wire between the Django process and the operator's tab — `runserver`
-    without daphne is plain WSGI and serves no WebSocket at all. uvicorn is not
-    being CHOSEN here either; architecture already picked it (config/asgi.py:1-22,
-    epics.md#L1280). What stays forbidden is exactly what the guard was written
-    for: a server in the runtime deps, i.e. in the прод-образ. That move is 12.1.
+    ``uvicorn`` moved from dev-extra (11.6, live e2e tooling only) into the
+    RUNTIME dependencies in Story 12.1 — it is now the actual прод-сервер
+    (config/asgi.py:1-22 «uvicorn (--lifespan off)», Backend/VAPS/Dockerfile).
+    This guard used to assert uvicorn's ABSENCE from runtime deps precisely
+    because that move belonged to 12.1 and not before it; now that 12.1 has
+    landed, the guard asserts its PRESENCE instead — a stale absence-check
+    here would silently pass if a future revert dropped uvicorn from the prod
+    image without anyone noticing.
     """
     runtime, dev = _declared_dependencies()
     declared = set(runtime) | set(dev)
@@ -344,12 +346,12 @@ def test_no_server_or_worker_stack_is_introduced():
     intruders = declared & {"daphne", "celery"}
     assert intruders == set(), (
         f"out-of-scope dependencies declared: {sorted(intruders)} — "
-        "daphne refused (11.1 AC-1), Celery is forbidden (AC-9)"
+        "daphne refused (11.1 AC-1), Celery is forbidden until 12.6 (AC-9)"
     )
-    # uvicorn — dev-extra only (11.6); the прод-образ stays server-free until 12.1.
-    assert "uvicorn" not in set(runtime), (
-        "uvicorn declared in RUNTIME dependencies — the прод-сервер is Story "
-        "12.1; 11.6 allows it in the [dev] extra only (live e2e tooling)"
+    # uvicorn — runtime dependency since 12.1 (the прод-сервер).
+    assert "uvicorn" in set(runtime), (
+        "uvicorn missing from RUNTIME dependencies — the прод-сервер (12.1) "
+        "must ship in the прод-образ, not only the [dev] extra"
     )
 
 

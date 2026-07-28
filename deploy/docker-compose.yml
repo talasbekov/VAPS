@@ -1,0 +1,136 @@
+# Story 12.1 — прод-топология (закрытый LAN, деплой носителем). nginx + app
+# (uvicorn, --lifespan off) + postgres + redis. НЕ worker/beat — Celery нигде
+# в проекте не установлен, ни одной @shared_task не существует; заводить
+# пустые контейнеры без задач было бы театром, не топологией (см. Dev Notes
+# story 12.1). Явно отложено на 12.6.
+#
+# Существующий Backend/VAPS/docker-compose.yml (Postgres-харнесс `make gate`,
+# порт 5433) — ОТДЕЛЬНЫЙ файл, не трогается и не переиспользуется (запрет,
+# повторённый 1.9/6.1/11.5/11.6a).
+#
+# HTTPS/TLS — сознательно отсутствует (architecture.md#L321: «эпик production
+# hardening, не блокирует первый релиз: закрытый LAN»). Порт 80 наружу.
+# restart: unless-stopped на всех четырёх сервисах (найдено ревью): без него
+# перезагрузка хоста/OOM-килл контейнера не поднимает стек обратно
+# автоматически — реальный риск для «носитель довёз, закрытый LAN, никто не
+# смотрит на дашборд» модели эксплуатации. `unless-stopped`, не `always`:
+# осознанный `docker compose down` не должен сам себя поднимать обратно.
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    environment:
+      # envsubst-шаблон (официальный механизм nginx-образа: любой файл в
+      # /etc/nginx/templates/*.template рендерится в /etc/nginx/conf.d/*.conf
+      # на старте контейнера — не самодельный entrypoint).
+      - VAPS_PRIVATE_STORAGE_ROOT=/protected-storage
+      - STATIC_ROOT=/app-static
+      - VAPS_XACCEL_LOCATION=${VAPS_XACCEL_LOCATION:-/protected}
+      # :?  не :-  — найдено ревью: пустое/незаданное значение рендерит
+      # `map`-строку `"" 1;`, которая пропускает WS-запросы БЕЗ заголовка
+      # Origin вовсе (не браузерные клиенты его могут не слать) — fail-open
+      # ровно там, где обязательство config/asgi.py требует fail-closed
+      # Origin-гард. `docker compose up` обязан упасть явно, а не тихо
+      # поднять открытый WS.
+      - VAPS_ALLOWED_ORIGIN=${VAPS_ALLOWED_ORIGIN:?VAPS_ALLOWED_ORIGIN must be set — see deploy/.env.example}
+    volumes:
+      - ./nginx/vaps.conf.template:/etc/nginx/templates/vaps.conf.template:ro
+      - private_storage:/protected-storage:ro
+      - static_files:/app-static:ro
+      # Bind-mount, не именованный volume: собранный фронт (`npm run build`)
+      # живёт на хосте, nginx его не собирает — сборка вне compose (12.2's
+      # bundle.sh автоматизирует перенос; здесь — прямой путь для ручного
+      # `docker compose up`, AC-6).
+      - ../frontend/dist:/frontend-dist:ro
+      # Найдено живым прогоном: образ несёт свой /etc/nginx/conf.d/default.conf
+      # с явным `server_name localhost;` — точное совпадение имени сервера
+      # побеждает НАШ `default_server` для любого запроса с заголовком
+      # `Host: localhost` (типичный локальный curl/браузер), и весь наш
+      # server-блок остаётся недостижимым молча (симптом — 404 от
+      # /usr/share/nginx/html, не ошибка конфигурации). Глушится нулевым
+      # байндом — стандартный docker-приём, не полагаться на один только
+      # `default_server`.
+      - /dev/null:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/admin/login/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build:
+      context: ../Backend/VAPS
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Миграции — ПЕРЕД uvicorn, не в отдельном одноразовом сервисе: 12.1
+    # ограничена топологией compose up, install.sh's полноценный чек-сумма→
+    # бэкап→load→migrate→smoke рунбук — 12.3.
+    command: sh -c "python manage.py migrate --noinput && uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --lifespan off"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Топология внутри compose-сети — постоянна, НЕ из .env (оператор не
+      # должен переоткрывать эти два значения на каждом деплое).
+      - VAPS_DB_HOST=postgres
+      - VAPS_DB_PORT=5432
+      - VAPS_PRIVATE_STORAGE_ROOT=/protected-storage
+      - VAPS_STATIC_ROOT=/app/staticfiles
+    volumes:
+      - private_storage:/protected-storage
+      - static_files:/app/staticfiles
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/admin/login/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${VAPS_DB_USER}
+      - POSTGRES_PASSWORD=${VAPS_DB_PASSWORD}
+      - POSTGRES_DB=${VAPS_DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Порт НЕ пробрасывается наружу (в отличие от гейт-харнесса 5433) — прод-БД
+    # доступна только внутри compose-сети.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VAPS_DB_USER} -d ${VAPS_DB_NAME} -h 127.0.0.1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    # Порт НЕ пробрасывается наружу (в отличие от гейт-харнесса 6380).
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+volumes:
+  postgres_data:
+  redis_data:
+  private_storage:
+  static_files:

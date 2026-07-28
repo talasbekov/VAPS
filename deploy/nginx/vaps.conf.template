@@ -1,0 +1,93 @@
+# Story 12.1 — прод nginx-конфиг. Файл — envsubst-ШАБЛОН (официальный
+# механизм nginx:1.27-alpine: /etc/nginx/templates/*.template рендерится в
+# /etc/nginx/conf.d/*.conf на старте контейнера, substitution ограничен
+# ПЕРЕЧНЕМ РЕАЛЬНО ЗАДАННЫХ env-переменных контейнера — nginx-переменные
+# рантайма ($http_upgrade, $uri, $remote_addr...) НЕ в этом списке и остаются
+# литеральными, не затираются пустой строкой). Переменные шаблона —
+# ${VAPS_PRIVATE_STORAGE_ROOT}, ${STATIC_ROOT}, ${VAPS_XACCEL_LOCATION},
+# ${VAPS_ALLOWED_ORIGIN} — заданы в deploy/docker-compose.yml's `nginx.environment`.
+
+# Origin-гард для WS (обязательство config/asgi.py, Решение №6, 11.1):
+# AllowedHostsOriginValidator намеренно отсутствует на Django-стороне —
+# Origin-фильтрация назначена nginx здесь, по номеру стори.
+#
+# Явный `"" 0;` — defense-in-depth (найдено ревью): compose требует
+# VAPS_ALLOWED_ORIGIN через `:?` (docker-compose.yml), значит пустое значение
+# сюда дойти не должно — но если это когда-то обойдут (ручной `docker run`
+# в обход compose, будущая правка убрала `:?`), голая строка `"" 1;` без этой
+# явной строки пропустила бы WS-запрос БЕЗ заголовка Origin вовсе (небраузерные
+# клиенты его могут не слать) — ровно fail-open там, где нужен fail-closed.
+map $http_origin $vaps_ws_origin_ok {
+    default 0;
+    "" 0;
+    "${VAPS_ALLOWED_ORIGIN}" 1;
+}
+
+server {
+    # default_server ОБЯЗАТЕЛЕН (найдено живым прогоном): образ nginx:1.27-alpine
+    # несёт свой /etc/nginx/conf.d/default.conf (root /usr/share/nginx/html),
+    # который сортируется РАНЬШЕ vaps.conf алфавитно — без явного default_server
+    # nginx отдаёт ВСЕ запросы на порт 80 default.conf'у, и весь этот server-блок
+    # становится мёртвым кодом (симптом: 404 «/usr/share/nginx/html/...», а не
+    # ошибка конфигурации — location-блоки корректны, но никогда не достигаются).
+    listen 80 default_server;
+
+    client_max_body_size 25m;  # синхронизировано вручную с VAPS_MAX_UPLOAD_MB
+                                # (config/settings.py:274, дефолт 20MB) + запас
+                                # на multipart-накладные расходы. Расхождение
+                                # при смене одного из двух — предмет ручной
+                                # сверки (envsubst не умеет единицы конвертировать).
+
+    # X-Accel internal location (контракт apps/documents/services.py Д2/Д3,
+    # story 6.1): xaccel_redirect_path() отдаёт "{location}/{uuid}",
+    # storage_path() — "{root}/{uuid}" (плоско, без расширения) — alias мапит
+    # 1:1, без лишнего сегмента пути.
+    location ${VAPS_XACCEL_LOCATION}/ {
+        internal;
+        alias ${VAPS_PRIVATE_STORAGE_ROOT}/;
+    }
+
+    # Admin-статика (deferred-work.md's E12/12.1-долг: без collectstatic+alias
+    # admin-CSS/JS не отдаются под DEBUG=False).
+    location /static/ {
+        alias ${STATIC_ROOT}/;
+    }
+
+    # WS — upgrade-заголовки + долгий read_timeout (буква эпика epics.md#L1280)
+    # + Origin-гард выше.
+    location /ws/ {
+        if ($vaps_ws_origin_ok = 0) {
+            return 403;
+        }
+        proxy_pass http://app:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+    }
+
+    # HTTP API + admin — обычный proxy.
+    location /api/ {
+        proxy_pass http://app:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /admin/ {
+        proxy_pass http://app:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # SPA — react-router's BrowserRouter (history-mode, frontend/src/app/App.tsx):
+    # любой несовпавший путь падает на index.html, клиентский роутер решает
+    # остальное. Контракт не был зафиксирован НИ ОДНОЙ предыдущей стори — впервые
+    # здесь.
+    root /frontend-dist;
+    location / {
+        try_files $uri /index.html;
+    }
+}

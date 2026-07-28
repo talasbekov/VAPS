@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-29 (12.1 → ready-for-dev, epic-12 → in-progress; carve-out 12.1a заведена)
+# last_updated: 2026-07-29 (12.1 → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -612,7 +612,7 @@ development_status:
   #           сегодня даёт W001/W009/W012/W016/W018). Функционально независимо
   #           от топологии — 12.1 даёт РАБОТАЮЩИЙ, но не полностью защищённый
   #           по чеклисту Django стек; 12.1a закрывает защищённость поверх.
-  12-1-прод-compose: ready-for-dev
+  12-1-прод-compose: done
   12-1a-прод-security-hardening: backlog
   12-2-bundle-sh-и-manifest: backlog
   12-3-install-sh-и-smoke-sh: backlog

@@ -256,9 +256,12 @@ SPECTACULAR_SETTINGS = {
     },
 }
 
-# Admin-ассеты под DEBUG/runserver через staticfiles. STATIC_ROOT +
-# collectstatic + nginx-alias — прод-статика, отложено в E12 (ARCH#L335).
+# Admin-ассеты под DEBUG/runserver — через staticfiles напрямую (STATIC_ROOT
+# не требуется). Под прод (12.1) — collectstatic В ОБРАЗ (Dockerfile) в
+# STATIC_ROOT, nginx отдаёт alias'ом (ARCH#L335: «static/media — nginx alias,
+# ASGI не отдаёт»); ASGI-приложение само эти файлы никогда не сервит.
 STATIC_URL = "static/"
+STATIC_ROOT = Path(os.environ.get("VAPS_STATIC_ROOT", BASE_DIR / "staticfiles"))
 
 
 # Story 6.1 — приватное файловое хранилище (Attachment). Файлы живут ВНЕ
