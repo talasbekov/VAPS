@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1785231838.5303774,
-    "ast_hash": "91d3fcb25e64b1801c5fb563d3a1e8b5",
+    "mtime": 1785232824.488461,
+    "ast_hash": "5f2dbf865bc0bb32f5fb064afad01dc9",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785231847.203496,
-    "ast_hash": "1e171d6f9832141162ac2084d92e3205",
+    "mtime": 1785232832.7065814,
+    "ast_hash": "246be8d6751fc05e03ddc1333c54de13",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -17835,8 +17835,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/management/commands/import_donor_slice.py": {
-    "mtime": 1785229796.0474591,
-    "ast_hash": "047ae5ce3fcba389ac79ee1bd3f9734a",
+    "mtime": 1785232077.2016897,
+    "ast_hash": "ffc8c8dcc484023f311080c4f40e6473",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/tests/__init__.py": {
@@ -22667,6 +22667,26 @@
   "_bmad-output/implementation-artifacts/7-5-post-migration-\u0441\u0445\u043e\u0434\u0438\u043c\u043e\u0441\u0442\u044c.md": {
     "mtime": 1785231818.1270995,
     "ast_hash": "70dbf23f3d20ae9c10d779d7b4ec2cad",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/full_import.py": {
+    "mtime": 1785232059.013434,
+    "ast_hash": "d6e9bc1ebfb9a23823ed4e45e0886c76",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/management/commands/migrate_rehearsal.py": {
+    "mtime": 1785232569.462744,
+    "ast_hash": "4ba32d28f498aed46e1cd7963759ae7b",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/tests/test_migrate_rehearsal.py": {
+    "mtime": 1785232628.1295967,
+    "ast_hash": "1b674e2e3e55e69bbe9dd7b777164ac0",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/7-6-\u0440\u0435\u043f\u0435\u0442\u0438\u0446\u0438\u0438-\u043c\u0438\u0433\u0440\u0430\u0446\u0438\u0438.md": {
+    "mtime": 1785232804.56717,
+    "ast_hash": "5d5ec31ba38cb20792865aa888fb0297",
     "semantic_hash": ""
   }
 }
