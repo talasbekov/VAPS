@@ -73,10 +73,23 @@
 | operation_id | owner_feature | contract_status | method/path | permission | mock_handler | contract_test |
 |---|---|---|---|---|---|---|
 | listDutyTypes | features/duties | backend-contract-pending | GET /api/ops/duty-types/ | ops.duty.view | mocks/handlers.ts | ручная проверка (2 типа, fixtures.ts) |
-| listDutyShifts | features/duties | backend-contract-pending | GET /api/ops/duty-shifts/ | ops.duty.view | mocks/handlers.ts | ручная проверка (4 синтетические смены) |
+| listDutyShifts | features/duties | backend-contract-pending | GET /api/ops/duty-shifts/ | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts (порядок, businessDate сервера) |
+| listDutyDirectory | features/duties | backend-contract-pending | GET /api/ops/duty-directory/ | ops.duty.view | mocks/handlers.ts | mocks/repository.test.ts (цели + ростер) |
+| createDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/ | ops.duty.manage | mocks/handlers.ts | mocks/repository.test.ts + pages/DutyPlanPage.calendar.test.tsx (400/422/409+override) |
 | acknowledgeDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/acknowledge/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
 | clockInDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/clock-in/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
 | clockOutDutyShift | features/duties | backend-contract-pending | POST /api/ops/duty-shifts/:id/clock-out/ | ops.duty.manage | mocks/handlers.ts | ручная проверка |
+
+### Коды ошибок `createDutyShift`
+
+| Ситуация | HTTP | error_code | Обход |
+|---|---|---|---|
+| Неизвестный сотрудник/объект/вид, кривая дата, пустая причина при `override` | 400 | VALIDATION_ERROR (details по полям) | — |
+| Вид дежурства не соответствует типу объекта | 422 | DUTY_TYPE_TARGET_MISMATCH | нет |
+| Сотрудник уже назначен на этот день | 422 | DUTY_DOUBLE_ASSIGNMENT | нет (hard-block) |
+| Смена в смежные сутки у того же сотрудника | 409 | DUTY_CONFLICT_DETECTED (`details.conflicts[]`, `conflict_code=REST_AFTER_DAILY_DUTY`) | да: `override:true` + `override_reason` в КОРНЕ тела |
+
+`DUTY_CONFLICT_DETECTED` — уже существующий код из `docs/registries/error-codes.yaml` (категория `conflict_soft`, входит в `OVERRIDABLE_CODES`); НОВЫЙ код завести было нельзя — общий `ConflictDialog` открывается только по кодам из этого множества.
 
 ## NEXT ACTION
 Регистрировать первые операции `features/analytics`/дальнейшее расширение duties (боевые группы, месячное планирование) — по решению пользователя.

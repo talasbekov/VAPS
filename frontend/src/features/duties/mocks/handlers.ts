@@ -4,17 +4,21 @@ import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import type { ErrorEnvelope } from '../../../shared/api/errors'
 import {
+  DUTY_DIRECTORY_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
   dutyShiftAcknowledgePath,
   dutyShiftClockInPath,
   dutyShiftClockOutPath,
 } from '../api/pending-contracts'
+import type { CreateDutyShiftRequest } from '../api/pending-contracts'
 import {
   createDutiesRepository,
   RepositoryBusinessRuleError,
+  RepositoryConflictError,
   RepositoryNotFoundError,
   RepositoryPermissionError,
+  RepositoryValidationError,
 } from './repository'
 
 function permissionDeniedEnvelope(clock: DemoClock): ErrorEnvelope {
@@ -45,6 +49,32 @@ function mapRepositoryError(error: unknown, clock: DemoClock, entityId: string):
   if (error instanceof RepositoryPermissionError) {
     return HttpResponse.json(permissionDeniedEnvelope(clock), { status: 403 })
   }
+  if (error instanceof RepositoryValidationError) {
+    // 400 = ФОРМА (§36): details по полям — сырьё для RHF setError.
+    return HttpResponse.json(
+      {
+        error_code: 'VALIDATION_ERROR',
+        message: 'Проверьте заполнение формы.',
+        details: error.fieldErrors,
+        request_id: null,
+        timestamp: clock.now(),
+      } satisfies ErrorEnvelope,
+      { status: 400 },
+    )
+  }
+  if (error instanceof RepositoryConflictError) {
+    // 409 = КОНФЛИКТ (§36); код в OVERRIDABLE_CODES ⇒ ConflictDialog.
+    return HttpResponse.json(
+      {
+        error_code: error.errorCode,
+        message: error.message,
+        details: { conflicts: error.conflicts },
+        request_id: null,
+        timestamp: clock.now(),
+      } satisfies ErrorEnvelope,
+      { status: 409 },
+    )
+  }
   if (error instanceof RepositoryNotFoundError) {
     return HttpResponse.json(notFoundEnvelope(clock, entityId), { status: 404 })
   }
@@ -68,10 +98,27 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
         return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
       }
     }),
+    http.get(`*${DUTY_DIRECTORY_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.listDirectory(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
     http.get(`*${DUTY_SHIFTS_PATH}`, async ({ request }) => {
       const actorUserId = request.headers.get('X-User-Id')
       try {
         return HttpResponse.json(await repository.listShifts(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    http.post(`*${DUTY_SHIFTS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        const body = (await request.json()) as CreateDutyShiftRequest
+        return HttpResponse.json(await repository.createShift(body, actorUserId), { status: 201 })
       } catch (error) {
         return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
       }

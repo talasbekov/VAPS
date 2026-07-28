@@ -19,6 +19,27 @@ export interface DutyTypeDefinition {
   requiresSenior: boolean
 }
 
+/**
+ * Цель дежурства из справочника (§24.3 — цели дежурств тоже данные, а не
+ * литералы в JSX). Живёт в том же demo-слайсе, что смены (A36).
+ */
+export interface DutyTarget {
+  objectId: string
+  targetType: DutyTargetType
+  safeLabel: string
+}
+
+/**
+ * Кадровый снимок, доступный для назначения на дежурство. Собственный набор
+ * duties, НЕ импорт из features/personnel (ARCH-FE-013 запрещает
+ * features→features; тот же прецедент, что personnelRoster у security-events).
+ */
+export interface DutyRosterEntry {
+  employeeId: string
+  fullName: string
+  unitLabel: string
+}
+
 /** Упрощённый процесс §24.1 (INDIVIDUAL-подмножество): без «формирование
  * потребности → подача состава → рассмотрение → утверждение смены» —
  * PLANNED сразу назначен, дальше ознакомление→заступление→завершение. */
@@ -33,6 +54,7 @@ export interface DutyShift {
     objectId: string
     safeLabel: string
   }
+  employeeId: string
   employeeName: string
   stateCode: DutyShiftState
   acknowledgedAt: string | null

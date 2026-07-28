@@ -1,21 +1,26 @@
 // План дежурств (§21.4/§24 мастер-промпта). §21.4: «По объектам»/«По
-// сотрудникам» — представления ОДНОГО набора данных (useDutyShifts), НЕ
-// отдельные источники истины — переключатель вида группирует один и тот же
-// список, второй запрос не делается. «Боевые группы на Трассе», подача/
-// утверждение состава, история/revisions — Not started (см. model/types.ts
-// шапку и FRONTEND_DECISIONS).
+// сотрудникам»/«Календарь» — ТРИ представления ОДНОГО набора данных
+// (useDutyShifts), НЕ отдельные источники истины: переключатель вида
+// группирует один и тот же список, второй запрос не делается. «Боевые группы
+// на Трассе», подача/утверждение состава, история/revisions — Not started
+// (см. model/types.ts шапку и FRONTEND_DECISIONS).
 import { useMemo, useState } from 'react'
 import { Button } from '../../../shared/ui/Button'
+import { usePermissions } from '../../../shared/auth/usePermissions'
 import {
   useAcknowledgeDutyShift,
   useClockInDutyShift,
   useClockOutDutyShift,
+  useDutyDirectory,
   useDutyShifts,
   useDutyTypes,
 } from '../api/queries'
+import { addDaysIso, startOfWeekIso } from '../model/calendar'
 import type { DutyShift, DutyShiftState } from '../model/types'
+import { AssignShiftDialog } from './AssignShiftDialog'
+import { DutyCalendarView } from './DutyCalendarView'
 
-type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE'
+type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE' | 'CALENDAR'
 
 const STATE_LABEL: Record<DutyShiftState, string> = {
   PLANNED: 'Запланировано',
@@ -33,8 +38,19 @@ const STATE_CLASS: Record<DutyShiftState, string> = {
 
 export function DutyPlanPage() {
   const [view, setView] = useState<ViewMode>('BY_OBJECT')
+  // Неделя хранится СМЕЩЕНИЕМ, а не датой: якорь («сегодня» сервера) приезжает
+  // асинхронно, и абсолютный стейт пришлось бы досинхронизировать эффектом.
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [assignTarget, setAssignTarget] = useState<{ date: string; employeeId: string } | null>(
+    null,
+  )
+  const { hasPermission } = usePermissions()
+  const canManage = hasPermission('ops.duty.manage')
+
   const dutyTypesQuery = useDutyTypes()
   const shiftsQuery = useDutyShifts()
+  // Справочник нужен только календарю (строки = ростер) и форме назначения.
+  const directoryQuery = useDutyDirectory()
 
   const dutyTypeLabel = useMemo(() => {
     const map = new Map<string, string>()
@@ -55,8 +71,14 @@ export function DutyPlanPage() {
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [shiftsQuery.data, view])
 
-  const isLoading = dutyTypesQuery.isLoading || shiftsQuery.isLoading
-  const isError = dutyTypesQuery.isError || shiftsQuery.isError
+  const serverBusinessDate = shiftsQuery.data?.businessDate ?? null
+  const weekStart =
+    serverBusinessDate === null
+      ? null
+      : addDaysIso(startOfWeekIso(serverBusinessDate), weekOffset * 7)
+
+  const isLoading = dutyTypesQuery.isLoading || shiftsQuery.isLoading || directoryQuery.isLoading
+  const isError = dutyTypesQuery.isError || shiftsQuery.isError || directoryQuery.isError
 
   return (
     <div>
@@ -85,6 +107,13 @@ export function DutyPlanPage() {
           >
             По сотрудникам
           </Button>
+          <Button
+            size="sm"
+            variant={view === 'CALENDAR' ? 'default' : 'ghost'}
+            onClick={() => setView('CALENDAR')}
+          >
+            Календарь
+          </Button>
         </div>
       </header>
 
@@ -95,7 +124,33 @@ export function DutyPlanPage() {
         <p className="text-sm text-destructive">Не удалось загрузить план дежурств.</p>
       )}
 
-      {!isLoading && !isError && (
+      {!isLoading && !isError && view === 'CALENDAR' && weekStart !== null && (
+        <DutyCalendarView
+          weekStart={weekStart}
+          todayIso={serverBusinessDate ?? weekStart}
+          shifts={shiftsQuery.data?.results ?? []}
+          roster={directoryQuery.data?.roster ?? []}
+          dutyTypeLabel={(code) => dutyTypeLabel.get(code) ?? code}
+          onPrevWeek={() => setWeekOffset((offset) => offset - 1)}
+          onNextWeek={() => setWeekOffset((offset) => offset + 1)}
+          onAssign={
+            canManage
+              ? (date, employeeId) => setAssignTarget({ date, employeeId })
+              : null
+          }
+        />
+      )}
+
+      {assignTarget !== null && (
+        <AssignShiftDialog
+          open
+          initialDate={assignTarget.date}
+          initialEmployeeId={assignTarget.employeeId}
+          onClose={() => setAssignTarget(null)}
+        />
+      )}
+
+      {!isLoading && !isError && view !== 'CALENDAR' && (
         <div className="flex flex-col gap-3.5">
           {groups.length === 0 && (
             <section className="rounded-xl border bg-card p-9 text-center text-sm text-muted-foreground">

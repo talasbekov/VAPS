@@ -4,6 +4,7 @@ import { apiClient } from '../../../shared/api/client'
 import { useApiMutation } from '../../../shared/api/useApiMutation'
 import type { ApiFailure } from '../../../shared/api/errors'
 import {
+  DUTY_DIRECTORY_PATH,
   DUTY_SHIFTS_PATH,
   DUTY_TYPES_PATH,
   dutyShiftAcknowledgePath,
@@ -14,6 +15,9 @@ import type {
   AcknowledgeDutyShiftResponse,
   ClockInDutyShiftResponse,
   ClockOutDutyShiftResponse,
+  CreateDutyShiftRequest,
+  CreateDutyShiftResponse,
+  ListDutyDirectoryResponse,
   ListDutyShiftsResponse,
   ListDutyTypesResponse,
 } from './pending-contracts'
@@ -26,10 +30,35 @@ export function useDutyTypes() {
   })
 }
 
+/** Справочник для формы назначения (§24.3): цели + доступный кадровый снимок. */
+export function useDutyDirectory() {
+  return useQuery<ListDutyDirectoryResponse, ApiFailure>({
+    queryKey: ['duties', 'directory'],
+    queryFn: () => apiClient.get<ListDutyDirectoryResponse>(DUTY_DIRECTORY_PATH),
+    staleTime: 5 * 60_000,
+  })
+}
+
 export function useDutyShifts() {
   return useQuery<ListDutyShiftsResponse, ApiFailure>({
     queryKey: ['duties', 'shifts'],
     queryFn: () => apiClient.get<ListDutyShiftsResponse>(DUTY_SHIFTS_PATH),
+  })
+}
+
+/**
+ * Назначение смены. Тип переменных включает `override`/`override_reason`:
+ * `confirmOverride` кладёт их в КОРЕНЬ исходного тела (§36) — без этого повтор
+ * с причиной не типизировался бы и уехал бы мимо контракта.
+ */
+export function useCreateDutyShift() {
+  const queryClient = useQueryClient()
+  return useApiMutation<CreateDutyShiftResponse, CreateDutyShiftRequest & Record<string, unknown>>({
+    mutationFn: (variables) =>
+      apiClient.post<CreateDutyShiftResponse>(DUTY_SHIFTS_PATH, variables),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shifts'] })
+    },
   })
 }
 
