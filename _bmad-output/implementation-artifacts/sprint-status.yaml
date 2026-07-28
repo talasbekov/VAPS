@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-28 (11.4a → done)
+# last_updated: 2026-07-29 (11.4b → ready-for-dev)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -547,7 +547,7 @@ development_status:
   # (пересечений по файлам нет: бэк vs фронт).
   11-4-центр-уведомлений-ui: done
   11-4a-бэк-отметка-прочтения: done
-  11-4b-ui-мутация-отметки-прочтения: backlog
+  11-4b-ui-мутация-отметки-прочтения: ready-for-dev
   # Вынесено из скоупа 11.5 (create-story 2026-07-19) с поимённым преемником.
   # Основание — правило декомпозиции проекта (CLAUDE.md §Story Size Rules:
   # стори не смешивает бэк и фронт, не трогает >5 файлов). Совместная стори
