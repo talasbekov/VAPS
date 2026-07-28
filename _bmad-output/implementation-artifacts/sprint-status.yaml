@@ -364,7 +364,7 @@ development_status:
   # Порядок: 10.3a → {10.4, 10.3c} ; 10.3c → 10.3b.
   10-1c-схема-daily-submissions: done
   10-3a-роут-светофора: done
-  10-3c-роут-drift-подразделения: backlog
+  10-3c-роут-drift-подразделения: done
   10-3b-серверный-drift-маркер: backlog
   # ⛔ 10.4 создана (create-story 2026-07-19), но СТАРТ ЗАБЛОКИРОВАН пререквизитом:
   #    её AC-0 — исполняемый гейт `grep traffic-light schema.yaml schema.d.ts`;

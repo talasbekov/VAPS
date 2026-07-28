@@ -130,6 +130,16 @@ class TrafficLightTreeFilterSerializer(serializers.Serializer):
     business_date = serializers.DateField(required=False)
 
 
+class TrafficLightDivisionFilterSerializer(serializers.Serializer):
+    """GET query form (10.3c) — ``division_id`` ОБЯЗАТЕЛЕН (в отличие от
+    ``tree``'s ``root_division_id``): точечный запрос ОДНОГО листа, «весь
+    видимый скоуп» здесь не имеет смысла. ``business_date`` опционален —
+    дефолт ``Clock.today_local()`` во вьюхе, как у ``tree``."""
+
+    division_id = serializers.UUIDField()
+    business_date = serializers.DateField(required=False)
+
+
 class TomorrowBlockOverrideSerializer(serializers.Serializer):
     """POST-body form (6.10b) — the date whose «на завтра» block is legally
     lifted and the mandatory reason. DRF defaults reject a missing/blank reason

@@ -1135,6 +1135,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/traffic-light/division/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Per-division светофор с drift-деталями (5.5a). 400 не-UUID/не-ISO/будущая дата; 403 чужой scope; 404 нет подразделения; 422 дата до начала данных. drift=null для GREEN/RED. status — только GREEN/YELLOW/RED (NEUTRAL/UNKNOWN — cascade-only, здесь недостижимы; поле делит enum с узлом tree, где все 5 значений возможны). */
+        get: operations["operations_traffic_light_division_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/traffic-light/tree/": {
         parameters: {
             query?: never;
@@ -1851,13 +1868,29 @@ export interface components {
             overridden_by: string;
             reason: string;
         };
+        TrafficLightDivisionResponse: {
+            status: components["schemas"]["TrafficLightStatusEnum"];
+            late: boolean;
+            drift?: components["schemas"]["TrafficLightDrift"] | null;
+        };
+        TrafficLightDrift: {
+            added: string[];
+            removed: string[];
+            changed: components["schemas"]["TrafficLightDriftChange"][];
+        };
+        TrafficLightDriftChange: {
+            /** Format: uuid */
+            employee_id: string;
+            from: string;
+            to: string;
+        };
         TrafficLightNode: {
             /** Format: uuid */
             division_id: string;
             name: string;
             /** Format: uuid */
             parent_id: string | null;
-            status: components["schemas"]["TrafficLightNodeStatusEnum"];
+            status: components["schemas"]["TrafficLightStatusEnum"];
             late: boolean;
         };
         /**
@@ -1868,7 +1901,7 @@ export interface components {
          *     * `UNKNOWN` - Неопределён
          * @enum {string}
          */
-        TrafficLightNodeStatusEnum: "GREEN" | "YELLOW" | "RED" | "NEUTRAL" | "UNKNOWN";
+        TrafficLightStatusEnum: "GREEN" | "YELLOW" | "RED" | "NEUTRAL" | "UNKNOWN";
         TrafficLightTreeResponse: {
             /** Format: date */
             business_date: string;
@@ -3125,6 +3158,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    operations_traffic_light_division_retrieve: {
+        parameters: {
+            query: {
+                business_date?: string;
+                division_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrafficLightDivisionResponse"];
+                };
             };
         };
     };

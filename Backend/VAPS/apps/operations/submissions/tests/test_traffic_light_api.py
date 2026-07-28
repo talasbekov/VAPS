@@ -783,7 +783,10 @@ def test_schema_node_carries_five_typed_fields(committed_schema):
     assert properties["parent_id"]["format"] == "uuid"
     assert properties["parent_id"]["nullable"] is True
     assert properties["late"]["type"] == "boolean"
-    assert properties["status"]["$ref"].endswith("/TrafficLightNodeStatusEnum")
+    # Story 10.3c: division-роут ввёл ВТОРОЙ "status"-field с тем же choice
+    # set — spectacular слил бы их под авто-хэшированным именем без
+    # ENUM_NAME_OVERRIDES (settings.py); имя теперь стабильное и общее.
+    assert properties["status"]["$ref"].endswith("/TrafficLightStatusEnum")
 
     # Ответ действительно ссылается на этот узел, а не на анонимный объект.
     response = committed_schema["paths"][TREE_PATH]["get"]["responses"]["200"]
@@ -796,9 +799,7 @@ def test_schema_node_carries_five_typed_fields(committed_schema):
 
 def test_schema_status_enum_matches_the_service(committed_schema):
     """Схема не расходится с TrafficLightStatus — 10.4 типизирует цвет по ней."""
-    enum = committed_schema["components"]["schemas"]["TrafficLightNodeStatusEnum"][
-        "enum"
-    ]
+    enum = committed_schema["components"]["schemas"]["TrafficLightStatusEnum"]["enum"]
     assert enum == list(TrafficLightStatus.values)
 
 

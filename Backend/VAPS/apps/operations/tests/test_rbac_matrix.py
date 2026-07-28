@@ -177,6 +177,10 @@ MATRIX = {
     # DIVISION_OPERATOR, VIEWER; ORGD/OMD → DENY (открытый policy-вопрос:
     # руководству назначили именно это дерево, но право у них не стоит).
     "ops-traffic-light-tree": _MethodGate({"get": "status.view"}),
+    # per-division светофор с drift-деталями (story 10.3c), GET-only. Тот же
+    # гейт-код, что tree; division_id ОБЯЗАТЕЛЕН (в отличие от tree) —
+    # payloadless GET держателя = 400 сериализатора = ALLOW по канону.
+    "ops-traffic-light-division": _MethodGate({"get": "status.view"}),
     # bulk-создание статусов (story 10.1a, POST /statuses/bulk/). Грубый гейт
     # RequirePermissionMixin {"bulk": status.manage}; per-строчный scope
     # (allowed_division_ids) энфорсит сервис 3.8, матрицей не проверяется

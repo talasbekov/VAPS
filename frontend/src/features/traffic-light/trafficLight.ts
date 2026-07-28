@@ -23,8 +23,12 @@ import type { components } from '../../shared/api/schema'
 /** Узел ответа роута 10.3a — дословно `TrafficLightNode` схемы. */
 export type TrafficLightNode = components['schemas']['TrafficLightNode']
 
-/** Пять значений `TrafficLightStatus`; NEUTRAL/UNKNOWN рождаются в свёртке. */
-export type TrafficLightStatus = components['schemas']['TrafficLightNodeStatusEnum']
+/** Пять значений `TrafficLightStatus`; NEUTRAL/UNKNOWN рождаются в свёртке.
+ * Story 10.3c: division-роут ввёл ВТОРОЙ "status"-field с тем же choice
+ * set — spectacular слил бы их под авто-хэшированным именем без
+ * ENUM_NAME_OVERRIDES (Backend/VAPS/config/settings.py); имя теперь
+ * стабильное и общее (`TrafficLightStatusEnum`, не `...Node...`). */
+export type TrafficLightStatus = components['schemas']['TrafficLightStatusEnum']
 
 /**
  * Порядок — для перебора в тестах и рендере легенды; сам список обязан

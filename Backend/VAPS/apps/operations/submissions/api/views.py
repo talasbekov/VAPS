@@ -49,6 +49,7 @@ from apps.operations.submissions.api.serializers import (
     ExpenseReportIssueSerializer,
     IssuedExpenseReportSerializer,
     TomorrowBlockOverrideSerializer,
+    TrafficLightDivisionFilterSerializer,
     TrafficLightTreeFilterSerializer,
 )
 from apps.operations.submissions.selectors import (
@@ -68,6 +69,7 @@ from apps.operations.submissions.services import (
 )
 from apps.operations.submissions.traffic_light import (
     TrafficLightStatus,
+    division_traffic_light,
     traffic_light_tree,
 )
 
@@ -535,7 +537,10 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
     чужака, а раннюю дату — маской, скрывающей 403.
     """
 
-    permission_map = {"tree": _TRAFFIC_LIGHT_PERMISSION}
+    permission_map = {
+        "tree": _TRAFFIC_LIGHT_PERMISSION,
+        "division": _TRAFFIC_LIGHT_PERMISSION,
+    }
     # No "head": HEAD stays 405 everywhere (project-wide canon, mirror of the
     # two ViewSets above). GET-only ⇒ AUDIT_MATRIX не нужен (аудит покрывает
     # только мутирующие роуты) — если сюда попадёт write-глагол, покраснеет
@@ -657,3 +662,81 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # business_date эхом: сервер считает в VAPS_LOCAL_TIMEZONE, экран — в
         # браузере; на границе суток «сегодня» разойдётся.
         return Response({"business_date": business_date.isoformat(), "nodes": nodes})
+
+    # Story 10.3c: per-division светофор с drift-деталями (5.5a). Другая
+    # бизнес-логика, чем tree (own-level per-employee diff, не cascade fold)
+    # — НЕ вызывает traffic_light_tree с фильтром на один узел, зовёт
+    # division_traffic_light напрямую. Drift НЕ тянется в tree (Q3,
+    # sprint-status.yaml): per-node вызов на каждый YELLOW-лист дерева был бы
+    # N+1, тем самым анти-паттерном, который 5.5b уже решал bulk-подходом.
+    @extend_schema(
+        parameters=[TrafficLightDivisionFilterSerializer],
+        responses={
+            200: inline_serializer(
+                name="TrafficLightDivisionResponse",
+                fields={
+                    "status": serializers.ChoiceField(
+                        choices=TrafficLightStatus.choices
+                    ),
+                    "late": serializers.BooleanField(),
+                    "drift": inline_serializer(
+                        name="TrafficLightDrift",
+                        fields={
+                            "added": serializers.ListField(
+                                child=serializers.UUIDField()
+                            ),
+                            "removed": serializers.ListField(
+                                child=serializers.UUIDField()
+                            ),
+                            "changed": inline_serializer(
+                                name="TrafficLightDriftChange",
+                                many=True,
+                                fields={
+                                    "employee_id": serializers.UUIDField(),
+                                    "from": serializers.CharField(),
+                                    "to": serializers.CharField(),
+                                },
+                            ),
+                        },
+                        required=False,
+                        allow_null=True,
+                    ),
+                },
+            )
+        },
+        description="Per-division светофор с drift-деталями (5.5a). "
+        "400 не-UUID/не-ISO/будущая дата; 403 чужой scope; "
+        "404 нет подразделения; 422 дата до начала данных. "
+        "drift=null для GREEN/RED. status — только GREEN/YELLOW/RED "
+        "(NEUTRAL/UNKNOWN — cascade-only, здесь недостижимы; поле делит "
+        "enum с узлом tree, где все 5 значений возможны).",
+    )
+    @action(detail=False, methods=["get"], url_path="division")
+    def division(self, request, *args, **kwargs):
+        form = TrafficLightDivisionFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+
+        # Порядок гвардов — зеркало tree (6.10a-прецедент): scope сначала,
+        # existence — потом (scoped-чужак получает 403, не 404-oracle).
+        ensure_division_scope(request.actor_id, _TRAFFIC_LIGHT_PERMISSION, division_id)
+        _ensure_division_exists(division_id)
+
+        business_date = form.validated_data.get("business_date") or Clock.today_local()
+        today = Clock.today_local()
+        if business_date > today:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={
+                    "business_date": business_date.isoformat(),
+                    "today": today.isoformat(),
+                },
+                message="Светофор не считается на будущую дату.",
+            )
+        assert_report_date_has_data(business_date=business_date)
+
+        result = division_traffic_light(division_id, business_date)
+        return Response(
+            {"status": result.status, "late": result.late, "drift": result.drift}
+        )

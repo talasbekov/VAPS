@@ -243,6 +243,17 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "VAPS API",
     "VERSION": "0.1.0",
     "COMPONENT_SPLIT_REQUEST": True,
+    # Story 10.3c: TrafficLightViewSet.tree ("node.status") и .division
+    # ("status") share the SAME TrafficLightStatus choice set — spectacular
+    # tried to merge them under an auto-generated hashed name ("Status3a8Enum")
+    # instead of the previously-stable "TrafficLightNodeStatusEnum", breaking
+    # the pinned schema test. A shared enum for the same underlying choices
+    # is correct (not a workaround); this just gives it a deterministic name.
+    "ENUM_NAME_OVERRIDES": {
+        "TrafficLightStatusEnum": (
+            "apps.operations.submissions.traffic_light.TrafficLightStatus.choices"
+        ),
+    },
 }
 
 # Admin-ассеты под DEBUG/runserver через staticfiles. STATIC_ROOT +

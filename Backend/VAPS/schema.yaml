@@ -1685,6 +1685,34 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/operations/traffic-light/division/:
+    get:
+      operationId: operations_traffic_light_division_retrieve
+      description: Per-division светофор с drift-деталями (5.5a). 400 не-UUID/не-ISO/будущая
+        дата; 403 чужой scope; 404 нет подразделения; 422 дата до начала данных. drift=null
+        для GREEN/RED. status — только GREEN/YELLOW/RED (NEUTRAL/UNKNOWN — cascade-only,
+        здесь недостижимы; поле делит enum с узлом tree, где все 5 значений возможны).
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: division_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficLightDivisionResponse'
+          description: ''
   /api/operations/traffic-light/tree/:
     get:
       operationId: operations_traffic_light_tree_retrieve
@@ -3207,6 +3235,55 @@ components:
       - business_date
       - overridden_by
       - reason
+    TrafficLightDivisionResponse:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/TrafficLightStatusEnum'
+        late:
+          type: boolean
+        drift:
+          allOf:
+          - $ref: '#/components/schemas/TrafficLightDrift'
+          nullable: true
+      required:
+      - late
+      - status
+    TrafficLightDrift:
+      type: object
+      properties:
+        added:
+          type: array
+          items:
+            type: string
+            format: uuid
+        removed:
+          type: array
+          items:
+            type: string
+            format: uuid
+        changed:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrafficLightDriftChange'
+      required:
+      - added
+      - changed
+      - removed
+    TrafficLightDriftChange:
+      type: object
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+        from:
+          type: string
+        to:
+          type: string
+      required:
+      - employee_id
+      - from
+      - to
     TrafficLightNode:
       type: object
       properties:
@@ -3220,7 +3297,7 @@ components:
           format: uuid
           nullable: true
         status:
-          $ref: '#/components/schemas/TrafficLightNodeStatusEnum'
+          $ref: '#/components/schemas/TrafficLightStatusEnum'
         late:
           type: boolean
       required:
@@ -3229,7 +3306,7 @@ components:
       - name
       - parent_id
       - status
-    TrafficLightNodeStatusEnum:
+    TrafficLightStatusEnum:
       enum:
       - GREEN
       - YELLOW
