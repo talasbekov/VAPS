@@ -70,11 +70,13 @@ test.describe('Lifecycle месячного плана (§21.27-21.28, mock-ре
     await expect(header.getByRole('group', { name: 'Редакция' })).toContainText('1')
 
     await header.getByRole('button', { name: 'Проверить конфликты' }).click()
-    // Демо-сид июля: пересечение + нарушение отдыха на собственном объекте.
-    await expect(header.getByText(/не пройдена \(жёстких конфликтов 2\)/)).toBeVisible()
+    // Демо-сид июля: ПЕРЕСЕЧЕНИЕ — единственный жёсткий конфликт. Нарушения
+    // отдыха жёсткими не являются, пока действующий режим §21.35 — мягкий:
+    // severity задаёт глобальная политика «Настроек» (§29), а не вид дежурства.
+    await expect(header.getByText(/не пройдена \(жёстких конфликтов 1\)/)).toBeVisible()
     await expect(header.getByRole('button', { name: 'Утвердить план' })).toBeDisabled()
     await expect(
-      header.getByText(/жёстких конфликтов: 2\. Их нельзя обойти обоснованием/),
+      header.getByText(/жёстких конфликтов: 1\. Их нельзя обойти обоснованием/),
     ).toBeVisible()
 
     // Проверка — РЕЗУЛЬТАТ, а не состояние: план остался черновиком (§21.27).
@@ -89,7 +91,7 @@ test.describe('Lifecycle месячного плана (§21.27-21.28, mock-ре
     await expect(
       page
         .getByRole('region', { name: PLAN_SECTION_NAME })
-        .getByText(/не пройдена \(жёстких конфликтов 2\)/),
+        .getByText(/не пройдена \(жёстких конфликтов 1\)/),
     ).toBeVisible()
   })
 

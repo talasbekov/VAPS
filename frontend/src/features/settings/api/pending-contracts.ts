@@ -1,6 +1,6 @@
 // Pending-контракты «Настройки» (§7.5): backend Smart Josparlau не
 // существует — статус `backend-contract-pending`.
-import type { PolicySetting, SettingChangeEvent } from '../model/types'
+import type { PolicySetting, SettingChangeEvent, SettingSectionCode } from '../model/types'
 
 export const SETTINGS_PATH = '/api/ops/settings/'
 /**
@@ -19,10 +19,12 @@ export interface ListSettingsResponse {
   /** Каждая запись несёт своё `action` — право и замок решает сервер, а не
    * экран: кнопка, выключенная только на клиенте, — не ограничение доступа. */
   results: PolicySetting[]
-  /** Действующая версия политики наблюдений — она же попадает в снимок аналитики §22.11. */
-  policyVersion: string
-  /** Действующая версия правил конфликтов — она же попадает в каждый конфликт §21.34. */
-  conflictPolicyVersion: string
+  /**
+   * Действующая версия КАЖДОГО раздела: наблюдения §22.11 попадают в снимок
+   * аналитики, правила §21.34 — в каждый конфликт, свежесть §21.7 — в каждую
+   * строку реестра объектов. Карта, а не именованные поля: разделов уже три.
+   */
+  sectionVersions: Record<SettingSectionCode, string>
 }
 
 export interface ListSettingChangeLogResponse {
@@ -38,7 +40,7 @@ export interface UpdateSettingRequest extends Record<string, unknown> {
 
 export interface UpdateSettingResponse {
   setting: PolicySetting
-  policyVersion: string
-  conflictPolicyVersion: string
+  /** Версии ВСЕХ разделов после правки — сдвинется ровно один. */
+  sectionVersions: Record<SettingSectionCode, string>
   event: SettingChangeEvent
 }

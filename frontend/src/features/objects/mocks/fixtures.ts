@@ -3,25 +3,19 @@ import type { SeedContext } from '../../../shared/testing/mock-runtime/seed-cont
 import { addDays } from '../lib/passportFreshness'
 import type {
   ObjectSector,
-  PassportFreshnessPolicy,
   SecurityObject,
   SecurityPost,
 } from '../model/types'
 
 export interface ObjectsSlice {
   objects: SecurityObject[]
-  /** §21.7 «срок актуальности приходит от policy» — настройка живёт в ДАННЫХ,
-   * а не константой в коде, и у неё есть версия (см. `PassportFreshness`). */
-  freshnessPolicy: PassportFreshnessPolicy
 }
 
-/** Интервал НАМЕРЕННО не 90 дней: §21.7 приводит «Паспорт старше 90 дней»
- * как пример того, чего делать нельзя, и совпадение значения скрыло бы
- * захардкоженный период, если бы он где-то остался. */
-export const PASSPORT_FRESHNESS_POLICY: PassportFreshnessPolicy = {
-  version: 'passport-freshness-v1',
-  verificationIntervalDays: 120,
-}
+// §21.7 «срок актуальности приходит от policy»: политика свежести паспорта
+// ЖИВЁТ НЕ ЗДЕСЬ. Её владелец — раздел «Настройки» (§29), а этот слайс читает
+// её узкой проекцией (`mocks/settingsSlice.ts`). Поля `freshnessPolicy` в
+// слайсе нет ВОВСЕ: пока оно существовало, у политики не было администратора,
+// и второй источник истины появился бы при первой же правке.
 
 function buildPosts(
   ctx: SeedContext,
@@ -208,6 +202,6 @@ export function buildObjectsSeed(ctx: SeedContext): { sliceName: string; data: O
 
   return {
     sliceName: 'objects',
-    data: { objects, freshnessPolicy: PASSPORT_FRESHNESS_POLICY },
+    data: { objects },
   }
 }

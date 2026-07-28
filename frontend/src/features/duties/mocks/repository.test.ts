@@ -190,8 +190,11 @@ const CONFLICT_SHIFT: CombatDutyShift = {
 /** Узкая копия слайса «Настройки» в объёме, который читает планирование. */
 function conflictRulesSlice(mode: 'HARD_BLOCK' | 'SOFT_OVERRIDE') {
   return {
-    policyVersion: 'attention-policy-test.1',
-    conflictPolicyVersion: 'conflict-rules-test.1',
+    sectionVersions: {
+      ATTENTION_POLICY: 'attention-policy-test.1',
+      CONFLICT_RULES: 'conflict-rules-test.1',
+      PASSPORT_FRESHNESS: 'passport-freshness-test.1',
+    },
     settings: [
       {
         settingCode: 'CONFLICT.REST_AFTER_DUTY.MODE',

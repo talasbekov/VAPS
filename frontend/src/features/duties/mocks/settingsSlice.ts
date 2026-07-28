@@ -57,7 +57,11 @@ export function readConflictPolicy(
     return FALLBACK_CONFLICT_POLICY
   }
   const raw = (slice as { settings?: unknown }).settings
-  const version = (slice as { conflictPolicyVersion?: unknown }).conflictPolicyVersion
+  const versions = (slice as { sectionVersions?: unknown }).sectionVersions
+  const version =
+    versions !== null && typeof versions === 'object'
+      ? (versions as Record<string, unknown>).CONFLICT_RULES
+      : undefined
   if (!Array.isArray(raw) || typeof version !== 'string' || version === '') {
     return FALLBACK_CONFLICT_POLICY
   }

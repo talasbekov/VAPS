@@ -101,6 +101,13 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       'ops.dictionary.view',
       'ops.dictionary.manage',
       'ops.calendar.view',
+      // §29/§21.7: политикой свежести паспортов владеет тот, кто ВЕДЁТ объекты,
+      // а не тот, кто настраивает наблюдения аналитики. Отсюда у этой persona
+      // есть `manage_passport_policy`, но НЕТ `ops.settings.manage`
+      // (наблюдения) и `manage_conflict_rules` — на одном экране «Настроек» ей
+      // открыт ровно свой раздел. Зеркально к `analyst`, у которого наоборот.
+      'ops.settings.view',
+      'ops.settings.manage_passport_policy',
     ],
     // Этап 5 реализовал реестр объектов/паспорт — реальная посадочная
     // страница этой persona (`ops.dashboard.view`, которого у неё нет, home не подходит).

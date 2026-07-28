@@ -17,6 +17,14 @@ export type PassportState = 'RED' | 'YELLOW' | 'GREEN'
 export interface PassportFreshnessPolicy {
   version: string
   verificationIntervalDays: number
+  /**
+   * Порог «скоро проверка» — ДОЛЯ интервала (проценты), а не своё число дней:
+   * иначе рядом с настраиваемым интервалом стояла бы вторая константа периода,
+   * ровно то, что §21.7 запрещает; и, растянув интервал, администратор молча
+   * получил бы прежнее окно предупреждения. Владелец — раздел «Настройки»
+   * (§29), сюда приходит узкой проекцией (`mocks/settingsSlice.ts`).
+   */
+  dueSoonPercent: number
 }
 
 /**

@@ -155,7 +155,9 @@ export function ObjectsListPage() {
           <p className="text-xs text-slate-600">
             Показатели посчитаны сервером по всему реестру, а не по отрисованной таблице
             (§21.7). Срок проверки — по политике {query.data.freshnessPolicy.version}:{' '}
-            {query.data.freshnessPolicy.verificationIntervalDays} дней с даты публикации.
+            {query.data.freshnessPolicy.verificationIntervalDays} дней с даты публикации,
+            предупреждение — за {query.data.freshnessPolicy.dueSoonPercent}% интервала до срока.
+            Политику ведёт раздел «Настройки».
           </p>
           {filter !== null && (
             <div className="flex items-center gap-2">

@@ -122,8 +122,11 @@ function listResponse(canManage: boolean) {
       withAction(REST_MODE, canManage),
       OVERLAP_LOCKED,
     ],
-    policyVersion: 'attention-policy-2026.07.1',
-    conflictPolicyVersion: 'conflict-rules-2026.07.1',
+    sectionVersions: {
+      ATTENTION_POLICY: 'attention-policy-2026.07.1',
+      CONFLICT_RULES: 'conflict-rules-2026.07.1',
+      PASSPORT_FRESHNESS: 'passport-freshness-2026.07.1',
+    },
   })
 }
 
@@ -191,8 +194,11 @@ describe('SettingsPage (§29)', () => {
         })
         return HttpResponse.json({
           setting: { ...PARAMETER, value: 7 },
-          policyVersion: 'attention-policy-2026.07.2',
-          conflictPolicyVersion: 'conflict-rules-2026.07.1',
+          sectionVersions: {
+            ATTENTION_POLICY: 'attention-policy-2026.07.2',
+            CONFLICT_RULES: 'conflict-rules-2026.07.1',
+            PASSPORT_FRESHNESS: 'passport-freshness-2026.07.1',
+          },
           event: {
             id: 'e1',
             settingCode: PARAMETER.settingCode,

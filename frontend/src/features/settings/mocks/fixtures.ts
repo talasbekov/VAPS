@@ -9,18 +9,26 @@
 // Стартовые значения совпадают с прежними константами детекторов, а
 // `policyVersion` — с прежней `ATTENTION_POLICY_VERSION`: перенос владения не
 // должен молча изменить наблюдения на первом же запуске.
-import type { SettingChangeEvent, StoredSetting } from '../model/types'
+import type { SettingChangeEvent, SettingSectionCode, StoredSetting } from '../model/types'
 
 export interface SettingsSlice {
-  policyVersion: string
-  /** Версия правил конфликтов §21.34 — СВОЯ: см. `SettingSectionCode`. */
-  conflictPolicyVersion: string
+  /**
+   * Версия У КАЖДОГО раздела своя (см. `SettingSectionCode`): у разделов разные
+   * потребители, и общая версия означала бы, что правка порога наблюдений
+   * меняет методику конфликтов. Именованными полями это хранилось до третьего
+   * раздела — карта не даёт им плодиться и снимает ветвление «какое поле
+   * двигать» в операции правки.
+   */
+  sectionVersions: Record<SettingSectionCode, string>
   settings: StoredSetting[]
   changeLog: SettingChangeEvent[]
 }
 
-export const INITIAL_POLICY_VERSION = 'attention-policy-2026.07.1'
-export const INITIAL_CONFLICT_POLICY_VERSION = 'conflict-rules-2026.07.1'
+export const INITIAL_SECTION_VERSIONS: Record<SettingSectionCode, string> = {
+  ATTENTION_POLICY: 'attention-policy-2026.07.1',
+  CONFLICT_RULES: 'conflict-rules-2026.07.1',
+  PASSPORT_FRESHNESS: 'passport-freshness-2026.07.1',
+}
 
 /**
  * Записи настроек. Одна запись — одно администрируемое число, а не «объект
@@ -37,7 +45,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.ACKNOWLEDGEMENT_MISSING.PARAMETER',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'ACKNOWLEDGEMENT_MISSING',
+    groupCode: 'ACKNOWLEDGEMENT_MISSING',
     field: 'PARAMETER',
     safeLabel: 'Срок упреждения по отметке об ознакомлении',
     description:
@@ -55,7 +63,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.ACKNOWLEDGEMENT_MISSING.WARNING_FROM',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'ACKNOWLEDGEMENT_MISSING',
+    groupCode: 'ACKNOWLEDGEMENT_MISSING',
     field: 'WARNING_FROM',
     safeLabel: 'Записей без отметки — порог предупреждения',
     description: 'С какого количества записей наблюдение показывается как предупреждение.',
@@ -72,7 +80,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.ACKNOWLEDGEMENT_MISSING.CRITICAL_FROM',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'ACKNOWLEDGEMENT_MISSING',
+    groupCode: 'ACKNOWLEDGEMENT_MISSING',
     field: 'CRITICAL_FROM',
     safeLabel: 'Записей без отметки — критический порог',
     description: 'С какого количества записей наблюдение становится критическим.',
@@ -89,7 +97,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.CONFLICT_SHARE.WARNING_FROM',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'CONFLICT_SHARE',
+    groupCode: 'CONFLICT_SHARE',
     field: 'WARNING_FROM',
     safeLabel: 'Доля конфликтных записей — порог предупреждения',
     description:
@@ -107,7 +115,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.CONFLICT_SHARE.CRITICAL_FROM',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'CONFLICT_SHARE',
+    groupCode: 'CONFLICT_SHARE',
     field: 'CRITICAL_FROM',
     safeLabel: 'Доля конфликтных записей — критический порог',
     description: 'С какой доли записей периода наблюдение становится критическим.',
@@ -124,7 +132,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.UNFINISHED_OVERDUE.PARAMETER',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'UNFINISHED_OVERDUE',
+    groupCode: 'UNFINISHED_OVERDUE',
     field: 'PARAMETER',
     safeLabel: 'Допуск незавершённой записи',
     description:
@@ -142,7 +150,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.UNFINISHED_OVERDUE.WARNING_FROM',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'UNFINISHED_OVERDUE',
+    groupCode: 'UNFINISHED_OVERDUE',
     field: 'WARNING_FROM',
     safeLabel: 'Незавершённых записей — порог предупреждения',
     description: 'С какого количества просроченных записей наблюдение становится предупреждением.',
@@ -159,7 +167,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.UNFINISHED_OVERDUE.CRITICAL_FROM',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'UNFINISHED_OVERDUE',
+    groupCode: 'UNFINISHED_OVERDUE',
     field: 'CRITICAL_FROM',
     safeLabel: 'Незавершённых записей — критический порог',
     description: 'С какого количества просроченных записей наблюдение становится критическим.',
@@ -176,7 +184,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.UNCONFIRMED_OVERDUE.PARAMETER',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'UNCONFIRMED_OVERDUE',
+    groupCode: 'UNCONFIRMED_OVERDUE',
     field: 'PARAMETER',
     safeLabel: 'Допуск неподтверждённых отметок времени',
     description:
@@ -194,7 +202,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.UNCONFIRMED_OVERDUE.WARNING_FROM',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'UNCONFIRMED_OVERDUE',
+    groupCode: 'UNCONFIRMED_OVERDUE',
     field: 'WARNING_FROM',
     safeLabel: 'Неподтверждённых записей — порог предупреждения',
     description: 'С какого количества записей наблюдение показывается как предупреждение.',
@@ -211,7 +219,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.UNCONFIRMED_OVERDUE.CRITICAL_FROM',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'UNCONFIRMED_OVERDUE',
+    groupCode: 'UNCONFIRMED_OVERDUE',
     field: 'CRITICAL_FROM',
     safeLabel: 'Неподтверждённых записей — критический порог',
     description: 'С какого количества записей наблюдение становится критическим.',
@@ -228,7 +236,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.SOURCE_AGE.PARAMETER',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'SOURCE_AGE',
+    groupCode: 'SOURCE_AGE',
     field: 'PARAMETER',
     safeLabel: 'Допуск возраста источника',
     description:
@@ -246,7 +254,7 @@ export const POLICY_SETTINGS: readonly StoredSetting[] = [
     settingCode: 'ATTENTION.SOURCE_AGE.WARNING_FROM',
     kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    groupCode:'SOURCE_AGE',
+    groupCode: 'SOURCE_AGE',
     field: 'WARNING_FROM',
     safeLabel: 'Возраст источника — порог предупреждения',
     description:
@@ -336,13 +344,67 @@ export const CONFLICT_RULE_SETTINGS: readonly StoredSetting[] = [
   },
 ]
 
+/**
+ * Свежесть паспорта §21.7. Промпт запрещает фиксированный frontend-период
+ * («Паспорт старше 90 дней») и требует, чтобы срок приходил от policy. Интервал
+ * жил в данных с Этапа 37 — но в слайсе ОБЪЕКТОВ, то есть владельца-политики у
+ * него не было, а порог «скоро» вообще оставался константой `DUE_SOON_FRACTION`
+ * в коде: рядом с настраиваемым интервалом стояло второе, захардкоженное число
+ * периода — ровно то, что §21.7 запрещает.
+ *
+ * Порог задан ДОЛЕЙ интервала, а не своим числом дней: иначе, растянув интервал,
+ * администратор молча получил бы прежнее окно предупреждения.
+ */
+export const PASSPORT_FRESHNESS_SETTINGS: readonly StoredSetting[] = [
+  {
+    settingCode: 'PASSPORT.FRESHNESS.PARAMETER',
+    kind: 'NUMBER',
+    sectionCode: 'PASSPORT_FRESHNESS',
+    groupCode: 'VERIFICATION_INTERVAL',
+    field: 'PARAMETER',
+    safeLabel: 'Интервал проверки паспорта объекта',
+    // Значение НАМЕРЕННО не 90: §21.7 приводит «старше 90 дней» как пример
+    // того, чего делать нельзя, и совпадение скрыло бы захардкоженный период,
+    // если бы он где-то остался.
+    description:
+      'Через сколько суток после публикации редакции паспорт требует повторной проверки. Отсчёт идёт от даты вступления последней ОПУБЛИКОВАННОЙ редакции, а не от правки черновика.',
+    valueType: 'DAYS',
+    value: 120,
+    minValue: 30,
+    maxValue: 730,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+  {
+    settingCode: 'PASSPORT.FRESHNESS.WARNING_FROM',
+    kind: 'NUMBER',
+    sectionCode: 'PASSPORT_FRESHNESS',
+    groupCode: 'VERIFICATION_INTERVAL',
+    field: 'WARNING_FROM',
+    safeLabel: 'Порог «скоро проверка» — доля интервала',
+    description:
+      'Какая часть интервала, оставшаяся до срока, делает объект «скоро требует проверки». Доля, а не число дней: при увеличении интервала окно предупреждения растёт вместе с ним.',
+    valueType: 'PERCENT',
+    value: 20,
+    minValue: 1,
+    maxValue: 90,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+]
+
 export function buildSettingsSeed(): { sliceName: string; data: SettingsSlice } {
   return {
     sliceName: 'settings',
     data: {
-      policyVersion: INITIAL_POLICY_VERSION,
-      conflictPolicyVersion: INITIAL_CONFLICT_POLICY_VERSION,
-      settings: [...POLICY_SETTINGS, ...CONFLICT_RULE_SETTINGS].map((item) => ({ ...item })),
+      sectionVersions: { ...INITIAL_SECTION_VERSIONS },
+      settings: [...POLICY_SETTINGS, ...CONFLICT_RULE_SETTINGS, ...PASSPORT_FRESHNESS_SETTINGS].map(
+        (item) => ({ ...item }),
+      ),
       // Журнал пуст: сеяных «изменений» не бывает — они не происходили.
       changeLog: [],
     },

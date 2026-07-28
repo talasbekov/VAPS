@@ -94,7 +94,7 @@ function settingsSlice(
     return patch === undefined ? item : { ...item, value: patch.value }
   })
   return {
-    policyVersion: ATTENTION_POLICY_VERSION,
+    sectionVersions: { ATTENTION_POLICY: ATTENTION_POLICY_VERSION },
     settings: merged.map((item, index) => ({
       settingCode: `ATTENTION.${item.groupCode}.${item.field}`,
       sectionCode: 'ATTENTION_POLICY',
@@ -564,7 +564,7 @@ describe('блок «Требует внимания» (§22.11)', () => {
     const { repository } = await setup({
       settings: {
         ...(settingsSlice() as Record<string, unknown>),
-        policyVersion: 'attention-policy-2026.07.9',
+        sectionVersions: { ATTENTION_POLICY: 'attention-policy-2026.07.9' },
       },
     })
     const response = await repository.getAttention(VIEWER, TODAY)

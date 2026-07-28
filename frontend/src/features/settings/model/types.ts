@@ -36,7 +36,7 @@ export type SettingField = 'PARAMETER' | 'WARNING_FROM' | 'CRITICAL_FROM' | 'MOD
  * дежурств §21.34), и общая версия означала бы, что правка порога наблюдений
  * меняет методику конфликтов. План утверждал бы о себе неправду.
  */
-export type SettingSectionCode = 'ATTENTION_POLICY' | 'CONFLICT_RULES'
+export type SettingSectionCode = 'ATTENTION_POLICY' | 'CONFLICT_RULES' | 'PASSPORT_FRESHNESS'
 
 /** Вариант значения-перечисления (§21.35 `HARD_BLOCK` / `SOFT_OVERRIDE`). */
 export interface SettingOption {

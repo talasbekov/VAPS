@@ -37,7 +37,11 @@ export function readAttentionPolicy(
   const slice = slices[SETTINGS_SLICE_NAME]
   if (slice === undefined || slice === null || typeof slice !== 'object') return null
   const raw = (slice as { settings?: unknown }).settings
-  const policyVersion = (slice as { policyVersion?: unknown }).policyVersion
+  const versions = (slice as { sectionVersions?: unknown }).sectionVersions
+  const policyVersion =
+    versions !== null && typeof versions === 'object'
+      ? (versions as Record<string, unknown>).ATTENTION_POLICY
+      : undefined
   if (!Array.isArray(raw) || typeof policyVersion !== 'string' || policyVersion === '') return null
 
   const byDetector = new Map<

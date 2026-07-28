@@ -1,11 +1,13 @@
 // «Настройки» (§29 — role-restricted administration, отделённая от read-only
-// `/audit`). Экран администрирует политику наблюдений §22.11: допуски и пороги
-// детекторов блока «Требует внимания». Изменение здесь видно на аналитике
-// службы — это не декоративная панель.
+// `/audit`). Администрируется только то, у чего есть ЖИВОЙ ПОТРЕБИТЕЛЬ:
+// политика наблюдений §22.11 (её читает аналитика службы), правила конфликтов
+// §21.34-21.35 (планирование дежурств) и свежесть паспортов §21.7 (реестр
+// объектов). Каждая правка видна на другом экране — это не декоративная панель.
 //
-// Право на изменение приходит С СЕРВЕРА (`canManage` в ответе списка), а не
-// вычисляется экраном: кнопка, выключенная только на клиенте, ограничением
-// доступа не является — сервер всё равно перепроверяет право на PATCH.
+// Право на изменение приходит С СЕРВЕРА, причём В КАЖДОЙ ЗАПИСИ (`action`), а не
+// вычисляется экраном: у разделов разные права, а у отдельных правил — свой
+// замок (§21.34), и причина отказа у них разная. Кнопка, выключенная только на
+// клиенте, ограничением доступа не является — сервер перепроверяет право на PATCH.
 import { useState } from 'react'
 import { Button } from '../../../shared/ui/Button'
 import { useSettingChangeLog, useSettings } from '../api/queries'
@@ -29,11 +31,13 @@ const GROUP_LABEL: Record<string, string> = {
   SOURCE_AGE: 'Возраст источника',
   REST_AFTER_DUTY: 'Обязательный отдых после дежурства',
   DUTY_OVERLAP: 'Пересечение дежурств',
+  VERIFICATION_INTERVAL: 'Интервал проверки паспорта',
 }
 
 const SECTION_TITLE: Record<PolicySetting['sectionCode'], string> = {
   ATTENTION_POLICY: 'Политика наблюдений',
   CONFLICT_RULES: 'Правила конфликтов',
+  PASSPORT_FRESHNESS: 'Свежесть паспортов объектов',
 }
 
 const SECTION_HINT: Record<PolicySetting['sectionCode'], string> = {
@@ -41,6 +45,8 @@ const SECTION_HINT: Record<PolicySetting['sectionCode'], string> = {
     'Допуски и пороги, по которым аналитика службы решает, что показать в блоке «Требует внимания».',
   CONFLICT_RULES:
     'Как планирование дежурств поступает с конфликтом. Изменение здесь меняет исход операции: назначение либо отвергается, либо требует обоснования.',
+  PASSPORT_FRESHNESS:
+    'Через сколько времени паспорт объекта требует повторной проверки. По этой политике реестр объектов считает срок, состояние актуальности и KPI (§21.7).',
 }
 
 /** Значение с единицей: у режима печатается подпись варианта, а не его код. */
@@ -69,7 +75,7 @@ export function SettingsPage() {
       groups.push({ groupCode: setting.groupCode, sectionCode: setting.sectionCode, items: [setting] })
     }
   }
-  const sections = (['ATTENTION_POLICY', 'CONFLICT_RULES'] as const)
+  const sections = (['ATTENTION_POLICY', 'CONFLICT_RULES', 'PASSPORT_FRESHNESS'] as const)
     .map((sectionCode) => ({
       sectionCode,
       groups: groups.filter((group) => group.sectionCode === sectionCode),
@@ -84,7 +90,7 @@ export function SettingsPage() {
         </p>
         <h1 className="text-2xl font-bold tracking-tight">Настройки</h1>
         <span className="text-sm text-muted-foreground">
-          Политика наблюдений блока «Требует внимания» и правила конфликтов планирования дежурств
+          Политика наблюдений, правила конфликтов планирования и свежесть паспортов объектов
         </span>
       </header>
 
@@ -98,14 +104,8 @@ export function SettingsPage() {
       {!settingsQuery.isLoading && !settingsQuery.isError && (
         <>
           <p className="mb-4 text-xs text-muted-foreground">
-            Версия политики наблюдений:{' '}
-            <span className="font-mono font-semibold">{settingsQuery.data?.policyVersion}</span>;
-            версия правил конфликтов:{' '}
-            <span className="font-mono font-semibold">
-              {settingsQuery.data?.conflictPolicyVersion}
-            </span>
-            . Разделы версионируются порознь: правка порога наблюдений не меняет методику
-            конфликтов, и наоборот.
+            Разделы версионируются порознь: правка в одном не меняет методику остальных —
+            каждая версия названа в своём разделе.
           </p>
 
           {sections.map((section) => (
@@ -113,6 +113,12 @@ export function SettingsPage() {
               <div>
                 <h2 className="text-base font-semibold">{SECTION_TITLE[section.sectionCode]}</h2>
                 <p className="text-xs text-muted-foreground">{SECTION_HINT[section.sectionCode]}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Действующая редакция:{' '}
+                  <span className="font-mono font-semibold">
+                    {settingsQuery.data?.sectionVersions[section.sectionCode]}
+                  </span>
+                </p>
               </div>
               {section.groups.map((group) => (
               <section key={group.groupCode} className="overflow-hidden rounded-xl border bg-card">
