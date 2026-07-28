@@ -742,3 +742,10 @@
 Проход 1 (bmad-code-review, 3 параллельных слоя: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 2 real bugs (независимо подтверждены двумя слоями) · 2 patch применены (stale cutover-флаг при re-enable + rollback без предшествующего cutover) · 0 defer · 0 dismiss.
 
 Эпик 7 (Migration & Parallel-run) закрыт целиком этой стори — все 11 сторис (7.0–7.10) done.
+
+## Deferred from: code review of 10-1b-get-статусов-на-дату (2026-07-28)
+
+Проход 1 (bmad-code-review, 3 параллельных слоя: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 0 real bugs · 1 patch применён (blank-guard в `_ensure_division_scope`, Low, защитный) · 2 defer (ниже) · 0 dismiss.
+
+- **Bare unpaginated список у `on_date`** (edge, Low): `Response(serializer.data)` без пагинации — не проблема на объявленном масштабе пилота (одно подразделение, десятки-низкие сотни сотрудников), но нет прецедента ни в одну, ни в другую сторону среди соседних экшенов `StatusViewSet`/`DailySubmissionViewSet`. Пересмотреть, если понятие "подразделение" когда-либо расширится до целой организации/площадки.
+- **`roster_on()`-семантика молча роняет уволенного с незакрытым живым статусом** (edge, Low): `on_date` фильтрует employee-состав через `HistoricalEmployeeSelector.roster_on()` (только `WORKING`/`is_active=True`) — сотрудник, уволенный СЕГОДНЯ, но с живым (не отменённым) статусом на запрошенную дату, молча пропадает из ответа, хотя `EmployeeStatusSelector.overlapping_on` сам по себе вернул бы его строку. Согласовано с существующим контрактом `roster_on` (та же семантика, что strength report), не новый разрыв этой стори — но нужно свериться с 10.2's UX-требованием: должен ли грид «вчера» показывать строку для уже не-ростерного сотрудника с остаточным статусом.

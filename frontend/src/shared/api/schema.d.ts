@@ -1084,6 +1084,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/statuses/on-date/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Живые статусы сотрудников подразделения на дату (10.1b, преднабор «вчера» грида 10.2). Сотрудник без статуса на дату в списке отсутствует (пусто = «В строю»). 403 нет status.view на division_id; 404 подразделение не существует (после scope). */
+        get: operations["operations_statuses_on_date_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/temporary-duty/": {
         parameters: {
             query?: never;
@@ -1160,6 +1177,22 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["operations_user_roles_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/parallel-run/health/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["parallel_run_health_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1668,6 +1701,19 @@ export interface components {
             valid_from: string;
             /** Format: date-time */
             valid_to?: string | null;
+        };
+        /**
+         * @description Плоская проекция живого статуса на дату — прямо из ``.values()``-словарей
+         *     ``EmployeeStatusSelector.overlapping_on`` (не ORM-объекты).
+         */
+        StatusOnDateRow: {
+            /** Format: uuid */
+            employee_id: string;
+            status_type_code: string;
+            /** Format: date */
+            date_start: string;
+            /** Format: date */
+            date_end: string;
         };
         /**
          * @description POST-body form (6.10b) — the date whose «на завтра» block is legally
@@ -2846,6 +2892,28 @@ export interface operations {
             };
         };
     };
+    operations_statuses_on_date_list: {
+        parameters: {
+            query: {
+                business_date: string;
+                division_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusOnDateRow"][];
+                };
+            };
+        };
+    };
     operations_temporary_duty_retrieve: {
         parameters: {
             query?: never;
@@ -2973,6 +3041,24 @@ export interface operations {
         responses: {
             /** @description No response body */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    parallel_run_health_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

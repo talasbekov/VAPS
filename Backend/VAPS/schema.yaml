@@ -1574,6 +1574,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkStatusCreateResponse'
           description: ''
+  /api/operations/statuses/on-date/:
+    get:
+      operationId: operations_statuses_on_date_list
+      description: Живые статусы сотрудников подразделения на дату (10.1b, преднабор
+        «вчера» грида 10.2). Сотрудник без статуса на дату в списке отсутствует (пусто
+        = «В строю»). 403 нет status.view на division_id; 404 подразделение не существует
+        (после scope).
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: division_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatusOnDateRow'
+          description: ''
   /api/operations/temporary-duty/:
     get:
       operationId: operations_temporary_duty_retrieve
@@ -2844,6 +2873,28 @@ components:
       - division
       - position_code
       - valid_from
+    StatusOnDateRow:
+      type: object
+      description: |-
+        Плоская проекция живого статуса на дату — прямо из ``.values()``-словарей
+        ``EmployeeStatusSelector.overlapping_on`` (не ORM-объекты).
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+        status_type_code:
+          type: string
+        date_start:
+          type: string
+          format: date
+        date_end:
+          type: string
+          format: date
+      required:
+      - date_end
+      - date_start
+      - employee_id
+      - status_type_code
     TomorrowBlockOverrideRequest:
       type: object
       description: |-

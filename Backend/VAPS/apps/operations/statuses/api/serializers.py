@@ -35,3 +35,22 @@ class BulkStatusCreateSerializer(serializers.Serializer):
     rows = BulkStatusCreateRowSerializer(
         many=True, allow_empty=False, max_length=MAX_BULK_ROWS
     )
+
+
+class StatusOnDateQuerySerializer(serializers.Serializer):
+    """Story 10.1b — query-параметры GET /statuses/on-date/. Оба обязательны:
+    без даты/подразделения запрос не имеет смысла (явный 400 лучше
+    молчаливого «весь список»)."""
+
+    division_id = serializers.UUIDField()
+    business_date = serializers.DateField()
+
+
+class StatusOnDateRowSerializer(serializers.Serializer):
+    """Плоская проекция живого статуса на дату — прямо из ``.values()``-словарей
+    ``EmployeeStatusSelector.overlapping_on`` (не ORM-объекты)."""
+
+    employee_id = serializers.UUIDField()
+    status_type_code = serializers.CharField()
+    date_start = serializers.DateField()
+    date_end = serializers.DateField()

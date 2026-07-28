@@ -183,6 +183,11 @@ MATRIX = {
     # (payloadless POST держателя = 400 сериализатора = ALLOW по канону).
     # Держатели status.manage выводятся из seed (ADMIN, INTEGRATION_USER).
     "ops-status-bulk": _MethodGate({"post": "status.manage"}),
+    # GET on-date статусов подразделения (story 10.1b, преднабор «вчера»).
+    # Грубый гейт RequirePermissionMixin {"on_date": status.view}; per-запрос
+    # scope (ensure_division_scope) энфорсит вьюха, матрицей не проверяется
+    # (payloadless GET держателя = 400 сериализатора = ALLOW по канону).
+    "ops-status-on-date": _MethodGate({"get": "status.view"}),
     # override «на завтра»-блока (story 6.10b, POST-only) — своё право
     # daily_report.override_block (обход ≠ выпуск); scope не применяется (обход
     # уровня дня, без division). ValueError сервиса → 400 = ALLOW по канону.
