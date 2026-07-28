@@ -40,6 +40,17 @@ class Notification(TimeStampedModel):
                 fields=["recipient", "-created_at", "id"],
                 name="ix_notif_recipient_recency",
             ),
+            # Unread lookup (story 11.4a): `recipient=? AND read_at IS NULL` is
+            # off the leftmost prefix of the recency index above (it isn't
+            # ordered by read_at at all), so it falls back to a scan of every
+            # row for that recipient. A partial index on the unread subset
+            # closes the other half of deferred-work.md:495 (the recency half
+            # closed in 5.7c).
+            models.Index(
+                fields=["recipient"],
+                name="ix_notif_recipient_unread",
+                condition=models.Q(read_at__isnull=True),
+            ),
         ]
         constraints = [
             # «Одно уведомление на день»: at most one of a given kind per

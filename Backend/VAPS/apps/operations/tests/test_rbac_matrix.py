@@ -221,6 +221,11 @@ MATRIX = {
     # НЕ RBAC-код); зеркало ops-my-permissions-list. Аноним → 403, любой actor →
     # ALLOW (его список, возможно пустой). seed_operations НЕ трогается.
     "notification-list": _AnyAuthenticated(),
+    # отметка прочтения (story 11.4a, POST /{id}/read/). Тот же гейт, что
+    # list — аутентификация, не RBAC-код: владение (recipient==actor_id)
+    # проверяется в сервисе mark_read, не матрицей. pk=0 у держателя
+    # резолвится селектором by_id в None → 404 = ALLOW по канону.
+    "notification-mark-read": _AnyAuthenticated(),
     # documents — вложения (story 6.1): list-роут служит ТОЛЬКО POST (create;
     # list/retrieve не реализованы, Д8), download — GET. Гейт
     # RequirePermissionMixin; мусорный pk у держателя → селектор 404 = ALLOW

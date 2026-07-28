@@ -41,3 +41,23 @@ class NotificationSelector:
         if since is not None:
             qs = qs.filter(created_at__gt=since)
         return qs.order_by("-created_at", "id")
+
+    @staticmethod
+    def by_id(notification_id, lock=False):
+        """The notification by surrogate pk, or None — the pk-resolution
+        channel for the mark-read API (11.4a), mirroring
+        ``DailySubmissionSelector.by_id``/``latest_for(lock=...)``.
+        Deliberately UNSCOPED (no ``recipient=`` filter): existence and
+        ownership are two different questions, and the caller (``mark_read``)
+        checks ownership itself after resolving — the same 404-then-403 order
+        as ``DailySubmissionViewSet.amend``. ``lock`` takes
+        ``select_for_update`` inside the caller's atomic block, serializing
+        concurrent mark-read calls on the same row (review 11.4a: without it,
+        two racing requests can both observe ``read_at IS NULL`` and both
+        write, letting the SECOND writer's timestamp win — contradicting the
+        documented "first read wins" idempotency contract).
+        """
+        qs = Notification.objects.filter(id=notification_id)
+        if lock:
+            qs = qs.select_for_update()
+        return qs.first()

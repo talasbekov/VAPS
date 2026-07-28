@@ -1208,6 +1208,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedNotificationList'
           description: ''
+  /api/notifications/{id}/read/:
+    post:
+      operationId: notifications_read_create
+      description: |-
+        ``POST /api/notifications/{id}/read/`` (story 11.4a).
+
+        Not a router ``@action`` — this app deliberately routes via plain
+        ``path()`` (urls.py's own docstring: a ``DefaultRouter`` with an empty
+        prefix collides ``api-root`` with the list route). Wired explicitly as
+        ``NotificationViewSet.as_view({"post": "mark_read"})`` on its own path,
+        the same shape as the existing ``{"get": "list"}`` mapping.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - notifications
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationMarkReadResponse'
+          description: ''
   /api/operations/daily-submissions/:
     get:
       operationId: operations_daily_submissions_list
@@ -2897,6 +2923,26 @@ components:
       - payload
       - read_at
       - recipient
+    NotificationMarkReadResponse:
+      type: object
+      description: |-
+        Response projection for ``POST /{id}/read/`` (story 11.4a) — deliberately
+        NOT ``NotificationSerializer``: that one's whole field list is
+        ``read_only_fields`` (a read-API projection), which is the wrong shape to
+        claim as "the response of a write". This mirrors only what the write
+        actually changed.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        read_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - id
+      - read_at
     NullEnum:
       enum:
       - null

@@ -22,6 +22,19 @@ class NotificationSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class NotificationMarkReadResponseSerializer(serializers.ModelSerializer):
+    """Response projection for ``POST /{id}/read/`` (story 11.4a) — deliberately
+    NOT ``NotificationSerializer``: that one's whole field list is
+    ``read_only_fields`` (a read-API projection), which is the wrong shape to
+    claim as "the response of a write". This mirrors only what the write
+    actually changed."""
+
+    class Meta:
+        model = Notification
+        fields = ["id", "read_at"]
+        read_only_fields = fields
+
+
 class NotificationFilterSerializer(serializers.Serializer):
     """Validates the ``since`` query param; a bad datetime → DRF ValidationError
     → 400 VALIDATION_ERROR via the unified handler (no manual Response).

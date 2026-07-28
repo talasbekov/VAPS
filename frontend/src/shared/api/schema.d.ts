@@ -806,6 +806,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notifications/{id}/read/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description ``POST /api/notifications/{id}/read/`` (story 11.4a).
+         *
+         *     Not a router ``@action`` — this app deliberately routes via plain
+         *     ``path()`` (urls.py's own docstring: a ``DefaultRouter`` with an empty
+         *     prefix collides ``api-root`` with the list route). Wired explicitly as
+         *     ``NotificationViewSet.as_view({"post": "mark_read"})`` on its own path,
+         *     the same shape as the existing ``{"get": "list"}`` mapping.
+         */
+        post: operations["notifications_read_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/daily-submissions/": {
         parameters: {
             query?: never;
@@ -1706,6 +1731,18 @@ export interface components {
             readonly read_at: string | null;
             /** Format: date-time */
             readonly created_at: string;
+        };
+        /**
+         * @description Response projection for ``POST /{id}/read/`` (story 11.4a) — deliberately
+         *     NOT ``NotificationSerializer``: that one's whole field list is
+         *     ``read_only_fields`` (a read-API projection), which is the wrong shape to
+         *     claim as "the response of a write". This mirrors only what the write
+         *     actually changed.
+         */
+        NotificationMarkReadResponse: {
+            readonly id: number;
+            /** Format: date-time */
+            readonly read_at: string | null;
         };
         /** @enum {unknown} */
         NullEnum: null;
@@ -2889,6 +2926,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedNotificationList"];
+                };
+            };
+        };
+    };
+    notifications_read_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationMarkReadResponse"];
                 };
             };
         };

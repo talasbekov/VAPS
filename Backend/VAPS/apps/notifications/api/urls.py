@@ -1,10 +1,10 @@
-"""Story 5.7c — notifications read API routing.
+"""Stories 5.7c/11.4a — notifications API routing.
 
-A single list-only endpoint (``GET /api/notifications/``), so a plain ``path``
-maps ``GET → list`` directly rather than a router. A ``DefaultRouter`` with an
-empty prefix would collide its ``api-root`` with the list at ``^$``; the plain
-path is unambiguous and still exposes ``.cls``/``.actions`` on the callback for
-the rbac-matrix route introspection (story 2.9).
+A plain ``path`` maps each verb directly rather than a router. A
+``DefaultRouter`` with an empty prefix would collide its ``api-root`` with the
+list at ``^$``; the plain paths are unambiguous and still expose
+``.cls``/``.actions`` on the callback for the rbac-matrix route introspection
+(story 2.9).
 """
 
 from django.urls import path
@@ -16,5 +16,10 @@ urlpatterns = [
         "",
         NotificationViewSet.as_view({"get": "list"}),
         name="notification-list",
+    ),
+    path(
+        "<int:pk>/read/",
+        NotificationViewSet.as_view({"post": "mark_read"}),
+        name="notification-mark-read",
     ),
 ]

@@ -40,8 +40,11 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from apps.core.clock import Clock
+from apps.core.exceptions import DomainError
 from apps.notifications.groups import NOTIFY_MESSAGE_TYPE, group_name_for
 from apps.notifications.models import Notification
+from apps.notifications.selectors import NotificationSelector
 
 logger = logging.getLogger(__name__)
 
@@ -216,3 +219,47 @@ def notify(recipient, kind, business_date, payload=None) -> Notification | None:
             business_date,
         )
         return None
+
+
+def mark_read(*, notification_id, actor_id) -> Notification:
+    """Story 11.4a — record that *actor_id* has read *notification_id*.
+
+    Mirrors ``DailySubmissionViewSet.amend``'s order of operations (resolve
+    pk → 404 if missing → scope-check → mutate): existence is checked BEFORE
+    ownership, so a phantom id is 404 to any caller, not a 403 that would leak
+    whether the id exists. Ownership here is a flat actor-id equality
+    (``recipient == actor_id``), not an RBAC code — the same self-scope
+    philosophy the read-API already documents (``NotificationViewSet``).
+
+    Idempotent: a second call on an already-read row is a no-op that returns
+    the row unchanged — the FIRST read wins, not the last click. Overwriting
+    ``read_at`` on every call would let a double-click or a refocused tab
+    silently move "when this was actually read" forward each time.
+
+    The check-then-set runs under ``select_for_update`` inside this function's
+    OWN ``transaction.atomic()`` (review 11.4a): without a lock, two
+    concurrent calls can both observe ``read_at IS NULL`` before either
+    writes, and the later ``.save()`` would win — breaking the idempotency
+    contract above under a real race (double-click, or a click racing a
+    background poll), not just under sequential calls.
+    """
+    with transaction.atomic():
+        notification = NotificationSelector.by_id(notification_id, lock=True)
+        if notification is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"notification_id": str(notification_id)},
+                message="Уведомление не найдено.",
+            )
+        if notification.recipient != actor_id:
+            raise DomainError(
+                "PERMISSION_DENIED",
+                403,
+                detail={"notification_id": str(notification_id)},
+            )
+        if notification.read_at is not None:
+            return notification
+        notification.read_at = Clock.now()
+        notification.save(update_fields=["read_at"])
+        return notification

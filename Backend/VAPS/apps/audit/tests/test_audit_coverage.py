@@ -206,6 +206,11 @@ _CORE = (
     "сервис-уровне (4.4); аудит core-путей = будущая hardening-стори"
 )
 _RBAC = "RBAC-admin мутации не аудируются — будущая admin-аудит стори"
+_NOTIF = (
+    "отметка прочтения — личная UX-мутация на своей же строке (self-scope, "
+    "не RBAC-право), не бизнес-событие с compliance-следом; аудит не "
+    "мотивирован тем же обоснованием, что _CORE/_RBAC"
+)
 
 # Declarative registry: route name → audit verdict. UPDATE when a mutating route
 # is added (AR-9 living registry; a missing row fails test_audit_matrix_covers_*).
@@ -254,6 +259,10 @@ AUDIT_MATRIX = {
     # той же транзакции; HTTP-smoke сквозь роут — test_bulk_status_api
     # (test_bulk_emits_audit_through_route, паттерн test_submission_audit 5.9).
     "ops-status-bulk": _Audited(),
+    # отметка прочтения уведомления (11.4a): личная UX-мутация на своей же
+    # строке (read_at), не бизнес-событие, требующее compliance-следа, как
+    # смена статуса/выпуск документа — тот же класс, что _CORE/_RBAC ниже.
+    "notification-mark-read": _DeferredAudit(_NOTIF),
 }
 
 
