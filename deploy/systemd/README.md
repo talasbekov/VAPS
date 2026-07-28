@@ -17,6 +17,11 @@ healthcheck already uses), instead of relying on `After=`/`Requires=`
 ordering alone, which only guarantees the *daemon* is up, not the
 *container*.
 
+The `db` (Postgres) container races the same way, so `wait-for-postgres.sh`
+applies the identical fix using `pg_isready` (same check `docker-compose.yml`'s
+`db` healthcheck uses) — without it, Django could start before Postgres
+accepts connections after a reboot.
+
 ## This was written without VPS access
 
 This session has repo/GitHub access only, not SSH to 81.17.99.96 — these
@@ -33,7 +38,8 @@ paths/user to match.
 ```bash
 # on the VPS, as a user that can write to /etc/systemd/system and reload systemd
 sudo cp deploy/systemd/wait-for-redis.sh /opt/vaps/deploy/systemd/wait-for-redis.sh
-sudo chmod +x /opt/vaps/deploy/systemd/wait-for-redis.sh
+sudo cp deploy/systemd/wait-for-postgres.sh /opt/vaps/deploy/systemd/wait-for-postgres.sh
+sudo chmod +x /opt/vaps/deploy/systemd/wait-for-redis.sh /opt/vaps/deploy/systemd/wait-for-postgres.sh
 
 # compare with what's live before overwriting:
 systemctl cat vaps-backend.service

@@ -17,6 +17,9 @@ EnvironmentFile=/opt/vaps/Backend/VAPS/.env
 # actually answering PING, producing a burst of
 # `TimeoutError: Timeout reading from 127.0.0.1:6380` on every reboot.
 ExecStartPre=/opt/vaps/deploy/systemd/wait-for-redis.sh 127.0.0.1 6380 60
+# Same race, db container: without this, Django can start before Postgres
+# accepts connections after a reboot.
+ExecStartPre=/opt/vaps/deploy/systemd/wait-for-postgres.sh 127.0.0.1 5433 vaps vaps 60
 ExecStart=/opt/vaps/Backend/VAPS/.venv/bin/uvicorn config.asgi:application --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=3
