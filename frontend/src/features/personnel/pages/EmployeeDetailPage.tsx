@@ -12,8 +12,9 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { Link, useParams } from 'react-router'
 import { ROUTES } from '../../../shared/routes'
-import { useDivisions, useEmployee, usePositions, useRanks } from '../api/queries'
+import { useDivisions, usePersonnelEntry, usePositions, useRanks } from '../api/queries'
 import { EMPLOYMENT_STATUS_LABEL } from '../model/types'
+import { IdentitySection } from './IdentitySection'
 
 const OPERATIONAL_TABS = [
   { key: 'availability', label: 'Доступность' },
@@ -66,7 +67,7 @@ const OPERATIONAL_TAB_NOT_CONNECTED: Record<OperationalTabKey, { message: string
 
 export function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const employeeQuery = useEmployee(id ?? '')
+  const employeeQuery = usePersonnelEntry(id ?? '')
   const divisionsQuery = useDivisions()
   const positionsQuery = usePositions()
   const ranksQuery = useRanks()
@@ -116,9 +117,9 @@ export function EmployeeDetailPage() {
   }
 
   const employee = employeeQuery.data
-  const rank = ranksQuery.data?.results.find((r) => r.code === employee.rank_code)
-  const position = positionsQuery.data?.results.find((p) => p.code === employee.position_code)
-  const division = divisionsQuery.data?.results.find((d) => d.id === employee.division)
+  const rank = ranksQuery.data?.results.find((r) => r.code === employee.rankCode)
+  const position = positionsQuery.data?.results.find((p) => p.code === employee.positionCode)
+  const division = divisionsQuery.data?.results.find((d) => d.id === employee.divisionId)
 
   return (
     <div>
@@ -128,7 +129,7 @@ export function EmployeeDetailPage() {
 
       <section className="mb-4 flex items-center gap-4 rounded-xl border bg-card p-4">
         <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-primary text-lg font-bold text-primary-foreground">
-          {employee.full_name
+          {employee.fullName
             .split(' ')
             .slice(0, 2)
             .map((part) => part.charAt(0))
@@ -136,37 +137,38 @@ export function EmployeeDetailPage() {
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold">{employee.full_name}</h1>
-            {employee.employment_status !== undefined && (
-              <span
-                className={
-                  employee.employment_status === 'WORKING'
-                    ? 'inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-800'
-                    : 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600'
-                }
-              >
-                {EMPLOYMENT_STATUS_LABEL[employee.employment_status]}
-              </span>
-            )}
+            <h1 className="text-xl font-bold">{employee.fullName}</h1>
+            <span
+              className={
+                employee.employmentStatus === 'WORKING'
+                  ? 'inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-800'
+                  : 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600'
+              }
+            >
+              {EMPLOYMENT_STATUS_LABEL[employee.employmentStatus]}
+            </span>
           </div>
           <p className="text-sm text-muted-foreground">
-            {rank?.name ?? employee.rank_code} · {position?.name ?? employee.position_code}
+            {rank?.name ?? employee.rankCode} · {position?.name ?? employee.positionCode}
           </p>
         </div>
       </section>
+
+      {/* §20.27: идентификационные данные — отдельный блок с собственным
+          протоколом раскрытия, а не строка в кадровой принадлежности. */}
+      <div className="mb-3.5">
+        <IdentitySection employee={employee} />
+      </div>
 
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
         <section className="rounded-xl border bg-card p-4">
           <div className="mb-3 text-sm font-semibold">Кадровая принадлежность</div>
           <dl className="flex flex-col gap-2 text-sm">
-            <Row label="Табельный номер" value={employee.personnel_number ?? '—'} />
+            <Row label="Табельный номер" value={employee.personnelNumber ?? '—'} />
             <Row label="Подразделение" value={division?.name ?? '—'} />
-            <Row
-              label="Дата приёма"
-              value={employee.hire_date ?? '—'}
-            />
-            {employee.dismissal_date !== null && employee.dismissal_date !== undefined && (
-              <Row label="Дата увольнения" value={employee.dismissal_date} />
+            <Row label="Дата приёма" value={employee.hireDate ?? '—'} />
+            {employee.dismissalDate !== null && (
+              <Row label="Дата увольнения" value={employee.dismissalDate} />
             )}
           </dl>
           <p className="mt-3 text-[11px] text-muted-foreground">

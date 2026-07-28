@@ -4,7 +4,26 @@
 // справочник для экрана «Сотрудники»). Дублирование намеренное: разные
 // bounded context, разная форма (§20.3), фичи не имеют права шарить друг у
 // друга внутренние mocks/ (ARCH-FE-013).
+import type { IdentityDisclosureRecord } from '../lib/identity'
 import type { Division, Employee, Position, Rank } from '../model/types'
+
+/**
+ * Слайс личного состава хранит ТОЛЬКО журнал раскрытий (§20.33). Самих
+ * сотрудников он не копирует: Smart Josparlau кадровую систему не ведёт
+ * (§20.1), он читает донорские данные — источником остаётся `EMPLOYEES`, а
+ * персистентное состояние появляется лишь у того, что порождает сам портал.
+ */
+export interface PersonnelSlice {
+  disclosures: IdentityDisclosureRecord[]
+}
+
+// Параметра нет намеренно: слайс ни от часов, ни от чужих слайсов не зависит
+// (`FeatureSeedBuilder` допускает функцию без аргументов).
+export function buildPersonnelSeed(): { sliceName: string; data: PersonnelSlice } {
+  // Пусто по построению: раскрытие — действие человека, и «уже раскрывали»
+  // из сида читалось бы как чей-то реальный доступ, которого не было.
+  return { sliceName: 'personnel', data: { disclosures: [] } }
+}
 
 export const DIVISIONS: readonly Division[] = [
   { id: 'division-1', organization: 'org-1', parent: null, type_code: 'DEPARTMENT', name: '6-е управление', code: 'D6', is_active: true },

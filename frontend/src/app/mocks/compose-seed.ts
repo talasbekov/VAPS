@@ -14,6 +14,7 @@ import { buildSecurityEventsSeed } from '../../features/security-events/mocks/fi
 import { buildObjectsSeed } from '../../features/objects/mocks/fixtures'
 import { buildDutiesSeed } from '../../features/duties/mocks/fixtures'
 import { buildDictionariesSeed } from '../../features/dictionaries/mocks/fixtures'
+import { buildPersonnelSeed } from '../../features/personnel/mocks/fixtures'
 import type { DemoScenarioDefinition } from './scenario-manifest'
 
 export type { SeedContext, FeatureSeedBuilder }
@@ -35,6 +36,9 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
   buildSecurityEventsSeed,
   buildDutiesSeed,
   buildDictionariesSeed,
+  // Личный состав хранит только журнал раскрытий ИИН (§20.33) — от чужих
+  // слайсов не зависит, поэтому позиция в реестре значения не имеет.
+  buildPersonnelSeed,
 ]
 
 // Бампается при КАЖДОМ изменении формы существующего feature-слайса (не
@@ -45,11 +49,12 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // в `DutyTypeDefinition` и нового списка `dutyCandidates` — 14→15;
 // добавление состояния CANCELLED и поля `cancellation` в `DutyShift` — 15→16;
 // добавление `freshnessPolicy` в слайс `objects` и двух объектов сида — 16→17;
-// добавление списка `monthlyPlans` (lifecycle месячного плана §21.27) — 17→18.
+// добавление списка `monthlyPlans` (lifecycle месячного плана §21.27) — 17→18;
+// новый слайс `personnel` с журналом раскрытий ИИН (§20.33) — 18→19.
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 18
+export const SCHEMA_VERSION = 19
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)
