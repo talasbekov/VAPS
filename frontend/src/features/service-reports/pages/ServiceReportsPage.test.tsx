@@ -8,6 +8,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { server } from '../../../shared/api/testing/server'
 import { clearCredential, setCredential } from '../../../shared/auth/credential'
@@ -70,6 +71,9 @@ function jobs(overrides: Partial<ListReportJobsResponse> = {}): ListReportJobsRe
   return {
     results: [],
     artifacts: [],
+    actions: [],
+    unavailableColumns: [],
+    totalVisible: 0,
     serverTime: '2026-07-20T08:00:00.000Z',
     ...overrides,
   }
@@ -99,7 +103,9 @@ function renderPage(): void {
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={client}>
-        <ToastProvider>{children}</ToastProvider>
+        <MemoryRouter>
+          <ToastProvider>{children}</ToastProvider>
+        </MemoryRouter>
       </QueryClientProvider>
     )
   }

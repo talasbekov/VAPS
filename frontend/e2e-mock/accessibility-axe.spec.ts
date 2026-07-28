@@ -155,5 +155,21 @@ test.describe('Accessibility (axe-core): второй слой аудита по
     await page.getByRole('button', { name: 'Список' }).click()
     await expect(page.getByText('Колонки, которых нет в модели')).toBeVisible()
     await assertNoSeriousViolations(page, 'План дежурств — список дежурств')
+
+    // История отчётов §22.25 — сканируется СО СТРОКОЙ и раскрытыми
+    // параметрами: пустая история не содержит ни таблицы, ни кнопок действий,
+    // и покрытие было бы мнимым (тот же урок, что форма создания дежурства).
+    await page.goto('/service-reports')
+    const reportForm = page.getByRole('group', { name: 'Форма запуска отчёта' })
+    await reportForm.getByLabel('Начало периода').fill('2026-07-01')
+    await reportForm.getByLabel('Конец периода').fill('2026-07-31')
+    await reportForm.getByRole('button', { name: 'Сформировать отчёт' }).click()
+    await expect(page.getByText('Готов', { exact: true })).toBeVisible({ timeout: 10_000 })
+    await assertNoSeriousViolations(page, 'Отчёты службы — запуск и артефакт')
+
+    await page.getByRole('link', { name: 'История отчётов →' }).click()
+    await page.getByRole('button', { name: 'Открыть параметры' }).click()
+    await expect(page.getByText('Ключ идемпотентности')).toBeVisible()
+    await assertNoSeriousViolations(page, 'История отчётов — строка с параметрами')
   })
 })

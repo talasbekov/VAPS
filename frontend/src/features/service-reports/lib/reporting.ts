@@ -9,6 +9,8 @@
 // вёрстке (тот же вывод, что sensitive identity в §20.27, A71).
 import type {
   ReportArtifact,
+  ReportJob,
+  ReportJobAction,
   ReportParameters,
 } from '../model/types'
 
@@ -144,6 +146,141 @@ export function periodDays(parameters: ReportParameters): number {
 export function isArtifactAvailable(artifact: ReportArtifact, nowIso: string): boolean {
   return Date.parse(nowIso) < Date.parse(artifact.expiresAt)
 }
+
+/**
+ * §22.25 «Сформировать новую revision». Серия — это отчёт ОДНОГО типа за ОДИН
+ * период в ОДНОМ режиме выгрузки: редакция 2 обязана быть пересчётом того же
+ * самого, иначе номер редакции не значит ничего. Режим (`sensitive`) входит в
+ * ключ намеренно: обычная и чувствительная выгрузки содержат разные колонки —
+ * это разные документы, а не редакции одного.
+ */
+export function artifactSeriesKey(input: {
+  reportTypeCode: string
+  parameters: ReportParameters
+  sensitive: boolean
+}): string {
+  const mode = input.sensitive ? 'S' : 'N'
+  return `${input.reportTypeCode}|${input.parameters.from}|${input.parameters.to}|${mode}`
+}
+
+/** Номер следующей редакции серии. Считается по УЖЕ существующим артефактам:
+ * жёсткая единица сделала бы «редакцию» украшением. */
+export function nextRevision(
+  artifacts: readonly ReportArtifact[],
+  seriesKey: string,
+): number {
+  const revisions = artifacts
+    .filter(
+      (artifact) =>
+        artifactSeriesKey({
+          reportTypeCode: artifact.reportTypeCode,
+          parameters: artifact.parameterSnapshot,
+          sensitive: artifact.sensitive,
+        }) === seriesKey,
+    )
+    .map((artifact) => artifact.revision)
+  // По МАКСИМУМУ, а не по количеству: артефакт может исчезнуть по сроку
+  // хранения, и тогда счёт по длине выдал бы второй артефакт с номером 1.
+  return revisions.length === 0 ? 1 : Math.max(...revisions) + 1
+}
+
+/**
+ * §22.25 «`Повторить` создаёт новый job … если repository не возвращает
+ * существующий пригодный артефакт». Пригодный — той же серии и ещё не
+ * истёкший: пересобирать файл, который уже лежит готовым, значит тратить
+ * работу сервера ради байт-в-байт того же содержимого.
+ */
+export function findReusableArtifact(
+  artifacts: readonly ReportArtifact[],
+  seriesKey: string,
+  nowIso: string,
+): ReportArtifact | null {
+  const suitable = artifacts.filter(
+    (artifact) =>
+      artifactSeriesKey({
+        reportTypeCode: artifact.reportTypeCode,
+        parameters: artifact.parameterSnapshot,
+        sensitive: artifact.sensitive,
+      }) === seriesKey && isArtifactAvailable(artifact, nowIso),
+  )
+  if (suitable.length === 0) return null
+  // Последняя редакция: повтор обязан отдавать самое свежее прочтение данных.
+  return suitable.reduce((best, artifact) => (artifact.revision > best.revision ? artifact : best))
+}
+
+/** §22.21: сбой сборки виден СОСТОЯНИЕМ работы, а сообщение — безопасное.
+ * Текст исключения (путь, имя слайса, стек) наружу не едет: §22.22 требует
+ * `safeFailureMessage`, а не «сообщение об ошибке». */
+export const ASSEMBLY_FAILURE = {
+  code: 'ASSEMBLY_FAILED',
+  message:
+    'Не удалось собрать отчёт: источник данных недоступен. Запустите отчёт повторно; если ошибка повторится, обратитесь к администратору.',
+} as const
+
+/**
+ * §22.25, политика действий строки истории. Целиком серверная: смотрит на
+ * состояние работы, наличие и срок артефакта — и на каждый отказ называет
+ * причину.
+ */
+export function buildJobActions(input: {
+  job: Pick<ReportJob, 'state' | 'artifactId'>
+  /** Артефакт работы и его доступность на момент ответа сервера. */
+  artifact: { available: boolean } | null
+}): ReportJobAction[] {
+  const { job, artifact } = input
+  const terminal = job.state === 'COMPLETED' || job.state === 'FAILED'
+  const running = 'Работа ещё выполняется — дождитесь её завершения.'
+
+  const download: ReportJobAction =
+    job.state === 'FAILED'
+      ? { code: 'DOWNLOAD', available: false, reason: 'Работа завершилась ошибкой — файла нет.' }
+      : artifact === null
+        ? { code: 'DOWNLOAD', available: false, reason: 'Артефакт ещё не сформирован.' }
+        : artifact.available
+          ? { code: 'DOWNLOAD', available: true, reason: null }
+          : {
+              code: 'DOWNLOAD',
+              available: false,
+              reason: 'Срок хранения артефакта истёк — файла больше нет на сервере.',
+            }
+
+  return [
+    // Параметры — часть самой работы и приходят вместе с ней: их показ ничего
+    // не открывает сверх уже разрешённого.
+    { code: 'OPEN_PARAMETERS', available: true, reason: null },
+    download,
+    {
+      code: 'RETRY',
+      available: terminal,
+      reason: terminal ? null : running,
+    },
+    {
+      code: 'NEW_REVISION',
+      available: job.state === 'COMPLETED',
+      reason:
+        job.state === 'COMPLETED'
+          ? null
+          : job.state === 'FAILED'
+            ? 'Редакция бывает у собранного отчёта: у упавшей работы её нет — используйте «Повторить».'
+            : running,
+    },
+    {
+      code: 'VIEW_ERROR',
+      available: job.state === 'FAILED',
+      reason: job.state === 'FAILED' ? null : 'Работа не завершалась ошибкой.',
+    },
+  ]
+}
+
+/** §35: колонки §22.25, которых demo-срез не даёт. */
+export const UNAVAILABLE_HISTORY_COLUMNS: readonly MaskedField[] = [
+  {
+    code: 'SCOPE',
+    label: 'Scope',
+    reason:
+      'RBAC demo-режима плоский, без организационного scope (§8.9): у работы нет области, которую можно было бы показать в колонке. Пустая колонка «Scope» читалась бы как «область не ограничена», а это утверждение, а не факт.',
+  },
+]
 
 /** §22.23: форматы, которых проект НЕ формирует. Приходят клиенту с причиной —
  * §22.23 требует удалить «фальшивые действия», а не спрятать их молча. */

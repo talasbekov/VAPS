@@ -6,15 +6,21 @@ import { hasPermission } from '../../../shared/testing/mock-runtime/rbac-directo
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
 import {
+  ASSEMBLY_FAILURE,
   CALCULATION_VERSION,
   MASKED_FIELDS,
   MASKING_POLICY_VERSION,
   UNAVAILABLE_ARTIFACT_FIELDS,
   UNAVAILABLE_FORMATS,
+  UNAVAILABLE_HISTORY_COLUMNS,
+  artifactSeriesKey,
+  buildJobActions,
   buildReportContent,
   contentHash,
   contentSize,
+  findReusableArtifact,
   isArtifactAvailable,
+  nextRevision,
   periodDays,
   selectRows,
 } from '../lib/reporting'
@@ -23,9 +29,11 @@ import type { ServiceReportsSlice } from './fixtures'
 import type {
   CreateReportJobRequest,
   DownloadArtifactResponse,
+  ListReportJobsFilters,
   ListReportJobsResponse,
   ListReportTypesResponse,
   ReportArtifactSummary,
+  RerunReportJobResponse,
 } from '../api/pending-contracts'
 import type { ReportArtifact, ReportJob } from '../model/types'
 
@@ -120,6 +128,9 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
     slice: ServiceReportsSlice,
     job: ReportJob,
     sourceSlices: Record<string, unknown>,
+    /** Артефакты, уже существующие К МОМЕНТУ сборки, включая созданные в этом
+     * же проходе: номер редакции считается по ним. */
+    existingArtifacts: readonly ReportArtifact[],
   ): { job: ReportJob; artifact: ReportArtifact | null } {
     if (job.state === 'COMPLETED' || job.state === 'FAILED') {
       return { job, artifact: null }
@@ -131,8 +142,28 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
       }
     }
 
-    const rows = selectRows(readReportSourceRows(sourceSlices), job.parameters)
-    const content = buildReportContent(rows, job.parameters, job.sensitive)
+    let rows
+    let content
+    try {
+      rows = selectRows(readReportSourceRows(sourceSlices), job.parameters)
+      content = buildReportContent(rows, job.parameters, job.sensitive)
+    } catch {
+      // §22.21: сбой сборки — СОСТОЯНИЕ работы, а не исключение наружу. Без
+      // этого одна неудачная работа роняла бы чтение ВСЕГО реестра, и человек
+      // не видел бы ни своих готовых отчётов, ни причины. Текст исключения не
+      // едет клиенту (§22.22 `safeFailureMessage`).
+      return {
+        job: {
+          ...job,
+          state: 'FAILED',
+          progressPercent: null,
+          completedAt: clock.now(),
+          failureCode: ASSEMBLY_FAILURE.code,
+          safeFailureMessage: ASSEMBLY_FAILURE.message,
+        },
+        artifact: null,
+      }
+    }
     const generatedAt = clock.now()
     const expiresAt = new Date(
       Date.parse(generatedAt) + slice.retentionPolicy.retentionDays * 86_400_000,
@@ -145,9 +176,17 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
         slice.reportTypes.find((type) => type.reportTypeCode === job.reportTypeCode)?.safeTitle ??
         job.reportTypeCode,
       format: job.format,
-      // Первая редакция артефакта работы. Повторный запуск — ДРУГАЯ работа со
-      // своим артефактом, а не вторая редакция этого.
-      revision: 1,
+      // §22.25: редакция считается по серии (тип + период + режим выгрузки),
+      // а не по работе — «Сформировать новую revision» обязано давать 2 там,
+      // где уже есть 1.
+      revision: nextRevision(
+        existingArtifacts,
+        artifactSeriesKey({
+          reportTypeCode: job.reportTypeCode,
+          parameters: job.parameters,
+          sensitive: job.sensitive,
+        }),
+      ),
       generatedAt,
       generatedBy: job.createdBy.userId,
       parameterSnapshot: job.parameters,
@@ -171,23 +210,60 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
     }
   }
 
-  async function listReportJobs(actorUserId: string | null): Promise<ListReportJobsResponse> {
+  /**
+   * §22.25 «Показывай только разрешённые пользователю jobs и artifacts».
+   * Работа со скрытыми полями невидима без права на sensitive export: её
+   * параметры, автор и время сами по себе говорят, кого и за какой период
+   * выгружали со скрытыми полями. Фильтрация — СЕРВЕРНАЯ: спрятать строку в
+   * вёрстке значит всё равно отдать её браузеру (тот же вывод, что §20.27).
+   */
+  function isJobVisible(job: ReportJob, canExportSensitive: boolean): boolean {
+    return canExportSensitive || !job.sensitive
+  }
+
+  async function listReportJobs(
+    actorUserId: string | null,
+    filters: ListReportJobsFilters = {},
+  ): Promise<ListReportJobsResponse> {
     if (!hasPermission(actorUserId, GENERATE_PERMISSION)) {
       throw new RepositoryPermissionError(GENERATE_PERMISSION)
     }
+    const canExportSensitive = hasPermission(actorUserId, SENSITIVE_PERMISSION)
     let response!: ListReportJobsResponse
     await runMutation(adapter, clock, (current) => {
       const slice = readSlice(current.slices)
       const artifacts = [...slice.artifacts]
+      // Продвигаются ВСЕ работы, а не только видимые/отфильтрованные: ступень
+      // выполняется на чтении, и работа, скрытая фильтром экрана, иначе
+      // застревала бы в очереди навсегда.
       const jobs = slice.jobs.map((job) => {
-        const stepped = advance(slice, job, current.slices)
+        const stepped = advance(slice, job, current.slices, artifacts)
         if (stepped.artifact !== null) artifacts.push(stepped.artifact)
         return stepped.job
       })
+
       const now = clock.now()
+      const visible = jobs.filter((job) => isJobVisible(job, canExportSensitive))
+      const matched = visible.filter((job) => {
+        if (filters.state !== undefined && job.state !== filters.state) return false
+        if (filters.mine === true && job.createdBy.userId !== (actorUserId ?? '')) return false
+        return true
+      })
+      const matchedIds = new Set(matched.map((job) => job.reportJobId))
+      const visibleArtifacts = artifacts.filter((artifact) => matchedIds.has(artifact.reportJobId))
+      const summaries = visibleArtifacts.map((artifact) => summarize(artifact, now))
+      const byJob = new Map(summaries.map((summary) => [summary.reportJobId, summary]))
+
       response = {
-        results: [...jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-        artifacts: artifacts.map((artifact) => summarize(artifact, now)),
+        results: [...matched].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        artifacts: summaries,
+        // §22.25: действия считает сервер — экран их не выводит из состояния.
+        actions: matched.map((job) => ({
+          reportJobId: job.reportJobId,
+          actions: buildJobActions({ job, artifact: byJob.get(job.reportJobId) ?? null }),
+        })),
+        unavailableColumns: [...UNAVAILABLE_HISTORY_COLUMNS],
+        totalVisible: visible.length,
         serverTime: now,
       }
       return {
@@ -292,6 +368,97 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
   }
 
   /**
+   * §22.25 «Повторить с теми же параметрами» и «Сформировать новую revision».
+   *
+   * Параметры повтора берутся из САМОЙ РАБОТЫ на сервере, а не приходят от
+   * экрана: «с теми же параметрами» должно означать те же самые, а не те, что
+   * клиент считает прежними.
+   *
+   * Разница режимов ровно одна и она содержательная: `RETRY` возвращает уже
+   * готовый пригодный артефакт, если он есть (§22.25 прямо это допускает), —
+   * человек просил файл, а не работу сервера; `NEW_REVISION` собирает заново
+   * ВСЕГДА, иначе новая редакция не появлялась бы никогда.
+   */
+  async function rerunReportJob(
+    reportJobId: string,
+    mode: 'RETRY' | 'NEW_REVISION',
+    actorUserId: string | null,
+  ): Promise<RerunReportJobResponse> {
+    if (!hasPermission(actorUserId, GENERATE_PERMISSION)) {
+      throw new RepositoryPermissionError(GENERATE_PERMISSION)
+    }
+    const canExportSensitive = hasPermission(actorUserId, SENSITIVE_PERMISSION)
+
+    let result!: RerunReportJobResponse
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current.slices)
+      const source = slice.jobs.find((job) => job.reportJobId === reportJobId)
+      // Невидимая работа отвечает «не найдено», а не «нет прав»: иначе отказ
+      // сам подтверждал бы, что такая выгрузка существует.
+      if (source === undefined || !isJobVisible(source, canExportSensitive)) {
+        throw new RepositoryNotFoundError(reportJobId)
+      }
+      if (mode === 'NEW_REVISION' && source.state !== 'COMPLETED') {
+        throw new RepositoryBusinessRuleError(
+          'NO_BASE_REVISION',
+          'Новая редакция бывает у собранного отчёта: эта работа ещё не завершилась успехом.',
+        )
+      }
+      if (mode === 'RETRY' && source.state !== 'COMPLETED' && source.state !== 'FAILED') {
+        throw new RepositoryBusinessRuleError(
+          'JOB_NOT_FINISHED',
+          'Работа ещё выполняется — дождитесь её завершения.',
+        )
+      }
+
+      const seriesKey = artifactSeriesKey({
+        reportTypeCode: source.reportTypeCode,
+        parameters: source.parameters,
+        sensitive: source.sensitive,
+      })
+      if (mode === 'RETRY') {
+        const reusable = findReusableArtifact(slice.artifacts, seriesKey, clock.now())
+        if (reusable !== null) {
+          result = {
+            reused: true,
+            reportJobId: reusable.reportJobId,
+            artifactId: reusable.artifactId,
+          }
+          return current.slices
+        }
+      }
+
+      const created: ReportJob = {
+        reportJobId: `report-job-${current.revision + 1}-${slice.jobs.length + 1}`,
+        reportTypeCode: source.reportTypeCode,
+        format: source.format,
+        state: 'PENDING',
+        progressPercent: null,
+        createdAt: clock.now(),
+        // Автор новой работы — тот, кто её запустил, а не автор исходной:
+        // «сформировал» в истории обязано отвечать, кто выгружал на самом деле.
+        createdBy: { userId: actorUserId ?? '', safeLabel: actorUserId ?? '' },
+        completedAt: null,
+        failureCode: null,
+        safeFailureMessage: null,
+        artifactId: null,
+        // §22.25 «новый job с новым idempotencyKey»: ключ исходной работы вернул
+        // бы её саму вместо повтора. Номер ревизии снапшота уникален в пределах
+        // слайса и не зависит от часов.
+        idempotencyKey: `${mode === 'RETRY' ? 'retry' : 'revision'}:${reportJobId}:${current.revision + 1}`,
+        sensitive: source.sensitive,
+        parameters: { ...source.parameters },
+      }
+      result = { reused: false, reportJobId: created.reportJobId, artifactId: null }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: { ...slice, jobs: [...slice.jobs, created] } satisfies ServiceReportsSlice,
+      }
+    })
+    return result
+  }
+
+  /**
    * §22.23 «Скачивание выполняется отдельной серверной операцией», при которой
    * repository ПОВТОРНО проверяет пользователя, право, состояние артефакта,
    * срок хранения и masking policy.
@@ -330,5 +497,5 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
     }
   }
 
-  return { listReportTypes, listReportJobs, createReportJob, downloadArtifact }
+  return { listReportTypes, listReportJobs, createReportJob, rerunReportJob, downloadArtifact }
 }

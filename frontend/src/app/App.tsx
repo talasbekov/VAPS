@@ -29,6 +29,7 @@ import { DictionariesListPage } from '../features/dictionaries/pages/Dictionarie
 import { DictionaryDetailPage } from '../features/dictionaries/pages/DictionaryDetailPage'
 import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
 import { ServiceReportsPage } from '../features/service-reports/pages/ServiceReportsPage'
+import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
 import { CalendarPage } from './CalendarPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -297,6 +298,16 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.report.generate">
               <ServiceReportsPage />
+            </RequirePermission>
+          }
+        />
+        {/* §22.27: право проверяется маршрутом ЗАНОВО — переход по ссылке с
+            разрешённого экрана доступ не подтверждает. */}
+        <Route
+          path={ROUTES.serviceReportHistory}
+          element={
+            <RequirePermission permission="ops.report.generate">
+              <ReportHistoryPage />
             </RequirePermission>
           }
         />

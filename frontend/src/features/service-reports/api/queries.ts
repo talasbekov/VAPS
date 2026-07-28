@@ -7,13 +7,17 @@ import {
   REPORT_JOBS_PATH,
   REPORT_TYPES_PATH,
   reportArtifactDownloadPath,
+  reportJobRerunPath,
 } from './pending-contracts'
 import type {
   CreateReportJobRequest,
   CreateReportJobResponse,
   DownloadArtifactResponse,
+  ListReportJobsFilters,
   ListReportJobsResponse,
   ListReportTypesResponse,
+  RerunMode,
+  RerunReportJobResponse,
 } from './pending-contracts'
 
 export function useReportTypes() {
@@ -32,10 +36,20 @@ export function useReportTypes() {
  */
 export const REPORT_POLL_INTERVAL_MS = 700
 
-export function useReportJobs() {
+/** §22.25: фильтры едут В ЗАПРОС и входят в ключ кэша — иначе отфильтрованный
+ * ответ подменял бы собой полный реестр на соседнем экране. */
+function jobsPath(filters: ListReportJobsFilters): string {
+  const params = new URLSearchParams()
+  if (filters.state !== undefined) params.set('state', filters.state)
+  if (filters.mine === true) params.set('mine', 'true')
+  const query = params.toString()
+  return query === '' ? REPORT_JOBS_PATH : `${REPORT_JOBS_PATH}?${query}`
+}
+
+export function useReportJobs(filters: ListReportJobsFilters = {}) {
   return useQuery<ListReportJobsResponse, ApiFailure>({
-    queryKey: ['service-reports', 'jobs'],
-    queryFn: () => apiClient.get<ListReportJobsResponse>(REPORT_JOBS_PATH),
+    queryKey: ['service-reports', 'jobs', filters.state ?? 'ALL', filters.mine === true],
+    queryFn: () => apiClient.get<ListReportJobsResponse>(jobsPath(filters)),
     refetchInterval: (query) => {
       const data = query.state.data
       if (data === undefined) return false
@@ -53,6 +67,23 @@ export function useCreateReportJob() {
     mutationFn: (body) => apiClient.post<CreateReportJobResponse>(REPORT_JOBS_PATH, body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['service-reports', 'jobs'] })
+    },
+  })
+}
+
+/**
+ * §22.25 «Повторить» / «Сформировать новую revision». Тело запроса ПУСТОЕ:
+ * параметры повтора сервер берёт из исходной работы, и передавать их отсюда
+ * значило бы позволить экрану подменить «те же параметры».
+ */
+export function useRerunReportJob(onDone: (result: RerunReportJobResponse) => void) {
+  const queryClient = useQueryClient()
+  return useApiMutation<RerunReportJobResponse, { reportJobId: string; mode: RerunMode }>({
+    mutationFn: ({ reportJobId, mode }) =>
+      apiClient.post<RerunReportJobResponse>(reportJobRerunPath(reportJobId, mode), {}),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['service-reports', 'jobs'] })
+      onDone(result)
     },
   })
 }

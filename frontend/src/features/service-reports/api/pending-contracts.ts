@@ -11,6 +11,8 @@ import type {
   ReportArtifact,
   ReportFormat,
   ReportJob,
+  ReportJobActions,
+  ReportJobState,
   ReportParameters,
   ReportRetentionPolicy,
   ReportTypeDefinition,
@@ -25,6 +27,14 @@ export function reportJobPath(id: string): string {
 export function reportArtifactDownloadPath(id: string): string {
   return `/api/ops/service-report-artifacts/${id}/download/`
 }
+/** §22.25 «Повторить с теми же параметрами» / «Сформировать новую revision».
+ * Отдельный ресурс, а не флаг в теле создания: параметры повтора берёт СЕРВЕР
+ * из исходной работы, и клиенту нечего сюда передавать, кроме режима. */
+export function reportJobRerunPath(id: string, mode: RerunMode): string {
+  return `${REPORT_JOBS_PATH}${id}/${mode === 'RETRY' ? 'retry' : 'new-revision'}/`
+}
+
+export type RerunMode = 'RETRY' | 'NEW_REVISION'
 
 export interface ListReportTypesResponse {
   results: ReportTypeDefinition[]
@@ -68,9 +78,24 @@ export interface ReportArtifactSummary {
   unavailableReason: ArtifactUnavailableReason | null
 }
 
+/** §22.25 фильтры истории. Применяет СЕРВЕР: экран не режет уже полученный
+ * массив — §22.24 не даёт грузить в браузер строки, которые не показывают. */
+export interface ListReportJobsFilters {
+  state?: ReportJobState
+  /** Только работы смотрящего. Чьи именно — решает сервер по актору запроса. */
+  mine?: boolean
+}
+
 export interface ListReportJobsResponse {
   results: ReportJob[]
   artifacts: ReportArtifactSummary[]
+  /** §22.25: доступные действия по каждой работе — считает сервер. */
+  actions: ReportJobActions[]
+  /** §35: колонки §22.25, которых demo-срез не даёт, с причиной. */
+  unavailableColumns: MaskedField[]
+  /** Сколько работ видит смотрящий ВСЕГО, до фильтров: «ничего не нашлось» и
+   * «отчётов ещё не запускали» — разные сообщения. */
+  totalVisible: number
   /** Время сервера, по которому считалась доступность артефактов: экран не
    * пересчитывает срок своими часами (§8.8). */
   serverTime: string
@@ -89,6 +114,18 @@ export type CreateReportJobRequest = {
 }
 
 export type CreateReportJobResponse = ReportJob
+
+/**
+ * Ответ повтора. `reused: true` означает, что новой работы НЕ создавали —
+ * сервер вернул уже готовый пригодный артефакт (§22.25). Экран обязан
+ * различать эти два исхода: «сформировано заново» и «отдан прежний файл» —
+ * разные события для человека.
+ */
+export type RerunReportJobResponse = {
+  reused: boolean
+  reportJobId: string
+  artifactId: string | null
+}
 export type ReportJobResponse = ReportJob
 export type DownloadArtifactResponse = { fileName: string; content: string }
 export type { ReportArtifact }

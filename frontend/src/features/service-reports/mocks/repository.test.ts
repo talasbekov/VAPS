@@ -339,3 +339,182 @@ describe('скачивание (§22.23)', () => {
     )
   })
 })
+
+describe('видимость истории (§22.25)', () => {
+  it('работа со скрытыми полями невидима без права на sensitive export', async () => {
+    const { repository } = await setup()
+    await repository.createReportJob(
+      { ...BASE_REQUEST, sensitive: true, idempotencyKey: 'sensitive-1' },
+      SENSITIVE_OPERATOR,
+    )
+    await runToCompletion(repository, SENSITIVE_OPERATOR)
+
+    const owner = await repository.listReportJobs(SENSITIVE_OPERATOR)
+    expect(owner.results).toHaveLength(1)
+    expect(owner.artifacts).toHaveLength(1)
+
+    // У соседа без права её нет ВООБЩЕ: ни строки, ни артефакта, ни следа в
+    // счётчике — параметры и автор сами говорят, кого выгружали целиком.
+    const other = await repository.listReportJobs(OPERATOR)
+    expect(other.results).toHaveLength(0)
+    expect(other.artifacts).toHaveLength(0)
+    expect(other.totalVisible).toBe(0)
+  })
+
+  it('повтор чужой невидимой работы отвечает «не найдено», а не «нет прав»', async () => {
+    const { repository } = await setup()
+    const hidden = await repository.createReportJob(
+      { ...BASE_REQUEST, sensitive: true, idempotencyKey: 'sensitive-2' },
+      SENSITIVE_OPERATOR,
+    )
+    await expect(
+      repository.rerunReportJob(hidden.reportJobId, 'RETRY', OPERATOR),
+    ).rejects.toThrow(RepositoryNotFoundError)
+  })
+
+  it('фильтр не останавливает продвижение скрытых им работ', async () => {
+    const { repository } = await setup()
+    await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    // Читаем реестр ТОЛЬКО через фильтр, под который работа не попадает: если
+    // ступень выполнялась бы лишь для показанных строк, она застряла бы в
+    // очереди навсегда.
+    for (let step = 0; step < 4; step += 1) {
+      await repository.listReportJobs(OPERATOR, { state: 'FAILED' })
+    }
+    const all = await repository.listReportJobs(OPERATOR)
+    expect(all.results[0].state).toBe('COMPLETED')
+  })
+
+  it('фильтры по состоянию и по автору применяет сервер', async () => {
+    const { repository } = await setup()
+    await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    await runToCompletion(repository)
+
+    expect((await repository.listReportJobs(OPERATOR, { state: 'COMPLETED' })).results).toHaveLength(1)
+    expect((await repository.listReportJobs(OPERATOR, { state: 'PENDING' })).results).toHaveLength(0)
+    expect((await repository.listReportJobs(OPERATOR, { mine: true })).results).toHaveLength(1)
+    // Чужой смотрит ту же работу: она видима (не sensitive), но не «его».
+    const foreign = await repository.listReportJobs(SENSITIVE_OPERATOR, { mine: true })
+    expect(foreign.results).toHaveLength(0)
+    // …и «ничего не нашлось» отличимо от «ничего не запускали».
+    expect(foreign.totalVisible).toBe(1)
+  })
+
+  it('артефакты отфильтрованных работ тоже не приезжают', async () => {
+    const { repository } = await setup()
+    await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    await runToCompletion(repository)
+    const filtered = await repository.listReportJobs(OPERATOR, { state: 'PENDING' })
+    expect(filtered.artifacts).toHaveLength(0)
+  })
+})
+
+describe('повтор и новая редакция (§22.25)', () => {
+  async function completedJob(repository: ReturnType<typeof createServiceReportsRepository>) {
+    const job = await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    await runToCompletion(repository)
+    return job
+  }
+
+  it('повтор при пригодном артефакте не создаёт работу, а отдаёт готовый', async () => {
+    const { repository } = await setup()
+    const job = await completedJob(repository)
+    const result = await repository.rerunReportJob(job.reportJobId, 'RETRY', OPERATOR)
+    expect(result).toMatchObject({ reused: true, artifactId: `artifact-${job.reportJobId}` })
+    expect((await repository.listReportJobs(OPERATOR)).results).toHaveLength(1)
+  })
+
+  it('новая редакция собирается ВСЕГДА и получает следующий номер', async () => {
+    const { repository } = await setup()
+    const job = await completedJob(repository)
+    const result = await repository.rerunReportJob(job.reportJobId, 'NEW_REVISION', OPERATOR)
+    expect(result.reused).toBe(false)
+    const response = await runToCompletion(repository)
+    expect(response.results).toHaveLength(2)
+    const revisions = response.artifacts.map((artifact) => artifact.revision).sort()
+    expect(revisions).toEqual([1, 2])
+    // Повтор ПОСЛЕ новой редакции отдаёт именно свежую.
+    const retried = await repository.rerunReportJob(job.reportJobId, 'RETRY', OPERATOR)
+    expect(retried.artifactId).toBe(`artifact-${result.reportJobId}`)
+  })
+
+  it('повтор истёкшего артефакта собирает заново', async () => {
+    const { repository, clock } = await setup()
+    const job = await completedJob(repository)
+    clock.set('2026-09-20T08:00:00+05:00')
+    const result = await repository.rerunReportJob(job.reportJobId, 'RETRY', OPERATOR)
+    expect(result).toMatchObject({ reused: false, artifactId: null })
+  })
+
+  it('незавершённая работа не повторяется и не даёт редакции', async () => {
+    const { repository } = await setup()
+    const job = await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    await expect(
+      repository.rerunReportJob(job.reportJobId, 'RETRY', OPERATOR),
+    ).rejects.toMatchObject({ errorCode: 'JOB_NOT_FINISHED' })
+    await expect(
+      repository.rerunReportJob(job.reportJobId, 'NEW_REVISION', OPERATOR),
+    ).rejects.toMatchObject({ errorCode: 'NO_BASE_REVISION' })
+  })
+
+  it('автор повтора — тот, кто повторил, а не автор исходной работы', async () => {
+    const { repository } = await setup()
+    const job = await completedJob(repository)
+    await repository.rerunReportJob(job.reportJobId, 'NEW_REVISION', SENSITIVE_OPERATOR)
+    const response = await repository.listReportJobs(SENSITIVE_OPERATOR)
+    const rerun = response.results.find((entry) => entry.reportJobId !== job.reportJobId)
+    expect(rerun?.createdBy.userId).toBe(SENSITIVE_OPERATOR)
+    // Ключ идемпотентности новый: старый вернул бы исходную работу.
+    expect(rerun?.idempotencyKey).not.toBe(job.idempotencyKey)
+  })
+})
+
+describe('сбой сборки (§22.21)', () => {
+  /**
+   * Снимок, в котором смена не той формы, что ждёт проекция отчёта. Это ровно
+   * тот риск, о котором предупреждает `dutiesSlice.ts`: узкая рукописная
+   * проекция чужого слайса протухает при его изменении. ОТСУТСТВИЕ слайса
+   * сбоем НЕ является — там отчёт честно выходит пустым.
+   */
+  async function setupWithBrokenSource() {
+    const adapter = createMemoryPersistence()
+    const envelope = seedEnvelope()
+    ;(envelope.slices as Record<string, unknown>).duties = { shifts: [null] }
+    await adapter.reset(envelope)
+    const clock = new DemoClock('2026-07-20T08:00:00+05:00')
+    return { repository: createServiceReportsRepository(adapter, clock) }
+  }
+
+  it('работа падает СОСТОЯНИЕМ, а не исключением, и реестр остаётся читаемым', async () => {
+    const { repository } = await setupWithBrokenSource()
+    await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    const response = await runToCompletion(repository)
+    const failed = response.results[0]
+    expect(failed.state).toBe('FAILED')
+    expect(failed.failureCode).toBe('ASSEMBLY_FAILED')
+    expect(failed.completedAt).not.toBeNull()
+    expect(response.artifacts).toHaveLength(0)
+  })
+
+  it('сообщение о сбое безопасное: ни имени слайса, ни текста исключения', async () => {
+    const { repository } = await setupWithBrokenSource()
+    await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    const message = (await runToCompletion(repository)).results[0].safeFailureMessage ?? ''
+    expect(message).not.toBe('')
+    expect(message).not.toMatch(/duties|слайс|mock-runtime|compose-seed/i)
+  })
+
+  it('упавшая работа даёт ошибку и повтор, но не файл и не редакцию', async () => {
+    const { repository } = await setupWithBrokenSource()
+    const job = await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    const response = await runToCompletion(repository)
+    const actions = Object.fromEntries(
+      (response.actions[0]?.actions ?? []).map((action) => [action.code, action.available]),
+    )
+    expect(actions).toMatchObject({ VIEW_ERROR: true, RETRY: true, DOWNLOAD: false, NEW_REVISION: false })
+    // Повтор упавшей работы разрешён и создаёт новую (готового артефакта нет).
+    await expect(
+      repository.rerunReportJob(job.reportJobId, 'RETRY', OPERATOR),
+    ).resolves.toMatchObject({ reused: false })
+  })
+})

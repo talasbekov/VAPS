@@ -260,3 +260,15 @@ endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуще
 неоткуда утечь. Состояния работы (`PENDING`/`PROCESSING`/`COMPLETED`/`FAILED`) —
 серверные; ступень продвигается на чтении реестра (фонового исполнителя в demo нет).
 
+
+## Этап 41 — история отчётов (§22.25)
+
+| Ресурс | Право | Ответ |
+| --- | --- | --- |
+| `GET /api/ops/service-report-jobs/?state=&mine=` | `ops.report.generate` | те же работы и артефакты, но: отфильтрованные СЕРВЕРОМ, без работ со скрытыми полями у того, у кого нет `ops.report.export_sensitive`, плюс `actions[]` (доступность каждого действия с причиной отказа), `unavailableColumns[]` и `totalVisible` |
+| `POST /api/ops/service-report-jobs/{id}/retry/` | `ops.report.generate` | `{ reused, reportJobId, artifactId }` — при пригодном (не истёкшем) артефакте той же серии новая работа НЕ создаётся; 404 на невидимую работу, 422 `JOB_NOT_FINISHED` |
+| `POST /api/ops/service-report-jobs/{id}/new-revision/` | `ops.report.generate` | всегда новая работа (`reused: false`); 422 `NO_BASE_REVISION`, если исходная не завершилась успехом |
+
+Параметры повтора берёт сервер из исходной работы — в теле запроса их нет вовсе.
+Невидимая работа отвечает «не найдено», а не «нет прав»: отказ по правам сам
+подтверждал бы, что такая выгрузка существует.

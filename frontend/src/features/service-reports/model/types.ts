@@ -85,6 +85,34 @@ export interface ReportArtifact {
 /** §22.22: артефакт может быть недоступен по разным причинам, и они разные. */
 export type ArtifactUnavailableReason = 'EXPIRED' | 'NOT_READY' | 'FAILED'
 
+/**
+ * §22.25 «История отчётов»: действия строки реестра. Их считает СЕРВЕР — по
+ * состоянию работы, наличию артефакта, сроку хранения и правам. В компоненте
+ * нет ни одной ветки «если работа упала — выключить кнопку»: экран рисует то,
+ * что пришло, вместе с причиной недоступности (тот же приём, что action policy
+ * месячного плана, §21.28).
+ */
+export type ReportJobActionCode =
+  | 'OPEN_PARAMETERS'
+  | 'DOWNLOAD'
+  | 'RETRY'
+  | 'NEW_REVISION'
+  | 'VIEW_ERROR'
+
+export interface ReportJobAction {
+  code: ReportJobActionCode
+  available: boolean
+  /** `null`, пока действие доступно: причина нужна ровно там, где отказ. */
+  reason: string | null
+}
+
+/** Действия одной работы. Едут РЯДОМ с работой, а не полем внутри неё:
+ * действия — производное от прав смотрящего, а сама работа у всех одна. */
+export interface ReportJobActions {
+  reportJobId: string
+  actions: ReportJobAction[]
+}
+
 /** Определение отчёта (§22.19). */
 export interface ReportTypeDefinition {
   reportTypeCode: string

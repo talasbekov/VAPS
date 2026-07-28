@@ -3,11 +3,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   MASKED_FIELDS,
+  artifactSeriesKey,
+  buildJobActions,
   buildReportContent,
   contentHash,
   contentSize,
   csvField,
+  findReusableArtifact,
   isArtifactAvailable,
+  nextRevision,
   periodDays,
   selectRows,
 } from './reporting'
@@ -119,5 +123,154 @@ describe('метаданные артефакта (§22.22)', () => {
     const artifact = { expiresAt: '2026-08-10T08:00:00.000Z' } as ReportArtifact
     expect(isArtifactAvailable(artifact, '2026-08-09T08:00:00.000Z')).toBe(true)
     expect(isArtifactAvailable(artifact, '2026-08-10T08:00:00.000Z')).toBe(false)
+  })
+})
+
+/** Артефакт серии: только поля, которые участвуют в нумерации и пригодности. */
+function artifact(overrides: Partial<ReportArtifact> = {}): ReportArtifact {
+  return {
+    artifactId: 'artifact-1',
+    reportJobId: 'report-job-1',
+    reportTypeCode: 'PERSONNEL_EXPENSE',
+    safeTitle: 'Расход личного состава',
+    format: 'CSV',
+    revision: 1,
+    generatedAt: '2026-07-20T08:00:00.000Z',
+    generatedBy: 'operator',
+    parameterSnapshot: PERIOD,
+    calculationVersion: 'expense-2026.07.1',
+    maskingPolicyVersion: 'masking-2026.07.1',
+    sensitive: false,
+    fileSize: 10,
+    hash: 'deadbeef',
+    expiresAt: '2026-08-10T08:00:00.000Z',
+    content: '',
+    ...overrides,
+  }
+}
+
+const SERIES = artifactSeriesKey({
+  reportTypeCode: 'PERSONNEL_EXPENSE',
+  parameters: PERIOD,
+  sensitive: false,
+})
+
+describe('редакции серии (§22.25)', () => {
+  it('первая редакция серии — первая, следующая продолжает НАИБОЛЬШУЮ', () => {
+    expect(nextRevision([], SERIES)).toBe(1)
+    expect(nextRevision([artifact()], SERIES)).toBe(2)
+    expect(nextRevision([artifact({ revision: 4 })], SERIES)).toBe(5)
+  })
+
+  it('исчезнувшая по сроку редакция не освобождает свой номер', () => {
+    // Счёт по КОЛИЧЕСТВУ дал бы здесь снова 2 — два разных файла с одним
+    // номером редакции, и «редакция 2» перестала бы что-либо значить.
+    const artifacts = [artifact({ revision: 2, artifactId: 'artifact-2' })]
+    expect(nextRevision(artifacts, SERIES)).toBe(3)
+  })
+
+  it('режим выгрузки — часть серии: обычный и чувствительный отчёт не общая нумерация', () => {
+    const sensitiveSeries = artifactSeriesKey({
+      reportTypeCode: 'PERSONNEL_EXPENSE',
+      parameters: PERIOD,
+      sensitive: true,
+    })
+    expect(nextRevision([artifact()], sensitiveSeries)).toBe(1)
+    expect(
+      nextRevision([artifact()], artifactSeriesKey({
+        reportTypeCode: 'PERSONNEL_EXPENSE',
+        parameters: { from: '2026-08-01', to: '2026-08-31' },
+        sensitive: false,
+      })),
+    ).toBe(1)
+  })
+})
+
+describe('пригодный артефакт для повтора (§22.25)', () => {
+  const NOW = '2026-07-25T08:00:00.000Z'
+
+  it('берётся последняя редакция серии', () => {
+    const found = findReusableArtifact(
+      [artifact(), artifact({ artifactId: 'artifact-2', revision: 2 })],
+      SERIES,
+      NOW,
+    )
+    expect(found?.artifactId).toBe('artifact-2')
+  })
+
+  it('истёкший артефакт непригоден — повтор обязан собрать заново', () => {
+    expect(
+      findReusableArtifact([artifact({ expiresAt: '2026-07-24T08:00:00.000Z' })], SERIES, NOW),
+    ).toBeNull()
+  })
+
+  it('артефакт чужой серии не подходит под повтор', () => {
+    expect(findReusableArtifact([artifact({ sensitive: true })], SERIES, NOW)).toBeNull()
+  })
+})
+
+describe('действия строки истории (§22.25)', () => {
+  function codes(
+    state: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED',
+    available: boolean | null,
+  ) {
+    const actions = buildJobActions({
+      job: { state, artifactId: available === null ? null : 'artifact-1' },
+      artifact: available === null ? null : { available },
+    })
+    return Object.fromEntries(actions.map((action) => [action.code, action]))
+  }
+
+  it('готовая работа с доступным артефактом даёт скачивание и новую редакцию', () => {
+    const actions = codes('COMPLETED', true)
+    expect(actions.DOWNLOAD.available).toBe(true)
+    expect(actions.NEW_REVISION.available).toBe(true)
+    expect(actions.RETRY.available).toBe(true)
+    expect(actions.VIEW_ERROR.available).toBe(false)
+  })
+
+  it('истёкший артефакт закрывает скачивание, но не повтор', () => {
+    const actions = codes('COMPLETED', false)
+    expect(actions.DOWNLOAD.available).toBe(false)
+    expect(actions.DOWNLOAD.reason).toMatch(/Срок хранения/)
+    expect(actions.RETRY.available).toBe(true)
+  })
+
+  it('у упавшей работы есть ошибка и повтор, но не редакция и не файл', () => {
+    const actions = codes('FAILED', null)
+    expect(actions.VIEW_ERROR.available).toBe(true)
+    expect(actions.RETRY.available).toBe(true)
+    expect(actions.NEW_REVISION.available).toBe(false)
+    expect(actions.DOWNLOAD.available).toBe(false)
+    // Причина отказа — про ошибку работы, а не про «артефакт ещё не готов»:
+    // упавшая работа файла не получит никогда.
+    expect(actions.DOWNLOAD.reason).toMatch(/ошибкой/)
+  })
+
+  it('незавершённая работа не повторяется и не скачивается, но параметры видны', () => {
+    for (const state of ['PENDING', 'PROCESSING'] as const) {
+      const actions = codes(state, null)
+      expect(actions.RETRY.available).toBe(false)
+      expect(actions.NEW_REVISION.available).toBe(false)
+      expect(actions.DOWNLOAD.available).toBe(false)
+      expect(actions.OPEN_PARAMETERS.available).toBe(true)
+    }
+  })
+
+  it('каждый отказ назван причиной, а доступное действие причины не несёт', () => {
+    // Проверяются ОБА состояния набора: у работающей отказов большинство, у
+    // готовой — большинство доступно. Один набор оставил бы половину правила
+    // непроверенной.
+    for (const state of ['PROCESSING', 'COMPLETED'] as const) {
+      const actions = buildJobActions({
+        job: { state, artifactId: state === 'COMPLETED' ? 'artifact-1' : null },
+        artifact: state === 'COMPLETED' ? { available: true } : null,
+      })
+      expect(actions.some((action) => !action.available)).toBe(true)
+      for (const action of actions) {
+        if (action.available) expect(action.reason).toBeNull()
+        else expect(action.reason?.trim()).toBeTruthy()
+      }
+    }
   })
 })

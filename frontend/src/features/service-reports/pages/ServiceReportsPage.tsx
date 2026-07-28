@@ -7,6 +7,8 @@
 // приходят метаданные. Содержимое появляется в памяти вкладки ровно на время
 // сохранения файла и не кэшируется (см. `useDownloadArtifact`).
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router'
+import { ROUTES } from '../../../shared/routes'
 import { Button } from '../../../shared/ui/Button'
 import { Input } from '../../../shared/ui/Input'
 import {
@@ -102,6 +104,14 @@ export function ServiceReportsPage() {
         <span className="text-sm text-muted-foreground">
           Асинхронное формирование отчётов, метаданные артефактов и выгрузка
         </span>
+        <div className="mt-2">
+          <Link
+            className="text-sm font-semibold text-primary underline"
+            to={ROUTES.serviceReportHistory}
+          >
+            История отчётов →
+          </Link>
+        </div>
       </header>
 
       {typesQuery.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}

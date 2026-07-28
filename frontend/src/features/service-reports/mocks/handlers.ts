@@ -7,8 +7,10 @@ import {
   REPORT_JOBS_PATH,
   REPORT_TYPES_PATH,
   reportArtifactDownloadPath,
+  reportJobRerunPath,
 } from '../api/pending-contracts'
 import type { CreateReportJobRequest } from '../api/pending-contracts'
+import type { ReportJobState } from '../model/types'
 import {
   createServiceReportsRepository,
   RepositoryBusinessRuleError,
@@ -27,7 +29,9 @@ function mapRepositoryError(error: unknown, clock: DemoClock): Response | null {
     })
   }
   if (error instanceof RepositoryNotFoundError) {
-    return HttpResponse.json(envelope(clock, 'ENTITY_NOT_FOUND', 'Артефакт не найден.'), {
+    // Одно сообщение и на артефакт, и на работу: разные тексты подсказывали бы,
+    // существует ли скрытая от смотрящего выгрузка.
+    return HttpResponse.json(envelope(clock, 'ENTITY_NOT_FOUND', 'Запись не найдена.'), {
       status: 404,
     })
   }
@@ -51,12 +55,31 @@ export function createServiceReportsHandlers(adapter: PersistenceAdapter, clock:
     }),
     http.get(`*${REPORT_JOBS_PATH}`, async ({ request }) => {
       const actorUserId = request.headers.get('X-User-Id')
+      const params = new URL(request.url).searchParams
+      const state = params.get('state')
       try {
-        return HttpResponse.json(await repository.listReportJobs(actorUserId))
+        return HttpResponse.json(
+          await repository.listReportJobs(actorUserId, {
+            state: state === null ? undefined : (state as ReportJobState),
+            mine: params.get('mine') === 'true',
+          }),
+        )
       } catch (error) {
         return mapRepositoryError(error, clock) ?? HttpResponse.error()
       }
     }),
+    ...(['RETRY', 'NEW_REVISION'] as const).map((mode) =>
+      http.post(`*${reportJobRerunPath(':id', mode)}`, async ({ request, params }) => {
+        const actorUserId = request.headers.get('X-User-Id')
+        try {
+          return HttpResponse.json(
+            await repository.rerunReportJob(String(params.id), mode, actorUserId),
+          )
+        } catch (error) {
+          return mapRepositoryError(error, clock) ?? HttpResponse.error()
+        }
+      }),
+    ),
     http.post(`*${REPORT_JOBS_PATH}`, async ({ request }) => {
       const actorUserId = request.headers.get('X-User-Id')
       const body = (await request.json()) as CreateReportJobRequest
