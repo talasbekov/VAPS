@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-28 (10.3c → done, 10.3b → ready-for-dev)
+# last_updated: 2026-07-28 (10.5e → done, 10.6a → ready-for-dev)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -424,7 +424,7 @@ development_status:
   # ⚠️ БЕЗ 10.6a+10.6b epic-AC 10.6 «протухшая сводка помечена» НЕ закрыт.
   # Порядок: 10.6 → 10.6a → 10.6b ; 10.6c — независима.
   10-6-amendment-флоу-ui: done
-  10-6a-роут-свежести-сводки: backlog
+  10-6a-роут-свежести-сводки: ready-for-dev
   10-6b-метка-протухшей-сводки-ui: backlog
   10-6c-причина-и-санкция-в-истории-версий: backlog
   # Вынесено из скоупа 10.7 (create-story 2026-07-19) с поимённым преемником.
