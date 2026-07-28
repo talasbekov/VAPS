@@ -280,6 +280,7 @@ export function DailyGrid({
   // Дефолт = прежняя канон-строка ⇒ тесты E9, рендерящие грид напрямую,
   // остаются зелёными без единой правки (доказательство аддитивности, AC-12).
   submitLabel = 'Сдать день',
+  serverMarkers,
 }: DailyGridProps) {
   const initials = useMemo(() => initValues(rows), [rows])
   const [values, dispatch] = useReducer(valueReducer, undefined, () =>
@@ -364,6 +365,50 @@ export function DailyGrid({
     })
     prevInitialsRef.current = initials
   }, [initials])
+
+  // Обратный канал bulk-ответа → маркеры (Story 10.2b). serverMarkers-проп —
+  // ДРУГОЙ источник, но ТОТ ЖЕ markers-стейт (не параллельный). Оператор,
+  // отредактировавший строку заново, естественно перезаписывает запись
+  // validateAndMark'ом того коммита — специальной логики снятия «руками» не
+  // нужно (AC-2).
+  //
+  // Ревью-фикс (3 слоя ревью 10.2b независимо сошлись на одной находке):
+  // per-id гейт СИММЕТРИЧЕН для прунинга И применения — трогаем маркер id
+  // ТОЛЬКО если текущее живое значение всё ещё равно тому, что ПОСЛЕДНИЙ
+  // серверный синк для этого id туда положил (`current === prevServer[id]`,
+  // где `undefined` для id, никогда не бывшего серверным). Если оператор
+  // локально сменил маркер этого id между двумя серверными синками —
+  // серверный синк его НЕ трогает ни прунингом, ни переприменением, пока
+  // сам id не пропадёт/появится заново со свежим значением из следующего
+  // serverMarkers. Без симметрии применение (не только прунинг) могло бы
+  // молча стереть локальную правку, если тот же id снова оказался бы в
+  // НОВОМ (по ссылке), но content-идентичном serverMarkers — сегодня
+  // недостижимо в проводке DailyUpdatePage (проп мемоизирован на
+  // mutationError, меняется только на реальный новый submit), но контракт
+  // компонента этого не гарантирует для будущих вызывающих.
+  const prevServerMarkersRef = useRef<Record<string, RowMarker>>({})
+  useLayoutEffect(() => {
+    const next = serverMarkers ?? {}
+    const prev = prevServerMarkersRef.current
+    if (prev === next) return
+    setMarkers((current) => {
+      let changed = false
+      const merged = { ...current }
+      const touchedIds = new Set([...Object.keys(prev), ...Object.keys(next)])
+      for (const id of touchedIds) {
+        const prevServerValue = prev[id]
+        const nextServerValue = next[id]
+        if (merged[id] !== prevServerValue) continue // локальный маркер — не трогаем
+        if (merged[id] === nextServerValue) continue
+        if (nextServerValue === undefined) delete merged[id]
+        else merged[id] = nextServerValue
+        changed = true
+      }
+      return changed ? merged : current
+    })
+    prevServerMarkersRef.current = next
+  }, [serverMarkers])
+
   useLayoutEffect(() => {
     setFocus((f) =>
       rows.length > 0 && f.row > rows.length - 1

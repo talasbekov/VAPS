@@ -4,7 +4,7 @@ import { useCallback, useMemo } from 'react'
 
 import type { ApiError } from '../../shared/api/errors'
 import { DailyGrid } from './DailyGrid'
-import type { RowChange, StatusOption } from './DailyGrid.types'
+import type { RowChange, RowMarker, StatusOption } from './DailyGrid.types'
 import {
   buildPrefilledRows,
   toBulkRequest,
@@ -32,6 +32,9 @@ export interface DailyGridContainerProps {
   /** Транзитный проброс надписи кнопки отправки дельт (10.3): контейнер
    * значение не читает — решение о надписи принимает экран. */
   submitLabel?: string
+  /** Обратный канал bulk-ответа → маркеры строк (10.2b), транзитный проброс —
+   * контейнер маппинг rowErrors→маркер не строит, решение экрана. */
+  serverMarkers?: Record<string, RowMarker>
 }
 
 export function DailyGridContainer({
@@ -44,6 +47,7 @@ export function DailyGridContainer({
   emptyLabel,
   onDirtyChange,
   submitLabel,
+  serverMarkers,
 }: DailyGridContainerProps) {
   const rows = useMemo(
     () => buildPrefilledRows(employees, yesterday),
@@ -70,6 +74,7 @@ export function DailyGridContainer({
       emptyLabel={emptyLabel}
       onDirtyChange={onDirtyChange}
       submitLabel={submitLabel}
+      serverMarkers={serverMarkers}
     />
   )
 }

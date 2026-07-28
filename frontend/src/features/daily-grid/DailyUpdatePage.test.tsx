@@ -415,6 +415,12 @@ it('409 mixed (hard-строка в агрегате): инлайн-панель
   )
   expect(within(rowOf(NAMES[0])).getByText('В отпуске')).toBeInTheDocument()
   expect(screen.queryByText(/Применено/)).not.toBeInTheDocument()
+
+  // 10.2b: обратный канал — обе отклонённые строки грида подсвечены (hard/
+  // soft), ДОПОЛНЯЯ инлайн-панель, а не заменяя её (AC-1/AC-6).
+  expect(rowOf(NAMES[0])).toHaveAttribute('data-marker', 'hard')
+  expect(rowOf(NAMES[1])).toHaveAttribute('data-marker', 'soft')
+  expect(rowOf(NAMES[2])).not.toHaveAttribute('data-marker')
 })
 
 it('409 чисто-soft: ConflictDialog открывается; «Подтвердить оверрайд» шлёт override:true+причину; успех обновляет счётчик как обычно (10.2a)', async () => {
@@ -484,6 +490,9 @@ it('409 чисто-soft: ConflictDialog открывается; «Подтвер
   expect(screen.getByTestId('changed-counter')).toHaveTextContent(
     'Изменено 0 из 3',
   )
+  // 10.2b: успешный override-ретрай снимает серверный маркер (rowErrors
+  // опустел вместе с mutationError).
+  expect(rowOf(NAMES[0])).not.toHaveAttribute('data-marker')
 })
 
 it('«Отмена» в ConflictDialog закрывает диалог без повторной отправки', async () => {

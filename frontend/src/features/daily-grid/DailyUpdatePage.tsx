@@ -41,6 +41,7 @@ import {
   parseValidationDetails,
 } from './bulkErrors'
 import { DailyGridContainer } from './DailyGridContainer'
+import type { RowMarker } from './DailyGrid.types'
 import { currentSubmission, parseSubmissionList } from './daySubmission'
 import { DaySubmissionPanel } from './DaySubmissionPanel'
 import type { DriftEntry } from './DaySubmissionPanel'
@@ -398,7 +399,25 @@ export function DailyUpdatePage() {
   )
 
   const failure = mutationError === null ? null : describeBulkFailure(mutationError)
-  const rowErrors = mutationError === null ? [] : parseBulkRowErrors(mutationError)
+  // useMemo keyed on mutationError (стабильная ссылка react-query, меняется
+  // ТОЛЬКО при новом исходе мутации), не на промежуточный литерал: без этого
+  // и rowErrors, и serverMarkers ниже строили бы новый объект на каждый
+  // рендер экрана — DailyGrid's serverMarkers-эффект (10.2b) триггерился бы
+  // избыточно (идемпотентно, но лишняя работа на каждый ререндер).
+  const rowErrors = useMemo(
+    () => (mutationError === null ? [] : parseBulkRowErrors(mutationError)),
+    [mutationError],
+  )
+  // 10.2b: обратный канал в грид — маппинг ПОСТРОЧНЫХ причин на маркер строки
+  // (422 → hard, 409/прочее → soft). Object.fromEntries широчает значение до
+  // `string` (не сузит до RowMarker) — типизированный аккумулятор вместо.
+  const serverMarkers = useMemo(() => {
+    const markers: Record<string, RowMarker> = {}
+    for (const rowError of rowErrors) {
+      markers[rowError.employeeId] = rowError.httpStatus === 422 ? 'hard' : 'soft'
+    }
+    return markers
+  }, [rowErrors])
   const validationDetails =
     failure?.kind === 'validation' ? parseValidationDetails(mutationError) : []
   // 422 — hard (красный), 409 и прочее — soft (жёлтый). Цвет НИКОГДА не
@@ -679,6 +698,7 @@ export function DailyUpdatePage() {
           onBulkSubmit={handleBulkSubmit}
           onDirtyChange={handleDirtyChange}
           submitLabel={GRID_SUBMIT_LABEL}
+          serverMarkers={serverMarkers}
         />
       )}
     </div>

@@ -257,3 +257,117 @@ describe('9.6 валидация — per-row', () => {
     expect(document.querySelectorAll('[data-marker]').length).toBe(1) // всё ещё одна
   })
 })
+
+describe('10.2b — обратный канал serverMarkers', () => {
+  it('serverMarkers на монтировании красит строки', () => {
+    render(
+      <DailyGrid
+        rows={rows('IN_SERVICE', 'IN_SERVICE')}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+        serverMarkers={{ e0: 'hard', e1: 'soft' }}
+      />,
+    )
+    expect(marker('hard')).toBeInTheDocument()
+    expect(marker('soft')).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-marker]').length).toBe(2)
+  })
+
+  it('rerender с новым serverMarkers снимает маркер исправленной строки (AC-4, прунинг)', () => {
+    const { rerender } = render(
+      <DailyGrid
+        rows={rows('IN_SERVICE', 'IN_SERVICE')}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+        serverMarkers={{ e0: 'hard', e1: 'soft' }}
+      />,
+    )
+    expect(document.querySelectorAll('[data-marker]').length).toBe(2)
+
+    // строка e1 «исправлена» — новый ответ несёт только e0
+    rerender(
+      <DailyGrid
+        rows={rows('IN_SERVICE', 'IN_SERVICE')}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+        serverMarkers={{ e0: 'hard' }}
+      />,
+    )
+    expect(document.querySelectorAll('[data-marker]').length).toBe(1)
+    expect(marker('hard')).toBeInTheDocument()
+    expect(marker('soft')).toBeNull()
+  })
+
+  it('rerender с пустым serverMarkers (успешный submit) снимает все маркеры', () => {
+    const { rerender } = render(
+      <DailyGrid
+        rows={rows('IN_SERVICE', 'IN_SERVICE')}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+        serverMarkers={{ e0: 'hard', e1: 'soft' }}
+      />,
+    )
+    expect(document.querySelectorAll('[data-marker]').length).toBe(2)
+
+    rerender(
+      <DailyGrid
+        rows={rows('IN_SERVICE', 'IN_SERVICE')}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+        serverMarkers={{}}
+      />,
+    )
+    expect(document.querySelectorAll('[data-marker]').length).toBe(0)
+  })
+
+  it('редактирование серверно-помеченной строки перезаписывает маркер клиентским вердиктом (AC-2)', async () => {
+    const user = userEvent.setup()
+    render(
+      <DailyGrid
+        rows={rows('IN_SERVICE', 'IN_SERVICE')}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+        onCellCommit={() => null} // клиентский коммит чист
+        serverMarkers={{ e0: 'hard' }}
+      />,
+    )
+    expect(marker('hard')).toBeInTheDocument()
+
+    await commitFocusedCell(user) // редактирование строки 0 (фокус стартует там)
+    expect(marker('hard')).toBeNull() // clearMarker перезаписал серверный маркер
+  })
+
+  it('локальная правка НЕ воскрешается повторным серверным синком с тем же id (ревью-фикс, 3 слоя)', async () => {
+    // Без симметричного гейта применение (не только прунинг) молча стёрло бы
+    // локальную правку, если тот же id снова оказался в НОВОМ (по ссылке)
+    // serverMarkers с тем же значением — например, повторный (по ссылке
+    // отличный) объект от родителя, который решил не мемоизировать проп.
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <DailyGrid
+        rows={rows('IN_SERVICE', 'IN_SERVICE')}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+        onCellCommit={() => null}
+        serverMarkers={{ e0: 'hard' }}
+      />,
+    )
+    expect(marker('hard')).toBeInTheDocument()
+
+    await commitFocusedCell(user) // оператор исправил строку 0
+    expect(marker('hard')).toBeNull()
+
+    // Родитель ре-рендерит с НОВЫМ (по ссылке) объектом, содержимое то же —
+    // ровно сценарий, который раньше воскрешал маркер.
+    rerender(
+      <DailyGrid
+        rows={rows('IN_SERVICE', 'IN_SERVICE')}
+        statusOptions={OPTIONS}
+        onSubmit={vi.fn()}
+        onCellCommit={() => null}
+        serverMarkers={{ e0: 'hard' }}
+      />,
+    )
+    expect(marker('hard')).toBeNull() // локальная правка НЕ перетёрта
+  })
+})
