@@ -1366,6 +1366,37 @@ paths:
                 type: string
                 format: binary
           description: ''
+  /api/operations/daily-submissions/freshness/:
+    get:
+      operationId: operations_daily_submissions_freshness_retrieve
+      description: 'Derived-свежесть фрактальной сводки (5.11/10.6a): `status` FRESH/STALE/NOT_SUMMARY
+        — `NOT_SUMMARY` НЕ значит «свежая», это отсутствие сводки на паре (обычная
+        сдача либо нет current-строки). Три оси STALE: `superseded` — пиненная версия
+        ребёнка вытеснена; `missing` — у пиненного ребёнка нет current-версии; `unpinned`
+        — required-ребёнок вне пинов. Читается байт-в-байт из сервиса, ничего не пересчитывает.
+        403 чужой scope; 404 нет подразделения.'
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+          format: date
+        required: true
+      - in: query
+        name: division_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryFreshnessResponse'
+          description: ''
   /api/operations/expense-reports/:
     get:
       operationId: operations_expense_reports_list
@@ -3345,6 +3376,64 @@ components:
       - is_hard_block
       - name
       - priority
+    SummaryFreshnessMissing:
+      type: object
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        pinned_version:
+          type: integer
+      required:
+      - division_id
+      - pinned_version
+    SummaryFreshnessResponse:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/SummaryFreshnessResponseStatusEnum'
+        superseded:
+          type: array
+          items:
+            $ref: '#/components/schemas/SummaryFreshnessSuperseded'
+        missing:
+          type: array
+          items:
+            $ref: '#/components/schemas/SummaryFreshnessMissing'
+        unpinned:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+      - missing
+      - status
+      - superseded
+      - unpinned
+    SummaryFreshnessResponseStatusEnum:
+      enum:
+      - FRESH
+      - STALE
+      - NOT_SUMMARY
+      type: string
+      description: |-
+        * `FRESH` - FRESH
+        * `STALE` - STALE
+        * `NOT_SUMMARY` - NOT_SUMMARY
+    SummaryFreshnessSuperseded:
+      type: object
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        pinned_version:
+          type: integer
+        current_version:
+          type: integer
+      required:
+      - current_version
+      - division_id
+      - pinned_version
     TomorrowBlockOverrideRequest:
       type: object
       description: |-

@@ -164,6 +164,17 @@ class ExpenseJournalFilterSerializer(serializers.Serializer):
     division_id = serializers.UUIDField()
 
 
+class SummaryFreshnessFilterSerializer(serializers.Serializer):
+    """GET /freshness/ query form (10.6a) — оба параметра ОБЯЗАТЕЛЬНЫ (зеркало
+    ``ExpenseReportByDateFilterSerializer``): точечный запрос ОДНОЙ пары
+    (division, date) — «сегодня по умолчанию» здесь не имеет доменного
+    смысла, свежесть конкретного дня сводки вызывающая сторона обязана
+    указать явно."""
+
+    division_id = serializers.UUIDField()
+    business_date = serializers.DateField()
+
+
 class IssuedExpenseReportSerializer(serializers.ModelSerializer):
     """Issued расход projection (6.10a) — flat metadata + the attachment ref and
     sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here.

@@ -13,6 +13,7 @@ from apps.operations.submissions.services.personal_export_service import (
 )
 from apps.operations.submissions.services.scope_gate import ensure_division_scope
 from apps.operations.submissions.services.snapshot import build_division_snapshot
+from apps.operations.submissions.services.summary_service import summary_freshness
 from apps.operations.submissions.services.tomorrow_gate import (
     assert_tomorrow_not_blocked,
 )
@@ -28,4 +29,5 @@ __all__ = [
     "issue_expense_document",
     "override_tomorrow_block",
     "submit_day",
+    "summary_freshness",
 ]

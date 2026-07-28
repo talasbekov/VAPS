@@ -920,6 +920,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/daily-submissions/freshness/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Derived-свежесть фрактальной сводки (5.11/10.6a): `status` FRESH/STALE/NOT_SUMMARY — `NOT_SUMMARY` НЕ значит «свежая», это отсутствие сводки на паре (обычная сдача либо нет current-строки). Три оси STALE: `superseded` — пиненная версия ребёнка вытеснена; `missing` — у пиненного ребёнка нет current-версии; `unpinned` — required-ребёнок вне пинов. Читается байт-в-байт из сервиса, ничего не пересчитывает. 403 чужой scope; 404 нет подразделения. */
+        get: operations["operations_daily_submissions_freshness_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/expense-reports/": {
         parameters: {
             query?: never;
@@ -1920,6 +1937,30 @@ export interface components {
             is_hard_block: boolean;
             priority: number;
         };
+        SummaryFreshnessMissing: {
+            /** Format: uuid */
+            division_id: string;
+            pinned_version: number;
+        };
+        SummaryFreshnessResponse: {
+            status: components["schemas"]["SummaryFreshnessResponseStatusEnum"];
+            superseded: components["schemas"]["SummaryFreshnessSuperseded"][];
+            missing: components["schemas"]["SummaryFreshnessMissing"][];
+            unpinned: string[];
+        };
+        /**
+         * @description * `FRESH` - FRESH
+         *     * `STALE` - STALE
+         *     * `NOT_SUMMARY` - NOT_SUMMARY
+         * @enum {string}
+         */
+        SummaryFreshnessResponseStatusEnum: "FRESH" | "STALE" | "NOT_SUMMARY";
+        SummaryFreshnessSuperseded: {
+            /** Format: uuid */
+            division_id: string;
+            pinned_version: number;
+            current_version: number;
+        };
         /**
          * @description POST-body form (6.10b) — the date whose «на завтра» block is legally
          *     lifted and the mandatory reason. DRF defaults reject a missing/blank reason
@@ -2897,6 +2938,28 @@ export interface operations {
                 };
                 content: {
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+        };
+    };
+    operations_daily_submissions_freshness_retrieve: {
+        parameters: {
+            query: {
+                business_date: string;
+                division_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SummaryFreshnessResponse"];
                 };
             };
         };

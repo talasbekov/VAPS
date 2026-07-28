@@ -49,6 +49,7 @@ from apps.operations.submissions.api.serializers import (
     ExpenseReportByDateFilterSerializer,
     ExpenseReportIssueSerializer,
     IssuedExpenseReportSerializer,
+    SummaryFreshnessFilterSerializer,
     TomorrowBlockOverrideSerializer,
     TrafficLightDivisionFilterSerializer,
     TrafficLightTreeFilterSerializer,
@@ -67,6 +68,7 @@ from apps.operations.submissions.services import (
     issue_expense_document,
     override_tomorrow_block,
     submit_day,
+    summary_freshness,
 )
 from apps.operations.submissions.traffic_light import (
     TrafficLightStatus,
@@ -147,6 +149,10 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # Личная копия (10.8) видит РОВНО то, что и так отдаёт retrieve —
         # значит и гейтится тем же кодом; нового права не заводим.
         "export": READ_PERMISSION,
+        # Свежесть сводки (10.6a) — тот же READ_PERMISSION, что list/retrieve:
+        # тот же селектор (DailySubmissionSelector.current_for изнутри
+        # summary_freshness), новое право не мотивировано одним read-экшеном.
+        "freshness": READ_PERMISSION,
     }
     # No "head": HEAD stays 405 everywhere (the 5.8a/b minimal surface).
     http_method_names = ["get", "post", "options"]
@@ -303,6 +309,73 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             DailySubmissionSerializer(new_version).data,
             status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        parameters=[SummaryFreshnessFilterSerializer],
+        responses={
+            200: inline_serializer(
+                name="SummaryFreshnessResponse",
+                fields={
+                    "status": serializers.ChoiceField(
+                        choices=["FRESH", "STALE", "NOT_SUMMARY"]
+                    ),
+                    "superseded": inline_serializer(
+                        name="SummaryFreshnessSuperseded",
+                        many=True,
+                        fields={
+                            "division_id": serializers.UUIDField(),
+                            "pinned_version": serializers.IntegerField(),
+                            "current_version": serializers.IntegerField(),
+                        },
+                    ),
+                    "missing": inline_serializer(
+                        name="SummaryFreshnessMissing",
+                        many=True,
+                        fields={
+                            "division_id": serializers.UUIDField(),
+                            "pinned_version": serializers.IntegerField(),
+                        },
+                    ),
+                    "unpinned": serializers.ListField(
+                        child=serializers.UUIDField()
+                    ),
+                },
+            )
+        },
+        description="Derived-свежесть фрактальной сводки (5.11/10.6a): "
+        "`status` FRESH/STALE/NOT_SUMMARY — `NOT_SUMMARY` НЕ значит «свежая», "
+        "это отсутствие сводки на паре (обычная сдача либо нет current-строки). "
+        "Три оси STALE: `superseded` — пиненная версия ребёнка вытеснена; "
+        "`missing` — у пиненного ребёнка нет current-версии; `unpinned` — "
+        "required-ребёнок вне пинов. Читается байт-в-байт из сервиса, "
+        "ничего не пересчитывает. 403 чужой scope; 404 нет подразделения.",
+    )
+    @action(detail=False, methods=["get"], url_path="freshness")
+    def freshness(self, request, *args, **kwargs):
+        form = SummaryFreshnessFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        business_date = form.validated_data["business_date"]
+        ensure_division_scope(request.actor_id, READ_PERMISSION, division_id)
+        _ensure_division_exists(division_id)
+        result = summary_freshness(division_id, business_date)
+        if result is None:
+            return Response(
+                {
+                    "status": "NOT_SUMMARY",
+                    "superseded": [],
+                    "missing": [],
+                    "unpinned": [],
+                }
+            )
+        return Response(
+            {
+                "status": result.status,
+                "superseded": result.superseded,
+                "missing": result.missing,
+                "unpinned": result.unpinned,
+            }
         )
 
 

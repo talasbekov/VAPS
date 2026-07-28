@@ -162,6 +162,11 @@ MATRIX = {
     # ensure_division_scope (матрицей не проверяется: payloadless POST держателя
     # на pk=0 = 400 формы = ALLOW по канону).
     "ops-daily-submission-amend": _MethodGate({"post": "daily_report.correct"}),
+    # свежесть сводки (story 10.6a, GET /freshness/): тот же READ-код, что
+    # list/retrieve/export — тот же селектор изнутри summary_freshness, новое
+    # право не мотивировано одним read-экшеном. GET-only ⇒ в AUDIT_MATRIX эта
+    # строка НЕ нужна (read не мутирует).
+    "ops-daily-submission-freshness": _MethodGate({"get": "daily_report.mark_update"}),
     # expense-reports — HTTP-поверхность расхода (story 6.10a). POST-выпуск + GET
     # по дате на базовом роуте; GET период (page-per-date, read-only). Оба гейта =
     # daily_report.generate (Д2: руководство читает то, что выпускает; scope в
