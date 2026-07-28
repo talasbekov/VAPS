@@ -33,12 +33,31 @@ import {
   UNAVAILABLE_DETECTORS,
   buildAttentionItems,
 } from '../lib/attention'
+import {
+  OPS_CALCULATION_VERSION,
+  UNAVAILABLE_OPS_MEASURES,
+  UNBOUND_OBJECT_ID,
+  breadcrumbFor,
+  buildEventCard,
+  columnsFor,
+  directionId,
+  directionRows,
+  eventRows,
+  lifecycleDistribution,
+  objectRows,
+  participationRows,
+  postRows,
+} from '../lib/operations'
+import type { OpsSourceEvent } from '../lib/operations'
 import { readAnalyticsSource } from './dutiesSlice'
+import { readOperationsSource } from './securityEventsSlice'
 import { MAX_CUSTOM_PERIOD_DAYS } from './fixtures'
 import type { ServiceAnalyticsSlice } from './fixtures'
 import type {
   AnalyticsPresetsResponse,
   AttentionResponse,
+  OperationsAnalyticsResponse,
+  OperationsQuery,
   DrilldownQuery,
   DrilldownResponse,
   ServiceAnalyticsResponse,
@@ -60,6 +79,9 @@ const VIEW_PERMISSION = 'ops.analytics.view'
  * разные пункты списка прав, и здесь они разные права. */
 const DRILLDOWN_PERMISSION = 'ops.analytics.drilldown'
 const PERSONAL_DETAIL_PERMISSION = 'ops.analytics.personal_detail'
+/** §22.26: «просмотр аналитики службы» и «просмотр аналитики ОМ» — разные
+ * пункты списка прав, и здесь они разные права. */
+const OPS_VIEW_PERMISSION = 'ops.analytics.operations'
 
 const TIMEZONE = 'Asia/Almaty'
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -417,5 +439,232 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
     }
   }
 
-  return { listPresets, getServiceAnalytics, getDrilldown, getAttention }
+  /**
+   * §22.13/§22.15 аналитика ОМ. Уровень разрешает СЕРВЕР: он же собирает
+   * breadcrumb и решает, какие колонки сопоставимы на этом уровне (§22.15
+   * запрещает смешивать «запрошено», «выделено», «назначено» и «фактически
+   * участвовало» — значит набор колонок не может быть решением вёрстки).
+   *
+   * Право СВОЁ: §22.26 перечисляет «просмотр аналитики службы» и «просмотр
+   * аналитики ОМ» разными пунктами, и здесь они разные права.
+   */
+  async function getOperationsAnalytics(
+    actorUserId: string | null,
+    query: OperationsQuery,
+  ): Promise<OperationsAnalyticsResponse> {
+    if (!hasPermission(actorUserId, OPS_VIEW_PERMISSION)) {
+      throw new RepositoryPermissionError(OPS_VIEW_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new RepositoryBusinessRuleError('SNAPSHOT_UNAVAILABLE', 'Снимок недоступен.')
+    }
+    const slice = readSlice(envelope.slices)
+    const businessDate = clock.businessDate()
+    const registry = slice.opsLifecycleRegistry ?? []
+    const source = readOperationsSource(envelope.slices)
+
+    const period: AnalyticsPeriod = { from: businessDate, to: businessDate, presetCode: null }
+    const base = {
+      snapshotId: buildSnapshotId({
+        revision: envelope.revision,
+        from: businessDate,
+        to: businessDate,
+        scopeId: `${DEMO_SCOPE.scopeId}:ops:${query.level}`,
+      }),
+      businessDate,
+      timezone: TIMEZONE,
+      period,
+      scope: DEMO_SCOPE,
+      generatedAt: clock.now(),
+      sourceUpdatedAt: null,
+      sourceWatermark: null,
+      calculationVersion: OPS_CALCULATION_VERSION,
+      policyVersion: POLICY_VERSION,
+    }
+
+    if (source === null) {
+      // Источник ОМ не читался — уровни строить не из чего. Пустая таблица
+      // читалась бы как «мероприятий нет» (§35).
+      return {
+        ...base,
+        freshnessState: 'UNKNOWN',
+        completenessState: 'INCOMPLETE',
+        data: {
+          level: 'ALL',
+          breadcrumb: breadcrumbFor('ALL', {}),
+          columns: columnsFor('ALL'),
+          rows: [],
+          lifecycleDistribution: [],
+          unknownLifecycleCodes: [],
+          eventCard: null,
+          unavailableMeasures: [
+            {
+              code: 'SOURCE',
+              label: 'Источник мероприятий',
+              reason:
+                'Слайс охранных мероприятий недоступен: ни уровни, ни распределение по состояниям не построены. Пустая таблица здесь означала бы «мероприятий нет».',
+            },
+            ...UNAVAILABLE_OPS_MEASURES.map((measure) => ({ ...measure })),
+          ],
+        },
+      }
+    }
+
+    const unavailableMeasures = UNAVAILABLE_OPS_MEASURES.map((measure) => ({ ...measure }))
+    const byId = new Map(source.map((event) => [event.id, event]))
+
+    function distribution(events: OpsSourceEvent[]) {
+      return lifecycleDistribution(events, registry)
+    }
+
+    if (query.level === 'ALL') {
+      const { buckets, unknownCodes } = distribution(source)
+      return {
+        ...base,
+        freshnessState: 'CURRENT',
+        completenessState: 'COMPLETE',
+        data: {
+          level: 'ALL',
+          breadcrumb: breadcrumbFor('ALL', {}),
+          columns: columnsFor('ALL'),
+          rows: objectRows(source),
+          lifecycleDistribution: buckets,
+          unknownLifecycleCodes: unknownCodes,
+          eventCard: null,
+          unavailableMeasures,
+        },
+      }
+    }
+
+    if (query.level === 'OBJECT') {
+      const objectId = query.objectId ?? ''
+      const events = source.filter(
+        (event) => (event.objectId ?? UNBOUND_OBJECT_ID) === objectId,
+      )
+      if (events.length === 0) {
+        throw new RepositoryBusinessRuleError('UNKNOWN_LEVEL_TARGET', 'Объект не найден.')
+      }
+      const { buckets, unknownCodes } = distribution(events)
+      return {
+        ...base,
+        freshnessState: 'CURRENT',
+        completenessState: 'COMPLETE',
+        data: {
+          level: 'OBJECT',
+          breadcrumb: breadcrumbFor('OBJECT', {
+            objectId,
+            objectLabel:
+              objectId === UNBOUND_OBJECT_ID
+                ? 'Объект вне реестра (связь по названию не выводится)'
+                : events[0].objectName,
+          }),
+          columns: columnsFor('OBJECT'),
+          rows: eventRows(events),
+          lifecycleDistribution: buckets,
+          unknownLifecycleCodes: unknownCodes,
+          eventCard: null,
+          unavailableMeasures,
+        },
+      }
+    }
+
+    const event = byId.get(query.eventId ?? '')
+    if (event === undefined) {
+      throw new RepositoryBusinessRuleError('UNKNOWN_LEVEL_TARGET', 'Мероприятие не найдено.')
+    }
+    const objectKey = event.objectId ?? UNBOUND_OBJECT_ID
+    const parts = {
+      objectId: objectKey,
+      objectLabel:
+        objectKey === UNBOUND_OBJECT_ID
+          ? 'Объект вне реестра (связь по названию не выводится)'
+          : event.objectName,
+      eventId: event.id,
+      eventLabel: `${event.code} · ${event.title}`,
+    }
+
+    if (query.level === 'EVENT') {
+      return {
+        ...base,
+        freshnessState: 'CURRENT',
+        completenessState: 'COMPLETE',
+        data: {
+          level: 'EVENT',
+          breadcrumb: breadcrumbFor('EVENT', parts),
+          columns: columnsFor('EVENT'),
+          rows: directionRows(event),
+          lifecycleDistribution: distribution([event]).buckets,
+          unknownLifecycleCodes: distribution([event]).unknownCodes,
+          eventCard: buildEventCard(event, registry),
+          unavailableMeasures,
+        },
+      }
+    }
+
+    const direction = query.directionId ?? ''
+    const directionPosts = event.posts.filter(
+      (post) => directionId(event.id, post) === direction,
+    )
+    if (directionPosts.length === 0) {
+      throw new RepositoryBusinessRuleError('UNKNOWN_LEVEL_TARGET', 'Направление не найдено.')
+    }
+    const directionRow = directionRows(event).find((row) => row.rowId === direction)
+
+    if (query.level === 'DIRECTION') {
+      return {
+        ...base,
+        freshnessState: 'CURRENT',
+        completenessState: 'COMPLETE',
+        data: {
+          level: 'DIRECTION',
+          breadcrumb: breadcrumbFor('DIRECTION', {
+            ...parts,
+            directionId: direction,
+            directionLabel: directionRow?.safeLabel ?? direction,
+          }),
+          columns: columnsFor('DIRECTION'),
+          rows: postRows(event, direction),
+          lifecycleDistribution: [],
+          unknownLifecycleCodes: [],
+          eventCard: null,
+          unavailableMeasures,
+        },
+      }
+    }
+
+    const post = directionPosts.find((item) => item.postId === (query.postId ?? ''))
+    if (post === undefined) {
+      throw new RepositoryBusinessRuleError('UNKNOWN_LEVEL_TARGET', 'Пост не найден.')
+    }
+    return {
+      ...base,
+      freshnessState: 'CURRENT',
+      completenessState: 'COMPLETE',
+      data: {
+        level: 'POST',
+        breadcrumb: breadcrumbFor('POST', {
+          ...parts,
+          directionId: direction,
+          directionLabel: directionRow?.safeLabel ?? direction,
+          postId: post.postId,
+          postLabel: post.postLabel,
+        }),
+        columns: columnsFor('POST'),
+        rows: participationRows(post),
+        lifecycleDistribution: [],
+        unknownLifecycleCodes: [],
+        eventCard: null,
+        unavailableMeasures,
+      },
+    }
+  }
+
+  return {
+    listPresets,
+    getServiceAnalytics,
+    getDrilldown,
+    getAttention,
+    getOperationsAnalytics,
+  }
 }

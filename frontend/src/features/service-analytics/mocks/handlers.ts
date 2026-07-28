@@ -8,7 +8,9 @@ import {
   ANALYTICS_DRILLDOWN_PATH,
   ANALYTICS_PRESETS_PATH,
   ANALYTICS_SNAPSHOT_PATH,
+  OPERATIONS_ANALYTICS_PATH,
 } from '../api/pending-contracts'
+import type { OpsLevel } from '../model/types'
 import {
   createServiceAnalyticsRepository,
   RepositoryBusinessRuleError,
@@ -62,6 +64,24 @@ export function createServiceAnalyticsHandlers(adapter: PersistenceAdapter, cloc
             from: params.get('from') ?? '',
             to: params.get('to') ?? '',
             cursor: param(params.get('cursor')),
+          }),
+        )
+      } catch (error) {
+        return mapRepositoryError(error, clock) ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${OPERATIONS_ANALYTICS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const params = new URL(request.url).searchParams
+      try {
+        return HttpResponse.json(
+          await repository.getOperationsAnalytics(actorUserId, {
+            // Уровень по умолчанию — корень иерархии §22.15.
+            level: (param(params.get('level')) ?? 'ALL') as OpsLevel,
+            objectId: params.get('object_id') ?? undefined,
+            eventId: params.get('event_id') ?? undefined,
+            directionId: params.get('direction_id') ?? undefined,
+            postId: params.get('post_id') ?? undefined,
           }),
         )
       } catch (error) {

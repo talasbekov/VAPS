@@ -184,6 +184,85 @@ export interface AttentionData {
   unavailableDetectors: UnavailableMetric[]
 }
 
+/**
+ * §22.15 «Иерархия детализации ОМ»: Все ОМ → объект → конкретное ОМ →
+ * направление → сектор или пост → агрегированные данные участия.
+ */
+export type OpsLevel = 'ALL' | 'OBJECT' | 'EVENT' | 'DIRECTION' | 'POST'
+
+/** §22.15 «Для каждого уровня сохраняй breadcrumb». Собирает его СЕРВЕР: он
+ * знает, из чего сложился путь, а экран знает только текущий URL. */
+export interface OpsBreadcrumbItem {
+  level: OpsLevel
+  /** `null` только у корня «Все ОМ» — у него нет своего идентификатора. */
+  id: string | null
+  safeLabel: string
+}
+
+/** Колонка уровня. Набор задаёт СЕРВЕР: §22.15 запрещает смешивать
+ * «запрошено», «выделено», «назначено» и «фактически участвовало», и решать,
+ * что с чем сопоставимо, должен владелец расчёта, а не вёрстка. */
+export interface OpsColumn {
+  code: string
+  safeLabel: string
+}
+
+export interface OpsCell {
+  code: string
+  /** `null` — измерение на этом уровне не выводится; причина обязательна. */
+  value: number | null
+  unavailableReason: string | null
+}
+
+export interface OpsRow {
+  /** Стабильный идентификатор (§22.15 «связывай по стабильным ID, а не по
+   * названию»): objectId, id ОМ, id направления, id поста. */
+  rowId: string
+  safeLabel: string
+  /** Уровень, на который ведёт строка; `null` — глубже некуда. */
+  childLevel: OpsLevel | null
+  cells: OpsCell[]
+}
+
+/** §22.13 «распределение по lifecycle». Только состояния Lifecycle Registry —
+ * коды, которых в реестре нет, НЕ раскладываются молча по чужим корзинам. */
+export interface LifecycleBucket {
+  stateCode: string
+  safeLabel: string
+  count: number
+}
+
+/** Показатель карточки ОМ §22.15. `displayValue` готов к печати: единица и
+ * «нет данных» — часть семантики, а не вёрстки (как у `MetricValue`). */
+export interface OpsFact {
+  code: string
+  safeLabel: string
+  displayValue: string
+  unavailableReason: string | null
+}
+
+export interface OpsEventCard {
+  eventId: string
+  code: string
+  safeLabel: string
+  facts: OpsFact[]
+}
+
+export interface OperationsAnalyticsData {
+  level: OpsLevel
+  breadcrumb: OpsBreadcrumbItem[]
+  columns: OpsColumn[]
+  rows: OpsRow[]
+  /** §22.13: считается по ВЫБРАННОМУ уровнем множеству ОМ, а не по странице. */
+  lifecycleDistribution: LifecycleBucket[]
+  /** §22.13 «Используй только состояния из Lifecycle Registry» — коды вне
+   * реестра называются ОТДЕЛЬНО, а не растворяются в распределении. */
+  unknownLifecycleCodes: string[]
+  eventCard: OpsEventCard | null
+  /** §35: измерения §22.13/§22.14, которых модель не даёт, с причиной. */
+  unavailableMeasures: UnavailableMetric[]
+}
+
 export interface DrilldownPage {
   metricCode: string
   rows: DrilldownRow[]

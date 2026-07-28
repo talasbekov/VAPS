@@ -6,6 +6,7 @@
 import { ROUTES } from '../../../shared/routes'
 import { METRIC_CODES } from '../lib/analytics'
 import type { AttentionDetectorDefinition } from '../lib/attention'
+import type { LifecycleStateDefinition } from '../lib/operations'
 import type { MetricDefinition, PeriodPreset } from '../model/types'
 
 export interface ServiceAnalyticsSlice {
@@ -15,6 +16,8 @@ export interface ServiceAnalyticsSlice {
   drilldownPageSize: number
   /** §22.11: политика наблюдений — отдельная от порогов показателей. */
   attentionDetectors: AttentionDetectorDefinition[]
+  /** §22.13: реестр состояний ОМ — распределение строится ТОЛЬКО по нему. */
+  opsLifecycleRegistry: LifecycleStateDefinition[]
 }
 
 /**
@@ -187,6 +190,25 @@ export const ATTENTION_DETECTORS: readonly AttentionDetectorDefinition[] = [
   },
 ]
 
+/**
+ * §22.13 Lifecycle Registry ОМ. Живёт В ДАННЫХ, а не строкой в коде аналитики:
+ * подписи стадий принадлежат feature `security-events`, импорт оттуда красный
+ * по ARCH-FE-013, а дубль-константа разошлась бы с оригиналом молча. Реестр в
+ * слайсе делает расхождение ВИДИМЫМ: код, которого здесь нет, приезжает
+ * клиенту списком `unknownLifecycleCodes`, а не растворяется в распределении.
+ */
+export const OPS_LIFECYCLE_REGISTRY: readonly LifecycleStateDefinition[] = [
+  { stateCode: 'BULLETIN', safeLabel: 'Бюллетень' },
+  { stateCode: 'RECON', safeLabel: 'Рекогносцировка' },
+  { stateCode: 'DEMAND', safeLabel: 'Потребность' },
+  { stateCode: 'FORCES', safeLabel: 'Запрос сил' },
+  { stateCode: 'PLACEMENT', safeLabel: 'Расстановка' },
+  { stateCode: 'APPROVAL', safeLabel: 'Согласование' },
+  { stateCode: 'ACKNOWLEDGEMENT', safeLabel: 'Ознакомление' },
+  { stateCode: 'CONDUCT', safeLabel: 'Проведение' },
+  { stateCode: 'CLOSED', safeLabel: 'Закрыто' },
+]
+
 export function buildServiceAnalyticsSeed(): {
   sliceName: string
   data: ServiceAnalyticsSlice
@@ -201,6 +223,7 @@ export function buildServiceAnalyticsSeed(): {
       // никогда, и pagination жил бы непроверенным.
       drilldownPageSize: 4,
       attentionDetectors: ATTENTION_DETECTORS.map((detector) => ({ ...detector })),
+      opsLifecycleRegistry: OPS_LIFECYCLE_REGISTRY.map((state) => ({ ...state })),
     },
   }
 }

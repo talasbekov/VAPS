@@ -3,6 +3,8 @@
 import type {
   AnalyticsSnapshot,
   AttentionData,
+  OperationsAnalyticsData,
+  OpsLevel,
   DrilldownPage,
   PeriodPreset,
   ServiceAnalyticsData,
@@ -18,6 +20,9 @@ export const ANALYTICS_DRILLDOWN_PATH = '/api/ops/service-analytics-drilldown/'
  * Путь СИБЛИНГ, а не вложенный: `…/service-analytics/attention/` msw отдал бы
  * первому совпавшему handler'у молча (коллизия путей, Этап 39). */
 export const ANALYTICS_ATTENTION_PATH = '/api/ops/service-analytics-attention/'
+/** §22.13-22.15 аналитика ОМ. Снова СИБЛИНГ-путь: вложенный `…/service-analytics/…`
+ * msw отдал бы первому совпавшему handler'у молча. */
+export const OPERATIONS_ANALYTICS_PATH = '/api/ops/operations-analytics/'
 
 /** Блок §35 в ответе. Форма та же, что у `UnavailableMetric`: «чего нет и
  * почему» — одно понятие, и второй тип с теми же полями разошёлся бы с первым.
@@ -59,6 +64,20 @@ export interface DrilldownQuery {
 }
 
 export type DrilldownResponse = AnalyticsSnapshot<DrilldownPage>
+
+/**
+ * §22.15 запрос уровня. Идентификаторы СТАБИЛЬНЫЕ (objectId, id ОМ, id
+ * направления, id поста) — по названию не адресуется ничего.
+ */
+export interface OperationsQuery {
+  level: OpsLevel
+  objectId?: string
+  eventId?: string
+  directionId?: string
+  postId?: string
+}
+
+export type OperationsAnalyticsResponse = AnalyticsSnapshot<OperationsAnalyticsData>
 
 /** §22.11. `policyVersion` конверта здесь — версия политики НАБЛЮДЕНИЙ, а не
  * порогов показателей: у этого снимка другая методика. */

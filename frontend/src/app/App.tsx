@@ -27,6 +27,7 @@ import { DutyPlanPage } from '../features/duties/pages/DutyPlanPage'
 import { DutyShiftDetailPage } from '../features/duties/pages/DutyShiftDetailPage'
 import { DictionariesListPage } from '../features/dictionaries/pages/DictionariesListPage'
 import { DictionaryDetailPage } from '../features/dictionaries/pages/DictionaryDetailPage'
+import { OperationsAnalyticsPage } from '../features/service-analytics/pages/OperationsAnalyticsPage'
 import { ServiceAnalyticsPage } from '../features/service-analytics/pages/ServiceAnalyticsPage'
 import { ServiceReportsPage } from '../features/service-reports/pages/ServiceReportsPage'
 import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
@@ -291,6 +292,14 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.analytics.view">
               <ServiceAnalyticsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.operationsAnalytics}
+          element={
+            <RequirePermission permission="ops.analytics.operations">
+              <OperationsAnalyticsPage />
             </RequirePermission>
           }
         />

@@ -12,7 +12,12 @@ import {
   RepositoryBusinessRuleError,
   RepositoryPermissionError,
 } from './repository'
-import { ATTENTION_DETECTORS, METRIC_DEFINITIONS, PERIOD_PRESETS } from './fixtures'
+import {
+  ATTENTION_DETECTORS,
+  METRIC_DEFINITIONS,
+  OPS_LIFECYCLE_REGISTRY,
+  PERIOD_PRESETS,
+} from './fixtures'
 import { ATTENTION_POLICY_VERSION, FORBIDDEN_ATTENTION_PHRASES } from '../lib/attention'
 import { POLICY_VERSION } from '../lib/analytics'
 
@@ -20,6 +25,7 @@ const VIEWER = 'viewer-user'
 const DRILLER = 'driller-user'
 const FULL = 'full-user'
 const NOBODY = 'nobody-user'
+const OPS_VIEWER = 'ops-viewer-user'
 
 const BUSINESS_DATE = '2026-07-20'
 
@@ -46,6 +52,8 @@ function shift(
 
 interface SeedOverrides {
   duties?: unknown
+  /** §22.13-22.15: слайс ОМ. По умолчанию его НЕТ — источник недоступен. */
+  securityEvents?: unknown
   /** §22.11: политику наблюдений подменяют точечно — часть тестов проверяет
    * именно её отсутствие. */
   attentionDetectors?: unknown
@@ -69,7 +77,11 @@ function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
           overrides.attentionDetectors === undefined
             ? ATTENTION_DETECTORS.map((d) => ({ ...d }))
             : overrides.attentionDetectors,
+        opsLifecycleRegistry: OPS_LIFECYCLE_REGISTRY.map((state) => ({ ...state })),
       },
+      ...(overrides.securityEvents === undefined
+        ? {}
+        : { 'security-events': overrides.securityEvents }),
       ...(overrides.duties === undefined
         ? {
             duties: {
@@ -121,6 +133,9 @@ beforeEach(() => {
         'ops.analytics.personal_detail',
       ],
     },
+    // §22.26: аналитика службы и аналитика ОМ — разные права. `OPS_VIEWER`
+    // держит только второе, `VIEWER` — только первое.
+    { userId: OPS_VIEWER, permissions: ['ops.analytics.operations'] },
     { userId: NOBODY, permissions: [] },
   ])
 })
@@ -548,5 +563,175 @@ describe('блок «Требует внимания» (§22.11)', () => {
     const before = JSON.stringify((await adapter.load())?.slices.duties)
     await repository.getAttention(VIEWER, TODAY)
     expect(JSON.stringify((await adapter.load())?.slices.duties)).toBe(before)
+  })
+})
+
+describe('аналитика ОМ (§22.13, §22.15)', () => {
+  const EVENTS = [
+    {
+      id: 'event-1',
+      code: 'ОМ-001',
+      title: 'Форум',
+      objectId: 'object-1',
+      objectName: 'Дворец Независимости',
+      businessDate: '2026-07-22',
+      stage: 'PLACEMENT',
+      readinessPercent: 82,
+      conflictsCount: 2,
+      demandApproved: true,
+      demandRows: [{ need: 6 }, { need: 4 }],
+      forceRequests: [{ requestedCount: 8, allocatedCount: 6 }],
+      journalEntries: [{ type: 'INCIDENT' }, { type: 'ORDER' }],
+      placementAssignments: [
+        { postId: 'post-1', acknowledgedAt: '2026-07-20T08:00:00+05:00' },
+        { postId: 'post-1', acknowledgedAt: null },
+      ],
+      reconSectorPosts: [
+        { id: 'post-1', sector: 'A', post: 'Главный вход', need: 4, sourceSectorId: 'sector-77' },
+        { id: 'post-2', sector: 'A', post: 'Пресс-зона', need: 2, sourceSectorId: null },
+      ],
+      closedAt: null,
+    },
+    {
+      id: 'event-2',
+      code: 'ОМ-002',
+      title: 'Визит',
+      objectId: null,
+      objectName: 'Резиденция',
+      businessDate: '2026-07-25',
+      stage: 'DEMAND',
+      readinessPercent: 40,
+      conflictsCount: 0,
+      demandApproved: false,
+      demandRows: [{ need: 99 }],
+      forceRequests: [],
+      journalEntries: [],
+      placementAssignments: [],
+      reconSectorPosts: [],
+      closedAt: null,
+    },
+  ]
+
+  async function opsSetup() {
+    return setup({ securityEvents: { events: EVENTS } })
+  }
+
+  it('§22.26: право на аналитику службы НЕ открывает аналитику ОМ, и наоборот', async () => {
+    const { repository } = await opsSetup()
+
+    await expect(repository.getOperationsAnalytics(VIEWER, { level: 'ALL' })).rejects.toThrow(
+      RepositoryPermissionError,
+    )
+    await expect(repository.getServiceAnalytics(OPS_VIEWER, TODAY)).rejects.toThrow(
+      RepositoryPermissionError,
+    )
+    // А со своим правом — открывается.
+    await expect(
+      repository.getOperationsAnalytics(OPS_VIEWER, { level: 'ALL' }),
+    ).resolves.toBeDefined()
+  })
+
+  it('корень иерархии группирует по объекту; ОМ без объекта — своя корзина', async () => {
+    const { repository } = await opsSetup()
+    const response = await repository.getOperationsAnalytics(OPS_VIEWER, { level: 'ALL' })
+
+    expect(response.data.level).toBe('ALL')
+    expect(response.data.breadcrumb.map((item) => item.safeLabel)).toEqual(['Все ОМ'])
+    expect(response.data.rows.map((row) => row.rowId).sort()).toEqual([
+      'object-1',
+      'object:unbound',
+    ])
+    expect(response.data.lifecycleDistribution.find((b) => b.stateCode === 'PLACEMENT')?.count).toBe(1)
+  })
+
+  it('спуск по уровням идёт по стабильным ID и накапливает breadcrumb', async () => {
+    const { repository } = await opsSetup()
+
+    const object = await repository.getOperationsAnalytics(OPS_VIEWER, {
+      level: 'OBJECT',
+      objectId: 'object-1',
+    })
+    expect(object.data.rows.map((row) => row.rowId)).toEqual(['event-1'])
+
+    const event = await repository.getOperationsAnalytics(OPS_VIEWER, {
+      level: 'EVENT',
+      eventId: 'event-1',
+    })
+    expect(event.data.eventCard?.code).toBe('ОМ-001')
+    // Два поста одного сектора «A», но один из паспорта, другой ручной —
+    // ДВА направления (§22.15 связывает по ID, не по названию).
+    expect(event.data.rows).toHaveLength(2)
+
+    const direction = await repository.getOperationsAnalytics(OPS_VIEWER, {
+      level: 'DIRECTION',
+      eventId: 'event-1',
+      directionId: 'event-1::sector-77',
+    })
+    expect(direction.data.rows.map((row) => row.rowId)).toEqual(['post-1'])
+    expect(direction.data.breadcrumb.map((item) => item.level)).toEqual([
+      'ALL',
+      'OBJECT',
+      'EVENT',
+      'DIRECTION',
+    ])
+
+    const post = await repository.getOperationsAnalytics(OPS_VIEWER, {
+      level: 'POST',
+      eventId: 'event-1',
+      directionId: 'event-1::sector-77',
+      postId: 'post-1',
+    })
+    // Последний уровень — АГРЕГАТ участия, а не список людей: ни одного ФИО.
+    expect(post.data.rows).toHaveLength(1)
+    expect(post.data.rows[0].childLevel).toBeNull()
+    expect(post.data.rows[0].cells.find((cell) => cell.code === 'ASSIGNED')?.value).toBe(2)
+    expect(post.data.rows[0].cells.find((cell) => cell.code === 'ACKNOWLEDGED')?.value).toBe(1)
+  })
+
+  it('несуществующая цель уровня — отказ, а не пустая таблица', async () => {
+    const { repository } = await opsSetup()
+    await expect(
+      repository.getOperationsAnalytics(OPS_VIEWER, { level: 'EVENT', eventId: 'нет-такого' }),
+    ).rejects.toThrow(RepositoryBusinessRuleError)
+    await expect(
+      repository.getOperationsAnalytics(OPS_VIEWER, {
+        level: 'DIRECTION',
+        eventId: 'event-1',
+        directionId: 'event-1::нет-такого',
+      }),
+    ).rejects.toThrow(RepositoryBusinessRuleError)
+  })
+
+  it('§22.14 воронка НЕ строится и названа с причиной', async () => {
+    const { repository } = await opsSetup()
+    const response = await repository.getOperationsAnalytics(OPS_VIEWER, { level: 'ALL' })
+    const funnel = response.data.unavailableMeasures.find((measure) => measure.code === 'FUNNEL')
+
+    expect(funnel?.reason).toContain('transition events')
+    // Ни одного поля воронки в ответе: собранная из текущих стадий, она была бы
+    // конверсией по тому, что §22.14 запрещает брать за источник.
+    const body = JSON.stringify(response)
+    expect(body).not.toContain('conversion')
+    expect(body).not.toContain('averageStageTime')
+  })
+
+  it('отсутствие слайса ОМ — не «мероприятий нет»', async () => {
+    const { repository } = await setup()
+    const response = await repository.getOperationsAnalytics(OPS_VIEWER, { level: 'ALL' })
+
+    expect(response.data.rows).toEqual([])
+    expect(response.completenessState).toBe('INCOMPLETE')
+    expect(response.freshnessState).toBe('UNKNOWN')
+    expect(
+      response.data.unavailableMeasures.some((measure) => measure.code === 'SOURCE'),
+    ).toBe(true)
+  })
+
+  it('аналитика ОМ ничего не меняет в чужом слайсе мероприятий', async () => {
+    const { repository, adapter } = await opsSetup()
+    const before = JSON.stringify((await adapter.load())?.slices['security-events'])
+    await repository.getOperationsAnalytics(OPS_VIEWER, { level: 'ALL' })
+    await repository.getOperationsAnalytics(OPS_VIEWER, { level: 'EVENT', eventId: 'event-1' })
+    expect(JSON.stringify((await adapter.load())?.slices['security-events'])).toBe(before)
   })
 })

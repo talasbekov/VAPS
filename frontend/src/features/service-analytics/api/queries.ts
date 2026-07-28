@@ -7,10 +7,13 @@ import {
   ANALYTICS_DRILLDOWN_PATH,
   ANALYTICS_PRESETS_PATH,
   ANALYTICS_SNAPSHOT_PATH,
+  OPERATIONS_ANALYTICS_PATH,
 } from './pending-contracts'
 import type {
   AnalyticsPresetsResponse,
   AttentionResponse,
+  OperationsAnalyticsResponse,
+  OperationsQuery,
   DrilldownQuery,
   DrilldownResponse,
   ServiceAnalyticsResponse,
@@ -85,6 +88,36 @@ export function useAttentionItems(period: AnalyticsPeriodRequest | null) {
         `${ANALYTICS_ATTENTION_PATH}?${periodParams(period as AnalyticsPeriodRequest).toString()}`,
       ),
     enabled: period !== null,
+  })
+}
+
+/**
+ * §22.13-22.15 аналитика ОМ. Уровень и его цель едут в ключе кэша целиком:
+ * два уровня — два РАЗНЫХ ответа с разными колонками, и подменять один другим
+ * нельзя.
+ */
+export function useOperationsAnalytics(query: OperationsQuery) {
+  return useQuery<OperationsAnalyticsResponse, ApiFailure>({
+    queryKey: [
+      'operations-analytics',
+      query.level,
+      query.objectId ?? '',
+      query.eventId ?? '',
+      query.directionId ?? '',
+      query.postId ?? '',
+    ],
+    queryFn: () => {
+      const params = new URLSearchParams({ level: query.level })
+      if (query.objectId !== undefined) params.set('object_id', query.objectId)
+      if (query.eventId !== undefined) params.set('event_id', query.eventId)
+      if (query.directionId !== undefined) params.set('direction_id', query.directionId)
+      if (query.postId !== undefined) params.set('post_id', query.postId)
+      return apiClient.get<OperationsAnalyticsResponse>(
+        `${OPERATIONS_ANALYTICS_PATH}?${params.toString()}`,
+      )
+    },
+    // Несуществующая цель уровня — отказ по смыслу, повторять его нечем.
+    retry: false,
   })
 }
 

@@ -68,6 +68,7 @@ test.describe('Accessibility (axe-core): второй слой аудита по
       ['/dictionaries', 'Справочники'],
       ['/calendar', 'Календарь смен'],
       ['/analytics', 'Аналитика службы'],
+      ['/analytics/operations', 'Аналитика мероприятий'],
       ['/audit', 'Аудит'],
     ]
 
