@@ -16,7 +16,7 @@ from datetime import date, timedelta
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DataError, IntegrityError, transaction
 
-from apps.core.models import Employee
+from apps.migration_legacy.import_employees import import_employees
 from apps.migration_legacy.import_orgstructure import (
     EXAMPLE_LIMIT,
     EntityReport,
@@ -25,7 +25,7 @@ from apps.migration_legacy.import_orgstructure import (
     import_ranks,
     import_staffing_slots,
 )
-from apps.migration_legacy.transform import Skip, transform_employee, transform_status
+from apps.migration_legacy.transform import Skip, transform_status
 from apps.operations.statuses.models import EmployeeStatus
 
 
@@ -94,7 +94,7 @@ class Command(BaseCommand):
             position_pks = import_positions(
                 by_model["dictionaries.position"], reports["positions"]
             )
-            employee_map = self._import_employees(
+            employee_map, merge_candidates = import_employees(
                 by_model["employees.employee"],
                 by_model["staff_unit.staffunit"],
                 division_map,
@@ -111,7 +111,12 @@ class Command(BaseCommand):
             )
 
         self._print_report(
-            reports, window_start, until, clamped, slot_divisions_covered
+            reports,
+            window_start,
+            until,
+            clamped,
+            slot_divisions_covered,
+            merge_candidates,
         )
 
     def _resolve_until(self, until_option, status_rows):
@@ -136,77 +141,6 @@ class Command(BaseCommand):
         if not all_dates:
             raise CommandError("export has no status dates; pass --until")
         return max(all_dates)
-
-    def _import_employees(
-        self, rows, staff_rows, division_map, rank_map, position_pks, report
-    ):
-        # Donor Employee has no division FK: the link lives in staff_unit.
-        staff_by_employee = {
-            r["fields"]["employee"]: r["fields"]
-            for r in staff_rows
-            if r["fields"]["employee"] is not None
-        }
-        employee_map = {}
-        for row in sorted(rows, key=lambda r: r["pk"]):
-            report.read += 1
-            donor_pk = row["pk"]
-            result = transform_employee(row["fields"])
-            if isinstance(result, Skip):
-                report.skip(result.reason, donor_pk)
-                continue
-            staff = staff_by_employee.get(donor_pk)
-            division = (
-                division_map.get(staff["division"]) if staff is not None else None
-            )
-            if division is None:
-                # Employee.division is PROTECT NOT NULL — no slot, no import.
-                report.skip("no_division", donor_pk)
-                continue
-            rank_code, rank_index = rank_map.get(result.rank_pk, ("", 0))
-            position_pk = staff["position"]
-            position_code = f"POS_{position_pk}" if position_pk in position_pks else ""
-            try:
-                with transaction.atomic():
-                    employee, created = Employee.objects.update_or_create(
-                        # Identity mapping donor_pk -> uuid (AC-1): the
-                        # unique external_id field exists for this.
-                        external_id=str(donor_pk),
-                        defaults={
-                            "iin": result.iin,
-                            "personnel_number": result.personnel_number,
-                            "last_name": result.last_name,
-                            "first_name": result.first_name,
-                            "middle_name": result.middle_name,
-                            "birth_date": result.birth_date,
-                            "gender": result.gender,
-                            "hire_date": result.hire_date,
-                            "dismissal_date": result.dismissal_date,
-                            "employment_status": result.employment_status,
-                            "rank_code": rank_code,
-                            "rank_index": rank_index,
-                            "position_code": position_code,
-                            "division": division,
-                            "data_source": "DONOR",
-                            # created_by stays NULL: no actor, honest NULL.
-                        },
-                    )
-            except IntegrityError as exc:
-                message = str(exc)
-                # NOT NULL violations mention the column name too — check
-                # them first or a missing field masquerades as a duplicate.
-                if "null value" in message:
-                    reason = "missing_required_field"
-                elif "iin" in message:
-                    reason = "duplicate_iin"
-                elif "personnel_number" in message:
-                    reason = "duplicate_personnel_number"
-                else:
-                    reason = "integrity_error"
-                report.skip(reason, donor_pk)
-                continue
-            report.count(created)
-            employee_map[donor_pk] = employee.id
-        return employee_map
 
     def _import_statuses(self, rows, employee_map, window_start, until, report):
         transformed = []
@@ -295,7 +229,13 @@ class Command(BaseCommand):
         return clamped
 
     def _print_report(
-        self, reports, window_start, until, clamped, slot_divisions_covered
+        self,
+        reports,
+        window_start,
+        until,
+        clamped,
+        slot_divisions_covered,
+        merge_candidates,
     ):
         write = self.stdout.write
         for name, report in reports.items():
@@ -329,3 +269,10 @@ class Command(BaseCommand):
                 f"window [{window_start.isoformat()}..{until.isoformat()}]"
             )
         )
+        # AC-1 (7.3): кандидаты на слияние — отчёт на ручную санкцию, не
+        # автослияние. Отдельная секция, не просто skip-счётчик.
+        if merge_candidates:
+            write(self.style.SUCCESS("merge candidates (AC-1, needs sanction):"))
+            for candidate in merge_candidates:
+                pks = ", ".join(str(pk) for pk in candidate["donor_pks"])
+                write(f"  - iin {candidate['iin_masked']}: donor_pks [{pks}]")
