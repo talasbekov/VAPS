@@ -21,6 +21,7 @@ from django.http import HttpResponse
 from django.utils.http import content_disposition_header
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
+    OpenApiParameter,
     extend_schema,
     extend_schema_serializer,
     inline_serializer,
@@ -97,9 +98,7 @@ _TRAFFIC_LIGHT_PERMISSION = "status.view"
 # Личная копия сдачи (10.8) отдаётся байтами прямо из памяти — сосед
 # _DOCX_CONTENT_TYPE живёт в document_release_service (там он описывает
 # СОХРАНЯЕМОЕ вложение), здесь тип нужен вью для ответа.
-_XLSX_CONTENT_TYPE = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+_XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _ensure_division_exists(division_id):
@@ -149,6 +148,38 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
     # No "head": HEAD stays 405 everywhere (the 5.8a/b minimal surface).
     http_method_names = ["get", "post", "options"]
 
+    # Story 10.1c: bare ViewSet (не GenericViewSet) — spectacular не читает
+    # pagination_class/serializer_class автоматически, поэтому конверт
+    # {count,next,previous,results} собран вручную (тот же inline_serializer-
+    # путь, что MyPermissionsViewSet/10.1a's BulkStatusCreateResponse).
+    # extend_schema_serializer(many=False) обязателен: action=="list" —
+    # эвристика spectacular заворачивает ЛЮБОЙ response в массив по имени
+    # действия, а конверт УЖЕ пагинированный объект, не голый массив
+    # (прецедент: _SingleIssuedExpenseReport выше, тот же класс дефекта).
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "division_id", str, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "business_date", str, OpenApiParameter.QUERY, required=False
+            ),
+        ],
+        responses={
+            200: extend_schema_serializer(many=False)(
+                inline_serializer(
+                    name="DailySubmissionListResponse",
+                    fields={
+                        "count": serializers.IntegerField(),
+                        "next": serializers.CharField(allow_null=True),
+                        "previous": serializers.CharField(allow_null=True),
+                        "results": DailySubmissionSerializer(many=True),
+                    },
+                )
+            )
+        },
+        description="Список сдач дня (5.8c), фильтры division_id/business_date.",
+    )
     def list(self, request, *args, **kwargs):
         filters = DailySubmissionFilterSerializer(data=request.query_params)
         filters.is_valid(raise_exception=True)
@@ -161,6 +192,7 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
             DailySubmissionSerializer(page, many=True).data
         )
 
+    @extend_schema(responses={200: DailySubmissionDetailSerializer})
     def retrieve(self, request, pk=None, *args, **kwargs):
         # A point read: the REQUESTED version, stale or current — never the
         # chain head (deliberate contrast with amend's Д1 chain semantics).
@@ -177,6 +209,10 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         ensure_division_scope(request.actor_id, READ_PERMISSION, submission.division_id)
         return Response(DailySubmissionDetailSerializer(submission).data)
 
+    @extend_schema(
+        request=DailySubmissionCreateSerializer,
+        responses={201: DailySubmissionSerializer},
+    )
     def create(self, request, *args, **kwargs):
         form = DailySubmissionCreateSerializer(data=request.data)
         form.is_valid(raise_exception=True)
@@ -199,8 +235,7 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
     @extend_schema(
         responses={(200, _XLSX_CONTENT_TYPE): OpenApiTypes.BINARY},
         description=(
-            "Личная копия сданного дня (.xlsx): паспорт сдачи + состав из "
-            "снапшота."
+            "Личная копия сданного дня (.xlsx): паспорт сдачи + состав из снапшота."
         ),
     )
     @action(detail=True, methods=["get"])
@@ -228,6 +263,10 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         response["Content-Disposition"] = content_disposition_header(True, filename)
         return response
 
+    @extend_schema(
+        request=DailySubmissionAmendSerializer,
+        responses={201: DailySubmissionSerializer},
+    )
     @action(detail=True, methods=["post"])
     def amend(self, request, pk=None, *args, **kwargs):
         form = DailySubmissionAmendSerializer(data=request.data)
@@ -617,6 +656,4 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
         nodes.sort(key=lambda node: (node["name"], node["division_id"]))
         # business_date эхом: сервер считает в VAPS_LOCAL_TIMEZONE, экран — в
         # браузере; на границе суток «сегодня» разойдётся.
-        return Response(
-            {"business_date": business_date.isoformat(), "nodes": nodes}
-        )
+        return Response({"business_date": business_date.isoformat(), "nodes": nodes})

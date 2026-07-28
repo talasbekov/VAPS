@@ -813,23 +813,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * @description ViewSet mixin: gate each action on an in-house RBAC permission code.
-         *
-         *     Subclasses set ``permission_map = {action_name: permission_code}`` (action
-         *     name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
-         *     custom ``@action`` method like ``archive``/``assign_employee``). The gate
-         *     runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
-         *     authentication, so the operations seam has populated
-         *     ``request.effective_permissions`` (story 2.13). An action absent from the
-         *     map is denied (fail-closed); the rbac-matrix completeness test guarantees
-         *     every served action is mapped, so a gap surfaces at test time, not in prod.
-         *
-         *     MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
-         *     viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
-         *     imports operations — the gate reads only request attributes (ARCH#L585).
-         */
-        get: operations["operations_daily_submissions_retrieve"];
+        /** @description Список сдач дня (5.8c), фильтры division_id/business_date. */
+        get: operations["operations_daily_submissions_list"];
         put?: never;
         /**
          * @description ViewSet mixin: gate each action on an in-house RBAC permission code.
@@ -877,7 +862,7 @@ export interface paths {
          *     viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
          *     imports operations — the gate reads only request attributes (ARCH#L585).
          */
-        get: operations["operations_daily_submissions_retrieve_2"];
+        get: operations["operations_daily_submissions_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1295,6 +1280,90 @@ export interface components {
             document_basis?: string;
             source_ref?: string;
         };
+        /**
+         * @description 201/list projection — flat, snake_case, WITHOUT the heavy snapshot JSON
+         *     (tens–hundreds of KB per row) and without the amend-only fields
+         *     (reason/sanction/triggered_by_status_id — always empty on v1). The list
+         *     selector defers snapshot; this serializer never touching it keeps the
+         *     deferred column from being silently re-fetched.
+         */
+        DailySubmission: {
+            readonly id: number;
+            /** Format: uuid */
+            readonly division_id: string;
+            /** Format: date */
+            readonly business_date: string;
+            /** @default 1 */
+            readonly version: number;
+            /** @default true */
+            readonly is_current: boolean;
+            readonly event: components["schemas"]["EventEnum"];
+            readonly submitted_by: string;
+            /** Format: date-time */
+            readonly submitted_at: string;
+            readonly late: boolean;
+        };
+        /**
+         * @description POST /{id}/amend/ form (5.8b) — exactly the reason/sanction pair the
+         *     API forwards to amend_day. DRF defaults (required + trim_whitespace +
+         *     allow_blank=False) reject missing/blank/whitespace-only values at the
+         *     boundary; ``sanction`` carries the model's CharField(255) limit — without
+         *     it an oversized value would reach Postgres as a DataError → 500 (the same
+         *     boundary-lets-garbage-through class as 5.8a's whitespace actor header).
+         *     ``triggered_by_status_id`` is NOT accepted: it is the 5.4b system hook's
+         *     provenance ref (manual HTTP amendment stores None); accepting it would let
+         *     a client write arbitrary EmployeeStatus references. Extra payload fields,
+         *     including submitted_by/actor, are ignored (ARCH-SEC-030, DRF-канон 5.8a Д5).
+         */
+        DailySubmissionAmendRequest: {
+            reason: string;
+            sanction: string;
+        };
+        /**
+         * @description POST-body form — exactly the two kwargs the API forwards to submit_day:
+         *     a flat UUID division ref (ARCH-003) and a YYYY-MM-DD business date (closes
+         *     the business_date=None defer class for the submit path). The actor NEVER
+         *     comes from the payload (ARCH-SEC-030) — extra fields, including
+         *     submitted_by, are ignored.
+         */
+        DailySubmissionCreateRequest: {
+            /** Format: uuid */
+            division_id: string;
+            /** Format: date */
+            business_date: string;
+        };
+        /**
+         * @description GET /{id}/ projection (5.8c, Д1) — the nine list fields plus the heavy
+         *     and amend-only payload. Detail is the ONLY HTTP channel for the snapshot
+         *     (расход screens 10.5/10.6, parallel-run reconciliation); reason/sanction
+         *     are empty strings and triggered_by_status_id is None on non-amended rows.
+         */
+        DailySubmissionDetail: {
+            readonly id: number;
+            /** Format: uuid */
+            readonly division_id: string;
+            /** Format: date */
+            readonly business_date: string;
+            /** @default 1 */
+            readonly version: number;
+            /** @default true */
+            readonly is_current: boolean;
+            readonly event: components["schemas"]["EventEnum"];
+            readonly submitted_by: string;
+            /** Format: date-time */
+            readonly submitted_at: string;
+            readonly late: boolean;
+            readonly snapshot: unknown;
+            readonly reason: string;
+            readonly sanction: string;
+            readonly triggered_by_status_id: number | null;
+        };
+        DailySubmissionListResponse: {
+            count: number;
+            next: string | null;
+            previous: string | null;
+            results: components["schemas"]["DailySubmission"][];
+        };
         Division: {
             /** Format: uuid */
             readonly id: string;
@@ -1390,6 +1459,13 @@ export interface components {
          * @enum {string}
          */
         EmploymentStatusEnum: "WORKING" | "FIRED" | "ARCHIVED";
+        /**
+         * @description * `CONFIRMED_NO_CHANGES` - Подтверждено без изменений
+         *     * `CHANGED` - Изменено
+         *     * `AMENDED` - Исправлено
+         * @enum {string}
+         */
+        EventEnum: "CONFIRMED_NO_CHANGES" | "CHANGED" | "AMENDED";
         ExpensePeriodResponse: {
             /** @description Страница-на-дату: {business_date, totals, rows} — read-only derive, без номера документа. */
             pages: {
@@ -2608,21 +2684,25 @@ export interface operations {
             };
         };
     };
-    operations_daily_submissions_retrieve: {
+    operations_daily_submissions_list: {
         parameters: {
-            query?: never;
+            query?: {
+                business_date?: string;
+                division_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DailySubmissionListResponse"];
+                };
             };
         };
     };
@@ -2633,18 +2713,25 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailySubmissionCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DailySubmissionCreateRequest"];
+                "multipart/form-data": components["schemas"]["DailySubmissionCreateRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DailySubmission"];
+                };
             };
         };
     };
-    operations_daily_submissions_retrieve_2: {
+    operations_daily_submissions_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -2655,12 +2742,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DailySubmissionDetail"];
+                };
             };
         };
     };
@@ -2673,14 +2761,21 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailySubmissionAmendRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DailySubmissionAmendRequest"];
+                "multipart/form-data": components["schemas"]["DailySubmissionAmendRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DailySubmission"];
+                };
             };
         };
     };

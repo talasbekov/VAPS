@@ -1,13 +1,19 @@
 // Story 10.3 — контракт daily-submissions на фронте.
 //
-// РУКОПИСНОЕ ЗЕРКАЛО `DailySubmissionSerializer` / `DailySubmissionCreateSerializer`.
-// Схема этих путей типов НЕ несёт: `DailySubmissionViewSet` — голый `ViewSet`
-// без `@extend_schema`, spectacular эмитит «No response body» (`requestBody?:
-// never`, 201 `content?: never`) — индексировать нечего. Поэтому ARCH-FE-011
-// («рукописные типы при наличии схемы = MUST NOT») здесь не нарушен: схемы нет
-// (Решение №3 стори). Прецедент формы — `statusTypes.ts` (10.2).
-// Заменяется схемными типами в стори **10.1c** (`@extend_schema` + regen);
-// `parseSubmissionList` после этого остаётся санитайзером.
+// РУКОПИСНОЕ ЗЕРКАЛО `DailySubmissionSerializer` / `DailySubmissionCreateSerializer`
+// (Решение №3 стори 10.3). Схема этих путей типов появилась в 10.1c
+// (`@extend_schema` на `DailySubmissionViewSet` + regen) — СВЕРЕНО (10.1c
+// Task 3), ВСЕ ТРИ зеркала полей-в-файле, не выборочно:
+//   `DaySubmission`            == `components["schemas"]["DailySubmission"]`
+//     — те же 9 полей в том же порядке, `EventEnum` = буквально тот же union
+//     `"CONFIRMED_NO_CHANGES" | "CHANGED" | "AMENDED"`.
+//   `DaySubmissionCreateBody`  == `components["schemas"]["DailySubmissionCreateRequest"]`
+//     — `{division_id, business_date}`, буквально то же.
+// Зеркало было точным, не разошлось. Замена рукописных типов на схемные
+// `type`-алиасы (полная замена этого файла — правка `DaySubmissionPanel.tsx`/
+// `daySubmission.test.ts`, более широкий кусок фронта) — не обязательна per
+// AC-6 10.1c (расхождений нет), самостоятельный follow-up, если/когда
+// захочется убрать дублирование.
 //
 // Источник истины:
 //   Backend/VAPS/apps/operations/submissions/api/serializers.py:12-72

@@ -1,13 +1,11 @@
 // Story 10.6 — контракт amendment-флоу (POST /{id}/amend/) на фронте.
 //
-// РУКОПИСНОЕ ЗЕРКАЛО `DailySubmissionAmendSerializer`.
-// Схема этого пути типов НЕ несёт: `operations_daily_submissions_amend_create`
-// (`schema.d.ts:2560-2579`) объявлен с `requestBody?: never` и единственным
-// ответом 200 c `content?: never`, тогда как живой view отдаёт **201** с
-// 9-полевой проекцией (`views.py:216-219`). Индексировать нечего ⇒ ARCH-FE-011
-// («рукописные типы при наличии схемы = MUST NOT») здесь не нарушен: схемы нет.
-// Прецедент формы — `daySubmission.ts:1-20` (10.3).
-// Замещается схемными типами в стори **10.1c** (`@extend_schema` + regen).
+// РУКОПИСНОЕ ЗЕРКАЛО `DailySubmissionAmendSerializer`. Схема появилась в
+// 10.1c (`@extend_schema` на `amend` + regen) — СВЕРЕНО: `components
+// ["schemas"]["DailySubmissionAmendRequest"]` = `{reason: string, sanction:
+// string}`, буквально то же, что `DayAmendBody` ниже. Замена на схемный
+// алиас — необязательный follow-up (см. `daySubmission.ts` для того же
+// решения по `DaySubmission`).
 //
 // Источник истины (сверено с raise-сайтами, НЕ со словарём error-codes.yaml —
 // урок 10.1: словарь несёт донор-фантомы):

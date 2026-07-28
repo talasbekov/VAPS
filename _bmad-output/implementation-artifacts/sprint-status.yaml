@@ -362,7 +362,7 @@ development_status:
   #           (5.5a на каждый YELLOW-лист = конфликт NFR-4).
   #           ⚠️ ПРЕРЕКВИЗИТ 10.3b — не 10.3a.
   # Порядок: 10.3a → {10.4, 10.3c} ; 10.3c → 10.3b.
-  10-1c-схема-daily-submissions: backlog
+  10-1c-схема-daily-submissions: done
   10-3a-роут-светофора: done
   10-3c-роут-drift-подразделения: backlog
   10-3b-серверный-drift-маркер: backlog

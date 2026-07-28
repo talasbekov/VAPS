@@ -1210,27 +1210,26 @@ paths:
           description: ''
   /api/operations/daily-submissions/:
     get:
-      operationId: operations_daily_submissions_retrieve
-      description: |-
-        ViewSet mixin: gate each action on an in-house RBAC permission code.
-
-        Subclasses set ``permission_map = {action_name: permission_code}`` (action
-        name = the ViewSet method, e.g. ``list``/``create``/``partial_update`` or a
-        custom ``@action`` method like ``archive``/``assign_employee``). The gate
-        runs in ``initial()`` AFTER ``super().initial()`` — i.e. after DRF
-        authentication, so the operations seam has populated
-        ``request.effective_permissions`` (story 2.13). An action absent from the
-        map is denied (fail-closed); the rbac-matrix completeness test guarantees
-        every served action is mapped, so a gap surfaces at test time, not in prod.
-
-        MRO: list the mixin FIRST (``class FooViewSet(RequirePermissionMixin,
-        viewsets.ModelViewSet)``) so its ``initial`` wraps the DRF chain. core never
-        imports operations — the gate reads only request attributes (ARCH#L585).
+      operationId: operations_daily_submissions_list
+      description: Список сдач дня (5.8c), фильтры division_id/business_date.
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+      - in: query
+        name: division_id
+        schema:
+          type: string
       tags:
       - operations
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailySubmissionListResponse'
+          description: ''
     post:
       operationId: operations_daily_submissions_create
       description: |-
@@ -1250,12 +1249,28 @@ paths:
         imports operations — the gate reads only request attributes (ARCH#L585).
       tags:
       - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionCreateRequest'
+        required: true
       responses:
         '201':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailySubmission'
+          description: ''
   /api/operations/daily-submissions/{id}/:
     get:
-      operationId: operations_daily_submissions_retrieve_2
+      operationId: operations_daily_submissions_retrieve
       description: |-
         ViewSet mixin: gate each action on an in-house RBAC permission code.
 
@@ -1281,7 +1296,11 @@ paths:
       - operations
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailySubmissionDetail'
+          description: ''
   /api/operations/daily-submissions/{id}/amend/:
     post:
       operationId: operations_daily_submissions_amend_create
@@ -1308,9 +1327,25 @@ paths:
         required: true
       tags:
       - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionAmendRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionAmendRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DailySubmissionAmendRequest'
+        required: true
       responses:
-        '200':
-          description: No response body
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailySubmission'
+          description: ''
   /api/operations/daily-submissions/{id}/export/:
     get:
       operationId: operations_daily_submissions_export_retrieve
@@ -1883,6 +1918,187 @@ components:
       - date_start
       - employee_id
       - status_type_code
+    DailySubmission:
+      type: object
+      description: |-
+        201/list projection — flat, snake_case, WITHOUT the heavy snapshot JSON
+        (tens–hundreds of KB per row) and without the amend-only fields
+        (reason/sanction/triggered_by_status_id — always empty on v1). The list
+        selector defers snapshot; this serializer never touching it keeps the
+        deferred column from being silently re-fetched.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        division_id:
+          type: string
+          format: uuid
+          readOnly: true
+        business_date:
+          type: string
+          format: date
+          readOnly: true
+        version:
+          type: integer
+          readOnly: true
+          default: 1
+        is_current:
+          type: boolean
+          readOnly: true
+          default: true
+        event:
+          allOf:
+          - $ref: '#/components/schemas/EventEnum'
+          readOnly: true
+        submitted_by:
+          type: string
+          readOnly: true
+        submitted_at:
+          type: string
+          format: date-time
+          readOnly: true
+        late:
+          type: boolean
+          readOnly: true
+      required:
+      - business_date
+      - division_id
+      - event
+      - id
+      - is_current
+      - late
+      - submitted_at
+      - submitted_by
+      - version
+    DailySubmissionAmendRequest:
+      type: object
+      description: |-
+        POST /{id}/amend/ form (5.8b) — exactly the reason/sanction pair the
+        API forwards to amend_day. DRF defaults (required + trim_whitespace +
+        allow_blank=False) reject missing/blank/whitespace-only values at the
+        boundary; ``sanction`` carries the model's CharField(255) limit — without
+        it an oversized value would reach Postgres as a DataError → 500 (the same
+        boundary-lets-garbage-through class as 5.8a's whitespace actor header).
+        ``triggered_by_status_id`` is NOT accepted: it is the 5.4b system hook's
+        provenance ref (manual HTTP amendment stores None); accepting it would let
+        a client write arbitrary EmployeeStatus references. Extra payload fields,
+        including submitted_by/actor, are ignored (ARCH-SEC-030, DRF-канон 5.8a Д5).
+      properties:
+        reason:
+          type: string
+          minLength: 1
+        sanction:
+          type: string
+          minLength: 1
+          maxLength: 255
+      required:
+      - reason
+      - sanction
+    DailySubmissionCreateRequest:
+      type: object
+      description: |-
+        POST-body form — exactly the two kwargs the API forwards to submit_day:
+        a flat UUID division ref (ARCH-003) and a YYYY-MM-DD business date (closes
+        the business_date=None defer class for the submit path). The actor NEVER
+        comes from the payload (ARCH-SEC-030) — extra fields, including
+        submitted_by, are ignored.
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        business_date:
+          type: string
+          format: date
+      required:
+      - business_date
+      - division_id
+    DailySubmissionDetail:
+      type: object
+      description: |-
+        GET /{id}/ projection (5.8c, Д1) — the nine list fields plus the heavy
+        and amend-only payload. Detail is the ONLY HTTP channel for the snapshot
+        (расход screens 10.5/10.6, parallel-run reconciliation); reason/sanction
+        are empty strings and triggered_by_status_id is None on non-amended rows.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        division_id:
+          type: string
+          format: uuid
+          readOnly: true
+        business_date:
+          type: string
+          format: date
+          readOnly: true
+        version:
+          type: integer
+          readOnly: true
+          default: 1
+        is_current:
+          type: boolean
+          readOnly: true
+          default: true
+        event:
+          allOf:
+          - $ref: '#/components/schemas/EventEnum'
+          readOnly: true
+        submitted_by:
+          type: string
+          readOnly: true
+        submitted_at:
+          type: string
+          format: date-time
+          readOnly: true
+        late:
+          type: boolean
+          readOnly: true
+        snapshot:
+          readOnly: true
+        reason:
+          type: string
+          readOnly: true
+        sanction:
+          type: string
+          readOnly: true
+        triggered_by_status_id:
+          type: integer
+          readOnly: true
+          nullable: true
+      required:
+      - business_date
+      - division_id
+      - event
+      - id
+      - is_current
+      - late
+      - reason
+      - sanction
+      - snapshot
+      - submitted_at
+      - submitted_by
+      - triggered_by_status_id
+      - version
+    DailySubmissionListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailySubmission'
+      required:
+      - count
+      - next
+      - previous
+      - results
     Division:
       type: object
       properties:
@@ -2166,6 +2382,16 @@ components:
         * `WORKING` - Работает
         * `FIRED` - Уволен
         * `ARCHIVED` - В архиве
+    EventEnum:
+      enum:
+      - CONFIRMED_NO_CHANGES
+      - CHANGED
+      - AMENDED
+      type: string
+      description: |-
+        * `CONFIRMED_NO_CHANGES` - Подтверждено без изменений
+        * `CHANGED` - Изменено
+        * `AMENDED` - Исправлено
     ExpensePeriodResponse:
       type: object
       properties:
