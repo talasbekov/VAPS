@@ -204,6 +204,11 @@ actions:
     description: "Подразделение удалено из пилотного списка исключений."
     provenance: derived-from-mutation
     source: "epics.md Story 7.7"
+  ROSTER_RECONCILIATION_SIGNED:
+    entity_type: roster_reconciliation
+    description: "Владелец расхода пилотного подразделения подтвердил (подписал) сверку выгруженного «как в системе» состава с реальностью на дату."
+    provenance: derived-from-mutation
+    source: "epics.md Story 7.9"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.
