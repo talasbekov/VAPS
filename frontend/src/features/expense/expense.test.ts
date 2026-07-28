@@ -6,7 +6,9 @@ import {
   ISSUE_PERMISSION_MESSAGE,
   describeIssueFailure,
   describeDownloadFailure,
+  describeOverrideFailure,
   expenseFileName,
+  isOverrideReasonComplete,
   parseIssuedReport,
   parseLaggards,
   todayLocalIso,
@@ -296,5 +298,76 @@ describe('expenseFileName: ТОЛЬКО фолбэк к Content-Disposition (AC-
 
   it('расширение .docx — генерация безусловно docx (фантом №1: xlsx/pdf нет)', () => {
     expect(expenseFileName({ business_date: '2026-01-01', number: 1 })).toMatch(/\.docx$/)
+  })
+})
+
+describe('isOverrideReasonComplete: Story 10.5a', () => {
+  it('пусто → false', () => {
+    expect(isOverrideReasonComplete('')).toBe(false)
+  })
+
+  it('только пробелы → false (зеркало DRF-400 на пустой CharField)', () => {
+    expect(isOverrideReasonComplete('   ')).toBe(false)
+  })
+
+  it('непустая причина → true', () => {
+    expect(isOverrideReasonComplete('Пилот уходит рано')).toBe(true)
+  })
+})
+
+describe('describeOverrideFailure: тотальная карта отказов обхода (Story 10.5a)', () => {
+  it('network → silent', () => {
+    expect(describeOverrideFailure(new NetworkError('обрыв')).kind).toBe('silent')
+  })
+
+  it.each([500, 502, 503])('%d → silent (уже в тосте useApiMutation)', (status) => {
+    const d = describeOverrideFailure(
+      new ServerError({ status, errorCode: null, message: 'x', details: {}, requestId: null }),
+    )
+    expect(d.kind).toBe('silent')
+  })
+
+  it('401 → silent (уже в logout-цепи)', () => {
+    expect(describeOverrideFailure(apiError(401, 'AUTH_REQUIRED')).kind).toBe('silent')
+  })
+
+  it('403 → permission, фиксированный текст (AC-6)', () => {
+    const d = describeOverrideFailure(apiError(403, 'PERMISSION_DENIED'))
+    expect(d.kind).toBe('permission')
+    expect(d.message).toBe('Нет права на обход блокировки.')
+  })
+
+  it('409 TOMORROW_BLOCK_ALREADY_OVERRIDDEN → already-overridden (AC-5)', () => {
+    const d = describeOverrideFailure(
+      new ConflictError({
+        status: 409,
+        errorCode: 'TOMORROW_BLOCK_ALREADY_OVERRIDDEN',
+        message: 'x',
+        details: {},
+        requestId: null,
+      }),
+    )
+    expect(d.kind).toBe('already-overridden')
+    expect(d.message).toBe('Обход на эту дату уже существует.')
+  })
+
+  it('400 → validation, текст ДОСЛОВНО из конверта (AC-7)', () => {
+    const d = describeOverrideFailure(
+      new ValidationError({
+        status: 400,
+        errorCode: 'VALIDATION_ERROR',
+        message: 'Дата обхода дальше +31 дней — проверьте год.',
+        details: {},
+        requestId: null,
+      }),
+    )
+    expect(d.kind).toBe('validation')
+    expect(d.message).toBe('Дата обхода дальше +31 дней — проверьте год.')
+  })
+
+  it('неучтённый код/статус → other, не тишина', () => {
+    const d = describeOverrideFailure(apiError(418, null, 'HTTP 418'))
+    expect(d.kind).toBe('other')
+    expect(d.message).toContain('HTTP 418')
   })
 })

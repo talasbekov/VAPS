@@ -291,3 +291,67 @@ export function describeDownloadFailure(error: ApiFailure): string {
   if (error.status === 404) return 'Файл документа не найден.'
   return `Не удалось скачать файл: ${error.message}`
 }
+
+/**
+ * Story 10.5a — тело обхода блокировки «на завтра». РОВНО `{business_date,
+ * reason}` — БЕЗ `division_id` (обход day-level, не per-division:
+ * `override_tomorrow_block` его не принимает, `views.py:458-518`) и без
+ * актора (сервер берёт `request.actor_id`).
+ *
+ * `type`, а НЕ `interface` — тот же приём, что `ExpenseIssueBody` (см. выше):
+ * `useApiMutation<TData, TVariables>` требует присваиваемости к индекс-
+ * сигнатуре, `interface` её неявно не получает.
+ */
+export type TomorrowBlockOverrideBody = {
+  business_date: string
+  reason: string
+}
+
+export type TomorrowBlockOverrideResponse =
+  components['schemas']['TomorrowBlockOverrideResponse']
+
+/** Причина обхода непуста после `trim()` — зеркало DRF-400 на пустой `CharField`. */
+export function isOverrideReasonComplete(reason: string): boolean {
+  return reason.trim().length > 0
+}
+
+export type OverrideFailureKind =
+  | 'permission'
+  | 'already-overridden'
+  | 'validation'
+  | 'other'
+  | 'silent'
+
+export interface OverrideFailureDescription {
+  kind: OverrideFailureKind
+  /** Текст для инлайна; для `silent` — пустой (форма ничего не рисует). */
+  message: string
+}
+
+/**
+ * Story 10.5a — тотальная карта отказов обхода (AC-5, AC-6, AC-7). Стиль —
+ * зеркало `describeIssueFailure` (порядок ветвления `network → 5xx → 401 →
+ * 403 → 400 → по errorCode`), но СВОЙ меньший набор кодов: обход не несёт
+ * `not-found`/`not-ready`/`already-issued`/`not-convergent` карты выпуска —
+ * это другой эндпоинт с другими отказами.
+ */
+export function describeOverrideFailure(
+  error: ApiFailure,
+): OverrideFailureDescription {
+  if (error.kind === 'network') return { kind: 'silent', message: '' }
+  if (error.status >= 500) return { kind: 'silent', message: '' }
+  if (error.status === 401) return { kind: 'silent', message: '' }
+  if (error.status === 403) {
+    return { kind: 'permission', message: 'Нет права на обход блокировки.' }
+  }
+  if (error.status === 409 && error.errorCode === 'TOMORROW_BLOCK_ALREADY_OVERRIDDEN') {
+    return {
+      kind: 'already-overridden',
+      message: 'Обход на эту дату уже существует.',
+    }
+  }
+  if (error.status === 400) {
+    return { kind: 'validation', message: error.message }
+  }
+  return { kind: 'other', message: error.message }
+}

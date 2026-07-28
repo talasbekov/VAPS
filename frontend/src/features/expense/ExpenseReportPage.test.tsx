@@ -19,8 +19,9 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { clearCredential, setCredential } from '../../shared/auth/credential'
 import { server } from '../../shared/api/testing/server'
 import { issuedExpenseReportFixture } from '../../shared/api/testing/handlers'
 import { ToastProvider } from '../../shared/ui/toast'
@@ -480,6 +481,212 @@ describe('AC-6: экран «кто не сдал» (422 TOMORROW_BLOCKED)', () 
 
     expect(await screen.findByText('Не готово')).toBeInTheDocument()
     expect(screen.queryByText('Не сдали:')).not.toBeInTheDocument()
+  })
+})
+
+describe('Story 10.5a: обход блокировки «на завтра»', () => {
+  beforeEach(() => setCredential({ kind: 'dev', userId: 'admin-1' }))
+  afterEach(() => clearCredential())
+
+  function grantOverridePermission() {
+    server.use(
+      http.get('*/api/operations/my-permissions/', () =>
+        HttpResponse.json({ permissions: ['daily_report.override_block'] }),
+      ),
+    )
+  }
+
+  async function blockedRender() {
+    const user = userEvent.setup()
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/', () =>
+        HttpResponse.json(errorEnvelope('ENTITY_NOT_FOUND', 'нет'), { status: 404 }),
+      ),
+      http.post('*/api/operations/expense-reports/', () =>
+        HttpResponse.json(
+          errorEnvelope('TOMORROW_BLOCKED', 'заблокировано', { laggards: [] }),
+          { status: 422 },
+        ),
+      ),
+    )
+    renderPage()
+    await selectDivision(user)
+    await user.click(await screen.findByRole('button', { name: 'Сформировать' }))
+    await screen.findByText('Не готово')
+    return user
+  }
+
+  it('AC-1: кнопка «Обойти блокировку» видна ТОЛЬКО держателю права', async () => {
+    grantOverridePermission()
+    await blockedRender()
+    expect(
+      await screen.findByRole('button', { name: 'Обойти блокировку' }),
+    ).toBeInTheDocument()
+  })
+
+  it('AC-1: без права кнопки НЕТ (дефолтная фикстура прав не несёт override_block)', async () => {
+    await blockedRender()
+    // Дать `['me']` время догрузиться, прежде чем утверждать отсутствие.
+    await screen.findByText('Не готово')
+    expect(
+      screen.queryByRole('button', { name: 'Обойти блокировку' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('AC-2: клик открывает инлайн-форму с полем «Причина»', async () => {
+    grantOverridePermission()
+    const user = await blockedRender()
+    await user.click(await screen.findByRole('button', { name: 'Обойти блокировку' }))
+
+    expect(
+      await screen.findByRole('form', { name: 'Обход блокировки' }),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Причина')).toBeInTheDocument()
+  })
+
+  it('AC-3: РОВНО один POST, тело СТРОГО {business_date, reason} — БЕЗ division_id', async () => {
+    grantOverridePermission()
+    const bodies: Record<string, unknown>[] = []
+    server.use(
+      http.post('*/api/operations/expense-reports/override-tomorrow-block/', async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(
+          { business_date: TODAY, overridden_by: 'admin-1', reason: 'Пилот уходит рано' },
+          { status: 201 },
+        )
+      }),
+    )
+    const user = await blockedRender()
+    await user.click(await screen.findByRole('button', { name: 'Обойти блокировку' }))
+    await user.type(screen.getByLabelText('Причина'), 'Пилот уходит рано')
+    await user.click(screen.getByRole('button', { name: 'Подтвердить обход' }))
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual({ business_date: TODAY, reason: 'Пилот уходит рано' })
+    expect(bodies[0]).not.toHaveProperty('division_id')
+  })
+
+  it('AC-4: 201 → подтверждение ДОСЛОВНО из ответа, форма закрыта', async () => {
+    grantOverridePermission()
+    server.use(
+      http.post('*/api/operations/expense-reports/override-tomorrow-block/', () =>
+        HttpResponse.json(
+          { business_date: TODAY, overridden_by: 'капитан Иванов', reason: 'Учения' },
+          { status: 201 },
+        ),
+      ),
+    )
+    const user = await blockedRender()
+    await user.click(await screen.findByRole('button', { name: 'Обойти блокировку' }))
+    await user.type(screen.getByLabelText('Причина'), 'Учения')
+    await user.click(screen.getByRole('button', { name: 'Подтвердить обход' }))
+
+    const confirmation = await screen.findByTestId('tomorrow-block-overridden')
+    expect(confirmation).toHaveTextContent('капитан Иванов')
+    expect(confirmation).toHaveTextContent('Учения')
+    expect(
+      screen.queryByRole('form', { name: 'Обход блокировки' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('AC-5: 409 уже обойдено → инлайн-текст, форма ОСТАЁТСЯ открытой', async () => {
+    grantOverridePermission()
+    // Дефолт-хендлер (Task 4) уже отдаёт этот 409 — явный `server.use` здесь
+    // не нужен, но пишем явно для читаемости теста.
+    server.use(
+      http.post('*/api/operations/expense-reports/override-tomorrow-block/', () =>
+        HttpResponse.json(errorEnvelope('TOMORROW_BLOCK_ALREADY_OVERRIDDEN', 'уже есть'), {
+          status: 409,
+        }),
+      ),
+    )
+    const user = await blockedRender()
+    await user.click(await screen.findByRole('button', { name: 'Обойти блокировку' }))
+    await user.type(screen.getByLabelText('Причина'), 'Причина')
+    await user.click(screen.getByRole('button', { name: 'Подтвердить обход' }))
+
+    expect(
+      await screen.findByText('Обход на эту дату уже существует.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('form', { name: 'Обход блокировки' }),
+    ).toBeInTheDocument()
+  })
+
+  it('AC-6: 403 → инлайн «Нет права...», экран не падает', async () => {
+    grantOverridePermission()
+    server.use(
+      http.post('*/api/operations/expense-reports/override-tomorrow-block/', () =>
+        HttpResponse.json(errorEnvelope('PERMISSION_DENIED', 'нет права'), { status: 403 }),
+      ),
+    )
+    const user = await blockedRender()
+    await user.click(await screen.findByRole('button', { name: 'Обойти блокировку' }))
+    await user.type(screen.getByLabelText('Причина'), 'Причина')
+    await user.click(screen.getByRole('button', { name: 'Подтвердить обход' }))
+
+    expect(
+      await screen.findByText('Нет права на обход блокировки.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Не готово')).toBeInTheDocument()
+  })
+
+  it('AC-7: 400 → инлайн-текст ИЗ ОТВЕТА, форма ОСТАЁТСЯ открытой', async () => {
+    grantOverridePermission()
+    server.use(
+      http.post('*/api/operations/expense-reports/override-tomorrow-block/', () =>
+        HttpResponse.json(
+          errorEnvelope('VALIDATION_ERROR', 'Дата обхода дальше +31 дней — проверьте год.'),
+          { status: 400 },
+        ),
+      ),
+    )
+    const user = await blockedRender()
+    await user.click(await screen.findByRole('button', { name: 'Обойти блокировку' }))
+    await user.type(screen.getByLabelText('Причина'), 'Причина')
+    await user.click(screen.getByRole('button', { name: 'Подтвердить обход' }))
+
+    expect(
+      await screen.findByText('Дата обхода дальше +31 дней — проверьте год.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('form', { name: 'Обход блокировки' }),
+    ).toBeInTheDocument()
+  })
+
+  it('AC-8: регресс — «Не готово»/список и «Сформировать» переживают открытую форму обхода', async () => {
+    grantOverridePermission()
+    const user = await blockedRender()
+    await user.click(await screen.findByRole('button', { name: 'Обойти блокировку' }))
+
+    expect(screen.getByText('Не готово')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Сформировать' })).toBeInTheDocument()
+  })
+
+  it('«Отмена» закрывает форму, POST не шлёт', async () => {
+    grantOverridePermission()
+    const bodies: Record<string, unknown>[] = []
+    server.use(
+      http.post('*/api/operations/expense-reports/override-tomorrow-block/', async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(
+          { business_date: TODAY, overridden_by: 'x', reason: 'y' },
+          { status: 201 },
+        )
+      }),
+    )
+    const user = await blockedRender()
+    await user.click(await screen.findByRole('button', { name: 'Обойти блокировку' }))
+    await user.type(screen.getByLabelText('Причина'), 'Черновик причины')
+    await user.click(screen.getByRole('button', { name: 'Отмена' }))
+
+    expect(
+      screen.queryByRole('form', { name: 'Обход блокировки' }),
+    ).not.toBeInTheDocument()
+    expect(bodies).toHaveLength(0)
+    // Кнопка-открывашка вернулась: путь не стал тупиком.
+    expect(screen.getByRole('button', { name: 'Обойти блокировку' })).toBeInTheDocument()
   })
 })
 

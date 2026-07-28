@@ -152,6 +152,16 @@ export const conflictStateEnvelope: ErrorEnvelope = {
   timestamp: TIMESTAMP,
 }
 
+// Story 10.5a: 409 НЕ overridable (тот же класс, что `conflictStateEnvelope`
+// выше) — обход не ретраится, это ОТДЕЛЬНОЕ действие с ОТДЕЛЬНЫМ телом.
+export const tomorrowBlockAlreadyOverriddenEnvelope: ErrorEnvelope = {
+  error_code: 'TOMORROW_BLOCK_ALREADY_OVERRIDDEN',
+  message: 'Обход блокировки на эту дату уже существует.',
+  details: {},
+  request_id: null,
+  timestamp: TIMESTAMP,
+}
+
 // 401 всегда AUTH_REQUIRED (exception_handler L43-48: TOKEN_INVALID не эмитится)
 export const authRequiredEnvelope: ErrorEnvelope = {
   error_code: 'AUTH_REQUIRED',
@@ -254,6 +264,12 @@ export const handlers = [
   // 409 НЕ overridable: state-конфликт (протокольная, Д8)
   http.post('*/api/operations/daily-submissions/:id/amend/', () =>
     HttpResponse.json(conflictStateEnvelope, { status: 409 }),
+  ),
+  // Story 10.5a: дефолт-отказ 409 «уже обойдено» — нейтральный дефолт, не
+  // тихий успех (обход НЕ должен успевать в тестах, которые его не настроили
+  // явно; тот же приём, что дефолт amend выше).
+  http.post('*/api/operations/expense-reports/override-tomorrow-block/', () =>
+    HttpResponse.json(tomorrowBlockAlreadyOverriddenEnvelope, { status: 409 }),
   ),
   // 500 с конвертом
   http.get('*/api/audit/logs/', () =>

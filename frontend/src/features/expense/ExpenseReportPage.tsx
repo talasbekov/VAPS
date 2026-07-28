@@ -38,21 +38,29 @@ import { Link } from 'react-router'
 import { apiClient } from '../../shared/api/client'
 import { ROUTES } from '../../shared/routes'
 import { useApiMutation } from '../../shared/api/useApiMutation'
+import { usePermissions } from '../../shared/auth/usePermissions'
 import type { ApiFailure } from '../../shared/api/errors'
 import type { paths } from '../../shared/api/schema'
 import { Button } from '../../shared/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader } from '../../shared/ui/Card'
 import { Input } from '../../shared/ui/Input'
 import { Label } from '../../shared/ui/Label'
+import { TomorrowBlockOverrideForm } from './TomorrowBlockOverrideForm'
 import {
   describeDownloadFailure,
   describeIssueFailure,
+  describeOverrideFailure,
   expenseFileName,
   issueSuccessMessage,
   parseIssuedReport,
   todayLocalIso,
 } from './expense'
-import type { ExpenseIssueBody, IssuedExpenseReport } from './expense'
+import type {
+  ExpenseIssueBody,
+  IssuedExpenseReport,
+  TomorrowBlockOverrideBody,
+  TomorrowBlockOverrideResponse,
+} from './expense'
 
 type DivisionsResponse =
   paths['/api/core/divisions/']['get']['responses']['200']['content']['application/json']
@@ -149,8 +157,18 @@ function ExpenseReportPanel({
   divisionNameById,
 }: PanelProps) {
   const queryClient = useQueryClient()
+  const { hasPermission } = usePermissions()
   /** Канон-строка успеха. UI-состояние, серверных данных не дублирует. */
   const [issuedMessage, setIssuedMessage] = useState<string | null>(null)
+  // Story 10.5a: форма обхода блокировки «на завтра» открыта.
+  const [overriding, setOverriding] = useState(false)
+  // Результат ПОСЛЕДНЕГО успешного обхода — ARCH-FE-010-легальное исключение
+  // «результат действия» (прецедент — `submitted`/`amended` в
+  // `DaySubmissionPanel.tsx`): обход нигде не читается GET'ом, серверные
+  // данные здесь не дублируются, дублировать нечего.
+  const [overridden, setOverridden] = useState<TomorrowBlockOverrideResponse | null>(
+    null,
+  )
 
   /**
    * Чтение выпущенного за дату (point-lookup: один объект или 404).
@@ -216,6 +234,32 @@ function ExpenseReportPanel({
       })
     },
   })
+
+  /**
+   * Story 10.5a — обход блокировки «на завтра». ОТДЕЛЬНЫЙ эндпоинт, ОТДЕЛЬНОЕ
+   * право (`daily_report.override_block`), day-level (БЕЗ `division_id` в
+   * теле — обход снимает блок на весь день, не на подразделение).
+   *
+   * БЕЗ инвалидации `['expense-report', ...]` в `onSuccess`: обход не меняет
+   * карточку расхода, только снимает блок на БУДУЩИЙ выпуск — инвалидация
+   * здесь была бы бесцельной. Повторный выпуск (`issue.mutate`) — ОТДЕЛЬНОЕ
+   * осознанное действие оператора (AC-4), не авто-ретрай отсюда: обход и
+   * выпуск — разные права, авто-ретрай замаскировал бы двухшаговость.
+   */
+  const override = useApiMutation<TomorrowBlockOverrideResponse, TomorrowBlockOverrideBody>({
+    mutationFn: (variables) =>
+      apiClient.post<TomorrowBlockOverrideResponse>(
+        '/api/operations/expense-reports/override-tomorrow-block/',
+        variables,
+      ),
+    onSuccess: (data) => {
+      setOverridden(data)
+      setOverriding(false)
+    },
+  })
+
+  const overrideFailure =
+    override.error === null ? null : describeOverrideFailure(override.error)
 
   /**
    * Скачивание — через `useApiMutation` (сырой `useMutation` в `features/**`
@@ -322,6 +366,45 @@ function ExpenseReportPanel({
                   ))}
                 </ul>
               </>
+            ) : null}
+
+            {/* Story 10.5a: обход — ТОЛЬКО держателю права (AC-1). Сервер
+                перепроверит всё равно (AC-6) — фронтовый гейт удобство, не
+                единственная защита. */}
+            {overridden !== null ? (
+              <p className="text-sm" data-testid="tomorrow-block-overridden">
+                Обход подтверждён: {overridden.overridden_by}, {overridden.reason}
+                . Действует на весь день, для всех подразделений. Нажмите «
+                {ISSUE_LABEL}» ещё раз.
+              </p>
+            ) : overriding ? (
+              <>
+                <TomorrowBlockOverrideForm
+                  businessDate={businessDate}
+                  isPending={override.isPending}
+                  onSubmit={(reason) => override.mutate({ business_date: businessDate, reason })}
+                  onCancel={() => {
+                    override.reset()
+                    setOverriding(false)
+                  }}
+                />
+                {overrideFailure !== null && overrideFailure.kind !== 'silent' ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {overrideFailure.message}
+                  </p>
+                ) : null}
+              </>
+            ) : hasPermission('daily_report.override_block') ? (
+              <div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setOverriding(true)}
+                >
+                  Обойти блокировку
+                </Button>
+              </div>
             ) : null}
           </div>
         ) : failure !== null && failure.kind !== 'silent' ? (
