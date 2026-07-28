@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-28
+# last_updated: 2026-07-28 (10.3c → done, 10.3b → ready-for-dev)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -365,7 +365,7 @@ development_status:
   10-1c-схема-daily-submissions: done
   10-3a-роут-светофора: done
   10-3c-роут-drift-подразделения: done
-  10-3b-серверный-drift-маркер: backlog
+  10-3b-серверный-drift-маркер: ready-for-dev
   # ⛔ 10.4 создана (create-story 2026-07-19), но СТАРТ ЗАБЛОКИРОВАН пререквизитом:
   #    её AC-0 — исполняемый гейт `grep traffic-light schema.yaml schema.d.ts`;
   #    пусто ⇒ dev-агент обязан HALT-нуть, а не строить экран на фикстуре.
