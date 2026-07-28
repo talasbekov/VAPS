@@ -17,7 +17,8 @@
 import type { ApiFailure } from '../../shared/api/errors'
 import type { components } from '../../shared/api/schema'
 
-/** 11 полей `IssuedExpenseReportSerializer` — ни `supersedes`, ни `reason`. */
+/** 14 полей `IssuedExpenseReportSerializer` (11 + `reason`/`supersedes_number`/
+ * `supersedes_year`, стори 10.5b). */
 export type IssuedExpenseReport = components['schemas']['IssuedExpenseReport']
 
 /**
@@ -100,7 +101,7 @@ const STATUSES: ReadonlySet<string> = new Set<
 >(['ISSUED', 'SUPERSEDED'])
 
 /**
- * Тотальный разбор проекции выпуска. Все 11 полей несущие: карточка показывает
+ * Тотальный разбор проекции выпуска. Все 14 полей несущие: карточка показывает
  * номер, год, дату, статус и версию сдачи, а кнопку скачивания вообще нельзя
  * нарисовать без `attachment_id` — частичная строка дала бы «Исх.№ undefined»
  * и ссылку на `/attachments//download/` (AC-9).
@@ -121,6 +122,16 @@ export function parseIssuedReport(raw: unknown): IssuedExpenseReport | null {
     return null
   }
   if (typeof row.sha256 !== 'string') return null
+  // Story 10.5b (бэк): три новых поля — reason ("" у v1, непустой у amended),
+  // supersedes_number/supersedes_year (number | null — null при первом
+  // выпуске дня). Разбор — той же тотальной дисциплины, что остальные 11 полей.
+  if (typeof row.reason !== 'string') return null
+  if (typeof row.supersedes_number !== 'number' && row.supersedes_number !== null) {
+    return null
+  }
+  if (typeof row.supersedes_year !== 'number' && row.supersedes_year !== null) {
+    return null
+  }
   return {
     id: row.id,
     doc_type: row.doc_type,
@@ -133,6 +144,9 @@ export function parseIssuedReport(raw: unknown): IssuedExpenseReport | null {
     status: row.status as components['schemas']['IssuedExpenseReportStatusEnum'],
     attachment_id: row.attachment_id,
     sha256: row.sha256,
+    reason: row.reason,
+    supersedes_number: row.supersedes_number,
+    supersedes_year: row.supersedes_year,
   }
 }
 

@@ -44,6 +44,7 @@ from apps.operations.submissions.api.serializers import (
     DailySubmissionDetailSerializer,
     DailySubmissionFilterSerializer,
     DailySubmissionSerializer,
+    ExpenseJournalFilterSerializer,
     ExpensePeriodFilterSerializer,
     ExpenseReportByDateFilterSerializer,
     ExpenseReportIssueSerializer,
@@ -317,6 +318,7 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "list": _EXPENSE_PERMISSION,
         "period": _EXPENSE_PERMISSION,
         "override_block": _OVERRIDE_PERMISSION,
+        "journal": _EXPENSE_PERMISSION,
     }
     # No "head": HEAD stays 405 everywhere (mirror of the 5.8a/b minimal
     # surface above — a deliberate project-wide canon, not an omission).
@@ -515,6 +517,42 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "reason": override.reason,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        parameters=[ExpenseJournalFilterSerializer],
+        responses={
+            200: extend_schema_serializer(many=False)(
+                inline_serializer(
+                    name="ExpenseJournalListResponse",
+                    fields={
+                        "count": serializers.IntegerField(),
+                        "next": serializers.CharField(allow_null=True),
+                        "previous": serializers.CharField(allow_null=True),
+                        "results": IssuedExpenseReportSerializer(many=True),
+                    },
+                )
+            )
+        },
+        description="Журнал выпусков подразделения (10.5b): ВСЕ документы "
+        "(ISSUED и SUPERSEDED), новые сверху, с `supersedes_number`/"
+        "`supersedes_year` — прослеживает цепочку «взамен исх.№ N». "
+        "403 чужой scope; 404 нет подразделения.",
+    )
+    @action(detail=False, methods=["get"])
+    def journal(self, request, *args, **kwargs):
+        form = ExpenseJournalFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        ensure_division_scope(request.actor_id, _EXPENSE_PERMISSION, division_id)
+        _ensure_division_exists(division_id)
+        qs = IssuedDocumentSelector.history(
+            doc_type=EXPENSE_DOC_TYPE, division_id=division_id
+        )
+        paginator = DailySubmissionPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        return paginator.get_paginated_response(
+            IssuedExpenseReportSerializer(page, many=True).data
         )
 
 

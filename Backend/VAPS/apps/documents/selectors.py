@@ -50,6 +50,22 @@ class IssuedDocumentSelector:
             status=IssuedDocument.Status.ISSUED,
         ).first()
 
+    @staticmethod
+    def history(*, doc_type, division_id):
+        """Story 10.5b — ВСЯ история выпусков подразделения (ISSUED И
+        SUPERSEDED, без фильтра по статусу — это и есть журнал, не точка),
+        новые сверху.
+
+        ``select_related("supersedes", "attachment")`` — сериализатор читает
+        ``supersedes.number``/``.year`` и ``attachment.sha256`` на КАЖДОЙ
+        строке; без него N строк журнала дают до 2N лишних запросов.
+        """
+        return (
+            IssuedDocument.objects.filter(doc_type=doc_type, division_id=division_id)
+            .select_related("supersedes", "attachment")
+            .order_by("-business_date", "-number")
+        )
+
 
 def lock_sequence(*, doc_type, year):
     """Row-lock строки счётчика (doc_type, year) для выдачи номера (Story 6.2).

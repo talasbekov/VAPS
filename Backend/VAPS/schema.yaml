@@ -1420,6 +1420,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/IssuedExpenseReport'
           description: ''
+  /api/operations/expense-reports/journal/:
+    get:
+      operationId: operations_expense_reports_journal_retrieve
+      description: 'Журнал выпусков подразделения (10.5b): ВСЕ документы (ISSUED и
+        SUPERSEDED), новые сверху, с `supersedes_number`/`supersedes_year` — прослеживает
+        цепочку «взамен исх.№ N». 403 чужой scope; 404 нет подразделения.'
+      parameters:
+      - in: query
+        name: division_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseJournalListResponse'
+          description: ''
   /api/operations/expense-reports/override-tomorrow-block/:
     post:
       operationId: operations_expense_reports_override_tomorrow_block_create
@@ -2420,6 +2442,26 @@ components:
         * `CONFIRMED_NO_CHANGES` - Подтверждено без изменений
         * `CHANGED` - Изменено
         * `AMENDED` - Исправлено
+    ExpenseJournalListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssuedExpenseReport'
+      required:
+      - count
+      - next
+      - previous
+      - results
     ExpensePeriodResponse:
       type: object
       properties:
@@ -2462,6 +2504,13 @@ components:
       description: |-
         Issued расход projection (6.10a) — flat metadata + the attachment ref and
         sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here.
+
+        Story 10.5b: ``reason`` (модельное поле, "" у v1, непустой у amended) и
+        ``supersedes_number``/``supersedes_year`` (номер/год предыдущего
+        документа, ``null`` при ``supersedes IS NULL``) — то же имя, что уже
+        используется в audit-payload (``document_release_service.py``), теперь
+        видимое по API — нужно, чтобы прослеживать цепочку «взамен исх.№ N»
+        (журнал, `journal`-роут ниже).
       properties:
         id:
           type: string
@@ -2501,6 +2550,17 @@ components:
         sha256:
           type: string
           readOnly: true
+        reason:
+          type: string
+          readOnly: true
+        supersedes_number:
+          type: integer
+          nullable: true
+          readOnly: true
+        supersedes_year:
+          type: integer
+          nullable: true
+          readOnly: true
       required:
       - attachment_id
       - business_date
@@ -2508,10 +2568,13 @@ components:
       - doc_type
       - id
       - number
+      - reason
       - sha256
       - status
       - submission_id
       - submission_version
+      - supersedes_number
+      - supersedes_year
       - year
     IssuedExpenseReportStatusEnum:
       enum:

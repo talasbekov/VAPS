@@ -249,6 +249,9 @@ describe('parseIssuedReport: тотальный рантайм-разбор (AC-
     status: 'ISSUED',
     attachment_id: 'c3d4e5f6-0718-492a-b3c4-d5e6f7081920',
     sha256: 'e3b0',
+    reason: '',
+    supersedes_number: null,
+    supersedes_year: null,
   }
 
   it('валидный ответ → разобран дословно', () => {

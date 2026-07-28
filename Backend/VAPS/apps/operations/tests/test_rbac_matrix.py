@@ -199,6 +199,10 @@ MATRIX = {
     # daily_report.override_block (обход ≠ выпуск); scope не применяется (обход
     # уровня дня, без division). ValueError сервиса → 400 = ALLOW по канону.
     "ops-expense-report-override-tomorrow-block": _Gate("daily_report.override_block"),
+    # журнал выпусков подразделения (story 10.5b), GET-only. Тот же гейт-код,
+    # что list/period; division_id ОБЯЗАТЕЛЕН — payloadless GET держателя =
+    # 400 сериализатора = ALLOW по канону.
+    "ops-expense-report-journal": _MethodGate({"get": "daily_report.generate"}),
     # audit — read-only журнал, загейчен RequirePermissionMixin("audit.view")
     # (story 4.5). GET-only (list+retrieve); ORGD/ADMIN → ALLOW, прочие/аноним
     # → DENY (из seed).

@@ -81,9 +81,9 @@ export const divisionTrafficLightFixture: TrafficLightDivisionResponse = {
   drift: null,
 }
 
-// Выпущенный расход (стори 10.5) — РОВНО 11 полей `IssuedExpenseReportSerializer`.
-// Типизация против paths[…] держит фикстуру честной: `supersedes`/`reason`/
-// `superseded_by` в проекции НЕТ, и дописать их сюда `tsc` не даст (AC-0 «б»).
+// Выпущенный расход (стори 10.5, +3 поля стори 10.5b) — 14 полей
+// `IssuedExpenseReportSerializer`. Типизация против paths[…] держит фикстуру
+// честной — расхождение с бэком `tsc` не даст (AC-0 «б»).
 export const issuedExpenseReportFixture: IssuedExpenseReportResponse = {
   id: 'b2c3d4e5-f607-4819-a2b3-c4d5e6f70819',
   doc_type: 'EXPENSE',
@@ -96,6 +96,10 @@ export const issuedExpenseReportFixture: IssuedExpenseReportResponse = {
   status: 'ISSUED',
   attachment_id: 'c3d4e5f6-0718-492a-b3c4-d5e6f7081920',
   sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+  // v1 — первый выпуск дня: reason "" и supersedes null (10.5b семантика).
+  reason: '',
+  supersedes_number: null,
+  supersedes_year: null,
 }
 
 // 404 чтения — ШТАТНЫЙ ответ «за эту дату не выпускалось» (views.py:293-301),

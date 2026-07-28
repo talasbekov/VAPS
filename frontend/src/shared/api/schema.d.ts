@@ -938,6 +938,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/expense-reports/journal/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Журнал выпусков подразделения (10.5b): ВСЕ документы (ISSUED и SUPERSEDED), новые сверху, с `supersedes_number`/`supersedes_year` — прослеживает цепочку «взамен исх.№ N». 403 чужой scope; 404 нет подразделения. */
+        get: operations["operations_expense_reports_journal_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/expense-reports/override-tomorrow-block/": {
         parameters: {
             query?: never;
@@ -1483,6 +1500,12 @@ export interface components {
          * @enum {string}
          */
         EventEnum: "CONFIRMED_NO_CHANGES" | "CHANGED" | "AMENDED";
+        ExpenseJournalListResponse: {
+            count: number;
+            next: string | null;
+            previous: string | null;
+            results: components["schemas"]["IssuedExpenseReport"][];
+        };
         ExpensePeriodResponse: {
             /** @description Страница-на-дату: {business_date, totals, rows} — read-only derive, без номера документа. */
             pages: {
@@ -1510,6 +1533,13 @@ export interface components {
         /**
          * @description Issued расход projection (6.10a) — flat metadata + the attachment ref and
          *     sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here.
+         *
+         *     Story 10.5b: ``reason`` (модельное поле, "" у v1, непустой у amended) и
+         *     ``supersedes_number``/``supersedes_year`` (номер/год предыдущего
+         *     документа, ``null`` при ``supersedes IS NULL``) — то же имя, что уже
+         *     используется в audit-payload (``document_release_service.py``), теперь
+         *     видимое по API — нужно, чтобы прослеживать цепочку «взамен исх.№ N»
+         *     (журнал, `journal`-роут ниже).
          */
         IssuedExpenseReport: {
             /** Format: uuid */
@@ -1527,6 +1557,9 @@ export interface components {
             /** Format: uuid */
             readonly attachment_id: string;
             readonly sha256: string;
+            readonly reason: string;
+            readonly supersedes_number: number | null;
+            readonly supersedes_year: number | null;
         };
         /**
          * @description * `ISSUED` - Выпущен
@@ -2876,6 +2909,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IssuedExpenseReport"];
+                };
+            };
+        };
+    };
+    operations_expense_reports_journal_retrieve: {
+        parameters: {
+            query: {
+                division_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseJournalListResponse"];
                 };
             };
         };

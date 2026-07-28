@@ -3,6 +3,7 @@
 Story 6.10a adds the расход HTTP forms/projections (issue + by-date + period).
 """
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.documents.models import IssuedDocument
@@ -149,12 +150,29 @@ class TomorrowBlockOverrideSerializer(serializers.Serializer):
     reason = serializers.CharField()
 
 
+class ExpenseJournalFilterSerializer(serializers.Serializer):
+    """GET /journal/ query form (10.5b) — ``division_id`` ОБЯЗАТЕЛЕН (зеркало
+    ``ExpenseReportByDateFilterSerializer``): точечный запрос ОДНОГО
+    подразделения, «весь скоуп» здесь не имеет смысла."""
+
+    division_id = serializers.UUIDField()
+
+
 class IssuedExpenseReportSerializer(serializers.ModelSerializer):
     """Issued расход projection (6.10a) — flat metadata + the attachment ref and
-    sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here."""
+    sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here.
+
+    Story 10.5b: ``reason`` (модельное поле, "" у v1, непустой у amended) и
+    ``supersedes_number``/``supersedes_year`` (номер/год предыдущего
+    документа, ``null`` при ``supersedes IS NULL``) — то же имя, что уже
+    используется в audit-payload (``document_release_service.py``), теперь
+    видимое по API — нужно, чтобы прослеживать цепочку «взамен исх.№ N»
+    (журнал, `journal`-роут ниже)."""
 
     attachment_id = serializers.UUIDField(read_only=True)
     sha256 = serializers.CharField(source="attachment.sha256", read_only=True)
+    supersedes_number = serializers.SerializerMethodField()
+    supersedes_year = serializers.SerializerMethodField()
 
     class Meta:
         model = IssuedDocument
@@ -170,5 +188,20 @@ class IssuedExpenseReportSerializer(serializers.ModelSerializer):
             "status",
             "attachment_id",
             "sha256",
+            "reason",
+            "supersedes_number",
+            "supersedes_year",
         ]
         read_only_fields = fields
+
+    # SerializerMethodField без подсказки типа спектакулярит как `string`
+    # (нет источника типа) — без явного `extend_schema_field` схема солгала
+    # бы фронту про тип (int|null), а tsc контракт-тест это бы не поймал
+    # (string принимает и число, и null молча).
+    @extend_schema_field({"type": "integer", "nullable": True})
+    def get_supersedes_number(self, obj):
+        return obj.supersedes.number if obj.supersedes_id else None
+
+    @extend_schema_field({"type": "integer", "nullable": True})
+    def get_supersedes_year(self, obj):
+        return obj.supersedes.year if obj.supersedes_id else None
