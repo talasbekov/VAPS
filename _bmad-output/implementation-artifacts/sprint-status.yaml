@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-28 (10.10a → done)
+# last_updated: 2026-07-28 (11.3a → ready-for-dev)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -521,7 +521,7 @@ development_status:
   #           enforcement по прецеденту 8.4 (бан `fetch` пришёл тем же PR, что
   #           и apiClient). Дыра проверена: `WebSocket` в banned-списке нет,
   #           `new WebSocket` сегодня легален в любом слое.
-  11-3a-бан-глобала-websocket: backlog
+  11-3a-бан-глобала-websocket: ready-for-dev
   # Вынесено из скоупа 11.4 (create-story 2026-07-19) с поимённым преемником.
   # Основание — не вкус: буква epic-AC 11.4 требует «отметку прочтения —
   # мутацию», а бэкенд-поверхности под неё НЕТ (проверено кодом, не памятью:
