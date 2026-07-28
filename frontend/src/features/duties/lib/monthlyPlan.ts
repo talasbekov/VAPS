@@ -14,7 +14,7 @@
 // businessDate — календарный день канона (+05), а не момент времени, и разбор
 // его в локальной зоне сдвигал бы день на машинах в минусовых таймзонах
 // (см. feedback-vaps-date-guard-needs-negative-tz).
-import type { DutyShift, DutyTypeDefinition } from '../model/types'
+import type { ConflictPolicy, DutyShift, DutyTypeDefinition } from '../model/types'
 
 /** §21.34: severity назначает сервер. Три уровня промпта — HARD (нельзя
  * обойти), SOFT (обход по отдельному permission с обоснованием), Warning
@@ -34,6 +34,14 @@ export interface MonthlyDutyPlanConflict {
   /** День, В КОТОРОМ конфликт проявляется (для отдыха — день второго дежурства). */
   businessDate: string
   message: string
+  /**
+   * Версия правил, ПО КОТОРЫМ посчитана `severity`. Стоит в КАЖДОМ конфликте, а
+   * не только в ответе: конфликт живёт дальше ответа (уезжает в диалог обхода,
+   * в протокол, в месячный план), и там уже нечем сверить, какой редакцией
+   * правил он объявлен. `null` — политика не прочитана, применён строгий
+   * дефолт §21.35.
+   */
+  policyVersion: string | null
 }
 
 export interface MonthlyDutyPlanCell {
@@ -123,6 +131,8 @@ export interface MonthlyDutyPlan {
   kpi: MonthlyDutyPlanKpi
   conflicts: MonthlyDutyPlanConflict[]
   unavailableMetrics: UnavailableMetric[]
+  /** Правила, по которым посчитаны конфликты месяца. */
+  conflictPolicy: ConflictPolicy
   /** §35: слои §21.30, которых модель не даёт. */
   unavailableLayers: UnavailableMetric[]
 }
@@ -190,14 +200,21 @@ export function restMessage(
  * месяца, и обрезав вход месяцем, мы бы такой конфликт молча потеряли.
  * Фильтрация по месяцу — только на выдаче.
  *
- * `restPolicy` берётся у вида дежурства ПРЕДЫДУЩЕЙ смены: обязательный отдых —
- * свойство отработанного дежурства, а не следующего. Вид дежурства, которого
- * нет в реестре, отдыха не навязывает (нечего читать — не выдумываем 24 часа,
- * §21.35 «не хардкодь 24 часа»).
+ * СРОК отдыха (`restAfterMinutes`) берётся у вида дежурства ПРЕДЫДУЩЕЙ смены:
+ * обязательный отдых — свойство отработанного дежурства, а не следующего. Вид
+ * дежурства, которого нет в реестре, отдыха не навязывает (нечего читать — не
+ * выдумываем 24 часа, §21.35 «не хардкодь 24 часа»).
+ *
+ * РЕЖИМ (`HARD_BLOCK` / `SOFT_OVERRIDE`) приходит из `policy` — глобальной
+ * политики §21.35, которой владеет раздел «Настройки» (§29 `conflict rules`).
+ * Раньше он был атрибутом вида дежурства: разные виды блокировали по-разному,
+ * то есть действующей политики, которую §21.35 велит читать, не существовало и
+ * администрировать её было негде.
  */
 export function detectConflicts(
   shifts: readonly DutyShift[],
   dutyTypes: readonly DutyTypeDefinition[],
+  policy: ConflictPolicy,
 ): MonthlyDutyPlanConflict[] {
   const typeByCode = new Map(dutyTypes.map((type) => [type.dutyTypeCode, type]))
   const byEmployee = new Map<string, DutyShift[]>()
@@ -230,11 +247,13 @@ export function detectConflicts(
           code: 'DUTY_OVERLAP',
           // §21.34 «пересечение с другим дежурством» — hard, обойти нельзя:
           // тот же принцип, что hard-rule двойного назначения в расстановке ОМ
-          // и в боевых группах (§24.17).
+          // и в боевых группах (§24.17). Правило показано в «Настройках»
+          // запертым (§29): режим у него не переключается ни для кого.
           severity: 'HARD',
           employeeName,
           businessDate: date,
           message: overlapMessage(employeeName, date, sameDay.length),
+          policyVersion: policy.conflictPolicyVersion,
         })
       }
     }
@@ -253,10 +272,11 @@ export function detectConflicts(
         conflicts.push({
           conflictId: `rest:${employeeName}:${previousDate}:${nextDate}`,
           code: 'REST_AFTER_DUTY',
-          severity: type.restPolicy === 'HARD_BLOCK' ? 'HARD' : 'SOFT',
+          severity: policy.restAfterDutyMode === 'HARD_BLOCK' ? 'HARD' : 'SOFT',
           employeeName,
           businessDate: nextDate,
           message: restMessage(employeeName, previousDate, nextDate, type.restAfterMinutes),
+          policyVersion: policy.conflictPolicyVersion,
         })
         break
       }
@@ -373,9 +393,10 @@ export function buildMonthlyPlan(
   month: string,
   shifts: readonly DutyShift[],
   dutyTypes: readonly DutyTypeDefinition[],
+  policy: ConflictPolicy,
 ): MonthlyDutyPlan {
   const days = daysInMonth(month)
-  const allConflicts = detectConflicts(shifts, dutyTypes)
+  const allConflicts = detectConflicts(shifts, dutyTypes, policy)
   const conflicts = allConflicts.filter((conflict) => monthOf(conflict.businessDate) === month)
   const monthShifts = shifts.filter((shift) => monthOf(shift.businessDate) === month)
   // Отменённые остаются в `rowsByObject` (строка объекта не должна исчезать
@@ -436,6 +457,7 @@ export function buildMonthlyPlan(
     month,
     days,
     rows,
+    conflictPolicy: policy,
     kpi: {
       objectsInPlan: rows.length,
       shifts: activeMonthShifts.length,

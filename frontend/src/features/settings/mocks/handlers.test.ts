@@ -34,8 +34,8 @@ beforeEach(async () => {
   const { sliceName, data } = buildSettingsSeed()
   await adapter.reset({
     application: 'smart-josparlau',
-    schema_version: 26,
-    seed_version: 'test-v26',
+    schema_version: 27,
+    seed_version: 'test-v27',
     scenario: 'normal',
     revision: 0,
     created_at: CLOCK_ISO,
@@ -43,7 +43,14 @@ beforeEach(async () => {
     slices: { [sliceName]: data },
   })
   registerRbacDirectory([
-    { userId: ADMIN, permissions: ['ops.settings.view', 'ops.settings.manage'] },
+    {
+      userId: ADMIN,
+      permissions: [
+        'ops.settings.view',
+        'ops.settings.manage',
+        'ops.settings.manage_conflict_rules',
+      ],
+    },
   ])
 })
 
@@ -109,5 +116,30 @@ describe('settings handlers — сопоставление маршрутов', 
         }),
       ),
     ).toBe(404)
+  })
+})
+
+describe('handler правил конфликтов (§29/§21.35)', () => {
+  it('PATCH режима доезжает до репозитория — код правила тоже параметр пути', async () => {
+    // Код правила содержит точки (`CONFLICT.REST_AFTER_DUTY.MODE`), и путь к
+    // нему строит та же фабрика с `encodeURIComponent`. Приём Этапа 49: КАЖДЫЙ
+    // новый путь с параметром получает handler-тест — юнит-тесты репозитория
+    // зовут функции напрямую и несовпадения маршрута не увидели бы.
+    const response = await client.patch<{ setting: { value: string }; conflictPolicyVersion: string }>(
+      settingPath('CONFLICT.REST_AFTER_DUTY.MODE'),
+      { value: 'HARD_BLOCK', reason: 'Ужесточение режима на период учений' },
+    )
+    expect(response.setting.value).toBe('HARD_BLOCK')
+    expect(response.conflictPolicyVersion).not.toBe('conflict-rules-2026.07.1')
+  })
+
+  it('запертое правило отвечает 422 по своему коду, а не 403', async () => {
+    const status = await statusOf(() =>
+      client.patch(settingPath('CONFLICT.DUTY_OVERLAP.MODE'), {
+        value: 'HARD_BLOCK',
+        reason: 'Попытка ослабить запрет пересечения',
+      }),
+    )
+    expect(status).toBe(422)
   })
 })

@@ -17,7 +17,7 @@
 // * «незавершённые процессы» и «данные не подтверждены» требуют ВЫДЕРЖКИ
 //   (смена просрочена дольше допуска) — KPI считает их с первого дня.
 import { addDays, detectConflictShiftIds, inPeriod, isUnconfirmed } from './analytics'
-import type { AnalyticsDutyType, AnalyticsSourceShift } from './analytics'
+import type { AnalyticsSource } from './analytics'
 import type { AttentionItem, AttentionSeverity } from '../model/types'
 
 /** Версия политики НАБЛЮДЕНИЙ. Своя и намеренно НЕ равна `POLICY_VERSION`
@@ -99,7 +99,7 @@ const HOUR_MS = 3_600_000
 
 function measure(
   definition: AttentionDetectorDefinition,
-  source: { shifts: AnalyticsSourceShift[]; dutyTypes: AnalyticsDutyType[] },
+  source: AnalyticsSource,
   context: { from: string; to: string; businessDate: string; generatedAt: string },
 ): Measurement | null {
   const inRange = source.shifts.filter((shift) =>
@@ -125,7 +125,7 @@ function measure(
       // и на сорока — а это разные наблюдения. Знаменатель — смены периода;
       // при пустом периоде наблюдения нет вовсе (0/0 — не «ноль процентов»).
       if (inRange.length === 0) return null
-      const conflicts = detectConflictShiftIds(inRange, source.dutyTypes)
+      const conflicts = detectConflictShiftIds(inRange, source.dutyTypes, source.restMode)
       const affected = conflicts.hard.length + conflicts.soft.length
       return {
         value: Math.round((affected / inRange.length) * 100),
@@ -244,7 +244,7 @@ export function applyAttentionPolicy(
  */
 export function buildAttentionItems(
   definitions: readonly AttentionDetectorDefinition[],
-  source: { shifts: AnalyticsSourceShift[]; dutyTypes: AnalyticsDutyType[] },
+  source: AnalyticsSource,
   context: {
     from: string
     to: string

@@ -19,31 +19,87 @@
 //   истины для одних и тех же значений.
 // * `rating rules` — рейтингов в этой сборке нет (сознательный scope cut
 //   A24), настройка без предмета была бы мёртвой (§35).
+// * ПРАВИЛА КОНФЛИКТОВ §29 (`conflict rules`) — режим обязательного отдыха
+//   §21.35. Их читает планирование дежурств, поэтому изменение здесь меняет
+//   ИСХОД операции (назначение в период отдыха отвергается либо требует
+//   обоснования), а не окраску экрана.
 
 /** Единица измерения значения. Нужна, чтобы экран не подписывал «3» без смысла. */
-export type SettingValueType = 'DAYS' | 'PERCENT' | 'COUNT' | 'HOURS'
+export type SettingValueType = 'DAYS' | 'PERCENT' | 'COUNT' | 'HOURS' | 'MODE'
 
-/** Поле определения детектора §22.11, которым управляет запись настройки. */
-export type SettingField = 'PARAMETER' | 'WARNING_FROM' | 'CRITICAL_FROM'
+/** Поле определения, которым управляет запись настройки. */
+export type SettingField = 'PARAMETER' | 'WARNING_FROM' | 'CRITICAL_FROM' | 'MODE'
 
-export interface PolicySetting {
+/**
+ * Раздел политики. Разделы ВЕРСИОНИРУЮТСЯ ПОРОЗНЬ: у каждого свой потребитель
+ * (наблюдения читает аналитика §22.11, правила конфликтов — планирование
+ * дежурств §21.34), и общая версия означала бы, что правка порога наблюдений
+ * меняет методику конфликтов. План утверждал бы о себе неправду.
+ */
+export type SettingSectionCode = 'ATTENTION_POLICY' | 'CONFLICT_RULES'
+
+/** Вариант значения-перечисления (§21.35 `HARD_BLOCK` / `SOFT_OVERRIDE`). */
+export interface SettingOption {
+  value: string
+  safeLabel: string
+  /** Чем этот режим оборачивается для планирующего — следствие, а не синоним кода. */
+  description: string
+}
+
+interface StoredSettingBase {
   settingCode: string
-  sectionCode: 'ATTENTION_POLICY'
-  /** `categoryCode` детектора §22.11, к которому относится значение. */
-  detectorCode: string
+  sectionCode: SettingSectionCode
+  /** Группа, к которой относится значение: детектор §22.11 либо правило §21.34. */
+  groupCode: string
   field: SettingField
   safeLabel: string
   /** Что именно меняется — своими словами, не пересказ имени поля. */
   description: string
-  valueType: SettingValueType
+  updatedAt: string | null
+  updatedBy: string | null
+  /**
+   * Редактируемость — свойство САМОГО правила, а не прав смотрящего: §21.34
+   * «hard-conflict нельзя обойти» запрещает ослаблять запрет пересечения кому
+   * бы то ни было. Правило показано, чтобы список правил был полон.
+   */
+  editable: boolean
+  lockedReason: string | null
+}
+
+export interface NumericSetting extends StoredSettingBase {
+  kind: 'NUMBER'
+  valueType: Exclude<SettingValueType, 'MODE'>
   value: number
   /** Границы приходят с СЕРВЕРА вместе со значением: диапазон — часть
    * политики, а не догадка формы (иначе клиент и сервер разошлись бы). */
   minValue: number
   maxValue: number
-  updatedAt: string | null
-  updatedBy: string | null
 }
+
+export interface ChoiceSetting extends StoredSettingBase {
+  kind: 'CHOICE'
+  valueType: 'MODE'
+  value: string
+  /** Допустимые варианты — тоже с сервера: список в вёрстке разошёлся бы с
+   * тем, что сервер готов принять. */
+  options: readonly SettingOption[]
+}
+
+/** Запись настройки, как она лежит в слайсе (без прав смотрящего). */
+export type StoredSetting = NumericSetting | ChoiceSetting
+
+/**
+ * Разрешение на правку КОНКРЕТНОЙ записи, посчитанное сервером. В компоненте
+ * не остаётся ветки «если правило заперто — выключить»: причина отказа у
+ * запертого правила и у нехватки права разная, и выбирать её должен тот, кто
+ * знает обе (§21.28, тот же приём, что у действий месячного плана).
+ */
+export interface SettingAction {
+  canEdit: boolean
+  disabledReason: string | null
+}
+
+export type PolicySetting = StoredSetting & { action: SettingAction }
 
 /**
  * Запись журнала изменений §29 («кто, когда, что, old/new, reason»).
@@ -55,9 +111,16 @@ export interface PolicySetting {
 export interface SettingChangeEvent {
   id: string
   settingCode: string
+  sectionCode: SettingSectionCode
   safeLabel: string
-  oldValue: number
-  newValue: number
+  /**
+   * Старое и новое — ГОТОВЫЕ подписи, а не сырые значения: у режима отдыха
+   * запись «SOFT_OVERRIDE → HARD_BLOCK» требует от читателя журнала знания
+   * кодов, а собирать подпись на экране значило бы держать словарь вариантов
+   * в двух местах. Форматирует тот, кто владеет вариантами, — сервер.
+   */
+  oldValue: string
+  newValue: string
   reason: string
   actorUserId: string
   changedAt: string

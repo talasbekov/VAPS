@@ -124,11 +124,13 @@ function plan(
       softConflicts: 0,
     },
     employeeRows: [],
-    unavailableLayers: [],
+    conflictPolicy: { restAfterDutyMode: 'SOFT_OVERRIDE', conflictPolicyVersion: 'conflict-rules-test.3' },
+  unavailableLayers: [],
     conflicts: [
       {
         conflictId: 'overlap:Жумабаев Р.:2026-07-22',
         code: 'DUTY_OVERLAP',
+        policyVersion: 'conflict-rules-test.1',
         severity: 'HARD',
         employeeName: 'Жумабаев Р.',
         businessDate: `${month}-22`,

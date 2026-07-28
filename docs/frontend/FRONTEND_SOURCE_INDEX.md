@@ -30,3 +30,16 @@
 
 ## Известные конфликты, уже разрешённые RECONCILIATION.md
 См. `FRONTEND_DECISIONS.md`.
+
+## Этап 50 — правила конфликтов §29 / §21.35
+
+- `src/features/settings/model/types.ts` — `StoredSetting` = `NumericSetting | ChoiceSetting`,
+  `SettingSectionCode`, `SettingAction` (право и замок считает сервер).
+- `src/features/settings/mocks/fixtures.ts` — `CONFLICT_RULE_SETTINGS`,
+  `INITIAL_CONFLICT_POLICY_VERSION`.
+- `src/features/duties/mocks/settingsSlice.ts` — узкая проекция правил конфликтов из чужого
+  слайса (шестой случай приёма) + строгий дефолт §21.35.
+- `src/features/duties/model/types.ts` — `ConflictPolicy`; `restPolicy` из
+  `DutyTypeDefinition` УДАЛЁН.
+- `src/features/service-analytics/mocks/settingsSlice.ts` — `readRestAfterDutyMode`.
+- `e2e-mock/settings-conflict-rules.spec.ts` — «правка правила меняет исход назначения».

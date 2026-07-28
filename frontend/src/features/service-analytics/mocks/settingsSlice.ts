@@ -7,6 +7,8 @@
 //
 // Инвариант: ТОЛЬКО ЧТЕНИЕ. Аналитика ничего не меняет в политике; она её
 // потребитель, а владелец — раздел «Настройки» (§29).
+import type { AnalyticsRestMode } from '../lib/analytics'
+
 export const SETTINGS_SLICE_NAME = 'settings'
 
 /** Значения политики наблюдений, разложенные по детекторам и полям. */
@@ -16,7 +18,8 @@ export interface AttentionPolicyOverrides {
 }
 
 interface SettingProjection {
-  detectorCode?: unknown
+  settingCode?: unknown
+  groupCode?: unknown
   field?: unknown
   value?: unknown
   sectionCode?: unknown
@@ -43,7 +46,7 @@ export function readAttentionPolicy(
   >()
   for (const item of raw as SettingProjection[]) {
     if (item.sectionCode !== 'ATTENTION_POLICY') continue
-    const detectorCode = typeof item.detectorCode === 'string' ? item.detectorCode : ''
+    const detectorCode = typeof item.groupCode === 'string' ? item.groupCode : ''
     const value = typeof item.value === 'number' ? item.value : null
     if (detectorCode === '' || value === null) continue
     const bucket = byDetector.get(detectorCode) ?? {}
@@ -54,4 +57,26 @@ export function readAttentionPolicy(
   }
 
   return { policyVersion, byDetector }
+}
+
+/**
+ * Режим нарушения обязательного отдыха §21.35 — из ТОГО ЖЕ раздела правил
+ * конфликтов, который читает планирование дежурств. Дефолт строгий: §21.35
+ * называет `HARD_BLOCK` серверным значением по умолчанию, и молча ослабить
+ * запрет из-за непрочитанной политики значило бы объявить жёсткое нарушение
+ * мягким.
+ */
+export function readRestAfterDutyMode(
+  slices: Readonly<Record<string, unknown>>,
+): AnalyticsRestMode {
+  const slice = slices[SETTINGS_SLICE_NAME]
+  if (slice === undefined || slice === null || typeof slice !== 'object') return 'HARD_BLOCK'
+  const raw = (slice as { settings?: unknown }).settings
+  if (!Array.isArray(raw)) return 'HARD_BLOCK'
+  const record = (raw as SettingProjection[]).find(
+    (item) =>
+      item.sectionCode === 'CONFLICT_RULES' &&
+      item.settingCode === 'CONFLICT.REST_AFTER_DUTY.MODE',
+  )
+  return record?.value === 'SOFT_OVERRIDE' ? 'SOFT_OVERRIDE' : 'HARD_BLOCK'
 }

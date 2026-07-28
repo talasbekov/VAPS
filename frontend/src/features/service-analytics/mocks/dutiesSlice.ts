@@ -6,7 +6,8 @@
 // соседнего слайса.
 //
 // Инвариант: ТОЛЬКО ЧТЕНИЕ. Аналитика ничего не меняет в чужом агрегате.
-import type { AnalyticsDutyType, AnalyticsSourceShift } from '../lib/analytics'
+import type { AnalyticsSource } from '../lib/analytics'
+import { readRestAfterDutyMode } from './settingsSlice'
 
 export const DUTIES_SLICE_NAME = 'duties'
 
@@ -25,7 +26,6 @@ interface ShiftProjection {
 interface TypeProjection {
   dutyTypeCode?: unknown
   restAfterMinutes?: unknown
-  restPolicy?: unknown
 }
 
 function asString(value: unknown): string {
@@ -47,7 +47,7 @@ function asNullableString(value: unknown): string | null {
  */
 export function readAnalyticsSource(
   slices: Readonly<Record<string, unknown>>,
-): { shifts: AnalyticsSourceShift[]; dutyTypes: AnalyticsDutyType[] } | null {
+): AnalyticsSource | null {
   const slice = slices[DUTIES_SLICE_NAME]
   if (slice === undefined || slice === null || typeof slice !== 'object') return null
   const rawShifts = (slice as { shifts?: unknown }).shifts
@@ -69,8 +69,10 @@ export function readAnalyticsSource(
   const dutyTypes = (rawTypes as TypeProjection[]).map((type) => ({
     dutyTypeCode: asString(type.dutyTypeCode),
     restAfterMinutes: typeof type.restAfterMinutes === 'number' ? type.restAfterMinutes : 0,
-    restPolicy: type.restPolicy === 'HARD_BLOCK' ? ('HARD_BLOCK' as const) : ('SOFT_OVERRIDE' as const),
   }))
 
-  return { shifts, dutyTypes }
+  // Режим отдыха приходит из ЧУЖОГО слайса настроек — аналитика и планирование
+  // читают одну политику (§21.35), иначе один конфликт был бы жёстким на плане
+  // и мягким в аналитике.
+  return { shifts, dutyTypes, restMode: readRestAfterDutyMode(slices) }
 }

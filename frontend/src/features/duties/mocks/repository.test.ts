@@ -187,6 +187,24 @@ const CONFLICT_SHIFT: CombatDutyShift = {
   requiredEmployees: 2,
 }
 
+/** Узкая копия слайса «Настройки» в объёме, который читает планирование. */
+function conflictRulesSlice(mode: 'HARD_BLOCK' | 'SOFT_OVERRIDE') {
+  return {
+    policyVersion: 'attention-policy-test.1',
+    conflictPolicyVersion: 'conflict-rules-test.1',
+    settings: [
+      {
+        settingCode: 'CONFLICT.REST_AFTER_DUTY.MODE',
+        sectionCode: 'CONFLICT_RULES',
+        groupCode: 'REST_AFTER_DUTY',
+        field: 'MODE',
+        value: mode,
+      },
+    ],
+    changeLog: [],
+  }
+}
+
 function seedEnvelope(combatShifts: CombatDutyShift[]): DemoStateEnvelope {
   return {
     application: 'smart-josparlau',
@@ -197,6 +215,11 @@ function seedEnvelope(combatShifts: CombatDutyShift[]): DemoStateEnvelope {
     created_at: '2026-07-24T08:00:00+05:00',
     updated_at: '2026-07-24T08:00:00+05:00',
     slices: {
+      // §21.35: режим обязательного отдыха — ГЛОБАЛЬНАЯ политика из «Настроек»
+      // (§29), а не свойство вида дежурства. Сеем мягкий режим: именно на нём
+      // достижим путь 409+override, который проверяют пробы ниже. Отсутствие
+      // слайса дало бы строгий дефолт HARD_BLOCK — это отдельная проба.
+      settings: conflictRulesSlice('SOFT_OVERRIDE'),
       duties: {
         dutyTypes: [],
         shifts: [],
@@ -1229,6 +1252,7 @@ describe('createDutiesRepository — месячный план дежурств 
       ...envelope,
       slices: {
         ...envelope.slices,
+        settings: conflictRulesSlice(restPolicy),
         duties: {
           ...(envelope.slices.duties as object),
           shifts,
@@ -1240,7 +1264,6 @@ describe('createDutiesRepository — месячный план дежурств 
               defaultDurationMinutes: 1440,
               requiresSenior: true,
               restAfterMinutes: 1440,
-              restPolicy,
             },
           ],
         },
@@ -1267,7 +1290,7 @@ describe('createDutiesRepository — месячный план дежурств 
     })
   })
 
-  it('severity конфликта отдыха приходит из СОХРАНЁННОЙ политики вида дежурства', async () => {
+  it('severity конфликта отдыха приходит из ДЕЙСТВУЮЩЕЙ политики конфликтов, а не из вида', async () => {
     const shifts = [
       planShift('duty-1', '2026-07-24', 'OWN_OBJECT_DAILY'),
       planShift('duty-2', '2026-07-25', 'OWN_OBJECT_DAILY'),
@@ -2356,9 +2379,11 @@ describe('createDutiesRepository — список дежурств и истор
     const response = await repository.listShiftList('ALL', VIEWER)
     expect(response.results.map((row) => row.id)).toEqual(['duty-1', 'duty-2'])
     expect(response.results[0].dutyTypeLabel).toBe('Суточное дежурство на собственном объекте')
-    // Две смены подряд у одного сотрудника — нарушение отдыха, severity из
-    // политики вида (HARD_BLOCK). Счётчик считает СЕРВЕР.
-    expect(response.results[1].hardConflictCount).toBe(1)
+    // Две смены подряд у одного сотрудника — нарушение отдыха. Severity берётся
+    // из ДЕЙСТВУЮЩЕЙ политики конфликтов (сид: SOFT_OVERRIDE), а не из вида
+    // дежурства; счётчик считает СЕРВЕР.
+    expect(response.results[1].softConflictCount).toBe(1)
+    expect(response.results[1].hardConflictCount).toBe(0)
     // §35: невыводимые колонки названы с причиной.
     expect(response.unavailableColumns.map((column) => column.code)).toContain('TIME_INTERVAL')
     expect(response.unavailableColumns.every((column) => column.reason.length > 0)).toBe(true)

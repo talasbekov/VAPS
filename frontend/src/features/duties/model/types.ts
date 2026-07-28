@@ -139,6 +139,16 @@ export interface CombatDutyShift {
  * SOFT_OVERRIDE — возможно с обоснованием и отдельным permission (§21.34). */
 export type DutyRestPolicy = 'HARD_BLOCK' | 'SOFT_OVERRIDE'
 
+/**
+ * Действующие правила конфликтов §21.34/§21.35. Владелец — раздел «Настройки»
+ * (§29 `conflict rules`); здесь только то, что читает планирование дежурств.
+ */
+export interface ConflictPolicy {
+  restAfterDutyMode: DutyRestPolicy
+  /** `null` — политика не прочитана, применён строгий дефолт §21.35. */
+  conflictPolicyVersion: string | null
+}
+
 /** §24.3 «Виды дежурств не должны быть захардкожены во frontend» — Duty Type Registry. */
 export interface DutyTypeDefinition {
   dutyTypeCode: string
@@ -146,13 +156,12 @@ export interface DutyTypeDefinition {
   targetType: DutyTargetType
   defaultDurationMinutes: number
   requiresSenior: boolean
-  /** §21.35 «не хардкодь 24 часа: используй restAfterMinutes вида дежурства». */
+  /** §21.35 «не хардкодь 24 часа: используй restAfterMinutes вида дежурства».
+   * СРОК отдыха — свойство вида; РЕЖИМ (`ConflictPolicy.restAfterDutyMode`)
+   * свойством вида быть перестал: §21.35 называет его глобальной серверной
+   * политикой, и поля здесь нет ВОВСЕ — недостижимость по типу надёжнее
+   * договорённости не читать его отсюда. */
   restAfterMinutes: number
-  /** §21.35 называет политику отдыха глобальной серверной настройкой
-   * (`REST_AFTER_DUTY_POLICY`), здесь она — атрибут ВИДА дежурства: там же,
-   * где `restAfterMinutes`, к которому она относится. Frontend в любом случае
-   * читает действующее значение и никогда не выводит severity сам (§21.34). */
-  restPolicy: DutyRestPolicy
   /** §21.31 «Если паспорт красный и выбранный вид требует актуального
    * паспорта, создание или утверждение блокируется согласно server policy» —
    * требование это атрибут ВИДА дежурства, а не глобальная константа. */

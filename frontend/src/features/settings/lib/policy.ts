@@ -1,6 +1,6 @@
 // Правила политики настроек (§29 «валидируются»). Чистая модель: ни React,
 // ни apiClient — тестируется в env node.
-import type { PolicySetting } from '../model/types'
+import type { StoredSetting } from '../model/types'
 
 /**
  * Следующая версия политики. Версия обязана меняться при КАЖДОМ принятом
@@ -20,9 +20,18 @@ export function nextPolicyVersion(current: string): string {
 
 /** Ошибки ФОРМЫ (400): по полям, канал RHF/details конверта §36. */
 export function validateSettingValue(
-  setting: PolicySetting,
+  setting: StoredSetting,
   value: unknown,
 ): Record<string, string[]> {
+  if (setting.kind === 'CHOICE') {
+    // Вариант проверяется по списку, пришедшему с той же записью: принять код
+    // вне списка значило бы завести режим, которого не знает ни один
+    // потребитель политики.
+    if (typeof value !== 'string' || !setting.options.some((option) => option.value === value)) {
+      return { value: ['Выберите один из допустимых режимов.'] }
+    }
+    return {}
+  }
   const errors: Record<string, string[]> = {}
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     errors.value = ['Укажите числовое значение.']
@@ -38,6 +47,19 @@ export function validateSettingValue(
     ]
   }
   return errors
+}
+
+/**
+ * Подпись значения для журнала §29. Собирает СЕРВЕР — он владеет списком
+ * вариантов; экран, собирающий её сам, держал бы второй словарь режимов и
+ * рано или поздно разошёлся бы с первым.
+ */
+export function formatSettingValue(setting: StoredSetting, value: number | string): string {
+  if (setting.kind === 'CHOICE') {
+    const option = setting.options.find((item) => item.value === value)
+    return option?.safeLabel ?? String(value)
+  }
+  return String(value)
 }
 
 export const REASON_MIN_LENGTH = 10
@@ -64,19 +86,23 @@ export function validateReason(reason: unknown): Record<string, string[]> {
  * законно само по себе и незаконно рядом с соседним.
  */
 export function findThresholdOrderViolation(
-  settings: readonly PolicySetting[],
+  settings: readonly StoredSetting[],
   changedCode: string,
-  nextValue: number,
+  nextValue: unknown,
 ): string | null {
+  if (typeof nextValue !== 'number') return null
   const changed = settings.find((item) => item.settingCode === changedCode)
   if (changed === undefined) return null
   if (changed.field !== 'WARNING_FROM' && changed.field !== 'CRITICAL_FROM') return null
 
   const counterpartField = changed.field === 'WARNING_FROM' ? 'CRITICAL_FROM' : 'WARNING_FROM'
   const counterpart = settings.find(
-    (item) => item.detectorCode === changed.detectorCode && item.field === counterpartField,
+    (item) =>
+      item.groupCode === changed.groupCode &&
+      item.field === counterpartField &&
+      item.kind === 'NUMBER',
   )
-  if (counterpart === undefined) return null
+  if (counterpart === undefined || counterpart.kind !== 'NUMBER') return null
 
   const warning = changed.field === 'WARNING_FROM' ? nextValue : counterpart.value
   const critical = changed.field === 'CRITICAL_FROM' ? nextValue : counterpart.value

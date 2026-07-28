@@ -27,7 +27,7 @@ import {
   resolvePreset,
   toDrilldownRow,
 } from '../lib/analytics'
-import type { AnalyticsDutyType, AnalyticsSourceShift } from '../lib/analytics'
+import type { AnalyticsSource, AnalyticsSourceShift } from '../lib/analytics'
 import {
   ATTENTION_POLICY_VERSION,
   UNAVAILABLE_DETECTORS,
@@ -170,13 +170,13 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
    * разошлись бы при первой же правке одного из двух мест.
    */
   function buildSelections(
-    source: { shifts: AnalyticsSourceShift[]; dutyTypes: AnalyticsDutyType[] },
+    source: AnalyticsSource,
     period: AnalyticsPeriod,
     businessDate: string,
   ): Map<string, string[]> {
     const inRange = source.shifts.filter((shift) => inPeriod(shift.businessDate, period.from, period.to))
     const typeByCode = new Map(source.dutyTypes.map((type) => [type.dutyTypeCode, type]))
-    const conflicts = detectConflictShiftIds(inRange, source.dutyTypes)
+    const conflicts = detectConflictShiftIds(inRange, source.dutyTypes, source.restMode)
 
     return new Map<string, string[]>([
       [METRIC_CODES.onDuty, inRange.filter((s) => s.stateCode === 'ACTIVE').map((s) => s.id)],

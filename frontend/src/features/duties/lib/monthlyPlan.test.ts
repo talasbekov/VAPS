@@ -12,7 +12,7 @@ import {
   overlapMessage,
   restMessage,
 } from './monthlyPlan'
-import type { DutyShift, DutyTypeDefinition } from '../model/types'
+import type { ConflictPolicy, DutyShift, DutyTypeDefinition } from '../model/types'
 
 const OWN_TYPE: DutyTypeDefinition = {
   dutyTypeCode: 'OWN_OBJECT_DAILY',
@@ -21,8 +21,7 @@ const OWN_TYPE: DutyTypeDefinition = {
   defaultDurationMinutes: 1440,
   requiresSenior: true,
   restAfterMinutes: 1440,
-  restPolicy: 'HARD_BLOCK',
-    requiresCurrentPassport: false,
+  requiresCurrentPassport: false,
 }
 
 const PROTECTED_TYPE: DutyTypeDefinition = {
@@ -32,11 +31,22 @@ const PROTECTED_TYPE: DutyTypeDefinition = {
   defaultDurationMinutes: 1440,
   requiresSenior: false,
   restAfterMinutes: 1440,
-  restPolicy: 'SOFT_OVERRIDE',
-    requiresCurrentPassport: true,
+  requiresCurrentPassport: true,
 }
 
 const TYPES = [OWN_TYPE, PROTECTED_TYPE]
+
+// §21.35: режим отдыха — ГЛОБАЛЬНАЯ политика (владелец — «Настройки» §29), а
+// не свойство вида дежурства. Версия у проб разная, чтобы её подмена в коде
+// была заметна.
+const HARD_POLICY: ConflictPolicy = {
+  restAfterDutyMode: 'HARD_BLOCK',
+  conflictPolicyVersion: 'conflict-rules-test.7',
+}
+const SOFT_POLICY: ConflictPolicy = {
+  restAfterDutyMode: 'SOFT_OVERRIDE',
+  conflictPolicyVersion: 'conflict-rules-test.9',
+}
 
 function shift(
   id: string,
@@ -105,6 +115,7 @@ describe('конфликты плана (§21.34)', () => {
         }),
       ],
       TYPES,
+      HARD_POLICY,
     )
     expect(conflicts).toHaveLength(1)
     expect(conflicts[0].code).toBe('DUTY_OVERLAP')
@@ -112,31 +123,49 @@ describe('конфликты плана (§21.34)', () => {
     expect(conflicts[0].message).toBe(overlapMessage('Жумабаев Р.', '2026-07-22', 2))
   })
 
-  it('severity отдыха берётся из политики вида дежурства, а не из кода фронта', () => {
-    const hard = detectConflicts(
-      [
-        shift('a', '2026-07-24', 'Сейтказы М.'),
-        shift('b', '2026-07-25', 'Сейтказы М.'),
-      ],
-      TYPES,
-    )
+  it('severity отдыха задаёт ДЕЙСТВУЮЩАЯ политика, а не вид дежурства', () => {
+    // Одни и те же две смены ОДНОГО вида: меняется только политика — меняется
+    // severity. Это и есть перенос владения §21.35: режим больше не свойство
+    // вида, а глобальное значение из «Настроек» (§29).
+    const pair = [shift('a', '2026-07-24', 'Сейтказы М.'), shift('b', '2026-07-25', 'Сейтказы М.')]
+
+    const hard = detectConflicts(pair, TYPES, HARD_POLICY)
     expect(hard.map((c) => [c.code, c.severity])).toEqual([['REST_AFTER_DUTY', 'HARD']])
     expect(hard[0].message).toBe(restMessage('Сейтказы М.', '2026-07-24', '2026-07-25', 1440))
+    // Версия правил стоит В САМОМ конфликте: он живёт дальше ответа.
+    expect(hard[0].policyVersion).toBe('conflict-rules-test.7')
 
-    const soft = detectConflicts(
+    const soft = detectConflicts(pair, TYPES, SOFT_POLICY)
+    expect(soft.map((c) => [c.code, c.severity])).toEqual([['REST_AFTER_DUTY', 'SOFT']])
+    expect(soft[0].policyVersion).toBe('conflict-rules-test.9')
+  })
+
+  it('вид дежурства на severity отдыха больше не влияет — режим один на все виды', () => {
+    // Разные виды при ОДНОЙ политике дают ОДИНАКОВУЮ severity. Проба ловит
+    // возврат к прежнему владению: пока режим лежал у вида, охраняемый объект
+    // давал SOFT там, где собственный давал HARD.
+    const own = detectConflicts(
+      [shift('a', '2026-07-24', 'Сейтказы М.'), shift('b', '2026-07-25', 'Сейтказы М.')],
+      TYPES,
+      SOFT_POLICY,
+    )
+    const protectedObject = detectConflicts(
       [
-        shift('a', '2026-07-15', 'Нурланов Е.', { dutyTypeCode: 'PROTECTED_OBJECT_DAILY' }),
-        shift('b', '2026-07-16', 'Нурланов Е.', { dutyTypeCode: 'PROTECTED_OBJECT_DAILY' }),
+        shift('c', '2026-07-15', 'Нурланов Е.', { dutyTypeCode: 'PROTECTED_OBJECT_DAILY' }),
+        shift('d', '2026-07-16', 'Нурланов Е.', { dutyTypeCode: 'PROTECTED_OBJECT_DAILY' }),
       ],
       TYPES,
+      SOFT_POLICY,
     )
-    expect(soft.map((c) => [c.code, c.severity])).toEqual([['REST_AFTER_DUTY', 'SOFT']])
+    expect(own.map((c) => c.severity)).toEqual(['SOFT'])
+    expect(protectedObject.map((c) => c.severity)).toEqual(['SOFT'])
   })
 
   it('сутки паузы закрывают требование отдыха в 24 часа', () => {
     const conflicts = detectConflicts(
       [shift('a', '2026-07-24', 'Сейтказы М.'), shift('b', '2026-07-26', 'Сейтказы М.')],
       TYPES,
+      HARD_POLICY,
     )
     expect(conflicts).toEqual([])
   })
@@ -148,6 +177,7 @@ describe('конфликты плана (§21.34)', () => {
         shift('b', '2026-07-25', 'Сейтказы М.', { dutyTypeCode: 'UNKNOWN_TYPE' }),
       ],
       TYPES,
+      HARD_POLICY,
     )
     expect(conflicts).toEqual([])
   })
@@ -156,6 +186,7 @@ describe('конфликты плана (§21.34)', () => {
     const conflicts = detectConflicts(
       [shift('a', '2026-07-22', 'Первый И.'), shift('b', '2026-07-22', 'Второй И.')],
       TYPES,
+      HARD_POLICY,
     )
     expect(conflicts).toEqual([])
   })
@@ -185,7 +216,10 @@ describe('месячный план (§21.29-21.30)', () => {
   ]
 
   it('KPI считаются по ВСЕМУ месяцу, а не по видимым ячейкам', () => {
-    const plan = buildMonthlyPlan('2026-07', SHIFTS, TYPES)
+    // Мягкий режим — чтобы в KPI были ОБА счётчика: при жёстком нарушение
+    // отдыха тоже стало бы hard, и `softConflicts` не отличался бы от нуля ни
+    // при какой ошибке подсчёта.
+    const plan = buildMonthlyPlan('2026-07', SHIFTS, TYPES, SOFT_POLICY)
     expect(plan.kpi).toEqual({
       objectsInPlan: 2,
       shifts: 4,
@@ -198,18 +232,18 @@ describe('месячный план (§21.29-21.30)', () => {
   })
 
   it('смены соседних месяцев в сетку не попадают', () => {
-    const plan = buildMonthlyPlan('2026-07', SHIFTS, TYPES)
+    const plan = buildMonthlyPlan('2026-07', SHIFTS, TYPES, HARD_POLICY)
     expect(plan.days).toHaveLength(31)
     const total = plan.rows.flatMap((row) => row.cells).reduce((sum, c) => sum + c.shiftCount, 0)
     expect(total).toBe(4)
 
-    const august = buildMonthlyPlan('2026-08', SHIFTS, TYPES)
+    const august = buildMonthlyPlan('2026-08', SHIFTS, TYPES, HARD_POLICY)
     expect(august.kpi.shifts).toBe(1)
     expect(august.rows).toHaveLength(1)
   })
 
   it('конфликт отмечен именно в той ячейке объекта и дня, где он возник', () => {
-    const plan = buildMonthlyPlan('2026-07', SHIFTS, TYPES)
+    const plan = buildMonthlyPlan('2026-07', SHIFTS, TYPES, HARD_POLICY)
     const hq = plan.rows.find((row) => row.objectLabel === 'Штаб управления')
     const cell = hq?.cells.find((c) => c.date === '2026-07-22')
     expect(cell).toMatchObject({ shiftCount: 1, hardConflictCount: 1, softConflictCount: 0 })
@@ -222,24 +256,24 @@ describe('месячный план (§21.29-21.30)', () => {
       shift('x', '2026-06-30', 'Сейтказы М.'),
       shift('y', '2026-07-01', 'Сейтказы М.'),
     ]
-    const july = buildMonthlyPlan('2026-07', crossMonth, TYPES)
+    const july = buildMonthlyPlan('2026-07', crossMonth, TYPES, HARD_POLICY)
     expect(july.conflicts.map((c) => c.businessDate)).toEqual(['2026-07-01'])
     expect(july.kpi.hardConflicts).toBe(1)
 
     // В июне конфликт не дублируется: он проявляется в день второго дежурства.
-    const june = buildMonthlyPlan('2026-06', crossMonth, TYPES)
+    const june = buildMonthlyPlan('2026-06', crossMonth, TYPES, HARD_POLICY)
     expect(june.conflicts).toEqual([])
   })
 
   it('пустой месяц — пустая сетка и нулевые KPI, но дни всё равно перечислены', () => {
-    const plan = buildMonthlyPlan('2026-09', SHIFTS, TYPES)
+    const plan = buildMonthlyPlan('2026-09', SHIFTS, TYPES, HARD_POLICY)
     expect(plan.rows).toEqual([])
     expect(plan.days).toHaveLength(30)
     expect(plan.kpi.shifts).toBe(0)
   })
 
   it('невыводимые показатели названы с причиной, а не показаны нулём', () => {
-    const plan = buildMonthlyPlan('2026-07', SHIFTS, TYPES)
+    const plan = buildMonthlyPlan('2026-07', SHIFTS, TYPES, HARD_POLICY)
     expect(plan.unavailableMetrics.map((m) => m.code)).toEqual([
       'STAFFING_COMPLETENESS',
       'REPLACEMENTS',
@@ -262,7 +296,6 @@ describe('buildEmployeeRows (§21.30)', () => {
       defaultDurationMinutes: 1440,
       requiresSenior: true,
       restAfterMinutes: 1440,
-      restPolicy: 'HARD_BLOCK',
       requiresCurrentPassport: false,
     },
     {
@@ -273,7 +306,6 @@ describe('buildEmployeeRows (§21.30)', () => {
       requiresSenior: false,
       // 3 суток: если бы отдых был захардкожен сутками, хвост был бы короче.
       restAfterMinutes: 3 * 24 * 60,
-      restPolicy: 'SOFT_OVERRIDE',
       requiresCurrentPassport: false,
     },
   ]
@@ -377,6 +409,7 @@ describe('buildEmployeeRows (§21.30)', () => {
           code: 'DUTY_OVERLAP',
           severity: 'SOFT',
           employeeName: 'Ахметов Б.',
+          policyVersion: null,
           businessDate: '2026-07-10',
           message: 'внешний конфликт',
         },
@@ -440,7 +473,7 @@ describe('buildEmployeeRows (§21.30)', () => {
   })
 
   it('§35: два невыводимых слоя §21.30 названы с причиной', () => {
-    const plan = buildMonthlyPlan('2026-07', [], [])
+    const plan = buildMonthlyPlan('2026-07', [], [], HARD_POLICY)
     expect(plan.unavailableLayers.map((layer) => layer.code)).toEqual([
       'SECURITY_EVENT_LAYER',
       'HR_UNAVAILABILITY_LAYER',

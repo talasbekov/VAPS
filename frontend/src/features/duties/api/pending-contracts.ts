@@ -8,6 +8,7 @@ import type {
 import type { MonthlyPlanHeader } from '../lib/planLifecycle'
 import type {
   CombatDutyShift,
+  ConflictPolicy,
   CombatDutyTypeDefinition,
   CombatRosterCandidate,
   DutyRoute,
@@ -102,6 +103,13 @@ export function combatDutyShiftHandoverPath(id: string): string {
 
 export interface ListDutyTypesResponse {
   results: DutyTypeDefinition[]
+  /**
+   * Действующие правила конфликтов §21.35. Приходят ВМЕСТЕ с видами, потому
+   * что читаются вместе: срок отдыха — у вида, режим — у политики, и форма
+   * создания называет оба в одной строке. Отдельным запросом они разошлись бы
+   * во времени с видами.
+   */
+  conflictPolicy: ConflictPolicy
 }
 
 /**
@@ -244,6 +252,8 @@ export interface DutyShiftDetail {
    * смене, которая его создала.
    */
   conflicts: MonthlyDutyPlanConflict[]
+  /** Правила, по которым посчитаны `conflicts` этой карточки. */
+  conflictPolicy: ConflictPolicy
   /** §35: блоки §21.32, которых в модели суточного дежурства нет. */
   unavailableBlocks: UnavailableMetric[]
 }

@@ -310,7 +310,7 @@ endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуще
 |---|---|---|---|---|---|---|
 | listSettings | features/settings | backend-contract-pending | GET /api/ops/settings/ | ops.settings.view | mocks/handlers.ts | mocks/repository.test.ts + mocks/handlers.test.ts |
 | listSettingChanges | features/settings | backend-contract-pending | GET /api/ops/setting-changes/ | ops.settings.view | mocks/handlers.ts | mocks/repository.test.ts + mocks/handlers.test.ts |
-| updateSetting | features/settings | backend-contract-pending | PATCH /api/ops/settings/:settingCode/ | ops.settings.manage | mocks/handlers.ts | mocks/repository.test.ts + pages/SettingsPage.test.tsx |
+| updateSetting | features/settings | backend-contract-pending | PATCH /api/ops/settings/:settingCode/ | ops.settings.manage (наблюдения) / ops.settings.manage_conflict_rules (правила конфликтов §21.34) | mocks/handlers.ts | mocks/repository.test.ts + mocks/handlers.test.ts + pages/SettingsPage.test.tsx |
 
 Ответ списка несёт `canManage` — право на изменение решает СЕРВЕР, а не экран.
 
@@ -321,7 +321,8 @@ endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуще
 | Не целое, вне диапазона записи, причина короче 10 символов | 400 | VALIDATION_ERROR (details по полям) | — |
 | Значение совпадает с действующим | 422 | SETTING_VALUE_UNCHANGED | нет |
 | Порог предупреждения выше критического у того же детектора | 422 | SETTING_THRESHOLD_ORDER_INVALID | нет |
-| Нет `ops.settings.manage` | 403 | PERMISSION_DENIED | — |
+| Нет права РАЗДЕЛА (`ops.settings.manage` / `ops.settings.manage_conflict_rules`) | 403 | PERMISSION_DENIED | — |
+| Правило не редактируется (§21.34 пересечение — hard) | 422 | SETTING_RULE_LOCKED | Замок проверяется ПЕРВЫМ: отказ одинаков даже для wildcard, иначе причина зависела бы от прав смотрящего |
 | Неизвестный код настройки | 404 | ENTITY_NOT_FOUND | — |
 
 Мягких конфликтов у раздела нет намеренно: «значение не изменилось» и «порядок порогов»
@@ -329,4 +330,14 @@ endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуще
 
 ⚠️ Журнал живёт по своему префиксу `/api/ops/setting-changes/`, а НЕ
 `/api/ops/settings/change-log/`: второй сматчился бы маршрутом `settings/:settingCode/`.
+
+Ответ списка несёт ДВЕ версии — `policyVersion` (наблюдения §22.11) и `conflictPolicyVersion`
+(правила §21.34): разделы версионируются порознь (A91). Право и замок приходят в КАЖДОЙ
+записи полем `action: { canEdit, disabledReason }` — компонент причину отказа не выводит.
+Значение записи — число (`kind: 'NUMBER'`) либо код режима (`kind: 'CHOICE'` + `options`);
+журнал хранит готовые ПОДПИСИ, а не сырые значения (A94).
+
+Действующие правила конфликтов приходят и потребителям: `ListDutyTypesResponse`,
+`DutyShiftDetail` и месячный план несут `conflictPolicy` — режим §21.35 больше не атрибут
+вида дежурства (A90).
 

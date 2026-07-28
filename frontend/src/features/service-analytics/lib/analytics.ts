@@ -26,13 +26,25 @@ export interface AnalyticsSourceShift {
   updatedAt: string
 }
 
-/** Политика отдыха вида дежурства — нужна, чтобы отличить жёсткое нарушение от
- * мягкого. Приходит из того же слайса, что и смены (§21.35: длительность отдыха
- * — атрибут ВИДА дежурства, а не глобальная константа). */
+/** Вид дежурства — здесь нужен только СРОК отдыха (§21.35: длительность —
+ * атрибут вида, а не глобальная константа). Режим нарушения видом больше не
+ * задаётся: он приходит правилами конфликтов из «Настроек» (§29). */
 export interface AnalyticsDutyType {
   dutyTypeCode: string
   restAfterMinutes: number
-  restPolicy: 'HARD_BLOCK' | 'SOFT_OVERRIDE'
+}
+
+/** Режим нарушения отдыха §21.35. Аналитика читает ТУ ЖЕ политику, что и
+ * планирование дежурств: два владельца одного факта разошлись бы, и один и тот
+ * же конфликт был бы жёстким на плане и мягким в аналитике. */
+export type AnalyticsRestMode = 'HARD_BLOCK' | 'SOFT_OVERRIDE'
+
+/** Источник аналитики: смены и виды из слайса дежурств + действующий режим
+ * отдыха из слайса настроек. Собирает СЕРВЕР — экран получает готовое. */
+export interface AnalyticsSource {
+  shifts: AnalyticsSourceShift[]
+  dutyTypes: AnalyticsDutyType[]
+  restMode: AnalyticsRestMode
 }
 
 export const CALCULATION_VERSION = 'service-analytics-2026.07.1'
@@ -132,6 +144,7 @@ export function isResting(
 export function detectConflictShiftIds(
   shifts: readonly AnalyticsSourceShift[],
   types: readonly AnalyticsDutyType[],
+  restMode: AnalyticsRestMode,
 ): { hard: string[]; soft: string[] } {
   const typeByCode = new Map(types.map((type) => [type.dutyTypeCode, type]))
   const active = shifts.filter((shift) => shift.stateCode !== 'CANCELLED')
@@ -161,7 +174,7 @@ export function detectConflictShiftIds(
         if (second.businessDate <= addDays(first.businessDate, days)) {
           // Нарушение принадлежит ВТОРОЙ смене пары — она заступает раньше
           // положенного; первая свою обязанность не нарушала.
-          const target = type?.restPolicy === 'HARD_BLOCK' ? hard : soft
+          const target = restMode === 'HARD_BLOCK' ? hard : soft
           target.add(second.id)
         }
       }

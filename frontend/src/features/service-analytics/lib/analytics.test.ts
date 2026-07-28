@@ -22,15 +22,16 @@ import type { MetricDefinition } from '../model/types'
 
 const BUSINESS_DATE = '2026-07-20'
 
+// Виды различаются ТОЛЬКО кодом и сроком: режим нарушения §21.35 видом больше
+// не задаётся — он приходит третьим аргументом из правил конфликтов («Настройки»
+// §29), теми же, что читает планирование дежурств.
 const HARD_TYPE: AnalyticsDutyType = {
   dutyTypeCode: 'OWN_OBJECT_DAILY',
   restAfterMinutes: 24 * 60,
-  restPolicy: 'HARD_BLOCK',
 }
 const SOFT_TYPE: AnalyticsDutyType = {
   dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
   restAfterMinutes: 24 * 60,
-  restPolicy: 'SOFT_OVERRIDE',
 }
 
 function shift(overrides: Partial<AnalyticsSourceShift> = {}): AnalyticsSourceShift {
@@ -127,18 +128,19 @@ describe('конфликты (§21.34/§22.7)', () => {
       shift({ id: 'a' }),
       shift({ id: 'b', objectLabel: 'Дворец Независимости' }),
     ]
-    const conflicts = detectConflictShiftIds(shifts, [HARD_TYPE])
+    const conflicts = detectConflictShiftIds(shifts, [HARD_TYPE], 'HARD_BLOCK')
     expect(conflicts.hard).toEqual(['a', 'b'])
     expect(conflicts.soft).toEqual([])
   })
 
-  it('нарушение отдыха принадлежит ВТОРОЙ смене пары, а severity — виду дежурства', () => {
+  it('нарушение отдыха принадлежит ВТОРОЙ смене пары, а severity — действующему режиму', () => {
     const soft = detectConflictShiftIds(
       [
         shift({ id: 'first', dutyTypeCode: SOFT_TYPE.dutyTypeCode }),
         shift({ id: 'second', businessDate: '2026-07-21', dutyTypeCode: SOFT_TYPE.dutyTypeCode }),
       ],
       [SOFT_TYPE],
+      'SOFT_OVERRIDE',
     )
     // Первая смена своей обязанности не нарушала — раньше положенного
     // заступает вторая.
@@ -148,6 +150,7 @@ describe('конфликты (§21.34/§22.7)', () => {
     const hard = detectConflictShiftIds(
       [shift({ id: 'first' }), shift({ id: 'second', businessDate: '2026-07-21' })],
       [HARD_TYPE],
+      'HARD_BLOCK',
     )
     expect(hard.hard).toEqual(['second'])
   })
@@ -156,6 +159,7 @@ describe('конфликты (§21.34/§22.7)', () => {
     const conflicts = detectConflictShiftIds(
       [shift({ id: 'a' }), shift({ id: 'b', stateCode: 'CANCELLED' })],
       [HARD_TYPE],
+      'HARD_BLOCK',
     )
     expect(conflicts.hard).toEqual([])
   })
@@ -164,6 +168,7 @@ describe('конфликты (§21.34/§22.7)', () => {
     const conflicts = detectConflictShiftIds(
       [shift({ id: 'a' }), shift({ id: 'b', employeeName: 'Абишев Н.' })],
       [HARD_TYPE],
+      'HARD_BLOCK',
     )
     expect(conflicts.hard).toEqual([])
     expect(conflicts.soft).toEqual([])
@@ -179,6 +184,7 @@ describe('конфликты (§21.34/§22.7)', () => {
         shift({ id: 'third', businessDate: '2026-07-21', dutyTypeCode: SOFT_TYPE.dutyTypeCode }),
       ],
       [SOFT_TYPE],
+      'SOFT_OVERRIDE',
     )
     expect(conflicts.hard).toContain('second')
     expect(conflicts.soft).not.toContain('second')
