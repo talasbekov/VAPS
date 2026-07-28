@@ -40,6 +40,7 @@ export default defineConfig(({ mode }) => {
       setupFiles: ['./src/shared/api/testing/vitest.setup.ts'],
     },
     server: {
+      allowedHosts: ['.ngrok-free.dev'],
       proxy: {
         '/api': {
           target: proxyTarget,
