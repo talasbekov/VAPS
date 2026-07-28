@@ -22,12 +22,14 @@ def test_health_no_runs_yet():
         "last_import_run": None,
         # Story 7.7/AC-2: default-off, 0 пилотных подразделений на пустой БД.
         # Story 7.8/AC-1: streak/deadline/exit_criterion_met на пустой БД.
+        # Story 7.10/AC-3: cutover_completed на пустой БД (никогда не был).
         "parallel_run_mode": {
             "enabled": False,
             "pilot_division_count": 0,
             "green_streak": 0,
             "deadline": None,
             "exit_criterion_met": False,
+            "cutover_completed": False,
         },
     }
 
@@ -105,6 +107,29 @@ def test_health_reflects_deadline_and_green_streak():
     assert resp.data["parallel_run_mode"]["deadline"] == "2030-01-01"
     assert resp.data["parallel_run_mode"]["green_streak"] == 1
     assert resp.data["parallel_run_mode"]["exit_criterion_met"] is False
+
+
+def test_health_reflects_cutover_completed():
+    """Story 7.10/AC-3: официальный канал = VAPS виден в health."""
+    from datetime import date
+
+    from apps.parallel_run.cutover import execute_cutover
+    from apps.parallel_run.exit_criterion import EXIT_CRITERION_GREEN_DAYS
+
+    for i in range(EXIT_CRITERION_GREEN_DAYS):
+        ParallelRunDay.objects.create(
+            run_date=date(2026, 7, 1 + i), status="ok", blocking_count=0, total_diffs=0
+        )
+    from apps.core import parallel_run_mode
+
+    parallel_run_mode.enable(actor="bratan", deadline=date(2030, 1, 1))
+    execute_cutover(actor="bratan", frozen_suite_green=True)
+
+    client = APIClient()
+    resp = client.get(reverse("parallel-run-health"))
+
+    assert resp.data["parallel_run_mode"]["cutover_completed"] is True
+    assert resp.data["parallel_run_mode"]["enabled"] is False
 
 
 def test_health_requires_no_authentication():

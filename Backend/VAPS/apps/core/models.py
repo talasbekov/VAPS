@@ -455,6 +455,11 @@ class ParallelRunModeSwitch(models.Model):
     # as of 7.8 — recorded at the moment the mode is switched on, not
     # backfilled later.
     deadline = models.DateField(null=True, blank=True)
+    # Story 7.10 — AC-3 "официальный канал = VAPS": a THIRD state distinct
+    # from plain enabled/disabled — an operator can disable() the pilot for
+    # reasons other than a real cutover, so this isn't derivable from
+    # `enabled` alone. Cleared by rollback_cutover().
+    cutover_completed_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

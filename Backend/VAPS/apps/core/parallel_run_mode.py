@@ -40,15 +40,36 @@ def get_deadline():
     return switch.deadline if switch is not None else None
 
 
+def is_cutover_complete():
+    """Story 7.10/AC-3: третье состояние, отличное от голого ``enabled``
+    — оператор может выключить пилот по другой причине, не только через
+    настоящий cutover."""
+    switch = ParallelRunModeSwitch.objects.filter(key=_KEY).first()
+    return switch is not None and switch.cutover_completed_at is not None
+
+
 @transaction.atomic
 def enable(*, actor, deadline):
     """Story 7.8/AC-1: «дедлайн до старта» — записывается В МОМЕНТ включения,
-    не постфактум отдельной командой."""
+    не постфактум отдельной командой.
+
+    Ревью-фикс (Story 7.10, Blind Hunter): очищает ``cutover_completed_at``
+    — без этого прямой повторный ``enable()`` после ``mark_cutover_complete()``
+    (не через ``rollback_cutover()``) оставлял бы ``enabled=True`` И
+    ``cutover_completed_at`` не-``None`` одновременно — ровно то
+    противоречивое состояние, от которого третье cutover-состояние должно
+    быть застраховано (см. докстринг поля в ``apps/core/models.py``)."""
     if deadline is None:
         raise ValueError("deadline обязателен при включении режима (Story 7.8/AC-1)")
     now = timezone.now()
     switch, _created = ParallelRunModeSwitch.objects.update_or_create(
-        key=_KEY, defaults={"enabled": True, "enabled_at": now, "deadline": deadline}
+        key=_KEY,
+        defaults={
+            "enabled": True,
+            "enabled_at": now,
+            "deadline": deadline,
+            "cutover_completed_at": None,
+        },
     )
     record(
         actor=actor,
@@ -69,6 +90,64 @@ def disable(*, actor):
     record(
         actor=actor,
         action="PARALLEL_RUN_MODE_DISABLED",
+        entity_type="parallel_run_mode",
+        entity_id=_SWITCH_ENTITY_ID,
+    )
+    return switch
+
+
+@transaction.atomic
+def mark_cutover_complete(*, actor):
+    """Story 7.10/AC-3: официальный канал расхода = VAPS. Exit-criterion
+    gating (AC-1) happens at the caller — ``apps.parallel_run.cutover`` —
+    same boundary as ``enable()``/``disable()`` not owning the pilot-mode
+    business rules that trigger them."""
+    now = timezone.now()
+    switch, _created = ParallelRunModeSwitch.objects.update_or_create(
+        key=_KEY,
+        defaults={"enabled": False, "disabled_at": now, "cutover_completed_at": now},
+    )
+    record(
+        actor=actor,
+        action="PARALLEL_RUN_CUTOVER_COMPLETED",
+        entity_type="parallel_run_mode",
+        entity_id=_SWITCH_ENTITY_ID,
+    )
+    return switch
+
+
+@transaction.atomic
+def rollback_cutover(*, actor, deadline):
+    """Откат на донора: re-enable + очистка ``cutover_completed_at`` —
+    новый ``deadline`` обязателен (тот же контракт, что ``enable()``,
+    Story 7.8: следующая попытка получает свой собственный дедлайн).
+
+    Ревью-фикс (Edge Case Hunter): отказывает, если cutover НИКОГДА не был
+    завершён — иначе это "откат" события, которого не было, с ложной
+    audit-записью ``PARALLEL_RUN_CUTOVER_ROLLED_BACK`` (footgun: оператор,
+    хотевший просто продлить дедлайн, случайно пишет в audit trail
+    несуществующий откат)."""
+    if deadline is None:
+        raise ValueError("deadline обязателен при откате (см. enable(), Story 7.8)")
+    if not is_cutover_complete():
+        raise ValueError(
+            "откат невозможен: cutover ещё не был завершён "
+            "(rollback_cutover — только для реального отката, не для "
+            "продления дедлайна активного parallel-run — используйте enable())"
+        )
+    now = timezone.now()
+    switch, _created = ParallelRunModeSwitch.objects.update_or_create(
+        key=_KEY,
+        defaults={
+            "enabled": True,
+            "enabled_at": now,
+            "deadline": deadline,
+            "cutover_completed_at": None,
+        },
+    )
+    record(
+        actor=actor,
+        action="PARALLEL_RUN_CUTOVER_ROLLED_BACK",
         entity_type="parallel_run_mode",
         entity_id=_SWITCH_ENTITY_ID,
     )

@@ -65,6 +65,69 @@ def test_enable_records_deadline():
     assert ParallelRunModeSwitch.objects.get().deadline == datetime.date(2030, 5, 1)
 
 
+def test_mark_cutover_complete_disables_and_flags_official_channel():
+    parallel_run_mode.enable(actor="bratan", deadline=datetime.date(2030, 1, 1))
+
+    parallel_run_mode.mark_cutover_complete(actor="bratan")
+
+    assert parallel_run_mode.is_enabled() is False
+    assert parallel_run_mode.is_cutover_complete() is True
+
+
+def test_plain_disable_does_not_flag_cutover():
+    """Story 7.10/AC-3: обычный disable() (не cutover) НЕ должен молча
+    выглядеть как "официальный канал = VAPS" — третье состояние отличимо."""
+    parallel_run_mode.enable(actor="bratan", deadline=datetime.date(2030, 1, 1))
+
+    parallel_run_mode.disable(actor="bratan")
+
+    assert parallel_run_mode.is_enabled() is False
+    assert parallel_run_mode.is_cutover_complete() is False
+
+
+def test_rollback_cutover_reenables_and_clears_cutover_flag():
+    parallel_run_mode.enable(actor="bratan", deadline=datetime.date(2030, 1, 1))
+    parallel_run_mode.mark_cutover_complete(actor="bratan")
+
+    parallel_run_mode.rollback_cutover(
+        actor="bratan", deadline=datetime.date(2031, 1, 1)
+    )
+
+    assert parallel_run_mode.is_enabled() is True
+    assert parallel_run_mode.is_cutover_complete() is False
+    assert parallel_run_mode.get_deadline() == datetime.date(2031, 1, 1)
+
+
+def test_rollback_cutover_requires_deadline():
+    with pytest.raises(ValueError, match="deadline"):
+        parallel_run_mode.rollback_cutover(actor="bratan", deadline=None)
+
+
+def test_rollback_cutover_rejected_when_cutover_never_completed():
+    """Ревью-фикс (Edge Case Hunter): "откат" события, которого не было, —
+    footgun с ложной audit-записью."""
+    parallel_run_mode.enable(actor="bratan", deadline=datetime.date(2030, 1, 1))
+
+    with pytest.raises(ValueError, match="cutover ещё не был завершён"):
+        parallel_run_mode.rollback_cutover(
+            actor="bratan", deadline=datetime.date(2031, 1, 1)
+        )
+
+
+def test_reenable_after_cutover_clears_stale_cutover_flag():
+    """Ревью-фикс (Blind Hunter): прямой enable() после mark_cutover_complete()
+    (в обход rollback_cutover()) не должен оставлять enabled=True И
+    cutover_completed_at не-None одновременно."""
+    parallel_run_mode.enable(actor="bratan", deadline=datetime.date(2030, 1, 1))
+    parallel_run_mode.mark_cutover_complete(actor="bratan")
+    assert parallel_run_mode.is_cutover_complete() is True
+
+    parallel_run_mode.enable(actor="bratan", deadline=datetime.date(2032, 1, 1))
+
+    assert parallel_run_mode.is_enabled() is True
+    assert parallel_run_mode.is_cutover_complete() is False
+
+
 def test_pilot_division_add_remove(division):
     assert parallel_run_mode.is_pilot_division(division.id) is False
 

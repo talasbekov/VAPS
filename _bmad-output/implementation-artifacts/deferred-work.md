@@ -736,3 +736,9 @@
 Проход 1 (bmad-code-review, 3 параллельных слоя: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 2 real bugs · 2 patch применены (Division-код-неоднозначность + пропущенный интеграционный тест AC-1) · 1 defer (ниже) · 0 dismiss.
 
 - **CSV formula injection в `export_roster_for_reconciliation`** (edge, Low, не регресс): `full_name` пишется в CSV без нейтрализации `=`/`+`/`-`/`@` — донор-контролируемая строка, начинающаяся с одного из этих символов, исполнится как формула при открытии в Excel/LibreOffice. Тот же непокрытый паттерн уже существует в `apps/documents/generators/expense_csv.py` (не новый прецедент, не регрессия этой стори) — закрыть общим CSV-хелпером с экранированием как отдельную, не блокирующую работу.
+
+## Deferred from: code review of 7-10-план-cutover-и-отката (2026-07-28)
+
+Проход 1 (bmad-code-review, 3 параллельных слоя: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 2 real bugs (независимо подтверждены двумя слоями) · 2 patch применены (stale cutover-флаг при re-enable + rollback без предшествующего cutover) · 0 defer · 0 dismiss.
+
+Эпик 7 (Migration & Parallel-run) закрыт целиком этой стори — все 11 сторис (7.0–7.10) done.

@@ -209,6 +209,16 @@ actions:
     description: "Владелец расхода пилотного подразделения подтвердил (подписал) сверку выгруженного «как в системе» состава с реальностью на дату."
     provenance: derived-from-mutation
     source: "epics.md Story 7.9"
+  PARALLEL_RUN_CUTOVER_COMPLETED:
+    entity_type: parallel_run_mode
+    description: "Cutover выполнен по рунбуку (exit criterion выполнен) — официальный канал расхода переключён на VAPS, донор перестаёт быть источником ввода."
+    provenance: derived-from-mutation
+    source: "epics.md Story 7.10"
+  PARALLEL_RUN_CUTOVER_ROLLED_BACK:
+    entity_type: parallel_run_mode
+    description: "Откат cutover — донор снова источник ввода (parallel-run возобновлён с новым дедлайном)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 7.10"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

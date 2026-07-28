@@ -26,6 +26,10 @@ Story 7.8/AC-1: тот же блок дополнен ``green_streak``/``deadlin
 часть критерия"; авторитетный вердикт — только через
 ``parallel_run_dashboard --frozen-suite-green``.
 
+Story 7.10/AC-3: ``cutover_completed`` — официальный канал расхода = VAPS.
+Третье состояние, не производное от ``enabled`` (оператор может выключить
+пилот НЕ через настоящий cutover).
+
 Нет top-level "status": "ok" — HTTP 200 сам по себе означает «эндпоинт
 достижим»; РЕАЛЬНЫЙ статус джобы — ``last_diff_run.status`` (ok/no_baseline/
 error). Монитор/healthcheck, читающий только верхний уровень как "всё ок",
@@ -34,7 +38,9 @@ error). Монитор/healthcheck, читающий только верхний
 
 from django.db import DatabaseError
 from rest_framework.decorators import (
-    api_view, authentication_classes, permission_classes,
+    api_view,
+    authentication_classes,
+    permission_classes,
 )
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -58,6 +64,7 @@ def stand_health(request):
             "green_streak": criterion.green_streak,
             "deadline": deadline.isoformat() if deadline else None,
             "exit_criterion_met": criterion.met,
+            "cutover_completed": parallel_run_mode.is_cutover_complete(),
         }
     except DatabaseError:
         # БД ещё мигрирует/недоступна на старте контейнера — явный 503, а не

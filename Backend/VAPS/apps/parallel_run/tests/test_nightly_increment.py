@@ -72,6 +72,36 @@ class TestModeCoupling:
         )
         assert "window [2026-06-04..2026-06-04]" in out_io.getvalue()
 
+    def test_after_real_cutover_still_refuses_without_flag(self):
+        """Story 7.10/AC-2: не просто "режим выключен вообще" — после
+        НАСТОЯЩЕГО cutover (execute_cutover, exit criterion выполнен)
+        инкремент точно так же отказывается бежать без --force-pre-cutover
+        (тот же гейт, теперь привязанный к реальному cutover-состоянию)."""
+        from apps.parallel_run.cutover import execute_cutover
+        from apps.parallel_run.exit_criterion import EXIT_CRITERION_GREEN_DAYS
+        from apps.parallel_run.models import ParallelRunDay
+
+        parallel_run_mode.enable(actor="t", deadline=datetime.date(2030, 1, 1))
+        for i in range(EXIT_CRITERION_GREEN_DAYS):
+            ParallelRunDay.objects.create(
+                run_date=datetime.date(2026, 6, 1 + i),
+                status=ParallelRunDay.STATUS_OK,
+                blocking_count=0,
+                total_diffs=0,
+            )
+        execute_cutover(actor="t", frozen_suite_green=True)
+        assert parallel_run_mode.is_cutover_complete() is True
+
+        with pytest.raises(CommandError, match="без --force-pre-cutover"):
+            call_command(
+                "nightly_increment",
+                str(FIXTURE),
+                "--days",
+                "1",
+                "--until",
+                "2026-06-04",
+            )
+
 
 class TestReport:
     def test_cannot_read_missing_file(self):
