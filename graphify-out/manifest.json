@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1785235783.5291457,
-    "ast_hash": "f0b1ae85825e7239ed4dd704bfcd0068",
+    "mtime": 1785236774.5077195,
+    "ast_hash": "802f48ba7113ae46228112fc5cbed2a8",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785235757.4251952,
-    "ast_hash": "5f660fde25bafed0bf87b6d0c14f76c5",
+    "mtime": 1785236761.4645767,
+    "ast_hash": "b14c36e759e0ccf752cb407ad958450a",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -18820,8 +18820,8 @@
     "semantic_hash": ""
   },
   "docs/registries/audit-events.yaml": {
-    "mtime": 1785234137.0133238,
-    "ast_hash": "84a4df615e3b6d8138e9939577e9283e",
+    "mtime": 1785236059.9596438,
+    "ast_hash": "2282d6d95626fcf629bccb06bb9bac7c",
     "semantic_hash": ""
   },
   "docs/registries/error-codes.yaml": {
@@ -22762,6 +22762,66 @@
   "_bmad-output/implementation-artifacts/7-8-\u0444\u043e\u0440\u043c\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f-parallel-run.md": {
     "mtime": 1785235747.28022,
     "ast_hash": "92c5e51455d8c3443eb4327d7b1096e7",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/management/commands/export_roster_for_reconciliation.py": {
+    "mtime": 1785236391.7299087,
+    "ast_hash": "03a95441d38ed3a5c8b8828d79718a8c",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/management/commands/sign_roster_reconciliation.py": {
+    "mtime": 1785236401.982998,
+    "ast_hash": "df9dce9672de55cfb8e2a07910e0c9d8",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/migrations/0001_initial.py": {
+    "mtime": 1785236205.6304717,
+    "ast_hash": "c17588ba24c7296500d3596afd1e5254",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/migrations/__init__.py": {
+    "mtime": 1785236137.8030481,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/models.py": {
+    "mtime": 1785236082.6247518,
+    "ast_hash": "b666b29d713f7f4ed70afb151020af37",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/roster_export.py": {
+    "mtime": 1785236483.6727376,
+    "ast_hash": "2fd95bed199474986e1b5931b8bbba4c",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/roster_signature.py": {
+    "mtime": 1785236108.4208846,
+    "ast_hash": "8ed29184d1cd312ca5891c376fb2cdb4",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/tests/test_roster_export.py": {
+    "mtime": 1785236205.6304717,
+    "ast_hash": "d2d29bcfd84c0a483a1f0bef11a4e026",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/tests/test_roster_reconciliation_commands.py": {
+    "mtime": 1785236418.9771473,
+    "ast_hash": "9d4dc16fa32286e500cbded7dac7681a",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/tests/test_roster_reconciliation_e2e.py": {
+    "mtime": 1785236647.1903574,
+    "ast_hash": "9d8aa1643ac1c9122b978c9d32e61b06",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/tests/test_roster_signature.py": {
+    "mtime": 1785236205.6304717,
+    "ast_hash": "db7b034fc4ba5eba271256c55852b846",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/7-9-\u0441\u0432\u0435\u0440\u043a\u0430-\u0441\u043f\u0438\u0441\u043a\u043e\u0432-\u0441-\u0440\u0435\u0430\u043b\u044c\u043d\u043e\u0441\u0442\u044c\u044e.md": {
+    "mtime": 1785236757.1495295,
+    "ast_hash": "c630eb3fcc48ed000fe2a3d15e59a585",
     "semantic_hash": ""
   }
 }
