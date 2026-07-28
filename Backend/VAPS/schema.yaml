@@ -2477,10 +2477,13 @@ components:
     ExpenseReportIssueRequest:
       type: object
       description: |-
-        POST-body form (6.10a) — the two kwargs forwarded to
+        POST-body form (6.10a) — the kwargs forwarded to
         ``issue_expense_document``: a flat UUID division ref (ARCH-003) and a
         YYYY-MM-DD business date. The actor NEVER comes from the payload
         (ARCH-SEC-030); extra fields are ignored.
+
+        Story 10.5d: ``format`` — optional, defaults to ``"docx"`` (backward-
+        compatible with every existing caller that omits it).
       properties:
         division_id:
           type: string
@@ -2488,9 +2491,21 @@ components:
         business_date:
           type: string
           format: date
+        format:
+          allOf:
+          - $ref: '#/components/schemas/FormatEnum'
+          default: docx
       required:
       - business_date
       - division_id
+    FormatEnum:
+      enum:
+      - docx
+      - xlsx
+      type: string
+      description: |-
+        * `docx` - docx
+        * `xlsx` - xlsx
     GenderEnum:
       enum:
       - M

@@ -92,13 +92,19 @@ class DailySubmissionDetailSerializer(serializers.ModelSerializer):
 
 
 class ExpenseReportIssueSerializer(serializers.Serializer):
-    """POST-body form (6.10a) — the two kwargs forwarded to
+    """POST-body form (6.10a) — the kwargs forwarded to
     ``issue_expense_document``: a flat UUID division ref (ARCH-003) and a
     YYYY-MM-DD business date. The actor NEVER comes from the payload
-    (ARCH-SEC-030); extra fields are ignored."""
+    (ARCH-SEC-030); extra fields are ignored.
+
+    Story 10.5d: ``format`` — optional, defaults to ``"docx"`` (backward-
+    compatible with every existing caller that omits it)."""
 
     division_id = serializers.UUIDField()
     business_date = serializers.DateField()
+    format = serializers.ChoiceField(
+        choices=["docx", "xlsx"], required=False, default="docx"
+    )
 
 
 class ExpenseReportByDateFilterSerializer(serializers.Serializer):

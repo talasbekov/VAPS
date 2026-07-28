@@ -125,8 +125,10 @@ def _amend(division, reason="ретро-правка статуса", sanction="
     )
 
 
-def _issue(division, actor="issuer-1"):
-    return issue_expense_document(division_id=division.id, business_date=D, actor=actor)
+def _issue(division, actor="issuer-1", format="docx"):
+    return issue_expense_document(
+        division_id=division.id, business_date=D, actor=actor, format=format
+    )
 
 
 def _zip_members(raw):
@@ -238,6 +240,50 @@ def test_no_submission_for_date_409(division):
 
 def test_empty_actor_400(division):
     _raises_domain("VALIDATION_ERROR", 400, division, actor="   ")
+    assert not IssuedDocument.objects.exists()
+
+
+# --- Story 10.5d: format param -----------------------------------------------
+
+
+def test_issue_xlsx_format(division):
+    make_employee(division)
+    make_slot(division, 1)
+    _submit(division)
+    issued = _issue(division, format="xlsx")
+
+    assert issued.attachment.content_type == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert issued.attachment.original_name.endswith(".xlsx")
+    # Байты — валидный .xlsx (та же проверка, что генератор-тесты 6.4).
+    from openpyxl import load_workbook
+
+    raw = storage_path(issued.attachment).read_bytes()
+    workbook = load_workbook(BytesIO(raw))
+    assert workbook.active.title == D.isoformat()
+
+
+def test_issue_default_format_is_docx_unchanged(division):
+    """Regression pin (AC-1): вызов БЕЗ format — байт-в-байт то же поведение."""
+    make_employee(division)
+    make_slot(division, 1)
+    _submit(division)
+    issued = _issue(division)
+
+    assert issued.attachment.content_type == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert issued.attachment.original_name.endswith(".docx")
+
+
+def test_issue_invalid_format_400_before_transaction(division):
+    """AC-2: гвард ДО транзакции — счётчик/строка НЕ созданы на мусорном format."""
+    make_employee(division)
+    make_slot(division, 1)
+    _submit(division)
+    _raises_domain("VALIDATION_ERROR", 400, division, format="pdf")
+
     assert not IssuedDocument.objects.exists()
 
 

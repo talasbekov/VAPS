@@ -4,7 +4,7 @@ baseline_commit: 37dbfe3
 
 # Story 10.5d: Выпуск .xlsx — бэк
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -25,23 +25,23 @@ so that **я могу получить номерной документ в фо
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `format`-параметр сервиса (`Backend/VAPS/apps/operations/submissions/services/document_release_service.py`, MOD) (AC: 1, 2, 3)
-  - [ ] Сигнатура: `issue_expense_document(*, division_id, business_date, actor, format="docx")`.
-  - [ ] Гвард ПЕРЕД `transaction.atomic()`: `if format not in ("docx", "xlsx"): raise DomainError("VALIDATION_ERROR", 400, detail={"format": format}, message="Неизвестный формат документа.")`.
-  - [ ] Локальная константа `_XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"` (та же строка, что `views.py:104` — модуль другой, копия строки, не импорт: `document_release_service.py` не должен тянуть `apps/operations/submissions/api/views.py`, направление зависимости).
-  - [ ] Импорт `generate_expense_xlsx` из `apps.documents.generators` (рядом с существующим `generate_expense_docx`).
-  - [ ] Ветвление ПЕРЕД `original_name`/`create_attachment` (сейчас — `views.py:250,288,295` эквивалент в сервисе): `file_bytes = generate_expense_xlsx(data) if format == "xlsx" else generate_expense_docx(data)`; `extension = "xlsx" if format == "xlsx" else "docx"`; `content_type = _XLSX_CONTENT_TYPE if format == "xlsx" else _DOCX_CONTENT_TYPE`; `original_name = f"расход_{business_date.isoformat()}_исх-{number}.{extension}"`.
-- [ ] Task 2 — HTTP-форма (`Backend/VAPS/apps/operations/submissions/api/serializers.py`, MOD) (AC: 4)
-  - [ ] `ExpenseReportIssueSerializer`: `format = serializers.ChoiceField(choices=["docx", "xlsx"], required=False, default="docx")`.
-- [ ] Task 3 — Вкрутка в `create`-экшен (`Backend/VAPS/apps/operations/submissions/api/views.py`, MOD) (AC: 4, 5)
-  - [ ] `issue_expense_document(..., format=form.validated_data["format"])` (`default="docx"` сериализатора гарантирует ключ ВСЕГДА присутствует в `validated_data`).
-- [ ] Task 4 — Регенерация схемы (AC: 5)
-  - [ ] `make schema` (Backend/VAPS) + `cd frontend && npm run generate:api`.
-- [ ] Task 5 — Тесты (AC: 1-6)
-  - [ ] Сервис-уровень (`Backend/VAPS/apps/operations/submissions/tests/test_document_release.py`, MOD или новый файл): `format="xlsx"` → `Attachment.content_type` == xlsx-константа, `original_name` оканчивается `.xlsx`, байты — валидный .xlsx (та же openpyxl-проверка, что существующие xlsx-генератор-тесты); `format` не передан → байты/content-type/имя ИДЕНТИЧНЫ существующему поведению (regression pin); `format="pdf"` (невалидный) → `DomainError` 400 ДО транзакции — `IssuedDocument.objects.count()`/`DocumentSequence`-счётчик НЕ выросли (AC-2's «до номера»).
-  - [ ] HTTP-уровень (`Backend/VAPS/apps/operations/submissions/tests/test_expense_report_api.py`, MOD): POST с `format: "xlsx"` в теле → 201, `content_type` в ответе точки чтения соответствует; POST БЕЗ `format` → 201, поведение как раньше (regression pin существующего теста — не менять, просто подтвердить в Dev Record, что не тронут).
-- [ ] Task 6 — Гейт (AC: 6)
-  - [ ] `make gate` (Backend/VAPS).
+- [x] Task 1 — `format`-параметр сервиса (`Backend/VAPS/apps/operations/submissions/services/document_release_service.py`, MOD) (AC: 1, 2, 3)
+  - [x] Сигнатура: `issue_expense_document(*, division_id, business_date, actor, format="docx")`.
+  - [x] Гвард ПЕРЕД `transaction.atomic()`: `if format not in ("docx", "xlsx"): raise DomainError("VALIDATION_ERROR", 400, detail={"format": format}, message="Неизвестный формат документа.")`.
+  - [x] Локальная константа `_XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"` (та же строка, что `views.py:104` — модуль другой, копия строки, не импорт: `document_release_service.py` не должен тянуть `apps/operations/submissions/api/views.py`, направление зависимости).
+  - [x] Импорт `generate_expense_xlsx` из `apps.documents.generators` (рядом с существующим `generate_expense_docx`).
+  - [x] Ветвление ПЕРЕД `original_name`/`create_attachment` (сейчас — `views.py:250,288,295` эквивалент в сервисе): `file_bytes = generate_expense_xlsx(data) if format == "xlsx" else generate_expense_docx(data)`; `extension = "xlsx" if format == "xlsx" else "docx"`; `content_type = _XLSX_CONTENT_TYPE if format == "xlsx" else _DOCX_CONTENT_TYPE`; `original_name = f"расход_{business_date.isoformat()}_исх-{number}.{extension}"`.
+- [x] Task 2 — HTTP-форма (`Backend/VAPS/apps/operations/submissions/api/serializers.py`, MOD) (AC: 4)
+  - [x] `ExpenseReportIssueSerializer`: `format = serializers.ChoiceField(choices=["docx", "xlsx"], required=False, default="docx")`.
+- [x] Task 3 — Вкрутка в `create`-экшен (`Backend/VAPS/apps/operations/submissions/api/views.py`, MOD) (AC: 4, 5)
+  - [x] `issue_expense_document(..., format=form.validated_data["format"])` (`default="docx"` сериализатора гарантирует ключ ВСЕГДА присутствует в `validated_data`).
+- [x] Task 4 — Регенерация схемы (AC: 5)
+  - [x] `make schema` (Backend/VAPS) + `cd frontend && npm run generate:api`.
+- [x] Task 5 — Тесты (AC: 1-6)
+  - [x] Сервис-уровень (`Backend/VAPS/apps/operations/submissions/tests/test_document_release.py`, MOD или новый файл): `format="xlsx"` → `Attachment.content_type` == xlsx-константа, `original_name` оканчивается `.xlsx`, байты — валидный .xlsx (та же openpyxl-проверка, что существующие xlsx-генератор-тесты); `format` не передан → байты/content-type/имя ИДЕНТИЧНЫ существующему поведению (regression pin); `format="pdf"` (невалидный) → `DomainError` 400 ДО транзакции — `IssuedDocument.objects.count()`/`DocumentSequence`-счётчик НЕ выросли (AC-2's «до номера»).
+  - [x] HTTP-уровень (`Backend/VAPS/apps/operations/submissions/tests/test_expense_report_api.py`, MOD): POST с `format: "xlsx"` в теле → 201, `content_type` в ответе точки чтения соответствует; POST БЕЗ `format` → 201, поведение как раньше (regression pin существующего теста — не менять, просто подтвердить в Dev Record, что не тронут).
+- [x] Task 6 — Гейт (AC: 6)
+  - [x] `make gate` (Backend/VAPS).
 
 ## Dev Notes
 
@@ -69,4 +69,25 @@ claude-sonnet-5
 
 ### Completion Notes List
 
+- `format` — новый именованный аргумент функции (тень встроенного `format()` в теле функции — не вызывается внутри неё, ruff молчит, конфликта нет).
+- Гвард формата — ДО `transaction.atomic()` (AC-2), после `_require_actor` — та же позиция в теле функции, что уже устоявшийся паттерн для чистых input-гвардов.
+- `_XLSX_CONTENT_TYPE` — копия строкового литерала из `views.py:104`, НЕ импорт (направление зависимости: сервис-слой не должен тянуть API-слой).
+- Ветвление байтов/content-type/имени — единый `if format == "xlsx"` в трёх местах (генератор, content_type, extension), не дублирует остальную формат-агностичную часть пайплайна (`build_expense_document`/`_assert_matches_derive`/`allocate_number`/`supersedes`-цепочка — без изменений).
+- HTTP-слой: `ExpenseReportIssueSerializer.format` — `ChoiceField` с `default="docx"`, поэтому невалидный `format` (напр. `"pdf"`) отклоняется УЖЕ на границе сериализатора (400 до вызова сервиса) — тот же итоговый код 400, что и внутренний гвард сервиса при прямом service-level вызове (двойная защита: HTTP формы + доменной функции, консистентно с остальными полями этого сериализатора).
+- `IssuedDocument` модель НЕ менялась — миграций нет, подтверждено `makemigrations --check` (пусто).
+- Регресс: `apps/operations`+`apps/documents`+`apps/core/test_schema_drift`+`apps/audit` — 2080 passed, 6 ERROR (те же документированные concurrency-teardown флейки — не регрессия). `ruff check apps/` чист. Frontend `npm run gate` — 916 тестов, tsc/eslint/build/size-gate (210.5 KB gzip / 300 бюджет) зелёные (новое поле `format` — опциональное на request-стороне, ripple-фикса не потребовалось, в отличие от 10.5b).
+
+**Ревью (3-агентное: Blind Hunter / Edge Case Hunter / Acceptance Auditor) — 6/6 AC SATISFIED, 0 багов:**
+- Все три слоя независимо подтвердили: guard-позиция ДО транзакции корректна (нет захвата submission-лока на мусорном формате), backward-compat дефолт работает (единственный существующий caller — сам этот диф, HTTP-слой всегда прокидывает `format` через `validated_data` с дефолтом), `_XLSX_CONTENT_TYPE` байт-в-байт совпадает с `views.py:104`, оба генератора принимают идентичную сигнатуру `(data)`, тест `test_issue_xlsx_format` корректно проверяет `workbook.active.title` против реального поведения генератора (`sheet.title = business_date.isoformat()`).
+- Acceptance Auditor независимо перепрогнал `ExpenseReportIssueSerializer(data={..., "format": "pdf"})` вживую — подтвердил заявление Completion Notes: HTTP-невалидный `format` отклоняется сериализатором ДО вызова сервиса, а `test_issue_invalid_format_400` (HTTP) и `test_issue_invalid_format_400_before_transaction` (прямой сервис-вызов) кроют ДВА РАЗНЫХ гварда — не задваивают покрытие одного и того же кода, framing «двойная защита» точен.
+- Ни одной реальной находки — редчайший случай для этой сессии (3-агентное ревью впервые за много стори не нашло ни одного бага).
+
 ### File List
+
+- `Backend/VAPS/apps/operations/submissions/services/document_release_service.py` (MOD) — `format`-параметр, гвард, ветвление генератора/content-type/имени.
+- `Backend/VAPS/apps/operations/submissions/api/serializers.py` (MOD) — `ExpenseReportIssueSerializer.format`.
+- `Backend/VAPS/apps/operations/submissions/api/views.py` (MOD) — проброс `format` в `issue_expense_document`.
+- `Backend/VAPS/schema.yaml` (регенерирован).
+- `frontend/src/shared/api/schema.d.ts` (регенерирован).
+- `Backend/VAPS/apps/operations/submissions/tests/test_document_release.py` (MOD) — `_issue`-хелпер +`format`-параметр, 3 новых теста.
+- `Backend/VAPS/apps/operations/submissions/tests/test_expense_report_api.py` (MOD) — 2 новых HTTP-теста.

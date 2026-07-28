@@ -351,6 +351,7 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             division_id=division_id,
             business_date=business_date,
             actor=request.actor_id,
+            format=form.validated_data["format"],
         )
         return Response(
             IssuedExpenseReportSerializer(issued).data,

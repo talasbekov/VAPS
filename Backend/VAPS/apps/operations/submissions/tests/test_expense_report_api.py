@@ -136,6 +136,43 @@ def test_issue_happy_201(org_type, storage):
     )
 
 
+def test_issue_xlsx_format_201(org_type, storage):
+    """Story 10.5d: POST с format:"xlsx" в теле → xlsx-документ."""
+    org, dtp = org_type
+    div = _division(org, dtp, "EXP-XLSX")
+    _populate(div)
+    _grant("orgd", div)
+    with clock.override(D):
+        submit_day(division_id=div.id, business_date=D, actor="op-1")
+    resp = _client("orgd").post(
+        reverse("ops-expense-report-list"),
+        {"division_id": str(div.id), "business_date": D.isoformat(), "format": "xlsx"},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.content
+    issued = IssuedDocument.objects.get(division_id=div.id, business_date=D)
+    assert issued.attachment.original_name.endswith(".xlsx")
+    assert issued.attachment.content_type == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+def test_issue_invalid_format_400(org_type, storage):
+    org, dtp = org_type
+    div = _division(org, dtp, "EXP-BADFMT")
+    _populate(div)
+    _grant("orgd", div)
+    with clock.override(D):
+        submit_day(division_id=div.id, business_date=D, actor="op-1")
+    resp = _client("orgd").post(
+        reverse("ops-expense-report-list"),
+        {"division_id": str(div.id), "business_date": D.isoformat(), "format": "pdf"},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert not IssuedDocument.objects.exists()
+
+
 def test_issue_without_permission_403(org_type, storage):
     org, dtp = org_type
     div = _division(org, dtp, "EXP-B")

@@ -48,7 +48,7 @@ from django.db import transaction
 from apps.audit.services import record
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector, CoreStaffingSelector
-from apps.documents.generators import generate_expense_docx
+from apps.documents.generators import generate_expense_docx, generate_expense_xlsx
 from apps.documents.models import EXPENSE_DOC_TYPE, IssuedDocument
 from apps.documents.selectors import IssuedDocumentSelector
 from apps.documents.services import allocate_number, create_attachment
@@ -63,6 +63,11 @@ from apps.operations.submissions.services.snapshot import SCHEMA_VERSION
 _DOCX_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 )
+# Story 10.5d: тот же литерал, что `apps/operations/submissions/api/views.py:104`
+# (`_XLSX_CONTENT_TYPE`, роут 10.8 «личная копия») — копия строки, не импорт:
+# этот сервис-модуль не должен тянуть API-слой (направление зависимости).
+_XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_SUPPORTED_FORMATS = ("docx", "xlsx")
 
 
 def _require_actor(actor):
@@ -150,23 +155,37 @@ def _issued_audit_value(issued, attachment):
     }
 
 
-def issue_expense_document(*, division_id, business_date, actor):
+def issue_expense_document(*, division_id, business_date, actor, format="docx"):
     """Выпустить расход по текущей сдаче (division, business_date).
 
     Args:
         division_id: UUID подразделения (flat, ARCH-003); str коэрцируется.
         business_date: дата сдачи (ЯВНЫЙ параметр; year номера = её год, Д6).
         actor: внешний account-id (строка) → created_by и аудит.
+        format: "docx" (дефолт, backward-compatible) или "xlsx" (Story 10.5d).
+            Влияет ТОЛЬКО на байты файла и `Attachment.content_type`/
+            `original_name` — номер/цепочка/статус формат-агностичны.
 
     Returns the created IssuedDocument (status=ISSUED).
 
-    Raises DomainError: 400 (actor пуст), 409 REPORT_NOT_READY_FOR_DATE (сдачи
-        за дату нет), 422 SNAPSHOT_SCHEMA_UNSUPPORTED (schema guard, Д5), 422
+    Raises DomainError: 400 (actor пуст / неизвестный format), 409
+        REPORT_NOT_READY_FOR_DATE (сдачи за дату нет), 422
+        SNAPSHOT_SCHEMA_UNSUPPORTED (schema guard, Д5), 422
         REPORT_NOT_CONVERGENT (release-ассерт, Д4), 409 DOCUMENT_ALREADY_ISSUED
         (повтор той же версии сдачи, Д7 — откат возвращает номер, gap-free).
         Отклонённый выпуск не оставляет ни строки, ни аудита DOCUMENT_*.
     """
     _require_actor(actor)
+    # Story 10.5d: чистый ввод-параметр, БД не нужна — гвард ДО
+    # transaction.atomic() (тот же принцип, что _require_actor выше):
+    # мусорный format не должен трогать submission-лок/счётчик документов.
+    if format not in _SUPPORTED_FORMATS:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"format": format, "supported": list(_SUPPORTED_FORMATS)},
+            message="Неизвестный формат документа.",
+        )
     # str-ключ vs UUID-ключи селекторов даёт ДВЕ строки derive и роняет
     # распаковку (report_row,); малформный id падает громко (зеркало snapshot.py).
     if not isinstance(division_id, uuid.UUID):
@@ -247,7 +266,14 @@ def issue_expense_document(*, division_id, business_date, actor):
         )
         _assert_matches_derive(data, report)
 
-        docx_bytes = generate_expense_docx(data)
+        # Story 10.5d: ветвление ПОСЛЕ release-ассерта (генерация мусорного
+        # формата на невалидном отчёте — трата CPU впустую), ДО номера
+        # (генерация формат-агностична к аллокации).
+        file_bytes = (
+            generate_expense_xlsx(data)
+            if format == "xlsx"
+            else generate_expense_docx(data)
+        )
 
         # Финализация: счётчик ВТОРЫМ локом (единый порядок), в ЭТОЙ же
         # транзакции — откат 409 ниже возвращает номер, дырки нет.
@@ -285,14 +311,16 @@ def issue_expense_document(*, division_id, business_date, actor):
                 status=IssuedDocument.Status.SUPERSEDED
             )
 
-        original_name = f"расход_{business_date.isoformat()}_исх-{number}.docx"
+        extension = "xlsx" if format == "xlsx" else "docx"
+        content_type = _XLSX_CONTENT_TYPE if format == "xlsx" else _DOCX_CONTENT_TYPE
+        original_name = f"расход_{business_date.isoformat()}_исх-{number}.{extension}"
         # create_attachment: sha256/size сам, свой вложенный savepoint + аудит
         # ATTACHMENT_UPLOADED (Ловушка №5); идёт предпоследним — все отказные
         # гварды уже позади (минимизация окна файла-сироты, Ловушка №6).
         attachment = create_attachment(
-            uploaded_file=ContentFile(docx_bytes, name=original_name),
+            uploaded_file=ContentFile(file_bytes, name=original_name),
             original_name=original_name,
-            content_type=_DOCX_CONTENT_TYPE,
+            content_type=content_type,
             actor=actor,
         )
 
