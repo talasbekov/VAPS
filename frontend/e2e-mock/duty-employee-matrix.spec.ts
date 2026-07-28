@@ -35,9 +35,13 @@ test.describe('Матрица доступности по сотрудникам
     await expect(row.getByText('2026-07-23, дежурств нет')).toBeVisible()
 
     // §35: два слоя §21.30, которых модель не даёт, названы с причиной.
-    await expect(page.getByText('Слои, которых нет в модели')).toBeVisible()
-    await expect(page.getByText(/Занятость охранным мероприятием/)).toBeVisible()
-    await expect(page.getByText(/Employee Status Repository/)).toBeVisible()
+    // Локатор сужен до САМОГО блока слоёв: отсутствие Employee Status
+    // Repository — общая причина, и её называет ещё и шапка плана (§21.28,
+    // поле «Состояние доступности»). Поиск по всей странице цеплял бы обе.
+    const layers = page.locator('section', { hasText: 'Слои, которых нет в модели' }).last()
+    await expect(layers).toBeVisible()
+    await expect(layers.getByText(/Занятость охранным мероприятием/)).toBeVisible()
+    await expect(layers.getByText(/Employee Status Repository/)).toBeVisible()
   })
 
   test('отменённая смена исчезает из матрицы вместе со своим хвостом отдыха', async ({ page }) => {

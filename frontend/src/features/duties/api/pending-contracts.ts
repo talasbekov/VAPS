@@ -5,6 +5,7 @@ import type {
   MonthlyDutyPlanConflict,
   UnavailableMetric,
 } from '../lib/monthlyPlan'
+import type { MonthlyPlanHeader } from '../lib/planLifecycle'
 import type {
   CombatDutyShift,
   CombatDutyTypeDefinition,
@@ -13,6 +14,7 @@ import type {
   DutyRouteCoverageMode,
   DutyShift,
   DutyTypeDefinition,
+  MonthlyPlanRecord,
 } from '../model/types'
 
 export const DUTY_TYPES_PATH = '/api/ops/duty-types/'
@@ -38,6 +40,24 @@ export const DUTY_CANDIDATES_PATH = '/api/ops/duty-candidates/'
 /** §21.30 «Список дежурств» и «История» — плоский список с серверными
  * счётчиками конфликтов (§21.34) и явным списком невыводимых колонок (§35). */
 export const DUTY_SHIFT_LIST_PATH = '/api/ops/duty-shift-list/'
+
+/**
+ * §21.27 lifecycle месячного плана — действия ПОД тем же ресурсом, что и
+ * чтение плана: они меняют ровно его. Месяц едет в теле, а не в пути: плана
+ * как отдельного идентификатора нет, ключ — сам месяц (см. `MonthlyPlanRecord`).
+ */
+export function dutyPlanDraftPath(): string {
+  return `${DUTY_MONTHLY_PLAN_PATH}draft/`
+}
+export function dutyPlanCheckPath(): string {
+  return `${DUTY_MONTHLY_PLAN_PATH}check/`
+}
+export function dutyPlanApprovePath(): string {
+  return `${DUTY_MONTHLY_PLAN_PATH}approve/`
+}
+export function dutyPlanReopenPath(): string {
+  return `${DUTY_MONTHLY_PLAN_PATH}reopen/`
+}
 
 /** §21.32 «Карточка дежурства» — deep link на одну смену. */
 export function dutyShiftDetailPath(id: string): string {
@@ -307,9 +327,26 @@ export type ClockInDutyShiftResponse = DutyShift
 export type ClockOutDutyShiftResponse = DutyShift
 
 /** §21.28-21.30 — весь месячный план одним ответом: сетка «объект × день»,
- * серверные KPI (§21.29), конфликты с серверной severity (§21.34) и явный
- * список показателей, которых у модели нет (§35). */
-export type MonthlyDutyPlanResponse = MonthlyDutyPlan
+ * серверные KPI (§21.29), конфликты с серверной severity (§21.34), шапка с
+ * lifecycle и action policy (§21.27-21.28) и явный список показателей, которых
+ * у модели нет (§35). Шапка едет ЗДЕСЬ, а не отдельным запросом: доступность
+ * действий выведена из того же снимка смен, что KPI и конфликты, и разъехаться
+ * с ними не должна. */
+export interface MonthlyDutyPlanResponse extends MonthlyDutyPlan {
+  header: MonthlyPlanHeader
+}
+
+/** §21.27, действия lifecycle. Месяц — единственный параметр: план на месяц
+ * один, отдельного идентификатора у него нет.
+ *
+ * `type`, а не `interface`: переменные `useApiMutation` обязаны удовлетворять
+ * `Record<string, unknown>`, а неявный index signature есть только у
+ * type-алиасов (тот же приём, что `CreateDutyShiftRequest`). */
+export type MonthlyPlanActionRequest = {
+  month: string
+}
+
+export type MonthlyPlanActionResponse = MonthlyPlanRecord
 
 export interface ListCombatDutyTypesResponse {
   results: CombatDutyTypeDefinition[]

@@ -6,8 +6,10 @@
 // model/types.ts) — своя подача/рассмотрение, не переключатель вида.
 // Вкладка «Месяц» (§21.27-21.30) — тот же DutyShift, но СЕРВЕРНАЯ проекция:
 // сетка/KPI/конфликты приходят готовыми из `useMonthlyDutyPlan`, страница их
-// не пересчитывает (§21.29/§21.34, см. MonthlyDutyPlanSection). История/
-// revisions и lifecycle плана — Not started (см. FRONTEND_DECISIONS A63).
+// не пересчитывает (§21.29/§21.34, см. MonthlyDutyPlanSection). Lifecycle плана
+// (§21.27) и шапка с action policy (§21.28) — в MonthlyPlanHeaderSection,
+// FRONTEND_DECISIONS A70 (отменяет A63). Формальный revision СМЕНЫ (не плана)
+// и Conflict Repository — по-прежнему Not started.
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { ROUTES } from '../../../shared/routes'
@@ -160,7 +162,14 @@ export function DutyPlanPage() {
             {isLoading ? 'Загрузка плана дежурств…' : 'Дежурств не найдено — месяц не выбран.'}
           </p>
         ) : (
-          <MonthlyDutyPlanSection key={defaultMonth} initialMonth={defaultMonth} />
+          <MonthlyDutyPlanSection
+            key={defaultMonth}
+            initialMonth={defaultMonth}
+            // §21.28 «Добавить дежурство»: форма заведения живёт на табличных
+            // представлениях (см. ниже), поэтому действие шапки уводит туда, а
+            // не открывает вторую копию формы на месячной сетке.
+            onAddShift={() => setView('BY_OBJECT')}
+          />
         ))}
 
       {isTableView && isLoading && (

@@ -3,13 +3,10 @@
 // приходят из ответа — §21.29 прямо запрещает считать итог по отрисованной
 // части календаря, §21.34 — определять severity на frontend.
 //
-// Что здесь СОЗНАТЕЛЬНО не реализовано (см. FRONTEND_DECISIONS A63):
-// lifecycle плана DRAFT→VALIDATED→APPROVED и действия «Сформировать
-// черновик»/«Утвердить план»/«Экспортировать» — у плана нет собственной
-// сущности, месяц это ПРОЕКЦИЯ уже существующих смен; рисовать кнопки,
-// за которыми нет операции, §35 запрещает. Представление «По сотрудникам»
-// (матрица доступности) требует слоёв отдыха/ОМ/кадровой недоступности, из
-// которых в модели есть только отдых — отдельный срез.
+// Lifecycle плана (§21.27) и шапка с action policy (§21.28) живут в
+// `MonthlyPlanHeaderSection` — у плана появилась собственная сущность
+// (`MonthlyPlanRecord`), см. FRONTEND_DECISIONS A70. Прежнее решение A63
+// («у плана нет своей сущности, рисовать кнопки не за чем») этим отменено.
 import { useMemo, useState } from 'react'
 import { Button } from '../../../shared/ui/Button'
 import { useMonthlyDutyPlan } from '../api/queries'
@@ -19,6 +16,7 @@ import type {
   MonthlyDutyPlanCell,
   MonthlyDutyPlanConflict,
 } from '../lib/monthlyPlan'
+import { MonthlyPlanHeaderSection } from './MonthlyPlanHeaderSection'
 
 const MONTH_NAMES = [
   'январь',
@@ -123,7 +121,13 @@ function employeeCellTitle(cell: MonthlyDutyEmployeeCell): string {
   return parts.join(', ')
 }
 
-export function MonthlyDutyPlanSection({ initialMonth }: { initialMonth: string }) {
+export function MonthlyDutyPlanSection({
+  initialMonth,
+  onAddShift,
+}: {
+  initialMonth: string
+  onAddShift: () => void
+}) {
   const [month, setMonth] = useState(initialMonth)
   const planQuery = useMonthlyDutyPlan(month)
   const plan = planQuery.data ?? null
@@ -202,6 +206,16 @@ export function MonthlyDutyPlanSection({ initialMonth }: { initialMonth: string 
       {planQuery.isLoading && <p className="text-sm text-muted-foreground">Загрузка плана…</p>}
       {planQuery.isError && (
         <p className="text-sm text-destructive">Не удалось загрузить месячный план.</p>
+      )}
+
+      {/* §21.27-21.28: шапка выше KPI — состояние плана определяет, что вообще
+          можно делать с месяцем, и читается раньше цифр. */}
+      {plan !== null && (
+        <MonthlyPlanHeaderSection
+          header={plan.header}
+          monthLabel={monthTitle(month)}
+          onAddShift={onAddShift}
+        />
       )}
 
       {plan !== null && (

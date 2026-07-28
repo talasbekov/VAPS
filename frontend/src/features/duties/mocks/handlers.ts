@@ -21,6 +21,10 @@ import {
   combatDutyShiftReplacePath,
   combatDutyShiftReviewPath,
   combatDutyShiftSubmitPath,
+  dutyPlanApprovePath,
+  dutyPlanCheckPath,
+  dutyPlanDraftPath,
+  dutyPlanReopenPath,
   dutyShiftAcknowledgePath,
   dutyShiftDetailPath,
   dutyShiftUpdatePath,
@@ -34,6 +38,7 @@ import type {
   CreateCombatDutyShiftRequest,
   CancelDutyShiftRequest,
   CreateDutyShiftRequest,
+  MonthlyPlanActionRequest,
   RequestCombatDutyReplacementRequest,
   ReviewCombatGroupRequest,
   SubmitCombatDutyHandoverRequest,
@@ -48,6 +53,9 @@ import {
   RepositoryPermissionError,
 } from './repository'
 
+/** §21.27: план на месяц ещё не сформирован — это не «нет такой смены». */
+const PLAN_NOT_FOUND_TEXT = 'План на этот месяц не сформирован.'
+
 function permissionDeniedEnvelope(clock: DemoClock): ErrorEnvelope {
   return {
     error_code: 'PERMISSION_DENIED',
@@ -58,10 +66,10 @@ function permissionDeniedEnvelope(clock: DemoClock): ErrorEnvelope {
   }
 }
 
-function notFoundEnvelope(clock: DemoClock, id: string): ErrorEnvelope {
+function notFoundEnvelope(clock: DemoClock, id: string, message: string): ErrorEnvelope {
   return {
     error_code: 'ENTITY_NOT_FOUND',
-    message: 'Дежурство не найдено.',
+    message,
     details: { id },
     request_id: null,
     timestamp: clock.now(),
@@ -72,12 +80,19 @@ function businessRuleEnvelope(clock: DemoClock, errorCode: string, message: stri
   return { error_code: errorCode, message, details: {}, request_id: null, timestamp: clock.now() }
 }
 
-function mapRepositoryError(error: unknown, clock: DemoClock, entityId: string): Response | null {
+function mapRepositoryError(
+  error: unknown,
+  clock: DemoClock,
+  entityId: string,
+  // Сообщение 404 зависит от того, чего не нашли: у lifecycle плана «дежурство
+  // не найдено» отправило бы читателя искать не тот объект.
+  notFoundMessage = 'Дежурство не найдено.',
+): Response | null {
   if (error instanceof RepositoryPermissionError) {
     return HttpResponse.json(permissionDeniedEnvelope(clock), { status: 403 })
   }
   if (error instanceof RepositoryNotFoundError) {
-    return HttpResponse.json(notFoundEnvelope(clock, entityId), { status: 404 })
+    return HttpResponse.json(notFoundEnvelope(clock, entityId, notFoundMessage), { status: 404 })
   }
   if (error instanceof RepositoryBusinessRuleError) {
     return HttpResponse.json(businessRuleEnvelope(clock, error.errorCode, error.message), {
@@ -129,6 +144,53 @@ export function createDutiesHandlers(adapter: PersistenceAdapter, clock: DemoClo
         return HttpResponse.json(await repository.getMonthlyPlan(month, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, '') ?? HttpResponse.error()
+      }
+    }),
+    // §21.27, четыре действия lifecycle. Каждое — своя операция под своим
+    // путём, а не один `POST …/transition/` с кодом в теле: у них разные права
+    // (`ops.duty.manage` против `ops.duty.approve_plan`) и разные отказы.
+    http.post(`*${dutyPlanDraftPath()}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const body = (await request.json()) as MonthlyPlanActionRequest
+      try {
+        return HttpResponse.json(await repository.createPlanDraft(body, actorUserId))
+      } catch (error) {
+        return (
+          mapRepositoryError(error, clock, body.month, PLAN_NOT_FOUND_TEXT) ?? HttpResponse.error()
+        )
+      }
+    }),
+    http.post(`*${dutyPlanCheckPath()}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const body = (await request.json()) as MonthlyPlanActionRequest
+      try {
+        return HttpResponse.json(await repository.checkPlanConflicts(body, actorUserId))
+      } catch (error) {
+        return (
+          mapRepositoryError(error, clock, body.month, PLAN_NOT_FOUND_TEXT) ?? HttpResponse.error()
+        )
+      }
+    }),
+    http.post(`*${dutyPlanApprovePath()}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const body = (await request.json()) as MonthlyPlanActionRequest
+      try {
+        return HttpResponse.json(await repository.approvePlan(body, actorUserId))
+      } catch (error) {
+        return (
+          mapRepositoryError(error, clock, body.month, PLAN_NOT_FOUND_TEXT) ?? HttpResponse.error()
+        )
+      }
+    }),
+    http.post(`*${dutyPlanReopenPath()}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const body = (await request.json()) as MonthlyPlanActionRequest
+      try {
+        return HttpResponse.json(await repository.reopenPlan(body, actorUserId))
+      } catch (error) {
+        return (
+          mapRepositoryError(error, clock, body.month, PLAN_NOT_FOUND_TEXT) ?? HttpResponse.error()
+        )
       }
     }),
     http.get(`*${DUTY_PLAN_OBJECTS_PATH}`, async ({ request }) => {

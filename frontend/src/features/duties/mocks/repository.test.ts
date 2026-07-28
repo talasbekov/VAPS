@@ -223,6 +223,8 @@ function seedEnvelope(combatShifts: CombatDutyShift[]): DemoStateEnvelope {
           { employeeName: 'Кенжебаев А.', unitName: '1-е боевое управление' },
         ],
         combatShifts,
+        // §21.27: планов нет — месяц открыт для планирования, как в сиде.
+        monthlyPlans: [],
       },
     },
   }
@@ -2445,5 +2447,462 @@ describe('createDutiesRepository — список дежурств и истор
     const before = (await adapter.load())?.revision
     await repository.listShiftList('ALL', VIEWER)
     expect((await adapter.load())?.revision).toBe(before)
+  })
+})
+
+// §21.27 lifecycle месячного плана + §21.28 action policy шапки. Ключевое, что
+// здесь проверяется: `VALIDATED` НЕ становится состоянием сущности, утверждение
+// закрывает месяц для ПЛАНИРУЮЩИХ мутаций (и только для них), а изменения после
+// утверждения возможны только через новую редакцию.
+describe('createDutiesRepository — lifecycle месячного плана (§21.27/§21.28)', () => {
+  const APPROVER = 'approver-user'
+
+  beforeEach(() => {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.duty.view'] },
+      { userId: PLANNER, permissions: ['ops.duty.view', 'ops.duty.manage'] },
+      { userId: APPROVER, permissions: ['ops.duty.view', 'ops.duty.approve_plan'] },
+      {
+        userId: 'both-user',
+        permissions: ['ops.duty.view', 'ops.duty.manage', 'ops.duty.approve_plan'],
+      },
+      { userId: NOBODY, permissions: [] },
+    ])
+  })
+  const BOTH = 'both-user'
+
+  const LIFECYCLE_OBJECT = {
+    id: 'object-life',
+    name: 'Дворец Независимости',
+    code: 'OBJ-001',
+    passportState: 'GREEN',
+    passportVersions: [
+      {
+        id: 'life-v1',
+        versionNumber: 1,
+        effectiveFrom: '2026-01-01',
+        sectors: [
+          {
+            id: 'sector-a',
+            name: 'Сектор A',
+            posts: [
+              { id: 'post-1', name: 'КПП-1', task: 'Контроль', requirements: 'Допуск A' },
+              { id: 'post-2', name: 'Пост 2', task: 'Периметр', requirements: 'Допуск A' },
+            ],
+          },
+        ],
+      },
+    ],
+  }
+
+  const LIFECYCLE_DUTY_TYPES = [
+    {
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      safeLabel: 'Суточное дежурство на собственном объекте',
+      targetType: 'OWN_OBJECT',
+      defaultDurationMinutes: 1440,
+      requiresSenior: true,
+      restAfterMinutes: 1440,
+      restPolicy: 'HARD_BLOCK',
+      requiresCurrentPassport: false,
+    },
+  ]
+
+  function lifecycleShift(
+    id: string,
+    businessDate: string,
+    overrides: Partial<DutyShift> = {},
+  ): DutyShift {
+    return {
+      id,
+      businessDate,
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      target: {
+        targetType: 'OWN_OBJECT',
+        objectId: LIFECYCLE_OBJECT.id,
+        safeLabel: LIFECYCLE_OBJECT.name,
+      },
+      employeeName: 'Ахметов Б.',
+      stateCode: 'PLANNED',
+      acknowledgedAt: null,
+      actualStart: null,
+      actualEnd: null,
+      updatedAt: `${businessDate}T08:00:00+05:00`,
+      passportBinding: {
+        objectId: LIFECYCLE_OBJECT.id,
+        objectName: LIFECYCLE_OBJECT.name,
+        versionId: 'life-v1',
+        versionNumber: 1,
+        effectiveFrom: '2026-01-01',
+        sectorId: 'sector-a',
+        sectorName: 'Сектор A',
+        postId: 'post-1',
+        postName: 'КПП-1',
+        boundAt: '2026-07-24T08:00:00+05:00',
+      },
+      note: null,
+      cancellation: null,
+      overrideReason: null,
+      ...overrides,
+    }
+  }
+
+  async function setupLifecycle(shifts: DutyShift[]) {
+    const envelope = seedEnvelope([])
+    const adapter = createMemoryPersistence()
+    await adapter.reset({
+      ...envelope,
+      slices: {
+        ...envelope.slices,
+        objects: { objects: [LIFECYCLE_OBJECT] },
+        duties: {
+          ...(envelope.slices.duties as object),
+          shifts,
+          dutyTypes: LIFECYCLE_DUTY_TYPES,
+        },
+      },
+    })
+    return {
+      repository: createDutiesRepository(adapter, new DemoClock('2026-07-26T09:00:00+05:00')),
+      adapter,
+    }
+  }
+
+  /** Доводит месяц до утверждённого состояния целиком через публичные операции. */
+  async function approveMonth(
+    repository: ReturnType<typeof createDutiesRepository>,
+    month = '2026-07',
+  ) {
+    await repository.createPlanDraft({ month }, PLANNER)
+    await repository.checkPlanConflicts({ month }, PLANNER)
+    return repository.approvePlan({ month }, APPROVER)
+  }
+
+  describe('права', () => {
+    it('черновик и проверка требуют ops.duty.manage', async () => {
+      const { repository } = await setupLifecycle([])
+      await expect(repository.createPlanDraft({ month: '2026-07' }, VIEWER)).rejects.toThrow(
+        RepositoryPermissionError,
+      )
+      await repository.createPlanDraft({ month: '2026-07' }, PLANNER)
+      await expect(repository.checkPlanConflicts({ month: '2026-07' }, VIEWER)).rejects.toThrow(
+        RepositoryPermissionError,
+      )
+    })
+
+    it('утверждение НЕ даётся правом планирования: нужно ops.duty.approve_plan', async () => {
+      const { repository } = await setupLifecycle([])
+      await repository.createPlanDraft({ month: '2026-07' }, PLANNER)
+      await repository.checkPlanConflicts({ month: '2026-07' }, PLANNER)
+      await expect(repository.approvePlan({ month: '2026-07' }, PLANNER)).rejects.toThrow(
+        RepositoryPermissionError,
+      )
+      await expect(repository.approvePlan({ month: '2026-07' }, APPROVER)).resolves.toMatchObject({
+        stateCode: 'APPROVED',
+      })
+    })
+
+    it('новую редакцию открывает тот же, кто утверждает, а не планировщик', async () => {
+      const { repository } = await setupLifecycle([])
+      await approveMonth(repository)
+      await expect(repository.reopenPlan({ month: '2026-07' }, PLANNER)).rejects.toThrow(
+        RepositoryPermissionError,
+      )
+      await expect(repository.reopenPlan({ month: '2026-07' }, APPROVER)).resolves.toMatchObject({
+        stateCode: 'DRAFT',
+      })
+    })
+  })
+
+  describe('состояния и проверка', () => {
+    it('месяца без черновика не существует: план приходит null, а не пустым DRAFT', async () => {
+      const { repository } = await setupLifecycle([lifecycleShift('duty-1', '2026-07-10')])
+      const plan = await repository.getMonthlyPlan('2026-07', VIEWER)
+      expect(plan.header.record).toBeNull()
+    })
+
+    it('повторный черновик на тот же месяц — бизнес-ошибка, а не второй план', async () => {
+      const { repository } = await setupLifecycle([])
+      await repository.createPlanDraft({ month: '2026-07' }, PLANNER)
+      await expect(repository.createPlanDraft({ month: '2026-07' }, PLANNER)).rejects.toMatchObject(
+        { errorCode: 'PLAN_ALREADY_EXISTS' },
+      )
+    })
+
+    it('проверка НЕ меняет состояние плана: VALIDATED — результат, а не состояние (§21.27)', async () => {
+      const { repository } = await setupLifecycle([lifecycleShift('duty-1', '2026-07-10')])
+      await repository.createPlanDraft({ month: '2026-07' }, PLANNER)
+      const checked = await repository.checkPlanConflicts({ month: '2026-07' }, PLANNER)
+      expect(checked.stateCode).toBe('DRAFT')
+      expect(checked.lastValidation).toMatchObject({ passed: true, hardConflicts: 0 })
+      // Проверка попадает в ИСТОРИЮ как событие, но ни одно состояние плана за
+      // весь конвейер не называется VALIDATED — §21.27 «VALIDATED может быть
+      // результатом проверки, а не состоянием сущности».
+      const approved = await repository.approvePlan({ month: '2026-07' }, APPROVER)
+      expect(approved.history.map((entry) => entry.event)).toEqual([
+        'DRAFT_CREATED',
+        'VALIDATED',
+        'APPROVED',
+      ])
+      const states = [checked.stateCode, approved.stateCode]
+      expect(states).toEqual(['DRAFT', 'APPROVED'])
+      expect(states).not.toContain('VALIDATED')
+    })
+
+    it('жёсткий конфликт валит проверку и закрывает утверждение', async () => {
+      const { repository } = await setupLifecycle([
+        lifecycleShift('duty-1', '2026-07-10'),
+        lifecycleShift('duty-2', '2026-07-10', { id: 'duty-2' }),
+      ])
+      await repository.createPlanDraft({ month: '2026-07' }, PLANNER)
+      const checked = await repository.checkPlanConflicts({ month: '2026-07' }, PLANNER)
+      expect(checked.lastValidation).toMatchObject({ passed: false, hardConflicts: 1 })
+      await expect(repository.approvePlan({ month: '2026-07' }, APPROVER)).rejects.toMatchObject({
+        errorCode: 'PLAN_HAS_HARD_CONFLICTS',
+      })
+    })
+
+    it('утверждение без проверки отклоняется', async () => {
+      const { repository } = await setupLifecycle([])
+      await repository.createPlanDraft({ month: '2026-07' }, PLANNER)
+      await expect(repository.approvePlan({ month: '2026-07' }, APPROVER)).rejects.toMatchObject({
+        errorCode: 'PLAN_NOT_VALIDATED',
+      })
+    })
+
+    it('проверка обесценивается ЛЮБОЙ правкой состава месяца', async () => {
+      const { repository } = await setupLifecycle([lifecycleShift('duty-1', '2026-07-10')])
+      await repository.createPlanDraft({ month: '2026-07' }, PLANNER)
+      await repository.checkPlanConflicts({ month: '2026-07' }, PLANNER)
+      // Правка существующей смены — не появление новой: отпечаток обязан
+      // измениться и от неё тоже.
+      await repository.updateDutyShift(
+        'duty-1',
+        { employeeName: 'Ахметов Б.', sectorId: 'sector-a', postId: 'post-2', note: null },
+        PLANNER,
+      )
+      await expect(repository.approvePlan({ month: '2026-07' }, APPROVER)).rejects.toMatchObject({
+        errorCode: 'PLAN_VALIDATION_STALE',
+      })
+      // Повторная проверка снимает блокировку.
+      await repository.checkPlanConflicts({ month: '2026-07' }, PLANNER)
+      await expect(repository.approvePlan({ month: '2026-07' }, APPROVER)).resolves.toMatchObject({
+        stateCode: 'APPROVED',
+      })
+    })
+
+    it('смена соседнего месяца проверку НЕ обесценивает', async () => {
+      const { repository } = await setupLifecycle([lifecycleShift('duty-1', '2026-07-10')])
+      await repository.createPlanDraft({ month: '2026-07' }, PLANNER)
+      await repository.checkPlanConflicts({ month: '2026-07' }, PLANNER)
+      await repository.createDutyShift(
+        {
+          businessDate: '2026-08-05',
+          dutyTypeCode: 'OWN_OBJECT_DAILY',
+          objectId: LIFECYCLE_OBJECT.id,
+          sectorId: 'sector-a',
+          postId: 'post-1',
+          employeeName: 'Ахметов Б.',
+          note: null,
+        },
+        PLANNER,
+      )
+      await expect(repository.approvePlan({ month: '2026-07' }, APPROVER)).resolves.toMatchObject({
+        stateCode: 'APPROVED',
+      })
+    })
+  })
+
+  describe('фиксация утверждённого месяца (§21.27 «изменения через новую revision»)', () => {
+    it('заводить, править и отменять дежурства утверждённого месяца нельзя', async () => {
+      const { repository } = await setupLifecycle([lifecycleShift('duty-1', '2026-07-10')])
+      await approveMonth(repository)
+
+      await expect(
+        repository.createDutyShift(
+          {
+            businessDate: '2026-07-20',
+            dutyTypeCode: 'OWN_OBJECT_DAILY',
+            objectId: LIFECYCLE_OBJECT.id,
+            sectorId: 'sector-a',
+            postId: 'post-1',
+            employeeName: 'Сериков Н.',
+            note: null,
+          },
+          PLANNER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'PLAN_APPROVED_LOCKED' })
+      await expect(
+        repository.updateDutyShift(
+          'duty-1',
+          { employeeName: 'Ахметов Б.', sectorId: 'sector-a', postId: 'post-2', note: null },
+          PLANNER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'PLAN_APPROVED_LOCKED' })
+      await expect(
+        repository.cancelDutyShift('duty-1', { reason: 'Изменился график' }, PLANNER),
+      ).rejects.toMatchObject({ errorCode: 'PLAN_APPROVED_LOCKED' })
+    })
+
+    it('ознакомление и заступление ОСТАЮТСЯ доступны: это факт, а не изменение плана', async () => {
+      const { repository } = await setupLifecycle([lifecycleShift('duty-1', '2026-07-10')])
+      await approveMonth(repository)
+      await expect(repository.acknowledge('duty-1', PLANNER)).resolves.toMatchObject({
+        stateCode: 'ACKNOWLEDGED',
+      })
+      await expect(repository.clockIn('duty-1', PLANNER)).resolves.toMatchObject({
+        stateCode: 'ACTIVE',
+      })
+    })
+
+    it('соседний месяц утверждением НЕ закрывается', async () => {
+      const { repository } = await setupLifecycle([lifecycleShift('duty-1', '2026-07-10')])
+      await approveMonth(repository)
+      await expect(
+        repository.createDutyShift(
+          {
+            businessDate: '2026-08-05',
+            dutyTypeCode: 'OWN_OBJECT_DAILY',
+            objectId: LIFECYCLE_OBJECT.id,
+            sectorId: 'sector-a',
+            postId: 'post-1',
+            employeeName: 'Сериков Н.',
+            note: null,
+          },
+          PLANNER,
+        ),
+      ).resolves.toMatchObject({ businessDate: '2026-08-05' })
+    })
+
+    it('проверка конфликтов утверждённого месяца отклоняется', async () => {
+      const { repository } = await setupLifecycle([])
+      await approveMonth(repository)
+      await expect(
+        repository.checkPlanConflicts({ month: '2026-07' }, PLANNER),
+      ).rejects.toMatchObject({ errorCode: 'PLAN_APPROVED_LOCKED' })
+    })
+
+    it('новая редакция поднимает номер, снимает утверждение и сбрасывает проверку', async () => {
+      const { repository } = await setupLifecycle([lifecycleShift('duty-1', '2026-07-10')])
+      const approved = await approveMonth(repository)
+      expect(approved).toMatchObject({ revision: 1, approvedBy: APPROVER })
+      const reopened = await repository.reopenPlan({ month: '2026-07' }, APPROVER)
+      expect(reopened).toMatchObject({
+        stateCode: 'DRAFT',
+        revision: 2,
+        approvedAt: null,
+        approvedBy: null,
+        // Проверка относилась к прошлой редакции — новая ещё не проверялась.
+        lastValidation: null,
+      })
+      // И месяц снова открыт для планирования.
+      await expect(
+        repository.cancelDutyShift('duty-1', { reason: 'Изменился график' }, PLANNER),
+      ).resolves.toMatchObject({ stateCode: 'CANCELLED' })
+    })
+
+    it('история только дополняется: прежнее утверждение остаётся после переоткрытия', async () => {
+      const { repository } = await setupLifecycle([])
+      await approveMonth(repository)
+      const reopened = await repository.reopenPlan({ month: '2026-07' }, APPROVER)
+      expect(reopened.history.map((entry) => entry.event)).toEqual([
+        'DRAFT_CREATED',
+        'VALIDATED',
+        'APPROVED',
+        'REOPENED',
+      ])
+      // Событие утверждения помнит СВОЮ редакцию, а не текущую.
+      expect(reopened.history[2]).toMatchObject({ event: 'APPROVED', revision: 1 })
+      expect(reopened.history[3]).toMatchObject({ event: 'REOPENED', revision: 2 })
+    })
+
+    it('повторное утверждение уже утверждённого плана отклоняется', async () => {
+      const { repository } = await setupLifecycle([])
+      await approveMonth(repository)
+      await expect(repository.approvePlan({ month: '2026-07' }, APPROVER)).rejects.toMatchObject({
+        errorCode: 'PLAN_ALREADY_APPROVED',
+      })
+    })
+
+    it('операции над несформированным планом дают 404, а не создают его молча', async () => {
+      const { repository } = await setupLifecycle([])
+      await expect(repository.checkPlanConflicts({ month: '2026-07' }, PLANNER)).rejects.toThrow(
+        RepositoryNotFoundError,
+      )
+      await expect(repository.approvePlan({ month: '2026-07' }, APPROVER)).rejects.toThrow(
+        RepositoryNotFoundError,
+      )
+      expect((await repository.getMonthlyPlan('2026-07', VIEWER)).header.record).toBeNull()
+    })
+
+    it('месяц вне формата YYYY-MM отклоняется всеми действиями lifecycle', async () => {
+      const { repository } = await setupLifecycle([])
+      for (const call of [
+        () => repository.createPlanDraft({ month: '2026-13' }, PLANNER),
+        () => repository.checkPlanConflicts({ month: '' }, PLANNER),
+        () => repository.approvePlan({ month: '2026-7' }, APPROVER),
+        () => repository.reopenPlan({ month: 'июль' }, APPROVER),
+      ]) {
+        await expect(call()).rejects.toMatchObject({ errorCode: 'INVALID_MONTH' })
+      }
+    })
+  })
+
+  describe('шапка плана (§21.28)', () => {
+    it('доступность действий приходит В ОТВЕТЕ и зависит от прав актора', async () => {
+      const { repository } = await setupLifecycle([lifecycleShift('duty-1', '2026-07-10')])
+      const asViewer = await repository.getMonthlyPlan('2026-07', VIEWER)
+      expect(asViewer.header.actions.every((action) => !action.enabled)).toBe(true)
+
+      const asPlanner = await repository.getMonthlyPlan('2026-07', PLANNER)
+      expect(
+        asPlanner.header.actions
+          .filter((action) => action.enabled)
+          .map((action) => action.code),
+      ).toEqual(['CREATE_DRAFT', 'ADD_SHIFT'])
+    })
+
+    it('после утверждения шапка оставляет доступной только новую редакцию', async () => {
+      const { repository } = await setupLifecycle([lifecycleShift('duty-1', '2026-07-10')])
+      await approveMonth(repository)
+      const header = (await repository.getMonthlyPlan('2026-07', BOTH)).header
+      expect(header.record).toMatchObject({ stateCode: 'APPROVED', revision: 1 })
+      expect(header.actions.filter((action) => action.enabled).map((action) => action.code)).toEqual(
+        ['REOPEN'],
+      )
+    })
+
+    it('источник объектов различает объекты реестра и объекты вне его', async () => {
+      const { repository } = await setupLifecycle([
+        lifecycleShift('duty-1', '2026-07-10'),
+        lifecycleShift('duty-2', '2026-07-11', {
+          id: 'duty-2',
+          target: { targetType: 'OWN_OBJECT', objectId: 'object-ghost', safeLabel: 'Штаб' },
+        }),
+      ])
+      const header = (await repository.getMonthlyPlan('2026-07', VIEWER)).header
+      expect(header.objectSource).toMatchObject({ knownObjects: 1, unknownObjects: 1 })
+    })
+
+    it('невыводимые поля шапки и эффекты утверждения приходят С ПРИЧИНОЙ (§35)', async () => {
+      const { repository } = await setupLifecycle([])
+      const header = (await repository.getMonthlyPlan('2026-07', VIEWER)).header
+      expect(header.unavailableFields.map((field) => field.code)).toEqual([
+        'USER_SCOPE',
+        'AVAILABILITY_STATE',
+      ])
+      expect(
+        [...header.unavailableFields, ...header.unavailableApprovalEffects].every(
+          (item) => item.reason.trim() !== '',
+        ),
+      ).toBe(true)
+    })
+
+    it('чтение плана с шапкой не поднимает ревизию состояния', async () => {
+      const { repository, adapter } = await setupLifecycle([])
+      const before = (await adapter.load())?.revision
+      await repository.getMonthlyPlan('2026-07', BOTH)
+      expect((await adapter.load())?.revision).toBe(before)
+    })
   })
 })

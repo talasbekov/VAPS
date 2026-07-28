@@ -21,6 +21,10 @@ import {
   combatDutyShiftReplacePath,
   combatDutyShiftReviewPath,
   combatDutyShiftSubmitPath,
+  dutyPlanApprovePath,
+  dutyPlanCheckPath,
+  dutyPlanDraftPath,
+  dutyPlanReopenPath,
   dutyShiftAcknowledgePath,
   dutyShiftDetailPath,
   dutyShiftUpdatePath,
@@ -57,6 +61,8 @@ import type {
   ListDutyShiftsResponse,
   ListDutyTypesResponse,
   MonthlyDutyPlanResponse,
+  MonthlyPlanActionRequest,
+  MonthlyPlanActionResponse,
   RequestCombatDutyReplacementRequest,
   RequestCombatDutyReplacementResponse,
   ReviewCombatGroupRequest,
@@ -121,6 +127,43 @@ export function useMonthlyDutyPlan(month: string, options: { enabled?: boolean }
     enabled: options.enabled ?? true,
     placeholderData: keepPreviousData,
   })
+}
+
+/**
+ * §21.27, действия lifecycle месячного плана. Один хук на все четыре: тела,
+ * ответы и инвалидация у них совпадают до последнего поля, различается только
+ * путь — четыре копии разошлись бы при первой же правке инвалидации.
+ *
+ * Инвалидируется не только сам план: утверждение ЗАКРЫВАЕТ месяц для правок
+ * (`PLAN_APPROVED_LOCKED`), поэтому список смен и карточка обязаны перечитать
+ * своё состояние — иначе форма правки осталась бы открытой над закрытым месяцем.
+ */
+function usePlanLifecycleAction(path: string) {
+  const queryClient = useQueryClient()
+  return useApiMutation<MonthlyPlanActionResponse, MonthlyPlanActionRequest>({
+    mutationFn: (body) => apiClient.post<MonthlyPlanActionResponse>(path, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'monthly-plan'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-list'] })
+      void queryClient.invalidateQueries({ queryKey: ['duties', 'shift-detail'] })
+    },
+  })
+}
+
+export function useCreatePlanDraft() {
+  return usePlanLifecycleAction(dutyPlanDraftPath())
+}
+
+export function useCheckPlanConflicts() {
+  return usePlanLifecycleAction(dutyPlanCheckPath())
+}
+
+export function useApprovePlan() {
+  return usePlanLifecycleAction(dutyPlanApprovePath())
+}
+
+export function useReopenPlan() {
+  return usePlanLifecycleAction(dutyPlanReopenPath())
 }
 
 /**

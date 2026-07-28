@@ -260,3 +260,72 @@ export interface DutyShift {
    * не обоснование. */
   overrideReason: string | null
 }
+
+/**
+ * §21.27 «Lifecycle месячного плана». Промпт называет цепочку
+ * `DRAFT → VALIDATED → APPROVED` и тут же ограничивает её:
+ *
+ *   «Если API registry содержит только DRAFT и APPROVED, не добавляй
+ *    промежуточный статус в данные. VALIDATED может быть результатом
+ *    проверки, а не состоянием сущности.»
+ *
+ * Ровно этот случай: в данных ДВА состояния, а `VALIDATED` живёт как
+ * `MonthlyPlanRecord.lastValidation` — результат проверки конфликтов, а не
+ * третий вариант `stateCode`. Тип нарочно не содержит `'VALIDATED'`: сделать
+ * его недостижимым НА УРОВНЕ ТИПА надёжнее, чем договориться его не писать.
+ */
+export type MonthlyPlanStateCode = 'DRAFT' | 'APPROVED'
+
+/**
+ * Результат последней проверки конфликтов месяца (§21.27 «VALIDATED может быть
+ * результатом проверки»).
+ *
+ * `planFingerprint` — отпечаток состава месяца на момент проверки. Без него
+ * проверка «протухала» бы молча: план проверили, потом завели ещё смену, и
+ * утверждение шло бы по устаревшему результату. Утверждать можно только план,
+ * отпечаток которого совпадает с текущим.
+ */
+export interface MonthlyPlanValidation {
+  checkedAt: string
+  hardConflicts: number
+  softConflicts: number
+  /** Проверка пройдена: жёстких конфликтов нет. Мягкие утверждению не мешают —
+   * они уже обойдены с обоснованием при заведении смены (§21.34). */
+  passed: boolean
+  planFingerprint: string
+}
+
+export type MonthlyPlanHistoryEvent = 'DRAFT_CREATED' | 'VALIDATED' | 'APPROVED' | 'REOPENED'
+
+/** §21.27 «история не перезаписывается» — список только дополняется. */
+export interface MonthlyPlanHistoryEntry {
+  at: string
+  /** Редакция, В КОТОРОЙ произошло событие (а не та, что получилась после). */
+  revision: number
+  event: MonthlyPlanHistoryEvent
+  note: string
+}
+
+/**
+ * Сущность месячного плана. Появляется НЕ автоматически: пока черновик не
+ * сформирован, плана на месяц не существует вовсе — «автоматически созданный
+ * черновик не считается утверждённым» (§21.27), а созданный сам собой при
+ * первом открытии экрана был бы ещё и не сформированным человеком.
+ *
+ * §21.27 «изменения выполняются через новую revision»: утверждённый месяц
+ * закрыт для планирующих мутаций, а `REOPEN` поднимает `revision` и возвращает
+ * план в `DRAFT`. Правки поверх утверждённой редакции не существует.
+ */
+export interface MonthlyPlanRecord {
+  /** YYYY-MM. Первичный ключ: план на месяц один. */
+  month: string
+  stateCode: MonthlyPlanStateCode
+  /** Начинается с 1 у черновика; растёт только при открытии новой редакции. */
+  revision: number
+  createdAt: string
+  lastValidation: MonthlyPlanValidation | null
+  approvedAt: string | null
+  /** userId утвердившего (dev-credential demo-режима). */
+  approvedBy: string | null
+  history: MonthlyPlanHistoryEntry[]
+}

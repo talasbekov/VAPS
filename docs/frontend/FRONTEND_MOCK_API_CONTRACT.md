@@ -172,8 +172,36 @@ join, а не кросс-фичевый импорт (ARCH-FE-013). Запись
 | `conflicts[]` | `severity` (HARD/SOFT) назначает сервер (§21.34), сообщение готово к показу |
 | `unavailableMetrics[]` | §35 — показатели прототипа, которых нет в модели, с причиной |
 
-Мутаций у ресурса нет: месяц — проекция уже существующих `DutyShift`, собственной
-сущности плана (DRAFT→APPROVED, §21.27) в этом срезе не заведено.
+## Этап 38 — lifecycle месячного плана (§21.27) и шапка плана (§21.28)
+
+У ресурса появилась собственная сущность плана и четыре мутации. Ответ
+`GET /api/ops/duty-monthly-plan/?month=` дополнен блоком `header`:
+
+| Поле `header` | Смысл |
+|---|---|
+| `record` | `MonthlyPlanRecord` или **`null`** — «плана нет» и «план в черновике» разные факты |
+| `record.stateCode` | ТОЛЬКО `DRAFT`/`APPROVED`; `VALIDATED` — не состояние (§21.27) |
+| `record.revision` | редакция; растёт только при открытии новой (§21.27) |
+| `record.lastValidation` | результат проверки: когда, сколько жёстких/мягких, пройдена ли, отпечаток состава |
+| `record.history[]` | §21.27 «история не перезаписывается» — только дополнение |
+| `objectSource` | §21.28 «источник объектов»: реестр + сколько объектов месяца вне его |
+| `actions[]` | §21.28 action policy: шесть действий, `enabled` + `reason` у каждого недоступного |
+| `unavailableFields[]` / `unavailableApprovalEffects[]` | §35 — поля шапки и эффекты утверждения, которых модель не даёт |
+
+| Мутация | Право | Отказы |
+|---|---|---|
+| `POST …/duty-monthly-plan/draft/` | `ops.duty.manage` | 422 `PLAN_ALREADY_EXISTS`, `INVALID_MONTH` |
+| `POST …/duty-monthly-plan/check/` | `ops.duty.manage` | 404 (плана нет), 422 `PLAN_APPROVED_LOCKED` |
+| `POST …/duty-monthly-plan/approve/` | `ops.duty.approve_plan` | 404, 422 `PLAN_NOT_VALIDATED` / `PLAN_VALIDATION_STALE` / `PLAN_HAS_HARD_CONFLICTS` / `PLAN_ALREADY_APPROVED` |
+| `POST …/duty-monthly-plan/reopen/` | `ops.duty.approve_plan` | 404, 422 `INVALID_STATE_TRANSITION` |
+
+Тело всех четырёх — `{ month: "YYYY-MM" }`: плана как отдельного идентификатора нет,
+ключ — сам месяц. Ответ — `MonthlyPlanRecord`.
+
+**Побочный эффект на ЧУЖИЕ операции**: `POST /api/ops/duty-shifts/`, `…/update/` и
+`…/cancel/` отвечают 422 `PLAN_APPROVED_LOCKED`, если месяц смены утверждён (§21.27
+«план фиксируется»). Ознакомление, заступление и завершение НЕ затронуты — это факт
+несения службы, а не изменение плана.
 
 ## NEXT ACTION
 Регистрировать первые операции `features/analytics`/дальнейшее расширение duties (боевые группы, месячное планирование) — по решению пользователя.

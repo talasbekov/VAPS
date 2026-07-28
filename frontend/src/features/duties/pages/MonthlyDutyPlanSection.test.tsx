@@ -16,12 +16,85 @@ import { server } from '../../../shared/api/testing/server'
 import { clearCredential, setCredential } from '../../../shared/auth/credential'
 import { ToastProvider } from '../../../shared/ui/toast'
 import { daysInMonth } from '../lib/monthlyPlan'
-import type { MonthlyDutyPlan } from '../lib/monthlyPlan'
+import type { MonthlyDutyPlanResponse } from '../api/pending-contracts'
+import type { DutyPlanAction, MonthlyPlanHeader } from '../lib/planLifecycle'
+import type { MonthlyPlanRecord } from '../model/types'
 import { MonthlyDutyPlanSection } from './MonthlyDutyPlanSection'
 
 const PLAN_URL = '*/api/ops/duty-monthly-plan/'
 
-function plan(month: string, overrides: Partial<MonthlyDutyPlan> = {}): MonthlyDutyPlan {
+/** Шапка §21.28 по умолчанию: плана нет, всё, кроме формирования черновика,
+ * недоступно — ровно то состояние, с которого месяц начинается в сиде. */
+function header(month: string, overrides: Partial<MonthlyPlanHeader> = {}): MonthlyPlanHeader {
+  return {
+    month,
+    record: null,
+    objectSource: {
+      registryLabel: 'Реестр объектов (паспорта, секторы и посты)',
+      knownObjects: 1,
+      unknownObjects: 0,
+    },
+    actions: [
+      { code: 'CREATE_DRAFT', label: 'Сформировать черновик', enabled: true, reason: null },
+      {
+        code: 'CHECK_CONFLICTS',
+        label: 'Проверить конфликты',
+        enabled: false,
+        reason: 'Плана на этот месяц нет — сначала сформируйте черновик.',
+      },
+      {
+        code: 'APPROVE',
+        label: 'Утвердить план',
+        enabled: false,
+        reason: 'Плана на этот месяц нет — сначала сформируйте черновик.',
+      },
+      {
+        code: 'REOPEN',
+        label: 'Открыть новую редакцию',
+        enabled: false,
+        reason: 'Новая редакция открывается только для утверждённого плана.',
+      },
+      { code: 'EXPORT', label: 'Экспортировать', enabled: false, reason: 'Экспорт не реализован.' },
+      { code: 'ADD_SHIFT', label: 'Добавить дежурство', enabled: true, reason: null },
+    ] satisfies DutyPlanAction[],
+    unavailableFields: [
+      { code: 'USER_SCOPE', label: 'Scope пользователя', reason: 'Плоский список прав.' },
+    ],
+    unavailableApprovalEffects: [
+      { code: 'PARTICIPANT_NOTIFICATIONS', label: 'Уведомления', reason: 'Нет реестра адресатов.' },
+    ],
+    ...overrides,
+  }
+}
+
+function planRecord(
+  month: string,
+  overrides: Partial<MonthlyPlanRecord> = {},
+): MonthlyPlanRecord {
+  return {
+    month,
+    stateCode: 'DRAFT',
+    revision: 1,
+    createdAt: '2026-07-01T09:00:00.000Z',
+    lastValidation: null,
+    approvedAt: null,
+    approvedBy: null,
+    history: [
+      {
+        at: '2026-07-01T09:00:00.000Z',
+        revision: 1,
+        event: 'DRAFT_CREATED',
+        note: 'Черновик плана сформирован.',
+      },
+    ],
+    ...overrides,
+  }
+}
+
+function plan(
+  month: string,
+  overrides: Partial<MonthlyDutyPlanResponse> = {},
+): MonthlyDutyPlanResponse {
   const days = daysInMonth(month)
   return {
     month,
@@ -65,12 +138,13 @@ function plan(month: string, overrides: Partial<MonthlyDutyPlan> = {}): MonthlyD
     unavailableMetrics: [
       { code: 'STAFFING_COMPLETENESS', label: 'Укомплектовано', reason: 'Нет требуемой численности.' },
     ],
+    header: header(month),
     ...overrides,
   }
 }
 
 /** Отдаёт свой ответ на каждый месяц и запоминает запрошенные месяцы. */
-function mockPlanByMonth(byMonth: Record<string, MonthlyDutyPlan>): string[] {
+function mockPlanByMonth(byMonth: Record<string, MonthlyDutyPlanResponse>): string[] {
   const requested: string[] = []
   server.use(
     http.get(PLAN_URL, ({ request }) => {
@@ -84,8 +158,9 @@ function mockPlanByMonth(byMonth: Record<string, MonthlyDutyPlan>): string[] {
   return requested
 }
 
-function renderSection(initialMonth = '2026-07'): void {
+function renderSection(initialMonth = '2026-07'): { addShiftCalls: number[] } {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const calls: number[] = []
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={client}>
@@ -93,7 +168,18 @@ function renderSection(initialMonth = '2026-07'): void {
       </QueryClientProvider>
     )
   }
-  render(<MonthlyDutyPlanSection initialMonth={initialMonth} />, { wrapper: Wrapper })
+  render(
+    <MonthlyDutyPlanSection
+      initialMonth={initialMonth}
+      onAddShift={() => calls.push(calls.length + 1)}
+    />,
+    { wrapper: Wrapper },
+  )
+  return {
+    get addShiftCalls() {
+      return calls
+    },
+  }
 }
 
 beforeEach(() => {
@@ -284,5 +370,161 @@ describe('Месячный план дежурств', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Объекты × дни' }))
     // §21.4/§21.30 — это ПРЕДСТАВЛЕНИЯ одного ответа, а не два источника.
     expect(requests).toBe(1)
+  })
+})
+
+describe('Шапка месячного плана (§21.27-21.28)', () => {
+  it('доступность кнопок берётся ИЗ ОТВЕТА, а не выводится из состояния плана', async () => {
+    // Сервер говорит: план утверждён, но «Утвердить план» ДОСТУПНО. Экран,
+    // который выводит доступность сам, здесь показал бы кнопку выключенной —
+    // §21.28 требует ровно обратного (action policy приходит с сервера).
+    mockPlanByMonth({
+      '2026-07': plan('2026-07', {
+        header: header('2026-07', {
+          record: planRecord('2026-07', { stateCode: 'APPROVED', revision: 3 }),
+          actions: [
+            { code: 'CREATE_DRAFT', label: 'Сформировать черновик', enabled: false, reason: 'нельзя' },
+            { code: 'CHECK_CONFLICTS', label: 'Проверить конфликты', enabled: false, reason: 'нельзя' },
+            { code: 'APPROVE', label: 'Утвердить план', enabled: true, reason: null },
+            { code: 'REOPEN', label: 'Открыть новую редакцию', enabled: false, reason: 'нельзя' },
+            { code: 'EXPORT', label: 'Экспортировать', enabled: false, reason: 'нельзя' },
+            { code: 'ADD_SHIFT', label: 'Добавить дежурство', enabled: false, reason: 'нельзя' },
+          ],
+        }),
+      }),
+    })
+    renderSection()
+
+    expect(await screen.findByRole('button', { name: 'Утвердить план' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Открыть новую редакцию' })).toBeDisabled()
+  })
+
+  it('причина недоступности видна текстом, а не только в подсказке выключенной кнопки', async () => {
+    mockPlanByMonth({ '2026-07': plan('2026-07') })
+    renderSection()
+
+    // Выключенная кнопка не получает фокус — title недостижим с клавиатуры.
+    expect(await screen.findByRole('button', { name: 'Проверить конфликты' })).toBeDisabled()
+    // Причина видна у КАЖДОГО недоступного действия, а не у одного: две кнопки
+    // закрыты одной и той же причиной, и обе обязаны её назвать.
+    const reasons = screen
+      .getAllByRole('listitem')
+      .map((item) => item.textContent ?? '')
+      .filter((text) => text.includes('сначала сформируйте черновик'))
+    expect(reasons).toHaveLength(2)
+    expect(reasons[0]).toContain('Проверить конфликты')
+    expect(reasons[1]).toContain('Утвердить план')
+  })
+
+  it('месяц без плана назван «черновик не сформирован», а не пустым состоянием', async () => {
+    mockPlanByMonth({ '2026-07': plan('2026-07') })
+    renderSection()
+
+    expect(await screen.findByText('Черновик не сформирован')).toBeInTheDocument()
+    expect(screen.getByText('Проверка конфликтов не проводилась')).toBeInTheDocument()
+    // Редакции у несформированного плана нет — прочерк, а не «1».
+    expect(screen.getByText('Редакция').nextElementSibling).toHaveTextContent('—')
+  })
+
+  it('утверждённый план: состояние, редакция и результат проверки — из ответа', async () => {
+    mockPlanByMonth({
+      '2026-07': plan('2026-07', {
+        header: header('2026-07', {
+          record: planRecord('2026-07', {
+            stateCode: 'APPROVED',
+            revision: 2,
+            approvedAt: '2026-07-05T11:30:00.000Z',
+            approvedBy: 'demo-objects-admin',
+            lastValidation: {
+              checkedAt: '2026-07-05T11:00:00.000Z',
+              hardConflicts: 0,
+              softConflicts: 2,
+              passed: true,
+              planFingerprint: 'fp-1',
+            },
+          }),
+        }),
+      }),
+    })
+    renderSection()
+
+    expect(await screen.findByText('Утверждён')).toBeInTheDocument()
+    expect(screen.getByText('Редакция').nextElementSibling).toHaveTextContent('2')
+    expect(screen.getByText(/пройдена$/)).toBeInTheDocument()
+    expect(screen.getByText(/изменения выполняются через новую/)).toBeInTheDocument()
+  })
+
+  it('провалившаяся проверка названа числом жёстких конфликтов, а не словом «ошибка»', async () => {
+    mockPlanByMonth({
+      '2026-07': plan('2026-07', {
+        header: header('2026-07', {
+          record: planRecord('2026-07', {
+            lastValidation: {
+              checkedAt: '2026-07-05T11:00:00.000Z',
+              hardConflicts: 3,
+              softConflicts: 0,
+              passed: false,
+              planFingerprint: 'fp-1',
+            },
+          }),
+        }),
+      }),
+    })
+    renderSection()
+
+    expect(await screen.findByText(/не пройдена \(жёстких конфликтов 3\)/)).toBeInTheDocument()
+  })
+
+  it('«Добавить дежурство» уводит туда, где живёт форма, а не шлёт мутацию', async () => {
+    mockPlanByMonth({ '2026-07': plan('2026-07') })
+    const section = renderSection()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Добавить дежурство' }))
+    expect(section.addShiftCalls).toHaveLength(1)
+  })
+
+  it('история плана показана целиком и в порядке событий (§21.27 «не перезаписывается»)', async () => {
+    mockPlanByMonth({
+      '2026-07': plan('2026-07', {
+        header: header('2026-07', {
+          record: planRecord('2026-07', {
+            revision: 2,
+            history: [
+              { at: '2026-07-01T09:00:00.000Z', revision: 1, event: 'DRAFT_CREATED', note: 'создан' },
+              { at: '2026-07-02T09:00:00.000Z', revision: 1, event: 'APPROVED', note: 'утверждён' },
+              { at: '2026-07-03T09:00:00.000Z', revision: 2, event: 'REOPENED', note: 'переоткрыт' },
+            ],
+          }),
+        }),
+      }),
+    })
+    renderSection()
+
+    await userEvent.click(await screen.findByText('История плана (3)'))
+    const entries = screen.getAllByRole('listitem').filter((item) => /редакция \d/.test(item.textContent ?? ''))
+    expect(entries.map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Сформирован черновик'),
+      expect.stringContaining('План утверждён'),
+      expect.stringContaining('Открыта новая редакция'),
+    ])
+  })
+
+  it('нажатие «Сформировать черновик» шлёт месяц ЭКРАНА, а не текущий месяц машины', async () => {
+    const bodies: unknown[] = []
+    mockPlanByMonth({ '2026-07': plan('2026-07'), '2026-08': plan('2026-08') })
+    server.use(
+      http.post('*/api/ops/duty-monthly-plan/draft/', async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json(planRecord('2026-08'))
+      }),
+    )
+    renderSection()
+
+    await screen.findByText('Черновик не сформирован')
+    await userEvent.click(screen.getByRole('button', { name: 'Следующий месяц' }))
+    expect(await screen.findByText('август 2026')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Сформировать черновик' }))
+
+    await waitFor(() => expect(bodies).toEqual([{ month: '2026-08' }]))
   })
 })

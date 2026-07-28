@@ -16,6 +16,7 @@ import type {
   DutyRoute,
   DutyShift,
   DutyTypeDefinition,
+  MonthlyPlanRecord,
 } from '../model/types'
 import { addDays } from '../lib/monthlyPlan'
 import type { DutyObjectProjection } from '../lib/passportBinding'
@@ -35,6 +36,9 @@ export interface DutiesSlice {
   combatShifts: CombatDutyShift[]
   /** §21.33 — кандидаты на ИНДИВИДУАЛЬНОЕ дежурство (см. `DUTY_CANDIDATES`). */
   dutyCandidates: DutyCandidate[]
+  /** §21.27 — планы по месяцам, ключ `month`. Пусто в сиде: план появляется
+   * только после того, как человек сформировал черновик. */
+  monthlyPlans: MonthlyPlanRecord[]
 }
 
 export const DUTY_TYPES: readonly DutyTypeDefinition[] = [
@@ -412,6 +416,11 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       rosterCandidates: [...ROSTER_CANDIDATES],
       combatShifts,
       dutyCandidates: [...DUTY_CANDIDATES],
+      // §21.27 «автоматически созданный черновик не считается утверждённым»:
+      // сид не заводит планов вовсе. Месяц с готовым черновиком выглядел бы
+      // как результат чьей-то работы, которой не было, а утверждённый — ещё и
+      // закрыл бы демо-месяц для планирования (см. `assertPlanOpen`).
+      monthlyPlans: [],
     },
   }
 }

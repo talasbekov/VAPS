@@ -8,8 +8,17 @@ import type {
   PersistenceAdapter,
 } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
-import { buildMonthlyPlan, detectConflicts, isValidMonth } from '../lib/monthlyPlan'
+import { buildMonthlyPlan, detectConflicts, isValidMonth, monthOf } from '../lib/monthlyPlan'
 import type { MonthlyDutyPlanConflict, UnavailableMetric } from '../lib/monthlyPlan'
+import {
+  UNAVAILABLE_APPROVAL_EFFECTS,
+  UNAVAILABLE_HEADER_FIELDS,
+  buildPlanActions,
+  buildValidation,
+  isValidationCurrent,
+  planFingerprint,
+} from '../lib/planLifecycle'
+import type { MonthlyPlanHeader } from '../lib/planLifecycle'
 import {
   NO_POSTS_IN_VERSION_TEXT,
   NO_VERSION_FOR_DATE_TEXT,
@@ -42,13 +51,20 @@ import type {
   ListDutyShiftsResponse,
   ListDutyTypesResponse,
   MonthlyDutyPlanResponse,
+  MonthlyPlanActionRequest,
   RequestCombatDutyReplacementRequest,
   ReviewCombatGroupRequest,
   SubmitCombatDutyHandoverRequest,
   SubmitCombatGroupRequest,
   UpdateDutyShiftRequest,
 } from '../api/pending-contracts'
-import type { CombatDutyShift, DutyReplacementRecord, DutyShift } from '../model/types'
+import type {
+  CombatDutyShift,
+  DutyReplacementRecord,
+  DutyShift,
+  MonthlyPlanHistoryEntry,
+  MonthlyPlanRecord,
+} from '../model/types'
 import type { DutiesSlice } from './fixtures'
 
 export class RepositoryPermissionError extends Error {}
@@ -91,6 +107,13 @@ const COMBAT_REPLACE_PERMISSION = 'ops.combat_group.replace'
  * Отдельным: право планировать дежурства (`ops.duty.manage`) не то же самое,
  * что право обойти обязательный отдых. */
 const REST_OVERRIDE_PERMISSION = 'ops.duty.override_rest'
+/**
+ * §21.27 «Утвердить план». Отдельное право, а не `ops.duty.manage`: тот, кто
+ * заводит смены, и тот, кто утверждает получившийся план, — разные роли (тот же
+ * принцип, что `ops.placement.approve` у расстановки ОМ). Им же открывается
+ * новая редакция: закрыть утверждённый план вправе только тот, кто его закрыл.
+ */
+const PLAN_APPROVE_PERMISSION = 'ops.duty.approve_plan'
 
 const BUSINESS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -445,7 +468,330 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     }
     const envelope = await adapter.load()
     const slice = envelope === null ? null : readSlice(envelope)
-    return buildMonthlyPlan(month, slice?.shifts ?? [], slice?.dutyTypes ?? [])
+    const plan = buildMonthlyPlan(month, slice?.shifts ?? [], slice?.dutyTypes ?? [])
+    return {
+      ...plan,
+      header: buildHeader(envelope, slice, month, actorUserId),
+    }
+  }
+
+  function findPlanRecord(slice: DutiesSlice | null, month: string): MonthlyPlanRecord | null {
+    return slice?.monthlyPlans.find((record) => record.month === month) ?? null
+  }
+
+  /**
+   * §21.28, шапка плана вместе с action policy.
+   *
+   * Доступность действий считается ЗДЕСЬ, на «сервере», и приходит на экран
+   * готовой — прямое требование §21.28 «доступность кнопки должна приходить от
+   * action policy API». Тот же снимок смен, что дал KPI и конфликты, даёт и
+   * отпечаток плана: иначе кнопка «Утвердить» могла бы быть активной под уже
+   * изменившийся состав.
+   */
+  function buildHeader(
+    envelope: DemoStateEnvelope | null,
+    slice: DutiesSlice | null,
+    month: string,
+    actorUserId: string | null,
+  ): MonthlyPlanHeader {
+    const shifts = slice?.shifts ?? []
+    const record = findPlanRecord(slice, month)
+    const fingerprint = planFingerprint(month, shifts)
+
+    // §21.28 «источник объектов»: объекты плана приходят из реестра объектов, и
+    // часть смен может ссылаться на объект вне реестра (в сиде это «Штаб
+    // управления»). Считаем по РАЗЛИЧНЫМ объектам месяца, включая отменённые
+    // смены: строка объекта остаётся в сетке и после отмены.
+    const monthObjectIds = new Set(
+      shifts
+        .filter((shift) => monthOf(shift.businessDate) === month)
+        .map((shift) => shift.target.objectId),
+    )
+    let knownObjects = 0
+    for (const objectId of monthObjectIds) {
+      if (envelope !== null && findObjectById(envelope.slices, objectId) !== null) {
+        knownObjects += 1
+      }
+    }
+
+    return {
+      month,
+      record,
+      objectSource: {
+        registryLabel: 'Реестр объектов (паспорта, секторы и посты)',
+        knownObjects,
+        unknownObjects: monthObjectIds.size - knownObjects,
+      },
+      actions: buildPlanActions(
+        record,
+        {
+          canManage: hasPermission(actorUserId, MANAGE_PERMISSION),
+          canApprove: hasPermission(actorUserId, PLAN_APPROVE_PERMISSION),
+        },
+        isValidationCurrent(record?.lastValidation ?? null, fingerprint),
+      ),
+      unavailableFields: [...UNAVAILABLE_HEADER_FIELDS],
+      unavailableApprovalEffects: [...UNAVAILABLE_APPROVAL_EFFECTS],
+    }
+  }
+
+  function appendHistory(
+    record: MonthlyPlanRecord,
+    entry: MonthlyPlanHistoryEntry,
+  ): MonthlyPlanHistoryEntry[] {
+    // §21.27 «история не перезаписывается»: только дополнение, всегда в хвост.
+    return [...record.history, entry]
+  }
+
+  function writePlanRecord(
+    slice: DutiesSlice,
+    record: MonthlyPlanRecord,
+  ): Record<string, unknown> {
+    const exists = slice.monthlyPlans.some((current) => current.month === record.month)
+    return {
+      [SLICE_NAME]: {
+        ...slice,
+        monthlyPlans: exists
+          ? slice.monthlyPlans.map((current) =>
+              current.month === record.month ? record : current,
+            )
+          : [...slice.monthlyPlans, record],
+      } satisfies DutiesSlice,
+    }
+  }
+
+  function assertMonth(month: string): void {
+    if (!isValidMonth(month)) {
+      throw new RepositoryBusinessRuleError(
+        'INVALID_MONTH',
+        'Месяц плана указывается в формате YYYY-MM.',
+      )
+    }
+  }
+
+  /**
+   * §21.27 «После утверждения план фиксируется; изменения выполняются через
+   * новую revision».
+   *
+   * Гейт стоит у ПЛАНИРУЮЩИХ мутаций (создать/править/отменить смену) и
+   * СОЗНАТЕЛЬНО не стоит у ознакомления, заступления и завершения: это факт
+   * несения службы, а не изменение плана. Запретив их, утверждение плана
+   * останавливало бы работу вместо того, чтобы её зафиксировать.
+   */
+  function assertPlanOpen(slice: DutiesSlice, businessDate: string): void {
+    const record = findPlanRecord(slice, monthOf(businessDate))
+    if (record === null || record.stateCode !== 'APPROVED') return
+    throw new RepositoryBusinessRuleError(
+      'PLAN_APPROVED_LOCKED',
+      `План месяца утверждён (редакция ${record.revision}) — откройте новую редакцию, чтобы вносить изменения.`,
+    )
+  }
+
+  /** §21.27, «Сформировать черновик». Состав не предлагается — черновик
+   * заводится над уже заведёнными сменами месяца (см. `DRAFT_LABEL`). */
+  async function createPlanDraft(
+    request: MonthlyPlanActionRequest,
+    actorUserId: string | null,
+  ): Promise<MonthlyPlanRecord> {
+    if (!hasPermission(actorUserId, MANAGE_PERMISSION)) {
+      throw new RepositoryPermissionError(MANAGE_PERMISSION)
+    }
+    assertMonth(request.month)
+    let created!: MonthlyPlanRecord
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      if (findPlanRecord(slice, request.month) !== null) {
+        throw new RepositoryBusinessRuleError(
+          'PLAN_ALREADY_EXISTS',
+          'План на этот месяц уже создан.',
+        )
+      }
+      created = {
+        month: request.month,
+        stateCode: 'DRAFT',
+        revision: 1,
+        createdAt: clock.now(),
+        lastValidation: null,
+        approvedAt: null,
+        approvedBy: null,
+        history: [
+          {
+            at: clock.now(),
+            revision: 1,
+            event: 'DRAFT_CREATED',
+            note: 'Черновик плана сформирован над заведёнными дежурствами месяца.',
+          },
+        ],
+      }
+      return { ...current.slices, ...writePlanRecord(slice, created) }
+    })
+    return created
+  }
+
+  /**
+   * §21.27 «VALIDATED может быть результатом проверки, а не состоянием
+   * сущности»: операция НЕ меняет `stateCode`, она записывает результат.
+   * Проверка привязана к отпечатку состава — после любой правки смен она
+   * перестаёт быть актуальной, и утверждение снова требует проверки.
+   */
+  async function checkPlanConflicts(
+    request: MonthlyPlanActionRequest,
+    actorUserId: string | null,
+  ): Promise<MonthlyPlanRecord> {
+    if (!hasPermission(actorUserId, MANAGE_PERMISSION)) {
+      throw new RepositoryPermissionError(MANAGE_PERMISSION)
+    }
+    assertMonth(request.month)
+    let updated!: MonthlyPlanRecord
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const record = findPlanRecord(slice, request.month)
+      if (record === null) {
+        throw new RepositoryNotFoundError(request.month)
+      }
+      if (record.stateCode === 'APPROVED') {
+        throw new RepositoryBusinessRuleError(
+          'PLAN_APPROVED_LOCKED',
+          'План утверждён: проверка конфликтов доступна только в черновике.',
+        )
+      }
+      // Конфликты берутся ТЕ ЖЕ, что показывает экран (весь набор смен,
+      // обрезка месяцем на выдаче) — иначе проверка утверждала бы одно, а
+      // список конфликтов месяца показывал другое.
+      const conflicts = detectConflicts(slice.shifts, slice.dutyTypes).filter(
+        (conflict) => monthOf(conflict.businessDate) === request.month,
+      )
+      const validation = buildValidation(
+        clock.now(),
+        conflicts,
+        planFingerprint(request.month, slice.shifts),
+      )
+      updated = {
+        ...record,
+        lastValidation: validation,
+        history: appendHistory(record, {
+          at: clock.now(),
+          revision: record.revision,
+          event: 'VALIDATED',
+          note: validation.passed
+            ? `Проверка пройдена: жёстких конфликтов нет, мягких ${validation.softConflicts}.`
+            : `Проверка не пройдена: жёстких конфликтов ${validation.hardConflicts}.`,
+        }),
+      }
+      return { ...current.slices, ...writePlanRecord(slice, updated) }
+    })
+    return updated
+  }
+
+  /**
+   * §21.27, утверждение. Условия повторяют action policy шапки НЕ случайно:
+   * доступность кнопки и отказ сервера обязаны совпадать, иначе «серая кнопка»
+   * и «422» разъедутся. Политика при этом одна — `buildPlanActions` считает
+   * доступность по тем же признакам, что проверяются здесь.
+   */
+  async function approvePlan(
+    request: MonthlyPlanActionRequest,
+    actorUserId: string | null,
+  ): Promise<MonthlyPlanRecord> {
+    if (!hasPermission(actorUserId, PLAN_APPROVE_PERMISSION)) {
+      throw new RepositoryPermissionError(PLAN_APPROVE_PERMISSION)
+    }
+    assertMonth(request.month)
+    let updated!: MonthlyPlanRecord
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const record = findPlanRecord(slice, request.month)
+      if (record === null) {
+        throw new RepositoryNotFoundError(request.month)
+      }
+      if (record.stateCode === 'APPROVED') {
+        throw new RepositoryBusinessRuleError('PLAN_ALREADY_APPROVED', 'План уже утверждён.')
+      }
+      if (record.lastValidation === null) {
+        throw new RepositoryBusinessRuleError(
+          'PLAN_NOT_VALIDATED',
+          'Перед утверждением проведите проверку конфликтов.',
+        )
+      }
+      if (
+        !isValidationCurrent(record.lastValidation, planFingerprint(request.month, slice.shifts))
+      ) {
+        throw new RepositoryBusinessRuleError(
+          'PLAN_VALIDATION_STALE',
+          'Состав месяца менялся после последней проверки — проверьте конфликты заново.',
+        )
+      }
+      if (!record.lastValidation.passed) {
+        throw new RepositoryBusinessRuleError(
+          'PLAN_HAS_HARD_CONFLICTS',
+          `Утверждение невозможно: жёстких конфликтов ${record.lastValidation.hardConflicts}.`,
+        )
+      }
+      updated = {
+        ...record,
+        stateCode: 'APPROVED',
+        approvedAt: clock.now(),
+        approvedBy: actorUserId,
+        history: appendHistory(record, {
+          at: clock.now(),
+          revision: record.revision,
+          event: 'APPROVED',
+          note: `План утверждён в редакции ${record.revision}.`,
+        }),
+      }
+      return { ...current.slices, ...writePlanRecord(slice, updated) }
+    })
+    return updated
+  }
+
+  /**
+   * §21.27 «изменения выполняются через новую revision». Правки поверх
+   * утверждённой редакции нет вовсе: месяц открывается заново, номер редакции
+   * растёт, а прежнее утверждение остаётся в истории — вместе со временем и
+   * номером редакции, в которой оно было (`approvedAt`/`approvedBy` при этом
+   * обнуляются: они описывают ДЕЙСТВУЮЩЕЕ утверждение, которого больше нет).
+   */
+  async function reopenPlan(
+    request: MonthlyPlanActionRequest,
+    actorUserId: string | null,
+  ): Promise<MonthlyPlanRecord> {
+    if (!hasPermission(actorUserId, PLAN_APPROVE_PERMISSION)) {
+      throw new RepositoryPermissionError(PLAN_APPROVE_PERMISSION)
+    }
+    assertMonth(request.month)
+    let updated!: MonthlyPlanRecord
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const record = findPlanRecord(slice, request.month)
+      if (record === null) {
+        throw new RepositoryNotFoundError(request.month)
+      }
+      if (record.stateCode !== 'APPROVED') {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STATE_TRANSITION',
+          'Новая редакция открывается только для утверждённого плана.',
+        )
+      }
+      const revision = record.revision + 1
+      updated = {
+        ...record,
+        stateCode: 'DRAFT',
+        revision,
+        approvedAt: null,
+        approvedBy: null,
+        // Результат прежней проверки не переносится: он относился к прошлой
+        // редакции, а новая ещё не проверялась ни разу.
+        lastValidation: null,
+        history: appendHistory(record, {
+          at: clock.now(),
+          revision,
+          event: 'REOPENED',
+          note: `Открыта редакция ${revision} — план снова в черновике.`,
+        }),
+      }
+      return { ...current.slices, ...writePlanRecord(slice, updated) }
+    })
+    return updated
   }
 
   /**
@@ -596,6 +942,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     let created!: DutyShift
     await runMutation(adapter, clock, (current) => {
       const slice = readSlice(current)
+      assertPlanOpen(slice, request.businessDate)
       const dutyType = slice.dutyTypes.find((t) => t.dutyTypeCode === request.dutyTypeCode)
       if (dutyType === undefined) {
         throw new RepositoryBusinessRuleError('UNKNOWN_DUTY_TYPE', 'Неизвестный вид дежурства.')
@@ -711,6 +1058,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
           'Править можно только дежурство, на которое ещё не заступили.',
         )
       }
+      assertPlanOpen(slice, existing.businessDate)
       const object = findObjectById(current.slices, existing.target.objectId)
       if (object === null) {
         throw new RepositoryBusinessRuleError(
@@ -803,6 +1151,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
             : 'Отменить можно только дежурство, на которое ещё не заступили.',
         )
       }
+      assertPlanOpen(slice, existing.businessDate)
       updated = {
         ...existing,
         stateCode: 'CANCELLED',
@@ -1496,6 +1845,10 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     listShiftList,
     getShiftDetail,
     getMonthlyPlan,
+    createPlanDraft,
+    checkPlanConflicts,
+    approvePlan,
+    reopenPlan,
     listDutyPlanObjects,
     listDutyCandidates,
     createDutyShift,

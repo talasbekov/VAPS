@@ -11,7 +11,7 @@ Persona — `mock-only-demo` runtime-переключатель (`app/mocks/demo
 | broker | Брокер сил (распределение) | ops.force_request.view, ops.force_allocation.manage, ops.dictionary.view | по запросам своей группы | — |
 | placement_approver | Утверждающий расстановку | ops.placement.view, ops.placement.approve, ops.dictionary.view | своё управление | — |
 | omd_temp | Сотрудник с временными полномочиями ОМД | ops.security_event.view, ops.assignment.replace (ВРЕМЕННО, TemporaryPermissionGrant) | конкретное ОМ, на время его проведения | да — не постоянная роль (D6) |
-| objects_admin | Ведение объектов/паспортов/дежурств/справочников/рассмотрение боевых групп | ops.object.view, ops.object.manage, ops.passport.publish, ops.duty.view, ops.duty.manage, ops.combat_group.review, ops.dictionary.view, ops.dictionary.manage, ops.calendar.view | свои объекты | — |
+| objects_admin | Ведение объектов/паспортов/дежурств/справочников/рассмотрение боевых групп | ops.object.view, ops.object.manage, ops.passport.publish, ops.duty.view, ops.duty.manage, ops.duty.override_rest, ops.duty.approve_plan, ops.combat_group.review, ops.dictionary.view, ops.dictionary.manage, ops.calendar.view | свои объекты | — |
 | combat_department_chief | Начальник боевого управления (§24.5-24.6, §24.19-24.23, §24.21) | ops.duty.view, ops.combat_group.submit, ops.combat_group.acknowledge, ops.combat_group.checkin, ops.combat_group.complete, ops.combat_group.replace, ops.dictionary.view | своё управление | — |
 | analyst | Аналитика/дашборды/экспорт | ops.analytics.view, ops.export.run, ops.dictionary.view, ops.calendar.view | по scope должности | — |
 | admin | Полный доступ (эталон) | `*` (wildcard, как существующий admin) | всё | — |
@@ -43,3 +43,12 @@ Persona — `mock-only-demo` runtime-переключатель (`app/mocks/demo
 Публикация версии паспорта (Этап 28) НОВОГО права не вводит: мутация — за существующим `ops.object.manage` (тот же владелец, что правит паспорт), чтение опубликованной версии по deep link — за `ops.object.view` (версия не открывает ничего сверх объекта).
 
 `ops.duty.override_rest` (§21.34, Этап 32, FRONTEND_DECISIONS A64) — у `objects_admin`, рядом с `ops.duty.manage`, но ОТДЕЛЬНЫМ кодом: §21.34 требует, чтобы обход мягкого конфликта шёл «с обоснованием и отдельным permission», а право планировать дежурства это не то же самое, что право обойти обязательный отдых. Проверяется в `mocks/repository.ts` (403 на отказ, покрыто repository.test.ts). Создание дежурства (§21.31) и списки формы (объекты/кандидаты) НОВЫХ прав не вводят: мутация — за существующим `ops.duty.manage`, чтения — за `ops.duty.view`.
+
+`ops.duty.approve_plan` (§21.27, Этап 38, FRONTEND_DECISIONS A70) — у `objects_admin`,
+рядом с `ops.duty.manage`, но ОТДЕЛЬНЫМ кодом: планировать смены и утверждать
+получившийся месяц — разные роли (тот же принцип, что `ops.placement.approve` у
+расстановки ОМ). Тем же правом открывается новая редакция утверждённого плана: закрыть
+план вправе только тот, кто его закрыл. У persona есть оба права, чтобы демо-сценарий
+проходился целиком; РАЗДЕЛЕНИЕ проверяется тестами репозитория (планировщик получает 403
+на утверждение и на переоткрытие) и красной пробой.
+

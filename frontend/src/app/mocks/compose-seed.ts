@@ -44,11 +44,12 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // добавление `note`/`restOverrideReason` в `DutyShift`, `requiresCurrentPassport`
 // в `DutyTypeDefinition` и нового списка `dutyCandidates` — 14→15;
 // добавление состояния CANCELLED и поля `cancellation` в `DutyShift` — 15→16;
-// добавление `freshnessPolicy` в слайс `objects` и двух объектов сида — 16→17.
+// добавление `freshnessPolicy` в слайс `objects` и двух объектов сида — 16→17;
+// добавление списка `monthlyPlans` (lifecycle месячного плана §21.27) — 17→18.
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 17
+export const SCHEMA_VERSION = 18
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)
