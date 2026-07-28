@@ -1,0 +1,12 @@
+# Story 7.0 — расписание diff-джобы. OnCalendar — ТОЧКА ПРАВКИ расписания
+# (AC-1 «расписание конфигурируемо», без хардкода в коде команды/сервиса).
+# Дефолт: каждую ночь в 02:15 локального времени сервера.
+[Unit]
+Description=VAPS parallel-run diff job schedule (Story 6.9/7.0)
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

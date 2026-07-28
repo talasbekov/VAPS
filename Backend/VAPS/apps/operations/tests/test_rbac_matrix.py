@@ -105,6 +105,14 @@ class _AnyAuthenticated:
         return DENY if actor == ANON else ALLOW
 
 
+class _Public:
+    """Без стража вовсе (Story 7.0 health-маркер): ALLOW всем, включая
+    анонима — намеренно (docker-compose healthcheck не несёт JWT)."""
+
+    def expected(self, actor, method=None):
+        return ALLOW
+
+
 class _DeferredGate:
     """core-роут без стража: гейт отложен в стори-гейт."""
 
@@ -238,6 +246,10 @@ MATRIX = {
     "rank-detail": _MethodGate(
         {"get": "orgstructure.view", "patch": "orgstructure.manage"}
     ),
+    # parallel_run — health-маркер стенда в контуре (story 7.0), GET-only.
+    # Публичный по конструкции (docker-compose healthcheck без JWT), никаких
+    # бизнес-данных не отдаёт — только timestamp/status последнего прогона.
+    "parallel-run-health": _Public(),
 }
 
 

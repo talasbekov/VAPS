@@ -1,0 +1,18 @@
+# Story 7.0 — планировщик diff-джобы (без Celery: в проекте его нет, см.
+# story Dev Notes / корректировка Task 2). Вызывает уже существующую
+# management-команду parallel_run_diff (Story 6.9) внутри контейнера backend.
+#
+# Установка (на сервере контура, из каталога стенда, например /opt/vaps-stand):
+#   sudo cp vaps-parallel-run-diff.service vaps-parallel-run-diff.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now vaps-parallel-run-diff.timer
+[Unit]
+Description=VAPS parallel-run diff job (Story 6.9/7.0)
+# WorkingDirectory: путь ДО docker-compose.yml на конкретном сервере — точка
+# правки при установке (см. README.md шаг «Планировщик»).
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/vaps-stand
+ExecStart=/usr/bin/docker compose exec -T backend python manage.py parallel_run_diff

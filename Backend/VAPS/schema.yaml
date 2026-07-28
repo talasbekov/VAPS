@@ -1657,6 +1657,16 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/parallel-run/health/:
+    get:
+      operationId: parallel_run_health_retrieve
+      tags:
+      - parallel-run
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
 components:
   schemas:
     Attachment:

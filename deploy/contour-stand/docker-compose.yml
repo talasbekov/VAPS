@@ -1,0 +1,70 @@
+# Story 7.0 — минимальный стенд в контуре (мини-вариант будущей прод-топологии 12.1).
+# Контурное ограничение спайка 1.9 повторяется буквально: НИ У ОДНОГО сервиса нет
+# ключа `build:` — образы поставляются через `docker load` из .tar-бандла
+# (install-stand.sh), сеть в контуре недоступна.
+#
+# Этот файл НЕ имеет отношения к Backend/VAPS/docker-compose.yml (тот — Postgres/Redis
+# харнесс для `make gate`, только для разработки/CI) и НЕ является прод-топологией
+# 12.1 (nginx+uvicorn+worker+beat+postgres+redis) — минимальный стенд специально урезан
+# (без Celery — в проекте его нет, планирование через systemd timer, см. systemd/).
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${VAPS_DB_USER:-vaps}
+      POSTGRES_PASSWORD: ${VAPS_DB_PASSWORD:?VAPS_DB_PASSWORD must be set in .env}
+      POSTGRES_DB: ${VAPS_DB_NAME:-vaps}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VAPS_DB_USER:-vaps} -d ${VAPS_DB_NAME:-vaps} -h 127.0.0.1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  backend:
+    image: ${VAPS_BACKEND_IMAGE:-vaps-backend:contour-stand}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      VAPS_SECRET_KEY: ${VAPS_SECRET_KEY:?VAPS_SECRET_KEY must be set in .env}
+      VAPS_DEBUG: ${VAPS_DEBUG:-0}
+      VAPS_DB: ${VAPS_DB:-postgres}
+      VAPS_DB_NAME: ${VAPS_DB_NAME:-vaps}
+      VAPS_DB_USER: ${VAPS_DB_USER:-vaps}
+      VAPS_DB_PASSWORD: ${VAPS_DB_PASSWORD:?VAPS_DB_PASSWORD must be set in .env}
+      VAPS_DB_HOST: db
+      VAPS_DB_PORT: "5432"
+      VAPS_REDIS_URL: redis://redis:6379/0
+      VAPS_STAND_EXPORT_DIR: /export
+    volumes:
+      - export-data:/export
+    # Прод-сервер — uvicorn поверх config.asgi (config/asgi.py — уже выбранный
+    # архитектурой ASGI-сервер, см. Story reference).
+    command: ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/api/parallel-run/health/', timeout=3).read()\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  db-data:
+  export-data:
