@@ -16,11 +16,15 @@
 // см. schema.d.ts:793-807; адреса выноса — 11.4a бэк + 11.4b UI-мутация);
 // start/stopNotificationsSocket — жизненным циклом транспорта владеет
 // ConnectionIndicator, второй владелец убил бы сокет обоим.
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../api/client'
 import type { components } from '../api/schema'
-import { subscribeMessages } from './notificationsSocket'
+import {
+  getStatusSnapshot,
+  subscribeMessages,
+  subscribeStatus,
+} from './notificationsSocket'
 
 export type Notification = components['schemas']['Notification']
 export type NotificationPage =
@@ -30,6 +34,11 @@ export const NOTIFICATIONS_QUERY_KEY = ['notifications'] as const
 /** Экспортируется, чтобы тест не хардкодил число, а обрезка хвоста в merge и
  *  строка запроса не разъехались между собой. */
 export const NOTIFICATIONS_LIMIT = 50
+/** Интервал REST-опроса, когда WS выключен kill-switch'ем (11.5a) — зеркало
+ *  TRAFFIC_LIGHT_POLL_MS (TrafficLightTreePage.tsx). НЕ всегда-включённый (в
+ *  отличие от трафик-света): пока WS жив, второй параллельный канал
+ *  обновлений не нужен — polling включается РОВНО в статусе 'disabled'. */
+export const NOTIFICATIONS_POLL_MS = 30_000
 
 /**
  * Защитный разбор строки (образец notificationsSocket.ts::asNotification и
@@ -122,6 +131,15 @@ export interface NotificationsFeed {
 export function useNotificationsFeed(): NotificationsFeed {
   const queryClient = useQueryClient()
 
+  // ЧТЕНИЕ статуса, не владение (11.5a): тот же стор, что уже читает
+  // ConnectionIndicator — start/stopNotificationsSocket остаются ТОЛЬКО там
+  // (второй владелец жизненного цикла убил бы сокет обоим, докстринг выше).
+  const status = useSyncExternalStore(
+    subscribeStatus,
+    getStatusSnapshot,
+    getStatusSnapshot,
+  )
+
   // enabled-гард не нужен: AppLayout смонтирован под <RequireAuth> (App.tsx:36-39),
   // без credential до колокольчика не доходит вовсе. retry: false — канал
   // best-effort ровно как дочитка 11.3; самовосстановление даёт
@@ -133,6 +151,11 @@ export function useNotificationsFeed(): NotificationsFeed {
         `/api/notifications/?limit=${NOTIFICATIONS_LIMIT}`,
       ),
     retry: false,
+    // 11.5a AC-3: polling ТОЛЬКО пока WS выключен kill-switch'ем — иначе два
+    // параллельных источника обновлений без нужды. Фоновая вкладка не платит
+    // за картину, которую никто не смотрит (refetchIntervalInBackground не
+    // включаем, тот же довод, что у TRAFFIC_LIGHT_POLL_MS).
+    refetchInterval: status === 'disabled' ? NOTIFICATIONS_POLL_MS : false,
   })
 
   useEffect(() => {

@@ -20,6 +20,7 @@ import {
   __notificationsSocketStateForTests,
   __resetNotificationsSocketForTests,
   CATCHUP_LIMIT,
+  CLOSE_WS_DISABLED,
   configureNotificationsSocket,
   getStatusSnapshot,
   RECONNECT_BASE_MS,
@@ -371,6 +372,41 @@ describe('notificationsSocket: backoff', () => {
     // иначе «сокет не пересоздан» неотличимо от «обработчик мёртв вовсе»
     setCredential({ kind: 'dev', userId: 'operator-77' })
     expect(sockets).toHaveLength(2)
+  })
+})
+
+describe('notificationsSocket: kill-switch (11.5a)', () => {
+  it('test_kill_switch_code_sets_disabled_status: 4503 → статус disabled', async () => {
+    startNotificationsSocket()
+    lastSocket().open()
+    await vi.waitFor(() => expect(state().catchUpInFlight).toBe(false))
+
+    lastSocket().emitClose(CLOSE_WS_DISABLED)
+
+    expect(getStatusSnapshot()).toBe('disabled')
+  })
+
+  it('test_kill_switch_does_not_schedule_reconnect: без backoff-цикла (AC-2)', async () => {
+    vi.useFakeTimers()
+    startNotificationsSocket()
+    expect(sockets).toHaveLength(1)
+
+    lastSocket().emitClose(CLOSE_WS_DISABLED)
+
+    // Побочный эффект, не только статус: никакого таймера — прокрутка потолка
+    // backoff НЕ создаёт второй сокет (иначе тест был бы вакуумным).
+    await vi.advanceTimersByTimeAsync(RECONNECT_CAP_MS * 2)
+    expect(sockets).toHaveLength(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('test_ordinary_close_still_reconnects: обычный обрыв (1006) НЕ путается с kill-switch', async () => {
+    startNotificationsSocket()
+    expect(sockets).toHaveLength(1)
+
+    lastSocket().emitClose(1006)
+
+    expect(getStatusSnapshot()).toBe('reconnecting')
   })
 })
 

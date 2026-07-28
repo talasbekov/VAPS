@@ -4,7 +4,7 @@ baseline_commit: a16141d
 
 # Story 11.5a: Клиент — fallback на polling
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -26,30 +26,30 @@ so that **уведомления продолжают доходить (пуст
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Новое состояние `'disabled'` в WS-клиенте (`frontend/src/shared/notifications/notificationsSocket.ts`, MOD) (AC: 1, 2)
-  - [ ] `export type ConnectionStatus = 'idle' | 'connecting' | 'online' | 'reconnecting' | 'disabled'` — обновить докстринг-комментарий над типом (было «ровно четыре», станет пять — переписать формулировку, не оставить лживый комментарий).
-  - [ ] `fresh.onclose` (сейчас безусловно вызывает `handleDrop()`) — читает `event.code`. `if (event.code === 4503) { setStatus('disabled'); return }` — ДО вызова `handleDrop()`, не после (иначе `handleDrop` всё равно спланирует backoff). Обычный путь (любой другой код, включая 1006) — `handleDrop()` без изменений.
-  - [ ] Константу `4503` НЕ хардкодить голым числом без комментария — сослаться на `Backend/VAPS/apps/notifications/consumers.py`'s `CLOSE_WS_DISABLED`, зеркалить смысл (frontend не может импортировать Python-константу — числовой литерал с комментарием-ссылкой, тот же паттерн, что уже был бы у 4403, если бы тот доходил до провода).
-  - [ ] Убедиться, что состояние `'disabled'` — терминальное для ЭТОГО соединения (`stopNotificationsSocket`/новый `startNotificationsSocket` — единственный путь выйти из него, AC-6) — не подписывать НИКАКОГО таймера/слушателя из этой ветки.
-- [ ] Task 2 — Polling в `useNotificationsFeed` (`frontend/src/shared/notifications/useNotificationsFeed.ts`, MOD) (AC: 3)
-  - [ ] `export const NOTIFICATIONS_POLL_MS = 30_000` (зеркало `TRAFFIC_LIGHT_POLL_MS`, тот же файл-локальный стиль экспорта, что уже принят для `NOTIFICATIONS_LIMIT`).
-  - [ ] Хук подписывается на `getStatusSnapshot`/`subscribeStatus` (импорт из `notificationsSocket.ts`, тот же стор, что уже читает `ConnectionIndicator.tsx` — НЕ дублировать источник истины) — через `useSyncExternalStore`, зеркало `ConnectionIndicator.tsx`'s паттерна.
-  - [ ] `useQuery`'s `refetchInterval: status === 'disabled' ? NOTIFICATIONS_POLL_MS : false`.
-  - [ ] `refetchIntervalInBackground` НЕ ставить (AC-3, тот же довод, что трафик-свет).
-  - [ ] Обновить докстринг файла (строка «Осознанно НЕТ: ... start/stopNotificationsSocket» уже верна — эта стори НЕ трогает владение жизненным циклом сокета, только читает статус; уточнить комментарий, если он неявно подразумевал отсутствие ЛЮБОГО чтения статуса).
-- [ ] Task 3 — Спокойный индикатор (`frontend/src/shared/ui/ConnectionIndicator.tsx`, MOD) (AC: 4, 5)
-  - [ ] Новая экспортируемая строка `export const NOTIFICATIONS_DISABLED_TEXT = '...'` (текст решить при реализации — короткий, спокойный, НЕ «нет связи», сверить тон с существующими `NOTIFICATIONS_*`-строками `NotificationBell.tsx`).
-  - [ ] Условие рендера расширяется: было `if (status !== 'reconnecting') return null`; станет ветвление на 3 исхода — `'reconnecting'` (существующий деструктивный блок, БЕЗ изменений), `'disabled'` (новый спокойный блок — другие классы, не `text-destructive`, другая/никакая иконка), иначе `null`.
-  - [ ] `role="status"` + `aria-live="polite"` — сохранить на обоих ветках (не только на `'reconnecting'`) для консистентности a11y-контракта, но РАЗНЫЙ `aria-label`/текст, чтобы скринридер не путал «нет связи» с «плановый режим опроса».
-  - [ ] НЕ заводить новый `useEffect(startNotificationsSocket/stopNotificationsSocket)` — существующий эффект компонента остаётся единственным владельцем (AC-5).
-- [ ] Task 4 — Тесты (`notificationsSocket.test.ts`, `ConnectionIndicator.test.tsx`, `useNotificationsFeed.test.tsx`, MOD) (AC: 1, 2, 3, 4, 7)
-  - [ ] `notificationsSocket.test.ts`: новый кейс в стиле существующего `describe('notificationsSocket: backoff', ...)` — `sockets[0].emitClose(4503)` → `state().status === 'disabled'`, И явный негативный контроль: `scheduleReconnect`/следующий `FakeSocket` НЕ создаётся (нет попытки переподключения) — не только «статус сменился», а «побочный эффект backoff отсутствует» (иначе тест был бы вакуумным по духу урока проекта про DB-персистентность/побочные эффекты).
-  - [ ] `notificationsSocket.test.ts`: негативный контроль — `emitClose(1006)` (обычный обрыв) по-прежнему уходит в `'reconnecting'`, не в `'disabled'` (доказывает, что ветка различает коды, а не ловит любое закрытие).
-  - [ ] `ConnectionIndicator.test.tsx`: новый кейс — `emitClose(4503)` → рендерится `NOTIFICATIONS_DISABLED_TEXT`, `CONNECTION_LOST_TEXT` НЕ рендерится, класс/семантика НЕ деструктивная (ассертить именно ОТСУТСТВИЕ `text-destructive`, не только присутствие своего текста — иначе регресс «оба блока показались разом» прошёл бы мимо).
-  - [ ] `useNotificationsFeed.test.tsx` (или новый файл, зеркало `TrafficLightTreePage.polling.test.tsx`'s стиля fake-timer): статус `'disabled'` → `refetchInterval` реально планирует повторный запрос через `NOTIFICATIONS_POLL_MS` (fake timers, `vi.advanceTimersByTimeAsync`); статус `'online'` → нет автоматического повторного запроса за тот же интервал (негативный контроль).
-- [ ] Task 5 — Валидация (AC: 7)
-  - [ ] `npm run gate` (frontend, из `frontend/`) — зелёный целиком, включая существующие тесты `notificationsSocket.test.ts` (backoff/дочитка/identity) и `ConnectionIndicator.test.tsx` (4 текущих кейса) без изменений в их ассертах.
-  - [ ] Подтвердить пустой `git diff` по `Backend/VAPS/**`, `schema.yaml`, `frontend/src/shared/api/schema.d.ts` (WS вне OpenAPI, AC-7).
+- [x] Task 1 — Новое состояние `'disabled'` в WS-клиенте (`frontend/src/shared/notifications/notificationsSocket.ts`, MOD) (AC: 1, 2)
+  - [x] `export type ConnectionStatus = 'idle' | 'connecting' | 'online' | 'reconnecting' | 'disabled'` — обновить докстринг-комментарий над типом (было «ровно четыре», станет пять — переписать формулировку, не оставить лживый комментарий).
+  - [x] `fresh.onclose` (сейчас безусловно вызывает `handleDrop()`) — читает `event.code`. `if (event.code === 4503) { setStatus('disabled'); return }` — ДО вызова `handleDrop()`, не после (иначе `handleDrop` всё равно спланирует backoff). Обычный путь (любой другой код, включая 1006) — `handleDrop()` без изменений.
+  - [x] Константу `4503` НЕ хардкодить голым числом без комментария — сослаться на `Backend/VAPS/apps/notifications/consumers.py`'s `CLOSE_WS_DISABLED`, зеркалить смысл (frontend не может импортировать Python-константу — числовой литерал с комментарием-ссылкой, тот же паттерн, что уже был бы у 4403, если бы тот доходил до провода).
+  - [x] Убедиться, что состояние `'disabled'` — терминальное для ЭТОГО соединения (`stopNotificationsSocket`/новый `startNotificationsSocket` — единственный путь выйти из него, AC-6) — не подписывать НИКАКОГО таймера/слушателя из этой ветки.
+- [x] Task 2 — Polling в `useNotificationsFeed` (`frontend/src/shared/notifications/useNotificationsFeed.ts`, MOD) (AC: 3)
+  - [x] `export const NOTIFICATIONS_POLL_MS = 30_000` (зеркало `TRAFFIC_LIGHT_POLL_MS`, тот же файл-локальный стиль экспорта, что уже принят для `NOTIFICATIONS_LIMIT`).
+  - [x] Хук подписывается на `getStatusSnapshot`/`subscribeStatus` (импорт из `notificationsSocket.ts`, тот же стор, что уже читает `ConnectionIndicator.tsx` — НЕ дублировать источник истины) — через `useSyncExternalStore`, зеркало `ConnectionIndicator.tsx`'s паттерна.
+  - [x] `useQuery`'s `refetchInterval: status === 'disabled' ? NOTIFICATIONS_POLL_MS : false`.
+  - [x] `refetchIntervalInBackground` НЕ ставить (AC-3, тот же довод, что трафик-свет).
+  - [x] Обновить докстринг файла (строка «Осознанно НЕТ: ... start/stopNotificationsSocket» уже верна — эта стори НЕ трогает владение жизненным циклом сокета, только читает статус; уточнить комментарий, если он неявно подразумевал отсутствие ЛЮБОГО чтения статуса).
+- [x] Task 3 — Спокойный индикатор (`frontend/src/shared/ui/ConnectionIndicator.tsx`, MOD) (AC: 4, 5)
+  - [x] Новая экспортируемая строка `export const NOTIFICATIONS_DISABLED_TEXT = '...'` (текст решить при реализации — короткий, спокойный, НЕ «нет связи», сверить тон с существующими `NOTIFICATIONS_*`-строками `NotificationBell.tsx`).
+  - [x] Условие рендера расширяется: было `if (status !== 'reconnecting') return null`; станет ветвление на 3 исхода — `'reconnecting'` (существующий деструктивный блок, БЕЗ изменений), `'disabled'` (новый спокойный блок — другие классы, не `text-destructive`, другая/никакая иконка), иначе `null`.
+  - [x] `role="status"` + `aria-live="polite"` — сохранить на обоих ветках (не только на `'reconnecting'`) для консистентности a11y-контракта, но РАЗНЫЙ `aria-label`/текст, чтобы скринридер не путал «нет связи» с «плановый режим опроса».
+  - [x] НЕ заводить новый `useEffect(startNotificationsSocket/stopNotificationsSocket)` — существующий эффект компонента остаётся единственным владельцем (AC-5).
+- [x] Task 4 — Тесты (`notificationsSocket.test.ts`, `ConnectionIndicator.test.tsx`, `useNotificationsFeed.test.tsx`, MOD) (AC: 1, 2, 3, 4, 7)
+  - [x] `notificationsSocket.test.ts`: новый кейс в стиле существующего `describe('notificationsSocket: backoff', ...)` — `sockets[0].emitClose(4503)` → `state().status === 'disabled'`, И явный негативный контроль: `scheduleReconnect`/следующий `FakeSocket` НЕ создаётся (нет попытки переподключения) — не только «статус сменился», а «побочный эффект backoff отсутствует» (иначе тест был бы вакуумным по духу урока проекта про DB-персистентность/побочные эффекты).
+  - [x] `notificationsSocket.test.ts`: негативный контроль — `emitClose(1006)` (обычный обрыв) по-прежнему уходит в `'reconnecting'`, не в `'disabled'` (доказывает, что ветка различает коды, а не ловит любое закрытие).
+  - [x] `ConnectionIndicator.test.tsx`: новый кейс — `emitClose(4503)` → рендерится `NOTIFICATIONS_DISABLED_TEXT`, `CONNECTION_LOST_TEXT` НЕ рендерится, класс/семантика НЕ деструктивная (ассертить именно ОТСУТСТВИЕ `text-destructive`, не только присутствие своего текста — иначе регресс «оба блока показались разом» прошёл бы мимо).
+  - [x] `useNotificationsFeed.test.tsx` (или новый файл, зеркало `TrafficLightTreePage.polling.test.tsx`'s стиля fake-timer): статус `'disabled'` → `refetchInterval` реально планирует повторный запрос через `NOTIFICATIONS_POLL_MS` (fake timers, `vi.advanceTimersByTimeAsync`); статус `'online'` → нет автоматического повторного запроса за тот же интервал (негативный контроль).
+- [x] Task 5 — Валидация (AC: 7)
+  - [x] `npm run gate` (frontend, из `frontend/`) — зелёный целиком, включая существующие тесты `notificationsSocket.test.ts` (backoff/дочитка/identity) и `ConnectionIndicator.test.tsx` (4 текущих кейса) без изменений в их ассертах.
+  - [x] Подтвердить пустой `git diff` по `Backend/VAPS/**`, `schema.yaml`, `frontend/src/shared/api/schema.d.ts` (WS вне OpenAPI, AC-7).
 
 ## Dev Notes
 
@@ -79,14 +79,25 @@ so that **уведомления продолжают доходить (пуст
 
 ### Completion Notes
 
-_(заполняется dev-агентом по завершении)_
+Реализовано по плану. `ConnectionStatus` расширен до пяти значений (`'disabled'`), `useNotificationsFeed.ts` читает статус тем же стором, что уже читает `ConnectionIndicator` (`useSyncExternalStore(subscribeStatus, getStatusSnapshot, ...)`) — не заводит второго владельца жизненного цикла транспорта. `refetchInterval` условный (`status === 'disabled' ? NOTIFICATIONS_POLL_MS : false`). Индикатор получил спокойную ветку рендера с отдельными текстом/aria-label/иконкой/цветом.
+
+**Ревью (3 агента, cross-model):**
+- **Blind Hunter** (diff-only) поднял 3 вопроса: (а) параметрless-вызов `onclose()` в фейковых сокетах тестов мог бы упасть на `event.code` — проверено прямым грепом по всем тестовым файлам: ВСЕ `emitClose(code)`-хелперы уже конструируют полноценный `CloseEvent` с кодом, зеро-арг вызовов нет нигде в кодовой базе, false positive; (б) окно до ~30с молчания между обрывом WS и первым poll-запросом (TanStack `refetchInterval` не форсирует немедленный fetch при включении) — реальное наблюдение, но признано приемлемым: сама суть periodic-polling уже принимает интервальную задержку по дизайну родительской 11.5 (Решение №3), а не баг этой стори; (в) текстовая строка «30 секунд» была захардкожена отдельно от `NOTIFICATIONS_POLL_MS` — **исправлено**: `NOTIFICATIONS_DISABLED_TEXT` теперь вычисляется из константы (`` `Обновления раз в ${NOTIFICATIONS_POLL_MS / 1000} секунд` ``), не может молча разъехаться при будущей правке интервала.
+- **Edge Case Hunter** (полный доступ к проекту) независимо подтвердил: «один тик online» — безвреден (`catchUp()` best-effort, ничем не аборчен, но и не ломает ничего); AC-6 технически неполон в формулировке — смена credential (logout/login) ТОЖЕ выводит канал из `'disabled'` (перезапускает `connect()`), не только перезагрузка страницы. Это НЕ баг (тот же класс восстановления, что уже задокументирован для credential-смены в остальном модуле), но формулировка AC-6 «только перезагрузка» неточна буквально — уточнено здесь, а не в самом AC (менять формулировку принятого AC пост-фактум неоправданно, комментарий фиксирует нюанс). Двойной подписки на `statusListeners` (оба потребителя, `NotificationBell` и `ConnectionIndicator`, читают один стор) не обнаружено — независимые записи в `Set`, `AppLayout.tsx` подтверждает: оба компонента смонтированы безусловно вместе, рассинхрон статусов между ними невозможен.
+- **Acceptance Auditor** независимо перепрочитал код, прогнал целевой набор и полный `npm run gate` (1007/1007, size-gate 212.8 KB/300 KB), подтвердил пустой `git diff` по `Backend/VAPS/**`/`schema.*` — все 7 AC удовлетворены без расхождений.
 
 ### File List
 
-_(заполняется dev-агентом по завершении)_
+- `frontend/src/shared/notifications/notificationsSocket.ts` (MOD) — `ConnectionStatus` (+`'disabled'`), `CLOSE_WS_DISABLED = 4503`, ветка в `onclose`.
+- `frontend/src/shared/notifications/notificationsSocket.test.ts` (MOD) — новый describe-блок «kill-switch (11.5a)», 3 теста.
+- `frontend/src/shared/notifications/useNotificationsFeed.ts` (MOD) — `NOTIFICATIONS_POLL_MS`, чтение статуса, условный `refetchInterval`.
+- `frontend/src/shared/notifications/useNotificationsFeed.test.tsx` (MOD) — новый describe-блок «polling-fallback», 3 теста (включая негативный контроль на `'online'`).
+- `frontend/src/shared/ui/ConnectionIndicator.tsx` (MOD) — новая спокойная ветка рендера для `'disabled'`.
+- `frontend/src/shared/ui/ConnectionIndicator.test.tsx` (MOD) — новый тест на спокойный индикатор.
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-29 | Story создана (create-story) |
+| 2026-07-29 | dev-story: реализация + фикс текстового дрейфа от NOTIFICATIONS_POLL_MS (ревью) → done |

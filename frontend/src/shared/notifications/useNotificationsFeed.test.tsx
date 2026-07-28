@@ -13,8 +13,8 @@
 // jsdom — потому что транспорт строит URL из location, а дефолтное окружение
 // проекта node; докблок первой строкой (vitest 4 удалил environmentMatchGlobs).
 import '@testing-library/jest-dom/vitest'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { cleanup, renderHook, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
@@ -22,14 +22,17 @@ import { server } from '../api/testing/server'
 import { clearCredential, setCredential } from '../auth/credential'
 import {
   __notificationsSocketStateForTests,
+  CLOSE_WS_DISABLED,
   configureNotificationsSocket,
   getStatusSnapshot,
   startNotificationsSocket,
+  stopNotificationsSocket,
 } from './notificationsSocket'
 import type { NotificationSocket } from './notificationsSocket'
 import {
   mergeNotificationPage,
   NOTIFICATIONS_LIMIT,
+  NOTIFICATIONS_POLL_MS,
   NOTIFICATIONS_QUERY_KEY,
   useNotificationsFeed,
 } from './useNotificationsFeed'
@@ -61,6 +64,10 @@ class FakeSocket implements NotificationSocket {
     this.onmessage?.(
       new MessageEvent('message', { data: JSON.stringify(frame) }),
     )
+  }
+
+  emitClose(code: number): void {
+    this.onclose?.(new CloseEvent('close', { code, wasClean: true }))
   }
 }
 
@@ -409,5 +416,66 @@ describe('useNotificationsFeed: WS-событие → мутация кэша (A
         .getQueryData<NotificationPage>(NOTIFICATIONS_QUERY_KEY)
         ?.results.map((row) => row.id),
     ).toEqual([1])
+  })
+})
+
+describe('useNotificationsFeed: polling-fallback на kill-switch (11.5a)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+  })
+
+  afterEach(() => {
+    stopNotificationsSocket()
+    vi.useRealTimers()
+  })
+
+  it('test_poll_ms_is_exported_and_positive: интервал — экспортируемая константа', () => {
+    expect(typeof NOTIFICATIONS_POLL_MS).toBe('number')
+    expect(NOTIFICATIONS_POLL_MS).toBeGreaterThan(0)
+  })
+
+  it('test_online_status_does_not_poll: пока WS жив, повторных запросов НЕТ', async () => {
+    feedResponders = [() => HttpResponse.json(pageOf([makeRow(1, EARLIER)]))]
+    const queryClient = makeClient()
+    renderFeed(queryClient)
+    await waitFor(() => expect(feedRequests()).toHaveLength(1))
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NOTIFICATIONS_POLL_MS * 2)
+    })
+
+    // WS — основной канал, второй параллельный опрос не нужен (AC-3).
+    expect(feedRequests()).toHaveLength(1)
+  })
+
+  it('test_disabled_status_polls_every_interval: kill-switch → ровно один GET на интервал (AC-3)', async () => {
+    feedResponders = [() => HttpResponse.json(pageOf([makeRow(1, EARLIER)]))]
+    const queryClient = makeClient()
+    renderFeed(queryClient)
+    await waitFor(() => expect(feedRequests()).toHaveLength(1))
+
+    const socket = await connectSocket()
+    act(() => {
+      socket.emitClose(CLOSE_WS_DISABLED)
+    })
+    await waitFor(() => expect(getStatusSnapshot()).toBe('disabled'))
+
+    // Чуть меньше интервала — второго запроса ещё нет (та же дисциплина, что
+    // у TRAFFIC_LIGHT_POLL_MS: без этой половины «стало 2» прошло бы и на
+    // вдвое более коротком интервале).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NOTIFICATIONS_POLL_MS - 1000)
+    })
+    expect(feedRequests()).toHaveLength(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(feedRequests()).toHaveLength(2)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NOTIFICATIONS_POLL_MS)
+    })
+    expect(feedRequests()).toHaveLength(3)
   })
 })

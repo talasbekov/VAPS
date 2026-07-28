@@ -6,13 +6,14 @@
 // (образец usePermissions): локальной копии в useState нет — и ARCH-FE-010, и
 // заодно нет риска react-hooks/set-state-in-effect, красного в гейте.
 import { useEffect, useSyncExternalStore } from 'react'
-import { WifiOff } from 'lucide-react'
+import { RefreshCw, WifiOff } from 'lucide-react'
 import {
   getStatusSnapshot,
   startNotificationsSocket,
   stopNotificationsSocket,
   subscribeStatus,
 } from '../notifications/notificationsSocket'
+import { NOTIFICATIONS_POLL_MS } from '../notifications/useNotificationsFeed'
 
 /** Текст видимый, не только цвет: цвет не может быть единственным сигналом
  *  (EXPERIENCE.md#L238). Экспорт — чтобы тест не дублировал строку. */
@@ -21,6 +22,15 @@ export const CONNECTION_LOST_TEXT = 'Нет связи с сервером'
  *  DOM (toast.tsx:54) и смонтирован в Providers — голый getByRole('status') в
  *  app-тестах стал бы неоднозначным. */
 export const CONNECTION_INDICATOR_LABEL = 'Состояние соединения'
+/** 11.5a: kill-switch (код 4503) — НЕ обрыв сети, доставка идёт через REST-
+ *  polling. Отдельные текст/aria-label/иконка/цвет от `CONNECTION_LOST_TEXT` —
+ *  красный «нет связи» при реально работающей доставке был бы ложью, которая
+ *  приучает оператора игнорировать индикатор (родительская 11.5, Решение №2).
+ *  Интервал ВЫЧИСЛЕН из `NOTIFICATIONS_POLL_MS` (ревью 11.5a: захардкоженная
+ *  цифра молча разъехалась бы с реальным интервалом при будущей правке
+ *  константы), не литерал «30 секунд». */
+export const NOTIFICATIONS_DISABLED_TEXT = `Обновления раз в ${NOTIFICATIONS_POLL_MS / 1000} секунд`
+export const NOTIFICATIONS_DISABLED_LABEL = 'Периодическое обновление'
 
 export function ConnectionIndicator() {
   const status = useSyncExternalStore(
@@ -39,6 +49,20 @@ export function ConnectionIndicator() {
   // `connecting` намеренно НЕ показывает индикатор: иначе «нет связи» мигало бы
   // на каждой загрузке страницы до первого open. Модалку не делаем — jsdom не
   // эмулирует модальность, ассерт был бы вакуумным (дефер 9.5/9.9/10.3).
+  if (status === 'disabled') {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        aria-label={NOTIFICATIONS_DISABLED_LABEL}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground"
+      >
+        <RefreshCw className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span>{NOTIFICATIONS_DISABLED_TEXT}</span>
+      </div>
+    )
+  }
+
   if (status !== 'reconnecting') return null
 
   return (

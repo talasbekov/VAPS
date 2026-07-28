@@ -19,7 +19,10 @@ import {
   CONNECTION_INDICATOR_LABEL,
   CONNECTION_LOST_TEXT,
   ConnectionIndicator,
+  NOTIFICATIONS_DISABLED_LABEL,
+  NOTIFICATIONS_DISABLED_TEXT,
 } from './ConnectionIndicator'
+import { CLOSE_WS_DISABLED } from '../notifications/notificationsSocket'
 import { ToastProvider } from './toast'
 
 class FakeSocket implements NotificationSocket {
@@ -132,5 +135,26 @@ describe('ConnectionIndicator', () => {
       sockets[0].emitClose(1006)
     })
     expect(sockets).toHaveLength(1)
+  })
+
+  it('kill-switch (4503) показывает спокойный текст, НЕ «нет связи» (11.5a)', () => {
+    render(<ConnectionIndicator />)
+
+    act(() => {
+      sockets[0].emitClose(CLOSE_WS_DISABLED)
+    })
+
+    const shown = screen.queryByRole('status', {
+      name: NOTIFICATIONS_DISABLED_LABEL,
+    })
+    expect(shown).not.toBeNull()
+    expect(shown).toHaveTextContent(NOTIFICATIONS_DISABLED_TEXT)
+    // Оба блока не должны показаться разом — регресс «ветки перепутались».
+    expect(shown).not.toHaveTextContent(CONNECTION_LOST_TEXT)
+    expect(
+      screen.queryByRole('status', { name: CONNECTION_INDICATOR_LABEL }),
+    ).toBeNull()
+    // НЕ деструктивная семантика: реально работающая доставка (REST) — не «нет связи».
+    expect(shown).not.toHaveClass('text-destructive')
   })
 })

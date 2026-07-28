@@ -12,10 +12,16 @@
 //
 // Осознанно НЕТ: heartbeat (браузерный WebSocket не умеет протокольный ping,
 // а прикладной кадр consumer игнорирует по замыслу — liveness приходит из
-// nginx ping/pong + proxy_read_timeout, стори 12.1); ветки по event.code
-// (consumer закрывает handshake ДО accept() → браузер видит 1006, приватный
-// 4403 на провод не выходит — такая ветка была бы зелёной на фейке и мёртвой
-// в проде); цикла дочитки по страницам (AC-9).
+// nginx ping/pong + proxy_read_timeout, стори 12.1); ветки по event.code для
+// АНОНИМНОГО отказа (4403) — consumer закрывает handshake ДО accept() →
+// браузер видит 1006, приватный код на провод не выходит, такая ветка была бы
+// зелёной на фейке и мёртвой в проде; цикла дочитки по страницам (AC-9).
+//
+// Story 11.5a: ЕДИНСТВЕННЫЙ код, реально достижимый браузером, — 4503
+// (kill-switch, VAPS_WS_ENABLED=0). Consumer (11.5) делает accept() ПЕРЕД
+// close() именно для этого кода — в отличие от 4403 выше, здесь браузер
+// получает настоящий CloseEvent{code: 4503, wasClean: true}, поэтому ветка
+// по коду ниже безопасна и не повторяет ошибку «зелёная на фейке».
 import { apiClient } from '../api/client'
 import { ApiError } from '../api/errors'
 import type { components } from '../api/schema'
@@ -48,9 +54,22 @@ export const SINCE_GRACE_MS = 5000
 export const SEEN_IDS_LIMIT = 1000
 export const CATCHUP_LIMIT = 200
 
-/** Ровно четыре. Статуса `unauthorized` НЕТ: отказ по identity недостижим для
- *  браузера (см. шапку) и ведёт себя как транспортный сбой. */
-export type ConnectionStatus = 'idle' | 'connecting' | 'online' | 'reconnecting'
+/** Пять значений. Статуса `unauthorized` НЕТ: отказ по identity недостижим для
+ *  браузера (см. шапку) и ведёт себя как транспортный сбой. `disabled`
+ *  (11.5a) — единственное состояние, различающее «WS выключен администратором»
+ *  (код 4503, доставка идёт через REST-polling) от `reconnecting` («связи с
+ *  сервером реально нет», обычный обрыв/1006). */
+export type ConnectionStatus =
+  | 'idle'
+  | 'connecting'
+  | 'online'
+  | 'reconnecting'
+  | 'disabled'
+
+/** Приватный close-код kill-switch (Backend/VAPS/apps/notifications/consumers.py,
+ *  `CLOSE_WS_DISABLED`) — зеркало числового значения, Python-константу
+ *  фронтенд импортировать не может. */
+export const CLOSE_WS_DISABLED = 4503
 
 /** Минимальная поверхность WebSocket, которой пользуется модуль: ровно она
  *  подменяется фейком в тестах (Решение №2 — mock-socket не ставим, глобал не
@@ -389,8 +408,17 @@ function connect(): void {
     if (epoch !== myEpoch) return
     handleFrame(event)
   }
-  fresh.onclose = () => {
+  fresh.onclose = (event) => {
     if (epoch !== myEpoch) return
+    // 11.5a: kill-switch — терминальное состояние ДЛЯ ЭТОГО соединения, не
+    // транспортный сбой. НЕ проходит через handleDrop()/scheduleReconnect():
+    // долбить backoff-таймером по флагу, который сменит администратор (не
+    // сеть), было бы бессмысленно (AC-2/AC-6). Единственный выход —
+    // stop()+start() (перезагрузка страницы).
+    if (event.code === CLOSE_WS_DISABLED) {
+      setStatus('disabled')
+      return
+    }
     handleDrop()
   }
   fresh.onerror = () => {
