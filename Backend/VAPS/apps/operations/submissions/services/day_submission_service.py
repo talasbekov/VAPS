@@ -17,6 +17,7 @@ from django.conf import settings
 from django.db import transaction
 
 from apps.audit.services import record
+from apps.core import parallel_run_mode
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector
@@ -112,11 +113,30 @@ def submit_day(*, division_id, business_date, actor, window_dates=None):
         actor: внешний account-id оператора (строка) → submitted_by.
         window_dates: допустимые даты сдачи; None → default {today, tomorrow}.
 
-    Raises DomainError: 400 (actor пуст), 422 BUSINESS_DATE_OUT_OF_WINDOW,
-        409 DAY_ALREADY_SUBMITTED. Права не гейтит (5.8); успешная сдача пишет
-        DAILY_SUBMISSION_SUBMITTED (5.9), отклонённая — ничего.
+    Raises DomainError: 400 (actor пуст), 409 PARALLEL_RUN_MANUAL_INPUT_BLOCKED
+        (Story 7.7, режим «без двойного ввода» включён и подразделение не
+        пилотное), 422 BUSINESS_DATE_OUT_OF_WINDOW, 409 DAY_ALREADY_SUBMITTED.
+        Права не гейтит (5.8); успешная сдача пишет DAILY_SUBMISSION_SUBMITTED
+        (5.9), отклонённая — ничего.
     """
     _require_actor(actor)
+
+    # Story 7.7: донор — источник ввода на период parallel-run; ручная сдача
+    # закрыта, кроме явно пилотных подразделений. Гейт ПОСЛЕ actor (400 —
+    # ошибка формы важнее состояния режима), ДО existence/window (состояние
+    # режима не зависит от того, существует ли подразделение).
+    if parallel_run_mode.is_enabled() and not parallel_run_mode.is_pilot_division(
+        division_id
+    ):
+        raise DomainError(
+            "PARALLEL_RUN_MANUAL_INPUT_BLOCKED",
+            409,
+            detail={"division_id": str(division_id)},
+            message=(
+                "Режим «без двойного ввода» включён — донор источник ввода, "
+                "ручная сдача дня закрыта для этого подразделения."
+            ),
+        )
 
     # Existence gate (404 BEFORE the snapshot build): a valid-but-phantom UUID
     # would otherwise yield an empty roster/rows and a SILENT сдача for a division

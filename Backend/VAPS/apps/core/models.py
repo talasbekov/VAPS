@@ -437,3 +437,40 @@ class Watermark(models.Model):
 
     def __str__(self):
         return self.key
+
+
+class ParallelRunModeSwitch(models.Model):
+    """Story 7.7 — «без двойного ввода»: singleton-by-convention switch
+    (mirrors ``Watermark``'s key-row pattern, но здесь ключ фиксирован —
+    ровно один переключатель на инсталляцию). No row = disabled (AC-1
+    default-off — критично для нулевой регрессии существующих write-путей).
+    """
+
+    key = models.CharField(max_length=100, unique=True, default="default")
+    enabled = models.BooleanField(default=False)
+    enabled_at = models.DateTimeField(null=True, blank=True)
+    disabled_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "core_parallel_run_mode_switch"
+
+    def __str__(self):
+        return f"parallel_run_mode({self.key})={'on' if self.enabled else 'off'}"
+
+
+class ParallelRunPilotDivision(models.Model):
+    """Story 7.7 — подразделения-исключения ("пилотные тест-операции",
+    AC-1): ручной ввод для них РАЗРЕШЁН даже при включённом режиме. Плоский
+    ``division_id`` (ARCH-003/004 — без FK на ``Division``, тот же паттерн,
+    что ``apps.parallel_run.models``).
+    """
+
+    division_id = models.UUIDField(unique=True)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "core_parallel_run_pilot_divisions"
+
+    def __str__(self):
+        return str(self.division_id)

@@ -20,6 +20,8 @@ def test_health_no_runs_yet():
     assert resp.data == {
         "last_diff_run": None,
         "last_import_run": None,
+        # Story 7.7/AC-2: default-off, 0 пилотных подразделений на пустой БД.
+        "parallel_run_mode": {"enabled": False, "pilot_division_count": 0},
     }
 
 

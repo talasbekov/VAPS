@@ -135,6 +135,12 @@ codes:
     category: state
     description: "Обход блокировки «на завтра» для этой даты уже существует (unique по дате, отзыва нет). Повторный POST override — конфликт состояния, не ошибка входа."
     source: "Story 6.10b (ревью 2026-07-13, Д2: дубль → 409, различение через __cause__ IntegrityError)"
+  PARALLEL_RUN_MANUAL_INPUT_BLOCKED:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Режим «без двойного ввода» включён (Story 7.7): донор — источник ввода, ручная сдача дня в VAPS закрыта для этого подразделения (не в списке пилотных). Снимается выключением режима (cutover, Story 7.10) или добавлением подразделения в пилотный список."
+    source: "epics.md Story 7.7"
   NOT_READY:
     http_status: 409
     overridable: false
