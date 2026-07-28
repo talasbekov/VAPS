@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1785227279.3491933,
-    "ast_hash": "aa72540f705f86cba1b930179219c484",
+    "mtime": 1785228308.9523487,
+    "ast_hash": "c65bb3cfa0c0e25974ae1656ba3409e0",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785227286.3823144,
-    "ast_hash": "6c004123e26a28b12ff0ed57ed5762c6",
+    "mtime": 1785228319.3315032,
+    "ast_hash": "507e4e9dfa1b0ee84043ed24eaace003",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -17835,8 +17835,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/management/commands/import_donor_slice.py": {
-    "mtime": 1785224485.339762,
-    "ast_hash": "e8c8b74525a2c08bf69f3d0ecdf059bb",
+    "mtime": 1785228091.088088,
+    "ast_hash": "e875d06045bfad03fd39e98814403c3a",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/migration_legacy/tests/__init__.py": {
@@ -22592,6 +22592,26 @@
   "_bmad-output/implementation-artifacts/7-1-\u043f\u0440\u043e\u0444\u0438\u043b\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435-\u0434\u0430\u043d\u043d\u044b\u0445-\u0434\u043e\u043d\u043e\u0440\u0430.md": {
     "mtime": 1785227260.9128742,
     "ast_hash": "4e682758a0ae2586f2325dfe5cc6fe8f",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/import_orgstructure.py": {
+    "mtime": 1785228101.1482396,
+    "ast_hash": "537223c7dc636a1a685895d43f297933",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/management/commands/import_donor_orgstructure.py": {
+    "mtime": 1785228107.3243327,
+    "ast_hash": "e49f2f4f1a3f69c166a90e554c82e3ac",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/tests/test_import_orgstructure_command.py": {
+    "mtime": 1785228153.7590306,
+    "ast_hash": "1bd4833e850aff69a2f95cba5b6d332e",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/7-2-\u0438\u043c\u043f\u043e\u0440\u0442\u0451\u0440-\u043e\u0440\u0433\u0441\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u044b-\u0438-\u0441\u0442\u0430\u0432\u043e\u043a.md": {
+    "mtime": 1785228288.5620453,
+    "ast_hash": "ad4bdd976a74408adbe3781e8c6761c3",
     "semantic_hash": ""
   }
 }
