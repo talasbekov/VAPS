@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-29 (11.6a → done, epic-11 → done)
+# last_updated: 2026-07-29 (12.1 → ready-for-dev, epic-12 → in-progress; carve-out 12.1a заведена)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -603,8 +603,17 @@ development_status:
 
   # Epic 12: Деплой в контур и пилот
   # Анти-каскад: 12.8 (пилот) НЕ стартует без работающих 13.1–13.3
-  epic-12: backlog
-  12-1-прод-compose: backlog
+  epic-12: in-progress
+  # Вынесено из скоупа 12.1 (create-story 2026-07-29) с поимённым преемником —
+  # хвост не «зависает намерением» (урок ретро E8/E9).
+  #   12.1a — прикладная security-hardening: ALLOWED_HOSTS (сейчас "*"),
+  #           SecurityMiddleware, SESSION_COOKIE_SECURE/CSRF_COOKIE_SECURE/HSTS
+  #           (deferred-work.md — явный E12-долг, manage.py check --deploy
+  #           сегодня даёт W001/W009/W012/W016/W018). Функционально независимо
+  #           от топологии — 12.1 даёт РАБОТАЮЩИЙ, но не полностью защищённый
+  #           по чеклисту Django стек; 12.1a закрывает защищённость поверх.
+  12-1-прод-compose: ready-for-dev
+  12-1a-прод-security-hardening: backlog
   12-2-bundle-sh-и-manifest: backlog
   12-3-install-sh-и-smoke-sh: backlog
   12-4-бэкапы-и-restore-репетиция: backlog
