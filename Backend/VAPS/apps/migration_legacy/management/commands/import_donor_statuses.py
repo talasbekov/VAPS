@@ -1,12 +1,11 @@
-"""Import a 5-7 day slice of donor data into the walking skeleton (1.6).
+"""Story 7.4 — самостоятельный импорт статусов (интервальная модель +
+convergence-проверка derived-статуса, AC-1).
 
-Reads a donor ``manage.py dumpdata`` JSON export, creates Employee rows
-(identity mapping donor_pk -> uuid via Employee.external_id) and interval
-EmployeeStatus rows. Idempotent; every skip is reported with a reason —
-the skips are the first data-quality findings for the 1.8 diff and E7.
-
-No wall clock anywhere: the window is derived from the data (--until
-defaults to the max date in the export) — the donor is historical.
+Статусы ссылаются на УЖЕ импортированных сотрудников (Story 7.3). Эта
+команда резолвит employee_map ТЕМ ЖЕ путём, что ``import_donor_employees``
+— повторный вызов ``import_divisions``/``import_ranks``/``import_positions``/
+``import_employees`` на той же выгрузке идемпотентен, поэтому безопасно
+вызывать их здесь снова.
 """
 
 import json
@@ -23,15 +22,15 @@ from apps.migration_legacy.import_orgstructure import (
     import_divisions,
     import_positions,
     import_ranks,
-    import_staffing_slots,
 )
 from apps.migration_legacy.import_statuses import import_statuses
 
 
 class Command(BaseCommand):
     help = (
-        "Import a donor dumpdata slice: employees (external_id = donor pk) "
-        "and statuses for a 5-7 day window. Idempotent, reports every skip."
+        "Идемпотентный импорт статусов (Story 7.4): интервальная модель, "
+        "секондменты (ATTACHED/DETACHED уже покрыты transform.py), "
+        "convergence-проверка derived-статуса на дату (AC-1)."
     )
 
     def add_arguments(self, parser):
@@ -48,16 +47,21 @@ class Command(BaseCommand):
             with open(options["file"], encoding="utf-8") as fh:
                 rows = json.load(fh)
         except (OSError, ValueError) as exc:
-            raise CommandError(f"cannot read export: {exc}")
-
-        by_model = defaultdict(list)
-        for row in rows:
-            # Unknown model keys are silently ignored: real exports carry
-            # extra apps (auth, contenttypes, ...).
-            by_model[row["model"]].append(row)
-
+            raise CommandError(f"cannot read export: {exc}") from exc
+        if not isinstance(rows, list):
+            raise CommandError(
+                "ожидался JSON-массив dumpdata [{model, pk, fields}, ...]"
+            )
         if options["days"] < 1:
             raise CommandError("--days must be >= 1")
+
+        by_model = defaultdict(list)
+        malformed_top_level = 0
+        for row in rows:
+            if isinstance(row, dict) and isinstance(row.get("model"), str):
+                by_model[row["model"]].append(row)
+            else:
+                malformed_top_level += 1
 
         status_rows = by_model["statuses.employeestatus"]
         until = self._resolve_until(options["until"], status_rows)
@@ -68,26 +72,18 @@ class Command(BaseCommand):
             for name in (
                 "organizations",
                 "divisions",
-                "staffing_slots",
                 "ranks",
                 "positions",
                 "employees",
                 "statuses",
             )
         }
-        clamped = 0
 
         with transaction.atomic():
             division_map = import_divisions(
                 by_model["divisions.division"],
                 reports["organizations"],
                 reports["divisions"],
-            )
-            slot_divisions_covered = import_staffing_slots(
-                by_model["staff_unit.staffunit"],
-                division_map,
-                window_start,
-                reports["staffing_slots"],
             )
             rank_map = import_ranks(by_model["dictionaries.rank"], reports["ranks"])
             position_pks = import_positions(
@@ -114,22 +110,25 @@ class Command(BaseCommand):
             window_start,
             until,
             clamped,
-            slot_divisions_covered,
             merge_candidates,
             derived_mismatches,
+            malformed_top_level,
         )
 
     def _resolve_until(self, until_option, status_rows):
         if until_option:
             try:
                 return date.fromisoformat(until_option)
-            except ValueError:
-                raise CommandError(f"--until is not a date: {until_option!r}")
-        # Deterministic from data, never from the wall clock: the donor
-        # died in prod, "today" would yield an empty window. Malformed date
-        # values are ignored here — transform skips those rows anyway.
+            except ValueError as exc:
+                raise CommandError(
+                    f"--until is not a date: {until_option!r}"
+                ) from exc
+        # Deterministic from data, never from the wall clock (same contract
+        # as import_donor_slice — the donor is historical).
         all_dates = []
         for row in status_rows:
+            if not isinstance(row, dict) or not isinstance(row.get("fields"), dict):
+                continue
             for key in ("start_date", "end_date", "actual_end_date"):
                 value = row["fields"].get(key)
                 if not value:
@@ -148,11 +147,17 @@ class Command(BaseCommand):
         window_start,
         until,
         clamped,
-        slot_divisions_covered,
         merge_candidates,
         derived_mismatches,
+        malformed_top_level,
     ):
         write = self.stdout.write
+        if malformed_top_level:
+            write(
+                self.style.WARNING(
+                    f"⚠ {malformed_top_level} строк(и) без 'model' проигнорированы"
+                )
+            )
         for name, report in reports.items():
             line = (
                 f"{name}: read {report.read}, created {report.created}, "
@@ -165,34 +170,17 @@ class Command(BaseCommand):
             for reason, pks in sorted(report.warnings.items()):
                 examples = ", ".join(str(pk) for pk in pks[:EXAMPLE_LIMIT])
                 write(f"  ~ {reason}: {len(pks)} (examples: {examples})")
-        # Explicit lines for 1.8 (diff reads these).
-        statuses = reports["statuses"]
-        write(
-            self.style.SUCCESS(
-                f"staffing divisions covered: {slot_divisions_covered}"
-            )
-        )
         write(self.style.SUCCESS(f"open_end_clamped: {clamped}"))
-        write(
-            self.style.SUCCESS(
-                f"hard_overlap: {len(statuses.skips.get('hard_overlap', []))}"
-            )
-        )
-        # The window is the closing line of the report (Task 3).
         write(
             self.style.SUCCESS(
                 f"window [{window_start.isoformat()}..{until.isoformat()}]"
             )
         )
-        # AC-1 (7.3): кандидаты на слияние — отчёт на ручную санкцию, не
-        # автослияние. Отдельная секция, не просто skip-счётчик.
         if merge_candidates:
             write(self.style.SUCCESS("merge candidates (AC-1, needs sanction):"))
             for candidate in merge_candidates:
                 pks = ", ".join(str(pk) for pk in candidate["donor_pks"])
                 write(f"  - iin {candidate['iin_masked']}: donor_pks [{pks}]")
-        # AC-1 (7.4): derived-статус на дату ≠ только что записанный —
-        # другой факт того же сотрудника перекрывает по приоритету.
         if derived_mismatches:
             write(self.style.WARNING("derived status mismatches (AC-1):"))
             for m in derived_mismatches:
