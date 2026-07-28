@@ -273,3 +273,11 @@ endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуще
 Параметры повтора берёт сервер из исходной работы — в теле запроса их нет вовсе.
 Невидимая работа отвечает «не найдено», а не «нет прав»: отказ по правам сам
 подтверждал бы, что такая выгрузка существует.
+
+## Аналитика службы (§22.3-22.12, Этап 43)
+
+| Операция | Право | Ответ |
+| --- | --- | --- |
+| `GET /api/ops/service-analytics-presets/` | `ops.analytics.view` | §22.5: пресеты периодов, предел произвольного периода и пресет ПО УМОЛЧАНИЮ — всё из registry, ни одного «последних 7 дней» в коде экрана |
+| `GET /api/ops/service-analytics/?preset=` либо `?from=&to=` | `ops.analytics.view` | §22.4 `AnalyticsSnapshot`: `snapshotId`, business date, timezone, период, scope, `generatedAt`, `sourceUpdatedAt`, `freshnessState`, `completenessState`, версии расчёта и политики + `data.metrics` (§22.3 `MetricValue` с `state`/`displayValue`) и `unavailableMetrics` (§35). Строк выборки в ответе НЕТ (§22.12). Отсутствие источника → `value: null` + `UNKNOWN`, а не ноль. 422 `INVALID_PERIOD` / `PERIOD_TOO_LONG` / `UNKNOWN_PERIOD_PRESET` |
+| `GET /api/ops/service-analytics-drilldown/?snapshot_id=&metric_code=&cursor=` | `ops.analytics.view` + `ops.analytics.drilldown`, ФИО дополнительно по `ops.analytics.personal_detail` | §22.12: страница строк со СТАБИЛЬНЫМИ `rowId`, `nextCursor`, `totalCount`. Несовпадение `snapshot_id` → 422 `SNAPSHOT_OUTDATED`; непосчитанный показатель → 422 `CALCULATION_UNAVAILABLE`; неизвестный код → 422 `UNKNOWN_METRIC`. Без права на детализацию `employeeLabel: null` + `personalDetailReason` |

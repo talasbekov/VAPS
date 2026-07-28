@@ -11,6 +11,7 @@ import { auditHandlers } from '../../features/audit/mocks/handlers'
 import { createDutiesHandlers } from '../../features/duties/mocks/handlers'
 import { createDictionariesHandlers } from '../../features/dictionaries/mocks/handlers'
 import { createServiceReportsHandlers } from '../../features/service-reports/mocks/handlers'
+import { createServiceAnalyticsHandlers } from '../../features/service-analytics/mocks/handlers'
 import { getDemoClock, getPersistenceAdapter } from './demo-runtime'
 import { identityHandlers } from './identity-handlers'
 
@@ -26,5 +27,6 @@ export function composeHandlers(): HttpHandler[] {
     ...createDutiesHandlers(adapter, clock),
     ...createDictionariesHandlers(adapter, clock),
     ...createServiceReportsHandlers(adapter, clock),
+    ...createServiceAnalyticsHandlers(adapter, clock),
   ]
 }

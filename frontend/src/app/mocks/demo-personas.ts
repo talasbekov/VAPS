@@ -131,6 +131,12 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     description: 'Дашборды, отчёты, экспорт',
     permissions: [
       'ops.analytics.view',
+      // §22.26/§22.12: раскрытие показателя до строк — своё право, отдельное от
+      // просмотра дашборда. Персональная детализация
+      // (`ops.analytics.personal_detail`) аналитику НЕ выдана: на этом
+      // разделении держится демонстрация §22.30 «privacy suppressed» — он видит
+      // смены за числом, но не видит, кто именно в них стоял.
+      'ops.analytics.drilldown',
       'ops.export.run',
       // §22.26: запуск отчёта — своё право, отдельное от просмотра аналитики.
       // Sensitive export (`ops.report.export_sensitive`) аналитику НЕ выдан:
