@@ -69,6 +69,7 @@
 | Мой профиль | (план) | features/personnel | Not started |
 | Отчётный реестр службы: запуск отчёта, состояния работы, метаданные артефакта, выгрузка с маскированием (§22.18-22.25, §20.32) | serviceReports | features/service-reports | createReportJob / listReportJobs / downloadArtifact | lib/reporting.test.ts, mocks/repository.test.ts, pages/ServiceReportsPage.test.tsx, e2e-mock/service-reports.spec.ts | Verified (A72; XLSX/PDF/DOCX — названы недоступными с причиной, §22.23) |
 | История отчётов: фильтры, редакции серии, повтор с теми же параметрами и новая revision, видимость только разрешённых работ (§22.25, §22.27) | serviceReports | features/service-reports | listReportJobs(filters) / rerunReportJob | lib/reporting.test.ts, mocks/repository.test.ts, pages/ReportHistoryPage.test.tsx, e2e-mock/service-reports-history.spec.ts | Verified (A73; колонка scope названа недоступной с причиной, §35) |
+| Карточка работы отчёта: состояние и метаданные артефакта одним срезом, действия из ответа, параметры чужого запуска вырезаны сервером (§22.26/§22.27/§22.28) | serviceReportJob | features/service-reports | getReportJob / downloadArtifact / rerunReportJob | lib/reporting.test.ts, mocks/repository.test.ts, pages/ReportJobPage.test.tsx, e2e-mock/service-report-job-card.spec.ts | Verified |
 | Календарь сотрудника × месяц | (план, Epic 19.4) | features/calendar | Not started |
 
 ## Домен: Объекты и служба (§21, Этап 5)

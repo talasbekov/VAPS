@@ -194,8 +194,11 @@ export function ServiceReportsPage() {
                 <li key={job.reportJobId} className="rounded-lg border p-3">
                   <div className="mb-1 flex flex-wrap items-center gap-2">
                     <span className={JOB_STATE_CLASS[job.state]}>{JOB_STATE_LABEL[job.state]}</span>
+                    {/* §22.26: у чужого запуска периода в ответе нет вовсе. */}
                     <span className="text-sm font-semibold">
-                      {job.parameters.from} — {job.parameters.to}
+                      {job.parameters === null
+                        ? 'период скрыт (чужой запуск)'
+                        : `${job.parameters.from} — ${job.parameters.to}`}
                     </span>
                     {job.sensitive && (
                       <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">

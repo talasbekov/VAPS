@@ -30,6 +30,7 @@ import { DictionaryDetailPage } from '../features/dictionaries/pages/DictionaryD
 import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
 import { ServiceReportsPage } from '../features/service-reports/pages/ServiceReportsPage'
 import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
+import { ReportJobPage } from '../features/service-reports/pages/ReportJobPage'
 import { CalendarPage } from './CalendarPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -308,6 +309,19 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.report.generate">
               <ReportHistoryPage />
+            </RequirePermission>
+          }
+        />
+        {/* §22.27 карточка работы. Динамический сегмент — ПОСЛЕ статического
+            `/service-reports/history`; порядок здесь не решает (React Router
+            ранжирует статику выше), но читается он именно так. Право
+            проверяется и маршрутом, и repository — карточка не считает доступ
+            подтверждённым переходом из реестра. */}
+        <Route
+          path={ROUTES.serviceReportJob}
+          element={
+            <RequirePermission permission="ops.report.generate">
+              <ReportJobPage />
             </RequirePermission>
           }
         />

@@ -253,7 +253,7 @@ frontend-период, поэтому и интервал (данные), и р�
 | `GET /api/ops/service-report-types/` | `ops.report.generate` | типы отчётов, политика хранения, список замаскированных полей и недоступных форматов с причинами, `canExportSensitive` |
 | `GET /api/ops/service-report-jobs/` | `ops.report.generate` | работы + БЕЗОПАСНАЯ проекция артефактов (метаданные, без содержимого и без ссылки) + `serverTime` |
 | `POST /api/ops/service-report-jobs/` | `ops.report.generate` (+ `ops.report.export_sensitive` при `sensitive: true`) | созданная работа в состоянии `PENDING`; 422 `INVALID_PERIOD` / `PERIOD_TOO_LONG` / `UNKNOWN_REPORT_TYPE` / `UNSUPPORTED_FORMAT` |
-| `POST /api/ops/service-report-artifacts/{id}/download/` | те же права, ПОВТОРНО | `{ fileName, content }` — поток, а не ссылка; 422 `ARTIFACT_EXPIRED` |
+| `POST /api/ops/service-report-artifacts/{id}/download/` | те же права, ПОВТОРНО (+ `ops.report.view_foreign_parameters` для ЧУЖОГО артефакта: период написан в первой строке файла) | `{ fileName, content }` — поток, а не ссылка; 422 `ARTIFACT_EXPIRED` |
 
 Постоянной ссылки на файл в контракте нет вовсе — §22.23 запрещает её в HTML, list
 endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуществующей ссылке
@@ -268,6 +268,7 @@ endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуще
 | `GET /api/ops/service-report-jobs/?state=&mine=` | `ops.report.generate` | те же работы и артефакты, но: отфильтрованные СЕРВЕРОМ, без работ со скрытыми полями у того, у кого нет `ops.report.export_sensitive`, плюс `actions[]` (доступность каждого действия с причиной отказа), `unavailableColumns[]` и `totalVisible` |
 | `POST /api/ops/service-report-jobs/{id}/retry/` | `ops.report.generate` | `{ reused, reportJobId, artifactId }` — при пригодном (не истёкшем) артефакте той же серии новая работа НЕ создаётся; 404 на невидимую работу, 422 `JOB_NOT_FINISHED` |
 | `POST /api/ops/service-report-jobs/{id}/new-revision/` | `ops.report.generate` | всегда новая работа (`reused: false`); 422 `NO_BASE_REVISION`, если исходная не завершилась успехом |
+| `GET /api/ops/service-report-jobs/{id}/` | `ops.report.generate` (перепроверяется), + `ops.report.view_foreign_parameters` для параметров ЧУЖОЙ работы | §22.27/§22.28 карточка: `{ job, artifact, actions, reportTypeTitle, isOwn, unavailableBlocks, unavailableArtifactFields, serverTime }` — состояние работы и метаданные артефакта ОДНИМ срезом (двумя запросами карточка показала бы состояние из одного ответа и файл из другого). Продвигает работу на чтении, как и список. У чужой работы без права `parameters`, `idempotencyKey` (он производен от параметров!) и `artifact.parameterSnapshot` приходят `null` + `parametersRedactedReason`. Невидимая работа — 404, а не 403 |
 
 Параметры повтора берёт сервер из исходной работы — в теле запроса их нет вовсе.
 Невидимая работа отвечает «не найдено», а не «нет прав»: отказ по правам сам

@@ -15,12 +15,12 @@ import { server } from '../../../shared/api/testing/server'
 import { clearCredential, setCredential } from '../../../shared/auth/credential'
 import { ToastProvider } from '../../../shared/ui/toast'
 import { ReportHistoryPage } from './ReportHistoryPage'
-import type { ListReportJobsResponse } from '../api/pending-contracts'
-import type { ReportJob, ReportJobAction, ReportJobActionCode } from '../model/types'
+import type { ListReportJobsResponse, ReportJobView } from '../api/pending-contracts'
+import type { ReportJobAction, ReportJobActionCode } from '../model/types'
 
 const JOBS_URL = '*/api/ops/service-report-jobs/'
 
-function job(overrides: Partial<ReportJob> = {}): ReportJob {
+function job(overrides: Partial<ReportJobView> = {}): ReportJobView {
   return {
     reportJobId: 'report-job-1',
     reportTypeCode: 'PERSONNEL_EXPENSE',
@@ -36,6 +36,7 @@ function job(overrides: Partial<ReportJob> = {}): ReportJob {
     idempotencyKey: 'key-1',
     sensitive: false,
     parameters: { from: '2026-07-01', to: '2026-07-31' },
+    parametersRedactedReason: null,
     ...overrides,
   }
 }

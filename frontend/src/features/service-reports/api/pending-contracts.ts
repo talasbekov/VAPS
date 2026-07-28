@@ -11,6 +11,7 @@ import type {
   ReportArtifact,
   ReportFormat,
   ReportJob,
+  ReportJobAction,
   ReportJobActions,
   ReportJobState,
   ReportParameters,
@@ -58,6 +59,30 @@ export interface ListReportTypesResponse {
  * повторно проверяет право и отдаёт ПОТОК; постоянной ссылки не существует
  * вовсе, поэтому её неоткуда утечь.
  */
+/**
+ * §22.26/§22.27: работа В ОТВЕТЕ СЕРВЕРА, а не в слайсе. Отличается от
+ * `ReportJob` ровно одним — параметры чужого запуска могут быть ВЫРЕЗАНЫ.
+ *
+ * Вырезаны именно на сервере: §22.27 требует, чтобы при запрещённом доступе
+ * закрытые данные ОТСУТСТВОВАЛИ В DOM, а спрятать период в вёрстке значит всё
+ * равно отдать его браузеру (тот же вывод, что sensitive identity §20.27 и
+ * фильтрация невидимых работ §22.25).
+ */
+export interface ReportJobView extends Omit<ReportJob, 'parameters' | 'idempotencyKey'> {
+  parameters: ReportParameters | null
+  /**
+   * `null` вместе с параметрами — и это не перестраховка.
+   *
+   * Ключ идемпотентности ПО ПОСТРОЕНИЮ производен от параметров
+   * (`PERSONNEL_EXPENSE:2026-07-01:2026-07-31:S:1`, см. `ServiceReportsPage`):
+   * вырезать период и напечатать ключ значило бы вернуть тот же период
+   * соседним полем ответа. Тот же класс, что `parameterSnapshot` артефакта.
+   */
+  idempotencyKey: string | null
+  /** `null`, пока параметры видны: причина нужна ровно там, где отказ. */
+  parametersRedactedReason: string | null
+}
+
 export interface ReportArtifactSummary {
   artifactId: string
   reportJobId: string
@@ -66,7 +91,10 @@ export interface ReportArtifactSummary {
   revision: number
   generatedAt: string
   generatedBy: string
-  parameterSnapshot: ReportParameters
+  /** `null` по той же причине, что `ReportJobView.parameters`: снимок
+   * параметров — это те же параметры, и вырезать надо ОБА места, иначе запрет
+   * просто переезжает в соседнее поле ответа. */
+  parameterSnapshot: ReportParameters | null
   calculationVersion: string
   maskingPolicyVersion: string
   sensitive: boolean
@@ -87,7 +115,7 @@ export interface ListReportJobsFilters {
 }
 
 export interface ListReportJobsResponse {
-  results: ReportJob[]
+  results: ReportJobView[]
   artifacts: ReportArtifactSummary[]
   /** §22.25: доступные действия по каждой работе — считает сервер. */
   actions: ReportJobActions[]
@@ -126,6 +154,34 @@ export type RerunReportJobResponse = {
   reportJobId: string
   artifactId: string | null
 }
-export type ReportJobResponse = ReportJob
+/**
+ * §22.27 карточка работы + §22.28 «получить состояние job» и «получить
+ * метаданные artifact» — ОДНИМ согласованным срезом.
+ *
+ * Двумя запросами карточка показывала бы состояние из одного ответа и артефакт
+ * из другого: между ними работа успевает продвинуться, и человек увидел бы
+ * «формируется» рядом с готовым файлом. Тот же приём, что карточка дежурства
+ * (§21.32).
+ */
+export interface ReportJobDetailResponse {
+  job: ReportJobView
+  /** Артефакт работы или `null`, пока его нет. */
+  artifact: ReportArtifactSummary | null
+  /** §22.25: действия считает сервер — здесь те же, что в строке истории. */
+  actions: ReportJobAction[]
+  /** Название типа отчёта из каталога: у работы без артефакта его взять больше
+   * неоткуда, а показывать человеку код `PERSONNEL_EXPENSE` — не название. */
+  reportTypeTitle: string
+  /** §22.26: свой ли это запуск. Экран не сравнивает пользователей сам —
+   * «свой» решает сервер, который знает актора запроса. */
+  isOwn: boolean
+  /** §35: блоки §22.27, которых demo-срез не даёт, с причиной. */
+  unavailableBlocks: MaskedField[]
+  /** §35: поля контракта артефакта (§22.22), которых demo-срез не даёт. */
+  unavailableArtifactFields: MaskedField[]
+  /** Время сервера, по которому считалась доступность артефакта (§8.8). */
+  serverTime: string
+}
+
 export type DownloadArtifactResponse = { fileName: string; content: string }
 export type { ReportArtifact }

@@ -7,6 +7,7 @@ import {
   REPORT_JOBS_PATH,
   REPORT_TYPES_PATH,
   reportArtifactDownloadPath,
+  reportJobPath,
   reportJobRerunPath,
 } from '../api/pending-contracts'
 import type { CreateReportJobRequest } from '../api/pending-contracts'
@@ -49,6 +50,17 @@ export function createServiceReportsHandlers(adapter: PersistenceAdapter, clock:
       const actorUserId = request.headers.get('X-User-Id')
       try {
         return HttpResponse.json(await repository.listReportTypes(actorUserId))
+      } catch (error) {
+        return mapRepositoryError(error, clock) ?? HttpResponse.error()
+      }
+    }),
+    // §22.27 карточка работы. Зарегистрирована ДО коллекции намеренно: путь
+    // строки — продолжение пути реестра, и порядок handler'ов в MSW значим
+    // (коллизия разрешается молча в пользу первого — инцидент Этапа 39).
+    http.get(`*${reportJobPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.getReportJob(String(params.id), actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock) ?? HttpResponse.error()
       }

@@ -17,8 +17,8 @@ import { ServiceReportsPage } from './ServiceReportsPage'
 import type {
   ListReportJobsResponse,
   ListReportTypesResponse,
+  ReportJobView,
 } from '../api/pending-contracts'
-import type { ReportJob } from '../model/types'
 
 const TYPES_URL = '*/api/ops/service-report-types/'
 const JOBS_URL = '*/api/ops/service-report-jobs/'
@@ -47,7 +47,7 @@ function types(overrides: Partial<ListReportTypesResponse> = {}): ListReportType
   }
 }
 
-function job(overrides: Partial<ReportJob> = {}): ReportJob {
+function job(overrides: Partial<ReportJobView> = {}): ReportJobView {
   return {
     reportJobId: 'report-job-1',
     reportTypeCode: 'PERSONNEL_EXPENSE',
@@ -63,6 +63,7 @@ function job(overrides: Partial<ReportJob> = {}): ReportJob {
     idempotencyKey: 'key-1',
     sensitive: false,
     parameters: { from: '2026-07-01', to: '2026-07-31' },
+    parametersRedactedReason: null,
     ...overrides,
   }
 }

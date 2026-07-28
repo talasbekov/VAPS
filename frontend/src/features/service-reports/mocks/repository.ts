@@ -8,11 +8,13 @@ import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
 import {
   ASSEMBLY_FAILURE,
   CALCULATION_VERSION,
+  FOREIGN_PARAMETERS_REASON,
   MASKED_FIELDS,
   MASKING_POLICY_VERSION,
   UNAVAILABLE_ARTIFACT_FIELDS,
   UNAVAILABLE_FORMATS,
   UNAVAILABLE_HISTORY_COLUMNS,
+  UNAVAILABLE_JOB_CARD_BLOCKS,
   artifactSeriesKey,
   buildJobActions,
   buildReportContent,
@@ -33,6 +35,8 @@ import type {
   ListReportJobsResponse,
   ListReportTypesResponse,
   ReportArtifactSummary,
+  ReportJobDetailResponse,
+  ReportJobView,
   RerunReportJobResponse,
 } from '../api/pending-contracts'
 import type { ReportArtifact, ReportJob } from '../model/types'
@@ -54,6 +58,9 @@ const GENERATE_PERMISSION = 'ops.report.generate'
 /** §20.32 «Sensitive export является отдельной операцией» — и отдельным
  * правом: право выгружать отчёт не даёт права выгружать скрытые поля. */
 const SENSITIVE_PERMISSION = 'ops.report.export_sensitive'
+/** §22.26 «просмотра параметров чужого отчёта» — прямо названо отдельным
+ * разрешением. Своя работа доступна всегда: разрешение нужно ровно на чужую. */
+const FOREIGN_PARAMETERS_PERMISSION = 'ops.report.view_foreign_parameters'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -93,7 +100,35 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
    * содержимое и не ссылка на файл. Доступность считается сервером по своему
    * времени — экран не пересчитывает срок хранения своими часами.
    */
-  function summarize(artifact: ReportArtifact, nowIso: string): ReportArtifactSummary {
+  /**
+   * §22.26: видны ли смотрящему параметры ЭТОЙ работы. Свой запуск — всегда;
+   * чужой — только по отдельному праву.
+   *
+   * Считает СЕРВЕР, а не экран: сравнение пользователей на клиенте означало бы,
+   * что параметры уже приехали в браузер, и запрет остался бы вёрсткой.
+   */
+  function canSeeParameters(job: ReportJob, actorUserId: string | null): boolean {
+    if (actorUserId !== null && job.createdBy.userId === actorUserId) return true
+    return hasPermission(actorUserId, FOREIGN_PARAMETERS_PERMISSION)
+  }
+
+  /** Работа в ответе сервера: параметры чужого запуска ВЫРЕЗАНЫ, а не скрыты. */
+  function projectJob(job: ReportJob, parametersVisible: boolean): ReportJobView {
+    return {
+      ...job,
+      parameters: parametersVisible ? job.parameters : null,
+      // Ключ идемпотентности — производное параметров, и вырезается вместе с
+      // ними: см. комментарий у `ReportJobView.idempotencyKey`.
+      idempotencyKey: parametersVisible ? job.idempotencyKey : null,
+      parametersRedactedReason: parametersVisible ? null : FOREIGN_PARAMETERS_REASON,
+    }
+  }
+
+  function summarize(
+    artifact: ReportArtifact,
+    nowIso: string,
+    parametersVisible: boolean,
+  ): ReportArtifactSummary {
     const available = isArtifactAvailable(artifact, nowIso)
     return {
       artifactId: artifact.artifactId,
@@ -103,7 +138,7 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
       revision: artifact.revision,
       generatedAt: artifact.generatedAt,
       generatedBy: artifact.generatedBy,
-      parameterSnapshot: artifact.parameterSnapshot,
+      parameterSnapshot: parametersVisible ? artifact.parameterSnapshot : null,
       calculationVersion: artifact.calculationVersion,
       maskingPolicyVersion: artifact.maskingPolicyVersion,
       sensitive: artifact.sensitive,
@@ -250,17 +285,30 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
         return true
       })
       const matchedIds = new Set(matched.map((job) => job.reportJobId))
+      // §22.26: право на параметры — по КАЖДОЙ работе своё (зависит от её
+      // автора), а не одно на весь ответ.
+      const parametersVisibleByJob = new Map(
+        matched.map((job) => [job.reportJobId, canSeeParameters(job, actorUserId)]),
+      )
       const visibleArtifacts = artifacts.filter((artifact) => matchedIds.has(artifact.reportJobId))
-      const summaries = visibleArtifacts.map((artifact) => summarize(artifact, now))
+      const summaries = visibleArtifacts.map((artifact) =>
+        summarize(artifact, now, parametersVisibleByJob.get(artifact.reportJobId) === true),
+      )
       const byJob = new Map(summaries.map((summary) => [summary.reportJobId, summary]))
 
       response = {
-        results: [...matched].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        results: [...matched]
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .map((job) => projectJob(job, parametersVisibleByJob.get(job.reportJobId) === true)),
         artifacts: summaries,
         // §22.25: действия считает сервер — экран их не выводит из состояния.
         actions: matched.map((job) => ({
           reportJobId: job.reportJobId,
-          actions: buildJobActions({ job, artifact: byJob.get(job.reportJobId) ?? null }),
+          actions: buildJobActions({
+            job,
+            artifact: byJob.get(job.reportJobId) ?? null,
+            parametersVisible: parametersVisibleByJob.get(job.reportJobId) === true,
+          }),
         })),
         unavailableColumns: [...UNAVAILABLE_HISTORY_COLUMNS],
         totalVisible: visible.length,
@@ -269,6 +317,76 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
       return {
         ...current.slices,
         [SLICE_NAME]: { ...slice, jobs, artifacts } satisfies ServiceReportsSlice,
+      }
+    })
+    return response
+  }
+
+  /**
+   * §22.27 карточка одной работы + §22.28 «получить состояние job» и «получить
+   * метаданные artifact».
+   *
+   * ⚠️ Право проверяется ЗАНОВО и ПОЛНОСТЬЮ. §22.27 прямо запрещает считать
+   * доступ разрешённым потому, что человек пришёл по ссылке из реестра: карточка
+   * не доверяет ни маршруту, ни тому, что работа была в чьём-то списке.
+   *
+   * Работа продвигается на чтении — как в списке (см. `advance`): иначе
+   * открытая по прямой ссылке карточка PENDING-работы висела бы вечно, а
+   * реестр ту же работу доводил бы до конца.
+   */
+  async function getReportJob(
+    reportJobId: string,
+    actorUserId: string | null,
+  ): Promise<ReportJobDetailResponse> {
+    if (!hasPermission(actorUserId, GENERATE_PERMISSION)) {
+      throw new RepositoryPermissionError(GENERATE_PERMISSION)
+    }
+    const canExportSensitive = hasPermission(actorUserId, SENSITIVE_PERMISSION)
+
+    let response!: ReportJobDetailResponse
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current.slices)
+      const stored = slice.jobs.find((job) => job.reportJobId === reportJobId)
+      // Как и в повторе: невидимая работа отвечает «не найдено», а не «нет
+      // прав» — 403 сам подтвердил бы, что такая выгрузка существует.
+      if (stored === undefined || !isJobVisible(stored, canExportSensitive)) {
+        throw new RepositoryNotFoundError(reportJobId)
+      }
+
+      const artifacts = [...slice.artifacts]
+      const stepped = advance(slice, stored, current.slices, artifacts)
+      if (stepped.artifact !== null) artifacts.push(stepped.artifact)
+      const job = stepped.job
+
+      const now = clock.now()
+      const parametersVisible = canSeeParameters(job, actorUserId)
+      const artifact = artifacts.find((entry) => entry.reportJobId === job.reportJobId) ?? null
+
+      response = {
+        job: projectJob(job, parametersVisible),
+        artifact: artifact === null ? null : summarize(artifact, now, parametersVisible),
+        actions: buildJobActions({
+          job,
+          artifact:
+            artifact === null ? null : { available: isArtifactAvailable(artifact, now) },
+          parametersVisible,
+        }),
+        reportTypeTitle:
+          slice.reportTypes.find((type) => type.reportTypeCode === job.reportTypeCode)?.safeTitle ??
+          job.reportTypeCode,
+        isOwn: actorUserId !== null && job.createdBy.userId === actorUserId,
+        unavailableBlocks: [...UNAVAILABLE_JOB_CARD_BLOCKS],
+        unavailableArtifactFields: [...UNAVAILABLE_ARTIFACT_FIELDS],
+        serverTime: now,
+      }
+
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          jobs: slice.jobs.map((entry) => (entry.reportJobId === job.reportJobId ? job : entry)),
+          artifacts,
+        } satisfies ServiceReportsSlice,
       }
     })
     return response
@@ -485,6 +603,14 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
     if (artifact.sensitive && !hasPermission(actorUserId, SENSITIVE_PERMISSION)) {
       throw new RepositoryPermissionError(SENSITIVE_PERMISSION)
     }
+    // §22.26: чужой артефакт скачивает тот, кому разрешены параметры чужого
+    // отчёта. Иначе запрет был бы декоративным: период выгрузки написан в
+    // ПЕРВОЙ СТРОКЕ файла (`buildReportContent`), и отказ на экране рядом с
+    // доступным файлом не скрывает ничего.
+    const owner = slice.jobs.find((job) => job.reportJobId === artifact.reportJobId)
+    if (owner !== undefined && !canSeeParameters(owner, actorUserId)) {
+      throw new RepositoryPermissionError(FOREIGN_PARAMETERS_PERMISSION)
+    }
     if (!isArtifactAvailable(artifact, clock.now())) {
       throw new RepositoryBusinessRuleError(
         'ARTIFACT_EXPIRED',
@@ -497,5 +623,12 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
     }
   }
 
-  return { listReportTypes, listReportJobs, createReportJob, rerunReportJob, downloadArtifact }
+  return {
+    listReportTypes,
+    listReportJobs,
+    getReportJob,
+    createReportJob,
+    rerunReportJob,
+    downloadArtifact,
+  }
 }

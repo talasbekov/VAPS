@@ -193,15 +193,26 @@ export function ReportHistoryPage() {
                   return (
                     <tr key={job.reportJobId} className="border-b align-top last:border-0">
                       <td className="py-2 pr-3">
-                        {artifact?.safeTitle ?? job.reportTypeCode}
+                        <Link
+                          className="font-semibold text-primary underline"
+                          to={ROUTES.serviceReportJobTo(job.reportJobId)}
+                        >
+                          {artifact?.safeTitle ?? job.reportTypeCode}
+                        </Link>
                         {job.sensitive && (
                           <span className="ml-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">
                             Со скрытыми полями
                           </span>
                         )}
                       </td>
+                      {/* §22.26: период чужого запуска сюда не приезжает —
+                          сервер вырезает его из ответа, а не экран прячет. */}
                       <td className="py-2 pr-3">
-                        {job.parameters.from} — {job.parameters.to}
+                        {job.parameters === null ? (
+                          <span className="text-slate-600">скрыт (чужой запуск)</span>
+                        ) : (
+                          `${job.parameters.from} — ${job.parameters.to}`
+                        )}
                       </td>
                       <td className="py-2 pr-3">{job.format}</td>
                       <td className="py-2 pr-3 font-semibold">{JOB_STATE_LABEL[job.state]}</td>
@@ -262,7 +273,9 @@ export function ReportHistoryPage() {
                           <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-slate-600">
                             <dt className="font-semibold">Период</dt>
                             <dd>
-                              {job.parameters.from} — {job.parameters.to} (границы включительно)
+                              {job.parameters === null
+                                ? job.parametersRedactedReason
+                                : `${job.parameters.from} — ${job.parameters.to} (границы включительно)`}
                             </dd>
                             <dt className="font-semibold">Режим выгрузки</dt>
                             <dd>{job.sensitive ? 'со скрытыми полями' : 'обычный'}</dd>

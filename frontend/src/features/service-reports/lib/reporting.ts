@@ -218,21 +218,48 @@ export const ASSEMBLY_FAILURE = {
 } as const
 
 /**
+ * §22.26 «просмотр параметров чужого отчёта» — ОТДЕЛЬНОЕ право. Право запускать
+ * отчёты даёт видеть, что коллега выгружал; период и режим его выгрузки —
+ * следующий шаг, и промпт называет его самостоятельным разрешением.
+ *
+ * Причина отказа формулируется ровно так, как есть: дело не в состоянии работы
+ * и не в сроке хранения, а в том, что запуск чужой.
+ */
+export const FOREIGN_PARAMETERS_REASON =
+  'Это чужой запуск: просмотр параметров чужого отчёта — отдельное право (§22.26), и его у вас нет.'
+
+/**
+ * Отказ в скачивании ЧУЖОГО артефакта без того же права.
+ *
+ * Скрывать период на экране и тут же отдавать файл, у которого период написан в
+ * первой строке (`buildReportContent`), — не защита, а её видимость. Поэтому
+ * ограничение одно и то же, и названо оно так же.
+ */
+export const FOREIGN_DOWNLOAD_REASON =
+  'Файл называет свой период в первой строке: скрыть параметры на экране и отдать их файлом значило бы скрыть только на вид.'
+
+/**
  * §22.25, политика действий строки истории. Целиком серверная: смотрит на
- * состояние работы, наличие и срок артефакта — и на каждый отказ называет
- * причину.
+ * состояние работы, наличие и срок артефакта, право на параметры чужого запуска
+ * — и на каждый отказ называет причину.
  */
 export function buildJobActions(input: {
   job: Pick<ReportJob, 'state' | 'artifactId'>
   /** Артефакт работы и его доступность на момент ответа сервера. */
   artifact: { available: boolean } | null
+  /** §22.26: видны ли смотрящему параметры ЭТОЙ работы (своя либо есть право). */
+  parametersVisible: boolean
 }): ReportJobAction[] {
-  const { job, artifact } = input
+  const { job, artifact, parametersVisible } = input
   const terminal = job.state === 'COMPLETED' || job.state === 'FAILED'
   const running = 'Работа ещё выполняется — дождитесь её завершения.'
 
-  const download: ReportJobAction =
-    job.state === 'FAILED'
+  const download: ReportJobAction = !parametersVisible
+    ? // Проверяется ПЕРВЫМ: сказать «срок хранения истёк» тому, кому вообще
+      // нельзя видеть эту выгрузку, значит подменить причину отказа (тот же
+      // порядок, что sensitive-право в `createReportJob`).
+      { code: 'DOWNLOAD', available: false, reason: FOREIGN_DOWNLOAD_REASON }
+    : job.state === 'FAILED'
       ? { code: 'DOWNLOAD', available: false, reason: 'Работа завершилась ошибкой — файла нет.' }
       : artifact === null
         ? { code: 'DOWNLOAD', available: false, reason: 'Артефакт ещё не сформирован.' }
@@ -245,9 +272,11 @@ export function buildJobActions(input: {
             }
 
   return [
-    // Параметры — часть самой работы и приходят вместе с ней: их показ ничего
-    // не открывает сверх уже разрешённого.
-    { code: 'OPEN_PARAMETERS', available: true, reason: null },
+    {
+      code: 'OPEN_PARAMETERS',
+      available: parametersVisible,
+      reason: parametersVisible ? null : FOREIGN_PARAMETERS_REASON,
+    },
     download,
     {
       code: 'RETRY',
@@ -279,6 +308,22 @@ export const UNAVAILABLE_HISTORY_COLUMNS: readonly MaskedField[] = [
     label: 'Scope',
     reason:
       'RBAC demo-режима плоский, без организационного scope (§8.9): у работы нет области, которую можно было бы показать в колонке. Пустая колонка «Scope» читалась бы как «область не ограничена», а это утверждение, а не факт.',
+  },
+]
+
+/** §35: то, что §22.27 называет у карточки работы, а demo-срез не даёт. */
+export const UNAVAILABLE_JOB_CARD_BLOCKS: readonly MaskedField[] = [
+  {
+    code: 'SCOPE',
+    label: 'Scope запуска',
+    reason:
+      'RBAC demo-режима плоский, без организационного scope (§8.9): §22.27 требует перепроверять на маршруте и permission, и scope — перепроверяется то, что есть, право; scope перепроверять не на чем, и пустой блок «вся организация» был бы утверждением, а не фактом.',
+  },
+  {
+    code: 'ARTIFACT_ROUTE',
+    label: 'Отдельный маршрут артефакта',
+    reason:
+      '§22.27 называет `/reports/artifacts/:artifactId`, но в demo-срезе у работы ровно один артефакт, и все его метаданные показаны здесь: второй маршрут стал бы вторым владельцем одного представления, а постоянной ссылки на сам файл не существует вовсе (§22.23).',
   },
 ]
 

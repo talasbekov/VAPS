@@ -213,10 +213,12 @@ describe('действия строки истории (§22.25)', () => {
   function codes(
     state: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED',
     available: boolean | null,
+    parametersVisible = true,
   ) {
     const actions = buildJobActions({
       job: { state, artifactId: available === null ? null : 'artifact-1' },
       artifact: available === null ? null : { available },
+      parametersVisible,
     })
     return Object.fromEntries(actions.map((action) => [action.code, action]))
   }
@@ -257,6 +259,19 @@ describe('действия строки истории (§22.25)', () => {
     }
   })
 
+  it('чужой запуск без права закрывает и параметры, и файл — разными причинами (§22.26)', () => {
+    const actions = codes('COMPLETED', true, false)
+    expect(actions.OPEN_PARAMETERS.available).toBe(false)
+    expect(actions.OPEN_PARAMETERS.reason).toMatch(/чужой запуск/)
+    // Файл закрыт НЕ «сроком хранения» и не «состоянием»: артефакт готов и
+    // доступен — причина именно в том, что запуск чужой.
+    expect(actions.DOWNLOAD.available).toBe(false)
+    expect(actions.DOWNLOAD.reason).toMatch(/первой строке/)
+    // Повтор при этом остаётся доступен: он ничего не показывает — параметры
+    // сервер берёт из исходной работы сам.
+    expect(actions.RETRY.available).toBe(true)
+  })
+
   it('каждый отказ назван причиной, а доступное действие причины не несёт', () => {
     // Проверяются ОБА состояния набора: у работающей отказов большинство, у
     // готовой — большинство доступно. Один набор оставил бы половину правила
@@ -265,6 +280,7 @@ describe('действия строки истории (§22.25)', () => {
       const actions = buildJobActions({
         job: { state, artifactId: state === 'COMPLETED' ? 'artifact-1' : null },
         artifact: state === 'COMPLETED' ? { available: true } : null,
+        parametersVisible: true,
       })
       expect(actions.some((action) => !action.available)).toBe(true)
       for (const action of actions) {

@@ -171,5 +171,12 @@ test.describe('Accessibility (axe-core): второй слой аудита по
     await page.getByRole('button', { name: 'Открыть параметры' }).click()
     await expect(page.getByText('Ключ идемпотентности')).toBeVisible()
     await assertNoSeriousViolations(page, 'История отчётов — строка с параметрами')
+
+    // Карточка работы §22.27 — сканируется у ГОТОВОЙ работы: у незавершённой
+    // нет ни метаданных артефакта, ни включённых кнопок действий, и покрытие
+    // было бы мнимым.
+    await page.getByRole('link', { name: 'Расход личного состава' }).first().click()
+    await expect(page.getByText('ваш запуск')).toBeVisible()
+    await assertNoSeriousViolations(page, 'Карточка работы отчёта')
   })
 })

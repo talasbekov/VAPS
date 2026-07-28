@@ -105,6 +105,19 @@ export const ROUTES = {
    * запрещает считать доступ разрешённым потому, что человек пришёл по ссылке
    * с разрешённого экрана. */
   serviceReportHistory: '/service-reports/history',
+  /**
+   * §22.27 «Прямые ссылки»: карточка одной работы. Промпт называет маршрут
+   * `/reports/:reportJobId` — здесь он живёт под `/service-reports` по той же
+   * причине, что и весь раздел (донорский `/reports` — «Расход дня», E10).
+   *
+   * ⚠️ Соседствует со СТАТИЧЕСКИМ `/service-reports/history`. React Router
+   * ранжирует статический сегмент выше динамического, поэтому история не
+   * становится «работой с идентификатором history» — но это свойство роутера,
+   * а не наше решение, и оно закреплено тестом.
+   */
+  serviceReportJob: '/service-reports/:reportJobId',
+  serviceReportJobTo: (reportJobId: string) =>
+    `/service-reports/${encodeURIComponent(reportJobId)}`,
   /** Мастер-промпт §21/§24: «Служба» → План дежурств. */
   duties: '/duties',
   /**

@@ -518,3 +518,129 @@ describe('сбой сборки (§22.21)', () => {
     ).resolves.toMatchObject({ reused: false })
   })
 })
+
+describe('карточка работы (§22.27) и параметры чужого запуска (§22.26)', () => {
+  it('карточка перепроверяет право сама: без права запуска — отказ', async () => {
+    const { repository } = await setup()
+    const job = await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    await expect(repository.getReportJob(job.reportJobId, NOBODY)).rejects.toThrow(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('несуществующая и невидимая работа отвечают одинаково — «не найдено»', async () => {
+    const { repository } = await setup()
+    const hidden = await repository.createReportJob(
+      { ...BASE_REQUEST, sensitive: true },
+      SENSITIVE_OPERATOR,
+    )
+    // Оператору без sensitive-права работа НЕ ВИДНА, и отказ не отличается от
+    // отказа по выдуманному идентификатору: 403 подтвердил бы, что выгрузка со
+    // скрытыми полями за этот период существует.
+    await expect(repository.getReportJob(hidden.reportJobId, OPERATOR)).rejects.toThrow(
+      RepositoryNotFoundError,
+    )
+    await expect(repository.getReportJob('report-job-нет-такой', OPERATOR)).rejects.toThrow(
+      RepositoryNotFoundError,
+    )
+  })
+
+  it('карточка сама доводит работу до конца, не дожидаясь реестра (§22.21)', async () => {
+    const { repository } = await setup()
+    const job = await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    expect(job.state).toBe('PENDING')
+    // Реестр НЕ читается ни разу: ступень продвигает то чтение, которое есть,
+    // — уже первое обращение к карточке сдвигает работу с места.
+    let card = await repository.getReportJob(job.reportJobId, OPERATOR)
+    expect(card.job.state).toBe('PROCESSING')
+    for (let step = 0; step < 5 && card.job.state !== 'COMPLETED'; step += 1) {
+      card = await repository.getReportJob(job.reportJobId, OPERATOR)
+    }
+    expect(card.job.state).toBe('COMPLETED')
+    expect(card.artifact?.revision).toBe(1)
+    expect(card.isOwn).toBe(true)
+  })
+
+  it('параметры ЧУЖОГО запуска не приезжают в ответе вовсе — ни периодом, ни ключом', async () => {
+    const { repository } = await setup()
+    const job = await repository.createReportJob(BASE_REQUEST, SENSITIVE_OPERATOR)
+    const card = await repository.getReportJob(job.reportJobId, OPERATOR)
+
+    expect(card.isOwn).toBe(false)
+    expect(card.job.parameters).toBeNull()
+    expect(card.job.parametersRedactedReason).toMatch(/чужой запуск/)
+    // Ключ идемпотентности вырезан вместе с ними: он БУКВАЛЬНО содержит период
+    // (`key-1` тестовый, но у экрана он собирается из параметров), и оставить
+    // его значило бы вернуть период соседним полем.
+    expect(card.job.idempotencyKey).toBeNull()
+    // Проверка ПО ВСЕМУ ответу, а не по знакомым полям: закрытые данные не
+    // должны просочиться ни в один из вложенных объектов (§22.27 «отсутствуют
+    // в DOM» начинается с «отсутствуют в ответе»).
+    expect(JSON.stringify(card)).not.toContain(PERIOD.from)
+    expect(JSON.stringify(card)).not.toContain(PERIOD.to)
+  })
+
+  it('свой запуск виден целиком — та же карточка тому, кто её создал', async () => {
+    const { repository } = await setup()
+    const job = await repository.createReportJob(BASE_REQUEST, SENSITIVE_OPERATOR)
+    const card = await repository.getReportJob(job.reportJobId, SENSITIVE_OPERATOR)
+    expect(card.job.parameters).toEqual(PERIOD)
+    expect(card.job.idempotencyKey).toBe('key-1')
+    expect(card.job.parametersRedactedReason).toBeNull()
+  })
+
+  it('право на параметры чужого отчёта открывает их, не открывая ничего сверх', async () => {
+    const { repository } = await setup()
+    registerRbacDirectory([
+      { userId: OPERATOR, permissions: ['ops.report.generate', 'ops.report.view_foreign_parameters'] },
+      {
+        userId: SENSITIVE_OPERATOR,
+        permissions: ['ops.report.generate', 'ops.report.export_sensitive'],
+      },
+    ])
+    const own = await repository.createReportJob(BASE_REQUEST, SENSITIVE_OPERATOR)
+    const foreign = await repository.getReportJob(own.reportJobId, OPERATOR)
+    expect(foreign.job.parameters).toEqual(PERIOD)
+    expect(foreign.isOwn).toBe(false)
+
+    // Sensitive-работа при этом всё равно НЕ видна: право на параметры чужого
+    // отчёта не заменяет права на скрытые поля — это разные ограничения.
+    const hidden = await repository.createReportJob(
+      { ...BASE_REQUEST, sensitive: true, idempotencyKey: 'key-2' },
+      SENSITIVE_OPERATOR,
+    )
+    await expect(repository.getReportJob(hidden.reportJobId, OPERATOR)).rejects.toThrow(
+      RepositoryNotFoundError,
+    )
+  })
+
+  it('реестр вырезает период чужой строки — и в работе, и в снимке артефакта', async () => {
+    const { repository } = await setup()
+    await repository.createReportJob(BASE_REQUEST, SENSITIVE_OPERATOR)
+    await runToCompletion(repository, SENSITIVE_OPERATOR)
+
+    const list = await repository.listReportJobs(OPERATOR)
+    expect(list.results[0].parameters).toBeNull()
+    // Снимок параметров в артефакте — те же параметры: без этой ветки запрет
+    // просто переехал бы в соседнее поле того же ответа.
+    expect(list.artifacts[0].parameterSnapshot).toBeNull()
+    expect(JSON.stringify(list)).not.toContain(PERIOD.from)
+  })
+
+  it('чужой файл не скачивается: период написан в первой строке содержимого', async () => {
+    const { repository } = await setup()
+    const job = await repository.createReportJob(BASE_REQUEST, SENSITIVE_OPERATOR)
+    await runToCompletion(repository, SENSITIVE_OPERATOR)
+    const card = await repository.getReportJob(job.reportJobId, SENSITIVE_OPERATOR)
+    const artifactId = card.artifact?.artifactId ?? ''
+
+    // Проверка на СЕРВЕРЕ, а не только в политике действий: выключенная кнопка
+    // не мешает позвать операцию напрямую.
+    await expect(repository.downloadArtifact(artifactId, OPERATOR)).rejects.toThrow(
+      RepositoryPermissionError,
+    )
+    const file = await repository.downloadArtifact(artifactId, SENSITIVE_OPERATOR)
+    // И убеждаемся, что запрет не декоративный: период в файле действительно есть.
+    expect(file.content).toContain(PERIOD.from)
+  })
+})

@@ -7,6 +7,7 @@ import {
   REPORT_JOBS_PATH,
   REPORT_TYPES_PATH,
   reportArtifactDownloadPath,
+  reportJobPath,
   reportJobRerunPath,
 } from './pending-contracts'
 import type {
@@ -16,6 +17,7 @@ import type {
   ListReportJobsFilters,
   ListReportJobsResponse,
   ListReportTypesResponse,
+  ReportJobDetailResponse,
   RerunMode,
   RerunReportJobResponse,
 } from './pending-contracts'
@@ -58,6 +60,28 @@ export function useReportJobs(filters: ListReportJobsFilters = {}) {
       )
       return running ? REPORT_POLL_INTERVAL_MS : false
     },
+  })
+}
+
+/**
+ * §22.27 карточка работы. Опрос — по ТОМУ ЖЕ правилу, что реестр: пока работа
+ * не в терминальном состоянии, и ни секунды после. Прямая ссылка на PENDING-
+ * работу обязана довести её до конца сама — человек, пришедший по ссылке, не
+ * должен открывать реестр, чтобы «подтолкнуть» свою выгрузку.
+ */
+export function useReportJob(reportJobId: string) {
+  return useQuery<ReportJobDetailResponse, ApiFailure>({
+    queryKey: ['service-reports', 'job', reportJobId],
+    queryFn: () => apiClient.get<ReportJobDetailResponse>(reportJobPath(reportJobId)),
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (data === undefined) return false
+      const running = data.job.state === 'PENDING' || data.job.state === 'PROCESSING'
+      return running ? REPORT_POLL_INTERVAL_MS : false
+    },
+    // Отказ по праву/видимости повторять нечем: ответ не изменится оттого, что
+    // мы спросим трижды (§22.27 — доступ перепроверяет сервер, не настойчивость).
+    retry: false,
   })
 }
 
