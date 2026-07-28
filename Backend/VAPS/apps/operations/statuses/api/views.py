@@ -1,5 +1,6 @@
 """Story 10.1a — REST bulk-роут статусов (POST /api/operations/statuses/bulk/).
 Story 10.1b — GET on-date роут (преднабор «вчера»).
+Story 10.1b2 — GET справочник статус-типов (combobox грида 10.2).
 
 Тонкая вьюха поверх готового сервиса 3.8 (bulk_create_statuses): сериализатор →
 резолв scope из RBAC → вызов сервиса → 201 {created}. Никакой бизнес-логики/
@@ -32,7 +33,9 @@ from apps.operations.statuses.api.serializers import (
     BulkStatusCreateSerializer,
     StatusOnDateQuerySerializer,
     StatusOnDateRowSerializer,
+    StatusTypeListSerializer,
 )
+from apps.operations.statuses.models import StatusType
 from apps.operations.statuses.selectors import EmployeeStatusSelector
 from apps.operations.statuses.services import bulk_create_statuses
 
@@ -162,3 +165,26 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         employee_ids = roster.get(division_id, [])
         rows = EmployeeStatusSelector.overlapping_on(business_date, employee_ids)
         return Response(StatusOnDateRowSerializer(rows, many=True).data)
+
+
+class StatusTypeViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET .../statuses/types/ — активный справочник статус-типов (10.1b2,
+    combobox грида 10.2). Отдельный ViewSet от ``StatusViewSet``: справочник
+    не подразделение-скоуповый (нет division-логики StatusViewSet), другая
+    модель ответственности (``StatusType`` vs ``EmployeeStatus``)."""
+
+    permission_map = {"list": _VIEW_PERMISSION}
+    http_method_names = ["get", "options"]
+
+    @extend_schema(
+        responses={200: StatusTypeListSerializer(many=True)},
+        description=(
+            "Активный справочник типов статусов (is_active=True), "
+            "отсортирован по (priority, code). Деактивированные типы НЕ "
+            "включены (в отличие от StatusTypeSelector.names_map(), которая "
+            "их включает для исторического export/report-разрешения)."
+        ),
+    )
+    def list(self, request, *args, **kwargs):
+        types = StatusType.objects.filter(is_active=True)
+        return Response(StatusTypeListSerializer(types, many=True).data)

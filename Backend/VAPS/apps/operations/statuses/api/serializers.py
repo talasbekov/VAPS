@@ -54,3 +54,14 @@ class StatusOnDateRowSerializer(serializers.Serializer):
     status_type_code = serializers.CharField()
     date_start = serializers.DateField()
     date_end = serializers.DateField()
+
+
+class StatusTypeListSerializer(serializers.Serializer):
+    """Story 10.1b2 — справочник статус-типов для combobox грида (10.2).
+    Прямо из ORM-инстансов ``StatusType`` (read-only, простой набор полей)."""
+
+    code = serializers.CharField()
+    name = serializers.CharField()
+    color = serializers.CharField()
+    is_hard_block = serializers.BooleanField()
+    priority = serializers.IntegerField()

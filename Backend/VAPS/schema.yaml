@@ -1603,6 +1603,23 @@ paths:
                 items:
                   $ref: '#/components/schemas/StatusOnDateRow'
           description: ''
+  /api/operations/statuses/types/:
+    get:
+      operationId: operations_statuses_types_list
+      description: Активный справочник типов статусов (is_active=True), отсортирован
+        по (priority, code). Деактивированные типы НЕ включены (в отличие от StatusTypeSelector.names_map(),
+        которая их включает для исторического export/report-разрешения).
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatusTypeList'
+          description: ''
   /api/operations/temporary-duty/:
     get:
       operationId: operations_temporary_duty_retrieve
@@ -2895,6 +2912,28 @@ components:
       - date_start
       - employee_id
       - status_type_code
+    StatusTypeList:
+      type: object
+      description: |-
+        Story 10.1b2 — справочник статус-типов для combobox грида (10.2).
+        Прямо из ORM-инстансов ``StatusType`` (read-only, простой набор полей).
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+        is_hard_block:
+          type: boolean
+        priority:
+          type: integer
+      required:
+      - code
+      - color
+      - is_hard_block
+      - name
+      - priority
     TomorrowBlockOverrideRequest:
       type: object
       description: |-

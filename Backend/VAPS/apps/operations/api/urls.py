@@ -7,7 +7,7 @@ from apps.operations.api.views import (
     TemporaryDutyViewSet,
     UserRoleViewSet,
 )
-from apps.operations.statuses.api.views import StatusViewSet
+from apps.operations.statuses.api.views import StatusTypeViewSet, StatusViewSet
 from apps.operations.submissions.api.views import (
     DailySubmissionViewSet,
     ExpenseReportViewSet,
@@ -30,5 +30,6 @@ router.register(
     "traffic-light", TrafficLightViewSet, basename="ops-traffic-light"
 )
 router.register("statuses", StatusViewSet, basename="ops-status")
+router.register("statuses/types", StatusTypeViewSet, basename="ops-status-type")
 
 urlpatterns = router.urls

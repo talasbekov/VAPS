@@ -1101,6 +1101,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/statuses/types/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Активный справочник типов статусов (is_active=True), отсортирован по (priority, code). Деактивированные типы НЕ включены (в отличие от StatusTypeSelector.names_map(), которая их включает для исторического export/report-разрешения). */
+        get: operations["operations_statuses_types_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/temporary-duty/": {
         parameters: {
             query?: never;
@@ -1714,6 +1731,17 @@ export interface components {
             date_start: string;
             /** Format: date */
             date_end: string;
+        };
+        /**
+         * @description Story 10.1b2 — справочник статус-типов для combobox грида (10.2).
+         *     Прямо из ORM-инстансов ``StatusType`` (read-only, простой набор полей).
+         */
+        StatusTypeList: {
+            code: string;
+            name: string;
+            color: string;
+            is_hard_block: boolean;
+            priority: number;
         };
         /**
          * @description POST-body form (6.10b) — the date whose «на завтра» block is legally
@@ -2910,6 +2938,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusOnDateRow"][];
+                };
+            };
+        };
+    };
+    operations_statuses_types_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusTypeList"][];
                 };
             };
         };

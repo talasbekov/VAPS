@@ -188,6 +188,9 @@ MATRIX = {
     # scope (ensure_division_scope) энфорсит вьюха, матрицей не проверяется
     # (payloadless GET держателя = 400 сериализатора = ALLOW по канону).
     "ops-status-on-date": _MethodGate({"get": "status.view"}),
+    # GET справочника статус-типов (story 10.1b2, combobox грида 10.2) —
+    # глобальный (не подразделение-скоуповый) грубый гейт status.view.
+    "ops-status-type-list": _Gate("status.view"),
     # override «на завтра»-блока (story 6.10b, POST-only) — своё право
     # daily_report.override_block (обход ≠ выпуск); scope не применяется (обход
     # уровня дня, без division). ValueError сервиса → 400 = ALLOW по канону.
