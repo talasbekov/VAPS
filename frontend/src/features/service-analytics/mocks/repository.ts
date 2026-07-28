@@ -31,6 +31,7 @@ import type { AnalyticsDutyType, AnalyticsSourceShift } from '../lib/analytics'
 import {
   ATTENTION_POLICY_VERSION,
   UNAVAILABLE_DETECTORS,
+  applyAttentionPolicy,
   buildAttentionItems,
 } from '../lib/attention'
 import {
@@ -51,6 +52,7 @@ import {
 } from '../lib/operations'
 import type { OpsSourceEvent } from '../lib/operations'
 import { readAnalyticsSource } from './dutiesSlice'
+import { readAttentionPolicy } from './settingsSlice'
 import { readOperationsSource, readOperationsTransitions } from './securityEventsSlice'
 import { MAX_CUSTOM_PERIOD_DAYS } from './fixtures'
 import type { ServiceAnalyticsSlice } from './fixtures'
@@ -402,11 +404,20 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
 
     // Нечем наблюдать — и это НЕ «всё в порядке». Пустой список при мёртвом
     // детекторе сказал бы от имени сервера то, чего он не проверял (§35).
-    const detectors = slice.attentionDetectors ?? []
+    //
+    // Методику (что и как измеряем, каким текстом описываем) держит аналитика;
+    // ЧИСЛА политики — допуски и пороги — принадлежат разделу «Настройки»
+    // (§29) и приезжают из его слайса. Разделение не косметическое: после
+    // правки порога в «Настройках» этот блок обязан считаться по-новому и
+    // нести НОВУЮ `policyVersion`, иначе снимок соврал бы о своей методике.
+    const policy = readAttentionPolicy(envelope.slices)
+    const detectors = applyAttentionPolicy(slice.attentionDetectors ?? [], policy)
     const unavailableReason =
       source === null
         ? 'Источник наблюдений недоступен: детекторы §22.11 не отработали. Пустой блок здесь означал бы «замечаний нет» — утверждение, которого сервер не делал.'
-        : detectors.length === 0
+        : policy === null
+          ? 'Политика наблюдений §22.11 не загружена: раздел «Настройки» не отдал допуски и пороги, а без них детекторы не запускались.'
+          : detectors.length === 0
           ? 'Политика наблюдений §22.11 не загружена: без порогов и допусков детекторы не запускались.'
           : null
 
@@ -423,8 +434,11 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
       completenessState: unavailableReason === null ? 'COMPLETE' : 'INCOMPLETE',
       calculationVersion: CALCULATION_VERSION,
       // Версия политики НАБЛЮДЕНИЙ, а не порогов показателей: методики
-      // независимы, и общая версия соврала бы про обе сразу.
-      policyVersion: ATTENTION_POLICY_VERSION,
+      // независимы, и общая версия соврала бы про обе сразу. Источник версии —
+      // раздел «Настройки»: он же её и двигает при каждой принятой правке.
+      // `ATTENTION_POLICY_VERSION` остаётся значением по умолчанию на случай,
+      // когда политика не загружена (тогда наблюдений всё равно нет).
+      policyVersion: policy?.policyVersion ?? ATTENTION_POLICY_VERSION,
       data: {
         items:
           source === null || unavailableReason !== null
@@ -436,6 +450,7 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
                 generatedAt,
                 snapshotId,
                 scopeLabel: DEMO_SCOPE.safeLabel,
+                policyVersion: policy?.policyVersion ?? ATTENTION_POLICY_VERSION,
               }),
         detectionState: unavailableReason === null ? 'COMPLETE' : 'UNAVAILABLE',
         detectionUnavailableReason: unavailableReason,

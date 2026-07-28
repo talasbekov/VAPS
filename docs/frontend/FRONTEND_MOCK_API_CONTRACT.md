@@ -304,3 +304,29 @@ endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуще
 | `POST /api/ops/feedback-requests/{id}/triage/` | `ops.feedback.triage` | Ответственный, рабочий приоритет и статус ОДНОЙ операцией (`undefined` — «не трогать», `null` — «снять»). События пишет диффер. Переход вне карты — 422 `FEEDBACK_TRANSITION_NOT_ALLOWED`; терминальный статус — 422 `FEEDBACK_USE_CLOSE` (закрытие оформляется отдельно, с ответом автору) |
 | `POST /api/ops/feedback-requests/{id}/close/` | `ops.feedback.triage` | Терминальный статус + ОБЯЗАТЕЛЬНЫЙ публичный ответ автору. Для `DUPLICATE` требуется `duplicateOfId`; оригинал обязан быть видим закрывающему (иначе 404) и не может быть самим обращением |
 
+## Settings (namespace `/api/ops/settings|setting-changes/`, mock-only-demo — backend-contract-pending)
+
+| operation_id | owner_feature | contract_status | method/path | permission | mock_handler | contract_test |
+|---|---|---|---|---|---|---|
+| listSettings | features/settings | backend-contract-pending | GET /api/ops/settings/ | ops.settings.view | mocks/handlers.ts | mocks/repository.test.ts + mocks/handlers.test.ts |
+| listSettingChanges | features/settings | backend-contract-pending | GET /api/ops/setting-changes/ | ops.settings.view | mocks/handlers.ts | mocks/repository.test.ts + mocks/handlers.test.ts |
+| updateSetting | features/settings | backend-contract-pending | PATCH /api/ops/settings/:settingCode/ | ops.settings.manage | mocks/handlers.ts | mocks/repository.test.ts + pages/SettingsPage.test.tsx |
+
+Ответ списка несёт `canManage` — право на изменение решает СЕРВЕР, а не экран.
+
+### Коды ошибок `updateSetting`
+
+| Ситуация | HTTP | error_code | Обход |
+|---|---|---|---|
+| Не целое, вне диапазона записи, причина короче 10 символов | 400 | VALIDATION_ERROR (details по полям) | — |
+| Значение совпадает с действующим | 422 | SETTING_VALUE_UNCHANGED | нет |
+| Порог предупреждения выше критического у того же детектора | 422 | SETTING_THRESHOLD_ORDER_INVALID | нет |
+| Нет `ops.settings.manage` | 403 | PERMISSION_DENIED | — |
+| Неизвестный код настройки | 404 | ENTITY_NOT_FOUND | — |
+
+Мягких конфликтов у раздела нет намеренно: «значение не изменилось» и «порядок порогов»
+причиной не обходятся, поэтому `ConflictDialog` здесь не участвует.
+
+⚠️ Журнал живёт по своему префиксу `/api/ops/setting-changes/`, а НЕ
+`/api/ops/settings/change-log/`: второй сматчился бы маршрутом `settings/:settingCode/`.
+

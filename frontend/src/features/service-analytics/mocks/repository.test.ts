@@ -57,6 +57,60 @@ interface SeedOverrides {
   /** §22.11: политику наблюдений подменяют точечно — часть тестов проверяет
    * именно её отсутствие. */
   attentionDetectors?: unknown
+  /** §29: администрируемые ЧИСЛА политики живут в чужом слайсе `settings`.
+   * `null` — слайса нет вовсе (проверяем честную недоступность блока). */
+  settings?: unknown
+}
+
+/**
+ * Слайс «Настроек» в том виде, в каком его читает аналитика (§29 владеет
+ * числами, §22.11 — методикой). Значения повторяют исходные пороги
+ * детекторов: перенос владения не должен менять наблюдения сам по себе.
+ * Литерал, а не импорт из `features/settings` — ARCH-FE-013 запрещает
+ * features→features, и проекция обязана переживать чужой рефакторинг.
+ */
+function settingsSlice(
+  overrides: { detectorCode: string; field: string; value: number }[] = [],
+): unknown {
+  const base = [
+    { detectorCode: 'ACKNOWLEDGEMENT_MISSING', field: 'PARAMETER', value: 3 },
+    { detectorCode: 'ACKNOWLEDGEMENT_MISSING', field: 'WARNING_FROM', value: 1 },
+    { detectorCode: 'ACKNOWLEDGEMENT_MISSING', field: 'CRITICAL_FROM', value: 4 },
+    { detectorCode: 'CONFLICT_SHARE', field: 'WARNING_FROM', value: 18 },
+    { detectorCode: 'CONFLICT_SHARE', field: 'CRITICAL_FROM', value: 34 },
+    { detectorCode: 'UNFINISHED_OVERDUE', field: 'PARAMETER', value: 2 },
+    { detectorCode: 'UNFINISHED_OVERDUE', field: 'WARNING_FROM', value: 1 },
+    { detectorCode: 'UNFINISHED_OVERDUE', field: 'CRITICAL_FROM', value: 5 },
+    { detectorCode: 'UNCONFIRMED_OVERDUE', field: 'PARAMETER', value: 2 },
+    { detectorCode: 'UNCONFIRMED_OVERDUE', field: 'WARNING_FROM', value: 1 },
+    { detectorCode: 'UNCONFIRMED_OVERDUE', field: 'CRITICAL_FROM', value: 4 },
+    { detectorCode: 'SOURCE_AGE', field: 'PARAMETER', value: 53 },
+    { detectorCode: 'SOURCE_AGE', field: 'WARNING_FROM', value: 53 },
+  ]
+  const merged = base.map((item) => {
+    const patch = overrides.find(
+      (o) => o.detectorCode === item.detectorCode && o.field === item.field,
+    )
+    return patch === undefined ? item : { ...item, value: patch.value }
+  })
+  return {
+    policyVersion: ATTENTION_POLICY_VERSION,
+    settings: merged.map((item, index) => ({
+      settingCode: `ATTENTION.${item.detectorCode}.${item.field}`,
+      sectionCode: 'ATTENTION_POLICY',
+      detectorCode: item.detectorCode,
+      field: item.field,
+      safeLabel: `Настройка ${index}`,
+      description: '',
+      valueType: 'COUNT',
+      value: item.value,
+      minValue: 1,
+      maxValue: 720,
+      updatedAt: null,
+      updatedBy: null,
+    })),
+    changeLog: [],
+  }
 }
 
 function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
@@ -79,6 +133,7 @@ function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
             : overrides.attentionDetectors,
         opsLifecycleRegistry: OPS_LIFECYCLE_REGISTRY.map((state) => ({ ...state })),
       },
+      ...(overrides.settings === null ? {} : { settings: overrides.settings ?? settingsSlice() }),
       ...(overrides.securityEvents === undefined
         ? {}
         : { 'security-events': overrides.securityEvents }),
@@ -479,6 +534,55 @@ describe('блок «Требует внимания» (§22.11)', () => {
     expect(dense?.count).toBe(2)
     expect(dense?.severity).toBe('CRITICAL')
     expect(sparse).toBeUndefined()
+  })
+
+  it('§29: пороги приезжают ИЗ НАСТРОЕК — та же выборка при другом пороге даёт другое наблюдение', async () => {
+    const source = { duties: conflictSeed(10) }
+    // Доля конфликтов в этой выборке ниже исходного порога 18% — наблюдения нет.
+    const asSeeded = await setup(source)
+    expect(
+      (await asSeeded.repository.getAttention(VIEWER, TODAY)).data.items.find(
+        (item) => item.categoryCode === 'CONFLICT_SHARE',
+      ),
+    ).toBeUndefined()
+
+    // Администратор опустил порог в «Настройках» — ДАННЫЕ те же, наблюдение появилось.
+    const lowered = await setup({
+      ...source,
+      settings: settingsSlice([
+        { detectorCode: 'CONFLICT_SHARE', field: 'WARNING_FROM', value: 5 },
+        { detectorCode: 'CONFLICT_SHARE', field: 'CRITICAL_FROM', value: 90 },
+      ]),
+    })
+    const item = (await lowered.repository.getAttention(VIEWER, TODAY)).data.items.find(
+      (entry) => entry.categoryCode === 'CONFLICT_SHARE',
+    )
+    expect(item?.severity).toBe('WARNING')
+  })
+
+  it('§29: версия политики берётся из «Настроек», а не из константы аналитики', async () => {
+    const { repository } = await setup({
+      settings: {
+        ...(settingsSlice() as Record<string, unknown>),
+        policyVersion: 'attention-policy-2026.07.9',
+      },
+    })
+    const response = await repository.getAttention(VIEWER, TODAY)
+    expect(response.policyVersion).toBe('attention-policy-2026.07.9')
+    expect(response.policyVersion).not.toBe(ATTENTION_POLICY_VERSION)
+    for (const item of response.data.items) {
+      expect(item.policyVersion).toBe('attention-policy-2026.07.9')
+    }
+  })
+
+  it('§29: без слайса настроек блок ЧЕСТНО недоступен, а не пуст', async () => {
+    const { repository } = await setup({ settings: null })
+    const response = await repository.getAttention(VIEWER, TODAY)
+
+    expect(response.data.items).toEqual([])
+    // Пустой список без объяснения читался бы как «замечаний нет» (§35).
+    expect(response.data.detectionState).toBe('UNAVAILABLE')
+    expect(response.data.detectionUnavailableReason).toMatch(/Настройки/)
   })
 
   it('порядок задаёт severity, а не код категории', async () => {

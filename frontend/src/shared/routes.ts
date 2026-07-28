@@ -17,6 +17,7 @@ import {
   Radar,
   MessageSquare,
   ScrollText,
+  Settings2,
   ShieldAlert,
   Users,
 } from 'lucide-react'
@@ -149,6 +150,12 @@ export const ROUTES = {
   /** Мастер-промпт §25: единый календарь смен (read model, см. FRONTEND_DECISIONS A44+). */
   calendar: '/calendar',
   /**
+   * Мастер-промпт §29: администрирование политик. Отдельный маршрут от
+   * `/audit` намеренно — промпт требует разделить read-only журнал и
+   * role-restricted администрирование, хотя прототип сводит их одним экраном.
+   */
+  settings: '/settings',
+  /**
    * Smart Josparlau §9.15 — печатная форма расстановки: вне AppLayout (сайдбар
    * и шапка на бумагу не попадают), за `ops.security_event.view` — гейт
    * зеркалит право чтения карточки в repository. В NAV_SECTIONS не живёт:
@@ -274,5 +281,11 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Обратная связь',
     icon: MessageSquare,
     permission: 'ops.feedback.view',
+  },
+  {
+    route: ROUTES.settings,
+    label: 'Настройки',
+    icon: Settings2,
+    permission: 'ops.settings.view',
   },
 ]
