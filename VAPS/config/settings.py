@@ -1,9 +1,20 @@
 import os
 from pathlib import Path
 
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+_SENTRY_DSN = os.environ.get("VAPS_SENTRY_DSN")
+if _SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=_SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        send_default_pii=True,
+        environment=os.environ.get("VAPS_ENV", "development"),
+    )
 
 SECRET_KEY = os.environ.get("VAPS_SECRET_KEY", "dev-insecure-key")
 DEBUG = os.environ.get("VAPS_DEBUG", "1") == "1"

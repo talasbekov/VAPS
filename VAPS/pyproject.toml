@@ -43,6 +43,7 @@ dependencies = [
     # (прецедент python-docx/lxml выше; architecture.md#L56, #L264).
     "channels>=4.3,<5",
     "channels-redis>=4.3,<5",
+    "sentry-sdk>=2,<3",
 ]
 
 [project.optional-dependencies]
