@@ -3,6 +3,7 @@
 Мутаторы требуют ``actor`` (audit) и (``add_pilot_division``) реально
 существующее подразделение — ревью-фиксы, см. модуль."""
 
+import datetime
 import uuid
 
 import pytest
@@ -29,7 +30,7 @@ def test_default_disabled_no_row():
 
 
 def test_enable_then_disable():
-    parallel_run_mode.enable(actor="bratan")
+    parallel_run_mode.enable(actor="bratan", deadline=datetime.date(2030, 1, 1))
     assert parallel_run_mode.is_enabled() is True
 
     parallel_run_mode.disable(actor="bratan")
@@ -39,14 +40,29 @@ def test_enable_then_disable():
 def test_enable_is_idempotent_single_row():
     from apps.core.models import ParallelRunModeSwitch
 
-    parallel_run_mode.enable(actor="bratan")
-    parallel_run_mode.enable(actor="bratan")
+    parallel_run_mode.enable(actor="bratan", deadline=datetime.date(2030, 1, 1))
+    parallel_run_mode.enable(actor="bratan", deadline=datetime.date(2030, 1, 1))
     assert ParallelRunModeSwitch.objects.count() == 1
 
 
 def test_enable_requires_actor():
     with pytest.raises(ValueError):
-        parallel_run_mode.enable(actor="")
+        parallel_run_mode.enable(actor="", deadline=datetime.date(2030, 1, 1))
+
+
+def test_enable_requires_deadline():
+    """Story 7.8/AC-1: "дедлайн до старта" — enable() отказывает без него."""
+    with pytest.raises(ValueError, match="deadline"):
+        parallel_run_mode.enable(actor="bratan", deadline=None)
+
+
+def test_enable_records_deadline():
+    from apps.core.models import ParallelRunModeSwitch
+
+    parallel_run_mode.enable(actor="bratan", deadline=datetime.date(2030, 5, 1))
+
+    assert parallel_run_mode.get_deadline() == datetime.date(2030, 5, 1)
+    assert ParallelRunModeSwitch.objects.get().deadline == datetime.date(2030, 5, 1)
 
 
 def test_pilot_division_add_remove(division):

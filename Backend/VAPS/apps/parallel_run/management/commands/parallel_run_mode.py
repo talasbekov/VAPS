@@ -11,6 +11,7 @@ remove-pilot) — переключатель гейтит production write-пу�
 самой строке.
 """
 
+import datetime
 import uuid
 
 from django.core.management.base import BaseCommand, CommandError
@@ -20,14 +21,20 @@ from apps.core import parallel_run_mode
 
 class Command(BaseCommand):
     help = (
-        "Переключатель режима «без двойного ввода» (Story 7.7/AC-2): "
-        "enable/disable/status + управление списком пилотных подразделений."
+        "Переключатель режима «без двойного ввода» (Story 7.7/AC-2, "
+        "7.8/AC-1 дедлайн): enable/disable/status + управление списком "
+        "пилотных подразделений."
     )
 
     def add_arguments(self, parser):
         sub = parser.add_subparsers(dest="action", required=True)
         enable_p = sub.add_parser("enable")
         enable_p.add_argument("--actor", required=True)
+        enable_p.add_argument(
+            "--deadline",
+            required=True,
+            help="YYYY-MM-DD — дедлайн exit-criterion (Story 7.8/AC-1)",
+        )
         disable_p = sub.add_parser("disable")
         disable_p.add_argument("--actor", required=True)
         sub.add_parser("status")
@@ -41,8 +48,15 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         action = options["action"]
         if action == "enable":
-            parallel_run_mode.enable(actor=options["actor"])
-            self.stdout.write(self.style.SUCCESS("режим включён"))
+            try:
+                deadline = datetime.date.fromisoformat(options["deadline"])
+            except ValueError as exc:
+                raise CommandError(f"невалидный --deadline: {exc}") from exc
+            try:
+                parallel_run_mode.enable(actor=options["actor"], deadline=deadline)
+            except ValueError as exc:
+                raise CommandError(str(exc)) from exc
+            self.stdout.write(self.style.SUCCESS(f"режим включён, дедлайн={deadline}"))
         elif action == "disable":
             parallel_run_mode.disable(actor=options["actor"])
             self.stdout.write(self.style.SUCCESS("режим выключен"))

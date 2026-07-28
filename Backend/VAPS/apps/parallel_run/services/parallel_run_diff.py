@@ -150,7 +150,7 @@ def run_parallel_run_diff(*, today=None, baseline_path=None) -> ParallelRunResul
             return ParallelRunResult(
                 watermark_before=None,
                 watermark_after=before,
-                green_streak=_green_streak(),
+                green_streak=green_streak(),
             )
 
         # ``today`` behind the watermark: halt, leave the watermark, surface
@@ -176,7 +176,7 @@ def run_parallel_run_diff(*, today=None, baseline_path=None) -> ParallelRunResul
                 watermark_after=before,
                 halted=True,
                 halt_reason=reason,
-                green_streak=_green_streak(),
+                green_streak=green_streak(),
             )
 
         gap = (run_today - before).days
@@ -194,7 +194,7 @@ def run_parallel_run_diff(*, today=None, baseline_path=None) -> ParallelRunResul
                 watermark_after=before,
                 halted=True,
                 halt_reason="gap_exceeds_sanity",
-                green_streak=_green_streak(),
+                green_streak=green_streak(),
             )
 
         full_plan = catchup_plan(watermark=before, today=run_today)
@@ -247,7 +247,7 @@ def run_parallel_run_diff(*, today=None, baseline_path=None) -> ParallelRunResul
             watermark_before=before,
             watermark_after=after,
             processed_days=processed,
-            green_streak=_green_streak(),
+            green_streak=green_streak(),
             remaining_backlog=remaining_backlog,
         )
 
@@ -316,7 +316,7 @@ def _record_error_day(day):
     )
 
 
-def _green_streak() -> int:
+def green_streak() -> int:
     """Consecutive most-recent business dates that are clean (status="ok",
     zero blocking cells) — the numeric basis for the 7.8 exit criterion.
 

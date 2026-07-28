@@ -285,7 +285,7 @@ development_status:
   7-5-post-migration-сходимость: done
   7-6-репетиции-миграции: done
   7-7-режим-без-двойного-ввода: done
-  7-8-формализация-parallel-run: backlog
+  7-8-формализация-parallel-run: done
   7-9-сверка-списков-с-реальностью: backlog
   7-10-план-cutover-и-отката: backlog
   epic-7-retrospective: optional

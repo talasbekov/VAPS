@@ -450,6 +450,11 @@ class ParallelRunModeSwitch(models.Model):
     enabled = models.BooleanField(default=False)
     enabled_at = models.DateTimeField(null=True, blank=True)
     disabled_at = models.DateTimeField(null=True, blank=True)
+    # Story 7.8 — «дедлайн до старта» (AC-1): nullable at the schema level
+    # (pre-7.8 rows / 0018 migration have none), but `enable()` requires it
+    # as of 7.8 — recorded at the moment the mode is switched on, not
+    # backfilled later.
+    deadline = models.DateField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

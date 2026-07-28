@@ -3,6 +3,7 @@
 Требует включённый parallel_run_mode (или --force-pre-cutover) — ревью-фикс:
 команда была функционально не связана с переключателем режима."""
 
+import datetime
 import io
 from pathlib import Path
 
@@ -24,7 +25,7 @@ pytestmark = pytest.mark.django_db
 
 
 def run_increment(*extra):
-    parallel_run_mode.enable(actor="test-setup")
+    parallel_run_mode.enable(actor="test-setup", deadline=datetime.date(2030, 1, 1))
     out = io.StringIO()
     call_command("nightly_increment", str(FIXTURE), *extra, stdout=out)
     return out.getvalue()
@@ -74,7 +75,7 @@ class TestModeCoupling:
 
 class TestReport:
     def test_cannot_read_missing_file(self):
-        parallel_run_mode.enable(actor="test-setup")
+        parallel_run_mode.enable(actor="test-setup", deadline=datetime.date(2030, 1, 1))
         with pytest.raises(CommandError):
             call_command("nightly_increment", "/no/such/file.json")
 
@@ -83,7 +84,7 @@ class TestReport:
 
         from apps.core.clock import override
 
-        parallel_run_mode.enable(actor="test-setup")
+        parallel_run_mode.enable(actor="test-setup", deadline=datetime.date(2030, 1, 1))
         with override(date(2026, 6, 8)):
             out_io = io.StringIO()
             call_command("nightly_increment", str(FIXTURE), stdout=out_io)

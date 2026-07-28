@@ -37,7 +37,7 @@ def division():
 
 def test_enable_disable_status():
     assert "enabled=False" in run("status")
-    run("enable", "--actor", "bratan")
+    run("enable", "--actor", "bratan", "--deadline", "2030-01-01")
     assert parallel_run_mode.is_enabled() is True
     assert "enabled=True" in run("status")
     run("disable", "--actor", "bratan")
@@ -45,7 +45,7 @@ def test_enable_disable_status():
 
 
 def test_enable_disable_are_audited():
-    run("enable", "--actor", "bratan")
+    run("enable", "--actor", "bratan", "--deadline", "2030-01-01")
     run("disable", "--actor", "bratan")
     actions = list(
         AuditLog.objects.filter(entity_type="parallel_run_mode").values_list(
@@ -58,7 +58,24 @@ def test_enable_disable_are_audited():
 
 def test_enable_requires_actor():
     with pytest.raises(CommandError):
-        call_command("parallel_run_mode", "enable")
+        call_command("parallel_run_mode", "enable", "--deadline", "2030-01-01")
+
+
+def test_enable_requires_deadline():
+    with pytest.raises(CommandError):
+        call_command("parallel_run_mode", "enable", "--actor", "bratan")
+
+
+def test_enable_invalid_deadline_rejected():
+    with pytest.raises(CommandError):
+        call_command(
+            "parallel_run_mode",
+            "enable",
+            "--actor",
+            "bratan",
+            "--deadline",
+            "not-a-date",
+        )
 
 
 def test_add_remove_pilot(division):

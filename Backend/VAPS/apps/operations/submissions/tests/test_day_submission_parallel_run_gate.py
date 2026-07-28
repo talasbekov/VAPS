@@ -54,7 +54,7 @@ def test_mode_disabled_default_submit_unaffected(division):
 
 def test_mode_enabled_blocks_non_pilot_division(division):
     make_employee(division)
-    parallel_run_mode.enable(actor="test-setup")
+    parallel_run_mode.enable(actor="test-setup", deadline=date(2030, 1, 1))
     with clock.override(TODAY):
         with pytest.raises(DomainError) as ei:
             submit_day(division_id=division.id, business_date=TODAY, actor="op")
@@ -64,7 +64,7 @@ def test_mode_enabled_blocks_non_pilot_division(division):
 
 def test_mode_enabled_allows_pilot_division(division):
     make_employee(division)
-    parallel_run_mode.enable(actor="test-setup")
+    parallel_run_mode.enable(actor="test-setup", deadline=date(2030, 1, 1))
     parallel_run_mode.add_pilot_division(division.id, actor="test-setup")
     with clock.override(TODAY):
         sub = submit_day(division_id=division.id, business_date=TODAY, actor="op")
@@ -75,7 +75,7 @@ def test_mode_disabled_after_enable_unblocks(division):
     """AC-2: явный выключатель — disable() снимает блок для всех
     подразделений (симулирует cutover, Story 7.10)."""
     make_employee(division)
-    parallel_run_mode.enable(actor="test-setup")
+    parallel_run_mode.enable(actor="test-setup", deadline=date(2030, 1, 1))
     parallel_run_mode.disable(actor="test-setup")
     with clock.override(TODAY):
         sub = submit_day(division_id=division.id, business_date=TODAY, actor="op")
@@ -87,7 +87,7 @@ def test_blocked_before_existence_check_not_leaking_404(division):
     несуществующая division_id при включённом режиме и без пилот-статуса
     получает 409 (состояние режима), а не 404 (это по design порядка
     гейтов в submit_day, задокументированного в докстринге)."""
-    parallel_run_mode.enable(actor="test-setup")
+    parallel_run_mode.enable(actor="test-setup", deadline=date(2030, 1, 1))
     with clock.override(TODAY):
         with pytest.raises(DomainError) as ei:
             submit_day(division_id=uuid.uuid4(), business_date=TODAY, actor="op")

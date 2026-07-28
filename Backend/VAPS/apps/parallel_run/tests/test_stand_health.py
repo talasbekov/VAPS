@@ -21,7 +21,14 @@ def test_health_no_runs_yet():
         "last_diff_run": None,
         "last_import_run": None,
         # Story 7.7/AC-2: default-off, 0 пилотных подразделений на пустой БД.
-        "parallel_run_mode": {"enabled": False, "pilot_division_count": 0},
+        # Story 7.8/AC-1: streak/deadline/exit_criterion_met на пустой БД.
+        "parallel_run_mode": {
+            "enabled": False,
+            "pilot_division_count": 0,
+            "green_streak": 0,
+            "deadline": None,
+            "exit_criterion_met": False,
+        },
     }
 
 
@@ -79,6 +86,25 @@ def test_health_does_not_mask_job_error_behind_a_blanket_ok():
     assert resp.status_code == 200
     assert "status" not in resp.data
     assert resp.data["last_diff_run"]["status"] == "error"
+
+
+def test_health_reflects_deadline_and_green_streak():
+    """Story 7.8/AC-1: дедлайн и green_streak видны в health без похода в CLI."""
+    from datetime import date
+
+    from apps.core import parallel_run_mode
+
+    ParallelRunDay.objects.create(
+        run_date="2026-07-20", status="ok", blocking_count=0, total_diffs=0
+    )
+    parallel_run_mode.enable(actor="bratan", deadline=date(2030, 1, 1))
+
+    client = APIClient()
+    resp = client.get(reverse("parallel-run-health"))
+
+    assert resp.data["parallel_run_mode"]["deadline"] == "2030-01-01"
+    assert resp.data["parallel_run_mode"]["green_streak"] == 1
+    assert resp.data["parallel_run_mode"]["exit_criterion_met"] is False
 
 
 def test_health_requires_no_authentication():

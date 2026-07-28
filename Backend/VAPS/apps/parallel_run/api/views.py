@@ -18,6 +18,14 @@ run-лога ради одного поля health-эндпоинта здесь
 ``parallel_run_mode`` (Story 7.7, AC-2) — состояние переключателя «без
 двойного ввода»: enabled + число пилотных подразделений-исключений.
 
+Story 7.8/AC-1: тот же блок дополнен ``green_streak``/``deadline``/
+``exit_criterion_met`` — видимость дедлайна и прогресса без похода в CLI
+(``parallel_run_dashboard``). Здесь ``exit_criterion_met`` всегда считается с
+``frozen_suite_green=False`` (у health-эндпоинта нет входа для этого
+внешнего флага) — это НЕ авторитетный вердикт готовности, только "streak-
+часть критерия"; авторитетный вердикт — только через
+``parallel_run_dashboard --frozen-suite-green``.
+
 Нет top-level "status": "ok" — HTTP 200 сам по себе означает «эндпоинт
 достижим»; РЕАЛЬНЫЙ статус джобы — ``last_diff_run.status`` (ok/no_baseline/
 error). Монитор/healthcheck, читающий только верхний уровень как "всё ок",
@@ -32,6 +40,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.core import parallel_run_mode
+from apps.parallel_run.exit_criterion import evaluate as evaluate_exit_criterion
 from apps.parallel_run.models import ParallelRunDay
 
 
@@ -41,9 +50,14 @@ from apps.parallel_run.models import ParallelRunDay
 def stand_health(request):
     try:
         last_day = ParallelRunDay.objects.order_by("-ran_at").first()
+        criterion = evaluate_exit_criterion(frozen_suite_green=False)
+        deadline = parallel_run_mode.get_deadline()
         mode_state = {
             "enabled": parallel_run_mode.is_enabled(),
             "pilot_division_count": parallel_run_mode.pilot_division_count(),
+            "green_streak": criterion.green_streak,
+            "deadline": deadline.isoformat() if deadline else None,
+            "exit_criterion_met": criterion.met,
         }
     except DatabaseError:
         # БД ещё мигрирует/недоступна на старте контейнера — явный 503, а не

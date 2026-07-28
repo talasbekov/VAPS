@@ -35,11 +35,20 @@ def is_enabled():
     return switch is not None and switch.enabled
 
 
+def get_deadline():
+    switch = ParallelRunModeSwitch.objects.filter(key=_KEY).first()
+    return switch.deadline if switch is not None else None
+
+
 @transaction.atomic
-def enable(*, actor):
+def enable(*, actor, deadline):
+    """Story 7.8/AC-1: «дедлайн до старта» — записывается В МОМЕНТ включения,
+    не постфактум отдельной командой."""
+    if deadline is None:
+        raise ValueError("deadline обязателен при включении режима (Story 7.8/AC-1)")
     now = timezone.now()
     switch, _created = ParallelRunModeSwitch.objects.update_or_create(
-        key=_KEY, defaults={"enabled": True, "enabled_at": now}
+        key=_KEY, defaults={"enabled": True, "enabled_at": now, "deadline": deadline}
     )
     record(
         actor=actor,
