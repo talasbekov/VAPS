@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-28 (10.6b → done)
+# last_updated: 2026-07-28 (10.6b → done, 10.6c → ready-for-dev)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -426,7 +426,7 @@ development_status:
   10-6-amendment-флоу-ui: done
   10-6a-роут-свежести-сводки: done
   10-6b-метка-протухшей-сводки-ui: done
-  10-6c-причина-и-санкция-в-истории-версий: backlog
+  10-6c-причина-и-санкция-в-истории-версий: ready-for-dev
   # Вынесено из скоупа 10.7 (create-story 2026-07-19) с поимённым преемником.
   # «Контракт секции 77» = донорское ТЗ docs/PersonnelStatus/VAPS_7.8.2.md,
   # которого в репо НЕТ (6-3:202, 6-5:179); действующая реификация §77 —
