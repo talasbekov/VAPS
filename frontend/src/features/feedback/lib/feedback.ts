@@ -4,6 +4,8 @@
 // Здесь нет ни доступа к персистентности, ни прав — только правила, которые
 // repository применяет, а тесты проверяют по одному.
 import type {
+  FeedbackCommentKind,
+  FeedbackEventKind,
   FeedbackRequest,
   FeedbackStatusCode,
   FeedbackTypeCode,
@@ -171,4 +173,146 @@ export function matchesFilters(
   if (filters.statusCode !== undefined && request.statusCode !== filters.statusCode) return false
   if (filters.moduleCode !== undefined && request.moduleCode !== filters.moduleCode) return false
   return matchesSearch(request, filters.search, contentVisible)
+}
+
+// ─── Карточка обращения (§28 detail, Этап 48) ────────────────────────────────
+
+/** Причина, по которой закрытое обращение больше не принимает изменений. */
+export const CLOSED_LOCK_REASON =
+  'Обращение закрыто: изменения и комментарии в закрытое обращение не добавляются.'
+
+/** Причина отказа во внутренней заметке. */
+export const INTERNAL_NOTE_REASON =
+  'Внутренняя заметка требует отдельного права ops.feedback.internal_note: право отвечать автору его не включает.'
+
+/** Причина отказа в разборе. */
+export const TRIAGE_REASON =
+  'Разбор обращения требует права ops.feedback.triage: право читать обращения его не включает.'
+
+/** Причина, по которой публичный ответ недоступен. */
+export const REPLY_REASON =
+  'Публичный ответ пишет разбирающий обращение (ops.feedback.triage) или его автор.'
+
+/**
+ * §28 detail: чего карточка НЕ показывает и почему. Отдельно от
+ * `UNAVAILABLE_CAPABILITIES` реестра — у карточки свой список.
+ */
+export const UNAVAILABLE_CARD_BLOCKS: readonly FeedbackNotice[] = [
+  {
+    code: 'ATTACHMENT_CONTENT',
+    label: 'Содержимое вложений',
+    reason:
+      'Blob-хранилища в проекте нет: §28 требует «attachment metadata», и карточка показывает имя, размер и тип файла. Кнопки скачивания нет — скачивать нечего.',
+  },
+  {
+    code: 'SLA',
+    label: 'Срок реакции',
+    reason:
+      'Политики сроков (SLA) в модели нет, а срок, посчитанный по умолчанию, был бы обещанием, которого никто не давал.',
+  },
+  {
+    code: 'LINKED_ENTITY',
+    label: 'Связанная сущность',
+    reason:
+      '§28 «related screen» карточка показывает маршрутом, с которого обращение завели. Связь с конкретной записью (мероприятием, сменой, объектом) в модели обращения не хранится: восстанавливать её по тексту значило бы угадывать.',
+  },
+]
+
+/**
+ * Кто может читать внутренние заметки. Отдельное право, и оно НЕ следует из
+ * права разбирать: заметка пишется о человеке, обратившемся за помощью.
+ */
+export function commentVisibleTo(
+  kind: FeedbackCommentKind,
+  canSeeInternal: boolean,
+): boolean {
+  return kind === 'PUBLIC_REPLY' || canSeeInternal
+}
+
+/**
+ * Событие внутренней заметки не показывается тем, кому сама заметка не видна —
+ * и целиком, а не «без текста».
+ *
+ * Строка «добавлена внутренняя заметка» без текста всё равно сообщает автору,
+ * что о нём что-то написали и когда: лента превратилась бы в счётчик работы
+ * разбора. Автор видит СВОЙ разговор, а не чужую работу над ним.
+ */
+export function eventVisibleTo(kind: FeedbackEventKind, canSeeInternal: boolean): boolean {
+  return kind !== 'INTERNAL_NOTE_ADDED' || canSeeInternal
+}
+
+/** Изменение, которое ищет `diffEvents`. */
+export interface FeedbackFieldChange {
+  fieldCode: string
+  oldValue: string | null
+  newValue: string | null
+  kind: FeedbackEventKind
+}
+
+function valueOf(value: string | null | undefined): string | null {
+  return value === undefined || value === null || value === '' ? null : value
+}
+
+/**
+ * Лента пишется ДИФФОМ в единственной точке.
+ *
+ * Ручная запись события на каждой операции означала бы столько мест, где её
+ * можно забыть, сколько операций, — а забытое событие не сломало бы ни одного
+ * теста разбора и молча оставило бы аудит неполным. Приём тот же, что журнал
+ * переходов ОМ (§22.14): операция меняет поля, ничего не зная о ленте.
+ */
+export function diffEvents(
+  before: {
+    statusCode: FeedbackStatusCode
+    workingPriorityCode: string | null
+    assigneeUserId: string | null
+    duplicateOfId: string | null
+  },
+  after: typeof before,
+  terminalStatuses: readonly FeedbackStatusCode[],
+): FeedbackFieldChange[] {
+  const changes: FeedbackFieldChange[] = []
+  if (before.statusCode !== after.statusCode) {
+    changes.push({
+      fieldCode: 'statusCode',
+      oldValue: before.statusCode,
+      newValue: after.statusCode,
+      // Закрытие — отдельный вид события, а не «ещё одна смена статуса»:
+      // §28 называет «close» отдельным действием карточки.
+      kind: terminalStatuses.includes(after.statusCode) ? 'CLOSED' : 'STATUS_CHANGED',
+    })
+  }
+  if (valueOf(before.workingPriorityCode) !== valueOf(after.workingPriorityCode)) {
+    changes.push({
+      fieldCode: 'workingPriorityCode',
+      oldValue: valueOf(before.workingPriorityCode),
+      newValue: valueOf(after.workingPriorityCode),
+      kind: 'WORKING_PRIORITY_SET',
+    })
+  }
+  if (valueOf(before.assigneeUserId) !== valueOf(after.assigneeUserId)) {
+    changes.push({
+      fieldCode: 'assignee',
+      oldValue: valueOf(before.assigneeUserId),
+      newValue: valueOf(after.assigneeUserId),
+      kind: 'ASSIGNED',
+    })
+  }
+  if (valueOf(before.duplicateOfId) !== valueOf(after.duplicateOfId)) {
+    changes.push({
+      fieldCode: 'duplicateOfId',
+      oldValue: valueOf(before.duplicateOfId),
+      newValue: valueOf(after.duplicateOfId),
+      kind: 'MARKED_DUPLICATE',
+    })
+  }
+  return changes
+}
+
+/** Допустимые следующие статусы — из справочника, а не из кода. */
+export function allowedTransitions(
+  registry: { statusTransitions: { from: FeedbackStatusCode; to: FeedbackStatusCode[] }[] },
+  from: FeedbackStatusCode,
+): FeedbackStatusCode[] {
+  return registry.statusTransitions.find((entry) => entry.from === from)?.to ?? []
 }

@@ -14,7 +14,7 @@ import {
   RepositoryPermissionError,
 } from './repository'
 import type { CreateFeedbackRequest } from '../api/pending-contracts'
-import type { FeedbackRequest } from '../model/types'
+import type { FeedbackComment, FeedbackEvent, FeedbackRequest } from '../model/types'
 
 const AUTHOR = 'author-user'
 const OTHER_AUTHOR = 'other-author-user'
@@ -42,6 +42,9 @@ function request(overrides: Partial<FeedbackRequest> & { feedbackId: string }): 
     confidential: false,
     relatedRoute: null,
     technicalInfo: null,
+    workingPriorityCode: null,
+    assignee: null,
+    duplicateOfId: null,
     author: { userId: OTHER_AUTHOR, safeLabel: OTHER_AUTHOR },
     createdAt: '2026-07-20T07:00:00+05:00',
     submittedAt: '2026-07-20T07:00:00+05:00',
@@ -98,22 +101,10 @@ const CREATE_BODY: CreateFeedbackRequest = {
   saveAsDraft: false,
 }
 
-beforeEach(() => {
-  registerRbacDirectory([
-    { userId: AUTHOR, permissions: ['ops.feedback.view', 'ops.feedback.create'] },
-    { userId: OTHER_AUTHOR, permissions: ['ops.feedback.view', 'ops.feedback.create'] },
-    { userId: READER, permissions: ['ops.feedback.view', 'ops.feedback.view_all'] },
-    {
-      userId: CONFIDENTIAL_READER,
-      permissions: ['ops.feedback.view', 'ops.feedback.view_all', 'ops.feedback.view_confidential'],
-    },
-    {
-      userId: SUPPORT,
-      permissions: ['ops.feedback.view', 'ops.feedback.view_all', 'ops.feedback.create'],
-    },
-    { userId: NOBODY, permissions: [] },
-  ])
-})
+// ⚠️ Директория прав ГЛОБАЛЬНА на модуль: два `beforeEach` с
+// `registerRbacDirectory` в одном файле не складываются — последний
+// зарегистрированный перетирает предыдущий для ВСЕХ тестов файла (инцидент
+// Этапа 46). Поэтому директория здесь одна, ниже, и содержит всех.
 
 describe('видимость обращений (§28)', () => {
   it('без права чтения реестр не отдаётся вовсе', async () => {
@@ -534,5 +525,357 @@ describe('§35 — что раздел не делает', () => {
     for (const item of response.unavailableCapabilities) {
       expect(item.reason.length).toBeGreaterThan(40)
     }
+  })
+})
+
+// ─── Карточка обращения (§28 detail, Этап 48) ────────────────────────────────
+
+const TRIAGER = 'triager-user'
+const SUPPORT_LEAD = 'support-lead-user'
+
+/** Слово живёт ТОЛЬКО во внутренней заметке — на нём проверяется, что она не
+ * приезжает тем, у кого нет права её читать. */
+const NOTE_WORD = 'секвойя'
+
+function comment(overrides: Partial<FeedbackComment> & { commentId: string }): FeedbackComment {
+  return {
+    feedbackId: 'fb-card',
+    kind: 'PUBLIC_REPLY',
+    body: 'Ответ автору',
+    author: { userId: TRIAGER, safeLabel: TRIAGER },
+    createdAt: '2026-07-20T07:30:00+05:00',
+    ...overrides,
+  }
+}
+
+async function setupCard(
+  requests: FeedbackRequest[],
+  comments: FeedbackComment[] = [],
+  events: FeedbackEvent[] = [],
+) {
+  const adapter = createMemoryPersistence()
+  const envelope = seedEnvelope(requests)
+  const slice = envelope.slices.feedback as Record<string, unknown>
+  await adapter.reset({ ...envelope, slices: { feedback: { ...slice, comments, events } } })
+  const clock = new DemoClock('2026-07-20T08:00:00+05:00')
+  return { repository: createFeedbackRepository(adapter, clock), adapter, clock }
+}
+
+const CARD = request({
+  feedbackId: 'fb-card',
+  statusCode: 'NEW',
+  author: { userId: AUTHOR, safeLabel: AUTHOR },
+})
+
+beforeEach(() => {
+  registerRbacDirectory([
+    { userId: AUTHOR, permissions: ['ops.feedback.view', 'ops.feedback.create'] },
+    { userId: OTHER_AUTHOR, permissions: ['ops.feedback.view', 'ops.feedback.create'] },
+    { userId: READER, permissions: ['ops.feedback.view', 'ops.feedback.view_all'] },
+    {
+      userId: CONFIDENTIAL_READER,
+      permissions: ['ops.feedback.view', 'ops.feedback.view_all', 'ops.feedback.view_confidential'],
+    },
+    {
+      userId: SUPPORT,
+      permissions: ['ops.feedback.view', 'ops.feedback.view_all', 'ops.feedback.create'],
+    },
+    // Разбирающий БЕЗ права на внутренние заметки — на нём и держится
+    // демонстрация «internal note только по праву».
+    {
+      userId: TRIAGER,
+      permissions: ['ops.feedback.view', 'ops.feedback.view_all', 'ops.feedback.triage'],
+    },
+    {
+      userId: SUPPORT_LEAD,
+      permissions: [
+        'ops.feedback.view',
+        'ops.feedback.view_all',
+        'ops.feedback.triage',
+        'ops.feedback.internal_note',
+      ],
+    },
+    { userId: NOBODY, permissions: [] },
+  ])
+})
+
+describe('внутренняя заметка (§28 detail «internal note только по праву»)', () => {
+  const WITH_NOTE = [
+    comment({ commentId: 'c-public' }),
+    comment({
+      commentId: 'c-internal',
+      kind: 'INTERNAL_NOTE',
+      body: `Причина — регрессия: ${NOTE_WORD} в конфигурации.`,
+    }),
+  ]
+  const WITH_EVENTS: FeedbackEvent[] = [
+    {
+      eventId: 'e-public',
+      feedbackId: 'fb-card',
+      kind: 'PUBLIC_REPLY_ADDED',
+      actor: { userId: TRIAGER, safeLabel: TRIAGER },
+      at: '2026-07-20T07:30:00+05:00',
+      fieldCode: null,
+      oldValue: null,
+      newValue: null,
+    },
+    {
+      eventId: 'e-internal',
+      feedbackId: 'fb-card',
+      kind: 'INTERNAL_NOTE_ADDED',
+      actor: { userId: TRIAGER, safeLabel: TRIAGER },
+      at: '2026-07-20T07:31:00+05:00',
+      fieldCode: null,
+      oldValue: null,
+      newValue: null,
+    },
+  ]
+
+  it('автору не приезжает НИ заметка, НИ событие о ней', async () => {
+    const { repository } = await setupCard([CARD], WITH_NOTE, WITH_EVENTS)
+    const detail = await repository.getFeedback('fb-card', AUTHOR)
+
+    expect(detail.comments.map((c) => c.commentId)).toEqual(['c-public'])
+    // Строка «добавлена внутренняя заметка» без текста всё равно сообщила бы
+    // автору, что о нём что-то написали и когда.
+    expect(detail.timeline.map((e) => e.eventId)).toEqual(['e-public'])
+    expect(JSON.stringify(detail)).not.toContain(NOTE_WORD)
+  })
+
+  it('разбирающему БЕЗ права на заметки — тоже не приезжает', async () => {
+    const { repository } = await setupCard([CARD], WITH_NOTE, WITH_EVENTS)
+    const detail = await repository.getFeedback('fb-card', TRIAGER)
+    expect(JSON.stringify(detail)).not.toContain(NOTE_WORD)
+    // Право разбирать при этом у него есть — проверка не пуста.
+    expect(detail.actions.find((a) => a.code === 'TRIAGE')?.available).toBe(true)
+    expect(detail.actions.find((a) => a.code === 'ADD_INTERNAL_NOTE')?.available).toBe(false)
+  })
+
+  it('обладателю права заметка и её событие видны', async () => {
+    const { repository } = await setupCard([CARD], WITH_NOTE, WITH_EVENTS)
+    const detail = await repository.getFeedback('fb-card', SUPPORT_LEAD)
+    expect(detail.comments.map((c) => c.commentId)).toEqual(['c-public', 'c-internal'])
+    expect(detail.timeline).toHaveLength(2)
+  })
+
+  it('без права заметку не записать', async () => {
+    const { repository } = await setupCard([CARD])
+    await expect(
+      repository.addComment(
+        { feedbackId: 'fb-card', kind: 'INTERNAL_NOTE', body: 'нельзя' },
+        TRIAGER,
+      ),
+    ).rejects.toBeInstanceOf(RepositoryPermissionError)
+  })
+})
+
+describe('действия карточки считает сервер (§28 detail)', () => {
+  it('у закрытого обращения недоступно ВСЁ, и причина одна и та же', async () => {
+    const { repository } = await setupCard([{ ...CARD, statusCode: 'CLOSED' }])
+    const detail = await repository.getFeedback('fb-card', SUPPORT_LEAD)
+    expect(detail.actions.every((action) => !action.available)).toBe(true)
+    // Причина не зависит от прав смотрящего: один и тот же закрытый разговор
+    // объясняется одинаково.
+    expect(new Set(detail.actions.map((a) => a.reason))).toHaveProperty('size', 1)
+    expect(detail.allowedStatuses).toEqual([])
+  })
+
+  it('автор может ответить в своём обращении, посторонний с правом чтения — нет', async () => {
+    const { repository } = await setupCard([CARD])
+    const own = await repository.getFeedback('fb-card', AUTHOR)
+    expect(own.actions.find((a) => a.code === 'ADD_PUBLIC_REPLY')?.available).toBe(true)
+
+    const foreign = await repository.getFeedback('fb-card', READER)
+    expect(foreign.actions.find((a) => a.code === 'ADD_PUBLIC_REPLY')?.available).toBe(false)
+    expect(foreign.actions.find((a) => a.code === 'TRIAGE')?.available).toBe(false)
+  })
+
+  it('допустимые статусы приходят из справочника, а не выводятся из текущего', async () => {
+    const { repository } = await setupCard([CARD])
+    const detail = await repository.getFeedback('fb-card', TRIAGER)
+    expect(detail.allowedStatuses).toEqual(['IN_REVIEW', 'NEED_INFO', 'REJECTED', 'DUPLICATE'])
+  })
+
+  it('невидимое обращение — 404, а не отказ по праву', async () => {
+    const { repository } = await setupCard([
+      request({ feedbackId: 'fb-foreign-draft', statusCode: 'DRAFT', submittedAt: null }),
+    ])
+    await expect(repository.getFeedback('fb-foreign-draft', AUTHOR)).rejects.toBeInstanceOf(
+      RepositoryNotFoundError,
+    )
+  })
+})
+
+describe('разбор обращения (§28 detail: assignee, working priority, статус)', () => {
+  it('лента пишется ДИФФОМ: операция о ней ничего не знает', async () => {
+    const { repository } = await setupCard([CARD])
+    await repository.triageFeedback(
+      {
+        feedbackId: 'fb-card',
+        assigneeUserId: SUPPORT_LEAD,
+        workingPriorityCode: 'LOW',
+        statusCode: 'IN_REVIEW',
+      },
+      TRIAGER,
+    )
+    const detail = await repository.getFeedback('fb-card', SUPPORT_LEAD)
+    const kinds = detail.timeline.map((event) => event.kind)
+    // Три изменённых поля — три события, и ни одно из них не записано руками.
+    expect(kinds).toContain('ASSIGNED')
+    expect(kinds).toContain('WORKING_PRIORITY_SET')
+    expect(kinds).toContain('STATUS_CHANGED')
+
+    // Аудит §28 «old/new»: событие несёт и прежнее значение, и новое.
+    const statusEvent = detail.timeline.find((event) => event.fieldCode === 'statusCode')
+    expect(statusEvent?.oldValue).toBe('NEW')
+    expect(statusEvent?.newValue).toBe('IN_REVIEW')
+  })
+
+  it('неизменённое поле события НЕ порождает', async () => {
+    const { repository } = await setupCard([CARD])
+    await repository.triageFeedback(
+      { feedbackId: 'fb-card', workingPriorityCode: 'HIGH' },
+      TRIAGER,
+    )
+    // Повтор того же значения — не поступок: лента не должна расти.
+    await repository.triageFeedback(
+      { feedbackId: 'fb-card', workingPriorityCode: 'HIGH' },
+      TRIAGER,
+    )
+    const detail = await repository.getFeedback('fb-card', SUPPORT_LEAD)
+    expect(detail.timeline.filter((e) => e.kind === 'WORKING_PRIORITY_SET')).toHaveLength(1)
+  })
+
+  it('рабочий приоритет отличается от заявленного и не подменяет его', async () => {
+    const { repository } = await setupCard([{ ...CARD, priorityCode: 'CRITICAL' }])
+    await repository.triageFeedback(
+      { feedbackId: 'fb-card', workingPriorityCode: 'LOW' },
+      TRIAGER,
+    )
+    const detail = await repository.getFeedback('fb-card', TRIAGER)
+    expect(detail.request.priorityCode).toBe('CRITICAL')
+    expect(detail.request.workingPriorityCode).toBe('LOW')
+  })
+
+  it('переход вне карты справочника отклоняется', async () => {
+    const { repository } = await setupCard([CARD])
+    await expect(
+      // NEW → FIXED карта не разрешает.
+      repository.triageFeedback({ feedbackId: 'fb-card', statusCode: 'FIXED' }, TRIAGER),
+    ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
+  })
+
+  it('закрыть обращение разбором нельзя — только отдельным действием', async () => {
+    const { repository } = await setupCard([CARD])
+    await expect(
+      repository.triageFeedback({ feedbackId: 'fb-card', statusCode: 'REJECTED' }, TRIAGER),
+    ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
+  })
+
+  it('без права разбора — отказ, даже при праве видеть все обращения', async () => {
+    const { repository } = await setupCard([CARD])
+    await expect(
+      repository.triageFeedback({ feedbackId: 'fb-card', statusCode: 'IN_REVIEW' }, READER),
+    ).rejects.toBeInstanceOf(RepositoryPermissionError)
+  })
+
+  it('закрытое обращение не принимает ни разбора, ни комментария', async () => {
+    const { repository } = await setupCard([{ ...CARD, statusCode: 'CLOSED' }])
+    await expect(
+      repository.triageFeedback({ feedbackId: 'fb-card', workingPriorityCode: 'LOW' }, TRIAGER),
+    ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
+    await expect(
+      repository.addComment({ feedbackId: 'fb-card', kind: 'PUBLIC_REPLY', body: 'ещё' }, AUTHOR),
+    ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
+  })
+})
+
+describe('закрытие обращения (§28 detail: close, duplicate)', () => {
+  it('закрытие обязательно сопровождается ответом автору', async () => {
+    const { repository } = await setupCard([CARD])
+    await expect(
+      repository.closeFeedback(
+        { feedbackId: 'fb-card', statusCode: 'REJECTED', publicReply: '   ' },
+        TRIAGER,
+      ),
+    ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
+  })
+
+  it('успешное закрытие меняет статус, пишет событие CLOSED и публикует ответ', async () => {
+    const { repository, adapter } = await setupCard([CARD])
+    await repository.closeFeedback(
+      { feedbackId: 'fb-card', statusCode: 'REJECTED', publicReply: 'Дублирует известную задачу.' },
+      TRIAGER,
+    )
+    const detail = await repository.getFeedback('fb-card', AUTHOR)
+    expect(detail.request.statusCode).toBe('REJECTED')
+    expect(detail.timeline.some((event) => event.kind === 'CLOSED')).toBe(true)
+    // Ответ виден АВТОРУ: закрытие без объяснения — смена статуса, а не ответ.
+    expect(detail.comments.map((c) => c.body)).toContain('Дублирует известную задачу.')
+
+    const envelope = await adapter.load()
+    const stored = (envelope?.slices.feedback as { requests: FeedbackRequest[] }).requests
+    expect(stored[0].statusCode).toBe('REJECTED')
+  })
+
+  it('признание дубликатом требует указать оригинал', async () => {
+    const { repository } = await setupCard([CARD])
+    await expect(
+      repository.closeFeedback(
+        { feedbackId: 'fb-card', statusCode: 'DUPLICATE', publicReply: 'Повтор.' },
+        TRIAGER,
+      ),
+    ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
+  })
+
+  it('оригиналом не может быть НЕВИДИМОЕ закрывающему обращение', async () => {
+    const { repository } = await setupCard([
+      CARD,
+      request({ feedbackId: 'fb-hidden-draft', statusCode: 'DRAFT', submittedAt: null }),
+    ])
+    await expect(
+      repository.closeFeedback(
+        {
+          feedbackId: 'fb-card',
+          statusCode: 'DUPLICATE',
+          duplicateOfId: 'fb-hidden-draft',
+          publicReply: 'Повтор.',
+        },
+        TRIAGER,
+      ),
+    ).rejects.toBeInstanceOf(RepositoryNotFoundError)
+  })
+
+  it('обращение не может быть дубликатом самого себя', async () => {
+    const { repository } = await setupCard([CARD])
+    await expect(
+      repository.closeFeedback(
+        {
+          feedbackId: 'fb-card',
+          statusCode: 'DUPLICATE',
+          duplicateOfId: 'fb-card',
+          publicReply: 'Повтор.',
+        },
+        TRIAGER,
+      ),
+    ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
+  })
+
+  it('ссылка на оригинал скрывается, если он невидим СМОТРЯЩЕМУ', async () => {
+    // Оригинал — конфиденциальное чужое обращение: закрывающий его видел,
+    // автор дубликата — нет.
+    const original = request({
+      feedbackId: 'fb-original',
+      subject: 'Оригинал обращения',
+      statusCode: 'DRAFT',
+      submittedAt: null,
+    })
+    const { repository } = await setupCard([
+      { ...CARD, statusCode: 'DUPLICATE', duplicateOfId: 'fb-original' },
+      original,
+    ])
+    const authorView = await repository.getFeedback('fb-card', AUTHOR)
+    expect(authorView.duplicateOf?.subject).toBeNull()
+    expect(authorView.duplicateOf?.hiddenReason).not.toBeNull()
   })
 })

@@ -7,6 +7,8 @@
 // полученного массива здесь была бы вёрсткой поверх привезённых в браузер
 // данных — ровно тем, что §22.24 и §20.27 запрещают.
 import { useState } from 'react'
+import { Link } from 'react-router'
+import { ROUTES } from '../../../shared/routes'
 import { Button } from '../../../shared/ui/Button'
 import { Input } from '../../../shared/ui/Input'
 import { useCreateFeedback, useFeedbackRequests, useSubmitFeedback } from '../api/queries'
@@ -219,7 +221,12 @@ export function FeedbackPage() {
                   <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600">
                     {labelOf('status', request.statusCode)}
                   </span>
-                  <span className="text-sm font-semibold">{request.subject}</span>
+                  <Link
+                    className="text-sm font-semibold text-primary underline"
+                    to={ROUTES.feedbackDetailTo(request.feedbackId)}
+                  >
+                    {request.subject}
+                  </Link>
                   {request.confidential && (
                     <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">
                       Конфиденциально

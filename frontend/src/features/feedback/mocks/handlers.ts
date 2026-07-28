@@ -3,8 +3,20 @@ import { http, HttpResponse } from 'msw'
 import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import type { ErrorEnvelope } from '../../../shared/api/errors'
-import { FEEDBACK_REQUESTS_PATH, feedbackSubmitPath } from '../api/pending-contracts'
-import type { CreateFeedbackRequest } from '../api/pending-contracts'
+import {
+  FEEDBACK_REQUESTS_PATH,
+  feedbackClosePath,
+  feedbackCommentsPath,
+  feedbackDetailPath,
+  feedbackSubmitPath,
+  feedbackTriagePath,
+} from '../api/pending-contracts'
+import type {
+  AddFeedbackCommentRequest,
+  CloseFeedbackRequest,
+  CreateFeedbackRequest,
+  TriageFeedbackRequest,
+} from '../api/pending-contracts'
 import type { FeedbackStatusCode, FeedbackTypeCode } from '../model/types'
 import {
   createFeedbackRepository,
@@ -51,6 +63,43 @@ export function createFeedbackHandlers(adapter: PersistenceAdapter, clock: DemoC
         return HttpResponse.json(
           await repository.submitFeedback(String(params.id), actorUserId),
         )
+      } catch (error) {
+        return mapRepositoryError(error, clock) ?? HttpResponse.error()
+      }
+    }),
+    ...(
+      [
+        ['comments', feedbackCommentsPath],
+        ['triage', feedbackTriagePath],
+        ['close', feedbackClosePath],
+      ] as const
+    ).map(([kind, pathOf]) =>
+      http.post(`*${pathOf(':id')}`, async ({ request, params }) => {
+        const actorUserId = request.headers.get('X-User-Id')
+        const body = (await request.json()) as Record<string, unknown>
+        const feedbackId = String(params.id)
+        try {
+          if (kind === 'comments') {
+            const payload = { ...body, feedbackId } as AddFeedbackCommentRequest
+            return HttpResponse.json(await repository.addComment(payload, actorUserId))
+          }
+          if (kind === 'triage') {
+            const payload = { ...body, feedbackId } as TriageFeedbackRequest
+            return HttpResponse.json(await repository.triageFeedback(payload, actorUserId))
+          }
+          const payload = { ...body, feedbackId } as CloseFeedbackRequest
+          return HttpResponse.json(await repository.closeFeedback(payload, actorUserId))
+        } catch (error) {
+          return mapRepositoryError(error, clock) ?? HttpResponse.error()
+        }
+      }),
+    ),
+    // §28 detail. Зарегистрирована ДО коллекции намеренно: путь карточки —
+    // продолжение пути реестра, и порядок handler'ов в MSW значим.
+    http.get(`*${feedbackDetailPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.getFeedback(String(params.id), actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock) ?? HttpResponse.error()
       }

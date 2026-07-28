@@ -295,3 +295,12 @@ endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуще
 Справочник §28 (типы, приоритеты, одиннадцать статусов, модули) приезжает в `registry`
 вместе с `registryVersion`: подписи и порядок принадлежат серверу, у экрана их нет.
 
+### Карточка обращения (§28 detail, Этап 48)
+
+| Операция | Право | Ответ |
+| --- | --- | --- |
+| `GET /api/ops/feedback-requests/{id}/` | `ops.feedback.view` (+ `view_all` для чужого, `view_confidential` для содержания, `internal_note` для заметок) | `{ request, comments, timeline, actions, allowedStatuses, assigneeCandidates, duplicateOf, registry, unavailableBlocks, serverTime }` ОДНИМ срезом. Внутренние заметки и события о них в ответ тому, кому они не видны, не попадают ВООБЩЕ. `allowedStatuses` — из карты `statusTransitions` справочника. Невидимое обращение — 404 |
+| `POST /api/ops/feedback-requests/{id}/comments/` | публичный ответ — `ops.feedback.triage` ИЛИ авторство; внутренняя заметка — `ops.feedback.internal_note` | Добавляет комментарий и событие ленты. Закрытое обращение — 422 `FEEDBACK_CLOSED`; черновик — 422 `FEEDBACK_NOT_SUBMITTED` |
+| `POST /api/ops/feedback-requests/{id}/triage/` | `ops.feedback.triage` | Ответственный, рабочий приоритет и статус ОДНОЙ операцией (`undefined` — «не трогать», `null` — «снять»). События пишет диффер. Переход вне карты — 422 `FEEDBACK_TRANSITION_NOT_ALLOWED`; терминальный статус — 422 `FEEDBACK_USE_CLOSE` (закрытие оформляется отдельно, с ответом автору) |
+| `POST /api/ops/feedback-requests/{id}/close/` | `ops.feedback.triage` | Терминальный статус + ОБЯЗАТЕЛЬНЫЙ публичный ответ автору. Для `DUPLICATE` требуется `duplicateOfId`; оригинал обязан быть видим закрывающему (иначе 404) и не может быть самим обращением |
+

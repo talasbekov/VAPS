@@ -1,10 +1,20 @@
 // Demo-сид обратной связи (§8.7: только синтетические данные).
 import { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import type { SeedContext } from '../../../shared/testing/mock-runtime/seed-context'
-import type { FeedbackRegistry, FeedbackRequest } from '../model/types'
+import type {
+  FeedbackComment,
+  FeedbackEvent,
+  FeedbackRegistry,
+  FeedbackRequest,
+} from '../model/types'
 
 export interface FeedbackSlice {
   requests: FeedbackRequest[]
+  /** §28 detail: публичные ответы и внутренние заметки — ОДНА коллекция с
+   * видом у каждой записи; вид решает, кто её увидит. */
+  comments: FeedbackComment[]
+  /** §28 detail «timeline» + «audit» — одна лента (см. `FeedbackEvent`). */
+  events: FeedbackEvent[]
   registry: FeedbackRegistry
 }
 
@@ -54,7 +64,26 @@ export const FEEDBACK_REGISTRY: FeedbackRegistry = {
     { moduleCode: 'PERSONNEL', label: 'Личный состав' },
     { moduleCode: 'OTHER', label: 'Другое' },
   ],
-  registryVersion: 'feedback-registry-2026.07.1',
+  /**
+   * §28 lifecycle. Карта переходов живёт ЗДЕСЬ, а не в коде разбора: порядок
+   * работы с обращением принадлежит службе поддержки, а не экрану. Из
+   * терминальных статусов переходов нет вовсе — это и есть замок.
+   */
+  statusTransitions: [
+    { from: 'DRAFT', to: ['NEW'] },
+    { from: 'NEW', to: ['IN_REVIEW', 'NEED_INFO', 'REJECTED', 'DUPLICATE'] },
+    { from: 'IN_REVIEW', to: ['NEED_INFO', 'ACCEPTED', 'REJECTED', 'DUPLICATE'] },
+    { from: 'NEED_INFO', to: ['IN_REVIEW', 'REJECTED'] },
+    { from: 'ACCEPTED', to: ['PLANNED', 'REJECTED'] },
+    { from: 'PLANNED', to: ['FIXED', 'REJECTED'] },
+    { from: 'FIXED', to: ['RELEASED'] },
+    { from: 'RELEASED', to: ['CLOSED'] },
+    { from: 'REJECTED', to: [] },
+    { from: 'CLOSED', to: [] },
+    { from: 'DUPLICATE', to: [] },
+  ],
+  terminalStatuses: ['CLOSED', 'REJECTED', 'DUPLICATE'],
+  registryVersion: 'feedback-registry-2026.07.2',
 }
 
 const PLANNER = { userId: 'demo-event-planner', safeLabel: 'Организатор ОМ' }
@@ -106,6 +135,11 @@ function seedRequests(ctx: SeedContext): FeedbackRequest[] {
         platform: 'desktop',
         capturedAt: at(600),
       },
+      // Разобранное обращение: рабочий приоритет НИЖЕ заявленного — совпадение
+      // скрыло бы, что это разные поля.
+      workingPriorityCode: 'NORMAL',
+      assignee: OBJECTS_ADMIN,
+      duplicateOfId: null,
       author: PLANNER,
       createdAt: at(600),
       submittedAt: at(600),
@@ -127,6 +161,9 @@ function seedRequests(ctx: SeedContext): FeedbackRequest[] {
       confidential: false,
       relatedRoute: '/duties',
       technicalInfo: null,
+      workingPriorityCode: null,
+      assignee: null,
+      duplicateOfId: null,
       author: OBJECTS_ADMIN,
       createdAt: at(540),
       submittedAt: at(540),
@@ -150,6 +187,9 @@ function seedRequests(ctx: SeedContext): FeedbackRequest[] {
       confidential: true,
       relatedRoute: '/organization',
       technicalInfo: null,
+      workingPriorityCode: null,
+      assignee: null,
+      duplicateOfId: null,
       // Автор — НЕ аналитик, и это условие демонстрации: аналитик здесь
       // контролёр (видит чужие обращения, закрытое содержание — нет). Будь он
       // автором, признак «конфиденциально» на нём было бы не показать вовсе.
@@ -173,6 +213,9 @@ function seedRequests(ctx: SeedContext): FeedbackRequest[] {
       confidential: false,
       relatedRoute: '/analytics/service',
       technicalInfo: null,
+      workingPriorityCode: null,
+      assignee: null,
+      duplicateOfId: null,
       author: ANALYST,
       createdAt: at(420),
       submittedAt: null,
@@ -193,6 +236,9 @@ function seedRequests(ctx: SeedContext): FeedbackRequest[] {
       confidential: false,
       relatedRoute: '/analytics/service',
       technicalInfo: null,
+      workingPriorityCode: null,
+      assignee: null,
+      duplicateOfId: null,
       author: ANALYST,
       createdAt: at(360),
       submittedAt: at(360),
@@ -213,6 +259,9 @@ function seedRequests(ctx: SeedContext): FeedbackRequest[] {
       confidential: false,
       relatedRoute: '/objects',
       technicalInfo: null,
+      workingPriorityCode: null,
+      assignee: null,
+      duplicateOfId: null,
       author: PLANNER,
       createdAt: at(300),
       submittedAt: at(300),
@@ -233,6 +282,9 @@ function seedRequests(ctx: SeedContext): FeedbackRequest[] {
       confidential: false,
       relatedRoute: '/duties',
       technicalInfo: null,
+      workingPriorityCode: null,
+      assignee: null,
+      duplicateOfId: null,
       author: OBJECTS_ADMIN,
       createdAt: at(240),
       submittedAt: at(240),
@@ -253,6 +305,11 @@ function seedRequests(ctx: SeedContext): FeedbackRequest[] {
       confidential: false,
       relatedRoute: '/security-events',
       technicalInfo: null,
+      workingPriorityCode: null,
+      assignee: null,
+      // Признанный дубликат обязан указывать НА ЧТО: статус DUPLICATE без
+      // ссылки — утверждение без адресата.
+      duplicateOfId: 'fb-1001',
       author: OBJECTS_ADMIN,
       createdAt: at(180),
       submittedAt: at(180),
@@ -273,6 +330,9 @@ function seedRequests(ctx: SeedContext): FeedbackRequest[] {
       confidential: false,
       relatedRoute: null,
       technicalInfo: null,
+      workingPriorityCode: null,
+      assignee: null,
+      duplicateOfId: null,
       author: PLANNER,
       createdAt: at(120),
       submittedAt: at(120),
@@ -281,14 +341,101 @@ function seedRequests(ctx: SeedContext): FeedbackRequest[] {
   ]
 }
 
+/**
+ * Сеяные комментарии. §33 прямо требует, чтобы demo-набор содержал «обращения
+ * обратной связи с комментариями и attachment»: обращение `fb-1001` несёт и
+ * то, и другое.
+ *
+ * Внутренняя заметка здесь ОБЯЗАТЕЛЬНА как демонстрация: без неё нечего было
+ * бы прятать от автора, и проверка «автор её не видит» была бы пустой.
+ */
+function seedComments(at: (minutes: number) => string): FeedbackComment[] {
+  return [
+    {
+      commentId: 'fbc-1',
+      feedbackId: 'fb-1001',
+      kind: 'PUBLIC_REPLY',
+      body: 'Приняли в работу, воспроизвели на тестовом контуре. Сообщим, когда исправим.',
+      author: OBJECTS_ADMIN,
+      createdAt: at(560),
+    },
+    {
+      commentId: 'fbc-2',
+      feedbackId: 'fb-1001',
+      kind: 'INTERNAL_NOTE',
+      // Слово встречается ТОЛЬКО во внутренней заметке — на нём проверяется,
+      // что автору она не приезжает ни полем, ни лентой.
+      body: 'Причина — регрессия маршрутизации: секвойя в конфигурации редиректов.',
+      author: OBJECTS_ADMIN,
+      createdAt: at(555),
+    },
+  ]
+}
+
+/** Лента сеяного обращения. Дальше её дописывает только диффер. */
+function seedEvents(at: (minutes: number) => string): FeedbackEvent[] {
+  const base = {
+    feedbackId: 'fb-1001',
+    actor: PLANNER,
+    fieldCode: null,
+    oldValue: null,
+    newValue: null,
+  }
+  return [
+    { ...base, eventId: 'fbe-1', kind: 'CREATED', at: at(600) },
+    { ...base, eventId: 'fbe-2', kind: 'SUBMITTED', at: at(600) },
+    {
+      ...base,
+      eventId: 'fbe-3',
+      kind: 'ASSIGNED',
+      actor: OBJECTS_ADMIN,
+      at: at(570),
+      fieldCode: 'assignee',
+      oldValue: null,
+      newValue: OBJECTS_ADMIN.userId,
+    },
+    {
+      ...base,
+      eventId: 'fbe-4',
+      kind: 'STATUS_CHANGED',
+      actor: OBJECTS_ADMIN,
+      at: at(565),
+      fieldCode: 'statusCode',
+      oldValue: 'NEW',
+      newValue: 'IN_REVIEW',
+    },
+    {
+      ...base,
+      eventId: 'fbe-5',
+      kind: 'PUBLIC_REPLY_ADDED',
+      actor: OBJECTS_ADMIN,
+      at: at(560),
+    },
+    {
+      ...base,
+      eventId: 'fbe-6',
+      kind: 'INTERNAL_NOTE_ADDED',
+      actor: OBJECTS_ADMIN,
+      at: at(555),
+    },
+  ]
+}
+
 export function buildFeedbackSeed(ctx: SeedContext): {
   sliceName: string
   data: FeedbackSlice
 } {
+  const at = (offsetMinutes: number): string => {
+    const shifted = new DemoClock(ctx.clock.now())
+    shifted.advanceMs(-offsetMinutes * 60_000)
+    return shifted.now()
+  }
   return {
     sliceName: 'feedback',
     data: {
       requests: seedRequests(ctx),
+      comments: seedComments(at),
+      events: seedEvents(at),
       registry: {
         ...FEEDBACK_REGISTRY,
         types: [...FEEDBACK_REGISTRY.types],

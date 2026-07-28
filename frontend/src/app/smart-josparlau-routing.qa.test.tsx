@@ -85,6 +85,7 @@ const ROUTE_MATRIX = [
   // §28: раздел обращений закрыт своим правом — право читать любой другой
   // раздел его не открывает.
   { route: ROUTES.feedback, code: 'ops.feedback.view' },
+  { route: ROUTES.feedbackDetailTo('does-not-exist'), code: 'ops.feedback.view' },
 ] as const
 
 describe('Карта гейтов Smart Josparlau-маршрутов (§34 route audit)', () => {

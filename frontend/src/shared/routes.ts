@@ -125,6 +125,13 @@ export const ROUTES = {
     `/service-reports/${encodeURIComponent(reportJobId)}`,
   /** §28 «Обратная связь»: реестр обращений и форма нового обращения. */
   feedback: '/feedback',
+  /**
+   * §28 detail — карточка обращения. Право маршрута то же, что у реестра
+   * (`ops.feedback.view`), и repository проверяет видимость ЗАНОВО: невидимое
+   * обращение отвечает «не найдено», а не «нет прав».
+   */
+  feedbackDetail: '/feedback/:feedbackId',
+  feedbackDetailTo: (feedbackId: string) => `/feedback/${encodeURIComponent(feedbackId)}`,
   /** Мастер-промпт §21/§24: «Служба» → План дежурств. */
   duties: '/duties',
   /**

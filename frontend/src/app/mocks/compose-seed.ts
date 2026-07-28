@@ -66,11 +66,12 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // новый слайс `serviceReports` (отчётный реестр §22.18) — 19→20;
 // новый слайс `serviceAnalytics` (определения показателей и пресеты периодов
 // §22.3-22.5) — 20→21; новый слайс `feedback` с обращениями и справочником
-// §28 — 23→24.
+// §28 — 23→24; комментарии, лента событий и поля разбора обращения
+// (§28 detail) — 24→25.
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 24
+export const SCHEMA_VERSION = 25
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)

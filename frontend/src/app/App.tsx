@@ -33,6 +33,7 @@ import { ServiceReportsPage } from '../features/service-reports/pages/ServiceRep
 import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
 import { ReportJobPage } from '../features/service-reports/pages/ReportJobPage'
 import { FeedbackPage } from '../features/feedback/pages/FeedbackPage'
+import { FeedbackDetailPage } from '../features/feedback/pages/FeedbackDetailPage'
 import { CalendarPage } from './CalendarPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -350,6 +351,16 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.feedback.view">
               <FeedbackPage />
+            </RequirePermission>
+          }
+        />
+        {/* §28 detail: право проверяется маршрутом ЗАНОВО — переход из реестра
+            доступ к конкретному обращению не подтверждает. */}
+        <Route
+          path={ROUTES.feedbackDetail}
+          element={
+            <RequirePermission permission="ops.feedback.view">
+              <FeedbackDetailPage />
             </RequirePermission>
           }
         />

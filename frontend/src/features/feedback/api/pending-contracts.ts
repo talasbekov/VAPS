@@ -6,7 +6,10 @@
 // ни предупреждения не будет.
 import type { FeedbackNotice, FeedbackStats } from '../lib/feedback'
 import type {
+  FeedbackAction,
   FeedbackAttachmentMeta,
+  FeedbackCommentKind,
+  FeedbackEventKind,
   FeedbackPriorityCode,
   FeedbackRegistry,
   FeedbackRequest,
@@ -40,6 +43,14 @@ export interface FeedbackRequestView {
   createdAt: string
   submittedAt: string | null
   confidential: boolean
+  /** §28 detail «working priority» — `null`, пока разбора не было. Поле
+   * ОТКРЫТОЕ: это решение службы об обращении, а не содержание обращения,
+   * и признак конфиденциальности его не закрывает. */
+  workingPriorityCode: FeedbackPriorityCode | null
+  /** §28 detail «assignee». Подпись — для человека, идентификатор — для
+   * формы разбора (её `select` работает по нему). */
+  assigneeLabel: string | null
+  assigneeUserId: string | null
   /** `true`, если обращение завёл смотрящий. Решает сервер: сравнение
    * пользователей на клиенте означало бы, что закрытые поля уже приехали. */
   isOwn: boolean
@@ -115,3 +126,96 @@ export type CreateFeedbackRequest = {
 
 export type CreateFeedbackResponse = FeedbackRequest
 export type SubmitFeedbackResponse = FeedbackRequest
+
+// ─── Карточка обращения (§28 detail, Этап 48) ────────────────────────────────
+
+export function feedbackDetailPath(id: string): string {
+  return `${FEEDBACK_REQUESTS_PATH}${id}/`
+}
+export function feedbackCommentsPath(id: string): string {
+  return `${FEEDBACK_REQUESTS_PATH}${id}/comments/`
+}
+/** Разбор — ОДНА операция: ответственный, рабочий приоритет и статус меняются
+ * вместе, потому что вместе и решаются. Тремя ресурсами карточка получила бы
+ * три записи в ленте на один поступок разбирающего. */
+export function feedbackTriagePath(id: string): string {
+  return `${FEEDBACK_REQUESTS_PATH}${id}/triage/`
+}
+export function feedbackClosePath(id: string): string {
+  return `${FEEDBACK_REQUESTS_PATH}${id}/close/`
+}
+
+/** Комментарий В ОТВЕТЕ. Внутренние заметки в ответ тому, кому они не видны,
+ * не попадают ВООБЩЕ — не приходят с вырезанным текстом. */
+export interface FeedbackCommentView {
+  commentId: string
+  kind: FeedbackCommentKind
+  body: string
+  authorLabel: string
+  createdAt: string
+}
+
+export interface FeedbackEventView {
+  eventId: string
+  kind: FeedbackEventKind
+  actorLabel: string
+  at: string
+  fieldCode: string | null
+  oldValue: string | null
+  newValue: string | null
+}
+
+/** §28 detail «duplicate»: на что указывает признанный дубликат. */
+export interface FeedbackDuplicateLink {
+  feedbackId: string
+  /** Тема обращения-оригинала или `null`, если смотрящему оно не видно. */
+  subject: string | null
+  /** `null`, пока тема видна. */
+  hiddenReason: string | null
+}
+
+export interface FeedbackDetailResponse {
+  request: FeedbackRequestView
+  comments: FeedbackCommentView[]
+  timeline: FeedbackEventView[]
+  /** §28 detail: доступность каждого действия считает сервер. */
+  actions: FeedbackAction[]
+  /** Статусы, в которые обращение может уйти ИЗ ТЕКУЩЕГО. Считает сервер по
+   * карте переходов справочника — экран не выводит их сам. */
+  allowedStatuses: FeedbackStatusCode[]
+  assigneeCandidates: { userId: string; safeLabel: string }[]
+  duplicateOf: FeedbackDuplicateLink | null
+  registry: FeedbackRegistry
+  /** §35: блоки §28 detail, которых demo-срез не даёт. */
+  unavailableBlocks: FeedbackNotice[]
+  serverTime: string
+}
+
+export type AddFeedbackCommentRequest = {
+  feedbackId: string
+  kind: FeedbackCommentKind
+  body: string
+}
+
+export type TriageFeedbackRequest = {
+  feedbackId: string
+  /** `undefined` — «не трогать»; `null` — «снять». Различие существенно:
+   * снятие ответственного — такое же событие ленты, как назначение. */
+  assigneeUserId?: string | null
+  workingPriorityCode?: FeedbackPriorityCode | null
+  statusCode?: FeedbackStatusCode
+}
+
+export type CloseFeedbackRequest = {
+  feedbackId: string
+  /** Только терминальный статус справочника. */
+  statusCode: FeedbackStatusCode
+  /** Обязателен для `DUPLICATE`: признание дубликатом без адресата —
+   * утверждение ни о чём. */
+  duplicateOfId?: string | null
+  /** §28: закрытие сопровождается публичным ответом — человек, написавший
+   * обращение, узнаёт причину, а не только новый статус. */
+  publicReply: string
+}
+
+export type FeedbackMutationResponse = { feedbackId: string }
