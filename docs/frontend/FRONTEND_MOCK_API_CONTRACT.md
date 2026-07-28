@@ -107,12 +107,15 @@
 
 ## Dictionaries (namespace `/api/ops/dictionaries/…`, mock-only-demo — backend-contract-pending, §30)
 
+> Этап 52: каждое значение в ответе несёт `usage` — посчитанные СЕРВЕРОМ связи (`status`: `TRACKED`/`NOT_TRACKED`/`UNKNOWN`, `references[]` с подписью источника и носителями, `totalCount`). Поля `referencedCount` больше нет. Конверт 409 несёт те же связи в `details.usage` (§30 «понятная зависимость»).
+
 | operation_id | owner_feature | contract_status | method/path | permission | mock_handler | contract_test |
 |---|---|---|---|---|---|---|
 | listDictionaryDefinitions | features/dictionaries | backend-contract-pending | GET /api/ops/dictionaries/ | ops.dictionary.view | mocks/handlers.ts | mocks/repository.test.ts |
 | listDictionaryEntries | features/dictionaries | backend-contract-pending | GET /api/ops/dictionaries/:code/entries/ | ops.dictionary.view | mocks/handlers.ts | mocks/repository.test.ts |
 | createDictionaryEntry | features/dictionaries | backend-contract-pending | POST /api/ops/dictionaries/:code/entries/ | ops.dictionary.manage | mocks/handlers.ts | mocks/repository.test.ts |
-| setDictionaryEntryActive | features/dictionaries | backend-contract-pending | POST /api/ops/dictionaries/entries/:id/set-active/ | ops.dictionary.manage | mocks/handlers.ts | mocks/repository.test.ts (409 на referencedCount>0) |
+| setDictionaryEntryActive | features/dictionaries | backend-contract-pending | POST /api/ops/dictionaries/entries/:id/set-active/ | ops.dictionary.manage | mocks/handlers.ts | mocks/repository.test.ts + mocks/handlers.test.ts (409 `DICTIONARY_ENTRY_REFERENCED` при ЖИВЫХ связях) |
+| deleteDictionaryEntry | features/dictionaries | backend-contract-pending | DELETE /api/ops/dictionaries/entries/:id/ | ops.dictionary.manage | mocks/handlers.ts | mocks/repository.test.ts + mocks/handlers.test.ts (409 `DICTIONARY_ENTRY_REFERENCED` / `DICTIONARY_USAGE_NOT_TRACKED` / `DICTIONARY_USAGE_UNKNOWN`; 204 при доказанном отсутствии связей) |
 
 5 справочников (definitions) на момент Этапа 10: `RETURN_REASONS`, `POST_REQUIREMENTS`, `SEASONAL_CORRECTIONS`, `JOURNAL_ENTRY_TYPES`, `POST_REQUIREMENT_GROUPS` (§30 «типы статусов»/«группы», см. FRONTEND_DECISIONS A48). `createDictionaryEntry` принимает необязательный `groupCode` — валидируется ТОЛЬКО когда `code==='POST_REQUIREMENTS'` (должен ссылаться на активную запись `POST_REQUIREMENT_GROUPS`, иначе 400 VALIDATION_ERROR по полю `groupCode`); для остальных справочников поле игнорируется (persist `null`), нет отдельной mock-операции.
 

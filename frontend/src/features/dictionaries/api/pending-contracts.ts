@@ -1,6 +1,6 @@
 // Pending-контракты «Справочники» (§7.5): backend Smart Josparlau не
 // существует — статус `backend-contract-pending`.
-import type { DictionaryDefinition, DictionaryEntry } from '../model/types'
+import type { DictionaryDefinition, DictionaryEntryView } from '../model/types'
 
 export const DICTIONARIES_PATH = '/api/ops/dictionaries/'
 
@@ -10,6 +10,15 @@ export function dictionaryEntriesPath(code: string): string {
 
 export function dictionaryEntrySetActivePath(id: string): string {
   return `${DICTIONARIES_PATH}entries/${id}/set-active/`
+}
+
+/**
+ * Удаление значения — СВОЙ путь, а не `set-active` с флагом: §30 говорит
+ * именно об удалении, и правило у него строже деактивации (удаление
+ * необратимо, поэтому требует ДОКАЗАННОГО отсутствия связей).
+ */
+export function dictionaryEntryPath(id: string): string {
+  return `${DICTIONARIES_PATH}entries/${id}/`
 }
 
 export interface DictionaryDefinitionSummary extends DictionaryDefinition {
@@ -22,7 +31,7 @@ export interface ListDictionaryDefinitionsResponse {
 }
 
 export interface ListDictionaryEntriesResponse {
-  results: DictionaryEntry[]
+  results: DictionaryEntryView[]
 }
 
 export interface CreateDictionaryEntryRequest extends Record<string, unknown> {
@@ -33,10 +42,10 @@ export interface CreateDictionaryEntryRequest extends Record<string, unknown> {
   groupCode?: string | null
 }
 
-export type CreateDictionaryEntryResponse = DictionaryEntry
+export type CreateDictionaryEntryResponse = DictionaryEntryView
 
 export interface SetDictionaryEntryActiveRequest extends Record<string, unknown> {
   isActive: boolean
 }
 
-export type SetDictionaryEntryActiveResponse = DictionaryEntry
+export type SetDictionaryEntryActiveResponse = DictionaryEntryView
