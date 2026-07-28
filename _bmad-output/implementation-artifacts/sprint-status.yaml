@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-29 (11.4b → done)
+# last_updated: 2026-07-29 (11.5a → ready-for-dev)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -575,7 +575,7 @@ development_status:
   # к 11.5», ЗАКРЫТ в пользу polling (11.5 Решение №3): architecture.md#L466
   # сам держит «поллинг — истина, WS — ускоритель».
   11-5-kill-switch-ws: done
-  11-5a-клиент-fallback-на-polling: backlog
+  11-5a-клиент-fallback-на-polling: ready-for-dev
   # Вынесено из скоупа 11.6 (create-story 2026-07-19) с поимённым преемником —
   # хвост не «зависает намерением» (урок ретро E8/E9).
   #   11.6a — гигиена и эксплуатация live-e2e: цель `make e2e` с бюджетом
