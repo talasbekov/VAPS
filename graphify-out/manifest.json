@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1785226173.1437767,
-    "ast_hash": "cfa2671e0ae1a1837ea342120f7f755f",
+    "mtime": 1785227279.3491933,
+    "ast_hash": "aa72540f705f86cba1b930179219c484",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785226208.6165574,
-    "ast_hash": "dc5c9dca8f0a1ae20c18920b9b99549e",
+    "mtime": 1785227286.3823144,
+    "ast_hash": "6c004123e26a28b12ff0ed57ed5762c6",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -22572,6 +22572,26 @@
   "\u041f\u0440\u043e\u0442\u043e\u0442\u0438\u043f/uploads/\u0440\u0430\u0441\u0445\u043e\u0434.jpeg": {
     "mtime": 1785224485.4113905,
     "ast_hash": "7ae3e542fd95430e096535a0012e1627",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/donor_profile.py": {
+    "mtime": 1785227110.8051999,
+    "ast_hash": "38ce060feff4cf1751b4d7f1db3b1ba6",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/management/commands/profile_donor_export.py": {
+    "mtime": 1785226915.799018,
+    "ast_hash": "e4b1410a0f868adbd46a8664a80738b2",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/tests/test_donor_profile.py": {
+    "mtime": 1785227143.2987914,
+    "ast_hash": "4708c7bb9792a00e7a2f32b533a8d735",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/7-1-\u043f\u0440\u043e\u0444\u0438\u043b\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435-\u0434\u0430\u043d\u043d\u044b\u0445-\u0434\u043e\u043d\u043e\u0440\u0430.md": {
+    "mtime": 1785227260.9128742,
+    "ast_hash": "4e682758a0ae2586f2325dfe5cc6fe8f",
     "semantic_hash": ""
   }
 }
