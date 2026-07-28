@@ -45,6 +45,7 @@ import { parseValidationDetails } from './bulkErrors'
 import { DayAmendmentForm } from './DayAmendmentForm'
 import { describeStaleness, parseSummaryFreshness } from './freshness'
 import { describeAmendmentReason, parseSubmissionDetail } from './submissionDetail'
+import { describeExportFailure, exportFileName, saveBlob } from './submissionExport'
 import {
   describeSubmitFailure,
   EVENT_LABELS,
@@ -372,6 +373,23 @@ export function DaySubmissionPanel({
     })
   }, [alreadySubmitted, queryClient, divisionId, businessDate])
 
+  /**
+   * Story 10.8a — «моя копия»: скачивание ВЕРСИИ `current` (той же, что
+   * показана в блоке «День сдан»), НЕ пересчитанного «последнего id».
+   * `useApiMutation`, не сырой `useMutation` (ARCH-FE-015).
+   */
+  const exportMutation = useApiMutation<void, Record<string, never>>({
+    mutationFn: async () => {
+      if (current === null) return
+      const { blob, filename } = await apiClient.getBlob(
+        `/api/operations/daily-submissions/${current.id}/export/`,
+      )
+      saveBlob(blob, filename ?? exportFileName(businessDate, current.version))
+    },
+  })
+  const exportFailureMessage =
+    exportMutation.error === null ? '' : describeExportFailure(exportMutation.error)
+
   // Дата не выбрана — сдавать нечего, панель молчит целиком. Это не косметика:
   // DailyUpdatePage.test.tsx:556 инвертированным ассертом проверяет, что при
   // негодной дате «Сдать день» на экране нет.
@@ -547,6 +565,30 @@ export function DaySubmissionPanel({
               </ul>
             ) : null}
           </div>
+        ) : null}
+
+        {/* Story 10.8a — «моя копия»: скачивает ИМЕННО версию `current`
+            (не пересчитанный «последний id»), видна только на сданном дне.
+            Размещение ПОСЛЕ amend-блока (не между кнопкой «Исправить сдачу» и
+            формой) — иначе ломает клавиатурный путь формы (Tab-порядок). */}
+        {!isLoading && !isError && current !== null ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={exportMutation.isPending}
+              onClick={() => exportMutation.mutate({})}
+            >
+              Моя копия
+            </Button>
+          </div>
+        ) : null}
+
+        {exportFailureMessage !== '' ? (
+          <p role="alert" className="text-sm text-red-800">
+            {exportFailureMessage}
+          </p>
         ) : null}
 
         {/* AC-5: версии дня различимы. Причина/санкция — по клику разворота
