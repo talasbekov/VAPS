@@ -11,6 +11,8 @@ import {
   RepositoryValidationError,
 } from './repository'
 import type { SecurityEventsSlice } from './fixtures'
+import type { SecurityObjectProjection } from '../lib/passportBinding'
+import type { SecurityEvent, SecurityEventTransition } from '../model/types'
 import type {
   ForceRequest,
   PlacementAssignment,
@@ -27,8 +29,48 @@ const DEMAND_PLANNER = 'demand-planner-user'
 const PLACEMENT_MANAGER = 'placement-manager-user'
 const PLACEMENT_APPROVER = 'placement-approver-user'
 const BROKER = 'broker-user'
+const CONDUCT_MANAGER = 'conduct-manager-user'
 
-function seedEnvelope(events: SecurityEventsSlice['events']): DemoStateEnvelope {
+/**
+ * Слайс `objects` кладётся РЯДОМ, а не импортируется из `features/objects`
+ * (ARCH-FE-013): repository читает его как чужой снимок по узкой проекции,
+ * ровно так же он выглядит и в бою.
+ */
+const PASSPORT_OBJECT: SecurityObjectProjection = {
+  id: 'object-1',
+  name: 'Дворец Независимости',
+  code: 'OBJ-001',
+  passportVersions: [
+    {
+      id: 'object-1-v1',
+      versionNumber: 1,
+      effectiveFrom: '2026-07-01',
+      sectors: [
+        {
+          id: 'sector-1',
+          name: 'Сектор A',
+          posts: [
+            { id: 'post-1', name: 'КПП-1', task: 'Контроль въезда', requirements: 'Допуск' },
+            { id: 'post-2', name: 'Пост 2', task: 'Периметр', requirements: '' },
+          ],
+        },
+      ],
+    },
+  ],
+}
+
+/** Объект в реестре есть, опубликованного паспорта — нет (§9.6, явный случай). */
+const OBJECT_WITHOUT_PASSPORT: SecurityObjectProjection = {
+  id: 'object-2',
+  name: 'Дом Министерств',
+  code: 'OBJ-002',
+  passportVersions: [],
+}
+
+function seedEnvelope(
+  events: SecurityEventsSlice['events'],
+  objects: SecurityObjectProjection[] = [],
+): DemoStateEnvelope {
   return {
     application: 'smart-josparlau',
     schema_version: 1,
@@ -37,7 +79,7 @@ function seedEnvelope(events: SecurityEventsSlice['events']): DemoStateEnvelope 
     revision: 0,
     created_at: '2026-07-20T08:00:00+05:00',
     updated_at: '2026-07-20T08:00:00+05:00',
-    slices: { 'security-events': { events } },
+    slices: { 'security-events': { events }, objects: { objects } },
   }
 }
 
@@ -45,7 +87,9 @@ const SAMPLE_EVENT = {
   id: 'evt-1',
   code: 'ОМ-2026-1',
   title: 'Форум',
+  objectId: null,
   objectName: 'Дворец',
+  passportBinding: null,
   businessDate: '2026-07-25',
   stage: 'BULLETIN' as const,
   readinessPercent: 10,
@@ -69,6 +113,24 @@ const SAMPLE_EVENT = {
   updatedAt: '2026-07-20T08:00:00+05:00',
 }
 
+/** ОМ, уже привязанный к v1 «Дворца Независимости» — база тестов импорта. */
+const BOUND_BINDING = {
+  objectId: 'object-1',
+  objectName: 'Дворец Независимости',
+  versionId: 'object-1-v1',
+  versionNumber: 1,
+  effectiveFrom: '2026-07-01',
+  boundAt: '2026-07-20T08:00:00+05:00',
+}
+const BOUND_RECON_EVENT = {
+  ...SAMPLE_EVENT,
+  id: 'evt-bound-recon',
+  stage: 'RECON' as const,
+  objectId: 'object-1' as string | null,
+  passportBinding: BOUND_BINDING as SecurityEvent['passportBinding'],
+}
+const BOUND_PLACEMENT_EVENT = { ...BOUND_RECON_EVENT, id: 'evt-bound-placement', stage: 'PLACEMENT' as const }
+
 describe('createSecurityEventsRepository', () => {
   beforeEach(() => {
     registerRbacDirectory([
@@ -87,6 +149,7 @@ describe('createSecurityEventsRepository', () => {
       { userId: BROKER, permissions: ['ops.security_event.view', 'ops.force_allocation.manage'] },
       { userId: PLACEMENT_MANAGER, permissions: ['ops.security_event.view', 'ops.placement.manage'] },
       { userId: PLACEMENT_APPROVER, permissions: ['ops.security_event.view', 'ops.placement.approve'] },
+      { userId: CONDUCT_MANAGER, permissions: ['ops.security_event.view', 'ops.conduct.manage'] },
     ])
   })
 
@@ -137,26 +200,26 @@ describe('createSecurityEventsRepository', () => {
 
   it('create() без ops.security_event.create кидает RepositoryPermissionError, даже с ops.security_event.view', async () => {
     const adapter = createMemoryPersistence()
-    await adapter.reset(seedEnvelope([]))
+    await adapter.reset(seedEnvelope([], [PASSPORT_OBJECT]))
     const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
     await expect(
-      repo.create({ title: 'X', objectName: 'Y', businessDate: '2026-08-01' }, VIEWER),
+      repo.create({ title: 'X', objectId: 'object-1', businessDate: '2026-08-01' }, VIEWER),
     ).rejects.toBeInstanceOf(RepositoryPermissionError)
   })
 
   it('create() с пустыми полями кидает RepositoryValidationError с полевыми ошибками', async () => {
     const adapter = createMemoryPersistence()
-    await adapter.reset(seedEnvelope([]))
+    await adapter.reset(seedEnvelope([], [PASSPORT_OBJECT]))
     const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
     try {
-      await repo.create({ title: '', objectName: '', businessDate: 'not-a-date' }, CREATOR)
+      await repo.create({ title: '', objectId: '', businessDate: 'not-a-date' }, CREATOR)
       expect.unreachable()
     } catch (error) {
       expect(error).toBeInstanceOf(RepositoryValidationError)
       const validationError = error as RepositoryValidationError
       expect(Object.keys(validationError.fieldErrors).sort()).toEqual([
         'businessDate',
-        'objectName',
+        'objectId',
         'title',
       ])
     }
@@ -164,12 +227,12 @@ describe('createSecurityEventsRepository', () => {
 
   it('create() успешно сохраняет — виден следующему list() (персистентность из БД, не из памяти вызова)', async () => {
     const adapter = createMemoryPersistence()
-    await adapter.reset(seedEnvelope([]))
+    await adapter.reset(seedEnvelope([], [PASSPORT_OBJECT]))
     const clock = new DemoClock('2026-07-20T08:00:00+05:00')
     const repo = createSecurityEventsRepository(adapter, clock)
 
     const created = await repo.create(
-      { title: 'Новое ОМ', objectName: 'Объект', businessDate: '2026-08-01' },
+      { title: 'Новое ОМ', objectId: 'object-1', businessDate: '2026-08-01' },
       CREATOR,
     )
     expect(created.stage).toBe('BULLETIN')
@@ -229,6 +292,7 @@ describe('createSecurityEventsRepository', () => {
   ]
   const RECON_EVENT = { ...SAMPLE_EVENT, id: 'evt-recon', stage: 'RECON' as const }
 
+
   it('updateRecon() требует ops.recon.manage, а не ops.bulletin.manage', async () => {
     const adapter = createMemoryPersistence()
     await adapter.reset(seedEnvelope([RECON_EVENT]))
@@ -255,7 +319,7 @@ describe('createSecurityEventsRepository', () => {
     await adapter.reset(seedEnvelope([RECON_EVENT]))
     const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
     const sectorPosts: ReconSectorPost[] = [
-      { id: 'p1', sector: 'A', post: 'Вход', task: 'Досмотр', need: 2, requirements: '', result: 'MATCHES', comment: '' },
+      { id: 'p1', sector: 'A', post: 'Вход', task: 'Досмотр', need: 2, requirements: '', result: 'MATCHES', comment: '', sourceSectorId: null, sourcePostId: null },
     ]
     const updated = await repo.updateRecon(
       RECON_EVENT.id,
@@ -272,7 +336,7 @@ describe('createSecurityEventsRepository', () => {
   it('completeRecon() требует все пункты чек-листа выполненными', async () => {
     const adapter = createMemoryPersistence()
     await adapter.reset(
-      seedEnvelope([{ ...RECON_EVENT, reconChecklist: RECON_CHECKLIST, reconSectorPosts: [{ id: 'p1', sector: 'A', post: 'X', task: 'Y', need: 1, requirements: '', result: 'MATCHES', comment: '' }] }]),
+      seedEnvelope([{ ...RECON_EVENT, reconChecklist: RECON_CHECKLIST, reconSectorPosts: [{ id: 'p1', sector: 'A', post: 'X', task: 'Y', need: 1, requirements: '', result: 'MATCHES', comment: '', sourceSectorId: null, sourcePostId: null }] }]),
     )
     const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
     await expect(repo.completeRecon(RECON_EVENT.id, RECON_OFFICER)).rejects.toBeInstanceOf(
@@ -296,7 +360,7 @@ describe('createSecurityEventsRepository', () => {
     const adapter = createMemoryPersistence()
     const doneChecklist = RECON_CHECKLIST.map((c) => ({ ...c, done: true, result: 'MATCHES' as const }))
     const sectorPosts: ReconSectorPost[] = [
-      { id: 'p1', sector: 'A', post: 'Вход', task: 'Досмотр', need: 2, requirements: '', result: 'MATCHES', comment: '' },
+      { id: 'p1', sector: 'A', post: 'Вход', task: 'Досмотр', need: 2, requirements: '', result: 'MATCHES', comment: '', sourceSectorId: null, sourcePostId: null },
     ]
     await adapter.reset(
       seedEnvelope([{ ...RECON_EVENT, reconChecklist: doneChecklist, reconSectorPosts: sectorPosts }]),
@@ -459,6 +523,8 @@ describe('createSecurityEventsRepository', () => {
     requirements: '',
     result: 'MATCHES',
     comment: '',
+    sourceSectorId: null,
+    sourcePostId: null,
   }
   const POST_B: ReconSectorPost = { ...POST_A, id: 'post-b', post: 'Второй пост' }
   const PLACEMENT_EVENT = {
@@ -581,5 +647,490 @@ describe('createSecurityEventsRepository', () => {
 
     const reread = await repo.get(APPROVAL_EVENT.id, VIEWER)
     expect(reread.stage).toBe('PLACEMENT')
+  })
+
+  const CONDUCT_EVENT = {
+    ...APPROVAL_EVENT,
+    id: 'evt-conduct',
+    stage: 'CONDUCT' as const,
+  }
+
+  describe('replaceAssignment (§9.11)', () => {
+    it('требует ops.conduct.manage', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await expect(
+        repo.replaceAssignment(
+          CONDUCT_EVENT.id,
+          { assignmentId: 'pa1', incomingEmployeeId: 'emp-3', reasonCode: 'Заболел' },
+          PLACEMENT_MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(RepositoryPermissionError)
+    })
+
+    it('требует непустую причину', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await expect(
+        repo.replaceAssignment(
+          CONDUCT_EVENT.id,
+          { assignmentId: 'pa1', incomingEmployeeId: 'emp-3', reasonCode: '' },
+          CONDUCT_MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(RepositoryValidationError)
+    })
+
+    it('неизвестный сотрудник — RepositoryValidationError', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await expect(
+        repo.replaceAssignment(
+          CONDUCT_EVENT.id,
+          { assignmentId: 'pa1', incomingEmployeeId: 'emp-unknown', reasonCode: 'Заболел' },
+          CONDUCT_MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(RepositoryValidationError)
+    })
+
+    it('доступна только на этапе «Проведение»', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([APPROVAL_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await expect(
+        repo.replaceAssignment(
+          APPROVAL_EVENT.id,
+          { assignmentId: 'pa1', incomingEmployeeId: 'emp-3', reasonCode: 'Заболел' },
+          CONDUCT_MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
+    })
+
+    it('несуществующее назначение — RepositoryNotFoundError', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await expect(
+        repo.replaceAssignment(
+          CONDUCT_EVENT.id,
+          { assignmentId: 'unknown-assignment', incomingEmployeeId: 'emp-3', reasonCode: 'Заболел' },
+          CONDUCT_MANAGER,
+        ),
+      ).rejects.toBeInstanceOf(RepositoryNotFoundError)
+    })
+
+    it('DOUBLE_ASSIGNMENT: заменяющий уже назначен на другой пост', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      // emp-2 уже на посте B (ASSIGNMENTS) — заменить pa1 (пост A) на emp-2 нельзя.
+      await expect(
+        repo.replaceAssignment(
+          CONDUCT_EVENT.id,
+          { assignmentId: 'pa1', incomingEmployeeId: 'emp-2', reasonCode: 'Заболел' },
+          CONDUCT_MANAGER,
+        ),
+      ).rejects.toMatchObject({ errorCode: 'DOUBLE_ASSIGNMENT' })
+    })
+
+    it('успешная замена меняет назначение и пишет journal entry типа REPLACEMENT', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      const result = await repo.replaceAssignment(
+        CONDUCT_EVENT.id,
+        { assignmentId: 'pa1', incomingEmployeeId: 'emp-3', reasonCode: 'Заболел' },
+        CONDUCT_MANAGER,
+      )
+      expect(result.placementAssignments.find((a) => a.postId === POST_A.id)?.employeeName).toBe(
+        'Ерланов Д.',
+      )
+      expect(result.placementAssignments).toHaveLength(2)
+      expect(result.journalEntries[0]).toMatchObject({
+        type: 'REPLACEMENT',
+        description: 'Ахметов Б. → Ерланов Д. — причина: Заболел',
+      })
+    })
+
+    it('успешная замена персистентна из БД (перечитано через get)', async () => {
+      const adapter = createMemoryPersistence()
+      await adapter.reset(seedEnvelope([CONDUCT_EVENT]))
+      const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+      await repo.replaceAssignment(
+        CONDUCT_EVENT.id,
+        { assignmentId: 'pa2', incomingEmployeeId: 'emp-4', reasonCode: 'Травма' },
+        CONDUCT_MANAGER,
+      )
+      const reread = await repo.get(CONDUCT_EVENT.id, VIEWER)
+      expect(reread.placementAssignments.find((a) => a.postId === POST_B.id)?.employeeName).toBe(
+        'Жаксыбеков Т.',
+      )
+      expect(reread.journalEntries).toHaveLength(1)
+    })
+  })
+})
+
+describe('привязка ОМ к версии паспорта (§9.6)', () => {
+  const CLOCK_ISO = '2026-07-20T08:00:00+05:00'
+
+  function makeRepo(events: SecurityEventsSlice['events'], objects: SecurityObjectProjection[]) {
+    const adapter = createMemoryPersistence()
+    return adapter
+      .reset(seedEnvelope(events, objects))
+      .then(() => createSecurityEventsRepository(adapter, new DemoClock(CLOCK_ISO)))
+  }
+
+  beforeEach(() => {
+    registerRbacDirectory([
+      {
+        userId: CREATOR,
+        permissions: ['ops.security_event.view', 'ops.security_event.create'],
+      },
+      { userId: VIEWER, permissions: ['ops.security_event.view'] },
+      { userId: RECON_OFFICER, permissions: ['ops.security_event.view', 'ops.recon.manage'] },
+      { userId: NOBODY, permissions: [] },
+    ])
+  })
+
+  it('create() на несуществующий объект — ошибка поля, а не битая ссылка', async () => {
+    const repo = await makeRepo([], [PASSPORT_OBJECT])
+    try {
+      await repo.create({ title: 'ОМ', objectId: 'object-нет', businessDate: '2026-08-01' }, CREATOR)
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(RepositoryValidationError)
+      expect(Object.keys((error as RepositoryValidationError).fieldErrors)).toEqual(['objectId'])
+    }
+  })
+
+  it('create() привязывает версию, действующую на бизнес-дату, и берёт имя объекта из реестра', async () => {
+    const repo = await makeRepo([], [PASSPORT_OBJECT])
+    const created = await repo.create(
+      { title: 'ОМ', objectId: PASSPORT_OBJECT.id, businessDate: '2026-08-01' },
+      CREATOR,
+    )
+    expect(created.objectId).toBe(PASSPORT_OBJECT.id)
+    // Имя — из реестра, а не из запроса: клиент не может разойтись с реестром.
+    expect(created.objectName).toBe('Дворец Независимости')
+    expect(created.passportBinding).toEqual({
+      objectId: 'object-1',
+      objectName: 'Дворец Независимости',
+      versionId: 'object-1-v1',
+      versionNumber: 1,
+      effectiveFrom: '2026-07-01',
+      // DemoClock двигает время на 1 мс за вызов — пинить полный ISO значило бы
+      // пинить число вызовов часов внутри мутации.
+      boundAt: expect.stringMatching(/^2026-07-20T08:00:00/) as unknown as string,
+    })
+    // Персистентно, а не только в возвращённом объекте.
+    expect((await repo.get(created.id, VIEWER)).passportBinding?.versionId).toBe('object-1-v1')
+  })
+
+  it('create() на дату РАНЬШЕ вступления версии в силу оставляет привязку пустой, но ОМ создаёт', async () => {
+    const repo = await makeRepo([], [PASSPORT_OBJECT])
+    const created = await repo.create(
+      { title: 'ОМ', objectId: PASSPORT_OBJECT.id, businessDate: '2026-06-30' },
+      CREATOR,
+    )
+    expect(created.objectId).toBe(PASSPORT_OBJECT.id)
+    expect(created.passportBinding).toBeNull()
+  })
+
+  it('create() на объект без опубликованного паспорта — тоже без привязки, но не отказ', async () => {
+    const repo = await makeRepo([], [PASSPORT_OBJECT, OBJECT_WITHOUT_PASSPORT])
+    const created = await repo.create(
+      { title: 'ОМ', objectId: OBJECT_WITHOUT_PASSPORT.id, businessDate: '2026-08-01' },
+      CREATOR,
+    )
+    expect(created.passportBinding).toBeNull()
+    expect(created.objectName).toBe('Дом Министерств')
+  })
+
+  it('getPassportView(): непривязанный ОМ не помечается устаревшим — это другой случай', async () => {
+    const repo = await makeRepo([SAMPLE_EVENT], [PASSPORT_OBJECT])
+    const view = await repo.getPassportView(SAMPLE_EVENT.id, VIEWER)
+    expect(view).toEqual({
+      objectId: null,
+      objectKnown: false,
+      binding: null,
+      applicableVersionId: null,
+      applicableVersionNumber: null,
+      stale: false,
+      importablePostCount: 0,
+    })
+  })
+
+  it('getPassportView(): публикация более новой версии помечает привязку устаревшей, НЕ трогая ОМ', async () => {
+    const repo = await makeRepo([], [PASSPORT_OBJECT])
+    const created = await repo.create(
+      { title: 'ОМ', objectId: PASSPORT_OBJECT.id, businessDate: '2026-08-01' },
+      CREATOR,
+    )
+    expect((await repo.getPassportView(created.id, VIEWER)).stale).toBe(false)
+
+    // Владелец объекта публикует v2 — операция ЧУЖОЙ фичи, здесь эмулируется
+    // прямой записью в слайс `objects`, как это сделал бы её repository.
+    const repoAfterPublish = await makeRepo(
+      [await repo.get(created.id, VIEWER)],
+      [
+        {
+          ...PASSPORT_OBJECT,
+          passportVersions: [
+            ...PASSPORT_OBJECT.passportVersions,
+            {
+              id: 'object-1-v2',
+              versionNumber: 2,
+              effectiveFrom: '2026-07-15',
+              sectors: [],
+            },
+          ],
+        },
+      ],
+    )
+    const view = await repoAfterPublish.getPassportView(created.id, VIEWER)
+    expect(view.stale).toBe(true)
+    expect(view.applicableVersionNumber).toBe(2)
+    // §9.6: расстановка не переписывается — сам ОМ по-прежнему на v1.
+    expect(view.binding?.versionNumber).toBe(1)
+    expect((await repoAfterPublish.get(created.id, VIEWER)).passportBinding?.versionId).toBe(
+      'object-1-v1',
+    )
+  })
+
+  it('importReconPostsFromPassport() требует ops.recon.manage', async () => {
+    const repo = await makeRepo(
+      [{ ...SAMPLE_EVENT, stage: 'RECON' as const }],
+      [PASSPORT_OBJECT],
+    )
+    await expect(
+      repo.importReconPostsFromPassport(SAMPLE_EVENT.id, VIEWER),
+    ).rejects.toBeInstanceOf(RepositoryPermissionError)
+  })
+
+  it('importReconPostsFromPassport() без привязки отказывает бизнес-правилом', async () => {
+    const repo = await makeRepo(
+      [{ ...SAMPLE_EVENT, stage: 'RECON' as const }],
+      [PASSPORT_OBJECT],
+    )
+    await expect(
+      repo.importReconPostsFromPassport(SAMPLE_EVENT.id, RECON_OFFICER),
+    ).rejects.toMatchObject({ errorCode: 'NO_PASSPORT_VERSION' })
+  })
+
+  it('importReconPostsFromPassport() не работает вне рекогносцировки', async () => {
+    const repo = await makeRepo([BOUND_PLACEMENT_EVENT], [PASSPORT_OBJECT])
+    await expect(
+      repo.importReconPostsFromPassport(BOUND_PLACEMENT_EVENT.id, RECON_OFFICER),
+    ).rejects.toMatchObject({ errorCode: 'RECON_STAGE_REQUIRED' })
+  })
+
+  it('importReconPostsFromPassport() переносит посты версии с их sectorId/postId, не трогая ручные строки', async () => {
+    const manualRow: ReconSectorPost = {
+      id: 'manual-1',
+      sector: 'Своё',
+      post: 'Ручной пост',
+      task: '',
+      need: 3,
+      requirements: '',
+      result: null,
+      comment: '',
+      sourceSectorId: null,
+      sourcePostId: null,
+    }
+    const repo = await makeRepo(
+      [{ ...BOUND_RECON_EVENT, reconSectorPosts: [manualRow] }],
+      [PASSPORT_OBJECT],
+    )
+    const updated = await repo.importReconPostsFromPassport(BOUND_RECON_EVENT.id, RECON_OFFICER)
+
+    expect(updated.reconSectorPosts).toHaveLength(3)
+    // Ручная строка осталась ПЕРВОЙ и неизменной — импорт добавляет, а не заменяет.
+    expect(updated.reconSectorPosts[0]).toEqual(manualRow)
+    expect(
+      updated.reconSectorPosts.slice(1).map((row) => [row.sector, row.post, row.sourceSectorId, row.sourcePostId]),
+    ).toEqual([
+      ['Сектор A', 'КПП-1', 'sector-1', 'post-1'],
+      ['Сектор A', 'Пост 2', 'sector-1', 'post-2'],
+    ])
+    // Численность паспортом не задаётся — минимальная 1, а не выдуманное число.
+    expect(updated.reconSectorPosts.slice(1).every((row) => row.need === 1)).toBe(true)
+  })
+
+  it('повторный импорт не плодит дубли и говорит об этом явно', async () => {
+    const repo = await makeRepo([BOUND_RECON_EVENT], [PASSPORT_OBJECT])
+    await repo.importReconPostsFromPassport(BOUND_RECON_EVENT.id, RECON_OFFICER)
+    await expect(
+      repo.importReconPostsFromPassport(BOUND_RECON_EVENT.id, RECON_OFFICER),
+    ).rejects.toMatchObject({ errorCode: 'NOTHING_TO_IMPORT' })
+    expect((await repo.get(BOUND_RECON_EVENT.id, VIEWER)).reconSectorPosts).toHaveLength(2)
+  })
+
+  it('импорт НЕ пишет в чужой слайс objects — паспорт остаётся нетронутым (§9.6)', async () => {
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([BOUND_RECON_EVENT], [PASSPORT_OBJECT]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock(CLOCK_ISO))
+    const before = JSON.stringify((await adapter.load())?.slices.objects)
+
+    await repo.importReconPostsFromPassport(BOUND_RECON_EVENT.id, RECON_OFFICER)
+
+    expect(JSON.stringify((await adapter.load())?.slices.objects)).toBe(before)
+  })
+
+  it('правка импортированной строки не рвёт связь с постом паспорта', async () => {
+    const repo = await makeRepo([BOUND_RECON_EVENT], [PASSPORT_OBJECT])
+    const imported = await repo.importReconPostsFromPassport(BOUND_RECON_EVENT.id, RECON_OFFICER)
+    const edited = imported.reconSectorPosts.map((row) => ({ ...row, need: 5, post: `${row.post} (уточнён)` }))
+
+    const saved = await repo.updateRecon(
+      BOUND_RECON_EVENT.id,
+      { checklist: imported.reconChecklist, sectorPosts: edited },
+      RECON_OFFICER,
+    )
+    expect(saved.reconSectorPosts.map((row) => row.sourcePostId)).toEqual(['post-1', 'post-2'])
+    const reread = await repo.get(BOUND_RECON_EVENT.id, VIEWER)
+    expect(reread.reconSectorPosts.map((row) => row.sourcePostId)).toEqual(['post-1', 'post-2'])
+  })
+
+  it('importablePostCount падает до нуля после переноса всех постов', async () => {
+    const repo = await makeRepo([BOUND_RECON_EVENT], [PASSPORT_OBJECT])
+    expect((await repo.getPassportView(BOUND_RECON_EVENT.id, VIEWER)).importablePostCount).toBe(2)
+    await repo.importReconPostsFromPassport(BOUND_RECON_EVENT.id, RECON_OFFICER)
+    expect((await repo.getPassportView(BOUND_RECON_EVENT.id, VIEWER)).importablePostCount).toBe(0)
+  })
+
+  it('listBindableObjects() отдаёт реестр по коду и честно помечает отсутствие паспорта', async () => {
+    const repo = await makeRepo([], [OBJECT_WITHOUT_PASSPORT, PASSPORT_OBJECT])
+    const { results } = await repo.listBindableObjects(VIEWER)
+    expect(results.map((o) => [o.code, o.publishedVersionCount])).toEqual([
+      ['OBJ-001', 1],
+      ['OBJ-002', 0],
+    ])
+  })
+
+  it('listBindableObjects() без права просмотра отказывает', async () => {
+    const repo = await makeRepo([], [PASSPORT_OBJECT])
+    await expect(repo.listBindableObjects(NOBODY)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+  })
+})
+
+describe('журнал переходов §22.14 (append-only, пишется диффом)', () => {
+  // Локальные фикстуры: те же формы, что у стадийных тестов выше, но их
+  // константы живут в чужом describe — тянуть их наружу ради журнала значило
+  // бы переписывать соседние тесты.
+  const POSTS: ReconSectorPost[] = [
+    { id: 'p1', sector: 'A', post: 'Вход', task: 'Досмотр', need: 1, requirements: '', result: 'MATCHES', comment: '', sourceSectorId: null, sourcePostId: null },
+  ]
+  const RECON_CHECKLIST: ReconChecklistItem[] = [
+    { id: 'c1', label: 'Периметр', done: false, result: null, comment: '' },
+  ]
+  const RECON_EVENT = { ...SAMPLE_EVENT, id: 'evt-recon', stage: 'RECON' as const }
+
+  /** Реестр прав перерегистрируется В КАЖДОМ тесте, а не в `beforeEach`:
+   * директория RBAC глобальна на модуль, и хук этого describe перетирал
+   * набор пользователей соседних блоков — 16 чужих тестов краснели. */
+  function registerJournalRbac(): void {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.security_event.view'] },
+      { userId: CREATOR, permissions: ['ops.security_event.view', 'ops.bulletin.manage'] },
+      { userId: RECON_OFFICER, permissions: ['ops.security_event.view', 'ops.recon.manage'] },
+      { userId: PLACEMENT_MANAGER, permissions: ['ops.security_event.view', 'ops.placement.manage'] },
+      { userId: PLACEMENT_APPROVER, permissions: ['ops.security_event.view', 'ops.placement.approve'] },
+    ])
+  }
+  const APPROVAL_EVENT = {
+    ...SAMPLE_EVENT,
+    id: 'evt-approval',
+    stage: 'APPROVAL' as const,
+    reconSectorPosts: POSTS,
+    placementAssignments: [
+      { id: 'pa1', postId: 'p1', employeeId: 'emp-1', employeeName: 'Ахметов Б.', acknowledgedAt: null },
+    ] as PlacementAssignment[],
+  }
+
+  async function transitionsOf(adapter: ReturnType<typeof createMemoryPersistence>) {
+    const envelope = await adapter.load()
+    return ((envelope?.slices['security-events'] as SecurityEventsSlice | undefined)
+      ?.transitions ?? []) as SecurityEventTransition[]
+  }
+
+  it('операция, меняющая стадию, оставляет запись, ничего не зная о журнале', async () => {
+    registerJournalRbac()
+    const adapter = createMemoryPersistence()
+    const doneChecklist = RECON_CHECKLIST.map((c) => ({
+      ...c,
+      done: true,
+      result: 'MATCHES' as const,
+    }))
+    const sectorPosts: ReconSectorPost[] = [
+      { id: 'p1', sector: 'A', post: 'Вход', task: 'Досмотр', need: 2, requirements: '', result: 'MATCHES', comment: '', sourceSectorId: null, sourcePostId: null },
+    ]
+    await adapter.reset(
+      seedEnvelope([
+        { ...RECON_EVENT, reconChecklist: doneChecklist, reconSectorPosts: sectorPosts },
+      ]),
+    )
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+
+    // Сеяный слайс приходит БЕЗ журнала — запись появляется сама.
+    expect(await transitionsOf(adapter)).toHaveLength(0)
+    await repo.completeRecon(RECON_EVENT.id, RECON_OFFICER)
+
+    const [transition] = await transitionsOf(adapter)
+    expect(transition.eventId).toBe(RECON_EVENT.id)
+    expect(transition.fromStage).toBe('RECON')
+    expect(transition.toStage).toBe('DEMAND')
+    expect(transition.kind).toBe('FORWARD')
+  })
+
+  it('возврат на доработку пишется отдельным видом, а не вычитается из переходов', async () => {
+    registerJournalRbac()
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([APPROVAL_EVENT]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+
+    await repo.returnPlacement(APPROVAL_EVENT.id, { comment: 'Не хватает поста B' }, PLACEMENT_APPROVER)
+
+    const [transition] = await transitionsOf(adapter)
+    expect(transition.fromStage).toBe('APPROVAL')
+    expect(transition.toStage).toBe('PLACEMENT')
+    // §22.14 считает возвраты своим показателем: запись остаётся в журнале
+    // и помечена, а не удаляет собой переход вперёд.
+    expect(transition.kind).toBe('RETURN')
+  })
+
+  it('операция БЕЗ смены стадии журнал не трогает', async () => {
+    registerJournalRbac()
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([SAMPLE_EVENT]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+
+    await repo.updateBulletin(
+      SAMPLE_EVENT.id,
+      { briefDescription: 'Описание', initialTasks: 'Задачи' },
+      CREATOR,
+    )
+    expect(await transitionsOf(adapter)).toHaveLength(0)
+  })
+
+  it('журнал append-only: прошлые записи не переписываются следующей операцией', async () => {
+    registerJournalRbac()
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([APPROVAL_EVENT]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+
+    await repo.returnPlacement(APPROVAL_EVENT.id, { comment: 'Первый возврат' }, PLACEMENT_APPROVER)
+    const first = (await transitionsOf(adapter))[0]
+
+    await repo.completePlacement(APPROVAL_EVENT.id, PLACEMENT_MANAGER)
+    const after = await transitionsOf(adapter)
+
+    expect(after).toHaveLength(2)
+    // Первая запись цела: id, время и вид не переписаны второй операцией.
+    expect(after[0]).toEqual(first)
+    expect(after[1].kind).toBe('FORWARD')
   })
 })

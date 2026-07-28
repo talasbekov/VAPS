@@ -13,13 +13,28 @@ import { DailyUpdatePage } from '../features/daily-grid/DailyUpdatePage'
 import { ExpenseReportPage } from '../features/expense/ExpenseReportPage'
 import { ExpensePrintPage } from '../features/print-forms/ExpensePrintPage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
+// Статический импорт (как ExpensePrintPage), НЕ lazy: фолбэк
+// RouteChunkBoundary — UI-разметка, она отрендерилась бы вне `.print-root` и
+// покрасила бы DOM-скан печатного канона.
+import { PlacementPrintPage } from '../features/print-forms/PlacementPrintPage'
 import { EmployeeDetailPage } from '../features/personnel/pages/EmployeeDetailPage'
 import { EmployeesListPage } from '../features/personnel/pages/EmployeesListPage'
 import { ObjectPassportPage } from '../features/objects/pages/ObjectPassportPage'
+import { ObjectPassportVersionPage } from '../features/objects/pages/ObjectPassportVersionPage'
 import { ObjectsListPage } from '../features/objects/pages/ObjectsListPage'
 import { AuditLogPage } from '../features/audit/pages/AuditLogPage'
 import { DutyPlanPage } from '../features/duties/pages/DutyPlanPage'
-import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
+import { DutyShiftDetailPage } from '../features/duties/pages/DutyShiftDetailPage'
+import { DictionariesListPage } from '../features/dictionaries/pages/DictionariesListPage'
+import { DictionaryDetailPage } from '../features/dictionaries/pages/DictionaryDetailPage'
+import { OperationsAnalyticsPage } from '../features/service-analytics/pages/OperationsAnalyticsPage'
+import { ServiceAnalyticsPage } from '../features/service-analytics/pages/ServiceAnalyticsPage'
+import { ServiceReportsPage } from '../features/service-reports/pages/ServiceReportsPage'
+import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
+import { ReportJobPage } from '../features/service-reports/pages/ReportJobPage'
+import { FeedbackPage } from '../features/feedback/pages/FeedbackPage'
+import { FeedbackDetailPage } from '../features/feedback/pages/FeedbackDetailPage'
+import { CalendarPage } from './CalendarPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
 import { ROUTES } from '../shared/routes'
@@ -52,6 +67,11 @@ const SecurityEventDetailPage = lazy(() =>
     (m) => ({ default: m.SecurityEventDetailPage }),
   ),
 )
+const SecurityEventArchivePage = lazy(() =>
+  import('../features/security-events/pages/SecurityEventArchivePage').then(
+    (m) => ({ default: m.SecurityEventArchivePage }),
+  ),
+)
 
 // Экспорт отдельно от BrowserRouter: E2E-тесты оборачивают AppRoutes в
 // MemoryRouter с initialEntries (BrowserRouter не даёт задать стартовый маршрут)
@@ -82,6 +102,21 @@ export function AppRoutes() {
           <RequireAuth>
             <RequirePermission permission="daily_report.generate">
               <ExpensePrintPage />
+            </RequirePermission>
+          </RequireAuth>
+        }
+      />
+      {/* Печатная форма расстановки (Smart Josparlau §9.15): сиблинг
+          layout-route по тем же причинам, что форма расхода. Гейт
+          `ops.security_event.view` зеркалит право чтения карточки в
+          repository — иначе страница показала бы 403-текст вместо честного
+          «нет доступа» экрана гварда. */}
+      <Route
+        path={ROUTES.printPlacement}
+        element={
+          <RequireAuth>
+            <RequirePermission permission="ops.security_event.view">
+              <PlacementPrintPage />
             </RequirePermission>
           </RequireAuth>
         }
@@ -133,11 +168,33 @@ export function AppRoutes() {
             </RequirePermission>
           }
         />
+        {/* Deep link опубликованной версии паспорта (§8.10, мастер-промпт
+            L5562/L6038): право то же, что у паспорта — версия не открывает
+            ничего сверх того, что читатель объекта уже видит. */}
+        <Route
+          path={ROUTES.objectPassportVersion}
+          element={
+            <RequirePermission permission="ops.object.view">
+              <ObjectPassportVersionPage />
+            </RequirePermission>
+          }
+        />
         <Route
           path={ROUTES.duties}
           element={
             <RequirePermission permission="ops.duty.view">
               <DutyPlanPage />
+            </RequirePermission>
+          }
+        />
+        {/* §21.32 «Карточка дежурства». Право то же, что у плана: карточка
+            ничего не открывает сверх строки плана — она её разворачивает.
+            Действия внутри гардятся отдельно (`ops.duty.manage`). */}
+        <Route
+          path={ROUTES.dutyShiftDetail}
+          element={
+            <RequirePermission permission="ops.duty.view">
+              <DutyShiftDetailPage />
             </RequirePermission>
           }
         />
@@ -167,6 +224,19 @@ export function AppRoutes() {
             <RequirePermission permission="ops.security_event.view">
               <RouteChunkBoundary>
                 <SecurityEventDetailPage />
+              </RouteChunkBoundary>
+            </RequirePermission>
+          }
+        />
+        {/* Архив дела закрытого ОМ — read-only. Право то же, что у карточки
+            (`ops.security_event.view`): архив ничего не открывает сверх того,
+            что читатель карточки уже видит, — он это перекладывает. */}
+        <Route
+          path={ROUTES.securityEventArchive}
+          element={
+            <RequirePermission permission="ops.security_event.view">
+              <RouteChunkBoundary>
+                <SecurityEventArchivePage />
               </RouteChunkBoundary>
             </RequirePermission>
           }
@@ -204,10 +274,93 @@ export function AppRoutes() {
           }
         />
         <Route
+          path={ROUTES.dictionaries}
+          element={
+            <RequirePermission permission="ops.dictionary.view">
+              <DictionariesListPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.dictionaryDetail}
+          element={
+            <RequirePermission permission="ops.dictionary.view">
+              <DictionaryDetailPage />
+            </RequirePermission>
+          }
+        />
+        <Route
           path={ROUTES.serviceAnalytics}
           element={
             <RequirePermission permission="ops.analytics.view">
               <ServiceAnalyticsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.operationsAnalytics}
+          element={
+            <RequirePermission permission="ops.analytics.operations">
+              <OperationsAnalyticsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.serviceReports}
+          element={
+            <RequirePermission permission="ops.report.generate">
+              <ServiceReportsPage />
+            </RequirePermission>
+          }
+        />
+        {/* §22.27: право проверяется маршрутом ЗАНОВО — переход по ссылке с
+            разрешённого экрана доступ не подтверждает. */}
+        <Route
+          path={ROUTES.serviceReportHistory}
+          element={
+            <RequirePermission permission="ops.report.generate">
+              <ReportHistoryPage />
+            </RequirePermission>
+          }
+        />
+        {/* §22.27 карточка работы. Динамический сегмент — ПОСЛЕ статического
+            `/service-reports/history`; порядок здесь не решает (React Router
+            ранжирует статику выше), но читается он именно так. Право
+            проверяется и маршрутом, и repository — карточка не считает доступ
+            подтверждённым переходом из реестра. */}
+        <Route
+          path={ROUTES.serviceReportJob}
+          element={
+            <RequirePermission permission="ops.report.generate">
+              <ReportJobPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.calendar}
+          element={
+            <RequirePermission permission="ops.calendar.view">
+              <CalendarPage />
+            </RequirePermission>
+          }
+        />
+        {/* §28 «Обратная связь». Право чтения реестра проверяет и маршрут, и
+            repository: доступ не считается подтверждённым переходом из меню. */}
+        <Route
+          path={ROUTES.feedback}
+          element={
+            <RequirePermission permission="ops.feedback.view">
+              <FeedbackPage />
+            </RequirePermission>
+          }
+        />
+        {/* §28 detail: право проверяется маршрутом ЗАНОВО — переход из реестра
+            доступ к конкретному обращению не подтверждает. */}
+        <Route
+          path={ROUTES.feedbackDetail}
+          element={
+            <RequirePermission permission="ops.feedback.view">
+              <FeedbackDetailPage />
             </RequirePermission>
           }
         />

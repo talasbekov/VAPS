@@ -1,10 +1,18 @@
 // План дежурств (§21.4/§24 мастер-промпта). §21.4: «По объектам»/«По
 // сотрудникам» — представления ОДНОГО набора данных (useDutyShifts), НЕ
 // отдельные источники истины — переключатель вида группирует один и тот же
-// список, второй запрос не делается. «Боевые группы на Трассе», подача/
-// утверждение состава, история/revisions — Not started (см. model/types.ts
-// шапку и FRONTEND_DECISIONS).
+// список, второй запрос не делается. Третья вкладка «Боевые группы и Трассы»
+// (§24.15) — ОТДЕЛЬНЫЙ набор данных (CombatDutyShift, не DutyShift, см.
+// model/types.ts) — своя подача/рассмотрение, не переключатель вида.
+// Вкладка «Месяц» (§21.27-21.30) — тот же DutyShift, но СЕРВЕРНАЯ проекция:
+// сетка/KPI/конфликты приходят готовыми из `useMonthlyDutyPlan`, страница их
+// не пересчитывает (§21.29/§21.34, см. MonthlyDutyPlanSection). Lifecycle плана
+// (§21.27) и шапка с action policy (§21.28) — в MonthlyPlanHeaderSection,
+// FRONTEND_DECISIONS A70 (отменяет A63). Формальный revision СМЕНЫ (не плана)
+// и Conflict Repository — по-прежнему Not started.
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router'
+import { ROUTES } from '../../../shared/routes'
 import { Button } from '../../../shared/ui/Button'
 import {
   useAcknowledgeDutyShift,
@@ -13,26 +21,40 @@ import {
   useDutyShifts,
   useDutyTypes,
 } from '../api/queries'
+import {
+  NO_BINDABLE_POST_TEXT,
+  NO_PUBLISHED_VERSION_TEXT,
+  NO_REGISTRY_OBJECT_TEXT,
+  stalePostBindingText,
+} from '../lib/passportBinding'
+import type { DutyPassportStatus, DutyShiftListScope } from '../api/pending-contracts'
 import type { DutyShift, DutyShiftState } from '../model/types'
+import { CombatDutyGroupsSection } from './CombatDutyGroupsSection'
+import { CreateDutyShiftForm } from './CreateDutyShiftForm'
+import { DutyShiftListSection } from './DutyShiftListSection'
+import { MonthlyDutyPlanSection } from './MonthlyDutyPlanSection'
 
-type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE'
+type ViewMode = 'BY_OBJECT' | 'BY_EMPLOYEE' | 'MONTH' | 'LIST' | 'COMBAT_GROUPS'
 
 const STATE_LABEL: Record<DutyShiftState, string> = {
   PLANNED: 'Запланировано',
   ACKNOWLEDGED: 'Ознакомлен',
   ACTIVE: 'На посту',
   COMPLETED: 'Завершено',
+  CANCELLED: 'Отменено',
 }
 
 const STATE_CLASS: Record<DutyShiftState, string> = {
-  PLANNED: 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground',
+  PLANNED: 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600',
   ACKNOWLEDGED: 'inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800',
   ACTIVE: 'inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-800',
-  COMPLETED: 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground',
+  COMPLETED: 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600',
+  CANCELLED: 'inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800',
 }
 
 export function DutyPlanPage() {
   const [view, setView] = useState<ViewMode>('BY_OBJECT')
+  const [listScope, setListScope] = useState<DutyShiftListScope>('ALL')
   const dutyTypesQuery = useDutyTypes()
   const shiftsQuery = useDutyShifts()
 
@@ -41,6 +63,14 @@ export function DutyPlanPage() {
     for (const t of dutyTypesQuery.data?.results ?? []) map.set(t.dutyTypeCode, t.safeLabel)
     return map
   }, [dutyTypesQuery.data])
+
+  // §9.6: производный статус привязки приходит отдельным блоком ответа —
+  // раскладываем по shiftId, чтобы строка таблицы не искала его линейно.
+  const passportStatus = useMemo(() => {
+    const map = new Map<string, DutyPassportStatus>()
+    for (const status of shiftsQuery.data?.passportStatuses ?? []) map.set(status.shiftId, status)
+    return map
+  }, [shiftsQuery.data])
 
   const groups = useMemo(() => {
     const shifts = shiftsQuery.data?.results ?? []
@@ -57,6 +87,14 @@ export function DutyPlanPage() {
 
   const isLoading = dutyTypesQuery.isLoading || shiftsQuery.isLoading
   const isError = dutyTypesQuery.isError || shiftsQuery.isError
+  const isTableView = view === 'BY_OBJECT' || view === 'BY_EMPLOYEE'
+
+  // §21.28: месяц по умолчанию берётся из УЖЕ ЗАГРУЖЕННЫХ данных, а не из
+  // `new Date()` — demo-runtime живёт по DemoClock (§8.8), и wall-clock часы
+  // машины показали бы пустой месяц (тот же приём, что дефолтный день
+  // CalendarPage). `results` отсортирован по дате, поэтому это месяц самой
+  // ранней смены.
+  const defaultMonth = shiftsQuery.data?.results[0]?.businessDate.slice(0, 7) ?? null
 
   return (
     <div>
@@ -85,17 +123,73 @@ export function DutyPlanPage() {
           >
             По сотрудникам
           </Button>
+          <Button
+            size="sm"
+            variant={view === 'MONTH' ? 'default' : 'ghost'}
+            onClick={() => setView('MONTH')}
+          >
+            Месяц
+          </Button>
+          <Button
+            size="sm"
+            variant={view === 'LIST' ? 'default' : 'ghost'}
+            onClick={() => setView('LIST')}
+          >
+            Список
+          </Button>
+          <Button
+            size="sm"
+            variant={view === 'COMBAT_GROUPS' ? 'default' : 'ghost'}
+            onClick={() => setView('COMBAT_GROUPS')}
+          >
+            Боевые группы и Трассы
+          </Button>
         </div>
       </header>
 
-      {isLoading && (
+      {view === 'COMBAT_GROUPS' && <CombatDutyGroupsSection />}
+
+      {/* §21.30 «Список дежурств»/«История» — плоское представление того же
+          набора смен. Область показа живёт ЗДЕСЬ, а не внутри секции: иначе
+          переключение вкладок сбрасывало бы выбор «Все»/«История». */}
+      {view === 'LIST' && (
+        <DutyShiftListSection scope={listScope} onScopeChange={setListScope} />
+      )}
+
+      {view === 'MONTH' &&
+        (defaultMonth === null ? (
+          <p className="text-sm text-muted-foreground">
+            {isLoading ? 'Загрузка плана дежурств…' : 'Дежурств не найдено — месяц не выбран.'}
+          </p>
+        ) : (
+          <MonthlyDutyPlanSection
+            key={defaultMonth}
+            initialMonth={defaultMonth}
+            // §21.28 «Добавить дежурство»: форма заведения живёт на табличных
+            // представлениях (см. ниже), поэтому действие шапки уводит туда, а
+            // не открывает вторую копию формы на месячной сетке.
+            onAddShift={() => setView('BY_OBJECT')}
+          />
+        ))}
+
+      {isTableView && isLoading && (
         <p className="text-sm text-muted-foreground">Загрузка плана дежурств…</p>
       )}
-      {isError && (
+      {isTableView && isError && (
         <p className="text-sm text-destructive">Не удалось загрузить план дежурств.</p>
       )}
 
-      {!isLoading && !isError && (
+      {/* §21.31. Форма живёт на табличных представлениях, а не на «Месяце»:
+          месячная сетка — сводка, заводить смену логично там, где виден
+          пообъектный список. Дефолтная дата — та же, что дефолтный месяц. */}
+      {isTableView && !isLoading && !isError && defaultMonth !== null && (
+        <CreateDutyShiftForm
+          dutyTypes={dutyTypesQuery.data?.results ?? []}
+          defaultBusinessDate={shiftsQuery.data?.results[0]?.businessDate ?? ''}
+        />
+      )}
+
+      {isTableView && !isLoading && !isError && (
         <div className="flex flex-col gap-3.5">
           {groups.length === 0 && (
             <section className="rounded-xl border bg-card p-9 text-center text-sm text-muted-foreground">
@@ -118,8 +212,13 @@ export function DutyPlanPage() {
                     {view === 'BY_EMPLOYEE' && (
                       <th className="p-3 text-[11px] font-semibold text-muted-foreground">Объект</th>
                     )}
+                    <th className="p-3 text-[11px] font-semibold text-muted-foreground">
+                      Пост по паспорту
+                    </th>
                     <th className="p-3 text-[11px] font-semibold text-muted-foreground">Статус</th>
-                    <th className="p-3 text-[11px] font-semibold text-muted-foreground" />
+                    <th className="p-3 text-[11px] font-semibold text-muted-foreground">
+                      <span className="sr-only">Действия</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -129,6 +228,7 @@ export function DutyPlanPage() {
                       shift={shift}
                       view={view}
                       dutyTypeLabel={dutyTypeLabel.get(shift.dutyTypeCode) ?? shift.dutyTypeCode}
+                      passportStatus={passportStatus.get(shift.id) ?? null}
                     />
                   ))}
                 </tbody>
@@ -145,10 +245,12 @@ function ShiftRow({
   shift,
   view,
   dutyTypeLabel,
+  passportStatus,
 }: {
   shift: DutyShift
   view: ViewMode
   dutyTypeLabel: string
+  passportStatus: DutyPassportStatus | null
 }) {
   const acknowledgeMutation = useAcknowledgeDutyShift()
   const clockInMutation = useClockInDutyShift()
@@ -158,10 +260,37 @@ function ShiftRow({
 
   return (
     <tr className="border-t">
-      <td className="p-3 text-sm tabular-nums">{shift.businessDate}</td>
-      <td className="p-3 text-sm">{dutyTypeLabel}</td>
+      <td className="p-3 text-sm tabular-nums">
+        {/* Вход в карточку §21.32 — с даты: она уникальна в строке и не
+            конкурирует с кнопками действий справа. */}
+        <Link className="text-primary underline" to={ROUTES.dutyShiftDetailTo(shift.id)}>
+          {shift.businessDate}
+        </Link>
+      </td>
+      <td className="p-3 text-sm">
+        <span>{dutyTypeLabel}</span>
+        {/* §21.31: примечание и §21.34: обоснование обхода — хранимые данные
+            смены. Не показать их значило бы завести поля, которых потом никто
+            не видит; прочерка при отсутствии нет — их просто не бывает. */}
+        {shift.note !== null && (
+          <span className="mt-1 block text-[11px] text-slate-600">{shift.note}</span>
+        )}
+        {shift.cancellation !== null && (
+          <span className="mt-1 block text-[11px] text-red-800">
+            Отменено: {shift.cancellation.reason}
+          </span>
+        )}
+        {shift.overrideReason !== null && (
+          <span className="mt-1 block text-[11px] font-semibold text-amber-700">
+            Конфликт обойдён: {shift.overrideReason}
+          </span>
+        )}
+      </td>
       {view === 'BY_OBJECT' && <td className="p-3 text-sm">{shift.employeeName}</td>}
       {view === 'BY_EMPLOYEE' && <td className="p-3 text-sm">{shift.target.safeLabel}</td>}
+      <td className="p-3">
+        <PassportBindingCell shift={shift} status={passportStatus} />
+      </td>
       <td className="p-3">
         <span className={STATE_CLASS[shift.stateCode]}>{STATE_LABEL[shift.stateCode]}</span>
       </td>
@@ -198,5 +327,47 @@ function ShiftRow({
         )}
       </td>
     </tr>
+  )
+}
+
+/**
+ * §9.6 в одной ячейке: либо «сектор · пост (ред. N)», либо ЯВНАЯ причина,
+ * почему привязки нет. Молчаливого прочерка тут быть не должно — отсутствие
+ * привязки к паспорту это факт планирования, а не пустое поле.
+ *
+ * `status === null` — статус не пришёл (старый кэш ответа): показываем
+ * снимок без вывода об актуальности, а не выдумываем «актуально».
+ */
+function PassportBindingCell({
+  shift,
+  status,
+}: {
+  shift: DutyShift
+  status: DutyPassportStatus | null
+}) {
+  const binding = shift.passportBinding
+  if (binding === null) {
+    const reason =
+      status === null || !status.objectKnown
+        ? NO_REGISTRY_OBJECT_TEXT
+        : status.applicableVersionNumber === null
+          ? NO_PUBLISHED_VERSION_TEXT
+          : NO_BINDABLE_POST_TEXT
+    return <span className="text-xs text-muted-foreground">{reason}</span>
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-sm">
+        {binding.sectorName} · {binding.postName}
+      </span>
+      <span className="text-[11px] text-muted-foreground tabular-nums">
+        Паспорт: ред. {binding.versionNumber} от {binding.effectiveFrom}
+      </span>
+      {status?.stale === true && status.applicableVersionNumber !== null && (
+        <span className="text-[11px] font-semibold text-amber-700">
+          {stalePostBindingText(binding.versionNumber, status.applicableVersionNumber)}
+        </span>
+      )}
+    </div>
   )
 }

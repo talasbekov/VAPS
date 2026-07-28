@@ -8,13 +8,20 @@ import type {
   ReconSectorPost,
   SecurityEvent,
   SecurityEventStage,
+  SecurityEventTransition,
   StaffingDemandRow,
 } from '../model/types'
+import { bindPassportVersion, resolveApplicableVersion } from '../lib/passportBinding'
+import { STAGE_ORDER } from '../lib/stageMeta'
 import { aggregateForceRequests } from './demandLogic'
+import { findObjectByCode } from './objectsSlice'
 import { PERSONNEL_ROSTER } from './personnelRoster'
 
 export interface SecurityEventsSlice {
   events: SecurityEvent[]
+  /** §22.14 append-only журнал переходов. Отдельный массив, а не поле ОМ:
+   * история принадлежит слайсу, а не карточке, и растёт независимо от неё. */
+  transitions: SecurityEventTransition[]
 }
 
 /** Стандартный шаблон чек-листа рекогносцировки — состав по духу прототипа (hint-placeholder-count=6, точные подписи не заданы шаблоном, домен — предметная область ОМ). */
@@ -39,9 +46,19 @@ function buildChecklist(ctx: SeedContext, doneCount: number): ReconChecklistItem
 
 function buildSectorPosts(
   ctx: SeedContext,
-  rows: ReadonlyArray<Omit<ReconSectorPost, 'id'>>,
+  rows: ReadonlyArray<Omit<ReconSectorPost, 'id' | 'sourceSectorId' | 'sourcePostId'>>,
 ): ReconSectorPost[] {
-  return rows.map((row) => ({ id: ctx.ids.next('recon-sector-post'), ...row }))
+  // Сеяные строки расчёта — РУЧНЫЕ (`source*` = null). Это не упущение: они
+  // заведены до того, как появился импорт из паспорта, и §9.6 прямо разрешает
+  // event-specific расчёт. Импорт демонстрируется живьём на RECON-мероприятии
+  // (e2e-mock/security-event-passport-binding.spec.ts) — сеять уже
+  // импортированные строки значило бы показать результат, минуя операцию.
+  return rows.map((row) => ({
+    id: ctx.ids.next('recon-sector-post'),
+    ...row,
+    sourceSectorId: null,
+    sourcePostId: null,
+  }))
 }
 
 function buildDemandRows(
@@ -54,6 +71,18 @@ function buildDemandRows(
 const SEED_EVENTS: ReadonlyArray<{
   title: string
   objectName: string
+  /**
+   * Код объекта в реестре `features/objects` — по нему сид находит `objectId`
+   * (§9.6). Именно КОД, а не имя: код уникален и является доменным ключом, а
+   * склейка по имени — ровно то, что запрещено в A44-A46. `null` — ОМ на
+   * объекте, которого в реестре нет (легальное состояние: объекты заводятся
+   * не всем скопом).
+   *
+   * Разрешение кода в id происходит ОДИН РАЗ, в момент сидирования; дальше ОМ
+   * держит id и снимок привязки — переименование или перекодировка объекта
+   * связь не рвёт.
+   */
+  objectCode: string | null
   daysFromStart: number
   stage: SecurityEventStage
   readinessPercent: number
@@ -65,7 +94,7 @@ const SEED_EVENTS: ReadonlyArray<{
   /** Сколько пунктов чек-листа уже отмечены выполненными (0 = ещё не начата). */
   checklistDone: number
   /** Начальные строки «Посты и секторы» (пусто = ещё не рассчитано). */
-  sectorPosts: ReadonlyArray<Omit<ReconSectorPost, 'id'>>
+  sectorPosts: ReadonlyArray<Omit<ReconSectorPost, 'id' | 'sourceSectorId' | 'sourcePostId'>>
   /** Строки потребности (пусто = этап ещё не начат). */
   demandRows: ReadonlyArray<Omit<StaffingDemandRow, 'id'>>
   demandApproved: boolean
@@ -75,6 +104,7 @@ const SEED_EVENTS: ReadonlyArray<{
   {
     title: 'Международный экономический форум',
     objectName: 'Дворец Независимости',
+    objectCode: 'OBJ-001',
     daysFromStart: 2,
     stage: 'PLACEMENT',
     readinessPercent: 82,
@@ -117,6 +147,9 @@ const SEED_EVENTS: ReadonlyArray<{
   {
     title: 'Официальный визит делегации',
     objectName: 'Резиденция',
+    // Объекта нет в реестре — привязка не установится, карточка обязана
+    // сказать об этом словами, а не показать пустое место.
+    objectCode: null,
     daysFromStart: 3,
     stage: 'DEMAND',
     readinessPercent: 61,
@@ -146,6 +179,7 @@ const SEED_EVENTS: ReadonlyArray<{
   {
     title: 'Городской спортивный форум',
     objectName: 'Астана Арена',
+    objectCode: 'OBJ-003',
     daysFromStart: 5,
     stage: 'APPROVAL',
     readinessPercent: 94,
@@ -177,6 +211,7 @@ const SEED_EVENTS: ReadonlyArray<{
   {
     title: 'Рабочее совещание акимата',
     objectName: 'Дом Министерств',
+    objectCode: 'OBJ-002',
     daysFromStart: 1,
     stage: 'BULLETIN',
     readinessPercent: 12,
@@ -193,7 +228,10 @@ const SEED_EVENTS: ReadonlyArray<{
   },
   {
     title: 'Культурный форум приграничных регионов',
-    objectName: 'Дворец Мира и Согласия',
+    objectName: 'Дворец Независимости',
+    // Второе мероприятие на том же объекте, но на стадии рекогносцировки —
+    // именно на нём демонстрируется импорт постов из привязанной версии.
+    objectCode: 'OBJ-001',
     daysFromStart: 9,
     stage: 'RECON',
     readinessPercent: 28,
@@ -220,6 +258,58 @@ const SEED_EVENTS: ReadonlyArray<{
   },
 ]
 
+/**
+ * §22.14 сеяная история переходов. Данные синтетические (§8.7), и это сказано
+ * вслух: у сеяных мероприятий нет «настоящего» прошлого, но воронка без
+ * истории была бы пустой независимо от того, работает она или нет — а пустой
+ * график не отличить от сломанного.
+ *
+ * Один ВОЗВРАТ заведён намеренно: без него «переходы» и «достигшие этапа»
+ * совпали бы на каждом этапе, и подмена одного показателя другим осталась бы
+ * незамеченной (§22.14 требует их различать).
+ */
+const RETURNED_EVENT_TITLE = 'Городской спортивный форум'
+
+function buildTransitions(ctx: SeedContext, events: SecurityEvent[]): SecurityEventTransition[] {
+  const now = new Date(ctx.clock.now()).getTime()
+  const HOUR = 60 * 60 * 1000
+  const transitions: SecurityEventTransition[] = []
+
+  for (const event of events) {
+    const targetIndex = STAGE_ORDER.indexOf(event.stage)
+    // Путь стадий: от создания до текущей; у возвращавшегося ОМ — с петлёй
+    // APPROVAL → PLACEMENT → APPROVAL.
+    const path: SecurityEventStage[] = STAGE_ORDER.slice(0, targetIndex + 1)
+    const walked: SecurityEventStage[] =
+      event.title === RETURNED_EVENT_TITLE && targetIndex >= 5
+        ? [...path, 'PLACEMENT', 'APPROVAL']
+        : path
+
+    // Шаги разной длины: одинаковые интервалы сделали бы среднее равным
+    // медиане, и подмена одного другим прошла бы незаметно.
+    let offset = walked.length * 11 * HOUR
+    let previous: SecurityEventStage | null = null
+    walked.forEach((stage, index) => {
+      const from = previous
+      transitions.push({
+        id: ctx.ids.next('security-event-transition'),
+        eventId: event.id,
+        fromStage: from,
+        toStage: stage,
+        kind:
+          from !== null && STAGE_ORDER.indexOf(stage) < STAGE_ORDER.indexOf(from)
+            ? 'RETURN'
+            : 'FORWARD',
+        occurredAt: new Date(now - offset).toISOString(),
+      })
+      offset -= (index + 2) * HOUR
+      previous = stage
+    })
+  }
+
+  return transitions
+}
+
 export function buildSecurityEventsSeed(ctx: SeedContext): {
   sliceName: string
   data: SecurityEventsSlice
@@ -233,6 +323,15 @@ export function buildSecurityEventsSeed(ctx: SeedContext): {
       .toISOString()
       .slice(0, 10)
     const id = ctx.ids.next('security-event')
+    // §9.6: привязка решается на БИЗНЕС-ДАТУ мероприятия, а не на «сегодня» —
+    // версия, вступающая в силу позже дня проведения, к этому ОМ отношения не
+    // имеет. Три исхода, и все три должны встретиться в demo-сиде: объект не
+    // найден (`null`/нет кода), объект есть — опубликованной версии нет,
+    // объект есть и версия действует.
+    const boundObject =
+      seed.objectCode === null ? null : findObjectByCode(ctx.builtSlices, seed.objectCode)
+    const applicableVersion =
+      boundObject === null ? null : resolveApplicableVersion(boundObject, businessDate)
     const demandRows = buildDemandRows(ctx, seed.demandRows)
     const sectorPosts = buildSectorPosts(ctx, seed.sectorPosts)
     const placementAssignments = seed.assignedPostIndexes.map((postIndex, i) => {
@@ -250,7 +349,12 @@ export function buildSecurityEventsSeed(ctx: SeedContext): {
       id,
       code: `ОМ-${businessDate.slice(0, 4)}-${id.split('-').pop()}`,
       title: seed.title,
+      objectId: boundObject?.id ?? null,
       objectName: seed.objectName,
+      passportBinding:
+        boundObject !== null && applicableVersion !== null
+          ? bindPassportVersion(boundObject, applicableVersion, now)
+          : null,
       businessDate,
       stage: seed.stage,
       readinessPercent: seed.readinessPercent,
@@ -285,5 +389,5 @@ export function buildSecurityEventsSeed(ctx: SeedContext): {
       updatedAt: now,
     }
   })
-  return { sliceName: 'security-events', data: { events } }
+  return { sliceName: 'security-events', data: { events, transitions: buildTransitions(ctx, events) } }
 }

@@ -6,6 +6,7 @@
 // несовместимых типов (§7.5 явный запрет).
 import type {
   ClosureDirectionSummary,
+  PassportBinding,
   JournalEntryType,
   PersonnelSummarySnapshot,
   ReconChecklistItem,
@@ -40,8 +41,46 @@ export interface ListSecurityEventsResponse {
 
 export interface CreateSecurityEventRequest extends Record<string, unknown> {
   title: string
-  objectName: string
+  /**
+   * §9.6: мероприятие заводится НА ОБЪЕКТ реестра, а не на строку текста —
+   * без id объекта версию паспорта не к чему привязать. Имя объекта в запросе
+   * больше не передаётся: его снимок делает сервер, чтобы клиент не мог
+   * разойтись с реестром.
+   */
+  objectId: string
   businessDate: string
+}
+
+/** Строка выпадающего списка объектов в форме создания ОМ (§9.6). */
+export interface BindableObject {
+  id: string
+  name: string
+  code: string
+  /** 0 — у объекта нет ни одной опубликованной версии паспорта. */
+  publishedVersionCount: number
+}
+
+export interface ListBindableObjectsResponse {
+  results: BindableObject[]
+}
+
+/**
+ * Производный взгляд на привязку ОМ к версии паспорта (§9.6). Отдельный
+ * endpoint, а не поля в `SecurityEvent`: `stale`/`applicable*` считаются на
+ * каждом чтении по ЖИВОМУ реестру объектов, тогда как сам ОМ хранит только
+ * неизменяемый снимок привязки.
+ */
+export interface SecurityEventPassportView {
+  objectId: string | null
+  /** false — объекта с таким id в реестре нет (или ОМ вообще не привязан). */
+  objectKnown: boolean
+  binding: PassportBinding | null
+  applicableVersionId: string | null
+  applicableVersionNumber: number | null
+  /** §9.6 «предупреждение об устаревшей версии» — действует версия новее привязанной. */
+  stale: boolean
+  /** Сколько постов привязанной версии ещё не перенесено в расчёт ОМ. */
+  importablePostCount: number
 }
 
 export type CreateSecurityEventResponse = SecurityEvent
@@ -68,6 +107,18 @@ export function securityEventDetailPath(id: string): string {
 export function securityEventBulletinPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/bulletin/`
 }
+
+export function securityEventPassportPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/passport/`
+}
+
+export function securityEventReconImportPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/recon/import-from-passport/`
+}
+
+export const BINDABLE_OBJECTS_PATH = `${SECURITY_EVENTS_PATH}bindable-objects/`
+
+export type ImportReconPostsResponse = SecurityEvent
 
 export function securityEventReconPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/recon/`
@@ -150,6 +201,21 @@ export interface CloseSecurityEventRequest extends Record<string, unknown> {
   directionSummaries: ClosureDirectionSummary[]
 }
 export type CloseSecurityEventResponse = SecurityEvent
+
+/** §9.11 «Замена выбывшего сотрудника», сокращённо (см. FRONTEND_DECISIONS
+ * A56): БЕЗ авто-подбора кандидата (REPLACEMENT-SUGGESTION-001 =
+ * business-policy-pending по мастер-промпту, алгоритм не утверждён
+ * заказчиком) — только ручной выбор, атомарная замена одной мутацией. */
+export interface ReplaceAssignmentRequest extends Record<string, unknown> {
+  assignmentId: string
+  incomingEmployeeId: string
+  reasonCode: string
+}
+export type ReplaceAssignmentResponse = SecurityEvent
+
+export function securityEventReplaceAssignmentPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/conduct/replace/`
+}
 
 // Раздельные сегменты ("acknowledge" vs "acknowledgement/complete") — иначе
 // path-to-regexp у MSW матчит /acknowledgement/complete/ через более ранний

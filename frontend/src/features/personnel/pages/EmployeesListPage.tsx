@@ -10,13 +10,10 @@ import { useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { ROUTES } from '../../../shared/routes'
 import { Input } from '../../../shared/ui/Input'
-import { useDivisions, useEmployees, usePositions, useRanks } from '../api/queries'
+import { useDivisions, usePersonnelDirectory, usePositions, useRanks } from '../api/queries'
 import { EMPLOYMENT_STATUS_LABEL } from '../model/types'
-import type { Division, Employee, Position, Rank } from '../model/types'
-
-function maskIin(iin: string): string {
-  return iin.length <= 4 ? iin : `••••••••${iin.slice(-4)}`
-}
+import type { Division, Position, Rank } from '../model/types'
+import type { PersonnelDirectoryEntry } from '../api/pending-contracts'
 
 function byCode<T extends { code: string }>(items: readonly T[]): Map<string, T> {
   return new Map(items.map((item) => [item.code, item]))
@@ -31,7 +28,7 @@ export function EmployeesListPage() {
   const search = searchParams.get('search') ?? ''
   const divisionId = searchParams.get('division') ?? ''
 
-  const employeesQuery = useEmployees()
+  const employeesQuery = usePersonnelDirectory()
   const divisionsQuery = useDivisions()
   const positionsQuery = usePositions()
   const ranksQuery = useRanks()
@@ -58,11 +55,11 @@ export function EmployeesListPage() {
     const all = employeesQuery.data?.results ?? []
     const query = search.trim().toLowerCase()
     return all.filter((employee) => {
-      if (divisionId !== '' && employee.division !== divisionId) return false
+      if (divisionId !== '' && employee.divisionId !== divisionId) return false
       if (query === '') return true
-      const division = divisionsById.get(employee.division)
-      const position = positionsByCode.get(employee.position_code)
-      const haystack = `${employee.full_name} ${position?.name ?? ''} ${division?.name ?? ''}`.toLowerCase()
+      const division = employee.divisionId === null ? undefined : divisionsById.get(employee.divisionId)
+      const position = positionsByCode.get(employee.positionCode)
+      const haystack = `${employee.fullName} ${position?.name ?? ''} ${division?.name ?? ''}`.toLowerCase()
       return haystack.includes(query)
     })
   }, [employeesQuery.data, search, divisionId, divisionsById, positionsByCode])
@@ -133,7 +130,7 @@ function ResultsTable({
 }: {
   isLoading: boolean
   isError: boolean
-  employees: Employee[]
+  employees: PersonnelDirectoryEntry[]
   divisionsById: Map<string, Division>
   positionsByCode: Map<string, Position>
   ranksByCode: Map<string, Rank>
@@ -168,39 +165,44 @@ function ResultsTable({
             <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">Должность</th>
             <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">Подразделение</th>
             <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">Статус</th>
-            <th className="p-3.5 text-[11px] font-semibold text-muted-foreground" />
+            <th className="p-3.5 text-[11px] font-semibold text-muted-foreground">
+              <span className="sr-only">Действия</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           {employees.map((employee) => {
-            const rank = ranksByCode.get(employee.rank_code)
-            const position = positionsByCode.get(employee.position_code)
-            const division = divisionsById.get(employee.division)
+            const rank = ranksByCode.get(employee.rankCode)
+            const position = positionsByCode.get(employee.positionCode)
+            const division =
+              employee.divisionId === null ? undefined : divisionsById.get(employee.divisionId)
             return (
               <tr key={employee.id} className="border-t hover:bg-muted/30">
                 <td className="p-3.5 text-sm">
                   <Link to={ROUTES.employeeDetailTo(employee.id)} className="block">
                     <span className="block font-semibold text-foreground">
-                      {employee.full_name}
+                      {employee.fullName}
                     </span>
+                    {/* §20.27 «ИИН по умолчанию маскирован». Маску считает
+                        СЕРВЕР: полного значения в этом ответе нет вовсе, и
+                        замаскировать его здесь было бы нечего — см.
+                        api/pending-contracts.ts. */}
                     <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                      {rank?.name ?? employee.rank_code} · ИИН {maskIin(employee.iin)}
+                      {rank?.name ?? employee.rankCode} · ИИН {employee.iinMasked}
                     </span>
                   </Link>
                 </td>
-                <td className="p-3.5 text-sm">{position?.name ?? employee.position_code}</td>
+                <td className="p-3.5 text-sm">{position?.name ?? employee.positionCode}</td>
                 <td className="p-3.5 text-sm">{division?.name ?? '—'}</td>
                 <td className="p-3.5">
                   <span
                     className={
-                      employee.employment_status === 'WORKING'
+                      employee.employmentStatus === 'WORKING'
                         ? 'inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-800'
-                        : 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground'
+                        : 'inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-slate-600'
                     }
                   >
-                    {employee.employment_status !== undefined
-                      ? EMPLOYMENT_STATUS_LABEL[employee.employment_status]
-                      : '—'}
+                    {EMPLOYMENT_STATUS_LABEL[employee.employmentStatus]}
                   </span>
                 </td>
                 <td className="p-3.5 text-center text-muted-foreground">

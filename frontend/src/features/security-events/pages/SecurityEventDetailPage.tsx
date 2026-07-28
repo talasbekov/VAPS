@@ -23,7 +23,10 @@ import {
   useCompleteForces,
   useCompletePlacement,
   useCompleteRecon,
+  useImportReconPostsFromPassport,
   usePersonnelRoster,
+  useSecurityEventPassport,
+  useReplaceAssignment,
   useReturnPlacement,
   useSecurityEvent,
   useUnassignPlacement,
@@ -34,14 +37,19 @@ import {
 import { SECURITY_EVENT_STAGES } from '../model/types'
 import type {
   ForceRequest,
-  JournalEntryType,
+  PlacementAssignment,
   ReconChecklistItem,
   ReconSectorPost,
   SecurityEvent,
   SecurityEventStage,
   StaffingDemandRow,
 } from '../model/types'
-import { STAGE_LABEL, stageBadgeVariants } from '../lib/stageMeta'
+import { JOURNAL_TYPE_LABEL, STAGE_LABEL, stageBadgeVariants } from '../lib/stageMeta'
+import {
+  NO_OBJECT_TEXT,
+  NO_PUBLISHED_VERSION_TEXT,
+  staleBindingText,
+} from '../lib/passportBinding'
 
 const bulletinSchema = z.object({
   briefDescription: z.string().trim().min(1, 'Обязательное поле'),
@@ -88,7 +96,7 @@ export function SecurityEventDetailPage() {
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-[11px] bg-purple-100 text-sm font-black text-purple-800">
             ОМ
           </div>
-          <div>
+          <div className="flex-1">
             <div className="mb-1 flex gap-1.5">
               <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800">
                 {event.code}
@@ -102,11 +110,86 @@ export function SecurityEventDetailPage() {
               {event.businessDate} · {event.objectName} · {event.ownerName}
             </p>
           </div>
+          {/* Вход в печатную форму расстановки (§9.15). Показывается ТОЛЬКО
+              когда есть что печатать: ссылка на пустой документ — мёртвый жест.
+
+              ⚠️ БЕЗ `target="_blank"` — СОЗНАТЕЛЬНОЕ отступление от прецедента
+              `ExpenseReportPage.tsx:285-288`, и вот почему: credential живёт в
+              `sessionStorage`, а Chromium ≥88 трактует безымянный
+              `target="_blank"` как implicit `noopener` — новая вкладка не
+              auxiliary, sessionStorage в неё НЕ клонируется, и печатная форма
+              открывается на экране входа. Поймано e2e
+              (`e2e-mock/placement-print.spec.ts`), не гипотеза: попап реально
+              отрендерил «Вход». Возврат — кнопкой браузера. */}
+          {/* Вход в архив дела (прототип «Архив дела»): только у закрытого ОМ —
+              до закрытия дела не существует, и ссылка вела бы на экран отказа. */}
+          {event.stage === 'CLOSED' && (
+            <Link
+              to={ROUTES.securityEventArchiveTo(event.id)}
+              className="shrink-0 self-start rounded-md border px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-accent"
+            >
+              Архив дела
+            </Link>
+          )}
+          {event.placementAssignments.length > 0 && (
+            <Link
+              to={ROUTES.printPlacementTo(event.id)}
+              className="shrink-0 self-start rounded-md border px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-accent"
+            >
+              Печатная форма расстановки
+            </Link>
+          )}
         </div>
         <StageTracker current={event.stage} />
+        <PassportBindingBar eventId={event.id} />
       </section>
 
       <StageContent event={event} />
+    </div>
+  )
+}
+
+/**
+ * §9.6: к какой опубликованной версии паспорта привязано планирование. Живёт
+ * в шапке карточки, а не только на рекогносцировке, потому что от версии
+ * зависят и расстановка, и печатная форма, и архив дела.
+ *
+ * Все три «пустых» исхода названы словами (§35): объекта нет в реестре,
+ * опубликованной версии на дату нет, версия устарела. Молчание здесь читалось
+ * бы как «привязка есть, просто её не показали».
+ */
+function PassportBindingBar({ eventId }: { eventId: string }) {
+  const query = useSecurityEventPassport(eventId)
+  if (query.isPending || query.isError || query.data === undefined) {
+    // Ошибку не показываем отдельной плашкой: карточка ОМ уже загружена и
+    // работоспособна, а вторая красная строка про вспомогательный запрос
+    // сбивала бы с толку. Отсутствие строки = нет данных о привязке.
+    return null
+  }
+  const view = query.data
+  if (view.binding === null) {
+    return (
+      <p className="mt-3 rounded-md border border-dashed px-3 py-2 text-[11.5px] text-slate-600">
+        {view.objectKnown ? NO_PUBLISHED_VERSION_TEXT : NO_OBJECT_TEXT}
+      </p>
+    )
+  }
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11.5px]">
+      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">
+        Паспорт: версия {view.binding.versionNumber}
+      </span>
+      <span className="text-slate-600">
+        действует с {view.binding.effectiveFrom} · {view.binding.objectName}
+      </span>
+      {view.stale && view.applicableVersionNumber !== null && (
+        <span
+          role="status"
+          className="inline-flex rounded-md bg-amber-100 px-2 py-0.5 font-semibold text-amber-900"
+        >
+          {staleBindingText(view.binding.versionNumber, view.applicableVersionNumber)}
+        </span>
+      )}
     </div>
   )
 }
@@ -354,9 +437,57 @@ function nextLocalId(): string {
   return `local-${sectorPostSeq}`
 }
 
+function ImportFromPassportButton({
+  eventId,
+  dirty,
+  mutation,
+  importableCount,
+  hasBinding,
+}: {
+  eventId: string
+  dirty: boolean
+  mutation: ReturnType<typeof useImportReconPostsFromPassport>
+  importableCount: number
+  hasBinding: boolean
+}) {
+  // Без привязки кнопки нет вовсе: причина уже названа в шапке карточки
+  // (`PassportBindingBar`), а задизейбленная кнопка без объяснения читалась бы
+  // как поломка.
+  if (!hasBinding) {
+    return null
+  }
+  // Импорт — серверная мутация над сохранённым расчётом, а на экране могут
+  // лежать несохранённые правки: выполнить его поверх них значило бы молча
+  // потерять работу. Поэтому при dirty кнопка заблокирована с причиной.
+  const blockedByDirty = dirty
+  const nothingToImport = importableCount === 0
+  const title = blockedByDirty
+    ? 'Сначала сохраните расчёт — импорт работает с сохранёнными строками.'
+    : nothingToImport
+      ? 'Все посты привязанной версии паспорта уже в расчёте.'
+      : undefined
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      type="button"
+      title={title}
+      disabled={blockedByDirty || nothingToImport || mutation.isPending}
+      onClick={() => mutation.mutate({})}
+      data-testid={`import-from-passport-${eventId}`}
+    >
+      {mutation.isPending
+        ? 'Импорт…'
+        : `Импортировать посты из паспорта${nothingToImport ? '' : ` (${importableCount})`}`}
+    </Button>
+  )
+}
+
 function ReconForm({ event }: { event: SecurityEvent }) {
   const updateMutation = useUpdateRecon(event.id)
   const completeMutation = useCompleteRecon(event.id)
+  const importMutation = useImportReconPostsFromPassport(event.id)
+  const passportQuery = useSecurityEventPassport(event.id)
   const [checklist, setChecklist] = useState<ReconChecklistItem[]>(event.reconChecklist)
   const [rows, setRows] = useState<ReconSectorPost[]>(event.reconSectorPosts)
 
@@ -384,6 +515,10 @@ function ReconForm({ event }: { event: SecurityEvent }) {
         requirements: '',
         result: null,
         comment: '',
+        // Ручная строка: источника в паспорте у неё нет (§9.6 разрешает
+        // event-specific расчёт), и подставлять сюда чужой id было бы ложью.
+        sourceSectorId: null,
+        sourcePostId: null,
       },
     ])
   }
@@ -456,7 +591,17 @@ function ReconForm({ event }: { event: SecurityEvent }) {
             <div className="text-sm font-semibold">Посты и секторы</div>
             <div className="text-xs text-muted-foreground">Расчёт для текущего ОМ</div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {/* §9.6 «рекогносцировка может создать event-specific расчёт на
+                основе паспорта». Кнопка живёт РЯДОМ с «Добавить пост», а не
+                вместо неё: ручной пост остаётся законным способом. */}
+            <ImportFromPassportButton
+              eventId={event.id}
+              dirty={dirty}
+              mutation={importMutation}
+              importableCount={passportQuery.data?.importablePostCount ?? 0}
+              hasBinding={passportQuery.data?.binding != null}
+            />
             <Button variant="outline" size="sm" type="button" onClick={addRow}>
               + Добавить пост
             </Button>
@@ -506,6 +651,15 @@ function ReconForm({ event }: { event: SecurityEvent }) {
                         value={row.post}
                         onChange={(e) => updateRow(row.id, { post: e.target.value })}
                       />
+                      {/* Строку из паспорта РАЗРЕШЕНО править: §9.6
+                          «event-specific изменение поста не редактирует
+                          паспорт автоматически». Метка говорит об источнике,
+                          а не запрещает правку. */}
+                      {row.sourcePostId !== null && (
+                        <span className="mt-0.5 block text-[10px] text-slate-600">
+                          из паспорта
+                        </span>
+                      )}
                     </td>
                     <td className="py-1.5 pr-1.5">
                       <input
@@ -827,7 +981,7 @@ const FORCE_STATUS_LABEL: Record<ForceRequest['status'], string> = {
 }
 
 const FORCE_STATUS_CLASS: Record<ForceRequest['status'], string> = {
-  NOT_SENT: 'bg-muted text-muted-foreground',
+  NOT_SENT: 'bg-muted text-slate-600',
   SENT: 'bg-blue-100 text-blue-800',
   PARTIALLY_ALLOCATED: 'bg-amber-100 text-amber-800',
   ALLOCATED: 'bg-green-100 text-green-800',
@@ -902,12 +1056,14 @@ function ForceRequestRow({
         type="number"
         min={0}
         className="h-8 w-16 rounded border border-input bg-background px-1.5 text-sm"
+        aria-label={`Выделено, ${request.group}`}
         value={allocated}
         onChange={(e) => setAllocated(Number(e.target.value) || 0)}
       />
       <input
         className="h-8 rounded border border-input bg-background px-2 text-sm"
         placeholder="—"
+        aria-label={`Комментарий, ${request.group}`}
         value={comment}
         onChange={(e) => setComment(e.target.value)}
       />
@@ -951,7 +1107,7 @@ function PlacementWorkspace({ event }: { event: SecurityEvent }) {
   return (
     <>
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[260px_1fr]">
-        <aside className="rounded-xl border bg-card p-3">
+        <aside className="rounded-xl border bg-card p-3" aria-label="Посты">
           <div className="mb-2 text-sm font-semibold">Посты</div>
           <div className="flex flex-col gap-1">
             {event.reconSectorPosts.map((post) => {
@@ -965,15 +1121,25 @@ function PlacementWorkspace({ event }: { event: SecurityEvent }) {
                   onClick={() => setSelectedPostId(post.id)}
                   className={
                     post.id === selectedPostId
-                      ? 'rounded-md bg-primary/10 px-2.5 py-2 text-left text-sm font-semibold text-primary'
+                      ? 'rounded-md bg-primary/10 px-2.5 py-2 text-left text-sm font-semibold text-blue-800'
                       : 'rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted/50'
                   }
                 >
                   <span className="block">
                     {post.sector} · {post.post}
                   </span>
-                  <span className="block text-xs text-muted-foreground">
+                  <span
+                    className={
+                      post.id === selectedPostId
+                        ? 'block text-xs text-slate-600'
+                        : 'block text-xs text-muted-foreground'
+                    }
+                  >
                     {count > 0 ? `Укомплектован (${count})` : 'Не укомплектован'}
+                    {/* §9.6: расстановка обязана быть прослеживаемой до поста
+                        версии паспорта. Метка ставится только у строк, реально
+                        пришедших из паспорта — у ручных её нет, и это честно. */}
+                    {post.sourcePostId !== null && ' · из паспорта'}
                   </span>
                 </button>
               )
@@ -1031,6 +1197,7 @@ function PlacementWorkspace({ event }: { event: SecurityEvent }) {
 
                 <div className="flex gap-2">
                   <select
+                    aria-label="Сотрудник для назначения на пост"
                     className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
                     value={pickedEmployeeId}
                     onChange={(e) => setPickedEmployeeId(e.target.value)}
@@ -1168,13 +1335,6 @@ function ApprovalPanel({ event }: { event: SecurityEvent }) {
       )}
     </section>
   )
-}
-
-const JOURNAL_TYPE_LABEL: Record<JournalEntryType, string> = {
-  INSTRUCTION: 'Инструктаж',
-  ORDER: 'Распоряжение',
-  INCIDENT: 'Инцидент',
-  REPLACEMENT: 'Замена',
 }
 
 function AcknowledgementPanel({ event }: { event: SecurityEvent }) {
@@ -1345,8 +1505,123 @@ function ConductJournal({ event }: { event: SecurityEvent }) {
         )}
       </section>
 
+      <ReplacementPanel event={event} />
+
       <ClosureTrigger event={event} />
     </div>
+  )
+}
+
+// §9.11 «Замена выбывшего сотрудника», сокращённо (FRONTEND_DECISIONS A56):
+// БЕЗ авто-подбора кандидата (алгоритм подбора не утверждён заказчиком по
+// мастер-промпту — REPLACEMENT-SUGGESTION-001 = business-policy-pending) —
+// только ручной выбор из ростера, одна атомарная замена + journal entry.
+function ReplacementPanel({ event }: { event: SecurityEvent }) {
+  const rosterQuery = usePersonnelRoster()
+  const replaceMutation = useReplaceAssignment(event.id)
+  const [replacingId, setReplacingId] = useState<string | null>(null)
+  const [incomingEmployeeId, setIncomingEmployeeId] = useState('')
+  const [reasonCode, setReasonCode] = useState('')
+
+  const assignedElsewhere = (postId: string) =>
+    new Set(
+      event.placementAssignments.filter((a) => a.postId !== postId).map((a) => a.employeeId),
+    )
+
+  function startReplacing(assignment: PlacementAssignment): void {
+    setReplacingId(assignment.id)
+    setIncomingEmployeeId('')
+    setReasonCode('')
+  }
+
+  return (
+    <section className="rounded-xl border bg-card p-4">
+      <div className="mb-2 text-sm font-semibold">Замена выбывшего сотрудника</div>
+      {replaceMutation.error !== null && (
+        <p className="mb-2 text-xs text-destructive" role="alert">
+          {replaceMutation.error.message}
+        </p>
+      )}
+      {event.placementAssignments.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Назначений на посты нет.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {event.placementAssignments.map((a) => {
+            const post = event.reconSectorPosts.find((p) => p.id === a.postId)
+            const excluded = assignedElsewhere(a.postId)
+            return (
+              <div key={a.id} className="rounded-md border p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm">
+                    {a.employeeName} · {post?.sector ?? '—'} · {post?.post ?? a.postId}
+                  </span>
+                  {replacingId !== a.id && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => startReplacing(a)}
+                    >
+                      Заменить
+                    </Button>
+                  )}
+                </div>
+                {replacingId === a.id && (
+                  <div className="mt-2.5 flex flex-col gap-1.5 border-t pt-2.5">
+                    <select
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                      value={incomingEmployeeId}
+                      onChange={(e) => setIncomingEmployeeId(e.target.value)}
+                      aria-label="Кем заменить"
+                    >
+                      <option value="">Выберите сотрудника…</option>
+                      {(rosterQuery.data?.results ?? []).map((emp) => (
+                        <option key={emp.id} value={emp.id} disabled={excluded.has(emp.id)}>
+                          {emp.rankLabel} {emp.name} · {emp.unit}
+                          {excluded.has(emp.id) ? ' (занят на другом посту)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                      placeholder="Причина замены"
+                      aria-label="Причина замены"
+                      value={reasonCode}
+                      onChange={(e) => setReasonCode(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={
+                          incomingEmployeeId === '' ||
+                          reasonCode.trim() === '' ||
+                          replaceMutation.isPending
+                        }
+                        onClick={() => {
+                          replaceMutation.mutate({ assignmentId: a.id, incomingEmployeeId, reasonCode })
+                          setReplacingId(null)
+                        }}
+                      >
+                        {replaceMutation.isPending ? 'Замена…' : 'Подтвердить замену'}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setReplacingId(null)}
+                      >
+                        Отмена
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 

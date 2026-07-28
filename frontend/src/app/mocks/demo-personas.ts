@@ -32,6 +32,12 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       'ops.acknowledgement.manage',
       'ops.conduct.manage',
       'ops.closure.manage',
+      'ops.dictionary.view',
+      'ops.calendar.view',
+      // §28: завести обращение и видеть СВОИ. Права видеть чужие у автора
+      // нет — на этом разделении и держится демонстрация §28.
+      'ops.feedback.create',
+      'ops.feedback.view',
     ],
     // Этап 2 реализовал только реестр/бюллетень ОМ — реальная посадочная
     // страница этой persona, не «/» (там status.view, которого нет ни у одной
@@ -43,7 +49,12 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     userId: 'demo-recon-officer',
     label: 'Офицер рекогносцировки',
     description: 'Проводит рекогносцировку назначенных ОМ',
-    permissions: ['ops.security_event.view', 'ops.recon.manage'],
+    permissions: [
+      'ops.security_event.view',
+      'ops.recon.manage',
+      'ops.dictionary.view',
+      'ops.calendar.view',
+    ],
     homeRoute: ROUTES.securityEvents,
   },
   {
@@ -51,7 +62,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     userId: 'demo-broker',
     label: 'Брокер сил',
     description: 'Распределяет запросы сил между группами',
-    permissions: ['ops.force_request.view', 'ops.force_allocation.manage'],
+    permissions: ['ops.force_request.view', 'ops.force_allocation.manage', 'ops.dictionary.view'],
     homeRoute: ROUTES.home,
   },
   {
@@ -59,31 +70,113 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     userId: 'demo-placement-approver',
     label: 'Утверждающий расстановку',
     description: 'Согласовывает и утверждает расстановку',
-    permissions: ['ops.placement.view', 'ops.placement.approve'],
+    permissions: ['ops.placement.view', 'ops.placement.approve', 'ops.dictionary.view'],
     homeRoute: ROUTES.home,
   },
   {
     id: 'objects_admin',
     userId: 'demo-objects-admin',
     label: 'Ведение объектов',
-    description: 'Паспорта объектов, сектора, посты, план дежурств',
+    description: 'Паспорта объектов, сектора, посты, план дежурств, справочники',
     permissions: [
       'ops.object.view',
       'ops.object.manage',
       'ops.passport.publish',
       'ops.duty.view',
       'ops.duty.manage',
+      // §21.34 «SOFT_OVERRIDE — возможно с обоснованием и отдельным
+      // permission»: обход обязательного отдыха при планировании дежурства.
+      // Отдельное право, а не часть ops.duty.manage — иначе «отдельный
+      // permission» промпта был бы формальностью.
+      'ops.duty.override_rest',
+      // §21.27 «Утвердить план». Отдельное право от `ops.duty.manage`: планирует
+      // смены и утверждает получившийся месяц — разные роли (тот же принцип, что
+      // ops.placement.approve). У этой persona есть оба, чтобы демо-сценарий
+      // проходился целиком; разделение проверяется тестами репозитория.
+      'ops.duty.approve_plan',
+      // §24.5 «уполномоченный согласующий»/«руководитель боевого
+      // департамента» — тематически ближайший текущий владелец плана
+      // дежурств, тот же принцип, что ops.dictionary.manage (A40).
+      'ops.combat_group.review',
+      'ops.dictionary.view',
+      'ops.dictionary.manage',
+      'ops.calendar.view',
     ],
     // Этап 5 реализовал реестр объектов/паспорт — реальная посадочная
     // страница этой persona (`ops.dashboard.view`, которого у неё нет, home не подходит).
     homeRoute: ROUTES.objects,
   },
   {
+    id: 'combat_department_chief',
+    userId: 'demo-combat-department-chief',
+    label: 'Начальник боевого управления',
+    description:
+      'Подаёт состав боевой группы на Трассу и ведёт его несение (§24.5-24.6, §24.19-24.23, §24.21)',
+    permissions: [
+      'ops.duty.view',
+      'ops.combat_group.submit',
+      // §24.19-24.23 — начальник управления отвечает за ознакомление,
+      // заступление и факт несения службы СВОЕГО состава (тот же принцип,
+      // что submit: ответственность не передаётся центральному оператору).
+      'ops.combat_group.acknowledge',
+      'ops.combat_group.checkin',
+      'ops.combat_group.complete',
+      // §24.21 — замена участника ДО заступления/во время READY, тот же
+      // принцип: свой состав, своя ответственность.
+      'ops.combat_group.replace',
+      'ops.dictionary.view',
+    ],
+    homeRoute: ROUTES.duties,
+  },
+  {
     id: 'analyst',
     userId: 'demo-analyst',
     label: 'Аналитик',
     description: 'Дашборды, отчёты, экспорт',
-    permissions: ['ops.analytics.view', 'ops.export.run'],
+    permissions: [
+      'ops.analytics.view',
+      // §22.26/§22.12: раскрытие показателя до строк — своё право, отдельное от
+      // просмотра дашборда. Персональная детализация
+      // (`ops.analytics.personal_detail`) аналитику НЕ выдана: на этом
+      // разделении держится демонстрация §22.30 «privacy suppressed» — он видит
+      // смены за числом, но не видит, кто именно в них стоял.
+      'ops.analytics.drilldown',
+      // §22.26: «просмотр аналитики службы» и «просмотр аналитики ОМ» — разные
+      // пункты списка прав. Аналитику выданы оба: разделение демонстрируется
+      // не на нём, а на persona без аналитики вовсе.
+      'ops.analytics.operations',
+      'ops.export.run',
+      // §22.26: запуск отчёта — своё право, отдельное от просмотра аналитики.
+      // Sensitive export (`ops.report.export_sensitive`) аналитику НЕ выдан:
+      // на этом разделении держится демонстрация §20.32 «sensitive export —
+      // отдельная операция».
+      'ops.report.generate',
+      'ops.dictionary.view',
+      'ops.calendar.view',
+      // §20.28 «просмотр другого сотрудника»: контролёру нужен доступ к
+      // карточке, иначе журнал раскрытий некуда открыть. Право раскрытия при
+      // этом ему НЕ даётся — на нём и держится демонстрация разделения.
+      'status.view',
+      // §20.33: читать журнал раскрытий ИИН — контрольная функция, и она
+      // СОЗНАТЕЛЬНО отделена от права раскрывать (`personnel.identity.reveal`,
+      // которого у этой persona нет). Контролёр видит, кто кем интересовался,
+      // не получая доступа к самому идентификатору.
+      'personnel.identity.audit',
+      // §28: аналитик здесь снова в роли КОНТРОЛЁРА — видит чужие обращения
+      // (`ops.feedback.view_all`), но не их закрытое содержание
+      // (`ops.feedback.view_confidential` ему НЕ выдан). На этом разделении
+      // держится демонстрация признака «конфиденциально»: строка видна,
+      // содержание — нет. Чужие ЧЕРНОВИКИ не открываются и этим правом.
+      'ops.feedback.create',
+      'ops.feedback.view',
+      'ops.feedback.view_all',
+      // §28 detail: разбирать обращения он вправе, а вести ВНУТРЕННИЕ ЗАМЕТКИ
+      // (`ops.feedback.internal_note`) — нет. Промпт называет заметку «только
+      // по праву», и на этом разделении держится её демонстрация: заметка
+      // пишется о человеке, обратившемся за помощью, и право её вести — не то
+      // же, что право менять статус.
+      'ops.feedback.triage',
+    ],
     // Этап 7 реализовал реестр аналитики службы — реальная посадочная
     // страница этой persona (`status.view`, которого у неё нет, home не подходит).
     homeRoute: ROUTES.serviceAnalytics,

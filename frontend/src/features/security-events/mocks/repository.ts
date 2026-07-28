@@ -14,9 +14,12 @@ import type {
   AssignPlacementRequest,
   CloseSecurityEventRequest,
   CreateSecurityEventRequest,
+  ListBindableObjectsResponse,
   ListSecurityEventsParams,
   ListSecurityEventsResponse,
+  ReplaceAssignmentRequest,
   ReturnPlacementRequest,
+  SecurityEventPassportView,
   UpdateDemandRequest,
   UpdateForceAllocationRequest,
   UpdateReconRequest,
@@ -30,8 +33,17 @@ import type {
   SecurityEvent,
   StaffingDemandRow,
 } from '../model/types'
+import type { SecurityObjectProjection } from '../lib/passportBinding'
+import {
+  NO_PUBLISHED_VERSION_TEXT,
+  bindPassportVersion,
+  isBindingStale,
+  resolveApplicableVersion,
+} from '../lib/passportBinding'
 import { RECON_CHECKLIST_TEMPLATE } from './fixtures'
 import type { SecurityEventsSlice } from './fixtures'
+import { findObjectById, readObjectsProjection } from './objectsSlice'
+import { STAGE_ORDER } from '../lib/stageMeta'
 import { aggregateForceRequests } from './demandLogic'
 import { findPersonnel } from './personnelRoster'
 
@@ -80,10 +92,80 @@ function readSlice(envelope: DemoStateEnvelope): SecurityEventsSlice {
   return slice as SecurityEventsSlice
 }
 
+/**
+ * Сколько постов привязанной версии ещё НЕ в расчёте — ровно то число, что
+ * покажет кнопка импорта. Считается на чтении, а не хранится: расчёт правят
+ * вручную, и хранимый счётчик разъехался бы с реальностью.
+ */
+function countImportablePosts(
+  event: SecurityEvent,
+  object: SecurityObjectProjection | null,
+  versionId: string,
+): number {
+  const version = object?.passportVersions.find((v) => v.id === versionId) ?? null
+  if (version === null) {
+    return 0
+  }
+  const alreadyImported = new Set(
+    event.reconSectorPosts
+      .map((row) => row.sourcePostId)
+      .filter((sourcePostId): sourcePostId is string => sourcePostId !== null),
+  )
+  return version.sectors
+    .flatMap((sector) => sector.posts)
+    .filter((post) => !alreadyImported.has(post.id)).length
+}
+
 export function createSecurityEventsRepository(
   adapter: PersistenceAdapter,
   clock: DemoClock,
 ) {
+  /**
+   * ЕДИНСТВЕННАЯ точка, где слайс ОМ уходит в снапшот, и единственное место,
+   * где пишется журнал переходов §22.14.
+   *
+   * Журнал пишется ДИФФОМ: сравниваются стадии «до» и «после». Ручная запись
+   * на каждом переходе означала бы девять мест, где её можно забыть, — а
+   * забытый переход не сломал бы ни одного теста стадий и молча исказил бы
+   * конверсию. При таком устройстве новая операция, меняющая стадию, попадает
+   * в журнал сама, ничего не зная о нём.
+   */
+  function commitEvents(
+    current: DemoStateEnvelope,
+    nextEvents: SecurityEvent[],
+  ): DemoStateEnvelope['slices'] {
+    const previous = readSlice(current)
+    const before = new Map(previous.events.map((event) => [event.id, event.stage]))
+    const transitions = [...(previous.transitions ?? [])]
+    const now = clock.now()
+
+    for (const event of nextEvents) {
+      const fromStage = before.get(event.id) ?? null
+      // Создание тоже переход: до него стадии не было, и §22.14 считает
+      // «достигших этапа» в том числе на первом.
+      if (before.has(event.id) && fromStage === event.stage) continue
+      transitions.push({
+        id: `security-event-transition-${current.revision + 1}-${transitions.length + 1}`,
+        eventId: event.id,
+        fromStage,
+        toStage: event.stage,
+        kind:
+          fromStage !== null &&
+          STAGE_ORDER.indexOf(event.stage) < STAGE_ORDER.indexOf(fromStage)
+            ? 'RETURN'
+            : 'FORWARD',
+        occurredAt: now,
+      })
+    }
+
+    return {
+      ...current.slices,
+      // Журнал APPEND-ONLY: старые записи переносятся как есть, новые
+      // дописываются в конец. Ни одна операция их не правит и не удаляет.
+      [SLICE_NAME]: { events: nextEvents, transitions } satisfies SecurityEventsSlice,
+    }
+  }
+
   async function list(
     params: ListSecurityEventsParams,
     actorUserId: string | null,
@@ -140,6 +222,73 @@ export function createSecurityEventsRepository(
     return found
   }
 
+  /**
+   * Объекты, доступные для привязки нового ОМ (§9.6). Собственный узкий read
+   * model, а не переиспользование `features/objects` — кросс-фичевый импорт
+   * красный по ARCH-FE-013, а форма создания ОМ живёт здесь. Дублируется
+   * ровно то, что нужно выпадающему списку.
+   */
+  async function listBindableObjects(
+    actorUserId: string | null,
+  ): Promise<ListBindableObjectsResponse> {
+    if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    const objects = envelope === null ? [] : readObjectsProjection(envelope.slices)
+    const results = [...objects]
+      .sort((a, b) => a.code.localeCompare(b.code))
+      .map((object) => ({
+        id: object.id,
+        name: object.name,
+        code: object.code,
+        publishedVersionCount: object.passportVersions.length,
+      }))
+    return { results }
+  }
+
+  /**
+   * Производный (НЕ хранимый) взгляд на привязку: сам снимок лежит в ОМ, а
+   * «какая версия действует ПРЯМО СЕЙЧАС» пересчитывается на каждом чтении.
+   * Хранить `stale` было бы ошибкой: публикация новой версии паспорта не
+   * трогает ОМ (§9.6), и хранимый флаг молча устарел бы.
+   */
+  async function getPassportView(
+    id: string,
+    actorUserId: string | null,
+  ): Promise<SecurityEventPassportView> {
+    if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    const events = envelope === null ? [] : readSlice(envelope).events
+    const event = events.find((e) => e.id === id)
+    if (event === undefined) {
+      throw new RepositoryNotFoundError(id)
+    }
+    const object =
+      envelope === null || event.objectId === null
+        ? null
+        : findObjectById(envelope.slices, event.objectId)
+    const applicable =
+      object === null ? null : resolveApplicableVersion(object, event.businessDate)
+    return {
+      objectId: event.objectId,
+      objectKnown: object !== null,
+      binding: event.passportBinding,
+      applicableVersionId: applicable?.id ?? null,
+      applicableVersionNumber: applicable?.versionNumber ?? null,
+      stale:
+        event.passportBinding === null
+          ? false
+          : isBindingStale(event.passportBinding, applicable),
+      importablePostCount:
+        event.passportBinding === null
+          ? 0
+          : countImportablePosts(event, object, event.passportBinding.versionId),
+    }
+  }
+
   async function create(
     request: CreateSecurityEventRequest,
     actorUserId: string | null,
@@ -151,8 +300,8 @@ export function createSecurityEventsRepository(
     if (request.title.trim() === '') {
       fieldErrors.title = ['Обязательное поле.']
     }
-    if (request.objectName.trim() === '') {
-      fieldErrors.objectName = ['Обязательное поле.']
+    if (request.objectId.trim() === '') {
+      fieldErrors.objectId = ['Обязательное поле.']
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(request.businessDate)) {
       fieldErrors.businessDate = ['Укажите дату в формате ГГГГ-ММ-ДД.']
@@ -165,12 +314,27 @@ export function createSecurityEventsRepository(
     await runMutation(adapter, clock, (current) => {
       const slice = readSlice(current)
       const now = clock.now()
+      // Объект резолвится ВНУТРИ мутации: между валидацией и записью объект
+      // мог исчезнуть, а ОМ с битой ссылкой на объект — хуже отказа.
+      const object = findObjectById(current.slices, request.objectId)
+      if (object === null) {
+        throw new RepositoryValidationError({ objectId: ['Объект не найден в реестре.'] })
+      }
+      // §9.6: версия выбирается по бизнес-дате ОМ. Её отсутствие — НЕ ошибка
+      // создания: мероприятие на объекте без опубликованного паспорта вести
+      // можно, просто расчёт постов будет ручным (карточка скажет об этом).
+      const applicableVersion = resolveApplicableVersion(object, request.businessDate)
       const id = `security-event-${current.revision + 1}-${slice.events.length + 1}`
       created = {
         id,
         code: `ОМ-${request.businessDate.slice(0, 4)}-${slice.events.length + 1}`,
         title: request.title.trim(),
-        objectName: request.objectName.trim(),
+        objectId: object.id,
+        objectName: object.name,
+        passportBinding:
+          applicableVersion === null
+            ? null
+            : bindPassportVersion(object, applicableVersion, now),
         businessDate: request.businessDate,
         stage: 'BULLETIN',
         readinessPercent: 0,
@@ -199,10 +363,7 @@ export function createSecurityEventsRepository(
         createdAt: now,
         updatedAt: now,
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: { events: [...slice.events, created] } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(current, [...slice.events, created])
     })
     return created
   }
@@ -239,12 +400,10 @@ export function createSecurityEventsRepository(
         initialTasks: request.initialTasks.trim(),
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -297,12 +456,100 @@ export function createSecurityEventsRepository(
         reconSectorPosts: sectorPosts,
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
+    })
+    return updated
+  }
+
+  /**
+   * §9.6 «рекогносцировка может создать event-specific расчёт на основе
+   * паспорта». Импорт ДОБАВЛЯЕТ строки, а не заменяет расчёт: уже заведённые
+   * руками посты — тоже решение человека, затирать их операцией «подтянуть из
+   * паспорта» было бы потерей работы. Повторный импорт не плодит дубли —
+   * пост, уже пришедший из этой версии, пропускается.
+   */
+  async function importReconPostsFromPassport(
+    id: string,
+    actorUserId: string | null,
+  ): Promise<SecurityEvent> {
+    if (!hasPermission(actorUserId, RECON_PERMISSION)) {
+      throw new RepositoryPermissionError(RECON_PERMISSION)
+    }
+    let updated!: SecurityEvent
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.events.find((e) => e.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
       }
+      if (existing.stage !== 'RECON') {
+        throw new RepositoryBusinessRuleError(
+          'RECON_STAGE_REQUIRED',
+          'Расчёт постов формируется на этапе рекогносцировки.',
+        )
+      }
+      const binding = existing.passportBinding
+      if (binding === null) {
+        throw new RepositoryBusinessRuleError('NO_PASSPORT_VERSION', NO_PUBLISHED_VERSION_TEXT)
+      }
+      const object = findObjectById(current.slices, binding.objectId)
+      const version = object?.passportVersions.find((v) => v.id === binding.versionId) ?? null
+      if (version === null) {
+        throw new RepositoryBusinessRuleError(
+          'PASSPORT_VERSION_NOT_FOUND',
+          'Привязанная версия паспорта недоступна — обратитесь к владельцу объекта.',
+        )
+      }
+      const alreadyImported = new Set(
+        existing.reconSectorPosts
+          .map((row) => row.sourcePostId)
+          .filter((sourcePostId): sourcePostId is string => sourcePostId !== null),
+      )
+      const now = clock.now()
+      let counter = 0
+      const added: ReconSectorPost[] = []
+      for (const sector of version.sectors) {
+        for (const post of sector.posts) {
+          if (alreadyImported.has(post.id)) {
+            continue
+          }
+          counter += 1
+          added.push({
+            id: `${id}-imported-${now}-${counter}`,
+            sector: sector.name,
+            post: post.name,
+            task: post.task,
+            // Паспорт описывает ПОСТ, а не численность на конкретное
+            // мероприятие: 1 — минимально допустимое значение расчёта, его и
+            // уточняет старший наряда. Подставить сюда выдуманное число
+            // означало бы сочинить потребность за человека (§35).
+            need: 1,
+            requirements: post.requirements,
+            result: null,
+            comment: '',
+            sourceSectorId: sector.id,
+            sourcePostId: post.id,
+          })
+        }
+      }
+      if (added.length === 0) {
+        throw new RepositoryBusinessRuleError(
+          'NOTHING_TO_IMPORT',
+          'Все посты этой версии паспорта уже в расчёте.',
+        )
+      }
+      updated = {
+        ...existing,
+        reconSectorPosts: [...existing.reconSectorPosts, ...added],
+        updatedAt: now,
+      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -341,12 +588,10 @@ export function createSecurityEventsRepository(
         )
       }
       updated = { ...existing, stage: 'DEMAND', updatedAt: clock.now() }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -417,12 +662,10 @@ export function createSecurityEventsRepository(
         stage: 'FORCES',
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -465,12 +708,10 @@ export function createSecurityEventsRepository(
         return { ...r, allocatedCount, status, comment: request.comment.trim() }
       })
       updated = { ...existing, forceRequests, updatedAt: clock.now() }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -506,12 +747,10 @@ export function createSecurityEventsRepository(
         )
       }
       updated = { ...existing, stage: 'PLACEMENT', updatedAt: clock.now() }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -569,12 +808,10 @@ export function createSecurityEventsRepository(
         placementAssignments: [...existing.placementAssignments, assignment],
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -602,12 +839,10 @@ export function createSecurityEventsRepository(
         ),
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -649,12 +884,10 @@ export function createSecurityEventsRepository(
         )
       }
       updated = { ...existing, stage: 'APPROVAL', updatedAt: clock.now() }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -689,12 +922,10 @@ export function createSecurityEventsRepository(
         approvalComment: '',
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -732,12 +963,10 @@ export function createSecurityEventsRepository(
         approvalComment: request.comment.trim(),
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -770,12 +999,10 @@ export function createSecurityEventsRepository(
         ),
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -808,12 +1035,10 @@ export function createSecurityEventsRepository(
         )
       }
       updated = { ...existing, stage: 'CONDUCT', updatedAt: clock.now() }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -856,12 +1081,93 @@ export function createSecurityEventsRepository(
         journalEntries: [entry, ...existing.journalEntries],
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
+    })
+    return updated
+  }
+
+  /** §9.11 «Замена выбывшего сотрудника», сокращённо (FRONTEND_DECISIONS
+   * A56) — БЕЗ авто-подбора кандидата (алгоритм не утверждён заказчиком,
+   * REPLACEMENT-SUGGESTION-001 = business-policy-pending). Одна атомарная
+   * мутация: снимает исходное назначение, создаёт новое на ТОТ ЖЕ пост,
+   * пишет journal entry типа REPLACEMENT. */
+  async function replaceAssignment(
+    id: string,
+    request: ReplaceAssignmentRequest,
+    actorUserId: string | null,
+  ): Promise<SecurityEvent> {
+    if (!hasPermission(actorUserId, CONDUCT_PERMISSION)) {
+      throw new RepositoryPermissionError(CONDUCT_PERMISSION)
+    }
+    if (request.reasonCode.trim() === '') {
+      throw new RepositoryValidationError({ reasonCode: ['Обязательное поле.'] })
+    }
+    const incomingEmployee = findPersonnel(request.incomingEmployeeId)
+    if (incomingEmployee === undefined) {
+      throw new RepositoryValidationError({
+        incomingEmployeeId: ['Сотрудник не найден.'],
+      })
+    }
+
+    let updated!: SecurityEvent
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.events.find((e) => e.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
       }
+      if (existing.stage !== 'CONDUCT') {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STAGE_TRANSITION',
+          'Замена доступна только на этапе «Проведение».',
+        )
+      }
+      const outgoing = existing.placementAssignments.find((a) => a.id === request.assignmentId)
+      if (outgoing === undefined) {
+        throw new RepositoryNotFoundError(request.assignmentId)
+      }
+      const alreadyOnAnotherPost = existing.placementAssignments.some(
+        (a) => a.employeeId === request.incomingEmployeeId && a.postId !== outgoing.postId,
+      )
+      if (alreadyOnAnotherPost) {
+        throw new RepositoryBusinessRuleError(
+          'DOUBLE_ASSIGNMENT',
+          `${incomingEmployee.name} уже назначен(а) на другой пост этого мероприятия.`,
+        )
+      }
+      const post = existing.reconSectorPosts.find((p) => p.id === outgoing.postId)
+      const incoming: PlacementAssignment = {
+        id: `${id}-assignment-${existing.placementAssignments.length + 1}`,
+        postId: outgoing.postId,
+        employeeId: request.incomingEmployeeId,
+        employeeName: incomingEmployee.name,
+        acknowledgedAt: null,
+      }
+      const journalEntry: JournalEntry = {
+        id: `${id}-journal-${existing.journalEntries.length + 1}`,
+        type: 'REPLACEMENT',
+        title: `Замена: ${post?.post ?? outgoing.postId}`,
+        // ФИО в ростере оканчиваются на «.» (инициалы) — разделитель " — ",
+        // а не точка сразу после имени, иначе получалось бы «Д.. Причина».
+        description: `${outgoing.employeeName} → ${incomingEmployee.name} — причина: ${request.reasonCode.trim()}`,
+        createdAt: clock.now(),
+      }
+      updated = {
+        ...existing,
+        placementAssignments: [
+          ...existing.placementAssignments.filter((a) => a.id !== request.assignmentId),
+          incoming,
+        ],
+        journalEntries: [journalEntry, ...existing.journalEntries],
+        updatedAt: clock.now(),
+      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -917,12 +1223,10 @@ export function createSecurityEventsRepository(
         closedAt: clock.now(),
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -931,8 +1235,11 @@ export function createSecurityEventsRepository(
     list,
     get,
     create,
+    listBindableObjects,
+    getPassportView,
     updateBulletin,
     updateRecon,
+    importReconPostsFromPassport,
     completeRecon,
     approveDemand,
     updateForceAllocation,
@@ -945,6 +1252,7 @@ export function createSecurityEventsRepository(
     acknowledgePlacement,
     completeAcknowledgement,
     addJournalEntry,
+    replaceAssignment,
     closeSecurityEvent,
   }
 }

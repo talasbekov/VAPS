@@ -3,7 +3,25 @@
 // feature `traffic-light` (TrafficLightNode.tsx): токен-классы Tailwind,
 // НЕ собранный литерал (JIT-сканер видит только целые классы в исходнике).
 import { cva } from 'class-variance-authority'
-import type { SecurityEventStage } from '../model/types'
+import type { JournalEntryType, SecurityEventStage } from '../model/types'
+
+/**
+ * Порядок стадий жизненного цикла. Нужен, чтобы отличить переход ВПЕРЁД от
+ * возврата: §22.14 считает возвраты отдельным показателем, а не вычитает их
+ * из переходов. Порядок один на всю feature — второй список разошёлся бы с
+ * этим молча.
+ */
+export const STAGE_ORDER: readonly SecurityEventStage[] = [
+  'BULLETIN',
+  'RECON',
+  'DEMAND',
+  'FORCES',
+  'PLACEMENT',
+  'APPROVAL',
+  'ACKNOWLEDGEMENT',
+  'CONDUCT',
+  'CLOSED',
+]
 
 export const STAGE_LABEL: Record<SecurityEventStage, string> = {
   BULLETIN: 'Бюллетень',
@@ -15,6 +33,16 @@ export const STAGE_LABEL: Record<SecurityEventStage, string> = {
   ACKNOWLEDGEMENT: 'Ознакомление',
   CONDUCT: 'Проведение',
   CLOSED: 'Закрыто',
+}
+
+/** Подписи типов записей журнала штаба. Живут здесь, а не в карточке ОМ:
+ * тот же словарь читает «Архив дела» (`lib/archiveCase.ts` его раскладывает,
+ * страницы — рисуют), а два независимых литерала разъехались бы. */
+export const JOURNAL_TYPE_LABEL: Record<JournalEntryType, string> = {
+  INSTRUCTION: 'Инструктаж',
+  ORDER: 'Распоряжение',
+  INCIDENT: 'Инцидент',
+  REPLACEMENT: 'Замена',
 }
 
 export const stageBadgeVariants = cva(
@@ -30,8 +58,26 @@ export const stageBadgeVariants = cva(
         APPROVAL: 'bg-green-100 text-green-800',
         ACKNOWLEDGEMENT: 'bg-blue-100 text-blue-800',
         CONDUCT: 'bg-green-100 text-green-800',
-        CLOSED: 'bg-muted text-muted-foreground',
+        CLOSED: 'bg-muted text-slate-600',
       } satisfies Record<SecurityEventStage, string>,
     },
   },
 )
+
+/** Заливка полосы готовности — та же цветовая семья, что бейдж стадии
+ * (`stageBadgeVariants`), но сплошной тон вместо светлого фона. */
+export const stageProgressVariants = cva('h-full rounded-full', {
+  variants: {
+    stage: {
+      BULLETIN: 'bg-purple-600',
+      RECON: 'bg-purple-600',
+      DEMAND: 'bg-amber-600',
+      FORCES: 'bg-amber-600',
+      PLACEMENT: 'bg-primary',
+      APPROVAL: 'bg-green-600',
+      ACKNOWLEDGEMENT: 'bg-primary',
+      CONDUCT: 'bg-green-600',
+      CLOSED: 'bg-muted-foreground/40',
+    } satisfies Record<SecurityEventStage, string>,
+  },
+})

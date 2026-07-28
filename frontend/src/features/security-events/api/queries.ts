@@ -7,6 +7,7 @@ import { useApiMutation } from '../../../shared/api/useApiMutation'
 import type { ApiFailure } from '../../../shared/api/errors'
 import { securityEventKeys } from './query-keys'
 import {
+  BINDABLE_OBJECTS_PATH,
   PERSONNEL_PATH,
   SECURITY_EVENTS_PATH,
   securityEventAcknowledgePath,
@@ -20,11 +21,14 @@ import {
   securityEventForceAllocationPath,
   securityEventForcesCompletePath,
   securityEventJournalPath,
+  securityEventPassportPath,
   securityEventPlacementAssignPath,
   securityEventPlacementCompletePath,
   securityEventPlacementUnassignPath,
   securityEventReconCompletePath,
+  securityEventReconImportPath,
   securityEventReconPath,
+  securityEventReplaceAssignmentPath,
 } from './pending-contracts'
 import type {
   AcknowledgePlacementResponse,
@@ -42,11 +46,16 @@ import type {
   CompleteReconResponse,
   CreateSecurityEventRequest,
   CreateSecurityEventResponse,
+  ImportReconPostsResponse,
+  ListBindableObjectsResponse,
   ListPersonnelResponse,
   ListSecurityEventsParams,
   ListSecurityEventsResponse,
+  ReplaceAssignmentRequest,
+  ReplaceAssignmentResponse,
   ReturnPlacementRequest,
   ReturnPlacementResponse,
+  SecurityEventPassportView,
   UnassignPlacementResponse,
   UpdateBulletinRequest,
   UpdateBulletinResponse,
@@ -67,13 +76,17 @@ function toQueryString(params: ListSecurityEventsParams): string {
   return search.toString()
 }
 
-export function useSecurityEventsList(params: ListSecurityEventsParams) {
+export function useSecurityEventsList(
+  params: ListSecurityEventsParams,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery<ListSecurityEventsResponse, ApiFailure>({
     queryKey: securityEventKeys.list(params),
     queryFn: () =>
       apiClient.get<ListSecurityEventsResponse>(
         `${SECURITY_EVENTS_PATH}?${toQueryString(params)}`,
       ),
+    enabled: options.enabled ?? true,
   })
 }
 
@@ -91,6 +104,38 @@ export function useCreateSecurityEvent() {
       apiClient.post<CreateSecurityEventResponse>(SECURITY_EVENTS_PATH, body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: securityEventKeys.lists() })
+    },
+  })
+}
+
+/** Список объектов для привязки нового ОМ (§9.6). */
+export function useBindableObjects(options: { enabled?: boolean } = {}) {
+  return useQuery<ListBindableObjectsResponse, ApiFailure>({
+    queryKey: securityEventKeys.bindableObjects(),
+    queryFn: () => apiClient.get<ListBindableObjectsResponse>(BINDABLE_OBJECTS_PATH),
+    enabled: options.enabled ?? true,
+  })
+}
+
+/** Привязка ОМ к версии паспорта: снимок + пересчитанное «что действует сейчас». */
+export function useSecurityEventPassport(id: string, options: { enabled?: boolean } = {}) {
+  return useQuery<SecurityEventPassportView, ApiFailure>({
+    queryKey: securityEventKeys.passport(id),
+    queryFn: () => apiClient.get<SecurityEventPassportView>(securityEventPassportPath(id)),
+    enabled: options.enabled ?? true,
+  })
+}
+
+export function useImportReconPostsFromPassport(id: string) {
+  const queryClient = useQueryClient()
+  return useApiMutation<ImportReconPostsResponse, Record<string, never>>({
+    mutationFn: () =>
+      apiClient.post<ImportReconPostsResponse>(securityEventReconImportPath(id), {}),
+    onSuccess: (data) => {
+      queryClient.setQueryData(securityEventKeys.detail(id), data)
+      // Счётчик «сколько ещё можно импортировать» живёт в passport-view —
+      // без инвалидации кнопка осталась бы предлагать уже перенесённые посты.
+      void queryClient.invalidateQueries({ queryKey: securityEventKeys.passport(id) })
     },
   })
 }
@@ -271,6 +316,17 @@ export function useAddJournalEntry(id: string) {
   return useApiMutation<AddJournalEntryResponse, AddJournalEntryRequest>({
     mutationFn: (body) =>
       apiClient.post<AddJournalEntryResponse>(securityEventJournalPath(id), body),
+    onSuccess: (data) => {
+      queryClient.setQueryData(securityEventKeys.detail(id), data)
+    },
+  })
+}
+
+export function useReplaceAssignment(id: string) {
+  const queryClient = useQueryClient()
+  return useApiMutation<ReplaceAssignmentResponse, ReplaceAssignmentRequest>({
+    mutationFn: (body) =>
+      apiClient.post<ReplaceAssignmentResponse>(securityEventReplaceAssignmentPath(id), body),
     onSuccess: (data) => {
       queryClient.setQueryData(securityEventKeys.detail(id), data)
     },

@@ -8,6 +8,26 @@
 // участников (Epic 18.3, скрытые рейтинги D3) и полный архив-просмотр —
 // Not started, см. FRONTEND_TRACEABILITY_MATRIX.md (не заявлять статусы,
 // которых ещё нет ни в UI, ни в repository, запрет §35).
+/**
+ * Снимок привязки ОМ к опубликованной версии паспорта объекта (§9.6). Именно
+ * снимок, а не ссылка: §9.6 «старые назначения продолжают ссылаться на
+ * историческую версию» и «публикация новой версии паспорта не переписывает
+ * действующую расстановку» — если бы карточка каждый раз перерешала, какая
+ * версия действует, публикация молча переписала бы согласованную расстановку.
+ *
+ * `objectName` продублирован СОЗНАТЕЛЬНО: переименование объекта не должно
+ * задним числом менять уже напечатанные и заархивированные документы.
+ */
+export interface PassportBinding {
+  objectId: string
+  objectName: string
+  versionId: string
+  versionNumber: number
+  /** Дата, с которой действует привязанная версия (YYYY-MM-DD). */
+  effectiveFrom: string
+  boundAt: string
+}
+
 export const SECURITY_EVENT_STAGES = [
   'BULLETIN',
   'RECON',
@@ -33,7 +53,19 @@ export interface ReconChecklistItem {
   comment: string
 }
 
-/** Строка «Посты и секторы» рекогносцировки (Smart Josparlau.dc.html:441-480) — СКОПИРОВАНА в контекст ОМ, не Object/Sector/Post Epic 14 (тот — Этап 5, полноценный паспорт объекта). */
+/**
+ * Строка «Посты и секторы» рекогносцировки (Smart Josparlau.dc.html:441-480) —
+ * СКОПИРОВАНА в контекст ОМ, не Object/Sector/Post Epic 14 (тот — Этап 5,
+ * полноценный паспорт объекта). §9.6 это прямо разрешает: «рекогносцировка
+ * может создать event-specific расчёт на основе паспорта», «event-specific
+ * изменение поста не редактирует паспорт автоматически».
+ *
+ * `sourceSectorId`/`sourcePostId` — откуда строка пришла в расчёт. Заполнены
+ * при импорте из привязанной версии паспорта, `null` у строк, заведённых
+ * руками. Через них замыкается цепочка §9.6 «расстановка ссылается на
+ * objectId / passportVersionId / sectorId / postId»: назначение → строка
+ * расчёта → снимок привязки (`SecurityEvent.passportBinding`) → объект.
+ */
 export interface ReconSectorPost {
   id: string
   sector: string
@@ -43,6 +75,10 @@ export interface ReconSectorPost {
   requirements: string
   result: ReconCheckResult
   comment: string
+  /** Сектор привязанной версии паспорта, `null` у ручной строки. */
+  sourceSectorId: string | null
+  /** Пост привязанной версии паспорта, `null` у ручной строки. */
+  sourcePostId: string | null
 }
 
 /** Строка потребности в силах (Smart Josparlau.dc.html:551-583 «1 · Потребность в силах»). */
@@ -110,11 +146,47 @@ export interface ClosureDirectionSummary {
   summary: string
 }
 
+/**
+ * §22.14: событие перехода жизненного цикла. APPEND-ONLY — записи не
+ * правятся и не удаляются, потому что журнал переходов и есть история; правка
+ * задним числом сделала бы воронку недоказуемой.
+ *
+ * Пишется ДИФФОМ на записи слайса (см. `mocks/repository.ts` `commitEvents`),
+ * а не руками на каждом переходе: девять операций меняют стадию, и ручная
+ * запись рано или поздно была бы забыта в одной из них — а забытый переход
+ * молча исказил бы конверсию.
+ */
+export interface SecurityEventTransition {
+  id: string
+  eventId: string
+  /** `null` — создание мероприятия: до него стадии не было. */
+  fromStage: SecurityEventStage | null
+  toStage: SecurityEventStage
+  /** `RETURN` — переход НАЗАД по порядку стадий (возврат на доработку).
+   * §22.14 считает возвраты отдельно от переходов, а не вычитает их. */
+  kind: 'FORWARD' | 'RETURN'
+  occurredAt: string
+}
+
 export interface SecurityEvent {
   id: string
   code: string
   title: string
+  /**
+   * Объект реестра, на котором проводится ОМ (§9.6 «объект и паспорт — разные
+   * сущности»). `null` — мероприятие, заведённое до появления привязки:
+   * так честнее, чем угадывать объект по `objectName` (совпадение имён —
+   * ровно та ложная склейка, которую запретили в A44-A46).
+   */
+  objectId: string | null
+  /** Снимок имени объекта: показывается и в тех ОМ, где `objectId` — null. */
   objectName: string
+  /**
+   * §9.6: конкретная опубликованная версия паспорта, действующая на дату ОМ.
+   * `null` — либо объект не привязан, либо на дату нет опубликованной версии
+   * (оба случая обрабатываются ЯВНО, см. lib/passportBinding.ts).
+   */
+  passportBinding: PassportBinding | null
   businessDate: string
   stage: SecurityEventStage
   /** Готовность текущей стадии, 0–100 (демонстрационная метрика — не читай как факт). */

@@ -10,7 +10,7 @@ import { Link } from 'react-router'
 import { Button } from '../../../shared/ui/Button'
 import { ROUTES } from '../../../shared/routes'
 import { useSecurityEventsList } from '../api/queries'
-import { STAGE_LABEL, stageBadgeVariants } from '../lib/stageMeta'
+import { STAGE_LABEL, stageBadgeVariants, stageProgressVariants } from '../lib/stageMeta'
 import { CreateSecurityEventDialog } from './CreateSecurityEventDialog'
 
 export function CommandCenterPage() {
@@ -61,7 +61,7 @@ export function CommandCenterPage() {
             to={ROUTES.securityEventDetailTo(event.id)}
             className="flex items-center gap-3.5 border-b py-3 text-left last:border-0 hover:bg-muted/30"
           >
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[10px] bg-primary/10 text-sm font-extrabold text-primary">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[10px] bg-primary/10 text-sm font-extrabold text-blue-800">
               {event.businessDate.slice(8, 10)}
             </span>
             <span className="min-w-0 flex-1">
@@ -70,6 +70,12 @@ export function CommandCenterPage() {
               </span>
               <span className="block text-[11.5px] text-muted-foreground">
                 {event.businessDate} · {event.objectName}
+              </span>
+              <span className="mt-2 block h-[5px] overflow-hidden rounded-full bg-muted">
+                <span
+                  className={stageProgressVariants({ stage: event.stage })}
+                  style={{ width: `${event.readinessPercent}%` }}
+                />
               </span>
             </span>
             <span className={stageBadgeVariants({ stage: event.stage })}>

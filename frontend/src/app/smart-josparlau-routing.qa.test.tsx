@@ -40,7 +40,11 @@ const OPS_CODES = [
   'status.view',
   'ops.object.view',
   'ops.analytics.view',
+  'ops.analytics.operations',
   'ops.duty.view',
+  'ops.dictionary.view',
+  'ops.calendar.view',
+  'ops.feedback.view',
 ] as const
 
 function usePermissionsResponse(payload: { permissions: string[] }) {
@@ -64,12 +68,24 @@ const ROUTE_MATRIX = [
   { route: ROUTES.commandCenter, code: 'ops.dashboard.view' },
   { route: ROUTES.securityEvents, code: 'ops.security_event.view' },
   { route: ROUTES.securityEventDetailTo('does-not-exist'), code: 'ops.security_event.view' },
+  { route: ROUTES.securityEventArchiveTo('does-not-exist'), code: 'ops.security_event.view' },
   { route: ROUTES.employees, code: 'status.view' },
   { route: ROUTES.employeeDetailTo('does-not-exist'), code: 'status.view' },
   { route: ROUTES.objects, code: 'ops.object.view' },
   { route: ROUTES.objectDetailTo('does-not-exist'), code: 'ops.object.view' },
+  { route: ROUTES.objectPassportVersionTo('does-not-exist', 'v1'), code: 'ops.object.view' },
   { route: ROUTES.serviceAnalytics, code: 'ops.analytics.view' },
+  // §22.27: аналитика ОМ перепроверяет СВОЁ право — переход с разрешённого
+  // дашборда службы доступа к мероприятиям не даёт.
+  { route: ROUTES.operationsAnalytics, code: 'ops.analytics.operations' },
   { route: ROUTES.duties, code: 'ops.duty.view' },
+  { route: ROUTES.dictionaries, code: 'ops.dictionary.view' },
+  { route: ROUTES.dictionaryDetailTo('does-not-exist'), code: 'ops.dictionary.view' },
+  { route: ROUTES.calendar, code: 'ops.calendar.view' },
+  // §28: раздел обращений закрыт своим правом — право читать любой другой
+  // раздел его не открывает.
+  { route: ROUTES.feedback, code: 'ops.feedback.view' },
+  { route: ROUTES.feedbackDetailTo('does-not-exist'), code: 'ops.feedback.view' },
 ] as const
 
 describe('Карта гейтов Smart Josparlau-маршрутов (§34 route audit)', () => {
