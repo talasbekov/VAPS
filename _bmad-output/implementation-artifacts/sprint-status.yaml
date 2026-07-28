@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-28 (10.8a → done)
+# last_updated: 2026-07-28 (10.8a → done, 10.10a → ready-for-dev)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -506,7 +506,7 @@ development_status:
   #            доходит до экрана /daily-expense и получает 403 на сохранении).
   #            🔴 Красная проба №5 подтвердила таблицу прав AC-3 прогоном:
   #            DIVISION_OPERATOR действительно не проходит массовое обновление.
-  10-10a-многоакторный-прогон-цепочки: backlog
+  10-10a-многоакторный-прогон-цепочки: ready-for-dev
   epic-10-retrospective: done
 
   # Epic 11: Уведомления — центр + WebSocket
