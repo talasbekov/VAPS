@@ -9,10 +9,12 @@ import {
   describeOverrideFailure,
   expenseFileName,
   isOverrideReasonComplete,
+  parseExpenseJournal,
   parseIssuedReport,
   parseLaggards,
   todayLocalIso,
 } from './expense'
+import type { IssuedExpenseReport } from './expense'
 import {
   ApiError,
   BusinessRuleError,
@@ -372,5 +374,83 @@ describe('describeOverrideFailure: тотальная карта отказов 
     const d = describeOverrideFailure(apiError(418, null, 'HTTP 418'))
     expect(d.kind).toBe('other')
     expect(d.message).toContain('HTTP 418')
+  })
+})
+
+describe('parseExpenseJournal: тотальный разбор конверта журнала (Story 10.5c)', () => {
+  function doc(over: Partial<IssuedExpenseReport> = {}): IssuedExpenseReport {
+    return {
+      id: 'b2c3d4e5-f607-4819-a2b3-c4d5e6f70819',
+      doc_type: 'EXPENSE',
+      number: 1,
+      year: 2026,
+      business_date: '2026-07-19',
+      division_id: '7a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9',
+      submission_id: 512,
+      submission_version: 1,
+      status: 'ISSUED',
+      attachment_id: 'c3d4e5f6-0718-492a-b3c4-d5e6f7081920',
+      sha256: 'e3b0',
+      reason: '',
+      supersedes_number: null,
+      supersedes_year: null,
+      ...over,
+    }
+  }
+
+  it('валидный конверт с двумя строками (одна с цепочкой, одна без) → обе разобраны', () => {
+    const withChain = doc({
+      id: 'd1',
+      number: 2,
+      status: 'ISSUED',
+      reason: 'правка ростера',
+      supersedes_number: 1,
+      supersedes_year: 2026,
+    })
+    const withoutChain = doc({ id: 'd2', number: 1, status: 'SUPERSEDED' })
+    const page = parseExpenseJournal({
+      count: 2,
+      next: null,
+      previous: null,
+      results: [withChain, withoutChain],
+    })
+    expect(page).toEqual({ results: [withChain, withoutChain], count: 2, hasMore: false })
+  })
+
+  it('мусорный элемент внутри results отброшен, валидные строки не пострадали', () => {
+    const valid = doc({ id: 'd1' })
+    const page = parseExpenseJournal({
+      count: 2,
+      next: null,
+      previous: null,
+      results: [valid, { garbage: true }],
+    })
+    expect(page.results).toEqual([valid])
+    // count — ИЗ КОНВЕРТА вербатим, не длина отфильтрованного массива (AC-5).
+    expect(page.count).toBe(2)
+  })
+
+  it('next непустой → hasMore: true', () => {
+    const page = parseExpenseJournal({
+      count: 5,
+      next: 'http://testserver/api/operations/expense-reports/journal/?limit=2&offset=2',
+      previous: null,
+      results: [doc()],
+    })
+    expect(page.hasMore).toBe(true)
+  })
+
+  it('next: null → hasMore: false', () => {
+    const page = parseExpenseJournal({ count: 1, next: null, previous: null, results: [doc()] })
+    expect(page.hasMore).toBe(false)
+  })
+
+  it('пустой/мусорный конверт → {results:[], count:0, hasMore:false}', () => {
+    expect(parseExpenseJournal(null)).toEqual({ results: [], count: 0, hasMore: false })
+    expect(parseExpenseJournal({ results: 'не массив' })).toEqual({
+      results: [],
+      count: 0,
+      hasMore: false,
+    })
   })
 })

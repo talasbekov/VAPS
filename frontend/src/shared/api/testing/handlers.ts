@@ -275,6 +275,12 @@ export const handlers = [
   http.post('*/api/operations/expense-reports/override-tomorrow-block/', () =>
     HttpResponse.json(tomorrowBlockAlreadyOverriddenEnvelope, { status: 409 }),
   ),
+  // Story 10.5c: журнал выпусков — нейтральный пустой дефолт (незамоканный
+  // роут не должен ронять чужие тесты `onUnhandledRequest: 'error'`, тот же
+  // урок, что дефолты daily-submissions/traffic-light).
+  http.get('*/api/operations/expense-reports/journal/', () =>
+    HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+  ),
   // 500 с конвертом
   http.get('*/api/audit/logs/', () =>
     HttpResponse.json(serverEnvelope, { status: 500 }),

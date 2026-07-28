@@ -22,6 +22,17 @@ import type { components } from '../../shared/api/schema'
 export type IssuedExpenseReport = components['schemas']['IssuedExpenseReport']
 
 /**
+ * Подписи `IssuedExpenseReportStatusEnum` — дословно из схемы. Живёт здесь
+ * (не в `ExpenseReportPage.tsx`), т.к. `ExpenseJournalPanel` (10.5c) тоже
+ * его использует — импорт словаря из соседнего КОМПОНЕНТА дал бы
+ * циклическую зависимость между двумя файлами страницы.
+ */
+export const STATUS_LABELS: Record<IssuedExpenseReport['status'], string> = {
+  ISSUED: 'Выпущен',
+  SUPERSEDED: 'Заменён',
+}
+
+/**
  * Тело выпуска — РОВНО два поля (`ExpenseReportIssueRequest`). Номер выдаёт
  * `DocumentSequence.allocate_number` под row-локом на бэке: клиент его не
  * подаёт и не может (фантом №3 — поля «Исх. №» и тумблера ФИНАЛ не существует).
@@ -148,6 +159,41 @@ export function parseIssuedReport(raw: unknown): IssuedExpenseReport | null {
     supersedes_number: row.supersedes_number,
     supersedes_year: row.supersedes_year,
   }
+}
+
+/**
+ * Story 10.5c — разобранный конверт журнала выпусков (`GET .../journal/`,
+ * 10.5b). `count`/`hasMore` — ИЗ КОНВЕРТА вербатим (AC-5 текст «из N»
+ * обязан быть серверным числом), не пересчитываются по длине
+ * `results` — невалидный элемент внутри страницы отбрасывается, но
+ * не уменьшает заявленный сервером total.
+ */
+export interface ExpenseJournalPage {
+  results: IssuedExpenseReport[]
+  count: number
+  hasMore: boolean
+}
+
+/**
+ * Тотальный разбор конверта `{count, next, previous, results}` (10.5b,
+ * зеркало `DailySubmissionListResponse`-конверта 10.1c). Каждый элемент
+ * `results` проходит через `parseIssuedReport` — переиспользование, не
+ * копия его логики (AC-7); мусорный элемент отбрасывается, остальные
+ * строки не страдают (тот же приём, что `parseLaggards` ниже).
+ */
+export function parseExpenseJournal(raw: unknown): ExpenseJournalPage {
+  const envelope = asRecord(raw)
+  if (envelope === null || !Array.isArray(envelope.results)) {
+    return { results: [], count: 0, hasMore: false }
+  }
+  const results: IssuedExpenseReport[] = []
+  for (const item of envelope.results) {
+    const parsed = parseIssuedReport(item)
+    if (parsed !== null) results.push(parsed)
+  }
+  const count = typeof envelope.count === 'number' ? envelope.count : results.length
+  const hasMore = typeof envelope.next === 'string' && envelope.next !== ''
+  return { results, count, hasMore }
 }
 
 /**

@@ -833,3 +833,205 @@ describe('Смена контекста: состояние не пережив�
     )
   })
 })
+
+describe('Story 10.5c: журнал выпусков', () => {
+  function journalPage(
+    results: Record<string, unknown>[],
+    over: Record<string, unknown> = {},
+  ) {
+    return { count: results.length, next: null, previous: null, results, ...over }
+  }
+
+  function docRow(over: Record<string, unknown> = {}) {
+    return {
+      id: 'd1',
+      doc_type: 'EXPENSE',
+      number: 1,
+      year: 2026,
+      business_date: '2026-07-19',
+      division_id: DIVISION_ID,
+      submission_id: 512,
+      submission_version: 1,
+      status: 'ISSUED',
+      attachment_id: 'c3d4e5f6-0718-492a-b3c4-d5e6f7081920',
+      sha256: 'e3b0',
+      reason: '',
+      supersedes_number: null,
+      supersedes_year: null,
+      ...over,
+    }
+  }
+
+  it('AC-1: журнал НЕ перезапрашивается при смене даты (свой ключ, не зависит от businessDate)', async () => {
+    let calls = 0
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/journal/', () => {
+        calls += 1
+        return HttpResponse.json(journalPage([]))
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+    await screen.findByText('Выпусков ещё не было')
+    await waitFor(() => expect(calls).toBe(1))
+
+    await user.clear(screen.getByLabelText('Дата'))
+    await user.type(screen.getByLabelText('Дата'), '2026-06-01')
+
+    // Дать ExpenseReportPanel время перемонтироваться под новой датой.
+    await screen.findByRole('button', { name: 'Сформировать' })
+    expect(calls).toBe(1)
+  })
+
+  it('AC-2: строка с цепочкой и причиной рендерится дословно', async () => {
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/journal/', () =>
+        HttpResponse.json(
+          journalPage([
+            docRow({
+              id: 'd2',
+              number: 2,
+              status: 'ISSUED',
+              reason: 'правка ростера',
+              supersedes_number: 1,
+              supersedes_year: 2026,
+            }),
+          ]),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+
+    const list = await screen.findByTestId('expense-journal-list')
+    expect(within(list).getByText(/Исх\.№ 2\/2026/)).toBeInTheDocument()
+    expect(within(list).getByText(/Выпущен/)).toBeInTheDocument()
+    expect(within(list).getByText('взамен исх.№ 1/2026')).toBeInTheDocument()
+    expect(within(list).getByText('правка ростера')).toBeInTheDocument()
+  })
+
+  it('AC-3: пустой журнал → role="status", не alert', async () => {
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/journal/', () => HttpResponse.json(journalPage([]))),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+
+    expect(await screen.findByText('Выпусков ещё не было')).toHaveAttribute(
+      'role',
+      'status',
+    )
+  })
+
+  it('AC-4: ошибка журнала (403) → инлайн, кнопка «Сформировать» остаётся рабочей', async () => {
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/', () =>
+        HttpResponse.json(errorEnvelope('ENTITY_NOT_FOUND', 'нет'), { status: 404 }),
+      ),
+      http.get('*/api/operations/expense-reports/journal/', () =>
+        HttpResponse.json(errorEnvelope('PERMISSION_DENIED', 'нет'), { status: 403 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+
+    expect(
+      await screen.findByText('Не удалось загрузить журнал выпусков.'),
+    ).toBeInTheDocument()
+    // Панель выпуска не задета ошибкой журнала — независимые запросы (AC-4).
+    expect(await screen.findByRole('button', { name: 'Сформировать' })).toBeInTheDocument()
+  })
+
+  it('AC-5: next непустой → «последние N из count»', async () => {
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/journal/', () =>
+        HttpResponse.json(
+          journalPage([docRow()], {
+            count: 51,
+            next: 'http://testserver/api/operations/expense-reports/journal/?limit=50&offset=50',
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+
+    expect(
+      await screen.findByText('Показаны последние 1 из 51'),
+    ).toBeInTheDocument()
+  })
+
+  it('ревью-фикс: next: null, но валидных строк меньше count (мусор отброшен) → текст всё равно показан', async () => {
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/journal/', () =>
+        HttpResponse.json(
+          journalPage([docRow(), { garbage: true }], { count: 2, next: null }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+
+    expect(
+      await screen.findByText('Показаны последние 1 из 2'),
+    ).toBeInTheDocument()
+  })
+
+  it('ревью-фикс: успешный выпуск инвалидирует журнал', async () => {
+    let journalBody = journalPage([])
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/', () =>
+        HttpResponse.json(errorEnvelope('ENTITY_NOT_FOUND', 'нет'), { status: 404 }),
+      ),
+      http.get('*/api/operations/expense-reports/journal/', () =>
+        HttpResponse.json(journalBody),
+      ),
+      http.post('*/api/operations/expense-reports/', () =>
+        HttpResponse.json(docRow({ id: 'new-doc' }), { status: 201 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+    await screen.findByText('Выпусков ещё не было')
+
+    // «Сервер» теперь отдаёт свежую строку — до инвалидации клиент об этом
+    // не знает (react-query кэширует по queryKey).
+    journalBody = journalPage([docRow({ id: 'new-doc' })])
+    await user.click(await screen.findByRole('button', { name: 'Сформировать' }))
+
+    expect(await screen.findByTestId('expense-journal-list')).toBeInTheDocument()
+    expect(screen.queryByText('Выпусков ещё не было')).not.toBeInTheDocument()
+  })
+
+  it('AC-8: регресс — журнал и панель выпуска сосуществуют, ни один не гасит другой', async () => {
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/', () =>
+        HttpResponse.json(errorEnvelope('ENTITY_NOT_FOUND', 'нет'), { status: 404 }),
+      ),
+      http.get('*/api/operations/expense-reports/journal/', () =>
+        HttpResponse.json(journalPage([docRow()])),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+
+    expect(await screen.findByRole('button', { name: 'Сформировать' })).toBeInTheDocument()
+    expect(await screen.findByTestId('expense-journal-list')).toBeInTheDocument()
+  })
+})

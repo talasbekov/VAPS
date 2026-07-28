@@ -45,8 +45,10 @@ import { Button } from '../../shared/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader } from '../../shared/ui/Card'
 import { Input } from '../../shared/ui/Input'
 import { Label } from '../../shared/ui/Label'
+import { ExpenseJournalPanel } from './ExpenseJournalPanel'
 import { TomorrowBlockOverrideForm } from './TomorrowBlockOverrideForm'
 import {
+  STATUS_LABELS,
   describeDownloadFailure,
   describeIssueFailure,
   describeOverrideFailure,
@@ -81,11 +83,9 @@ const BLOCKED_HEADING = 'Не готово'
 /** Вход в контрольную печатную форму (10.7) — не официальный документ. */
 const PRINT_FORM_LINK_LABEL = 'Печатная форма'
 
-/** Подписи `IssuedExpenseReportStatusEnum` — дословно из схемы. */
-const STATUS_LABELS: Record<IssuedExpenseReport['status'], string> = {
-  ISSUED: 'Выпущен',
-  SUPERSEDED: 'Заменён',
-}
+// STATUS_LABELS — в expense.ts (не здесь): ExpenseJournalPanel (10.5c) тоже
+// его использует, а импорт из соседнего компонента дал бы циклическую
+// зависимость (ExpenseReportPage → ExpenseJournalPanel → ExpenseReportPage).
 
 /**
  * Сохранение блоба файлом. Синтетический `<a download>` — единственный путь:
@@ -231,6 +231,13 @@ function ExpenseReportPanel({
       // свежего ответа чтения, а не из тела POST'а.
       void queryClient.invalidateQueries({
         queryKey: ['expense-report', divisionId, businessDate],
+      })
+      // Story 10.5c (ревью-фикс): выпуск создаёт НОВУЮ строку журнала (и,
+      // при amendment-цепочке, переводит прежнюю в SUPERSEDED) — без этой
+      // инвалидации журнал показывал бы устаревший список до размонтирования
+      // панели (смена подразделения/даты), хотя выпуск только что удался.
+      void queryClient.invalidateQueries({
+        queryKey: ['expense-journal', divisionId],
       })
     },
   })
@@ -532,6 +539,14 @@ export function ExpenseReportPage() {
           divisionNameById={divisionNameById}
         />
       )}
+
+      {/* Story 10.5c: журнал — division-scoped, НЕ date-scoped (AC-1).
+          Свой ключ `key={divisionId}` (без businessDate) — смена даты НЕ
+          ремаунтит и НЕ перезапрашивает журнал; независим от выбора даты и
+          от состояния ExpenseReportPanel выше (AC-4). */}
+      {divisionId !== null ? (
+        <ExpenseJournalPanel key={divisionId} divisionId={divisionId} />
+      ) : null}
     </div>
   )
 }
