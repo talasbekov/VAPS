@@ -19,6 +19,9 @@ type MyPermissionsResponse =
 type TrafficLightTreeResponse =
   paths['/api/operations/traffic-light/tree/']['get']['responses']['200']['content']['application/json']
 
+type TrafficLightDivisionResponse =
+  paths['/api/operations/traffic-light/division/']['get']['responses']['200']['content']['application/json']
+
 type IssuedExpenseReportResponse =
   paths['/api/operations/expense-reports/']['get']['responses']['200']['content']['application/json']
 
@@ -65,6 +68,17 @@ export const employeesListFixture: EmployeesListResponse = {
 export const trafficLightTreeFixture: TrafficLightTreeResponse = {
   business_date: '2026-07-19',
   nodes: [],
+}
+
+// Story 10.3b: per-division светофор с drift (10.3c) — нейтральный дефолт
+// GREEN/drift:null. Обязателен по тому же уроку, что дефолт tree выше:
+// `DaySubmissionPanel` теперь запрашивает этот роут на любом сданном дне —
+// без дефолта каждый тест daily-grid, доходящий до «День сдан», ловил бы
+// onUnhandledRequest: 'error' по инфраструктуре, а не по логике сценария.
+export const divisionTrafficLightFixture: TrafficLightDivisionResponse = {
+  status: 'GREEN',
+  late: false,
+  drift: null,
 }
 
 // Выпущенный расход (стори 10.5) — РОВНО 11 полей `IssuedExpenseReportSerializer`.
@@ -205,6 +219,11 @@ export const handlers = [
   // '/api/…' МОЛЧА не матчится против абсолютного URL запроса.
   http.get('*/api/operations/traffic-light/tree/', () =>
     HttpResponse.json(trafficLightTreeFixture),
+  ),
+  // 200 (стори 10.3b): per-division светофор с drift — нейтральный дефолт
+  // (см. фикстуру выше).
+  http.get('*/api/operations/traffic-light/division/', () =>
+    HttpResponse.json(divisionTrafficLightFixture),
   ),
   // 404 (стори 10.5): расход за дату НЕ выпускался — нейтральный дефолт.
   // Обязателен, а не опционален: `app-layout.qa.test.tsx` монтирует `/reports`,

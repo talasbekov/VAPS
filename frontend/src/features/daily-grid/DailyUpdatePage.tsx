@@ -591,6 +591,7 @@ export function DailyUpdatePage() {
         rowCount={employees.length}
         dirtyCount={dirtyCount}
         localDrift={localDrift}
+        nameById={nameById}
         submission={daySubmission}
         submissions={daySubmissions}
         isLoading={daySubmissionQuery.isPending && divisionId !== null && !dateInvalid}

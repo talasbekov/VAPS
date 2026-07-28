@@ -113,6 +113,7 @@ function renderPanel(
     rowCount: 40,
     dirtyCount: 0,
     localDrift: [],
+    nameById: {},
     submission: null,
     submissions: [],
     isLoading: false,
@@ -409,6 +410,7 @@ it('AC-8: перечитка после 409 принесла «День сдан
     rowCount: 40,
     dirtyCount: 0,
     localDrift: [],
+    nameById: {},
     submission: null,
     submissions: [],
     isLoading: false,
@@ -607,6 +609,7 @@ it('смена подразделения/даты снимает ответ п�
     rowCount: 40,
     dirtyCount: 0,
     localDrift: [],
+    nameById: {},
     submission: null,
     submissions: [],
     isLoading: false,
@@ -1234,4 +1237,147 @@ it('«Отмена» закрывает форму исправления и POS
   expect(bodies).toHaveLength(0)
   // Кнопка-открывашка вернулась: путь не стал тупиком.
   expect(screen.getByRole('button', { name: 'Исправить сдачу' })).toBeInTheDocument()
+})
+
+// ---------------------------------------------------------------------------
+// Story 10.3b — серверный drift-маркер (роут 10.3c).
+// ---------------------------------------------------------------------------
+
+const ADDED_ID = 'a0000000-0000-0000-0000-000000000001'
+const REMOVED_ID = 'a0000000-0000-0000-0000-000000000002'
+const CHANGED_ID = 'a0000000-0000-0000-0000-000000000003'
+
+/** Перекрывает дефолт роута 10.3c (GREEN/drift:null) заданным ответом. */
+function mockServerDrift(body: Record<string, unknown>) {
+  server.use(
+    http.get('*/api/operations/traffic-light/division/', () => HttpResponse.json(body)),
+  )
+}
+
+/** Считает реальные GET на роут 10.3c — источник истины «ушёл ли запрос». */
+function countServerDriftCalls(): { count: number } {
+  const counter = { count: 0 }
+  server.use(
+    http.get('*/api/operations/traffic-light/division/', () => {
+      counter.count += 1
+      return HttpResponse.json({ status: 'GREEN', late: false, drift: null })
+    }),
+  )
+  return counter
+}
+
+it('AC-1/AC-3: день НЕ сдан → запрос серверного drift не уходит, панели нет', async () => {
+  const counter = countServerDriftCalls()
+  renderPanel({ submission: null })
+
+  await screen.findByText(/День не сдан/)
+  expect(screen.queryByTestId('day-submission-server-drift')).not.toBeInTheDocument()
+  expect(counter.count).toBe(0)
+})
+
+it('AC-2: YELLOW → серверная панель с added/removed/changed, ФИО резолвятся из nameById', async () => {
+  mockServerDrift({
+    status: 'YELLOW',
+    late: false,
+    drift: {
+      added: [ADDED_ID],
+      removed: [REMOVED_ID],
+      changed: [{ employee_id: CHANGED_ID, from: 'DUTY', to: 'SICK' }],
+    },
+  })
+  renderPanel({
+    submission: submissionFixture(),
+    nameById: { [ADDED_ID]: 'Иванов И.И.', [CHANGED_ID]: 'Петров П.П.' },
+  })
+
+  const panel = await screen.findByTestId('day-submission-server-drift')
+  expect(within(panel).getByText('Иванов И.И.')).toBeInTheDocument()
+  expect(within(panel).getByText('Петров П.П. · DUTY → SICK')).toBeInTheDocument()
+  // AC-4: REMOVED_ID отсутствует в nameById — id + честная пометка, строка не пропадает.
+  expect(
+    within(panel).getByText(`${REMOVED_ID} (нет в текущем составе)`),
+  ).toBeInTheDocument()
+  // AC-6: граница названа честно.
+  expect(
+    within(panel).getByText(
+      'Полное расхождение по данным сервера — включает правки из ЛЮБОГО источника, не только с этого экрана.',
+    ),
+  ).toBeInTheDocument()
+})
+
+it('AC-3: GREEN → панели нет', async () => {
+  mockServerDrift({ status: 'GREEN', late: false, drift: null })
+  renderPanel({ submission: submissionFixture() })
+
+  await screen.findByTestId('day-submission-state')
+  expect(screen.queryByTestId('day-submission-server-drift')).not.toBeInTheDocument()
+})
+
+it('AC-3: RED → панели нет', async () => {
+  mockServerDrift({ status: 'RED', late: false, drift: null })
+  renderPanel({ submission: submissionFixture() })
+
+  await screen.findByTestId('day-submission-state')
+  expect(screen.queryByTestId('day-submission-server-drift')).not.toBeInTheDocument()
+})
+
+it('AC-3/AC-8: ошибка роута (403) → панели нет, экран не падает', async () => {
+  server.use(
+    http.get('*/api/operations/traffic-light/division/', () =>
+      HttpResponse.json(errorEnvelope('PERMISSION_DENIED', 'Нет доступа'), { status: 403 }),
+    ),
+  )
+  renderPanel({ submission: submissionFixture() })
+
+  await screen.findByTestId('day-submission-state')
+  expect(screen.queryByTestId('day-submission-server-drift')).not.toBeInTheDocument()
+})
+
+it('AC-6: локальная и серверная панели рендерятся ОДНОВРЕМЕННО — ни одна не гасит другую', async () => {
+  mockServerDrift({
+    status: 'YELLOW',
+    late: false,
+    drift: { added: [ADDED_ID], removed: [], changed: [] },
+  })
+  renderPanel({
+    submission: submissionFixture(),
+    nameById: { [ADDED_ID]: 'Иванов И.И.' },
+    localDrift: [
+      { employeeId: CHANGED_ID, fullName: 'Петров П.П.', statusLabel: 'Дежурство' },
+    ],
+  })
+
+  expect(await screen.findByTestId('day-submission-drift')).toBeInTheDocument()
+  expect(await screen.findByTestId('day-submission-server-drift')).toBeInTheDocument()
+})
+
+it('ревью-фикс: успешное исправление инвалидирует кэш серверного drift (не показывает данные ДО амендмента)', async () => {
+  // День сдан и УЖЕ показывает YELLOW — запрос серверного drift успел
+  // отфетчиться и закэшироваться ДО исправления.
+  mockServerDrift({
+    status: 'YELLOW',
+    late: false,
+    drift: { added: [ADDED_ID], removed: [], changed: [] },
+  })
+  const user = await openAmendForm({
+    submission: submissionFixture(),
+    nameById: { [ADDED_ID]: 'Иванов И.И.' },
+  })
+  await screen.findByTestId('day-submission-server-drift')
+
+  // Исправление закрыло расхождение — «после» сервер отдаёт GREEN. Без
+  // инвалидации ['division-traffic-light', ...] в amendMutation.onSuccess
+  // панель осталась бы висеть на закэшированном YELLOW.
+  mockServerDrift({ status: 'GREEN', late: false, drift: null })
+  server.use(
+    http.post('*/api/operations/daily-submissions/:id/amend/', () =>
+      HttpResponse.json(submissionFixture({ version: 2, event: 'AMENDED' }), { status: 201 }),
+    ),
+  )
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  await waitFor(() =>
+    expect(screen.queryByTestId('day-submission-server-drift')).not.toBeInTheDocument(),
+  )
 })

@@ -34,6 +34,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient } from '../../shared/api/client'
+import type { components } from '../../shared/api/schema'
 import { useApiMutation } from '../../shared/api/useApiMutation'
 import { usePermissions } from '../../shared/auth/usePermissions'
 import { Button } from '../../shared/ui/Button'
@@ -59,6 +60,12 @@ export interface DriftEntry {
   statusLabel: string
 }
 
+/**
+ * Story 10.3b — ответ `GET /api/operations/traffic-light/division/` (5.5a,
+ * роут 10.3c). Тип — ИЗ СХЕМЫ (ARCH-FE-011), не рукописное зеркало.
+ */
+type DivisionTrafficLight = components['schemas']['TrafficLightDivisionResponse']
+
 export interface DaySubmissionPanelProps {
   divisionId: string | null
   businessDate: string
@@ -69,6 +76,12 @@ export interface DaySubmissionPanelProps {
   dirtyCount: number
   /** Правки, отправленные на ЭТОМ экране уже после сдачи (AC-10). */
   localDrift: DriftEntry[]
+  /**
+   * Story 10.3b: ФИО живого состава подразделения (тот же маппинг, что кормит
+   * `localDrift` на экране) — переиспользуется для резолюции серверного
+   * drift БЕЗ второго сетевого запроса (Dev Notes: N+1 за именем не заводим).
+   */
+  nameById: Record<string, string>
   /** Текущая сдача дня. Владелец запроса — ЭКРАН (Решение №7), не панель. */
   submission: DaySubmission | null
   /**
@@ -96,6 +109,17 @@ function formatSubmittedAt(value: string): string {
   return parsed.toLocaleString('ru-RU')
 }
 
+/**
+ * Story 10.3b (AC-4) — ФИО из живого состава подразделения, а не второй
+ * сетевой запрос. `removed`-id по определению отсутствует в живом составе
+ * (это и значит «removed») — печатаем id с честной пометкой, а не скрываем
+ * строку и не молчим.
+ */
+function resolveName(id: string, nameById: Record<string, string>): string {
+  const name = nameById[id]
+  return name !== undefined ? name : `${id} (нет в текущем составе)`
+}
+
 export function DaySubmissionPanel({
   divisionId,
   businessDate,
@@ -103,6 +127,7 @@ export function DaySubmissionPanel({
   rowCount,
   dirtyCount,
   localDrift,
+  nameById,
   submission,
   submissions,
   isLoading,
@@ -162,6 +187,14 @@ export function DaySubmissionPanel({
         queryKey: ['day-submission', divisionId, businessDate],
       })
       queryClient.invalidateQueries({ queryKey: ['division-submissions', divisionId] })
+      // Story 10.3b (ревью): защитная инвалидация — на момент сдачи запрос
+      // серверного drift ещё был `enabled: false` (current === null), так что
+      // первый фетч после включения гейта и так свежий. Инвалидация здесь —
+      // страховка от гонки (запрос успел стартовать ДО завершения мутации),
+      // а не обязательный фикс для этого пути (см. amend ниже — там баг реальный).
+      queryClient.invalidateQueries({
+        queryKey: ['division-traffic-light', divisionId, businessDate],
+      })
     },
   })
 
@@ -173,6 +206,45 @@ export function DaySubmissionPanel({
   // адресует ЦЕПОЧКУ (Д1 5.8b) — `amend_day` сам переразрешает голову цепочки
   // через `latest_for`, поэтому даже устаревший pk амендит ТОТ ЖЕ день.
   const current = amended ?? submitted ?? submission
+
+  /**
+   * Story 10.3b — серверное расхождение подразделения (5.5a, роут 10.3c).
+   * `enabled` держит ТОТ ЖЕ гейт, что уже открывает локальный drift и
+   * «Исправить сдачу» (`current !== null`): смысла запрашивать расхождение
+   * на несданном дне нет — `division_traffic_light` на несданный день
+   * отдаёт RED, `drift: null`.
+   *
+   * Гейт `status.view` уже стоит на роуте (10.3c AC-8) — своей permission-
+   * проверки здесь нет (Dev Notes): 403 гасится ниже как обычная ошибка
+   * обогащения (AC-3, AC-8), не первичный сигнал экрана.
+   */
+  const serverDriftQuery = useQuery({
+    queryKey: ['division-traffic-light', divisionId, businessDate],
+    queryFn: () =>
+      apiClient.get<DivisionTrafficLight>(
+        `/api/operations/traffic-light/division/?division_id=${encodeURIComponent(
+          divisionId as string,
+        )}&business_date=${encodeURIComponent(businessDate)}`,
+      ),
+    enabled: divisionId !== null && dateValid && current !== null,
+  })
+
+  /**
+   * Story 10.3b (ревью): НЕ доверяем инварианту бэка «YELLOW ⇒ хотя бы одна
+   * из трёх групп непуста» вслепую (Dev Notes уже предупреждали об этом для
+   * под-списков — тот же принцип распространён на видимость ВСЕЙ панели).
+   * Без явной проверки суммы длин all-empty drift рисовал бы «alert» без
+   * единой строки содержимого — пустую оболочку, которую сама панель и
+   * запрещает (AC-3: «никакого пустого блока»).
+   */
+  const rawServerDrift =
+    serverDriftQuery.data?.status === 'YELLOW' ? (serverDriftQuery.data.drift ?? null) : null
+  const serverDrift =
+    rawServerDrift !== null &&
+    rawServerDrift.added.length + rawServerDrift.removed.length + rawServerDrift.changed.length >
+      0
+      ? rawServerDrift
+      : null
 
   const amendMutation = useApiMutation<DaySubmission, DayAmendBody>({
     mutationFn: (variables) =>
@@ -187,6 +259,14 @@ export function DaySubmissionPanel({
         queryKey: ['day-submission', divisionId, businessDate],
       })
       queryClient.invalidateQueries({ queryKey: ['division-submissions', divisionId] })
+      // Story 10.3b (ревью, реальный баг — Blind Hunter): в отличие от
+      // изначальной сдачи, серверный drift-запрос УЖЕ был enabled и УЖЕ
+      // отфетчен ДО исправления (день был сдан). Без явной инвалидации панель
+      // показывала бы кэш ДО амендмента — расхождение, которое исправление
+      // могло уже закрыть (или, наоборот, новое, внесённое амендментом).
+      queryClient.invalidateQueries({
+        queryKey: ['division-traffic-light', divisionId, businessDate],
+      })
     },
   })
 
@@ -565,6 +645,64 @@ export function DaySubmissionPanel({
             <span>
               Экран видит только правки, сделанные здесь; расхождения из других
               каналов покажет светофор подразделения.
+            </span>
+          </div>
+        ) : null}
+
+        {/* Story 10.3b (AC-2, AC-3): серверная правда — ОТДЕЛЬНО от локальной
+            выше, не вместо. Рендерится ТОЛЬКО на YELLOW с непустым drift;
+            GREEN/RED/загрузка/ошибка — панели нет вовсе (AC-3, drift —
+            необязательное обогащение, не первичный сигнал). */}
+        {serverDrift !== null ? (
+          <div
+            data-testid="day-submission-server-drift"
+            role="alert"
+            className="flex flex-col gap-1 rounded-md bg-amber-100 p-3 text-sm text-amber-800"
+          >
+            <span className="font-medium">
+              Расхождение по данным сервера
+            </span>
+            {serverDrift.added.length > 0 ? (
+              <div>
+                <span>Добавлены в состав:</span>
+                <ul className="list-disc pl-5">
+                  {serverDrift.added.map((id) => (
+                    <li key={id}>{resolveName(id, nameById)}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {serverDrift.removed.length > 0 ? (
+              <div>
+                <span>Выбыли из состава:</span>
+                <ul className="list-disc pl-5">
+                  {serverDrift.removed.map((id) => (
+                    <li key={id}>{resolveName(id, nameById)}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {serverDrift.changed.length > 0 ? (
+              <div>
+                <span>Сменили статус:</span>
+                <ul className="list-disc pl-5">
+                  {serverDrift.changed.map((change) => (
+                    <li key={change.employee_id}>
+                      {resolveName(change.employee_id, nameById)} ·{' '}
+                      {change.from} → {change.to}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {/* Граница названа честно (AC-6): полное серверное расхождение —
+                НЕ то же самое, что локальный маркер выше (он видит только
+                правки, отправленные с этого экрана). Полное множество
+                включает локальное как подмножество — обе панели МОГУТ
+                показаться одновременно, это не баг. */}
+            <span>
+              Полное расхождение по данным сервера — включает правки из
+              ЛЮБОГО источника, не только с этого экрана.
             </span>
           </div>
         ) : null}
