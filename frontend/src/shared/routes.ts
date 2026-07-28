@@ -97,6 +97,9 @@ export const ROUTES = {
     `/objects/${encodeURIComponent(id)}/passports/${encodeURIComponent(versionId)}`,
   /** Этап 6/7 (мастер-промпт §22): аналитика службы. */
   serviceAnalytics: '/analytics',
+  /** Отчётный реестр Smart Josparlau (§22.18). НЕ `/reports` — там донорский
+   * экран «Расход дня» (E10), это другой раздел и другой владелец. */
+  serviceReports: '/service-reports',
   /** Мастер-промпт §21/§24: «Служба» → План дежурств. */
   duties: '/duties',
   /**
@@ -203,6 +206,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Аналитика службы',
     icon: BarChart3,
     permission: 'ops.analytics.view',
+  },
+  {
+    route: ROUTES.serviceReports,
+    label: 'Отчёты службы',
+    icon: FileText,
+    permission: 'ops.report.generate',
   },
   {
     route: ROUTES.audit,

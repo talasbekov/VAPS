@@ -28,6 +28,7 @@ import { DutyShiftDetailPage } from '../features/duties/pages/DutyShiftDetailPag
 import { DictionariesListPage } from '../features/dictionaries/pages/DictionariesListPage'
 import { DictionaryDetailPage } from '../features/dictionaries/pages/DictionaryDetailPage'
 import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
+import { ServiceReportsPage } from '../features/service-reports/pages/ServiceReportsPage'
 import { CalendarPage } from './CalendarPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -288,6 +289,14 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.analytics.view">
               <ServiceAnalyticsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.serviceReports}
+          element={
+            <RequirePermission permission="ops.report.generate">
+              <ServiceReportsPage />
             </RequirePermission>
           }
         />

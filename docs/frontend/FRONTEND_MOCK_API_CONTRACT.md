@@ -246,3 +246,17 @@ frontend-период, поэтому и интервал (данные), и р�
 остаются замоченными как есть (их контракт нам не принадлежит), но экраны портала их
 больше не читают.
 
+## Этап 40 — отчётный реестр службы (§22.18-22.25, §20.32)
+
+| Ресурс | Право | Что отдаёт |
+|---|---|---|
+| `GET /api/ops/service-report-types/` | `ops.report.generate` | типы отчётов, политика хранения, список замаскированных полей и недоступных форматов с причинами, `canExportSensitive` |
+| `GET /api/ops/service-report-jobs/` | `ops.report.generate` | работы + БЕЗОПАСНАЯ проекция артефактов (метаданные, без содержимого и без ссылки) + `serverTime` |
+| `POST /api/ops/service-report-jobs/` | `ops.report.generate` (+ `ops.report.export_sensitive` при `sensitive: true`) | созданная работа в состоянии `PENDING`; 422 `INVALID_PERIOD` / `PERIOD_TOO_LONG` / `UNKNOWN_REPORT_TYPE` / `UNSUPPORTED_FORMAT` |
+| `POST /api/ops/service-report-artifacts/{id}/download/` | те же права, ПОВТОРНО | `{ fileName, content }` — поток, а не ссылка; 422 `ARTIFACT_EXPIRED` |
+
+Постоянной ссылки на файл в контракте нет вовсе — §22.23 запрещает её в HTML, list
+endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуществующей ссылке
+неоткуда утечь. Состояния работы (`PENDING`/`PROCESSING`/`COMPLETED`/`FAILED`) —
+серверные; ступень продвигается на чтении реестра (фонового исполнителя в demo нет).
+

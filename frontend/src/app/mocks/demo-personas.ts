@@ -132,6 +132,11 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     permissions: [
       'ops.analytics.view',
       'ops.export.run',
+      // §22.26: запуск отчёта — своё право, отдельное от просмотра аналитики.
+      // Sensitive export (`ops.report.export_sensitive`) аналитику НЕ выдан:
+      // на этом разделении держится демонстрация §20.32 «sensitive export —
+      // отдельная операция».
+      'ops.report.generate',
       'ops.dictionary.view',
       'ops.calendar.view',
       // §20.28 «просмотр другого сотрудника»: контролёру нужен доступ к
