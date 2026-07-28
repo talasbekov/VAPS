@@ -396,11 +396,40 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             200: inline_serializer(
                 name="ExpensePeriodResponse",
                 fields={
-                    "pages": serializers.ListField(
-                        child=serializers.DictField(),
-                        help_text="Страница-на-дату: {business_date, totals, "
-                        "rows} — read-only derive, без номера документа.",
-                    )
+                    "pages": inline_serializer(
+                        name="ExpensePeriodPage",
+                        many=True,
+                        fields={
+                            "business_date": serializers.DateField(),
+                            "totals": inline_serializer(
+                                name="ExpensePeriodTotals",
+                                fields={
+                                    "staff_total": serializers.IntegerField(),
+                                    "list_total": serializers.IntegerField(),
+                                    "vacancies": serializers.IntegerField(),
+                                    "attached": serializers.IntegerField(),
+                                    "columns": serializers.DictField(
+                                        child=serializers.IntegerField()
+                                    ),
+                                },
+                            ),
+                            "rows": inline_serializer(
+                                name="ExpensePeriodRow",
+                                many=True,
+                                fields={
+                                    "division_id": serializers.UUIDField(),
+                                    "name": serializers.CharField(),
+                                    "staff_total": serializers.IntegerField(),
+                                    "list_total": serializers.IntegerField(),
+                                    "vacancies": serializers.IntegerField(),
+                                    "attached": serializers.IntegerField(),
+                                    "columns": serializers.DictField(
+                                        child=serializers.IntegerField()
+                                    ),
+                                },
+                            ),
+                        },
+                    ),
                 },
             )
         },

@@ -2462,18 +2462,80 @@ components:
       - next
       - previous
       - results
+    ExpensePeriodPage:
+      type: object
+      properties:
+        business_date:
+          type: string
+          format: date
+        totals:
+          $ref: '#/components/schemas/ExpensePeriodTotals'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpensePeriodRow'
+      required:
+      - business_date
+      - rows
+      - totals
     ExpensePeriodResponse:
       type: object
       properties:
         pages:
           type: array
           items:
-            type: object
-            additionalProperties: {}
-          description: 'Страница-на-дату: {business_date, totals, rows} — read-only
-            derive, без номера документа.'
+            $ref: '#/components/schemas/ExpensePeriodPage'
       required:
       - pages
+    ExpensePeriodRow:
+      type: object
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        staff_total:
+          type: integer
+        list_total:
+          type: integer
+        vacancies:
+          type: integer
+        attached:
+          type: integer
+        columns:
+          type: object
+          additionalProperties:
+            type: integer
+      required:
+      - attached
+      - columns
+      - division_id
+      - list_total
+      - name
+      - staff_total
+      - vacancies
+    ExpensePeriodTotals:
+      type: object
+      properties:
+        staff_total:
+          type: integer
+        list_total:
+          type: integer
+        vacancies:
+          type: integer
+        attached:
+          type: integer
+        columns:
+          type: object
+          additionalProperties:
+            type: integer
+      required:
+      - attached
+      - columns
+      - list_total
+      - staff_total
+      - vacancies
     ExpenseReportIssueRequest:
       type: object
       description: |-

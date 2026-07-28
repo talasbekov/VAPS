@@ -1506,11 +1506,35 @@ export interface components {
             previous: string | null;
             results: components["schemas"]["IssuedExpenseReport"][];
         };
+        ExpensePeriodPage: {
+            /** Format: date */
+            business_date: string;
+            totals: components["schemas"]["ExpensePeriodTotals"];
+            rows: components["schemas"]["ExpensePeriodRow"][];
+        };
         ExpensePeriodResponse: {
-            /** @description Страница-на-дату: {business_date, totals, rows} — read-only derive, без номера документа. */
-            pages: {
-                [key: string]: unknown;
-            }[];
+            pages: components["schemas"]["ExpensePeriodPage"][];
+        };
+        ExpensePeriodRow: {
+            /** Format: uuid */
+            division_id: string;
+            name: string;
+            staff_total: number;
+            list_total: number;
+            vacancies: number;
+            attached: number;
+            columns: {
+                [key: string]: number;
+            };
+        };
+        ExpensePeriodTotals: {
+            staff_total: number;
+            list_total: number;
+            vacancies: number;
+            attached: number;
+            columns: {
+                [key: string]: number;
+            };
         };
         /**
          * @description POST-body form (6.10a) — the kwargs forwarded to

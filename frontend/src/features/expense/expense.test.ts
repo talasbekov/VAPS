@@ -9,7 +9,9 @@ import {
   describeOverrideFailure,
   expenseFileName,
   isOverrideReasonComplete,
+  describeExpensePeriodFailure,
   parseExpenseJournal,
+  parseExpensePeriod,
   parseIssuedReport,
   parseLaggards,
   todayLocalIso,
@@ -452,5 +454,73 @@ describe('parseExpenseJournal: тотальный разбор конверта 
       count: 0,
       hasMore: false,
     })
+  })
+})
+
+describe('parseExpensePeriod: тотальный разбор конверта периода (Story 10.5e)', () => {
+  function periodPage(over: Record<string, unknown> = {}) {
+    return {
+      business_date: '2026-07-19',
+      totals: { staff_total: 10, list_total: 9, vacancies: 1, attached: 0, columns: {} },
+      rows: [],
+      ...over,
+    }
+  }
+
+  it('валидные страницы разобраны дословно', () => {
+    const page = periodPage()
+    expect(parseExpensePeriod({ pages: [page] })).toEqual([page])
+  })
+
+  it('мусорный элемент внутри pages отброшен построчно', () => {
+    const valid = periodPage()
+    expect(
+      parseExpensePeriod({ pages: [valid, { garbage: true }, { business_date: '2026-07-20' }] }),
+    ).toEqual([valid])
+  })
+
+  it('пустой/мусорный конверт → []', () => {
+    expect(parseExpensePeriod(null)).toEqual([])
+    expect(parseExpensePeriod({ pages: 'не массив' })).toEqual([])
+  })
+})
+
+describe('describeExpensePeriodFailure: 400/422 → validation дословно (Story 10.5e)', () => {
+  it('network → silent', () => {
+    expect(describeExpensePeriodFailure(new NetworkError('обрыв')).kind).toBe('silent')
+  })
+
+  it('400 → validation, текст ДОСЛОВНО из конверта', () => {
+    const d = describeExpensePeriodFailure(
+      new ValidationError({
+        status: 400,
+        errorCode: 'VALIDATION_ERROR',
+        message: 'Период слишком длинный (макс. 62 дней).',
+        details: {},
+        requestId: null,
+      }),
+    )
+    expect(d.kind).toBe('validation')
+    expect(d.message).toBe('Период слишком длинный (макс. 62 дней).')
+  })
+
+  it('422 → validation, текст дословно (REPORT_NO_DATA_FOR_DATE)', () => {
+    const d = describeExpensePeriodFailure(
+      new BusinessRuleError({
+        status: 422,
+        errorCode: 'REPORT_NO_DATA_FOR_DATE',
+        message: 'Запрошена дата до начала данных.',
+        details: {},
+        requestId: null,
+      }),
+    )
+    expect(d.kind).toBe('validation')
+    expect(d.message).toBe('Запрошена дата до начала данных.')
+  })
+
+  it('неучтённый код/статус → other', () => {
+    const d = describeExpensePeriodFailure(apiError(418, null, 'HTTP 418'))
+    expect(d.kind).toBe('other')
+    expect(d.message).toContain('HTTP 418')
   })
 })

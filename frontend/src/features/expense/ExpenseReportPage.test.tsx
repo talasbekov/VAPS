@@ -1035,3 +1035,115 @@ describe('Story 10.5c: журнал выпусков', () => {
     expect(await screen.findByTestId('expense-journal-list')).toBeInTheDocument()
   })
 })
+
+describe('Story 10.5e: чтение за период', () => {
+  function periodPage(over: Record<string, unknown> = {}) {
+    return {
+      business_date: '2026-07-19',
+      totals: { staff_total: 10, list_total: 9, vacancies: 1, attached: 0, columns: {} },
+      rows: [],
+      ...over,
+    }
+  }
+
+  it('AC-2: запрос НЕ уходит до клика «Показать»', async () => {
+    let calls = 0
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/period/', () => {
+        calls += 1
+        return HttpResponse.json({ pages: [] })
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+    await screen.findByRole('heading', { name: 'Чтение за период' })
+
+    expect(calls).toBe(0)
+  })
+
+  it('AC-3: клик «Показать» после ввода дат → таблица строк дословно', async () => {
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/period/', () =>
+        HttpResponse.json({ pages: [periodPage()] }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+
+    await user.type(screen.getByLabelText('С'), '2026-07-18')
+    await user.type(screen.getByLabelText('По'), '2026-07-19')
+    await user.click(screen.getByRole('button', { name: 'Показать' }))
+
+    const table = await screen.findByTestId('expense-period-table')
+    expect(within(table).getByText('2026-07-19')).toBeInTheDocument()
+    expect(within(table).getByText('10')).toBeInTheDocument()
+  })
+
+  it('AC-4: 400 → инлайн-текст ДОСЛОВНО из ответа', async () => {
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/period/', () =>
+        HttpResponse.json(
+          errorEnvelope('VALIDATION_ERROR', 'Период слишком длинный (макс. 62 дней).'),
+          { status: 400 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+
+    await user.type(screen.getByLabelText('С'), '2026-01-01')
+    await user.type(screen.getByLabelText('По'), '2026-12-31')
+    await user.click(screen.getByRole('button', { name: 'Показать' }))
+
+    expect(
+      await screen.findByText('Период слишком длинный (макс. 62 дней).'),
+    ).toBeInTheDocument()
+  })
+
+  it('AC-6: ошибка периода не блокирует «Сформировать»', async () => {
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/', () =>
+        HttpResponse.json(errorEnvelope('ENTITY_NOT_FOUND', 'нет'), { status: 404 }),
+      ),
+      http.get('*/api/operations/expense-reports/period/', () =>
+        HttpResponse.json(errorEnvelope('REPORT_NO_DATA_FOR_DATE', 'до начала данных'), {
+          status: 422,
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+
+    await user.type(screen.getByLabelText('С'), '2020-01-01')
+    await user.type(screen.getByLabelText('По'), '2020-01-02')
+    await user.click(screen.getByRole('button', { name: 'Показать' }))
+
+    expect(await screen.findByText('до начала данных')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Сформировать' })).toBeInTheDocument()
+  })
+
+  it('AC-7: регресс — журнал и период сосуществуют без коллизии ключей', async () => {
+    server.use(
+      http.get('*/api/core/divisions/', () => divisionsResponse()),
+      http.get('*/api/operations/expense-reports/journal/', () =>
+        HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await selectDivision(user)
+
+    expect(await screen.findByRole('heading', { name: 'Журнал выпусков' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Чтение за период' }),
+    ).toBeInTheDocument()
+  })
+})

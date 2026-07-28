@@ -46,6 +46,7 @@ import { Card, CardContent, CardDescription, CardHeader } from '../../shared/ui/
 import { Input } from '../../shared/ui/Input'
 import { Label } from '../../shared/ui/Label'
 import { ExpenseJournalPanel } from './ExpenseJournalPanel'
+import { ExpensePeriodPanel } from './ExpensePeriodPanel'
 import { TomorrowBlockOverrideForm } from './TomorrowBlockOverrideForm'
 import {
   STATUS_LABELS,
@@ -545,7 +546,13 @@ export function ExpenseReportPage() {
           ремаунтит и НЕ перезапрашивает журнал; независим от выбора даты и
           от состояния ExpenseReportPanel выше (AC-4). */}
       {divisionId !== null ? (
-        <ExpenseJournalPanel key={divisionId} divisionId={divisionId} />
+        <ExpenseJournalPanel key={`journal-${divisionId}`} divisionId={divisionId} />
+      ) : null}
+
+      {/* Story 10.5e: период — division-scoped, тот же приём, что журнал
+          (свой key, независимый query, не влияет на карточку выпуска). */}
+      {divisionId !== null ? (
+        <ExpensePeriodPanel key={`period-${divisionId}`} divisionId={divisionId} />
       ) : null}
     </div>
   )

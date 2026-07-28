@@ -281,6 +281,12 @@ export const handlers = [
   http.get('*/api/operations/expense-reports/journal/', () =>
     HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
   ),
+  // Story 10.5e: чтение за период — нейтральный пустой дефолт (запрос
+  // отложенный, но `ExpensePeriodPanel` монтируется всегда при выбранном
+  // подразделении — незамоканный роут не должен ронять чужие тесты).
+  http.get('*/api/operations/expense-reports/period/', () =>
+    HttpResponse.json({ pages: [] }),
+  ),
   // 500 с конвертом
   http.get('*/api/audit/logs/', () =>
     HttpResponse.json(serverEnvelope, { status: 500 }),

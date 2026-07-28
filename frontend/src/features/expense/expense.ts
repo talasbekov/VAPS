@@ -415,3 +415,77 @@ export function describeOverrideFailure(
   }
   return { kind: 'other', message: error.message }
 }
+
+/**
+ * Story 10.5e — страница «расход за дату» из read-only периода
+ * (`GET .../period/`, 6.10a, типизировано 10.5e). Тип — из схемы, домен
+ * (`derive_period`/`_serialize_report`) НЕ менялся этой стори.
+ */
+export type ExpensePeriodPage = components['schemas']['ExpensePeriodPage']
+
+/**
+ * Тотальный разбор конверта `{pages: [...]}`. Мусорный элемент внутри
+ * `pages` ОТБРАСЫВАЕТСЯ построчно (тот же приём, что `parseExpenseJournal`),
+ * а не роняет весь список — частичная страница честнее пустого экрана.
+ */
+export function parseExpensePeriod(raw: unknown): ExpensePeriodPage[] {
+  const envelope = asRecord(raw)
+  if (envelope === null || !Array.isArray(envelope.pages)) return []
+  const pages: ExpensePeriodPage[] = []
+  for (const item of envelope.pages) {
+    const row = asRecord(item)
+    if (row === null) continue
+    if (typeof row.business_date !== 'string') continue
+    const totals = asRecord(row.totals)
+    if (totals === null) continue
+    if (
+      typeof totals.staff_total !== 'number' ||
+      typeof totals.list_total !== 'number' ||
+      typeof totals.vacancies !== 'number' ||
+      typeof totals.attached !== 'number'
+    ) {
+      continue
+    }
+    // rows/columns НЕ провалидированы построчно — экран этой стори читает
+    // ТОЛЬКО totals (AC-3, `rows`-детализация вне скоупа); углублённая
+    // проверка вложенной формы, которую никто не читает, — мёртвый код.
+    pages.push({
+      business_date: row.business_date,
+      totals: {
+        staff_total: totals.staff_total,
+        list_total: totals.list_total,
+        vacancies: totals.vacancies,
+        attached: totals.attached,
+        columns: (totals.columns ?? {}) as Record<string, number>,
+      },
+      rows: Array.isArray(row.rows) ? (row.rows as ExpensePeriodPage['rows']) : [],
+    })
+  }
+  return pages
+}
+
+export type ExpensePeriodFailureKind = 'validation' | 'other' | 'silent'
+
+export interface ExpensePeriodFailureDescription {
+  kind: ExpensePeriodFailureKind
+  /** Текст для инлайна; для `silent` — пустой. */
+  message: string
+}
+
+/**
+ * Отказы периода (AC-4) — 400 (инверсия/длина) и 422 (`REPORT_NO_DATA_FOR_DATE`)
+ * оба несут точный текст в конверте (лимит `62` — серверная константа,
+ * `data_horizon` — серверная дата), поэтому ОБА ветвятся в один и тот же
+ * `validation`-исход с `error.message` дословно — свой текст не сочиняем.
+ */
+export function describeExpensePeriodFailure(
+  error: ApiFailure,
+): ExpensePeriodFailureDescription {
+  if (error.kind === 'network') return { kind: 'silent', message: '' }
+  if (error.status >= 500) return { kind: 'silent', message: '' }
+  if (error.status === 401) return { kind: 'silent', message: '' }
+  if (error.status === 400 || error.status === 422) {
+    return { kind: 'validation', message: error.message }
+  }
+  return { kind: 'other', message: error.message }
+}
