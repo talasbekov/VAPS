@@ -44,6 +44,7 @@ const OPS_CODES = [
   'ops.duty.view',
   'ops.dictionary.view',
   'ops.calendar.view',
+  'ops.feedback.view',
 ] as const
 
 function usePermissionsResponse(payload: { permissions: string[] }) {
@@ -81,6 +82,9 @@ const ROUTE_MATRIX = [
   { route: ROUTES.dictionaries, code: 'ops.dictionary.view' },
   { route: ROUTES.dictionaryDetailTo('does-not-exist'), code: 'ops.dictionary.view' },
   { route: ROUTES.calendar, code: 'ops.calendar.view' },
+  // §28: раздел обращений закрыт своим правом — право читать любой другой
+  // раздел его не открывает.
+  { route: ROUTES.feedback, code: 'ops.feedback.view' },
 ] as const
 
 describe('Карта гейтов Smart Josparlau-маршрутов (§34 route audit)', () => {

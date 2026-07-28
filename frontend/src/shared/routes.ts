@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   Network,
   Radar,
+  MessageSquare,
   ScrollText,
   ShieldAlert,
   Users,
@@ -122,6 +123,8 @@ export const ROUTES = {
   serviceReportJob: '/service-reports/:reportJobId',
   serviceReportJobTo: (reportJobId: string) =>
     `/service-reports/${encodeURIComponent(reportJobId)}`,
+  /** §28 «Обратная связь»: реестр обращений и форма нового обращения. */
+  feedback: '/feedback',
   /** Мастер-промпт §21/§24: «Служба» → План дежурств. */
   duties: '/duties',
   /**
@@ -258,5 +261,11 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Календарь смен',
     icon: CalendarDays,
     permission: 'ops.calendar.view',
+  },
+  {
+    route: ROUTES.feedback,
+    label: 'Обратная связь',
+    icon: MessageSquare,
+    permission: 'ops.feedback.view',
   },
 ]

@@ -32,6 +32,7 @@ import { ServiceAnalyticsPage } from '../features/service-analytics/pages/Servic
 import { ServiceReportsPage } from '../features/service-reports/pages/ServiceReportsPage'
 import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
 import { ReportJobPage } from '../features/service-reports/pages/ReportJobPage'
+import { FeedbackPage } from '../features/feedback/pages/FeedbackPage'
 import { CalendarPage } from './CalendarPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -339,6 +340,16 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.calendar.view">
               <CalendarPage />
+            </RequirePermission>
+          }
+        />
+        {/* §28 «Обратная связь». Право чтения реестра проверяет и маршрут, и
+            repository: доступ не считается подтверждённым переходом из меню. */}
+        <Route
+          path={ROUTES.feedback}
+          element={
+            <RequirePermission permission="ops.feedback.view">
+              <FeedbackPage />
             </RequirePermission>
           }
         />

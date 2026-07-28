@@ -34,6 +34,10 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       'ops.closure.manage',
       'ops.dictionary.view',
       'ops.calendar.view',
+      // §28: завести обращение и видеть СВОИ. Права видеть чужие у автора
+      // нет — на этом разделении и держится демонстрация §28.
+      'ops.feedback.create',
+      'ops.feedback.view',
     ],
     // Этап 2 реализовал только реестр/бюллетень ОМ — реальная посадочная
     // страница этой persona, не «/» (там status.view, которого нет ни у одной
@@ -158,6 +162,14 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       // которого у этой persona нет). Контролёр видит, кто кем интересовался,
       // не получая доступа к самому идентификатору.
       'personnel.identity.audit',
+      // §28: аналитик здесь снова в роли КОНТРОЛЁРА — видит чужие обращения
+      // (`ops.feedback.view_all`), но не их закрытое содержание
+      // (`ops.feedback.view_confidential` ему НЕ выдан). На этом разделении
+      // держится демонстрация признака «конфиденциально»: строка видна,
+      // содержание — нет. Чужие ЧЕРНОВИКИ не открываются и этим правом.
+      'ops.feedback.create',
+      'ops.feedback.view',
+      'ops.feedback.view_all',
     ],
     // Этап 7 реализовал реестр аналитики службы — реальная посадочная
     // страница этой persona (`status.view`, которого у неё нет, home не подходит).

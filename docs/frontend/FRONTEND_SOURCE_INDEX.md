@@ -20,5 +20,12 @@
 3. BMAD epics/PRD.
 4. HTML-прототип (инвентарь, но не источник архитектурных решений).
 
+## `features/feedback` (§28, Этап 47)
+
+`model/types.ts` — коды §28 в типах, подписи в данных; `lib/feedback.ts` — область поиска,
+превью, порядок, страницы, сводка, блок §35; `mocks/fixtures.ts` — справочник и девять сеяных
+обращений; `mocks/repository.ts` — видимость, вырезание, создание, отправка черновика;
+`api/pending-contracts.ts` — `/api/ops/feedback-requests/`; `pages/FeedbackPage.tsx` — экран.
+
 ## Известные конфликты, уже разрешённые RECONCILIATION.md
 См. `FRONTEND_DECISIONS.md`.
