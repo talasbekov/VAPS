@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-28 (10.7a → done)
+# last_updated: 2026-07-28 (10.7a → done, 10.8a → ready-for-dev)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -467,7 +467,7 @@ development_status:
   #   но из UI недоступен.
   # Порядок: 10.8 → 10.8a.
   10-8-личный-экспорт-оператора-щит: done
-  10-8a-ui-кнопка-моя-копия: backlog
+  10-8a-ui-кнопка-моя-копия: ready-for-dev
   # 10.9 — ФРОНТ целиком, бэка нет вовсе. Два деливерабла одной петли:
   #   (1) шов версии: build-time `define` __APP_VERSION__/__BUILD_SHA__ из
   #       frontend/scripts/build-constants.ts (env VAPS_APP_VERSION /
