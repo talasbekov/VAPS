@@ -259,8 +259,22 @@ export interface OperationsAnalyticsData {
    * реестра называются ОТДЕЛЬНО, а не растворяются в распределении. */
   unknownLifecycleCodes: string[]
   eventCard: OpsEventCard | null
+  /** §22.14 воронка по журналу переходов; `null` — журнала нет (снапшот
+   * старой схемы), и это НЕ «переходов не было». */
+  funnel: FunnelView | null
+  funnelUnavailableReason: string | null
   /** §35: измерения §22.13/§22.14, которых модель не даёт, с причиной. */
   unavailableMeasures: UnavailableMetric[]
+}
+
+/** §22.14. Шесть показателей держатся раздельно, экран показывает ОДИН за раз
+ * («Не складывай эти показатели в один график без явного переключателя»). */
+export interface FunnelView {
+  measures: { code: string; safeLabel: string; unit: string }[]
+  stages: { stateCode: string; safeLabel: string; values: Record<string, number | null> }[]
+  excludedEventIds: string[]
+  exclusionNote: string
+  transitionCount: number
 }
 
 export interface DrilldownPage {

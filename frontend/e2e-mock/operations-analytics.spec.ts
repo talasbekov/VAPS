@@ -3,8 +3,8 @@
 // Проверяется не наличие таблицы, а три структурных свойства:
 //   1) спуск по иерархии идёт по СТАБИЛЬНЫМ ID и накапливает breadcrumb;
 //   2) уровень живёт в URL и переживает перезагрузку (§22.6/§22.27);
-//   3) §22.14 воронка не нарисована, а названа с причиной — модель не даёт
-//      transition events, и собирать конверсию из текущих стадий запрещено.
+//   3) §22.14 воронка строится ПО ЖУРНАЛУ переходов (число событий названо в
+//      подписи) и показывает один показатель за раз — их нельзя складывать.
 import { expect, test } from '@playwright/test'
 import { hideDemoToolbar, seedCredential } from './testUtils'
 
@@ -59,13 +59,34 @@ test.describe('Аналитика мероприятий (§22.13-22.15, mock-р
     await expect(trail.getByRole('button', { name: 'Дворец Независимости' })).toBeVisible()
   })
 
-  test('§22.14 воронка не нарисована, а названа с причиной', async ({ page }) => {
+  test('§22.14 воронка строится по журналу и показывает ОДИН показатель за раз', async ({
+    page,
+  }) => {
     await seedCredential(page)
     await hideDemoToolbar(page)
     await page.goto('/analytics/operations')
 
-    await expect(page.getByText('Воронка ОМ (§22.14)')).toBeVisible()
-    await expect(page.getByText(/transition events/)).toBeVisible()
+    const funnel = page.getByRole('group', { name: 'Воронка мероприятий' })
+    // Источник назван числом событий: воронка, нарисованная по карточкам, не
+    // смогла бы его показать.
+    await expect(funnel.getByText(/Построено по журналу переходов: событий — [1-9]/)).toBeVisible()
+
+    // Переключатель §22.14: показатели не смешаны в одном ряду — активен один.
+    await funnel.getByRole('button', { name: 'Возвратов' }).click()
+    await expect(funnel.getByText(/Согласование/)).toBeVisible()
+    await funnel.getByRole('button', { name: 'Среднее время этапа' }).click()
+    // Единица меняется вместе с показателем: часы и «ОМ» одним числом быть
+    // не могут.
+    await expect(funnel.getByText(/ ч$/).first()).toBeVisible()
+  })
+
+  test('§35: невыводимые измерения названы с причиной', async ({ page }) => {
+    await seedCredential(page)
+    await hideDemoToolbar(page)
+    await page.goto('/analytics/operations')
+
+    await expect(page.getByText('Открытые инциденты')).toBeVisible()
+    await expect(page.getByText(/состояния «открыт\/закрыт»/)).toBeVisible()
     // Ни конверсии, ни среднего времени этапа как ПОКАЗАТЕЛЯ на экране нет:
     // собранные из текущих стадий, они были бы посчитаны по запрещённому
     // источнику. Ассерт структурный, по заголовкам колонок: `getByText`

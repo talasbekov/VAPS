@@ -4,13 +4,11 @@
 // стороны, как и показатели службы: §22.3 запрещает фронтенду считать итоги, и
 // «итог по видимой части таблицы» стоит в том же списке.
 //
-// ⚠️ Чего здесь НЕТ и почему. §22.14 «Воронка ОМ» требует строить конверсию по
-// СЕРВЕРНЫМ transition events, а не по текущему массиву карточек. Событий
-// перехода в модели ОМ нет вовсе (`SecurityEvent` держит только ТЕКУЩУЮ
-// стадию), поэтому воронка не строится, а называется недоступной с причиной
-// (§35). Собрать её из распределения по стадиям значило бы выдать снимок
-// «кто где сейчас» за историю переходов — ровно то, что §22.14 запрещает
-// первой же строкой.
+// ⚠️ §22.14 «Воронка ОМ» требует строить конверсию по СЕРВЕРНЫМ transition
+// events, а не по текущему массиву карточек. До Этапа 46 таких событий в
+// модели не было, и воронка честно называлась недоступной; теперь журнал
+// переходов ведётся (`security-events`, append-only), и воронка строится
+// ТОЛЬКО по нему — см. `buildFunnel` внизу файла.
 import type {
   LifecycleBucket,
   OpsBreadcrumbItem,
@@ -372,22 +370,16 @@ export function breadcrumbFor(
 /** §35: измерения §22.13/§22.14, которых модель ОМ не даёт. */
 export const UNAVAILABLE_OPS_MEASURES = [
   {
-    code: 'FUNNEL',
-    label: 'Воронка ОМ (§22.14)',
-    reason:
-      'Воронка строится по СЕРВЕРНЫМ transition events, а событий перехода в модели ОМ нет вовсе — карточка держит только текущую стадию. Достигшие этапа, переходы, возвраты и среднее время этапа из снимка «кто где сейчас» не выводятся: это была бы конверсия, посчитанная по тому, что §22.14 запрещает брать за источник.',
-  },
-  {
     code: 'OVERDUE_ACTIONS',
     label: 'Просроченные действия',
     reason:
       'Сроков у действий ОМ модель не хранит: у мероприятия есть дата проведения, но нет ни плановых сроков этапов, ни дедлайнов согласования. Просрочка без срока — не измерение.',
   },
   {
-    code: 'RETURNS_COUNT',
-    label: 'Возвраты на доработку (количество)',
+    code: 'CANCELLED_COUNT',
+    label: 'Количество отменённых ОМ (§22.14)',
     reason:
-      'Модель держит ТЕКУЩИЙ статус согласования, а не историю: сколько раз мероприятие возвращали, восстановить нечем. Число возвратов требует того же журнала переходов, что и воронка §22.14.',
+      'Состояний «отменено» и «приостановлено» у мероприятия нет: отменить ОМ через UI нельзя, и журнал переходов такого события не содержит. Показать ноль значило бы утверждать, что отмен не было, — а мы утверждаем лишь, что их негде записать.',
   },
   {
     code: 'OPEN_INCIDENTS',
@@ -402,3 +394,135 @@ export const UNAVAILABLE_OPS_MEASURES = [
       'Факт участия в ОМ не фиксируется: отмечается только ознакомление. Приравнять факт к назначению — записать в участники того, кто мог не выйти.',
   },
 ] as const
+
+// ─── §22.14 Воронка ОМ ──────────────────────────────────────────────────────
+//
+// ⚠️ Строится ТОЛЬКО по журналу переходов. Массив карточек сюда не передаётся
+// вовсе — кроме одного показателя, который по определению читается из текущего
+// состояния («находящихся на этапе»), и он назван так, чтобы его нельзя было
+// перепутать с «достигшими».
+
+/** Событие перехода в проекции аналитики (см. mocks/securityEventsSlice.ts). */
+export interface OpsSourceTransition {
+  eventId: string
+  fromStage: string | null
+  toStage: string
+  kind: 'FORWARD' | 'RETURN'
+  occurredAt: string
+}
+
+/**
+ * §22.14 «Различай…» — ШЕСТЬ разных показателей. Держатся раздельно и никогда
+ * не складываются: у них разные единицы (ОМ, переходы, часы) и разный смысл.
+ */
+export const FUNNEL_MEASURES = {
+  reached: { code: 'REACHED', safeLabel: 'ОМ, достигших этапа', unit: 'ОМ' },
+  current: { code: 'CURRENT', safeLabel: 'ОМ, находящихся на этапе', unit: 'ОМ' },
+  transitions: { code: 'TRANSITIONS', safeLabel: 'Переходов', unit: 'переходов' },
+  returns: { code: 'RETURNS', safeLabel: 'Возвратов', unit: 'переходов' },
+  averageHours: { code: 'AVERAGE_HOURS', safeLabel: 'Среднее время этапа', unit: 'ч' },
+  medianHours: { code: 'MEDIAN_HOURS', safeLabel: 'Медиана времени этапа', unit: 'ч' },
+} as const
+
+export interface FunnelStageRow {
+  stateCode: string
+  safeLabel: string
+  /** Значения ПО КОДУ показателя. `null` — значение не посчитано (нет ни
+   * одного завершённого интервала), и это не ноль часов. */
+  values: Record<string, number | null>
+}
+
+export interface FunnelData {
+  stages: FunnelStageRow[]
+  measures: { code: string; safeLabel: string; unit: string }[]
+  /** §22.14: ОМ, исключённые из конверсии, и почему. Пустой список с ЯВНОЙ
+   * причиной — тоже утверждение: «исключать нечего», а не «мы не проверяли». */
+  excludedEventIds: string[]
+  exclusionNote: string
+  /** Сколько событий перехода легло в основу — без него воронку нельзя
+   * отличить от нарисованной по карточкам. */
+  transitionCount: number
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 1
+    ? sorted[middle]
+    : Math.round(((sorted[middle - 1] + sorted[middle]) / 2) * 10) / 10
+}
+
+/**
+ * §22.14. Интервал этапа = от входа в стадию до СЛЕДУЮЩЕГО перехода того же
+ * ОМ. Незакрытый интервал (ОМ стоит на этапе сейчас) в среднее НЕ попадает:
+ * иначе среднее падало бы тем сильнее, чем дольше мероприятие висит.
+ */
+export function buildFunnel(
+  transitions: readonly OpsSourceTransition[],
+  events: readonly OpsSourceEvent[],
+  registry: readonly LifecycleStateDefinition[],
+): FunnelData {
+  const byEvent = new Map<string, OpsSourceTransition[]>()
+  for (const transition of transitions) {
+    byEvent.set(transition.eventId, [...(byEvent.get(transition.eventId) ?? []), transition])
+  }
+  for (const list of byEvent.values()) {
+    list.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
+  }
+
+  const currentByStage = new Map<string, number>()
+  for (const event of events) {
+    currentByStage.set(event.stageCode, (currentByStage.get(event.stageCode) ?? 0) + 1)
+  }
+
+  const stages = registry.map((state) => {
+    const arrivals = transitions.filter((item) => item.toStage === state.stateCode)
+    const durations: number[] = []
+    for (const list of byEvent.values()) {
+      list.forEach((transition, index) => {
+        if (transition.toStage !== state.stateCode) return
+        const next = list[index + 1]
+        if (next === undefined) return
+        const hours =
+          (new Date(next.occurredAt).getTime() - new Date(transition.occurredAt).getTime()) /
+          3_600_000
+        if (hours >= 0) durations.push(Math.round(hours * 10) / 10)
+      })
+    }
+    const average =
+      durations.length === 0
+        ? null
+        : Math.round((durations.reduce((total, item) => total + item, 0) / durations.length) * 10) /
+          10
+
+    return {
+      stateCode: state.stateCode,
+      safeLabel: state.safeLabel,
+      values: {
+        // «Достигших» считаем по РАЗНЫМ ОМ: мероприятие, вернувшееся и снова
+        // дошедшее до этапа, достигло его один раз, но переходов сделало два.
+        [FUNNEL_MEASURES.reached.code]: new Set(arrivals.map((item) => item.eventId)).size,
+        [FUNNEL_MEASURES.current.code]: currentByStage.get(state.stateCode) ?? 0,
+        [FUNNEL_MEASURES.transitions.code]: arrivals.length,
+        [FUNNEL_MEASURES.returns.code]: arrivals.filter((item) => item.kind === 'RETURN').length,
+        // §22.14 «Среднее и медиана отображаются только при наличии готовых
+        // серверных значений»: нет ни одного закрытого интервала — `null`.
+        [FUNNEL_MEASURES.averageHours.code]: average,
+        [FUNNEL_MEASURES.medianHours.code]: median(durations),
+      },
+    }
+  })
+
+  return {
+    stages,
+    measures: Object.values(FUNNEL_MEASURES).map((measure) => ({ ...measure })),
+    // §22.14 «Отменённые и приостановленные ОМ не должны искусственно
+    // уменьшать или увеличивать конверсию». Таких состояний в модели нет
+    // вовсе — и это сказано вслух, а не изображено пустым фильтром.
+    excludedEventIds: [],
+    exclusionNote:
+      'Состояний «отменено» и «приостановлено» в модели ОМ нет: исключать из конверсии нечего. Появятся — исключение обязано считаться здесь, а не на экране.',
+    transitionCount: transitions.length,
+  }
+}

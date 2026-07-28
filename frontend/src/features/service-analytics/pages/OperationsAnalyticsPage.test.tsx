@@ -56,6 +56,8 @@ function response(data: Partial<OperationsAnalyticsData> = {}): OperationsAnalyt
       lifecycleDistribution: [{ stateCode: 'PLACEMENT', safeLabel: 'Расстановка', count: 1 }],
       unknownLifecycleCodes: [],
       eventCard: null,
+      funnel: null,
+      funnelUnavailableReason: 'Журнала переходов в снапшоте нет.',
       unavailableMeasures: [
         { code: 'FUNNEL', label: 'Воронка ОМ (§22.14)', reason: 'Нет transition events.' },
       ],

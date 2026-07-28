@@ -6,7 +6,7 @@
 // СЕРВЕР — рукописная УЗКАЯ проекция соседнего слайса.
 //
 // Инвариант: ТОЛЬКО ЧТЕНИЕ. Аналитика ничего не меняет в чужом агрегате.
-import type { OpsSourceEvent, OpsSourcePost } from '../lib/operations'
+import type { OpsSourceEvent, OpsSourcePost, OpsSourceTransition } from '../lib/operations'
 
 export const SECURITY_EVENTS_SLICE_NAME = 'security-events'
 
@@ -70,6 +70,32 @@ function buildPosts(event: EventProjection): OpsSourcePost[] {
         .length,
     }
   })
+}
+
+/**
+ * §22.14: журнал переходов. Читается ОТДЕЛЬНО от карточек — воронка обязана
+ * строиться по нему, и передавать сюда события вместе с карточками значило бы
+ * позволить перепутать источники.
+ *
+ * `null` — журнала нет вовсе (снапшот старой схемы); пустой массив — журнал
+ * есть и он пуст. Разница видна на экране: «истории нет» и «переходов не
+ * было» — разные утверждения.
+ */
+export function readOperationsTransitions(
+  slices: Readonly<Record<string, unknown>>,
+): OpsSourceTransition[] | null {
+  const slice = slices[SECURITY_EVENTS_SLICE_NAME]
+  if (slice === undefined || slice === null || typeof slice !== 'object') return null
+  const raw = (slice as { transitions?: unknown }).transitions
+  if (!Array.isArray(raw)) return null
+
+  return (raw as Record<string, unknown>[]).map((transition) => ({
+    eventId: asString(transition.eventId),
+    fromStage: typeof transition.fromStage === 'string' ? transition.fromStage : null,
+    toStage: asString(transition.toStage),
+    kind: transition.kind === 'RETURN' ? ('RETURN' as const) : ('FORWARD' as const),
+    occurredAt: asString(transition.occurredAt),
+  }))
 }
 
 /**

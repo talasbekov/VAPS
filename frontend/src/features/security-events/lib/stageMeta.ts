@@ -5,6 +5,24 @@
 import { cva } from 'class-variance-authority'
 import type { JournalEntryType, SecurityEventStage } from '../model/types'
 
+/**
+ * Порядок стадий жизненного цикла. Нужен, чтобы отличить переход ВПЕРЁД от
+ * возврата: §22.14 считает возвраты отдельным показателем, а не вычитает их
+ * из переходов. Порядок один на всю feature — второй список разошёлся бы с
+ * этим молча.
+ */
+export const STAGE_ORDER: readonly SecurityEventStage[] = [
+  'BULLETIN',
+  'RECON',
+  'DEMAND',
+  'FORCES',
+  'PLACEMENT',
+  'APPROVAL',
+  'ACKNOWLEDGEMENT',
+  'CONDUCT',
+  'CLOSED',
+]
+
 export const STAGE_LABEL: Record<SecurityEventStage, string> = {
   BULLETIN: 'Бюллетень',
   RECON: 'Рекогносцировка',

@@ -5,10 +5,11 @@
 // сервер. §22.15 прямо запрещает смешивать «запрошено», «выделено»,
 // «назначено» и «фактически участвовало» — набор колонок поэтому принадлежит
 // ОТВЕТУ, а не вёрстке.
+import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { Button } from '../../../shared/ui/Button'
 import { useOperationsAnalytics } from '../api/queries'
-import type { OpsBreadcrumbItem, OpsLevel, OpsRow } from '../model/types'
+import type { FunnelView, OpsBreadcrumbItem, OpsLevel, OpsRow } from '../model/types'
 
 const LEVELS: readonly OpsLevel[] = ['ALL', 'OBJECT', 'EVENT', 'DIRECTION', 'POST']
 
@@ -20,6 +21,59 @@ const LEVEL_PARAM: Record<OpsLevel, string | null> = {
   EVENT: 'event',
   DIRECTION: 'direction',
   POST: 'post',
+}
+
+/**
+ * §22.14. Показатели воронки НЕ рисуются вместе: у них разные единицы (ОМ,
+ * переходы, часы), и общий график означал бы, что 3 возврата и 3 часа —
+ * одно и то же. Активный показатель выбирается явно.
+ */
+function FunnelSection({ funnel }: { funnel: FunnelView }) {
+  const [measureCode, setMeasureCode] = useState(funnel.measures[0]?.code ?? '')
+  const measure = funnel.measures.find((item) => item.code === measureCode) ?? funnel.measures[0]
+
+  return (
+    <>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {funnel.measures.map((item) => (
+          <Button
+            key={item.code}
+            size="sm"
+            variant={item.code === measure?.code ? 'default' : 'outline'}
+            onClick={() => setMeasureCode(item.code)}
+          >
+            {item.safeLabel}
+          </Button>
+        ))}
+      </div>
+      <ul className="flex flex-col gap-1">
+        {funnel.stages.map((stage) => {
+          const value = measure === undefined ? null : stage.values[measure.code]
+          return (
+            <li
+              key={stage.stateCode}
+              className="flex items-baseline justify-between gap-3 border-b py-1 text-sm last:border-0"
+            >
+              <span>{stage.safeLabel}</span>
+              <span className="tabular-nums">
+                {value === null || value === undefined ? (
+                  // §22.14 «Среднее и медиана отображаются только при наличии
+                  // готовых серверных значений»: ноль часов и «не посчитано» —
+                  // разные утверждения.
+                  <span className="text-xs text-slate-600">нет готового значения</span>
+                ) : (
+                  `${value} ${measure?.unit ?? ''}`
+                )}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="mt-2 text-[11px] text-slate-600">
+        Построено по журналу переходов: событий — {funnel.transitionCount}. {funnel.exclusionNote}
+      </p>
+    </>
+  )
 }
 
 export function OperationsAnalyticsPage() {
@@ -120,6 +174,23 @@ export function OperationsAnalyticsPage() {
               )}
             </section>
           )}
+
+          {/* §22.14. ОДИН показатель за раз: «Не складывай эти показатели в
+              один график без явного переключателя» — переключатель здесь и
+              есть, а сложить их было бы нельзя и по единицам (ОМ, переходы,
+              часы). */}
+          <section
+            role="group"
+            aria-label="Воронка мероприятий"
+            className="mb-4 rounded-xl border bg-card p-4"
+          >
+            <h2 className="mb-2 text-sm font-semibold">Воронка мероприятий</h2>
+            {data.funnel === null ? (
+              <p className="text-sm text-slate-600">{data.funnelUnavailableReason}</p>
+            ) : (
+              <FunnelSection funnel={data.funnel} />
+            )}
+          </section>
 
           {data.eventCard !== null && (
             <section

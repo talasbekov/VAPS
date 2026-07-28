@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   OPS_COLUMNS,
+  buildFunnel,
   UNBOUND_OBJECT_ID,
   buildEventCard,
   columnsFor,
@@ -11,7 +12,7 @@ import {
   objectRows,
   postRows,
 } from './operations'
-import type { OpsSourceEvent, OpsSourcePost } from './operations'
+import type { OpsSourceEvent, OpsSourcePost, OpsSourceTransition } from './operations'
 import { OPS_LIFECYCLE_REGISTRY } from '../mocks/fixtures'
 
 function post(overrides: Partial<OpsSourcePost> = {}): OpsSourcePost {
@@ -169,5 +170,109 @@ describe('карточка ОМ (§22.15)', () => {
     const lifecycle = card.facts.find((fact) => fact.code === 'LIFECYCLE')
     expect(lifecycle?.displayValue).toContain('ВЫДУМАННАЯ')
     expect(lifecycle?.displayValue).toContain('Lifecycle Registry')
+  })
+})
+
+describe('воронка §22.14', () => {
+  const REGISTRY = OPS_LIFECYCLE_REGISTRY
+
+  function transition(
+    eventId: string,
+    fromStage: string | null,
+    toStage: string,
+    occurredAt: string,
+    kind: 'FORWARD' | 'RETURN' = 'FORWARD',
+  ): OpsSourceTransition {
+    return { eventId, fromStage, toStage, kind, occurredAt }
+  }
+
+  it('«достигших этапа» считает РАЗНЫЕ ОМ, а «переходов» — события', () => {
+    // Одно мероприятие дошло до APPROVAL дважды: между заходами был возврат.
+    const funnel = buildFunnel(
+      [
+        transition('e1', 'PLACEMENT', 'APPROVAL', '2026-07-18T08:00:00.000Z'),
+        transition('e1', 'APPROVAL', 'PLACEMENT', '2026-07-19T08:00:00.000Z', 'RETURN'),
+        transition('e1', 'PLACEMENT', 'APPROVAL', '2026-07-20T08:00:00.000Z'),
+      ],
+      [event({ id: 'e1', stageCode: 'APPROVAL' })],
+      REGISTRY,
+    )
+    const approval = funnel.stages.find((stage) => stage.stateCode === 'APPROVAL')
+
+    // Достигло ОДНО мероприятие, переходов при этом ДВА — подменить один
+    // показатель другим нельзя.
+    expect(approval?.values.REACHED).toBe(1)
+    expect(approval?.values.TRANSITIONS).toBe(2)
+    expect(funnel.stages.find((s) => s.stateCode === 'PLACEMENT')?.values.RETURNS).toBe(1)
+  })
+
+  it('«находящихся на этапе» и «достигших» — разные числа', () => {
+    const funnel = buildFunnel(
+      [
+        transition('e1', null, 'BULLETIN', '2026-07-18T08:00:00.000Z'),
+        transition('e1', 'BULLETIN', 'RECON', '2026-07-19T08:00:00.000Z'),
+      ],
+      [event({ id: 'e1', stageCode: 'RECON' })],
+      REGISTRY,
+    )
+    const bulletin = funnel.stages.find((stage) => stage.stateCode === 'BULLETIN')
+
+    // Через «Бюллетень» ОМ прошло, но СЕЙЧАС его там нет.
+    expect(bulletin?.values.REACHED).toBe(1)
+    expect(bulletin?.values.CURRENT).toBe(0)
+  })
+
+  it('незакрытый интервал в среднее не попадает, и это НЕ ноль часов', () => {
+    const funnel = buildFunnel(
+      [transition('e1', null, 'BULLETIN', '2026-07-18T08:00:00.000Z')],
+      [event({ id: 'e1', stageCode: 'BULLETIN' })],
+      REGISTRY,
+    )
+    const bulletin = funnel.stages.find((stage) => stage.stateCode === 'BULLETIN')
+
+    expect(bulletin?.values.REACHED).toBe(1)
+    // Мероприятие стоит на этапе прямо сейчас — времени этапа ещё нет.
+    expect(bulletin?.values.AVERAGE_HOURS).toBeNull()
+    expect(bulletin?.values.MEDIAN_HOURS).toBeNull()
+  })
+
+  it('среднее и медиана считаются раздельно и не совпадают на перекошенных данных', () => {
+    const funnel = buildFunnel(
+      [
+        transition('e1', null, 'BULLETIN', '2026-07-18T00:00:00.000Z'),
+        transition('e1', 'BULLETIN', 'RECON', '2026-07-18T01:00:00.000Z'),
+        transition('e2', null, 'BULLETIN', '2026-07-18T00:00:00.000Z'),
+        transition('e2', 'BULLETIN', 'RECON', '2026-07-18T02:00:00.000Z'),
+        transition('e3', null, 'BULLETIN', '2026-07-18T00:00:00.000Z'),
+        transition('e3', 'BULLETIN', 'RECON', '2026-07-19T00:00:00.000Z'),
+      ],
+      [event({ id: 'e1', stageCode: 'RECON' })],
+      REGISTRY,
+    )
+    const bulletin = funnel.stages.find((stage) => stage.stateCode === 'BULLETIN')
+
+    // 1, 2 и 24 часа: медиана 2, среднее 9 — одно другим не подменишь.
+    expect(bulletin?.values.MEDIAN_HOURS).toBe(2)
+    expect(bulletin?.values.AVERAGE_HOURS).toBe(9)
+  })
+
+  it('воронка строится ТОЛЬКО по журналу: пустой журнал не берёт числа из карточек', () => {
+    const funnel = buildFunnel([], [event({ id: 'e1', stageCode: 'APPROVAL' })], REGISTRY)
+    const approval = funnel.stages.find((stage) => stage.stateCode === 'APPROVAL')
+
+    expect(funnel.transitionCount).toBe(0)
+    // «Достигших» и «переходов» — ноль, хотя карточка стоит на APPROVAL:
+    // текущее состояние историей не является.
+    expect(approval?.values.REACHED).toBe(0)
+    expect(approval?.values.TRANSITIONS).toBe(0)
+    // А «находящихся на этапе» читается из карточек — и это единственный
+    // показатель, который вправе их читать.
+    expect(approval?.values.CURRENT).toBe(1)
+  })
+
+  it('исключение из конверсии названо явно, а не изображено пустым фильтром', () => {
+    const funnel = buildFunnel([], [], REGISTRY)
+    expect(funnel.excludedEventIds).toEqual([])
+    expect(funnel.exclusionNote).toContain('приостановлено')
   })
 })

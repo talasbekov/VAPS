@@ -43,6 +43,7 @@ import {
 import { RECON_CHECKLIST_TEMPLATE } from './fixtures'
 import type { SecurityEventsSlice } from './fixtures'
 import { findObjectById, readObjectsProjection } from './objectsSlice'
+import { STAGE_ORDER } from '../lib/stageMeta'
 import { aggregateForceRequests } from './demandLogic'
 import { findPersonnel } from './personnelRoster'
 
@@ -119,6 +120,52 @@ export function createSecurityEventsRepository(
   adapter: PersistenceAdapter,
   clock: DemoClock,
 ) {
+  /**
+   * ЕДИНСТВЕННАЯ точка, где слайс ОМ уходит в снапшот, и единственное место,
+   * где пишется журнал переходов §22.14.
+   *
+   * Журнал пишется ДИФФОМ: сравниваются стадии «до» и «после». Ручная запись
+   * на каждом переходе означала бы девять мест, где её можно забыть, — а
+   * забытый переход не сломал бы ни одного теста стадий и молча исказил бы
+   * конверсию. При таком устройстве новая операция, меняющая стадию, попадает
+   * в журнал сама, ничего не зная о нём.
+   */
+  function commitEvents(
+    current: DemoStateEnvelope,
+    nextEvents: SecurityEvent[],
+  ): DemoStateEnvelope['slices'] {
+    const previous = readSlice(current)
+    const before = new Map(previous.events.map((event) => [event.id, event.stage]))
+    const transitions = [...(previous.transitions ?? [])]
+    const now = clock.now()
+
+    for (const event of nextEvents) {
+      const fromStage = before.get(event.id) ?? null
+      // Создание тоже переход: до него стадии не было, и §22.14 считает
+      // «достигших этапа» в том числе на первом.
+      if (before.has(event.id) && fromStage === event.stage) continue
+      transitions.push({
+        id: `security-event-transition-${current.revision + 1}-${transitions.length + 1}`,
+        eventId: event.id,
+        fromStage,
+        toStage: event.stage,
+        kind:
+          fromStage !== null &&
+          STAGE_ORDER.indexOf(event.stage) < STAGE_ORDER.indexOf(fromStage)
+            ? 'RETURN'
+            : 'FORWARD',
+        occurredAt: now,
+      })
+    }
+
+    return {
+      ...current.slices,
+      // Журнал APPEND-ONLY: старые записи переносятся как есть, новые
+      // дописываются в конец. Ни одна операция их не правит и не удаляет.
+      [SLICE_NAME]: { events: nextEvents, transitions } satisfies SecurityEventsSlice,
+    }
+  }
+
   async function list(
     params: ListSecurityEventsParams,
     actorUserId: string | null,
@@ -316,10 +363,7 @@ export function createSecurityEventsRepository(
         createdAt: now,
         updatedAt: now,
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: { events: [...slice.events, created] } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(current, [...slice.events, created])
     })
     return created
   }
@@ -356,12 +400,10 @@ export function createSecurityEventsRepository(
         initialTasks: request.initialTasks.trim(),
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -414,12 +456,10 @@ export function createSecurityEventsRepository(
         reconSectorPosts: sectorPosts,
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -506,12 +546,10 @@ export function createSecurityEventsRepository(
         reconSectorPosts: [...existing.reconSectorPosts, ...added],
         updatedAt: now,
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -550,12 +588,10 @@ export function createSecurityEventsRepository(
         )
       }
       updated = { ...existing, stage: 'DEMAND', updatedAt: clock.now() }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -626,12 +662,10 @@ export function createSecurityEventsRepository(
         stage: 'FORCES',
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -674,12 +708,10 @@ export function createSecurityEventsRepository(
         return { ...r, allocatedCount, status, comment: request.comment.trim() }
       })
       updated = { ...existing, forceRequests, updatedAt: clock.now() }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -715,12 +747,10 @@ export function createSecurityEventsRepository(
         )
       }
       updated = { ...existing, stage: 'PLACEMENT', updatedAt: clock.now() }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -778,12 +808,10 @@ export function createSecurityEventsRepository(
         placementAssignments: [...existing.placementAssignments, assignment],
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -811,12 +839,10 @@ export function createSecurityEventsRepository(
         ),
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -858,12 +884,10 @@ export function createSecurityEventsRepository(
         )
       }
       updated = { ...existing, stage: 'APPROVAL', updatedAt: clock.now() }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -898,12 +922,10 @@ export function createSecurityEventsRepository(
         approvalComment: '',
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -941,12 +963,10 @@ export function createSecurityEventsRepository(
         approvalComment: request.comment.trim(),
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -979,12 +999,10 @@ export function createSecurityEventsRepository(
         ),
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -1017,12 +1035,10 @@ export function createSecurityEventsRepository(
         )
       }
       updated = { ...existing, stage: 'CONDUCT', updatedAt: clock.now() }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -1065,12 +1081,10 @@ export function createSecurityEventsRepository(
         journalEntries: [entry, ...existing.journalEntries],
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -1150,12 +1164,10 @@ export function createSecurityEventsRepository(
         journalEntries: [journalEntry, ...existing.journalEntries],
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }
@@ -1211,12 +1223,10 @@ export function createSecurityEventsRepository(
         closedAt: clock.now(),
         updatedAt: clock.now(),
       }
-      return {
-        ...current.slices,
-        [SLICE_NAME]: {
-          events: slice.events.map((e) => (e.id === id ? updated : e)),
-        } satisfies SecurityEventsSlice,
-      }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
     })
     return updated
   }

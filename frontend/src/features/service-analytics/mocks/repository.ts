@@ -39,6 +39,7 @@ import {
   UNBOUND_OBJECT_ID,
   breadcrumbFor,
   buildEventCard,
+  buildFunnel,
   columnsFor,
   directionId,
   directionRows,
@@ -50,7 +51,7 @@ import {
 } from '../lib/operations'
 import type { OpsSourceEvent } from '../lib/operations'
 import { readAnalyticsSource } from './dutiesSlice'
-import { readOperationsSource } from './securityEventsSlice'
+import { readOperationsSource, readOperationsTransitions } from './securityEventsSlice'
 import { MAX_CUSTOM_PERIOD_DAYS } from './fixtures'
 import type { ServiceAnalyticsSlice } from './fixtures'
 import type {
@@ -82,6 +83,10 @@ const PERSONAL_DETAIL_PERMISSION = 'ops.analytics.personal_detail'
 /** §22.26: «просмотр аналитики службы» и «просмотр аналитики ОМ» — разные
  * пункты списка прав, и здесь они разные права. */
 const OPS_VIEW_PERMISSION = 'ops.analytics.operations'
+
+/** Воронка §22.14 — про множество мероприятий. Ниже уровня ОМ множества нет. */
+const NO_FUNNEL_AT_LEVEL =
+  'Воронка §22.14 строится по множеству мероприятий: на уровне направления и поста множества нет, и повторять здесь воронку ОМ значило бы показать её под чужим заголовком.'
 
 const TIMEZONE = 'Asia/Almaty'
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -498,6 +503,9 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
           lifecycleDistribution: [],
           unknownLifecycleCodes: [],
           eventCard: null,
+          funnel: null,
+          funnelUnavailableReason:
+            'Источник мероприятий недоступен — журнала переходов тоже нет. Воронка не строится.',
           unavailableMeasures: [
             {
               code: 'SOURCE',
@@ -513,6 +521,34 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
 
     const unavailableMeasures = UNAVAILABLE_OPS_MEASURES.map((measure) => ({ ...measure }))
     const byId = new Map(source.map((event) => [event.id, event]))
+    // §22.14: журнал читается ОТДЕЛЬНО от карточек. `null` — журнала нет
+    // (снапшот старой схемы), и это не «переходов не было».
+    const journal = readOperationsTransitions(envelope.slices)
+
+    /** Воронка принадлежит МНОЖЕСТВУ мероприятий: на уровне направления и
+     * поста множества нет, и рисовать её там значило бы повторить воронку ОМ
+     * под чужим заголовком. */
+    function funnelFor(events: OpsSourceEvent[]): {
+      funnel: OperationsAnalyticsResponse['data']['funnel']
+      funnelUnavailableReason: string | null
+    } {
+      if (journal === null) {
+        return {
+          funnel: null,
+          funnelUnavailableReason:
+            'Журнала переходов в снапшоте нет (снимок старой схемы). Построить воронку по текущим стадиям нельзя — §22.14 требует событий перехода.',
+        }
+      }
+      const ids = new Set(events.map((event) => event.id))
+      return {
+        funnel: buildFunnel(
+          journal.filter((transition) => ids.has(transition.eventId)),
+          events,
+          registry,
+        ),
+        funnelUnavailableReason: null,
+      }
+    }
 
     function distribution(events: OpsSourceEvent[]) {
       return lifecycleDistribution(events, registry)
@@ -532,6 +568,7 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
           lifecycleDistribution: buckets,
           unknownLifecycleCodes: unknownCodes,
           eventCard: null,
+          ...funnelFor(source),
           unavailableMeasures,
         },
       }
@@ -564,6 +601,7 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
           lifecycleDistribution: buckets,
           unknownLifecycleCodes: unknownCodes,
           eventCard: null,
+          ...funnelFor(events),
           unavailableMeasures,
         },
       }
@@ -597,6 +635,7 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
           lifecycleDistribution: distribution([event]).buckets,
           unknownLifecycleCodes: distribution([event]).unknownCodes,
           eventCard: buildEventCard(event, registry),
+          ...funnelFor([event]),
           unavailableMeasures,
         },
       }
@@ -628,6 +667,8 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
           lifecycleDistribution: [],
           unknownLifecycleCodes: [],
           eventCard: null,
+          funnel: null,
+          funnelUnavailableReason: NO_FUNNEL_AT_LEVEL,
           unavailableMeasures,
         },
       }
@@ -655,6 +696,8 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
         lifecycleDistribution: [],
         unknownLifecycleCodes: [],
         eventCard: null,
+        funnel: null,
+        funnelUnavailableReason: NO_FUNNEL_AT_LEVEL,
         unavailableMeasures,
       },
     }

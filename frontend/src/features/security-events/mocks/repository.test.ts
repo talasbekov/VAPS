@@ -12,7 +12,7 @@ import {
 } from './repository'
 import type { SecurityEventsSlice } from './fixtures'
 import type { SecurityObjectProjection } from '../lib/passportBinding'
-import type { SecurityEvent } from '../model/types'
+import type { SecurityEvent, SecurityEventTransition } from '../model/types'
 import type {
   ForceRequest,
   PlacementAssignment,
@@ -291,6 +291,7 @@ describe('createSecurityEventsRepository', () => {
     { id: 'c2', label: 'Освещение', done: false, result: null, comment: '' },
   ]
   const RECON_EVENT = { ...SAMPLE_EVENT, id: 'evt-recon', stage: 'RECON' as const }
+
 
   it('updateRecon() требует ops.recon.manage, а не ops.bulletin.manage', async () => {
     const adapter = createMemoryPersistence()
@@ -1013,5 +1014,123 @@ describe('привязка ОМ к версии паспорта (§9.6)', () =>
     await expect(repo.listBindableObjects(NOBODY)).rejects.toBeInstanceOf(
       RepositoryPermissionError,
     )
+  })
+})
+
+describe('журнал переходов §22.14 (append-only, пишется диффом)', () => {
+  // Локальные фикстуры: те же формы, что у стадийных тестов выше, но их
+  // константы живут в чужом describe — тянуть их наружу ради журнала значило
+  // бы переписывать соседние тесты.
+  const POSTS: ReconSectorPost[] = [
+    { id: 'p1', sector: 'A', post: 'Вход', task: 'Досмотр', need: 1, requirements: '', result: 'MATCHES', comment: '', sourceSectorId: null, sourcePostId: null },
+  ]
+  const RECON_CHECKLIST: ReconChecklistItem[] = [
+    { id: 'c1', label: 'Периметр', done: false, result: null, comment: '' },
+  ]
+  const RECON_EVENT = { ...SAMPLE_EVENT, id: 'evt-recon', stage: 'RECON' as const }
+
+  /** Реестр прав перерегистрируется В КАЖДОМ тесте, а не в `beforeEach`:
+   * директория RBAC глобальна на модуль, и хук этого describe перетирал
+   * набор пользователей соседних блоков — 16 чужих тестов краснели. */
+  function registerJournalRbac(): void {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.security_event.view'] },
+      { userId: CREATOR, permissions: ['ops.security_event.view', 'ops.bulletin.manage'] },
+      { userId: RECON_OFFICER, permissions: ['ops.security_event.view', 'ops.recon.manage'] },
+      { userId: PLACEMENT_MANAGER, permissions: ['ops.security_event.view', 'ops.placement.manage'] },
+      { userId: PLACEMENT_APPROVER, permissions: ['ops.security_event.view', 'ops.placement.approve'] },
+    ])
+  }
+  const APPROVAL_EVENT = {
+    ...SAMPLE_EVENT,
+    id: 'evt-approval',
+    stage: 'APPROVAL' as const,
+    reconSectorPosts: POSTS,
+    placementAssignments: [
+      { id: 'pa1', postId: 'p1', employeeId: 'emp-1', employeeName: 'Ахметов Б.', acknowledgedAt: null },
+    ] as PlacementAssignment[],
+  }
+
+  async function transitionsOf(adapter: ReturnType<typeof createMemoryPersistence>) {
+    const envelope = await adapter.load()
+    return ((envelope?.slices['security-events'] as SecurityEventsSlice | undefined)
+      ?.transitions ?? []) as SecurityEventTransition[]
+  }
+
+  it('операция, меняющая стадию, оставляет запись, ничего не зная о журнале', async () => {
+    registerJournalRbac()
+    const adapter = createMemoryPersistence()
+    const doneChecklist = RECON_CHECKLIST.map((c) => ({
+      ...c,
+      done: true,
+      result: 'MATCHES' as const,
+    }))
+    const sectorPosts: ReconSectorPost[] = [
+      { id: 'p1', sector: 'A', post: 'Вход', task: 'Досмотр', need: 2, requirements: '', result: 'MATCHES', comment: '', sourceSectorId: null, sourcePostId: null },
+    ]
+    await adapter.reset(
+      seedEnvelope([
+        { ...RECON_EVENT, reconChecklist: doneChecklist, reconSectorPosts: sectorPosts },
+      ]),
+    )
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+
+    // Сеяный слайс приходит БЕЗ журнала — запись появляется сама.
+    expect(await transitionsOf(adapter)).toHaveLength(0)
+    await repo.completeRecon(RECON_EVENT.id, RECON_OFFICER)
+
+    const [transition] = await transitionsOf(adapter)
+    expect(transition.eventId).toBe(RECON_EVENT.id)
+    expect(transition.fromStage).toBe('RECON')
+    expect(transition.toStage).toBe('DEMAND')
+    expect(transition.kind).toBe('FORWARD')
+  })
+
+  it('возврат на доработку пишется отдельным видом, а не вычитается из переходов', async () => {
+    registerJournalRbac()
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([APPROVAL_EVENT]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+
+    await repo.returnPlacement(APPROVAL_EVENT.id, { comment: 'Не хватает поста B' }, PLACEMENT_APPROVER)
+
+    const [transition] = await transitionsOf(adapter)
+    expect(transition.fromStage).toBe('APPROVAL')
+    expect(transition.toStage).toBe('PLACEMENT')
+    // §22.14 считает возвраты своим показателем: запись остаётся в журнале
+    // и помечена, а не удаляет собой переход вперёд.
+    expect(transition.kind).toBe('RETURN')
+  })
+
+  it('операция БЕЗ смены стадии журнал не трогает', async () => {
+    registerJournalRbac()
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([SAMPLE_EVENT]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+
+    await repo.updateBulletin(
+      SAMPLE_EVENT.id,
+      { briefDescription: 'Описание', initialTasks: 'Задачи' },
+      CREATOR,
+    )
+    expect(await transitionsOf(adapter)).toHaveLength(0)
+  })
+
+  it('журнал append-only: прошлые записи не переписываются следующей операцией', async () => {
+    registerJournalRbac()
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([APPROVAL_EVENT]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+
+    await repo.returnPlacement(APPROVAL_EVENT.id, { comment: 'Первый возврат' }, PLACEMENT_APPROVER)
+    const first = (await transitionsOf(adapter))[0]
+
+    await repo.completePlacement(APPROVAL_EVENT.id, PLACEMENT_MANAGER)
+    const after = await transitionsOf(adapter)
+
+    expect(after).toHaveLength(2)
+    // Первая запись цела: id, время и вид не переписаны второй операцией.
+    expect(after[0]).toEqual(first)
+    expect(after[1].kind).toBe('FORWARD')
   })
 })

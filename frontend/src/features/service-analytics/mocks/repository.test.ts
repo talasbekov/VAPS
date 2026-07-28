@@ -702,17 +702,52 @@ describe('аналитика ОМ (§22.13, §22.15)', () => {
     ).rejects.toThrow(RepositoryBusinessRuleError)
   })
 
-  it('§22.14 воронка НЕ строится и названа с причиной', async () => {
+  it('§22.14 воронка строится ПО ЖУРНАЛУ, а не по текущим стадиям', async () => {
+    const { repository, adapter } = await opsSetup()
+    // Журнал кладём рядом с карточками: он живёт в том же слайсе, но читается
+    // отдельно (и до Этапа 46 его не было вовсе).
+    const envelope = await adapter.load()
+    await adapter.reset({
+      ...envelope!,
+      slices: {
+        ...envelope!.slices,
+        'security-events': {
+          events: EVENTS,
+          transitions: [
+            { eventId: 'event-1', fromStage: null, toStage: 'BULLETIN', kind: 'FORWARD', occurredAt: '2026-07-18T00:00:00.000Z' },
+            { eventId: 'event-1', fromStage: 'BULLETIN', toStage: 'PLACEMENT', kind: 'FORWARD', occurredAt: '2026-07-18T06:00:00.000Z' },
+          ],
+        },
+      },
+    })
+
+    const response = await repository.getOperationsAnalytics(OPS_VIEWER, { level: 'ALL' })
+    expect(response.data.funnel?.transitionCount).toBe(2)
+    const bulletin = response.data.funnel?.stages.find((stage) => stage.stateCode === 'BULLETIN')
+    // Через «Бюллетень» мероприятие прошло, хотя СЕЙЧАС стоит на «Расстановке»:
+    // воронка знает историю, а распределение по стадиям — нет.
+    expect(bulletin?.values.REACHED).toBe(1)
+    expect(bulletin?.values.CURRENT).toBe(0)
+  })
+
+  it('без журнала переходов воронка не подменяется текущими стадиями', async () => {
+    // Слайс ОМ есть, журнала нет (снапшот старой схемы).
     const { repository } = await opsSetup()
     const response = await repository.getOperationsAnalytics(OPS_VIEWER, { level: 'ALL' })
-    const funnel = response.data.unavailableMeasures.find((measure) => measure.code === 'FUNNEL')
 
-    expect(funnel?.reason).toContain('transition events')
-    // Ни одного поля воронки в ответе: собранная из текущих стадий, она была бы
-    // конверсией по тому, что §22.14 запрещает брать за источник.
-    const body = JSON.stringify(response)
-    expect(body).not.toContain('conversion')
-    expect(body).not.toContain('averageStageTime')
+    expect(response.data.funnel).toBeNull()
+    expect(response.data.funnelUnavailableReason).toContain('событий перехода')
+  })
+
+  it('§35: отменённые ОМ и просрочка по-прежнему названы с причиной', async () => {
+    const { repository } = await opsSetup()
+    const response = await repository.getOperationsAnalytics(OPS_VIEWER, { level: 'ALL' })
+    const codes = response.data.unavailableMeasures.map((measure) => measure.code)
+
+    expect(codes).toContain('CANCELLED_COUNT')
+    expect(codes).toContain('OVERDUE_ACTIONS')
+    // Воронка из этого списка УШЛА: она реализована.
+    expect(codes).not.toContain('FUNNEL')
   })
 
   it('отсутствие слайса ОМ — не «мероприятий нет»', async () => {

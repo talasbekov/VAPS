@@ -146,6 +146,28 @@ export interface ClosureDirectionSummary {
   summary: string
 }
 
+/**
+ * §22.14: событие перехода жизненного цикла. APPEND-ONLY — записи не
+ * правятся и не удаляются, потому что журнал переходов и есть история; правка
+ * задним числом сделала бы воронку недоказуемой.
+ *
+ * Пишется ДИФФОМ на записи слайса (см. `mocks/repository.ts` `commitEvents`),
+ * а не руками на каждом переходе: девять операций меняют стадию, и ручная
+ * запись рано или поздно была бы забыта в одной из них — а забытый переход
+ * молча исказил бы конверсию.
+ */
+export interface SecurityEventTransition {
+  id: string
+  eventId: string
+  /** `null` — создание мероприятия: до него стадии не было. */
+  fromStage: SecurityEventStage | null
+  toStage: SecurityEventStage
+  /** `RETURN` — переход НАЗАД по порядку стадий (возврат на доработку).
+   * §22.14 считает возвраты отдельно от переходов, а не вычитает их. */
+  kind: 'FORWARD' | 'RETURN'
+  occurredAt: string
+}
+
 export interface SecurityEvent {
   id: string
   code: string
