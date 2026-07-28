@@ -2,6 +2,7 @@
 // существует — статус `backend-contract-pending`.
 import type {
   AnalyticsSnapshot,
+  AttentionData,
   DrilldownPage,
   PeriodPreset,
   ServiceAnalyticsData,
@@ -11,6 +12,12 @@ import type {
 export const ANALYTICS_SNAPSHOT_PATH = '/api/ops/service-analytics/'
 export const ANALYTICS_PRESETS_PATH = '/api/ops/service-analytics-presets/'
 export const ANALYTICS_DRILLDOWN_PATH = '/api/ops/service-analytics-drilldown/'
+/** §22.11 отдельный ресурс, а не поле снимка показателей: наблюдения делает
+ * ДРУГОЙ детектор с другой политикой и другим временем — приехав внутри снимка
+ * KPI, они унаследовали бы его `policyVersion` и читались бы как его следствие.
+ * Путь СИБЛИНГ, а не вложенный: `…/service-analytics/attention/` msw отдал бы
+ * первому совпавшему handler'у молча (коллизия путей, Этап 39). */
+export const ANALYTICS_ATTENTION_PATH = '/api/ops/service-analytics-attention/'
 
 /** Блок §35 в ответе. Форма та же, что у `UnavailableMetric`: «чего нет и
  * почему» — одно понятие, и второй тип с теми же полями разошёлся бы с первым.
@@ -52,3 +59,7 @@ export interface DrilldownQuery {
 }
 
 export type DrilldownResponse = AnalyticsSnapshot<DrilldownPage>
+
+/** §22.11. `policyVersion` конверта здесь — версия политики НАБЛЮДЕНИЙ, а не
+ * порогов показателей: у этого снимка другая методика. */
+export type AttentionResponse = AnalyticsSnapshot<AttentionData>

@@ -17,9 +17,11 @@ import { ToastProvider } from '../../../shared/ui/toast'
 import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
 import type {
   AnalyticsPresetsResponse,
+  AttentionResponse,
   DrilldownResponse,
   ServiceAnalyticsResponse,
 } from '../api/pending-contracts'
+import type { AttentionItem } from '../model/types'
 
 const PRESETS_URL = '*/api/ops/service-analytics-presets/'
 const DRILLDOWN_URL = '*/api/ops/service-analytics-drilldown/'
@@ -337,6 +339,190 @@ describe('Аналитика службы (§22.3-22.7)', () => {
 
     expect(
       await screen.findByText('Период аналитики не может превышать 62 дней.'),
+    ).toBeInTheDocument()
+  })
+})
+
+describe('блок «Требует внимания» (§22.11)', () => {
+  const ATTENTION_URL = '*/api/ops/service-analytics-attention/'
+  const PERMISSIONS_URL = '*/api/operations/my-permissions/'
+
+  function item(overrides: Partial<AttentionItem> = {}): AttentionItem {
+    return {
+      attentionId: 'att-1',
+      categoryCode: 'ACKNOWLEDGEMENT_MISSING',
+      severity: 'WARNING',
+      safeTitle: 'Требуется проверка',
+      safeDescription: 'Записей с ближайшим заступлением без отметки: 2.',
+      count: 2,
+      scopeLabel: 'Область demo-режима',
+      targetRoute: '/duties',
+      targetPermission: 'ops.duty.view',
+      detectedAt: '2026-07-20T08:00:00+05:00',
+      policyVersion: 'attention-policy-2026.07.1',
+      ...overrides,
+    }
+  }
+
+  function attention(overrides: Partial<AttentionResponse['data']> = {}): AttentionResponse {
+    const base = snapshot()
+    return {
+      ...base,
+      policyVersion: 'attention-policy-2026.07.1',
+      data: {
+        items: [item()],
+        detectionState: 'COMPLETE',
+        detectionUnavailableReason: null,
+        unavailableDetectors: [],
+        ...overrides,
+      },
+    }
+  }
+
+  function baseHandlers() {
+    return [
+      http.get(PRESETS_URL, () => HttpResponse.json(presets())),
+      http.get(SNAPSHOT_URL, () => HttpResponse.json(snapshot())),
+    ]
+  }
+
+  it('печатает элементы В ПОРЯДКЕ ОТВЕТА и красит по severity, а не по числу', async () => {
+    // ⚠️ Три элемента и числа подобраны так, чтобы порядок ответа НЕ СОВПАДАЛ
+    // ни с одной правдоподобной клиентской сортировкой: ни по severity
+    // (CRITICAL был бы первым), ни по числу по убыванию (99, 50, 1), ни по
+    // возрастанию. Первая редакция этого теста обходилась двумя элементами и
+    // осталась ЗЕЛЁНОЙ, когда экрану добавили сортировку по count, — то есть
+    // проверяла меньше, чем обещала.
+    server.use(
+      ...baseHandlers(),
+      http.get(ATTENTION_URL, () =>
+        HttpResponse.json(
+          attention({
+            items: [
+              item({
+                attentionId: 'att-info',
+                categoryCode: 'SOURCE_AGE',
+                severity: 'INFO',
+                safeTitle: 'Источник не обновлён',
+                safeDescription: 'Последнее изменение — 72 ч назад.',
+                count: 99,
+                targetRoute: null,
+                targetPermission: null,
+              }),
+              item({
+                attentionId: 'att-critical',
+                severity: 'CRITICAL',
+                safeTitle: 'Обнаружено превышение серверного порога',
+                safeDescription: 'Доля записей периода с конфликтом — 38%.',
+                count: 1,
+              }),
+              item({
+                attentionId: 'att-warning',
+                severity: 'WARNING',
+                safeTitle: 'Есть незавершённые процессы',
+                safeDescription: 'Записей, не переведённых в завершённое состояние: 50.',
+                count: 50,
+              }),
+            ],
+          }),
+        ),
+      ),
+    )
+    renderPage()
+
+    const block = await screen.findByRole('group', { name: 'Требует внимания' })
+    const entries = await waitFor(() => {
+      const found = block.querySelectorAll('li')
+      expect(found).toHaveLength(3)
+      return found
+    })
+    expect(entries[0]).toHaveTextContent('Источник не обновлён')
+    expect(entries[1]).toHaveTextContent('Обнаружено превышение серверного порога')
+    expect(entries[2]).toHaveTextContent('Есть незавершённые процессы')
+    // Цвет — от severity ответа: спокойный элемент с числом 99 остаётся
+    // спокойным, тревожный с единицей — тревожным.
+    expect(entries[0].className).not.toContain('red')
+    expect(entries[1].className).toContain('red')
+  })
+
+  it('печатает текст сервера дословно и называет версию политики наблюдений', async () => {
+    server.use(
+      ...baseHandlers(),
+      http.get(ATTENTION_URL, () => HttpResponse.json(attention())),
+    )
+    renderPage()
+
+    expect(
+      await screen.findByText('Записей с ближайшим заступлением без отметки: 2.'),
+    ).toBeInTheDocument()
+    // Версия политики НАБЛЮДЕНИЙ, а не порогов показателей (снимок KPI несёт
+    // `analytics-policy-2026.07.1`).
+    expect(
+      await screen.findByText(/Версия политики наблюдений: attention-policy-2026\.07\.1/),
+    ).toBeInTheDocument()
+  })
+
+  it('неработающий детектор называется вслух и не выдаётся за «замечаний нет»', async () => {
+    server.use(
+      ...baseHandlers(),
+      http.get(ATTENTION_URL, () =>
+        HttpResponse.json(
+          attention({
+            items: [],
+            detectionState: 'UNAVAILABLE',
+            detectionUnavailableReason: 'Источник наблюдений недоступен: детекторы не отработали.',
+          }),
+        ),
+      ),
+    )
+    renderPage()
+
+    expect(
+      await screen.findByText('Источник наблюдений недоступен: детекторы не отработали.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Ни один серверный детектор не сработал/)).not.toBeInTheDocument()
+  })
+
+  it('пустой результат отработавшего детектора — отдельное утверждение', async () => {
+    server.use(
+      ...baseHandlers(),
+      http.get(ATTENTION_URL, () => HttpResponse.json(attention({ items: [] }))),
+    )
+    renderPage()
+
+    expect(
+      await screen.findByText(/Ни один серверный детектор не сработал в этом периоде/),
+    ).toBeInTheDocument()
+  })
+
+  it('переход рисуется только при праве на раздел назначения (§22.27)', async () => {
+    server.use(
+      ...baseHandlers(),
+      http.get(ATTENTION_URL, () => HttpResponse.json(attention())),
+      http.get(PERMISSIONS_URL, () =>
+        HttpResponse.json({ permissions: ['ops.analytics.view', 'ops.duty.view'] }),
+      ),
+    )
+    renderPage()
+
+    const link = await screen.findByRole('link', { name: 'Перейти к записям' })
+    expect(link).toHaveAttribute('href', '/duties')
+  })
+
+  it('без права на раздел назначения ссылки нет, а причина названа', async () => {
+    server.use(
+      ...baseHandlers(),
+      http.get(ATTENTION_URL, () => HttpResponse.json(attention())),
+      // У аналитика нет `ops.duty.view` — ровно та persona, на которой держится
+      // демонстрация разделения прав.
+      http.get(PERMISSIONS_URL, () => HttpResponse.json({ permissions: ['ops.analytics.view'] })),
+    )
+    renderPage()
+
+    expect(await screen.findByText('Требуется проверка')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Перейти к записям' })).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Переход к записям закрыт: раздел требует отдельного доступа.'),
     ).toBeInTheDocument()
   })
 })

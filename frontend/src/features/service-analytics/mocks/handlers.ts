@@ -4,6 +4,7 @@ import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import type { ErrorEnvelope } from '../../../shared/api/errors'
 import {
+  ANALYTICS_ATTENTION_PATH,
   ANALYTICS_DRILLDOWN_PATH,
   ANALYTICS_PRESETS_PATH,
   ANALYTICS_SNAPSHOT_PATH,
@@ -61,6 +62,21 @@ export function createServiceAnalyticsHandlers(adapter: PersistenceAdapter, cloc
             from: params.get('from') ?? '',
             to: params.get('to') ?? '',
             cursor: param(params.get('cursor')),
+          }),
+        )
+      } catch (error) {
+        return mapRepositoryError(error, clock) ?? HttpResponse.error()
+      }
+    }),
+    http.get(`*${ANALYTICS_ATTENTION_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const params = new URL(request.url).searchParams
+      try {
+        return HttpResponse.json(
+          await repository.getAttention(actorUserId, {
+            presetCode: param(params.get('preset')),
+            from: params.get('from') ?? '',
+            to: params.get('to') ?? '',
           }),
         )
       } catch (error) {

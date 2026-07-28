@@ -3,12 +3,14 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../../../shared/api/client'
 import type { ApiFailure } from '../../../shared/api/errors'
 import {
+  ANALYTICS_ATTENTION_PATH,
   ANALYTICS_DRILLDOWN_PATH,
   ANALYTICS_PRESETS_PATH,
   ANALYTICS_SNAPSHOT_PATH,
 } from './pending-contracts'
 import type {
   AnalyticsPresetsResponse,
+  AttentionResponse,
   DrilldownQuery,
   DrilldownResponse,
   ServiceAnalyticsResponse,
@@ -59,6 +61,28 @@ export function useServiceAnalytics(period: AnalyticsPeriodRequest | null) {
     queryFn: () =>
       apiClient.get<ServiceAnalyticsResponse>(
         `${ANALYTICS_SNAPSHOT_PATH}?${periodParams(period as AnalyticsPeriodRequest).toString()}`,
+      ),
+    enabled: period !== null,
+  })
+}
+
+/**
+ * §22.11 блок «Требует внимания». Отдельный запрос по той же причине, по
+ * которой отдельный ресурс: наблюдения делает другой детектор с другой
+ * политикой, и приехав полем снимка KPI, они читались бы как его следствие.
+ */
+export function useAttentionItems(period: AnalyticsPeriodRequest | null) {
+  return useQuery<AttentionResponse, ApiFailure>({
+    queryKey: [
+      'service-analytics',
+      'attention',
+      period?.presetCode ?? 'CUSTOM',
+      period?.from ?? '',
+      period?.to ?? '',
+    ],
+    queryFn: () =>
+      apiClient.get<AttentionResponse>(
+        `${ANALYTICS_ATTENTION_PATH}?${periodParams(period as AnalyticsPeriodRequest).toString()}`,
       ),
     enabled: period !== null,
   })

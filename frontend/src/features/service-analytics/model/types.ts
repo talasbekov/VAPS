@@ -137,6 +137,53 @@ export interface DrilldownRow {
   employeeLabel: string | null
 }
 
+/**
+ * §22.11 элемент блока «Требует внимания». Форма — из промпта дословно.
+ *
+ * ⚠️ Каждое поле здесь ПРИХОДИТ С СЕРВЕРА, включая текст: §22.11 запрещает
+ * фронтенду формировать собственные обвинительные выводы, и «собрать» элемент
+ * из уже показанных KPI значило бы выдать перестановку чисел экрана за
+ * серверное наблюдение. Поэтому у элемента СВОИ `policyVersion` и `detectedAt`
+ * — по ним видно, какой политикой и когда сделано наблюдение, а версия
+ * политики порогов показателей (`POLICY_VERSION`) к нему отношения не имеет.
+ */
+export interface AttentionItem {
+  attentionId: string
+  categoryCode: string
+  severity: AttentionSeverity
+  /** Одна из РАЗРЕШЁННЫХ §22.11 формулировок — не свободный текст. */
+  safeTitle: string
+  safeDescription: string
+  /** `null`, когда считать нечего: «источник не обновлён» — утверждение о
+   * состоянии источника, а не о количестве чего-либо. Ноль читался бы как
+   * «ноль случаев», то есть как отсутствие наблюдения. */
+  count: number | null
+  scopeLabel: string | null
+  /** §22.12/§22.27: куда ведёт наблюдение. Маршрут ПОВТОРНО проверит право —
+   * `targetPermission` называется здесь, чтобы экран не рисовал заведомо
+   * закрытый переход, а не вместо проверки на месте. */
+  targetRoute: string | null
+  targetPermission: string | null
+  detectedAt: string
+  policyVersion: string
+}
+
+export type AttentionSeverity = 'CRITICAL' | 'WARNING' | 'INFO'
+
+export interface AttentionData {
+  items: AttentionItem[]
+  /**
+   * Пустой список и неработающий детектор — РАЗНЫЕ утверждения, и §35 требует
+   * их различать: «ни один детектор не сработал» — наблюдение, «детекторы не
+   * отработали» — его отсутствие. Молча вернуть пустоту значило бы сказать
+   * «всё в порядке» от имени сервера, который ничего не проверял.
+   */
+  detectionState: 'COMPLETE' | 'UNAVAILABLE'
+  detectionUnavailableReason: string | null
+  /** §35: наблюдения §22.11, которых demo-срез не даёт, с причиной. */
+  unavailableDetectors: UnavailableMetric[]
+}
+
 export interface DrilldownPage {
   metricCode: string
   rows: DrilldownRow[]

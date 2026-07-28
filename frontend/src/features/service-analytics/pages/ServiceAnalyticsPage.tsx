@@ -7,16 +7,23 @@
 // просрочкой. Теперь считает repository, а экран печатает `displayValue` и
 // `state` из ответа — цвет по числу здесь не назначается нигде.
 import { useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
+import { usePermissions } from '../../../shared/auth/usePermissions'
 import { Button } from '../../../shared/ui/Button'
 import { Input } from '../../../shared/ui/Input'
 import {
   useAnalyticsDrilldown,
   useAnalyticsPresets,
+  useAttentionItems,
   useServiceAnalytics,
 } from '../api/queries'
 import type { AnalyticsPeriodRequest } from '../api/queries'
-import type { MetricState, MetricValue } from '../model/types'
+import type {
+  AttentionItem,
+  AttentionSeverity,
+  MetricState,
+  MetricValue,
+} from '../model/types'
 
 /** §22.3 «Frontend отображает state … а не назначает цвет по числовому
  * значению»: карта идёт от СОСТОЯНИЯ, и ни одна ветка здесь не смотрит на
@@ -33,6 +40,14 @@ const STATE_LABEL: Record<MetricState, string> = {
   WARNING: 'Требуется проверка',
   CRITICAL: 'Обнаружено превышение серверного порога',
   UNKNOWN: 'Данные не подтверждены',
+}
+
+/** §22.11: цвет — от severity ОТВЕТА. Ни одна ветка не смотрит на `count`:
+ * «внимание» решает серверный детектор, а не величина числа на экране. */
+const SEVERITY_CLASS: Record<AttentionSeverity, string> = {
+  CRITICAL: 'border-red-300 bg-red-50',
+  WARNING: 'border-amber-300 bg-amber-50',
+  INFO: 'border-slate-200 bg-card',
 }
 
 const FRESHNESS_LABEL: Record<string, string> = {
@@ -77,6 +92,7 @@ export function ServiceAnalyticsPage() {
 
   const snapshotQuery = useServiceAnalytics(period)
   const snapshot = snapshotQuery.data
+  const attentionQuery = useAttentionItems(period)
 
   // ⚠️ Раскрытие хранится ВМЕСТЕ со снимком, которому принадлежит, а не рядом
   // с ним. Смена периода даёт другой `snapshotId`, и выборка старого снимка к
@@ -238,6 +254,42 @@ export function ServiceAnalyticsPage() {
         )}
       </section>
 
+      {/* §22.11. Блок приезжает СВОИМ ответом и печатается дословно: ни
+          заголовок, ни описание, ни порядок здесь не собираются. */}
+      <section
+        role="group"
+        aria-label="Требует внимания"
+        className="mb-4 rounded-xl border bg-card p-4"
+      >
+        <h2 className="mb-2 text-sm font-semibold">Требует внимания</h2>
+        {attentionQuery.error !== null ? (
+          <p className="text-sm text-destructive">{attentionQuery.error.message}</p>
+        ) : attentionQuery.data === undefined ? (
+          <p className="text-sm text-muted-foreground">Загрузка наблюдений…</p>
+        ) : attentionQuery.data.data.detectionState === 'UNAVAILABLE' ? (
+          // Пустой список и неработающий детектор различаются ВСЛУХ: молчание
+          // здесь прочиталось бы как «замечаний нет».
+          <p className="text-sm text-slate-600">
+            {attentionQuery.data.data.detectionUnavailableReason}
+          </p>
+        ) : attentionQuery.data.data.items.length === 0 ? (
+          <p className="text-sm text-slate-600">
+            Ни один серверный детектор не сработал в этом периоде.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {attentionQuery.data.data.items.map((item) => (
+              <AttentionCard key={item.attentionId} item={item} />
+            ))}
+          </ul>
+        )}
+        {attentionQuery.data !== undefined && (
+          <p className="mt-2 text-[11px] text-slate-600">
+            Версия политики наблюдений: {attentionQuery.data.policyVersion}
+          </p>
+        )}
+      </section>
+
       {snapshotQuery.error !== null && (
         <p className="mb-4 text-sm text-destructive">{snapshotQuery.error.message}</p>
       )}
@@ -348,7 +400,11 @@ export function ServiceAnalyticsPage() {
           <section className="rounded-xl border border-dashed bg-muted/30 p-4">
             <h2 className="mb-2 text-sm font-semibold">Чего в этом снимке нет</h2>
             <ul className="flex flex-col gap-2">
-              {[...snapshot.data.unavailableMetrics, ...snapshot.unavailableHeaderBlocks].map(
+              {[
+                ...snapshot.data.unavailableMetrics,
+                ...snapshot.unavailableHeaderBlocks,
+                ...(attentionQuery.data?.data.unavailableDetectors ?? []),
+              ].map(
                 (item) => (
                   <li key={item.code} className="text-xs text-slate-600">
                     <span className="font-semibold">{item.label}</span> — {item.reason}
@@ -360,6 +416,47 @@ export function ServiceAnalyticsPage() {
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * §22.11 элемент наблюдения. Экран НЕ формулирует ничего: заголовок, описание,
+ * количество и область приходят готовыми, класс идёт от `severity` ответа.
+ *
+ * §22.27 «каждый маршрут повторно проверяет permission»: право у перехода
+ * СВОЁ (`targetPermission`), и здесь оно проверяется лишь чтобы не рисовать
+ * заведомо закрытую ссылку — настоящая проверка стоит на маршруте назначения.
+ */
+function AttentionCard({ item }: { item: AttentionItem }) {
+  const { hasPermission } = usePermissions()
+  const canFollow =
+    item.targetRoute !== null &&
+    (item.targetPermission === null || hasPermission(item.targetPermission))
+
+  return (
+    <li className={`rounded-lg border p-3 ${SEVERITY_CLASS[item.severity]}`}>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-sm font-semibold">{item.safeTitle}</span>
+        {item.count !== null && (
+          <span className="text-sm font-bold tabular-nums">{item.count}</span>
+        )}
+        {item.scopeLabel !== null && (
+          <span className="text-[11px] text-slate-600">{item.scopeLabel}</span>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-slate-600">{item.safeDescription}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
+        <span>Наблюдение зафиксировано: {formatMoment(item.detectedAt)}</span>
+        {item.targetRoute !== null &&
+          (canFollow ? (
+            <Link className="font-semibold text-blue-800 underline" to={item.targetRoute}>
+              Перейти к записям
+            </Link>
+          ) : (
+            <span>Переход к записям закрыт: раздел требует отдельного доступа.</span>
+          ))}
+      </div>
+    </li>
   )
 }
 

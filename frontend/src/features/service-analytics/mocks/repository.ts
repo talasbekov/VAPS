@@ -28,11 +28,17 @@ import {
   toDrilldownRow,
 } from '../lib/analytics'
 import type { AnalyticsDutyType, AnalyticsSourceShift } from '../lib/analytics'
+import {
+  ATTENTION_POLICY_VERSION,
+  UNAVAILABLE_DETECTORS,
+  buildAttentionItems,
+} from '../lib/attention'
 import { readAnalyticsSource } from './dutiesSlice'
 import { MAX_CUSTOM_PERIOD_DAYS } from './fixtures'
 import type { ServiceAnalyticsSlice } from './fixtures'
 import type {
   AnalyticsPresetsResponse,
+  AttentionResponse,
   DrilldownQuery,
   DrilldownResponse,
   ServiceAnalyticsResponse,
@@ -338,5 +344,78 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
     }
   }
 
-  return { listPresets, getServiceAnalytics, getDrilldown }
+  /**
+   * §22.11 блок «Требует внимания». Считается СВОИМ проходом по источнику:
+   * `getServiceAnalytics` здесь не вызывается вовсе, и ни одно наблюдение не
+   * читает `MetricValue` — иначе блок был бы перестановкой показателей экрана,
+   * выданной за серверное наблюдение.
+   */
+  async function getAttention(
+    actorUserId: string | null,
+    request: { presetCode: string | null; from?: string; to?: string },
+  ): Promise<AttentionResponse> {
+    if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new RepositoryBusinessRuleError('SNAPSHOT_UNAVAILABLE', 'Снимок недоступен.')
+    }
+    const slice = readSlice(envelope.slices)
+    const businessDate = clock.businessDate()
+    const period = resolvePeriod(slice, businessDate, request)
+    const source = readAnalyticsSource(envelope.slices)
+    const generatedAt = clock.now()
+    const snapshotId = buildSnapshotId({
+      revision: envelope.revision,
+      from: period.from,
+      to: period.to,
+      scopeId: DEMO_SCOPE.scopeId,
+    })
+
+    // Нечем наблюдать — и это НЕ «всё в порядке». Пустой список при мёртвом
+    // детекторе сказал бы от имени сервера то, чего он не проверял (§35).
+    const detectors = slice.attentionDetectors ?? []
+    const unavailableReason =
+      source === null
+        ? 'Источник наблюдений недоступен: детекторы §22.11 не отработали. Пустой блок здесь означал бы «замечаний нет» — утверждение, которого сервер не делал.'
+        : detectors.length === 0
+          ? 'Политика наблюдений §22.11 не загружена: без порогов и допусков детекторы не запускались.'
+          : null
+
+    return {
+      snapshotId,
+      businessDate,
+      timezone: TIMEZONE,
+      period,
+      scope: DEMO_SCOPE,
+      generatedAt,
+      sourceUpdatedAt: null,
+      sourceWatermark: null,
+      freshnessState: source === null ? 'UNKNOWN' : 'CURRENT',
+      completenessState: unavailableReason === null ? 'COMPLETE' : 'INCOMPLETE',
+      calculationVersion: CALCULATION_VERSION,
+      // Версия политики НАБЛЮДЕНИЙ, а не порогов показателей: методики
+      // независимы, и общая версия соврала бы про обе сразу.
+      policyVersion: ATTENTION_POLICY_VERSION,
+      data: {
+        items:
+          source === null || unavailableReason !== null
+            ? []
+            : buildAttentionItems(detectors, source, {
+                from: period.from,
+                to: period.to,
+                businessDate,
+                generatedAt,
+                snapshotId,
+                scopeLabel: DEMO_SCOPE.safeLabel,
+              }),
+        detectionState: unavailableReason === null ? 'COMPLETE' : 'UNAVAILABLE',
+        detectionUnavailableReason: unavailableReason,
+        unavailableDetectors: UNAVAILABLE_DETECTORS.map((detector) => ({ ...detector })),
+      },
+    }
+  }
+
+  return { listPresets, getServiceAnalytics, getDrilldown, getAttention }
 }

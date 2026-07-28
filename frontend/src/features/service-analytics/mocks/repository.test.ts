@@ -12,7 +12,9 @@ import {
   RepositoryBusinessRuleError,
   RepositoryPermissionError,
 } from './repository'
-import { METRIC_DEFINITIONS, PERIOD_PRESETS } from './fixtures'
+import { ATTENTION_DETECTORS, METRIC_DEFINITIONS, PERIOD_PRESETS } from './fixtures'
+import { ATTENTION_POLICY_VERSION, FORBIDDEN_ATTENTION_PHRASES } from '../lib/attention'
+import { POLICY_VERSION } from '../lib/analytics'
 
 const VIEWER = 'viewer-user'
 const DRILLER = 'driller-user'
@@ -42,11 +44,18 @@ function shift(
   }
 }
 
-function seedEnvelope(overrides: { duties?: unknown } = {}): DemoStateEnvelope {
+interface SeedOverrides {
+  duties?: unknown
+  /** §22.11: политику наблюдений подменяют точечно — часть тестов проверяет
+   * именно её отсутствие. */
+  attentionDetectors?: unknown
+}
+
+function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
   return {
     application: 'smart-josparlau',
-    schema_version: 21,
-    seed_version: 'test-v21',
+    schema_version: 22,
+    seed_version: 'test-v22',
     scenario: 'normal',
     revision: 3,
     created_at: '2026-07-20T08:00:00+05:00',
@@ -56,6 +65,10 @@ function seedEnvelope(overrides: { duties?: unknown } = {}): DemoStateEnvelope {
         metricDefinitions: METRIC_DEFINITIONS.map((d) => ({ ...d })),
         periodPresets: PERIOD_PRESETS.map((p) => ({ ...p })),
         drilldownPageSize: 2,
+        attentionDetectors:
+          overrides.attentionDetectors === undefined
+            ? ATTENTION_DETECTORS.map((d) => ({ ...d }))
+            : overrides.attentionDetectors,
       },
       ...(overrides.duties === undefined
         ? {
@@ -85,7 +98,7 @@ function seedEnvelope(overrides: { duties?: unknown } = {}): DemoStateEnvelope {
   }
 }
 
-async function setup(overrides: { duties?: unknown } = {}) {
+async function setup(overrides: SeedOverrides = {}) {
   const adapter = createMemoryPersistence()
   await adapter.reset(seedEnvelope(overrides))
   const clock = new DemoClock(`${BUSINESS_DATE}T08:00:00+05:00`)
@@ -391,6 +404,149 @@ describe('drill-down (§22.12)', () => {
       to: '',
       cursor: null,
     })
+    expect(JSON.stringify((await adapter.load())?.slices.duties)).toBe(before)
+  })
+})
+
+describe('блок «Требует внимания» (§22.11)', () => {
+  const DUTY_TYPES = [
+    { dutyTypeCode: 'OWN_OBJECT_DAILY', restAfterMinutes: 24 * 60, restPolicy: 'HARD_BLOCK' },
+  ]
+
+  /** Две смены одного сотрудника в один день — жёсткий конфликт; остальные
+   * заполняют знаменатель доли. */
+  function conflictSeed(filler: number, conflictingState = 'ACKNOWLEDGED') {
+    return {
+      dutyTypes: DUTY_TYPES,
+      shifts: [
+        shift('c1', BUSINESS_DATE, 'Оразов К.', conflictingState),
+        shift('c2', BUSINESS_DATE, 'Оразов К.', conflictingState),
+        ...Array.from({ length: filler }, (_, index) =>
+          shift(`f${index}`, BUSINESS_DATE, `Сотрудник ${index}`, 'ACKNOWLEDGED'),
+        ),
+      ],
+    }
+  }
+
+  it('без права просмотра аналитики блок закрыт целиком', async () => {
+    const { repository } = await setup()
+    await expect(repository.getAttention(NOBODY, TODAY)).rejects.toThrow(RepositoryPermissionError)
+  })
+
+  it('наблюдение несёт СВОЮ версию политики, а не версию порогов показателей', async () => {
+    const { repository } = await setup()
+    const response = await repository.getAttention(VIEWER, TODAY)
+
+    expect(response.policyVersion).toBe(ATTENTION_POLICY_VERSION)
+    // Ровно то, что отличает наблюдение от перекрашенного KPI: методики
+    // независимы, и версия у них разная.
+    expect(response.policyVersion).not.toBe(POLICY_VERSION)
+    expect(response.data.items.length).toBeGreaterThan(0)
+    for (const item of response.data.items) {
+      expect(item.policyVersion).toBe(ATTENTION_POLICY_VERSION)
+      expect(item.detectedAt).toBe(response.generatedAt)
+    }
+  })
+
+  it('превышение считает ДОЛЮ: то же количество конфликтов при большем объёме наблюдением не является', async () => {
+    const few = await setup({ duties: conflictSeed(1) })
+    const many = await setup({ duties: conflictSeed(10) })
+
+    const dense = (await few.repository.getAttention(VIEWER, TODAY)).data.items.find(
+      (item) => item.categoryCode === 'CONFLICT_SHARE',
+    )
+    const sparse = (await many.repository.getAttention(VIEWER, TODAY)).data.items.find(
+      (item) => item.categoryCode === 'CONFLICT_SHARE',
+    )
+
+    // Конфликтных смен в обоих случаях РОВНО ДВЕ — KPI показал бы одинаковое
+    // «2». Наблюдение появляется только там, где доля перешла порог.
+    expect(dense?.count).toBe(2)
+    expect(dense?.severity).toBe('CRITICAL')
+    expect(sparse).toBeUndefined()
+  })
+
+  it('порядок задаёт severity, а не код категории', async () => {
+    const { repository } = await setup({
+      duties: {
+        dutyTypes: DUTY_TYPES,
+        shifts: [
+          shift('c1', BUSINESS_DATE, 'Оразов К.', 'ACKNOWLEDGED'),
+          shift('c2', BUSINESS_DATE, 'Оразов К.', 'ACKNOWLEDGED'),
+          shift('p1', BUSINESS_DATE, 'Ерланов Д.', 'PLANNED'),
+        ],
+      },
+    })
+    const items = (await repository.getAttention(VIEWER, TODAY)).data.items
+
+    // По алфавиту ACKNOWLEDGEMENT_MISSING шёл бы ПЕРВЫМ — проверка не пуста.
+    expect(items.map((item) => item.categoryCode)).toEqual([
+      'CONFLICT_SHARE',
+      'ACKNOWLEDGEMENT_MISSING',
+    ])
+    expect(items.map((item) => item.severity)).toEqual(['CRITICAL', 'WARNING'])
+  })
+
+  it('наблюдение об источнике не считает случаев и никуда не ведёт', async () => {
+    const { repository } = await setup({
+      duties: {
+        dutyTypes: DUTY_TYPES,
+        // Источник не менялся третьи сутки — допуск 53 часа перейден.
+        shifts: [
+          {
+            ...shift('old', BUSINESS_DATE, 'Ерланов Д.', 'ACKNOWLEDGED'),
+            updatedAt: '2026-07-17T08:00:00+05:00',
+          },
+        ],
+      },
+    })
+    const source = (await repository.getAttention(VIEWER, TODAY)).data.items.find(
+      (item) => item.categoryCode === 'SOURCE_AGE',
+    )
+
+    expect(source?.safeTitle).toBe('Источник не обновлён')
+    // Ноль здесь читался бы как «ноль случаев», то есть как отсутствие
+    // наблюдения — а наблюдение как раз есть.
+    expect(source?.count).toBeNull()
+    expect(source?.targetRoute).toBeNull()
+    expect(source?.targetPermission).toBeNull()
+  })
+
+  it('отсутствие источника — НЕ «замечаний нет»', async () => {
+    const { repository } = await setup({ duties: null })
+    const response = await repository.getAttention(VIEWER, TODAY)
+
+    expect(response.data.items).toEqual([])
+    expect(response.data.detectionState).toBe('UNAVAILABLE')
+    expect(response.data.detectionUnavailableReason).not.toBeNull()
+    expect(response.completenessState).toBe('INCOMPLETE')
+  })
+
+  it('пустая политика наблюдений тоже не даёт «замечаний нет»', async () => {
+    const { repository } = await setup({ attentionDetectors: [] })
+    const response = await repository.getAttention(VIEWER, TODAY)
+
+    expect(response.data.detectionState).toBe('UNAVAILABLE')
+    expect(response.data.items).toEqual([])
+  })
+
+  it('ни один произведённый текст не содержит запрещённых §22.11 формулировок', async () => {
+    const { repository } = await setup({ duties: conflictSeed(1, 'PLANNED') })
+    const response = await repository.getAttention(VIEWER, TODAY)
+
+    expect(response.data.items.length).toBeGreaterThan(0)
+    for (const item of response.data.items) {
+      const text = `${item.safeTitle} ${item.safeDescription}`.toLowerCase()
+      for (const phrase of FORBIDDEN_ATTENTION_PHRASES) {
+        expect(text).not.toContain(phrase)
+      }
+    }
+  })
+
+  it('наблюдения ничего не меняют в чужом слайсе дежурств', async () => {
+    const { repository, adapter } = await setup()
+    const before = JSON.stringify((await adapter.load())?.slices.duties)
+    await repository.getAttention(VIEWER, TODAY)
     expect(JSON.stringify((await adapter.load())?.slices.duties)).toBe(before)
   })
 })

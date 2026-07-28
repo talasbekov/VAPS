@@ -3,7 +3,9 @@
 // В слайсе лежат ОПРЕДЕЛЕНИЯ, а не числа: сами показатели считаются на запросе
 // из живых смен. Пороги и пресеты периодов живут здесь, потому что §22.5 прямо
 // запрещает хардкодить «последние 7 дней» и «порог перегрузки» в коде.
+import { ROUTES } from '../../../shared/routes'
 import { METRIC_CODES } from '../lib/analytics'
+import type { AttentionDetectorDefinition } from '../lib/attention'
 import type { MetricDefinition, PeriodPreset } from '../model/types'
 
 export interface ServiceAnalyticsSlice {
@@ -11,6 +13,8 @@ export interface ServiceAnalyticsSlice {
   periodPresets: PeriodPreset[]
   /** Размер страницы выборки drill-down (§22.12 pagination cursor). */
   drilldownPageSize: number
+  /** §22.11: политика наблюдений — отдельная от порогов показателей. */
+  attentionDetectors: AttentionDetectorDefinition[]
 }
 
 /**
@@ -98,6 +102,91 @@ export const PERIOD_PRESETS: readonly PeriodPreset[] = [
  * допустимый диапазон через server validation»). */
 export const MAX_CUSTOM_PERIOD_DAYS = 62
 
+/**
+ * §22.11 политика наблюдений. Живёт РЯДОМ с порогами показателей, но отдельно
+ * от них: у наблюдений своя версия (`ATTENTION_POLICY_VERSION`), свои единицы
+ * (проценты, часы, дни выдержки) и свои допуски. Общий набор порогов означал бы,
+ * что «внимание» — это перекрашенный KPI, а §22.11 требует наблюдения.
+ *
+ * Пороги снова не круглые: 18/34 процента и 53 часа. Совпадение с «привычным»
+ * числом (25/50, двое суток) скрыло бы захардкоженный порог, если бы он
+ * где-то остался.
+ */
+export const ATTENTION_DETECTORS: readonly AttentionDetectorDefinition[] = [
+  {
+    categoryCode: 'ACKNOWLEDGEMENT_MISSING',
+    measure: 'ACKNOWLEDGEMENT_MISSING',
+    titleCode: 'VERIFICATION_REQUIRED',
+    safeDescriptionTemplate:
+      // ⚠️ Формулировка §22.11 стоит в ЗАГОЛОВКЕ и не повторяется здесь:
+      // повтор делал бы подпись элемента подстрокой его же описания — тот же
+      // класс, что «сдано» ⊂ «сдано, расход разошёлся» (инцидент Этапа 44).
+      'Записей с ближайшим заступлением без отметки об ознакомлении: {count}. Срок упреждения — {parameter} дн.',
+    parameter: 3,
+    warningFrom: 1,
+    criticalFrom: 4,
+    baseSeverity: 'INFO',
+    targetRoute: ROUTES.duties,
+    targetPermission: 'ops.duty.view',
+  },
+  {
+    categoryCode: 'CONFLICT_SHARE',
+    measure: 'CONFLICT_SHARE',
+    titleCode: 'THRESHOLD_EXCEEDED',
+    safeDescriptionTemplate:
+      'Доля записей периода с конфликтом планирования — {value}% при серверном пороге. Записей с конфликтом: {count}.',
+    parameter: 0,
+    warningFrom: 18,
+    criticalFrom: 34,
+    baseSeverity: 'INFO',
+    targetRoute: ROUTES.duties,
+    targetPermission: 'ops.duty.view',
+  },
+  {
+    categoryCode: 'UNFINISHED_OVERDUE',
+    measure: 'UNFINISHED_OVERDUE',
+    titleCode: 'UNFINISHED_PROCESSES',
+    safeDescriptionTemplate:
+      'Записей, не переведённых в завершённое состояние дольше допуска ({parameter} дн.): {count}.',
+    parameter: 2,
+    warningFrom: 1,
+    criticalFrom: 5,
+    baseSeverity: 'INFO',
+    targetRoute: ROUTES.duties,
+    targetPermission: 'ops.duty.view',
+  },
+  {
+    categoryCode: 'UNCONFIRMED_OVERDUE',
+    measure: 'UNCONFIRMED_OVERDUE',
+    titleCode: 'DATA_UNCONFIRMED',
+    safeDescriptionTemplate:
+      'Записей без подтверждённых отметок фактического времени дольше допуска ({parameter} дн.): {count}.',
+    parameter: 2,
+    warningFrom: 1,
+    criticalFrom: 4,
+    baseSeverity: 'INFO',
+    targetRoute: ROUTES.duties,
+    targetPermission: 'ops.duty.view',
+  },
+  {
+    // Утверждение об ИСТОЧНИКЕ. Перехода у него нет намеренно: вести человека
+    // в раздел данных, которые не обновлялись, значит предложить искать там
+    // причину, которой в разделе не видно.
+    categoryCode: 'SOURCE_AGE',
+    measure: 'SOURCE_AGE',
+    titleCode: 'SOURCE_NOT_UPDATED',
+    safeDescriptionTemplate:
+      // Формулировка §22.11 — в заголовке; здесь только измеренное (см. выше).
+      'Последнее изменение источника — {value} ч назад при допуске {parameter} ч.',
+    parameter: 53,
+    warningFrom: 53,
+    criticalFrom: null,
+    baseSeverity: 'INFO',
+    targetRoute: null,
+    targetPermission: null,
+  },
+]
+
 export function buildServiceAnalyticsSeed(): {
   sliceName: string
   data: ServiceAnalyticsSlice
@@ -111,6 +200,7 @@ export function buildServiceAnalyticsSeed(): {
       // demo-объёме данных — при странице в 50 вторая страница не наступила бы
       // никогда, и pagination жил бы непроверенным.
       drilldownPageSize: 4,
+      attentionDetectors: ATTENTION_DETECTORS.map((detector) => ({ ...detector })),
     },
   }
 }

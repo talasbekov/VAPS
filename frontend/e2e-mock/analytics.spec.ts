@@ -138,4 +138,68 @@ test.describe('Аналитика службы (§22.3-22.12, mock-режим)',
     await expect(page.getByText('Фильтры активны')).toBeHidden()
     await expect(page.getByText('Запланировано смен')).toBeVisible()
   })
+
+  // §22.11 «Требует внимания». Проверяется не наличие блока, а два его
+  // структурных свойства: наблюдения приезжают ОТДЕЛЬНЫМ ответом со СВОЕЙ
+  // версией политики (иначе это перекрашенные KPI) и переход закрыт правом
+  // раздела назначения, а не правом на дашборд.
+  test('§22.11: наблюдения приезжают своим ответом и своей версией политики', async ({ page }) => {
+    await seedCredential(page)
+    await hideDemoToolbar(page)
+
+    const attentionBodies: string[] = []
+    const snapshotBodies: string[] = []
+    page.on('response', async (response) => {
+      const url = response.url()
+      if (url.includes('/api/ops/service-analytics-attention/')) {
+        attentionBodies.push(await response.text().catch(() => ''))
+      } else if (url.includes('/api/ops/service-analytics/')) {
+        snapshotBodies.push(await response.text().catch(() => ''))
+      }
+    })
+
+    await page.goto('/analytics')
+    const block = page.getByRole('group', { name: 'Требует внимания' })
+    // Сид кладёт на бизнес-дату смену без отметки об ознакомлении.
+    // `exact`: подпись наблюдения — статусная, и без него она ловится как
+    // подстрока соседнего текста (канон проекта, инцидент Этапа 38).
+    await expect(block.getByText('Требуется проверка', { exact: true })).toBeVisible()
+    await expect(block.getByText(/Версия политики наблюдений: attention-policy-/)).toBeVisible()
+
+    expect(attentionBodies.length).toBeGreaterThan(0)
+    expect(snapshotBodies.length).toBeGreaterThan(0)
+    // Наблюдений НЕТ в ответе показателей: приехав внутри него, они
+    // унаследовали бы его политику и читались бы как его следствие.
+    expect(snapshotBodies.join('')).not.toContain('attentionId')
+    expect(snapshotBodies.join('')).not.toContain('attention-policy-')
+    expect(attentionBodies.join('')).toContain('attention-policy-')
+  })
+
+  test('§22.27: переход из наблюдения закрыт правом раздела назначения', async ({ page }) => {
+    await seedCredential(page)
+    await hideDemoToolbar(page)
+    await page.goto('/analytics')
+
+    const block = page.getByRole('group', { name: 'Требует внимания' })
+    // demo-admin (wildcard) — переход нарисован и ведёт в раздел записей.
+    await expect(block.getByRole('link', { name: 'Перейти к записям' })).toBeVisible()
+
+    // Именно ВТОРЫМ addInitScript: seedCredential — тоже init-скрипт и
+    // переустанавливал бы demo-admin на каждой навигации (урок Этапа 41).
+    await page.addInitScript(() => {
+      sessionStorage.setItem(
+        'vaps.credential',
+        JSON.stringify({ kind: 'dev', userId: 'demo-analyst' }),
+      )
+    })
+    await page.reload()
+
+    // У аналитика есть право на дашборд и нет права на раздел дежурств —
+    // наблюдение он видит, перехода не получает.
+    await expect(block.getByText('Требуется проверка', { exact: true })).toBeVisible()
+    await expect(block.getByRole('link', { name: 'Перейти к записям' })).toHaveCount(0)
+    await expect(
+      block.getByText('Переход к записям закрыт: раздел требует отдельного доступа.'),
+    ).toBeVisible()
+  })
 })
