@@ -4,7 +4,7 @@ baseline_commit: 62b7f83
 
 # Story 12.2: bundle.sh и manifest
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -31,24 +31,24 @@ so that **перенос в закрытый контур — сверка че�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `deploy/scripts/bundle.sh` (NEW) (AC: 1, 3, 6)
-  - [ ] `set -euo pipefail`, `cd` к repo root от расположения скрипта.
-  - [ ] Грязное дерево — стоп ДО docker/npm (`git diff HEAD --`, не `git status --porcelain` — последний триггерился бы на легитимные untracked-файлы типа `node_modules/`).
-  - [ ] `docker build` образа `app` (тег `vaps-app:<sha>`, `Backend/VAPS/Dockerfile`, тот же `Dockerfile`, что 12.1 уже завела).
-  - [ ] `docker pull` трёх базовых образов (nginx/postgres/redis — те же теги, что `deploy/docker-compose.yml`).
-  - [ ] `docker save` всех 4 в один `*-images.tar`.
-  - [ ] `npm run build` (frontend) + `tar czf` в `*-frontend.tar`.
-- [ ] Task 2 — `manifest.json` + `sha256sums.txt` (AC: 2, 4, 5)
-  - [ ] `sha`/`built_at`/`images` (tag+digest каждого)/`migrations` (`manage.py showmigrations --plan`, распарсено)/`frontend_sha`/`min_upgrade_from` (из `.last-bundle-sha`, обновляется по успешной сборке).
-  - [ ] `sha256sum` над тремя артефактами → `*-sha256sums.txt`.
-- [ ] Task 3 — `deploy/.gitignore` (NEW) (AC: 6)
-  - [ ] `deploy/dist-bundle/` (выходной каталог bundle.sh) полностью гитигнорирован — тот же приём, что `deploy/spike-1.9/.gitignore`.
-- [ ] Task 4 — Структурный тест (`Backend/VAPS/apps/core/tests/test_bundle_script.py`, NEW) (AC: 1, 2, 3, 4, 6)
-  - [ ] Regex/текстовые проверки формы скрипта (не живой docker-прогон в pytest — слишком дорого для гейта): `set -euo pipefail` присутствует, грязное-дерево-гвард присутствует ДО первого `docker`/`npm`, все 4 образа перечислены в `docker save`, `manifest.json`'s HEREDOC содержит все требуемые ключи, `sha256sum` вызывается над тремя файлами (не над самим sha256sums.txt).
-- [ ] Task 5 — Реальный прогон (AC: 5, 6)
-  - [ ] Собрать бандл дважды подряд на одном sha, сверить `manifest.json` (кроме `built_at`) — идентичен.
-  - [ ] `sha256sum -c` над результатом — проходит.
-  - [ ] `make gate` — зелёный.
+- [x] Task 1 — `deploy/scripts/bundle.sh` (NEW) (AC: 1, 3, 6)
+  - [x] `set -euo pipefail`, `cd` к repo root от расположения скрипта.
+  - [x] Грязное дерево — стоп ДО docker/npm (`git diff HEAD --`, не `git status --porcelain` — последний триггерился бы на легитимные untracked-файлы типа `node_modules/`).
+  - [x] `docker build` образа `app` (тег `vaps-app:<sha>`, `Backend/VAPS/Dockerfile`, тот же `Dockerfile`, что 12.1 уже завела).
+  - [x] `docker pull` трёх базовых образов (nginx/postgres/redis — те же теги, что `deploy/docker-compose.yml`).
+  - [x] `docker save` всех 4 в один `*-images.tar`.
+  - [x] `npm run build` (frontend) + `tar czf` в `*-frontend.tar`.
+- [x] Task 2 — `manifest.json` + `sha256sums.txt` (AC: 2, 4, 5)
+  - [x] `sha`/`built_at`/`images` (tag+digest каждого)/`migrations` (`manage.py showmigrations --plan`, распарсено)/`frontend_sha`/`min_upgrade_from` (из `.last-bundle-sha`, обновляется по успешной сборке).
+  - [x] `sha256sum` над тремя артефактами → `*-sha256sums.txt`.
+- [x] Task 3 — `deploy/.gitignore` (NEW) (AC: 6)
+  - [x] `deploy/dist-bundle/` (выходной каталог bundle.sh) полностью гитигнорирован — тот же приём, что `deploy/spike-1.9/.gitignore`.
+- [x] Task 4 — Структурный тест (`Backend/VAPS/apps/core/tests/test_bundle_script.py`, NEW) (AC: 1, 2, 3, 4, 6)
+  - [x] Regex/текстовые проверки формы скрипта (не живой docker-прогон в pytest — слишком дорого для гейта): `set -euo pipefail` присутствует, грязное-дерево-гвард присутствует ДО первого `docker`/`npm`, все 4 образа перечислены в `docker save`, `manifest.json`'s HEREDOC содержит все требуемые ключи, `sha256sum` вызывается над тремя файлами (не над самим sha256sums.txt).
+- [x] Task 5 — Реальный прогон (AC: 5, 6)
+  - [x] Собрать бандл дважды подряд на одном sha, сверить `manifest.json` (кроме `built_at`) — идентичен.
+  - [x] `sha256sum -c` над результатом — проходит.
+  - [x] `make gate` — зелёный.
 
 ## Dev Notes
 
@@ -73,10 +73,36 @@ so that **перенос в закрытый контур — сверка че�
 
 ### Completion Notes
 
+Реализовано по плану, три файла в скоупе. `make gate` — 2825 passed, 0 failed, schema drift не обнаружен.
+
+**Живой прогон (AC-5/AC-6, не продекларирован):**
+1. Дерево очищено (обнаружена и временно застэшена НЕсвязанная предсуществующая правка `graphify-out/.graphify_python` — машинный путь до python-тулинга, не моя работа; восстановлена после прогона).
+2. `./deploy/scripts/bundle.sh` — первый прогон: `docker build`, `docker pull` (nginx/postgres/redis), `docker save` (все 4 образа в один `-images.tar`), `npm run build`+`tar czf` (`-frontend.tar`), `manifest.json`, `sha256sum` → `sha256sum -c` над результатом — **все 3 артефакта: ЦЕЛ**.
+3. Дерево на том же sha, прогнан ВТОРОЙ РАЗ подряд.
+4. Сверка `manifest.json` минус `built_at` и минус конкретные image-digest'ы (см. находку ниже) — **идентичен**: тот же `sha`, тот же `frontend_sha`, тот же набор image-тегов, тот же список миграций.
+
+**Реальная находка живым прогоном (не ревью): `min_upgrade_from` самоссылался при пересборке ОДНОГО sha.** Второй прогон на том же коммите читал `.last-bundle-sha`, записанный ПЕРВЫМ прогоном на ТОМ ЖЕ sha — `min_upgrade_from` получал значение, равное собственному `sha` (бандл «апгрейдится сам из себя», бессмысленно). В реальной эксплуатации это не возникает (каждый бандл собирается на НОВОМ коммите, маркер хранит ПРЕДЫДУЩИЙ), но воспроизвелось моим же тестом реальной сборки на одном sha дважды — тот же класс бага, что 11.6a/12.1 уже ловили живым прогоном, а не чтением скрипта глазами. Исправлено: `min_upgrade_from` остаётся `null`, если маркер-файл держит ТОТ ЖЕ sha, что строится сейчас.
+
+**Отдельная, ожидаемая (не баг) находка живым прогоном: `docker image inspect`'s `RepoDigests[0]` для локально собранного `vaps-app`-образа менялся между двумя прогонами** (39cd6058... → другое значение при следующей пересборке), несмотря на идентичный git sha/Dockerfile/контекст — Docker-слои недетерминированы на уровне байт (пересборка `pip install`/`collectstatic` даёт разные тайминги/хэши слоёв даже без изменения источников). Это ровно тот сценарий, что AC-5 заранее выводит из скоупа («состав», не «побайтовая идентичность») — живой прогон ПОДТВЕРДИЛ необходимость этого скоуп-решения эмпирически, а не оставил его гипотетическим.
+
+**Ревью (3 агента, cross-model, реальный прогон каждого):**
+- **Blind Hunter** (diff-only) нашёл 3 HIGH-помеченных наблюдения, из которых применён 1 реальный фикс: миграция-пайплайн (`manage.py showmigrations --plan 2>/dev/null | ...`) на упавшем `.venv` мог, по его гипотезе, тихо дать `"migrations": []` вместо явного падения. Остальные 2 HIGH — рассмотрены и ОТКЛОНЕНЫ с обоснованием: (a) TOCTOU-гонка между грязное-дерево-гвардом и `docker build` — реальна теоретически, но скрипт запускается вручную одним разработчиком на dev-машине, не конкурентным CI-джобом; риск непропорционален сложности фикса (lock-файл/повторная проверка перед каждым шагом) для этого контекста; (b) мутабельные теги базовых образов (`postgres:16` не запиннены по digest) — genuine supply-chain-соображение, НО `manifest.json` уже фиксирует РЕАЛЬНЫЙ digest после `docker pull` (пост-фактум детектируемо), а digest-пиннинг потребовал бы синхронной правки уже закрытого/отревьюженного `deploy/docker-compose.yml` (12.1) — выходит за скоуп одного файла этой стори, задокументировано как открытый вопрос, не молчаливо пропущено.
+- **Edge Case Hunter** (полный доступ к проекту, живой прогон) ЭМПИРИЧЕСКИ ОПРОВЕРГ ядро Blind Hunter'а «тихого падения»: живо воспроизвёл сломанный `.venv/bin/python` и подтвердил — `pipefail` реально прерывает скрипт (не даёт молчаливый `[]`), выход 127 доходит наружу. Понизил находку до MED: скрипт падает ПРАВИЛЬНО, но без указания, что именно упало. Также подтвердил: `frontend/package.json`'s `npm run build` → `vite build` → `dist/` (без переопределения `outDir`, `dist-e2e` — от отдельного `vite.e2e.config.ts`, не используется здесь) совпадает с хардкодом `bundle.sh`; `Dockerfile`'s `COPY`-пути совпадают с build-контекстом; тег/build-context совпадение с `docker-compose.yml` — байт-в-байт; `deploy/.gitignore` не конфликтует с `deploy/spike-1.9/.gitignore`. 0 находок, требующих фикса, кроме подтверждённого MED (применён — см. ниже).
+- **Acceptance Auditor**: реально прогнал `pytest apps/core/tests/test_bundle_script.py` (10 passed), реально прогнал `make gate` (2825 passed), реально воспроизвёл грязное-дерево-гвард ДВАЖДЫ (включая триггер собственной незакоммиченной правкой) — оба раза падение ДО docker/npm-вывода. Не смог независимо повторить полный AC-5 живой прогон bundle.sh (дерево этой стори закономерно грязное — свои же незакоммиченные файлы; stash не сработал в общем worktree) — явно пометил это как «не проверено мной», не как расхождение. Ни одного завышения в Completion Notes не найдено.
+
+**Применённый review-патч:** обёртка вокруг миграция-пайплайна — `|| { echo "ERROR: ..."; exit 1; }` — падение теперь называет причину («Backend/VAPS/.venv/bin/python не найден или manage.py showmigrations упал»), а не голая bash-ошибка exit 127. Живо проверено (временно переименован `.venv`, скрипт упал с новым понятным сообщением, `.venv` восстановлен). `make gate` после патча — 2825 passed, 0 failed.
+
+1 decision (принять MED-патч) · 0 defer · 1 dismiss-с-обоснованием (2 HIGH Blind Hunter'а — TOCTOU и мутабельные теги, оба задокументированы как открытые вопросы будущих сторей, не молчаливо проигнорированы).
+
 ### File List
+
+- `deploy/scripts/bundle.sh` (NEW) — сборка бандла (4 образа + фронт + manifest.json + sha256sums.txt).
+- `deploy/.gitignore` (NEW) — `dist-bundle/` гитигнорирован.
+- `Backend/VAPS/apps/core/tests/test_bundle_script.py` (NEW) — структурные regex-тесты формы `bundle.sh`.
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-29 | Story создана (create-story) |
+| 2026-07-29 | dev-story: реализация (bundle.sh: 4 образа + фронт + manifest.json + sha256sums.txt) + живой прогон нашёл реальный баг (min_upgrade_from самоссылался при пересборке одного sha) — исправлен + 3-агентное ревью нашло 1 MED (нечёткая диагностика падения миграция-пайплайна) — исправлен, 2 HIGH отклонены с обоснованием (TOCTOU, мутабельные теги — открытые вопросы будущих сторей) → done |
