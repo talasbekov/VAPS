@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-29 (11.5a → done)
+# last_updated: 2026-07-29 (11.6a → ready-for-dev)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -598,7 +598,7 @@ development_status:
   # занят №2 (9.9) и №4 (11.6); свободны №1 (стори не заведена ни в одном
   # эпике — см. Открытый вопрос №4), №3 (10.10), №5 (12.x).
   11-6-e2e-уведомления: done
-  11-6a-гигиена-live-e2e: backlog
+  11-6a-гигиена-live-e2e: ready-for-dev
   epic-11-retrospective: done
 
   # Epic 12: Деплой в контур и пилот
