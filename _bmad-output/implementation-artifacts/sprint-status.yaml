@@ -282,7 +282,7 @@ development_status:
   7-2-импортёр-оргструктуры-и-ставок: done
   7-3-импортёр-сотрудников: done
   7-4-импортёр-статусов-и-историй: done
-  7-5-post-migration-сходимость: backlog
+  7-5-post-migration-сходимость: done
   7-6-репетиции-миграции: backlog
   7-7-режим-без-двойного-ввода: backlog
   7-8-формализация-parallel-run: backlog
