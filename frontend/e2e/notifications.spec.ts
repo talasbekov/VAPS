@@ -394,6 +394,15 @@ test('AC-5: настоящий Escape закрывает панель и ВОЗ�
   // ровно этот вакуум красная проба дев-прохода поймала в jsdom-сюите
   // (мутация №9 осталась зелёной). Здесь Tab настоящий, а не имитация
   // userEvent по собственному списку кандидатов.
+  //
+  // Два Tab, не один (11.4b, найдено живым прогоном 11.6a): строка теперь
+  // несёт кнопку «прочитано» (read_at: null по умолчанию у row()) — первый
+  // Tab уходит на неё, второй — на «Меню пользователя». Тот же фикс, что уже
+  // применён к jsdom-двойнику этого теста (NotificationBell.test.tsx).
+  await page.keyboard.press('Tab')
+  await expect(
+    page.getByRole('button', { name: 'Отметить прочитанным' }),
+  ).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(page.getByRole('button', { name: 'Меню пользователя' })).toBeFocused()
 

@@ -2,7 +2,7 @@ PYTHON  := .venv/bin/python
 RUFF    := .venv/bin/ruff
 PYTEST  := .venv/bin/pytest
 
-.PHONY: gate test-full schema golden-update parallel-run-diff migrate-rehearsal
+.PHONY: gate test-full e2e schema golden-update parallel-run-diff migrate-rehearsal
 
 # Story 8.3: единственная команда обновления бэк-половины контракта (ARCH-FE-011).
 # Regen in place; drift ловит pytest-тест test_schema_drift.py внутри gate.
@@ -132,4 +132,44 @@ gate:
 	end=$$(date +%s); \
 	if [ $$status -eq 124 ]; then echo "gate TIMED OUT: exceeded 300s budget (NFR-8)"; fi; \
 	echo "gate duration: $$((end - start))s"; \
+	exit $$status
+
+# Story 11.6a: единая точка входа для живого Playwright-сьюта (architecture.md
+# §Make-цели: «make e2e | < 15 мин | Playwright 5 сценариев против compose»).
+# НЕ переизобретает оркестровку frontend/playwright.live.config.ts — тот
+# webServer-массив уже сам поднимает compose db/redis, гоняет `migrate` и
+# стартует uvicorn; здесь `docker compose up -d --wait db redis` вызывается
+# ЗАРАНЕЕ тем же паттерном защитной идемпотентности, что уже несёт `gate`, —
+# чтобы 900-секундный бюджет считался от начала тестов, а не от поднятия
+# Postgres с нуля.
+#
+# uvicorn остаётся ЛОКАЛЬНЫМ ПРОЦЕССОМ внутри playwright.live.config.ts, НЕ
+# сервисом compose: docker-compose.yml сегодня несёт ровно db+redis, ни
+# одного web-сервиса даже в зачаточном виде — заводить его сейчас означало бы
+# городить топологию, которую прод-compose (Story 12.1, backlog) неизбежно
+# переопределит. Адрес — «после 12.1», записано явно, не забыто.
+#
+# НЕ запускать в офлайн-контуре: там нет ни Playwright-браузеров, ни docker
+# (установленный прецедент проекта — 8.8 Решение Д4, 9.9, playwright.config.ts,
+# playwright.live.config.ts) — эта цель только для машины разработчика,
+# дисциплиной релиза, а не CI (CI в проекте нет).
+e2e:
+	@test -x $(PYTHON) || { \
+		echo "e2e: .venv not found or incomplete."; \
+		echo "  run: python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'"; \
+		exit 1; \
+	}
+	# Гвард на .venv, хоть эта цель сама $(PYTHON) не зовёт: playwright.live.config.ts's
+	# webServer запускает .venv/bin/python manage.py migrate и .venv/bin/uvicorn —
+	# без венва npm-скрипт упадёт своей собственной ошибкой глубоко внутри
+	# Playwright-оркестровки, а не понятным сообщением здесь.
+	@start=$$(date +%s); \
+	timeout 900 sh -c '\
+		docker compose up -d --wait db redis && \
+		cd ../../frontend && npm run test:e2e:live \
+	'; \
+	status=$$?; \
+	end=$$(date +%s); \
+	if [ $$status -eq 124 ]; then echo "e2e TIMED OUT: exceeded 900s budget (architecture.md#L640)"; fi; \
+	echo "e2e duration: $$((end - start))s"; \
 	exit $$status

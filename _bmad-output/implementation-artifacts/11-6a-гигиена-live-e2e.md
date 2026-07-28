@@ -4,7 +4,7 @@ baseline_commit: 0d0eb8d
 
 # Story 11.6a: Гигиена live-e2e
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -27,23 +27,23 @@ so that **живой Playwright-сьют не остаётся «ручной к
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Верификация `.gitignore` (AC: 1)
-  - [ ] `git check-ignore -v frontend/dist-e2e frontend/test-results frontend/playwright-report` — подтвердить все три пути покрыты `frontend/.gitignore`.
-  - [ ] `git status --short` на чистом дереве после `npm run test:e2e:live` (или локальной сборки `dist-e2e`) — подтвердить, что артефакты НЕ всплывают как untracked.
-  - [ ] Задокументировать находку в Completion Notes: расхождение с формулировкой родительской 11.6/`sprint-status.yaml` — устарело, не текущий дефект.
-- [ ] Task 2 — Цель `make e2e` (`Backend/VAPS/Makefile`, MOD) (AC: 3, 5)
-  - [ ] Добавить `e2e` в `.PHONY`-список (строка 5).
-  - [ ] Новая цель, зеркало `gate`/`test-full`'s venv-guard + `timeout N sh -c '...'; status=$?; end=...; if [ $$status -eq 124 ]; ...; echo duration; exit $$status`. Бюджет — `timeout 900` (15 мин, architecture.md#L640).
-  - [ ] Тело: `docker compose up -d --wait db redis && cd ../../frontend && npm run test:e2e:live` — относительный путь `../../frontend` от `Backend/VAPS/` (подтверждено структурой репозитория: `Backend/VAPS/../../frontend` = `<repo-root>/frontend`).
-  - [ ] Докстринг цели — зафиксировать: (а) бюджет и источник обещания (architecture.md#L640), (б) явную ссылку «uvicorn остаётся локальным процессом до 12.1, не сервисом compose — см. AC-2/Dev Notes этой стори», (в) «НЕ запускать в офлайн-контуре — нет Playwright-браузеров/docker, дисциплина релиза» (AC-4).
-- [ ] Task 3 — Реальный прогон и фиксация результата (AC: 6)
-  - [ ] Запустить `make e2e` из `Backend/VAPS/` целиком, дождаться завершения.
-  - [ ] Зафиксировать в Completion Notes: фактическая длительность, число прошедших/упавших Playwright-сценариев, любые расхождения с ожиданием (например, отсутствие `dev/uvicorn` конфликта порта — проверить, что предыдущий процесс на 8001 не мешает).
-  - [ ] Если прогон превышает 900с или падает по причине, НЕ относящейся к самому коду цели (например, занятый порт/контейнер) — задокументировать причину, не маскировать увеличением таймаута вслепую.
-- [ ] Task 4 — Валидация регресса (AC: 5)
-  - [ ] `make gate` (из `Backend/VAPS/`) — зелёный, существующие цели не задеты.
-  - [ ] `npm run gate` (из `frontend/`) — зелёный, `deps-gate` подтверждает ноль новых зависимостей.
-  - [ ] `git diff --stat` — подтвердить, что изменён РОВНО `Backend/VAPS/Makefile` (плюс сама стори-документация/`sprint-status.yaml`), никаких случайных правок `docker-compose.yml`/`playwright.config.ts`/`.gitignore`.
+- [x] Task 1 — Верификация `.gitignore` (AC: 1)
+  - [x] `git check-ignore -v frontend/dist-e2e frontend/test-results frontend/playwright-report` — подтвердить все три пути покрыты `frontend/.gitignore`.
+  - [x] `git status --short` на чистом дереве после `npm run test:e2e:live` (или локальной сборки `dist-e2e`) — подтвердить, что артефакты НЕ всплывают как untracked.
+  - [x] Задокументировать находку в Completion Notes: расхождение с формулировкой родительской 11.6/`sprint-status.yaml` — устарело, не текущий дефект.
+- [x] Task 2 — Цель `make e2e` (`Backend/VAPS/Makefile`, MOD) (AC: 3, 5)
+  - [x] Добавить `e2e` в `.PHONY`-список (строка 5).
+  - [x] Новая цель, зеркало `gate`/`test-full`'s venv-guard + `timeout N sh -c '...'; status=$?; end=...; if [ $$status -eq 124 ]; ...; echo duration; exit $$status`. Бюджет — `timeout 900` (15 мин, architecture.md#L640).
+  - [x] Тело: `docker compose up -d --wait db redis && cd ../../frontend && npm run test:e2e:live` — относительный путь `../../frontend` от `Backend/VAPS/` (подтверждено структурой репозитория: `Backend/VAPS/../../frontend` = `<repo-root>/frontend`).
+  - [x] Докстринг цели — зафиксировать: (а) бюджет и источник обещания (architecture.md#L640), (б) явную ссылку «uvicorn остаётся локальным процессом до 12.1, не сервисом compose — см. AC-2/Dev Notes этой стори», (в) «НЕ запускать в офлайн-контуре — нет Playwright-браузеров/docker, дисциплина релиза» (AC-4).
+- [x] Task 3 — Реальный прогон и фиксация результата (AC: 6)
+  - [x] Запустить `make e2e` из `Backend/VAPS/` целиком, дождаться завершения.
+  - [x] Зафиксировать в Completion Notes: фактическая длительность, число прошедших/упавших Playwright-сценариев, любые расхождения с ожиданием (например, отсутствие `dev/uvicorn` конфликта порта — проверить, что предыдущий процесс на 8001 не мешает).
+  - [x] Если прогон превышает 900с или падает по причине, НЕ относящейся к самому коду цели (например, занятый порт/контейнер) — задокументировать причину, не маскировать увеличением таймаута вслепую.
+- [x] Task 4 — Валидация регресса (AC: 5)
+  - [x] `make gate` (из `Backend/VAPS/`) — зелёный, существующие цели не задеты.
+  - [x] `npm run gate` (из `frontend/`) — зелёный, `deps-gate` подтверждает ноль новых зависимостей.
+  - [x] `git diff --stat` — подтвердить, что изменён РОВНО `Backend/VAPS/Makefile` (плюс сама стори-документация/`sprint-status.yaml`), никаких случайных правок `docker-compose.yml`/`playwright.config.ts`/`.gitignore`.
 
 ## Dev Notes
 
@@ -73,11 +73,26 @@ so that **живой Playwright-сьют не остаётся «ручной к
 
 ### Completion Notes
 
-_(заполняется dev-агентом по завершении)_
+Реализовано по плану: скоуп пересмотрен при create-story (3 из 4 пунктов спилловера не требовали кода — верификация, а не правка), реальная работа — цель `make e2e` в `Backend/VAPS/Makefile`.
+
+**Реальный прогон (AC-6) немедленно нашёл 2 настоящих бага, не связанных с самой целью Makefile:**
+1. `frontend/e2e-harness/notifications.tsx` не оборачивал `AppLayout` в `ToastProvider` — 11.4b добавила `useApiMutation` (кнопка «прочитано») внутрь `NotificationRow`, а хук безусловно зовёт `useToast()`. Без провайдера рендер падал целиком, панель/колокольчик не появлялись вовсе. Live-спека `notifications-live.spec.ts` немедленно покраснела на этом при первом же реальном прогоне `make e2e`.
+2. `frontend/e2e/notifications.spec.ts`'s AC-5 (клавиатурный тест) ожидал ОДИН Tab от колокольчика до «Меню пользователя» — с появлением кнопки «прочитано» внутри строки нужно ДВА Tab. Тот же класс регресса, что уже был найден и исправлен в jsdom-двойнике этого теста в самой 11.4b (`NotificationBell.test.tsx`) — но офлайн-Playwright-версия того же теста не была обновлена, потому что `npm run test:e2e` вне `npm run gate` (проектный канон Д4 8.8) и не гонялась при дев-проходе 11.4b.
+
+Оба бага исправлены здесь, а не замаскированы увеличением таймаута или пропуском сценария — прямое требование AC-6/Task 3 «не маскировать причину».
+
+**Ревью (3 агента, cross-model):**
+- **Blind Hunter** (diff-only) поднял вопрос о `.venv`-гварде цели `e2e` («сама цель не зовёт `$(PYTHON)`, зачем гвард») — проверено: гвард ОБОСНОВАН, `playwright.live.config.ts`'s `webServer` сам вызывает `.venv/bin/python manage.py migrate` и `.venv/bin/uvicorn` — без венва npm-скрипт упал бы своей ошибкой глубоко внутри Playwright-оркестровки, а не понятным сообщением сразу. Добавлен поясняющий комментарий в Makefile, чтобы будущий читатель не задавался тем же вопросом. Также поднял вопрос о порядке `ToastProvider`/`AuthProvider` в харнесе (не проверить без исходника `toast.tsx`) — проверено: `ToastProvider` самодостаточен (голый `useState`), но для консистентности с prod-композицией (`app/providers.tsx`: `AuthProvider` снаружи, `ToastProvider` внутри) порядок харнеса выровнен, а не оставлен «эквивалентным, но другим».
+- **Edge Case Hunter** (полный доступ к проекту) независимо подтвердил: (а) баг с `ToastProvider` затрагивал ТОЛЬКО `notifications.tsx` — `chain.tsx`/`expense.tsx` уже используют настоящий `<Providers>` из `app/providers.tsx`, который несёт `ToastProvider` изначально; (б) офлайн-сьют был сломан ТЕМ ЖЕ багом с момента коммита 11.4b (`a16141d`), не только живой — оба фикса закрывают оба сьюта разом; (в) механика Makefile-цели (относительный путь, порядок `docker compose && cd && npm`) — корректна, гвард на `docker`/`npm` отсутствует ровно тем же паттерном, что уже несут `gate`/`test-full` (не новый пробел).
+- **Acceptance Auditor** независимо перепрочитал код, прогнал `make gate` (2803 passed), `npm run gate` (1007 passed), офлайн `notifications.spec.ts` (5/5) и САМ прогнал `make e2e` (3 сценария passed, 12с) — все 6 AC подтверждены. Отметил не связанное с этой стори расхождение: таблица `architecture.md` обещает «5 сценариев», реально существует 3 (сценарии №1 и №5 из общего пула ещё не заведены ни в одном эпике — известный факт, задокументированный в ретро Epic 11 §4, вне скоупа этой стори).
+
+Финальный `make e2e`: **3 passed, 12s** (бюджет 900s/15 мин) — далеко в пределах нормы.
 
 ### File List
 
-_(заполняется dev-агентом по завершении)_
+- `Backend/VAPS/Makefile` (MOD) — новая цель `e2e`.
+- `frontend/e2e-harness/notifications.tsx` (MOD) — добавлен `ToastProvider` (реальный баг 11.4b, найден живым прогоном).
+- `frontend/e2e/notifications.spec.ts` (MOD) — AC-5 клавиатурный тест: два `Tab` вместо одного (тот же баг-класс).
 
 ## Change Log
 

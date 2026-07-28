@@ -30,6 +30,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { AuthProvider } from '../src/shared/auth/AuthContext'
 import { setCredential } from '../src/shared/auth/credential'
 import { AppLayout } from '../src/shared/ui/AppLayout'
+import { ToastProvider } from '../src/shared/ui/toast'
 import '../src/index.css'
 
 // ASCII в credential: значение уходит заголовком X-User-Id и параметром
@@ -66,15 +67,25 @@ function HarnessBody() {
 
 createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={queryClient}>
-    {/* AuthProvider обязан жить ВНУТРИ QueryClientProvider (Ловушка 9 8.6) */}
+    {/* AuthProvider обязан жить ВНУТРИ QueryClientProvider (Ловушка 9 8.6);
+        ToastProvider — ВНУТРИ AuthProvider, тот же порядок, что prod-композиция
+        (app/providers.tsx). Сам ToastProvider ни от чего не зависит (голый
+        useState/useCallback, без auth-контекста) — порядок не изменил бы
+        поведение, но харнес держит его идентичным prod, а не «эквивалентным»
+        (обязателен: 11.4b, найдено живым прогоном 11.6a — строка уведомления
+        теперь заводит собственный useApiMutation (кнопка «прочитано»), а хук
+        зовёт useToast() безусловно — без провайдера рендер падает целиком, и
+        панель/колокольчик не появляются вовсе, а не «выглядят иначе»). */}
     <AuthProvider>
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route path="/" element={<AppLayout />}>
-            <Route index element={<HarnessBody />} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<AppLayout />}>
+              <Route index element={<HarnessBody />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </AuthProvider>
   </QueryClientProvider>,
 )

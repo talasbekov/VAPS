@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-29 (11.6a → ready-for-dev)
+# last_updated: 2026-07-29 (11.6a → done, epic-11 → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -510,7 +510,7 @@ development_status:
   epic-10-retrospective: done
 
   # Epic 11: Уведомления — центр + WebSocket
-  epic-11: in-progress
+  epic-11: done
   11-1-channels-и-channels-redis: done
   11-2-публикация-в-ws-из-notify: done
   11-3-ws-клиент-с-reconnect: done
@@ -598,7 +598,7 @@ development_status:
   # занят №2 (9.9) и №4 (11.6); свободны №1 (стори не заведена ни в одном
   # эпике — см. Открытый вопрос №4), №3 (10.10), №5 (12.x).
   11-6-e2e-уведомления: done
-  11-6a-гигиена-live-e2e: ready-for-dev
+  11-6a-гигиена-live-e2e: done
   epic-11-retrospective: done
 
   # Epic 12: Деплой в контур и пилот
