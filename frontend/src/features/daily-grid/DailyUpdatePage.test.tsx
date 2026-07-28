@@ -28,6 +28,19 @@ type DivisionsResponse =
 type EmployeesResponse =
   paths['/api/core/employees/']['get']['responses']['200']['content']['application/json']
 
+// jsdom НЕ реализует <dialog> методы (Ловушка 3, ConflictDialog.test.tsx) —
+// 10.2a рендерит ConflictDialog внутри этой страницы, тот же минимальный
+// полифилл (только open-семантика).
+if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
+  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+    this.open = true
+  }
+  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+    this.open = false
+    this.dispatchEvent(new Event('close'))
+  }
+}
+
 const origOffsetHeight = Object.getOwnPropertyDescriptor(
   HTMLElement.prototype,
   'offsetHeight',
@@ -339,10 +352,144 @@ it('успех: счётчик «Применено N» из ТЕЛА ОТВЕТ
   expect(within(rowOf(NAMES[2])).getByText('В строю')).toBeInTheDocument()
 })
 
-it('409: инлайн-панель со ФИО и причинами; ConflictDialog НЕ открывается; ввод не потерян', async () => {
+it('409 mixed (hard-строка в агрегате): инлайн-панель со ФИО и причинами; ConflictDialog НЕ открывается; ввод не потерян', async () => {
+  // 10.2a: чисто-soft агрегат ТЕПЕРЬ открывает ConflictDialog (см. тест ниже)
+  // — этот тест доказывает, что mixed/hard-агрегат (код НЕ в OVERRIDABLE_CODES,
+  // здесь буквально другой код) по-прежнему остаётся инлайн-only каналом.
   mockDivisions()
   mockEmployees()
   captureBulk(() =>
+    HttpResponse.json(
+      envelope(
+        'OVERLAPPING_HARD_STATUS',
+        'Массовое обновление отклонено: см. detail.rows.',
+        {
+          rows: [
+            {
+              index: 0,
+              employee_id: 'emp-0',
+              code: 'OVERLAPPING_HARD_STATUS',
+              http_status: 422,
+              message: 'Статус конфликтует с hard-статусом сотрудника.',
+            },
+            {
+              index: 1,
+              employee_id: 'emp-1',
+              code: 'STATUS_OVERLAP_WARNING',
+              http_status: 409,
+              message: 'Отпуск уже открыт с 15.07.2026.',
+            },
+          ],
+        },
+      ),
+      { status: 422 },
+    ),
+  )
+  renderPage()
+  const user = await selectDivision()
+
+  await editCurrentRow(user, 'VACATION')
+  await editCurrentRow(user, 'SICK_LEAVE')
+  await user.click(screen.getByText('Сохранить правки'))
+
+  // Построчная детализация: номер строки 1-based + ФИО, резолвнутое по id
+  expect(
+    await screen.findByText(
+      `Строка 1 · ${NAMES[0]} · Статус конфликтует с hard-статусом сотрудника.`,
+    ),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(`Строка 2 · ${NAMES[1]} · Отпуск уже открыт с 15.07.2026.`),
+  ).toBeInTheDocument()
+  // Цвет не единственный сигнал — текстовая метка обязательна
+  expect(screen.getByText(/^Нельзя:/)).toBeInTheDocument()
+
+  // OVERLAPPING_HARD_STATUS не в OVERRIDABLE_CODES ⇒ conflict-стейт не
+  // поднимается, ConflictDialog не открывается (hard никогда не обходится).
+  expect(document.querySelector('dialog')).toBeNull()
+  expect(screen.queryByText('Подтвердить оверрайд')).not.toBeInTheDocument()
+
+  // Сервис атомарен: 0 записей в БД ⇒ база НЕ сдвигается, ввод остаётся правимым
+  expect(screen.getByTestId('changed-counter')).toHaveTextContent(
+    'Изменено 2 из 3',
+  )
+  expect(within(rowOf(NAMES[0])).getByText('В отпуске')).toBeInTheDocument()
+  expect(screen.queryByText(/Применено/)).not.toBeInTheDocument()
+})
+
+it('409 чисто-soft: ConflictDialog открывается; «Подтвердить оверрайд» шлёт override:true+причину; успех обновляет счётчик как обычно (10.2a)', async () => {
+  mockDivisions()
+  mockEmployees()
+  const bodies = captureBulk(() => {
+    // captureBulk push'ит тело ДО вызова этого коллбэка — на первый запрос
+    // bodies.length уже 1, на второй — 2.
+    const call = bodies.length
+    if (call === 1) {
+      return HttpResponse.json(
+        envelope(
+          'STATUS_OVERLAP_WARNING',
+          'Массовое обновление отклонено: см. detail.rows.',
+          {
+            rows: [
+              {
+                index: 0,
+                employee_id: 'emp-0',
+                code: 'STATUS_OVERLAP_WARNING',
+                http_status: 409,
+                message: 'Статус пересекает soft-статус сотрудника.',
+              },
+            ],
+          },
+        ),
+        { status: 409 },
+      )
+    }
+    return HttpResponse.json({ created: 1 }, { status: 201 })
+  })
+  renderPage()
+  const user = await selectDivision()
+
+  await editCurrentRow(user, 'VACATION')
+  await user.click(screen.getByText('Сохранить правки'))
+
+  // Чисто-soft агрегат: STATUS_OVERLAP_WARNING в OVERRIDABLE_CODES ⇒
+  // useApiMutation поднимает conflict-стейт ⇒ ConflictDialog рендерится.
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).getByText(/^Конфликт:/)).toBeInTheDocument()
+  // Инлайн-панель НЕ дублирует канал, пока диалог открыт.
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+  const confirmButton = within(dialog).getByText('Подтвердить оверрайд')
+  expect(confirmButton).toBeDisabled() // причина ещё пуста (10–500)
+
+  await user.type(
+    within(dialog).getByLabelText('Причина (10–500 символов)'),
+    'Согласовано с руководителем устно',
+  )
+  expect(confirmButton).toBeEnabled()
+  await user.click(confirmButton)
+
+  // Повторный POST — исходное тело + override:true/override_reason (спред
+  // confirmOverride, useApiMutation 8.5 — эта стори его НЕ переписывает).
+  await waitFor(() => expect(bodies).toHaveLength(2))
+  expect(bodies[1]).toMatchObject({
+    business_date: bodies[0].business_date,
+    override: true,
+    override_reason: 'Согласовано с руководителем устно',
+  })
+
+  // Успех — тот же путь, что обычный bulk-успех: диалог закрывается,
+  // счётчик применённых обновляется, база сдвигается.
+  await waitFor(() => expect(document.querySelector('dialog')).toBeNull())
+  expect(screen.getByTestId('changed-counter')).toHaveTextContent(
+    'Изменено 0 из 3',
+  )
+})
+
+it('«Отмена» в ConflictDialog закрывает диалог без повторной отправки', async () => {
+  mockDivisions()
+  mockEmployees()
+  const bodies = captureBulk(() =>
     HttpResponse.json(
       envelope(
         'STATUS_OVERLAP_WARNING',
@@ -356,13 +503,6 @@ it('409: инлайн-панель со ФИО и причинами; ConflictDi
               http_status: 409,
               message: 'Статус пересекает soft-статус сотрудника.',
             },
-            {
-              index: 1,
-              employee_id: 'emp-1',
-              code: 'STATUS_OVERLAP_WARNING',
-              http_status: 409,
-              message: 'Отпуск уже открыт с 15.07.2026.',
-            },
           ],
         },
       ),
@@ -373,32 +513,13 @@ it('409: инлайн-панель со ФИО и причинами; ConflictDi
   const user = await selectDivision()
 
   await editCurrentRow(user, 'VACATION')
-  await editCurrentRow(user, 'SICK_LEAVE')
   await user.click(screen.getByText('Сохранить правки'))
 
-  // Построчная детализация: номер строки 1-based + ФИО, резолвнутое по id
-  expect(
-    await screen.findByText(
-      `Строка 1 · ${NAMES[0]} · Статус пересекает soft-статус сотрудника.`,
-    ),
-  ).toBeInTheDocument()
-  expect(
-    screen.getByText(`Строка 2 · ${NAMES[1]} · Отпуск уже открыт с 15.07.2026.`),
-  ).toBeInTheDocument()
-  // Цвет не единственный сигнал — текстовая метка обязательна
-  expect(screen.getByText(/^Конфликт:/)).toBeInTheDocument()
+  const dialog = await screen.findByRole('dialog')
+  await user.click(within(dialog).getByText('Отмена'))
 
-  // Решение №4: агрегат bulk не оверрайдаем ⇒ диалога нет (иначе «Подтвердить
-  // оверрайд» была бы мёртвой кнопкой — сериализатор 10.1a override не примет)
   expect(document.querySelector('dialog')).toBeNull()
-  expect(screen.queryByText('Подтвердить')).not.toBeInTheDocument()
-
-  // Сервис атомарен: 0 записей в БД ⇒ база НЕ сдвигается, ввод остаётся правимым
-  expect(screen.getByTestId('changed-counter')).toHaveTextContent(
-    'Изменено 2 из 3',
-  )
-  expect(within(rowOf(NAMES[0])).getByText('В отпуске')).toBeInTheDocument()
-  expect(screen.queryByText(/Применено/)).not.toBeInTheDocument()
+  expect(bodies).toHaveLength(1) // без ретрая
 })
 
 it('403 → инлайн про status.manage; 500 → инлайна НЕТ, только общий тост', async () => {

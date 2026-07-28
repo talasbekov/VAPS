@@ -2,10 +2,13 @@
 // Чистые функции: ни React, ни apiClient (тестируются в env node).
 //
 // Форма построчных причин — из ЖИВОГО raise-сайта сервиса 3.8
-// (Backend/VAPS/apps/operations/statuses/services/bulk_status_service.py:219-238):
+// (Backend/VAPS/apps/operations/statuses/services/bulk_status_service.py):
 //   details.rows[] = [{index, employee_id, code, http_status, message}]
-// Это НЕ details.conflicts[], который умеет рендерить общий ConflictList —
-// ещё одна причина не звать ConflictDialog (Решение №4 стори).
+// Это НЕ details.conflicts[], который умеет рендерить ConflictDialog — этот
+// модуль остаётся каналом ТОЛЬКО для mixed/hard-отказов (OVERLAPPING_
+// HARD_STATUS не в OVERRIDABLE_CODES ⇒ conflict-стейт не поднимается);
+// чисто-soft отказ теперь рендерит ConflictDialog напрямую (10.2a, Решение
+// №4 закрыто), эта функция для него не вызывается.
 import type { ApiFailure } from '../../shared/api/errors'
 
 /** Одна отклонённая строка массового обновления (§36 details.rows[]). */

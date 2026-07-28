@@ -101,7 +101,10 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "403 нет права status.manage / сотрудник вне scope оператора; "
             "400 структурная ошибка payload (дубль/пропуск ключа/пустой/тип/"
             "cap); 409 soft-пересечение (details.rows[]); 422 hard-пересечение "
-            "/ интервал / уволен (details.rows[]). Успех → {created: N}."
+            "/ интервал / уволен (details.rows[]). Успех → {created: N}. "
+            "10.2a: `override:true`+`override_reason` (непустая — длина "
+            "10-500 не бэк-граница) обходит ТОЛЬКО soft-конфликты этого "
+            "запроса; hard (422) никогда не обходится."
         ),
     )
     @action(detail=False, methods=["post"], url_path="bulk", url_name="bulk")
@@ -124,6 +127,8 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             actor=request.actor_id,
             business_date=form.validated_data["business_date"],
             allowed_division_ids=allowed,
+            override=form.validated_data.get("override", False),
+            override_reason=form.validated_data.get("override_reason", ""),
         )
         return Response({"created": len(created)}, status=status.HTTP_201_CREATED)
 

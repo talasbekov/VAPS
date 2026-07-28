@@ -6,16 +6,25 @@
 // фича не имела бы права импортировать DailyGridContainer (ARCH-FE-013).
 //
 // Чего здесь осознанно НЕТ:
-// - prefill «вчера» с сервера: GET статусов на дату не существует → yesterday
-//   пуст, все строки садятся в DEFAULT_STATUS (плашка об этом честно говорит);
-//   точка подключения 10.1b — инициализация стейта `yesterday`;
-// - ConflictDialog и оверрайд: агрегат bulk НЕ оверрайдаем by design
-//   (3.8 AC-9; сериализатор 10.1a не принимает override/override_reason) —
-//   кнопка «Подтвердить оверрайд» была бы заведомо мёртвой (Решение №4).
-//   Детализация конфликта — инлайн-панель без поля причины;
+// - prefill «вчера» с сервера: GET статусов на дату существует с 10.1b, но
+//   ИНТЕГРАЦИЯ фронта — отдельная стори (10.1b/10.1b2 намеренно построили
+//   только бэк-поверхность); yesterday остаётся пуст, все строки садятся в
+//   DEFAULT_STATUS (плашка об этом честно говорит);
 // - onCellCommit: покомпонентного эндпоинта нет, сетевой вызов на строку
 //   недопустим (defer 9.6) — маркеры остаются только от zod-валидации;
 // - оптимистичных апдейтов и своих loading-флагов (канон #L472/#L487).
+//
+// ConflictDialog и bulk-override (10.2a, ЗАКРЫТО): агрегат bulk был
+// НЕоверрайдаем by design в 10.2 (3.8 AC-9; сериализатор 10.1a не принимал
+// override/override_reason) — кнопка «Подтвердить оверрайд» была бы мёртвой
+// (Решение №4). 10.2a добавила override на бэк (bulk_create_statuses) и
+// сняла squash-эффект здесь: чисто-soft отказ (STATUS_OVERLAP_WARNING, тот
+// же код — в OVERRIDABLE_CODES) теперь поднимает conflict-стейт по-настоящему,
+// ConflictDialog рендерится, «Подтвердить оверрайд» зовёт mutation.
+// confirmOverride(reason) — уже существующий общий механизм useApiMutation
+// (8.5), спредящий исходное тело + override:true/override_reason. Инлайн-
+// панель per-row ошибок остаётся ЕДИНСТВЕННЫМ каналом для mixed/hard-отказов
+// (OVERLAPPING_HARD_STATUS не в OVERRIDABLE_CODES ⇒ conflict не поднимается).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
@@ -23,6 +32,7 @@ import { apiClient } from '../../shared/api/client'
 import type { paths } from '../../shared/api/schema'
 import { useApiMutation } from '../../shared/api/useApiMutation'
 import { Card, CardContent, CardDescription, CardHeader } from '../../shared/ui/Card'
+import { ConflictDialog } from '../../shared/ui/ConflictDialog'
 import { Input } from '../../shared/ui/Input'
 import { Label } from '../../shared/ui/Label'
 import {
@@ -283,21 +293,13 @@ export function DailyUpdatePage() {
   })
 
   const {
+    confirmOverride,
     conflict,
     dismissConflict,
     error: mutationError,
     isPending,
     mutate,
   } = mutation
-
-  // Агрегат bulk не оверрайдаем (Решение №4), но его error_code при чисто-soft
-  // отказе — STATUS_OVERLAP_WARNING, и useApiMutation выводит overridable ПО
-  // КОДУ из OVERRIDABLE_CODES ⇒ поднимает conflict-стейт. Гасим его сразу:
-  // ConflictDialog экран не рендерит, а повисший стейт не должен всплыть
-  // диалогом на следующем рендере.
-  useEffect(() => {
-    if (conflict !== null) dismissConflict()
-  }, [conflict, dismissConflict])
 
   const handleDirtyChange = useCallback((changedCount: number) => {
     setDirtyCount(changedCount)
@@ -596,7 +598,12 @@ export function DailyUpdatePage() {
         </div>
       ) : null}
 
-      {failure !== null && failure.kind === 'rows' ? (
+      {/* conflict !== null: чисто-soft отказ (STATUS_OVERLAP_WARNING) теперь
+          рендерит ConflictDialog ниже (10.2a) — инлайн-панель молчит, чтобы
+          не дублировать канал. Mixed/hard (OVERLAPPING_HARD_STATUS не в
+          OVERRIDABLE_CODES ⇒ conflict остаётся null) — инлайн-панель, как
+          и раньше, единственный канал. */}
+      {failure !== null && failure.kind === 'rows' && conflict === null ? (
         <div
           role="alert"
           className={
@@ -622,6 +629,12 @@ export function DailyUpdatePage() {
           </ul>
         </div>
       ) : null}
+
+      <ConflictDialog
+        conflict={conflict}
+        onOverride={confirmOverride}
+        onCancel={dismissConflict}
+      />
 
       {divisionId === null ? (
         <Card>

@@ -72,6 +72,32 @@ describe('ConflictDialog: открытие/закрытие', () => {
     // «…Причина попадёт в аудит.» — копирайт мокапа key-daily-grid.html
     expect(screen.getByText(/Причина попадёт в аудит\./)).toBeInTheDocument()
   })
+
+  it('10.2a: bulk-агрегат (details.rows[], НЕ details.conflicts[]) тоже отображается итемизированно', () => {
+    const bulkConflict = new ConflictError({
+      status: 409,
+      errorCode: 'STATUS_OVERLAP_WARNING',
+      message: 'Массовое обновление отклонено: см. detail.rows.',
+      details: {
+        rows: [
+          {
+            index: 0,
+            employee_id: 'emp-0',
+            code: 'STATUS_OVERLAP_WARNING',
+            http_status: 409,
+            message: 'Статус пересекает soft-статус сотрудника.',
+          },
+        ],
+      },
+      requestId: null,
+    })
+    renderDialog(bulkConflict)
+    expect(
+      screen.getByText(
+        'Строка 1 · emp-0 · Статус пересекает soft-статус сотрудника.',
+      ),
+    ).toBeInTheDocument()
+  })
 })
 
 describe('ConflictDialog: валидация причины 10–500 (AC 2)', () => {

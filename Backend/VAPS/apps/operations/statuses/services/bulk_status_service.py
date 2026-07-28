@@ -26,9 +26,10 @@ from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreEmployeeLockSelector
 from apps.operations.statuses.conflict_matrix import detect_conflicts
-from apps.operations.statuses.models import EmployeeStatus, StatusType
+from apps.operations.statuses.models import EmployeeStatus, Override, StatusType
 from apps.operations.statuses.services.status_service import (
     _conflict_details,
+    _override_snapshot,
     _require_actor,
     _status_snapshot,
     _validate_interval,
@@ -55,7 +56,10 @@ def _overlaps(existing_rows, date_start, date_end):
 
 
 @transaction.atomic
-def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
+def bulk_create_statuses(
+    rows, *, actor, business_date, allowed_division_ids,
+    override=False, override_reason="",
+):
     """Create operator-owned deviation statuses atomically (source=USER).
 
     ``rows``: list of dicts ``{employee_id, status_type_code, date_start,
@@ -63,8 +67,24 @@ def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
     is the operator's scope (Решение №2 — resolved from RBAC by the caller; the
     service enforces 403). Raises a single ``DomainError`` on any failure and
     writes NOTHING; returns the created rows on success.
+
+    Story 10.2a: ``override``/``override_reason`` mirror ``create_status``
+    (3.5) — a SINGLE reason bypasses every row's soft (409) conflict in this
+    batch; a hard (422) conflict is NEVER bypassable, override or not (the
+    hard branch below never reads ``override`` at all — an architectural
+    invariant, not a policy check). Bypassed rows get an ``Override`` record
+    each (SM-C1, auditable — not a silent bypass).
     """
     _require_actor(actor)
+    # AC-3: mirror create_status's guard — before ANY conflict detection, so
+    # a malformed override request never touches the DB.
+    if override and not (override_reason or "").strip():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"field": "override_reason"},
+            message="При override обязательна непустая причина.",
+        )
     # Defend a future caller (e.g. a serializer's unfilled field): a None
     # business_date reaches detect_conflicts as ``date > None`` → TypeError → 500,
     # and it would NOT be caught by the per-row ``except DomainError`` below. The
@@ -173,7 +193,12 @@ def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
 
     # Per-row business validation, fully in memory (AC-4/AC-6). Each row's
     # DomainError is caught and collected; nothing is written yet.
+    # Story 10.2a: bypassed[index] = the soft conflicts a bypassed row hid —
+    # populated ONLY when override=True and a soft (never hard) conflict was
+    # actually found, so an Override row is created iff a conflict was
+    # genuinely bypassed (mirror create_status's `bypassed_conflicts`).
     row_errors = []
+    bypassed = {}
     for index, row in enumerate(rows):
         try:
             status_type = types.get(row["status_type_code"])
@@ -208,13 +233,18 @@ def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
                     message="Статус конфликтует с hard-статусом сотрудника.",
                 )
             if report.soft:
-                raise DomainError(
-                    "STATUS_OVERLAP_WARNING",
-                    409,
-                    overridable=True,
-                    detail={"conflicts": _conflict_details(report.soft)},
-                    message="Статус пересекает soft-статус сотрудника.",
-                )
+                if override:
+                    # Bypassed, not an error — Override record created below,
+                    # after the bulk insert (needs the created status's PK).
+                    bypassed[index] = report.soft
+                else:
+                    raise DomainError(
+                        "STATUS_OVERLAP_WARNING",
+                        409,
+                        overridable=True,
+                        detail={"conflicts": _conflict_details(report.soft)},
+                        message="Статус пересекает soft-статус сотрудника.",
+                    )
         except DomainError as exc:
             row_errors.append(
                 {
@@ -281,4 +311,35 @@ def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
             "employee_ids": [str(st.employee_id) for st in created],
         },
     )
+
+    # Story 10.2a: one Override row per bypassed soft conflict — `created`
+    # preserves `rows`/`objects` order (Postgres bulk_create), so `created
+    # [index]` is the status the bypass at that index unblocked.
+    if bypassed:
+        override_objects = [
+            Override(
+                status=created[index],
+                employee_id=created[index].employee_id,
+                status_type_code=created[index].status_type_code,
+                reason=override_reason,
+                conflicts=_conflict_details(soft_conflicts),
+                created_by=actor,
+            )
+            for index, soft_conflicts in bypassed.items()
+        ]
+        with transaction.atomic():
+            created_overrides = Override.objects.bulk_create(override_objects)
+        record_many(
+            [
+                {
+                    "actor": actor,
+                    "action": "OVERRIDE_APPLIED",
+                    "entity_type": "override",
+                    "entity_id": ov.employee_id,
+                    "old_value": None,
+                    "new_value": _override_snapshot(ov),
+                }
+                for ov in created_overrides
+            ]
+        )
     return created

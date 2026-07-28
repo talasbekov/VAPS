@@ -108,17 +108,56 @@ function OpenConflictDialog({
   )
 }
 
-/** details.conflicts[] конверта — unknown-типа: рендер строго defensive. */
+/**
+ * details.conflicts[] конверта (single-status путь, 3.5) — unknown-типа,
+ * рендер строго defensive.
+ *
+ * Story 10.2a: bulk-агрегат (3.8/10.1a) несёт другую форму —
+ * details.rows[] = [{index, employee_id, code, http_status, message}], НЕ
+ * details.conflicts[] (в bulk-агрегате per-row detail.conflicts не
+ * пробрасывается — row_errors хранит только code/message). Без этой ветки
+ * диалог открывался бы для bulk-оверрайда БЕЗ итемизированного списка (та
+ * же информация, что уже есть в заголовке «Конфликт: …», но не построчно) —
+ * найдено ревью 10.2a (Blind Hunter). Обе формы взаимоисключающие по
+ * consumer'у, рендерим ту, что реально пришла.
+ */
 function ConflictList({ details }: { details: Record<string, unknown> }) {
   const conflicts = Array.isArray(details.conflicts) ? details.conflicts : []
-  if (conflicts.length === 0) return null
+  if (conflicts.length > 0) {
+    return (
+      <ul>
+        {conflicts.map((item, index) => (
+          <li key={index}>{conflictLabel(item)}</li>
+        ))}
+      </ul>
+    )
+  }
+  const rows = Array.isArray(details.rows) ? details.rows : []
+  if (rows.length === 0) return null
   return (
     <ul>
-      {conflicts.map((item, index) => (
-        <li key={index}>{conflictLabel(item)}</li>
+      {rows.map((item, index) => (
+        <li key={index}>{bulkRowLabel(item)}</li>
       ))}
     </ul>
   )
+}
+
+function bulkRowLabel(item: unknown): string {
+  if (typeof item === 'object' && item !== null) {
+    const record = item as Record<string, unknown>
+    const index = typeof record.index === 'number' ? record.index + 1 : null
+    const employeeId =
+      typeof record.employee_id === 'string' ? record.employee_id : null
+    const message = typeof record.message === 'string' ? record.message : null
+    const parts = [
+      index !== null ? `Строка ${index}` : null,
+      employeeId,
+      message,
+    ].filter((value): value is string => value !== null)
+    if (parts.length > 0) return parts.join(' · ')
+  }
+  return JSON.stringify(item)
 }
 
 function conflictLabel(item: unknown): string {

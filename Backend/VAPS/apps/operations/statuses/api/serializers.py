@@ -29,12 +29,26 @@ class BulkStatusCreateRowSerializer(serializers.Serializer):
 
 
 class BulkStatusCreateSerializer(serializers.Serializer):
-    """Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC."""
+    """Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC.
+
+    Story 10.2a: ``override``/``override_reason`` — ОДНА причина на весь
+    ретрай (не per-row), зеркалит ``confirmOverride``'а спред исходного
+    тела + два поля протокола (`useApiMutation.ts`). Длина 10-500 (BR-003) —
+    ФРОНТ-граница (ConflictDialog), бэк проверяет только непустоту (Решение
+    8.5, расхождение зафиксировано намеренно).
+
+    Осознанно БЕЗ ``default=`` (в отличие от очевидного): openapi-typescript
+    трактует поле схемы с ``default`` как ВСЕГДА присутствующее в TS-типе
+    (не `field?:`), а `comment`/`document_basis`/`source_ref` уже задают
+    прецедент «просто `required=False`» → optional-поле в сгенерированном
+    типе. Читается через ``.get(..., False)``/``.get(..., "")`` во вьюхе."""
 
     business_date = serializers.DateField()
     rows = BulkStatusCreateRowSerializer(
         many=True, allow_empty=False, max_length=MAX_BULK_ROWS
     )
+    override = serializers.BooleanField(required=False)
+    override_reason = serializers.CharField(required=False, allow_blank=True)
 
 
 class StatusOnDateQuerySerializer(serializers.Serializer):

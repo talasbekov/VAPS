@@ -1076,7 +1076,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Массовое создание статусов-отклонений одним вызовом (FR-12). 403 нет права status.manage / сотрудник вне scope оператора; 400 структурная ошибка payload (дубль/пропуск ключа/пустой/тип/cap); 409 soft-пересечение (details.rows[]); 422 hard-пересечение / интервал / уволен (details.rows[]). Успех → {created: N}. */
+        /** @description Массовое создание статусов-отклонений одним вызовом (FR-12). 403 нет права status.manage / сотрудник вне scope оператора; 400 структурная ошибка payload (дубль/пропуск ключа/пустой/тип/cap); 409 soft-пересечение (details.rows[]); 422 hard-пересечение / интервал / уволен (details.rows[]). Успех → {created: N}. 10.2a: `override:true`+`override_reason` (непустая — длина 10-500 не бэк-граница) обходит ТОЛЬКО soft-конфликты этого запроса; hard (422) никогда не обходится. */
         post: operations["operations_statuses_bulk_create"];
         delete?: never;
         options?: never;
@@ -1254,11 +1254,27 @@ export interface components {
         };
         /** @enum {unknown} */
         BlankEnum: "";
-        /** @description Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC. */
+        /**
+         * @description Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC.
+         *
+         *     Story 10.2a: ``override``/``override_reason`` — ОДНА причина на весь
+         *     ретрай (не per-row), зеркалит ``confirmOverride``'а спред исходного
+         *     тела + два поля протокола (`useApiMutation.ts`). Длина 10-500 (BR-003) —
+         *     ФРОНТ-граница (ConflictDialog), бэк проверяет только непустоту (Решение
+         *     8.5, расхождение зафиксировано намеренно).
+         *
+         *     Осознанно БЕЗ ``default=`` (в отличие от очевидного): openapi-typescript
+         *     трактует поле схемы с ``default`` как ВСЕГДА присутствующее в TS-типе
+         *     (не `field?:`), а `comment`/`document_basis`/`source_ref` уже задают
+         *     прецедент «просто `required=False`» → optional-поле в сгенерированном
+         *     типе. Читается через ``.get(..., False)``/``.get(..., "")`` во вьюхе.
+         */
         BulkStatusCreateRequest: {
             /** Format: date */
             business_date: string;
             rows: components["schemas"]["BulkStatusCreateRowRequest"][];
+            override?: boolean;
+            override_reason?: string;
         };
         BulkStatusCreateResponse: {
             created: number;
