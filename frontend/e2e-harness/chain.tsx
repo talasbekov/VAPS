@@ -35,6 +35,17 @@ import '../src/index.css'
 // увёл бы на /login, то есть спека проверяла бы форму входа вместо цепочки.
 setCredential({ kind: 'dev', userId: 'e2e-chain-operator' })
 
+// Story 10.10a — экспонирует ПЕРЕКЛЮЧАТЕЛЬ актора для многоактёрного спека.
+// `setCredential` уже реактивен (`useSyncExternalStore`, credential.ts) и уже
+// синхронно пишет в sessionStorage — `page.evaluate` вызывает эту же функцию
+// БЕЗ `page.reload()`/повторного `addInitScript` (урок памяти проекта:
+// `addInitScript` переустанавливает персону на КАЖДОЙ навигации; здесь
+// навигаций между шагами нет — `MemoryRouter` держит состояние приложения,
+// переходы идут кликами по сайдбару). e2e-only харнес-файл — отдельная
+// Vite-точка входа (`vite.e2e.config.ts`), в прод-бандл не попадает.
+;(window as unknown as { __e2eSetActor: typeof setCredential }).__e2eSetActor =
+  setCredential
+
 createRoot(document.getElementById('root')!).render(
   // Без StrictMode (канон всех шести соседних харнесов): двойной монтаж удвоил
   // бы запросы, и счётчик `GET /traffic-light/tree/` — несущий ассерт

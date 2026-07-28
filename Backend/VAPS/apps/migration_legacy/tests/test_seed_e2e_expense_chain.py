@@ -304,6 +304,73 @@ def test_stale_roles_of_the_actor_do_not_survive_a_rerun():
     )
 
 
+def test_the_multi_actor_roles_are_real_and_scoped_to_the_division():
+    """Story 10.10a — два ДОПОЛНИТЕЛЬНЫХ актора, каждый со scoped-грантом на
+    E2E_CHAIN_DIVISION_ID (не global, в отличие от ADMIN): реалистичный
+    оператор/орг.дежурный видит СВОЁ подразделение, не всё дерево."""
+    with clock.override(at(DAY, 12)):
+        run_seed()
+
+    operator_roles = list(UserRole.objects.filter(user_id="e2e-chain-operator-div"))
+    assert len(operator_roles) == 1
+    assert operator_roles[0].role_code_id == "DIVISION_OPERATOR"
+    assert operator_roles[0].scope_division_id == E2E_CHAIN_DIVISION_ID
+    assert operator_roles[0].is_active is True
+
+    issuer_roles = list(UserRole.objects.filter(user_id="e2e-chain-issuer-orgd"))
+    assert len(issuer_roles) == 1
+    assert issuer_roles[0].role_code_id == "ORGD"
+    assert issuer_roles[0].scope_division_id == E2E_CHAIN_DIVISION_ID
+    assert issuer_roles[0].is_active is True
+
+
+def test_stale_multi_actor_roles_do_not_survive_a_rerun():
+    """Тот же класс пробы, что `test_stale_roles_of_the_actor_do_not_survive_a_rerun`
+    (красная проба №5, 10.10), перенесённый на два новых актора 10.10a."""
+    UserRole.objects.create(
+        user_id="e2e-chain-operator-div",
+        role_code_id="ADMIN",
+        scope_division_id=None,
+        is_active=True,
+    )
+    UserRole.objects.create(
+        user_id="e2e-chain-issuer-orgd",
+        role_code_id="ADMIN",
+        scope_division_id=None,
+        is_active=True,
+    )
+
+    with clock.override(at(DAY, 12)):
+        run_seed()
+
+    operator_roles = list(UserRole.objects.filter(user_id="e2e-chain-operator-div"))
+    assert [role.role_code_id for role in operator_roles] == ["DIVISION_OPERATOR"]
+
+    issuer_roles = list(UserRole.objects.filter(user_id="e2e-chain-issuer-orgd"))
+    assert [role.role_code_id for role in issuer_roles] == ["ORGD"]
+
+
+def test_the_multi_actor_roles_survive_a_second_seed_run():
+    """Повторный прогон — ровно одна строка на каждого нового актора, не две
+    (та же идемпотентность, что `test_a_repeat_run_leaves_exactly_the_same_state`)."""
+    with clock.override(at(DAY, 12)):
+        run_seed()
+        run_seed()
+
+    assert UserRole.objects.filter(user_id="e2e-chain-operator-div").count() == 1
+    assert UserRole.objects.filter(user_id="e2e-chain-issuer-orgd").count() == 1
+
+
+def test_the_multi_actor_output_carries_both_new_actors():
+    """Story 10.10a AC-2 — команда печатает E2E_OPERATOR_ACTOR/E2E_ISSUER_ACTOR
+    машинно-читаемо, тем же паттерном, что четыре существующие переменные."""
+    with clock.override(at(DAY, 12)):
+        out = run_seed()
+
+    assert re.search(r"^E2E_OPERATOR_ACTOR=e2e-chain-operator-div$", out, re.MULTILINE)
+    assert re.search(r"^E2E_ISSUER_ACTOR=e2e-chain-issuer-orgd$", out, re.MULTILINE)
+
+
 def test_the_control_settings_leak_from_the_lagging_fixture_is_reset():
     """Защита от протечки singleton'а между живыми сьютами.
 

@@ -67,6 +67,16 @@ POSITION_CODE = "OPER"
 DEFAULT_ACTOR = "e2e-chain-operator"
 DEFAULT_EMPLOYEES = 3
 
+# Story 10.10a — ДВЕ ДОПОЛНИТЕЛЬНЫЕ реальные роли на ТОМ ЖЕ подразделении,
+# рядом с `DEFAULT_ACTOR`/ADMIN (10.10, Решение №3 — единственная роль,
+# покрывающая ВЕСЬ путь целиком). `OPERATOR_ACTOR`/DIVISION_OPERATOR держит
+# daily_report.mark_update+status.view+document.view (сдача+светофор+
+# скачивание); `ISSUER_ACTOR`/ORGD держит daily_report.generate+document.view
+# (выпуск+скачивание). Ни одна не покрывает status.manage (bulk) — тот
+# по-прежнему только у ADMIN/DEFAULT_ACTOR (см. _ensure_role docstring).
+OPERATOR_ACTOR = "e2e-chain-operator-div"
+ISSUER_ACTOR = "e2e-chain-issuer-orgd"
+
 # Кириллица (грид матчит type-ahead через toLocaleLowerCase('ru') — латиница
 # молча промахивается, урок 9.8/9.9) и РАЗЛИЧИМЫЕ первые буквы: спека вправе
 # целиться в конкретную строку.
@@ -159,11 +169,14 @@ class Command(BaseCommand):
             self._ensure_staffing(division, employees_count, day)
             self._ensure_history(division, employee_ids, day)
             self._ensure_role(actor)
+            self._ensure_multi_actor_roles()
             self._reset_control_settings()
 
         self.stdout.write(f"E2E_DAY={day.isoformat()}")
         self.stdout.write(f"E2E_DIVISION={E2E_CHAIN_DIVISION_ID}")
         self.stdout.write(f"E2E_ACTOR={actor}")
+        self.stdout.write(f"E2E_OPERATOR_ACTOR={OPERATOR_ACTOR}")
+        self.stdout.write(f"E2E_ISSUER_ACTOR={ISSUER_ACTOR}")
         self.stdout.write(f"E2E_EMPLOYEES={employees_count}")
         self.stdout.write(
             self.style.SUCCESS(
@@ -377,6 +390,34 @@ class Command(BaseCommand):
             user_id=actor,
             role_code_id="ADMIN",
             scope_division_id=None,
+            defaults={"is_active": True},
+        )
+
+    def _ensure_multi_actor_roles(self):
+        """Story 10.10a — два ДОПОЛНИТЕЛЬНЫХ реальных актора на том же
+        подразделении, для многоактёрного прогона (`OPERATOR_ACTOR`/
+        `ISSUER_ACTOR`). Тот же приём идемпотентности, что `_ensure_role`
+        (красная проба №5, 10.10): роли сносятся ПОЛНОСТЬЮ перед пересозданием
+        — иначе накопление между прогонами делает RBAC-состояние
+        недетерминированным.
+
+        `scope_division_id=E2E_CHAIN_DIVISION_ID`, НЕ `None`: в отличие от
+        ADMIN (глобальный скоуп по построению роли), реалистичный оператор/
+        орг.дежурный видит СВОЁ подразделение — тест обязан пройти со scoped-
+        грантом, не глобальным, иначе он не проверял бы то, что заявляет.
+        """
+        for actor in (OPERATOR_ACTOR, ISSUER_ACTOR):
+            UserRole.objects.filter(user_id=actor).delete()
+        UserRole.objects.update_or_create(
+            user_id=OPERATOR_ACTOR,
+            role_code_id="DIVISION_OPERATOR",
+            scope_division_id=E2E_CHAIN_DIVISION_ID,
+            defaults={"is_active": True},
+        )
+        UserRole.objects.update_or_create(
+            user_id=ISSUER_ACTOR,
+            role_code_id="ORGD",
+            scope_division_id=E2E_CHAIN_DIVISION_ID,
             defaults={"is_active": True},
         )
 
