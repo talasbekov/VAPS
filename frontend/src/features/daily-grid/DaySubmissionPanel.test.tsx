@@ -1381,3 +1381,164 @@ it('ревью-фикс: успешное исправление инвалид�
     expect(screen.queryByTestId('day-submission-server-drift')).not.toBeInTheDocument(),
   )
 })
+
+// ---------------------------------------------------------------------------
+// Story 10.6b — метка протухшей сводки (5.11, роут 10.6a).
+// ---------------------------------------------------------------------------
+
+/** Перекрывает дефолт роута 10.6a (NOT_SUMMARY) заданным ответом. */
+function mockFreshness(body: Record<string, unknown>) {
+  server.use(
+    http.get('*/api/operations/daily-submissions/freshness/', () => HttpResponse.json(body)),
+  )
+}
+
+/** Считает реальные GET на роут 10.6a — источник истины «ушёл ли запрос». */
+function countFreshnessCalls(): { count: number } {
+  const counter = { count: 0 }
+  server.use(
+    http.get('*/api/operations/daily-submissions/freshness/', () => {
+      counter.count += 1
+      return HttpResponse.json({
+        status: 'NOT_SUMMARY',
+        superseded: [],
+        missing: [],
+        unpinned: [],
+      })
+    }),
+  )
+  return counter
+}
+
+it('AC-2: день НЕ сдан → запрос свежести не уходит, метки нет', async () => {
+  const counter = countFreshnessCalls()
+  renderPanel({ submission: null })
+
+  await screen.findByText(/День не сдан/)
+  expect(screen.queryByTestId('day-summary-stale')).not.toBeInTheDocument()
+  expect(counter.count).toBe(0)
+})
+
+it('AC-1: FRESH → метки нет (основной путь для сдач-сводок)', async () => {
+  mockFreshness({ status: 'FRESH', superseded: [], missing: [], unpinned: [] })
+  renderPanel({ submission: submissionFixture() })
+
+  await screen.findByTestId('day-submission-state')
+  expect(screen.queryByTestId('day-summary-stale')).not.toBeInTheDocument()
+})
+
+it('AC-1: NOT_SUMMARY → метки нет (основной путь для ОБЫЧНЫХ сдач)', async () => {
+  mockFreshness({ status: 'NOT_SUMMARY', superseded: [], missing: [], unpinned: [] })
+  renderPanel({ submission: submissionFixture() })
+
+  await screen.findByTestId('day-submission-state')
+  expect(screen.queryByTestId('day-summary-stale')).not.toBeInTheDocument()
+})
+
+it('AC-1/AC-3: STALE → метка видна, три оси текстом', async () => {
+  mockFreshness({
+    status: 'STALE',
+    superseded: [{ division_id: ADDED_ID, pinned_version: 1, current_version: 2 }],
+    missing: [{ division_id: REMOVED_ID, pinned_version: 1 }],
+    unpinned: [CHANGED_ID],
+  })
+  renderPanel({ submission: submissionFixture() })
+
+  const panel = await screen.findByTestId('day-summary-stale')
+  expect(within(panel).getByText('Сводка устарела')).toBeInTheDocument()
+  expect(
+    within(panel).getByText('1 подразделение пересдало после сборки сводки'),
+  ).toBeInTheDocument()
+  expect(within(panel).getByText('1 подразделение без действующей сдачи')).toBeInTheDocument()
+  expect(within(panel).getByText('1 новое подразделение вне сводки')).toBeInTheDocument()
+})
+
+it('AC-2/AC-8: ошибка роута (403) → метки нет, экран не падает', async () => {
+  server.use(
+    http.get('*/api/operations/daily-submissions/freshness/', () =>
+      HttpResponse.json(errorEnvelope('PERMISSION_DENIED', 'Нет доступа'), { status: 403 }),
+    ),
+  )
+  renderPanel({ submission: submissionFixture() })
+
+  await screen.findByTestId('day-submission-state')
+  expect(screen.queryByTestId('day-summary-stale')).not.toBeInTheDocument()
+})
+
+it('AC-5: YELLOW-drift БЕЗ STALE-freshness → метки свежести нет (оси не путаются)', async () => {
+  mockServerDrift({
+    status: 'YELLOW',
+    late: false,
+    drift: { added: [ADDED_ID], removed: [], changed: [] },
+  })
+  mockFreshness({ status: 'FRESH', superseded: [], missing: [], unpinned: [] })
+  renderPanel({ submission: submissionFixture(), nameById: { [ADDED_ID]: 'Иванов И.И.' } })
+
+  await screen.findByTestId('day-submission-server-drift')
+  expect(screen.queryByTestId('day-summary-stale')).not.toBeInTheDocument()
+})
+
+it('AC-5: STALE-freshness БЕЗ YELLOW-drift (GREEN) → метка свежести видна независимо', async () => {
+  mockServerDrift({ status: 'GREEN', late: false, drift: null })
+  mockFreshness({
+    status: 'STALE',
+    superseded: [{ division_id: ADDED_ID, pinned_version: 1, current_version: 2 }],
+    missing: [],
+    unpinned: [],
+  })
+  renderPanel({ submission: submissionFixture() })
+
+  expect(await screen.findByTestId('day-summary-stale')).toBeInTheDocument()
+  expect(screen.queryByTestId('day-submission-server-drift')).not.toBeInTheDocument()
+})
+
+it('AC-4: успешная сдача инвалидирует кэш свежести', async () => {
+  mockFreshness({ status: 'NOT_SUMMARY', superseded: [], missing: [], unpinned: [] })
+  const bodies = capturePost(() => HttpResponse.json(submissionFixture(), { status: 201 }))
+  const user = userEvent.setup()
+  renderPanel()
+
+  await user.click(await screen.findByRole('button', { name: 'Сдать день' }))
+
+  // Пока панель подтверждения открыта, сервер начинает возвращать STALE —
+  // без инвалидации после сдачи панель осталась бы висеть на закэшированном
+  // NOT_SUMMARY (тот же класс защитной инвалидации, что submit→serverDrift).
+  mockFreshness({
+    status: 'STALE',
+    superseded: [{ division_id: ADDED_ID, pinned_version: 1, current_version: 2 }],
+    missing: [],
+    unpinned: [],
+  })
+  await user.click(screen.getByRole('button', { name: 'Подтвердить сдачу' }))
+
+  await waitFor(() => expect(bodies).toHaveLength(1))
+  await waitFor(() => expect(screen.getByTestId('day-summary-stale')).toBeInTheDocument())
+})
+
+it('AC-4: успешное исправление инвалидирует кэш свежести (не показывает данные ДО амендмента)', async () => {
+  // День сдан и УЖЕ показывает STALE — запрос свежести успел отфетчиться и
+  // закэшироваться ДО исправления.
+  mockFreshness({
+    status: 'STALE',
+    superseded: [{ division_id: ADDED_ID, pinned_version: 1, current_version: 2 }],
+    missing: [],
+    unpinned: [],
+  })
+  const user = await openAmendForm({ submission: submissionFixture() })
+  await screen.findByTestId('day-summary-stale')
+
+  // Красная проба (Dev Notes AC-4): без инвалидации ['summary-freshness', ...]
+  // в amendMutation.onSuccess панель осталась бы висеть на закэшированном STALE.
+  mockFreshness({ status: 'FRESH', superseded: [], missing: [], unpinned: [] })
+  server.use(
+    http.post('*/api/operations/daily-submissions/:id/amend/', () =>
+      HttpResponse.json(submissionFixture({ version: 2, event: 'AMENDED' }), { status: 201 }),
+    ),
+  )
+  await fillAmendForm(user)
+  await user.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+  await waitFor(() =>
+    expect(screen.queryByTestId('day-summary-stale')).not.toBeInTheDocument(),
+  )
+})

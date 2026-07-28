@@ -43,6 +43,7 @@ import { describeAmendFailure } from './amendment'
 import type { DayAmendBody } from './amendment'
 import { parseValidationDetails } from './bulkErrors'
 import { DayAmendmentForm } from './DayAmendmentForm'
+import { describeStaleness, parseSummaryFreshness } from './freshness'
 import {
   describeSubmitFailure,
   EVENT_LABELS,
@@ -195,6 +196,11 @@ export function DaySubmissionPanel({
       queryClient.invalidateQueries({
         queryKey: ['division-traffic-light', divisionId, businessDate],
       })
+      // Story 10.6b — та же защитная инвалидация, что drift выше: на момент
+      // сдачи freshness ещё был `enabled: false` (current === null).
+      queryClient.invalidateQueries({
+        queryKey: ['summary-freshness', divisionId, businessDate],
+      })
     },
   })
 
@@ -246,6 +252,36 @@ export function DaySubmissionPanel({
       ? rawServerDrift
       : null
 
+  /**
+   * Story 10.6b — свежесть сводки (5.11, роут 10.6a). ТОТ ЖЕ гейт, что
+   * `serverDriftQuery`: на несданный день сводки нет смысла спрашивать.
+   *
+   * ⚠️ Свежесть — ОТДЕЛЬНАЯ ось от цвета светофора (5-11:97) — этот запрос НЕ
+   * читает `TrafficLightStatus`/`DivisionTrafficLight` ни в каком виде,
+   * источник исключительно ответ `/freshness/`.
+   */
+  const freshnessQuery = useQuery({
+    queryKey: ['summary-freshness', divisionId, businessDate],
+    queryFn: () =>
+      apiClient.get<unknown>(
+        `/api/operations/daily-submissions/freshness/?division_id=${encodeURIComponent(
+          divisionId as string,
+        )}&business_date=${encodeURIComponent(businessDate)}`,
+      ),
+    enabled: divisionId !== null && dateValid && current !== null,
+  })
+  const freshness = parseSummaryFreshness(freshnessQuery.data)
+  // Не доверяем инварианту бэка «STALE ⇒ хотя бы одна ось непуста» вслепую
+  // (тот же принцип, что `serverDrift`'s all-empty guard выше): без явной
+  // проверки суммы длин STALE-с-пустыми-осями нарисовал бы alert без единой
+  // строки содержимого.
+  const staleness =
+    freshness !== null &&
+    freshness.status === 'STALE' &&
+    freshness.superseded.length + freshness.missing.length + freshness.unpinned.length > 0
+      ? freshness
+      : null
+
   const amendMutation = useApiMutation<DaySubmission, DayAmendBody>({
     mutationFn: (variables) =>
       apiClient.post<DaySubmission>(
@@ -266,6 +302,12 @@ export function DaySubmissionPanel({
       // могло уже закрыть (или, наоборот, новое, внесённое амендментом).
       queryClient.invalidateQueries({
         queryKey: ['division-traffic-light', divisionId, businessDate],
+      })
+      // Story 10.6b (AC-4, урок 10.3b — не повторять пропущенную инвалидацию
+      // на amend): freshness-запрос УЖЕ был enabled и УЖЕ отфетчен до
+      // исправления (день был сдан), тот же риск устаревшего кэша.
+      queryClient.invalidateQueries({
+        queryKey: ['summary-freshness', divisionId, businessDate],
       })
     },
   })
@@ -529,6 +571,30 @@ export function DaySubmissionPanel({
                 </li>
               ))}
             </ul>
+          </div>
+        ) : null}
+
+        {/* Story 10.6b (AC-1, AC-3, AC-5): метка ТОЛЬКО на STALE — FRESH/
+            NOT_SUMMARY/загрузка/ошибка → блока нет вовсе (enrichment, не
+            первичный сигнал, зеркало `serverDrift` выше). Свежесть — ОТДЕЛЬНАЯ
+            ось от цвета светофора (5-11:97): источник исключительно ответ
+            `/freshness/`, не `serverDrift`/`TrafficLightStatus`. */}
+        {staleness !== null ? (
+          <div
+            data-testid="day-summary-stale"
+            role="alert"
+            className="flex flex-col gap-1 rounded-md bg-amber-100 p-3 text-sm text-amber-800"
+          >
+            <span className="font-medium">Сводка устарела</span>
+            <ul className="list-disc pl-5">
+              {describeStaleness(staleness).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <span>
+              Список подразделений и причин остаётся в API — экран показывает
+              только факт расхождения.
+            </span>
           </div>
         ) : null}
 

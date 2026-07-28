@@ -239,6 +239,11 @@ export const handlers = [
   http.get('*/api/operations/traffic-light/division/', () =>
     HttpResponse.json(divisionTrafficLightFixture),
   ),
+  // 200 (стори 10.6a/10.6b): свежесть сводки — нейтральный дефолт
+  // NOT_SUMMARY (большинство сдач — обычные, не сводки; это ОСНОВНОЙ путь).
+  http.get('*/api/operations/daily-submissions/freshness/', () =>
+    HttpResponse.json({ status: 'NOT_SUMMARY', superseded: [], missing: [], unpinned: [] }),
+  ),
   // 404 (стори 10.5): расход за дату НЕ выпускался — нейтральный дефолт.
   // Обязателен, а не опционален: `app-layout.qa.test.tsx` монтирует `/reports`,
   // и после подмены заглушки живым экраном любой незамоканный GET валит чужой
