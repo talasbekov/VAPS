@@ -2045,8 +2045,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/models.py": {
-    "mtime": 1785224485.3349645,
-    "ast_hash": "f6921b6fcb2dbd9ef8f5764894bf8082",
+    "mtime": 1785233216.30027,
+    "ast_hash": "3c2f9dd48360ec9a6feaabf58bc39461",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/selectors.py": {
@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1785232824.488461,
-    "ast_hash": "5f2dbf865bc0bb32f5fb064afad01dc9",
+    "mtime": 1785234715.1141336,
+    "ast_hash": "126b27a6cd03551d8e23c832554b960c",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785232832.7065814,
-    "ast_hash": "246be8d6751fc05e03ddc1333c54de13",
+    "mtime": 1785234822.9452343,
+    "ast_hash": "a8cc42cbfa8c71ffc7726dc03d262bac",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -18820,13 +18820,13 @@
     "semantic_hash": ""
   },
   "docs/registries/audit-events.yaml": {
-    "mtime": 1785224485.3756654,
-    "ast_hash": "abd52d1d04ceec14b7ef17e877449144",
+    "mtime": 1785234137.0133238,
+    "ast_hash": "84a4df615e3b6d8138e9939577e9283e",
     "semantic_hash": ""
   },
   "docs/registries/error-codes.yaml": {
-    "mtime": 1785224485.376036,
-    "ast_hash": "d5889345bfdd24c8750c544249b19a54",
+    "mtime": 1785233258.340802,
+    "ast_hash": "317ef183bfd230b4380dd76876fbb5a6",
     "semantic_hash": ""
   },
   "docs/registries/ws-message-types.yaml": {
@@ -19630,8 +19630,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/day_submission_service.py": {
-    "mtime": 1785224485.3437862,
-    "ast_hash": "8debce75f091465fa95b671b569f04c8",
+    "mtime": 1785233308.7895627,
+    "ast_hash": "13d845f30d6e1391bf7db7ff4336e520",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/submissions/services/lagging_check.py": {
@@ -21115,7 +21115,7 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/schema.yaml": {
-    "mtime": 1785226022.4105494,
+    "mtime": 1785233736.4557176,
     "ast_hash": "3159e13276e478afeed32777ead38e90",
     "semantic_hash": ""
   },
@@ -22065,8 +22065,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/parallel_run/api/views.py": {
-    "mtime": 1785225882.8627715,
-    "ast_hash": "49e89c1d19d9728a25f8a03d096e3c85",
+    "mtime": 1785233444.5499368,
+    "ast_hash": "085f13b27bf039ad9105e076303f5ec8",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/parallel_run/management/commands/export_stand_snapshot.py": {
@@ -22080,8 +22080,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/parallel_run/tests/test_stand_health.py": {
-    "mtime": 1785225907.4101105,
-    "ast_hash": "74c445c0086052176789c328371da3d3",
+    "mtime": 1785233543.9611561,
+    "ast_hash": "221f973e66b6a0dbfdfa26987dd17e01",
     "semantic_hash": ""
   },
   "deploy/contour-stand/install-stand.sh": {
@@ -22687,6 +22687,51 @@
   "_bmad-output/implementation-artifacts/7-6-\u0440\u0435\u043f\u0435\u0442\u0438\u0446\u0438\u0438-\u043c\u0438\u0433\u0440\u0430\u0446\u0438\u0438.md": {
     "mtime": 1785232804.56717,
     "ast_hash": "5d5ec31ba38cb20792865aa888fb0297",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/core/migrations/0018_parallelrunmodeswitch_parallelrunpilotdivision.py": {
+    "mtime": 1785233499.2915723,
+    "ast_hash": "5c3a66b421292bccf6464e8a4b65ca9a",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/core/parallel_run_mode.py": {
+    "mtime": 1785234218.1452477,
+    "ast_hash": "07cdbfd68df7c38ccf533d0c3abc5890",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/core/tests/test_parallel_run_mode.py": {
+    "mtime": 1785234392.2316854,
+    "ast_hash": "e6fcc7793efbf0d4f0ccf51fd8ce8efb",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/submissions/tests/test_day_submission_parallel_run_gate.py": {
+    "mtime": 1785234410.2692206,
+    "ast_hash": "1aca37d516a6c401929c4ac4a5263a4c",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/parallel_run/management/commands/nightly_increment.py": {
+    "mtime": 1785234302.0478249,
+    "ast_hash": "7ea0e8218a05124f7345a5f38bf1da5a",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/parallel_run/management/commands/parallel_run_mode.py": {
+    "mtime": 1785234262.6600018,
+    "ast_hash": "17e8ca1438b72d86b40dffcabcd54d35",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/parallel_run/tests/test_nightly_increment.py": {
+    "mtime": 1785234336.52354,
+    "ast_hash": "db825677f50f9187955310e04c04dd1c",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/parallel_run/tests/test_parallel_run_mode_command.py": {
+    "mtime": 1785234369.5692208,
+    "ast_hash": "ddda3176154cecf99c1fb434fed2fd28",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/7-7-\u0440\u0435\u0436\u0438\u043c-\u0431\u0435\u0437-\u0434\u0432\u043e\u0439\u043d\u043e\u0433\u043e-\u0432\u0432\u043e\u0434\u0430.md": {
+    "mtime": 1785234724.0123076,
+    "ast_hash": "33b90cc0adc967de6e417478e3cc2d01",
     "semantic_hash": ""
   }
 }
