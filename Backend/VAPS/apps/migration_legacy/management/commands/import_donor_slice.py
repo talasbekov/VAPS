@@ -7,25 +7,18 @@ the skips are the first data-quality findings for the 1.8 diff and E7.
 
 No wall clock anywhere: the window is derived from the data (--until
 defaults to the max date in the export) — the donor is historical.
+
+Orchestration lives in ``full_import.run_full_import`` (Story 7.6) — this
+command is now a thin CLI wrapper so ``migrate_rehearsal`` can call the same
+logic twice in one process without shelling out / parsing stdout.
 """
 
 import json
-from collections import defaultdict
-from datetime import date, timedelta
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
 
-from apps.migration_legacy.import_employees import import_employees
-from apps.migration_legacy.import_orgstructure import (
-    EXAMPLE_LIMIT,
-    EntityReport,
-    import_divisions,
-    import_positions,
-    import_ranks,
-    import_staffing_slots,
-)
-from apps.migration_legacy.import_statuses import import_statuses
+from apps.migration_legacy.full_import import FullImportError, run_full_import
+from apps.migration_legacy.import_orgstructure import EXAMPLE_LIMIT
 
 
 class Command(BaseCommand):
@@ -48,112 +41,18 @@ class Command(BaseCommand):
             with open(options["file"], encoding="utf-8") as fh:
                 rows = json.load(fh)
         except (OSError, ValueError) as exc:
-            raise CommandError(f"cannot read export: {exc}")
+            raise CommandError(f"cannot read export: {exc}") from exc
 
-        by_model = defaultdict(list)
-        for row in rows:
-            # Unknown model keys are silently ignored: real exports carry
-            # extra apps (auth, contenttypes, ...).
-            by_model[row["model"]].append(row)
+        try:
+            result = run_full_import(rows, options["days"], options["until"])
+        except FullImportError as exc:
+            raise CommandError(str(exc)) from exc
 
-        if options["days"] < 1:
-            raise CommandError("--days must be >= 1")
+        self._print_report(result)
 
-        status_rows = by_model["statuses.employeestatus"]
-        until = self._resolve_until(options["until"], status_rows)
-        window_start = until - timedelta(days=options["days"] - 1)
-
-        reports = {
-            name: EntityReport()
-            for name in (
-                "organizations",
-                "divisions",
-                "staffing_slots",
-                "ranks",
-                "positions",
-                "employees",
-                "statuses",
-            )
-        }
-        clamped = 0
-
-        with transaction.atomic():
-            division_map = import_divisions(
-                by_model["divisions.division"],
-                reports["organizations"],
-                reports["divisions"],
-            )
-            slot_divisions_covered = import_staffing_slots(
-                by_model["staff_unit.staffunit"],
-                division_map,
-                window_start,
-                reports["staffing_slots"],
-            )
-            rank_map = import_ranks(by_model["dictionaries.rank"], reports["ranks"])
-            position_pks = import_positions(
-                by_model["dictionaries.position"], reports["positions"]
-            )
-            employee_map, merge_candidates = import_employees(
-                by_model["employees.employee"],
-                by_model["staff_unit.staffunit"],
-                division_map,
-                rank_map,
-                position_pks,
-                reports["employees"],
-            )
-            clamped, derived_mismatches = import_statuses(
-                status_rows,
-                employee_map,
-                window_start,
-                until,
-                reports["statuses"],
-            )
-
-        self._print_report(
-            reports,
-            window_start,
-            until,
-            clamped,
-            slot_divisions_covered,
-            merge_candidates,
-            derived_mismatches,
-        )
-
-    def _resolve_until(self, until_option, status_rows):
-        if until_option:
-            try:
-                return date.fromisoformat(until_option)
-            except ValueError:
-                raise CommandError(f"--until is not a date: {until_option!r}")
-        # Deterministic from data, never from the wall clock: the donor
-        # died in prod, "today" would yield an empty window. Malformed date
-        # values are ignored here — transform skips those rows anyway.
-        all_dates = []
-        for row in status_rows:
-            for key in ("start_date", "end_date", "actual_end_date"):
-                value = row["fields"].get(key)
-                if not value:
-                    continue
-                try:
-                    all_dates.append(date.fromisoformat(value))
-                except (TypeError, ValueError):
-                    continue
-        if not all_dates:
-            raise CommandError("export has no status dates; pass --until")
-        return max(all_dates)
-
-    def _print_report(
-        self,
-        reports,
-        window_start,
-        until,
-        clamped,
-        slot_divisions_covered,
-        merge_candidates,
-        derived_mismatches,
-    ):
+    def _print_report(self, result):
         write = self.stdout.write
-        for name, report in reports.items():
+        for name, report in result.reports.items():
             line = (
                 f"{name}: read {report.read}, created {report.created}, "
                 f"updated {report.updated}, skipped {report.skipped}"
@@ -166,13 +65,13 @@ class Command(BaseCommand):
                 examples = ", ".join(str(pk) for pk in pks[:EXAMPLE_LIMIT])
                 write(f"  ~ {reason}: {len(pks)} (examples: {examples})")
         # Explicit lines for 1.8 (diff reads these).
-        statuses = reports["statuses"]
+        statuses = result.reports["statuses"]
         write(
             self.style.SUCCESS(
-                f"staffing divisions covered: {slot_divisions_covered}"
+                f"staffing divisions covered: {result.slot_divisions_covered}"
             )
         )
-        write(self.style.SUCCESS(f"open_end_clamped: {clamped}"))
+        write(self.style.SUCCESS(f"open_end_clamped: {result.clamped}"))
         write(
             self.style.SUCCESS(
                 f"hard_overlap: {len(statuses.skips.get('hard_overlap', []))}"
@@ -181,21 +80,22 @@ class Command(BaseCommand):
         # The window is the closing line of the report (Task 3).
         write(
             self.style.SUCCESS(
-                f"window [{window_start.isoformat()}..{until.isoformat()}]"
+                f"window [{result.window_start.isoformat()}.."
+                f"{result.until.isoformat()}]"
             )
         )
         # AC-1 (7.3): кандидаты на слияние — отчёт на ручную санкцию, не
         # автослияние. Отдельная секция, не просто skip-счётчик.
-        if merge_candidates:
+        if result.merge_candidates:
             write(self.style.SUCCESS("merge candidates (AC-1, needs sanction):"))
-            for candidate in merge_candidates:
+            for candidate in result.merge_candidates:
                 pks = ", ".join(str(pk) for pk in candidate["donor_pks"])
                 write(f"  - iin {candidate['iin_masked']}: donor_pks [{pks}]")
         # AC-1 (7.4): derived-статус на дату ≠ только что записанный —
         # другой факт того же сотрудника перекрывает по приоритету.
-        if derived_mismatches:
+        if result.derived_mismatches:
             write(self.style.WARNING("derived status mismatches (AC-1):"))
-            for m in derived_mismatches:
+            for m in result.derived_mismatches:
                 write(
                     f"  - employee {m['employee_id']} on {m['date']}: "
                     f"wrote {m['written']}, resolved {m['resolved']}"
