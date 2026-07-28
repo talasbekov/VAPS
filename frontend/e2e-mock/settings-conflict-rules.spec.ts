@@ -73,18 +73,19 @@ test.describe('Правила конфликтов §29 (mock-режим)', () =
 
   test('версия правил растёт, а версия политики наблюдений — нет', async ({ page }) => {
     await page.goto('/settings')
-    const versions = page.getByText(/Версия политики наблюдений/)
-    await expect(versions).toContainText('conflict-rules-2026.07.1')
+    // Каждая версия названа В СВОЁМ разделе: разделов уже три, и общий блок
+    // версий не сказал бы, какая из них к чему относится.
+    // Версия раздела — в его шапке. Ищем именно её: ту же строку печатает и
+    // журнал изменений, и локатор по всей странице после правки стал бы
+    // неоднозначным (тот же класс, что дубли подписей в прошлых этапах).
+    const conflictSection = page.getByText('conflict-rules-2026.07.1', { exact: true })
+    await expect(conflictSection).toBeVisible()
 
     await setRestMode(page, 'Жёсткий запрет', 'Проверка версионирования разделов')
 
-    await expect(page.getByText(/Версия политики наблюдений/)).toContainText(
-      'conflict-rules-2026.07.2',
-    )
+    await expect(page.getByText('conflict-rules-2026.07.2', { exact: true })).toBeVisible()
     // Методика наблюдений не менялась — её версия обязана остаться прежней.
-    await expect(page.getByText(/Версия политики наблюдений/)).toContainText(
-      'attention-policy-2026.07.1',
-    )
+    await expect(page.getByText('attention-policy-2026.07.1', { exact: true })).toBeVisible()
   })
 
   test('§21.34: правило пересечения показано, но не редактируется НИКЕМ', async ({ page }) => {

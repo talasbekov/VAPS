@@ -35,11 +35,6 @@ export interface UnavailableMetric {
   reason: string
 }
 
-/** Порог «скоро потребуется проверка» — доля интервала политики, а не своё
- * число дней: иначе рядом с настраиваемым интервалом появилась бы вторая,
- * захардкоженная константа периода, ровно то, что §21.7 запрещает. */
-const DUE_SOON_FRACTION = 0.2
-
 export function addDays(date: string, amount: number): string {
   const year = Number(date.slice(0, 4))
   const monthIndex = Number(date.slice(5, 7)) - 1
@@ -82,7 +77,12 @@ export function resolveFreshness(
   }
   const verificationDueAt = addDays(version.effectiveFrom, policy.verificationIntervalDays)
   const daysLeft = daysBetween(businessDate, verificationDueAt)
-  const dueSoonThreshold = Math.ceil(policy.verificationIntervalDays * DUE_SOON_FRACTION)
+  // Порог «скоро» тоже ПРИХОДИТ ОТ POLICY: доля интервала была константой в
+  // этом файле, то есть вторым захардкоженным числом периода рядом с
+  // настраиваемым первым (§21.7 запрещает именно это).
+  const dueSoonThreshold = Math.ceil(
+    (policy.verificationIntervalDays * policy.dueSoonPercent) / 100,
+  )
   const state: PassportFreshnessState =
     daysLeft < 0 ? 'OVERDUE' : daysLeft <= dueSoonThreshold ? 'DUE_SOON' : 'FRESH'
   return {

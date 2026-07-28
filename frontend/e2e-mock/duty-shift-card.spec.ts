@@ -49,10 +49,10 @@ test.describe('Карточка дежурства (§21.32, mock-режим)', 
     await expect(page.getByText('Жёсткий')).toBeVisible()
     await expect(page.getByText(/2 дежурства в один день \(2026-07-22\)/)).toBeVisible()
 
-    // Мягкий: у Нурланова Е. смены 2026-07-27 и 2026-07-28 на ОХРАНЯЕМОМ
-    // объекте, чья политика отдыха — SOFT_OVERRIDE. Тот же класс конфликта
-    // (нарушение отдыха), но другая severity — и берётся она из политики ВИДА
-    // дежурства, а не выводится карточкой (§21.34/§21.35).
+    // Мягкий: у Нурланова Е. смены 2026-07-27 и 2026-07-28. Тот же класс
+    // конфликта, другая severity — и берётся она из ДЕЙСТВУЮЩЕЙ политики
+    // конфликтов §21.35 (раздел «Настройки», §29), а не выводится карточкой и
+    // не следует из вида дежурства (§21.34 «frontend severity не определяет»).
     await page.goto('/duties')
     await page.locator('tr', { hasText: 'Нурланов Е.' }).nth(1).getByRole('link').click()
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
@@ -60,13 +60,15 @@ test.describe('Карточка дежурства (§21.32, mock-режим)', 
     await expect(page.getByText('Мягкий')).toBeVisible()
     await expect(page.getByText('Жёсткий')).toHaveCount(0)
 
-    // Жёсткий отдых на СОБСТВЕННОМ объекте (HARD_BLOCK) — тот же класс,
-    // противоположная severity: у Сейтказы М. смены 2026-07-24 и 2026-07-25.
+    // Нарушение отдыха на СОБСТВЕННОМ объекте — тот же класс и ТА ЖЕ severity:
+    // вид дежурства на неё больше не влияет (проба на возврат к прежней
+    // модели, где собственный объект давал жёсткий конфликт).
     await page.goto('/duties')
     await page.locator('tr', { hasText: 'Сейтказы М.' }).nth(1).getByRole('link').click()
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     await expect(page.getByText(/до конца обязательного отдыха/)).toBeVisible()
-    await expect(page.getByText('Жёсткий')).toBeVisible()
+    await expect(page.getByText('Мягкий')).toBeVisible()
+    await expect(page.getByText('Жёсткий')).toHaveCount(0)
   })
 
   test('карточка ведёт смену по состояниям и переживает reload', async ({ page }) => {

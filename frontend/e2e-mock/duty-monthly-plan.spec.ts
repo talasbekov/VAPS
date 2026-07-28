@@ -2,10 +2,14 @@
 // серверные KPI (§21.29) и конфликты с серверной severity (§21.34).
 //
 // Демо-сценарий детерминирован (DemoClock стартует с 2026-07-20T08:00+05:00),
-// поэтому даты — константы фикстур, не вычисляются в рантайме. Сид даёт по
-// одному представителю каждого класса конфликта (см. features/duties/mocks/
-// fixtures.ts): пересечение (hard), отдых на собственном объекте (hard,
-// HARD_BLOCK), отдых на охраняемом (soft, SOFT_OVERRIDE).
+// поэтому даты — константы фикстур, не вычисляются в рантайме. Сид даёт оба
+// класса конфликта: пересечение (hard всегда, §21.34 «нельзя обойти») и два
+// нарушения обязательного отдыха.
+//
+// ⚠️ Severity отдыха с Этапа 50 задаёт ГЛОБАЛЬНАЯ политика §21.35 из раздела
+// «Настройки», а не вид дежурства: оба нарушения отдыха несут ОДНУ severity —
+// ту, что стоит в правилах конфликтов (сид: SOFT_OVERRIDE). Прежние ожидания
+// «на собственном объекте hard, на охраняемом soft» описывали снятую модель.
 import { expect, test } from '@playwright/test'
 import { seedCredential } from './testUtils'
 
@@ -31,11 +35,11 @@ test.describe('Месячный план дежурств: KPI и конфлик
     await expect(kpiCard(page, 'Дежурств')).toContainText('10')
     await expect(kpiCard(page, 'Без ознакомления')).toContainText('5')
     await expect(kpiCard(page, 'Завершено')).toContainText('3')
-    await expect(kpiCard(page, 'Hard-конфликтов')).toContainText('2')
-    await expect(kpiCard(page, 'Soft-конфликтов')).toContainText('1')
+    await expect(kpiCard(page, 'Hard-конфликтов')).toContainText('1')
+    await expect(kpiCard(page, 'Soft-конфликтов')).toContainText('2')
 
-    // §21.34: severity назначает сервер — пересечение и отдых на собственном
-    // объекте hard, отдых на охраняемом soft.
+    // §21.34: severity назначает сервер — пересечение hard всегда, оба
+    // нарушения отдыха одинаковы и следуют действующему режиму политики.
     const overlap = page.locator('li', {
       hasText: 'Жумабаев Р.: 2 дежурства в один день (2026-07-22).',
     })
@@ -45,7 +49,7 @@ test.describe('Месячный план дежурств: KPI и конфлик
       hasText:
         'Сейтказы М.: дежурство 2026-07-25 начинается до конца обязательного отдыха (24 ч) после дежурства 2026-07-24.',
     })
-    await expect(ownRest.getByText('Hard-конфликт')).toBeVisible()
+    await expect(ownRest.getByText('Soft-конфликт')).toBeVisible()
 
     const protectedRest = page.locator('li', {
       hasText:

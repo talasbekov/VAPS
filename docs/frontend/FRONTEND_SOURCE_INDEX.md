@@ -43,3 +43,15 @@
   `DutyTypeDefinition` УДАЛЁН.
 - `src/features/service-analytics/mocks/settingsSlice.ts` — `readRestAfterDutyMode`.
 - `e2e-mock/settings-conflict-rules.spec.ts` — «правка правила меняет исход назначения».
+
+## Этап 51 — свежесть паспорта §21.7 / контракт снапшота
+
+- `src/features/settings/mocks/fixtures.ts` — `PASSPORT_FRESHNESS_SETTINGS`,
+  `INITIAL_SECTION_VERSIONS` (карта версий разделов).
+- `src/features/objects/mocks/settingsSlice.ts` — узкая проекция политики свежести
+  (седьмой случай приёма) + fallback с говорящей версией.
+- `src/features/objects/lib/passportFreshness.ts` — `DUE_SOON_FRACTION` УДАЛЁН, порог из
+  политики.
+- `src/app/mocks/settings-projections.contract.test.ts` — контракт demo-снапшота: все
+  потребители политики против реального сида.
+- `e2e-mock/settings-passport-policy.spec.ts` — «правка интервала меняет реестр объектов».

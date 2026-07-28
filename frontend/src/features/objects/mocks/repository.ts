@@ -16,6 +16,7 @@ import type { PassportVersion, SecurityObject } from '../model/types'
 import type { ObjectsSlice } from './fixtures'
 import { buildObjectsKpi, resolveFreshness } from '../lib/passportFreshness'
 import type { UnavailableMetric } from '../lib/passportFreshness'
+import { readFreshnessPolicy } from './settingsSlice'
 
 export class RepositoryPermissionError extends Error {}
 export class RepositoryNotFoundError extends Error {}
@@ -57,11 +58,6 @@ const UNAVAILABLE_OBJECT_KPI: readonly UnavailableMetric[] = [
   },
 ]
 
-/** Fallback на случай снапшота без политики (старый сид): показать «нет
- * политики» было бы честнее, но контракт §21.7 требует версию всегда —
- * поэтому версия говорит сама за себя. */
-const DEFAULT_FRESHNESS_POLICY = { version: 'unset', verificationIntervalDays: 0 }
-
 export function createObjectsRepository(adapter: PersistenceAdapter, clock: DemoClock) {
   async function list(actorUserId: string | null): Promise<ListObjectsResponse> {
     if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
@@ -72,7 +68,7 @@ export function createObjectsRepository(adapter: PersistenceAdapter, clock: Demo
     const sorted = [...(slice?.objects ?? [])].sort((a, b) => a.code.localeCompare(b.code))
     // §21.7: политика — из данных, срок и состояние считаются ЗДЕСЬ (на
     // «сервере»), KPI — по ВСЕМУ реестру, а не по отрисованной странице.
-    const policy = slice?.freshnessPolicy ?? DEFAULT_FRESHNESS_POLICY
+    const policy = readFreshnessPolicy(envelope?.slices ?? {})
     const businessDate = clock.businessDate()
     const freshness = sorted.map((object) => resolveFreshness(object, policy, businessDate))
     return {

@@ -8,6 +8,7 @@ import type { PassportFreshnessPolicy, SecurityObject } from '../model/types'
 const POLICY: PassportFreshnessPolicy = {
   version: 'policy-v1',
   verificationIntervalDays: 120,
+  dueSoonPercent: 20,
 }
 
 function objectWith(
@@ -56,7 +57,7 @@ describe('resolveFreshness (§21.7)', () => {
     const object = objectWith('a', '2026-01-01')
     const short = resolveFreshness(
       object,
-      { version: 'policy-v2', verificationIntervalDays: 10 },
+      { version: 'policy-v2', verificationIntervalDays: 10, dueSoonPercent: 20 },
       '2026-02-01',
     )
     expect(short.verificationDueAt).toBe('2026-01-11')
@@ -64,6 +65,30 @@ describe('resolveFreshness (§21.7)', () => {
     expect(short.freshnessPolicyVersion).toBe('policy-v2')
     // Тот же объект и та же дата при интервале 120 — ещё актуален.
     expect(resolveFreshness(object, POLICY, '2026-02-01').state).toBe('FRESH')
+  })
+
+  it('порог «скоро» ПРИХОДИТ ОТ ПОЛИТИКИ, а не задан константой в коде', () => {
+    // До Этапа 51 доля была `DUE_SOON_FRACTION = 0.2` прямо в модуле — вторым
+    // захардкоженным числом периода рядом с настраиваемым интервалом (§21.7
+    // запрещает именно это). Тот же объект, тот же интервал, тот же день —
+    // состояние меняет ТОЛЬКО порог.
+    const object = objectWith('a', '2026-01-01')
+    const narrow = { version: 'p', verificationIntervalDays: 120, dueSoonPercent: 10 }
+    const wide = { version: 'p', verificationIntervalDays: 120, dueSoonPercent: 50 }
+    // Срок — 2026-05-01; на 2026-03-20 остаётся 42 дня: это 35% интервала.
+    expect(resolveFreshness(object, narrow, '2026-03-20').state).toBe('FRESH')
+    expect(resolveFreshness(object, wide, '2026-03-20').state).toBe('DUE_SOON')
+  })
+
+  it('расширение интервала растягивает и окно предупреждения — доля, а не дни', () => {
+    // Смысл ДОЛИ: администратор, растянувший интервал вдвое, не должен молча
+    // остаться с прежним окном предупреждения.
+    const object = objectWith('a', '2026-01-01')
+    const short = { version: 'p', verificationIntervalDays: 100, dueSoonPercent: 20 }
+    const long = { version: 'p', verificationIntervalDays: 200, dueSoonPercent: 20 }
+    // 20% от 100 — 20 дней, от 200 — 40: окно шире ровно вдвое.
+    expect(resolveFreshness(object, short, '2026-03-20').verificationDueAt).toBe('2026-04-11')
+    expect(resolveFreshness(object, long, '2026-03-20').verificationDueAt).toBe('2026-07-20')
   })
 
   it('90 дней НЕ являются порогом: при интервале 120 паспорт 100-дневной давности актуален', () => {

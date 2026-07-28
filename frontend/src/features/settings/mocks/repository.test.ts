@@ -19,6 +19,8 @@ const THRESHOLDS_ONLY = 'thresholds-admin-user'
 const WILDCARD = 'wildcard-user'
 
 const REST_MODE_CODE = 'CONFLICT.REST_AFTER_DUTY.MODE'
+const PASSPORT_INTERVAL_CODE = 'PASSPORT.FRESHNESS.PARAMETER'
+const OBJECTS_ADMIN = 'objects-admin-user'
 const OVERLAP_MODE_CODE = 'CONFLICT.DUTY_OVERLAP.MODE'
 
 const CLOCK_ISO = '2026-07-20T08:00:00+05:00'
@@ -33,8 +35,8 @@ function seedEnvelope(): DemoStateEnvelope {
   const { sliceName, data } = buildSettingsSeed()
   return {
     application: 'smart-josparlau',
-    schema_version: 27,
-    seed_version: 'test-v27',
+    schema_version: 28,
+    seed_version: 'test-v28',
     scenario: 'normal',
     revision: 0,
     created_at: CLOCK_ISO,
@@ -72,6 +74,12 @@ beforeEach(() => {
       permissions: ['ops.settings.view', 'ops.settings.manage'],
     },
     { userId: WILDCARD, permissions: ['*'] },
+    // §21.7: политикой паспортов владеет тот, кто ВЕДЁТ объекты. Ему закрыты и
+    // наблюдения, и правила конфликтов — зеркально к THRESHOLDS_ONLY.
+    {
+      userId: OBJECTS_ADMIN,
+      permissions: ['ops.settings.view', 'ops.settings.manage_passport_policy'],
+    },
   ])
 })
 
@@ -149,12 +157,12 @@ describe('settings repository — изменение', () => {
       ADMIN,
     )
     expect(result.setting.value).toBe(7)
-    expect(result.policyVersion).not.toBe(before.policyVersion)
+    expect(result.sectionVersions.ATTENTION_POLICY).not.toBe(before.sectionVersions.ATTENTION_POLICY)
 
     // Персистентность — ПОВТОРНЫМ чтением, не по возвращённому объекту.
     const after = await repository.listSettings(ADMIN)
     expect(after.results.find((item) => item.settingCode === PARAMETER_CODE)?.value).toBe(7)
-    expect(after.policyVersion).toBe(result.policyVersion)
+    expect(after.sectionVersions.ATTENTION_POLICY).toBe(result.sectionVersions.ATTENTION_POLICY)
     expect(after.results.find((item) => item.settingCode === PARAMETER_CODE)?.updatedBy).toBe(
       ADMIN,
     )
@@ -167,7 +175,7 @@ describe('settings repository — изменение', () => {
       newValue: '7',
       reason: REASON,
       actorUserId: ADMIN,
-      policyVersionAfter: result.policyVersion,
+      policyVersionAfter: result.sectionVersions.ATTENTION_POLICY,
     })
   })
 
@@ -183,7 +191,7 @@ describe('settings repository — изменение', () => {
     expect(repeated).toMatchObject({ errorCode: 'SETTING_VALUE_UNCHANGED' })
 
     const afterSecond = await repository.listSettings(ADMIN)
-    expect(afterSecond.policyVersion).toBe(afterFirst.policyVersion)
+    expect(afterSecond.sectionVersions.ATTENTION_POLICY).toBe(afterFirst.sectionVersions.ATTENTION_POLICY)
     expect((await repository.listChangeLog(ADMIN)).results).toHaveLength(1)
   })
 
@@ -201,8 +209,8 @@ describe('settings repository — изменение', () => {
 
     // Отказ не оставил следа: ни записи в журнале, ни новой версии.
     expect((await repository.listChangeLog(ADMIN)).results).toEqual([])
-    expect((await repository.listSettings(ADMIN)).policyVersion).toBe(
-      buildSettingsSeed().data.policyVersion,
+    expect((await repository.listSettings(ADMIN)).sectionVersions.ATTENTION_POLICY).toBe(
+      buildSettingsSeed().data.sectionVersions.ATTENTION_POLICY,
     )
   })
 
@@ -218,7 +226,7 @@ describe('settings repository — изменение', () => {
       { value: 5, reason: REASON },
       ADMIN,
     )
-    expect(new Set([first.policyVersion, second.policyVersion]).size).toBe(2)
+    expect(new Set([first.sectionVersions.ATTENTION_POLICY, second.sectionVersions.ATTENTION_POLICY]).size).toBe(2)
 
     const log = await repository.listChangeLog(ADMIN)
     expect(log.results.map((event) => event.newValue)).toEqual(['5', '4'])
@@ -296,8 +304,8 @@ describe('правила конфликтов §29/§21.34-21.35', () => {
       { value: 'HARD_BLOCK', reason: REASON },
       WILDCARD,
     )
-    expect(response.conflictPolicyVersion).not.toBe(before.conflictPolicyVersion)
-    expect(response.policyVersion).toBe(before.policyVersion)
+    expect(response.sectionVersions.CONFLICT_RULES).not.toBe(before.sectionVersions.CONFLICT_RULES)
+    expect(response.sectionVersions.ATTENTION_POLICY).toBe(before.sectionVersions.ATTENTION_POLICY)
 
     // И обратно: правка порога не двигает версию правил конфликтов.
     const thresholds = await repository.updateSetting(
@@ -305,8 +313,8 @@ describe('правила конфликтов §29/§21.34-21.35', () => {
       { value: 6, reason: REASON },
       WILDCARD,
     )
-    expect(thresholds.policyVersion).not.toBe(before.policyVersion)
-    expect(thresholds.conflictPolicyVersion).toBe(response.conflictPolicyVersion)
+    expect(thresholds.sectionVersions.ATTENTION_POLICY).not.toBe(before.sectionVersions.ATTENTION_POLICY)
+    expect(thresholds.sectionVersions.CONFLICT_RULES).toBe(response.sectionVersions.CONFLICT_RULES)
   })
 
   it('журнал печатает ПОДПИСЬ режима и раздел, а не код варианта', async () => {
@@ -329,5 +337,69 @@ describe('правила конфликтов §29/§21.34-21.35', () => {
     await expect(
       repository.updateSetting(REST_MODE_CODE, { value: 'BEFORE_DUTY', reason: REASON }, WILDCARD),
     ).rejects.toBeInstanceOf(RepositoryValidationError)
+  })
+})
+
+describe('свежесть паспортов §29/§21.7', () => {
+  it('третий раздел — третье право: ведущий объекты правит СВОЁ и не трогает чужое', async () => {
+    const { repository } = await makeRepository()
+    await expect(
+      repository.updateSetting(
+        PASSPORT_INTERVAL_CODE,
+        { value: 200, reason: REASON },
+        OBJECTS_ADMIN,
+      ),
+    ).resolves.toBeDefined()
+    // Тот же актор: наблюдения и правила конфликтов ему закрыты.
+    await expect(
+      repository.updateSetting(PARAMETER_CODE, { value: 6, reason: REASON }, OBJECTS_ADMIN),
+    ).rejects.toBeInstanceOf(RepositoryPermissionError)
+    await expect(
+      repository.updateSetting(
+        REST_MODE_CODE,
+        { value: 'HARD_BLOCK', reason: REASON },
+        OBJECTS_ADMIN,
+      ),
+    ).rejects.toBeInstanceOf(RepositoryPermissionError)
+  })
+
+  it('и наоборот: администратор наблюдений политику паспортов не правит', async () => {
+    // Без этой половины «отдельное право» доказывалось бы только в одну сторону.
+    const { repository } = await makeRepository()
+    await expect(
+      repository.updateSetting(
+        PASSPORT_INTERVAL_CODE,
+        { value: 200, reason: REASON },
+        THRESHOLDS_ONLY,
+      ),
+    ).rejects.toBeInstanceOf(RepositoryPermissionError)
+  })
+
+  it('версия двигается ТОЛЬКО у своего раздела — карта разделов, а не общее поле', async () => {
+    const { repository } = await makeRepository()
+    const before = (await repository.listSettings(WILDCARD)).sectionVersions
+    const after = (
+      await repository.updateSetting(
+        PASSPORT_INTERVAL_CODE,
+        { value: 200, reason: REASON },
+        WILDCARD,
+      )
+    ).sectionVersions
+    expect(after.PASSPORT_FRESHNESS).not.toBe(before.PASSPORT_FRESHNESS)
+    expect(after.ATTENTION_POLICY).toBe(before.ATTENTION_POLICY)
+    expect(after.CONFLICT_RULES).toBe(before.CONFLICT_RULES)
+  })
+
+  it('порог «скоро» и интервал — РАЗНЫЕ записи с разными диапазонами', async () => {
+    // Иначе долю можно было бы выставить в 730 (границы интервала), и окно
+    // предупреждения перекрыло бы весь срок.
+    const { repository } = await makeRepository()
+    const records = (await repository.listSettings(VIEWER)).results.filter(
+      (item) => item.sectionCode === 'PASSPORT_FRESHNESS',
+    )
+    expect(records).toHaveLength(2)
+    const percent = records.find((item) => item.field === 'WARNING_FROM')
+    expect(percent?.kind === 'NUMBER' ? percent.maxValue : null).toBe(90)
+    expect(percent?.valueType).toBe('PERCENT')
   })
 })

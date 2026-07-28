@@ -5,7 +5,7 @@ import { readConflictPolicy } from './settingsSlice'
 function slice(value: unknown, version: unknown = 'conflict-rules-2026.07.1') {
   return {
     settings: {
-      conflictPolicyVersion: version,
+      sectionVersions: { CONFLICT_RULES: version },
       settings: [
         {
           settingCode: 'CONFLICT.REST_AFTER_DUTY.MODE',
@@ -65,3 +65,4 @@ describe('readConflictPolicy', () => {
     expect(readConflictPolicy(foreign).restAfterDutyMode).toBe('HARD_BLOCK')
   })
 })
+

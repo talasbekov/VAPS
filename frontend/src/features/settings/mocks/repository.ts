@@ -61,11 +61,15 @@ const VIEW_PERMISSION = 'ops.settings.view'
 const MANAGE_PERMISSION: Record<SettingSectionCode, string> = {
   ATTENTION_POLICY: 'ops.settings.manage',
   CONFLICT_RULES: 'ops.settings.manage_conflict_rules',
+  // §21.7 — политика объектов: ею владеет тот, кто ведёт реестр объектов, а не
+  // тот, кто настраивает наблюдения аналитики.
+  PASSPORT_FRESHNESS: 'ops.settings.manage_passport_policy',
 }
 
 const NO_PERMISSION_REASON: Record<SettingSectionCode, string> = {
   ATTENTION_POLICY: 'Право на администрирование политики наблюдений не выдано.',
   CONFLICT_RULES: 'Право на изменение правил конфликтов не выдано.',
+  PASSPORT_FRESHNESS: 'Право на изменение политики паспортов не выдано.',
 }
 
 /** Решение о доступности правки принимает сервер (см. `SettingAction`). */
@@ -118,11 +122,7 @@ export function createSettingsRepository(adapter: PersistenceAdapter, clock: Dem
           order[a.field] - order[b.field],
       )
       .map((setting) => ({ ...setting, action: buildAction(setting, actorUserId) }))
-    return {
-      results,
-      policyVersion: slice.policyVersion,
-      conflictPolicyVersion: slice.conflictPolicyVersion,
-    }
+    return { results, sectionVersions: { ...slice.sectionVersions } }
   }
 
   async function listChangeLog(
@@ -209,15 +209,15 @@ export function createSettingsRepository(adapter: PersistenceAdapter, clock: Dem
     await runMutation(adapter, clock, (current) => {
       const currentSlice = readSlice(current)
       const now = clock.now()
-      // Растёт версия ТОЛЬКО того раздела, к которому относится запись:
-      // правка порога наблюдений не меняет методику конфликтов, и наоборот.
-      const isConflictRule = existing.sectionCode === 'CONFLICT_RULES'
-      const policyVersion = isConflictRule
-        ? currentSlice.policyVersion
-        : nextPolicyVersion(currentSlice.policyVersion)
-      const conflictPolicyVersion = isConflictRule
-        ? nextPolicyVersion(currentSlice.conflictPolicyVersion)
-        : currentSlice.conflictPolicyVersion
+      // Растёт версия ТОЛЬКО того раздела, к которому относится запись: правка
+      // порога наблюдений не меняет ни методику конфликтов, ни политику
+      // паспортов. С картой разделов это одна строка вместо ветвления на
+      // каждое именованное поле — и новый раздел ничего здесь не правит.
+      const section = existing.sectionCode
+      const sectionVersions: Record<SettingSectionCode, string> = {
+        ...currentSlice.sectionVersions,
+        [section]: nextPolicyVersion(currentSlice.sectionVersions[section]),
+      }
       const updated = {
         ...existing,
         value: nextValue,
@@ -234,19 +234,17 @@ export function createSettingsRepository(adapter: PersistenceAdapter, clock: Dem
         reason,
         actorUserId: actorUserId ?? 'demo',
         changedAt: now,
-        policyVersionAfter: isConflictRule ? conflictPolicyVersion : policyVersion,
+        policyVersionAfter: sectionVersions[section],
       }
       response = {
         setting: { ...updated, action: buildAction(updated, actorUserId) },
-        policyVersion,
-        conflictPolicyVersion,
+        sectionVersions,
         event,
       }
       return {
         ...current.slices,
         [SLICE_NAME]: {
-          policyVersion,
-          conflictPolicyVersion,
+          sectionVersions,
           settings: currentSlice.settings.map((item) =>
             item.settingCode === settingCode ? updated : item,
           ),

@@ -18,8 +18,10 @@ test.describe('KPI реестра объектов (§21.7, mock-режим)', (
 
     await expect(page.getByRole('group', { name: 'Всего объектов' })).toContainText('5')
     // §21.7: период приходит от policy — версия и интервал названы на экране.
+    // Версия политики теперь приходит из раздела «Настройки» (§29): владелец
+    // сменился, требование §21.7 «срок от policy» осталось.
     await expect(
-      page.getByText(/по политике passport-freshness-v1: 120 дней/),
+      page.getByText(/по политике passport-freshness-2026\.07\.1: 120 дней/),
     ).toBeVisible()
 
     // Четыре состояния актуальности — каждое в своей строке.

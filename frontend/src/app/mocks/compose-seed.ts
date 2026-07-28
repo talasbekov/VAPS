@@ -75,11 +75,14 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // и журналом изменений (§29) — 25→26; правила конфликтов §21.34-21.35 в том же
 // слайсе (записи-режимы, своя `conflictPolicyVersion`, `detectorCode`→`groupCode`)
 // — 26→27: у прежних записей нет ни `kind`, ни `groupCode`, и старый снапшот
-// молча остался бы без режима отдыха.
+// молча остался бы без режима отдыха; свежесть паспорта §21.7 уехала из слайса
+// `objects` в тот же раздел настроек, а версии разделов стали картой
+// `sectionVersions` — 27→28: старый снапшот нёс `freshnessPolicy` там, где его
+// больше не читают, и именованные поля версий, которых больше нет.
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 27
+export const SCHEMA_VERSION = 28
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)

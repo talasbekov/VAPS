@@ -34,8 +34,8 @@ beforeEach(async () => {
   const { sliceName, data } = buildSettingsSeed()
   await adapter.reset({
     application: 'smart-josparlau',
-    schema_version: 27,
-    seed_version: 'test-v27',
+    schema_version: 28,
+    seed_version: 'test-v28',
     scenario: 'normal',
     revision: 0,
     created_at: CLOCK_ISO,
@@ -79,12 +79,15 @@ describe('settings handlers — сопоставление маршрутов', 
   })
 
   it('PATCH совпадает с путём, который строит КЛИЕНТ (settingPath), а не с придуманным', async () => {
-    const body = await client.patch<{ setting: { value: number }; policyVersion: string }>(
+    const body = await client.patch<{
+      setting: { value: number }
+      sectionVersions: Record<string, string>
+    }>(
       settingPath(SETTING_CODE),
       { value: 6, reason: 'Срок упреждения увеличен приказом' },
     )
     expect(body.setting.value).toBe(6)
-    expect(body.policyVersion).not.toBe(buildSettingsSeed().data.policyVersion)
+    expect(body.sectionVersions.ATTENTION_POLICY).not.toBe(buildSettingsSeed().data.sectionVersions.ATTENTION_POLICY)
   })
 
   it('журнал изменений не перехватывается маршрутом одной настройки', async () => {
@@ -125,12 +128,15 @@ describe('handler правил конфликтов (§29/§21.35)', () => {
     // нему строит та же фабрика с `encodeURIComponent`. Приём Этапа 49: КАЖДЫЙ
     // новый путь с параметром получает handler-тест — юнит-тесты репозитория
     // зовут функции напрямую и несовпадения маршрута не увидели бы.
-    const response = await client.patch<{ setting: { value: string }; conflictPolicyVersion: string }>(
+    const response = await client.patch<{
+      setting: { value: string }
+      sectionVersions: Record<string, string>
+    }>(
       settingPath('CONFLICT.REST_AFTER_DUTY.MODE'),
       { value: 'HARD_BLOCK', reason: 'Ужесточение режима на период учений' },
     )
     expect(response.setting.value).toBe('HARD_BLOCK')
-    expect(response.conflictPolicyVersion).not.toBe('conflict-rules-2026.07.1')
+    expect(response.sectionVersions.CONFLICT_RULES).not.toBe('conflict-rules-2026.07.1')
   })
 
   it('запертое правило отвечает 422 по своему коду, а не 403', async () => {
