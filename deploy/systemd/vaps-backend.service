@@ -1,0 +1,28 @@
+[Unit]
+Description=VAPS backend (uvicorn ASGI)
+# docker.service being up is necessary but not sufficient — the redis
+# *container* still needs time to boot after a host reboot. That gap is
+# closed by ExecStartPre below, not by unit ordering alone.
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=vaps
+WorkingDirectory=/opt/vaps/Backend/VAPS
+EnvironmentFile=/opt/vaps/Backend/VAPS/.env
+# Fixes Sentry PYTHON-DJANGO-1: without this, uvicorn can start (and accept
+# WS connections routed to channels_redis) before the redis container is
+# actually answering PING, producing a burst of
+# `TimeoutError: Timeout reading from 127.0.0.1:6380` on every reboot.
+ExecStartPre=/opt/vaps/deploy/systemd/wait-for-redis.sh 127.0.0.1 6380 60
+# Same race, db container: without this, Django can start before Postgres
+# accepts connections after a reboot.
+ExecStartPre=/opt/vaps/deploy/systemd/wait-for-postgres.sh 127.0.0.1 5433 vaps vaps 60
+ExecStart=/opt/vaps/Backend/VAPS/.venv/bin/uvicorn config.asgi:application --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
