@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1785230805.4357224,
-    "ast_hash": "a7fd471bf0b555aaec5447b08ad6bfbc",
+    "mtime": 1785231838.5303774,
+    "ast_hash": "91d3fcb25e64b1801c5fb563d3a1e8b5",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785230814.8048687,
-    "ast_hash": "18ba95afeb2796e27c235a45fc22caf6",
+    "mtime": 1785231847.203496,
+    "ast_hash": "1e171d6f9832141162ac2084d92e3205",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -22652,6 +22652,21 @@
   "_bmad-output/implementation-artifacts/7-4-\u0438\u043c\u043f\u043e\u0440\u0442\u0451\u0440-\u0441\u0442\u0430\u0442\u0443\u0441\u043e\u0432-\u0438-\u0438\u0441\u0442\u043e\u0440\u0438\u0439.md": {
     "mtime": 1785230783.6733825,
     "ast_hash": "87c95668c0651850cd0a764acaff5651",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/management/commands/verify_migration_convergence.py": {
+    "mtime": 1785231528.3442767,
+    "ast_hash": "b910fa7a969dc89e24a1780bb2ccbc8f",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/migration_legacy/tests/test_verify_migration_convergence.py": {
+    "mtime": 1785231655.8869267,
+    "ast_hash": "c3e217fb003cb4a9131ea35eaa1c9df4",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/7-5-post-migration-\u0441\u0445\u043e\u0434\u0438\u043c\u043e\u0441\u0442\u044c.md": {
+    "mtime": 1785231818.1270995,
+    "ast_hash": "70dbf23f3d20ae9c10d779d7b4ec2cad",
     "semantic_hash": ""
   }
 }
