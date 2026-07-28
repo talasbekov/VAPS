@@ -44,6 +44,7 @@ import type { DayAmendBody } from './amendment'
 import { parseValidationDetails } from './bulkErrors'
 import { DayAmendmentForm } from './DayAmendmentForm'
 import { describeStaleness, parseSummaryFreshness } from './freshness'
+import { describeAmendmentReason, parseSubmissionDetail } from './submissionDetail'
 import {
   describeSubmitFailure,
   EVENT_LABELS,
@@ -148,6 +149,9 @@ export function DaySubmissionPanel({
   // разрешённое ARCH-FE-010 исключение, что и `submitted` выше.
   const [amending, setAmending] = useState(false)
   const [amended, setAmended] = useState<DaySubmission | null>(null)
+  // Story 10.6c — ОДНА развёрнутая версия одновременно (AC-2/AC-3): простейшая
+  // модель, AC не просит multi-expand.
+  const [expandedVersionId, setExpandedVersionId] = useState<number | null>(null)
 
   /**
    * История сдач ПОДРАЗДЕЛЕНИЯ (без фильтра по дате) — нужна предпросмотру:
@@ -545,30 +549,25 @@ export function DaySubmissionPanel({
           </div>
         ) : null}
 
-        {/* AC-5: версии дня различимы. Причины/санкции здесь НЕТ — список даёт
-            9 полей без них, а GET /{id}/ на каждую версию был бы N+1 (→10.6c);
-            обещать основание, которого не читали, экран не станет. */}
+        {/* AC-5: версии дня различимы. Причина/санкция — по клику разворота
+            (Story 10.6c): список сам даёт 9 полей, GET /{id}/ на каждую
+            версию разом был бы N+1 — разворот запрашивает деталь ТОЛЬКО за
+            кликнутую строку. */}
         {!isLoading && !isError && dayVersions.length > 0 ? (
           <div data-testid="day-versions" className="flex flex-col gap-1 text-sm">
             <h3 className="font-medium">Версии за {businessDate}</h3>
             <ul className="flex flex-col gap-1">
               {dayVersions.map((version) => (
-                <li
+                <VersionRow
                   key={version.id}
-                  className="flex flex-wrap items-center gap-2 rounded-md bg-muted p-2"
-                >
-                  <span>
-                    v{version.version} · {EVENT_LABELS[version.event]} ·{' '}
-                    {formatSubmittedAt(version.submitted_at)} · {version.submitted_by}
-                  </span>
-                  {/* Цвет НИКОГДА не единственный сигнал (DESIGN.md:366,371):
-                      действующая версия помечена СЛОВОМ. */}
-                  {version.is_current ? (
-                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">
-                      действующая
-                    </span>
-                  ) : null}
-                </li>
+                  version={version}
+                  isExpanded={expandedVersionId === version.id}
+                  onToggle={() =>
+                    setExpandedVersionId((current) =>
+                      current === version.id ? null : version.id,
+                    )
+                  }
+                />
               ))}
             </ul>
           </div>
@@ -774,5 +773,92 @@ export function DaySubmissionPanel({
         ) : null}
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Story 10.6c — одна строка списка версий, с кнопкой разворота
+ * (зеркало `TrafficLightNodeRow.tsx:92-104`: `aria-expanded`/`aria-label`,
+ * БЕЗ своих keydown-обработчиков — нативная семантика `<button>` уже даёт
+ * Enter/Space, урок ревью 9.9). Собственный `useQuery` — легально: строка
+ * отдельного компонента, ключ по `version.id`, число версий стабильно между
+ * рендерами одного (division, date) (Dev Notes).
+ */
+function VersionRow({
+  version,
+  isExpanded,
+  onToggle,
+}: {
+  version: DaySubmission
+  isExpanded: boolean
+  onToggle: () => void
+}) {
+  const detailQuery = useQuery({
+    queryKey: ['submission-detail', version.id],
+    queryFn: () => apiClient.get<unknown>(`/api/operations/daily-submissions/${version.id}/`),
+    enabled: isExpanded,
+    // Версия — append-only: этот id никогда не меняет reason/sanction/snapshot
+    // задним числом (5.8b: amend создаёт НОВУЮ версию, не правит старую).
+    // staleTime: Infinity — повторное схлопывание/разворот НЕ рефетчит
+    // (AC-3), домен это гарантирует, а не просто оптимизация кэша.
+    // refetchOnWindowFocus: false — тот же довод: неизменный id не может
+    // «протухнуть» от возврата фокуса на вкладку.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  })
+  const detail = parseSubmissionDetail(detailQuery.data)
+  const amendment = detail !== null ? describeAmendmentReason(detail) : null
+
+  return (
+    <li className="flex flex-col gap-2 rounded-md bg-muted p-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          aria-label={`${isExpanded ? 'Свернуть' : 'Развернуть'} версию v${version.version}`}
+          onClick={onToggle}
+          className="inline-flex size-6 shrink-0 items-center justify-center rounded border border-input text-xs hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          {isExpanded ? '−' : '+'}
+        </button>
+        <span>
+          v{version.version} · {EVENT_LABELS[version.event]} ·{' '}
+          {formatSubmittedAt(version.submitted_at)} · {version.submitted_by}
+        </span>
+        {/* Цвет НИКОГДА не единственный сигнал (DESIGN.md:366,371):
+            действующая версия помечена СЛОВОМ. */}
+        {version.is_current ? (
+          <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">
+            действующая
+          </span>
+        ) : null}
+      </div>
+
+      {/* AC-5: разворот — ОСНОВНОЙ контент по клику, не enrichment (в
+          отличие от freshness-метки 10.6b) — ошибка НЕ должна молчать. */}
+      {isExpanded ? (
+        <div data-testid={`version-detail-${version.id}`} className="text-xs text-muted-foreground">
+          {detail !== null ? (
+            amendment !== null ? (
+              <span>
+                Причина: {amendment.reason} · Санкция: {amendment.sanction}
+              </span>
+            ) : (
+              <span>Без исправления — исходная сдача</span>
+            )
+          ) : detailQuery.isError || detailQuery.isSuccess ? (
+            // isSuccess && detail === null — ответ 200, но форма не прошла
+            // parseSubmissionDetail (Edge Case Hunter, 10.6c ревью): БЕЗ этой
+            // ветки такой ответ падал бы в «Загрузка…» и висел бы там вечно,
+            // неотличимо от реальной загрузки.
+            <span role="alert" className="text-red-800">
+              Не удалось прочитать основание исправления.
+            </span>
+          ) : (
+            <span>Загрузка…</span>
+          )}
+        </div>
+      ) : null}
+    </li>
   )
 }

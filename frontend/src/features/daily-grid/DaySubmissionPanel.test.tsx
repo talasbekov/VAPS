@@ -1542,3 +1542,155 @@ it('AC-4: успешное исправление инвалидирует кэ�
     expect(screen.queryByTestId('day-summary-stale')).not.toBeInTheDocument(),
   )
 })
+
+// ---------------------------------------------------------------------------
+// Story 10.6c — причина/санкция в истории версий (GET /daily-submissions/{id}/).
+// ---------------------------------------------------------------------------
+
+function detailFixture(over: Record<string, unknown> = {}) {
+  return {
+    id: 12,
+    division_id: DIVISION_ID,
+    business_date: TODAY,
+    version: 1,
+    is_current: false,
+    event: 'CHANGED',
+    submitted_by: 'operator-1',
+    submitted_at: '2026-07-19T08:15:00+05:00',
+    late: false,
+    snapshot: {},
+    reason: '',
+    sanction: '',
+    triggered_by_status_id: null,
+    ...over,
+  }
+}
+
+/** Считает реальные GET на роут детали — источник истины «за какой id ушёл запрос». */
+function countDetailCalls(): { count: number; ids: string[] } {
+  const state = { count: 0, ids: [] as string[] }
+  server.use(
+    http.get('*/api/operations/daily-submissions/:id([0-9]+)/', ({ params }) => {
+      state.count += 1
+      state.ids.push(String(params.id))
+      return HttpResponse.json(detailFixture({ id: Number(params.id) }))
+    }),
+  )
+  return state
+}
+
+it('AC-2: клик на версию → РОВНО один GET, за КЛИКНУТУЮ версию', async () => {
+  const counter = countDetailCalls()
+  const user = userEvent.setup()
+  renderPanel({
+    submission: versionFixture({ id: 13, version: 2, is_current: true }),
+    submissions: [
+      versionFixture({ id: 13, version: 2, is_current: true }),
+      versionFixture({ id: 12, version: 1, is_current: false }),
+    ],
+  })
+
+  const versions = await screen.findByTestId('day-versions')
+  expect(counter.count).toBe(0)
+
+  await user.click(within(versions).getByRole('button', { name: 'Развернуть версию v1' }))
+
+  await waitFor(() => expect(counter.count).toBe(1))
+  expect(counter.ids).toEqual(['12'])
+  // Соседняя (v2) НЕ развёрнута и не запрошена.
+  expect(screen.queryByTestId('version-detail-13')).not.toBeInTheDocument()
+})
+
+it('AC-3: развернуть → свернуть → развернуть снова — кэш переживает схлопывание, ОДИН GET', async () => {
+  const counter = countDetailCalls()
+  const user = userEvent.setup()
+  renderPanel({
+    submission: versionFixture(),
+    submissions: [versionFixture()],
+  })
+
+  const versions = await screen.findByTestId('day-versions')
+  const toggle = within(versions).getByRole('button', { name: 'Развернуть версию v1' })
+
+  await user.click(toggle)
+  await waitFor(() => expect(counter.count).toBe(1))
+  await user.click(screen.getByRole('button', { name: 'Свернуть версию v1' }))
+  expect(screen.queryByTestId('version-detail-12')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Развернуть версию v1' }))
+
+  await screen.findByTestId('version-detail-12')
+  expect(counter.count).toBe(1)
+})
+
+it('AC-4: reason === "" → «Без исправления — исходная сдача»', async () => {
+  server.use(
+    http.get('*/api/operations/daily-submissions/:id([0-9]+)/', () =>
+      HttpResponse.json(detailFixture({ reason: '', sanction: '' })),
+    ),
+  )
+  const user = userEvent.setup()
+  renderPanel({ submission: versionFixture(), submissions: [versionFixture()] })
+
+  const versions = await screen.findByTestId('day-versions')
+  await user.click(within(versions).getByRole('button', { name: 'Развернуть версию v1' }))
+
+  const detail = await screen.findByTestId('version-detail-12')
+  expect(detail).toHaveTextContent('Без исправления — исходная сдача')
+})
+
+it('AC-4: reason/sanction непусты → оба поля текстом', async () => {
+  server.use(
+    http.get('*/api/operations/daily-submissions/:id([0-9]+)/', () =>
+      HttpResponse.json(
+        detailFixture({ reason: 'Ошибка в ростере', sanction: 'Выговор' }),
+      ),
+    ),
+  )
+  const user = userEvent.setup()
+  renderPanel({ submission: versionFixture(), submissions: [versionFixture()] })
+
+  const versions = await screen.findByTestId('day-versions')
+  await user.click(within(versions).getByRole('button', { name: 'Развернуть версию v1' }))
+
+  const detail = await screen.findByTestId('version-detail-12')
+  expect(detail).toHaveTextContent('Ошибка в ростере')
+  expect(detail).toHaveTextContent('Выговор')
+})
+
+it('AC-5: ошибка разворота (403) → role=alert с текстом, секция НЕ пустая', async () => {
+  server.use(
+    http.get('*/api/operations/daily-submissions/:id([0-9]+)/', () =>
+      HttpResponse.json(errorEnvelope('PERMISSION_DENIED', 'Нет доступа'), { status: 403 }),
+    ),
+  )
+  const user = userEvent.setup()
+  renderPanel({ submission: versionFixture(), submissions: [versionFixture()] })
+
+  const versions = await screen.findByTestId('day-versions')
+  await user.click(within(versions).getByRole('button', { name: 'Развернуть версию v1' }))
+
+  const detail = await screen.findByTestId('version-detail-12')
+  const alert = await within(detail).findByRole('alert')
+  expect(alert).toHaveTextContent(/./)
+})
+
+it('AC-5: 200 с формой, не прошедшей parseSubmissionDetail → role=alert, НЕ вечная «Загрузка…»', async () => {
+  // Ревью (Edge Case Hunter): успешный ответ, провалившийся в parseSubmissionDetail
+  // (например, отсутствует несущее поле), не должен неотличимо повиснуть на
+  // «Загрузка…» — isSuccess без валидной формы обязан считаться отказом.
+  server.use(
+    http.get('*/api/operations/daily-submissions/:id([0-9]+)/', () =>
+      HttpResponse.json({ id: 12 }), // форма не проходит parseSubmissionDetail
+    ),
+  )
+  const user = userEvent.setup()
+  renderPanel({ submission: versionFixture(), submissions: [versionFixture()] })
+
+  const versions = await screen.findByTestId('day-versions')
+  await user.click(within(versions).getByRole('button', { name: 'Развернуть версию v1' }))
+
+  const detail = await screen.findByTestId('version-detail-12')
+  const alert = await within(detail).findByRole('alert')
+  expect(alert).toHaveTextContent(/./)
+  expect(detail).not.toHaveTextContent('Загрузка…')
+})

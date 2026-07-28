@@ -274,6 +274,35 @@ export const handlers = [
   http.post('*/api/operations/daily-submissions/:id/amend/', () =>
     HttpResponse.json(conflictStateEnvelope, { status: 409 }),
   ),
+  // 200 (стори 10.6c): деталь версии (13 полей) — нейтральный дефолт,
+  // reason/sanction пустые (неисправленная версия). Обязателен: разворот
+  // версии монтирует `useQuery` на этот путь при клике, и при
+  // onUnhandledRequest: 'error' незамоканный запрос свалил бы любой тест,
+  // разворачивающий строку без явного `server.use`.
+  // ⚠️ `:id([0-9]+)` — ЧИСЛОВОЙ constraint обязателен (не просто `:id`):
+  // Django-pk целочисленный, а без ограничения этот паттерн МОЛЧА поглотил бы
+  // `/daily-submissions/freshness/` (10.6a/10.6b) — тот же класс коллизии,
+  // что project-memory предупреждает про MSW path collision. server.use()-
+  // оверрайды в тестах ставятся ПОВЕРХ дефолтов и переупорядочивают
+  // приоритет — без числового constraint override этого роута в любом тесте
+  // 10.6c тихо перехватил бы freshness-запросы того же теста.
+  http.get('*/api/operations/daily-submissions/:id([0-9]+)/', () =>
+    HttpResponse.json({
+      id: 1,
+      division_id: '00000000-0000-0000-0000-000000000000',
+      business_date: '2026-01-01',
+      version: 1,
+      is_current: true,
+      event: 'CHANGED',
+      submitted_by: 'operator-1',
+      submitted_at: '2026-01-01T08:00:00+05:00',
+      late: false,
+      snapshot: {},
+      reason: '',
+      sanction: '',
+      triggered_by_status_id: null,
+    }),
+  ),
   // Story 10.5a: дефолт-отказ 409 «уже обойдено» — нейтральный дефолт, не
   // тихий успех (обход НЕ должен успевать в тестах, которые его не настроили
   // явно; тот же приём, что дефолт amend выше).
