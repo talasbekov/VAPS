@@ -18,10 +18,19 @@
 // app-layout.qa.test.tsx).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bell } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '../lib/cn'
-import { useNotificationsFeed } from '../notifications/useNotificationsFeed'
+import { apiClient } from '../api/client'
+import { useApiMutation } from '../api/useApiMutation'
+import {
+  NOTIFICATIONS_QUERY_KEY,
+  useNotificationsFeed,
+} from '../notifications/useNotificationsFeed'
 import type { Notification } from '../notifications/useNotificationsFeed'
+import type { components } from '../api/schema'
 import { Button } from './Button'
+
+type MarkReadResponse = components['schemas']['NotificationMarkReadResponse']
 
 /** Экспорт строк — чтобы тест не дублировал литерал, а смена текста стоила
  *  одну правку. Литералы предложены стори: таблица пустых состояний UX
@@ -33,6 +42,7 @@ export const NOTIFICATIONS_LOADING_TEXT = 'Загрузка уведомлени
 export const NOTIFICATIONS_LOADING_LABEL = 'Загрузка уведомлений'
 export const NOTIFICATIONS_ERROR_TEXT = 'Не удалось загрузить уведомления'
 export const NOTIFICATION_UNREAD_TEXT = 'Не прочитано'
+export const NOTIFICATION_MARK_READ_LABEL = 'Отметить прочитанным'
 
 /**
  * Человеческая метка типа живёт на клиенте, потому что по проводу едет КОД:
@@ -82,6 +92,25 @@ function NotificationRow({ row }: { row: Notification }) {
   const label = NOTIFICATION_KIND_LABELS[row.kind] ?? row.kind
   const time = formatCreatedAtTime(row.created_at)
   const isUnread = row.read_at === null
+  const queryClient = useQueryClient()
+
+  // Мутация ЛОКАЛЬНА строке (не одна на всю панель, стори 11.4b): pending/error
+  // одной строки не должны переиспользоваться на соседних при клике по чужой.
+  const {
+    mutate: markRead,
+    isPending: isMarking,
+    error: markReadError,
+  } = useApiMutation<MarkReadResponse, { id: number }>({
+    mutationFn: (variables) =>
+      apiClient.post<MarkReadResponse>(
+        `/api/notifications/${variables.id}/read/`,
+      ),
+    // Обычный инвалидейт, БЕЗ setQueryData (ЗАПРЕТ optimistic, architecture.md#L472):
+    // строка не меняется до подтверждённого сервером рефетча.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY })
+    },
+  })
 
   return (
     <li className="flex flex-col gap-1 border-b border-border px-3 py-2 last:border-b-0">
@@ -90,8 +119,19 @@ function NotificationRow({ row }: { row: Notification }) {
         {/* признак непрочитанного — ТЕКСТОМ, не точкой и не цветом
             (EXPERIENCE.md#L238: цвет не единственный сигнал) */}
         {isUnread && (
-          <span className="shrink-0 text-xs font-medium text-destructive">
-            {NOTIFICATION_UNREAD_TEXT}
+          <span className="flex shrink-0 items-center gap-2">
+            <span className="text-xs font-medium text-destructive">
+              {NOTIFICATION_UNREAD_TEXT}
+            </span>
+            <button
+              type="button"
+              aria-label={NOTIFICATION_MARK_READ_LABEL}
+              disabled={isMarking}
+              onClick={() => markRead({ id: row.id })}
+              className="rounded border border-border px-1.5 py-0.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
+            >
+              {NOTIFICATION_MARK_READ_LABEL}
+            </button>
           </span>
         )}
       </div>
@@ -99,6 +139,9 @@ function NotificationRow({ row }: { row: Notification }) {
         <span>{formatBusinessDate(row.business_date)}</span>
         {time !== '' && <span>{time}</span>}
       </div>
+      {markReadError !== null && (
+        <p className="text-xs text-destructive">{markReadError.message}</p>
+      )}
     </li>
   )
 }

@@ -18,6 +18,7 @@ import {
   subscribe,
 } from './credential'
 import type { Credential } from './credential'
+import { NOTIFICATIONS_QUERY_KEY } from '../notifications/useNotificationsFeed'
 
 export interface AuthContextValue {
   /**
@@ -44,6 +45,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // credential (queryKey не меняется — сам кэш рефетч не запустит);
       // removeQueries, не invalidate — заголовки уже новые, рефетч чистый
       queryClient.removeQueries({ queryKey: ['me'] })
+      // 11.4b, открытый вопрос №1 родительской 11.4 (подтверждён ревью):
+      // уведомления актора А иначе доживают в кэше до первого рефетча под Б —
+      // тот же класс утечки, что ['me'] выше.
+      queryClient.removeQueries({ queryKey: NOTIFICATIONS_QUERY_KEY })
     },
     [queryClient],
   )
@@ -52,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearCredential()
     // removeQueries, НЕ invalidate: рефетч без credential словил бы 403 (Ловушка 4)
     queryClient.removeQueries({ queryKey: ['me'] })
+    queryClient.removeQueries({ queryKey: NOTIFICATIONS_QUERY_KEY })
   }, [queryClient])
 
   const value = useMemo<AuthContextValue>(

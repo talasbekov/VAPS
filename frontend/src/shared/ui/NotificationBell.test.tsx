@@ -7,13 +7,14 @@
 // Дефолтную 502-фикстуру НЕ переопределяем глобально, только server.use
 // внутри своих тестов (Ловушка 1).
 import '@testing-library/jest-dom/vitest'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import type { JsonBodyType } from 'msw'
 import { server } from '../api/testing/server'
+import { ToastProvider } from './toast'
 import { clearCredential, setCredential } from '../auth/credential'
 import { NOTIFICATIONS_LIMIT } from '../notifications/useNotificationsFeed'
 import type {
@@ -21,6 +22,7 @@ import type {
   NotificationPage,
 } from '../notifications/useNotificationsFeed'
 import {
+  NOTIFICATION_MARK_READ_LABEL,
   NOTIFICATION_UNREAD_TEXT,
   NOTIFICATIONS_EMPTY_TEXT,
   NOTIFICATIONS_ERROR_TEXT,
@@ -67,8 +69,10 @@ function renderBell() {
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <NotificationBell />
-      <button type="button">{OUTSIDE_TEXT}</button>
+      <ToastProvider>
+        <NotificationBell />
+        <button type="button">{OUTSIDE_TEXT}</button>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }
@@ -211,6 +215,12 @@ describe('NotificationBell: раскрытие, клавиатура и фоку
     // фокус и так стоит. Красная проба это поймала (мутация «Escape закрывает,
     // но фокус не возвращает» оставалась ЗЕЛЁНОЙ) — ровно форма вакуума №3
     // ретро E9. Tab панель не закрывает: она disclosure, а не модалка.
+    // Два Tab, не один (11.4b): строка теперь несёт кнопку «прочитано» —
+    // первый Tab уходит на неё, второй — на внешнюю кнопку.
+    await user.tab()
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Отметить прочитанным' }),
+    )
     await user.tab()
     const outside = screen.getByRole('button', { name: OUTSIDE_TEXT })
     expect(document.activeElement).toBe(outside)
@@ -365,5 +375,139 @@ describe('NotificationBell: состояния Query внутри панели (
     })
     expect(alert).toHaveTextContent(NOTIFICATIONS_ERROR_TEXT)
     expect(bell()).toBeEnabled()
+  })
+})
+
+describe('NotificationBell: мутация отметки прочтения (11.4b)', () => {
+  it('test_mark_read_button_appears_only_on_unread_rows: кнопка только на непрочитанном', async () => {
+    respondWith(
+      pageOf([makeRow(1), makeRow(2, { read_at: '2026-07-19T10:00:00+05:00' })]),
+    )
+    const user = userEvent.setup()
+    renderBell()
+    await user.click(bell())
+
+    const items = await screen.findAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(
+      within(items[0]).getByRole('button', { name: NOTIFICATION_MARK_READ_LABEL }),
+    ).toBeInTheDocument()
+    expect(
+      within(items[1]).queryByRole('button', {
+        name: NOTIFICATION_MARK_READ_LABEL,
+      }),
+    ).not.toBeInTheDocument()
+  })
+
+  it("test_mark_read_click_invalidates_notifications_query: onSuccess инвалидирует ['notifications']", async () => {
+    respondWith(pageOf([makeRow(1)]))
+    server.use(
+      http.post('*/api/notifications/1/read/', () =>
+        HttpResponse.json({ id: 1, read_at: '2026-07-19T11:00:00+05:00' }),
+      ),
+    )
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <NotificationBell />
+        </ToastProvider>
+      </QueryClientProvider>,
+    )
+    await user.click(bell())
+
+    const markReadButton = await screen.findByRole('button', {
+      name: NOTIFICATION_MARK_READ_LABEL,
+    })
+    await user.click(markReadButton)
+
+    await waitFor(() => {
+      expect(invalidate).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: ['notifications'] }),
+      )
+    })
+  })
+
+  it('test_mark_read_does_not_mutate_row_before_server_response: без optimistic', async () => {
+    respondWith(pageOf([makeRow(1)]))
+    let release = (): void => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/notifications/1/read/', async () => {
+        await gate
+        return HttpResponse.json({ id: 1, read_at: '2026-07-19T11:00:00+05:00' })
+      }),
+    )
+    const user = userEvent.setup()
+    renderBell()
+    await user.click(bell())
+
+    const markReadButton = await screen.findByRole('button', {
+      name: NOTIFICATION_MARK_READ_LABEL,
+    })
+    await user.click(markReadButton)
+
+    // Пока ответ сервера удерживается — бейдж "Не прочитано" и кнопка ещё на
+    // месте: ни один локальный useState не пометил строку прочитанной заранее.
+    expect(screen.getByText(NOTIFICATION_UNREAD_TEXT)).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: NOTIFICATION_MARK_READ_LABEL }),
+    ).toBeInTheDocument()
+
+    release()
+    await waitFor(() => expect(markReadButton).toBeDisabled())
+  })
+
+  it('test_mark_read_error_is_shown_inline_and_button_stays_clickable: ошибка видима, кнопка живая', async () => {
+    respondWith(pageOf([makeRow(1)]))
+    server.use(
+      http.post('*/api/notifications/1/read/', () =>
+        HttpResponse.json(
+          { error_code: 'PERMISSION_DENIED', message: 'Чужое уведомление' },
+          { status: 403 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderBell()
+    await user.click(bell())
+
+    const markReadButton = await screen.findByRole('button', {
+      name: NOTIFICATION_MARK_READ_LABEL,
+    })
+    await user.click(markReadButton)
+
+    await screen.findByText('Чужое уведомление')
+    expect(markReadButton).toBeEnabled()
+  })
+
+  it('test_mark_read_click_does_not_close_the_panel: клик по кнопке — не outside-click', async () => {
+    respondWith(pageOf([makeRow(1)]))
+    server.use(
+      http.post('*/api/notifications/1/read/', () =>
+        HttpResponse.json({ id: 1, read_at: '2026-07-19T11:00:00+05:00' }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderBell()
+    await user.click(bell())
+
+    const markReadButton = await screen.findByRole('button', {
+      name: NOTIFICATION_MARK_READ_LABEL,
+    })
+    await user.click(markReadButton)
+
+    // Панель осталась открытой — клик по кнопке ВНУТРИ panelRef не считается
+    // outside-click (иначе колокольчик мгновенно бы закрывался при любой
+    // мутации строки).
+    expect(
+      screen.getByRole('region', { name: NOTIFICATIONS_LABEL }),
+    ).toBeInTheDocument()
   })
 })

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { LoginPage } from '../features/auth/LoginPage'
 import { apiClient } from '../shared/api/client'
@@ -19,7 +20,7 @@ import {
   permissionDeniedEnvelope,
 } from '../shared/api/testing/handlers'
 import { server } from '../shared/api/testing/server'
-import { useAuth } from '../shared/auth/AuthContext'
+import { AuthProvider, useAuth } from '../shared/auth/AuthContext'
 import {
   ACCESS_DENIED_TEXT,
   RequireAuth,
@@ -300,5 +301,70 @@ describe('createQueryClient: handle401 на ОБОИХ кэшах (AC 6, Лов�
 
     expect(getCredential()).toEqual({ kind: 'dev', userId: 'operator-1' })
     expect(client.getQueryData(['me'])).toEqual(myPermissionsFixture)
+  })
+})
+
+describe("AuthContext: login()/logout() чистят ['notifications'] тоже (11.4b, AC-6)", () => {
+  // Регресс-тест на ТОЧНЫЙ набор ключей (не «хоть что-то вызвалось»,
+  // урок памяти проекта): ['me'] и ['notifications'] — оба, не только один.
+  function SwitchAndLogoutProbe() {
+    const { login, logout } = useAuth()
+    return (
+      <main>
+        <button
+          type="button"
+          onClick={() => login({ kind: 'dev', userId: 'admin-1' })}
+        >
+          Сменить пользователя
+        </button>
+        <button type="button" onClick={logout}>
+          Выйти
+        </button>
+      </main>
+    )
+  }
+
+  it("login() сбрасывает И ['me'], И ['notifications']: уведомления актора А не переживают вход Б", async () => {
+    const client = createQueryClient()
+    client.setQueryData(['me'], myPermissionsFixture)
+    client.setQueryData(['notifications'], { count: 1, results: [] })
+    const user = userEvent.setup()
+    setCredential({ kind: 'dev', userId: 'operator-1' })
+
+    render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <SwitchAndLogoutProbe />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Сменить пользователя' }),
+    )
+
+    expect(client.getQueryData(['me'])).toBeUndefined()
+    expect(client.getQueryData(['notifications'])).toBeUndefined()
+  })
+
+  it("logout() сбрасывает И ['me'], И ['notifications']", async () => {
+    const client = createQueryClient()
+    client.setQueryData(['me'], myPermissionsFixture)
+    client.setQueryData(['notifications'], { count: 1, results: [] })
+    const user = userEvent.setup()
+    setCredential({ kind: 'dev', userId: 'operator-1' })
+
+    render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <SwitchAndLogoutProbe />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Выйти' }))
+
+    expect(client.getQueryData(['me'])).toBeUndefined()
+    expect(client.getQueryData(['notifications'])).toBeUndefined()
   })
 })
