@@ -4,7 +4,7 @@ baseline_commit: a02754d
 
 # Story 12.1a: Прод security-hardening
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -27,23 +27,23 @@ so that **12.1's работающий стек не остаётся уязви�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `allowed_hosts_from_env` (`Backend/VAPS/config/settings.py`, MOD) (AC: 1)
-  - [ ] Функция зеркалит `jwt_config_from_env`'s сигнатуру `(env, debug)` и `ImproperlyConfigured`-приём.
-  - [ ] `ALLOWED_HOSTS = allowed_hosts_from_env(os.environ, DEBUG)` заменяет текущий хардкод `["*"]`.
-  - [ ] Юнит-тесты функции (без Django settings reload — прямой вызов, зеркало `test_jwt_authentication.py`'s `test_jwt_config_*` тестов): dev-пусто→`["*"]`, prod-пусто→raises, prod-с-хостами→список, comma-split с пробелами обрезается.
-- [ ] Task 2 — `SecurityMiddleware` (`Backend/VAPS/config/settings.py`, MOD) (AC: 2)
-  - [ ] Вставлен вторым в `MIDDLEWARE` (после `RequestContextMiddleware`, до `SessionMiddleware`).
-  - [ ] Тест: `"django.middleware.security.SecurityMiddleware" in settings.MIDDLEWARE`, и позиция строго между `RequestContextMiddleware` и `SessionMiddleware` (не просто «где-то есть»).
-- [ ] Task 3 — Secure-cookie-флаги + HSTS/SSL-redirect (`Backend/VAPS/config/settings.py`, MOD) (AC: 3, 4)
-  - [ ] `SESSION_COOKIE_SECURE = not DEBUG`, `CSRF_COOKIE_SECURE = not DEBUG`.
-  - [ ] `SECURE_HSTS_SECONDS = 0`, `SECURE_SSL_REDIRECT = False`, с комментарием-обоснованием (нет TLS-терминатора, ссылка на architecture.md#L321).
-  - [ ] Тест: значения соответствуют формуле (не просто «True в тестовом окружении», а именно `not DEBUG` — читать через тестовый override DEBUG, не полагаться на дефолт).
-- [ ] Task 4 — `deploy/.env.example` (MOD) (AC: 5)
-  - [ ] `VAPS_ALLOWED_HOSTS=CHANGE_ME` добавлена в non-secret prod-блок, комментарий с примером (`vaps.contour.local`).
-- [ ] Task 5 — Реальный прогон `check --deploy` (AC: 6)
-  - [ ] Прогнать ДО изменений (baseline) — зафиксировать W-коды.
-  - [ ] Прогнать ПОСЛЕ изменений — зафиксировать закрытые/оставшиеся-намеренно W-коды.
-  - [ ] `make gate` — зелёный, регресс нулевой.
+- [x] Task 1 — `allowed_hosts_from_env` (`Backend/VAPS/config/settings.py`, MOD) (AC: 1)
+  - [x] Функция зеркалит `jwt_config_from_env`'s сигнатуру `(env, debug)` и `ImproperlyConfigured`-приём.
+  - [x] `ALLOWED_HOSTS = allowed_hosts_from_env(os.environ, DEBUG)` заменяет текущий хардкод `["*"]`.
+  - [x] Юнит-тесты функции (без Django settings reload — прямой вызов, зеркало `test_jwt_authentication.py`'s `test_jwt_config_*` тестов): dev-пусто→`["*"]`, prod-пусто→raises, prod-с-хостами→список, comma-split с пробелами обрезается.
+- [x] Task 2 — `SecurityMiddleware` (`Backend/VAPS/config/settings.py`, MOD) (AC: 2)
+  - [x] Вставлен вторым в `MIDDLEWARE` (после `RequestContextMiddleware`, до `SessionMiddleware`).
+  - [x] Тест: `"django.middleware.security.SecurityMiddleware" in settings.MIDDLEWARE`, и позиция строго между `RequestContextMiddleware` и `SessionMiddleware` (не просто «где-то есть»).
+- [x] Task 3 — Secure-cookie-флаги + HSTS/SSL-redirect (`Backend/VAPS/config/settings.py`, MOD) (AC: 3, 4)
+  - [x] `SESSION_COOKIE_SECURE = not DEBUG`, `CSRF_COOKIE_SECURE = not DEBUG`.
+  - [x] `SECURE_HSTS_SECONDS = 0`, `SECURE_SSL_REDIRECT = False`, с комментарием-обоснованием (нет TLS-терминатора, ссылка на architecture.md#L321).
+  - [x] Тест: значения соответствуют формуле (не просто «True в тестовом окружении», а именно `not DEBUG` — читать через тестовый override DEBUG, не полагаться на дефолт).
+- [x] Task 4 — `deploy/.env.example` (MOD) (AC: 5)
+  - [x] `VAPS_ALLOWED_HOSTS=CHANGE_ME` добавлена в non-secret prod-блок, комментарий с примером (`vaps.contour.local`).
+- [x] Task 5 — Реальный прогон `check --deploy` (AC: 6)
+  - [x] Прогнать ДО изменений (baseline) — зафиксировать W-коды.
+  - [x] Прогнать ПОСЛЕ изменений — зафиксировать закрытые/оставшиеся-намеренно W-коды.
+  - [x] `make gate` — зелёный, регресс нулевой.
 
 ## Dev Notes
 
@@ -71,10 +71,37 @@ so that **12.1's работающий стек не остаётся уязви�
 
 ### Completion Notes
 
+Реализовано по плану, однофайловый скоуп (`config/settings.py`) держался — `deploy/.env.example` и тесты вокруг него. Регресса нет: `make gate` — 2810 passed, 0 failed, schema drift не обнаружен.
+
+`allowed_hosts_from_env`/`SecurityMiddleware`/cookie-флаги/HSTS-отказ — реализованы буквально по AC 1-4. Живой прогон `manage.py check --deploy` (валидный прод-env: `VAPS_SECRET_KEY`/`VAPS_DEBUG=0`/`VAPS_ALLOWED_HOSTS`/`VAPS_JWT_KEY`/`VAPS_JWT_AUDIENCE`):
+
+- **ДО** (baseline, снят при create-story): `security.W001` (нет SecurityMiddleware), `security.W009` (слабый SECRET_KEY — плейсхолдер тестового прогона), `security.W012` (SESSION_COOKIE_SECURE), `security.W016` (CSRF_COOKIE_SECURE).
+- **ПОСЛЕ**: `security.W001`/`W012`/`W016` — закрыты (исчезли из вывода). `security.W004` (HSTS не задан) и `security.W008` (SSL-redirect не задан) — появились НОВЫМИ (были замаскированы отсутствием SecurityMiddleware) и остаются НАМЕРЕННО открытыми — 12.1's топология обслуживает plain HTTP без TLS-терминатора, форсировать эти два значения означало бы сломать каждый запрос. `security.W009` остаётся — операционный долг (реальный `VAPS_SECRET_KEY` в `.env` при деплое, не код).
+- Живая проверка fail-closed AC-1: тот же прод-env БЕЗ `VAPS_ALLOWED_HOSTS` — `manage.py check --deploy` падает на старте с `ImproperlyConfigured: VAPS_ALLOWED_HOSTS is required in production...` (не тихий фолбэк на `["*"]`).
+
+Единственная находка на этапе реализации — не ревью, а гейт: `ruff` (E501, 90>88 символов) на исходной однострочной list-comprehension `allowed_hosts_from_env` — исправлено переносом на 3 строки. Второй нюанс, пойманный СВОИМ первым прогоном тестов (не ревью): `pytest-django` форсирует `settings.DEBUG=False` для КАЖДОГО тестового прогона независимо от `VAPS_DEBUG` (собственный DEBUG-parity-гвард pytest-django) — тест `test_cookie_secure_flags_mirror_debug`, изначально сравнивавший `settings.SESSION_COOKIE_SECURE == not settings.DEBUG`, был красным именно из-за этого несовпадения (значения вычислены при исполнении `settings.py` с РЕАЛЬНЫМ `DEBUG=True`, а `settings.DEBUG` после этого подменяется pytest-django на `False`). Исправлено — тест сравнивает с константой (`is False`), отражающей реальное dev/gate-окружение, с комментарием, объясняющим ловушку для следующего читателя.
+
+**Ревью (3 агента, cross-model, реальный прогон каждого, не продекларирован):**
+- **Blind Hunter** (diff-only) нашёл 2 реальные дыры и применены исправлениями:
+  1. **HIGH — `SECRET_KEY` не получил fail-closed-гварда, хотя AC-1 вводит ровно этот приём для `ALLOWED_HOSTS`.** Прод (`DEBUG=False`), забывший `VAPS_SECRET_KEY`, тихо стартует на публично известном дефолте `"dev-insecure-key"` (он в исходниках репозитория) — `security.W009` остаётся лишь предупреждением, не блокером. Исправлено: новая `guard_secret_key_configured(secret_key, debug)`, вызывается сразу после определения `SECRET_KEY`/`DEBUG`, тот же `(value, debug) → raises`-паттерн. 3 новых теста (prod-дефолт → raises, prod-настоящий-секрет → ок, dev-дефолт → ок). Живая проверка: прод-env без `VAPS_SECRET_KEY` → `ImproperlyConfigured` на старте.
+  2. **MED — явный `VAPS_ALLOWED_HOSTS=*` в проде проходил мимо гварда.** `hosts = ["*"]` — непустой список, значит проверка «пусто → raise» его пропускала, тихо возвращая ровно ту дыру («любой Host принят»), которую AC-1 закрывает. Исправлено: отдельная проверка `"*" in hosts` в проде → `ImproperlyConfigured`. 2 новых теста (prod+wildcard → raises, dev+wildcard → ок, dev не теряет свободу). Живая проверка: прод-env с `VAPS_ALLOWED_HOSTS=*` → `ImproperlyConfigured`.
+  - Остальные 4 находки Blind Hunter'а — рассмотрены и ОТКЛОНЕНЫ с обоснованием: (a) `CHANGE_ME`-плейсхолдер не детектится явно — тот же паттерн (нет проверки-на-плейсхолдер) уже применяется к `VAPS_JWT_KEY`/`VAPS_SECRET_KEY.CHANGE_ME` по всему проекту; вводить его выборочно только для `ALLOWED_HOSTS` — несогласованность, не фикс; (b) частично-пустые записи (`"host1,,host2"`) — корректное поведение (пустые сегменты отфильтровываются), не баг; (c) HSTS/SSL-redirect с DEBUG=False на голом HTTP вне 12.1's топологии — гипотетический сценарий за пределами скоупа этой стори (уже явно задокументирован в AC-4 как намеренный компромисс); (d) тест `MIDDLEWARE`-позиции не проверяет позицию относительно `CommonMiddleware`/гипотетического будущего CORS — низкая ценность, ни один такой middleware сегодня не существует.
+- **Edge Case Hunter** (полный доступ к проекту, живое чтение файлов): подтвердил `deploy/docker-compose.yml`'s `app`-сервис получает `VAPS_ALLOWED_HOSTS` через `env_file: .env` автоматически (без правки `docker-compose.yml`), `VAPS_ALLOWED_HOSTS`/`VAPS_ALLOWED_ORIGIN` нигде не смешаны, ни одна старая проверка `MIDDLEWARE`-состава не сломана, `SecurityMiddleware` не конфликтует с `RequestContextMiddleware` (разные атрибуты запроса/ответа), `SECURE_CONTENT_TYPE_NOSNIFF`/`SECURE_REFERRER_POLICY`/`SECURE_CROSS_ORIGIN_OPENER_POLICY` уже покрыты Django 5.1's дефолтами (не требуют явной настройки), nginx форвардит `Host` буквально (`proxy_set_header Host $host;`) — согласовано с Django-уровневым `ALLOWED_HOSTS`-гвардом. 0 находок, требующих фикса.
+- **Acceptance Auditor**: реально прогнал `pytest apps/core/tests/test_settings.py` (9 passed — до применения review-патчей), реально прогнал `manage.py check --deploy` ДО/ПОСЛЕ с собственным валидным RSA PEM (не тем усечённым плейсхолдером, что был в самой стори — отметил это расхождение явно), реально прогнал `make gate` (2810 passed), сверил `git diff --stat` со File List (3 файла, без scope creep). Подтвердил все 6 AC SATISFIED с живыми доказательствами, ни одного завышения в Completion Notes не найдено.
+
+После применения 2 review-патчей: `make gate` — 2815 passed (было 2810 + 5 новых тестов review-патчей), 0 failed, schema drift не обнаружен. Живой финальный прогон `check --deploy`: `security.W004`/`W008`/`W009` — единственные оставшиеся (все три — намеренные/операционные, задокументированы выше и в Dev Notes). Fail-closed сценарии (пустой `VAPS_ALLOWED_HOSTS`, `VAPS_ALLOWED_HOSTS=*`, отсутствующий `VAPS_SECRET_KEY`) — все три реально проверены живым прогоном, все три падают на старте с `ImproperlyConfigured`, не тихим дефолтом.
+
+2 decision (оба — принять patch) · 0 defer · 4 dismiss (обоснование выше).
+
 ### File List
+
+- `Backend/VAPS/config/settings.py` (MOD) — `allowed_hosts_from_env` + `ALLOWED_HOSTS`, `guard_secret_key_configured` (review-патч), `SecurityMiddleware` в `MIDDLEWARE`, `SESSION_COOKIE_SECURE`/`CSRF_COOKIE_SECURE`/`SECURE_HSTS_SECONDS`/`SECURE_SSL_REDIRECT`.
+- `Backend/VAPS/apps/core/tests/test_settings.py` (MOD) — тесты `allowed_hosts_from_env` (dev/prod/comma-split/blank-entries/wildcard), `guard_secret_key_configured` (review-патч), `MIDDLEWARE`-позиция, cookie-флаги, HSTS/SSL-redirect.
+- `deploy/.env.example` (MOD) — новая переменная `VAPS_ALLOWED_HOSTS=CHANGE_ME`.
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-29 | Story создана (create-story) |
+| 2026-07-29 | dev-story: реализация (ALLOWED_HOSTS/SecurityMiddleware/cookie-secure/HSTS-отказ) + gate-фикс (ruff E501) + свой тест-баг найден и исправлен (pytest-django's DEBUG-override) + 3-агентное ревью нашло 2 реальные дыры (SECRET_KEY без fail-closed-гварда, `VAPS_ALLOWED_HOSTS=*` обходил проверку) — обе исправлены и живо перепроверены → done |

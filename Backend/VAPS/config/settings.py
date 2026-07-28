@@ -7,7 +7,46 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("VAPS_SECRET_KEY", "dev-insecure-key")
 DEBUG = os.environ.get("VAPS_DEBUG", "1") == "1"
-ALLOWED_HOSTS = ["*"]
+
+
+# Story 12.1a (review, Blind Hunter): the fail-closed treatment below for
+# ALLOWED_HOSTS is worthless as a security posture if SECRET_KEY can boot
+# prod on the dev default — that default is public (this repo's source).
+def guard_secret_key_configured(secret_key, debug):
+    if not debug and secret_key == "dev-insecure-key":
+        raise ImproperlyConfigured(
+            "VAPS_SECRET_KEY is required in production (DEBUG=False): the "
+            "dev default is public (checked into this repository's source)."
+        )
+
+
+guard_secret_key_configured(SECRET_KEY, DEBUG)
+
+
+# Story 12.1a — mirrors jwt_config_from_env's (env, debug) → value|raises shape
+# below. Prod (DEBUG=False) MUST configure explicit hosts — ALLOWED_HOSTS=["*"]
+# would accept a forged Host header (password-reset/cache-poisoning vector).
+def allowed_hosts_from_env(env, debug):
+    hosts = [
+        h.strip() for h in env.get("VAPS_ALLOWED_HOSTS", "").split(",") if h.strip()
+    ]
+    if not debug and not hosts:
+        raise ImproperlyConfigured(
+            "VAPS_ALLOWED_HOSTS is required in production (DEBUG=False): "
+            "ALLOWED_HOSTS=['*'] would accept a forged Host header."
+        )
+    # Review (Blind Hunter): an explicit "*" in the env var is non-empty, so
+    # the guard above would let it through and reintroduce the exact
+    # any-Host-header hole this function exists to close.
+    if not debug and "*" in hosts:
+        raise ImproperlyConfigured(
+            "VAPS_ALLOWED_HOSTS must not contain '*' in production: that "
+            "accepts any Host header, defeating the guard entirely."
+        )
+    return hosts or ["*"]
+
+
+ALLOWED_HOSTS = allowed_hosts_from_env(os.environ, DEBUG)
 
 INSTALLED_APPS = [
     # Django Admin (только справочники, стори 2.10/2.11; ARCH#L467) +
@@ -43,6 +82,10 @@ MIDDLEWARE = [
     # request_id contextvar — ПЕРВЫМ (внешним), чтобы оборачивать весь
     # request/response; reset в finally не даёт ему течь между запросами (4.3).
     "apps.core.middleware.RequestContextMiddleware",
+    # Story 12.1a: Django docs recommend SecurityMiddleware first, but
+    # RequestContextMiddleware's request_id wrapper must stay outermost — this
+    # is the next-best position, still ahead of everything it hardens.
+    "django.middleware.security.SecurityMiddleware",
     # Порядок обязателен для admin (system-check admin.E408/E409/E410):
     # Session → ... → Auth → Message; Session ДО Auth.
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -224,6 +267,23 @@ def build_auth_classes(vaps_jwt):
 
 
 VAPS_JWT = jwt_config_from_env(os.environ, DEBUG)
+
+# Story 12.1a — cookie/transport hardening. Mirrors DEBUG exactly (one flag,
+# no separate env var to forget): dev/gate keep working over plain HTTP, prod
+# (DEBUG=False) gets Secure-flagged cookies automatically.
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+
+# HSTS/SSL-redirect deliberately NOT enabled: Story 12.1's topology serves
+# plain HTTP on port 80 with no TLS terminator (architecture.md#L321 — HTTPS
+# is a later production-hardening epic, not a blocker for the closed-LAN
+# first release). Forcing SECURE_SSL_REDIRECT or a nonzero
+# SECURE_HSTS_SECONDS with no certificate in front would break every
+# request (redirect loop / browsers refusing plain HTTP after HSTS).
+# manage.py check --deploy's security.W004/W008 stay open on purpose until a
+# TLS terminator exists — same E12 debt, addressed by a future story.
+SECURE_HSTS_SECONDS = 0
+SECURE_SSL_REDIRECT = False
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": build_auth_classes(VAPS_JWT),
