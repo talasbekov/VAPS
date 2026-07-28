@@ -72,11 +72,14 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // §22.3-22.5) — 20→21; новый слайс `feedback` с обращениями и справочником
 // §28 — 23→24; комментарии, лента событий и поля разбора обращения
 // (§28 detail) — 24→25; новый слайс `settings` с политикой наблюдений §22.11
-// и журналом изменений (§29) — 25→26.
+// и журналом изменений (§29) — 25→26; правила конфликтов §21.34-21.35 в том же
+// слайсе (записи-режимы, своя `conflictPolicyVersion`, `detectorCode`→`groupCode`)
+// — 26→27: у прежних записей нет ни `kind`, ни `groupCode`, и старый снапшот
+// молча остался бы без режима отдыха.
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 26
+export const SCHEMA_VERSION = 27
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)

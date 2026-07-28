@@ -48,11 +48,10 @@ export const DUTY_TYPES: readonly DutyTypeDefinition[] = [
     targetType: 'OWN_OBJECT',
     defaultDurationMinutes: 24 * 60,
     requiresSenior: true,
-    // §21.35: обязательный отдых — атрибут вида дежурства, а не константа в
-    // коде. Собственные объекты держат жёсткую политику (дефолт промпта
-    // REST_AFTER_DUTY_POLICY=HARD_BLOCK)…
+    // §21.35: СРОК обязательного отдыха — атрибут вида дежурства, а не
+    // константа в коде. РЕЖИМ (`REST_AFTER_DUTY_POLICY`) здесь больше не
+    // задаётся: он глобальный и живёт в правилах конфликтов «Настроек» (§29).
     restAfterMinutes: 24 * 60,
-    restPolicy: 'HARD_BLOCK',
     // §21.31: собственный объект — свой периметр, красный паспорт заступление
     // не блокирует…
     requiresCurrentPassport: false,
@@ -63,11 +62,10 @@ export const DUTY_TYPES: readonly DutyTypeDefinition[] = [
     targetType: 'PROTECTED_OBJECT',
     defaultDurationMinutes: 24 * 60,
     requiresSenior: false,
-    // …а охраняемые — мягкую: нарушение отдыха здесь soft-конфликт, который
-    // §21.34 разрешает обойти с обоснованием. Оба значения ЧИТАЮТСЯ фронтом,
-    // severity он не выводит сам.
+    // Срок тот же; насколько строгим будет нарушение отдыха, решает
+    // действующая политика, а не вид дежурства (§21.34: frontend severity не
+    // выводит сам).
     restAfterMinutes: 24 * 60,
-    restPolicy: 'SOFT_OVERRIDE',
     // …а охраняемый объект без актуального паспорта под охрану не берут.
     requiresCurrentPassport: true,
   },

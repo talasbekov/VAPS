@@ -34,8 +34,9 @@ if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
 
 const PARAMETER = {
   settingCode: 'ATTENTION.ACKNOWLEDGEMENT_MISSING.PARAMETER',
+  kind: 'NUMBER' as const,
   sectionCode: 'ATTENTION_POLICY' as const,
-  detectorCode: 'ACKNOWLEDGEMENT_MISSING',
+  groupCode: 'ACKNOWLEDGEMENT_MISSING',
   field: 'PARAMETER' as const,
   safeLabel: 'Срок упреждения по отметке об ознакомлении',
   description: 'За сколько суток до заступления отсутствие отметки становится наблюдением.',
@@ -45,12 +46,15 @@ const PARAMETER = {
   maxValue: 30,
   updatedAt: null,
   updatedBy: null,
+  editable: true,
+  lockedReason: null,
+  action: { canEdit: true, disabledReason: null },
 }
 
 const WARNING = {
   ...PARAMETER,
   settingCode: 'ATTENTION.CONFLICT_SHARE.WARNING_FROM',
-  detectorCode: 'CONFLICT_SHARE',
+  groupCode: 'CONFLICT_SHARE',
   field: 'WARNING_FROM' as const,
   safeLabel: 'Доля конфликтных записей — порог предупреждения',
   valueType: 'PERCENT' as const,
@@ -59,11 +63,67 @@ const WARNING = {
   maxValue: 100,
 }
 
+/** Правило конфликтов §21.35 — вторая секция экрана и единственная запись-режим. */
+const REST_MODE = {
+  settingCode: 'CONFLICT.REST_AFTER_DUTY.MODE',
+  kind: 'CHOICE' as const,
+  sectionCode: 'CONFLICT_RULES' as const,
+  groupCode: 'REST_AFTER_DUTY',
+  field: 'MODE' as const,
+  safeLabel: 'Режим обязательного отдыха после дежурства',
+  description: 'Как поступать с назначением, попадающим в период обязательного отдыха.',
+  valueType: 'MODE' as const,
+  value: 'SOFT_OVERRIDE',
+  options: [
+    { value: 'HARD_BLOCK', safeLabel: 'Жёсткий запрет', description: 'Назначение отвергается.' },
+    {
+      value: 'SOFT_OVERRIDE',
+      safeLabel: 'Обход с обоснованием',
+      description: 'Назначение подтверждается с причиной.',
+    },
+  ],
+  updatedAt: null,
+  updatedBy: null,
+  editable: true,
+  lockedReason: null,
+  action: { canEdit: true, disabledReason: null },
+}
+
+/** §21.34: пересечение — hard-конфликт, режим не переключается НИ ДЛЯ КОГО. */
+const OVERLAP_LOCKED = {
+  ...REST_MODE,
+  settingCode: 'CONFLICT.DUTY_OVERLAP.MODE',
+  groupCode: 'DUTY_OVERLAP',
+  safeLabel: 'Режим пересечения дежурств',
+  value: 'HARD_BLOCK',
+  options: [REST_MODE.options[0]],
+  editable: false,
+  lockedReason: 'Пересечение с другим дежурством — hard-конфликт (§21.34).',
+  action: {
+    canEdit: false,
+    disabledReason: 'Пересечение с другим дежурством — hard-конфликт (§21.34).',
+  },
+}
+
+function withAction<T extends { action: { canEdit: boolean } }>(item: T, canEdit: boolean) {
+  return canEdit
+    ? item
+    : {
+        ...item,
+        action: { canEdit: false, disabledReason: 'Право на администрирование не выдано.' },
+      }
+}
+
 function listResponse(canManage: boolean) {
   return HttpResponse.json({
-    results: [PARAMETER, WARNING],
+    results: [
+      withAction(PARAMETER, canManage),
+      withAction(WARNING, canManage),
+      withAction(REST_MODE, canManage),
+      OVERLAP_LOCKED,
+    ],
     policyVersion: 'attention-policy-2026.07.1',
-    canManage,
+    conflictPolicyVersion: 'conflict-rules-2026.07.1',
   })
 }
 
@@ -103,14 +163,20 @@ describe('SettingsPage (§29)', () => {
     expect(await screen.findByText(/attention-policy-2026\.07\.1/)).toBeInTheDocument()
     expect(screen.getByText('3 сут.')).toBeInTheDocument()
     expect(screen.getByText('18 %')).toBeInTheDocument()
-    expect(screen.getAllByText('не менялось')).toHaveLength(2)
+    expect(screen.getAllByText('не менялось')).toHaveLength(4)
   })
 
   it('без права изменения кнопок нет — решение приходит с сервера, а не из вёрстки', async () => {
     seedHandlers({ canManage: false })
     renderPage()
 
-    expect(await screen.findByText(/Просмотр без изменения/)).toBeInTheDocument()
+    // Причина у КАЖДОЙ записи своя и приходит с сервера: у трёх — нехватка
+    // права, у запертого правила §21.34 — другая, и она видна даже там, где
+    // право есть.
+    expect(await screen.findAllByText(/Право на администрирование не выдано\./)).toHaveLength(3)
+    expect(
+      screen.getByText(/Пересечение с другим дежурством — hard-конфликт/),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Изменить' })).not.toBeInTheDocument()
   })
 
@@ -126,12 +192,14 @@ describe('SettingsPage (§29)', () => {
         return HttpResponse.json({
           setting: { ...PARAMETER, value: 7 },
           policyVersion: 'attention-policy-2026.07.2',
+          conflictPolicyVersion: 'conflict-rules-2026.07.1',
           event: {
             id: 'e1',
             settingCode: PARAMETER.settingCode,
             safeLabel: PARAMETER.safeLabel,
-            oldValue: 3,
-            newValue: 7,
+            sectionCode: 'ATTENTION_POLICY',
+            oldValue: '3',
+            newValue: '7',
             reason: 'Срок увеличен приказом по управлению',
             actorUserId: 'demo-admin',
             changedAt: '2026-07-20T09:00:00+05:00',

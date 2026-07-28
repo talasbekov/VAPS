@@ -53,6 +53,7 @@ function conflict(severity: MonthlyDutyPlanConflict['severity']): MonthlyDutyPla
   return {
     conflictId: `x-${severity}`,
     code: 'DUTY_OVERLAP',
+    policyVersion: 'conflict-rules-test.1',
     severity,
     employeeName: 'Ерланов Д.',
     businessDate: '2026-07-10',

@@ -29,6 +29,8 @@ import {
   resolveApplicableVersion,
 } from '../lib/passportBinding'
 import { findObjectById, readObjectsProjection } from './objectsSlice'
+import { readConflictPolicy } from './settingsSlice'
+import type { ConflictPolicy } from '../model/types'
 import type {
   CancelDutyShiftRequest,
   CompleteCombatDutyRequest,
@@ -254,12 +256,13 @@ function assertNoNewConflicts(
   slice: DutiesSlice,
   candidate: DutyShift,
   overrideReason: string,
+  policy: ConflictPolicy,
 ): MonthlyDutyPlanConflict | null {
   const others = slice.shifts.filter((shift) => shift.id !== candidate.id)
   const before = new Set(
-    detectConflicts(others, slice.dutyTypes).map((conflict) => conflict.conflictId),
+    detectConflicts(others, slice.dutyTypes, policy).map((conflict) => conflict.conflictId),
   )
-  const introduced = detectConflicts([...others, candidate], slice.dutyTypes).filter(
+  const introduced = detectConflicts([...others, candidate], slice.dutyTypes, policy).filter(
     (conflict) => !before.has(conflict.conflictId),
   )
 
@@ -294,7 +297,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     }
     const envelope = await adapter.load()
     const dutyTypes = envelope === null ? [] : readSlice(envelope).dutyTypes
-    return { results: dutyTypes }
+    return { results: dutyTypes, conflictPolicy: readConflictPolicy(envelope?.slices ?? {}) }
   }
 
   async function listShifts(actorUserId: string | null): Promise<ListDutyShiftsResponse> {
@@ -351,7 +354,7 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     const typeLabel = new Map(dutyTypes.map((type) => [type.dutyTypeCode, type.safeLabel]))
 
     const conflictCounts = new Map<string, { hard: number; soft: number }>()
-    for (const conflict of detectConflicts(shifts, dutyTypes)) {
+    for (const conflict of detectConflicts(shifts, dutyTypes, readConflictPolicy(envelope?.slices ?? {}))) {
       const key = `${conflict.employeeName}|${conflict.businessDate}`
       const current = conflictCounts.get(key) ?? { hard: 0, soft: 0 }
       if (conflict.severity === 'HARD') current.hard += 1
@@ -423,12 +426,14 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     const object = findObjectById(envelope.slices, shift.target.objectId)
     const applicable =
       object === null ? null : resolveApplicableVersion(object, shift.businessDate)
-    const conflicts = detectConflicts(slice.shifts, slice.dutyTypes).filter(
+    const conflictPolicy = readConflictPolicy(envelope.slices)
+    const conflicts = detectConflicts(slice.shifts, slice.dutyTypes, conflictPolicy).filter(
       (conflict) =>
         conflict.employeeName === shift.employeeName &&
         conflict.businessDate === shift.businessDate,
     )
     return {
+      conflictPolicy,
       shift,
       passportStatus: {
         shiftId: shift.id,
@@ -468,7 +473,12 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
     }
     const envelope = await adapter.load()
     const slice = envelope === null ? null : readSlice(envelope)
-    const plan = buildMonthlyPlan(month, slice?.shifts ?? [], slice?.dutyTypes ?? [])
+    const plan = buildMonthlyPlan(
+      month,
+      slice?.shifts ?? [],
+      slice?.dutyTypes ?? [],
+      readConflictPolicy(envelope?.slices ?? {}),
+    )
     return {
       ...plan,
       header: buildHeader(envelope, slice, month, actorUserId),
@@ -658,9 +668,11 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
       // Конфликты берутся ТЕ ЖЕ, что показывает экран (весь набор смен,
       // обрезка месяцем на выдаче) — иначе проверка утверждала бы одно, а
       // список конфликтов месяца показывал другое.
-      const conflicts = detectConflicts(slice.shifts, slice.dutyTypes).filter(
-        (conflict) => monthOf(conflict.businessDate) === request.month,
-      )
+      const conflicts = detectConflicts(
+        slice.shifts,
+        slice.dutyTypes,
+        readConflictPolicy(current.slices),
+      ).filter((conflict) => monthOf(conflict.businessDate) === request.month)
       const validation = buildValidation(
         clock.now(),
         conflicts,
@@ -1002,7 +1014,12 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
         overrideReason: null,
       }
 
-      const soft = assertNoNewConflicts(slice, candidate, overrideReason)
+      const soft = assertNoNewConflicts(
+        slice,
+        candidate,
+        overrideReason,
+        readConflictPolicy(current.slices),
+      )
       const stored: DutyShift = {
         ...candidate,
         overrideReason: soft === null ? null : overrideReason,
@@ -1100,7 +1117,12 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
         updatedAt: clock.now(),
       }
 
-      const soft = assertNoNewConflicts(slice, candidate, overrideReason)
+      const soft = assertNoNewConflicts(
+        slice,
+        candidate,
+        overrideReason,
+        readConflictPolicy(current.slices),
+      )
       updated = {
         ...candidate,
         // Обоснование относится к КОНФЛИКТУ, а не к смене навсегда: правка без

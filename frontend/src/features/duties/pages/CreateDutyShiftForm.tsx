@@ -25,7 +25,7 @@ import { ConflictDialog } from '../../../shared/ui/ConflictDialog'
 import { usePermissions } from '../../../shared/auth/usePermissions'
 import { useCreateDutyShift, useDutyCandidates, useDutyPlanObjects } from '../api/queries'
 import type { DutyPlanObjectOption } from '../api/pending-contracts'
-import type { DutyTypeDefinition } from '../model/types'
+import type { ConflictPolicy, DutyTypeDefinition } from '../model/types'
 
 function durationLabel(minutes: number): string {
   const hours = minutes / 60
@@ -39,9 +39,13 @@ const REST_POLICY_LABEL = {
 
 export function CreateDutyShiftForm({
   dutyTypes,
+  conflictPolicy,
   defaultBusinessDate,
 }: {
   dutyTypes: DutyTypeDefinition[]
+  /** Режим отдыха §21.35 — глобальная политика, а не свойство вида: приходит
+   * с сервера тем же ответом, что и виды. */
+  conflictPolicy: ConflictPolicy
   /** Дата из УЖЕ загруженных смен, не из `new Date()`: demo-runtime живёт по
    * DemoClock (§8.8) и часы машины показали бы дату вне демо-сценария. */
   defaultBusinessDate: string
@@ -70,6 +74,7 @@ export function CreateDutyShiftForm({
       {open && (
         <CreateDutyShiftFields
           dutyTypes={dutyTypes}
+          conflictPolicy={conflictPolicy}
           defaultBusinessDate={defaultBusinessDate}
           onCreated={() => setOpen(false)}
         />
@@ -80,10 +85,12 @@ export function CreateDutyShiftForm({
 
 function CreateDutyShiftFields({
   dutyTypes,
+  conflictPolicy,
   defaultBusinessDate,
   onCreated,
 }: {
   dutyTypes: DutyTypeDefinition[]
+  conflictPolicy: ConflictPolicy
   defaultBusinessDate: string
   onCreated: () => void
 }) {
@@ -213,10 +220,15 @@ function CreateDutyShiftFields({
       {dutyType !== null && (
         <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-slate-600">
           Продолжительность {durationLabel(dutyType.defaultDurationMinutes)} · обязательный отдых{' '}
-          {durationLabel(dutyType.restAfterMinutes)} ({REST_POLICY_LABEL[dutyType.restPolicy]}) ·
+          {durationLabel(dutyType.restAfterMinutes)} ({REST_POLICY_LABEL[conflictPolicy.restAfterDutyMode]}) ·
           актуальный паспорт{' '}
-          {dutyType.requiresCurrentPassport ? 'обязателен' : 'не обязателен'}. Значения заданы видом
-          дежурства и на смене не переопределяются.
+          {dutyType.requiresCurrentPassport ? 'обязателен' : 'не обязателен'}. Срок отдыха и
+          требование паспорта заданы видом дежурства; режим нарушения отдыха — действующими
+          правилами конфликтов{' '}
+          {conflictPolicy.conflictPolicyVersion === null
+            ? '(политика не прочитана — применён строгий режим)'
+            : `(ред. ${conflictPolicy.conflictPolicyVersion})`}
+          .
         </p>
       )}
 

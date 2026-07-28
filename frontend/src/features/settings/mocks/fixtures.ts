@@ -9,15 +9,18 @@
 // Стартовые значения совпадают с прежними константами детекторов, а
 // `policyVersion` — с прежней `ATTENTION_POLICY_VERSION`: перенос владения не
 // должен молча изменить наблюдения на первом же запуске.
-import type { PolicySetting, SettingChangeEvent } from '../model/types'
+import type { SettingChangeEvent, StoredSetting } from '../model/types'
 
 export interface SettingsSlice {
   policyVersion: string
-  settings: PolicySetting[]
+  /** Версия правил конфликтов §21.34 — СВОЯ: см. `SettingSectionCode`. */
+  conflictPolicyVersion: string
+  settings: StoredSetting[]
   changeLog: SettingChangeEvent[]
 }
 
 export const INITIAL_POLICY_VERSION = 'attention-policy-2026.07.1'
+export const INITIAL_CONFLICT_POLICY_VERSION = 'conflict-rules-2026.07.1'
 
 /**
  * Записи настроек. Одна запись — одно администрируемое число, а не «объект
@@ -29,11 +32,12 @@ export const INITIAL_POLICY_VERSION = 'attention-policy-2026.07.1'
  * период) допуск не использует — настройка появилась бы ради симметрии
  * таблицы и не влияла бы ни на что (§35).
  */
-export const POLICY_SETTINGS: readonly PolicySetting[] = [
+export const POLICY_SETTINGS: readonly StoredSetting[] = [
   {
     settingCode: 'ATTENTION.ACKNOWLEDGEMENT_MISSING.PARAMETER',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'ACKNOWLEDGEMENT_MISSING',
+    groupCode:'ACKNOWLEDGEMENT_MISSING',
     field: 'PARAMETER',
     safeLabel: 'Срок упреждения по отметке об ознакомлении',
     description:
@@ -44,11 +48,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 30,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.ACKNOWLEDGEMENT_MISSING.WARNING_FROM',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'ACKNOWLEDGEMENT_MISSING',
+    groupCode:'ACKNOWLEDGEMENT_MISSING',
     field: 'WARNING_FROM',
     safeLabel: 'Записей без отметки — порог предупреждения',
     description: 'С какого количества записей наблюдение показывается как предупреждение.',
@@ -58,11 +65,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 100,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.ACKNOWLEDGEMENT_MISSING.CRITICAL_FROM',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'ACKNOWLEDGEMENT_MISSING',
+    groupCode:'ACKNOWLEDGEMENT_MISSING',
     field: 'CRITICAL_FROM',
     safeLabel: 'Записей без отметки — критический порог',
     description: 'С какого количества записей наблюдение становится критическим.',
@@ -72,11 +82,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 100,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.CONFLICT_SHARE.WARNING_FROM',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'CONFLICT_SHARE',
+    groupCode:'CONFLICT_SHARE',
     field: 'WARNING_FROM',
     safeLabel: 'Доля конфликтных записей — порог предупреждения',
     description:
@@ -87,11 +100,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 100,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.CONFLICT_SHARE.CRITICAL_FROM',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'CONFLICT_SHARE',
+    groupCode:'CONFLICT_SHARE',
     field: 'CRITICAL_FROM',
     safeLabel: 'Доля конфликтных записей — критический порог',
     description: 'С какой доли записей периода наблюдение становится критическим.',
@@ -101,11 +117,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 100,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.UNFINISHED_OVERDUE.PARAMETER',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'UNFINISHED_OVERDUE',
+    groupCode:'UNFINISHED_OVERDUE',
     field: 'PARAMETER',
     safeLabel: 'Допуск незавершённой записи',
     description:
@@ -116,11 +135,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 30,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.UNFINISHED_OVERDUE.WARNING_FROM',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'UNFINISHED_OVERDUE',
+    groupCode:'UNFINISHED_OVERDUE',
     field: 'WARNING_FROM',
     safeLabel: 'Незавершённых записей — порог предупреждения',
     description: 'С какого количества просроченных записей наблюдение становится предупреждением.',
@@ -130,11 +152,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 100,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.UNFINISHED_OVERDUE.CRITICAL_FROM',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'UNFINISHED_OVERDUE',
+    groupCode:'UNFINISHED_OVERDUE',
     field: 'CRITICAL_FROM',
     safeLabel: 'Незавершённых записей — критический порог',
     description: 'С какого количества просроченных записей наблюдение становится критическим.',
@@ -144,11 +169,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 100,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.UNCONFIRMED_OVERDUE.PARAMETER',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'UNCONFIRMED_OVERDUE',
+    groupCode:'UNCONFIRMED_OVERDUE',
     field: 'PARAMETER',
     safeLabel: 'Допуск неподтверждённых отметок времени',
     description:
@@ -159,11 +187,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 30,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.UNCONFIRMED_OVERDUE.WARNING_FROM',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'UNCONFIRMED_OVERDUE',
+    groupCode:'UNCONFIRMED_OVERDUE',
     field: 'WARNING_FROM',
     safeLabel: 'Неподтверждённых записей — порог предупреждения',
     description: 'С какого количества записей наблюдение показывается как предупреждение.',
@@ -173,11 +204,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 100,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.UNCONFIRMED_OVERDUE.CRITICAL_FROM',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'UNCONFIRMED_OVERDUE',
+    groupCode:'UNCONFIRMED_OVERDUE',
     field: 'CRITICAL_FROM',
     safeLabel: 'Неподтверждённых записей — критический порог',
     description: 'С какого количества записей наблюдение становится критическим.',
@@ -187,11 +221,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 100,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.SOURCE_AGE.PARAMETER',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'SOURCE_AGE',
+    groupCode:'SOURCE_AGE',
     field: 'PARAMETER',
     safeLabel: 'Допуск возраста источника',
     description:
@@ -202,11 +239,14 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 720,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
   },
   {
     settingCode: 'ATTENTION.SOURCE_AGE.WARNING_FROM',
+    kind: 'NUMBER',
     sectionCode: 'ATTENTION_POLICY',
-    detectorCode: 'SOURCE_AGE',
+    groupCode:'SOURCE_AGE',
     field: 'WARNING_FROM',
     safeLabel: 'Возраст источника — порог предупреждения',
     description:
@@ -217,6 +257,82 @@ export const POLICY_SETTINGS: readonly PolicySetting[] = [
     maxValue: 720,
     updatedAt: null,
     updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+]
+
+/**
+ * Правила конфликтов §29 (`conflict rules`). §21.35 разделяет владение прямо:
+ * СРОК обязательного отдыха — у вида дежурства («используй `restAfterMinutes`
+ * вида дежурства»), РЕЖИМ — глобальная серверная политика
+ * (`REST_AFTER_DUTY_POLICY`, значения `HARD_BLOCK` / `SOFT_OVERRIDE`). До этого
+ * среза режим лежал атрибутом вида — то есть глобальной действующей политики,
+ * которую §21.35 велит читать, не существовало и администрировать её было
+ * негде.
+ */
+export const CONFLICT_RULE_SETTINGS: readonly StoredSetting[] = [
+  {
+    settingCode: 'CONFLICT.REST_AFTER_DUTY.MODE',
+    kind: 'CHOICE',
+    sectionCode: 'CONFLICT_RULES',
+    groupCode: 'REST_AFTER_DUTY',
+    field: 'MODE',
+    safeLabel: 'Режим обязательного отдыха после дежурства',
+    description:
+      'Как поступать с назначением, попадающим в период обязательного отдыха. Длительность отдыха режимом не задаётся — она остаётся свойством вида дежурства.',
+    valueType: 'MODE',
+    // Сеяное значение — мягкое, а дефолт при ОТСУТСТВИИ политики — жёсткий
+    // (§21.35 «по умолчанию применяй REST_AFTER_DUTY_POLICY=HARD_BLOCK»). Это
+    // не противоречие: сид демонстрирует обход с обоснованием, который иначе
+    // недостижим ни на одном экране, а дефолт отвечает на другой вопрос —
+    // что делать, когда действующего значения нет вовсе.
+    value: 'SOFT_OVERRIDE',
+    options: [
+      {
+        value: 'HARD_BLOCK',
+        safeLabel: 'Жёсткий запрет',
+        description:
+          'Назначение в период отдыха отвергается (422). Обойти нельзя ни с каким правом.',
+      },
+      {
+        value: 'SOFT_OVERRIDE',
+        safeLabel: 'Обход с обоснованием',
+        description:
+          'Назначение отвергается (409), но может быть подтверждено с указанием причины — след остаётся в аудите.',
+      },
+    ],
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+  {
+    settingCode: 'CONFLICT.DUTY_OVERLAP.MODE',
+    kind: 'CHOICE',
+    sectionCode: 'CONFLICT_RULES',
+    groupCode: 'DUTY_OVERLAP',
+    field: 'MODE',
+    safeLabel: 'Режим пересечения дежурств',
+    description:
+      'Как поступать со вторым дежурством того же сотрудника в тот же день.',
+    valueType: 'MODE',
+    value: 'HARD_BLOCK',
+    options: [
+      {
+        value: 'HARD_BLOCK',
+        safeLabel: 'Жёсткий запрет',
+        description: 'Второе дежурство в тот же день отвергается (422).',
+      },
+    ],
+    updatedAt: null,
+    updatedBy: null,
+    // Правило показано, но не редактируется: §21.34 относит пересечение к
+    // hard-конфликтам и запрещает их обходить — единственный вариант здесь не
+    // «выбор из одного», а отсутствие выбора, и сказать об этом должен сервер.
+    editable: false,
+    lockedReason:
+      'Пересечение с другим дежурством — hard-конфликт (§21.34): его нельзя обойти, поэтому режим не переключается.',
   },
 ]
 
@@ -225,7 +341,8 @@ export function buildSettingsSeed(): { sliceName: string; data: SettingsSlice } 
     sliceName: 'settings',
     data: {
       policyVersion: INITIAL_POLICY_VERSION,
-      settings: POLICY_SETTINGS.map((item) => ({ ...item })),
+      conflictPolicyVersion: INITIAL_CONFLICT_POLICY_VERSION,
+      settings: [...POLICY_SETTINGS, ...CONFLICT_RULE_SETTINGS].map((item) => ({ ...item })),
       // Журнал пуст: сеяных «изменений» не бывает — они не происходили.
       changeLog: [],
     },

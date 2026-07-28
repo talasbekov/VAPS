@@ -71,7 +71,7 @@ function build(
 ) {
   return buildAttentionItems(
     definitions,
-    { shifts, dutyTypes: DUTY_TYPES },
+    { shifts, dutyTypes: DUTY_TYPES, restMode: 'HARD_BLOCK' },
     { ...CONTEXT, ...context },
   )
 }

@@ -185,6 +185,12 @@ export function DutyPlanPage() {
       {isTableView && !isLoading && !isError && defaultMonth !== null && (
         <CreateDutyShiftForm
           dutyTypes={dutyTypesQuery.data?.results ?? []}
+          conflictPolicy={
+            dutyTypesQuery.data?.conflictPolicy ?? {
+              restAfterDutyMode: 'HARD_BLOCK',
+              conflictPolicyVersion: null,
+            }
+          }
           defaultBusinessDate={shiftsQuery.data?.results[0]?.businessDate ?? ''}
         />
       )}

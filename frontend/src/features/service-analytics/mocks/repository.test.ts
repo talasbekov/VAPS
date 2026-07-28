@@ -70,35 +70,35 @@ interface SeedOverrides {
  * features→features, и проекция обязана переживать чужой рефакторинг.
  */
 function settingsSlice(
-  overrides: { detectorCode: string; field: string; value: number }[] = [],
+  overrides: { groupCode: string; field: string; value: number }[] = [],
 ): unknown {
   const base = [
-    { detectorCode: 'ACKNOWLEDGEMENT_MISSING', field: 'PARAMETER', value: 3 },
-    { detectorCode: 'ACKNOWLEDGEMENT_MISSING', field: 'WARNING_FROM', value: 1 },
-    { detectorCode: 'ACKNOWLEDGEMENT_MISSING', field: 'CRITICAL_FROM', value: 4 },
-    { detectorCode: 'CONFLICT_SHARE', field: 'WARNING_FROM', value: 18 },
-    { detectorCode: 'CONFLICT_SHARE', field: 'CRITICAL_FROM', value: 34 },
-    { detectorCode: 'UNFINISHED_OVERDUE', field: 'PARAMETER', value: 2 },
-    { detectorCode: 'UNFINISHED_OVERDUE', field: 'WARNING_FROM', value: 1 },
-    { detectorCode: 'UNFINISHED_OVERDUE', field: 'CRITICAL_FROM', value: 5 },
-    { detectorCode: 'UNCONFIRMED_OVERDUE', field: 'PARAMETER', value: 2 },
-    { detectorCode: 'UNCONFIRMED_OVERDUE', field: 'WARNING_FROM', value: 1 },
-    { detectorCode: 'UNCONFIRMED_OVERDUE', field: 'CRITICAL_FROM', value: 4 },
-    { detectorCode: 'SOURCE_AGE', field: 'PARAMETER', value: 53 },
-    { detectorCode: 'SOURCE_AGE', field: 'WARNING_FROM', value: 53 },
+    { groupCode: 'ACKNOWLEDGEMENT_MISSING', field: 'PARAMETER', value: 3 },
+    { groupCode: 'ACKNOWLEDGEMENT_MISSING', field: 'WARNING_FROM', value: 1 },
+    { groupCode: 'ACKNOWLEDGEMENT_MISSING', field: 'CRITICAL_FROM', value: 4 },
+    { groupCode: 'CONFLICT_SHARE', field: 'WARNING_FROM', value: 18 },
+    { groupCode: 'CONFLICT_SHARE', field: 'CRITICAL_FROM', value: 34 },
+    { groupCode: 'UNFINISHED_OVERDUE', field: 'PARAMETER', value: 2 },
+    { groupCode: 'UNFINISHED_OVERDUE', field: 'WARNING_FROM', value: 1 },
+    { groupCode: 'UNFINISHED_OVERDUE', field: 'CRITICAL_FROM', value: 5 },
+    { groupCode: 'UNCONFIRMED_OVERDUE', field: 'PARAMETER', value: 2 },
+    { groupCode: 'UNCONFIRMED_OVERDUE', field: 'WARNING_FROM', value: 1 },
+    { groupCode: 'UNCONFIRMED_OVERDUE', field: 'CRITICAL_FROM', value: 4 },
+    { groupCode: 'SOURCE_AGE', field: 'PARAMETER', value: 53 },
+    { groupCode: 'SOURCE_AGE', field: 'WARNING_FROM', value: 53 },
   ]
   const merged = base.map((item) => {
     const patch = overrides.find(
-      (o) => o.detectorCode === item.detectorCode && o.field === item.field,
+      (o) => o.groupCode === item.groupCode && o.field === item.field,
     )
     return patch === undefined ? item : { ...item, value: patch.value }
   })
   return {
     policyVersion: ATTENTION_POLICY_VERSION,
     settings: merged.map((item, index) => ({
-      settingCode: `ATTENTION.${item.detectorCode}.${item.field}`,
+      settingCode: `ATTENTION.${item.groupCode}.${item.field}`,
       sectionCode: 'ATTENTION_POLICY',
-      detectorCode: item.detectorCode,
+      groupCode: item.groupCode,
       field: item.field,
       safeLabel: `Настройка ${index}`,
       description: '',
@@ -550,8 +550,8 @@ describe('блок «Требует внимания» (§22.11)', () => {
     const lowered = await setup({
       ...source,
       settings: settingsSlice([
-        { detectorCode: 'CONFLICT_SHARE', field: 'WARNING_FROM', value: 5 },
-        { detectorCode: 'CONFLICT_SHARE', field: 'CRITICAL_FROM', value: 90 },
+        { groupCode: 'CONFLICT_SHARE', field: 'WARNING_FROM', value: 5 },
+        { groupCode: 'CONFLICT_SHARE', field: 'CRITICAL_FROM', value: 90 },
       ]),
     })
     const item = (await lowered.repository.getAttention(VIEWER, TODAY)).data.items.find(

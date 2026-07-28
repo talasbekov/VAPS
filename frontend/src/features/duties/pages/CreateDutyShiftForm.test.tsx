@@ -32,7 +32,6 @@ const DUTY_TYPES: DutyTypeDefinition[] = [
     defaultDurationMinutes: 1440,
     requiresSenior: false,
     restAfterMinutes: 720,
-    restPolicy: 'SOFT_OVERRIDE',
     requiresCurrentPassport: true,
   },
 ]
@@ -112,7 +111,11 @@ function renderForm(): void {
       </QueryClientProvider>
     )
   }
-  render(<CreateDutyShiftForm dutyTypes={DUTY_TYPES} defaultBusinessDate="2026-07-24" />, {
+  render(<CreateDutyShiftForm
+      dutyTypes={DUTY_TYPES}
+      conflictPolicy={{ restAfterDutyMode: 'SOFT_OVERRIDE', conflictPolicyVersion: 'conflict-rules-test.3' }}
+      defaultBusinessDate="2026-07-24"
+    />, {
     wrapper: Wrapper,
   })
 }

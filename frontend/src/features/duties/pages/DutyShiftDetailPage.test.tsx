@@ -85,6 +85,10 @@ function mockEditSources(): void {
 }
 
 const BASE_DETAIL: DutyShiftDetail = {
+  conflictPolicy: {
+    restAfterDutyMode: 'SOFT_OVERRIDE',
+    conflictPolicyVersion: 'conflict-rules-test.3',
+  },
   shift: {
     id: 'duty-1',
     businessDate: '2026-07-24',
@@ -132,7 +136,6 @@ const BASE_DETAIL: DutyShiftDetail = {
     defaultDurationMinutes: 720,
     requiresSenior: true,
     restAfterMinutes: 720,
-    restPolicy: 'HARD_BLOCK',
     requiresCurrentPassport: false,
   },
   conflicts: [],
@@ -218,6 +221,7 @@ describe('DutyShiftDetailPage — §21.32 карточка дежурства', 
           // у неё быть не должно.
           code: 'DUTY_OVERLAP',
           severity: 'SOFT',
+          policyVersion: 'conflict-rules-test.3',
           employeeName: 'Ахметов Б.',
           businessDate: '2026-07-24',
           message: 'Ахметов Б.: 2 дежурства в один день (2026-07-24).',

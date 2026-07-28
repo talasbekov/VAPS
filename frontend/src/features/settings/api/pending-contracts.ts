@@ -16,12 +16,13 @@ export function settingPath(settingCode: string): string {
 }
 
 export interface ListSettingsResponse {
+  /** Каждая запись несёт своё `action` — право и замок решает сервер, а не
+   * экран: кнопка, выключенная только на клиенте, — не ограничение доступа. */
   results: PolicySetting[]
-  /** Действующая версия политики — она же попадает в снимок аналитики §22.11. */
+  /** Действующая версия политики наблюдений — она же попадает в снимок аналитики §22.11. */
   policyVersion: string
-  /** Может ли АКТОР менять значения. Решает сервер, а не экран: кнопка,
-   * выключенная только на клиенте, — не ограничение доступа. */
-  canManage: boolean
+  /** Действующая версия правил конфликтов — она же попадает в каждый конфликт §21.34. */
+  conflictPolicyVersion: string
 }
 
 export interface ListSettingChangeLogResponse {
@@ -29,12 +30,15 @@ export interface ListSettingChangeLogResponse {
 }
 
 export interface UpdateSettingRequest extends Record<string, unknown> {
-  value: number
+  /** Число для порога, код варианта для режима — какой из них законен, решает
+   * вид записи на сервере. */
+  value: number | string
   reason: string
 }
 
 export interface UpdateSettingResponse {
   setting: PolicySetting
   policyVersion: string
+  conflictPolicyVersion: string
   event: SettingChangeEvent
 }

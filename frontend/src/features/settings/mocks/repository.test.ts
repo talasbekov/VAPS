@@ -15,6 +15,11 @@ import { POLICY_SETTINGS, buildSettingsSeed } from './fixtures'
 const VIEWER = 'viewer-user'
 const ADMIN = 'admin-user'
 const NOBODY = 'nobody-user'
+const THRESHOLDS_ONLY = 'thresholds-admin-user'
+const WILDCARD = 'wildcard-user'
+
+const REST_MODE_CODE = 'CONFLICT.REST_AFTER_DUTY.MODE'
+const OVERLAP_MODE_CODE = 'CONFLICT.DUTY_OVERLAP.MODE'
 
 const CLOCK_ISO = '2026-07-20T08:00:00+05:00'
 
@@ -28,8 +33,8 @@ function seedEnvelope(): DemoStateEnvelope {
   const { sliceName, data } = buildSettingsSeed()
   return {
     application: 'smart-josparlau',
-    schema_version: 26,
-    seed_version: 'test-v26',
+    schema_version: 27,
+    seed_version: 'test-v27',
     scenario: 'normal',
     revision: 0,
     created_at: CLOCK_ISO,
@@ -50,8 +55,23 @@ async function makeRepository() {
 beforeEach(() => {
   registerRbacDirectory([
     { userId: VIEWER, permissions: ['ops.settings.view'] },
-    { userId: ADMIN, permissions: ['ops.settings.view', 'ops.settings.manage'] },
+    {
+      userId: ADMIN,
+      permissions: [
+        'ops.settings.view',
+        'ops.settings.manage',
+        'ops.settings.manage_conflict_rules',
+      ],
+    },
     { userId: NOBODY, permissions: [] },
+    // §29: раздел правил конфликтов управляется ОТДЕЛЬНЫМ правом. Эта persona —
+    // администратор порогов наблюдений, которому правила конфликтов закрыты:
+    // без неё разделение прав было бы недостижимо (у wildcard открыто всё).
+    {
+      userId: THRESHOLDS_ONLY,
+      permissions: ['ops.settings.view', 'ops.settings.manage'],
+    },
+    { userId: WILDCARD, permissions: ['*'] },
   ])
 })
 
@@ -64,21 +84,25 @@ describe('settings repository — чтение', () => {
     )
   })
 
-  it('canManage приходит С СЕРВЕРА и различает две роли', async () => {
+  it('право на правку приходит С СЕРВЕРА в КАЖДОЙ записи и различает две роли', async () => {
     const { repository } = await makeRepository()
-    expect((await repository.listSettings(VIEWER)).canManage).toBe(false)
-    expect((await repository.listSettings(ADMIN)).canManage).toBe(true)
+    const forViewer = (await repository.listSettings(VIEWER)).results
+    const forAdmin = (await repository.listSettings(ADMIN)).results
+    const threshold = (list: typeof forViewer) =>
+      list.find((item) => item.settingCode === PARAMETER_CODE)
+    expect(threshold(forViewer)?.action.canEdit).toBe(false)
+    expect(threshold(forAdmin)?.action.canEdit).toBe(true)
   })
 
   it('порядок задаёт сервер: детектор, затем допуск → предупреждение → критично', async () => {
     const { repository } = await makeRepository()
     const codes = (await repository.listSettings(VIEWER)).results
-      .filter((item) => item.detectorCode === 'ACKNOWLEDGEMENT_MISSING')
+      .filter((item) => item.groupCode === 'ACKNOWLEDGEMENT_MISSING')
       .map((item) => item.field)
     expect(codes).toEqual(['PARAMETER', 'WARNING_FROM', 'CRITICAL_FROM'])
     // Фикстура задана в другом порядке — иначе ассерт был бы вакуумен.
     const seedFields = POLICY_SETTINGS.filter(
-      (item) => item.detectorCode === 'CONFLICT_SHARE',
+      (item) => item.groupCode === 'CONFLICT_SHARE',
     ).map((item) => item.field)
     expect(seedFields).not.toContain('PARAMETER')
   })
@@ -139,8 +163,8 @@ describe('settings repository — изменение', () => {
     expect(log.results).toHaveLength(1)
     expect(log.results[0]).toMatchObject({
       settingCode: PARAMETER_CODE,
-      oldValue: 3,
-      newValue: 7,
+      oldValue: '3',
+      newValue: '7',
       reason: REASON,
       actorUserId: ADMIN,
       policyVersionAfter: result.policyVersion,
@@ -197,7 +221,7 @@ describe('settings repository — изменение', () => {
     expect(new Set([first.policyVersion, second.policyVersion]).size).toBe(2)
 
     const log = await repository.listChangeLog(ADMIN)
-    expect(log.results.map((event) => event.newValue)).toEqual([5, 4])
+    expect(log.results.map((event) => event.newValue)).toEqual(['5', '4'])
   })
 
   it('причина сохраняется обрезанной, а не как её ввели', async () => {
@@ -216,5 +240,94 @@ describe('settings repository — изменение', () => {
     const { repository } = await makeRepository()
     await repository.updateSetting(PARAMETER_CODE, { value: 6, reason: REASON }, ADMIN)
     expect((await repository.listChangeLog(VIEWER)).results).toHaveLength(1)
+  })
+})
+
+describe('правила конфликтов §29/§21.34-21.35', () => {
+  it('правка режима — ОТДЕЛЬНОЕ право: администратор порогов правила не трогает', async () => {
+    const { repository } = await makeRepository()
+    // Тот же актор МЕНЯЕТ порог наблюдений успешно — значит отказ ниже вызван
+    // разделением прав, а не отсутствием доступа к разделу вообще.
+    await expect(
+      repository.updateSetting(PARAMETER_CODE, { value: 6, reason: REASON }, THRESHOLDS_ONLY),
+    ).resolves.toBeDefined()
+    await expect(
+      repository.updateSetting(REST_MODE_CODE, { value: 'HARD_BLOCK', reason: REASON }, THRESHOLDS_ONLY),
+    ).rejects.toBeInstanceOf(RepositoryPermissionError)
+  })
+
+  it('запертое правило §21.34 не правится ДАЖЕ wildcard-персоной', async () => {
+    const { repository } = await makeRepository()
+    // Замок — свойство правила, а не прав: hard-конфликт нельзя обойти никому.
+    await expect(
+      repository.updateSetting(
+        OVERLAP_MODE_CODE,
+        { value: 'HARD_BLOCK', reason: REASON },
+        WILDCARD,
+      ),
+    ).rejects.toMatchObject({ errorCode: 'SETTING_RULE_LOCKED' })
+  })
+
+  it('причина отказа у запертого правила ОДНА для всех — замок проверяется первым', async () => {
+    const { repository } = await makeRepository()
+    // Иначе смотрящий без права узнавал бы «нет права» там, где правило не
+    // редактируется ни для кого, — причина зависела бы от того, кто спросил.
+    await expect(
+      repository.updateSetting(
+        OVERLAP_MODE_CODE,
+        { value: 'HARD_BLOCK', reason: REASON },
+        THRESHOLDS_ONLY,
+      ),
+    ).rejects.toMatchObject({ errorCode: 'SETTING_RULE_LOCKED' })
+    const locked = (await repository.listSettings(WILDCARD)).results.find(
+      (item) => item.settingCode === OVERLAP_MODE_CODE,
+    )
+    expect(locked?.action).toEqual({
+      canEdit: false,
+      disabledReason: expect.stringContaining('hard-конфликт'),
+    })
+  })
+
+  it('версии разделов растут ПОРОЗНЬ — правка режима не двигает методику наблюдений', async () => {
+    const { repository } = await makeRepository()
+    const before = await repository.listSettings(WILDCARD)
+    const response = await repository.updateSetting(
+      REST_MODE_CODE,
+      { value: 'HARD_BLOCK', reason: REASON },
+      WILDCARD,
+    )
+    expect(response.conflictPolicyVersion).not.toBe(before.conflictPolicyVersion)
+    expect(response.policyVersion).toBe(before.policyVersion)
+
+    // И обратно: правка порога не двигает версию правил конфликтов.
+    const thresholds = await repository.updateSetting(
+      PARAMETER_CODE,
+      { value: 6, reason: REASON },
+      WILDCARD,
+    )
+    expect(thresholds.policyVersion).not.toBe(before.policyVersion)
+    expect(thresholds.conflictPolicyVersion).toBe(response.conflictPolicyVersion)
+  })
+
+  it('журнал печатает ПОДПИСЬ режима и раздел, а не код варианта', async () => {
+    const { repository } = await makeRepository()
+    await repository.updateSetting(
+      REST_MODE_CODE,
+      { value: 'HARD_BLOCK', reason: REASON },
+      WILDCARD,
+    )
+    const event = (await repository.listChangeLog(VIEWER)).results[0]
+    expect(event.oldValue).toBe('Обход с обоснованием')
+    expect(event.newValue).toBe('Жёсткий запрет')
+    expect(event.sectionCode).toBe('CONFLICT_RULES')
+    // Версия в записи — версия СВОЕГО раздела.
+    expect(event.policyVersionAfter).toContain('conflict-rules')
+  })
+
+  it('режим вне списка вариантов отвергается как ошибка ФОРМЫ', async () => {
+    const { repository } = await makeRepository()
+    await expect(
+      repository.updateSetting(REST_MODE_CODE, { value: 'BEFORE_DUTY', reason: REASON }, WILDCARD),
+    ).rejects.toBeInstanceOf(RepositoryValidationError)
   })
 })

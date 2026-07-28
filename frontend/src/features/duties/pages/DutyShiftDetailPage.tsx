@@ -143,7 +143,8 @@ function ShiftCard({ detail }: { detail: DutyShiftDetail }) {
                 dutyType === null
                   ? 'Неизвестен — вида дежурства нет в реестре'
                   : `${durationLabel(dutyType.restAfterMinutes)} · ${
-                      dutyType.restPolicy === 'HARD_BLOCK'
+                      // Режим — из ПОЛИТИКИ ответа (§21.35), срок — у вида.
+                      detail.conflictPolicy.restAfterDutyMode === 'HARD_BLOCK'
                         ? 'нарушение блокируется'
                         : 'нарушение обходится с обоснованием'
                     }`

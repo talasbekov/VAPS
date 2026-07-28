@@ -41,7 +41,11 @@ export function EditSettingDialog({ setting, unitLabel, onClose }: EditSettingDi
   const parsed = Number(value)
   const reasonValid =
     trimmedReason.length >= REASON_MIN_LENGTH && trimmedReason.length <= REASON_MAX_LENGTH
-  const valueParsable = value.trim() !== '' && Number.isFinite(parsed)
+  const isChoice = setting.kind === 'CHOICE'
+  // У режима «разбираемость» — это принадлежность списку вариантов, а не
+  // число: `Number('HARD_BLOCK')` дал бы NaN и заблокировал бы кнопку навсегда.
+  const valueParsable = isChoice ? value !== '' : value.trim() !== '' && Number.isFinite(parsed)
+  const submittedValue: number | string = isChoice ? value : parsed
 
   const fieldErrors =
     mutation.error instanceof ApiError && mutation.error.status === 400
@@ -81,22 +85,47 @@ export function EditSettingDialog({ setting, unitLabel, onClose }: EditSettingDi
           event.preventDefault()
           mutation.mutate({
             settingCode: setting.settingCode,
-            value: parsed,
+            value: submittedValue,
             reason: trimmedReason,
           })
         }}
       >
         <div>
-          <Label htmlFor={`${fieldId}-value`}>
-            Значение ({unitLabel}), допустимо {setting.minValue}–{setting.maxValue}
-          </Label>
-          <Input
-            id={`${fieldId}-value`}
-            type="number"
-            inputMode="numeric"
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-          />
+          {setting.kind === 'CHOICE' ? (
+            <>
+              <Label htmlFor={`${fieldId}-value`}>Режим</Label>
+              <select
+                id={`${fieldId}-value`}
+                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+              >
+                {setting.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.safeLabel}
+                  </option>
+                ))}
+              </select>
+              {/* Следствие выбранного режима печатается рядом: код варианта сам
+                  по себе не говорит, что произойдёт с назначением. */}
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {setting.options.find((option) => option.value === value)?.description}
+              </p>
+            </>
+          ) : (
+            <>
+              <Label htmlFor={`${fieldId}-value`}>
+                Значение ({unitLabel}), допустимо {setting.minValue}–{setting.maxValue}
+              </Label>
+              <Input
+                id={`${fieldId}-value`}
+                type="number"
+                inputMode="numeric"
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+              />
+            </>
+          )}
           <FieldError message={fieldErrors.value} />
         </div>
 
