@@ -18,6 +18,7 @@ import { buildPersonnelSeed } from '../../features/personnel/mocks/fixtures'
 import { buildServiceReportsSeed } from '../../features/service-reports/mocks/fixtures'
 import { buildServiceAnalyticsSeed } from '../../features/service-analytics/mocks/fixtures'
 import { buildFeedbackSeed } from '../../features/feedback/mocks/fixtures'
+import { buildSettingsSeed } from '../../features/settings/mocks/fixtures'
 import type { DemoScenarioDefinition } from './scenario-manifest'
 
 export type { SeedContext, FeatureSeedBuilder }
@@ -51,6 +52,9 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
   // Обратная связь ни от кого не зависит: обращения ссылаются на разделы
   // портала строкой маршрута, а не на записи чужих слайсов.
   buildFeedbackSeed,
+  // §29: политика наблюдений §22.11 переехала во владение «Настроек» —
+  // аналитика её ЧИТАЕТ (mocks/settingsSlice.ts), а меняют её здесь.
+  buildSettingsSeed,
 ]
 
 // Бампается при КАЖДОМ изменении формы существующего feature-слайса (не
@@ -67,11 +71,12 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // новый слайс `serviceAnalytics` (определения показателей и пресеты периодов
 // §22.3-22.5) — 20→21; новый слайс `feedback` с обращениями и справочником
 // §28 — 23→24; комментарии, лента событий и поля разбора обращения
-// (§28 detail) — 24→25.
+// (§28 detail) — 24→25; новый слайс `settings` с политикой наблюдений §22.11
+// и журналом изменений (§29) — 25→26.
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 25
+export const SCHEMA_VERSION = 26
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)

@@ -201,6 +201,42 @@ const SEVERITY_RANK: Record<AttentionSeverity, number> = {
   INFO: 2,
 }
 
+/** Администрируемые числа детектора (владелец — раздел «Настройки», §29). */
+export interface AttentionPolicyValues {
+  parameter?: number
+  warningFrom?: number
+  criticalFrom?: number
+}
+
+/**
+ * Наложение администрируемой политики на определения детекторов. Методика
+ * (мера, текст наблюдения, маршрут перехода) остаётся здесь; допуски и пороги
+ * приходят из раздела «Настройки» — там их меняют, с журналом и версией.
+ *
+ * Политики нет — детекторов нет: вернуть их с зашитыми числами значило бы
+ * наблюдать по методике, которую никто не администрирует, и выдать результат
+ * за действующую политику. Вызывающий обязан объяснить пустоту (§35).
+ *
+ * Детектор, чьих значений в политике нет, сохраняет собственные: это не
+ * «сброс в ноль», а отсутствие администрируемой записи именно для него.
+ */
+export function applyAttentionPolicy(
+  definitions: readonly AttentionDetectorDefinition[],
+  policy: { byDetector: ReadonlyMap<string, AttentionPolicyValues> } | null,
+): AttentionDetectorDefinition[] {
+  if (policy === null) return []
+  return definitions.map((definition) => {
+    const values = policy.byDetector.get(definition.categoryCode)
+    if (values === undefined) return definition
+    return {
+      ...definition,
+      parameter: values.parameter ?? definition.parameter,
+      warningFrom: values.warningFrom ?? definition.warningFrom,
+      criticalFrom: values.criticalFrom ?? definition.criticalFrom,
+    }
+  })
+}
+
 /**
  * Сборка блока. Порядок задаёт СЕРВЕР (severity, затем код категории): §22.11
  * отдаёт элементы готовыми, и пересортировка на экране сделала бы порядок
@@ -216,6 +252,11 @@ export function buildAttentionItems(
     generatedAt: string
     snapshotId: string
     scopeLabel: string | null
+    /** Версия ДЕЙСТВУЮЩЕЙ политики (владелец — «Настройки», §29). Приходит
+     * снаружи, а не берётся константой: элемент и ответ обязаны говорить об
+     * одной методике, иначе элемент сослался бы на политику, по которой его
+     * уже не считали. */
+    policyVersion: string
   },
 ): AttentionItem[] {
   const items: AttentionItem[] = []
@@ -237,7 +278,7 @@ export function buildAttentionItems(
       targetRoute: definition.targetRoute,
       targetPermission: definition.targetPermission,
       detectedAt: context.generatedAt,
-      policyVersion: ATTENTION_POLICY_VERSION,
+      policyVersion: context.policyVersion,
     })
   }
   return items.sort(

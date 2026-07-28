@@ -42,6 +42,7 @@ const OPS_CODES = [
   'ops.analytics.view',
   'ops.analytics.operations',
   'ops.duty.view',
+  'ops.settings.view',
   'ops.dictionary.view',
   'ops.calendar.view',
   'ops.feedback.view',
@@ -86,6 +87,9 @@ const ROUTE_MATRIX = [
   // раздел его не открывает.
   { route: ROUTES.feedback, code: 'ops.feedback.view' },
   { route: ROUTES.feedbackDetailTo('does-not-exist'), code: 'ops.feedback.view' },
+  // §29: администрирование политик закрыто СВОИМ правом — право читать
+  // аудит или любой другой раздел его не открывает.
+  { route: ROUTES.settings, code: 'ops.settings.view' },
 ] as const
 
 describe('Карта гейтов Smart Josparlau-маршрутов (§34 route audit)', () => {

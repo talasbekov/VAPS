@@ -33,6 +33,7 @@ import { ServiceReportsPage } from '../features/service-reports/pages/ServiceRep
 import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
 import { ReportJobPage } from '../features/service-reports/pages/ReportJobPage'
 import { FeedbackPage } from '../features/feedback/pages/FeedbackPage'
+import { SettingsPage } from '../features/settings/pages/SettingsPage'
 import { FeedbackDetailPage } from '../features/feedback/pages/FeedbackDetailPage'
 import { CalendarPage } from './CalendarPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
@@ -351,6 +352,18 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.feedback.view">
               <FeedbackPage />
+            </RequirePermission>
+          }
+        />
+        {/* §29: администрирование политик — отдельный маршрут от read-only
+            `/audit`, со своим правом. Право на ИЗМЕНЕНИЕ проверяет сервер
+            (`canManage` в ответе и повторно на PATCH), маршрут гардит только
+            вход в раздел. */}
+        <Route
+          path={ROUTES.settings}
+          element={
+            <RequirePermission permission="ops.settings.view">
+              <SettingsPage />
             </RequirePermission>
           }
         />

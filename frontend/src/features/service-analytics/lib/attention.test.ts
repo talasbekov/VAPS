@@ -21,6 +21,10 @@ const CONTEXT = {
   generatedAt: GENERATED_AT,
   snapshotId: 'snap-1-2026-07-01-2026-07-31-demo',
   scopeLabel: 'Область demo',
+  // §29: действующую версию политики держат «Настройки» и передают снаружи —
+  // элемент не берёт её константой, иначе ссылался бы на методику, по которой
+  // его уже не считали.
+  policyVersion: ATTENTION_POLICY_VERSION,
 }
 
 function shift(overrides: Partial<AnalyticsSourceShift> = {}): AnalyticsSourceShift {
@@ -203,6 +207,12 @@ describe('идентичность наблюдения', () => {
     const items = build([detector({ warningFrom: 1 })], [shift()])
     expect(items[0].attentionId).toBe(`att-${CONTEXT.snapshotId}-TEST`)
     expect(items[0].policyVersion).toBe(ATTENTION_POLICY_VERSION)
+    // Версия — из контекста, а не из константы модуля: с другой политикой
+    // элемент обязан назвать другую версию (§29 двигает её при каждой правке).
+    expect(
+      build([detector({ warningFrom: 1 })], [shift()], { policyVersion: 'attention-policy-x.7' })[0]
+        .policyVersion,
+    ).toBe('attention-policy-x.7')
     expect(items[0].detectedAt).toBe(GENERATED_AT)
     expect(items[0].scopeLabel).toBe('Область demo')
 
