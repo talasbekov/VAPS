@@ -4,14 +4,34 @@
 # докстринг явно называет эту стори адресом manifest.json/digests/списка
 # миграций — спайк-скрипт не трогается, живёт отдельно).
 #
+# Story 13.3 — `--hotfix`: облегчённый режим, только `app`-образ (пропускает
+# pull+save nginx/postgres/redis — hotfix почти никогда их не трогает).
+# `install.sh` НЕ правится вовсе (research подтвердил при create-story:
+# discovery-логика install.sh не проверяет, сколько образов внутри
+# `images.tar` — грузит что есть, остальное берёт из локального docker-кеша
+# целевой машины, оставшегося от прошлой ПОЛНОЙ установки). Без `--hotfix` —
+# поведение не меняется, все 4 образа, как раньше. Что допустимо/недопустимо
+# hotfix'ом — deploy/HOTFIX-POLICY.md, не эта скрипт-логика.
+#
 # Выход (deploy/dist-bundle/, гитигнорирован — deploy/.gitignore):
-#   vaps-<дата>-<sha>-images.tar     — docker save всех 4 образов 12.1's топологии
+#   vaps-<дата>-<sha>-images.tar     — docker save образов (4 полных / 1 hotfix)
 #   vaps-<дата>-<sha>-frontend.tar   — frontend/dist, того же sha
-#   vaps-<дата>-<sha>-manifest.json  — sha/digests/миграции/min_upgrade_from
+#   vaps-<дата>-<sha>-manifest.json  — sha/digests/миграции/min_upgrade_from/hotfix
 #   vaps-<дата>-<sha>-sha256sums.txt — sha256sum-совместимый (12.3's install.sh
 #                                      наследует эту же проверку)
 set -euo pipefail
 cd "$(dirname "$0")/../.."   # repo root
+
+HOTFIX=0
+for arg in "$@"; do
+  case "${arg}" in
+    --hotfix) HOTFIX=1 ;;
+    *)
+      echo "ERROR: неизвестный аргумент: ${arg} (единственный флаг — --hotfix)" >&2
+      exit 1
+      ;;
+  esac
+done
 
 APP_IMAGE_NAME="vaps-app"
 NGINX_IMAGE="nginx:1.27-alpine"
@@ -37,6 +57,17 @@ PREFIX="vaps-${DATE_ONLY}-${GIT_SHA}"
 
 mkdir -p "${OUT_DIR}"
 
+# Story 13.3/AC-2: hotfix по определению патчит УЖЕ существующую установку —
+# без предыдущего бандла (LAST_SHA_FILE) hotfix бессмыслен (не «первая
+# установка», ту делает полный bundle.sh). Стоп ДО docker/npm, тем же
+# принципом, что грязное дерево выше — дешёвая проверка первой.
+if [[ "${HOTFIX}" -eq 1 && ! -f "${LAST_SHA_FILE}" ]]; then
+  echo "ERROR: --hotfix без предыдущего бандла (${LAST_SHA_FILE} не найден) —" >&2
+  echo "hotfix патчит существующую установку; для первой установки используйте" >&2
+  echo "полный бандл (bundle.sh без --hotfix)." >&2
+  exit 1
+fi
+
 IMAGES_TAR="${OUT_DIR}/${PREFIX}-images.tar"
 FRONTEND_TAR="${OUT_DIR}/${PREFIX}-frontend.tar"
 MANIFEST="${OUT_DIR}/${PREFIX}-manifest.json"
@@ -47,13 +78,19 @@ APP_IMAGE="${APP_IMAGE_NAME}:${GIT_SHA}"
 echo "[1/6] docker build (${APP_IMAGE})..."
 docker build -t "${APP_IMAGE}" -f Backend/VAPS/Dockerfile Backend/VAPS
 
-echo "[2/6] docker pull базовых образов (nginx/postgres/redis — теги как в deploy/docker-compose.yml)..."
-docker pull "${NGINX_IMAGE}"
-docker pull "${POSTGRES_IMAGE}"
-docker pull "${REDIS_IMAGE}"
+if [[ "${HOTFIX}" -eq 1 ]]; then
+  echo "[2/6] --hotfix: пропуск docker pull nginx/postgres/redis (не пересобираются)..."
+  echo "[3/6] docker save -> ${IMAGES_TAR} (--hotfix: только ${APP_IMAGE})..."
+  docker save -o "${IMAGES_TAR}" "${APP_IMAGE}"
+else
+  echo "[2/6] docker pull базовых образов (nginx/postgres/redis — теги как в deploy/docker-compose.yml)..."
+  docker pull "${NGINX_IMAGE}"
+  docker pull "${POSTGRES_IMAGE}"
+  docker pull "${REDIS_IMAGE}"
 
-echo "[3/6] docker save -> ${IMAGES_TAR} (все 4 образа 12.1's топологии)..."
-docker save -o "${IMAGES_TAR}" "${APP_IMAGE}" "${NGINX_IMAGE}" "${POSTGRES_IMAGE}" "${REDIS_IMAGE}"
+  echo "[3/6] docker save -> ${IMAGES_TAR} (все 4 образа 12.1's топологии)..."
+  docker save -o "${IMAGES_TAR}" "${APP_IMAGE}" "${NGINX_IMAGE}" "${POSTGRES_IMAGE}" "${REDIS_IMAGE}"
+fi
 
 echo "[4/6] фронт (npm run build) -> ${FRONTEND_TAR} (того же sha, AC-3)..."
 ( cd frontend && npm run build )
@@ -65,12 +102,26 @@ digest_of() {
 }
 app_digest="$(digest_of "${APP_IMAGE}")"
 [[ -z "${app_digest}" ]] && app_digest="<no-digest-local-build>"
-nginx_digest="$(digest_of "${NGINX_IMAGE}")"
-[[ -z "${nginx_digest}" ]] && nginx_digest="<no-digest-local-build>"
-postgres_digest="$(digest_of "${POSTGRES_IMAGE}")"
-[[ -z "${postgres_digest}" ]] && postgres_digest="<no-digest-local-build>"
-redis_digest="$(digest_of "${REDIS_IMAGE}")"
-[[ -z "${redis_digest}" ]] && redis_digest="<no-digest-local-build>"
+
+if [[ "${HOTFIX}" -eq 1 ]]; then
+  # --hotfix: nginx/postgres/redis не тронуты этим бандлом — манифест не
+  # придумывает их digest (были бы либо стухшими, либо вводящими в
+  # заблуждение — "образ, которого нет в этом images.tar, но манифест
+  # утверждает обратное"), явно помечает null.
+  nginx_digest_json="null"
+  postgres_digest_json="null"
+  redis_digest_json="null"
+else
+  nginx_digest="$(digest_of "${NGINX_IMAGE}")"
+  [[ -z "${nginx_digest}" ]] && nginx_digest="<no-digest-local-build>"
+  nginx_digest_json="\"${nginx_digest}\""
+  postgres_digest="$(digest_of "${POSTGRES_IMAGE}")"
+  [[ -z "${postgres_digest}" ]] && postgres_digest="<no-digest-local-build>"
+  postgres_digest_json="\"${postgres_digest}\""
+  redis_digest="$(digest_of "${REDIS_IMAGE}")"
+  [[ -z "${redis_digest}" ]] && redis_digest="<no-digest-local-build>"
+  redis_digest_json="\"${redis_digest}\""
+fi
 
 # AC-2 min_upgrade_from: best-effort locally-remembered pointer, NOT a
 # cryptographic contract — the file lives only on this dev machine and is
@@ -85,6 +136,17 @@ if [[ -f "${LAST_SHA_FILE}" ]]; then
   if [[ "${candidate}" != "${GIT_SHA}" ]]; then
     prev_sha="\"${candidate}\""
   fi
+fi
+
+# Story 13.3/AC-2: for --hotfix, min_upgrade_from staying null (either no
+# prior marker — already caught above — or a same-sha rebuild) is exactly
+# as meaningless as it would be for the check above; a hotfix that can't
+# name what it patches isn't a hotfix.
+if [[ "${HOTFIX}" -eq 1 && "${prev_sha}" == "null" ]]; then
+  echo "ERROR: --hotfix даёт min_upgrade_from=null (пересборка того же sha," >&2
+  echo "${LAST_SHA_FILE} совпадает с текущим ${GIT_SHA}) — hotfix обязан" >&2
+  echo "патчить конкретную предыдущую версию, не себя же." >&2
+  exit 1
 fi
 
 # Review (Blind Hunter/Edge Case Hunter): pipefail does abort the script if
@@ -103,15 +165,19 @@ migrations_json="$(
   exit 1
 }
 
+hotfix_json="false"
+[[ "${HOTFIX}" -eq 1 ]] && hotfix_json="true"
+
 cat > "${MANIFEST}" <<JSON
 {
   "sha": "${GIT_SHA}",
   "built_at": "${BUILD_DATE}",
+  "hotfix": ${hotfix_json},
   "images": {
     "${APP_IMAGE_NAME}": {"tag": "${APP_IMAGE}", "digest": "${app_digest}"},
-    "nginx": {"tag": "${NGINX_IMAGE}", "digest": "${nginx_digest}"},
-    "postgres": {"tag": "${POSTGRES_IMAGE}", "digest": "${postgres_digest}"},
-    "redis": {"tag": "${REDIS_IMAGE}", "digest": "${redis_digest}"}
+    "nginx": {"tag": "${NGINX_IMAGE}", "digest": ${nginx_digest_json}},
+    "postgres": {"tag": "${POSTGRES_IMAGE}", "digest": ${postgres_digest_json}},
+    "redis": {"tag": "${REDIS_IMAGE}", "digest": ${redis_digest_json}}
   },
   "migrations": ${migrations_json},
   "frontend_sha": "${GIT_SHA}",
