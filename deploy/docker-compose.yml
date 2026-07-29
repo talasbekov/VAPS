@@ -123,6 +123,18 @@ services:
     restart: unless-stopped
     command: celery -A config worker --loglevel=info
     depends_on:
+      app:
+        # Найдено ревью (Blind Hunter + Edge Case Hunter, независимо):
+        # `app` мигрирует БД инлайн в своём `command:` (строка выше) ПЕРЕД
+        # стартом uvicorn — `app`'s healthcheck проходит только ПОСЛЕ
+        # успешной миграции. worker/beat раньше зависели только от
+        # postgres/redis `service_healthy`, которые готовы сразу после
+        # приёма подключений — на свежей БД worker/beat могли начать
+        # исполнять задачи против ещё немигрированной схемы (гонка на
+        # первом `docker compose up`). `service_healthy` на `app`, не
+        # `service_started` — именно прохождение healthcheck доказывает,
+        # что миграция уже завершилась.
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -146,6 +158,9 @@ services:
     restart: unless-stopped
     command: celery -A config beat --loglevel=info
     depends_on:
+      # Тот же гард гонки миграции, что у worker — см. его комментарий.
+      app:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:

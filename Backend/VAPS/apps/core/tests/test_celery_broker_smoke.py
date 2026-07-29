@@ -28,6 +28,19 @@ subprocess (which reloads Django settings fresh and would otherwise see
 the dispatched call itself passes `ignore_result=False` — that overrides
 the worker-side default per-call, at the message level, without touching
 global conf.
+
+The worker subprocess inherits `os.environ.copy()` verbatim, so it connects
+to `VAPS_DB_NAME` directly (the gate-harness `vaps` DB, migrated) — NOT
+pytest-django's ephemeral `test_vaps` (an in-process `settings.DATABASES`
+rename other db-touching tests in the same `test-full` session may trigger,
+which the subprocess never sees). This matches every other raw
+`manage.py`-style entrypoint in `Makefile` (`schema`, `parallel-run-diff`,
+`migrate-rehearsal` all target `VAPS_DB_NAME=vaps` directly, bypassing
+pytest-django's test DB on purpose) — not a mismatch, the established
+pattern for anything that isn't itself a pytest-django `django_db` test.
+`materialize_status_effects_task`'s own idempotency/advisory-lock design
+(Dev Notes) is exactly what makes a real write against that persistent,
+shared DB safe to repeat across runs.
 """
 
 import os

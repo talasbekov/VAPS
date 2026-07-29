@@ -4,7 +4,7 @@ baseline_commit: 947082d
 
 # Story 12.6a: worker/beat-контейнеры и broker-smoke
 
-Status: review
+Status: done
 
 ## Story
 
@@ -69,6 +69,12 @@ so that **12.6's зарегистрированные beat-задачи не о�
 - **AC-5**: `make gate` — `2875 passed, 57 deselected` (smoke корректно исключён `not slow`-фильтром). `make test-full`-эквивалент (сам smoke) прогнан вручную и зелёный (см. выше). Никаких висящих docker-контейнеров/процессов после прогона (`ps aux | grep celery` — пусто; harness-контейнеры `vaps-db-1`/`vaps-redis-1` — предсуществующие gate-контейнеры, не созданы и не тронуты этой стори).
 - `ruff check` на новый тестовый файл — чисто.
 
+**3-агентное ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor, параллельно):**
+- **Acceptance Auditor**: все 5 AC подтверждены genuinely satisfied (не вакуумно) — переисполнил тест и `make gate`-эквивалентную проверку сам, независимо.
+- **Найдено и исправлено (Blind Hunter + Edge Case Hunter, независимо, оба пришли к одному выводу)**: гонка миграции — `worker`/`beat` зависели только от `postgres`/`redis` `service_healthy`, но НЕ от `app` (который мигрирует БД инлайн перед стартом). На первом `docker compose up` на свежей БД `postgres` становится healthy раньше, чем `app` завершает миграцию — `worker`/`beat` могли начать исполнять задачи против ещё немигрированной схемы. Исправлено: `worker`/`beat` теперь также зависят от `app: condition: service_healthy` (healthcheck `app` проходит только ПОСЛЕ успешной миграции — доказательство завершённости, не просто "процесс стартовал").
+- **Найдено, но ОПРОВЕРГНУТО прямой проверкой (оба агента поставили это в топ находок, ошибочно)**: «worker-подпроцесс и pytest-процесс могут смотреть в разные БД» (`vaps` vs pytest-django's эфемерный `test_vaps`). Проверено живьём: `docker exec vaps-db-1 psql -U vaps -lqt` — сейчас существует ТОЛЬКО `vaps` (никакого `test_vaps`), и эта `vaps`-БД УЖЕ мигрирована (реальные таблицы `core_*` присутствуют). Это НЕ баг — это тот же паттерн, что `Makefile`'s `schema`/`parallel-run-diff`/`migrate-rehearsal`-таргеты УЖЕ используют (`VAPS_DB_NAME=vaps` напрямую, в обход pytest-django's `test_vaps`, намеренно — та стори's Dev Notes уже документируют это явно: «идемпотентна, безопасна к повторному прогону против гейт-харнесс-БД»). Добавлено пояснение в докстринг теста, чтобы будущий ревьюер не наступил на ту же ложную тревогу.
+- Прочие находки Edge Case Hunter (xdist-совместимость мутации `os.environ`/backend-кэша, потенциальный deadlock на `stdout=PIPE`, недренированное сообщение в брокере при провале) — спекулятивны, не подтверждены живым провалом, xdist в проекте не используется (`Makefile` не передаёт `-n`); оставлены без изменений, не блокируют.
+
 ### File List
 
 - `deploy/docker-compose.yml` (MOD) — добавлены `worker`+`beat`-сервисы, переписан заголовочный комментарий.
@@ -80,3 +86,4 @@ so that **12.6's зарегистрированные beat-задачи не о�
 |---|---|
 | 2026-07-29 | Story создана (create-story) |
 | 2026-07-29 | dev-story: worker/beat-контейнеры + broker-smoke реализованы, живой прогон зелёный (`make gate` 2875 passed, smoke `1 passed` через `test-full`-tier). Найден и исправлен реальный баг plана: `conf.result_backend`-мутация маскируется namespaced-ключом `CELERY_RESULT_BACKEND` — заменена на env var + `.apply_async(ignore_result=False)`. Status → review |
+| 2026-07-29 | 3-агентное ревью: гонка миграции worker/beat vs app найдена независимо двумя агентами, исправлена (`depends_on: app: service_healthy`); DB-mismatch находка проверена живьём и опровергнута (намеренный паттерн, matches Makefile-конвенцию). Живой ре-прогон зелёный. Status → done |
