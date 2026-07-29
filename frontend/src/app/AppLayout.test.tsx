@@ -15,6 +15,7 @@ import {
   myPermissionsFixture,
 } from '../shared/api/testing/handlers'
 import { server } from '../shared/api/testing/server'
+import { resetRecentRequestIds } from '../shared/api/recentRequestIds'
 import { ACCESS_DENIED_TEXT } from '../shared/auth/guards'
 import {
   clearCredential,
@@ -42,6 +43,11 @@ afterEach(() => {
   cleanup()
   clearCredential()
   sessionStorage.clear()
+  // AppLayout now renders BugReportButton (13.1b), which reads a
+  // module-level singleton (recentRequestIds.ts) — reset it so a request-id
+  // captured by one test doesn't leak into the next (review: Edge Case
+  // Hunter).
+  resetRecentRequestIds()
 })
 
 const ALL_SECTIONS = [

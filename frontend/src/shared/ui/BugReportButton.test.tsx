@@ -9,6 +9,7 @@ import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { server } from '../api/testing/server'
 import { ToastProvider } from './toast'
+import { GENERIC_FAILURE_MESSAGE } from '../api/useApiMutation'
 import { clearCredential, setCredential } from '../auth/credential'
 import { resetRecentRequestIds } from '../api/recentRequestIds'
 import { BugReportButton } from './BugReportButton'
@@ -92,11 +93,21 @@ describe('BugReportButton', () => {
     })
   })
 
-  it('keeps the dialog open and the text intact on a server error', async () => {
+  it('keeps the dialog open and the text intact on a server error (global toast, no duplicate inline alert)', async () => {
+    // Review (Blind Hunter): useApiMutation's onError already fires a
+    // GLOBAL toast for ServerError — an inline dialog alert on TOP of that
+    // would say the same thing twice. This test pins the fix: exactly the
+    // global toast, no role="alert" inside the dialog.
     server.use(
       http.post('/api/bugreports/', () =>
         HttpResponse.json(
-          { code: 'SERVER_ERROR', message: 'x', details: {}, request_id: null },
+          {
+            error_code: 'SERVER_ERROR',
+            message: 'x',
+            details: {},
+            request_id: null,
+            timestamp: '2026-07-29T09:00:00+05:00',
+          },
           { status: 500 },
         ),
       ),
@@ -111,10 +122,60 @@ describe('BugReportButton', () => {
     await user.click(screen.getByRole('button', { name: 'Отправить' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument()
+      expect(screen.getByText(GENERIC_FAILURE_MESSAGE)).toBeInTheDocument()
     })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Что произошло')).toHaveValue(
       'текст не должен потеряться',
+    )
+  })
+
+  it('surfaces a network failure the same way (global toast, dialog stays open)', async () => {
+    server.use(http.post('/api/bugreports/', () => HttpResponse.error()))
+
+    const user = userEvent.setup()
+    renderButton()
+
+    await user.click(screen.getByRole('button', { name: 'Сообщить о проблеме' }))
+    await user.type(screen.getByLabelText('Что произошло'), 'сеть недоступна')
+    await user.click(screen.getByRole('button', { name: 'Отправить' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(GENERIC_FAILURE_MESSAGE)).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Что произошло')).toHaveValue('сеть недоступна')
+  })
+
+  it('shows an inline field alert for a non-server error (e.g. 400)', async () => {
+    server.use(
+      http.post('/api/bugreports/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'VALIDATION_ERROR',
+            message: 'x',
+            details: { description: ['обязательное поле'] },
+            request_id: null,
+            timestamp: '2026-07-29T09:00:00+05:00',
+          },
+          { status: 400 },
+        ),
+      ),
+    )
+
+    const user = userEvent.setup()
+    renderButton()
+
+    await user.click(screen.getByRole('button', { name: 'Сообщить о проблеме' }))
+    await user.type(screen.getByLabelText('Что произошло'), 'x')
+    await user.click(screen.getByRole('button', { name: 'Отправить' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    })
+    expect(screen.getByLabelText('Что произошло')).toHaveAttribute(
+      'aria-invalid',
+      'true',
     )
   })
 

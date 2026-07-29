@@ -67,4 +67,19 @@ describe('recentRequestIds', () => {
     await expect(client.get('/api/core/employees/')).rejects.toThrow()
     expect(getRecentRequestIds()).toContain('error-req-id')
   })
+
+  it('client.getBlob() also captures X-Request-Id (review: Edge Case Hunter — previously untested)', async () => {
+    server.use(
+      http.get(
+        '*/api/documents/attachments/abc/download/',
+        () =>
+          new HttpResponse(new Blob(['x']), {
+            status: 200,
+            headers: { 'X-Request-Id': 'blob-req-id' },
+          }),
+      ),
+    )
+    await client.getBlob('/api/documents/attachments/abc/download/')
+    expect(getRecentRequestIds()).toContain('blob-req-id')
+  })
 })

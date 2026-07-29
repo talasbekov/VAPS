@@ -15,6 +15,7 @@ import { MessageSquareWarning } from 'lucide-react'
 import { apiClient } from '../api/client'
 import { useApiMutation } from '../api/useApiMutation'
 import { getRecentRequestIds } from '../api/recentRequestIds'
+import { NetworkError, ServerError } from '../api/errors'
 import type { components } from '../api/schema'
 import { APP_VERSION, BUILD_SHA } from '../version'
 import { useToast } from './toast'
@@ -30,6 +31,7 @@ export function BugReportButton() {
   const { toast } = useToast()
   const titleId = useId()
   const descriptionId = useId()
+  const errorId = useId()
   const [description, setDescription] = useState('')
   const dialogRef = useRef<HTMLDialogElement | null>(null)
 
@@ -46,6 +48,13 @@ export function BugReportButton() {
     },
   })
 
+  // No `else { dialog.close() }` branch: `open=false` unmounts the whole
+  // `<dialog>` subtree (conditional render below), which destroys the
+  // native element outright — there is never a "React thinks closed, DOM
+  // still open" state to reconcile. Same pattern as ConflictDialog.tsx
+  // (review: Edge Case Hunter flagged this as fragile IF a future refactor
+  // switches to keep-mounted+CSS-hidden instead of conditional unmount —
+  // note left here so that refactor doesn't quietly reintroduce the gap).
   useEffect(() => {
     const dialog = dialogRef.current
     if (open && dialog && !dialog.open) {
@@ -108,13 +117,34 @@ export function BugReportButton() {
             value={description}
             placeholder="Например: кнопка «Сдать день» не реагирует на клик."
             onChange={(event) => setDescription(event.target.value)}
+            aria-describedby={
+              mutation.error &&
+              !(mutation.error instanceof ServerError) &&
+              !(mutation.error instanceof NetworkError)
+                ? errorId
+                : undefined
+            }
+            aria-invalid={
+              mutation.error &&
+              !(mutation.error instanceof ServerError) &&
+              !(mutation.error instanceof NetworkError)
+                ? true
+                : undefined
+            }
           />
-          {mutation.error && (
-            <p role="alert">
-              Не удалось отправить репорт. Текст сохранён — попробуйте ещё
-              раз.
-            </p>
-          )}
+          {/* Review (Blind Hunter): useApiMutation's onError already fires a
+              GLOBAL toast for ServerError/NetworkError — rendering an inline
+              alert too would say the same thing twice, in two different
+              wordings. Inline alert only for the remaining error shapes
+              (e.g. 400/403), which the mutation hook does NOT toast. */}
+          {mutation.error &&
+            !(mutation.error instanceof ServerError) &&
+            !(mutation.error instanceof NetworkError) && (
+              <p id={errorId} role="alert">
+                Не удалось отправить репорт. Текст сохранён — попробуйте ещё
+                раз.
+              </p>
+            )}
           <button type="button" onClick={closeDialog}>
             Отмена
           </button>
