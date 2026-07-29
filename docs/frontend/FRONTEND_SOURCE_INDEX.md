@@ -59,3 +59,7 @@
   можно, а где нельзя (смена методики, период без агрегата). Никаких расчётов агрегата.
 - `src/features/ratings/pages/RatingDynamicsSection.tsx` — первый SVG-график проекта:
   отрезки, граница смены методики, tooltip с версией policy + таблица тех же точек.
+- `src/features/ratings/lib/analytics.ts` — отчёт §22.16: полосы распределения, агрегаты
+  групп и подавление малых (`SUPPRESSED`). Общего среднего не считает намеренно.
+- `src/features/ratings/pages/RatingAnalyticsPage.tsx` — маршрут `/ratings/analytics`,
+  право `ops.analytics.view` (не право сводки).

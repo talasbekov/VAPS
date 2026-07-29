@@ -2,8 +2,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../../../shared/api/client'
 import type { ApiFailure } from '../../../shared/api/errors'
-import { OPERATIONAL_RATINGS_PATH, OPERATIONAL_RATING_DYNAMICS_PATH } from './pending-contracts'
-import type { ListOperationalRatingsResponse, RatingDynamicsResponse } from './pending-contracts'
+import {
+  OPERATIONAL_RATINGS_PATH,
+  OPERATIONAL_RATING_DYNAMICS_PATH,
+  RATING_ANALYTICS_PATH,
+} from './pending-contracts'
+import type {
+  ListOperationalRatingsResponse,
+  RatingAnalyticsResponse,
+  RatingDynamicsResponse,
+} from './pending-contracts'
 
 export function useOperationalRatings() {
   return useQuery<ListOperationalRatingsResponse, ApiFailure>({
@@ -25,5 +33,13 @@ export function useRatingDynamics(employeeId: string | null) {
           ? OPERATIONAL_RATING_DYNAMICS_PATH
           : `${OPERATIONAL_RATING_DYNAMICS_PATH}?employee=${encodeURIComponent(employeeId)}`,
       ),
+  })
+}
+
+/** Отчёт аналитики рейтинга (§22.16). Своё право — своё состояние ошибки. */
+export function useRatingAnalytics() {
+  return useQuery<RatingAnalyticsResponse, ApiFailure>({
+    queryKey: ['ratings', 'analytics'],
+    queryFn: () => apiClient.get<RatingAnalyticsResponse>(RATING_ANALYTICS_PATH),
   })
 }

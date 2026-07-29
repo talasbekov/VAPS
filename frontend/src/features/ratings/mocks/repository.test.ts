@@ -9,6 +9,7 @@ import { createRatingsRepository, RepositoryPermissionError } from './repository
 import { DYNAMICS_POINTS, EVALUATIONS } from './fixtures'
 
 const VIEWER = 'rating-viewer'
+const ANALYST = 'rating-analyst'
 const NOBODY = 'nobody-user'
 const BUSINESS_DATE = '2026-07-20'
 
@@ -18,9 +19,15 @@ const BUSINESS_DATE = '2026-07-20'
 const PERIOD_DAYS = 105
 const MIN_EVALUATIONS = 4
 const RATING_POLICY_VERSION = 'OPERATIONAL-RATING-test.1'
+/** §22.17: порог безопасной агрегации — тоже policy, не константа кода. */
+const MIN_GROUP = 3
 
 function settingsSlice(
-  overrides: { periodDays?: number | null; minEvaluations?: number | null } = {},
+  overrides: {
+    periodDays?: number | null
+    minEvaluations?: number | null
+    suppressionMinGroup?: number | null
+  } = {},
 ) {
   const periodDays = overrides.periodDays === undefined ? PERIOD_DAYS : overrides.periodDays
   const minEvaluations =
@@ -42,6 +49,15 @@ function settingsSlice(
       groupCode: 'AGGREGATION',
       field: 'WARNING_FROM',
       value: minEvaluations,
+    })
+  }
+  if (overrides.suppressionMinGroup !== null) {
+    settings.push({
+      settingCode: 'RATING.SUPPRESSION_MIN_GROUP.PARAMETER',
+      sectionCode: 'RATING_POLICY',
+      groupCode: 'PRIVACY',
+      field: 'PARAMETER',
+      value: overrides.suppressionMinGroup ?? MIN_GROUP,
     })
   }
   return { sectionVersions: { RATING_POLICY: RATING_POLICY_VERSION }, settings, changeLog: [] }
@@ -85,6 +101,10 @@ async function setup(overrides: SeedOverrides = {}) {
 beforeEach(() => {
   registerRbacDirectory([
     { userId: VIEWER, permissions: ['ops.rating.view_aggregate'] },
+    // §22.26: отчёт аналитики охраняет СВОЁ право. Аналитик здесь намеренно
+    // БЕЗ `ops.rating.view_aggregate`, а держатель сводки — без аналитики:
+    // иначе разделение прав было бы недемонстрируемо (обе роли у одного лица).
+    { userId: ANALYST, permissions: ['ops.analytics.view'] },
     { userId: NOBODY, permissions: [] },
   ])
 })
@@ -267,5 +287,79 @@ describe('динамика агрегата (§19.20)', () => {
     expect(response.capabilities.operationalRatings).toBe(false)
     expect(response.points).toEqual([])
     expect(response.boundaries).toEqual([])
+  })
+})
+
+describe('аналитика рейтинга (§22.16-22.17)', () => {
+  it('отчёт охраняет право АНАЛИТИКИ: держателя одной лишь сводки не пускают', async () => {
+    const { repository } = await setup()
+    await expect(repository.getRatingAnalytics(VIEWER)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+    await expect(repository.getRatingAnalytics(NOBODY)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+    // И наоборот: аналитик получает отчёт, не имея права на сводку.
+    await expect(repository.listOperationalRatings(ANALYST)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+    expect((await repository.getRatingAnalytics(ANALYST)).figures).not.toBeNull()
+  })
+
+  it('в отчёте нет ни одной закрытой величины и ни одного участника поимённо', async () => {
+    const { repository } = await setup()
+    const json = JSON.stringify(await repository.getRatingAnalytics(ANALYST))
+    expect(json).not.toContain('demo-event-planner')
+    expect(json).not.toContain('Задержка на инструктаже')
+    expect(json).not.toContain('evaluation-1')
+    // §22.16 запрещает отдельного участника в общем отчёте — ни подписи, ни id.
+    expect(json).not.toContain('Ерланов')
+    expect(json).not.toContain('employee-1')
+  })
+
+  it('малая группа подавлена, большая рассчитана, порог берётся из «Настроек»', async () => {
+    const { repository } = await setup()
+    const { figures, suppressionMinGroupSize } = await repository.getRatingAnalytics(ANALYST)
+    expect(suppressionMinGroupSize).toBe(MIN_GROUP)
+    const groups = Object.fromEntries((figures?.groups ?? []).map((g) => [g.groupCode, g]))
+    // Первое управление — четверо с агрегатом, отчёт его показывает.
+    expect(groups['division-1']).toMatchObject({ state: 'READY', ratedCount: 4 })
+    // Третье — двое: меньше порога, значение не считается вовсе.
+    expect(groups['division-3']).toMatchObject({ state: 'SUPPRESSED', aggregateRating: null })
+    // Второе — оценок в периоде ни у кого: это другое состояние, не приватность.
+    expect(groups['division-2']).toMatchObject({ state: 'NO_AGGREGATE', ratedCount: 0 })
+  })
+
+  it('снижение порога в «Настройках» РАСКРЫВАЕТ подавленную группу', async () => {
+    const { repository } = await setup({ settings: settingsSlice({ suppressionMinGroup: 2 }) })
+    const { figures } = await repository.getRatingAnalytics(ANALYST)
+    const group = figures?.groups.find((item) => item.groupCode === 'division-3')
+    expect(group?.state).toBe('READY')
+    expect(group?.aggregateRating).not.toBeNull()
+  })
+
+  it('без правила приватности отчёт не публикуется вовсе', async () => {
+    const { repository } = await setup({ settings: settingsSlice({ suppressionMinGroup: null }) })
+    const response = await repository.getRatingAnalytics(ANALYST)
+    expect(response.unpublishedReason).toBe('SUPPRESSION_UNDEFINED')
+    expect(response.figures).toBeNull()
+  })
+
+  it('порядок причин непубликации: функция → методика → приватность', async () => {
+    const disabled = await (await setup({ operationalRatings: false })).repository.getRatingAnalytics(
+      ANALYST,
+    )
+    expect(disabled.unpublishedReason).toBe('FEATURE_DISABLED')
+    const noPolicy = await (
+      await setup({ settings: settingsSlice({ minEvaluations: null }) })
+    ).repository.getRatingAnalytics(ANALYST)
+    expect(noPolicy.unpublishedReason).toBe('POLICY_UNDEFINED')
+  })
+
+  it('исправленные оценки приходят количеством, а не записями', async () => {
+    const { repository } = await setup()
+    const { figures } = await repository.getRatingAnalytics(ANALYST)
+    // В сиде ровно одна вытесненная исправлением оценка.
+    expect(figures?.correctedEvaluations).toBe(1)
   })
 })

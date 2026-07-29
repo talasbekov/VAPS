@@ -30,12 +30,37 @@ export interface RatingsSlice {
   capabilities: { operationalRatings: boolean; ratingConflicts: boolean }
 }
 
+/**
+ * Группы участников (§22.16 «аналитика рейтинга»). Свой перечень, а не импорт
+ * кадровых подразделений: фичи не читают чужие `mocks/` (ARCH-FE-013), и это
+ * тот же осознанный дубль, что и состав оцениваемых.
+ *
+ * Размеры групп подобраны так, чтобы отчёт демонстрировал ВСЕ три исхода
+ * §22.17 сразу: рассчитанный агрегат, подавление малой группы и отсутствие
+ * агрегата вовсе. Одинаковые группы делали бы подавление недостижимым.
+ */
+export const RATING_GROUPS: readonly { groupCode: string; safeLabel: string }[] = [
+  { groupCode: 'division-1', safeLabel: 'Первое управление' },
+  { groupCode: 'division-2', safeLabel: 'Второе управление' },
+  { groupCode: 'division-3', safeLabel: 'Третье управление' },
+]
+
 /** Оцениваемые. Подпись безопасная — идентификатора в ней нет (§20.29). */
-export const RATED_EMPLOYEES: readonly { employeeId: string; safeLabel: string }[] = [
-  { employeeId: 'employee-1', safeLabel: 'Ерланов Д.' },
-  { employeeId: 'employee-2', safeLabel: 'Абишев Н.' },
-  { employeeId: 'employee-3', safeLabel: 'Сейтказы М.' },
-  { employeeId: 'employee-4', safeLabel: 'Нурланов Е.' },
+export const RATED_EMPLOYEES: readonly {
+  employeeId: string
+  safeLabel: string
+  groupCode: string
+}[] = [
+  { employeeId: 'employee-1', safeLabel: 'Ерланов Д.', groupCode: 'division-1' },
+  { employeeId: 'employee-2', safeLabel: 'Абишев Н.', groupCode: 'division-1' },
+  { employeeId: 'employee-3', safeLabel: 'Сейтказы М.', groupCode: 'division-2' },
+  { employeeId: 'employee-4', safeLabel: 'Нурланов Е.', groupCode: 'division-2' },
+  { employeeId: 'employee-5', safeLabel: 'Тлеуов А.', groupCode: 'division-1' },
+  { employeeId: 'employee-6', safeLabel: 'Жумабек С.', groupCode: 'division-1' },
+  // Третье управление — ровно два участника с агрегатом: меньше порога
+  // безопасной агрегации, и на нём держится демонстрация SUPPRESSED (§22.17).
+  { employeeId: 'employee-7', safeLabel: 'Оспанов Р.', groupCode: 'division-3' },
+  { employeeId: 'employee-8', safeLabel: 'Кайрат Б.', groupCode: 'division-3' },
 ]
 
 function evaluation(
@@ -94,6 +119,29 @@ export const EVALUATIONS: readonly EventEvaluation[] = [
   // Оценка ЗА ПРЕДЕЛАМИ периода расчёта: без неё период было бы нечем
   // проверить — все оценки и так попадали бы в окно.
   evaluation('evaluation-13', 'employee-4', 10, '2025-11-04'),
+
+  // Участники, добавленные ради аналитики §22.16: их агрегаты намеренно
+  // попадают в РАЗНЫЕ полосы распределения — одинаковые значения скрыли бы
+  // подмену распределения одной полосой.
+  evaluation('evaluation-14', 'employee-5', 9, '2026-07-03'),
+  evaluation('evaluation-15', 'employee-5', 10, '2026-07-07'),
+  evaluation('evaluation-16', 'employee-5', 9, '2026-07-12'),
+  evaluation('evaluation-17', 'employee-5', 9, '2026-07-16'),
+
+  evaluation('evaluation-18', 'employee-6', 7, '2026-07-04'),
+  evaluation('evaluation-19', 'employee-6', 6, '2026-07-08'),
+  evaluation('evaluation-20', 'employee-6', 7, '2026-07-12'),
+  evaluation('evaluation-21', 'employee-6', 7, '2026-07-17'),
+
+  evaluation('evaluation-22', 'employee-7', 8, '2026-07-02'),
+  evaluation('evaluation-23', 'employee-7', 8, '2026-07-09'),
+  evaluation('evaluation-24', 'employee-7', 8, '2026-07-14'),
+  evaluation('evaluation-25', 'employee-7', 8, '2026-07-18'),
+
+  evaluation('evaluation-26', 'employee-8', 9, '2026-07-05'),
+  evaluation('evaluation-27', 'employee-8', 10, '2026-07-10'),
+  evaluation('evaluation-28', 'employee-8', 9, '2026-07-15'),
+  evaluation('evaluation-29', 'employee-8', 8, '2026-07-19'),
 ]
 
 /**

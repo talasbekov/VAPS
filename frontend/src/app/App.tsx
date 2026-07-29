@@ -31,6 +31,7 @@ import { OperationsAnalyticsPage } from '../features/service-analytics/pages/Ope
 import { ServiceAnalyticsPage } from '../features/service-analytics/pages/ServiceAnalyticsPage'
 import { ServiceReportsPage } from '../features/service-reports/pages/ServiceReportsPage'
 import { RatingsPage } from '../features/ratings/pages/RatingsPage'
+import { RatingAnalyticsPage } from '../features/ratings/pages/RatingAnalyticsPage'
 import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
 import { ReportJobPage } from '../features/service-reports/pages/ReportJobPage'
 import { FeedbackPage } from '../features/feedback/pages/FeedbackPage'
@@ -312,6 +313,14 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.rating.view_aggregate">
               <RatingsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.ratingAnalytics}
+          element={
+            <RequirePermission permission="ops.analytics.view">
+              <RatingAnalyticsPage />
             </RequirePermission>
           }
         />

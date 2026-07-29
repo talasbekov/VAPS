@@ -105,6 +105,45 @@ test.describe('Оперативный рейтинг §19 (mock-режим)', ()
     }
   })
 
+  test('аналитика §22.16: подавление малой группы и своё право раздела', async ({ page }) => {
+    const payloads: string[] = []
+    page.on('response', async (response) => {
+      if (response.url().includes('/api/ops/rating-analytics/')) {
+        payloads.push(await response.text())
+      }
+    })
+    await page.goto('/ratings/analytics')
+    await expect(page.getByRole('heading', { name: 'Аналитика рейтинга' })).toBeVisible()
+
+    // Малая группа: формулировка §22.17 дословно, значения нет ни на экране,
+    // ни в ответе API — подавление обеспечивается сервером, а не вёрсткой.
+    const suppressed = page.getByRole('row', { name: /Третье управление/ })
+    await expect(suppressed).toContainText('Недостаточно данных для безопасного отображения')
+    const rated = page.getByRole('row', { name: /Первое управление/ })
+    await expect(rated).not.toContainText('Недостаточно данных')
+    expect(payloads.length).toBeGreaterThan(0)
+    for (const body of payloads) {
+      // Ни одного участника поимённо (§22.16) и ни одной закрытой величины.
+      expect(body).not.toContain('Ерланов')
+      expect(body).not.toContain('demo-event-planner')
+    }
+  })
+
+  test('отчёт §22.16 закрыт держателю одной лишь сводки рейтинга', async ({ page }) => {
+    // §22.26: отчёт охраняет право РАЗДЕЛА АНАЛИТИКИ. Persona ведущего
+    // объекты его не имеет — отказ ПОЛОЖИТЕЛЬНЫЙ («Доступ запрещён»), а не
+    // пустой экран по любой другой причине.
+    await page.addInitScript(() => {
+      sessionStorage.setItem(
+        'vaps.credential',
+        JSON.stringify({ kind: 'dev', userId: 'demo-objects-admin' }),
+      )
+    })
+    await page.goto('/ratings/analytics')
+    await expect(page.getByText('Доступ запрещён')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Аналитика рейтинга' })).toHaveCount(0)
+  })
+
   test('без своего права раздел не открывается и в меню не показан', async ({ page }) => {
     await page.addInitScript(() => {
       sessionStorage.setItem(

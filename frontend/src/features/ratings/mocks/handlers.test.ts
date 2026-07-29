@@ -12,9 +12,11 @@ import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac
 import {
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
+  RATING_ANALYTICS_PATH,
 } from '../api/pending-contracts'
 import type {
   ListOperationalRatingsResponse,
+  RatingAnalyticsResponse,
   RatingDynamicsResponse,
 } from '../api/pending-contracts'
 import { createRatingsHandlers } from './handlers'
@@ -22,6 +24,7 @@ import { buildRatingsSeed } from './fixtures'
 
 const CLOCK_ISO = '2026-07-20T08:00:00+05:00'
 const VIEWER = 'rating-viewer'
+const ANALYST = 'rating-analyst'
 const NOBODY = 'nobody-user'
 const BASE = 'http://localhost'
 
@@ -57,6 +60,13 @@ beforeEach(async () => {
           field: 'WARNING_FROM',
           value: 4,
         },
+        {
+          settingCode: 'RATING.SUPPRESSION_MIN_GROUP.PARAMETER',
+          sectionCode: 'RATING_POLICY',
+          groupCode: 'PRIVACY',
+          field: 'PARAMETER',
+          value: 3,
+        },
       ],
       changeLog: [],
     },
@@ -73,12 +83,14 @@ beforeEach(async () => {
   })
   registerRbacDirectory([
     { userId: VIEWER, permissions: ['ops.rating.view_aggregate'] },
+    { userId: ANALYST, permissions: ['ops.analytics.view'] },
     { userId: NOBODY, permissions: [] },
   ])
 })
 
 const client = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': VIEWER } })
 const stranger = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': NOBODY } })
+const analyst = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': ANALYST } })
 
 async function statusOf(call: () => Promise<unknown>): Promise<number> {
   try {
@@ -119,5 +131,17 @@ describe('ratings handlers — динамика (§19.20)', () => {
 
   it('без права — 403 конвертом, а не пустым рядом', async () => {
     expect(await statusOf(() => stranger.get(OPERATIONAL_RATING_DYNAMICS_PATH))).toBe(403)
+  })
+})
+
+describe('ratings handlers — аналитика рейтинга (§22.16)', () => {
+  it('GET отчёта доходит до repository и отдаёт агрегаты групп', async () => {
+    const response = await analyst.get<RatingAnalyticsResponse>(RATING_ANALYTICS_PATH)
+    expect(response.figures?.groups.length).toBeGreaterThan(0)
+    expect(response.suppressionMinGroupSize).toBe(3)
+  })
+
+  it('держателю одной лишь сводки отчёт закрыт — 403 конвертом', async () => {
+    expect(await statusOf(() => client.get(RATING_ANALYTICS_PATH))).toBe(403)
   })
 })

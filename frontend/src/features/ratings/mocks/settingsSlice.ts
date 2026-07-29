@@ -15,6 +15,7 @@ export const SETTINGS_SLICE_NAME = 'settings'
 const SECTION = 'RATING_POLICY'
 const PERIOD_CODE = 'RATING.PERIOD.PARAMETER'
 const MIN_EVALUATIONS_CODE = 'RATING.MIN_EVALUATIONS.PARAMETER'
+const SUPPRESSION_CODE = 'RATING.SUPPRESSION_MIN_GROUP.PARAMETER'
 
 interface SettingProjection {
   settingCode?: unknown
@@ -53,4 +54,32 @@ export function readRatingPolicy(slices: Readonly<Record<string, unknown>>): Rat
   }
   if (periodDays === null || minEvaluations === null) return null
   return { periodDays, minEvaluations, policyVersion }
+}
+
+/**
+ * Порог безопасной агрегации (§22.17 «privacy suppression приходят от policy»).
+ *
+ * Отдельная проекция, а не поле `RatingPolicy`: методика расчёта и правило
+ * приватности отвечают на разные вопросы и отсутствуют порознь. Неполная
+ * методика делает бессмысленным СЧЁТ, отсутствующий порог — ПУБЛИКАЦИЮ
+ * отчёта; смешав их в один объект, пришлось бы гасить сводку из-за настройки,
+ * которую она не читает.
+ *
+ * `null` — правило не задано. Подставить умолчание значило бы выбрать порог
+ * приватности в коде экрана — ровно то, что §22.17 запрещает.
+ */
+export function readRatingSuppressionMinGroup(
+  slices: Readonly<Record<string, unknown>>,
+): number | null {
+  const slice = slices[SETTINGS_SLICE_NAME]
+  if (slice === undefined || slice === null || typeof slice !== 'object') return null
+  const raw = (slice as { settings?: unknown }).settings
+  if (!Array.isArray(raw)) return null
+  for (const item of raw as SettingProjection[]) {
+    if (item.sectionCode !== SECTION) continue
+    if (item.settingCode !== SUPPRESSION_CODE) continue
+    if (typeof item.value !== 'number') return null
+    return item.value
+  }
+  return null
 }
