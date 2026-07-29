@@ -1,0 +1,18 @@
+# Story 12.4 — планировщик ночного бэкапа (без Celery: в проекте его нет,
+# см. deploy/docker-compose.yml's заголовочный комментарий). Тот же паттерн,
+# что уже проверен и заведён Story 7.0 для vaps-parallel-run-diff.
+#
+# Установка (на сервере контура, из каталога деплоя, например /opt/vaps):
+#   sudo cp vaps-backup.service vaps-backup.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now vaps-backup.timer
+[Unit]
+Description=VAPS nightly backup (Story 12.4)
+After=docker.service
+
+[Service]
+Type=oneshot
+# WorkingDirectory: путь ДО deploy/ на конкретном сервере — точка правки при
+# установке (тот же приём, что vaps-parallel-run-diff.service).
+WorkingDirectory=/opt/vaps/deploy
+ExecStart=/opt/vaps/deploy/scripts/nightly-backup.sh

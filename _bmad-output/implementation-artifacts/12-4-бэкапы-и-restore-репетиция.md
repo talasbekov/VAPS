@@ -4,7 +4,7 @@ baseline_commit: 3ebce31
 
 # Story 12.4: Бэкапы и restore-репетиция
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,7 +18,7 @@ so that **«бэкап, который не восстанавливали, не
 
 Скоуп — 5 файлов (граница CLAUDE.md's лимита, одна ответственность — «бэкап доказанно восстановим»): `deploy/scripts/nightly-backup.sh` (NEW), `deploy/scripts/restore-rehearsal.sh` (NEW), `deploy/systemd/vaps-backup.service`+`.timer` (NEW, планировщик — та же механика, что уже проверена 7.0's `vaps-parallel-run-diff.{service,timer}`), структурный тест (regex-стиль, зеркало 12.2/12.3).
 
-1. **AC-1 (ночной pg_dump + volume-бэкап, планировщик — systemd timer, не Celery beat).** Celery не установлен нигде в проекте (12.1's Dockerfile/12.3's install.sh это уже подтвердили; worker/beat явно отложены на 12.6). Планировщик — та же механика, что уже проверена и заведена Story 7.0 для `parallel-run-diff`: `deploy/systemd/vaps-backup.service` (`Type=oneshot`, `ExecStart=/usr/bin/deploy/scripts/nightly-backup.sh`) + `vaps-backup.timer` (`OnCalendar=*-*-* 03:00:00`, **`Persistent=true`**).
+1. **AC-1 (ночной pg_dump + volume-бэкап, планировщик — systemd timer, не Celery beat).** Celery не установлен нигде в проекте (12.1's Dockerfile/12.3's install.sh это уже подтвердили; worker/beat явно отложены на 12.6). Планировщик — та же механика, что уже проверена и заведена Story 7.0 для `parallel-run-diff`: `deploy/systemd/vaps-backup.service` (`Type=oneshot`, `ExecStart=/opt/vaps/deploy/scripts/nightly-backup.sh`, `WorkingDirectory=/opt/vaps/deploy`) + `vaps-backup.timer` (`OnCalendar=*-*-* 03:00:00`, **`Persistent=true`**).
 2. **AC-2 (catch-up семантика — systemd's собственный механизм, не приложенческий watermark).** `Persistent=true` в `.timer` — ДОКУМЕНТИРОВАННОЕ ЯДРО systemd: пропущенный (сервер был выключен) запуск исполняется при ближайшей доступности автоматически, без кастомного кода. **Скоуп-решение**: НЕ переиспользуется `apps.core.clock.catchup_plan` (тот — приложенческий, per-day watermark-replay для ДАННЫХ, применяется в 3.12/5.7b2/6.9; ночной pg_dump — не «за пропущенные дни», а «сделать бэкап СЕЙЧАС, раз пропустили окно» — систем-уровневая, не бизнес-семантика; 7.0 уже установила этот прецедент для инфраструктурных джоб).
 3. **AC-3 (`nightly-backup.sh` — pg_dump + volume-tar, с меткой времени + стабильный указатель `latest`).** Тот же механизм, что `install.sh`'s inline-бэкап (12.3: `pg_dump` через `docker compose exec`, `docker run --rm -v ...:/data ... tar czf`), но САМОСТОЯТЕЛЬНО, не переиспользует install.sh's код (12.3's Dev Notes явно называет свой бэкап «inline safety-net этой стори», не общей библиотекой) — независимая копия механики, задокументированное намеренное НЕ-обобщение (обобщать после ВТОРОГО реального потребителя — сейчас их два: 12.3 и 12.4, но оба уже написаны с разным контекстом вызова, рефакторинг в общую либу — не в скоупе этой стори). `docker compose exec`/`docker run` используют ТОТ ЖЕ `COMPOSE_PROJECT="vaps-install"`, что `install.sh` — реальный прод-стек на целевой машине ВСЕГДА поднят под этим именем (12.3's install.sh — единственный способ его поднять). После каждого успешного бэкапа — `deploy/backups/latest` (symlink) указывает на свежий timestamped-каталог, тот же приём, что `.last-bundle-sha`/`.installed-sha` (12.2/12.3).
 4. **AC-4 (`restore-rehearsal.sh` — реальное восстановление в ЧИСТЫЙ параллельный стек, не в прод).** Отдельный `docker compose`-проект `vaps-restore-rehearsal` (НЕ `vaps-install` — восстановление в ЖИВОЙ прод-стек стёрло бы прод-данные; НЕ `deploy` — коллизионный generic-неймспейс, уже дважды ударивший эту сессию). Поднимает ТОЛЬКО `postgres`+`redis`+`app` (БЕЗ `nginx` — избегает коллизии порта `80:80` с реально работающим прод-стеком на той же машине) из `deploy/backups/latest`. Восстанавливает `postgres.sql` через `psql`, `private_storage.tar.gz` через `docker run --rm -v ...`. Smoke — ВНУТРИ контейнера `app` (`docker compose exec app`, бьёт `127.0.0.1:8000` напрямую — та же механика, что уже использует 12.1's собственный app-healthcheck; ALLOWED_HOSTS уже разрешает `127.0.0.1` для ровно этого внутреннего сценария, 12.3's review-фикс) — не через `smoke.sh`/nginx (тот требует publish порта 80, коллизирующего с прод; полная nginx-цепочка уже покрыта 12.3's `install.sh`, здесь цель — доказать ВОССТАНОВИМОСТЬ ДАННЫХ + запускаемость приложения НА НИХ, не переповторить весь nginx-routing-тест).
@@ -27,26 +27,26 @@ so that **«бэкап, который не восстанавливали, не
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `deploy/scripts/nightly-backup.sh` (NEW) (AC: 1, 3)
-  - [ ] `set -euo pipefail`, `COMPOSE_PROJECT="vaps-install"` (тот же, что `install.sh`).
-  - [ ] `pg_dump` через `docker compose exec -T postgres`, `docker run --rm -v vaps-install_private_storage:/data ... tar czf` для volume'а — в `deploy/backups/<timestamp>/`.
-  - [ ] `deploy/backups/latest` symlink обновляется ПОСЛЕ успешного завершения обоих шагов (не раньше — недописанный бэкап не должен стать «latest»).
-- [ ] Task 2 — `deploy/systemd/vaps-backup.service`+`.timer` (NEW) (AC: 1, 2)
-  - [ ] Зеркало `deploy/contour-stand/systemd/vaps-parallel-run-diff.{service,timer}` — `Type=oneshot`, `OnCalendar=*-*-* 03:00:00`, `Persistent=true`.
-- [ ] Task 3 — `deploy/scripts/restore-rehearsal.sh` (NEW) (AC: 4, 5)
-  - [ ] `COMPOSE_PROJECT="vaps-restore-rehearsal"` — явно ОТДЕЛЬНЫЙ от `vaps-install`.
-  - [ ] Снос стейл-остатков предыдущей неудачной репетиции (`down -v`) ПЕРЕД стартом.
-  - [ ] `docker compose ... up -d --wait postgres redis app` (БЕЗ nginx — избегает коллизии порта).
-  - [ ] Восстановление `postgres.sql` (`psql`) + `private_storage.tar.gz` (`docker run --rm -v ...`) из `deploy/backups/latest`.
-  - [ ] Смок ИЗНУТРИ `app`-контейнера (`docker compose exec app python -c "urllib.request.urlopen('http://127.0.0.1:8000/api/parallel-run/health/')"` — та же механика, что 12.1's app-healthcheck).
-  - [ ] Снос стека (`down -v`) ПОСЛЕ, успешно или нет — не оставлять репетиционный стек висеть.
-- [ ] Task 4 — Структурный тест (`Backend/VAPS/apps/core/tests/test_backup_scripts.py`, NEW) (AC: 1-6)
-  - [ ] Зеркало `test_bundle_script.py`/`test_install_and_smoke_scripts.py`: `set -euo pipefail`, оба `COMPOSE_PROJECT`-значения РАЗЛИЧНЫ и НЕ `deploy`, `-p` присутствует на каждом `docker compose`-вызове, systemd-юниты содержат `Persistent=true`/`OnCalendar`, `latest`-symlink обновляется ПОСЛЕ успешных шагов.
-- [ ] Task 5 — Реальный прогон (AC: 6)
-  - [ ] Прод-подобный стек (`vaps-install`) реально поднят, `nightly-backup.sh` реально собрал бэкап.
-  - [ ] `restore-rehearsal.sh` реально восстановил в `vaps-restore-rehearsal`, смок зелёный.
-  - [ ] Оба стека убраны, `docker volume ls`/`docker ps -a` чистые (без посторонних ресурсов).
-  - [ ] `make gate` — зелёный.
+- [x] Task 1 — `deploy/scripts/nightly-backup.sh` (NEW) (AC: 1, 3)
+  - [x] `set -euo pipefail`, `COMPOSE_PROJECT="vaps-install"` (тот же, что `install.sh`).
+  - [x] `pg_dump` через `docker compose exec -T postgres`, `docker run --rm -v vaps-install_private_storage:/data ... tar czf` для volume'а — в `deploy/backups/<timestamp>/`.
+  - [x] `deploy/backups/latest` symlink обновляется ПОСЛЕ успешного завершения обоих шагов (не раньше — недописанный бэкап не должен стать «latest»).
+- [x] Task 2 — `deploy/systemd/vaps-backup.service`+`.timer` (NEW) (AC: 1, 2)
+  - [x] Зеркало `deploy/contour-stand/systemd/vaps-parallel-run-diff.{service,timer}` — `Type=oneshot`, `OnCalendar=*-*-* 03:00:00`, `Persistent=true`.
+- [x] Task 3 — `deploy/scripts/restore-rehearsal.sh` (NEW) (AC: 4, 5)
+  - [x] `COMPOSE_PROJECT="vaps-restore-rehearsal"` — явно ОТДЕЛЬНЫЙ от `vaps-install`.
+  - [x] Снос стейл-остатков предыдущей неудачной репетиции (`down -v`) ПЕРЕД стартом.
+  - [x] `docker compose ... up -d --wait postgres redis app` (БЕЗ nginx — избегает коллизии порта).
+  - [x] Восстановление `postgres.sql` (`psql`) + `private_storage.tar.gz` (`docker run --rm -v ...`) из `deploy/backups/latest`.
+  - [x] Смок ИЗНУТРИ `app`-контейнера (`docker compose exec app python -c "urllib.request.urlopen('http://127.0.0.1:8000/api/parallel-run/health/')"` — та же механика, что 12.1's app-healthcheck).
+  - [x] Снос стека (`down -v`) ПОСЛЕ, успешно или нет — не оставлять репетиционный стек висеть.
+- [x] Task 4 — Структурный тест (`Backend/VAPS/apps/core/tests/test_backup_scripts.py`, NEW) (AC: 1-6)
+  - [x] Зеркало `test_bundle_script.py`/`test_install_and_smoke_scripts.py`: `set -euo pipefail`, оба `COMPOSE_PROJECT`-значения РАЗЛИЧНЫ и НЕ `deploy`, `-p` присутствует на каждом `docker compose`-вызове, systemd-юниты содержат `Persistent=true`/`OnCalendar`, `latest`-symlink обновляется ПОСЛЕ успешных шагов.
+- [x] Task 5 — Реальный прогон (AC: 6)
+  - [x] Прод-подобный стек (`vaps-install`) реально поднят, `nightly-backup.sh` реально собрал бэкап.
+  - [x] `restore-rehearsal.sh` реально восстановил в `vaps-restore-rehearsal`, смок зелёный.
+  - [x] Оба стека убраны, `docker volume ls`/`docker ps -a` чистые (без посторонних ресурсов).
+  - [x] `make gate` — зелёный.
 
 ## Dev Notes
 
@@ -73,10 +73,39 @@ so that **«бэкап, который не восстанавливали, не
 
 ### Completion Notes
 
+Реализовано по плану, 5 файлов в скоупе (граница лимита ≤5). `make gate` — 2853 passed, 0 failed, schema drift не обнаружен.
+
+**Живой прогон (не продекларирован), полный цикл:**
+1. Собран `vaps-app:dev`, поднят прод-подобный стек `docker compose -p vaps-install ... up -d --wait` — все 4 контейнера healthy.
+2. `nightly-backup.sh` реально выполнен: `pg_dump` → реальный 114KB `postgres.sql` (3571 строк), volume-tar `private_storage.tar.gz`, `deploy/backups/latest` symlink указывает на свежий timestamped-каталог.
+3. `restore-rehearsal.sh` реально выполнен: снос стейл-остатков (none) → подъём `postgres`+`redis` под ОТДЕЛЬНЫМ проектом `vaps-restore-rehearsal` → реальное `psql`-восстановление (полная схема — CREATE TABLE/INDEX/TRIGGER на ~80 таблиц, COPY данных, включая `COPY 172`-строчную и другие непустые таблицы) → восстановление файлового volume'а → `app` поднят НА восстановленных данных и стал healthy → smoke ИЗНУТРИ контейнера (`docker compose exec app python -c "urllib.request.urlopen(...)"`) — зелёный → `trap cleanup EXIT` автоматически снёс весь репетиционный стек (контейнеры + 4 volume'а + сеть), подтверждено `docker ps -a`/`docker volume ls` — ни единого `vaps-restore-rehearsal-*`-ресурса не осталось.
+4. Прод-подобный стек (`vaps-install`) на всём протяжении репетиции НЕ ТРОНУТ — подтверждено `docker ps` (все 4 контейнера продолжали healthy) — доказывает изоляцию проектных имён работает по построению, не по дисциплине.
+5. Финальная уборка — `docker compose -p vaps-install ... down -v` — тоже чисто, никаких посторонних docker-ресурсов не задето (явная проверка после урока этой сессии, дважды пострадавшей от коллизии на generic-имени «deploy»).
+
+**Ревью (3 агента, cross-model, реальный прогон каждого).**
+
+- **Blind Hunter** (diff-only) поднял несколько HIGH-гипотез, из которых бо́льшая часть ОПРОВЕРГНУТА либо моим же живым прогоном (см. выше), либо Edge Case Hunter'ом с прямым чтением файлов — в том числе главная HIGH: «`down -v` не подчистит `private_storage`, если тот не объявлен top-level volume'ом в compose» — ОПРОВЕРГНУТО: `private_storage` РЕАЛЬНО объявлен в `deploy/docker-compose.yml`'s `volumes:`-блоке, и мой собственный живой прогон УЖЕ показал реальный вывод `Volume vaps-restore-rehearsal_private_storage Removed` — гипотеза была проверяемой и не подтвердилась. Из оставшегося применены 2 реальных, дешёвых фикса:
+  1. **Нет retention/pruning для `deploy/backups/`.** Под `Persistent=true` джоба крутится бессрочно без оператора — без ротации диск рано или поздно заполнится (и утащит за собой живые postgres/app-контейнеры). Исправлено: `nightly-backup.sh` хранит последние 14 бэкапов, старее — удаляет, ПОСЛЕ успешного обновления `latest` (не раньше). Дополнительно: `trap` удаляет НЕДОПИСАННЫЙ `OUT_DIR` при провале (частичный `postgres.sql` от упавшего на середине прогона больше не остаётся мусором навсегда).
+  2. **`cleanup()`'s `|| true` полностью проглатывал провал снoса.** Неудачный `docker compose down -v` (сеть занята, etc.) оставлял бы репетиционный стек висеть БЕЗ единого следа для оператора. Исправлено: `WARNING`-строка на неудачный снос, `|| true` сохранён (по-прежнему не маскирует реальный exit-код репетиции).
+  - Остальные HIGH/MED (TOCTOU-гонка между конкурентными прогонами, отсутствие `docker volume inspect`-проверки перед бэкапом, `.env`-парсинг не снимает кавычки) — рассмотрены и ОТКЛОНЕНЫ: единственный оператор, последовательные операции на закрытом контуре — конкурентность гипотетична; volume-конвенция уже используется идентично в `install.sh` (12.3) без проблем; `.env`-парсинг — тот же (не регрессировавший) паттерн, что уже принят 12.3, не новый для этой стори.
+- **Edge Case Hunter** (полный доступ к проекту, живое чтение) подтвердил volume-именование корректно (сверено байт-в-байт с `docker-compose.yml`), опроверг «chicken-and-egg»-гипотезу restore-в-свежую-БД (plain `pg_dump`+`psql` в контейнер-инициализированную пустую БД — стандартный, безопасный паттерн), подтвердил `cleanup()`'s идемпотентность на первом прогоне (`down -v` на несуществующем проекте — no-op под `|| true`). Нашёл 1 реальную неточность в комментарии `vaps-backup.timer` (утверждение «02:15 vs 03:00 не конкурируют за БД» подразумевало ОБЩУЮ БД с `vaps-parallel-run-diff.timer`, 7.0 — но `contour-stand`'s `db`-сервис ОТДЕЛЬНАЯ Postgres-инсталляция, не та же БД) — исправлено: комментарий переписан, ложная предпосылка снята.
+- **Acceptance Auditor**: реально прогнал структурные тесты (12 passed), `make gate` (2853 passed) — оба совпали с Completion Notes буква-в-букву. Явно НЕ прогнал живой backup/restore-цикл (по инструкции — избежать третьего docker-инцидента в этой сессии), чётко пометил это как неподтверждённое им лично, не притворился, что проверил. Нашёл 1 косметическую неточность: AC-1's текст в самой стори цитировал другой (устаревший черновой) `ExecStart`-путь, чем реальный файл — исправлено В ТЕКСТЕ AC (файл был верным с самого начала).
+
+**Применённые review-патчи**: retention/pruning (14 последних бэкапов) + cleanup-failure-видимость + исправлен ложный комментарий про пересечение БД с 7.0's таймером + синхронизирован AC-1's текст с реальным путём `ExecStart`. `make gate` после патчей — 2853 passed, 0 failed.
+
+2 decision (принять оба дешёвых MED-патча) · 0 defer · 1 dismiss-с-обоснованием (главная опровергнутая HIGH-гипотеза Blind Hunter'а + TOCTOU/volume-inspect/quoting — все объяснены выше).
+
 ### File List
+
+- `deploy/scripts/nightly-backup.sh` (NEW) — pg_dump + volume-tar, `latest`-symlink; retention (14 бэкапов) + provал-cleanup (review-фиксы).
+- `deploy/scripts/restore-rehearsal.sh` (NEW) — restore в изолированный стек + внутренний smoke + автоматический teardown (trap); видимый WARNING на неудачный снос (review-фикс).
+- `deploy/systemd/vaps-backup.service` (NEW) — планировщик, зеркало 7.0's паттерна.
+- `deploy/systemd/vaps-backup.timer` (NEW) — `Persistent=true` (catch-up, AC-2); комментарий исправлен (review-фикс, ложная предпосылка про общую БД с 7.0).
+- `Backend/VAPS/apps/core/tests/test_backup_scripts.py` (NEW) — структурные regex-тесты обоих скриптов + systemd-юнитов.
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-29 | Story создана (create-story) |
+| 2026-07-29 | dev-story: реализация (nightly-backup.sh/restore-rehearsal.sh/systemd-юниты) + полный живой прогон (pg_dump→restore→smoke изнутри контейнера, оба стека убраны чисто под правильными project-именами) + 3-агентное ревью опровергло главную HIGH-гипотезу живой уликой, применило 2 дешёвых MED-патча (retention/pruning + cleanup-failure-видимость) + исправило ложную предпосылку в комментарии таймера → done |

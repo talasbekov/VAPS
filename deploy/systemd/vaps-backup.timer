@@ -1,0 +1,23 @@
+# Story 12.4 — расписание ночного бэкапа. OnCalendar — точка правки
+# расписания. Дефолт: каждую ночь в 03:00 локального времени сервера.
+#
+# Review (Edge Case Hunter): предыдущая версия этого комментария утверждала
+# «после vaps-parallel-run-diff.timer's 02:15 — не конкурируют за БД» — это
+# было НЕВЕРНО: `deploy/contour-stand/docker-compose.yml`'s `db`-сервис —
+# ОТДЕЛЬНАЯ Postgres-инсталляция (собственный урезанный стенд, 7.0), не та
+# же БД, что эта стори бэкапит. 03:00 выбран просто чтобы не совпасть буква
+# в букву, не потому что оба юнита делят один ресурс.
+#
+# Persistent=true — AC-2's «catch-up семантика», буквально: если сервер был
+# выключен в 03:00, systemd сам исполняет пропущенный запуск при ближайшей
+# доступности. Не приложенческий watermark-код — встроенная семантика
+# systemd, тот же приём, что уже принят vaps-parallel-run-diff.timer (7.0).
+[Unit]
+Description=VAPS nightly backup schedule (Story 12.4)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
