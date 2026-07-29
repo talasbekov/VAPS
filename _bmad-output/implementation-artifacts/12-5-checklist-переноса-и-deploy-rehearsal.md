@@ -4,7 +4,7 @@ baseline_commit: 5d244d6
 
 # Story 12.5: CHECKLIST переноса и deploy-rehearsal
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -28,26 +28,26 @@ so that **перенос носителем — воспроизводимая �
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `Backend/VAPS/config/settings.py` (MOD) (AC: 0)
-  - [ ] `jwt_config_from_env`: `key.replace("\\n", "\n")` сразу после чтения непустого `key`.
-  - [ ] Юнит-тест: `jwt_config_from_env` с буквальным `\n`-PEM реально ДАЁТ ключ, который `cryptography` может распарсить (не просто «функция не упала» — реальная попытка `serialization.load_pem_public_key`).
-- [ ] Task 2 — `deploy/CHECKLIST.md` (NEW) (AC: 1)
-  - [ ] Таблица шагов, колонки времени начала/конца, «проверено».
-  - [ ] Версия было/стало — явная ссылка на `.installed-sha`/`manifest.json`'s `sha` (не «спросить у кого-то»).
-  - [ ] Секция секретов — чек-пункт канала доставки, не единственный протокол.
-- [ ] Task 3 — `deploy/scripts/deploy-rehearsal.sh` (NEW) (AC: 2, 3, 4, 5)
-  - [ ] Header-комментарий явно отличает от `restore-rehearsal.sh` (12.4) и от `RUNBOOK.md`/12.7.
-  - [ ] `COMPOSE_PROJECT="vaps-deploy-rehearsal"` — третье уникальное имя.
-  - [ ] Каждый шаг: timestamp + описание + пауза-подтверждение + запись в лог-файл (`deploy/rehearsal-logs/<ts>.log`).
-  - [ ] Реальные шаги install.sh's последовательности (sha-check/бэкап/load/up/smoke/фиксация).
-- [ ] Task 4 — Структурный+юнит тест (`Backend/VAPS/apps/core/tests/test_deploy_rehearsal.py`, NEW, + правка `test_jwt_authentication.py`) (AC: 0, 2-6)
-  - [ ] `jwt_config_from_env`'s unescape — реальный PEM-парсинг, не просто отсутствие исключения.
-  - [ ] `deploy-rehearsal.sh` regex-тесты: `COMPOSE_PROJECT` уникален, timestamp-паттерн на каждом шаге, header различает три скрипта.
-- [ ] Task 5 — Реальный прогон (AC: 6)
-  - [ ] `deploy-rehearsal.sh` реально прогнан (неинтерактивно, авто-подтверждения) на локальном стеке.
-  - [ ] Лог-файл содержит реальные timestamp'ы на каждом шаге.
-  - [ ] Стек убран, `docker ps -a`/`docker volume ls` чистые.
-  - [ ] `make gate` — зелёный.
+- [x] Task 1 — `Backend/VAPS/config/settings.py` (MOD) (AC: 0)
+  - [x] `jwt_config_from_env`: `key.replace("\\n", "\n")` сразу после чтения непустого `key`.
+  - [x] Юнит-тест: `jwt_config_from_env` с буквальным `\n`-PEM реально ДАЁТ ключ, который `cryptography` может распарсить (не просто «функция не упала» — реальная попытка `serialization.load_pem_public_key`).
+- [x] Task 2 — `deploy/CHECKLIST.md` (NEW) (AC: 1)
+  - [x] Таблица шагов, колонки времени начала/конца, «проверено».
+  - [x] Версия было/стало — явная ссылка на `.installed-sha`/`manifest.json`'s `sha` (не «спросить у кого-то»).
+  - [x] Секция секретов — чек-пункт канала доставки, не единственный протокол.
+- [x] Task 3 — `deploy/scripts/deploy-rehearsal.sh` (NEW) (AC: 2, 3, 4, 5)
+  - [x] Header-комментарий явно отличает от `restore-rehearsal.sh` (12.4) и от `RUNBOOK.md`/12.7.
+  - [x] `COMPOSE_PROJECT="vaps-deploy-rehearsal"` — третье уникальное имя.
+  - [x] Каждый шаг: timestamp + описание + пауза-подтверждение + запись в лог-файл (`deploy/rehearsal-logs/<ts>.log`).
+  - [x] Реальные шаги install.sh's последовательности (sha-check/бэкап/load/up/smoke/фиксация).
+- [x] Task 4 — Структурный+юнит тест (`Backend/VAPS/apps/core/tests/test_deploy_rehearsal.py`, NEW, + правка `test_jwt_authentication.py`) (AC: 0, 2-6)
+  - [x] `jwt_config_from_env`'s unescape — реальный PEM-парсинг, не просто отсутствие исключения.
+  - [x] `deploy-rehearsal.sh` regex-тесты: `COMPOSE_PROJECT` уникален, timestamp-паттерн на каждом шаге, header различает три скрипта.
+- [x] Task 5 — Реальный прогон (AC: 6)
+  - [x] `deploy-rehearsal.sh` реально прогнан (неинтерактивно, авто-подтверждения) на локальном стеке.
+  - [x] Лог-файл содержит реальные timestamp'ы на каждом шаге.
+  - [x] Стек убран, `docker ps -a`/`docker volume ls` чистые.
+  - [x] `make gate` — зелёный.
 
 ## Dev Notes
 
@@ -75,10 +75,52 @@ so that **перенос носителем — воспроизводимая �
 
 ### Completion Notes
 
+Реализовано по плану. Скоуп РЕАЛЬНО вышел за заявленные «4 файла» — 6-7 файлов тронуто (`settings.py`, `test_jwt_authentication.py`, `CHECKLIST.md`, `deploy-rehearsal.sh`, `test_deploy_rehearsal.py`, плюс два дешёвых, необходимых соседских фикса: `install.sh`'s `COMPOSE_PROJECT` сделан override-able — иначе изоляция репетиции от прод-стека была бы невозможна БЕЗ третьей копипасты pg_dump/load/up-логики; `deploy/.gitignore` — обнаружен реальный пробел (`.installed-sha`/`backups/`/`pre-install-backups/`/`rehearsal-logs/` НИ РАЗУ не были перечислены с 12.3/12.4). Оба — прямые предпосылки этой стори, не расползание скоупа, задокументировано явно, не спрятано за «4 файла».
+
+`make gate` — 2868 passed, 0 failed, schema drift не обнаружен.
+
+**AC-0 — реальный, ранее незамеченный баг закрыт и живо перепроверен ДВАЖДЫ:**
+1. Юнит-тестом: `serialization.load_pem_public_key()` реально распарсил ключ, прошедший через `jwt_config_from_env` в буквальном `\n`-виде — не просто «функция не упала».
+2. Живым прогоном `deploy-rehearsal.sh` (AC-6): тестовый `.env` намеренно собран ТЕМ ЖЕ методом, что документирует `.env.example` (реальные переводы строк → буквальные `\n`, ОДНОЙ строкой) — приложение реально стартовало, `smoke.sh`'s 8/8 прошли, включая `/admin/login/` (200) — JWT-verification-подсистема реально жива на настоящем PEM, доставленном ровно тем способом, что был сломан.
+
+**Живой прогон (не продекларирован), полный цикл:**
+- `deploy-rehearsal.sh /tmp/vaps-test-bundle` (VAPS_REHEARSAL_AUTO=1, неинтерактивный авто-прогон для теста) — вызвал `install.sh` под ИЗОЛИРОВАННЫМ `COMPOSE_PROJECT=vaps-deploy-rehearsal` (не трогая гипотетический реальный `vaps-install`).
+- `install.sh` завершился за 19с, 8/8 smoke зелёные (включая AC-0's живую проверку выше).
+- Лог-файл `deploy/rehearsal-logs/<ts>.log` реально содержит `[HH:MM:SS]`-метки на каждом шаге (не проза — структурный timestamp, ровно то, чего не хватало `RUNBOOK.md`'s прецеденту, AC-3).
+- Репетиционный стек убран под правильным именем — `docker ps -a`/`docker volume ls` после прогона чистые, никаких посторонних ресурсов (третий раз подряд в этой сессии подтверждена изоляция по построению, не по дисциплине).
+
+**Самостоятельно найденный и исправленный баг ДО отправки на ревью (не ревью нашло — я сам, перечитывая diff перед отправкой):** `install.sh`'s `.installed-sha`-маркер имел ЖЁСТКО зашитый путь, не завязанный на `COMPOSE_PROJECT`. `deploy-rehearsal.sh`, переиспользующий `install.sh` под изолированным проектом, БЕЗ дополнительного фикса тихо перезаписал бы РЕАЛЬНЫЙ `.installed-sha` (прод-инсталляции) значением из репетиционного бандла — именно то бухгалтерию «было/стало», на которую опирается `CHECKLIST.md`. Исправлено тем же приёмом, что `COMPOSE_PROJECT` (override-able, дефолт не меняется для реальной установки): `INSTALLED_SHA_FILE="${INSTALLED_SHA_FILE:-...}"`, `deploy-rehearsal.sh` экспортирует отдельный `.installed-sha-rehearsal`. **Живая проверка**: `deploy/.installed-sha` предзаполнен фиктивным «прод»-значением, `deploy-rehearsal.sh` прогнан целиком — реальный prod-маркер остался НЕТРОНУТЫМ, репетиция записала СВОЁ значение в отдельный файл.
+
+**Ревью (3 агента, cross-model, реальный прогон каждого) нашло 3 РЕАЛЬНЫЕ дыры сверх самостоятельно закрытой выше — все применены:**
+
+- **Blind Hunter** (diff-only):
+  1. **MED — `.replace("\\n","\n")` применялся безусловно**, даже к уже-корректному многострочному PEM (теоретический риск: base64-тело PEM крайне маловероятно содержит буквальный `\n`, но чище — не трогать вообще, если реальные переводы строк уже есть). Исправлено: гард `if key and "\n" not in key:` — трансформация только когда она реально нужна.
+  2. **LOW/структурная находка, реально оказавшаяся HIGH после сверки с Edge Case Hunter** — отсутствие `trap`: если `install.sh` падает на середине (например, smoke.sh не прошёл), `set -euo pipefail` убивает `deploy-rehearsal.sh` ДО инлайн-уборки — репетиционный стек остаётся висеть. Исправлено (см. ниже, тот же фикс, что нашёл Edge Case Hunter независимо).
+- **Edge Case Hunter** (полный доступ к проекту, живое чтение) нашёл 2 РЕАЛЬНЫЕ HIGH-дыры:
+  1. **HIGH — коллизия порта 80.** `install.sh` поднимает ВСЕ 4 сервиса без фильтра (в отличие от `restore-rehearsal.sh`, 12.4, который сознательно пропускает nginx) — на машине с уже работающим `vaps-install` оба nginx боролись бы за хост-порт 80. Исправлено: `deploy/docker-compose.yml`'s `nginx.ports` параметризован (`${VAPS_NGINX_PORT:-80}:80`, дефолт не меняется для реальной установки), `deploy-rehearsal.sh` экспортирует `VAPS_NGINX_PORT=18080`, `install.sh`'s `VAPS_SMOKE_BASE_URL`-построение учитывает нестандартный порт. **Живая проверка — САМАЯ жёсткая во всей стори**: реальный `vaps-install`-стек поднят и держит порт 80 (подтверждено `curl` 200 на реальном хосте), `deploy-rehearsal.sh` прогнан ПАРАЛЛЕЛЬНО (не последовательно) — 8/8 smoke зелёные на порту 18080, репетиция убрана, прод ВСЁ ЭТО ВРЕМЯ оставался healthy и отвечал на реальном порту 80, `curl`-проверка ПОСЛЕ репетиции подтвердила прод всё ещё 200.
+  2. **HIGH — нет `trap` на уборку.** Подтверждено тем же выводом, что Blind Hunter. Исправлено: `cleanup()`-функция + `trap cleanup EXIT`, зеркало уже принятого паттерна `restore-rehearsal.sh` (12.4).
+  - Дополнительно подтвердил (без находки): volume-именование корректно унаследовало `COMPOSE_PROJECT`-override; `CHECKLIST.md`'s §3-таблица строка-в-строку соответствует `install.sh`'s реальным `[N/6]`-маркерам; `.env.example`'s конвенция не разошлась с фиксом с 12.1.
+  - MED (не фикс, улучшена диагностика): `confirm()`'s неинтерактивный путь (`read` на закрытом stdin) тихо вёл себя как авто-режим без пометки — добавлена явная лог-строка «stdin недоступен — подтверждение НЕ получено», отличающая этот случай от настоящего `VAPS_REHEARSAL_AUTO=1`.
+- **Acceptance Auditor**: реально прогнал структурные+юнит тесты (66 passed на тот момент), `make gate` (2869 passed), И самостоятельно, с нуля, эмпирически опроверг/подтвердил AC-0 (написал собственный скрипт: реальный RSA-ключ → буквальный `\n` → `jwt_config_from_env` → `load_pem_public_key()` — подтвердил и баг, и фикс, независимо от моей методологии). Явно НЕ прогнал живой Docker (по инструкции, история session'а с инцидентами) — пометил это прозрачно как неподтверждённое лично. Отметил единственную терминологическую неточность (моя формулировка «InvalidKeyError» — это PyJWT-обёртка над `cryptography`'s `ValueError`, разные слои одного и того же реального провала, не противоречие).
+
+**После всех review-патчей — живой прогон ПОВТОРЁН с самым жёстким сценарием из возможных** (параллельно с реальным прод-стеком, не последовательно) — описан выше. `make gate` — 2871 passed, 0 failed.
+
+3 decision (все патчи приняты: `\n`-гард, порт-параметризация, `trap`) · 0 defer · 0 dismiss.
+
 ### File List
+
+- `Backend/VAPS/config/settings.py` (MOD) — `jwt_config_from_env` разэкранирует буквальный `\n`, гард «только если реальных переводов строк ещё нет» (AC-0 + review-фикс).
+- `Backend/VAPS/apps/core/tests/test_jwt_authentication.py` (MOD) — реальная PEM-парсинг проверка + regression-тест «уже-корректный PEM не портится».
+- `deploy/CHECKLIST.md` (NEW) — бумажная процедура, версия было/стало из `.installed-sha`/`manifest.json`, секция секретов.
+- `deploy/scripts/deploy-rehearsal.sh` (NEW) — таймированная локальная репетиция, переиспользует `install.sh` под изолированным compose-проектом+портом, `trap`-уборка (review-фиксы).
+- `deploy/scripts/install.sh` (MOD) — `COMPOSE_PROJECT`/`INSTALLED_SHA_FILE` override-able (само-фикс), `VAPS_SMOKE_BASE_URL` учитывает нестандартный порт (review-фикс).
+- `deploy/docker-compose.yml` (MOD) — `nginx.ports` параметризован `VAPS_NGINX_PORT` (review-фикс, коллизия портов).
+- `deploy/.gitignore` (MOD) — закрыт реальный пробел (`.installed-sha`/`.installed-sha-rehearsal`/`backups/`/`pre-install-backups/`/`rehearsal-logs/`, не перечисленные с 12.3/12.4).
+- `Backend/VAPS/apps/core/tests/test_deploy_rehearsal.py` (NEW) — структурные regex-тесты, включая гварды на порт-коллизию и `trap`-уборку.
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-29 | Story создана (create-story) |
+| 2026-07-29 | dev-story: реализация (CHECKLIST.md/deploy-rehearsal.sh/AC-0 JWT-фикс) + сам нашёл и исправил баг ДО ревью (.installed-sha corruption risk) + 3-агентное ревью нашло 3 реальные дыры (порт-коллизия nginx, отсутствие trap-уборки, безусловный \n-replace) — все исправлены, живой прогон повторён с прод-стеком, работающим ПАРАЛЛЕЛЬНО репетиции (самый жёсткий сценарий), прод не пострадал ни разу → done |

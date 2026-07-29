@@ -14,7 +14,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.yml"
-INSTALLED_SHA_FILE="${DEPLOY_DIR}/.installed-sha"
+# Story 12.5: override-able for the same reason as COMPOSE_PROJECT above —
+# self-caught before review: deploy-rehearsal.sh calling this script
+# unmodified would otherwise overwrite the REAL prod install's version-
+# tracking file with the rehearsal's sha, corrupting exactly the "было/
+# стало" bookkeeping CHECKLIST.md depends on. Default unchanged for a real
+# install (no override).
+INSTALLED_SHA_FILE="${INSTALLED_SHA_FILE:-${DEPLOY_DIR}/.installed-sha}"
 
 # Review (Edge Case Hunter): a bare `docker compose` derives its project name
 # from the compose file's own directory ("deploy") regardless of invocation
@@ -30,7 +36,13 @@ INSTALLED_SHA_FILE="${DEPLOY_DIR}/.installed-sha"
 # <nonexistent>:/data` creates it with no error), producing a 0-byte-content
 # "backup" that would have satisfied the exit-code check while backing up
 # nothing. Both problems close by giving the project a fixed, known name.
-COMPOSE_PROJECT="vaps-install"
+#
+# Story 12.5: override-able (not hardcoded) so deploy-rehearsal.sh can reuse
+# this exact, already-reviewed pipeline under its OWN isolated project
+# (vaps-deploy-rehearsal) instead of re-implementing pg_dump/docker
+# load/compose-up a third time. A real install (no override) still gets
+# "vaps-install" — unchanged default, unchanged behavior.
+COMPOSE_PROJECT="${COMPOSE_PROJECT:-vaps-install}"
 
 # Live-verified: docker compose's `env_file: .env` exports these INTO the
 # containers, but nothing exports them into THIS shell — install.sh's own
@@ -121,7 +133,14 @@ fi
 
 echo "[5/6] smoke.sh..."
 if [[ -n "${VAPS_ALLOWED_HOSTS_PRIMARY}" ]]; then
-  export VAPS_SMOKE_BASE_URL="http://${VAPS_ALLOWED_HOSTS_PRIMARY}"
+  # Story 12.5: honor VAPS_NGINX_PORT (deploy-rehearsal.sh's port-collision
+  # avoidance) — nginx's $host strips the port, so the Host-spoof guard
+  # (12.3 review) is unaffected, but the URL itself must hit the right port.
+  if [[ -n "${VAPS_NGINX_PORT:-}" && "${VAPS_NGINX_PORT}" != "80" ]]; then
+    export VAPS_SMOKE_BASE_URL="http://${VAPS_ALLOWED_HOSTS_PRIMARY}:${VAPS_NGINX_PORT}"
+  else
+    export VAPS_SMOKE_BASE_URL="http://${VAPS_ALLOWED_HOSTS_PRIMARY}"
+  fi
 fi
 if ! "${SCRIPT_DIR}/smoke.sh"; then
   echo "ERROR: smoke.sh упал — стек поднялся, но не прошёл проверку." >&2

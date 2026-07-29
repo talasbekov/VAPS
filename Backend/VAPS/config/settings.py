@@ -217,6 +217,22 @@ def jwt_config_from_env(env, debug):
     no key). Raises ``ImproperlyConfigured`` so an unsafe/missing prod config fails
     closed at startup, never silently degrading to the unsigned dev-header path."""
     key = env.get("VAPS_JWT_KEY")
+    if key and "\n" not in key:
+        # Story 12.5: closes the open question deploy/.env.example's own
+        # comment left unresolved since 12.1 — operators are told to put a
+        # multi-line PEM on one .env line with literal "\n" (docker compose's
+        # .env parser has no multi-line syntax), but nothing ever converted
+        # those back to real newlines before handing the key to PyJWT/
+        # cryptography, which require actual line breaks to parse a PEM.
+        # Verified empirically: cryptography.hazmat's PEM loader raises
+        # InvalidKeyError on the literal-\n form without this.
+        #
+        # Review (Blind Hunter): gated on "no real newline present" rather
+        # than applied unconditionally — a key that's ALREADY a genuine
+        # multi-line PEM (mounted-file env source) is left untouched, not
+        # blindly re-processed on the (extremely unlikely, PEM bodies are
+        # base64) chance it contains a literal backslash-n substring.
+        key = key.replace("\\n", "\n")
     if not key:
         if not debug:
             raise ImproperlyConfigured(

@@ -22,8 +22,15 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    # Story 12.5 (review, Edge Case Hunter): parametrized so
+    # deploy-rehearsal.sh can bind an alternate host port — install.sh
+    # (12.3) brings up ALL 4 services with no filter, unlike
+    # restore-rehearsal.sh (12.4), which deliberately skips nginx. A
+    # rehearsal reusing install.sh unfiltered on a machine already running
+    # the real vaps-install stack would otherwise collide on :80. A real
+    # install (no override) still gets 80 — unchanged default.
     ports:
-      - "80:80"
+      - "${VAPS_NGINX_PORT:-80}:80"
     environment:
       # envsubst-шаблон (официальный механизм nginx-образа: любой файл в
       # /etc/nginx/templates/*.template рендерится в /etc/nginx/conf.d/*.conf

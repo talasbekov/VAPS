@@ -318,3 +318,36 @@ def test_jwt_config_valid_prod():
     )
     assert cfg["audience"] == "vaps"
     assert cfg["algorithms"] == ["RS256"]
+
+
+# ---------------------------------------------------------------------------
+# Story 12.5 (AC-0) — VAPS_JWT_KEY delivered as one .env line with literal
+# "\n" (deploy/.env.example's own documented convention, since 12.1) must
+# actually be parseable as a PEM, not just accepted without an exception.
+# ---------------------------------------------------------------------------
+
+
+def test_jwt_config_unescapes_literal_backslash_n_in_pem():
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    real_pem = key.public_key().public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    one_line = real_pem.replace("\n", "\\n")
+    assert "\n" not in one_line, "test fixture must actually be one line"
+
+    cfg = jwt_config_from_env({"VAPS_JWT_KEY": one_line}, debug=True)
+
+    # The real assertion: cryptography can actually load it as a PEM. A
+    # config dict that merely "didn't raise" would pass a weaker test while
+    # PyJWT still fails at first real token verification (found live,
+    # empirically: InvalidKeyError on the un-unescaped literal-\n form).
+    serialization.load_pem_public_key(cfg["key"].encode())
+
+
+def test_jwt_config_leaves_an_already_real_multiline_pem_untouched():
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    real_pem = key.public_key().public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+    cfg = jwt_config_from_env({"VAPS_JWT_KEY": real_pem}, debug=True)
+    assert cfg["key"] == real_pem

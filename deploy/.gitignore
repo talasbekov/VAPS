@@ -1,2 +1,11 @@
 # Story 12.2: bundle.sh's output — тяжёлые, регенерируемые из закоммиченного sha.
 dist-bundle/
+
+# Story 12.3/12.4/12.5 — генерируемые runtime-артефакты на целевой машине,
+# не исходники. Замечено при create-story 12.5: ни один не был здесь
+# перечислен раньше — правится сейчас, не расползание скоупа.
+.installed-sha
+.installed-sha-rehearsal
+backups/
+pre-install-backups/
+rehearsal-logs/
