@@ -22,6 +22,15 @@ class TestScrubDescription:
         assert "[телефон скрыт]" in out
         assert "701" not in out
 
+    def test_masks_local_dial_format_without_leaking_trailing_digit(self):
+        # Review (Blind Hunter): {8,14} left the trailing digit of
+        # "8 (701) 234-56-78" (a common KZ local-dial format) un-redacted —
+        # regression pin for the widened bound.
+        out = scrub_description("тел.: 8 (701) 234-56-78")
+        assert "[телефон скрыт]" in out
+        assert "78" not in out
+        assert "701" not in out
+
     def test_masks_email(self):
         assert scrub_description("пишите test@example.com") == "пишите [email скрыт]"
 
@@ -142,3 +151,34 @@ class TestExportDiagnosticsCommand:
             audit_log_body = zf.read("audit_log.json").decode("utf-8")
             assert "sensitive-value-xyz" not in audit_log_body
             assert "ASSIGNMENT_CREATED" in audit_log_body
+
+    def test_rerunning_the_same_range_does_not_overwrite_the_earlier_archive(
+        self, tmp_path
+    ):
+        # Review (Blind Hunter): a filename keyed only on --from/--to
+        # collided on re-run, silently truncating the first archive while
+        # its AuditLog row kept referencing a sha256 that no longer existed
+        # on disk. Two runs of the SAME range must produce two files and two
+        # independently-verifiable AuditLog rows.
+        self._seed_bugreport()
+        for _ in range(2):
+            call_command(
+                "export_diagnostics",
+                "--from",
+                "2020-01-01",
+                "--to",
+                "2030-12-31",
+                "--actor",
+                "dev-3",
+                "--out-dir",
+                str(tmp_path),
+            )
+
+        archives = list(tmp_path.glob("*.zip"))
+        assert len(archives) == 2
+
+        entries = list(AuditLog.objects.filter(action="DIAGNOSTICS_EXPORTED"))
+        assert len(entries) == 2
+        assert entries[0].entity_id != entries[1].entity_id
+        archive_names_on_disk = {a.name for a in archives}
+        assert {e.new_value["archive"] for e in entries} == archive_names_on_disk

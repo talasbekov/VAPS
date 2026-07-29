@@ -27,7 +27,12 @@ from apps.operations.bugreports.models import BugReport
 # in without thinking (IIN, phone, email) — NOT a substitute for a human
 # reviewing before the archive leaves the circuit.
 _IIN_RE = re.compile(r"\b\d{12}\b")
-_PHONE_RE = re.compile(r"\+?\d[\d\-\s()]{8,14}\d")
+# Review (Blind Hunter): {8,14} was one character too short to cover the
+# common KZ local-dial format with a leading 8 and spaced area code, e.g.
+# "8 (701) 234-56-78" (16 separator/digit chars between the first and last
+# digit) — the trailing digit leaked past the redaction. Widened with margin
+# for "+7 (701) 234-56-78" too.
+_PHONE_RE = re.compile(r"\+?\d[\d\-\s()]{8,18}\d")
 _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
 
 
@@ -40,6 +45,16 @@ def scrub_description(text: str) -> str:
 
 
 def _bugreports_payload(date_from, date_to) -> list[dict]:
+    # Review (Edge Case Hunter): created_at__date under USE_TZ=True resolves
+    # in the ACTIVE connection timezone, which Django sets to
+    # settings.TIME_ZONE ("Asia/Qyzylorda") by default outside a per-request
+    # override — an operator typing --from/--to in local dates gets the
+    # local-day boundary they expect, not a UTC-shifted one. No management
+    # command in this codebase does date-range filtering on a DateTimeField
+    # (strength_report.py/parallel_run_diff.py both take an explicit `date`
+    # argument instead), so this is new territory, not an established
+    # pattern — documented here so a future reader doesn't "fix" it into a
+    # UTC bug.
     rows = BugReport.objects.filter(
         created_at__date__gte=date_from, created_at__date__lte=date_to
     ).order_by("created_at")
@@ -90,8 +105,22 @@ def build_export(*, date_from, date_to, actor: str, out_dir: Path) -> Path:
     bugreports = _bugreports_payload(date_from, date_to)
     audit_rows = _audit_log_payload(date_from, date_to)
 
-    exported_at = Clock.now().isoformat()
-    archive_name = f"diagnostics-{date_from.isoformat()}_{date_to.isoformat()}.zip"
+    exported_at_dt = Clock.now()
+    exported_at = exported_at_dt.isoformat()
+    # Review (Blind Hunter): a filename keyed ONLY on --from/--to collides on
+    # re-run of the same range (a realistic scenario — e.g. re-exporting
+    # after a new BugReport came in) — zipfile's "w" mode silently
+    # TRUNCATES the earlier archive, while the AuditLog row already written
+    # for that earlier run still references a sha256 that no longer exists
+    # on disk. A run-timestamp in the filename makes every run's archive a
+    # distinct file — the audit trail stays verifiable.
+    # Microsecond resolution, not just seconds: two runs in the same test/
+    # script can land in the same second (verified — two back-to-back CLI
+    # calls in a loop collided on a seconds-only stamp).
+    run_stamp = exported_at_dt.strftime("%Y%m%dT%H%M%S%f")
+    archive_name = (
+        f"diagnostics-{date_from.isoformat()}_{date_to.isoformat()}-{run_stamp}.zip"
+    )
     archive_path = out_dir / archive_name
 
     bugreports_json = json.dumps(bugreports, ensure_ascii=False, indent=2)

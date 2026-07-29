@@ -76,7 +76,13 @@ class Command(BaseCommand):
             actor=actor,
             action="DIAGNOSTICS_EXPORTED",
             entity_type="diagnostics_export",
-            entity_id=_deterministic_entity_id(archive_sha256),
+            # Review (Edge Case Hunter): a content-derived (uuid5) entity_id
+            # implied "same content -> same entity", but each export IS a
+            # distinct event even when the underlying data is unchanged
+            # (re-running the same --from/--to after a failed handoff is a
+            # real scenario) — a plain random UUID says that correctly,
+            # with no risk of two independent runs sharing an entity_id.
+            entity_id=uuid.uuid4(),
             new_value={
                 "from": date_from.isoformat(),
                 "to": date_to.isoformat(),
@@ -100,12 +106,3 @@ class Command(BaseCommand):
             raise CommandError(
                 f"{flag} должен быть YYYY-MM-DD, получено: {value!r}"
             ) from exc
-
-
-def _deterministic_entity_id(archive_sha256: str) -> uuid.UUID:
-    # entity_id is a UUIDField (apps/audit/models.py) — the archive's own
-    # sha256 is a hex digest, not a UUID; derive a deterministic uuid5 from
-    # it (same technique already established for TomorrowBlockOverride,
-    # apps/operations/statuses — a UUID entity_id from a non-UUID natural
-    # key, without inventing a new pattern).
-    return uuid.uuid5(uuid.NAMESPACE_OID, archive_sha256)
