@@ -22,7 +22,12 @@ from apps.operations.submissions.models import (
 
 @admin.register(SubmissionControlSettings)
 class SubmissionControlSettingsAdmin(admin.ModelAdmin):
-    list_display = ("control_hour", "default_notify_recipient")
+    list_display = (
+        "control_hour",
+        "default_notify_recipient",
+        "alert_hour",
+        "alert_threshold_pct",
+    )
 
     def has_add_permission(self, request):
         if self.model.objects.exists():

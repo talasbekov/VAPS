@@ -76,4 +76,8 @@ class SubmissionControlSettings(TimeStampedModel):
         verbose_name_plural = "Настройки контроля сдачи"
 
     def __str__(self):
-        return f"control_hour={self.control_hour}"
+        return (
+            f"control_hour={self.control_hour} "
+            f"alert_hour={self.alert_hour} "
+            f"alert_threshold_pct={self.alert_threshold_pct}"
+        )

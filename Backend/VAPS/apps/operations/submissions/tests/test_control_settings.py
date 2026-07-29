@@ -83,13 +83,19 @@ def test_alert_hour_and_threshold_are_configurable():
     assert SubmissionControlSettingsSelector.alert_threshold_pct() == 75
 
 
-@pytest.mark.parametrize("bad_pct", [0, -1, 101, 1000])
+@pytest.mark.parametrize("bad_pct", [0, 101, 1000])
 def test_alert_threshold_pct_out_of_range_rejected_by_db(bad_pct):
     # AC-2: DB CheckConstraint, not application validation — .objects.create()
     # skips full_clean(), so this must be a real IntegrityError, not a ValueError.
     # The migration-seeded singleton_key=1 row is deleted first so the failure
     # is provably the range constraint, not the singleton uniqueness constraint
     # (mirror test_second_row_violates_singleton's isolation concern).
+    # NB: -1 deliberately excluded — review (Acceptance Auditor) proved it's
+    # vacuous for THIS constraint: PositiveSmallIntegerField already emits its
+    # OWN implicit `>= 0` CHECK, so -1 is rejected even with
+    # ck_submission_control_settings_alert_threshold_range dropped entirely.
+    # Only 0/101/1000 are outside that implicit check and so actually exercise
+    # the named [1,100] constraint this story adds.
     SubmissionControlSettings.objects.all().delete()
     with pytest.raises(IntegrityError):
         with transaction.atomic():
