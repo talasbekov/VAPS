@@ -13,6 +13,7 @@
 // подписи, а не по значению: сортировка по рейтингу и есть таблица лидеров,
 // как её ни озаглавь.
 import { useOperationalRatings } from '../api/queries'
+import { RatingDynamicsSection } from './RatingDynamicsSection'
 import { DATA_STATE_LABEL } from '../lib/rating'
 import type { OperationalRatingSummary } from '../model/types'
 
@@ -117,6 +118,8 @@ export function RatingsPage() {
               </tbody>
             </table>
           </section>
+
+          <RatingDynamicsSection />
 
           <section className="mb-4 rounded-xl border bg-card p-4">
             <h2 className="mb-2 text-sm font-semibold">Что в расчёт не входит</h2>

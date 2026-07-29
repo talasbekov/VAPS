@@ -9,8 +9,14 @@ import { ApiError } from '../../../shared/api/errors'
 import { createMemoryPersistence } from '../../../shared/testing/mock-runtime/memory-persistence'
 import { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac-directory'
-import { OPERATIONAL_RATINGS_PATH } from '../api/pending-contracts'
-import type { ListOperationalRatingsResponse } from '../api/pending-contracts'
+import {
+  OPERATIONAL_RATINGS_PATH,
+  OPERATIONAL_RATING_DYNAMICS_PATH,
+} from '../api/pending-contracts'
+import type {
+  ListOperationalRatingsResponse,
+  RatingDynamicsResponse,
+} from '../api/pending-contracts'
 import { createRatingsHandlers } from './handlers'
 import { buildRatingsSeed } from './fixtures'
 
@@ -57,8 +63,8 @@ beforeEach(async () => {
   }
   await adapter.reset({
     application: 'smart-josparlau',
-    schema_version: 31,
-    seed_version: 'test-v31',
+    schema_version: 32,
+    seed_version: 'test-v32',
     scenario: 'normal',
     revision: 0,
     created_at: CLOCK_ISO,
@@ -95,5 +101,23 @@ describe('ratings handlers — сопоставление маршрута', () 
 
   it('без права — 403 конвертом, а не пустым списком', async () => {
     expect(await statusOf(() => stranger.get(OPERATIONAL_RATINGS_PATH))).toBe(403)
+  })
+})
+
+describe('ratings handlers — динамика (§19.20)', () => {
+  it('GET динамики доходит до repository и отдаёт ряд точек', async () => {
+    const response = await client.get<RatingDynamicsResponse>(
+      `${OPERATIONAL_RATING_DYNAMICS_PATH}?employee=employee-2`,
+    )
+    // Выбор сотрудника едет ЧЕРЕЗ HTTP query, а не теряется в handler'е:
+    // потерянный параметр вернул бы ряд первого сотрудника и остался бы
+    // незамеченным — поэтому проверяется именно НЕ первый.
+    expect(response.employeeId).toBe('employee-2')
+    expect(response.points.length).toBeGreaterThan(0)
+    expect(response.boundaries.length).toBeGreaterThan(0)
+  })
+
+  it('без права — 403 конвертом, а не пустым рядом', async () => {
+    expect(await statusOf(() => stranger.get(OPERATIONAL_RATING_DYNAMICS_PATH))).toBe(403)
   })
 })

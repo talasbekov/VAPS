@@ -83,6 +83,45 @@ export interface OperationalRatingSummary {
   dataState: RatingDataState
 }
 
+/**
+ * Точка динамики (§19.20). Это ЗАПИСАННЫЙ агрегат закрытого периода, а не
+ * значение, вычисленное «на лету»: §19.20 требует строить график только по
+ * агрегированным серверным точкам и прямо запрещает пересчитывать старые точки
+ * во frontend. Поэтому точка несёт СВОЮ `policyVersion` — ту, по которой её
+ * посчитали тогда, а не текущую редакцию методики.
+ *
+ * Отдельные закрытые оценки в точку не входят ни одним полем (§19.20
+ * «Не показывай на графике отдельные закрытые оценки»).
+ */
+export interface RatingDynamicsPoint {
+  employeeId: string
+  /** Код периода — то, что §19.20 называет `period` (напр. `2026-05`). */
+  period: string
+  periodStartsAt: string
+  periodEndsAt: string
+  /** `null` — агрегата за период нет. Не ноль (§19.19 «Не показывай 0,0»). */
+  aggregateRating: number | null
+  evaluationsCount: number
+  /** Версия методики НА МОМЕНТ расчёта точки. */
+  policyVersion: string
+  /** Закрытый период имеет ровно два исхода: посчитан или данных не хватило. */
+  dataState: Extract<RatingDataState, 'READY' | 'INSUFFICIENT_DATA'>
+  /** Когда точка зафиксирована сервером. */
+  recordedAt: string
+}
+
+/**
+ * Граница смены методики (§19.20 «обозначь границу смены методики»). Считает
+ * её СЕРВЕР: для клиента это факт из ответа, а не вывод из соседних точек —
+ * иначе граница была бы фронтовой догадкой о том, что произошло на сервере.
+ */
+export interface RatingPolicyBoundary {
+  /** Первый период НОВОЙ методики. */
+  period: string
+  fromPolicyVersion: string
+  toPolicyVersion: string
+}
+
 /** Политика расчёта (§19.19/§22.17: период, минимум оценок и включение в
  * aggregate приходят от policy, а не из кода). */
 export interface RatingPolicy {

@@ -27,6 +27,7 @@ import {
 import { readReportLimits } from '../../features/service-reports/mocks/settingsSlice'
 import { REPORT_TYPES } from '../../features/service-reports/mocks/fixtures'
 import { readRatingPolicy } from '../../features/ratings/mocks/settingsSlice'
+import { DYNAMICS_POINTS } from '../../features/ratings/mocks/fixtures'
 
 const { sliceName, data } = buildSettingsSeed()
 const slices = { [sliceName]: data }
@@ -87,6 +88,20 @@ describe('проекции слайса «Настройки» понимают 
     // методики, а не имя раздела настроек: строку видит человек.
     expect(policy?.policyVersion).toBe(data.sectionVersions.RATING_POLICY)
     expect(policy?.policyVersion).toMatch(/^OPERATIONAL-RATING-/)
+  })
+
+  it('точки динамики §19.20 подписаны редакциями ТОЙ ЖЕ методики, но не текущей', () => {
+    const current = data.sectionVersions.RATING_POLICY
+    const versions = new Set(DYNAMICS_POINTS.map((point) => point.policyVersion))
+    // Редакции одного семейства: разошедшийся префикс означал бы, что ряд
+    // подписан не той методикой, к которой относится раздел «Настроек».
+    for (const version of versions) expect(version).toMatch(/^OPERATIONAL-RATING-/)
+    // И ни одна из них не равна ТЕКУЩЕЙ: действующая редакция вступила в силу
+    // на открытом периоде и ни одного периода ещё не закрывала. Подписать ею
+    // старую точку значило бы соврать о методике расчёта, а пересчитать точку
+    // под неё запрещено прямо (§19.20).
+    expect(versions.has(current)).toBe(false)
+    expect(versions.size).toBeGreaterThan(1)
   })
 
   it('каждый раздел сида имеет свою редакцию — общих версий нет', () => {

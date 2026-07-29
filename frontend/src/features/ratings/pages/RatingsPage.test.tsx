@@ -16,6 +16,7 @@ import type { ListOperationalRatingsResponse } from '../api/pending-contracts'
 import type { OperationalRatingSummary } from '../model/types'
 
 const RATINGS_URL = '*/api/ops/operational-ratings/'
+const DYNAMICS_URL = '*/api/ops/operational-rating-dynamics/'
 
 function summary(overrides: Partial<OperationalRatingSummary> = {}): OperationalRatingSummary {
   return {
@@ -65,6 +66,24 @@ function renderPage() {
 
 beforeEach(() => {
   setCredential({ kind: 'dev', userId: 'demo-analyst' })
+  // Динамика (§19.20) — свой запрос, свой экран и свои тесты
+  // (`RatingDynamicsSection.test.tsx`). Здесь она отвечает пустым рядом: этот
+  // файл проверяет СВОДКУ, а вторая таблица на странице ломала бы структурную
+  // проверку колонок §22.16, ничего при этом не доказывая.
+  server.use(
+    http.get(DYNAMICS_URL, () =>
+      HttpResponse.json({
+        employeeId: 'employee-1',
+        safeLabel: 'Ерланов Д.',
+        points: [],
+        boundaries: [],
+        currentPolicy: null,
+        currentPolicyHasClosedPeriods: false,
+        capabilities: { operationalRatings: true },
+        employees: [{ employeeId: 'employee-1', safeLabel: 'Ерланов Д.' }],
+      }),
+    ),
+  )
 })
 
 afterEach(() => {
