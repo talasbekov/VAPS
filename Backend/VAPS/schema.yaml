@@ -78,6 +78,66 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuditLog'
           description: ''
+  /api/bugreports/:
+    get:
+      operationId: bugreports_list
+      description: Требует bugreports.view (только DEVELOPER-роль по seed_operations)
+        — анонимность отправителя от начальства.
+      tags:
+      - bugreports
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BugReport'
+          description: ''
+    post:
+      operationId: bugreports_create
+      description: «Сообщить о проблеме» — любой аутентифицированный пользователь,
+        без RBAC-права.
+      tags:
+      - bugreports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BugReportCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BugReportCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BugReportCreateRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BugReport'
+          description: ''
+  /api/bugreports/{id}/:
+    get:
+      operationId: bugreports_retrieve
+      description: Требует bugreports.view — см. list().
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - bugreports
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BugReport'
+          description: ''
   /api/core/divisions/:
     get:
       operationId: core_divisions_list
@@ -1987,6 +2047,67 @@ components:
     BlankEnum:
       enum:
       - ''
+    BugReport:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user_id:
+          type: string
+          readOnly: true
+        screen_path:
+          type: string
+          readOnly: true
+        app_version:
+          type: string
+          readOnly: true
+        build_sha:
+          type: string
+          readOnly: true
+        last_request_ids:
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - app_version
+      - build_sha
+      - created_at
+      - description
+      - id
+      - last_request_ids
+      - screen_path
+      - user_id
+    BugReportCreateRequest:
+      type: object
+      properties:
+        screen_path:
+          type: string
+          minLength: 1
+          maxLength: 255
+        app_version:
+          type: string
+          maxLength: 100
+        build_sha:
+          type: string
+          maxLength: 100
+        last_request_ids:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        description:
+          type: string
+          minLength: 1
+      required:
+      - description
+      - screen_path
     BulkStatusCreateRequest:
       type: object
       description: |-

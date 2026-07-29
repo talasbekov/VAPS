@@ -31,6 +31,10 @@ PERMISSIONS = [
     # открытый вопрос Bratan) — тест проверяет механизм, не политику.
     ("document.upload", "Загрузка вложений"),
     ("document.view", "Скачивание вложений/документов"),
+    # Story 13.1a: видимость багрепортов — НЕ новый механизм, обычный RBAC-код,
+    # выдаваемый только роли DEVELOPER ниже (create-эндпоинт открыт любому
+    # аутентифицированному без этого кода — гейтуется только чтение).
+    ("bugreports.view", "Просмотр багрепортов"),
 ]
 
 ROLES = [
@@ -42,6 +46,10 @@ ROLES = [
     ("DIVISION_OPERATOR", "Оператор подразделения"),
     ("VIEWER", "Наблюдатель"),
     ("INTEGRATION_USER", "Интеграционная учётная запись"),
+    # Story 13.1a: единственная роль, у которой есть bugreports.view —
+    # анонимность отправителя от начальства (буква стори) — обычные роли
+    # НЕ получают этот код по умолчанию.
+    ("DEVELOPER", "Разработчик"),
 ]
 
 # core perms (personnel.*/orgstructure.*) — PROVISIONAL раскладка (story 2.13,
@@ -78,6 +86,7 @@ ROLE_PERMISSIONS = {
         "document.view",  # PROVISIONAL (6.1, Д6)
     ],
     "INTEGRATION_USER": ["status.manage"],
+    "DEVELOPER": ["bugreports.view"],
 }
 
 

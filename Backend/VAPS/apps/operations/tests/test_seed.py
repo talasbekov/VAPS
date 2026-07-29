@@ -18,6 +18,7 @@ def test_seed_creates_all_roles():
         "DIVISION_OPERATOR",
         "VIEWER",
         "INTEGRATION_USER",
+        "DEVELOPER",  # Story 13.1a — bugreports.view holder
     }
 
 
@@ -71,6 +72,6 @@ def test_orgd_holds_override_block():
 def test_seed_is_idempotent():
     call_command("seed_operations")
     call_command("seed_operations")
-    assert Role.objects.count() == 8
+    assert Role.objects.count() == 9  # Story 13.1a added DEVELOPER
     assert RolePermission.objects.filter(role_code="OMD").count() == 8
     assert RolePermission.objects.filter(role_code="ORGD").count() == 9

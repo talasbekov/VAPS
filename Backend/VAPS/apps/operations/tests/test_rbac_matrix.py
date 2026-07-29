@@ -1,7 +1,8 @@
 """RBAC-матрица роль×endpoint — сквозной gate-тест (Story 2.9, AR-9).
 
 Параметризованная проверка «роль × зарегистрированный роут →
-разрешено/запрещено» по 8 ролям + анониму. Назначение (epics.md#L468):
+разрешено/запрещено» по 9 ролям (Story 13.1a добавила DEVELOPER) + анониму.
+Назначение (epics.md#L468):
 
 * completeness-gate: каждый обслуживаемый (роут, метод) обязан иметь
   строку в ``MATRIX``; роут вне матрицы → красный тест; протухшая строка
@@ -41,7 +42,7 @@ from apps.operations.rbac.models import UserRole
 
 pytestmark = pytest.mark.django_db
 
-# --- акторы матрицы (AC: 8 ролей + аноним) ---
+# --- акторы матрицы (AC: 9 ролей + аноним) ---
 ROLE_CODES = [code for code, _name in SEED_ROLES]
 ANON = "__anon__"
 ACTORS = [*ROLE_CODES, ANON]
@@ -80,6 +81,13 @@ class _Gate:
         return ALLOW if actor in _holders(self.code) else DENY
 
 
+# Story 13.1a: sentinel for a _MethodGate method that needs no permission
+# code at all (any authenticated actor) — mirrors _AnyAuthenticated's policy
+# but per-method, since bugreport-list mixes POST (any authenticated, cost
+# ~0) with GET (bugreports.view only, visibility restricted).
+_ANY_AUTH = "__any_authenticated__"
+
+
 class _MethodGate:
     """Per-method страж: разные коды на разные HTTP-методы одного роута
     (смешанная view/edit политика, story 2.14 / deferred 2.9 #L215).
@@ -95,7 +103,10 @@ class _MethodGate:
     def expected(self, actor, method):
         if actor == ANON:
             return DENY
-        return ALLOW if actor in _holders(self.method_codes[method]) else DENY
+        code = self.method_codes[method]
+        if code == _ANY_AUTH:
+            return ALLOW
+        return ALLOW if actor in _holders(code) else DENY
 
 
 class _AnyAuthenticated:
@@ -211,6 +222,12 @@ MATRIX = {
     # JSON-поверхность тела документа (story 10.7a), READ-ONLY, GET-only. Тот
     # же гейт-код, что list/period/journal — тот же расход-домен.
     "ops-expense-report-document": _MethodGate({"get": "daily_report.generate"}),
+    # bugreports — story 13.1a. POST (create) — cost ~0, any authenticated
+    # actor, NO permission code (буква стори). GET (list/retrieve) —
+    # bugreports.view (DEVELOPER-only per seed) — visibility restricted,
+    # anonymity from management is the whole point.
+    "bugreport-list": _MethodGate({"get": "bugreports.view", "post": _ANY_AUTH}),
+    "bugreport-detail": _MethodGate({"get": "bugreports.view"}),
     # audit — read-only журнал, загейчен RequirePermissionMixin("audit.view")
     # (story 4.5). GET-only (list+retrieve); ORGD/ADMIN → ALLOW, прочие/аноним
     # → DENY (из seed).
@@ -349,7 +366,7 @@ def test_matrix_covers_every_registered_route():
 
 
 def test_matrix_declares_all_actors_explicitly():
-    """Каждая (строка, метод) даёт явное ожидание для 8 ролей + анонима."""
+    """Каждая (строка, метод) даёт явное ожидание для 9 ролей + анонима."""
     for name, spec in MATRIX.items():
         for method in sorted(SERVED.get(name) or {"get"}):
             for actor in ACTORS:
@@ -370,9 +387,10 @@ def test_method_gates_cover_exactly_served_methods():
             )
 
 
-def test_actor_set_is_eight_roles_plus_anon():
-    assert len(ROLE_CODES) == 8, ROLE_CODES
-    assert len(ACTORS) == 9 and ACTORS[-1] == ANON
+def test_actor_set_is_nine_roles_plus_anon():
+    # Story 13.1a added DEVELOPER (9th role — bugreports.view holder).
+    assert len(ROLE_CODES) == 9, ROLE_CODES
+    assert len(ACTORS) == 10 and ACTORS[-1] == ANON
 
 
 def test_introspection_is_not_vacuous():

@@ -211,6 +211,12 @@ _NOTIF = (
     "не RBAC-право), не бизнес-событие с compliance-следом; аудит не "
     "мотивирован тем же обоснованием, что _CORE/_RBAC"
 )
+_BUGREPORTS = (
+    "story 13.1a: BugReport-строка САМА является append-only записью "
+    "(created_at/created_by/user_id) — не бизнес-мутация с юридическим/"
+    "финансовым следом (в отличие от DOCUMENT_ISSUED/DAILY_SUBMISSION_*), "
+    "аналогично _NOTIF; отдельный AuditLog-канал не мотивирован"
+)
 
 # Declarative registry: route name → audit verdict. UPDATE when a mutating route
 # is added (AR-9 living registry; a missing row fails test_audit_matrix_covers_*).
@@ -254,6 +260,8 @@ AUDIT_MATRIX = {
     # override «на завтра»-блока (6.10b): TOMORROW_BLOCK_OVERRIDDEN эмитится в
     # override_tomorrow_block (5.6b/5.9) в той же транзакции.
     "ops-expense-report-override-tomorrow-block": _Audited(),
+    # bugreports POST create (13.1a): see _BUGREPORTS above.
+    "bugreport-list": _DeferredAudit(_BUGREPORTS),
     # bulk-создание статусов (10.1a): STATUS_CREATED (record_many, по строке) +
     # STATUS_BULK_CREATED (summary) эмитятся в bulk_create_statuses (3.8/4.4) в
     # той же транзакции; HTTP-smoke сквозь роут — test_bulk_status_api
