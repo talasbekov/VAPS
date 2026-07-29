@@ -1,3 +1,6 @@
+from zoneinfo import ZoneInfo
+
+from django.conf import settings
 from rest_framework import serializers
 
 from apps.operations.bugreports.models import BugReport
@@ -35,5 +38,55 @@ class BugReportSerializer(serializers.ModelSerializer):
             "last_request_ids",
             "description",
             "created_at",
+            "resolved_at",
+            "resolved_in_version",
+            "resolution_summary",
         ]
         read_only_fields = fields
+
+
+class BugReportResolveSerializer(serializers.Serializer):
+    """Story 13.4a: developer-authored, public-facing fields — NOT a copy
+    of the operator's raw ``description`` (see model docstring)."""
+
+    resolved_in_version = serializers.CharField(max_length=100)
+    resolution_summary = serializers.CharField(max_length=500)
+
+    def validate_resolved_in_version(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("не может быть пустым.")
+        return value.strip()
+
+    def validate_resolution_summary(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("не может быть пустым.")
+        return value.strip()
+
+
+class BugReportJournalEntrySerializer(serializers.ModelSerializer):
+    """Story 13.4a: public journal projection (any authenticated user, see
+    BugReportViewSet.journal) — deliberately NOT BugReportSerializer's
+    fields. user_id/screen_path/description/last_request_ids never reach
+    this projection, matching frontend/src/features/changelog/changelog.ts's
+    FixEntry contract field-for-field (renamed to match its camelCase)."""
+
+    # FixEntry.id is a string (frontend/src/features/changelog/changelog.ts)
+    # — BugReport.id is an integer PK, CharField's to_representation stringifies.
+    id = serializers.CharField()
+    version = serializers.CharField(source="resolved_in_version")
+    releasedAt = serializers.SerializerMethodField()
+    summary = serializers.CharField(source="resolution_summary")
+
+    class Meta:
+        model = BugReport
+        fields = ["id", "version", "releasedAt", "summary"]
+        read_only_fields = fields
+
+    def get_releasedAt(self, obj):
+        # DRF's plain DateField refuses a datetime input outright (rightly —
+        # bare .date() on the raw UTC-aware value would silently pick the
+        # WRONG calendar day whenever local time crosses midnight relative
+        # to UTC, exactly the class of tz bug this project's Clock exists to
+        # prevent). Same conversion Clock.today_local() applies to "now",
+        # applied here to a stored moment instead.
+        return obj.resolved_at.astimezone(ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)).date()

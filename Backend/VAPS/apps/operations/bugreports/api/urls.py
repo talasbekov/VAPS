@@ -19,9 +19,21 @@ urlpatterns = [
         BugReportViewSet.as_view({"get": "list", "post": "create"}),
         name="bugreport-list",
     ),
+    # Story 13.4a: static "journal/" — no collision risk with "<int:pk>/"
+    # below (that requires digits only), but ordered first for clarity.
+    path(
+        "journal/",
+        BugReportViewSet.as_view({"get": "journal"}),
+        name="bugreport-journal",
+    ),
     path(
         "<int:pk>/",
         BugReportViewSet.as_view({"get": "retrieve"}),
         name="bugreport-detail",
+    ),
+    path(
+        "<int:pk>/resolve/",
+        BugReportViewSet.as_view({"post": "resolve"}),
+        name="bugreport-resolve",
     ),
 ]

@@ -262,6 +262,11 @@ AUDIT_MATRIX = {
     "ops-expense-report-override-tomorrow-block": _Audited(),
     # bugreports POST create (13.1a): see _BUGREPORTS above.
     "bugreport-list": _DeferredAudit(_BUGREPORTS),
+    # resolve (13.4a): same reasoning as _BUGREPORTS — the BugReport row
+    # itself already records the resolution facts (resolved_at/
+    # resolved_in_version/resolution_summary), self-recording rather than
+    # needing a separate compliance-audit channel.
+    "bugreport-resolve": _DeferredAudit(_BUGREPORTS),
     # bulk-создание статусов (10.1a): STATUS_CREATED (record_many, по строке) +
     # STATUS_BULK_CREATED (summary) эмитятся в bulk_create_statuses (3.8/4.4) в
     # той же транзакции; HTTP-smoke сквозь роут — test_bulk_status_api

@@ -24,6 +24,16 @@ class BugReport(TimeStampedModel):
     last_request_ids = models.JSONField(default=list, blank=True)
     description = models.TextField()
 
+    # Story 13.4a: журнал «сообщено → исправлено». resolved_in_version —
+    # git short-sha (deploy/scripts/bundle.sh/install.sh's «Бандл sha: X»),
+    # НЕ semver — ничего в пайплайне не бампает semver-версию per-релиз
+    # (см. story's Scope Decision). resolution_summary — формулировка ДЛЯ
+    # ПУБЛИКИ, которую пишет разработчик при resolve, НЕ копия
+    # `description` (тот — сырой ввод оператора, мог быть о чём угодно).
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_in_version = models.CharField(max_length=100, blank=True)
+    resolution_summary = models.CharField(max_length=500, blank=True)
+
     class Meta:
         db_table = "ops_bug_reports"
         indexes = [

@@ -183,6 +183,12 @@ codes:
     category: state
     description: "Документ по текущей версии сдачи уже выпущен; повторная выдача файла — операция скачивания (6.7), новый выпуск — только после amendment сдачи."
     source: "VAPS_7.8.2 §82.1-82.3 (снапшот-семантика выпуска); epics.md Story 6.5"
+  BUGREPORT_ALREADY_RESOLVED:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Багрепорт уже помечен разрешённым (resolved_at не пуст) — повторный resolve отклонён, чтобы второй разработчик случайно не переписал версию/формулировку первого."
+    source: "epics.md Story 13.4a"
 
   # --- 422: нарушение бизнес-правила (hard) ---
   HARD_UNAVAILABLE_STATUS:

@@ -6,8 +6,12 @@ from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
 from apps.core.api.permissions import require_permission
+from apps.core.clock import Clock
+from apps.core.exceptions import DomainError
 from apps.operations.bugreports.api.serializers import (
     BugReportCreateSerializer,
+    BugReportJournalEntrySerializer,
+    BugReportResolveSerializer,
     BugReportSerializer,
 )
 from apps.operations.bugreports.models import BugReport
@@ -92,3 +96,51 @@ class BugReportViewSet(viewsets.ViewSet):
         require_permission(request, _VIEW_PERMISSION)
         report = get_object_or_404(BugReport, pk=pk)
         return Response(BugReportSerializer(report).data)
+
+    @extend_schema(
+        operation_id="bugreports_resolve",
+        request=BugReportResolveSerializer,
+        responses={200: BugReportSerializer},
+        description="Требует bugreports.view — тот же держатель, что "
+        "list/retrieve (13.4a). 409 на уже разрешённом репорте.",
+    )
+    def resolve(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _VIEW_PERMISSION)
+        report = get_object_or_404(BugReport, pk=pk)
+        if report.resolved_at is not None:
+            raise DomainError(
+                "BUGREPORT_ALREADY_RESOLVED",
+                409,
+                detail={"resolved_at": report.resolved_at.isoformat()},
+                message="Багрепорт уже помечен разрешённым.",
+            )
+        form = BugReportResolveSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        report.resolved_at = Clock.now()
+        report.resolved_in_version = form.validated_data["resolved_in_version"]
+        report.resolution_summary = form.validated_data["resolution_summary"]
+        report.save(
+            update_fields=["resolved_at", "resolved_in_version", "resolution_summary"]
+        )
+        return Response(BugReportSerializer(report).data)
+
+    @extend_schema(
+        operation_id="bugreports_journal",
+        responses={200: BugReportJournalEntrySerializer(many=True)},
+        description="Публичный журнал «сообщено → исправлено» — любой "
+        "аутентифицированный пользователь (не bugreports.view — см. "
+        "create). Только разрешённые репорты, анонимизированная проекция "
+        "(id/version/releasedAt/summary — без user_id/screen_path/"
+        "description).",
+    )
+    def journal(self, request, *args, **kwargs):
+        if not getattr(request, "actor_id", None):
+            raise PermissionDenied("PERMISSION_DENIED")
+        reports = BugReport.objects.filter(resolved_at__isnull=False).order_by(
+            "-resolved_at"
+        )
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(reports, request)
+        return paginator.get_paginated_response(
+            BugReportJournalEntrySerializer(page, many=True).data
+        )

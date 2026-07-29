@@ -228,6 +228,11 @@ MATRIX = {
     # anonymity from management is the whole point.
     "bugreport-list": _MethodGate({"get": "bugreports.view", "post": _ANY_AUTH}),
     "bugreport-detail": _MethodGate({"get": "bugreports.view"}),
+    # Story 13.4a: resolve — same holder as list/retrieve (bugreports.view).
+    "bugreport-resolve": _MethodGate({"post": "bugreports.view"}),
+    # journal — public (any authenticated), NOT bugreports.view: mirrors
+    # bugreport-list's own POST-side _ANY_AUTH, "доступно всем" per AC-3.
+    "bugreport-journal": _MethodGate({"get": _ANY_AUTH}),
     # audit — read-only журнал, загейчен RequirePermissionMixin("audit.view")
     # (story 4.5). GET-only (list+retrieve); ORGD/ADMIN → ALLOW, прочие/аноним
     # → DENY (из seed).
