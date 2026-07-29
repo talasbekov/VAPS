@@ -32,6 +32,7 @@ function types(overrides: Partial<ListReportTypesResponse> = {}): ListReportType
         description: 'Смены дежурств за период.',
         formats: ['CSV'],
         maxPeriodDays: 92,
+        unavailableReason: null,
       },
     ],
     retentionPolicy: { retentionDays: 21, policyVersion: 'retention-2026.07.1' },

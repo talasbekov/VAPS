@@ -211,16 +211,28 @@ export function ServiceAnalyticsPage() {
           <Button
             size="sm"
             variant="outline"
-            disabled={customFrom === '' || customTo === ''}
+            disabled={
+              customFrom === '' ||
+              customTo === '' ||
+              // Недоступность решил СЕРВЕР (прислал причину вместо предела);
+              // экран не выводит её сам из значения.
+              presetsQuery.data?.customPeriodUnavailableReason != null
+            }
             onClick={applyCustom}
           >
             Произвольный период
           </Button>
-          {presetsQuery.data !== undefined && (
+          {presetsQuery.data?.customPeriodUnavailableReason != null ? (
             <span className="text-xs text-slate-600">
-              Предел произвольного периода — {presetsQuery.data.maxCustomPeriodDays} дней, его
-              проверяет сервер
+              {presetsQuery.data.customPeriodUnavailableReason}
             </span>
+          ) : (
+            presetsQuery.data?.maxCustomPeriodDays != null && (
+              <span className="text-xs text-slate-600">
+                Предел произвольного периода — {presetsQuery.data.maxCustomPeriodDays} дней, его
+                проверяет сервер (редакция политики {presetsQuery.data.limitPolicyVersion})
+              </span>
+            )
           )}
         </div>
 

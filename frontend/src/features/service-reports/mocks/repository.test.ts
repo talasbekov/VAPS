@@ -11,7 +11,43 @@ import {
   RepositoryNotFoundError,
   RepositoryPermissionError,
 } from './repository'
-import { REPORT_TYPES, RETENTION_POLICY } from './fixtures'
+import { REPORT_TYPES } from './fixtures'
+
+/**
+ * §22.5-пределы принадлежат разделу «Настройки», поэтому тест сеет ИХ СЛАЙС —
+ * рукописной формой, а не импортом чужой фичи (ARCH-FE-013). Согласованность
+ * этой формы с настоящим сидом настроек проверяет контрактный тест в `app/`.
+ */
+const MAX_PERIOD_DAYS = 92
+const RETENTION_DAYS = 21
+const REPORT_LIMITS_VERSION = 'report-limits-test.1'
+
+function settingsSlice(
+  overrides: { maxPeriodDays?: number | null; retentionDays?: number | null } = {},
+) {
+  const settings: Record<string, unknown>[] = []
+  const maxPeriodDays = overrides.maxPeriodDays === undefined ? MAX_PERIOD_DAYS : overrides.maxPeriodDays
+  const retentionDays = overrides.retentionDays === undefined ? RETENTION_DAYS : overrides.retentionDays
+  if (maxPeriodDays !== null) {
+    settings.push({
+      settingCode: 'LIMITS.REPORT_PERIOD.PERSONNEL_EXPENSE',
+      sectionCode: 'REPORT_LIMITS',
+      groupCode: 'PERSONNEL_EXPENSE',
+      field: 'PARAMETER',
+      value: maxPeriodDays,
+    })
+  }
+  if (retentionDays !== null) {
+    settings.push({
+      settingCode: 'LIMITS.REPORT_RETENTION.PARAMETER',
+      sectionCode: 'REPORT_LIMITS',
+      groupCode: 'REPORT_RETENTION',
+      field: 'PARAMETER',
+      value: retentionDays,
+    })
+  }
+  return { sectionVersions: { REPORT_LIMITS: REPORT_LIMITS_VERSION }, settings, changeLog: [] }
+}
 
 const OPERATOR = 'operator-user'
 const SENSITIVE_OPERATOR = 'sensitive-user'
@@ -34,9 +70,9 @@ function seedEnvelope(): DemoStateEnvelope {
       serviceReports: {
         jobs: [],
         artifacts: [],
-        reportTypes: [...REPORT_TYPES],
-        retentionPolicy: { ...RETENTION_POLICY },
+        reportTypes: REPORT_TYPES.map((type) => ({ ...type })),
       },
+      settings: settingsSlice(),
       duties: {
         shifts: [
           {
@@ -158,7 +194,7 @@ describe('параметры отчёта (§22.19)', () => {
 
   it('глубина периода ограничена ПОЛИТИКОЙ отчёта, а не числом в коде', async () => {
     const { repository } = await setup()
-    const limit = REPORT_TYPES[0].maxPeriodDays
+    const limit = MAX_PERIOD_DAYS
     // Ровно предел — проходит; предел + 1 день — нет.
     const atLimit = new Date(Date.UTC(2026, 6, 1) + (limit - 1) * 86_400_000)
       .toISOString()
@@ -323,7 +359,7 @@ describe('скачивание (§22.23)', () => {
     const { repository, clock } = await setup()
     await repository.createReportJob(BASE_REQUEST, OPERATOR)
     await runToCompletion(repository)
-    clock.advanceMs((RETENTION_POLICY.retentionDays + 1) * 86_400_000)
+    clock.advanceMs((RETENTION_DAYS + 1) * 86_400_000)
     await expect(
       repository.downloadArtifact('artifact-report-job-1-1', OPERATOR),
     ).rejects.toMatchObject({ errorCode: 'ARTIFACT_EXPIRED' })
@@ -642,5 +678,102 @@ describe('карточка работы (§22.27) и параметры чужо
     const file = await repository.downloadArtifact(artifactId, SENSITIVE_OPERATOR)
     // И убеждаемся, что запрет не декоративный: период в файле действительно есть.
     expect(file.content).toContain(PERIOD.from)
+  })
+})
+
+/**
+ * §22.5: предел периода и срок хранения ПРИНАДЛЕЖАТ «Настройкам» (§29).
+ * Проверяется не «число есть в ответе», а то, что отчётный реестр ЧИТАЕТ
+ * чужую политику: подменённое значение обязано менять исход операции, а
+ * отсутствие политики — запрещать её, а не разрешать без ограничения.
+ */
+describe('пределы отчётности приходят из «Настроек» (§22.5/§29)', () => {
+  async function setupWith(limits: { maxPeriodDays?: number | null; retentionDays?: number | null }) {
+    const adapter = createMemoryPersistence()
+    const envelope = seedEnvelope()
+    await adapter.reset({
+      ...envelope,
+      slices: { ...envelope.slices, settings: settingsSlice(limits) },
+    })
+    const clock = new DemoClock('2026-07-20T08:00:00+05:00')
+    return { repository: createServiceReportsRepository(adapter, clock), adapter, clock }
+  }
+
+  it('предел берётся из политики: подменённое значение меняет исход запуска', async () => {
+    const { repository } = await setupWith({ maxPeriodDays: 10 })
+    // 31 день — при сеяных 92 проходил; при политике в 10 дней обязан быть отвергнут.
+    await expect(repository.createReportJob(BASE_REQUEST, OPERATOR)).rejects.toMatchObject({
+      errorCode: 'PERIOD_TOO_LONG',
+    })
+    // И число в сообщении — то самое из политики, а не прежнее сеяное.
+    await expect(repository.createReportJob(BASE_REQUEST, OPERATOR)).rejects.toThrow(/10 дней/)
+    const types = await repository.listReportTypes(OPERATOR)
+    expect(types.results[0].maxPeriodDays).toBe(10)
+  })
+
+  it('тип без записи политики не формируется, а не выгружается без ограничения', async () => {
+    const { repository } = await setupWith({ maxPeriodDays: null })
+    const types = await repository.listReportTypes(OPERATOR)
+    expect(types.results[0].maxPeriodDays).toBeNull()
+    expect(types.results[0].unavailableReason).not.toBeNull()
+    // Однодневный период — заведомо короче любого мыслимого предела; отказ
+    // означает именно «предела нет», а не «период длинный».
+    await expect(
+      repository.createReportJob({ ...BASE_REQUEST, to: PERIOD.from }, OPERATOR),
+    ).rejects.toMatchObject({ errorCode: 'PERIOD_LIMIT_UNAVAILABLE' })
+  })
+
+  it('без срока хранения файл не собирается: у него не было бы срока доступности', async () => {
+    const { repository } = await setupWith({ retentionDays: null })
+    const types = await repository.listReportTypes(OPERATOR)
+    expect(types.retentionPolicy.retentionDays).toBeNull()
+    expect(types.results[0].unavailableReason).not.toBeNull()
+    await expect(repository.createReportJob(BASE_REQUEST, OPERATOR)).rejects.toMatchObject({
+      errorCode: 'RETENTION_UNAVAILABLE',
+    })
+  })
+
+  it('исчезнувшая между запуском и сборкой политика роняет РАБОТУ, а не чтение реестра', async () => {
+    // Гард на сборке недостижим через запуск (там отказ приходит раньше), но
+    // работа уже создана, а политику могли отозвать следом. Без этого пути
+    // файл собрался бы вовсе без срока доступности.
+    const { repository, adapter } = await setupWith({})
+    await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    await adapter.transaction(
+      (current) => ({ ...current.slices, settings: settingsSlice({ retentionDays: null }) }),
+      '2026-07-20T09:00:00+05:00',
+    )
+    const list = await runToCompletion(repository)
+    expect(list.results[0]).toMatchObject({ state: 'FAILED', failureCode: 'RETENTION_UNAVAILABLE' })
+    expect(list.artifacts).toHaveLength(0)
+  })
+
+  it('срок замораживается при сборке: правка политики не трогает выданный файл', async () => {
+    const { repository, adapter } = await setupWith({})
+    await repository.createReportJob(BASE_REQUEST, OPERATOR)
+    const before = await runToCompletion(repository)
+    const frozen = before.artifacts[0].expiresAt
+
+    // Политику сокращают втрое ПОСЛЕ сборки.
+    await adapter.transaction(
+      (current) => ({ ...current.slices, settings: settingsSlice({ retentionDays: 7 }) }),
+      '2026-07-20T09:00:00+05:00',
+    )
+
+    const after = await repository.listReportJobs(OPERATOR)
+    expect(after.artifacts[0].expiresAt).toBe(frozen)
+
+    // А НОВАЯ работа считается уже по новой редакции — иначе «заморожен»
+    // означало бы «политика больше ни на что не влияет».
+    await repository.createReportJob(
+      { ...BASE_REQUEST, idempotencyKey: 'key-2', to: '2026-07-30' },
+      OPERATOR,
+    )
+    const next = await runToCompletion(repository)
+    const fresh = next.artifacts.find((item) => item.expiresAt !== frozen)
+    expect(fresh).toBeDefined()
+    expect(Date.parse(fresh?.expiresAt ?? '') - Date.parse(fresh?.generatedAt ?? '')).toBe(
+      7 * 86_400_000,
+    )
   })
 })

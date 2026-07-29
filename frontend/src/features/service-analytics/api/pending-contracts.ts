@@ -33,7 +33,15 @@ export type HeaderBlock = UnavailableMetric
 /** §22.5: набор пресетов и предел произвольного периода — из registry. */
 export interface AnalyticsPresetsResponse {
   results: PeriodPreset[]
-  maxCustomPeriodDays: number
+  /** `null` — предела нет в политике «Настроек» (§29), и произвольный период
+   * не принимается вовсе. Ноль и «без ограничения» были бы двумя разными
+   * неправдами: первое запретило бы всё, второе разрешило бы всё. */
+  maxCustomPeriodDays: number | null
+  /** Редакция раздела «Пределы аналитики», которой принадлежит это число. */
+  limitPolicyVersion: string | null
+  /** §35: почему произвольный период недоступен. Формулировку выбирает сервер —
+   * та же строка, которой он откажет в самом запросе. */
+  customPeriodUnavailableReason: string | null
   /** §22.6: пресет по умолчанию решает сервер — кнопка «Сбросить» возвращает
    * «разрешённые сервером значения по умолчанию», а не зашитый в экран выбор. */
   defaultPresetCode: string

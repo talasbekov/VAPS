@@ -21,6 +21,11 @@ import {
 import { ATTENTION_POLICY_VERSION, FORBIDDEN_ATTENTION_PHRASES } from '../lib/attention'
 import { POLICY_VERSION } from '../lib/analytics'
 
+/** §22.5: предел произвольного периода приходит из «Настроек» — тест сеет его
+ * своей формой, согласованность с настоящим сидом проверяет контракт в `app/`. */
+const MAX_CUSTOM_PERIOD_DAYS = 62
+const ANALYTICS_LIMITS_VERSION = 'analytics-limits-test.1'
+
 const VIEWER = 'viewer-user'
 const DRILLER = 'driller-user'
 const FULL = 'full-user'
@@ -94,8 +99,29 @@ function settingsSlice(
     return patch === undefined ? item : { ...item, value: patch.value }
   })
   return {
-    sectionVersions: { ATTENTION_POLICY: ATTENTION_POLICY_VERSION },
-    settings: merged.map((item, index) => ({
+    sectionVersions: {
+      ATTENTION_POLICY: ATTENTION_POLICY_VERSION,
+      ANALYTICS_LIMITS: ANALYTICS_LIMITS_VERSION,
+    },
+    settings: [
+      // §22.5 предел произвольного периода — в ТОМ ЖЕ слайсе «Настроек», но
+      // своим разделом: у него своя редакция, не сдвигающая методику
+      // наблюдений.
+      {
+        settingCode: 'LIMITS.ANALYTICS_CUSTOM_PERIOD.PARAMETER',
+        sectionCode: 'ANALYTICS_LIMITS',
+        groupCode: 'ANALYTICS_CUSTOM_PERIOD',
+        field: 'PARAMETER',
+        safeLabel: 'Предел произвольного периода',
+        description: '',
+        valueType: 'DAYS',
+        value: MAX_CUSTOM_PERIOD_DAYS,
+        minValue: 7,
+        maxValue: 366,
+        updatedAt: null,
+        updatedBy: null,
+      },
+    ].concat(merged.map((item, index) => ({
       settingCode: `ATTENTION.${item.groupCode}.${item.field}`,
       sectionCode: 'ATTENTION_POLICY',
       groupCode: item.groupCode,
@@ -108,7 +134,7 @@ function settingsSlice(
       maxValue: 720,
       updatedAt: null,
       updatedBy: null,
-    })),
+    }))),
     changeLog: [],
   }
 }
@@ -872,5 +898,90 @@ describe('аналитика ОМ (§22.13, §22.15)', () => {
     await repository.getOperationsAnalytics(OPS_VIEWER, { level: 'ALL' })
     await repository.getOperationsAnalytics(OPS_VIEWER, { level: 'EVENT', eventId: 'event-1' })
     expect(JSON.stringify((await adapter.load())?.slices['security-events'])).toBe(before)
+  })
+})
+
+/**
+ * §22.5: предел ПРОИЗВОЛЬНОГО периода принадлежит «Настройкам» (§29), а не
+ * слайсу аналитики. Проверяется чтение чужой политики, а не наличие числа в
+ * ответе: подменённое значение обязано менять исход, а его отсутствие —
+ * запрещать произвольный период, оставляя именованные пресеты работать.
+ */
+describe('предел произвольного периода приходит из «Настроек» (§22.5/§29)', () => {
+  /** Слайс настроек, где раздел пределов отсутствует целиком. */
+  function settingsWithoutLimits() {
+    const slice = settingsSlice() as {
+      sectionVersions: Record<string, string>
+      settings: Record<string, unknown>[]
+      changeLog: unknown[]
+    }
+    return {
+      ...slice,
+      sectionVersions: { ATTENTION_POLICY: slice.sectionVersions.ATTENTION_POLICY },
+      settings: slice.settings.filter((item) => item.sectionCode !== 'ANALYTICS_LIMITS'),
+    }
+  }
+
+  it('число в отказе — из политики, а не из кода аналитики', async () => {
+    const slice = settingsSlice() as { settings: Record<string, unknown>[] }
+    const tightened = {
+      ...slice,
+      settings: slice.settings.map((item) =>
+        item.sectionCode === 'ANALYTICS_LIMITS' ? { ...item, value: 9 } : item,
+      ),
+    }
+    const { repository } = await setup({ settings: tightened })
+    await expect(
+      repository.getServiceAnalytics(VIEWER, {
+        presetCode: null,
+        from: '2026-07-01',
+        to: '2026-07-20',
+      }),
+    ).rejects.toMatchObject({ errorCode: 'PERIOD_TOO_LONG' })
+    await expect(
+      repository.getServiceAnalytics(VIEWER, {
+        presetCode: null,
+        from: '2026-07-01',
+        to: '2026-07-20',
+      }),
+    ).rejects.toThrow(/9 дней/)
+    expect((await repository.listPresets(VIEWER)).maxCustomPeriodDays).toBe(9)
+  })
+
+  it('без политики произвольный период отвергается, а именованный продолжает работать', async () => {
+    const { repository } = await setup({ settings: settingsWithoutLimits() })
+    // Один день — короче любого мыслимого предела: отказ означает именно
+    // «предела нет», а не «период длинный».
+    await expect(
+      repository.getServiceAnalytics(VIEWER, {
+        presetCode: null,
+        from: BUSINESS_DATE,
+        to: BUSINESS_DATE,
+      }),
+    ).rejects.toMatchObject({ errorCode: 'PERIOD_LIMIT_UNAVAILABLE' })
+    // Пресет своей глубиной задан и политикой пределов не связан.
+    await expect(repository.getServiceAnalytics(VIEWER, TODAY)).resolves.toMatchObject({
+      period: { presetCode: 'TODAY' },
+    })
+  })
+
+  it('список пресетов называет причину теми же словами, что и отказ операции', async () => {
+    const { repository } = await setup({ settings: settingsWithoutLimits() })
+    const presets = await repository.listPresets(VIEWER)
+    expect(presets.maxCustomPeriodDays).toBeNull()
+    expect(presets.limitPolicyVersion).toBeNull()
+    const rejection = await repository
+      .getServiceAnalytics(VIEWER, { presetCode: null, from: BUSINESS_DATE, to: BUSINESS_DATE })
+      .catch((error: Error) => error.message)
+    expect(presets.customPeriodUnavailableReason).toBe(rejection)
+  })
+
+  it('редакция политики пределов едет вместе с числом', async () => {
+    const { repository } = await setup()
+    const presets = await repository.listPresets(VIEWER)
+    expect(presets.maxCustomPeriodDays).toBe(MAX_CUSTOM_PERIOD_DAYS)
+    expect(presets.limitPolicyVersion).toBe(ANALYTICS_LIMITS_VERSION)
+    // Редакция наблюдений — ДРУГАЯ: разделы версионируются порознь.
+    expect(presets.limitPolicyVersion).not.toBe(ATTENTION_POLICY_VERSION)
   })
 })

@@ -20,9 +20,12 @@ import { buildSettingsSeed } from '../../features/settings/mocks/fixtures'
 import { readConflictPolicy } from '../../features/duties/mocks/settingsSlice'
 import { readFreshnessPolicy } from '../../features/objects/mocks/settingsSlice'
 import {
+  readAnalyticsCustomPeriodLimit,
   readAttentionPolicy,
   readRestAfterDutyMode,
 } from '../../features/service-analytics/mocks/settingsSlice'
+import { readReportLimits } from '../../features/service-reports/mocks/settingsSlice'
+import { REPORT_TYPES } from '../../features/service-reports/mocks/fixtures'
 
 const { sliceName, data } = buildSettingsSeed()
 const slices = { [sliceName]: data }
@@ -49,5 +52,33 @@ describe('проекции слайса «Настройки» понимают 
     expect(policy?.byDetector.get('CONFLICT_SHARE')?.warningFrom).toBe(18)
     // Один и тот же факт для двух потребителей: разойтись они не имеют права.
     expect(readRestAfterDutyMode(slices)).toBe(readConflictPolicy(slices).restAfterDutyMode)
+  })
+
+  it('аналитика службы читает предел произвольного периода §22.5', () => {
+    const limit = readAnalyticsCustomPeriodLimit(slices)
+    expect(limit).not.toBeNull()
+    expect(limit?.maxDays).toBe(62)
+    // Редакция СВОЯ, не общая с наблюдениями: иначе правка предела объявляла бы
+    // изменившейся методику блока «Требует внимания».
+    expect(limit?.policyVersion).toBe(data.sectionVersions.ANALYTICS_LIMITS)
+    expect(limit?.policyVersion).not.toBe(data.sectionVersions.ATTENTION_POLICY)
+  })
+
+  it('отчётный реестр читает предел периода и срок хранения §22.5/§22.22', () => {
+    const limits = readReportLimits(slices)
+    // Ключ карты — код ТИПА отчёта, и проверяется он по РЕАЛЬНОМУ реестру
+    // типов: заведённый тип без записи политики не формируется вовсе, и
+    // узнать об этом лучше здесь, чем на экране.
+    for (const type of REPORT_TYPES) {
+      expect(limits.maxPeriodDaysByType.get(type.reportTypeCode)).toEqual(expect.any(Number))
+    }
+    expect(limits.maxPeriodDaysByType.get('PERSONNEL_EXPENSE')).toBe(92)
+    expect(limits.retentionDays).toBe(21)
+    expect(limits.policyVersion).toBe(data.sectionVersions.REPORT_LIMITS)
+  })
+
+  it('каждый раздел сида имеет свою редакцию — общих версий нет', () => {
+    const versions = Object.values(data.sectionVersions)
+    expect(new Set(versions).size).toBe(versions.length)
   })
 })

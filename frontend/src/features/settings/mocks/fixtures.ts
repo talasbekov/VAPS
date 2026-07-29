@@ -28,6 +28,8 @@ export const INITIAL_SECTION_VERSIONS: Record<SettingSectionCode, string> = {
   ATTENTION_POLICY: 'attention-policy-2026.07.1',
   CONFLICT_RULES: 'conflict-rules-2026.07.1',
   PASSPORT_FRESHNESS: 'passport-freshness-2026.07.1',
+  ANALYTICS_LIMITS: 'analytics-limits-2026.07.1',
+  REPORT_LIMITS: 'report-limits-2026.07.1',
 }
 
 /**
@@ -397,14 +399,93 @@ export const PASSPORT_FRESHNESS_SETTINGS: readonly StoredSetting[] = [
   },
 ]
 
+/**
+ * §22.5 предел ПРОИЗВОЛЬНОГО периода аналитики. До этого среза он был
+ * константой `MAX_CUSTOM_PERIOD_DAYS` в слайсе аналитики — то есть числом,
+ * которое §22.5 запрещает хардкодить, лежащим у самого ОГРАНИЧИВАЕМОГО.
+ */
+export const ANALYTICS_LIMIT_SETTINGS: readonly StoredSetting[] = [
+  {
+    settingCode: 'LIMITS.ANALYTICS_CUSTOM_PERIOD.PARAMETER',
+    kind: 'NUMBER',
+    sectionCode: 'ANALYTICS_LIMITS',
+    groupCode: 'ANALYTICS_CUSTOM_PERIOD',
+    field: 'PARAMETER',
+    safeLabel: 'Предел произвольного периода аналитики',
+    description:
+      'Сколько суток может охватывать период, заданный датами вручную. Именованные периоды («текущая неделя») этим пределом не проверяются — их глубина задана самим пресетом.',
+    valueType: 'DAYS',
+    // 62 — прежнее сеяное значение: перенос владения не должен молча изменить
+    // то, что сервер принимал вчера.
+    value: 62,
+    minValue: 7,
+    maxValue: 366,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+]
+
+/**
+ * §22.5 «срок хранения отчёта» и глубина периода отчёта §22.19.
+ *
+ * Глубина задана НА ТИП отчёта (`groupCode` = код типа): типов может стать
+ * больше, и общее число объявило бы про новый тип то, чего о нём никто не
+ * решал. Тип без своей записи политики не формируется вовсе (§35) — предел,
+ * которого нет, означал бы «без ограничения», а это не то же самое.
+ */
+export const REPORT_LIMIT_SETTINGS: readonly StoredSetting[] = [
+  {
+    settingCode: 'LIMITS.REPORT_PERIOD.PERSONNEL_EXPENSE',
+    kind: 'NUMBER',
+    sectionCode: 'REPORT_LIMITS',
+    groupCode: 'PERSONNEL_EXPENSE',
+    field: 'PARAMETER',
+    safeLabel: 'Предел периода отчёта «Расход личного состава»',
+    description:
+      'Сколько суток может охватывать один отчёт этого типа. Значение принадлежит политике, а не форме запуска.',
+    valueType: 'DAYS',
+    value: 92,
+    minValue: 7,
+    maxValue: 366,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+  {
+    settingCode: 'LIMITS.REPORT_RETENTION.PARAMETER',
+    kind: 'NUMBER',
+    sectionCode: 'REPORT_LIMITS',
+    groupCode: 'REPORT_RETENTION',
+    field: 'PARAMETER',
+    safeLabel: 'Срок хранения сформированного файла',
+    description:
+      'Сколько суток артефакт доступен для скачивания. Срок назначается в момент сборки файла и у уже собранных не пересчитывается: сокращение политики иначе задним числом отняло бы выданную выгрузку, а продление — воскресило бы истёкшую.',
+    valueType: 'DAYS',
+    value: 21,
+    minValue: 1,
+    maxValue: 365,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+]
+
 export function buildSettingsSeed(): { sliceName: string; data: SettingsSlice } {
   return {
     sliceName: 'settings',
     data: {
       sectionVersions: { ...INITIAL_SECTION_VERSIONS },
-      settings: [...POLICY_SETTINGS, ...CONFLICT_RULE_SETTINGS, ...PASSPORT_FRESHNESS_SETTINGS].map(
-        (item) => ({ ...item }),
-      ),
+      settings: [
+        ...POLICY_SETTINGS,
+        ...CONFLICT_RULE_SETTINGS,
+        ...PASSPORT_FRESHNESS_SETTINGS,
+        ...ANALYTICS_LIMIT_SETTINGS,
+        ...REPORT_LIMIT_SETTINGS,
+      ].map((item) => ({ ...item })),
       // Журнал пуст: сеяных «изменений» не бывает — они не происходили.
       changeLog: [],
     },
