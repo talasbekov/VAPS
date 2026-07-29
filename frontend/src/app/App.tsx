@@ -30,6 +30,7 @@ import { DictionaryDetailPage } from '../features/dictionaries/pages/DictionaryD
 import { OperationsAnalyticsPage } from '../features/service-analytics/pages/OperationsAnalyticsPage'
 import { ServiceAnalyticsPage } from '../features/service-analytics/pages/ServiceAnalyticsPage'
 import { ServiceReportsPage } from '../features/service-reports/pages/ServiceReportsPage'
+import { RatingsPage } from '../features/ratings/pages/RatingsPage'
 import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
 import { ReportJobPage } from '../features/service-reports/pages/ReportJobPage'
 import { FeedbackPage } from '../features/feedback/pages/FeedbackPage'
@@ -303,6 +304,14 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.analytics.operations">
               <OperationsAnalyticsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.ratings}
+          element={
+            <RequirePermission permission="ops.rating.view_aggregate">
+              <RatingsPage />
             </RequirePermission>
           }
         />

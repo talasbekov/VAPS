@@ -1,0 +1,99 @@
+// Handler-уровень (приём Этапа 49): проверяется, что MSW действительно
+// СОПОСТАВЛЯЕТ маршрут раздела с URL, который строит клиент. Тест репозитория
+// этого не видит (зовёт функции напрямую), тест страницы подменяет handler'ы
+// своими — обе половины остаются зелёными при несовпадающем пути.
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { setupServer } from 'msw/node'
+import { createApiClient } from '../../../shared/api/client'
+import { ApiError } from '../../../shared/api/errors'
+import { createMemoryPersistence } from '../../../shared/testing/mock-runtime/memory-persistence'
+import { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
+import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac-directory'
+import { OPERATIONAL_RATINGS_PATH } from '../api/pending-contracts'
+import type { ListOperationalRatingsResponse } from '../api/pending-contracts'
+import { createRatingsHandlers } from './handlers'
+import { buildRatingsSeed } from './fixtures'
+
+const CLOCK_ISO = '2026-07-20T08:00:00+05:00'
+const VIEWER = 'rating-viewer'
+const NOBODY = 'nobody-user'
+const BASE = 'http://localhost'
+
+const adapter = createMemoryPersistence()
+const clock = new DemoClock(CLOCK_ISO)
+const server = setupServer(...createRatingsHandlers(adapter, clock))
+
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterAll(() => server.close())
+afterEach(() => server.resetHandlers(...createRatingsHandlers(adapter, clock)))
+
+beforeEach(async () => {
+  const ratings = buildRatingsSeed()
+  // Слайс «Настроек» — рукописной формой: импорт чужой фичи запрещён
+  // ARCH-FE-013, а сверку этой формы с настоящим сидом ведёт контрактный тест
+  // в `app/` (он единственный слой, которому позволено видеть обе фичи).
+  const settings = {
+    sliceName: 'settings',
+    data: {
+      sectionVersions: { RATING_POLICY: 'OPERATIONAL-RATING-test.1' },
+      settings: [
+        {
+          settingCode: 'RATING.PERIOD.PARAMETER',
+          sectionCode: 'RATING_POLICY',
+          groupCode: 'AGGREGATION',
+          field: 'PARAMETER',
+          value: 105,
+        },
+        {
+          settingCode: 'RATING.MIN_EVALUATIONS.PARAMETER',
+          sectionCode: 'RATING_POLICY',
+          groupCode: 'AGGREGATION',
+          field: 'WARNING_FROM',
+          value: 4,
+        },
+      ],
+      changeLog: [],
+    },
+  }
+  await adapter.reset({
+    application: 'smart-josparlau',
+    schema_version: 31,
+    seed_version: 'test-v31',
+    scenario: 'normal',
+    revision: 0,
+    created_at: CLOCK_ISO,
+    updated_at: CLOCK_ISO,
+    slices: { [ratings.sliceName]: ratings.data, [settings.sliceName]: settings.data },
+  })
+  registerRbacDirectory([
+    { userId: VIEWER, permissions: ['ops.rating.view_aggregate'] },
+    { userId: NOBODY, permissions: [] },
+  ])
+})
+
+const client = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': VIEWER } })
+const stranger = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': NOBODY } })
+
+async function statusOf(call: () => Promise<unknown>): Promise<number> {
+  try {
+    await call()
+    return 200
+  } catch (error) {
+    if (error instanceof ApiError) return error.status
+    throw error
+  }
+}
+
+describe('ratings handlers — сопоставление маршрута', () => {
+  it('GET сводки доходит до repository и отдаёт агрегаты', async () => {
+    const response = await client.get<ListOperationalRatingsResponse>(OPERATIONAL_RATINGS_PATH)
+    expect(response.results.length).toBeGreaterThan(0)
+    // Методика доезжает до клиента ЧЕРЕЗ HTTP: репозиторий её отдаёт, а
+    // handler не теряет по дороге.
+    expect(response.policy?.policyVersion).toBe('OPERATIONAL-RATING-test.1')
+  })
+
+  it('без права — 403 конвертом, а не пустым списком', async () => {
+    expect(await statusOf(() => stranger.get(OPERATIONAL_RATINGS_PATH))).toBe(403)
+  })
+})

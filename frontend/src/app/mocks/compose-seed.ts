@@ -19,6 +19,7 @@ import { buildServiceReportsSeed } from '../../features/service-reports/mocks/fi
 import { buildServiceAnalyticsSeed } from '../../features/service-analytics/mocks/fixtures'
 import { buildFeedbackSeed } from '../../features/feedback/mocks/fixtures'
 import { buildSettingsSeed } from '../../features/settings/mocks/fixtures'
+import { buildRatingsSeed } from '../../features/ratings/mocks/fixtures'
 import type { DemoScenarioDefinition } from './scenario-manifest'
 
 export type { SeedContext, FeatureSeedBuilder }
@@ -55,6 +56,9 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
   // §29: политика наблюдений §22.11 переехала во владение «Настроек» —
   // аналитика её ЧИТАЕТ (mocks/settingsSlice.ts), а меняют её здесь.
   buildSettingsSeed,
+  // §19: закрытые оценки мероприятий. Методику расчёта рейтинг ЧИТАЕТ из
+  // слайса «Настроек» на ЗАПРОСЕ, а не при сидировании — от порядка не зависит.
+  buildRatingsSeed,
 ]
 
 // Бампается при КАЖДОМ изменении формы существующего feature-слайса (не
@@ -85,7 +89,7 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 30
+export const SCHEMA_VERSION = 31
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)

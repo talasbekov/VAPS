@@ -30,6 +30,10 @@ export const INITIAL_SECTION_VERSIONS: Record<SettingSectionCode, string> = {
   PASSPORT_FRESHNESS: 'passport-freshness-2026.07.1',
   ANALYTICS_LIMITS: 'analytics-limits-2026.07.1',
   REPORT_LIMITS: 'report-limits-2026.07.1',
+  // Эта редакция печатается как МЕТОДИКА расчёта рейтинга (§19.19
+  // «Методика: OPERATIONAL-RATING-2.1»), поэтому её префикс — имя методики,
+  // а не имя раздела настроек.
+  RATING_POLICY: 'OPERATIONAL-RATING-2026.07.1',
 }
 
 /**
@@ -474,6 +478,54 @@ export const REPORT_LIMIT_SETTINGS: readonly StoredSetting[] = [
   },
 ]
 
+/**
+ * §19.19/§22.17 политика оперативного рейтинга. Промпт называет захардкоженный
+ * период «90 дней» ошибкой прототипа (§19.1) и требует, чтобы период,
+ * минимальное количество оценок и правила включения приходили от policy.
+ *
+ * Значения намеренно не «привычные»: 105 суток вместо 90 и минимум 4 оценки —
+ * совпадение с круглым числом скрыло бы захардкоженный период, если бы он
+ * где-то остался.
+ */
+export const RATING_POLICY_SETTINGS: readonly StoredSetting[] = [
+  {
+    settingCode: 'RATING.PERIOD.PARAMETER',
+    kind: 'NUMBER',
+    sectionCode: 'RATING_POLICY',
+    groupCode: 'AGGREGATION',
+    field: 'PARAMETER',
+    safeLabel: 'Период расчёта оперативного рейтинга',
+    description:
+      'За сколько последних суток учитываются оценки. Оценка старше периода в агрегат не входит — она относится к другой методике и другому составу мероприятий.',
+    valueType: 'DAYS',
+    value: 105,
+    minValue: 14,
+    maxValue: 730,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+  {
+    settingCode: 'RATING.MIN_EVALUATIONS.PARAMETER',
+    kind: 'NUMBER',
+    sectionCode: 'RATING_POLICY',
+    groupCode: 'AGGREGATION',
+    field: 'WARNING_FROM',
+    safeLabel: 'Минимум оценок для расчёта агрегата',
+    description:
+      'Сколько учтённых оценок нужно, чтобы агрегат считался. Меньше — сводка показывает «Недостаточно данных», а не ноль: рейтинг по одной оценке говорил бы об оценщике, а не о сотруднике.',
+    valueType: 'COUNT',
+    value: 4,
+    minValue: 2,
+    maxValue: 50,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+]
+
 export function buildSettingsSeed(): { sliceName: string; data: SettingsSlice } {
   return {
     sliceName: 'settings',
@@ -485,6 +537,7 @@ export function buildSettingsSeed(): { sliceName: string; data: SettingsSlice } 
         ...PASSPORT_FRESHNESS_SETTINGS,
         ...ANALYTICS_LIMIT_SETTINGS,
         ...REPORT_LIMIT_SETTINGS,
+        ...RATING_POLICY_SETTINGS,
       ].map((item) => ({ ...item })),
       // Журнал пуст: сеяных «изменений» не бывает — они не происходили.
       changeLog: [],
