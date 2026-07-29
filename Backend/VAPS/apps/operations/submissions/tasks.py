@@ -9,6 +9,7 @@ from celery import shared_task
 from apps.operations.submissions.services.lagging_check import (
     check_lagging_submissions,
 )
+from apps.operations.submissions.services.pilot_pulse import pilot_pulse_digest
 from apps.operations.submissions.services.threshold_check import (
     check_submission_threshold,
 )
@@ -26,3 +27,9 @@ def check_submission_threshold_task():
     # Story 13.5b — bare call, same reasoning as check_lagging_submissions_task
     # above: the service defaults `today` to Clock.today_local() itself.
     check_submission_threshold()
+
+
+@shared_task(name="apps.operations.submissions.tasks.pilot_pulse_digest_task")
+def pilot_pulse_digest_task():
+    # Story 13.5c — bare call, same reasoning as the two tasks above.
+    pilot_pulse_digest()

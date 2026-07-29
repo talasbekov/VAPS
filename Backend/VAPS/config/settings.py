@@ -257,6 +257,16 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.operations.submissions.tasks.check_submission_threshold_task",
         "schedule": crontab(minute="*/15", hour="0-1,4-23"),
     },
+    # Story 13.5c — once daily (not intraday like 13.5b above): the pulse's
+    # own cutoff (PULSE_CUTOFF_HOUR=20 in pilot_pulse.py) is a fixed literal,
+    # not an Admin setting, so a single fixed crontab entry (unlike 13.5b's
+    # periodic re-check) is enough — no config to silently drift out of sync
+    # with. 20:00 doesn't collide with (2,15)/(3,0) (reserved above) or with
+    # 13.5b's *-per-15-minutes ticks (different task, same minute is fine).
+    "pilot-pulse-digest-daily": {
+        "task": "apps.operations.submissions.tasks.pilot_pulse_digest_task",
+        "schedule": crontab(hour=20, minute=0),
+    },
 }
 
 # BR-EMP-005 default

@@ -53,6 +53,17 @@ types:
     action_url: "/daily-expense"
     trigger: "доля сдавших < alert_threshold_pct к alert_hour (интрадей)"
     source: "VAPS story 13.5a (модель) / 13.5b (эмиттер) — epics.md#L1380-1387"
+  # Не дубль SUBMISSION_THRESHOLD_ALERT: тот — только на недобор, гейт
+  # alert_hour (Admin-настройка). Этот — ЕЖЕДНЕВНО, независимо от исхода
+  # дня (сдачи есть/нет), фиксированный час отсечки 20:00 (литерал, не
+  # настройка) — сама сводка есть сигнал «цикл дня дошёл до проверки».
+  PILOT_PULSE_DIGEST:
+    priority: INFO
+    recipients: "ответственный (default_notify_recipient)"
+    repeat: "once per business_date (UniqueConstraint)"
+    action_url: "/daily-expense"
+    trigger: "ежедневная сводка после 20:00 (сдачи/активные пользователи/день тишины)"
+    source: "VAPS story 13.5c — epics.md#L1380-1387"
   DAILY_MARK_MISSING:
     priority: WARNING
     recipients: "division operators"

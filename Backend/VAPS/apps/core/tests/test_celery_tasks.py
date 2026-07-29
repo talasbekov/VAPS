@@ -62,6 +62,7 @@ def test_all_expected_beat_jobs_are_registered():
         "apps.operations.statuses.tasks.materialize_status_effects_task",
         "apps.operations.submissions.tasks.check_lagging_submissions_task",
         "apps.operations.submissions.tasks.check_submission_threshold_task",
+        "apps.operations.submissions.tasks.pilot_pulse_digest_task",
         "apps.parallel_run.tasks.parallel_run_diff_task",
     }
 

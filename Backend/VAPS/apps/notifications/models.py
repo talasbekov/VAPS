@@ -28,6 +28,11 @@ class Notification(TimeStampedModel):
             "SUBMISSION_THRESHOLD_ALERT",
             "Порог сдачи не достигнут",
         )
+        # Story 13.5c — once-daily digest ("were there submissions today,
+        # how many active users, was today a silent day"), a different
+        # trigger (fixed daily cutoff, not alert_hour) and aggregation
+        # (always emits, not just on shortfall) than either kind above.
+        PILOT_PULSE_DIGEST = "PILOT_PULSE_DIGEST", "Пульс пилота"
 
     recipient = models.CharField(max_length=100)
     kind = models.CharField(max_length=50, choices=Kind.choices)
@@ -72,7 +77,11 @@ class Notification(TimeStampedModel):
             # (зеркало Kind.values; drift ловит test_kind_check_covers_kind_choices).
             models.CheckConstraint(
                 condition=models.Q(
-                    kind__in=["SUBMISSION_LAGGING", "SUBMISSION_THRESHOLD_ALERT"]
+                    kind__in=[
+                        "SUBMISSION_LAGGING",
+                        "SUBMISSION_THRESHOLD_ALERT",
+                        "PILOT_PULSE_DIGEST",
+                    ]
                 ),
                 name="chk_notification_kind",
             ),

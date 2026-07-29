@@ -1826,9 +1826,10 @@ export interface components {
         /**
          * @description * `SUBMISSION_LAGGING` - Отставание по сдаче
          *     * `SUBMISSION_THRESHOLD_ALERT` - Порог сдачи не достигнут
+         *     * `PILOT_PULSE_DIGEST` - Пульс пилота
          * @enum {string}
          */
-        KindEnum: "SUBMISSION_LAGGING" | "SUBMISSION_THRESHOLD_ALERT";
+        KindEnum: "SUBMISSION_LAGGING" | "SUBMISSION_THRESHOLD_ALERT" | "PILOT_PULSE_DIGEST";
         MyPermissionsResponse: {
             permissions: string[];
         };
