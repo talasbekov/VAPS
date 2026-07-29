@@ -9,3 +9,6 @@ dist-bundle/
 backups/
 pre-install-backups/
 rehearsal-logs/
+
+# Story 13.2: export_diagnostics's output — carried out by media, not source.
+diagnostics-exports/
