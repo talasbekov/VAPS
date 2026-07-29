@@ -4,7 +4,7 @@ baseline_commit: 9d4bd7d
 
 # Story 13.3: Патч-цикл hotfix
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -30,18 +30,18 @@ so that **мелкий баг чинится за один цикл носите
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `bundle.sh --hotfix` (AC: 1, 2)
-  - [ ] Флаг парсится, без него — поведение не меняется (regression-гвард).
-  - [ ] `--hotfix`: пропускает pull+save трёх базовых образов, `images.tar` содержит только `app`.
-  - [ ] `--hotfix` без `LAST_SHA_FILE` → явная ошибка, не null-бандл.
-  - [ ] `manifest.json` — новое поле `"hotfix": true/false`.
-- [ ] Task 2 — `deploy/HOTFIX-POLICY.md` (AC: 4)
-  - [ ] Разрешено/запрещено-список (конкретный, не общие слова).
-  - [ ] Явно: smoke/бэкап без сокращений.
-- [ ] Task 3 — Реальный двойной прогон (AC: 3, 5)
-  - [ ] Полный бандл → install → smoke (baseline, не сломан).
-  - [ ] `--hotfix`-бандл на том же стеке → install (ТЕМ ЖЕ install.sh, без правок) → smoke.
-  - [ ] `make gate` зелёный.
+- [x] Task 1 — `bundle.sh --hotfix` (AC: 1, 2)
+  - [x] Флаг парсится, без него — поведение не меняется (regression-гвард, live-подтверждено полным прогоном).
+  - [x] `--hotfix`: пропускает pull+save трёх базовых образов, `images.tar` содержит только `app` (280MB → 105MB, live-измерено).
+  - [x] `--hotfix` без `LAST_SHA_FILE` → явная ошибка, не null-бандл (структурный тест).
+  - [x] `manifest.json` — новое поле `"hotfix": true/false` (live-подтверждено обеими ветками).
+- [x] Task 2 — `deploy/HOTFIX-POLICY.md` (AC: 4)
+  - [x] Разрешено/запрещено-список (конкретный, не общие слова).
+  - [x] Явно: smoke/бэкап без сокращений.
+- [x] Task 3 — Реальный двойной прогон (AC: 3, 5)
+  - [x] Полный бандл → install → smoke 8/8 (baseline, не сломан).
+  - [x] `--hotfix`-бандл на ТОМ ЖЕ живом стеке → install (ТЕМ ЖЕ install.sh, без единой правки) → smoke 8/8.
+  - [x] `make gate` зелёный (2996 passed).
 
 ## Dev Notes
 
@@ -65,10 +65,21 @@ so that **мелкий баг чинится за один цикл носите
 
 ### Completion Notes
 
+- **AC-1/AC-2**: `bundle.sh --hotfix` реализован. Живой прогон подтвердил ОБА пути: полный бандл (183a0ec, без флага) — 4 образа, `hotfix: false`, `images.tar` 280MB; hotfix-бандл (8e5a0a4, с флагом) — только `app`, `hotfix: true`, `images.tar` 105MB (~62% меньше). `min_upgrade_from` корректно непустой (`"183a0ec"`) — не `null`.
+- **AC-3 — критично, буква стори буквально проверена, не предположена.** `install.sh` НЕ тронут вовсе (`git diff` подтверждает — ни одной строки правки в этом файле за всю стори). Живой прогон: `install.sh` полного бандла поднял весь стек (nginx/app/postgres/redis/worker/beat), 8/8 smoke; ЗАТЕМ `install.sh` (буквально тот же файл, без перезапуска/модификации) hotfix-бандла на ТОМ ЖЕ работающем стеке — `nginx` остался `Running` (не тронут, не было в его `images.tar`), `app`/`worker`/`beat` пересозданы с новым образом, `postgres`/`redis` не тронуты — 8/8 smoke снова зелёные. Это ровно сценарий, который research предсказал ДО реализации (целевая машина уже несёт nginx/postgres/redis из прошлой полной установки), подтверждён, не имитирован.
+- **AC-4**: `deploy/HOTFIX-POLICY.md` — конкретный список (не общие слова): разрешено (код приложения, аддитивные миграции), запрещено-как-hotfix (Dockerfile/базовые образы, docker-compose-топология, новые зависимости, разрушающие миграции, новые env-переменные), без сокращений (smoke 8/8, бэкап-шаг CHECKLIST.md).
+- **AC-5**: `make gate` — 2996 passed (было 2991). Новые структурные тесты (`test_bundle_script.py`, зеркалит установленный для этого файла паттерн «regex-over-source, не live-прогон в gate» — живой прогон описан здесь, в Completion Notes, как и для родительской 12.2-стори) — попутно нашли и исправили РЕАЛЬНУЮ регрессию в уже существующем тесте (`test_all_four_topology_images_are_saved_together` предполагал ОДИН `docker save`-вызов — теперь их легитимно два, full/hotfix-ветки).
+- Все тестовые артефакты (тестовый `.env`, установленные стеки, `dist-bundle/`'s тестовые файлы) убраны после прогона — `docker ps -a`/`docker volume ls` чистые (только предсуществующие gate-харнесс-контейнеры), `git status` чистый.
+
 ### File List
+
+- `deploy/scripts/bundle.sh` (MOD) — `--hotfix`-флаг.
+- `deploy/HOTFIX-POLICY.md` (NEW) — разрешено/запрещено-политика.
+- `Backend/VAPS/apps/core/tests/test_bundle_script.py` (MOD) — 5 новых hotfix-тестов + фикс регрессии в существующем тесте.
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-29 | Story создана (create-story) |
+| 2026-07-29 | dev-story: `--hotfix`-флаг + политика реализованы, живой двойной прогон (полный бандл → install → smoke, ЗАТЕМ hotfix-бандл на том же стеке → ТЕМ ЖЕ install.sh → smoke) — nginx не тронут, app/worker/beat пересозданы, оба раза 8/8. `make gate` 2996 passed. Status → review |
