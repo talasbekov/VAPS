@@ -81,6 +81,7 @@ INSTALLED_APPS = [
     "apps.operations.rbac",
     "apps.operations.submissions",
     "apps.operations.bugreports",
+    "apps.operations.facilities",
     "apps.audit",
     "apps.notifications",
     "apps.documents",

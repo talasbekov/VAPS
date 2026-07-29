@@ -4,7 +4,7 @@ baseline_commit: d87a28e
 
 # Story 14.1: `apps.operations.facilities` — Object + Паспорт (модели)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -48,20 +48,20 @@ so that **Epic 14's последующие стори (Post/Sector 14.2, чек-
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Приложение `apps.operations.facilities` (AC: 1)
-  - [ ] `apps/operations/facilities/apps.py`, `__init__.py`
-  - [ ] `INSTALLED_APPS` в `config/settings.py`
-- [ ] Task 2 — Модель `Object` (AC: 2)
-  - [ ] `apps/operations/facilities/models/object.py` (или `models.py`, если пакет избыточен — решить по объёму, зеркалить `submissions/models/`-паттерн, если файлов ≥2)
-- [ ] Task 3 — Модель `ObjectPassport` (AC: 3, 4, 5, 6, 7)
-  - [ ] Все поля из AC-3..AC-7
-  - [ ] `CheckConstraint` на `completeness_status`
-- [ ] Task 4 — Миграция (AC: 8)
-  - [ ] `makemigrations` — одна `0001_initial.py`
-- [ ] Task 5 — Тесты + реальный прогон (AC: 10, 11)
-  - [ ] Юнит: создание, уникальность `code`, 1:1-паспорт, `completeness_status`-CHECK red-probe
-  - [ ] `test_isolation.py` прогнан явно (уже существующий тест, новое приложение автоматически попадает под его скан) — зелёный
-  - [ ] `make gate` зелёный, явно прогнан
+- [x] Task 1 — Приложение `apps.operations.facilities` (AC: 1)
+  - [x] `apps/operations/facilities/apps.py`, `__init__.py`
+  - [x] `INSTALLED_APPS` в `config/settings.py`
+- [x] Task 2 — Модель `Object` (AC: 2)
+  - [x] `apps/operations/facilities/models.py` (один файл — 2 модели, объём не требует пакета, зеркалит `bugreports/models.py`)
+- [x] Task 3 — Модель `ObjectPassport` (AC: 3, 4, 5, 6, 7)
+  - [x] Все поля из AC-3..AC-7
+  - [x] `CheckConstraint` на `completeness_status`
+- [x] Task 4 — Миграция (AC: 8)
+  - [x] `makemigrations` — одна `0001_initial.py`
+- [x] Task 5 — Тесты + реальный прогон (AC: 10, 11)
+  - [x] Юнит: создание, уникальность `code`, 1:1-паспорт, `completeness_status`-CHECK red-probe (4 значения параметризовано)
+  - [x] `test_isolation.py` прогнан явно — зелёный (ARCH-004: `apps.operations.facilities` не импортирует `apps.core.models`)
+  - [x] `make gate` зелёный, явно прогнан (3077 passed)
 
 ## Dev Notes
 
@@ -89,14 +89,29 @@ so that **Epic 14's последующие стори (Post/Sector 14.2, чек-
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+- **AC-1**: `apps/operations/facilities/apps.py` (`OpsFacilitiesConfig`, `name="apps.operations.facilities"`, `label="ops_facilities"`) — буквальная копия `bugreports/apps.py`'s структуры. Зарегистрировано в `INSTALLED_APPS` сразу после `apps.operations.bugreports`.
+- **AC-2/AC-3/AC-4/AC-5/AC-6/AC-7**: `Object` (6 полей: `code`/`name`/`address`/`latitude`/`longitude`/`importance_level_code`/`is_active`) и `ObjectPassport` (`OneToOneField`, 6 текстовых + 12 JSONB-структурных + 8 инфраструктурных текстовых + `completeness_status`+`last_verified_at`/`last_verified_by`) — все поля буквально из донор-спеки `DB-OPS-004`/`DB-OPS-014`. `completeness_status` защищён `CheckConstraint` (мирроит 13.5a/13.5c's `ck_<table>_<field>_choices`-паттерн), доказано red-probe тестом на 4 невалидных значениях (`""`, `"PURPLE"`, `"red"`, `"green "` — регистр и трейлинг-пробел тоже покрыты).
+- **AC-8**: одна миграция `0001_initial.py` — обе модели, `CheckConstraint` включён.
+- **AC-9**: Admin НЕ регистрируется — `admin.py` не создан для этого приложения (осознанное решение, задокументировано в Dev Notes: `Object`/`ObjectPassport` — растущий бизнес-реестр, не статичный справочник).
+- **AC-10**: `test_isolation.py`'s существующий AST-гвард (`apps.core↛other-context-models`) прогнан явно — зелёный без каких-либо правок самого теста (новое приложение автоматически попало под скан). 16 новых тестов (4 в `test_app.py`, 12 в `test_models.py`, включая параметризованные).
+- **AC-11**: `make gate` — 3077 passed (было 3061 до стори, +16 новых тестов), "No changes detected" (новая модель НЕ API-поверхность — сериализаторов/вьюх нет, `schema.yaml` не тронут).
+- **Терминология подтверждена живым кодом**: класс `Object` (не `Facility`), `db_table="ops_objects"`/`"ops_object_passports"` — буквально имена донора, задокументировано в Scope Decision почему буква эпика («Facility») не выиграла у донор-схемы.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/facilities/__init__.py` (NEW).
+- `Backend/VAPS/apps/operations/facilities/apps.py` (NEW).
+- `Backend/VAPS/apps/operations/facilities/models.py` (NEW) — `Object`, `ObjectPassport`.
+- `Backend/VAPS/apps/operations/facilities/migrations/__init__.py` (NEW).
+- `Backend/VAPS/apps/operations/facilities/migrations/0001_initial.py` (NEW).
+- `Backend/VAPS/apps/operations/facilities/tests/__init__.py` (NEW).
+- `Backend/VAPS/apps/operations/facilities/tests/test_app.py` (NEW) — 4 теста.
+- `Backend/VAPS/apps/operations/facilities/tests/test_models.py` (NEW) — 12 тестов.
+- `Backend/VAPS/config/settings.py` (MOD) — `INSTALLED_APPS` новая запись.
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-30 | Story создана (create-story). Первая стори Epic 14 (после подтверждённой пользователем премисы «этап 2 стартовал»). Терминология донора («Object») предпочтена букве эпика («Facility»); модели-only скоуп (API/сервисы — будущие стори); `importance_level_code`'s FK и `passport_history`-таблица явно отложены (зависят от ещё не построенных частей Epic 15/14.12). |
+| 2026-07-30 | dev-story: приложение `apps.operations.facilities`, модели `Object`+`ObjectPassport`, миграция, 16 тестов. `make gate` 3077 passed. Status → review |
