@@ -2,6 +2,7 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
 from apps.core.api.permissions import require_permission
@@ -12,6 +13,16 @@ from apps.operations.bugreports.api.serializers import (
 from apps.operations.bugreports.models import BugReport
 
 _VIEW_PERMISSION = "bugreports.view"
+
+
+class BugReportPagination(LimitOffsetPagination):
+    """limit/offset envelope — project canon (architecture.md#L427), mirrors
+    AuditLogPagination (apps/audit/api/views.py). ``create`` has no RBAC
+    gate (AC-2, cost ~0) — without a cap here, ``list`` would return an
+    unbounded, ever-growing table on every call (review: Blind Hunter)."""
+
+    default_limit = 50
+    max_limit = 200
 
 
 class BugReportViewSet(viewsets.ViewSet):
@@ -33,6 +44,7 @@ class BugReportViewSet(viewsets.ViewSet):
     """
 
     http_method_names = ["get", "post", "options"]
+    pagination_class = BugReportPagination
 
     @extend_schema(
         operation_id="bugreports_create",
@@ -59,12 +71,17 @@ class BugReportViewSet(viewsets.ViewSet):
         operation_id="bugreports_list",
         responses={200: BugReportSerializer(many=True)},
         description="Требует bugreports.view (только DEVELOPER-роль по "
-        "seed_operations) — анонимность отправителя от начальства.",
+        "seed_operations) — анонимность отправителя от начальства. "
+        "limit/offset-пагинация (дефолт 50, потолок 200).",
     )
     def list(self, request, *args, **kwargs):
         require_permission(request, _VIEW_PERMISSION)
         reports = BugReport.objects.order_by("-created_at")
-        return Response(BugReportSerializer(reports, many=True).data)
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(reports, request)
+        return paginator.get_paginated_response(
+            BugReportSerializer(page, many=True).data
+        )
 
     @extend_schema(
         operation_id="bugreports_retrieve",

@@ -82,7 +82,21 @@ paths:
     get:
       operationId: bugreports_list
       description: Требует bugreports.view (только DEVELOPER-роль по seed_operations)
-        — анонимность отправителя от начальства.
+        — анонимность отправителя от начальства. limit/offset-пагинация (дефолт 50,
+        потолок 200).
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
       tags:
       - bugreports
       responses:
@@ -90,9 +104,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/BugReport'
+                $ref: '#/components/schemas/PaginatedBugReportList'
           description: ''
     post:
       operationId: bugreports_create
@@ -2102,6 +2114,7 @@ components:
             type: string
             minLength: 1
             maxLength: 64
+          maxItems: 20
         description:
           type: string
           minLength: 1
@@ -3090,6 +3103,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuditLog'
+    PaginatedBugReportList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BugReport'
     PaginatedDivisionList:
       type: object
       required:

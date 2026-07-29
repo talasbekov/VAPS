@@ -8,11 +8,17 @@ class BugReportCreateSerializer(serializers.Serializer):
     app_version = serializers.CharField(
         max_length=100, required=False, allow_blank=True
     )
-    build_sha = serializers.CharField(
-        max_length=100, required=False, allow_blank=True
-    )
+    build_sha = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    # max_length caps ELEMENT COUNT (DRF ListField), not string length — the
+    # frontend (13.1b) only ever needs "last few" request ids; without this,
+    # a giant array is still bounded by Django's global
+    # DATA_UPLOAD_MAX_MEMORY_SIZE, but that's incidental, not a designed cap
+    # (review: Edge Case Hunter).
     last_request_ids = serializers.ListField(
-        child=serializers.CharField(max_length=64), required=False, default=list
+        child=serializers.CharField(max_length=64),
+        required=False,
+        default=list,
+        max_length=20,
     )
     description = serializers.CharField()
 

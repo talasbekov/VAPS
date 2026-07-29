@@ -4,7 +4,7 @@ baseline_commit: 5ac968d
 
 # Story 13.1a: Багрепорт — модель и API (бэк)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -81,6 +81,14 @@ so that **бэкенд-половина канала «сообщить о пр�
   6. **Самостоятельно найден и исправлен ДО финального прогона (не gate поймал, я сам при первой генерации схемы):** `router.register("", BugReportViewSet, ...)` с ПУСТЫМ префиксом дал operationId-коллизию (`bugreports_retrieve` для ОБОИХ GET-эндпоинтов, list и retrieve) — та же ловушка, что `apps/notifications/api/urls.py`'s собственный докстринг уже документирует («DefaultRouter с пустым префиксом сталкивает api-root со list»). Исправлено: точная копия notifications' паттерна (`path()`-маппинг, НЕ router) + явные `@extend_schema(operation_id=...)` на все 3 метода (паттерн `ExpenseReportViewSet`) — коллизия исчезла, `unable to guess serializer`-ошибка тоже пропала (явные `responses=`).
 - **AC-4**: 5 API-тестов (не 4 из плана — добавлен `test_ordinary_role_without_bugreports_view_stays_forbidden`, доказывающий, что НАСТОЯЩАЯ руководящая роль ORGD тоже не видит репорты, не только гипотетический безролевой актор). `make gate` — 2976 passed (было 2875), `ruff check` чисто, `make schema` без drift.
 
+**3-агентное ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor, параллельно) — 4 реальные находки, все применены:**
+- **Blind Hunter (HIGH, подтверждено)**: `list()` был БЕЗ пагинации — единственный подобный list-эндпоинт в кодовой базе без неё (`AuditLogPagination`/`DefaultPagination` — уже установленный канон). Учитывая, что `create` НАМЕРЕННО открыт без RBAC-ограничения (AC-2, «стоимость ~0») — это реальный риск неограниченного роста таблицы + одного `GET`, тянущего её целиком в память. Исправлено: `BugReportPagination(LimitOffsetPagination)`, зеркалит `AuditLogPagination` (default 50, потолок 200), `list()` переписан на `paginate_queryset`/`get_paginated_response` (паттерн `UserRoleViewSet`, `apps/operations/api/views.py`).
+- **Edge Case Hunter (MED, подтверждено)**: `retrieve()` не имел НИ ОДНОГО прямого теста (только косвенное покрытие 403-пути через `test_rbac_matrix.py`) — добавлены `test_developer_can_retrieve_a_single_report_by_id` (200 + тело) и `test_retrieve_of_missing_id_is_404_for_a_developer` (404).
+- **Edge Case Hunter (LOW, defense-in-depth)**: `last_request_ids` — `ListField` без `max_length` (элементов), инцидентально ограничен только глобальным `DATA_UPLOAD_MAX_MEMORY_SIZE`, не осознанным дизайном. Исправлено: явный `max_length=20` + тест `test_create_serializer_rejects_too_many_request_ids`.
+- **Acceptance Auditor (найдено расхождение с AC-4)**: заявленный в AC-4 «unit: serialization round-trip» тест реально ОТСУТСТВОВАЛ в первом прогоне (только HTTP-интеграционные). Добавлен `tests/test_serializers.py` — 3 юнит-теста напрямую на `BugReportCreateSerializer`/`BugReportSerializer`, без HTTP.
+- **Опровергнутые/некритичные находки (проверены, не требуют фикса)**: `_ANY_AUTH`/RBAC-механизм подтверждён Acceptance Auditor как «тот же код-путь, что mixin использует внутри» — легитимное, задокументированное отклонение от буквы AC-3, не тихий спецкейс; `retrieve()` без per-row scoping — подтверждено НЕ IDOR (та же модель, что `AuditLogViewSet` — глобальная видимость держателю права, именно так и задумано); `ADMIN`'s wildcard `*` тоже видит багрепорты — существующая, не новая конвенция (не нарушает «анонимность от начальства», цель — скрыть от ORGD/OMD, не от superuser).
+- Живой ре-прогон после всех фиксов: `apps/operations/bugreports/` — 13 passed (было 8). `make gate` — 2981 passed (было 2976), `make schema` без drift, `ruff check` чисто.
+
 ### File List
 
 - `Backend/VAPS/apps/operations/bugreports/` (NEW app) — `models.py`, `apps.py`, `migrations/0001_initial.py`, `api/serializers.py`, `api/views.py`, `api/urls.py`, `tests/test_app.py`, `tests/test_bugreport_api.py`.
@@ -90,7 +98,8 @@ so that **бэкенд-половина канала «сообщить о пр�
 - `Backend/VAPS/apps/operations/tests/test_seed.py` (MOD) — 8→9 ролей.
 - `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (MOD) — `_ANY_AUTH`-сентинел (новый примитив), 2 новые MATRIX-строки, 8→9 ролей.
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (MOD) — `_BUGREPORTS`-обоснование + `_DeferredAudit`-строка.
-- `Backend/VAPS/schema.yaml` (MOD) — регенерирован (`make schema`).
+- `Backend/VAPS/schema.yaml` (MOD) — регенерирован (`make schema`, дважды — до и после ревью-фиксов).
+- `Backend/VAPS/apps/operations/bugreports/tests/test_serializers.py` (NEW, ревью-фикс) — юнит-тесты сериализатора.
 
 ## Change Log
 
@@ -98,3 +107,4 @@ so that **бэкенд-половина канала «сообщить о пр�
 |---|---|
 | 2026-07-29 | Story создана (create-story), декомпозирована на 13.1a (бэк)/13.1b (фронт) |
 | 2026-07-29 | dev-story: модель+API+RBAC-видимость реализованы (иной механизм, чем в AC-3 буквально — обоснование в Completion Notes), 6 реальных gate-регрессий найдено и исправлено (8→9 ролей, RBAC/audit-матрицы, operationId-коллизия). `make gate` 2976 passed. Status → review |
+| 2026-07-29 | 3-агентное ревью: 4 реальные находки исправлены (пагинация list(), retrieve()-тесты, last_request_ids-потолок, недостающий unit-тест сериализатора). Живой ре-прогон 13/13 + `make gate` 2981 passed. Status → done |

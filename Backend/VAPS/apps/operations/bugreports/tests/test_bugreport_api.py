@@ -80,8 +80,11 @@ def test_developer_role_can_list_reports(seeded):
     dev_client = _client("the-dev")
     resp = dev_client.get(reverse("bugreport-list"))
     assert resp.status_code == 200
+    # Paginated envelope (review: Blind Hunter — list() was unbounded before
+    # this fix), not a bare list — {count, next, previous, results}.
+    assert "results" in resp.data
     assert any(
-        r["description"] == "видит только разработчик" for r in resp.data
+        r["description"] == "видит только разработчик" for r in resp.data["results"]
     )
 
 
@@ -91,3 +94,27 @@ def test_ordinary_role_without_bugreports_view_stays_forbidden(seeded):
     UserRole.objects.create(user_id="orgd-lead", role_code_id="ORGD")
     resp = _client("orgd-lead").get(reverse("bugreport-list"))
     assert resp.status_code == 403
+
+
+def test_developer_can_retrieve_a_single_report_by_id(seeded):
+    # Review (Edge Case Hunter): retrieve() had zero direct test coverage
+    # before this fix — only indirect 403-path coverage via test_rbac_matrix.
+    reporter = _client("plain-operator-3")
+    created = reporter.post(
+        reverse("bugreport-list"),
+        {"screen_path": "/y", "description": "детальный просмотр"},
+        format="json",
+    )
+    UserRole.objects.create(user_id="the-dev-2", role_code_id="DEVELOPER")
+    dev_client = _client("the-dev-2")
+    resp = dev_client.get(
+        reverse("bugreport-detail", kwargs={"pk": created.data["id"]})
+    )
+    assert resp.status_code == 200
+    assert resp.data["description"] == "детальный просмотр"
+
+
+def test_retrieve_of_missing_id_is_404_for_a_developer(seeded):
+    UserRole.objects.create(user_id="the-dev-3", role_code_id="DEVELOPER")
+    resp = _client("the-dev-3").get(reverse("bugreport-detail", kwargs={"pk": 999999}))
+    assert resp.status_code == 404
