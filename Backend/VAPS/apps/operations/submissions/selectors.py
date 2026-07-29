@@ -174,6 +174,14 @@ class SubmissionControlSettingsSelector:
     def required_division_ids(cls):
         return list(cls.get().required_division_ids)
 
+    @classmethod
+    def alert_hour(cls):
+        return cls.get().alert_hour
+
+    @classmethod
+    def alert_threshold_pct(cls):
+        return cls.get().alert_threshold_pct
+
 
 class NotifyRecipientSelector:
     """Resolve «дивизион→получатель» for lagging-submission notices (Story 5.7b1).

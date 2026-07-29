@@ -63,3 +63,44 @@ def test_control_hour_is_configurable():
     settings_row.control_hour = time(9, 0)
     settings_row.save()
     assert SubmissionControlSettingsSelector.control_hour() == time(9, 0)
+
+
+# ═══ Story 13.5a — alert_hour / alert_threshold_pct ═══
+
+
+def test_default_alert_hour_and_threshold():
+    # AC-1: 15:30/50% defaults ("половина к 15:30", epics.md#L1386).
+    assert SubmissionControlSettingsSelector.alert_hour() == time(15, 30)
+    assert SubmissionControlSettingsSelector.alert_threshold_pct() == 50
+
+
+def test_alert_hour_and_threshold_are_configurable():
+    settings_row = SubmissionControlSettingsSelector.get()
+    settings_row.alert_hour = time(12, 0)
+    settings_row.alert_threshold_pct = 75
+    settings_row.save()
+    assert SubmissionControlSettingsSelector.alert_hour() == time(12, 0)
+    assert SubmissionControlSettingsSelector.alert_threshold_pct() == 75
+
+
+@pytest.mark.parametrize("bad_pct", [0, -1, 101, 1000])
+def test_alert_threshold_pct_out_of_range_rejected_by_db(bad_pct):
+    # AC-2: DB CheckConstraint, not application validation — .objects.create()
+    # skips full_clean(), so this must be a real IntegrityError, not a ValueError.
+    # The migration-seeded singleton_key=1 row is deleted first so the failure
+    # is provably the range constraint, not the singleton uniqueness constraint
+    # (mirror test_second_row_violates_singleton's isolation concern).
+    SubmissionControlSettings.objects.all().delete()
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            SubmissionControlSettings.objects.create(
+                singleton_key=1, alert_threshold_pct=bad_pct
+            )
+
+
+@pytest.mark.parametrize("good_pct", [1, 50, 100])
+def test_alert_threshold_pct_boundary_values_accepted(good_pct):
+    settings_row = SubmissionControlSettingsSelector.get()
+    settings_row.alert_threshold_pct = good_pct
+    settings_row.save()
+    assert SubmissionControlSettingsSelector.alert_threshold_pct() == good_pct

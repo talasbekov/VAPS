@@ -1825,9 +1825,10 @@ export interface components {
         IssuedExpenseReportStatusEnum: "ISSUED" | "SUPERSEDED";
         /**
          * @description * `SUBMISSION_LAGGING` - Отставание по сдаче
+         *     * `SUBMISSION_THRESHOLD_ALERT` - Порог сдачи не достигнут
          * @enum {string}
          */
-        KindEnum: "SUBMISSION_LAGGING";
+        KindEnum: "SUBMISSION_LAGGING" | "SUBMISSION_THRESHOLD_ALERT";
         MyPermissionsResponse: {
             permissions: string[];
         };

@@ -34,6 +34,15 @@ class SubmissionControlSettings(TimeStampedModel):
     # («нет дежурного») → an unmapped division simply is not resolved by
     # NotifyRecipientSelector.resolve_many (5.7b2 logs + skips it).
     default_notify_recipient = models.CharField(max_length=100, blank=True, default="")
+    # Story 13.5a — intraday threshold-alert config (13.5b owns detection/emission).
+    # Deliberately a SEPARATE field from `control_hour`: that one gates the
+    # full-day lagging catch-up (checked the NEXT morning, 5.7b2/12.6); this one
+    # gates a same-day partial-shortfall warning ("half not submitted by 15:30" —
+    # epics.md#L1386) with its own owner and semantics.
+    alert_hour = models.TimeField(default=time(15, 30))
+    # «Половина» — percentage of required_division_ids that must have submitted
+    # by alert_hour, below which 13.5b fires the alert. [1, 100] enforced below.
+    alert_threshold_pct = models.PositiveSmallIntegerField(default=50)
 
     class Meta:
         db_table = "ops_submission_control_settings"
@@ -50,6 +59,17 @@ class SubmissionControlSettings(TimeStampedModel):
             models.CheckConstraint(
                 condition=~models.Q(default_notify_recipient__regex=r"^\s+$"),
                 name="ck_submission_control_settings_duty_not_whitespace",
+            ),
+            # DB-level floor/ceiling (13.5a) — bulk_create()/.objects.create() skip
+            # full_clean(), so an application-only PositiveSmallIntegerField range
+            # would silently allow 0% (alert on every check) or >100% (never
+            # fires) if ever written outside a form (lesson:
+            # feedback_vaps_db_integrity_checks — no-check-on-a-choice/numeric-
+            # floor field must not be copied blind).
+            models.CheckConstraint(
+                condition=models.Q(alert_threshold_pct__gte=1)
+                & models.Q(alert_threshold_pct__lte=100),
+                name="ck_submission_control_settings_alert_threshold_range",
             ),
         ]
         verbose_name = "Настройки контроля сдачи"

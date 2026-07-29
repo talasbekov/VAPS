@@ -3123,8 +3123,11 @@ components:
     KindEnum:
       enum:
       - SUBMISSION_LAGGING
+      - SUBMISSION_THRESHOLD_ALERT
       type: string
-      description: '* `SUBMISSION_LAGGING` - Отставание по сдаче'
+      description: |-
+        * `SUBMISSION_LAGGING` - Отставание по сдаче
+        * `SUBMISSION_THRESHOLD_ALERT` - Порог сдачи не достигнут
     MyPermissionsResponse:
       type: object
       properties:

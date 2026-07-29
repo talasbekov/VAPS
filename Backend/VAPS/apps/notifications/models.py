@@ -21,6 +21,13 @@ class Notification(TimeStampedModel):
 
     class Kind(models.TextChoices):
         SUBMISSION_LAGGING = "SUBMISSION_LAGGING", "Отставание по сдаче"
+        # Story 13.5a/13.5b — intraday partial-shortfall warning ("half of
+        # required divisions not submitted by alert_hour"), distinct from
+        # SUBMISSION_LAGGING (full-day catch-up, checked the next morning).
+        SUBMISSION_THRESHOLD_ALERT = (
+            "SUBMISSION_THRESHOLD_ALERT",
+            "Порог сдачи не достигнут",
+        )
 
     recipient = models.CharField(max_length=100)
     kind = models.CharField(max_length=50, choices=Kind.choices)
@@ -64,7 +71,9 @@ class Notification(TimeStampedModel):
             # урок chk_daily_submission_event). DB-гард держит словарь видов
             # (зеркало Kind.values; drift ловит test_kind_check_covers_kind_choices).
             models.CheckConstraint(
-                condition=models.Q(kind__in=["SUBMISSION_LAGGING"]),
+                condition=models.Q(
+                    kind__in=["SUBMISSION_LAGGING", "SUBMISSION_THRESHOLD_ALERT"]
+                ),
                 name="chk_notification_kind",
             ),
         ]

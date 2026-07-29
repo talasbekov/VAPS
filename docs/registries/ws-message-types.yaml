@@ -41,6 +41,18 @@ types:
     action_url: "/daily-expense"
     trigger: "catch-up несдачи за прошедший день (lagging_check)"
     source: "VAPS story 5.7a/5.7b — реальный эмиттер, не донор"
+  # Не дубль SUBMISSION_LAGGING: тот — catch-up ПОЛНОГО отсутствия сдачи за
+  # ПРОШЕДШИЙ день (проверяется следующим утром); этот — интрадей-предупреждение
+  # о ЧАСТИЧНОМ отставании В ТЕЧЕНИЕ дня (доля необходимых управлений ниже
+  # порога к настраиваемому часу). Модель — 13.5a; эмиттер (13.5b) не готов на
+  # момент регистрации типа.
+  SUBMISSION_THRESHOLD_ALERT:
+    priority: WARNING
+    recipients: "division submission recipients / ответственный"
+    repeat: "once per business_date (UniqueConstraint)"
+    action_url: "/daily-expense"
+    trigger: "доля сдавших < alert_threshold_pct к alert_hour (интрадей)"
+    source: "VAPS story 13.5a (модель) / 13.5b (эмиттер) — epics.md#L1380-1387"
   DAILY_MARK_MISSING:
     priority: WARNING
     recipients: "division operators"
