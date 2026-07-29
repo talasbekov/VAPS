@@ -68,6 +68,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bugreports/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Требует bugreports.view (только DEVELOPER-роль по seed_operations) — анонимность отправителя от начальства. limit/offset-пагинация (дефолт 50, потолок 200). */
+        get: operations["bugreports_list"];
+        put?: never;
+        /** @description «Сообщить о проблеме» — любой аутентифицированный пользователь, без RBAC-права. */
+        post: operations["bugreports_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bugreports/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Требует bugreports.view — см. list(). */
+        get: operations["bugreports_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/core/divisions/": {
         parameters: {
             query?: never;
@@ -1332,6 +1367,24 @@ export interface components {
         };
         /** @enum {unknown} */
         BlankEnum: "";
+        BugReport: {
+            readonly id: number;
+            readonly user_id: string;
+            readonly screen_path: string;
+            readonly app_version: string;
+            readonly build_sha: string;
+            readonly last_request_ids: unknown;
+            readonly description: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        BugReportCreateRequest: {
+            screen_path: string;
+            app_version?: string;
+            build_sha?: string;
+            last_request_ids?: string[];
+            description: string;
+        };
         /**
          * @description Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC.
          *
@@ -1761,6 +1814,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["AuditLog"][];
         };
+        PaginatedBugReportList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["BugReport"][];
+        };
         PaginatedDivisionList: {
             /** @example 123 */
             count: number;
@@ -2171,6 +2239,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditLog"];
+                };
+            };
+        };
+    };
+    bugreports_list: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedBugReportList"];
+                };
+            };
+        };
+    };
+    bugreports_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BugReportCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BugReportCreateRequest"];
+                "multipart/form-data": components["schemas"]["BugReportCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BugReport"];
+                };
+            };
+        };
+    };
+    bugreports_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BugReport"];
                 };
             };
         };

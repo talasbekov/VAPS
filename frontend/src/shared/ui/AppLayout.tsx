@@ -13,6 +13,7 @@ import { cn } from '../lib/cn'
 import { NAV_SECTIONS, ROUTES } from '../routes'
 import { APP_VERSION, BUILD_SHA, buildLabel, versionLabel } from '../version'
 import { Avatar, AvatarFallback } from './Avatar'
+import { BugReportButton } from './BugReportButton'
 import { Button } from './Button'
 import { ConnectionIndicator } from './ConnectionIndicator'
 import {
@@ -78,6 +79,9 @@ export function AppLayout() {
               setQueryData. Пермишен-гарды НЕТ: /api/notifications/ гейтится
               только аутентификацией, аудитория — «любой авторизованный» */}
           <NotificationBell />
+          {/* «сообщить о проблеме» (13.1b): любой авторизованный, cost ~0 —
+              зеркалит NotificationBell's гейт (аутентификация, не право) */}
+          <BugReportButton />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

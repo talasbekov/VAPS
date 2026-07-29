@@ -6,6 +6,7 @@
 // FF100), auth-логики (8.6 подключит через defaultHeaders, парсинг не правится).
 import { authHeaders } from '../auth/credential'
 import { NetworkError, parseErrorResponse } from './errors'
+import { trackRequestId } from './recentRequestIds'
 
 export interface ApiClientOptions {
   /**
@@ -86,6 +87,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       throw new NetworkError(`Сетевой сбой: ${method} ${path}`, { cause })
     }
 
+    // Story 13.1b: X-Request-Id echoed on EVERY response (success or
+    // error) — captured here, before the error branch, so a failing
+    // request's id is still available to the bug-report button.
+    trackRequestId(response.headers.get('X-Request-Id'))
+
     if (!response.ok) {
       throw await parseErrorResponse(response)
     }
@@ -117,6 +123,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     } catch (cause) {
       throw new NetworkError(`Сетевой сбой: GET ${path}`, { cause })
     }
+    trackRequestId(response.headers.get('X-Request-Id'))
     if (!response.ok) {
       throw await parseErrorResponse(response)
     }
