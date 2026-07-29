@@ -4,7 +4,7 @@ baseline_commit: 6b85e79
 
 # Story 13.6: Errors-журнал на сервере
 
-Status: review
+Status: done
 
 ## Story
 
@@ -110,3 +110,4 @@ so that **диагностика без внешних сервисов (GlitchT
 |---|---|
 | 2026-07-29 | Story создана (create-story). Последняя стори эпика 13 (кроме ретро) — 13.2's явно отложенный structured-logging долг теперь в скоупе. Связь лог↔багрепорт реализована через УЖЕ существующее `BugReport.last_request_ids` (13.1a), без новой FK/миграции. |
 | 2026-07-29 | dev-story: JSON-форматтер, `LOGGING`-конфиг+ротация, `tail_errors`-команда, 12 тестов. Сам нашёл и закрыл живую регрессию до ревью (архитектурная граница apps.core↛other-context-models — команда перенесена в `apps/operations/bugreports/`). `make gate` 3060 passed. Status → review |
+| 2026-07-29 | 3-агентное ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Acceptance Auditor — все 6 AC подтверждены невакуумными, прогнал тесты сам (15 passed), явно проверил AC-4's `except`-блок (не вакуумный `exc_info`). Триаж: (1) Blind Hunter — `--n 0` печатал ВЕСЬ журнал (`entries[-0:]` = `entries[0:]` в Python, `-0 == 0`) → явный гард + тест `test_n_zero_shows_nothing_not_the_whole_journal`; (2) `mkdir`-при-импорте-crash-риск (Blind Hunter + Edge Case Hunter) — задокументирован как принятый: гард здесь ничего не спас бы, `RotatingFileHandler`'s конструктор упал бы по той же причине чуть ниже; (3) multi-process ротация без cross-process лока — задокументирована как принятая: `Dockerfile` гоняет ОДИН `uvicorn`-процесс (без `--workers`), Celery делит путь, но объём ERROR-уровня низкий. `make gate` — 3061 passed (+1 за счёт нового теста), "No changes detected". Status → done |

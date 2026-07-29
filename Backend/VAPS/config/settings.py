@@ -490,7 +490,20 @@ VAPS_ERROR_LOG_MAX_BYTES = int(
 VAPS_ERROR_LOG_BACKUP_COUNT = int(os.environ.get("VAPS_ERROR_LOG_BACKUP_COUNT", "5"))
 
 # RotatingFileHandler does not create its own parent directory (AC-3) — must
-# exist before LOGGING is applied at Django startup.
+# exist before LOGGING is applied at Django startup. Review (Edge Case
+# Hunter): this raises PermissionError at import time on an unwritable
+# filesystem (breaks even `manage.py --help`) — accepted, not guarded: the
+# RotatingFileHandler constructor itself would fail identically the moment
+# LOGGING is applied for the same underlying reason (no write access), so
+# swallowing the error here would only move the crash a few lines down, not
+# prevent it. Deploy must ensure VAPS_ERROR_LOG_PATH's directory is writable,
+# same operational requirement as VAPS_DB_*/VAPS_REDIS_URL above.
+#
+# Review (Blind Hunter/Edge Case Hunter): RotatingFileHandler has no
+# cross-process rotation lock. Not a current risk — deploy/Dockerfile runs a
+# single uvicorn process (no --workers), and the Celery worker/beat processes
+# that also log here are low-volume (ERROR level only). Would need revisiting
+# if the web process is ever scaled to multiple workers sharing this path.
 Path(VAPS_ERROR_LOG_PATH).parent.mkdir(parents=True, exist_ok=True)
 
 LOGGING = {

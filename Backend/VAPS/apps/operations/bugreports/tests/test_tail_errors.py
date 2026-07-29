@@ -53,6 +53,28 @@ def test_shows_last_n_entries_in_order(tmp_path):
     assert "boom-2" not in output
 
 
+def test_n_zero_shows_nothing_not_the_whole_journal(tmp_path):
+    # Review (Blind Hunter): entries[-0:] == entries[0:] (the WHOLE list) is
+    # a real Python footgun — --n 0 must print nothing.
+    log_path = tmp_path / "errors.log"
+    _write_log(
+        log_path,
+        [
+            {
+                "timestamp": "t",
+                "level": "ERROR",
+                "logger": "x",
+                "message": "should-not-appear",
+                "request_id": "r1",
+                "exception": None,
+            }
+        ],
+    )
+    with override_settings(VAPS_ERROR_LOG_PATH=str(log_path)):
+        output = _run("--n", "0")
+    assert "should-not-appear" not in output
+
+
 def test_filters_by_request_id(tmp_path):
     log_path = tmp_path / "errors.log"
     entries = [

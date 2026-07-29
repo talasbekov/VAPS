@@ -50,7 +50,11 @@ class Command(BaseCommand):
         if request_id:
             entries = [e for e in entries if e.get("request_id") == request_id]
 
-        for entry in entries[-options["n"] :]:
+        # Review (Blind Hunter): entries[-0:] is entries[0:] (the WHOLE list,
+        # not empty) — Python's -0 == 0 gotcha. --n 0 must show nothing, not
+        # everything; guard explicitly rather than rely on negative slicing.
+        n = max(options["n"], 0)
+        for entry in (entries[-n:] if n else []):
             self._print_entry(entry)
 
         if request_id:
