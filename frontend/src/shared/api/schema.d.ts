@@ -103,6 +103,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bugreports/{id}/resolve/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Требует bugreports.view — тот же держатель, что list/retrieve (13.4a). 409 на уже разрешённом репорте. */
+        post: operations["bugreports_resolve"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bugreports/journal/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Публичный журнал «сообщено → исправлено» — любой аутентифицированный пользователь (не bugreports.view — см. create). Только разрешённые репорты, анонимизированная проекция (id/version/releasedAt/summary — без user_id/screen_path/description). */
+        get: operations["bugreports_journal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/core/divisions/": {
         parameters: {
             query?: never;
@@ -1377,6 +1411,10 @@ export interface components {
             readonly description: string;
             /** Format: date-time */
             readonly created_at: string;
+            /** Format: date-time */
+            readonly resolved_at: string | null;
+            readonly resolved_in_version: string;
+            readonly resolution_summary: string;
         };
         BugReportCreateRequest: {
             screen_path: string;
@@ -1384,6 +1422,27 @@ export interface components {
             build_sha?: string;
             last_request_ids?: string[];
             description: string;
+        };
+        /**
+         * @description Story 13.4a: public journal projection (any authenticated user, see
+         *     BugReportViewSet.journal) — deliberately NOT BugReportSerializer's
+         *     fields. user_id/screen_path/description/last_request_ids never reach
+         *     this projection, matching frontend/src/features/changelog/changelog.ts's
+         *     FixEntry contract field-for-field (renamed to match its camelCase).
+         */
+        BugReportJournalEntry: {
+            id: string;
+            version: string;
+            readonly releasedAt: string;
+            summary: string;
+        };
+        /**
+         * @description Story 13.4a: developer-authored, public-facing fields — NOT a copy
+         *     of the operator's raw ``description`` (see model docstring).
+         */
+        BugReportResolveRequest: {
+            resolved_in_version: string;
+            resolution_summary: string;
         };
         /**
          * @description Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC.
@@ -1813,6 +1872,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["AuditLog"][];
+        };
+        PaginatedBugReportJournalEntryList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["BugReportJournalEntry"][];
         };
         PaginatedBugReportList: {
             /** @example 123 */
@@ -2309,6 +2383,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BugReport"];
+                };
+            };
+        };
+    };
+    bugreports_resolve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BugReportResolveRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BugReportResolveRequest"];
+                "multipart/form-data": components["schemas"]["BugReportResolveRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BugReport"];
+                };
+            };
+        };
+    };
+    bugreports_journal: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedBugReportJournalEntryList"];
                 };
             };
         };
