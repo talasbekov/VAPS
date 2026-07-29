@@ -35,11 +35,15 @@ logger = logging.getLogger(__name__)
 def check_submission_threshold(*, today=None) -> None:
     """Run one intraday threshold check; emit at most one alert for ``today``.
 
-    ``today`` defaults to ``Clock.today_local()`` (the only legitimate
-    wall-clock read — mirror ``check_lagging_submissions``). No watermark, no
-    lock: see the module docstring for why none is needed here.
+    ``today`` defaults to the SAME wall-clock read used for the hour gate
+    below (one ``Clock.now()`` call, not two) — mirror ``check_lagging_
+    submissions``'s single-read discipline; two independent reads could
+    theoretically disagree across a local-midnight boundary (review, Edge
+    Case Hunter). No watermark, no lock: see the module docstring for why
+    none is needed here.
     """
-    real_today = today if today is not None else Clock.today_local()
+    local_now = Clock.now().astimezone(ZoneInfo(settings.VAPS_LOCAL_TIMEZONE))
+    real_today = today if today is not None else local_now.date()
 
     required = SubmissionControlSettingsSelector.required_division_ids()
     if not required:
@@ -48,7 +52,6 @@ def check_submission_threshold(*, today=None) -> None:
         return
 
     alert_hour = SubmissionControlSettingsSelector.alert_hour()
-    local_now = Clock.now().astimezone(ZoneInfo(settings.VAPS_LOCAL_TIMEZONE))
     if local_now.time() < alert_hour:
         # AC-3: too early today — do not even read submission state yet.
         return

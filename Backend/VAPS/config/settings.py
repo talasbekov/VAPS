@@ -243,13 +243,19 @@ CELERY_BEAT_SCHEDULE = {
     # catch-up checked the next morning. A fixed once-a-day crontab entry
     # would silently stop tracking an Admin edit to alert_hour without a
     # redeploy; a periodic run with the service's own internal hour-gate
-    # (check_submission_threshold) tracks config changes for free. 8-19,
-    # not all night: no point running before/after the working day, and
-    # repeat firings after the first alert are free no-ops (notify()'s own
+    # (check_submission_threshold) tracks config changes for free — repeat
+    # firings after the first alert are free no-ops (notify()'s own
     # get_or_create idempotency — no dedicated watermark needed here).
+    # Hour window is "0-1,4-23", NOT "0-23": review (Blind Hunter) caught
+    # that a naive full-day "0-23" would tick at (2,15) and (3,0) — the two
+    # hours this file's OWN comment above (L221-227) already reserves for
+    # the parallel-run-diff/backup systemd timers. Excluding 02:00-03:59
+    # wholesale sidesteps both forbidden ticks while still covering any
+    # plausible admin-configured alert_hour (a submission deadline in the
+    # middle of the night is not a realistic config).
     "check-submission-threshold-intraday": {
         "task": "apps.operations.submissions.tasks.check_submission_threshold_task",
-        "schedule": crontab(minute="*/15", hour="8-19"),
+        "schedule": crontab(minute="*/15", hour="0-1,4-23"),
     },
 }
 
