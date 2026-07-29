@@ -23,6 +23,20 @@ map $http_origin $vaps_ws_origin_ok {
     "${VAPS_ALLOWED_ORIGIN}" 1;
 }
 
+# Story 12.3 (review, Blind Hunter): config/settings.py's allowed_hosts_from_env
+# now always accepts Host: 127.0.0.1/localhost — required so the app service's
+# OWN healthcheck (hits http://127.0.0.1:8000/... directly, bypassing nginx
+# entirely, container-internal) doesn't 400. But nginx forwards $host VERBATIM
+# to app (`proxy_set_header Host $host;` below) — without this guard, an
+# EXTERNAL client could send Host: 127.0.0.1 through nginx itself and have it
+# reach Django looking identical to the trusted internal healthcheck, quietly
+# reopening the exact Host-header-spoofing hole 12.1a's guard exists to close.
+map $host $vaps_host_is_loopback_spoof {
+    default 0;
+    "127.0.0.1" 1;
+    "localhost" 1;
+}
+
 server {
     # default_server ОБЯЗАТЕЛЕН (найдено живым прогоном): образ nginx:1.27-alpine
     # несёт свой /etc/nginx/conf.d/default.conf (root /usr/share/nginx/html),
@@ -67,8 +81,26 @@ server {
         proxy_read_timeout 3600s;
     }
 
-    # HTTP API + admin — обычный proxy.
+    # HTTP API + admin — обычный proxy. Loopback-Host-спуфинг-гард (Story
+    # 12.3) — ПЕРВЫМ, до proxy_pass. NOT a bare $vaps_host_is_loopback_spoof
+    # check: this container's OWN healthcheck (wget http://127.0.0.1/admin/
+    # login/, below) legitimately sends Host: 127.0.0.1 too — it runs INSIDE
+    # this nginx container, arriving with $remote_addr=127.0.0.1. An external
+    # client spoofing the same Host header arrives via the published port
+    # with its REAL address as $remote_addr (Docker's port-forwarding
+    # preserves the true source IP) — that combination is what gets blocked,
+    # not the Host value alone.
     location /api/ {
+        set $vaps_host_spoof_guard "";
+        if ($vaps_host_is_loopback_spoof) {
+            set $vaps_host_spoof_guard "spoofed";
+        }
+        if ($remote_addr = 127.0.0.1) {
+            set $vaps_host_spoof_guard "";
+        }
+        if ($vaps_host_spoof_guard = "spoofed") {
+            return 403;
+        }
         proxy_pass http://app:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -76,6 +108,16 @@ server {
     }
 
     location /admin/ {
+        set $vaps_host_spoof_guard "";
+        if ($vaps_host_is_loopback_spoof) {
+            set $vaps_host_spoof_guard "spoofed";
+        }
+        if ($remote_addr = 127.0.0.1) {
+            set $vaps_host_spoof_guard "";
+        }
+        if ($vaps_host_spoof_guard = "spoofed") {
+            return 403;
+        }
         proxy_pass http://app:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

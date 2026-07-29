@@ -67,6 +67,13 @@ services:
     build:
       context: ../Backend/VAPS
       dockerfile: Dockerfile
+    # Story 12.3: named alongside `build:` so `docker compose up` on a
+    # target machine — which has bundle.sh's (12.2) loaded image tar but
+    # NOT the Backend/VAPS source tree to build from — uses the already-
+    # loaded, exact-sha image instead of failing to rebuild. install.sh
+    # exports VAPS_APP_SHA from the bundle's manifest.json before `up`;
+    # a plain dev `docker compose build` still works (build: stays).
+    image: "vaps-app:${VAPS_APP_SHA:-dev}"
     restart: unless-stopped
     # Миграции — ПЕРЕД uvicorn, не в отдельном одноразовом сервисе: 12.1
     # ограничена топологией compose up, install.sh's полноценный чек-сумма→

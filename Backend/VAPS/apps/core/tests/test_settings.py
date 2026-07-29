@@ -32,7 +32,26 @@ def test_allowed_hosts_prod_reads_comma_separated_list():
     hosts = allowed_hosts_from_env(
         {"VAPS_ALLOWED_HOSTS": " vaps.contour.local , 10.0.0.1 "}, debug=False
     )
-    assert hosts == ["vaps.contour.local", "10.0.0.1"]
+    assert hosts[:2] == ["vaps.contour.local", "10.0.0.1"]
+
+
+def test_allowed_hosts_prod_always_includes_loopback_for_internal_healthchecks():
+    # Story 12.3 (live install.sh run): deploy/docker-compose.yml's app
+    # healthcheck hits http://127.0.0.1:8000/... directly, bypassing nginx —
+    # without this, `docker compose up --wait` never goes healthy once
+    # VAPS_ALLOWED_HOSTS holds a real hostname (found as a real 400 Bad
+    # Request loop, not a hypothetical).
+    hosts = allowed_hosts_from_env(
+        {"VAPS_ALLOWED_HOSTS": "vaps.contour.local"}, debug=False
+    )
+    assert "127.0.0.1" in hosts
+    assert "localhost" in hosts
+
+
+def test_allowed_hosts_dev_does_not_get_loopback_added():
+    # Dev already returns ["*"] — adding loopback entries would be noise.
+    hosts = allowed_hosts_from_env({}, debug=True)
+    assert hosts == ["*"]
 
 
 def test_allowed_hosts_prod_blank_entries_dont_satisfy_the_requirement():

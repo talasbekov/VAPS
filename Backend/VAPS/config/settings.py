@@ -43,6 +43,14 @@ def allowed_hosts_from_env(env, debug):
             "VAPS_ALLOWED_HOSTS must not contain '*' in production: that "
             "accepts any Host header, defeating the guard entirely."
         )
+    if not debug:
+        # Story 12.3 (live install.sh run): deploy/docker-compose.yml's app
+        # healthcheck hits http://127.0.0.1:8000/admin/login/ directly,
+        # bypassing nginx — Host: 127.0.0.1, never the real configured host.
+        # Without this, `docker compose up --wait` never goes healthy once
+        # VAPS_ALLOWED_HOSTS holds a real hostname (400 Bad Request).
+        # Loopback-only — unreachable from outside the container itself.
+        hosts = list(dict.fromkeys(hosts + ["127.0.0.1", "localhost"]))
     return hosts or ["*"]
 
 
