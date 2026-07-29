@@ -26,6 +26,7 @@ import {
 } from '../../features/service-analytics/mocks/settingsSlice'
 import { readReportLimits } from '../../features/service-reports/mocks/settingsSlice'
 import { REPORT_TYPES } from '../../features/service-reports/mocks/fixtures'
+import { readRatingPolicy } from '../../features/ratings/mocks/settingsSlice'
 
 const { sliceName, data } = buildSettingsSeed()
 const slices = { [sliceName]: data }
@@ -75,6 +76,17 @@ describe('проекции слайса «Настройки» понимают 
     expect(limits.maxPeriodDaysByType.get('PERSONNEL_EXPENSE')).toBe(92)
     expect(limits.retentionDays).toBe(21)
     expect(limits.policyVersion).toBe(data.sectionVersions.REPORT_LIMITS)
+  })
+
+  it('оперативный рейтинг читает свою методику §19.19', () => {
+    const policy = readRatingPolicy(slices)
+    expect(policy).not.toBeNull()
+    expect(policy?.periodDays).toBe(105)
+    expect(policy?.minEvaluations).toBe(4)
+    // Версия раздела ПЕЧАТАЕТСЯ как методика расчёта, поэтому её префикс — имя
+    // методики, а не имя раздела настроек: строку видит человек.
+    expect(policy?.policyVersion).toBe(data.sectionVersions.RATING_POLICY)
+    expect(policy?.policyVersion).toMatch(/^OPERATIONAL-RATING-/)
   })
 
   it('каждый раздел сида имеет свою редакцию — общих версий нет', () => {

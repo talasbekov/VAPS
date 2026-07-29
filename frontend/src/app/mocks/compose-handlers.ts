@@ -14,6 +14,7 @@ import { createServiceReportsHandlers } from '../../features/service-reports/moc
 import { createServiceAnalyticsHandlers } from '../../features/service-analytics/mocks/handlers'
 import { createFeedbackHandlers } from '../../features/feedback/mocks/handlers'
 import { createSettingsHandlers } from '../../features/settings/mocks/handlers'
+import { createRatingsHandlers } from '../../features/ratings/mocks/handlers'
 import { getDemoClock, getPersistenceAdapter } from './demo-runtime'
 import { identityHandlers } from './identity-handlers'
 
@@ -32,5 +33,6 @@ export function composeHandlers(): HttpHandler[] {
     ...createServiceAnalyticsHandlers(adapter, clock),
     ...createFeedbackHandlers(adapter, clock),
     ...createSettingsHandlers(adapter, clock),
+    ...createRatingsHandlers(adapter, clock),
   ]
 }

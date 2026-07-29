@@ -35,6 +35,7 @@ const GROUP_LABEL: Record<string, string> = {
   ANALYTICS_CUSTOM_PERIOD: 'Произвольный период аналитики',
   PERSONNEL_EXPENSE: 'Отчёт «Расход личного состава»',
   REPORT_RETENTION: 'Хранение сформированных файлов',
+  AGGREGATION: 'Агрегирование оценок',
 }
 
 const SECTION_TITLE: Record<PolicySetting['sectionCode'], string> = {
@@ -43,6 +44,7 @@ const SECTION_TITLE: Record<PolicySetting['sectionCode'], string> = {
   PASSPORT_FRESHNESS: 'Свежесть паспортов объектов',
   ANALYTICS_LIMITS: 'Пределы аналитики',
   REPORT_LIMITS: 'Пределы отчётности',
+  RATING_POLICY: 'Методика оперативного рейтинга',
 }
 
 const SECTION_HINT: Record<PolicySetting['sectionCode'], string> = {
@@ -56,6 +58,8 @@ const SECTION_HINT: Record<PolicySetting['sectionCode'], string> = {
     'Насколько глубокий период разрешено запрашивать у аналитики службы вручную. Проверяет сервер: превышение отвергается, а не обрезается молча (§22.5).',
   REPORT_LIMITS:
     'Глубина периода отчёта и срок жизни сформированного файла (§22.5, §22.22). Срок хранения назначается при сборке файла — у уже собранных он не меняется.',
+  RATING_POLICY:
+    'По этим порогам сервер считает оперативный рейтинг участников мероприятий (§19.19). Редакция раздела печатается как версия методики: значения, посчитанные по разным редакциям, несопоставимы.',
 }
 
 /** Значение с единицей: у режима печатается подпись варианта, а не его код. */
@@ -90,6 +94,7 @@ export function SettingsPage() {
     'PASSPORT_FRESHNESS',
     'ANALYTICS_LIMITS',
     'REPORT_LIMITS',
+    'RATING_POLICY',
   ] as const)
     .map((sectionCode) => ({
       sectionCode,

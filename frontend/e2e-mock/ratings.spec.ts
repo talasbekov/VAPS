@@ -1,0 +1,87 @@
+// Smart Josparlau E2E (§33, Этап 54): §19 оперативный рейтинг — сводный экран
+// агрегатов и его связь с методикой из «Настроек».
+//
+// Проверяется то, чего не видит ни один unit-тест: раздел настроек и рейтинг —
+// разные фичи, связанные только общим demo-снапшотом, и правка порога методики
+// обязана изменить СОСТОЯНИЕ сводки, а не подпись под ней.
+import { expect, test } from '@playwright/test'
+import { seedCredential } from './testUtils'
+
+const MIN_EVALUATIONS_ROW = 'Минимум оценок для расчёта агрегата'
+
+test.describe('Оперативный рейтинг §19 (mock-режим)', () => {
+  test('сводка приходит с сервера: агрегат, методика и состояния', async ({ page }) => {
+    await page.goto('/ratings')
+    await expect(page.getByRole('heading', { name: 'Оперативный рейтинг' })).toBeVisible()
+    // Методика — редакция раздела «Настроек», а не строка в коде экрана.
+    await expect(page.getByText('OPERATIONAL-RATING-2026.07.1')).toBeVisible()
+    await expect(page.getByText('105 сут.')).toBeVisible()
+
+    // 9+8+7+9+10 = 43 при пяти учтённых (шестая вытеснена исправлением) → 8,6.
+    const first = page.getByRole('row', { name: /Ерланов/ })
+    await expect(first).toContainText('8,6')
+    await expect(first).toContainText('Рассчитан')
+
+    // У кого оценок меньше минимума — СОСТОЯНИЕ, а не ноль.
+    const few = page.getByRole('row', { name: /Сейтказы/ })
+    await expect(few).toContainText('Недостаточно данных')
+    await expect(few).not.toContainText('0,0')
+  })
+
+  test('правка минимума оценок МЕНЯЕТ состояние сводки в другом разделе', async ({ page }) => {
+    await page.goto('/settings')
+    const row = page.locator('tr', { hasText: MIN_EVALUATIONS_ROW })
+    await row.getByRole('button', { name: 'Изменить' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel(/Значение/).fill('6')
+    await dialog.getByLabel(/Причина изменения/).fill('Повышение требований к выборке оценок')
+    await dialog.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(dialog).toBeHidden()
+
+    await page.goto('/ratings')
+    // Пяти учтённых оценок больше не хватает — готовая сводка стала «недостаточно».
+    await expect(page.getByRole('row', { name: /Ерланов/ })).toContainText('Недостаточно данных')
+    // И методика на экране — уже НОВАЯ редакция: значения по старой и новой
+    // несопоставимы, и экран об этом говорит.
+    await expect(page.getByText('OPERATIONAL-RATING-2026.07.2')).toBeVisible()
+  })
+
+  test('закрытые данные не приходят в браузер вовсе (§19.21)', async ({ page }) => {
+    const payloads: string[] = []
+    page.on('response', async (response) => {
+      if (response.url().includes('/api/ops/operational-ratings/')) {
+        payloads.push(await response.text())
+      }
+    })
+    await page.goto('/ratings')
+    await expect(page.getByRole('row', { name: /Ерланов/ })).toContainText('8,6')
+    expect(payloads.length).toBeGreaterThan(0)
+    for (const body of payloads) {
+      // Оценщик и текст комментария закрыты — их нет в ОТВЕТЕ, а не спрятаны
+      // в вёрстке: закрытость обеспечивается API (§19.21).
+      expect(body).not.toContain('demo-event-planner')
+      expect(body).not.toContain('Задержка на инструктаже')
+    }
+  })
+
+  test('без своего права раздел не открывается и в меню не показан', async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem(
+        'vaps.credential',
+        JSON.stringify({ kind: 'dev', userId: 'demo-objects-admin' }),
+      )
+    })
+    await page.goto('/ratings')
+    // Отказ ПОЛОЖИТЕЛЬНЫЙ: маршрут ответил «Доступ запрещён», а не остался
+    // пустым по любой другой причине — иначе проверка была бы вакуумной.
+    await expect(page.getByText('Доступ запрещён')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Оперативный рейтинг' })).toHaveCount(0)
+    await expect(
+      page.getByRole('link', { name: 'Оперативный рейтинг' }),
+    ).toHaveCount(0)
+  })
+})
+
+test.beforeEach(async ({ page }) => {
+  await seedCredential(page)
+})

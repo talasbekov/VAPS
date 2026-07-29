@@ -103,6 +103,14 @@ export const ROUTES = {
    * перепроверяет СВОЁ право — переход с разрешённого дашборда службы доступа
    * к мероприятиям не даёт. */
   operationsAnalytics: '/analytics/operations',
+  /**
+   * §19.4 второй маршрут — сводный экран итоговых оценок и оперативного
+   * рейтинга. Первый (`/security-events/:id/evaluations`) и третий
+   * (`/employees/:id/operational-rating`) не заведены: за первым стоят формы
+   * оценивания, которых ещё нет, а третий требует связи persona↔сотрудник —
+   * маршрут без операции вёл бы на честно пустой экран.
+   */
+  ratings: '/ratings',
   /** Отчётный реестр Smart Josparlau (§22.18). НЕ `/reports` — там донорский
    * экран «Расход дня» (E10), это другой раздел и другой владелец. */
   serviceReports: '/service-reports',
@@ -251,6 +259,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Аналитика мероприятий',
     icon: BarChart3,
     permission: 'ops.analytics.operations',
+  },
+  {
+    route: ROUTES.ratings,
+    label: 'Оперативный рейтинг',
+    icon: BarChart3,
+    permission: 'ops.rating.view_aggregate',
   },
   {
     route: ROUTES.serviceReports,

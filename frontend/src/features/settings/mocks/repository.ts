@@ -73,6 +73,13 @@ const MANAGE_PERMISSION: Record<SettingSectionCode, string> = {
    */
   ANALYTICS_LIMITS: 'ops.settings.manage_analytics_limits',
   REPORT_LIMITS: 'ops.settings.manage_reporting_limits',
+  /**
+   * §19.19: правка этих порогов меняет МЕТОДИКУ, которой подписан каждый
+   * агрегат, — то есть значение рейтинга конкретных людей. Право отдельное и
+   * не совпадает ни с правом смотреть рейтинг, ни с правом администрировать
+   * наблюдения аналитики.
+   */
+  RATING_POLICY: 'ops.settings.manage_rating_policy',
 }
 
 const NO_PERMISSION_REASON: Record<SettingSectionCode, string> = {
@@ -81,6 +88,7 @@ const NO_PERMISSION_REASON: Record<SettingSectionCode, string> = {
   PASSPORT_FRESHNESS: 'Право на изменение политики паспортов не выдано.',
   ANALYTICS_LIMITS: 'Право на изменение пределов аналитики не выдано.',
   REPORT_LIMITS: 'Право на изменение пределов отчётности не выдано.',
+  RATING_POLICY: 'Право на изменение методики расчёта рейтинга не выдано.',
 }
 
 /** Решение о доступности правки принимает сервер (см. `SettingAction`). */
