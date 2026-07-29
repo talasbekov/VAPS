@@ -27,6 +27,7 @@ import {
   selectRows,
 } from '../lib/reporting'
 import { readReportSourceRows } from './dutiesSlice'
+import { readReportLimits } from './settingsSlice'
 import type { ServiceReportsSlice } from './fixtures'
 import type {
   CreateReportJobRequest,
@@ -52,6 +53,16 @@ export class RepositoryBusinessRuleError extends Error {
 }
 
 const SLICE_NAME = 'serviceReports'
+
+/**
+ * §35-причины отсутствующей политики §22.5. Одни и те же строки печатаются в
+ * списке типов и возвращаются отказом на запуске: разойдясь, они объяснили бы
+ * одно и то же двумя способами.
+ */
+const NO_PERIOD_LIMIT_REASON =
+  'Предел периода для этого типа отчёта не задан политикой — отчёт не формируется. Задайте его в разделе «Настройки» → «Пределы отчётности».'
+const NO_RETENTION_REASON =
+  'Срок хранения файлов не задан политикой — отчёт не формируется: у файла не было бы срока доступности.'
 /** §22.26: запуск отчёта — своё право, отдельное от аналитики: смотреть
  * дашборд и выгружать поимённый расход личного состава — разные действия. */
 const GENERATE_PERMISSION = 'ops.report.generate'
@@ -85,9 +96,30 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
     }
     const envelope = await adapter.load()
     const slice = envelope === null ? null : readSlice(envelope.slices)
+    // Предел приезжает к типу из ПОЛИТИКИ, а не лежит в его определении:
+    // отредактированное значение обязано побеждать сеяное, а не спорить с ним.
+    const limits =
+      envelope === null
+        ? { maxPeriodDaysByType: new Map<string, number>(), retentionDays: null, policyVersion: null }
+        : readReportLimits(envelope.slices)
     return {
-      results: slice?.reportTypes ?? [],
-      retentionPolicy: slice?.retentionPolicy ?? { retentionDays: 0, policyVersion: 'unknown' },
+      results: (slice?.reportTypes ?? []).map((type) => {
+        const maxPeriodDays = limits.maxPeriodDaysByType.get(type.reportTypeCode) ?? null
+        return {
+          ...type,
+          maxPeriodDays,
+          unavailableReason:
+            maxPeriodDays === null
+              ? NO_PERIOD_LIMIT_REASON
+              : limits.retentionDays === null
+                ? NO_RETENTION_REASON
+                : null,
+        }
+      }),
+      retentionPolicy: {
+        retentionDays: limits.retentionDays,
+        policyVersion: limits.policyVersion,
+      },
       maskedFields: [...MASKED_FIELDS],
       unavailableFormats: [...UNAVAILABLE_FORMATS],
       unavailableArtifactFields: [...UNAVAILABLE_ARTIFACT_FIELDS],
@@ -177,6 +209,27 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
       }
     }
 
+    // Срок хранения берётся ДЕЙСТВУЮЩИЙ на момент сборки — и здесь же
+    // замораживается в артефакте. Политику могли изменить между запуском и
+    // сборкой: считать по значению момента запуска значило бы назначить файлу
+    // срок, которого политика уже не предусматривает.
+    const retention = readReportLimits(sourceSlices)
+    if (retention.retentionDays === null || retention.policyVersion === null) {
+      // Сбой политики — тоже СОСТОЯНИЕ работы, а не исключение наружу: без
+      // срока файл был бы вечным, и молча собрать его нельзя.
+      return {
+        job: {
+          ...job,
+          state: 'FAILED',
+          progressPercent: null,
+          completedAt: clock.now(),
+          failureCode: 'RETENTION_UNAVAILABLE',
+          safeFailureMessage: NO_RETENTION_REASON,
+        },
+        artifact: null,
+      }
+    }
+
     let rows
     let content
     try {
@@ -201,7 +254,7 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
     }
     const generatedAt = clock.now()
     const expiresAt = new Date(
-      Date.parse(generatedAt) + slice.retentionPolicy.retentionDays * 86_400_000,
+      Date.parse(generatedAt) + retention.retentionDays * 86_400_000,
     ).toISOString()
     const artifact: ReportArtifact = {
       artifactId: `artifact-${job.reportJobId}`,
@@ -227,6 +280,7 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
       parameterSnapshot: job.parameters,
       calculationVersion: CALCULATION_VERSION,
       maskingPolicyVersion: MASKING_POLICY_VERSION,
+      retentionPolicyVersion: retention.policyVersion,
       sensitive: job.sensitive,
       fileSize: contentSize(content),
       hash: contentHash(content),
@@ -443,10 +497,21 @@ export function createServiceReportsRepository(adapter: PersistenceAdapter, cloc
         )
       }
       const parameters = { from: request.from, to: request.to }
-      if (periodDays(parameters) > reportType.maxPeriodDays) {
+      // Предел читается ЗАНОВО на мутации, а не берётся из ответа списка типов:
+      // между открытием формы и запуском политику могли изменить, и решать
+      // обязано действующее значение (§29 — правка меняет исход операции).
+      const limits = readReportLimits(current.slices)
+      const maxPeriodDays = limits.maxPeriodDaysByType.get(reportType.reportTypeCode) ?? null
+      if (maxPeriodDays === null) {
+        throw new RepositoryBusinessRuleError('PERIOD_LIMIT_UNAVAILABLE', NO_PERIOD_LIMIT_REASON)
+      }
+      if (limits.retentionDays === null) {
+        throw new RepositoryBusinessRuleError('RETENTION_UNAVAILABLE', NO_RETENTION_REASON)
+      }
+      if (periodDays(parameters) > maxPeriodDays) {
         throw new RepositoryBusinessRuleError(
           'PERIOD_TOO_LONG',
-          `Период отчёта не может превышать ${reportType.maxPeriodDays} дней.`,
+          `Период отчёта не может превышать ${maxPeriodDays} дней.`,
         )
       }
 

@@ -140,6 +140,7 @@ function artifact(overrides: Partial<ReportArtifact> = {}): ReportArtifact {
     parameterSnapshot: PERIOD,
     calculationVersion: 'expense-2026.07.1',
     maskingPolicyVersion: 'masking-2026.07.1',
+    retentionPolicyVersion: 'report-limits-2026.07.1',
     sensitive: false,
     fileSize: 10,
     hash: 'deadbeef',

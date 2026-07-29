@@ -156,7 +156,18 @@ export function ServiceReportsPage() {
               />
               Включить скрытые поля (sensitive export)
             </label>
-            <Button size="sm" onClick={submit} disabled={createJob.isPending || from === '' || to === ''}>
+            <Button
+              size="sm"
+              onClick={submit}
+              disabled={
+                createJob.isPending ||
+                from === '' ||
+                to === '' ||
+                // Недоступность типа решил СЕРВЕР (§22.5: предел периода либо
+                // срок хранения не заданы политикой) — экран её не выводит сам.
+                reportType.unavailableReason !== null
+              }
+            >
               Сформировать отчёт
             </Button>
           </div>
@@ -168,12 +179,16 @@ export function ServiceReportsPage() {
               (ops.report.export_sensitive) — право формировать отчёт его не включает (§20.32).
             </p>
           )}
-          <p className="mt-2 text-xs text-slate-600">
-            Период — не длиннее {reportType.maxPeriodDays} дней (значение приходит из политики
-            отчёта, а не задано в форме). Артефакт хранится{' '}
-            {typesQuery.data.retentionPolicy.retentionDays} дней (политика{' '}
-            {typesQuery.data.retentionPolicy.policyVersion}).
-          </p>
+          {reportType.unavailableReason !== null ? (
+            <p className="mt-2 text-xs text-slate-600">{reportType.unavailableReason}</p>
+          ) : (
+            <p className="mt-2 text-xs text-slate-600">
+              Период — не длиннее {reportType.maxPeriodDays} дней (значение приходит из политики
+              «Настроек», а не задано в форме). Артефакт хранится{' '}
+              {typesQuery.data.retentionPolicy.retentionDays} дней (редакция политики{' '}
+              {typesQuery.data.retentionPolicy.policyVersion}).
+            </p>
+          )}
           {createJob.error !== null && (
             <p className="mt-2 text-xs text-destructive">{createJob.error.message}</p>
           )}

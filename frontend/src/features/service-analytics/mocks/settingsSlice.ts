@@ -84,3 +84,31 @@ export function readRestAfterDutyMode(
   )
   return record?.value === 'SOFT_OVERRIDE' ? 'SOFT_OVERRIDE' : 'HARD_BLOCK'
 }
+
+/**
+ * §22.5 предел произвольного периода. `null` — политика не прочитана, и это
+ * НЕ «ограничения нет»: молча принять период любой глубины значило бы снять
+ * предел из-за отсутствия его владельца. Решает вызывающий — в аналитике это
+ * отказ произвольного периода с названной причиной, именованные пресеты при
+ * этом продолжают работать (их глубина задана самим пресетом).
+ */
+export function readAnalyticsCustomPeriodLimit(
+  slices: Readonly<Record<string, unknown>>,
+): { maxDays: number; policyVersion: string } | null {
+  const slice = slices[SETTINGS_SLICE_NAME]
+  if (slice === undefined || slice === null || typeof slice !== 'object') return null
+  const raw = (slice as { settings?: unknown }).settings
+  const versions = (slice as { sectionVersions?: unknown }).sectionVersions
+  const policyVersion =
+    versions !== null && typeof versions === 'object'
+      ? (versions as Record<string, unknown>).ANALYTICS_LIMITS
+      : undefined
+  if (!Array.isArray(raw) || typeof policyVersion !== 'string' || policyVersion === '') return null
+  const record = (raw as SettingProjection[]).find(
+    (item) =>
+      item.sectionCode === 'ANALYTICS_LIMITS' &&
+      item.settingCode === 'LIMITS.ANALYTICS_CUSTOM_PERIOD.PARAMETER',
+  )
+  if (typeof record?.value !== 'number') return null
+  return { maxDays: record.value, policyVersion }
+}

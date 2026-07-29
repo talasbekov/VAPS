@@ -32,12 +32,17 @@ const GROUP_LABEL: Record<string, string> = {
   REST_AFTER_DUTY: 'Обязательный отдых после дежурства',
   DUTY_OVERLAP: 'Пересечение дежурств',
   VERIFICATION_INTERVAL: 'Интервал проверки паспорта',
+  ANALYTICS_CUSTOM_PERIOD: 'Произвольный период аналитики',
+  PERSONNEL_EXPENSE: 'Отчёт «Расход личного состава»',
+  REPORT_RETENTION: 'Хранение сформированных файлов',
 }
 
 const SECTION_TITLE: Record<PolicySetting['sectionCode'], string> = {
   ATTENTION_POLICY: 'Политика наблюдений',
   CONFLICT_RULES: 'Правила конфликтов',
   PASSPORT_FRESHNESS: 'Свежесть паспортов объектов',
+  ANALYTICS_LIMITS: 'Пределы аналитики',
+  REPORT_LIMITS: 'Пределы отчётности',
 }
 
 const SECTION_HINT: Record<PolicySetting['sectionCode'], string> = {
@@ -47,6 +52,10 @@ const SECTION_HINT: Record<PolicySetting['sectionCode'], string> = {
     'Как планирование дежурств поступает с конфликтом. Изменение здесь меняет исход операции: назначение либо отвергается, либо требует обоснования.',
   PASSPORT_FRESHNESS:
     'Через сколько времени паспорт объекта требует повторной проверки. По этой политике реестр объектов считает срок, состояние актуальности и KPI (§21.7).',
+  ANALYTICS_LIMITS:
+    'Насколько глубокий период разрешено запрашивать у аналитики службы вручную. Проверяет сервер: превышение отвергается, а не обрезается молча (§22.5).',
+  REPORT_LIMITS:
+    'Глубина периода отчёта и срок жизни сформированного файла (§22.5, §22.22). Срок хранения назначается при сборке файла — у уже собранных он не меняется.',
 }
 
 /** Значение с единицей: у режима печатается подпись варианта, а не его код. */
@@ -75,7 +84,13 @@ export function SettingsPage() {
       groups.push({ groupCode: setting.groupCode, sectionCode: setting.sectionCode, items: [setting] })
     }
   }
-  const sections = (['ATTENTION_POLICY', 'CONFLICT_RULES', 'PASSPORT_FRESHNESS'] as const)
+  const sections = ([
+    'ATTENTION_POLICY',
+    'CONFLICT_RULES',
+    'PASSPORT_FRESHNESS',
+    'ANALYTICS_LIMITS',
+    'REPORT_LIMITS',
+  ] as const)
     .map((sectionCode) => ({
       sectionCode,
       groups: groups.filter((group) => group.sectionCode === sectionCode),
@@ -90,7 +105,8 @@ export function SettingsPage() {
         </p>
         <h1 className="text-2xl font-bold tracking-tight">Настройки</h1>
         <span className="text-sm text-muted-foreground">
-          Политика наблюдений, правила конфликтов планирования и свежесть паспортов объектов
+          Политика наблюдений, правила конфликтов планирования, свежесть паспортов объектов и
+          пределы периодов (§22.5)
         </span>
       </header>
 

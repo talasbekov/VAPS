@@ -64,12 +64,23 @@ const MANAGE_PERMISSION: Record<SettingSectionCode, string> = {
   // §21.7 — политика объектов: ею владеет тот, кто ведёт реестр объектов, а не
   // тот, кто настраивает наблюдения аналитики.
   PASSPORT_FRESHNESS: 'ops.settings.manage_passport_policy',
+  /**
+   * §22.5-пределы отделены от права аналитика на СВОЮ методику наблюдений
+   * намеренно: предел — ограничение НА ТОГО, кто им связан. Аналитик правит
+   * пороги, по которым считает свои наблюдения, но не глубину периода, которую
+   * ему разрешено запрашивать, и не срок, в течение которого живёт выгруженный
+   * файл (последнее — ещё и окно доступности sensitive-выгрузки).
+   */
+  ANALYTICS_LIMITS: 'ops.settings.manage_analytics_limits',
+  REPORT_LIMITS: 'ops.settings.manage_reporting_limits',
 }
 
 const NO_PERMISSION_REASON: Record<SettingSectionCode, string> = {
   ATTENTION_POLICY: 'Право на администрирование политики наблюдений не выдано.',
   CONFLICT_RULES: 'Право на изменение правил конфликтов не выдано.',
   PASSPORT_FRESHNESS: 'Право на изменение политики паспортов не выдано.',
+  ANALYTICS_LIMITS: 'Право на изменение пределов аналитики не выдано.',
+  REPORT_LIMITS: 'Право на изменение пределов отчётности не выдано.',
 }
 
 /** Решение о доступности правки принимает сервер (см. `SettingAction`). */

@@ -52,9 +52,8 @@ import {
 } from '../lib/operations'
 import type { OpsSourceEvent } from '../lib/operations'
 import { readAnalyticsSource } from './dutiesSlice'
-import { readAttentionPolicy } from './settingsSlice'
+import { readAnalyticsCustomPeriodLimit, readAttentionPolicy } from './settingsSlice'
 import { readOperationsSource, readOperationsTransitions } from './securityEventsSlice'
-import { MAX_CUSTOM_PERIOD_DAYS } from './fixtures'
 import type { ServiceAnalyticsSlice } from './fixtures'
 import type {
   AnalyticsPresetsResponse,
@@ -102,6 +101,14 @@ const DEMO_SCOPE: AnalyticsScope = {
   safeLabel: 'Единственная область видимости demo-режима',
 }
 
+/**
+ * §35-причина отсутствующего предела. Одна строка на ДВА места (список пресетов
+ * и отказ операции): разойдясь, они объяснили бы одно и то же по-разному — тот
+ * же класс, что общий блокер, названный разными словами в разных местах.
+ */
+const CUSTOM_PERIOD_UNAVAILABLE_REASON =
+  'Предел произвольного периода не задан политикой — период по датам не принимается. Выберите именованный период.'
+
 const PERSONAL_DETAIL_REASON =
   'У вас нет права на персональную детализацию: строки показаны без сотрудника (§22.26). Сервер их не присылает — скрывать ФИО в вёрстке значило бы всё равно отдать его браузеру.'
 
@@ -129,6 +136,7 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
    */
   function resolvePeriod(
     slice: ServiceAnalyticsSlice,
+    slices: Readonly<Record<string, unknown>>,
     businessDate: string,
     request: { presetCode: string | null; from?: string; to?: string },
   ): AnalyticsPeriod {
@@ -153,11 +161,19 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
       throw new RepositoryBusinessRuleError('INVALID_PERIOD', 'Начало периода позже его конца.')
     }
     // §22.5 «При произвольном периоде проверяй допустимый диапазон через server
-    // validation» — предел лежит в данных, не в форме.
-    if (periodDays(from, to) > MAX_CUSTOM_PERIOD_DAYS) {
+    // validation». Предел приходит из «Настроек» (§29): аналитика его читает,
+    // но не задаёт — ограничение принадлежит не тому, кого оно связывает.
+    const limit = readAnalyticsCustomPeriodLimit(slices)
+    if (limit === null) {
+      throw new RepositoryBusinessRuleError(
+        'PERIOD_LIMIT_UNAVAILABLE',
+        CUSTOM_PERIOD_UNAVAILABLE_REASON,
+      )
+    }
+    if (periodDays(from, to) > limit.maxDays) {
       throw new RepositoryBusinessRuleError(
         'PERIOD_TOO_LONG',
-        `Период аналитики не может превышать ${MAX_CUSTOM_PERIOD_DAYS} дней.`,
+        `Период аналитики не может превышать ${limit.maxDays} дней.`,
       )
     }
     return { from, to, presetCode: null }
@@ -211,9 +227,15 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
     }
     const envelope = await adapter.load()
     const slice = envelope === null ? null : readSlice(envelope.slices)
+    // Предел — из «Настроек», а не из своего слайса: экран печатает то самое
+    // число, которым сервер проверит запрос, и версию политики, которой оно
+    // принадлежит.
+    const limit = envelope === null ? null : readAnalyticsCustomPeriodLimit(envelope.slices)
     return {
       results: slice?.periodPresets ?? [],
-      maxCustomPeriodDays: MAX_CUSTOM_PERIOD_DAYS,
+      maxCustomPeriodDays: limit?.maxDays ?? null,
+      limitPolicyVersion: limit?.policyVersion ?? null,
+      customPeriodUnavailableReason: limit === null ? CUSTOM_PERIOD_UNAVAILABLE_REASON : null,
       defaultPresetCode: slice?.periodPresets[0]?.presetCode ?? 'TODAY',
     }
   }
@@ -231,7 +253,7 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
     }
     const slice = readSlice(envelope.slices)
     const businessDate = clock.businessDate()
-    const period = resolvePeriod(slice, businessDate, request)
+    const period = resolvePeriod(slice, envelope.slices, businessDate, request)
     const source = readAnalyticsSource(envelope.slices)
 
     let metrics: MetricValue[]
@@ -305,7 +327,7 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
     }
     const slice = readSlice(envelope.slices)
     const businessDate = clock.businessDate()
-    const period = resolvePeriod(slice, businessDate, {
+    const period = resolvePeriod(slice, envelope.slices, businessDate, {
       presetCode: query.presetCode,
       from: query.from,
       to: query.to,
@@ -392,7 +414,7 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
     }
     const slice = readSlice(envelope.slices)
     const businessDate = clock.businessDate()
-    const period = resolvePeriod(slice, businessDate, request)
+    const period = resolvePeriod(slice, envelope.slices, businessDate, request)
     const source = readAnalyticsSource(envelope.slices)
     const generatedAt = clock.now()
     const snapshotId = buildSnapshotId({

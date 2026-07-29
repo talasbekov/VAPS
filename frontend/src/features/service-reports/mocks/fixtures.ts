@@ -1,42 +1,36 @@
 // Demo-сид отчётного реестра (§8.7: только синтетические данные).
-import type {
-  ReportArtifact,
-  ReportJob,
-  ReportRetentionPolicy,
-  ReportTypeDefinition,
-} from '../model/types'
+import type { ReportArtifact, ReportJob } from '../model/types'
+
+/**
+ * Определение типа отчёта БЕЗ предела периода: глубина принадлежит политике
+ * «Настроек» (§22.5) и приезжает к типу на чтении. Хранить её здесь значило бы
+ * держать два источника одного числа — и сеяное побеждало бы отредактированное.
+ */
+export interface StoredReportType {
+  reportTypeCode: string
+  safeTitle: string
+  description: string
+  formats: ReportArtifact['format'][]
+}
 
 export interface ServiceReportsSlice {
   jobs: ReportJob[]
   artifacts: ReportArtifact[]
-  reportTypes: ReportTypeDefinition[]
-  retentionPolicy: ReportRetentionPolicy
+  reportTypes: StoredReportType[]
 }
 
 /** §22.19 «Определение отчёта». Один тип — тот, под который есть РЕАЛЬНЫЕ
  * данные (смены дежурств). Второй выдуманный тип был бы пустой строкой в
  * реестре, а не расширением возможностей. */
-export const REPORT_TYPES: readonly ReportTypeDefinition[] = [
+export const REPORT_TYPES: readonly StoredReportType[] = [
   {
     reportTypeCode: 'PERSONNEL_EXPENSE',
     safeTitle: 'Расход личного состава',
     description:
       'Смены дежурств за период: дата, сотрудник, объект, пост из снимка паспорта, состояние.',
     formats: ['CSV'],
-    // §22.19: глубина периода — параметр политики, а не число в форме. 92 дня
-    // (квартал), НАМЕРЕННО не круглые 90: совпадение с «привычным» числом
-    // скрыло бы захардкоженное ограничение, если бы оно где-то осталось —
-    // тот же приём, что интервал 120 в политике свежести паспорта (§21.7).
-    maxPeriodDays: 92,
   },
 ]
-
-/** §22.22: срок хранения артефакта — в ДАННЫХ. Хардкода «файлы доступны 30
- * дней» в проекте нет; 21 день — снова не круглое «привычное» число. */
-export const RETENTION_POLICY: ReportRetentionPolicy = {
-  retentionDays: 21,
-  policyVersion: 'retention-2026.07.1',
-}
 
 export function buildServiceReportsSeed(): {
   sliceName: string
@@ -49,8 +43,7 @@ export function buildServiceReportsSeed(): {
     data: {
       jobs: [],
       artifacts: [],
-      reportTypes: [...REPORT_TYPES],
-      retentionPolicy: { ...RETENTION_POLICY },
+      reportTypes: REPORT_TYPES.map((type) => ({ ...type })),
     },
   }
 }

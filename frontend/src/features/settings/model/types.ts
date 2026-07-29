@@ -36,7 +36,20 @@ export type SettingField = 'PARAMETER' | 'WARNING_FROM' | 'CRITICAL_FROM' | 'MOD
  * дежурств §21.34), и общая версия означала бы, что правка порога наблюдений
  * меняет методику конфликтов. План утверждал бы о себе неправду.
  */
-export type SettingSectionCode = 'ATTENTION_POLICY' | 'CONFLICT_RULES' | 'PASSPORT_FRESHNESS'
+export type SettingSectionCode =
+  | 'ATTENTION_POLICY'
+  | 'CONFLICT_RULES'
+  | 'PASSPORT_FRESHNESS'
+  /**
+   * §22.5 «Не хардкодь: последние 7/14/30/90 дней, квартал, срок хранения
+   * отчёта». Глубина ПРОИЗВОЛЬНОГО периода аналитики и предел периода отчёта
+   * вместе со сроком хранения — разные разделы, потому что у них разные
+   * потребители: первый читает снимок аналитики, второй — отчётный реестр.
+   * Общий раздел означал бы, что продление срока хранения файлов сдвигает
+   * версию методики, по которой считался снимок службы.
+   */
+  | 'ANALYTICS_LIMITS'
+  | 'REPORT_LIMITS'
 
 /** Вариант значения-перечисления (§21.35 `HARD_BLOCK` / `SOFT_OVERRIDE`). */
 export interface SettingOption {

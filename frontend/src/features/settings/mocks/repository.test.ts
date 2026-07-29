@@ -403,3 +403,59 @@ describe('свежесть паспортов §29/§21.7', () => {
     expect(percent?.valueType).toBe('PERCENT')
   })
 })
+
+/**
+ * §22.5-пределы: своё право на раздел. Проверяется не «право существует», а
+ * что администратор порогов наблюдений — то есть САМ потребитель пределов —
+ * их не правит: ограничение не принадлежит ограничиваемому.
+ */
+describe('пределы аналитики и отчётности — отдельные разделы (§22.5/§29)', () => {
+  it('администратор наблюдений видит пределы, но не правит их', async () => {
+    const { repository } = await makeRepository()
+    const list = (await repository.listSettings(THRESHOLDS_ONLY)).results
+    const limits = list.filter(
+      (item) => item.sectionCode === 'ANALYTICS_LIMITS' || item.sectionCode === 'REPORT_LIMITS',
+    )
+    expect(limits.length).toBeGreaterThan(0)
+    for (const item of limits) {
+      expect(item.action.canEdit).toBe(false)
+      expect(item.action.disabledReason).not.toBeNull()
+    }
+    // А его собственный раздел при этом открыт — отказ именно по разделу.
+    expect(
+      list.find((item) => item.settingCode === PARAMETER_CODE)?.action.canEdit,
+    ).toBe(true)
+  })
+
+  it('PATCH предела отвергается тем же правом, что и кнопка', async () => {
+    const { repository } = await makeRepository()
+    await expect(
+      repository.updateSetting(
+        'LIMITS.REPORT_RETENTION.PARAMETER',
+        { value: 45, reason: 'Продлеваем срок хранения выгрузок' },
+        THRESHOLDS_ONLY,
+      ),
+    ).rejects.toBeInstanceOf(RepositoryPermissionError)
+    await expect(
+      repository.updateSetting(
+        'LIMITS.ANALYTICS_CUSTOM_PERIOD.PARAMETER',
+        { value: 30, reason: 'Сокращаем глубину произвольного периода' },
+        THRESHOLDS_ONLY,
+      ),
+    ).rejects.toBeInstanceOf(RepositoryPermissionError)
+  })
+
+  it('правка предела двигает ТОЛЬКО свою редакцию', async () => {
+    const { repository } = await makeRepository()
+    const before = (await repository.listSettings(VIEWER)).sectionVersions
+    const response = await repository.updateSetting(
+      'LIMITS.ANALYTICS_CUSTOM_PERIOD.PARAMETER',
+      { value: 30, reason: 'Сокращаем глубину произвольного периода' },
+      WILDCARD,
+    )
+    expect(response.sectionVersions.ANALYTICS_LIMITS).not.toBe(before.ANALYTICS_LIMITS)
+    expect(response.sectionVersions.REPORT_LIMITS).toBe(before.REPORT_LIMITS)
+    expect(response.sectionVersions.ATTENTION_POLICY).toBe(before.ATTENTION_POLICY)
+    expect(response.event.policyVersionAfter).toBe(response.sectionVersions.ANALYTICS_LIMITS)
+  })
+})

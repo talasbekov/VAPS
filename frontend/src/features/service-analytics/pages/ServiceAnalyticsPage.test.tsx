@@ -35,6 +35,8 @@ function presets(): AnalyticsPresetsResponse {
       { presetCode: 'CURRENT_WEEK', safeLabel: 'Текущая неделя', offsetDays: 0, lengthDays: 7 },
     ],
     maxCustomPeriodDays: 62,
+    limitPolicyVersion: 'analytics-limits-2026.07.1',
+    customPeriodUnavailableReason: null,
     defaultPresetCode: 'TODAY',
   }
 }
