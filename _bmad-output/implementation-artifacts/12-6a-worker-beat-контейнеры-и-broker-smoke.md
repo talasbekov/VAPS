@@ -4,7 +4,7 @@ baseline_commit: 947082d
 
 # Story 12.6a: worker/beat-контейнеры и broker-smoke
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -24,18 +24,18 @@ so that **12.6's зарегистрированные beat-задачи не о�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `worker`+`beat` в `deploy/docker-compose.yml` (NEW services) (AC: 1, 4)
-  - [ ] Тот же образ/build, что `app`; без публикации портов; `depends_on: postgres/redis healthy`; `restart: unless-stopped`.
-  - [ ] Комментарий переписан — контейнеры реально добавлены.
-- [ ] Task 2 — Broker-smoke тест (`Backend/VAPS/apps/core/tests/test_celery_broker_smoke.py`, NEW) (AC: 2, 3)
-  - [ ] `@pytest.mark.slow`.
-  - [ ] Подпроцесс `celery -A config worker` на гейт-харнесс-Redis.
-  - [ ] `.delay()` реальной задачи, поллинг `AsyncResult` с таймаутом, временный `result_backend`-override.
-  - [ ] Подпроцесс корректно завершается в `finally` — не оставляет висящих worker-процессов при провале теста.
-- [ ] Task 3 — Реальный прогон (AC: 5)
-  - [ ] `make gate` зелёный (smoke НЕ запускается — `slow`-фильтр).
-  - [ ] `make test-full` — smoke реально зелёный, прогнан вручную дев-агентом.
-  - [ ] Никаких висящих docker/процессов после прогона.
+- [x] Task 1 — `worker`+`beat` в `deploy/docker-compose.yml` (NEW services) (AC: 1, 4)
+  - [x] Тот же образ/build, что `app`; без публикации портов; `depends_on: postgres/redis healthy`; `restart: unless-stopped`.
+  - [x] Комментарий переписан — контейнеры реально добавлены.
+- [x] Task 2 — Broker-smoke тест (`Backend/VAPS/apps/core/tests/test_celery_broker_smoke.py`, NEW) (AC: 2, 3)
+  - [x] `@pytest.mark.slow`.
+  - [x] Подпроцесс `celery -A config worker` на гейт-харнесс-Redis.
+  - [x] `.apply_async(ignore_result=False)` реальной задачи (не `.delay()` — см. Completion Notes), поллинг `AsyncResult` с таймаутом, временный override через `CELERY_RESULT_BACKEND` env var (не `conf.result_backend` — см. Completion Notes).
+  - [x] Подпроцесс корректно завершается в `finally` — не оставляет висящих worker-процессов при провале теста.
+- [x] Task 3 — Реальный прогон (AC: 5)
+  - [x] `make gate` зелёный (smoke НЕ запускается — `slow`-фильтр): 2875 passed, 57 deselected.
+  - [x] `make test-full` — smoke реально зелёный, прогнан вручную дев-агентом (`pytest ... -m slow -s`: 1 passed).
+  - [x] Никаких висящих docker/процессов после прогона.
 
 ## Dev Notes
 
@@ -59,10 +59,24 @@ so that **12.6's зарегистрированные beat-задачи не о�
 
 ### Completion Notes
 
+- **AC-1/AC-4**: `worker`+`beat` добавлены в `deploy/docker-compose.yml`, тот же build/image что `app` (`vaps-app:${VAPS_APP_SHA:-dev}`), команды `celery -A config worker --loglevel=info` / `celery -A config beat --loglevel=info`, `depends_on: postgres/redis healthy`, `restart: unless-stopped`, без публикуемых портов. Заголовочный комментарий переписан фактически (список всех 6 сервисов, ссылка на эту стори). YAML синтаксис проверен `docker compose config --quiet` с временным `.env` (создан и удалён, не закоммичен).
+- **AC-2/AC-3 — план `.delay()` + `conf.result_backend`-override НЕ сработал, найдено и исправлено живым прогоном**: первый реальный прогон упал `AttributeError: 'DisabledBackend' object has no attribute '_get_task_meta_for'` при чтении `async_result.state`, хотя предшествующий `.get(timeout=30)` не бросал исключения. Корень — ДВА независимых слоя, оба вскрыты через `inspect.getsource` на реальных Celery-классах + живые python-репро:
+  1. **Backend-кэш**: `app.backend` кэшируется в `app._backend_cache` (thread-safe backends) / `app._local.backend` (thread-local, `DisabledBackend`), НЕ пересчитывается автоматически при изменении `conf.result_backend` после первого обращения к backend в процессе. Фикс: явный сброс `celery_app._backend_cache = None` + `celery_app._local.backend = None` после мутации.
+  2. **Мутация `conf.result_backend` вообще не долетает** (первый слой сброса кэша сам по себе не хватило): `celery.app.utils.Settings.result_backend` — именной `@property` на namespaced-ключ `CELERY_RESULT_BACKEND`; Celery резолвит префиксный ключ (`CELERY_RESULT_BACKEND`) РАНЬШЕ обычного (`result_backend`) при поиске по `ChainMap`-цепочке карт. `config/settings.py` явно задаёт `CELERY_RESULT_BACKEND = None` (12.6's фикс) — эта явная запись маскирует запись `conf.result_backend = redis_url`, которая физически попадает в ДРУГОЙ (pending/changes) слой, никогда не достигаемый при чтении, пока не совпадает КЛЮЧ буквально. Подтверждено пошаговой трассировкой (`ChainMap.__getitem__`, `_to_keys`, `PendingConfiguration`).
+  - **Итоговый рабочий подход (иной, чем предполагала стори при create-story) — переменная окружения, не `conf`-мутация**: `result_backend`-property — один из немногих в `Settings`, что проверяет `os.environ["CELERY_RESULT_BACKEND"]` ПЕРВЫМ, раньше любых `conf`-слоёв. Тест ставит именно этот env var (не трогая `config/settings.py`) — единственный путь, надёжно работающий И в текущем процессе (после сброса backend-кэша), И в worker-подпроцессе (тот заново грузит Django settings с нуля и иначе снова увидел бы `None`).
+  - **`task_ignore_result` — аналогичной env-var лазейки нет** (только `broker_url`/`broker_read_url`/`broker_write_url`/`result_backend`/`timezone` имеют такие property). Вместо глобальной мутации конфига тест диспатчит через `.apply_async(ignore_result=False)` вместо `.delay()` — это оверрайдит воркер-side дефолт (`config/settings.py`'s `CELERY_TASK_IGNORE_RESULT = True`, 12.6) ТОЛЬКО для этого конкретного вызова, на уровне сообщения, не трогая глобальный конфиг вовсе — даже сильнее изолировано, чем исходный план.
+  - Живой прогон подтверждён: `pytest apps/core/tests/test_celery_broker_smoke.py -q -m slow -s` → `1 passed in 2.72s`; реальный воркер-подпроцесс забрал `.apply_async()`-задачу через реальный Redis-брокер, вернул `SUCCESS`.
+- **AC-5**: `make gate` — `2875 passed, 57 deselected` (smoke корректно исключён `not slow`-фильтром). `make test-full`-эквивалент (сам smoke) прогнан вручную и зелёный (см. выше). Никаких висящих docker-контейнеров/процессов после прогона (`ps aux | grep celery` — пусто; harness-контейнеры `vaps-db-1`/`vaps-redis-1` — предсуществующие gate-контейнеры, не созданы и не тронуты этой стори).
+- `ruff check` на новый тестовый файл — чисто.
+
 ### File List
+
+- `deploy/docker-compose.yml` (MOD) — добавлены `worker`+`beat`-сервисы, переписан заголовочный комментарий.
+- `Backend/VAPS/apps/core/tests/test_celery_broker_smoke.py` (NEW) — broker-execution smoke-тест.
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-29 | Story создана (create-story) |
+| 2026-07-29 | dev-story: worker/beat-контейнеры + broker-smoke реализованы, живой прогон зелёный (`make gate` 2875 passed, smoke `1 passed` через `test-full`-tier). Найден и исправлен реальный баг plана: `conf.result_backend`-мутация маскируется namespaced-ключом `CELERY_RESULT_BACKEND` — заменена на env var + `.apply_async(ignore_result=False)`. Status → review |

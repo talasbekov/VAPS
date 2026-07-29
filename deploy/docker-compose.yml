@@ -1,18 +1,8 @@
 # Story 12.1 — прод-топология (закрытый LAN, деплой носителем). nginx + app
-# (uvicorn, --lifespan off) + postgres + redis. НЕ worker/beat.
-#
-# Обновлено Story 12.6 (review, Edge Case Hunter — предыдущая версия этого
-# комментария называла «12.6» адресом worker/beat-контейнеров БЕЗ уточнения,
-# написана ДО create-story 12.6's декомпозиции): Celery теперь установлен,
-# три @shared_task существуют и зарегистрированы в CELERY_BEAT_SCHEDULE
-# (config/settings.py) — но САМИ КОНТЕЙНЕРЫ (`celery -A config worker`/
-# `celery -A config beat`) сюда ещё не добавлены. Буква эпика 12.6 бандлит
-# два разных теста (статический gate-тест «задача существует/импортируется»
-# — БЕЗ брокера — и smoke ЧЕРЕЗ БРОКЕР в test-full, которому нужны живые
-# worker+beat) — разбито на 12.6 (эта регистрация, done) и 12.6a (контейнеры
-# здесь + брокер-smoke, backlog). CELERY_BEAT_SCHEDULE сегодня — «мёртвая»
-# конфигурация в реально развёрнутом стеке до 12.6a, задокументировано явно,
-# не молчаливый пробел.
+# (uvicorn, --lifespan off) + postgres + redis + worker + beat (Celery,
+# Story 12.6/12.6a — три ночные catch-up-задачи, CELERY_BEAT_SCHEDULE в
+# config/settings.py; worker/beat — те же образ/build, что app, без
+# публикуемых портов).
 #
 # Существующий Backend/VAPS/docker-compose.yml (Postgres-харнесс `make gate`,
 # порт 5433) — ОТДЕЛЬНЫЙ файл, не трогается и не переиспользуется (запрет,
@@ -119,6 +109,57 @@ services:
       timeout: 5s
       retries: 10
       start_period: 15s
+
+  # Story 12.6a — CELERY_BEAT_SCHEDULE's three nightly catch-up jobs (12.6)
+  # need somewhere to actually run: worker consumes tasks, beat fires them
+  # on schedule. Same image/build as app (identical Dockerfile/deps —
+  # celery is already a runtime dependency, 12.6). Neither publishes a
+  # port — nothing calls in, they only call out to postgres/redis.
+  worker:
+    build:
+      context: ../Backend/VAPS
+      dockerfile: Dockerfile
+    image: "vaps-app:${VAPS_APP_SHA:-dev}"
+    restart: unless-stopped
+    command: celery -A config worker --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - VAPS_DB_HOST=postgres
+      - VAPS_DB_PORT=5432
+      - VAPS_PRIVATE_STORAGE_ROOT=/protected-storage
+      - VAPS_STATIC_ROOT=/app/staticfiles
+    volumes:
+      - private_storage:/protected-storage
+      - static_files:/app/staticfiles
+
+  beat:
+    build:
+      context: ../Backend/VAPS
+      dockerfile: Dockerfile
+    image: "vaps-app:${VAPS_APP_SHA:-dev}"
+    restart: unless-stopped
+    command: celery -A config beat --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - VAPS_DB_HOST=postgres
+      - VAPS_DB_PORT=5432
+      - VAPS_PRIVATE_STORAGE_ROOT=/protected-storage
+      - VAPS_STATIC_ROOT=/app/staticfiles
+    volumes:
+      - private_storage:/protected-storage
+      - static_files:/app/staticfiles
 
   postgres:
     image: postgres:16
