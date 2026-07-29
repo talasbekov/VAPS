@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
@@ -104,9 +105,20 @@ class BugReportViewSet(viewsets.ViewSet):
         description="Требует bugreports.view — тот же держатель, что "
         "list/retrieve (13.4a). 409 на уже разрешённом репорте.",
     )
+    @transaction.atomic
     def resolve(self, request, pk=None, *args, **kwargs):
         require_permission(request, _VIEW_PERMISSION)
-        report = get_object_or_404(BugReport, pk=pk)
+        # Review (Blind Hunter + Edge Case Hunter, independently): a plain
+        # get_object_or_404 + Python-side `is not None` check + save() is a
+        # check-then-act TOCTOU race — two concurrent resolve calls could
+        # both read resolved_at=None before either writes, and the second
+        # save() would silently overwrite the first with no error, exactly
+        # what the 409 exists to prevent. select_for_update() inside
+        # @transaction.atomic serializes concurrent resolvers on this row —
+        # the same pattern already established for guard-then-mutate
+        # sequences elsewhere (apps/operations/statuses/services/
+        # dismissal.py, apps/operations/submissions/selectors.py).
+        report = get_object_or_404(BugReport.objects.select_for_update(), pk=pk)
         if report.resolved_at is not None:
             raise DomainError(
                 "BUGREPORT_ALREADY_RESOLVED",
@@ -136,8 +148,13 @@ class BugReportViewSet(viewsets.ViewSet):
     def journal(self, request, *args, **kwargs):
         if not getattr(request, "actor_id", None):
             raise PermissionDenied("PERMISSION_DENIED")
+        # Review (Blind Hunter): -id tiebreaker — two reports resolved within
+        # the same clock tick (possible under clock.override() in tests, or
+        # fast successive resolves) would otherwise sort in DB-dependent
+        # order, which combined with limit/offset pagination risks
+        # duplicate/skipped entries across pages.
         reports = BugReport.objects.filter(resolved_at__isnull=False).order_by(
-            "-resolved_at"
+            "-resolved_at", "-id"
         )
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(reports, request)
