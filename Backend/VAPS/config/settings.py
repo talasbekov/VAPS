@@ -238,6 +238,19 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.parallel_run.tasks.parallel_run_diff_task",
         "schedule": crontab(hour=2, minute=30),
     },
+    # Story 13.5b — intraday, NOT nightly: alert_hour (13.5a) is a same-day,
+    # configurable threshold ("half not submitted by 15:30"), not a full-day
+    # catch-up checked the next morning. A fixed once-a-day crontab entry
+    # would silently stop tracking an Admin edit to alert_hour without a
+    # redeploy; a periodic run with the service's own internal hour-gate
+    # (check_submission_threshold) tracks config changes for free. 8-19,
+    # not all night: no point running before/after the working day, and
+    # repeat firings after the first alert are free no-ops (notify()'s own
+    # get_or_create idempotency — no dedicated watermark needed here).
+    "check-submission-threshold-intraday": {
+        "task": "apps.operations.submissions.tasks.check_submission_threshold_task",
+        "schedule": crontab(minute="*/15", hour="8-19"),
+    },
 }
 
 # BR-EMP-005 default

@@ -54,13 +54,14 @@ def test_every_beat_task_exists_and_imports():
     )
 
 
-def test_all_three_expected_catch_up_jobs_are_registered():
-    # Names the three jobs directly (not just "the schedule is non-empty") so
+def test_all_expected_beat_jobs_are_registered():
+    # Names each job directly (not just "the schedule is non-empty") so
     # silently dropping one from CELERY_BEAT_SCHEDULE fails loudly here too.
     task_names = {entry["task"] for entry in settings.CELERY_BEAT_SCHEDULE.values()}
     assert task_names == {
         "apps.operations.statuses.tasks.materialize_status_effects_task",
         "apps.operations.submissions.tasks.check_lagging_submissions_task",
+        "apps.operations.submissions.tasks.check_submission_threshold_task",
         "apps.parallel_run.tasks.parallel_run_diff_task",
     }
 
