@@ -8,7 +8,7 @@ import { Suspense, lazy } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { getFrontendEnv } from '../shared/config/env'
 import { LoginPage } from '../features/auth/LoginPage'
-import { ChangelogPage } from '../features/changelog/ChangelogPage'
+import { ChangelogPageContainer } from '../features/changelog/ChangelogPageContainer'
 import { DailyUpdatePage } from '../features/daily-grid/DailyUpdatePage'
 import { ExpenseReportPage } from '../features/expense/ExpenseReportPage'
 import { ExpensePrintPage } from '../features/print-forms/ExpensePrintPage'
@@ -219,7 +219,7 @@ export function AppRoutes() {
             роута за RequireAuth — printTest (:29-36), прецедент безправной
             аудитории в каркасе — NotificationBell (AppLayout.tsx:75-78).
             В NAV_SECTIONS маршрут не добавляется — вход через футер (AC-7). */}
-        <Route path={ROUTES.changelog} element={<ChangelogPage />} />
+        <Route path={ROUTES.changelog} element={<ChangelogPageContainer />} />
       </Route>
     </Routes>
   )

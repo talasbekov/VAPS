@@ -228,6 +228,14 @@ export const handlers = [
   http.get('*/api/operations/daily-submissions/', () =>
     HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
   ),
+  // 200 (Story 13.4b): журнал починок — ChangelogPageContainer's useQuery
+  // мгновенно монтируется на /changelog (changelog-routing.test.tsx),
+  // дефолт обязателен по той же причине, что daily-submissions выше —
+  // onUnhandledRequest: 'error' иначе роняет любой тест, доходящий до
+  // журнала. Конверт — LimitOffsetPagination, тот же формат.
+  http.get('*/api/bugreports/journal/', () =>
+    HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+  ),
   // 200 (стори 10.4): каскадное дерево светофора — пустой дефолт (см. выше).
   // Предикат с '*' обязателен: в env node без location относительный
   // '/api/…' МОЛЧА не матчится против абсолютного URL запроса.
