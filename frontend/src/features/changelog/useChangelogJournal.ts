@@ -18,6 +18,14 @@ export interface UseChangelogJournalResult {
   isError: boolean
 }
 
+// Бэк лимитирует страницу (`BugReportPagination.default_limit = 50`,
+// 13.4a) — без явного `limit` журнал молча обрежется на 51-й записи,
+// без единого признака для пользователя (найдено ревью, Blind Hunter).
+// `max_limit = 200` — потолок, дальше сервер сам не отдаст больше; страница
+// прямо заявляет «постраничная навигация не нужна» (Out of Scope), так
+// запрос максимума — минимальная правка, закрывающая ближайший риск.
+const JOURNAL_PAGE_LIMIT = 200
+
 /**
  * Распаковывает `.results` ДО отдачи потребителю (13.4a-ревью: бэк отдаёт
  * limit/offset-конверт `{count,next,previous,results}`, а `FixEntry[]`/
@@ -31,7 +39,10 @@ export interface UseChangelogJournalResult {
 export function useChangelogJournal(): UseChangelogJournalResult {
   const query = useQuery({
     queryKey: CHANGELOG_JOURNAL_QUERY_KEY,
-    queryFn: () => apiClient.get<JournalPage>('/api/bugreports/journal/'),
+    queryFn: () =>
+      apiClient.get<JournalPage>(
+        `/api/bugreports/journal/?limit=${JOURNAL_PAGE_LIMIT}`,
+      ),
   })
 
   return {

@@ -243,6 +243,39 @@ describe('вход в журнал — ссылка версии (AC-4, прав
   })
 })
 
+// 13.4b-ревью (Edge Case Hunter): ChangelogPageContainer.test.tsx рендерит
+// контейнер в изоляции, а этот файл никогда не подменял /journal непустыми
+// данными — вместе ни один тест не доказывал «настоящий роут рендерит
+// настоящие полученные строки». Закрывает пробел, не переизобретая её тесты.
+describe('журнал сквозь настоящий роут (13.4b) — реальные данные, не дефолт', () => {
+  it('непустой ответ /api/bugreports/journal/ доходит до строки через реальный AppRoutes', async () => {
+    grantPermissions(['status.view'])
+    server.use(
+      http.get('*/api/bugreports/journal/', () =>
+        HttpResponse.json({
+          count: 1,
+          next: null,
+          previous: null,
+          results: [
+            {
+              id: '1',
+              version: 'deadbee',
+              releasedAt: '2026-07-19',
+              summary: 'Кнопка «Сдать день» починена',
+            },
+          ],
+        }),
+      ),
+    )
+    renderAt(ROUTES.changelog)
+
+    expect(
+      await screen.findByText('Кнопка «Сдать день» починена'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('deadbee')).toBeInTheDocument()
+  })
+})
+
 describe('доступ к журналу (AC-6)', () => {
   it('🔴 permissions: [] → журнал РЕНДЕРИТСЯ, а не «Доступ запрещён»', async () => {
     // credential ставится ОБЯЗАТЕЛЬНО: без него тест был бы зелёным по
