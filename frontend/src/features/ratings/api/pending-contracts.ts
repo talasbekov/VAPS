@@ -14,6 +14,7 @@ import type {
   RatingPolicy,
   RatingPolicyBoundary,
 } from '../model/types'
+import type { RatingAnalyticsFigures } from '../lib/analytics'
 
 export const OPERATIONAL_RATINGS_PATH = '/api/ops/operational-ratings/'
 /**
@@ -22,6 +23,8 @@ export const OPERATIONAL_RATINGS_PATH = '/api/ops/operational-ratings/'
  * путь до заведения грепнут по всему `src` (инцидент Этапа 39).
  */
 export const OPERATIONAL_RATING_DYNAMICS_PATH = '/api/ops/operational-rating-dynamics/'
+/** Отчёт аналитики рейтинга §22.16 — свой путь и СВОЁ право (`ops.analytics.view`). */
+export const RATING_ANALYTICS_PATH = '/api/ops/rating-analytics/'
 
 /** §35: чего в расчёте нет и почему. Форма та же, что у блоков аналитики. */
 export interface UnavailableRatingFactor {
@@ -39,6 +42,31 @@ export interface ListOperationalRatingsResponse {
   capabilities: { operationalRatings: boolean; ratingConflicts: boolean }
   /** §35-блоки: факторы, не участвующие в расчёте, и нереализованные части §19. */
   unavailableFactors: UnavailableRatingFactor[]
+  unavailableViews: UnavailableRatingFactor[]
+}
+
+/**
+ * Отчёт аналитики рейтинга (§22.16-22.17).
+ *
+ * ⚠️ ОБЩЕГО СРЕДНЕГО В ОТВЕТЕ НЕТ И НЕ ДОЛЖНО ПОЯВИТЬСЯ: вместе с
+ * опубликованными средними и размерами остальных групп оно восстанавливало бы
+ * подавленное значение арифметикой в одну строку (§22.17 «Не пытайся
+ * восстановить скрытое значение из других показателей»).
+ */
+export interface RatingAnalyticsResponse {
+  /** `null` — методика не определена: считать отчёт не по чему (§19.19). */
+  policy: RatingPolicy | null
+  periodStartsAt: string | null
+  periodEndsAt: string | null
+  calculatedAt: string
+  /** Порог безопасной агрегации из policy. `null` — правило не задано. */
+  suppressionMinGroupSize: number | null
+  /** `null`, когда отчёт не публикуется (выключена функция / нет методики /
+   * не задан порог приватности). Причина приходит отдельным полем. */
+  figures: RatingAnalyticsFigures | null
+  unpublishedReason: 'FEATURE_DISABLED' | 'POLICY_UNDEFINED' | 'SUPPRESSION_UNDEFINED' | null
+  capabilities: { operationalRatings: boolean }
+  /** §35: чего в отчёте нет и почему. */
   unavailableViews: UnavailableRatingFactor[]
 }
 

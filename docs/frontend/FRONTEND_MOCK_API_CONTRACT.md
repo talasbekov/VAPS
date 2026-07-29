@@ -357,3 +357,16 @@ policyVersion, dataState, recordedAt), `boundaries[]` (границы смены
 Закрытых величин нет ни одним полем — как и в сводке (§19.20/§19.21), закреплено ассертом
 по ВСЕМУ JSON. Право то же, что у сводки (`ops.rating.view_aggregate`): динамика — это
 агрегаты, а отдельное право охраняло бы ту же операцию чтения (§19.22).
+
+### `/api/ops/rating-analytics/` (§22.16-22.17)
+
+Право — `ops.analytics.view` (раздел аналитики), НЕ `ops.rating.view_aggregate`.
+Ответ: `policy`, `periodStartsAt/EndsAt`, `suppressionMinGroupSize`, `figures` (или `null`
+с `unpublishedReason`: `FEATURE_DISABLED` → `POLICY_UNDEFINED` → `SUPPRESSION_UNDEFINED`,
+порядок значим), `unavailableViews`.
+
+`figures`: `ratedParticipants`, `coveredParticipants`/`totalParticipants` (покрытие),
+`withoutAggregate`, `correctedEvaluations` (количеством), `distribution[]` (полуоткрытые
+полосы, восьмёрка — своя), `groups[]` (`READY` | `SUPPRESSED` | `NO_AGGREGATE`).
+Подавленная группа приходит БЕЗ `aggregateRating` — значение не считается вовсе.
+**Общего среднего в ответе нет и появиться не должно** (§22.17, A117).

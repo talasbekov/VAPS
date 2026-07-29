@@ -6,13 +6,15 @@ import { hasPermission } from '../../../shared/testing/mock-runtime/rbac-directo
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import { UNAVAILABLE_RATING_FACTORS, buildSummary } from '../lib/rating'
 import { policyBoundaries } from '../lib/dynamics'
+import { buildRatingAnalytics } from '../lib/analytics'
 import type {
   ListOperationalRatingsResponse,
+  RatingAnalyticsResponse,
   RatingDynamicsResponse,
 } from '../api/pending-contracts'
-import { RATED_EMPLOYEES } from './fixtures'
+import { RATED_EMPLOYEES, RATING_GROUPS } from './fixtures'
 import type { RatingsSlice } from './fixtures'
-import { readRatingPolicy } from './settingsSlice'
+import { readRatingPolicy, readRatingSuppressionMinGroup } from './settingsSlice'
 
 export class RepositoryPermissionError extends Error {}
 
@@ -25,6 +27,35 @@ const SLICE_NAME = 'ratings'
  * операцию ничего не охраняло бы.
  */
 const VIEW_AGGREGATE_PERMISSION = 'ops.rating.view_aggregate'
+/**
+ * Отчёт §22.16 охраняет право РАЗДЕЛА АНАЛИТИКИ, а не право сводки: §22.26
+ * перечисляет просмотр аналитики отдельным пунктом, и держатель одной только
+ * сводки отчёта не получает. Право уже существует и уже роздано — новое здесь
+ * не заводится.
+ */
+const VIEW_ANALYTICS_PERMISSION = 'ops.analytics.view'
+
+/** §35: чего нет в ОТЧЁТЕ (не в расчёте) и почему. */
+const UNAVAILABLE_ANALYTICS_VIEWS: readonly { code: string; label: string; reason: string }[] = [
+  {
+    code: 'FORBIDDEN_BY_2216',
+    label: 'Отдельная оценка, оценщик, комментарий, доля ручных оценок, таблица лидеров, место',
+    reason:
+      '§22.16 перечисляет это списком запрещённого в общем отчёте. Их нет не в вёрстке, а в ответе API: отчёт оперирует агрегатами групп и полосами распределения, отдельного участника в нём не найти.',
+  },
+  {
+    code: 'PROTOTYPE_METRICS_REMOVED',
+    label: 'Показатели прототипа: «Авто-оценок», «Стандартных оценок», «Оценок ниже 6»',
+    reason:
+      '§22.17 требует удалить эту логику целиком. Первые две — выдуманные константы прототипа, третья прямо запрещена как количество низких оценок. Заменены распределением по полосам, где восьмёрка — стандартное выполнение.',
+  },
+  {
+    code: 'NO_OVERALL_MEAN',
+    label: 'Общее среднее по всем участникам',
+    reason:
+      'Вместе с опубликованными средними и размерами остальных групп общее среднее восстанавливает подавленное значение арифметикой (§22.17 «не пытайся восстановить скрытое значение из других показателей»). §22.16 его и не требует.',
+  },
+]
 
 /**
  * §35: части §19, не реализованные в этом срезе. Названы вслух и с причиной —
@@ -158,5 +189,84 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     }
   }
 
-  return { listOperationalRatings, getRatingDynamics }
+  /**
+   * Отчёт аналитики рейтинга (§22.16-22.17).
+   *
+   * Право СВОЁ — `ops.analytics.view`, а не право сводки: §22 — это отчёт, и
+   * доступ к нему решает раздел аналитики. Персона без аналитики не получает
+   * отчёт, даже держа `ops.rating.view_aggregate`.
+   */
+  async function getRatingAnalytics(actorUserId: string | null): Promise<RatingAnalyticsResponse> {
+    if (!hasPermission(actorUserId, VIEW_ANALYTICS_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_ANALYTICS_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new Error('mock-runtime: чтение аналитики рейтинга до инициализации demo-состояния')
+    }
+    const slice = readSlice(envelope.slices)
+    const policy = readRatingPolicy(envelope.slices)
+    const suppressionMinGroupSize = readRatingSuppressionMinGroup(envelope.slices)
+    const featureEnabled = slice.capabilities.operationalRatings
+    const businessDate = clock.businessDate()
+    const calculatedAt = clock.now()
+
+    const base = {
+      policy: featureEnabled ? policy : null,
+      periodStartsAt: null,
+      periodEndsAt: null,
+      calculatedAt,
+      suppressionMinGroupSize,
+      figures: null,
+      capabilities: { operationalRatings: featureEnabled },
+      unavailableViews: UNAVAILABLE_ANALYTICS_VIEWS.map((item) => ({ ...item })),
+    }
+    // Порядок причин значим — как и в сводке: выключенная функция отвечает
+    // раньше отсутствующей методики, а отсутствующая методика раньше
+    // незаданного порога приватности.
+    if (!featureEnabled) return { ...base, unpublishedReason: 'FEATURE_DISABLED' }
+    if (policy === null) return { ...base, unpublishedReason: 'POLICY_UNDEFINED' }
+    // Отчёт без правила приватности не публикуется ВОВСЕ: показать группы,
+    // выбрав порог в коде, значило бы решить вопрос приватности за политику
+    // (§22.17).
+    if (suppressionMinGroupSize === null) {
+      return { ...base, unpublishedReason: 'SUPPRESSION_UNDEFINED' }
+    }
+
+    const summaries = RATED_EMPLOYEES.map((employee) =>
+      buildSummary({
+        employeeId: employee.employeeId,
+        safeLabel: employee.safeLabel,
+        evaluations: slice.evaluations,
+        policy,
+        featureEnabled,
+        businessDate,
+        calculatedAt,
+      }),
+    )
+
+    return {
+      ...base,
+      periodStartsAt: summaries[0]?.periodStartsAt ?? null,
+      periodEndsAt: summaries[0]?.periodEndsAt ?? null,
+      unpublishedReason: null,
+      figures: buildRatingAnalytics({
+        summaries,
+        groups: RATING_GROUPS.map((group) => ({
+          groupCode: group.groupCode,
+          safeLabel: group.safeLabel,
+          members: RATED_EMPLOYEES.filter((item) => item.groupCode === group.groupCode).map(
+            (item) => item.employeeId,
+          ),
+        })),
+        minGroupSize: suppressionMinGroupSize,
+        // §22.16 «количество исправленных оценок в агрегированном виде» —
+        // именно количество: какая оценка кем исправлена, закрыто (§19.21).
+        correctedEvaluations: slice.evaluations.filter((item) => item.supersededById !== null)
+          .length,
+      }),
+    }
+  }
+
+  return { listOperationalRatings, getRatingDynamics, getRatingAnalytics }
 }

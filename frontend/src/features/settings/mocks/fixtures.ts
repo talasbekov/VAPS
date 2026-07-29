@@ -524,6 +524,24 @@ export const RATING_POLICY_SETTINGS: readonly StoredSetting[] = [
     editable: true,
     lockedReason: null,
   },
+  {
+    settingCode: 'RATING.SUPPRESSION_MIN_GROUP.PARAMETER',
+    kind: 'NUMBER',
+    sectionCode: 'RATING_POLICY',
+    groupCode: 'PRIVACY',
+    field: 'PARAMETER',
+    safeLabel: 'Минимальный размер группы для агрегации в отчёте',
+    description:
+      'Сколько участников с рассчитанным агрегатом нужно, чтобы показать среднее по группе в аналитике. Меньше — отчёт отвечает «Недостаточно данных для безопасного отображения»: среднее по двоим называет обоих.',
+    valueType: 'COUNT',
+    value: 3,
+    minValue: 2,
+    maxValue: 50,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
 ]
 
 export function buildSettingsSeed(): { sliceName: string; data: SettingsSlice } {

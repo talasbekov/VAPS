@@ -111,6 +111,13 @@ export const ROUTES = {
    * маршрут без операции вёл бы на честно пустой экран.
    */
   ratings: '/ratings',
+  /**
+   * Отчёт §22.16 «Аналитика рейтинга» — ОТДЕЛЬНЫЙ маршрут со СВОИМ правом
+   * (`ops.analytics.view`). Секцией на `/ratings` он быть не мог: там правом
+   * входа служит `ops.rating.view_aggregate`, и отчёт раздела аналитики
+   * открывался бы тому, кому раздел аналитики не выдан.
+   */
+  ratingAnalytics: '/ratings/analytics',
   /** Отчётный реестр Smart Josparlau (§22.18). НЕ `/reports` — там донорский
    * экран «Расход дня» (E10), это другой раздел и другой владелец. */
   serviceReports: '/service-reports',
@@ -265,6 +272,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Оперативный рейтинг',
     icon: BarChart3,
     permission: 'ops.rating.view_aggregate',
+  },
+  {
+    route: ROUTES.ratingAnalytics,
+    label: 'Аналитика рейтинга',
+    icon: BarChart3,
+    permission: 'ops.analytics.view',
   },
   {
     route: ROUTES.serviceReports,

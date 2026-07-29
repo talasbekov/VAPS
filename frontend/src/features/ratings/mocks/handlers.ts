@@ -6,6 +6,7 @@ import type { ErrorEnvelope } from '../../../shared/api/errors'
 import {
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
+  RATING_ANALYTICS_PATH,
 } from '../api/pending-contracts'
 import { createRatingsRepository, RepositoryPermissionError } from './repository'
 
@@ -36,6 +37,20 @@ export function createRatingsHandlers(adapter: PersistenceAdapter, clock: DemoCl
       const employeeId = new URL(request.url).searchParams.get('employee')
       try {
         return HttpResponse.json(await repository.getRatingDynamics(actorUserId, employeeId))
+      } catch (error) {
+        if (error instanceof RepositoryPermissionError) {
+          return HttpResponse.json(envelope(clock, 'PERMISSION_DENIED', 'Недостаточно прав.'), {
+            status: 403,
+          })
+        }
+        throw error
+      }
+    }),
+
+    http.get(`*${RATING_ANALYTICS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.getRatingAnalytics(actorUserId))
       } catch (error) {
         if (error instanceof RepositoryPermissionError) {
           return HttpResponse.json(envelope(clock, 'PERMISSION_DENIED', 'Недостаточно прав.'), {

@@ -282,8 +282,10 @@ describe('доступ к журналу (AC-6)', () => {
     // + 1 (objects, Этап 5) + 1 (serviceAnalytics, Этап 7) + 1 (duties, Этап 7)
     // + 1 (dictionaries, §30) + 1 (calendar, §25)
     // + 1 (serviceReports, §22.18, Этап 40) + 1 (feedback, §28)
-    // + 1 (settings, §29) + 1 (ratings, §19.4) — changelog среди них нет
-    expect(NAV_SECTIONS).toHaveLength(18)
+    // + 1 (settings, §29) + 1 (ratings, §19.4)
+    // + 1 (ratingAnalytics, §22.16 — своё право `ops.analytics.view`)
+    // — changelog среди них нет
+    expect(NAV_SECTIONS).toHaveLength(19)
   })
 })
 
