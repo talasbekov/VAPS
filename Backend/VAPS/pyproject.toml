@@ -54,6 +54,15 @@ dependencies = [
     # отклоняется, поэтому пинится явно.
     "uvicorn>=0.30,<1",
     "websockets>=13,<16",
+    # Story 12.6: wraps materialize_status_effects/check_lagging_submissions/
+    # parallel_run_diff (3.12/5.7b2/6.9 — already "beat-ready" by their own
+    # docstrings) in @shared_task and registers them on a beat schedule.
+    # Broker is VAPS_REDIS_URL — the SAME Redis instance Channels already
+    # uses (architecture.md#L311 "Redis — only a broker, no cache
+    # introduced"), not a second one. The redis Python client itself is
+    # already a transitive dependency via channels-redis (11.1) — not
+    # re-declared here.
+    "celery>=5.4,<6",
 ]
 
 [project.optional-dependencies]

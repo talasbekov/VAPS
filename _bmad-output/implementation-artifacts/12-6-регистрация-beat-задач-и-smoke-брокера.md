@@ -4,7 +4,7 @@ baseline_commit: e0dd36d
 
 # Story 12.6: Регистрация beat-задач и smoke брокера
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -28,23 +28,23 @@ so that **переименованная/удалённая задача не у
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Celery-зависимость + `config/celery.py` (AC: 1)
-  - [ ] `pyproject.toml`: `celery>=5.4,<6`.
-  - [ ] `config/celery.py` (NEW): `Celery('vaps')`, `config_from_object`, `autodiscover_tasks()`.
-  - [ ] `config/__init__.py`: экспорт `celery_app`.
-  - [ ] `CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` в `settings.py`, из `VAPS_REDIS_URL` (та же переменная, что `channel_layers_from_env`).
-- [ ] Task 2 — `@shared_task`-обёртки (AC: 2)
-  - [ ] `apps/operations/statuses/tasks.py`, `apps/operations/submissions/tasks.py`, `apps/parallel_run/tasks.py` — каждая вызывает существующий сервис напрямую с `Clock.today_local()`.
-- [ ] Task 3 — `CELERY_BEAT_SCHEDULE` (AC: 3)
-  - [ ] Три записи в `settings.py`, разнесённые ночные часы, не пересекающиеся с существующими systemd-таймерами.
-- [ ] Task 4 — Gate-тест (`test_celery_tasks.py`, NEW) (AC: 4)
-  - [ ] Резолвит каждую запись расписания через Celery-реестр, реально импортирует.
-  - [ ] Мутационная проба (переименовать → тест красный) — проверено вручную, не автоматизирована постоянно (зафиксировано в Completion Notes).
-- [ ] Task 5 — Инверсия существующего гварда (AC: 5)
-  - [ ] `test_ws_guards.py`'s `test_no_disallowed_server_or_worker_stack_is_introduced` — `celery` убран из запрещённого множества, докстринг объясняет переворот (зеркало 12.1's uvicorn-переворота).
-- [ ] Task 6 — Реальный прогон (AC: 5)
-  - [ ] `make gate` зелёный.
-  - [ ] Живая мутационная проба гейт-теста (AC-4) — красная на переименованной задаче.
+- [x] Task 1 — Celery-зависимость + `config/celery.py` (AC: 1)
+  - [x] `pyproject.toml`: `celery>=5.4,<6`.
+  - [x] `config/celery.py` (NEW): `Celery('vaps')`, `config_from_object`, `autodiscover_tasks()`.
+  - [x] `config/__init__.py`: экспорт `celery_app`.
+  - [x] `CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` в `settings.py`, из `VAPS_REDIS_URL` (та же переменная, что `channel_layers_from_env`).
+- [x] Task 2 — `@shared_task`-обёртки (AC: 2)
+  - [x] `apps/operations/statuses/tasks.py`, `apps/operations/submissions/tasks.py`, `apps/parallel_run/tasks.py` — каждая вызывает существующий сервис напрямую с `Clock.today_local()`.
+- [x] Task 3 — `CELERY_BEAT_SCHEDULE` (AC: 3)
+  - [x] Три записи в `settings.py`, разнесённые ночные часы, не пересекающиеся с существующими systemd-таймерами.
+- [x] Task 4 — Gate-тест (`test_celery_tasks.py`, NEW) (AC: 4)
+  - [x] Резолвит каждую запись расписания через Celery-реестр, реально импортирует.
+  - [x] Мутационная проба (переименовать → тест красный) — проверено вручную, не автоматизирована постоянно (зафиксировано в Completion Notes).
+- [x] Task 5 — Инверсия существующего гварда (AC: 5)
+  - [x] `test_ws_guards.py`'s `test_no_disallowed_server_or_worker_stack_is_introduced` — `celery` убран из запрещённого множества, докстринг объясняет переворот (зеркало 12.1's uvicorn-переворота).
+- [x] Task 6 — Реальный прогон (AC: 5)
+  - [x] `make gate` зелёный.
+  - [x] Живая мутационная проба гейт-теста (AC-4) — красная на переименованной задаче.
 
 ## Dev Notes
 
@@ -70,10 +70,45 @@ so that **переименованная/удалённая задача не у
 
 ### Completion Notes
 
+Реализовано по плану. `make gate` — 2875 passed, 0 failed, schema drift не обнаружен.
+
+**Живая проверка (не продекларирована):**
+1. `autodiscover_tasks()` реально резолвит все 3 задачи из соответствующих `tasks.py`: `python -c "... celery_app.autodiscover_tasks(); print(sorted(celery_app.tasks))"` — все три полных dotted-имени присутствуют.
+2. Мутационная проба AC-4: `CELERY_BEAT_SCHEDULE`'s `parallel_run_diff_task` временно переименован на несуществующее имя — `test_every_beat_task_exists_and_imports` И `test_all_three_expected_catch_up_jobs_are_registered` реально покраснели, вернулось после revert — оба зелёные.
+3. **Синхронный прогон ВСЕХ ТРЁХ задач против реальной БД (`.apply()` — без брокера, в рамках скоупа этой стори, не 12.6a's brokered-smoke):** гейт-харнесс (`db`/`redis`, порты 5433/6380) поднят, все три `@shared_task` реально выполнены — `SUCCESS`, без исключений, против настоящей Postgres. Убрано после (`docker compose down`).
+
+**Ревью (3 агента, cross-model, реальный прогон каждого).**
+
+- **Blind Hunter** (diff-only) нашёл 1 реальную дыру, исправлена:
+  1. **MED — `CELERY_RESULT_BACKEND` включён, но результат НИКЕМ не читается** (все три beat-задачи — fire-and-forget, `.get()`/`AsyncResult()` нигде не вызываются) — без явного `CELERY_RESULT_EXPIRES` это бесконечное накопление `celery-task-meta-*`-ключей в ТОМ ЖЕ Redis, что уже держит Channels. Исправлено: `CELERY_RESULT_BACKEND = None` + `CELERY_TASK_IGNORE_RESULT = True` (не полагаться на дефолтный TTL, а вообще не писать результат, раз его никто не читает). Живая проверка: `.apply()` на всех трёх задачах — `SUCCESS`, `CELERY_TASK_IGNORE_RESULT=True` подтверждён в рантайме.
+  2. Дополнительно усилен anti-vacuum гейт-теста (`test_every_beat_task_exists_and_imports`): явная проверка, что после `autodiscover_tasks()`+`import_default_modules()` реестр содержит НЕ-builtin-задачи (не просто «непустой список» — ловит гипотетическую будущую регрессию порядка вызовов, которая оставила бы реестр из ТОЛЬКО `celery.*`-встроенных задач).
+  - Остальное (нет retry/alerting на уровне задачи, фиксированные, не general-purpose, часы в anti-overlap-тесте) — рассмотрено и ОТКЛОНЕНО: retry/alerting-инфраструктуры в проекте сознательно нет (тот же принцип, что уже принят 12.4 — «громкий exit + структурный лог», GlitchTip явно DEFERRED); отсутствие retry на Celery-уровне не проблема — все три сервиса УЖЕ идемпотентны/catch-up-safe по своей архитектуре (следующий тик расписания сам подберёт пропущенное), добавление Celery-level retry дублировало бы уже существующую catch-up-семантику без пользы.
+- **Edge Case Hunter** (полный доступ к проекту, живое чтение) нашёл 1 РЕАЛЬНУЮ находку, исправлена:
+  1. **HIGH — `deploy/docker-compose.yml`'s комментарий (12.1) буквально называл «12.6» адресом worker/beat-КОНТЕЙНЕРОВ**, без знания о decomposition-решении «12.6 vs 12.6a», принятом ПОСЛЕ того, как этот комментарий был написан. Формально это создавало путаницу: контейнеры действительно НЕ добавлены этой стори (буква 12.6 — только регистрация задач), но старый комментарий не объяснял, ПОЧЕМУ — читатель мог решить, что это упущение, не сознательное решение. Исправлено: комментарий переписан, явно называет 12.6a, объясняет расщепление буквы эпика на два теста разной инфраструктуры, честно называет `CELERY_BEAT_SCHEDULE` «мёртвой конфигурацией до 12.6a».
+  - Ложная тревога (проверено и опровергнуто напрямую): «celery не установлен в окружении» — `celery==5.6.3` реально установлен в `.venv`, подтверждено `python -c "import celery; print(celery.__version__)"`; агент, видимо, смотрел на `pyproject.toml`, не запуская собственный `pip install`.
+  - Подтверждены БЕЗ находки: `autodiscover_tasks()` без `packages=` реально работает (все три app'а в `INSTALLED_APPS`), нет circular-import риска между `config/__init__.py` и `asgi.py`/`manage.py` (`setdefault`, не `set`), `CELERY_TIMEZONE` — достаточная настройка для Celery 5.x (не нужен отдельный `CELERY_ENABLE_UTC`), исключения из сервисов корректно долетают до Celery как `FAILURE` (не проглатываются).
+- **Acceptance Auditor**: реально прогнал `pytest test_celery_tasks.py test_ws_guards.py` (29 passed), `make gate` (2875 passed), **независимо повторил мутационную пробу с нуля** (сам сломал/починил `CELERY_BEAT_SCHEDULE`, сверил байт-в-байт свой diff с оригиналом при откате), **независимо повторил синхронный `.apply()`-прогон против реальной Postgres** (свежий `docker compose up`, миграции, все три задачи — `SUCCESS`) — подтвердил ВСЕ заявления Completion Notes без единого расхождения. `manage.py check` — 0 issues, `config/asgi.py`/`manage.py` не задеты этой стори.
+
+**После review-патчей — гейт и тесты перепрогнаны.** `make gate` — 2875 passed, 0 failed (тот же счёт — патчи усилили существующий тест, не добавили новый). `.apply()`-прогон подтверждён Acceptance Auditor'ом независимо уже ПОСЛЕ фикса `CELERY_RESULT_BACKEND`.
+
+2 decision (оба реальных фикса приняты) · 0 defer · 2 dismiss-с-обоснованием (retry/alerting — сознательный принцип проекта; ложная тревога про неустановленный celery — опровергнута).
+
 ### File List
+
+- `Backend/VAPS/pyproject.toml` (MOD) — `celery>=5.4,<6` в основных зависимостях.
+- `Backend/VAPS/config/celery.py` (NEW) — Celery app instance, autodiscover.
+- `Backend/VAPS/config/__init__.py` (MOD, было пусто) — экспорт `celery_app`.
+- `Backend/VAPS/config/settings.py` (MOD) — `CELERY_BROKER_URL`/`CELERY_BEAT_SCHEDULE`, импорт `crontab`; `CELERY_RESULT_BACKEND=None`+`CELERY_TASK_IGNORE_RESULT=True` (review-фикс).
+- `Backend/VAPS/apps/operations/statuses/tasks.py` (NEW) — `materialize_status_effects_task`.
+- `Backend/VAPS/apps/operations/submissions/tasks.py` (NEW) — `check_lagging_submissions_task`.
+- `Backend/VAPS/apps/parallel_run/tasks.py` (NEW) — `parallel_run_diff_task`.
+- `Backend/VAPS/apps/core/tests/test_celery_tasks.py` (NEW) — gate-тест «задача существует/импортируется» (AC-4) + усиленный anti-vacuum-гвард (review-фикс).
+- `Backend/VAPS/apps/notifications/tests/test_ws_guards.py` (MOD) — гвард инвертирован для `celery` (тот же приём, что uvicorn, 12.1).
+- `deploy/docker-compose.yml` (MOD) — комментарий (12.1) переписан, называет 12.6a явно, честно фиксирует «мёртвую» конфигурацию до неё (review-фикс).
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-29 | Story создана (create-story) |
+| 2026-07-29 | dev-story: реализация (Celery впервые в проекте — зависимость, config/celery.py, 3 @shared_task, beat-расписание, gate-тест) + живой прогон (autodiscover, мутационная проба, синхронный .apply() против реальной Postgres) + 3-агентное ревью нашло 2 реальные дыры (неограниченный рост celery-task-meta-* в общем Redis, устаревший комментарий docker-compose.yml про адрес worker/beat) — обе исправлены, независимо перепроверены Acceptance Auditor'ом → done |

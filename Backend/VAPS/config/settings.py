@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -198,6 +199,45 @@ AUTH_USER_MODEL = "core.User"
 TIME_ZONE = "Asia/Qyzylorda"
 USE_TZ = True
 VAPS_LOCAL_TIMEZONE = "Asia/Qyzylorda"
+
+# Story 12.6 — Celery broker: the SAME VAPS_REDIS_URL as CHANNEL_LAYERS
+# above (architecture.md#L311 — one Redis, one broker role, no separate
+# cache). Celery's own key namespace (kombu's _kombu.binding.* etc.)
+# doesn't collide with channels_redis' group keys — no DB-index split
+# needed.
+CELERY_BROKER_URL = os.environ.get("VAPS_REDIS_URL", "redis://127.0.0.1:6379/0")
+# Review (Blind Hunter): all three beat tasks are fire-and-forget — nothing
+# ever calls .get()/AsyncResult() on them. A result backend nobody reads
+# would just accumulate celery-task-meta-* keys in the same Redis instance
+# forever (no consumer to expire them against). No backend, not "set one
+# and hope the default TTL is enough."
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = TIME_ZONE
+
+# Story 12.6 — three catch-up jobs, wrapped in @shared_task (each already
+# "beat-ready" per its own docstring, 3.12/5.7b2/6.9). Nightly hours chosen
+# to NOT overlap the existing systemd timers (vaps-parallel-run-diff.timer
+# 02:15, deploy/systemd/vaps-backup.timer 03:00, story 7.0/12.4) —
+# parallel-run-diff's own systemd timer stays; registering it here too is
+# additive, not a replacement (Dev Notes: dual trigger is safe, each job is
+# idempotent under its own advisory lock).
+CELERY_BEAT_SCHEDULE = {
+    "materialize-status-effects-nightly": {
+        "task": "apps.operations.statuses.tasks.materialize_status_effects_task",
+        "schedule": crontab(hour=1, minute=30),
+    },
+    "check-lagging-submissions-nightly": {
+        "task": "apps.operations.submissions.tasks.check_lagging_submissions_task",
+        "schedule": crontab(hour=1, minute=45),
+    },
+    "parallel-run-diff-nightly": {
+        "task": "apps.parallel_run.tasks.parallel_run_diff_task",
+        "schedule": crontab(hour=2, minute=30),
+    },
+}
 
 # BR-EMP-005 default
 AUTO_GENERATE_PERSONNEL_NUMBER = (

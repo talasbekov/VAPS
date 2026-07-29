@@ -322,12 +322,8 @@ def test_no_disallowed_server_or_worker_stack_is_introduced():
     """AC-9 boundary: 11.1 ships a transport, not the full DEPLOYMENT stack.
 
     ``daphne`` is refused outright (11.1 AC-1, решение Bratan: +14 transitive
-    packages and 3 C-extensions into the offline mirror) and ``celery`` likewise
-    (epics.md#L759, ARCH-DEFERRED-048) — in ANY dependency group, still today:
-    12.1 fixed the prod TOPOLOGY (nginx+uvicorn-app+postgres+redis) but
-    explicitly deferred worker/beat containers to 12.6 (no Celery task exists
-    anywhere in the codebase yet — see 12.1's own Dev Notes) — Celery staying
-    absent from pyproject.toml is exactly what proves that deferral held.
+    packages and 3 C-extensions into the offline mirror) — in ANY dependency
+    group, still today.
 
     ``uvicorn`` moved from dev-extra (11.6, live e2e tooling only) into the
     RUNTIME dependencies in Story 12.1 — it is now the actual прод-сервер
@@ -337,21 +333,37 @@ def test_no_disallowed_server_or_worker_stack_is_introduced():
     landed, the guard asserts its PRESENCE instead — a stale absence-check
     here would silently pass if a future revert dropped uvicorn from the prod
     image without anyone noticing.
+
+    ``celery`` — same flip, one story later. This guard used to forbid it
+    outright (epics.md#L759, ARCH-DEFERRED-048), citing 12.6 as the exact
+    point where that changes ("12.1 explicitly deferred worker/beat
+    containers to 12.6 — no Celery task exists anywhere in the codebase yet").
+    Story 12.6 landed (materialize_status_effects/check_lagging_submissions/
+    parallel_run_diff wrapped in @shared_task, config/celery.py, a beat
+    schedule) — same reasoning as uvicorn above: the guard now asserts
+    celery's PRESENCE, not absence, so a future revert dropping it wouldn't
+    silently pass.
     """
     runtime, dev = _declared_dependencies()
     declared = set(runtime) | set(dev)
     assert declared, "no dependencies parsed from pyproject.toml"
 
-    # daphne/celery — nowhere, in any group.
-    intruders = declared & {"daphne", "celery"}
+    # daphne — nowhere, in any group. Still forbidden, unchanged.
+    intruders = declared & {"daphne"}
     assert intruders == set(), (
         f"out-of-scope dependencies declared: {sorted(intruders)} — "
-        "daphne refused (11.1 AC-1), Celery is forbidden until 12.6 (AC-9)"
+        "daphne refused (11.1 AC-1)"
     )
     # uvicorn — runtime dependency since 12.1 (the прод-сервер).
     assert "uvicorn" in set(runtime), (
         "uvicorn missing from RUNTIME dependencies — the прод-сервер (12.1) "
         "must ship in the прод-образ, not only the [dev] extra"
+    )
+    # celery — runtime dependency since 12.6 (beat-scheduled catch-up jobs).
+    assert "celery" in set(runtime), (
+        "celery missing from RUNTIME dependencies — the beat-scheduled "
+        "catch-up jobs (12.6) must ship in the прод-образ, not only the "
+        "[dev] extra"
     )
 
 
