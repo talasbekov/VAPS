@@ -61,10 +61,42 @@ mkdir -p "${OUT_DIR}"
 # без предыдущего бандла (LAST_SHA_FILE) hotfix бессмыслен (не «первая
 # установка», ту делает полный bundle.sh). Стоп ДО docker/npm, тем же
 # принципом, что грязное дерево выше — дешёвая проверка первой.
-if [[ "${HOTFIX}" -eq 1 && ! -f "${LAST_SHA_FILE}" ]]; then
-  echo "ERROR: --hotfix без предыдущего бандла (${LAST_SHA_FILE} не найден) —" >&2
-  echo "hotfix патчит существующую установку; для первой установки используйте" >&2
-  echo "полный бандл (bundle.sh без --hotfix)." >&2
+# `-s`, не `-f` (review: Blind Hunter): файл, оставшийся пустым после
+# прерванного/упавшего прошлого прогона, проходил бы `-f`-проверку, но дал
+# бы `candidate=""` ниже — `prev_sha` стал бы `"\"\""` (пустая JSON-строка),
+# НЕ строка `"null"`, так что более поздний non-null-гард его не ловил.
+if [[ "${HOTFIX}" -eq 1 && ! -s "${LAST_SHA_FILE}" ]]; then
+  echo "ERROR: --hotfix без предыдущего бандла (${LAST_SHA_FILE} не найден" >&2
+  echo "или пуст) — hotfix патчит существующую установку; для первой" >&2
+  echo "установки используйте полный бандл (bundle.sh без --hotfix)." >&2
+  exit 1
+fi
+
+# AC-2 min_upgrade_from: best-effort locally-remembered pointer, NOT a
+# cryptographic contract — the file lives only on this dev machine and is
+# never shipped with the bundle. null on the first-ever run. Found by a live
+# rebuild-same-sha-twice test (AC-5): if the marker already holds the sha
+# being built RIGHT NOW (a retry/rebuild, not a real new release), a bundle
+# claiming to "upgrade from itself" is meaningless — treat that case as null
+# too, same as no prior bundle.
+#
+# Story 13.3 (review: Blind Hunter): computed HERE, before docker/npm, not
+# at manifest-writing time — a --hotfix same-sha rebuild is exactly as cheap
+# to detect as the missing-marker case above, and the script's own ordering
+# principle (cheap guards before expensive work) said this should never have
+# waited for a full docker build + npm build just to fail anyway.
+prev_sha="null"
+if [[ -s "${LAST_SHA_FILE}" ]]; then
+  candidate="$(cat "${LAST_SHA_FILE}")"
+  if [[ "${candidate}" != "${GIT_SHA}" ]]; then
+    prev_sha="\"${candidate}\""
+  fi
+fi
+
+if [[ "${HOTFIX}" -eq 1 && "${prev_sha}" == "null" ]]; then
+  echo "ERROR: --hotfix даёт min_upgrade_from=null (пересборка того же sha," >&2
+  echo "${LAST_SHA_FILE} совпадает с текущим ${GIT_SHA}) — hotfix обязан" >&2
+  echo "патчить конкретную предыдущую версию, не себя же." >&2
   exit 1
 fi
 
@@ -123,31 +155,8 @@ else
   redis_digest_json="\"${redis_digest}\""
 fi
 
-# AC-2 min_upgrade_from: best-effort locally-remembered pointer, NOT a
-# cryptographic contract — the file lives only on this dev machine and is
-# never shipped with the bundle. null on the first-ever run. Found by a live
-# rebuild-same-sha-twice test (AC-5): if the marker already holds the sha
-# being built RIGHT NOW (a retry/rebuild, not a real new release), a bundle
-# claiming to "upgrade from itself" is meaningless — treat that case as null
-# too, same as no prior bundle.
-prev_sha="null"
-if [[ -f "${LAST_SHA_FILE}" ]]; then
-  candidate="$(cat "${LAST_SHA_FILE}")"
-  if [[ "${candidate}" != "${GIT_SHA}" ]]; then
-    prev_sha="\"${candidate}\""
-  fi
-fi
-
-# Story 13.3/AC-2: for --hotfix, min_upgrade_from staying null (either no
-# prior marker — already caught above — or a same-sha rebuild) is exactly
-# as meaningless as it would be for the check above; a hotfix that can't
-# name what it patches isn't a hotfix.
-if [[ "${HOTFIX}" -eq 1 && "${prev_sha}" == "null" ]]; then
-  echo "ERROR: --hotfix даёт min_upgrade_from=null (пересборка того же sha," >&2
-  echo "${LAST_SHA_FILE} совпадает с текущим ${GIT_SHA}) — hotfix обязан" >&2
-  echo "патчить конкретную предыдущую версию, не себя же." >&2
-  exit 1
-fi
+# prev_sha already computed above (before docker/npm) — reused here, not
+# recomputed.
 
 # Review (Blind Hunter/Edge Case Hunter): pipefail does abort the script if
 # `showmigrations` fails (live-verified — a broken .venv does NOT silently

@@ -152,9 +152,20 @@ def test_hotfix_flag_skips_base_image_pull_and_save():
 def test_hotfix_requires_prior_bundle_marker():
     # Story 13.3/AC-2: --hotfix without a prior bundle (nothing to patch)
     # must fail loudly, not silently produce a null-upgrade-path bundle.
+    #
+    # Review (Edge Case Hunter, red-probe-confirmed): the original second
+    # assertion (`"..." in text.lower() or "hotfix" in text`) was vacuous —
+    # "hotfix" appears dozens of times regardless of whether this guard
+    # exists at all (the flag name, docstrings, variable names). Deleting
+    # the entire guard block left it passing. Pinned to the EXACT guard
+    # condition and exit instead — a real regression (removed/weakened
+    # guard) now fails this test.
     text = _text()
     assert "LAST_SHA_FILE" in text
-    assert "hotfix без предыдущего бандла" in text.lower() or "hotfix" in text
+    guard_pos = text.find('if [[ "${HOTFIX}" -eq 1 && ! -s "${LAST_SHA_FILE}" ]]; then')
+    assert guard_pos != -1, "missing-marker guard condition not found verbatim"
+    guard_block = text[guard_pos : guard_pos + 400]
+    assert "exit 1" in guard_block, "guard does not actually exit non-zero"
 
 
 def test_hotfix_requires_non_null_min_upgrade_from():
