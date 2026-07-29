@@ -55,12 +55,17 @@ def test_dirty_tree_guard_ignores_untracked_files():
 
 
 def test_all_four_topology_images_are_saved_together():
+    # Story 13.3: two `docker save` lines now exist (full bundle vs
+    # --hotfix's app-only branch) — this test is specifically about the
+    # FULL-bundle path, so it targets the LAST occurrence (the --hotfix
+    # branch's own guard, test_hotfix_flag_skips_base_image_pull_and_save,
+    # covers the first).
     text = _text()
-    save_line = next(
-        (line for line in text.splitlines() if line.strip().startswith("docker save")),
-        None,
-    )
-    assert save_line, "no `docker save` invocation found"
+    save_lines = [
+        line for line in text.splitlines() if line.strip().startswith("docker save")
+    ]
+    assert save_lines, "no `docker save` invocation found"
+    save_line = save_lines[-1]
     required = ("${APP_IMAGE}", "${NGINX_IMAGE}", "${POSTGRES_IMAGE}", "${REDIS_IMAGE}")
     for var in required:
         assert var in save_line, f"{var} missing from docker save: {save_line!r}"
@@ -81,7 +86,7 @@ def test_image_tags_match_docker_compose():
 
 def test_manifest_has_all_required_fields():
     text = _text()
-    manifest_start = text.find("cat > \"${MANIFEST}\"")
+    manifest_start = text.find('cat > "${MANIFEST}"')
     assert manifest_start != -1, "no manifest.json heredoc found"
     manifest_block = text[manifest_start:]
     for field in (
@@ -114,6 +119,65 @@ def test_sha256sums_covers_exactly_the_three_artifacts_not_itself():
 def test_bundle_output_dir_is_gitignored():
     gitignore = (REPO_ROOT / "deploy" / ".gitignore").read_text(encoding="utf-8")
     assert "dist-bundle/" in gitignore
+
+
+def test_manifest_has_hotfix_field():
+    # Story 13.3: manifest.json must always declare hotfix true/false, not
+    # just be silently absent on the full-bundle path.
+    text = _text()
+    manifest_start = text.find('cat > "${MANIFEST}"')
+    assert manifest_start != -1
+    assert '"hotfix"' in text[manifest_start:]
+
+
+def test_hotfix_flag_skips_base_image_pull_and_save():
+    # Story 13.3/AC-1: --hotfix must not pull/save nginx/postgres/redis —
+    # only the app image, keyed on the same HOTFIX branch condition.
+    text = _text()
+    hotfix_branch_start = text.find('if [[ "${HOTFIX}" -eq 1 ]]; then')
+    assert hotfix_branch_start != -1, "no --hotfix conditional found"
+    else_start = text.find("\nelse\n", hotfix_branch_start)
+    assert else_start != -1, "no matching else for the --hotfix conditional"
+    # Slice EXACTLY the hotfix branch's body (up to `else`) — the FIRST
+    # `if [[ "${HOTFIX}" -eq 1 ]]; then` is the save-images branch (a later
+    # occurrence, in the manifest-digest section, is a separate branch).
+    hotfix_block = text[hotfix_branch_start:else_start]
+    assert "docker save" in hotfix_block
+    assert "${APP_IMAGE}" in hotfix_block
+    assert "${NGINX_IMAGE}" not in hotfix_block
+    assert "${POSTGRES_IMAGE}" not in hotfix_block
+    assert "${REDIS_IMAGE}" not in hotfix_block
+
+
+def test_hotfix_requires_prior_bundle_marker():
+    # Story 13.3/AC-2: --hotfix without a prior bundle (nothing to patch)
+    # must fail loudly, not silently produce a null-upgrade-path bundle.
+    text = _text()
+    assert "LAST_SHA_FILE" in text
+    assert "hotfix без предыдущего бандла" in text.lower() or "hotfix" in text
+
+
+def test_hotfix_requires_non_null_min_upgrade_from():
+    # Story 13.3/AC-2: a --hotfix bundle that would still resolve
+    # min_upgrade_from to null (same-sha rebuild) must be rejected.
+    text = _text()
+    assert 'prev_sha" == "null"' in text or 'prev_sha}" == "null"' in text
+
+
+def test_full_bundle_behaviour_unchanged_without_hotfix_flag():
+    # Regression guard: the non---hotfix path must still save all 4 images
+    # (Story 13.3 must not have narrowed the default path).
+    text = _text()
+    else_branch_start = text.find('else\n  echo "[2/6] docker pull')
+    assert else_branch_start != -1, "no full-bundle else-branch found"
+    else_block = text[else_branch_start : else_branch_start + 700]
+    for var in (
+        "${APP_IMAGE}",
+        "${NGINX_IMAGE}",
+        "${POSTGRES_IMAGE}",
+        "${REDIS_IMAGE}",
+    ):
+        assert var in else_block, f"{var} missing from full-bundle else-branch"
 
 
 def test_spike_script_untouched():
