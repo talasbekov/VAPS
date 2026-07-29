@@ -5,7 +5,11 @@ import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import { hasPermission } from '../../../shared/testing/mock-runtime/rbac-directory'
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import { UNAVAILABLE_RATING_FACTORS, buildSummary } from '../lib/rating'
-import type { ListOperationalRatingsResponse } from '../api/pending-contracts'
+import { policyBoundaries } from '../lib/dynamics'
+import type {
+  ListOperationalRatingsResponse,
+  RatingDynamicsResponse,
+} from '../api/pending-contracts'
 import { RATED_EMPLOYEES } from './fixtures'
 import type { RatingsSlice } from './fixtures'
 import { readRatingPolicy } from './settingsSlice'
@@ -46,10 +50,10 @@ const UNAVAILABLE_VIEWS: readonly { code: string; label: string; reason: string 
       'Просмотр отдельной оценки требует sensitive permission, organization scope, event scope и срока полномочия одновременно (§19.21 «контролёр рейтинга»). Ни одна операция этого среза их не отдаёт: закрытые данные не покидают сервер, а не прячутся в вёрстке.',
   },
   {
-    code: 'RATING_DYNAMICS',
-    label: 'Динамика агрегата',
+    code: 'RATING_DYNAMICS_FORECAST',
+    label: 'Прогноз и сглаживание динамики',
     reason:
-      'График §19.20 строится по серверным точкам с версией методики на каждой; ряда точек в модели ещё нет, а соединить две редакции одной линией прямо запрещено — поэтому график не рисуется, а не рисуется приблизительно.',
+      'График §19.20 строится ТОЛЬКО по записанным серверным точкам. Тренд, скользящее среднее и достроенные промежуточные значения не показываются: это было бы вычисление на клиенте поверх агрегатов, а старые точки пересчитывать запрещено прямо.',
   },
 ]
 
@@ -106,5 +110,53 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     }
   }
 
-  return { listOperationalRatings }
+  /**
+   * Динамика одного сотрудника (§19.20). Точки берутся из слайса КАК ЕСТЬ:
+   * ни одно их поле здесь не пересчитывается — ни агрегат, ни счётчик, ни
+   * версия методики. Единственная серверная работа — отбор по сотруднику,
+   * порядок по периоду и границы смены методики.
+   */
+  async function getRatingDynamics(
+    actorUserId: string | null,
+    employeeId: string | null,
+  ): Promise<RatingDynamicsResponse> {
+    // Право то же, что у сводки: динамика — это агрегаты, а не отдельные
+    // оценки. Заводить под неё отдельное право значило бы охранять им ту же
+    // самую операцию чтения агрегата (§19.22).
+    if (!hasPermission(actorUserId, VIEW_AGGREGATE_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_AGGREGATE_PERMISSION)
+    }
+    const employee =
+      RATED_EMPLOYEES.find((item) => item.employeeId === employeeId) ?? RATED_EMPLOYEES[0]
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new Error('mock-runtime: чтение динамики рейтинга до инициализации demo-состояния')
+    }
+    const slice = readSlice(envelope.slices)
+    const policy = readRatingPolicy(envelope.slices)
+    const featureEnabled = slice.capabilities.operationalRatings
+
+    // Выключенная функция не отдаёт ряд: показать историю при выключенном
+    // рейтинге значило бы, что функция всё-таки работает (§19.3).
+    const points = featureEnabled
+      ? slice.dynamicsPoints
+          .filter((point) => point.employeeId === employee.employeeId)
+          .map((point) => ({ ...point }))
+          .sort((a, b) => a.periodStartsAt.localeCompare(b.periodStartsAt))
+      : []
+
+    return {
+      employeeId: employee.employeeId,
+      safeLabel: employee.safeLabel,
+      points,
+      boundaries: policyBoundaries(points),
+      currentPolicy: featureEnabled && policy !== null ? { ...policy } : null,
+      currentPolicyHasClosedPeriods:
+        policy !== null && points.some((point) => point.policyVersion === policy.policyVersion),
+      capabilities: { operationalRatings: featureEnabled },
+      employees: RATED_EMPLOYEES.map((item) => ({ ...item })),
+    }
+  }
+
+  return { listOperationalRatings, getRatingDynamics }
 }

@@ -55,3 +55,7 @@
 - `src/app/mocks/settings-projections.contract.test.ts` — контракт demo-снапшота: все
   потребители политики против реального сида.
 - `e2e-mock/settings-passport-policy.spec.ts` — «правка интервала меняет реестр объектов».
+- `src/features/ratings/lib/dynamics.ts` — разрез ряда динамики §19.20: где линию вести
+  можно, а где нельзя (смена методики, период без агрегата). Никаких расчётов агрегата.
+- `src/features/ratings/pages/RatingDynamicsSection.tsx` — первый SVG-график проекта:
+  отрезки, граница смены методики, tooltip с версией policy + таблица тех же точек.

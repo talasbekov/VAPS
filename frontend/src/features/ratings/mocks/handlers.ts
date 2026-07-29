@@ -3,7 +3,10 @@ import { http, HttpResponse } from 'msw'
 import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import type { ErrorEnvelope } from '../../../shared/api/errors'
-import { OPERATIONAL_RATINGS_PATH } from '../api/pending-contracts'
+import {
+  OPERATIONAL_RATINGS_PATH,
+  OPERATIONAL_RATING_DYNAMICS_PATH,
+} from '../api/pending-contracts'
 import { createRatingsRepository, RepositoryPermissionError } from './repository'
 
 function envelope(clock: DemoClock, code: string, message: string): ErrorEnvelope {
@@ -18,6 +21,21 @@ export function createRatingsHandlers(adapter: PersistenceAdapter, clock: DemoCl
       const actorUserId = request.headers.get('X-User-Id')
       try {
         return HttpResponse.json(await repository.listOperationalRatings(actorUserId))
+      } catch (error) {
+        if (error instanceof RepositoryPermissionError) {
+          return HttpResponse.json(envelope(clock, 'PERMISSION_DENIED', 'Недостаточно прав.'), {
+            status: 403,
+          })
+        }
+        throw error
+      }
+    }),
+
+    http.get(`*${OPERATIONAL_RATING_DYNAMICS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const employeeId = new URL(request.url).searchParams.get('employee')
+      try {
+        return HttpResponse.json(await repository.getRatingDynamics(actorUserId, employeeId))
       } catch (error) {
         if (error instanceof RepositoryPermissionError) {
           return HttpResponse.json(envelope(clock, 'PERMISSION_DENIED', 'Недостаточно прав.'), {

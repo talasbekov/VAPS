@@ -6,7 +6,7 @@ import { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac-directory'
 import type { DemoStateEnvelope } from '../../../shared/testing/mock-runtime/persistence'
 import { createRatingsRepository, RepositoryPermissionError } from './repository'
-import { EVALUATIONS } from './fixtures'
+import { DYNAMICS_POINTS, EVALUATIONS } from './fixtures'
 
 const VIEWER = 'rating-viewer'
 const NOBODY = 'nobody-user'
@@ -55,8 +55,8 @@ interface SeedOverrides {
 function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
   return {
     application: 'smart-josparlau',
-    schema_version: 31,
-    seed_version: 'test-v31',
+    schema_version: 32,
+    seed_version: 'test-v32',
     scenario: 'normal',
     revision: 0,
     created_at: '2026-07-20T08:00:00+05:00',
@@ -64,6 +64,7 @@ function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
     slices: {
       ratings: {
         evaluations: EVALUATIONS.map((item) => ({ ...item })),
+        dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
         capabilities: {
           operationalRatings: overrides.operationalRatings ?? true,
           ratingConflicts: false,
@@ -190,5 +191,81 @@ describe('порядок строк (§22.16 «таблица лидеров» �
       (a, b) => (b.aggregateRating ?? -1) - (a.aggregateRating ?? -1),
     )
     expect(byRating.map((item) => item.safeLabel)).not.toEqual(labels)
+  })
+})
+
+describe('динамика агрегата (§19.20)', () => {
+  it('без права агрегата ряд не отдаётся — то же право, что у сводки', async () => {
+    const { repository } = await setup()
+    await expect(repository.getRatingDynamics(NOBODY, 'employee-1')).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('в ряду нет ни одной закрытой величины — проверяется ВЕСЬ JSON', async () => {
+    const { repository } = await setup()
+    const response = await repository.getRatingDynamics(VIEWER, 'employee-1')
+    const json = JSON.stringify(response)
+    // §19.20 «Не показывай на графике отдельные закрытые оценки»: ни оценщика,
+    // ни комментария, ни идентификатора оценки в ответе быть не может.
+    expect(json).not.toContain('demo-event-planner')
+    expect(json).not.toContain('Задержка на инструктаже')
+    expect(json).not.toContain('evaluation-1')
+    expect(json).not.toContain('event-1')
+  })
+
+  it('точки отдаются как записаны и по возрастанию периода', async () => {
+    const { repository } = await setup()
+    const { points } = await repository.getRatingDynamics(VIEWER, 'employee-1')
+    expect(points.map((item) => item.period)).toEqual(['2026-03', '2026-04', '2026-05', '2026-06'])
+    // Значения совпадают с ЗАПИСАННЫМИ, а не с пересчитанными по текущей
+    // методике: оценки сида дают агрегат 8,6 за текущий период, и совпадение
+    // ряда с ним означало бы пересчёт (§19.20).
+    expect(points.map((item) => item.aggregateRating)).toEqual([8.1, 7.9, null, 8.6])
+  })
+
+  it('период без агрегата остаётся в ряду состоянием, а не нулём', async () => {
+    const { repository } = await setup()
+    const { points } = await repository.getRatingDynamics(VIEWER, 'employee-1')
+    const gap = points.find((item) => item.period === '2026-05')
+    expect(gap).toMatchObject({ aggregateRating: null, dataState: 'INSUFFICIENT_DATA' })
+    expect(points.some((item) => item.aggregateRating === 0)).toBe(false)
+  })
+
+  it('граница смены методики приходит от сервера', async () => {
+    const { repository } = await setup()
+    const { boundaries } = await repository.getRatingDynamics(VIEWER, 'employee-2')
+    expect(boundaries).toEqual([
+      {
+        period: '2026-05',
+        fromPolicyVersion: 'OPERATIONAL-RATING-2026.01.1',
+        toPolicyVersion: 'OPERATIONAL-RATING-2026.05.1',
+      },
+    ])
+  })
+
+  it('текущая методика ни одного периода не закрывала — и сервер говорит это прямо', async () => {
+    const { repository } = await setup()
+    const response = await repository.getRatingDynamics(VIEWER, 'employee-1')
+    expect(response.currentPolicy?.policyVersion).toBe(RATING_POLICY_VERSION)
+    expect(response.currentPolicyHasClosedPeriods).toBe(false)
+    expect(response.points.every((item) => item.policyVersion !== RATING_POLICY_VERSION)).toBe(true)
+  })
+
+  it('ряд принадлежит выбранному сотруднику, неизвестный — первому из списка', async () => {
+    const { repository } = await setup()
+    const chosen = await repository.getRatingDynamics(VIEWER, 'employee-3')
+    expect(chosen.employeeId).toBe('employee-3')
+    expect(chosen.points.every((item) => item.employeeId === 'employee-3')).toBe(true)
+    const fallback = await repository.getRatingDynamics(VIEWER, null)
+    expect(fallback.employeeId).toBe('employee-1')
+  })
+
+  it('выключенная функция не отдаёт ряд вовсе', async () => {
+    const { repository } = await setup({ operationalRatings: false })
+    const response = await repository.getRatingDynamics(VIEWER, 'employee-1')
+    expect(response.capabilities.operationalRatings).toBe(false)
+    expect(response.points).toEqual([])
+    expect(response.boundaries).toEqual([])
   })
 })

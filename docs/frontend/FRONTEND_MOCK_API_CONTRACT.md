@@ -344,3 +344,16 @@ endpoint, Tooltip, `aria-label`, telemetry, localStorage и URL, а несуще
 `DutyShiftDetail` и месячный план несут `conflictPolicy` — режим §21.35 больше не атрибут
 вида дежурства (A90).
 
+
+### `/api/ops/operational-rating-dynamics/` (§19.20)
+
+Собственный путь, не хвост под `/api/ops/operational-ratings/`: коллизия путей в MSW
+разрешается молча в пользу первого handler'а. Выбор сотрудника едет query-параметром
+`?employee=`, неизвестный — первый из безопасного списка.
+
+Ответ: `points[]` (period, periodStartsAt/EndsAt, aggregateRating|null, evaluationsCount,
+policyVersion, dataState, recordedAt), `boundaries[]` (границы смены методики — считает
+СЕРВЕР), `currentPolicy`, `currentPolicyHasClosedPeriods`, `capabilities`, `employees[]`.
+Закрытых величин нет ни одним полем — как и в сводке (§19.20/§19.21), закреплено ассертом
+по ВСЕМУ JSON. Право то же, что у сводки (`ops.rating.view_aggregate`): динамика — это
+агрегаты, а отдельное право охраняло бы ту же операцию чтения (§19.22).

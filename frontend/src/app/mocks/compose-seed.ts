@@ -86,10 +86,14 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // Связи значений справочников стали живым расчётом по снимку (§30), а поле
 // `referencedCount` удалено с записи — 28→29: старый снапшот нёс выдуманное
 // число там, где его больше никто не читает.
+// Ряд точек динамики рейтинга (§19.20) появился в слайсе `ratings` — 31→32: в
+// старом снапшоте поля `dynamicsPoints` нет вовсе, а достроить его миграцией
+// нельзя: значения точек записаны при закрытии периодов и из текущих оценок не
+// выводятся (§19.20 «не пересчитывай старые точки»).
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 31
+export const SCHEMA_VERSION = 32
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)
