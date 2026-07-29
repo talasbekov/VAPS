@@ -4,7 +4,7 @@ baseline_commit: 6b85e79
 
 # Story 13.6: Errors-журнал на сервере
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -39,26 +39,26 @@ so that **диагностика без внешних сервисов (GlitchT
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — JSON-форматтер (AC: 1)
-  - [ ] `apps/core/logging_json.py`: `RequestJsonFormatter`
-  - [ ] `request_id` — из `apps.core.middleware.get_request_id()`, не из параметра `record`
-  - [ ] `exception`-поле — traceback-текст через `self.formatException(record.exc_info)`, если `record.exc_info` установлен
-- [ ] Task 2 — `LOGGING`-конфиг + ротация (AC: 2, 3)
-  - [ ] `config/settings.py`: `LOGGING`-словарь, env-driven путь/`maxBytes`/`backupCount`
-  - [ ] `Backend/VAPS/logs/`-директория создаётся при отсутствии (до инициализации handler'а)
-  - [ ] `Backend/VAPS/.gitignore`: `logs/`
-- [ ] Task 3 — Реальная связь через `logger.exception` (AC: 4)
-  - [ ] Живой прогон: необработанное исключение → JSON-строка в файле, `request_id` совпадает с HTTP-ответом
-- [ ] Task 4 — `tail_errors`-команда (AC: 5)
-  - [ ] `apps/core/management/commands/tail_errors.py`: `--n`/`--request-id`
-  - [ ] `--request-id`-режим ищет `BugReport.objects.filter(last_request_ids__contains=[request_id])`, печатает найденные
-- [ ] Task 5 — Тесты + реальный прогон (AC: 6)
-  - [ ] Юнит: `RequestJsonFormatter` — валидный JSON, все поля на месте, `request_id` из contextvar (не хардкод)
-  - [ ] Юнит: forматтер с `exc_info` даёт непустой `exception`; без — `None`
-  - [ ] Интеграционный: реальный HTTP-запрос, вызывающий необработанное исключение (или прямой вызов `exception_handler` с исключением) → файл лога содержит запись с ТЕМ ЖЕ `request_id`, что в JSON-ответе
-  - [ ] Команда: `tail_errors` без флагов — читает N последних строк реального файла
-  - [ ] Команда: `tail_errors --request-id X` — фильтрует + находит совпадающий `BugReport` (живой сценарий: создать `BugReport` с `last_request_ids=["X"]`, лог-запись с тем же `request_id`, команда печатает оба)
-  - [ ] `make gate` зелёный, явно прогнан
+- [x] Task 1 — JSON-форматтер (AC: 1)
+  - [x] `apps/core/logging_json.py`: `RequestJsonFormatter`
+  - [x] `request_id` — из `apps.core.middleware.get_request_id()`, не из параметра `record`
+  - [x] `exception`-поле — traceback-текст через `self.formatException(record.exc_info)`, если `record.exc_info` установлен
+- [x] Task 2 — `LOGGING`-конфиг + ротация (AC: 2, 3)
+  - [x] `config/settings.py`: `LOGGING`-словарь, env-driven путь/`maxBytes`/`backupCount`
+  - [x] `Backend/VAPS/logs/`-директория создаётся при отсутствии (до инициализации handler'а)
+  - [x] `Backend/VAPS/.gitignore`: `logs/`
+- [x] Task 3 — Реальная связь через `logger.exception` (AC: 4)
+  - [x] Живой прогон: необработанное исключение → JSON-строка в файле, `request_id` совпадает с HTTP-ответом
+- [x] Task 4 — `tail_errors`-команда (AC: 5)
+  - [x] `apps/operations/bugreports/management/commands/tail_errors.py`: `--n`/`--request-id` (перенесена из `apps/core/` — см. Completion Notes, найденная архитектурная граница)
+  - [x] `--request-id`-режим ищет `BugReport.objects.filter(last_request_ids__contains=[request_id])`, печатает найденные
+- [x] Task 5 — Тесты + реальный прогон (AC: 6)
+  - [x] Юнит: `RequestJsonFormatter` — валидный JSON, все поля на месте, `request_id` из contextvar (не хардкод)
+  - [x] Юнит: forматтер с `exc_info` даёт непустой `exception`; без — `None`
+  - [x] Интеграционный: реальный HTTP-запрос через `RequestContextMiddleware` + `domain_exception_handler` с реально пойманным исключением → файл лога содержит запись с ТЕМ ЖЕ `request_id`, что в JSON-ответе
+  - [x] Команда: `tail_errors` без флагов — читает N последних строк реального файла
+  - [x] Команда: `tail_errors --request-id X` — фильтрует + находит совпадающий `BugReport` (живой сценарий: создан `BugReport` с `last_request_ids=["X"]`, лог-запись с тем же `request_id`, команда печатает оба)
+  - [x] `make gate` зелёный, явно прогнан (3060 passed)
 
 ## Dev Notes
 
@@ -86,14 +86,27 @@ so that **диагностика без внешних сервисов (GlitchT
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+- **AC-1**: `RequestJsonFormatter` — stdlib-only (`json.dumps`), `request_id` читается из `get_request_id()`-contextvar (тот же источник, что HTTP-конверт §36), `exception`-поле через `formatException`.
+- **AC-2/AC-3**: `LOGGING`-словарь добавлен в `config/settings.py` (ранее отсутствовал полностью), env-driven (`VAPS_ERROR_LOG_PATH`/`VAPS_ERROR_LOG_MAX_BYTES`/`VAPS_ERROR_LOG_BACKUP_COUNT`, тот же стиль, что `VAPS_DB_*`), `Backend/VAPS/logs/`-директория создаётся явно ДО применения `LOGGING` (`RotatingFileHandler` сам не создаёт родительскую директорию), `logs/` — в `.gitignore`.
+- **AC-4**: `django.request` и `apps.core.api.exception_handler`-логгеры маршрутизированы на `errors_journal`-handler. Доказано живым тестом: `RuntimeError` реально поймана/переброшена через `domain_exception_handler` внутри `RequestContextMiddleware`-обёртки — JSON-строка в файле несёт ТОТ ЖЕ `request_id`, что HTTP-конверт (`test_unhandled_exception_writes_journal_entry_matching_envelope_request_id`).
+- **AC-5**: `tail_errors`-команда — `--n`/`--request-id`, `--request-id`-режим ищет `BugReport.last_request_ids__contains` (уже существующее поле 13.1a — связь без новой FK/миграции, как и планировалось в Scope Decision).
+- **Найдена и закрыта живая регрессия ДО отправки на ревью (не ревью нашло — сам, прогоняя `make gate`)**: команда изначально жила в `apps/core/management/commands/`, но импортировала `BugReport` (`apps.operations.bugreports.models`) — `test_isolation.py::test_core_does_not_import_other_context_models` покраснел (`apps.core` не должен импортировать модели других контекстов, направление зависимости строго ОБРАТНОЕ). Исправлено: команда+её тест перенесены в `apps/operations/bugreports/management/commands/`/`tests/` (мирроит `export_diagnostics.py`'s размещение в домене, которого касается — не `apps/core/`), докстринг объясняет решение явно.
+- **AC-6**: `make gate` — 3060 passed, "No changes detected" (не API-поверхность — новые классы/команды не сериализуются в OpenAPI-схему).
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/core/logging_json.py` (NEW) — `RequestJsonFormatter`.
+- `Backend/VAPS/config/settings.py` (MOD) — `LOGGING`-словарь, `VAPS_ERROR_LOG_*` env-переменные.
+- `Backend/VAPS/.gitignore` (MOD) — `logs/`.
+- `Backend/VAPS/apps/operations/bugreports/management/__init__.py` (NEW).
+- `Backend/VAPS/apps/operations/bugreports/management/commands/__init__.py` (NEW).
+- `Backend/VAPS/apps/operations/bugreports/management/commands/tail_errors.py` (NEW) — команда просмотра ошибок (изначально `apps/core/`, перенесена — см. Completion Notes).
+- `Backend/VAPS/apps/core/tests/test_logging_json.py` (NEW) — 6 тестов.
+- `Backend/VAPS/apps/operations/bugreports/tests/test_tail_errors.py` (NEW) — 6 тестов (изначально `apps/core/tests/`, перенесён вместе с командой).
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-29 | Story создана (create-story). Последняя стори эпика 13 (кроме ретро) — 13.2's явно отложенный structured-logging долг теперь в скоупе. Связь лог↔багрепорт реализована через УЖЕ существующее `BugReport.last_request_ids` (13.1a), без новой FK/миграции. |
+| 2026-07-29 | dev-story: JSON-форматтер, `LOGGING`-конфиг+ротация, `tail_errors`-команда, 12 тестов. Сам нашёл и закрыл живую регрессию до ревью (архитектурная граница apps.core↛other-context-models — команда перенесена в `apps/operations/bugreports/`). `make gate` 3060 passed. Status → review |

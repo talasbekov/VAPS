@@ -477,3 +477,55 @@ VAPS_XACCEL_LOCATION = os.environ.get("VAPS_XACCEL_LOCATION", "/protected")
 # запрещено каноном «конфиг — env, без веток по окружению» (architecture.md#L339,
 # комментарий :256).
 VAPS_WS_ENABLED = os.environ.get("VAPS_WS_ENABLED", "1") == "1"
+
+# Story 13.6 — structured JSON errors journal (GlitchTip stays DEFERRED,
+# epics.md#L1389-1395). env-driven, same style as VAPS_DB_*/VAPS_REDIS_URL
+# above. RotatingFileHandler (stdlib logging.handlers) — no new dependency.
+VAPS_ERROR_LOG_PATH = os.environ.get(
+    "VAPS_ERROR_LOG_PATH", str(BASE_DIR / "logs" / "errors.log")
+)
+VAPS_ERROR_LOG_MAX_BYTES = int(
+    os.environ.get("VAPS_ERROR_LOG_MAX_BYTES", str(10 * 1024 * 1024))
+)
+VAPS_ERROR_LOG_BACKUP_COUNT = int(os.environ.get("VAPS_ERROR_LOG_BACKUP_COUNT", "5"))
+
+# RotatingFileHandler does not create its own parent directory (AC-3) — must
+# exist before LOGGING is applied at Django startup.
+Path(VAPS_ERROR_LOG_PATH).parent.mkdir(parents=True, exist_ok=True)
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "request_json": {
+            "()": "apps.core.logging_json.RequestJsonFormatter",
+        },
+    },
+    "handlers": {
+        "errors_journal": {
+            "level": "ERROR",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": VAPS_ERROR_LOG_PATH,
+            "maxBytes": VAPS_ERROR_LOG_MAX_BYTES,
+            "backupCount": VAPS_ERROR_LOG_BACKUP_COUNT,
+            "formatter": "request_json",
+        },
+    },
+    "loggers": {
+        # Django's own per-500 logger (unhandled view exceptions).
+        "django.request": {
+            "handlers": ["errors_journal"],
+            "level": "ERROR",
+            "propagate": True,
+        },
+        # apps/core/api/exception_handler.py's own logger — already calls
+        # logger.exception(...) on every unhandled exception surfaced to the
+        # API boundary (L175, story 4.x); this story only wires its OUTPUT,
+        # the call site itself is untouched.
+        "apps.core.api.exception_handler": {
+            "handlers": ["errors_journal"],
+            "level": "ERROR",
+            "propagate": True,
+        },
+    },
+}
