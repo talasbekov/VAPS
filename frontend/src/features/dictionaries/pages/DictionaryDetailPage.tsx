@@ -16,11 +16,12 @@ import { ROUTES } from '../../../shared/routes'
 import { ApiError } from '../../../shared/api/errors'
 import {
   useCreateDictionaryEntry,
+  useDeleteDictionaryEntry,
   useDictionaryDefinitions,
   useDictionaryEntries,
   useSetDictionaryEntryActive,
 } from '../api/queries'
-import type { DictionaryEntry } from '../model/types'
+import type { DictionaryEntryView, DictionaryUsage } from '../model/types'
 
 const formSchema = z.object({
   code: z.string().trim().min(1, 'Обязательное поле.'),
@@ -89,11 +90,12 @@ function EntriesTable({
   dictionaryCode,
   groups,
 }: {
-  entries: DictionaryEntry[]
+  entries: DictionaryEntryView[]
   dictionaryCode: string
-  groups: DictionaryEntry[]
+  groups: DictionaryEntryView[]
 }) {
-  const mutation = useSetDictionaryEntryActive(dictionaryCode)
+  const mutation = useSetDictionaryEntryActive()
+  const deleteMutation = useDeleteDictionaryEntry()
   const showGroupColumn = dictionaryCode === 'POST_REQUIREMENTS'
 
   if (entries.length === 0) {
@@ -115,6 +117,7 @@ function EntriesTable({
             {showGroupColumn && (
               <th className="p-3 text-[11px] font-semibold text-muted-foreground">Группа</th>
             )}
+            <th className="p-3 text-[11px] font-semibold text-muted-foreground">Связи</th>
             <th className="p-3 text-[11px] font-semibold text-muted-foreground">Статус</th>
             <th className="p-3 text-[11px] font-semibold text-muted-foreground">
               <span className="sr-only">Действия</span>
@@ -135,6 +138,9 @@ function EntriesTable({
                 </td>
               )}
               <td className="p-3">
+                <UsageCell usage={entry.usage} />
+              </td>
+              <td className="p-3">
                 <span
                   className={
                     entry.isActive
@@ -146,14 +152,30 @@ function EntriesTable({
                 </span>
               </td>
               <td className="p-3 text-right">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={mutation.isPending}
-                  onClick={() => mutation.mutate({ id: entry.id, isActive: !entry.isActive })}
-                >
-                  {entry.isActive ? 'Деактивировать' : 'Активировать'}
-                </Button>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={mutation.isPending}
+                    onClick={() => mutation.mutate({ id: entry.id, isActive: !entry.isActive })}
+                  >
+                    {entry.isActive ? 'Деактивировать' : 'Активировать'}
+                  </Button>
+                  {/*
+                    Кнопка удаления показывается ВСЕГДА и всегда работает —
+                    отказ приходит от сервера с зависимостью (§30). Прятать её
+                    у значения со связями значило бы проверять правило
+                    скрытием кнопки (§35).
+                  */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => deleteMutation.mutate({ id: entry.id })}
+                  >
+                    Удалить
+                  </Button>
+                </div>
               </td>
             </tr>
           ))}
@@ -164,7 +186,41 @@ function EntriesTable({
           {mutation.error.message}
         </p>
       )}
+      {deleteMutation.error !== null && (
+        <p className="border-t bg-destructive/5 p-3 text-sm text-destructive" role="alert">
+          {deleteMutation.error.message}
+        </p>
+      )}
     </section>
+  )
+}
+
+/**
+ * Связи значения. Три состояния РАЗЛИЧАЮТСЯ на экране: посчитано (сколько и
+ * откуда), не отслеживается (почему), не удалось посчитать. Ноль печатается
+ * только в первом случае — в остальных он был бы утверждением «удалять
+ * безопасно» (§35).
+ */
+function UsageCell({ usage }: { usage: DictionaryUsage }) {
+  if (usage.status === 'NOT_TRACKED' || usage.status === 'UNKNOWN') {
+    return (
+      <span className="text-xs text-slate-600" title={usage.reason ?? undefined}>
+        {usage.status === 'NOT_TRACKED' ? 'Не отслеживается' : 'Посчитать не удалось'}
+      </span>
+    )
+  }
+  if (usage.totalCount === 0) {
+    return <span className="text-xs text-slate-600">Связей нет</span>
+  }
+  return (
+    <ul className="space-y-0.5 text-xs text-slate-600">
+      {usage.references.map((reference) => (
+        <li key={reference.sourceLabel}>
+          <span className="font-semibold">{reference.count}</span> — {reference.sourceLabel}
+          {reference.samples.length > 0 && ` (${reference.samples.join(', ')})`}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -173,7 +229,7 @@ function CreateEntryForm({
   groups,
 }: {
   dictionaryCode: string
-  groups: DictionaryEntry[]
+  groups: DictionaryEntryView[]
 }) {
   const isPostRequirements = dictionaryCode === 'POST_REQUIREMENTS'
   const mutation = useCreateDictionaryEntry(dictionaryCode)

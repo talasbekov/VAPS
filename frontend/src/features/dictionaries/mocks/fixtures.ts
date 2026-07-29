@@ -1,6 +1,11 @@
 // Demo-сид «Справочники» (§8.7: только синтетические данные). Собственный
 // набор значений — НЕ шарит данные с features/duties (ARCH-FE-013 не даёт
 // фичам импортировать друг друга, тот же принцип, что A26/A35).
+//
+// Числа связей в сиде НЕТ: `referencedCount` был выдуманной константой
+// фикстуры (§35 «не выдавать за серверный агрегат»), причём у единственного
+// справочника с настоящими ссылками он утверждал «связей нет». Теперь связи
+// считает репозиторий по общему снимку — см. `lib/usage.ts`.
 import type { SeedContext } from '../../../shared/testing/mock-runtime/seed-context'
 import type { DictionaryDefinition, DictionaryEntry } from '../model/types'
 
@@ -51,7 +56,6 @@ export function buildDictionariesSeed(
       label: 'Недостаточная укомплектованность постов',
       description: 'Не все посты обеспечены назначением.',
       isActive: true,
-      referencedCount: 3,
       groupCode: null,
       updatedAt: now,
     },
@@ -62,7 +66,6 @@ export function buildDictionariesSeed(
       label: 'Обнаружено двойное назначение',
       description: 'Сотрудник назначен на два поста одновременно.',
       isActive: true,
-      referencedCount: 0,
       groupCode: null,
       updatedAt: now,
     },
@@ -73,7 +76,6 @@ export function buildDictionariesSeed(
       label: 'Устаревшие исходные данные',
       description: 'Рекогносцировка/потребность требует пересмотра.',
       isActive: false,
-      referencedCount: 0,
       groupCode: null,
       updatedAt: now,
     },
@@ -84,7 +86,6 @@ export function buildDictionariesSeed(
       label: 'Вооружённый пост',
       description: 'Требуется допуск к табельному оружию.',
       isActive: true,
-      referencedCount: 5,
       groupCode: 'ACCESS',
       updatedAt: now,
     },
@@ -95,7 +96,6 @@ export function buildDictionariesSeed(
       label: 'Водительское удостоверение',
       description: 'Требуется действующее удостоверение категории B.',
       isActive: true,
-      referencedCount: 0,
       groupCode: 'DOCUMENTS',
       updatedAt: now,
     },
@@ -106,7 +106,6 @@ export function buildDictionariesSeed(
       label: 'Зимняя ночная смена',
       description: 'Увеличенная продолжительность обогрева поста.',
       isActive: true,
-      referencedCount: 0,
       groupCode: null,
       updatedAt: now,
     },
@@ -117,7 +116,6 @@ export function buildDictionariesSeed(
       label: 'Аномальная жара',
       description: 'Сокращённые интервалы смены на открытых постах.',
       isActive: true,
-      referencedCount: 2,
       groupCode: null,
       updatedAt: now,
     },
@@ -128,7 +126,6 @@ export function buildDictionariesSeed(
       label: 'Инструктаж',
       description: 'Проведение инструктажа личного состава на мероприятии.',
       isActive: true,
-      referencedCount: 0,
       groupCode: null,
       updatedAt: now,
     },
@@ -139,7 +136,6 @@ export function buildDictionariesSeed(
       label: 'Распоряжение',
       description: 'Распоряжение штаба по ходу мероприятия.',
       isActive: true,
-      referencedCount: 0,
       groupCode: null,
       updatedAt: now,
     },
@@ -150,7 +146,6 @@ export function buildDictionariesSeed(
       label: 'Инцидент',
       description: 'Регистрация инцидента на мероприятии.',
       isActive: true,
-      referencedCount: 0,
       groupCode: null,
       updatedAt: now,
     },
@@ -161,7 +156,6 @@ export function buildDictionariesSeed(
       label: 'Замена',
       description: 'Замена сотрудника на посту в ходе мероприятия.',
       isActive: true,
-      referencedCount: 0,
       groupCode: null,
       updatedAt: now,
     },
@@ -172,7 +166,6 @@ export function buildDictionariesSeed(
       label: 'Допуски',
       description: 'Требования, связанные с допуском (оружие, спецсредства).',
       isActive: true,
-      referencedCount: 1,
       groupCode: null,
       updatedAt: now,
     },
@@ -183,7 +176,6 @@ export function buildDictionariesSeed(
       label: 'Документы',
       description: 'Требования к личным документам сотрудника.',
       isActive: true,
-      referencedCount: 1,
       groupCode: null,
       updatedAt: now,
     },
@@ -194,7 +186,6 @@ export function buildDictionariesSeed(
       label: 'Экипировка',
       description: 'Требования к форме и снаряжению.',
       isActive: false,
-      referencedCount: 0,
       groupCode: null,
       updatedAt: now,
     },

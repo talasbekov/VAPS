@@ -6,6 +6,7 @@ import type { ErrorEnvelope } from '../../../shared/api/errors'
 import {
   DICTIONARIES_PATH,
   dictionaryEntriesPath,
+  dictionaryEntryPath,
   dictionaryEntrySetActivePath,
 } from '../api/pending-contracts'
 import type {
@@ -61,7 +62,9 @@ function mapRepositoryError(error: unknown, clock: DemoClock, entityId: string):
     const envelope: ErrorEnvelope = {
       error_code: error.errorCode,
       message: error.message,
-      details: {},
+      // §30 «понятная зависимость»: источники едут структурой, а не только
+      // внутри текста сообщения.
+      details: error.usage === null ? {} : { usage: error.usage },
       request_id: null,
       timestamp: clock.now(),
     }
@@ -99,6 +102,16 @@ export function createDictionariesHandlers(adapter: PersistenceAdapter, clock: D
         return HttpResponse.json(await repository.createEntry(code, body, actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock, code) ?? HttpResponse.error()
+      }
+    }),
+    http.delete(`*${dictionaryEntryPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = params.id as string
+      try {
+        await repository.deleteEntry(id, actorUserId)
+        return new HttpResponse(null, { status: 204 })
+      } catch (error) {
+        return mapRepositoryError(error, clock, id) ?? HttpResponse.error()
       }
     }),
     http.post(`*${dictionaryEntrySetActivePath(':id')}`, async ({ request, params }) => {

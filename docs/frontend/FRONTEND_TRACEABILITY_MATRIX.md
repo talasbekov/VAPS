@@ -145,7 +145,10 @@
 |---|---|---|---|
 | Реестр справочников (карточки со счётчиком active/total) | dictionaries | features/dictionaries | Verified (ручная браузерная проверка) |
 | Значения справочника (таблица, добавление, деактивация) | dictionaryDetail | features/dictionaries | Verified (ручная браузерная проверка + unit-тесты repository + e2e-mock/dictionaries.spec.ts) |
-| Блокировка деактивации используемого значения (409, причина дословно) | dictionaryDetail | features/dictionaries | Verified (ручная проверка + unit-тест + e2e-mock/dictionaries.spec.ts) |
+| Блокировка деактивации используемого значения (409, зависимость названа поимённо) | dictionaryDetail | features/dictionaries | Verified (unit-тесты repository + handlers.test.ts + e2e-mock/dictionaries.spec.ts; Этап 52 — счёт связей стал живым) |
+| Живой подсчёт связей значения по общему снимку (свой слайс + слайс ОМ узкой проекцией) | dictionaryDetail | features/dictionaries | Verified (unit-тесты + живой e2e: запись журнала ОМ запирает значение справочника) |
+| Три состояния связей: посчитано / не отслеживается (с причиной) / посчитать не удалось | dictionaryDetail | features/dictionaries | Verified (unit-тесты repository + e2e-mock/dictionaries.spec.ts) |
+| Удаление значения (§30) — отдельная операция, требует ДОКАЗАННОГО отсутствия связей | dictionaryDetail | features/dictionaries | Verified (unit-тесты + handlers.test.ts + e2e-mock/dictionaries.spec.ts) |
 | Типы записей журнала (JOURNAL_ENTRY_TYPES, §30 «типы статусов») | dictionaryDetail | features/dictionaries | Verified (ручная браузерная проверка + unit-тесты repository) |
 | Группы требований постов (POST_REQUIREMENT_GROUPS, §30 «группы») + колонка «Группа»/select в POST_REQUIREMENTS | dictionaryDetail | features/dictionaries | Verified (ручная браузерная проверка + unit-тесты repository) |
 | Должности/звания (§30 остальные 2 пункта) | — | — | Not started (уже реальные donor-справочники через personnel, см. A40) |

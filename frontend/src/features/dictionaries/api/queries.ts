@@ -6,6 +6,7 @@ import type { ApiFailure } from '../../../shared/api/errors'
 import {
   DICTIONARIES_PATH,
   dictionaryEntriesPath,
+  dictionaryEntryPath,
   dictionaryEntrySetActivePath,
 } from './pending-contracts'
 import type {
@@ -39,13 +40,30 @@ export function useCreateDictionaryEntry(dictionaryCode: string) {
     mutationFn: (body) =>
       apiClient.post<CreateDictionaryEntryResponse>(dictionaryEntriesPath(dictionaryCode), body),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['dictionaries', 'entries', dictionaryCode] })
-      void queryClient.invalidateQueries({ queryKey: ['dictionaries', 'definitions'] })
+      // Инвалидируется ВЕСЬ раздел, а не только свой справочник: связи стали
+      // живыми и считаются перекрёстно — значение «Требований постов» меняет
+      // связи «Групп требований», поэтому узкая инвалидация показала бы
+      // соседнему справочнику устаревшую зависимость.
+      void queryClient.invalidateQueries({ queryKey: ['dictionaries'] })
     },
   })
 }
 
-export function useSetDictionaryEntryActive(dictionaryCode: string) {
+export function useDeleteDictionaryEntry() {
+  const queryClient = useQueryClient()
+  return useApiMutation<undefined, { id: string }>({
+    mutationFn: ({ id }) => apiClient.del(dictionaryEntryPath(id)),
+    onSuccess: () => {
+      // Инвалидируется ВЕСЬ раздел, а не только свой справочник: связи стали
+      // живыми и считаются перекрёстно — значение «Требований постов» меняет
+      // связи «Групп требований», поэтому узкая инвалидация показала бы
+      // соседнему справочнику устаревшую зависимость.
+      void queryClient.invalidateQueries({ queryKey: ['dictionaries'] })
+    },
+  })
+}
+
+export function useSetDictionaryEntryActive() {
   const queryClient = useQueryClient()
   return useApiMutation<
     SetDictionaryEntryActiveResponse,
@@ -56,8 +74,11 @@ export function useSetDictionaryEntryActive(dictionaryCode: string) {
         isActive,
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['dictionaries', 'entries', dictionaryCode] })
-      void queryClient.invalidateQueries({ queryKey: ['dictionaries', 'definitions'] })
+      // Инвалидируется ВЕСЬ раздел, а не только свой справочник: связи стали
+      // живыми и считаются перекрёстно — значение «Требований постов» меняет
+      // связи «Групп требований», поэтому узкая инвалидация показала бы
+      // соседнему справочнику устаревшую зависимость.
+      void queryClient.invalidateQueries({ queryKey: ['dictionaries'] })
     },
   })
 }
