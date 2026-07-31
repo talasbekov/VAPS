@@ -4,7 +4,7 @@ baseline_commit: 5fc5a0a
 
 # Story 14.11b: API — создание/список смен дежурств
 
-Status: review
+Status: done
 
 ## Story
 
@@ -55,7 +55,7 @@ so that **смены дежурств можно завести и найти в
   - [x] `ops-duty-plan-shifts` — `_Gate("duty.manage")`/`_DeferredAudit(_DUTY)`
 - [x] Task 5 — `make schema` регенерация
 - [x] Task 6 — Тесты (AC: 1-7)
-  - [x] create happy path, 403, 404 (несуществующий план), 422 (интервал), 400 (несовместимый post/duty_type)
+  - [x] create happy path, 403, 404 (несуществующий план), 400 (интервал), 400 (несовместимый post/duty_type)
   - [x] list happy path (включая отменённую смену — cancel-поля видны), 403
   - [x] `make gate` зелёный, явно прогнан
 
@@ -90,6 +90,10 @@ so that **смены дежурств можно завести и найти в
 - `apps/audit/tests/test_audit_coverage.py` (modified — `AUDIT_MATRIX`'s новая строка)
 - `apps/operations/duties/tests/test_duty_shift_api.py` (new)
 - `schema.yaml` (regenerated — `make schema`, x2)
+
+### Post-review addendum
+
+3-агентное ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor). ВСЕ ТРИ агента сошлись: жёстких/блокирующих дефектов нет. Acceptance Auditor подтвердил все 7 AC PASS (эмпирически проверил форму тела ошибки для AC-3/AC-4 — обе структурно корректны, `__all__`/`post` ключи присутствуют), + эмпирически подтвердил race-бэкстоп (`DutyShift.objects.create()` в обход `full_clean()` реально даёт `IntegrityError` с `ck_duty_shift_starts_before_ends`, throwaway-тест удалён после). Blind Hunter нашёл 2 тест-пробела (не баги): тесты AC-3/AC-4 проверяли только статус-код, не содержимое тела ошибки (не доказывали сохранение ключа поля); не было негативного теста на `duty_type`-несовместимость отдельно от `post`. Edge Case Hunter независимо нашёл ОДИН реальный, но узкий пробел: гонка «план удалён между `get_object_or_404` и `shift.save()`» даёt необработанный `IntegrityError` (FK на `plan_id`) → незамапленный `500`, а не чистый 4xx — узкое окно (конкурентное удаление плана во время создания смены), признано НЕ блокирующим для этой стори (аналогичные незамапленные FK-гонки уже существуют в кодовой базе необработанными), не исправлялось. Fix: 2 новых теста (`test_create_shift_incompatible_duty_type_rejected` + усиление существующих AC-3/AC-4-тестов ассертами по `resp.data["details"]`-ключам). Мелкая находка Acceptance Auditor (cosmetic) — устаревшая метка «422» в чеклисте Task 6 исправлена на «400». `make gate` — 3272 passed (было 3271, +1), без регрессий. Status → done.
 
 ## Change Log
 

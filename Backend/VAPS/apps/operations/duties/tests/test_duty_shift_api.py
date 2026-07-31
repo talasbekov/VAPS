@@ -102,7 +102,11 @@ def test_create_shift_invalid_interval_rejected(duty_manager_client):
         },
         format="json",
     )
+    # Review (Blind Hunter): assert the error body's field key, not just the
+    # status code — proves full_clean()'s NON_FIELD_ERRORS ("__all__") is
+    # preserved, not collapsed into an unkeyed/generic message.
     assert resp.status_code == 400, resp.data
+    assert "__all__" in resp.data["details"]
 
 
 def test_create_shift_incompatible_post_rejected(duty_manager_client):
@@ -121,6 +125,29 @@ def test_create_shift_incompatible_post_rejected(duty_manager_client):
         format="json",
     )
     assert resp.status_code == 400, resp.data
+    assert "post" in resp.data["details"]
+
+
+def test_create_shift_incompatible_duty_type_rejected(duty_manager_client):
+    # Review (Blind Hunter): the cross-FK guard covers BOTH post and
+    # duty_type — only "post" was exercised negatively; duty_type alone was
+    # untested.
+    obj_a = make_object("OBJ-SHIFT-5C")
+    obj_b = make_object("OBJ-SHIFT-5D")
+    plan = make_plan(obj_a)
+    duty_type_b = DutyType.objects.create(object=obj_b, code="DAY", name="Дневное")
+    resp = duty_manager_client.post(
+        reverse("ops-duty-plan-shifts", args=[plan.pk]),
+        {
+            "employee_id": str(uuid.uuid4()),
+            "duty_type": duty_type_b.pk,
+            "starts_at": "2026-08-01T08:00:00+05:00",
+            "ends_at": "2026-08-01T20:00:00+05:00",
+        },
+        format="json",
+    )
+    assert resp.status_code == 400, resp.data
+    assert "duty_type" in resp.data["details"]
 
 
 def test_list_shifts_requires_permission(seeded):
