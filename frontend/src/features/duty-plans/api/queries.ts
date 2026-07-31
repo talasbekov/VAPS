@@ -14,11 +14,11 @@ import { useApiMutation } from '../../../shared/api/useApiMutation'
 import type { ApiFailure } from '../../../shared/api/errors'
 import type { paths } from '../../../shared/api/schema'
 
-type DutyPlansListResponse =
+export type DutyPlansListResponse =
   paths['/api/operations/duty-plans/']['get']['responses']['200']['content']['application/json']
-type DutyPlanCreateRequest =
+export type DutyPlanCreateRequest =
   paths['/api/operations/duty-plans/']['post']['requestBody']['content']['application/json']
-type DutyPlanCreateResponse =
+export type DutyPlanCreateResponse =
   paths['/api/operations/duty-plans/']['post']['responses']['201']['content']['application/json']
 type DutyPlanApproveResponse =
   paths['/api/operations/duty-plans/{id}/approve/']['post']['responses']['200']['content']['application/json']

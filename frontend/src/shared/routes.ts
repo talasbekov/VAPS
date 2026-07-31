@@ -81,6 +81,14 @@ export const ROUTES = {
   serviceAnalytics: '/analytics',
   /** Мастер-промпт §21/§24: «Служба» → План дежурств. */
   duties: '/duties',
+  /**
+   * Story 14.11j (Epic 14): «Служба» → Планы дежурств — РЕАЛЬНЫЙ бэк
+   * (`/api/operations/duty-plans/`). НЕ путать с `duties` выше (Smart
+   * Josparlau, чужой, всё ещё несуществующий бэк `/api/ops/duty-shifts/`) —
+   * два похожих по смыслу раздела сосуществуют осознанно (14.11i's Scope
+   * Decision, коллизия имён разрешена явным решением пользователя).
+   */
+  dutyPlans: '/duty-plans',
 } as const
 
 export interface NavSection {
@@ -137,6 +145,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'План дежурств',
     icon: CalendarClock,
     permission: 'ops.duty.view',
+  },
+  {
+    route: ROUTES.dutyPlans,
+    label: 'Планы дежурств',
+    icon: CalendarClock,
+    permission: 'duty.manage',
   },
   {
     route: ROUTES.dailyExpense,

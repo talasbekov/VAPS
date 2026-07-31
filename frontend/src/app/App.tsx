@@ -19,6 +19,7 @@ import { ObjectPassportPage } from '../features/objects/pages/ObjectPassportPage
 import { ObjectsListPage } from '../features/objects/pages/ObjectsListPage'
 import { AuditLogPage } from '../features/audit/pages/AuditLogPage'
 import { DutyPlanPage } from '../features/duties/pages/DutyPlanPage'
+import { DutyPlansListPage } from '../features/duty-plans/pages/DutyPlansListPage'
 import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -138,6 +139,14 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.duty.view">
               <DutyPlanPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.dutyPlans}
+          element={
+            <RequirePermission permission="duty.manage">
+              <DutyPlansListPage />
             </RequirePermission>
           }
         />

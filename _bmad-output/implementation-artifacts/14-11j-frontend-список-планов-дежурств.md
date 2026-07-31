@@ -4,7 +4,7 @@ baseline_commit: a18deed
 
 # Story 14.11j: Frontend — список + создание планов дежурств
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -44,19 +44,19 @@ so that **планы дежурств видны и создаются чере�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `ROUTES.dutyPlans`/`NAV_SECTIONS`-запись (AC: 1, 4)
-  - [ ] `frontend/src/shared/routes.ts` — новый путь `/duty-plans`, nav-пункт «Планы дежурств», право `duty.manage`
-- [ ] Task 2 — `DutyPlansListPage.tsx` (AC: 1-3)
-  - [ ] `frontend/src/features/duty-plans/pages/DutyPlansListPage.tsx` — таблица, isLoading/isError/isEmpty
-- [ ] Task 3 — `CreateDutyPlanDialog.tsx` (AC: 5-7)
-  - [ ] `frontend/src/features/duty-plans/pages/CreateDutyPlanDialog.tsx` — нативный dialog, RHF+Zod (год/месяц/object-ID), setError на 400
-- [ ] Task 4 — Роутинг (AC: 4)
-  - [ ] `frontend/src/app/App.tsx` — `lazy`-импорт, `<Route>` за `RequirePermission permission="duty.manage"`
-- [ ] Task 5 — MSW-хендлеры (AC: 1-3, 5-7)
-  - [ ] `duty-plans/mocks/handlers.ts`/`fixtures.ts`, регистрация в `compose-handlers.ts`
-- [ ] Task 6 — Тесты (AC: 1-8)
-  - [ ] Page-тест (RTL+MSW, `server.use()`-паттерн из `app-layout.qa.test.tsx`): список/пусто/ошибка/гейт-права/создание-успех/создание-400
-  - [ ] `npm run gate` зелёный, явно прогнан
+- [x] Task 1 — `ROUTES.dutyPlans`/`NAV_SECTIONS`-запись (AC: 1, 4)
+  - [x] `frontend/src/shared/routes.ts` — новый путь `/duty-plans`, nav-пункт «Планы дежурств», право `duty.manage`
+- [x] Task 2 — `DutyPlansListPage.tsx` (AC: 1-3)
+  - [x] `frontend/src/features/duty-plans/pages/DutyPlansListPage.tsx` — таблица, isLoading/isError/isEmpty
+- [x] Task 3 — `CreateDutyPlanDialog.tsx` (AC: 5-7)
+  - [x] `frontend/src/features/duty-plans/pages/CreateDutyPlanDialog.tsx` — нативный dialog, RHF+Zod (год/месяц/object-ID), setError на 400
+- [x] Task 4 — Роутинг (AC: 4)
+  - [x] `frontend/src/app/App.tsx` — статический импорт (не lazy — прецедент `DutyPlanPage`/`ObjectsListPage`, не `SecurityEventsListPage`'s code-splitting, которое специфично своей фиче), `<Route>` за `RequirePermission permission="duty.manage"`
+- [x] Task 5 — MSW-хендлеры (AC: 1-3, 5-7)
+  - [x] `duty-plans/mocks/handlers.ts`/`fixtures.ts`, регистрация в `compose-handlers.ts`
+- [x] Task 6 — Тесты (AC: 1-8)
+  - [x] Page-тест (RTL+MSW, `server.use()`-паттерн из `app-layout.qa.test.tsx`): список/пусто/ошибка/гейт-права/создание-успех/создание-400
+  - [x] `npm run gate` зелёный, явно прогнан
 
 ## Dev Notes
 
@@ -80,10 +80,31 @@ so that **планы дежурств видны и создаются чере�
 
 ### Completion Notes
 
+Реализовано по AC 1-8. `DutyPlansListPage.tsx` (isLoading/isError/isEmpty-ветки, буквальный образец `SecurityEventsListPage`), `CreateDutyPlanDialog.tsx` (нативный `<dialog>`+`showModal()`, RHF+Zod, `object`/`year`/`month` числовые поля с `z.coerce.number()` — `z.input`/`z.output`-generic-разделение для `useForm` понадобилось из-за coercion, TS иначе не типизирует incompatible input/output). Новый route `ROUTES.dutyPlans` (`/duty-plans`), NAV_SECTIONS-пункт «Планы дежурств» (не «План дежурств» — та занята Smart Josparlau), право `duty.manage`. MSW-хендлеры (`duty-plans/mocks/handlers.ts`/`fixtures.ts`) зарегистрированы в `compose-handlers.ts`, статичный фикстур-паттерн (без `compose-seed.ts` — как `personnel`, не как `duties`/`security-events`'s adapter-based persistence).
+
+**Найдено при dev-story (не ревью)**: page-composition тест (`Providers`+`AppRoutes`, паттерн `app-layout.qa.test.tsx`) изначально жил в `features/duty-plans/pages/` и краснил eslint's ARCH-FE-013 (`features` не может импортировать `app`) — перенесён в `src/app/duty-plans-list.qa.test.tsx` (тот же слой, что прецедент). Также `<dialog>`'s `showModal()` не реализован в jsdom — применён тот же полифилл, что `ConflictDialog.test.tsx`. `changelog-routing.test.tsx`'s пин `NAV_SECTIONS.toHaveLength(11)` — ожидаемо покраснел новой записью, обновлён на 12 (комментарий тоже).
+
+6 новых page-тестов (AC-1 список, AC-2 пусто, AC-3 ошибка — таймаут поднят до 10с из-за дефолтного query-retry backoff providers.tsx не глушит для queries, только mutations, AC-4 гейт права, AC-5/6 создание+инвалидация через стейтфулный MSW-мок а не статичный return — иначе рефетч не доказал бы обновление списка, AC-7 400→inline field error). `npm run gate` — 1027 passed (было 1021, +6), build/size-gate зелёные (216.4KB/300KB).
+
+**Браузер-верификация**: попытка через preview-инструмент упёрлась в рассинхрон портов (vite dev:mock забиндился на 5174, прокси-инструмент ждал 42673) — не решено в рамках этой стори (инфраструктурная проблема окружения, не кода). Верификация опирается на 6 RTL+MSW page-тестов через РЕАЛЬНУЮ композицию `Providers`+`AppRoutes` (тот же рендер-путь, что реальное приложение), не изолированный юнит-тест компонента — разумная замена интерактивной проверки.
+
 ### File List
+
+- `frontend/src/features/duty-plans/pages/DutyPlansListPage.tsx` (new)
+- `frontend/src/features/duty-plans/pages/CreateDutyPlanDialog.tsx` (new)
+- `frontend/src/features/duty-plans/mocks/handlers.ts` (new)
+- `frontend/src/features/duty-plans/mocks/fixtures.ts` (new)
+- `frontend/src/features/duty-plans/api/queries.ts` (modified — exported `DutyPlansListResponse`/`DutyPlanCreateRequest`/`DutyPlanCreateResponse`)
+- `frontend/src/app/duty-plans-list.qa.test.tsx` (new)
+- `frontend/src/app/App.tsx` (modified — новый route)
+- `frontend/src/app/mocks/compose-handlers.ts` (modified — регистрация `dutyPlansHandlers`)
+- `frontend/src/app/changelog-routing.test.tsx` (modified — `NAV_SECTIONS`-пин 11→12)
+- `frontend/src/shared/routes.ts` (modified — `ROUTES.dutyPlans`, `NAV_SECTIONS`-запись)
+- `.claude/launch.json` (new — dev:mock preview-конфиг)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Десятая (вторая frontend) из ~12 подсторий разделения 14.11. Новый route /duty-plans (не /duties — та занята Smart Josparlau). Object-picker — числовое ID-поле (stopgap, нет backend-эндпоинта списка объектов). После создания — остаться на списке (14.11k деталь-страницы ещё нет). Тесты прав — server.use()-оверрайд, не новая demo-персона. |
+| 2026-07-31 | Dev-story: `DutyPlansListPage`/`CreateDutyPlanDialog`, MSW-хендлеры, роутинг, 6 page-тестов (перенесены в src/app/ — ARCH-FE-013 layer boundary). `npm run gate` — 1027 passed. Status → review. |
