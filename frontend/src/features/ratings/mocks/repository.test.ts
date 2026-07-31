@@ -11,7 +11,13 @@ import {
   RepositoryNotFoundError,
   RepositoryPermissionError,
 } from './repository'
-import { CORRECTIONS, DYNAMICS_POINTS, EVALUATIONS, WORK_ITEMS } from './fixtures'
+import {
+  CORRECTIONS,
+  DYNAMICS_POINTS,
+  EVALUATIONS,
+  SEED_AUDIT_ENTRIES,
+  WORK_ITEMS,
+} from './fixtures'
 
 const VIEWER = 'rating-viewer'
 const ANALYST = 'rating-analyst'
@@ -91,6 +97,7 @@ function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
         workItems: WORK_ITEMS.map((item) => ({ ...item })),
         corrections: CORRECTIONS.map((item) => ({ ...item })),
         idempotency: [],
+        auditEntries: SEED_AUDIT_ENTRIES.map((item) => ({ ...item })),
         dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
         capabilities: {
           operationalRatings: overrides.operationalRatings ?? true,
@@ -1094,5 +1101,158 @@ describe('идемпотентность и конфликты (§19.25-19.26)',
     const second = await repository.correctEvaluation(EVALUATOR, 'work-item-9', body)
     expect(second.submitted.evaluationId).toBe(first.submitted.evaluationId)
     expect(second.chain).toHaveLength(first.chain?.length ?? 0)
+  })
+})
+
+describe('журнал оценивания (§19.27)', () => {
+  const AUDITOR = 'rating-auditor'
+  const SUBMIT = {
+    score: 9,
+    basisCode: 'EXECUTION_OF_DUTIES',
+    basisNote: null,
+    comment: null,
+    revision: 1,
+    idempotencyKey: 'idem-audit-1',
+  }
+
+  beforeEach(() => {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.rating.view_aggregate'] },
+      { userId: NOBODY, permissions: [] },
+      { userId: AUDITOR, permissions: ['ops.rating.view_audit'] },
+      {
+        userId: EVALUATOR,
+        permissions: [
+          'ops.rating.evaluate',
+          'ops.rating.correct',
+          'ops.rating.view_correction_chain',
+        ],
+      },
+      {
+        userId: EVALUATOR_WITH_AGGREGATE,
+        permissions: ['ops.rating.evaluate', 'ops.rating.view_aggregate'],
+      },
+    ])
+  })
+
+  it('журнал охраняет СВОЁ право: ни оценщику, ни держателю агрегата он не открыт', async () => {
+    const { repository } = await setup()
+    await expect(repository.listRatingAudit(EVALUATOR, 1)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+    await expect(repository.listRatingAudit(VIEWER, 1)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+    const audit = await repository.listRatingAudit(AUDITOR, 1)
+    expect(audit.results.length).toBeGreaterThan(0)
+  })
+
+  it('в записях журнала нет значений оценок и комментариев — ВЕСЬ JSON', async () => {
+    const { repository } = await setup()
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+      ...SUBMIT,
+      score: 4,
+      comment: 'Уход с поста до смены',
+    })
+    const audit = await repository.listRatingAudit(AUDITOR, 1)
+    const json = JSON.stringify(audit.results)
+    expect(json).not.toContain('Уход с поста')
+    // Ни значения оценки: «4» встречалось бы как число, поэтому ищем поле.
+    expect(json).not.toContain('"score"')
+    expect(json).not.toContain('comment')
+  })
+
+  it('успех пишется после commit и несёт ссылки §19.27', async () => {
+    const { repository } = await setup()
+    const result = await repository.submitEvaluation(EVALUATOR, 'work-item-1', SUBMIT)
+    const audit = await repository.listRatingAudit(AUDITOR, 1)
+    const entry = audit.results.find((item) => item.eventCode === 'EVALUATION_SUBMITTED')
+    expect(entry).toMatchObject({
+      outcome: 'SUCCESS',
+      actorUserId: EVALUATOR,
+      securityEventId: 'event-1',
+      eventRunId: 'run-1',
+      assignmentId: 'assignment-work-item-1',
+      evaluationId: result.submitted.evaluationId,
+      requestId: SUBMIT.idempotencyKey,
+      revision: 2,
+    })
+  })
+
+  it('изменение относительно начального — ОТДЕЛЬНОЕ событие, а не подразумеваемое', async () => {
+    const { repository } = await setup()
+    // Начальная оценка задания — 8; отправка девятки обязана дать два события.
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', SUBMIT)
+    const changed = (await repository.listRatingAudit(AUDITOR, 1)).results.filter(
+      (item) => item.eventCode === 'EVALUATION_SCORE_CHANGED_FROM_INITIAL',
+    )
+    expect(changed).toHaveLength(1)
+
+    // А отправка ровно начального значения второго события не создаёт.
+    await repository.submitEvaluation(EVALUATOR, 'work-item-2', {
+      ...SUBMIT,
+      score: 8,
+      idempotencyKey: 'idem-audit-initial',
+    })
+    const after = (await repository.listRatingAudit(AUDITOR, 1)).results.filter(
+      (item) => item.eventCode === 'EVALUATION_SCORE_CHANGED_FROM_INITIAL',
+    )
+    expect(after).toHaveLength(1)
+  })
+
+  it('ОТКАЗ остаётся в журнале, хотя состояние откатилось', async () => {
+    const { repository } = await setup()
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+        ...SUBMIT,
+        score: 5,
+        idempotencyKey: 'idem-audit-low',
+      }),
+    ).rejects.toMatchObject({ errorCode: 'COMMENT_REQUIRED' })
+
+    const audit = await repository.listRatingAudit(AUDITOR, 1)
+    const rejected = audit.results.find(
+      (item) => item.eventCode === 'EVALUATION_LOW_SCORE_WITHOUT_COMMENT',
+    )
+    // §19.27 перечисляет «попытку снижения без комментария» отдельным событием:
+    // если бы запись шла внутри отклонённой мутации, её стёр бы откат.
+    expect(rejected).toMatchObject({ outcome: 'REJECTED', reasonCode: 'COMMENT_REQUIRED' })
+    // И самой оценки при этом не появилось — журнал помнит попытку, не факт.
+    const workspace = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
+    expect(workspace.pending.map((item) => item.id)).toContain('work-item-1')
+  })
+
+  it('отклонённое исправление и запрещённая попытка просмотра тоже попадают в журнал', async () => {
+    const { repository } = await setup()
+    await expect(
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', {
+        score: 10,
+        basisCode: 'DISCIPLINE',
+        basisNote: null,
+        comment: null,
+        reason: 'Учтён рапорт',
+        revision: 99,
+        idempotencyKey: 'idem-audit-conflict',
+      }),
+    ).rejects.toMatchObject({ errorCode: 'EVALUATION_REVISION_MISMATCH' })
+    await expect(
+      repository.getSubmittedEvaluationDetail(EVALUATOR_WITH_AGGREGATE, 'work-item-9'),
+    ).rejects.toBeInstanceOf(RepositoryNotFoundError)
+
+    const codes = (await repository.listRatingAudit(AUDITOR, 1)).results.map(
+      (item) => `${item.eventCode}:${item.reasonCode ?? ''}`,
+    )
+    expect(codes).toContain('EVALUATION_CORRECTION_REJECTED:EVALUATION_REVISION_MISMATCH')
+    expect(codes).toContain('EVALUATION_ACCESS_DENIED:FOREIGN_EVALUATION')
+  })
+
+  it('порядок — от свежего к старому, страница считается сервером', async () => {
+    const { repository } = await setup()
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', SUBMIT)
+    const audit = await repository.listRatingAudit(AUDITOR, 1)
+    const times = audit.results.map((item) => item.occurredAt)
+    expect([...times].sort((a, b) => b.localeCompare(a))).toEqual(times)
+    expect(audit.page).toBe(1)
+    expect(audit.total).toBeGreaterThanOrEqual(3)
   })
 })

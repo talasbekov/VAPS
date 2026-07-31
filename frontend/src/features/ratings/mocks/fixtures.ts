@@ -8,6 +8,7 @@
 // чужие `mocks/` (ARCH-FE-013), и это тот же осознанный дубль, что ростер
 // кандидатов в `security-events` (§20.3 — разные bounded context).
 import type {
+  RatingAuditEntry,
   EvaluationBasis,
   EvaluationCorrection,
   EvaluationWorkItem,
@@ -39,6 +40,12 @@ export interface RatingsSlice {
    * бы закрытый комментарий целиком.
    */
   idempotency: { key: string; operation: string; workItemId: string; evaluationId: string }[]
+  /**
+   * §19.27: журнал оценивания. Живёт В СВОЁМ слайсе, а не в общем `/audit`:
+   * общий экран аудита читают люди без права на рейтинг, и складывать туда
+   * события закрытого раздела значило бы раздавать их вместе с ним.
+   */
+  auditEntries: RatingAuditEntry[]
   /**
    * §19.20: ряд точек динамики — ЗАПИСАННЫЕ агрегаты закрытых периодов, а не
    * производное от `evaluations`. Пересчитывать их из оценок при каждом
@@ -513,6 +520,45 @@ export const CORRECTIONS: readonly EvaluationCorrection[] = [
   },
 ]
 
+/**
+ * Сеяные события журнала (§19.27). Без них экран журнала был бы пуст с первого
+ * запуска, а «в записи нет значений» проверялось бы на отсутствующих данных.
+ * Сюда попали ровно те события, которые в сиде УЖЕ произошли: заведение
+ * заданий, системная восьмёрка и исправление `evaluation-4` → `evaluation-5`.
+ */
+export const SEED_AUDIT_ENTRIES: readonly RatingAuditEntry[] = [
+  {
+    id: 'rating-audit-1',
+    occurredAt: '2026-07-18T20:05:00+05:00',
+    actorUserId: 'demo-event-planner',
+    eventCode: 'EVALUATION_SUBMITTED',
+    outcome: 'SUCCESS',
+    reasonCode: null,
+    securityEventId: 'event-1',
+    eventRunId: 'run-1',
+    assignmentId: 'assignment-work-item-4',
+    evaluationId: 'evaluation-21',
+    correctionId: null,
+    requestId: 'seed-request-1',
+    revision: 2,
+  },
+  {
+    id: 'rating-audit-2',
+    occurredAt: '2026-07-15T09:20:00+05:00',
+    actorUserId: 'demo-event-planner',
+    eventCode: 'EVALUATION_CORRECTED',
+    outcome: 'SUCCESS',
+    reasonCode: null,
+    securityEventId: 'event-1',
+    eventRunId: 'run-1',
+    assignmentId: 'assignment-work-item-9',
+    evaluationId: 'evaluation-5',
+    correctionId: 'correction-1',
+    requestId: 'seed-request-2',
+    revision: 3,
+  },
+]
+
 export function buildRatingsSeed(): { sliceName: string; data: RatingsSlice } {
   return {
     sliceName: 'ratings',
@@ -521,6 +567,7 @@ export function buildRatingsSeed(): { sliceName: string; data: RatingsSlice } {
       workItems: WORK_ITEMS.map((item) => ({ ...item })),
       corrections: CORRECTIONS.map((item) => ({ ...item })),
       idempotency: [],
+      auditEntries: SEED_AUDIT_ENTRIES.map((item) => ({ ...item })),
       dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
       capabilities: { operationalRatings: true, ratingConflicts: false },
     },

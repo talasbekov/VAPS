@@ -471,3 +471,21 @@ unitSafeLabel, summary, points[], unavailableViews[] }` — §19.17 в aggregate
 `event scope changed`, `archive locked`) НЕ заведены: ни eligibility, ни scope, ни архива в
 сборке нет — код без источника не отличался бы от выдуманного.
 
+### `/api/ops/rating-audit/` (§19.27)
+
+`backend-contract-pending`. Право — `ops.rating.view_audit` (§19.22 отдельный пункт), НЕ
+право сводки и не право оценивания.
+
+`GET /api/ops/rating-audit/?page` → `{ results[], total, page, pageCount, unavailableViews[] }`.
+
+Запись несёт ТОЛЬКО ссылки и код события: `occurredAt`, `actorUserId`, `eventCode`,
+`outcome` (`SUCCESS`/`REJECTED`), `reasonCode`, `securityEventId`, `eventRunId`,
+`assignmentId`, `evaluationId`, `correctionId`, `requestId` (= ключ идемпотентности §19.26),
+`revision`. Значений оценок, комментариев и связи «оценка ↔ оценщик» в ней нет: §19.27
+отдаёт их отдельной audit privacy permission, а §19.21 требует к ней scope и срок
+полномочия, которых в сборке нет.
+
+Коды событий: `EVALUATION_SUBMITTED`, `EVALUATION_SCORE_CHANGED_FROM_INITIAL`,
+`EVALUATION_LOW_SCORE_WITHOUT_COMMENT`, `EVALUATION_CORRECTED`,
+`EVALUATION_CORRECTION_REJECTED`, `EVALUATION_ACCESS_DENIED`.
+

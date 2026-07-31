@@ -111,6 +111,48 @@ export interface EvaluationCorrection {
 }
 
 /**
+ * Событие журнала оценивания (§19.27).
+ *
+ * ⚠️ ЗАПИСЬ ЖУРНАЛА НЕ НЕСЁТ ЗНАЧЕНИЙ. §19.27 отдаёт доступ к old/new score,
+ * комментариям и оценщику отдельной audit privacy permission, а §19.21
+ * запрещает раскрывать закрытые оценки через общий экран аудита. Здесь таких
+ * полей нет вовсе: журнал отвечает на вопрос «что произошло и с какой записью»,
+ * а не «какое значение было выставлено».
+ */
+export interface RatingAuditEntry {
+  id: string
+  occurredAt: string
+  /** Кто действовал. Это НЕ «кто оценил»: у отказа и у чтения актор тоже есть. */
+  actorUserId: string | null
+  eventCode: RatingAuditEventCode
+  /** Успех пишется ПОСЛЕ commit, отказ — своей записью (§19.27). */
+  outcome: 'SUCCESS' | 'REJECTED'
+  /** Код причины отказа — тот же, что уехал клиенту. `null` у успеха. */
+  reasonCode: string | null
+  securityEventId: string | null
+  eventRunId: string | null
+  assignmentId: string | null
+  evaluationId: string | null
+  correctionId: string | null
+  /** §19.27 требует ссылку на requestId — им служит ключ идемпотентности. */
+  requestId: string | null
+  revision: number | null
+}
+
+/** Что именно произошло (§19.27 перечисляет события списком). */
+export type RatingAuditEventCode =
+  /** Отправка собственной оценки. */
+  | 'EVALUATION_SUBMITTED'
+  /** Значение отличается от начального (§19.27 «изменение относительно начального»). */
+  | 'EVALUATION_SCORE_CHANGED_FROM_INITIAL'
+  /** Попытка снижения без комментария — событие ОТКАЗА, но событие. */
+  | 'EVALUATION_LOW_SCORE_WITHOUT_COMMENT'
+  | 'EVALUATION_CORRECTED'
+  | 'EVALUATION_CORRECTION_REJECTED'
+  /** Запрещённая попытка: право не выдано либо запись чужая. */
+  | 'EVALUATION_ACCESS_DENIED'
+
+/**
  * Основание оценки (§19.10). Перечень приходит С СЕРВЕРА: «основание не должно
  * быть произвольным frontend-only справочником». `requiresNote` — правило
  * policy для «Другое», а не догадка формы по коду.

@@ -14,6 +14,7 @@ import type {
   EvaluationMethod,
   EvaluationWorkItem,
   OperationalRatingSummary,
+  RatingAuditEntry,
   RatingDynamicsPoint,
   RatingPolicy,
   RatingPolicyBoundary,
@@ -83,6 +84,8 @@ export const EVALUATION_DETAIL_PATH_PATTERN =
  * коллизия в MSW разрешается молча в пользу первого handler'а.
  */
 export const EVALUATION_REGISTRY_PATH = '/api/ops/evaluation-registry/'
+/** Журнал оценивания §19.27 — свой путь и СВОЁ право (`ops.rating.view_audit`). */
+export const RATING_AUDIT_PATH = '/api/ops/rating-audit/'
 export const RATING_EMPLOYEE_DETAIL_PATH = '/api/ops/operational-rating-employee/'
 
 /** Значения, которыми можно фильтровать реестр. Их перечень даёт СЕРВЕР —
@@ -122,6 +125,19 @@ export interface RatingEmployeeDetailResponse {
   unitSafeLabel: string
   summary: OperationalRatingSummary
   points: RatingDynamicsPoint[]
+  unavailableViews: UnavailableRatingFactor[]
+}
+
+export interface RatingAuditResponse {
+  results: RatingAuditEntry[]
+  total: number
+  page: number
+  pageCount: number
+  /**
+   * §35: чего в журнале нет. Значения оценок и оценщики закрыты не «до выдачи
+   * права», а вовсе: audit privacy permission (§19.27) требует того же scope,
+   * что и sensitive-просмотр (§19.21).
+   */
   unavailableViews: UnavailableRatingFactor[]
 }
 
