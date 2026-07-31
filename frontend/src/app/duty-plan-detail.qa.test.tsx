@@ -460,6 +460,43 @@ describe('DutyPlanDetailPage', () => {
     expect(shifts[0].id).toBe(9)
   })
 
+  it('AC-9 (доп.): replan — поле НЕ тронуто (checkbox снят) → значение сохраняется, не пропадает', async () => {
+    // Review (Edge Case Hunter/Acceptance Auditor, независимо): AC-9's
+    // единственный тест проверял только explicit-null-путь ("Снять пост");
+    // «не трогать поле → значение сохраняется» не был явно ассертирован —
+    // регрессия, случайно превратившая undefined в '' или null, прошла бы
+    // незамеченной. Этот тест закрывает именно эту половину контракта.
+    usePermissionsResponse({ permissions: ['duty.manage'] })
+    server.use(
+      http.get('*/api/operations/duty-plans/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [PLAN] }),
+      ),
+      http.get('*/api/operations/duty-plans/1/shifts/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [SHIFT] }),
+      ),
+      http.post('*/api/operations/duty-plans/1/shifts/1/replan/', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>
+        expect('post' in body).toBe(true)
+        expect(body.post).toBe(3)
+        return HttpResponse.json({ ...SHIFT, id: 10 }, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(ROUTES.dutyPlanDetailTo(1))
+
+    await screen.findByText(SHIFT.employee_id)
+    await user.click(screen.getByRole('button', { name: 'Перепланировать' }))
+
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Причина перепланирования'), 'Только время')
+    // Не трогаем "Снять пост"/поле поста — значение должно уйти как есть (3).
+    await user.click(within(dialog).getByRole('button', { name: 'Перепланировать' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
   it('AC-11: replan — 400 (пустая причина от сервера) показывает inline-ошибку', async () => {
     usePermissionsResponse({ permissions: ['duty.manage'] })
     server.use(

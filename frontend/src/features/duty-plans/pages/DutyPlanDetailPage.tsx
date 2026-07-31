@@ -282,7 +282,18 @@ function CancelShiftAction({ planId, shift }: { planId: string; shift: DutyShift
         >
           {mutation.isPending ? 'Отмена…' : 'Подтвердить'}
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => setShowForm(false)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            // Review (Blind Hunter): без сброса причина остаётся в поле при
+            // повторном открытии тоггла — не влияет на КОРРЕКТНОСТЬ (та же
+            // строка/смена), но вводит в заблуждение UX-ом «залипшего» текста.
+            setReason('')
+            setShowForm(false)
+          }}
+        >
           Отмена
         </Button>
       </div>

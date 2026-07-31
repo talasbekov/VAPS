@@ -4,7 +4,7 @@ baseline_commit: 43e9f2f
 
 # Story 14.11l: Frontend — действия approve/cancel/replan
 
-Status: review
+Status: done
 
 ## Story
 
@@ -78,14 +78,16 @@ so that **весь жизненный цикл плана/смены досту�
 
 Реализовано по AC 1-12. `ApproveButton` — прямой `mutate({})` (буквальный образец `ApprovalPanel`'s approve-кнопка), `disabled={statusCode !== 'DRAFT'}` — перелейбл «Утверждён», не скрыта (честно задизейблена, канон §35). `CancelShiftAction` — inline reason-toggle, ЕДИНСТВЕННЫЙ кодобазный прецедент «действие+причина» (`ApprovalPanel`'s return-form), только для активных смен. `ReplanDutyShiftDialog.tsx` — модалка, буквальный образец `CreateDutyShiftDialog.tsx`, `defaultValues` из текущей строки, `post_clear`/`duty_type_clear`-чекбоксы для explicit-null (единственный способ отличить «не менять» от «явно снять» — backend различает absent vs null, 14.11e). Добавлен `isoToZonedDateTimeLocal()` (`duty-plans/lib/localDateTime.ts`) — точный инверс `zonedDateTimeToIso()` (14.11k) для предзаполнения формы; +2 юнит-теста (round-trip, конкретное значение). MSW-хендлеры approve/cancel/replan добавлены (стейтфулные — реально мутируют фикстуры). Все действия используют `ApiError.kind`-ветвление (5xx/network → generic, остальное → `mutation.error.message`) — та же архитектура, что 14.11j/k, не старый хардкод-текст `ApprovalPanel`. validate/conflicts-UI НЕ добавлены (вне объёма, title стори их не называет). 8 новых page-тестов, все зелёные с первой попытки (после мелкой правки — стейтфулный approve-мок, дубль-текст-ассерт). `npm run gate` — 1046 passed (было 1038, +8), 0 regressions, build/size-gate зелёные (219.6KB/300KB).
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** Acceptance Auditor подтвердил все 12 AC PASS (полный gate — 1046 passed на момент ревью). Ни один агент не нашёл High/Medium багов. Blind Hunter's единственная реальная (хоть и низкоприоритетная) находка — причина отмены не сбрасывалась при закрытии inline-тоггла («Отмена» → повторное открытие показывало залипший текст); не влияет на корректность (та же строка/смена), но вводит в заблуждение UX. Edge Case Hunter И Acceptance Auditor НЕЗАВИСИМО сошлись на одном реальном пробеле покрытия: AC-9's тест проверял только explicit-null-путь («Снять пост»), но НЕ проверял «поле не тронуто → значение сохраняется» — при регрессии, случайно превратившей `undefined` в `null`/`''`, тест не покраснел бы. Исправлено: (1) `setReason('')` при закрытии cancel-тоггла; (2) новый тест, явно ассертирующий `'post' in body && body.post === 3` для нетронутого поля. `npm run gate` после фиксов — 1047 passed, 0 regressions.
+
 ### File List
 
 - `frontend/src/features/duty-plans/pages/ReplanDutyShiftDialog.tsx` (new)
-- `frontend/src/features/duty-plans/pages/DutyPlanDetailPage.tsx` (modified — `ApproveButton`, `CancelShiftAction`, Actions-колонка)
+- `frontend/src/features/duty-plans/pages/DutyPlanDetailPage.tsx` (modified — `ApproveButton`, `CancelShiftAction`, Actions-колонка; review fix: сброс `reason` при закрытии тоггла)
 - `frontend/src/features/duty-plans/lib/localDateTime.ts` (modified — `isoToZonedDateTimeLocal()`)
 - `frontend/src/features/duty-plans/lib/localDateTime.test.ts` (modified — +2 теста)
 - `frontend/src/features/duty-plans/mocks/handlers.ts` (modified — approve/cancel/replan)
-- `frontend/src/app/duty-plan-detail.qa.test.tsx` (modified — +8 тестов)
+- `frontend/src/app/duty-plan-detail.qa.test.tsx` (modified — +9 тестов, включая +1 review-тест на «значение сохраняется»)
 
 ## Change Log
 
@@ -93,3 +95,4 @@ so that **весь жизненный цикл плана/смены досту�
 |---|---|
 | 2026-07-31 | Story создана (create-story). Двенадцатая (четвёртая, последняя frontend) из ~12 подсторий разделения 14.11. Только approve/cancel/replan (title стори в sprint-status.yaml не называет validate/conflicts — вне объёма, future work если понадобится). Approve/cancel — буквальный образец SecurityEventDetailPage's ApprovalPanel (inline reason-toggle, единственный прецедент). Replan — модалка, буквальный образец CreateDutyShiftDialog (14.11k), предзаполненная текущими значениями строки. |
 | 2026-07-31 | Dev-story: `ApproveButton`/`CancelShiftAction`/`ReplanDutyShiftDialog`, `isoToZonedDateTimeLocal()`, MSW-хендлеры, 8 новых page-тестов + 2 юнит. `npm run gate` — 1046 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): Acceptance Auditor — все 12 AC PASS, багов нет. Edge Case Hunter+Acceptance Auditor независимо сошлись на пробеле покрытия AC-9 (только null-путь тестирован, не «сохранение» путь). Blind Hunter — залипшая причина отмены при переоткрытии тоггла. Исправлено: reset причины, +1 тест на сохранение значения. `npm run gate` — 1047 passed, 0 regressions. Status → done. |
