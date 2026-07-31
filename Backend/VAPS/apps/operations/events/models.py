@@ -343,3 +343,135 @@ class SecurityEventDirectAssignment(TimeStampedModel):
 
     def __str__(self):
         return f"{self.employee_id} -> {self.sector_post_id} ({self.event_id})"
+
+
+class AssignmentVersion(TimeStampedModel):
+    """Story 16.1 (FR-26): версия Расстановки (Placement) — черновик →
+    согласование с возвратом → утверждение. Versioning follows
+    `DailySubmission`'s pattern (ARCH-DATA-021/025) literally, NOT
+    `duties.DutyPlan`'s mutable single-status shape: Placement is a
+    submit→return→resubmit cycle over ONE event, keeping every prior
+    version immutable, not a recurring monthly plan mutated in place.
+
+    Model+migration only (this story) — the draft auto-formation (16.2),
+    conflict detector (16.3), approval workflow (16.4), status projection
+    (16.5), notifications (16.6), print form (16.7), and API/audit/e2e
+    (16.8) are all later stories; nothing here writes to this table yet.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Черновик"
+        SUBMITTED = "SUBMITTED", "Подано на согласование"
+        RETURNED = "RETURNED", "Возвращено на доработку"
+        APPROVED = "APPROVED", "Утверждено"
+
+    event = models.ForeignKey(
+        SecurityEvent, on_delete=models.CASCADE, related_name="assignment_versions"
+    )
+    status = models.CharField(max_length=20, choices=Status.choices)
+    version = models.PositiveIntegerField(default=1)
+    # First version is current by nature; the partial-unique below
+    # guarantees at most one current per event — same "ровно одна
+    # текущая" contract as DailySubmission's is_current.
+    is_current = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "ops_assignment_versions"
+        verbose_name = "Версия расстановки"
+        verbose_name_plural = "Версии расстановки"
+        constraints = [
+            # Ровно одна текущая версия на событие (DailySubmission pattern).
+            models.UniqueConstraint(
+                fields=["event"],
+                condition=models.Q(is_current=True),
+                name="unique_assignment_version_current",
+            ),
+            # Версии одного события различны.
+            models.UniqueConstraint(
+                fields=["event", "version"],
+                name="unique_assignment_version_number",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1),
+                name="ck_assignment_version_min",
+            ),
+            # status без дефолта → .objects.create() без него запишет "";
+            # CharField.choices не валидируется на пути create() — тот же
+            # урок, что chk_daily_submission_event.
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=["DRAFT", "SUBMITTED", "RETURNED", "APPROVED"]
+                ),
+                name="ck_assignment_version_status_choices",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.event_id} v{self.version} ({self.status})"
+
+
+class PlacementAssignment(TimeStampedModel):
+    """Story 16.1 (FR-25/26/27): построчное назначение сотрудника на пост
+    внутри одной `AssignmentVersion`.
+
+    `employee_id` — плоский UUID (ARCH-002/003), тот же паттерн, что
+    `DutyShift.employee_id`/`SecurityEvent.senior_employee_id` — никогда
+    FK в core.Employee. `post` — FK на `ops_facilities.Post`, PROTECT
+    (тот же выбор, что `DutyShift.post`): живая версия не должна молча
+    потерять свой Пост.
+
+    `acknowledged_at`/`conflict_severity` — ПОЛЯ-ЗАГЛУШКИ, найденные через
+    уже зарезервированные типы `docs/registries/ws-message-types.yaml`
+    (`ACK_REQUIRED`/`ACK_MISSING_ESCALATION`, `SOFT_CONFLICT_DETECTED` vs
+    `HARD_BLOCK_ATTEMPT`) — структура нужна СЕЙЧАС, чтобы 16.3/16.6 не
+    добавляли миграцию за миграцией; РЕАЛЬНАЯ детекция конфликтов (16.3)
+    и уведомление-об-ознакомлении (16.6) — не эта стори.
+
+    Известный, задокументированный (15.9's ревью), НЕ решаемый здесь
+    коллизионный риск: `SecurityEventDirectAssignment` (физнаряд) сегодня
+    БЕЗ гарда против двойного назначения («система пассивна» —
+    намеренно), а `PlacementAssignment` — концепт СТАДИИ PLACEMENT,
+    структурно другой уровень цикла ОМ; hard-block (если появится) —
+    предмет Story 16.3, не изобретается здесь.
+    """
+
+    class ConflictSeverity(models.TextChoices):
+        SOFT = "SOFT", "Мягкий конфликт"
+        HARD = "HARD", "Жёсткий конфликт"
+
+    version = models.ForeignKey(
+        AssignmentVersion, on_delete=models.CASCADE, related_name="assignments"
+    )
+    employee_id = models.UUIDField()
+    post = models.ForeignKey(
+        "ops_facilities.Post", on_delete=models.PROTECT, related_name="placements"
+    )
+    # FR-27: заполняется Story 16.6's уведомление-об-ознакомлении сервисом;
+    # nullable — «ещё не ознакомлен» по умолчанию.
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    # FR-25: заполняется Story 16.3's конфликт-детектором; blank — ещё не
+    # прогнан детектор ИЛИ конфликтов нет.
+    conflict_severity = models.CharField(
+        max_length=10, choices=ConflictSeverity.choices, blank=True
+    )
+
+    class Meta:
+        db_table = "ops_placement_assignments"
+        verbose_name = "Назначение в расстановке"
+        verbose_name_plural = "Назначения в расстановке"
+        constraints = [
+            # blank допустим (детектор ещё не прогнан) — CHECK держит
+            # словарь ТОЛЬКО непустых значений (та же asymmetric-CHECK
+            # форма, что chk_daily_submission_amended_requires_reason_
+            # sanction — пустая строка сознательно вне словаря choices).
+            models.CheckConstraint(
+                condition=(
+                    models.Q(conflict_severity="")
+                    | models.Q(conflict_severity__in=["SOFT", "HARD"])
+                ),
+                name="ck_placement_assignment_conflict_severity_choices",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employee_id} -> {self.post_id} (v{self.version_id})"

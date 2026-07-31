@@ -4,7 +4,7 @@ baseline_commit: 2f0e3547fb09c367d666b85607095f786990b3ac
 
 # Story 16.1: Placement — модель с версионированием
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -42,10 +42,10 @@ so that **черновик→согласование→утверждение (
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `AssignmentVersion`-модель + миграция (статус-enum, версионирование по паттерну `DailySubmission`)
-- [ ] Task 2 — `PlacementAssignment`-модель + миграция (в той же миграции или следующей — построчные назначения)
-- [ ] Task 3 — Модельные тесты (happy-path создания; `UniqueConstraint`-инварианты; `CheckConstraint`-инварианты)
-- [ ] Task 4 — Гейт
+- [x] Task 1 — `AssignmentVersion`-модель + миграция (статус-enum, версионирование по паттерну `DailySubmission`)
+- [x] Task 2 — `PlacementAssignment`-модель + миграция (в той же миграции или следующей — построчные назначения)
+- [x] Task 3 — Модельные тесты (happy-path создания; `UniqueConstraint`-инварианты; `CheckConstraint`-инварианты)
+- [x] Task 4 — Гейт
 
 ## Dev Notes
 
@@ -73,14 +73,17 @@ so that **черновик→согласование→утверждение (
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано по AC 1-6. `AssignmentVersion` — заголовок версии (FK на `SecurityEvent`, `status` TextChoices+CheckConstraint DRAFT/SUBMITTED/RETURNED/APPROVED, `version`/`is_current` — буквальный паттерн `DailySubmission`: partial-unique `is_current` + unique `(event, version)` + `CheckConstraint(version__gte=1)`). `PlacementAssignment` — построчное назначение (FK на `AssignmentVersion` CASCADE, `employee_id` плоский UUID, `post` FK на `ops_facilities.Post` PROTECT, `acknowledged_at` nullable-заглушка для 16.6, `conflict_severity` blank-заглушка для 16.3 с asymmetric-CHECK — тот же паттерн, что `chk_daily_submission_amended_requires_reason_sanction`). 10 новых тестов, все на реальных DB-уровневых инвариантах (`bulk`-`update()` в обход `full_clean()` — тот же метод, что `test_models.py`'s `SecurityEvent`-тесты). Одна мелкая правка по ходу: первая попытка теста CHECK-constraint использовала значение длиннее `max_length=10` колонки, что упало на `DataError` (усечение varchar) ДО достижения самого CHECK — заменено на короткое невалидное значение, реально изолирующее именно CHECK-инвариант. `make gate` — 3675 passed (было 3665, +10), 0 regressions, no drift.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/events/models.py` (modified — `AssignmentVersion`/`PlacementAssignment`)
+- `Backend/VAPS/apps/operations/events/migrations/0009_assignmentversion_placementassignment_and_more.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/test_placement_model.py` (new)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-01 | Story создана (create-story). Epic 15 закрыт, начало Epic 16. Модель+миграция only — тот же паттерн, что 15.5a/15.6/15.7a/15.9. Версионирование — буквальный образец `DailySubmission` (ARCH-DATA-021/025), НЕ `duties`-app паттерн. |
+| 2026-08-01 | Dev-story: `AssignmentVersion`+`PlacementAssignment`-модели+миграция. 10 новых DB-уровневых тестов. `make gate` — 3675 passed. Status → review. |
