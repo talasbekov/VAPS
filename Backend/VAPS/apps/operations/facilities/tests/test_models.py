@@ -60,6 +60,52 @@ def test_structural_jsonb_fields_default_to_empty_list():
     assert passport.cameras == []
 
 
+@pytest.mark.parametrize(
+    "latitude,longitude",
+    [(-90.000001, 0), (90.000001, 0), (0, -180.000001), (0, 180.000001)],
+)
+def test_object_lat_long_out_of_range_rejected_by_db(latitude, longitude):
+    # Review (Blind Hunter/Edge Case Hunter): DB CheckConstraint, not just
+    # DecimalField bounds — .objects.create() skips full_clean().
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            Object.objects.create(
+                code="OBJ-LATLONG",
+                name="x",
+                address="x",
+                latitude=latitude,
+                longitude=longitude,
+            )
+
+
+@pytest.mark.parametrize(
+    "latitude,longitude", [(-90, -180), (90, 180), (0, 0), (None, None)]
+)
+def test_object_lat_long_boundary_and_null_values_accepted(latitude, longitude):
+    obj = Object.objects.create(
+        code=f"OBJ-OK-{latitude}-{longitude}",
+        name="x",
+        address="x",
+        latitude=latitude,
+        longitude=longitude,
+    )
+    obj.refresh_from_db()
+    assert obj.latitude == (None if latitude is None else latitude)
+    assert obj.longitude == (None if longitude is None else longitude)
+
+
+def test_deleting_object_with_passport_is_protected_not_cascaded():
+    # Review (Edge Case Hunter): Object.is_active signals the deactivation
+    # path is a flag flip, not a hard delete — PROTECT, not CASCADE.
+    from django.db.models import ProtectedError
+
+    obj = make_object("OBJ-PROTECTED")
+    ObjectPassport.objects.create(object=obj)
+    with pytest.raises(ProtectedError):
+        obj.delete()
+    assert Object.objects.filter(code="OBJ-PROTECTED").exists()
+
+
 def test_importance_level_code_is_plain_field_not_fk():
     # Scope Decision: importance_level_code is a plain CharField until
     # ops_event_levels (Epic 15) exists — any string is accepted, no FK

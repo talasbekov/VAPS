@@ -4,7 +4,7 @@ baseline_commit: d87a28e
 
 # Story 14.1: `apps.operations.facilities` — Object + Паспорт (модели)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -108,6 +108,8 @@ so that **Epic 14's последующие стори (Post/Sector 14.2, чек-
 - `Backend/VAPS/apps/operations/facilities/tests/test_app.py` (NEW) — 4 теста.
 - `Backend/VAPS/apps/operations/facilities/tests/test_models.py` (NEW) — 12 тестов.
 - `Backend/VAPS/config/settings.py` (MOD) — `INSTALLED_APPS` новая запись.
+- `Backend/VAPS/apps/operations/facilities/migrations/0002_alter_objectpassport_object_and_more.py` (NEW, ревью-фикс) — `PROTECT` + lat/long-`CheckConstraint`.
+- `Backend/VAPS/apps/operations/facilities/tests/test_models.py` (MOD, ревью-фикс) — 9 новых тестов.
 
 ## Change Log
 
@@ -115,3 +117,4 @@ so that **Epic 14's последующие стори (Post/Sector 14.2, чек-
 |---|---|
 | 2026-07-30 | Story создана (create-story). Первая стори Epic 14 (после подтверждённой пользователем премисы «этап 2 стартовал»). Терминология донора («Object») предпочтена букве эпика («Facility»); модели-only скоуп (API/сервисы — будущие стори); `importance_level_code`'s FK и `passport_history`-таблица явно отложены (зависят от ещё не построенных частей Epic 15/14.12). |
 | 2026-07-30 | dev-story: приложение `apps.operations.facilities`, модели `Object`+`ObjectPassport`, миграция, 16 тестов. `make gate` 3077 passed. Status → review |
+| 2026-07-31 | 3-агентное ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor; первая попытка Edge Case Hunter/Acceptance Auditor упала по API 529 Overloaded — повторный прогон успешен). Acceptance Auditor — все 11 AC подтверждены невакуумными. Триаж 2 находок: (1) Blind Hunter + Edge Case Hunter (сошлись независимо) — `latitude`/`longitude` не имели DB-гарда диапазона (плохое геокодирование могло молча записать 999.999999) → добавлен `CheckConstraint` на оба поля (`[-90,90]`/`[-180,180]`, NULL проходит по стандартной Postgres CHECK-семантике), миграция `0002`; (2) Edge Case Hunter — `ObjectPassport.object`'s `on_delete=CASCADE` противоречит `Object.is_active`'s подразумеваемому пути деактивации (флаг, не hard delete) → `PROTECT` (мирроит `apps/operations/rbac/models.py`'s тот же паттерн «не должно молча исчезать»). 9 новых тестов (4 lat/long-red-probe, 4 lat/long-граница+NULL, 1 PROTECT-red-probe). `make gate` — 3086 passed (было 3077, +9), "No changes detected". Status → done |

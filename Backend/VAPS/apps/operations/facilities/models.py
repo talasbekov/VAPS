@@ -41,6 +41,23 @@ class Object(TimeStampedModel):
         db_table = "ops_objects"
         verbose_name = "Объект"
         verbose_name_plural = "Объекты"
+        constraints = [
+            # Review (Blind Hunter/Edge Case Hunter): bad geocoding could
+            # silently write e.g. 999.999999 with no DB-level check — mirror
+            # apps.core.models's numeric-bound pattern (MinValueValidator/
+            # MaxValueValidator there is form/serializer-level only; a DB
+            # CheckConstraint also survives bulk_create()/.objects.create(),
+            # the same reasoning as completeness_status below).
+            models.CheckConstraint(
+                condition=models.Q(latitude__gte=-90) & models.Q(latitude__lte=90),
+                name="ck_object_latitude_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(longitude__gte=-180)
+                & models.Q(longitude__lte=180),
+                name="ck_object_longitude_range",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.code} — {self.name}"
@@ -58,8 +75,14 @@ class ObjectPassport(TimeStampedModel):
         YELLOW = "YELLOW", "Частично заполнен"
         GREEN = "GREEN", "Заполнен"
 
+    # PROTECT, not CASCADE (review, Edge Case Hunter): Object.is_active
+    # signals this codebase's deactivation path is a flag flip, not a hard
+    # delete — a stray Object.objects.filter(...).delete() (e.g. a future
+    # cleanup script) must not silently destroy the passport with it.
+    # Mirrors apps/operations/rbac/models.py's PROTECT for the same
+    # "don't let this vanish silently" reasoning.
     object = models.OneToOneField(
-        Object, on_delete=models.CASCADE, related_name="passport"
+        Object, on_delete=models.PROTECT, related_name="passport"
     )
     object_type = models.CharField(max_length=100, blank=True)
     # ARCH-007: flat external actor ids, never FKs into core.models.
