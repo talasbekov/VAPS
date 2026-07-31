@@ -212,3 +212,39 @@ def test_duty_shift_without_post_passes_clean():
         ends_at=datetime.datetime(2026, 8, 1, 20, 0, tzinfo=datetime.timezone.utc),
     )
     shift.full_clean()  # must not raise
+
+
+def test_duty_shift_duty_type_from_a_different_object_rejected_by_clean():
+    # Review (Blind Hunter/Edge Case Hunter, independently confirmed):
+    # DutyType is per-object (same shape as Post) — the clean() guard
+    # originally only covered post, silently leaving this identical gap
+    # unguarded for duty_type.
+    obj_a = make_object("OBJ-DP-19A")
+    obj_b = make_object("OBJ-DP-19B")
+    plan = make_plan(obj_a)
+    duty_type_b = DutyType.objects.create(object=obj_b, code="DAY", name="Дневное")
+
+    shift = DutyShift(
+        plan=plan,
+        duty_type=duty_type_b,
+        employee_id=uuid.uuid4(),
+        starts_at=datetime.datetime(2026, 8, 1, 8, 0, tzinfo=datetime.timezone.utc),
+        ends_at=datetime.datetime(2026, 8, 1, 20, 0, tzinfo=datetime.timezone.utc),
+    )
+    with pytest.raises(ValidationError):
+        shift.full_clean()
+
+
+def test_duty_shift_duty_type_from_the_same_object_passes_clean():
+    obj = make_object("OBJ-DP-20")
+    plan = make_plan(obj)
+    duty_type = DutyType.objects.create(object=obj, code="DAY", name="Дневное")
+
+    shift = DutyShift(
+        plan=plan,
+        duty_type=duty_type,
+        employee_id=uuid.uuid4(),
+        starts_at=datetime.datetime(2026, 8, 1, 8, 0, tzinfo=datetime.timezone.utc),
+        ends_at=datetime.datetime(2026, 8, 1, 20, 0, tzinfo=datetime.timezone.utc),
+    )
+    shift.full_clean()  # must not raise

@@ -128,14 +128,25 @@ class DutyShift(TimeStampedModel):
 
     def clean(self):
         # Same cross-FK class of gap as Post.clean() (14.2)/
-        # ChecklistOverride.clean() (14.3): post and plan are separate FKs
-        # — nothing else stops a shift's post belonging to a DIFFERENT
-        # object than its plan. Guard on `_id`s before dereferencing (14.3's
-        # review lesson). Same caveat: only enforced via full_clean(), not
-        # .objects.create()/bulk_create() — a future API/service story must
-        # call full_clean() on the write path.
+        # ChecklistOverride.clean() (14.3): post/duty_type and plan are
+        # separate FKs — nothing else stops a shift's post OR duty_type
+        # belonging to a DIFFERENT object than its plan (DutyType is
+        # per-object, facilities/models.py, same shape as Post). Guard on
+        # `_id`s before dereferencing (14.3's review lesson). Same caveat:
+        # only enforced via full_clean(), not .objects.create()/
+        # bulk_create() — a future API/service story must call
+        # full_clean() on the write path.
         super().clean()
+        errors = {}
         if self.post_id and self.plan_id and self.post.object_id != self.plan.object_id:
-            raise ValidationError(
-                {"post": "Пост должен принадлежать тому же объекту, что и план."}
+            errors["post"] = "Пост должен принадлежать тому же объекту, что и план."
+        if (
+            self.duty_type_id
+            and self.plan_id
+            and self.duty_type.object_id != self.plan.object_id
+        ):
+            errors["duty_type"] = (
+                "Вид дежурства должен принадлежать тому же объекту, что и план."
             )
+        if errors:
+            raise ValidationError(errors)
