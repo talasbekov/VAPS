@@ -53,6 +53,11 @@ export default defineConfig({
         // правка `expense` — тот захардкожен на ROUTES.reports и чужой
         // userId, и от него зависит мокнутая e2e/expense.spec.ts.
         chain: fileURLToPath(new URL('./e2e-harness/chain.html', import.meta.url)),
+        // 14.12b: полный цикл плана дежурств. Монтирует НАСТОЯЩИЙ AppRoutes
+        // (не отдельную страницу, как day-submission/traffic-light) — цикл
+        // сам по себе многостраничный (/duty-plans → /duty-plans/:id),
+        // нужна реальная навигация через <Link>, не голый компонент.
+        dutyPlan: fileURLToPath(new URL('./e2e-harness/duty-plan.html', import.meta.url)),
       },
     },
   },
