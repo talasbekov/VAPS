@@ -317,13 +317,27 @@ def process_temp_duty_transitions():
 
     Per-grant (not digest, unlike 15.10's `escalate_stale_force_requests`):
     the registry's `recipients: "duty user"` means the grant holder
-    themselves, not a role-wide audience, so `notify()`'s
-    `(recipient, kind, business_date)` collision is a rare, accepted edge
-    (two grants for the same user activating/expiring the same day) — see
-    the story's Out of Scope.
+    themselves, not a role-wide audience. `notify()`'s
+    `(recipient, kind, business_date)` uniqueness means a SECOND same-user
+    grant activating the same day gets back the FIRST grant's existing row
+    (non-``None``, "first payload wins" per `notify()`'s own contract), not
+    its own. Review finding: on the activation path this must NOT be read
+    as "this grant was notified" — `activated_notified_at` is a permanent,
+    never-cleared marker, so wrongly stamping it on a losing grant would
+    silently and IRRECOVERABLY skip that grant's own signal forever (worse
+    than the accepted one-day miss the naive code implied). Guarded below
+    by checking the returned row's payload actually names THIS grant; a
+    losing grant is left unmarked and retried on a later day it's still
+    active. Expiry has no such durable-marker risk — a same-day collision
+    there only drops the "losing" grant's WS signal (accepted, matches
+    every other `notify()` caller's best-effort contract); the state that
+    matters (`is_active`, the audit row) is written per-grant, unconditional
+    on `notify()`'s outcome, inside `expire_temporary_duty` itself.
 
     Returns `{"activated": [...], "expired": [...]}` — the two lists of
-    `TemporaryDutyPermission` rows touched this run.
+    `TemporaryDutyPermission` rows whose OWN notification was actually
+    delivered this run (a "losing" grant in a same-day collision is
+    reported in neither list on the activation side, since it will retry).
     """
     now = Clock.now()
     today = Clock.today_local()
@@ -348,7 +362,10 @@ def process_temp_duty_transitions():
                 "ends_at": grant.ends_at.isoformat(),
             },
         )
-        if result is not None:
+        # `result` is non-None even on a same-day collision (notify()
+        # returns the OTHER grant's pre-existing row) — only mark/count
+        # this grant if its own payload is the one that actually landed.
+        if result is not None and result.payload.get("grant_id") == grant.pk:
             TemporaryDutyPermission.objects.filter(pk=grant.pk).update(
                 activated_notified_at=now
             )
@@ -359,14 +376,19 @@ def process_temp_duty_transitions():
     )
     expired = []
     for grant in expiring:
+        # Unconditional: expire_temporary_duty's own is_active=True filter
+        # already makes this idempotent and authoritative (15.11a) — the
+        # grant IS expired regardless of whether its notify() call below
+        # wins or loses a same-day collision, so it belongs in the return
+        # value/stdout count either way (unlike activation, where the
+        # return value tracks "own signal delivered", not "state changed").
         RoleAdminService.expire_temporary_duty(grant.pk, actor="SYSTEM")
-        result = notify(
+        notify(
             recipient=grant.user_id,
             kind="TEMP_PERMISSION_EXPIRED",
             business_date=today,
             payload={"grant_id": grant.pk, "duty_role_code": grant.duty_role_code},
         )
-        if result is not None:
-            expired.append(grant)
+        expired.append(grant)
 
     return {"activated": activated, "expired": expired}

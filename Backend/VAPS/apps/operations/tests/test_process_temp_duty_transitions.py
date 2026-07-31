@@ -101,3 +101,52 @@ def test_manually_deactivated_grant_is_not_reprocessed(seeded):
     make_grant(-3, -1, is_active=False)
     result = process_temp_duty_transitions()
     assert result == {"activated": [], "expired": []}
+
+
+def make_grant_for(user_id, starts_delta, ends_delta, duty_role_code="OMD"):
+    now = Clock.now()
+    return TemporaryDutyPermission.objects.create(
+        user_id=user_id, duty_role_code=duty_role_code, is_active=True,
+        starts_at=now + dt.timedelta(hours=starts_delta),
+        ends_at=now + dt.timedelta(hours=ends_delta),
+        created_by="admin",
+    )
+
+
+def test_same_day_activation_collision_does_not_permanently_stick_loser(seeded):
+    """Review finding (Blind Hunter/Edge Case Hunter, HIGH): two grants for
+    the SAME user activating the same day must not both be permanently
+    marked activated_notified_at when notify()'s (recipient, kind,
+    business_date) uniqueness only lets ONE of them actually persist a
+    notification. The "losing" grant must stay eligible for a future run,
+    not be silently and irrecoverably skipped forever."""
+    winner = make_grant_for("dual-1", -1, 1, duty_role_code="OMD")
+    loser = make_grant_for("dual-1", -1, 1, duty_role_code="ORGD")
+
+    result = process_temp_duty_transitions()
+
+    assert Notification.objects.filter(kind="TEMP_PERMISSION_ACTIVE").count() == 1
+    winner.refresh_from_db()
+    loser.refresh_from_db()
+    assert winner.activated_notified_at is not None
+    assert loser.activated_notified_at is None
+    assert {g.pk for g in result["activated"]} == {winner.pk}
+
+
+def test_same_day_expiry_collision_still_expires_both_grants(seeded):
+    """Unlike activation, expiry's idempotency (is_active) is per-grant and
+    unconditional on notify()'s outcome — both grants must actually expire
+    (is_active=False, audited) even though only one notification survives
+    the same-(recipient,kind,business_date) collision."""
+    grant_a = make_grant_for("dual-2", -3, -1, duty_role_code="OMD")
+    grant_b = make_grant_for("dual-2", -3, -1, duty_role_code="ORGD")
+
+    result = process_temp_duty_transitions()
+
+    assert Notification.objects.filter(kind="TEMP_PERMISSION_EXPIRED").count() == 1
+    assert AuditLog.objects.filter(action="TEMP_DUTY_EXPIRED").count() == 2
+    grant_a.refresh_from_db()
+    grant_b.refresh_from_db()
+    assert grant_a.is_active is False
+    assert grant_b.is_active is False
+    assert {g.pk for g in result["expired"]} == {grant_a.pk, grant_b.pk}
