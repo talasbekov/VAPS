@@ -1,4 +1,4 @@
-"""Story 14.6 — OM_AUTO projection service (project_duty_shift/approve_duty_plan)."""
+"""Story 14.6/14.7 — OM_AUTO projection (project_duty_shift/approve_duty_plan)."""
 
 import datetime
 from zoneinfo import ZoneInfo
@@ -13,6 +13,7 @@ from apps.operations.duties.services import (
     approve_duty_plan,
     project_duty_shift,
 )
+from apps.operations.facilities.models import DutyType
 from apps.operations.facilities.models import Object as FacilityObject
 from apps.operations.statuses.models import EmployeeStatus, StatusType
 from apps.operations.statuses.services.status_service import cancel_status
@@ -46,6 +47,13 @@ def status_types(db):
         is_hard_block=False,
         priority=60,
         report_column_code="AFTER_DUTY",
+    )
+    StatusType.objects.create(
+        code="BEFORE_DUTY",
+        name="Перед дежурством",
+        is_hard_block=False,
+        priority=65,
+        report_column_code="BEFORE_DUTY",
     )
 
 
@@ -127,6 +135,122 @@ def test_project_duty_shift_is_idempotent_by_source_ref(status_types, div):
         EmployeeStatus.objects.filter(source_ref=f"REST_AFTER_DUTY:{shift.pk}").count()
         == 1
     )
+
+
+def test_project_duty_shift_creates_before_duty_when_configured(status_types, div):
+    # Story 14.7 / BR-DUTY-TYPE-003: before_duty_minutes > 0 on the shift's
+    # duty_type creates a BEFORE_DUTY projection, symmetric to REST_AFTER_DUTY.
+    obj = make_object("OBJ-OM-9")
+    plan = make_plan(obj)
+    emp = make_employee(div)
+    duty_type = DutyType.objects.create(
+        object=obj, code="DAY", name="Дневное", before_duty_minutes=60
+    )
+    shift = make_shift(
+        plan,
+        emp.id,
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
+        duty_type=duty_type,
+    )
+
+    project_duty_shift(shift)
+
+    before = EmployeeStatus.objects.get(source_ref=f"BEFORE_DUTY:{shift.pk}")
+    assert before.employee_id == emp.id
+    assert before.status_type_code == "BEFORE_DUTY"
+    assert before.source == EmployeeStatus.Source.OM_AUTO
+    assert before.date_start == datetime.date(2026, 8, 1)
+    assert before.date_end == datetime.date(2026, 8, 2)
+
+
+def test_project_duty_shift_without_duty_type_skips_before_duty(status_types, div):
+    obj = make_object("OBJ-OM-10")
+    plan = make_plan(obj)
+    emp = make_employee(div)
+    shift = make_shift(
+        plan,
+        emp.id,
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
+    )
+
+    project_duty_shift(shift)
+
+    assert not EmployeeStatus.objects.filter(
+        source_ref=f"BEFORE_DUTY:{shift.pk}"
+    ).exists()
+    assert EmployeeStatus.objects.filter(source_ref=f"DUTY:{shift.pk}").exists()
+
+
+def test_project_duty_shift_before_duty_minutes_zero_skips_before_duty(
+    status_types, div
+):
+    # AC-3: donor default (before_duty_minutes=0) explicitly does NOT project.
+    obj = make_object("OBJ-OM-11")
+    plan = make_plan(obj)
+    emp = make_employee(div)
+    duty_type = DutyType.objects.create(
+        object=obj, code="DAY", name="Дневное", before_duty_minutes=0
+    )
+    shift = make_shift(
+        plan,
+        emp.id,
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
+        duty_type=duty_type,
+    )
+
+    project_duty_shift(shift)
+
+    assert not EmployeeStatus.objects.filter(
+        source_ref=f"BEFORE_DUTY:{shift.pk}"
+    ).exists()
+
+
+def test_project_duty_shift_before_duty_is_idempotent(status_types, div):
+    obj = make_object("OBJ-OM-12")
+    plan = make_plan(obj)
+    emp = make_employee(div)
+    duty_type = DutyType.objects.create(
+        object=obj, code="DAY", name="Дневное", before_duty_minutes=60
+    )
+    shift = make_shift(
+        plan,
+        emp.id,
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
+        duty_type=duty_type,
+    )
+
+    project_duty_shift(shift)
+    project_duty_shift(shift)
+
+    assert (
+        EmployeeStatus.objects.filter(source_ref=f"BEFORE_DUTY:{shift.pk}").count() == 1
+    )
+
+
+def test_before_duty_row_is_not_manually_editable(status_types, div):
+    obj = make_object("OBJ-OM-13")
+    plan = make_plan(obj)
+    emp = make_employee(div)
+    duty_type = DutyType.objects.create(
+        object=obj, code="DAY", name="Дневное", before_duty_minutes=60
+    )
+    shift = make_shift(
+        plan,
+        emp.id,
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
+        duty_type=duty_type,
+    )
+    project_duty_shift(shift)
+    before = EmployeeStatus.objects.get(source_ref=f"BEFORE_DUTY:{shift.pk}")
+
+    with pytest.raises(DomainError) as exc_info:
+        cancel_status(before, actor="operator", reason="проверка")
+    assert exc_info.value.code == "AUTO_STATUS_READONLY"
 
 
 def test_approve_duty_plan_transitions_status_and_projects_shifts(status_types, div):

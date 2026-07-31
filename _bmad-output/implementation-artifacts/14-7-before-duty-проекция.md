@@ -4,7 +4,7 @@ baseline_commit: 8393dcd
 
 # Story 14.7: BEFORE_DUTY-проекция
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -42,16 +42,16 @@ so that **BR-DUTY-TYPE-003 выполняется: оператор видит �
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Расширить `project_duty_shift()` (AC: 1, 2, 3, 4, 5)
-  - [ ] `apps/operations/duties/services.py` — блок BEFORE_DUTY внутри `project_duty_shift`, условный на `shift.duty_type_id` и `before_duty_minutes > 0`
-- [ ] Task 2 — Тесты (AC: 6, 7, 8)
-  - [ ] Юнит: BEFORE_DUTY создаётся с правильным интервалом при `duty_type.before_duty_minutes > 0`
-  - [ ] Юнит: без `duty_type` — BEFORE_DUTY не создаётся
-  - [ ] Юнит: `before_duty_minutes=0` — BEFORE_DUTY не создаётся
-  - [ ] Юнит: повторный вызов — идемпотентность BEFORE_DUTY
-  - [ ] Юнит: `assert_user_editable()` на BEFORE_DUTY-записи
-  - [ ] Прогнать ВСЕ существующие тесты 14.5/14.6 — 0 регрессий
-  - [ ] `make gate` зелёный, явно прогнан
+- [x] Task 1 — Расширить `project_duty_shift()` (AC: 1, 2, 3, 4, 5)
+  - [x] `apps/operations/duties/services.py` — блок BEFORE_DUTY внутри `project_duty_shift`, условный на `shift.duty_type_id` и `before_duty_minutes > 0`
+- [x] Task 2 — Тесты (AC: 6, 7, 8)
+  - [x] Юнит: BEFORE_DUTY создаётся с правильным интервалом при `duty_type.before_duty_minutes > 0`
+  - [x] Юнит: без `duty_type` — BEFORE_DUTY не создаётся
+  - [x] Юнит: `before_duty_minutes=0` — BEFORE_DUTY не создаётся
+  - [x] Юнит: повторный вызов — идемпотентность BEFORE_DUTY
+  - [x] Юнит: `assert_user_editable()` на BEFORE_DUTY-записи
+  - [x] Прогнать ВСЕ существующие тесты 14.5/14.6 — 0 регрессий
+  - [x] `make gate` зелёный, явно прогнан
 
 ## Dev Notes
 
@@ -73,14 +73,16 @@ so that **BR-DUTY-TYPE-003 выполняется: оператор видит �
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано буквально по AC 1-8. Третий `get_or_create`-блок внутри `project_duty_shift()` (не отдельная функция — точка встраивания по буквe Scope Decision), условный на `shift.duty_type_id and shift.duty_type.before_duty_minutes > 0`. Интервал симметричен `REST_AFTER_DUTY`: `[shift.starts_at - before_duty_minutes, shift.starts_at)`, та же `_to_date_range()`-конвертация (14.6, уже локализована к `Asia/Qyzylorda`). `approve_duty_plan()` не изменялась — BEFORE_DUTY проецируется автоматически как часть `project_duty_shift()`. 5 новых тестов (создание/пропуск-без-duty_type/пропуск-при-нуле/идемпотентность/read-only-гард) + фикстура `status_types` дополнена `BEFORE_DUTY` `StatusType`. Все 43 теста `duties/`, включая все 38 из 14.5/14.6 БЕЗ изменения ассертов (аддитивное расширение), прогнаны под реальным Postgres, все зелёные; `make gate` — 3178 passed (было 3173, +5), 0 regressions, no migration drift (новых миграций нет — только сервисный слой).
 
 ### File List
 
-_(заполняется dev-story)_
+- `apps/operations/duties/services.py` (modified — BEFORE_DUTY-блок в `project_duty_shift()`)
+- `apps/operations/duties/tests/test_services.py` (modified — 5 новых тестов + `BEFORE_DUTY` в фикстуре `status_types`)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Седьмая стори Epic 14, прямое расширение `project_duty_shift()` (14.6, done). Донор резервирует BEFORE_DUTY «до решения заказчика» (OQ-010) — заказчик подтвердил: строить полноценно в MVP, симметрично `REST_AFTER_DUTY`. `BR-DUTY-TYPE-004` (reconnaissance-гейт на approve) явно вне этой стори — 14.11. |
+| 2026-07-31 | Dev-story: BEFORE_DUTY-блок в `project_duty_shift()`, 5 новых тестов, все зелёные под реальным Postgres. `make gate` — 3178 passed. Status → review. |

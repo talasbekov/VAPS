@@ -1,4 +1,5 @@
-"""Story 14.6: OM_AUTO projection service (BR-017 — DUTY/REST_AFTER_DUTY).
+"""Story 14.6/14.7: OM_AUTO projection service (BR-017 — DUTY/REST_AFTER_DUTY;
+BR-DUTY-TYPE-003 — BEFORE_DUTY).
 
 Deliberately does NOT reuse `apps.operations.statuses.services.status_service
 .create_status()`: that function forces `source=USER` (its own docstring:
@@ -56,8 +57,9 @@ def _to_date_range(starts_at, ends_at):
 
 
 def project_duty_shift(shift):
-    """BR-017: project one `DutyShift` into DUTY + REST_AFTER_DUTY
-    `EmployeeStatus` rows, source=OM_AUTO, idempotent by `source_ref`.
+    """BR-017/BR-DUTY-TYPE-003: project one `DutyShift` into DUTY +
+    REST_AFTER_DUTY (+ BEFORE_DUTY when applicable) `EmployeeStatus` rows,
+    source=OM_AUTO, idempotent by `source_ref`.
     """
     duty_start, duty_end = _to_date_range(shift.starts_at, shift.ends_at)
     EmployeeStatus.objects.get_or_create(
@@ -84,6 +86,28 @@ def project_duty_shift(shift):
             "source": EmployeeStatus.Source.OM_AUTO,
         },
     )
+
+    # Story 14.7 / BR-DUTY-TYPE-003: "before_duty_minutes > 0 creates
+    # BEFORE_DUTY projection" — donor reserves this "until customer
+    # decision" (OQ-010); customer confirmed building it in MVP at 14.7's
+    # create-story. Symmetric to REST_AFTER_DUTY: starts before_duty_minutes
+    # before the shift, ends at the shift's own start.
+    if shift.duty_type_id and shift.duty_type.before_duty_minutes > 0:
+        before_starts_at = shift.starts_at - datetime.timedelta(
+            minutes=shift.duty_type.before_duty_minutes
+        )
+        before_ends_at = shift.starts_at
+        before_start, before_end = _to_date_range(before_starts_at, before_ends_at)
+        EmployeeStatus.objects.get_or_create(
+            source_ref=f"BEFORE_DUTY:{shift.pk}",
+            defaults={
+                "employee_id": shift.employee_id,
+                "status_type_code": "BEFORE_DUTY",
+                "date_start": before_start,
+                "date_end": before_end,
+                "source": EmployeeStatus.Source.OM_AUTO,
+            },
+        )
 
 
 def approve_duty_plan(plan):
