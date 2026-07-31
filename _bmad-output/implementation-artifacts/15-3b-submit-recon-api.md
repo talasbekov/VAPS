@@ -4,7 +4,7 @@ baseline_commit: d2c7b23
 
 # Story 15.3b: `PUT /security-events/{id}/checklist` + `/sector-posts` — захват данных рекогносцировки (FR-22)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -74,12 +74,15 @@ _(заполняется dev-story)_
 
 Реализовано по AC 1-6. `ChecklistItemSerializer`/`SectorPostSerializer` (`ModelSerializer`, `id`-read-only). `replace_checklist_items()`/`replace_sector_posts()` — `services.py`, `transaction.atomic()`-блок `.all().delete()` + `bulk_create()`. `PUT .../checklist`/`PUT .../sector-posts` — новый общий `_get_event_or_404()`-хелпер (извлечён из `bulletin()`'s ревью-фикса 15.2b, теперь переиспользован трижды). Оба роута — `_DeferredAudit` в `AUDIT_MATRIX` (черновик-данные, не финализированное событие — тот же принцип, что `_NOTIF`/`_BUGREPORTS`), `_Gate("event.manage")` в RBAC-матрице. 7 новых тестов (create/replace-old-rows/empty-array-reset ×оба эндпоинта где применимо, 403, 404×2). `make gate` — 3453 passed (было 3426, +27 — включая параметризованные RBAC-кейсы на 2 новых роута), 0 regressions, schema регенерирована.
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** Blind Hunter — 0 блокирующих находок, отметил отсутствие `select_for_update()` как «принятый trade-off» (не баг). Acceptance Auditor — 5/6 PASS, AC-2/AC-3 PARTIAL: replace-old-rows/пустой-массив проверены ТОЛЬКО для checklist, не для sector-posts (тот же shared-код, но AC-текст явно называет оба роута). Edge Case Hunter НАШЁЛ И ВОСПРОИЗВЁЛ реальный Medium-баг: без `select_for_update()` два одновременных `PUT` на один ОМ дают torn write — оба видят пустой набор строк под READ COMMITTED, оба коммитят свой `bulk_create()`, в итоге остаются строки ОБОИХ писателей (10 вместо 5, воспроизведено 2 из 3 прогонов прямым тестом с `threading.Barrier`). Исправлено: `select_for_update()` на родительском `SecurityEvent` в обеих функциях `services.py` (зеркалит `issue_bulletin()`). Добавлен `test_recon_capture_concurrency.py` (`@pytest.mark.concurrency`, тот же паттерн, что `test_employee_status_concurrency.py`) — доказывает ровно ОДИН писатель побеждает (5 строк, не 10). Также закрыт Acceptance Auditor's пробел — добавлены `test_sector_posts_replace_removes_old_rows`/`test_sector_posts_replace_with_empty_array_clears_all`/`test_sector_posts_without_permission_is_403`. `make gate` — 3456 passed (было 3453, +3 non-concurrency +1 concurrency-marked, деселектится гейтом как и прецедент). Status → done.
+
 ### File List
 
 - `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — `ChecklistItemSerializer`/`SectorPostSerializer`)
-- `Backend/VAPS/apps/operations/events/services.py` (modified — `replace_checklist_items()`/`replace_sector_posts()`)
+- `Backend/VAPS/apps/operations/events/services.py` (modified — `replace_checklist_items()`/`replace_sector_posts()` + ревью-фикс `select_for_update()`)
 - `Backend/VAPS/apps/operations/events/api/views.py` (modified — `checklist`/`sector_posts`-actions, `_get_event_or_404()`-хелпер, `bulletin()` рефакторен на хелпер)
-- `Backend/VAPS/apps/operations/events/tests/test_recon_capture_api.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/test_recon_capture_api.py` (new, +3 sector-posts теста после ревью)
+- `Backend/VAPS/apps/operations/events/tests/test_recon_capture_concurrency.py` (new, ревью-фикс regression-тест)
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 2 `_DeferredAudit`-записи)
 - `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — 2 `_Gate`-записи)
 - `Backend/VAPS/schema.yaml` (regenerated)
@@ -90,3 +93,4 @@ _(заполняется dev-story)_
 |---|---|
 | 2026-07-31 | Story создана (create-story) — средняя часть разбитого `15-3`. PUT-replace-семантика выбрана вместо построчного CRUD; аудит намеренно deferred (черновик, не финализированное событие). |
 | 2026-07-31 | Dev-story: 2 PUT-replace-эндпоинта, общий `_get_event_or_404()`-хелпер (рефакторинг `bulletin()`), оба живых реестра обновлены (`_DeferredAudit`+`_Gate`), 7 новых тестов, схема регенерирована. `make gate` — 3453 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): Edge Case Hunter нашёл и ВОСПРОИЗВЁЛ реальный Medium-баг — отсутствие `select_for_update()` даёт torn write при одновременных PUT (10 строк вместо 5). Исправлено + concurrency-regression-тест. Acceptance Auditor поймал пробел покрытия sector-posts (AC-2/AC-3) — закрыто 3 новыми тестами. `make gate` — 3456 passed. Status → done. |

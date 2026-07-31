@@ -95,6 +95,50 @@ def test_sector_posts_replace_creates_rows(event_manager_client):
     assert SecurityEventSectorPost.objects.filter(event=event).count() == 1
 
 
+def test_sector_posts_replace_removes_old_rows(event_manager_client):
+    # Review (Acceptance Auditor): AC-2/AC-3 wording applies to both
+    # endpoints, but the original test pass only proved replace-old-rows
+    # and empty-array-reset for checklist, not sector-posts — same shared
+    # code path, but AC text names both routes explicitly.
+    event = make_event("OBJ-RECON-API-6")
+    SecurityEventSectorPost.objects.create(
+        event=event, sector="OLD", post="Старый пост", need=1
+    )
+    resp = event_manager_client.put(
+        reverse("ops-security-event-sector-posts", args=[event.pk]),
+        [{"sector": "NEW", "post": "Новый пост", "need": 2}],
+        format="json",
+    )
+    assert resp.status_code == 200
+    sectors = list(
+        SecurityEventSectorPost.objects.filter(event=event).values_list(
+            "sector", flat=True
+        )
+    )
+    assert sectors == ["NEW"]
+
+
+def test_sector_posts_replace_with_empty_array_clears_all(event_manager_client):
+    event = make_event("OBJ-RECON-API-7")
+    SecurityEventSectorPost.objects.create(
+        event=event, sector="A", post="Пост 1", need=1
+    )
+    resp = event_manager_client.put(
+        reverse("ops-security-event-sector-posts", args=[event.pk]), [], format="json"
+    )
+    assert resp.status_code == 200
+    assert resp.data == []
+    assert not SecurityEventSectorPost.objects.filter(event=event).exists()
+
+
+def test_sector_posts_without_permission_is_403(seeded):
+    event = make_event("OBJ-RECON-API-8")
+    resp = _client("nobody").put(
+        reverse("ops-security-event-sector-posts", args=[event.pk]), [], format="json"
+    )
+    assert resp.status_code == 403
+
+
 def test_checklist_without_permission_is_403(seeded):
     event = make_event("OBJ-RECON-API-5")
     resp = _client("nobody").put(

@@ -58,8 +58,19 @@ def replace_checklist_items(event, rows):
     """Story 15.3b: replace-all-rows for `event.checklist_items` — a full
     form submission, not an incremental CRUD (no donor spec confirms
     per-row editing; replace-all avoids orphaned rows from a prior partial
-    attempt)."""
+    attempt).
+
+    Review (Edge Case Hunter): `select_for_update()` on the parent
+    `SecurityEvent` row, mirroring `issue_bulletin()` — without it, two
+    concurrent PUTs both see the pre-delete row set as absent under
+    READ COMMITTED (neither's DELETE conflicts with the other), and both
+    commit their own `bulk_create()`, leaving the UNION of both writers'
+    rows instead of one clean replace (reproduced: 10 rows survived from
+    two 5-row concurrent PUTs). The lock serializes concurrent replaces
+    onto the same event, closing the window.
+    """
     with transaction.atomic():
+        SecurityEvent.objects.select_for_update().get(pk=event.pk)
         event.checklist_items.all().delete()
         items = [SecurityEventChecklistItem(event=event, **row) for row in rows]
         SecurityEventChecklistItem.objects.bulk_create(items)
@@ -68,8 +79,10 @@ def replace_checklist_items(event, rows):
 
 def replace_sector_posts(event, rows):
     """Story 15.3b: replace-all-rows for `event.sector_posts` — same
-    semantics as `replace_checklist_items()`."""
+    semantics (including the `select_for_update()` fix) as
+    `replace_checklist_items()`."""
     with transaction.atomic():
+        SecurityEvent.objects.select_for_update().get(pk=event.pk)
         event.sector_posts.all().delete()
         posts = [SecurityEventSectorPost(event=event, **row) for row in rows]
         SecurityEventSectorPost.objects.bulk_create(posts)
