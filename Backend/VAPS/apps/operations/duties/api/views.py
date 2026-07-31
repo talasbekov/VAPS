@@ -162,11 +162,14 @@ class DutyPlanViewSet(viewsets.ViewSet):
     )
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None, *args, **kwargs):
-        # Story 14.11c: thin wrapper — approve_duty_plan() (14.6) is already
-        # idempotent by design (status flip guarded, project_duty_shift()'s
-        # get_or_create is idempotent by source_ref), so this action adds
-        # no state-machine guard of its own.
+        # Story 14.11c: thin wrapper — approve_duty_plan() (14.6, review-
+        # hardened in 14.11c with select_for_update()) is already idempotent
+        # by design (status flip guarded, project_duty_shift()'s get_or_create
+        # is idempotent by source_ref), so this action adds no state-machine
+        # guard of its own. Uses the RETURNED plan (re-fetched under lock
+        # inside the service), not the pre-lock instance from
+        # get_object_or_404 above, which the lock doesn't mutate in place.
         require_permission(request, _PERMISSION)
         plan = get_object_or_404(DutyPlan, pk=pk)
-        approve_duty_plan(plan)
+        plan = approve_duty_plan(plan)
         return Response(DutyPlanSerializer(plan).data)

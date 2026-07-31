@@ -5,12 +5,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from apps.core import clock
 from apps.core.exceptions import DomainError
 from apps.core.models import Division, DivisionType, Employee, Organization
 from apps.operations.duties.models import DutyPlan, DutyShift
 from apps.operations.duties.services import (
     _to_date_range,
     approve_duty_plan,
+    cancel_duty_shift,
     project_duty_shift,
 )
 from apps.operations.facilities.models import DutyType
@@ -346,6 +348,38 @@ def test_approve_duty_plan_is_idempotent(status_types, div):
     plan.refresh_from_db()
     assert plan.status_code == DutyPlan.StatusCode.APPROVED
     assert EmployeeStatus.objects.count() == 2
+
+
+def test_reapproving_plan_does_not_resurrect_a_cancelled_shifts_statuses(
+    status_types, div
+):
+    # Review (Edge Case Hunter, 14.11c): approve -> cancel one shift (14.9a)
+    # -> re-approve (idempotent per AC-4) must NOT recreate the cancelled
+    # shift's DUTY/REST_AFTER_DUTY rows — that would silently undo the
+    # cancellation.
+    obj = make_object("OBJ-OM-6")
+    plan = make_plan(obj)
+    emp = make_employee(div)
+    shift = make_shift(
+        plan,
+        emp.id,
+        datetime.datetime(2026, 9, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 9, 1, 20, 0, tzinfo=LOCAL_TZ),
+    )
+
+    approve_duty_plan(plan)
+    assert EmployeeStatus.objects.filter(source_ref=f"DUTY:{shift.pk}").exists()
+
+    with clock.override(datetime.date(2026, 8, 1)):
+        cancel_duty_shift(shift, actor="operator", reason="Отмена")
+    assert not EmployeeStatus.objects.filter(source_ref=f"DUTY:{shift.pk}").exists()
+
+    approve_duty_plan(plan)
+
+    assert not EmployeeStatus.objects.filter(source_ref=f"DUTY:{shift.pk}").exists()
+    assert not EmployeeStatus.objects.filter(
+        source_ref=f"REST_AFTER_DUTY:{shift.pk}"
+    ).exists()
 
 
 def test_om_auto_row_is_not_manually_editable(status_types, div):

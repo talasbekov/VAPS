@@ -26,7 +26,7 @@ from django.db import transaction
 
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
-from apps.operations.duties.models import DutyShift
+from apps.operations.duties.models import DutyPlan, DutyShift
 from apps.operations.statuses.models import EmployeeStatus
 
 REST_AFTER_DUTY_HOURS = 24
@@ -64,7 +64,17 @@ def project_duty_shift(shift):
     """BR-017/BR-DUTY-TYPE-003: project one `DutyShift` into DUTY +
     REST_AFTER_DUTY (+ BEFORE_DUTY when applicable) `EmployeeStatus` rows,
     source=OM_AUTO, idempotent by `source_ref`.
+
+    Review (Edge Case Hunter, 14.11c): a cancelled shift (14.9a) must never
+    be (re-)projected — `approve_duty_plan()` re-approving a plan after one
+    of its shifts was cancelled would otherwise silently resurrect the
+    exact `EmployeeStatus` rows `cancel_duty_shift()` deleted, undoing the
+    cancellation. Guarded HERE (not just in the caller) so every present
+    and future caller of this function is protected, not only
+    `approve_duty_plan()`.
     """
+    if shift.cancelled_at is not None:
+        return
     duty_start, duty_end = _to_date_range(shift.starts_at, shift.ends_at)
     EmployeeStatus.objects.get_or_create(
         source_ref=f"DUTY:{shift.pk}",
@@ -119,15 +129,29 @@ def approve_duty_plan(plan):
     plan. Idempotent — re-approving an already-APPROVED plan is a no-op for
     the status_code flip; `project_duty_shift()`'s own idempotency covers
     re-running the projection.
+
+    Review (Edge Case Hunter, 14.11c): wrapped in `transaction.atomic()` +
+    `select_for_update()` on the plan row, matching `cancel_duty_shift()`/
+    `replan_duty_shift()`'s own pattern — this endpoint is now reachable
+    over HTTP (14.11c), where two overlapping requests for the same plan
+    are a real possibility (double-click, client retry-on-timeout), not
+    just a sequential test/script call. `EmployeeStatus.source_ref` has no
+    DB-level unique constraint (that belongs to a different app/epic), so
+    `get_or_create()` alone is not race-safe; the lock serializes
+    concurrent approvers of the SAME plan onto the same execution, closing
+    the window without touching `EmployeeStatus`'s schema.
     """
-    if plan.status_code != plan.StatusCode.APPROVED:
-        plan.status_code = plan.StatusCode.APPROVED
-        plan.save(update_fields=["status_code", "updated_at"])
-    # Review (Edge Case Hunter, 14.7): project_duty_shift() dereferences
-    # shift.duty_type when set — select_related avoids an N+1 query per
-    # shift for plans where most shifts carry a duty_type.
-    for shift in plan.shifts.select_related("duty_type").all():
-        project_duty_shift(shift)
+    with transaction.atomic():
+        plan = DutyPlan.objects.select_for_update().get(pk=plan.pk)
+        if plan.status_code != plan.StatusCode.APPROVED:
+            plan.status_code = plan.StatusCode.APPROVED
+            plan.save(update_fields=["status_code", "updated_at"])
+        # Review (Edge Case Hunter, 14.7): project_duty_shift() dereferences
+        # shift.duty_type when set — select_related avoids an N+1 query per
+        # shift for plans where most shifts carry a duty_type.
+        for shift in plan.shifts.select_related("duty_type").all():
+            project_duty_shift(shift)
+    return plan
 
 
 def cancel_duty_shift(shift, *, actor, reason):
