@@ -4,7 +4,7 @@ baseline_commit: 3c8acf2
 
 # Story 14.11g: API — список конфликтов плана дежурств
 
-Status: review
+Status: done
 
 ## Story
 
@@ -68,9 +68,11 @@ so that **конфликты плана можно ПРОЧИТАТЬ (без п
 
 Реализовано по AC 1-6. `@action(detail=True, methods=["get"], pagination_class=None)` `conflicts` на `DutyPlanViewSet` — буквальная копия `validate`'s тела (`require_permission` → `get_object_or_404` → `validate_duty_plan(plan)` → `DutyPlanConflictSerializer(many=True)`), только `GET` вместо `POST`, свой `operation_id`/description. **Исправлено при dev-story**: story изначально предполагала AUDIT_MATRIX-строку тоже нужна — при реализации подтверждено (докстринг `test_audit_coverage.py`), что audit-полнота-гейт завязан ТОЛЬКО на мутирующие методы (POST/PUT/PATCH/DELETE), `GET` в него не входит — строка НЕ добавлена (намеренно, не пропуск). RBAC-строка добавлена (та матрица покрывает все роуты). 4 новых теста (чистый план, идентичность результата с `validate` на одном и том же fixture — sanity, что оба action'а реально вызывают тот же сервис, 404, 403), все зелёные с первой попытки; `make schema` регенерирован (bare array, без пагинации — тот же паттерн, что 14.11f); `make gate` — 3364 passed (было 3350, +14), 0 regressions.
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** Acceptance Auditor подтвердил все 6 AC PASS реальным прогоном (911 passed на целевом срезе), включая явную проверку, что `conflicts` — генуинно независимое вычисление (не HTTP-self-call на `validate`). Blind Hunter и Edge Case Hunter независимо сошлись на ОДНОЙ Low-находке: тела `validate`/`conflicts` были побайтово идентичны (permission-check/404/response-обёртка скопированы, не вынесены в общий хелпер) — риск расхождения при будущей правке одного без другого, ничем не защищённый кроме теста параллельности результатов. Оба сошлись независимо → применено: вынесен приватный `_conflicts_response(request, pk)`, оба action'а теперь тонкие однострочные обёртки над ним. Багов не найдено ни одним агентом. `make gate` после фикса — 3364 passed, 0 regressions.
+
 ### File List
 
-- `apps/operations/duties/api/views.py` (modified — `conflicts`-action)
+- `apps/operations/duties/api/views.py` (modified — `conflicts`-action, review fix: `_conflicts_response()` shared helper)
 - `apps/operations/tests/test_rbac_matrix.py` (modified — `MATRIX`'s новая строка)
 - `apps/operations/duties/tests/test_duty_plan_conflicts_api.py` (new)
 - `schema.yaml` (regenerated — `make schema`)
@@ -81,3 +83,4 @@ so that **конфликты плана можно ПРОЧИТАТЬ (без п
 |---|---|
 | 2026-07-31 | Story создана (create-story). Седьмая (последняя backend) из ~12 подсторий разделения 14.11. `conflicts` — тонкая GET-обёртка над `validate_duty_plan()` (14.11f), без новой таблицы персистентности (донор не даёт полной схемы `ops_duty_conflicts`, ничто в backlog её не строит). Тот же bare-array/pagination_class=None паттерн, что 14.11f's review-фикс. |
 | 2026-07-31 | Dev-story: `conflicts`-action, MATRIX-строка (AUDIT_MATRIX сознательно пропущена — GET не входит в audit-полноту-гейт), 4 новых теста, все зелёные с первой попытки. `make gate` — 3364 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): Acceptance Auditor — все 6 AC PASS, багов нет. Blind Hunter и Edge Case Hunter независимо сошлись на одной Low-находке (дублирование тел validate/conflicts) — исправлено вынесением `_conflicts_response()`. `make gate` — 3364 passed, 0 regressions. Status → done. |

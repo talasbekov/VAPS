@@ -291,10 +291,7 @@ class DutyPlanViewSet(viewsets.ViewSet):
     # action never paginates) and schema generation.
     @action(detail=True, methods=["post"], pagination_class=None)
     def validate(self, request, pk=None, *args, **kwargs):
-        require_permission(request, _PERMISSION)
-        plan = get_object_or_404(DutyPlan, pk=pk)
-        conflicts = validate_duty_plan(plan)
-        return Response(DutyPlanConflictSerializer(conflicts, many=True).data)
+        return self._conflicts_response(request, pk)
 
     @extend_schema(
         operation_id="duty_plan_conflicts",
@@ -305,11 +302,18 @@ class DutyPlanViewSet(viewsets.ViewSet):
     )
     @action(detail=True, methods=["get"], pagination_class=None)
     def conflicts(self, request, pk=None, *args, **kwargs):
-        # Story 14.11g: donor treats validate (POST, "check now") and
-        # conflicts (GET, "read what was found") as two distinct logical
-        # endpoints even though nothing in the codebase persists conflicts
-        # yet (no ops_duty_conflicts table) — both call the exact same
-        # read-only validate_duty_plan(), no logic duplicated.
+        return self._conflicts_response(request, pk)
+
+    def _conflicts_response(self, request, pk):
+        # Story 14.11g / review (Blind Hunter, Edge Case Hunter, both
+        # independently): validate (POST, "check now") and conflicts (GET,
+        # "read what was found") are two distinct logical endpoints per the
+        # donor, even though nothing in the codebase persists conflicts yet
+        # (no ops_duty_conflicts table) — both call the exact same read-only
+        # validate_duty_plan(). Factored the shared view-layer plumbing
+        # (permission/404/response) into one helper so the two actions can't
+        # drift apart on a future edit (e.g. a query param added to one but
+        # not the other) — only the service call itself was shared before.
         require_permission(request, _PERMISSION)
         plan = get_object_or_404(DutyPlan, pk=pk)
         conflicts = validate_duty_plan(plan)
