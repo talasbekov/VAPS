@@ -4,7 +4,7 @@ baseline_commit: b69fe71
 
 # Story 15.1: App operations/events — SecurityEvent + жизненный цикл
 
-Status: review
+Status: done
 
 ## Story
 
@@ -28,7 +28,7 @@ so that **Story 15.2+ (бюллетень/рекогносцировка/пот�
 ## Acceptance Criteria
 
 1. **AC-1 (`SecurityEvent`-модель).** Поля: `object` (FK на `facilities.Object`), `title`, `status_code` (choices, DB-level CheckConstraint), `created_at`/`updated_at` (`TimeStampedModel`), `senior_employee_id` (flat UUID — ARCH-002/003, «Старший объекта», FR-21).
-2. **AC-2 (статус-enum — 9 значений, см. Scope Decision).** `TextChoices` + `CheckConstraint`, дефолт `DRAFT`.
+2. **AC-2 (статус-enum — 10 значений, см. Scope Decision).** `TextChoices` + `CheckConstraint`, дефолт `DRAFT`.
 3. **AC-3 (`db_table`).** `ops_security_events` (донор-конвенция `ops_*`, тот же паттерн, что `ops_duty_plans`/`ops_objects`).
 4. **AC-4 (миграция).** `makemigrations` создаёт единственную новую миграцию, `migrate` проходит чисто на пустой БД.
 5. **AC-5 (ARCH-003 изоляция).** Новое приложение `apps/operations/events/` не импортирует `apps.core.models` напрямую — `test_isolation.py`-паттерн, зеркалящий `duties`/`facilities`.
@@ -75,6 +75,8 @@ so that **Story 15.2+ (бюллетень/рекогносцировка/пот�
 
 ### Completion Notes
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** все 6 AC PASS (подтверждено Acceptance Auditor целевым прогоном — 9 passed, `makemigrations --check` чисто). Blind Hunter поднял High-находку (диф-only, без выполнения кода): `ProtectedError` — НЕ подкласс `IntegrityError`, тест `test_object_protected_from_deletion_when_referenced` должен падать. НЕЗАВИСИМО опровергнуто ДВУМЯ агентами (Edge Case Hunter + Acceptance Auditor), оба реально запустившими тест и проверившими MRO класса напрямую: `class ProtectedError(IntegrityError)` в установленном Django 5.1.15 — подкласс, тест реально проходит. Ложная тревога (устаревшее допущение о версии Django), не баг. Единственная реальная находка — косметическая: заголовок AC-2 в этом файле говорил «9 значений», код и Scope Decision корректно — 10 (включая CANCELLED). Исправлено (эта правка). Багов в коде не найдено ни одним агентом.
+
 Реализовано по AC 1-6. Новое приложение `apps/operations/events/` (label `ops_events`), зеркалит структуру `duties`/`facilities`. `SecurityEvent`-модель — FK на `Object` (`on_delete=PROTECT`, тот же паттерн, что 14.2-14.4, не CASCADE как у `DutyPlan`, — ОМ не должно исчезать молча при удалении объекта), `status_code` (10-значный `TextChoices`+CheckConstraint, синтезирован из `epics.md:58-68`'s FR-21..FR-30, донор-спека недоступна в этом worktree — см. Scope Decision), `senior_employee_id` (flat UUID, ARCH-002/003, FR-21 «Старший объекта»). `db_table = ops_security_events`. Миграция `0001_initial` — единственная, применилась чисто. Изоляция — покрыта общим `test_isolation.py` (AST-скан по всей `operations/`, новый app подхвачен автоматически, отдельный файл не нужен). 6 новых тестов: app-smoke (4, буквальный образец `facilities/tests/test_app.py`) + DB-уровневый CheckConstraint-пруф через `queryset.update()` (bypass `full_clean()`, доказывает именно DB-constraint, не Python-валидацию) + PROTECT-пруф через прямой `.delete()`. `make gate` — 3378 passed (было 3372, +6), 0 regressions, no migration drift.
 
 ### File List
@@ -95,3 +97,4 @@ so that **Story 15.2+ (бюллетень/рекогносцировка/пот�
 |---|---|
 | 2026-07-31 | Story создана (create-story). Первая стори Epic 15. Research-агент процитировал architecture.md:215 как источник статус-enum — цитата оказалась ложной при личной проверке (та строка про Vite-стартер). Статус-enum вместо этого синтезирован из epics.md's FR-21..FR-30 (личная проверка). Донор-спека недоступна в этом worktree. Существующий frontend/security-events (Smart Josparlau прототип) НЕ источник истины для backend-модели. |
 | 2026-07-31 | Dev-story: новое приложение `apps/operations/events/`, `SecurityEvent`-модель, миграция, 6 новых тестов (app-smoke + DB-constraint-пруф), все зелёные с первой попытки (после `ruff format` на длинных choices-строках). `make gate` — 3378 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): Acceptance Auditor — все 6 AC PASS. Blind Hunter поднял High-находку (ProtectedError vs IntegrityError) — независимо опровергнута Edge Case Hunter И Acceptance Auditor реальным запуском+MRO-проверкой (ложная тревога). Единственный реальный итог — косметическая правка AC-2's «9»→«10 значений». Status → done. |
