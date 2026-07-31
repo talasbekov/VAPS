@@ -4,7 +4,7 @@ baseline_commit: 6cbf0a4
 
 # Story 15.7a: `GroupForceRequest` — модель (FR-24, Story 15.7 «Запросы Группам»)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -65,9 +65,11 @@ so that **15.7b (генерация+рассылка) и 15.8 (выделени�
 
 Реализовано по AC 1-6. `GroupForceRequest` — event-scoped модель, `group` FK на `Group` (`PROTECT` — справочник не должен исчезать под ссылками, доказано `test_deleting_group_is_protected`), `event` FK `CASCADE`. `Status`-enum (4 значения) + DB-level CheckConstraint. `UniqueConstraint(event, group)` — один агрегированный запрос на пару. Миграция `0006` — единственная. 6 новых тестов (db_table, create+persist, unique-together-пруф, CheckConstraint-пруф, CASCADE-пруф, PROTECT-пруф). `make gate` — 3542 passed (было 3536, +6), 0 regressions, no drift.
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** все три агента — 0 реальных багов. Blind Hunter — единственное замечание Low: `PROTECT` на `group` навсегда блокирует хард-delete referenced-Группы, но не было явно сверено с `is_active`-механизмом (15.6) как намеренным путём ретайра — добавлено уточнение в докстринг. Edge Case Hunter эмпирически подтвердил: PROTECT блокирует только REFERENCED группы, НЕ referenced удаляются нормально (не побочный эффект); unique-constraint держится на 5 независимых итерациях, не флейк. Acceptance Auditor — 5/6 PASS + 1 PARTIAL (не блокирующий — `test_isolation.py` не был передернут агентом лично, но уже покрыт гейт-прогоном). Status → done.
+
 ### File List
 
-- `Backend/VAPS/apps/operations/events/models.py` (modified — `GroupForceRequest`-модель)
+- `Backend/VAPS/apps/operations/events/models.py` (modified — `GroupForceRequest`-модель, ревью-фикс докстринга)
 - `Backend/VAPS/apps/operations/events/migrations/0006_groupforcerequest.py` (new)
 - `Backend/VAPS/apps/operations/events/tests/test_group_force_request_model.py` (new)
 
@@ -77,3 +79,4 @@ so that **15.7b (генерация+рассылка) и 15.8 (выделени�
 |---|---|
 | 2026-07-31 | Story создана (create-story), разбита из планового `15-7` на 15.7a (модель)/15.7b (генерация+рассылка API). `group`-поле — FK на 15.6's справочник с самого начала (не текст, в отличие от уже-закрытой `SecurityEventStaffingDemand.group`). |
 | 2026-07-31 | Dev-story: `GroupForceRequest`-модель + миграция + 6 тестов. `make gate` — 3542 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): 0 багов, 5/6 AC чистый PASS + 1 некритичный PARTIAL. Докстринг-уточнение про PROTECT+is_active. Status → done. |

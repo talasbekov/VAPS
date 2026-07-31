@@ -245,7 +245,14 @@ class GroupForceRequest(TimeStampedModel):
     модель, никакого конфликта с решением НЕ переводить уже-закрытую
     `SecurityEventStaffingDemand.group` на FK). `allocated_count`
     присутствует с дефолтом 0, но НЕ записывается этой стори — запись
-    (переход в `PARTIALLY_ALLOCATED`/`ALLOCATED`) — Story 15.8's работа."""
+    (переход в `PARTIALLY_ALLOCATED`/`ALLOCATED`) — Story 15.8's работа.
+
+    Review (Blind Hunter): `PROTECT` на `group`, а не `SET_NULL`/CASCADE —
+    та же «не исчезай молча под ссылками» логика, что `SecurityEvent
+    .object`. Раз `Group` уже несёт `is_active` для мягкого вывода из
+    оборота (15.6), намеренный путь ретайра referenced-Группы —
+    `is_active=False`, НЕ хард-delete (тот навсегда заблокирован, пока
+    существует хоть один ссылающийся `GroupForceRequest`)."""
 
     class Status(models.TextChoices):
         NOT_SENT = "NOT_SENT", "Не отправлен"
