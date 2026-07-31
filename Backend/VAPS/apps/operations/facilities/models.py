@@ -430,3 +430,56 @@ class ChecklistOverride(TimeStampedModel):
             )
         if errors:
             raise ValidationError({"source_item": errors})
+
+
+class DutyType(TimeStampedModel):
+    """Вид дежурства объекта (donor `ops_object_duty_types`, §48
+    "Critical Fix 4 — Object Duty Types", DB-OPS-046).
+
+    PER-OBJECT, not a global reference table: PRD FR-39 lists "виды
+    дежурств" alongside global catalogs (должности/звания/etc), but the
+    donor's later "Critical Fix" section overrides that with the actual
+    schema — `object_id NOT NULL` — mirroring the same donor-wins-over-
+    letter call as 14.1's Object-vs-Facility naming decision.
+    """
+
+    object = models.ForeignKey(
+        Object, on_delete=models.CASCADE, related_name="duty_types"
+    )
+    code = models.CharField(max_length=100)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    # Donor FK -> ops_post_types (doesn't exist yet) — plain field, same
+    # deferred-FK pattern as Post.post_type_code/Object.importance_level_code.
+    default_post_type_code = models.CharField(max_length=50, blank=True)
+    # Donor: no NOT NULL — nullable. CHECK (> 0) below, strictly tighter
+    # than PositiveIntegerField's own implicit >=0 (0 is invalid per donor).
+    default_duration_minutes = models.PositiveIntegerField(null=True, blank=True)
+    rest_after_minutes = models.PositiveIntegerField(default=1440)
+    before_duty_minutes = models.PositiveIntegerField(default=0)
+    requires_reconnaissance = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "ops_object_duty_types"
+        verbose_name = "Вид дежурства"
+        verbose_name_plural = "Виды дежурств"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["object", "code"], name="uq_object_duty_type_code"
+            ),
+            # rest_after_minutes/before_duty_minutes deliberately get NO
+            # explicit >=0 CheckConstraint: PositiveIntegerField already
+            # gives that at the DB level (lesson from 13.5a's review — a
+            # duplicate constraint would be vacuous, the field's own
+            # implicit guard already rejects negative values before a
+            # named constraint could).
+            models.CheckConstraint(
+                condition=models.Q(default_duration_minutes__isnull=True)
+                | models.Q(default_duration_minutes__gt=0),
+                name="ck_duty_type_default_duration_minutes_positive",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.object.code} / {self.code}"
