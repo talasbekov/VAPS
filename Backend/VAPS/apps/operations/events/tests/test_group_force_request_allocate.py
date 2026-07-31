@@ -76,6 +76,25 @@ def test_zero_allocation_stays_sent(broker_client):
     assert resp.data["status"] == "SENT"
 
 
+def test_zero_requested_zero_allocated_is_sent_not_allocated(broker_client):
+    # Review (Blind Hunter/Edge Case Hunter): the `== 0` branch must be
+    # checked BEFORE `allocated_count >= requested_count` — otherwise a
+    # never-staffed request (requested_count=0) allocating 0 people would
+    # wrongly satisfy `0 >= 0` and land on ALLOCATED instead of SENT. Seed
+    # a non-zero allocated_count first so the PATCH to 0 is a REAL change
+    # (not the count_unchanged no-op shortcut), genuinely exercising the
+    # status-derivation branch order.
+    force_request = make_request(requested_count=0)
+    force_request.allocated_count = 1
+    force_request.status = GroupForceRequest.Status.PARTIALLY_ALLOCATED
+    force_request.save(update_fields=["allocated_count", "status"])
+    resp = broker_client.patch(
+        allocate_url(force_request), {"allocated_count": 0}, format="json"
+    )
+    assert resp.status_code == 200
+    assert resp.data["status"] == "SENT"
+
+
 def test_allocation_exceeding_requested_is_400(broker_client):
     force_request = make_request(requested_count=5)
     resp = broker_client.patch(
