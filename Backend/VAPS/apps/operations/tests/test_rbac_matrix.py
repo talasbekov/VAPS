@@ -149,6 +149,10 @@ MATRIX = {
     "ops-temp-duty-list": _Gate("admin.roles"),
     "ops-temp-duty-expire": _Gate("admin.roles"),
     "ops-my-permissions-list": _AnyAuthenticated(),
+    # Story 14.11a: create+list duty plans. Role-binding for duty.manage
+    # (which role actually carries it) is 14.12's job — no role holds it
+    # yet, so this row expects DENY for every actor until then.
+    "ops-duty-plan-list": _Gate("duty.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

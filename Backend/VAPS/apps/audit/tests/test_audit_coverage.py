@@ -217,6 +217,11 @@ _BUGREPORTS = (
     "финансовым следом (в отличие от DOCUMENT_ISSUED/DAILY_SUBMISSION_*), "
     "аналогично _NOTIF; отдельный AuditLog-канал не мотивирован"
 )
+_DUTY = (
+    "story 14.11a: create-duty-plan — HTTP audit-логирование явно отложено "
+    "на Story 14.12 («Аудит + RBAC-строки»), тот же паттерн отсрочки, что "
+    "в Out of Scope 14.6/14.7/14.9a/14.9b"
+)
 
 # Declarative registry: route name → audit verdict. UPDATE when a mutating route
 # is added (AR-9 living registry; a missing row fails test_audit_matrix_covers_*).
@@ -242,6 +247,7 @@ AUDIT_MATRIX = {
     "ops-user-role-detail": _DeferredAudit(_RBAC),
     "ops-temp-duty-list": _DeferredAudit(_RBAC),
     "ops-temp-duty-expire": _DeferredAudit(_RBAC),
+    "ops-duty-plan-list": _DeferredAudit(_DUTY),
     # submissions (5.8a → 5.9): DAILY_SUBMISSION_SUBMITTED эмитится на
     # СЕРВИС-уровне (submit_day, канон 4.4); поведенческие пины + HTTP-smoke
     # сквозь роут — test_submission_audit (5.9).

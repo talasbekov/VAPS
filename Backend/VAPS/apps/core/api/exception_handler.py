@@ -35,6 +35,12 @@ CONSTRAINT_ERROR_MAP = {
     # index check order — NOT contractual (pg_dump/restore reorders OIDs). Map the
     # version index to the same 409 so the race surfaces consistently, never 500.
     "unique_daily_submission_version": ("DAY_ALREADY_SUBMITTED", 409, False),
+    # Story 14.11a: DutyPlan's uniqueness/range constraints (14.5) surfacing
+    # through the create-duty-plan API — same "map the DB backstop, don't
+    # duplicate the check in the serializer" reasoning as the entries above.
+    "uq_duty_plan_object_month": ("DUTY_PLAN_ALREADY_EXISTS", 409, False),
+    "ck_duty_plan_year_range": ("DUTY_PLAN_INVALID_PERIOD", 422, False),
+    "ck_duty_plan_month_range": ("DUTY_PLAN_INVALID_PERIOD", 422, False),
 }
 
 # DRF-handled HTTP status → registry code (re-shaped into the §36 envelope).

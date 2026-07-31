@@ -203,6 +203,18 @@ codes:
     category: business_hard
     description: "Ручной статус конфликтует с существующим hard-block статусом (backstop — excl_hard_status_overlap)."
     source: "VAPS_7.8.2 §6 (статусы); architecture.md ARCH-DATA-020"
+  DUTY_PLAN_ALREADY_EXISTS:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "План дежурств для этого объекта и месяца уже существует (backstop — uq_duty_plan_object_month)."
+    source: "Story 14.5 (DutyPlan.uq_duty_plan_object_month); Story 14.11a API backstop"
+  DUTY_PLAN_INVALID_PERIOD:
+    http_status: 422
+    overridable: false
+    category: validation
+    description: "year/month плана дежурств вне допустимого диапазона (backstop — ck_duty_plan_year_range/ck_duty_plan_month_range)."
+    source: "Story 14.5 (DutyPlan CheckConstraints); Story 14.11a API backstop"
   REST_AFTER_DUTY_BLOCK:
     http_status: 422
     overridable: false
