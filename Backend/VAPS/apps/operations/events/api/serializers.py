@@ -8,6 +8,7 @@ from apps.operations.events.models import (
     GroupForceRequest,
     SecurityEvent,
     SecurityEventChecklistItem,
+    SecurityEventDirectAssignment,
     SecurityEventSectorPost,
     SecurityEventStaffingDemand,
 )
@@ -129,3 +130,10 @@ class GenerateForceRequestsResponseSerializer(serializers.Serializer):
     force_requests = GroupForceRequestSerializer(many=True)
     unmatched_groups = serializers.ListField(child=serializers.CharField())
     stale_groups = serializers.ListField(child=serializers.CharField())
+
+
+class DirectAssignmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SecurityEventDirectAssignment
+        fields = ["id", "sector_post", "employee_id", "comment", "created_at"]
+        read_only_fields = ["id", "created_at"]

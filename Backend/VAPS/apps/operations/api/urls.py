@@ -11,6 +11,7 @@ from apps.operations.duties.api.views import DutyPlanViewSet
 from apps.operations.events.api.views import (
     GroupForceRequestViewSet,
     GroupViewSet,
+    SecurityEventDirectAssignmentViewSet,
     SecurityEventViewSet,
 )
 from apps.operations.statuses.api.views import StatusTypeViewSet, StatusViewSet
@@ -36,6 +37,11 @@ router.register("security-events", SecurityEventViewSet, basename="ops-security-
 router.register("groups", GroupViewSet, basename="ops-group")
 router.register(
     "force-requests", GroupForceRequestViewSet, basename="ops-force-request"
+)
+router.register(
+    "direct-assignments",
+    SecurityEventDirectAssignmentViewSet,
+    basename="ops-direct-assignment",
 )
 router.register("statuses", StatusViewSet, basename="ops-status")
 router.register("statuses/types", StatusTypeViewSet, basename="ops-status-type")

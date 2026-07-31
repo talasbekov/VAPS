@@ -32,6 +32,7 @@ from apps.operations.api.permissions import require_permission
 from apps.operations.events.api.serializers import (
     AllocateForceRequestSerializer,
     ChecklistItemSerializer,
+    DirectAssignmentSerializer,
     GenerateForceRequestsResponseSerializer,
     GroupForceRequestSerializer,
     GroupSerializer,
@@ -40,7 +41,12 @@ from apps.operations.events.api.serializers import (
     SectorPostSerializer,
     StaffingDemandSerializer,
 )
-from apps.operations.events.models import Group, GroupForceRequest, SecurityEvent
+from apps.operations.events.models import (
+    Group,
+    GroupForceRequest,
+    SecurityEvent,
+    SecurityEventDirectAssignment,
+)
 from apps.operations.events.services import (
     allocate_force_request,
     approve_staffing_demand,
@@ -307,6 +313,55 @@ class SecurityEventViewSet(viewsets.ViewSet):
         requests = event.force_requests.select_related("group").all()
         return Response(GroupForceRequestSerializer(requests, many=True).data)
 
+    @extend_schema(
+        operation_id="security_event_direct_assignments",
+        methods=["GET"],
+        responses={200: DirectAssignmentSerializer(many=True)},
+        description="Список физнарядов (прямых назначений ОМД) для этого "
+        "ОМ. Требует event.manage.",
+    )
+    @extend_schema(
+        operation_id="security_event_direct_assignment_create",
+        methods=["POST"],
+        request=DirectAssignmentSerializer,
+        responses={201: DirectAssignmentSerializer},
+        description="Создать физнаряд — прямое назначение сотрудника на "
+        "пост, минуя запрос Группе/брокеридж (FR-24). Требует "
+        "event.manage. Система пассивна: НЕТ проверки двойного "
+        "назначения — разрешение «спора за человека» вне системы.",
+    )
+    @action(detail=True, methods=["get", "post"], url_path="direct-assignments")
+    def direct_assignments(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        if request.method == "GET":
+            assignments = event.direct_assignments.all()
+            return Response(DirectAssignmentSerializer(assignments, many=True).data)
+        form = DirectAssignmentSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        sector_post = form.validated_data["sector_post"]
+        if sector_post.event_id != event.pk:
+            raise ValidationError({"sector_post": "Пост принадлежит другому ОМ."})
+        with transaction.atomic():
+            assignment = SecurityEventDirectAssignment.objects.create(
+                event=event, **form.validated_data
+            )
+            record(
+                actor=request.actor_id,
+                action="SECURITY_EVENT_DIRECT_ASSIGNMENT_CREATED",
+                entity_type="security_event_direct_assignment",
+                entity_id=uuid.UUID(int=assignment.pk),
+                new_value={
+                    "event_id": event.pk,
+                    "sector_post_id": assignment.sector_post_id,
+                    "employee_id": str(assignment.employee_id),
+                },
+            )
+        return Response(
+            DirectAssignmentSerializer(assignment).data,
+            status=http_status.HTTP_201_CREATED,
+        )
+
 
 class GroupViewSet(viewsets.ViewSet):
     """Story 15.6: `GET /api/operations/groups` — справочник Групп (FR-39).
@@ -364,3 +419,42 @@ class GroupForceRequestViewSet(viewsets.ViewSet):
             comment=form.validated_data.get("comment"),
         )
         return Response(GroupForceRequestSerializer(updated).data)
+
+
+def _get_direct_assignment_or_404(pk):
+    if not (pk or "").isdigit():
+        raise Http404("Физнаряд не найден.")
+    return get_object_or_404(SecurityEventDirectAssignment, pk=pk)
+
+
+class SecurityEventDirectAssignmentViewSet(viewsets.ViewSet):
+    """Story 15.9: `DELETE /api/operations/direct-assignments/{id}` — снять
+    физнаряд. Отдельный ViewSet (не вложен в `SecurityEventViewSet`) —
+    мутирует КОНКРЕТНУЮ строку по её собственному id, тот же паттерн, что
+    `GroupForceRequestViewSet` (15.8)."""
+
+    http_method_names = ["delete", "options"]
+
+    @extend_schema(
+        operation_id="security_event_direct_assignment_delete",
+        responses={204: None},
+        description="Снять физнаряд (FR-24). Требует event.manage. "
+        "Человеческое решение спора за человека — не статус-машина.",
+    )
+    def destroy(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        assignment = _get_direct_assignment_or_404(pk)
+        with transaction.atomic():
+            record(
+                actor=request.actor_id,
+                action="SECURITY_EVENT_DIRECT_ASSIGNMENT_DELETED",
+                entity_type="security_event_direct_assignment",
+                entity_id=uuid.UUID(int=assignment.pk),
+                old_value={
+                    "event_id": assignment.event_id,
+                    "sector_post_id": assignment.sector_post_id,
+                    "employee_id": str(assignment.employee_id),
+                },
+            )
+            assignment.delete()
+        return Response(status=http_status.HTTP_204_NO_CONTENT)

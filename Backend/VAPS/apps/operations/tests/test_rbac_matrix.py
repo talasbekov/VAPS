@@ -209,6 +209,10 @@ MATRIX = {
     # code (already seeded, already granted to OMD) — not event.manage,
     # this mutates a GroupForceRequest row directly, not a SecurityEvent.
     "ops-force-request-allocate": _Gate("brokerage.manage"),
+    # Story 15.9: физнаряд create+list (same route, GET+POST) and delete
+    # (separate ViewSet), both gated on event.manage.
+    "ops-security-event-direct-assignments": _Gate("event.manage"),
+    "ops-direct-assignment-detail": _Gate("event.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

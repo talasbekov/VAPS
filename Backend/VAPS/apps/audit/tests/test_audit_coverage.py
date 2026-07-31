@@ -310,6 +310,12 @@ AUDIT_MATRIX = {
     # real change (allocated_count and/or comment); behavioral pin —
     # test_group_force_request_allocate.py.
     "ops-force-request-allocate": _Audited(),
+    # Story 15.9: SECURITY_EVENT_DIRECT_ASSIGNMENT_CREATED/_DELETED emit
+    # directly in views.py (plain one-line create/delete, no service
+    # function of their own — same shape as duty-plan create); behavioral
+    # pin — test_direct_assignment.py.
+    "ops-security-event-direct-assignments": _Audited(),
+    "ops-direct-assignment-detail": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

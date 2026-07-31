@@ -296,3 +296,45 @@ class GroupForceRequest(TimeStampedModel):
 
     def __str__(self):
         return f"{self.group_id} ({self.event_id})"
+
+
+class SecurityEventDirectAssignment(TimeStampedModel):
+    """Story 15.9: физнаряд — ОМД's direct employee->post assignment
+    (FR-24 «физнаряд — ОМД напрямую»), bypassing the Group/broker path
+    (`GroupForceRequest`, 15.7-15.8) entirely. Genuinely novel — no code
+    precedent anywhere (personally verified by the research agent).
+
+    «Система пассивна» (the story's own title) is read literally as "no
+    enforcement logic": deliberately NO uniqueness constraint against the
+    same `employee_id` being assigned twice — double-booking disputes are
+    a human decision outside this system, not something the backend
+    blocks or resolves.
+
+    Distinct from the frontend prototype's `PlacementAssignment`
+    (types.ts:76-84), which explicitly HAS a hard double-assignment rule
+    — that's Epic 16's «Расстановка» (a later PLACEMENT-stage concept),
+    a different lifecycle stage, not a contradiction to reconcile here.
+
+    `employee_id` — flat UUID (ARCH-002/003), same pattern as
+    `DutyShift.employee_id`/`SecurityEvent.senior_employee_id` — never an
+    FK into core.Employee.
+    """
+
+    event = models.ForeignKey(
+        SecurityEvent, on_delete=models.CASCADE, related_name="direct_assignments"
+    )
+    sector_post = models.ForeignKey(
+        SecurityEventSectorPost,
+        on_delete=models.CASCADE,
+        related_name="direct_assignments",
+    )
+    employee_id = models.UUIDField()
+    comment = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "ops_security_event_direct_assignments"
+        verbose_name = "Физнаряд (прямое назначение)"
+        verbose_name_plural = "Физнаряды (прямые назначения)"
+
+    def __str__(self):
+        return f"{self.employee_id} -> {self.sector_post_id} ({self.event_id})"

@@ -1555,6 +1555,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/SummaryFreshnessResponse'
           description: ''
+  /api/operations/direct-assignments/{id}/:
+    delete:
+      operationId: security_event_direct_assignment_delete
+      description: Снять физнаряд (FR-24). Требует event.manage. Человеческое решение
+        спора за человека — не статус-машина.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '204':
+          description: No response body
   /api/operations/duty-plans/:
     get:
       operationId: duty_plans_list
@@ -2233,6 +2249,60 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ChecklistItem'
+          description: ''
+  /api/operations/security-events/{id}/direct-assignments/:
+    get:
+      operationId: security_event_direct_assignments
+      description: Список физнарядов (прямых назначений ОМД) для этого ОМ. Требует
+        event.manage.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DirectAssignment'
+          description: ''
+    post:
+      operationId: security_event_direct_assignment_create
+      description: 'Создать физнаряд — прямое назначение сотрудника на пост, минуя
+        запрос Группе/брокеридж (FR-24). Требует event.manage. Система пассивна: НЕТ
+        проверки двойного назначения — разрешение «спора за человека» вне системы.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DirectAssignmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DirectAssignmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DirectAssignmentRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectAssignment'
           description: ''
   /api/operations/security-events/{id}/force-requests/:
     get:
@@ -3151,6 +3221,41 @@ components:
       - next
       - previous
       - results
+    DirectAssignment:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        sector_post:
+          type: integer
+        employee_id:
+          type: string
+          format: uuid
+        comment:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - employee_id
+      - id
+      - sector_post
+    DirectAssignmentRequest:
+      type: object
+      properties:
+        sector_post:
+          type: integer
+        employee_id:
+          type: string
+          format: uuid
+        comment:
+          type: string
+      required:
+      - employee_id
+      - sector_post
     Division:
       type: object
       properties:
