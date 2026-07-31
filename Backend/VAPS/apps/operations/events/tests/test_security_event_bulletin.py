@@ -78,6 +78,17 @@ def test_bulletin_from_other_status_is_422_conflict(event_manager_client):
     assert event.status_code == "RECON"
 
 
+def test_bulletin_with_non_numeric_id_is_404_not_500(event_manager_client):
+    # Review (Edge Case Hunter): the router's default lookup regex accepts
+    # non-numeric pk; get_object_or_404() alone only catches DoesNotExist,
+    # not the ValueError from casting a malformed string to an int field
+    # lookup — must be a clean 404, not a bare 500.
+    resp = event_manager_client.post(
+        reverse("ops-security-event-bulletin", args=["not-a-number"])
+    )
+    assert resp.status_code == 404
+
+
 def test_bulletin_without_permission_is_403(seeded):
     event = make_event()
     resp = _client("nobody").post(

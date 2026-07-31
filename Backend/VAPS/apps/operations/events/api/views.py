@@ -15,6 +15,7 @@ role-binding stays flexible/admin-configurable, no per-story hardcoding
 
 import uuid
 
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import status as http_status
@@ -109,6 +110,14 @@ class SecurityEventViewSet(viewsets.ViewSet):
     @action(detail=True, methods=["post"], url_path="bulletin")
     def bulletin(self, request, pk=None, *args, **kwargs):
         require_permission(request, _PERMISSION)
+        # Review (Edge Case Hunter, 15.2b): the router's default lookup
+        # regex accepts non-numeric pk — SecurityEvent's PK is a plain
+        # integer, and get_object_or_404() only catches DoesNotExist, not
+        # the ValueError Django raises casting a malformed string to an int
+        # field lookup (same bug class as 14.11d's shift_id fix). Guard so
+        # bad input is a clean 404, not a bare 500.
+        if not (pk or "").isdigit():
+            raise Http404("ОМ не найден.")
         event = get_object_or_404(SecurityEvent, pk=pk)
         event = issue_bulletin(event, actor=request.actor_id)
         return Response(SecurityEventSerializer(event).data)
