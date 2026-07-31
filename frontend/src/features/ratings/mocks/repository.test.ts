@@ -1209,7 +1209,9 @@ describe('журнал оценивания (§19.27)', () => {
     expect(changed).toHaveLength(1)
 
     // А отправка ровно начального значения второго события не создаёт.
-    await repository.submitEvaluation(EVALUATOR, 'work-item-2', {
+    // work-item-3: участие подтверждено (work-item-2 теперь отвергается гардом
+    // §19.33 «оценивается фактический участник»).
+    await repository.submitEvaluation(EVALUATOR, 'work-item-3', {
       ...SUBMIT,
       score: 8,
       idempotencyKey: 'idem-audit-initial',
@@ -1693,5 +1695,60 @@ describe('замок закрытого мероприятия §19.23', () => {
     const original = slice.evaluations.find((entry) => entry.id === 'evaluation-5')
     expect(original?.score).toBe(9)
     expect(original?.supersededById).not.toBeNull()
+  })
+})
+
+describe('фактический участник §19.33', () => {
+  it('оценка за неучаствовавшего отвергается канонической причиной §19.30', async () => {
+    const { repository } = await setup()
+    // work-item-2 сеян с participated: false — задание видно (§19.9 показывает
+    // факт участия), но оценку не принимает (§19.35 «оценивается фактический
+    // участник»).
+    const error: unknown = await repository
+      .submitEvaluation(EVALUATOR, 'work-item-2', {
+        score: 9,
+        basisCode: 'EXECUTION_OF_DUTIES',
+        basisNote: null,
+        comment: null,
+        revision: 1,
+        idempotencyKey: nextKey(),
+      })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      )
+    expect(error).toBeInstanceOf(RepositoryBusinessRuleError)
+    expect((error as RepositoryBusinessRuleError).errorCode).toBe('PARTICIPATION_NOT_CONFIRMED')
+    expect((error as RepositoryBusinessRuleError).message).toBe(
+      'Фактическое участие сотрудника не подтверждено.',
+    )
+  })
+
+  it('оценка связана с ЕГО заданием: чужие задания той же очереди не изменяются', async () => {
+    const { repository, adapter } = await setup()
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+      score: 9,
+      basisCode: 'EXECUTION_OF_DUTIES',
+      basisNote: null,
+      comment: null,
+      revision: 1,
+      idempotencyKey: nextKey(),
+    })
+    const envelope = await adapter.load()
+    const slice = envelope?.slices.ratings as {
+      workItems: { id: string; submittedEvaluationId: string | null; status: string }[]
+      evaluations: { id: string; employeeId: string }[]
+    }
+    const mine = slice.workItems.find((item) => item.id === 'work-item-1')
+    expect(mine?.status).toBe('SUBMITTED')
+    expect(mine?.submittedEvaluationId).not.toBeNull()
+    // Созданная запись адресована target ИМЕННО этого задания (employee-1) —
+    // и ни одно другое задание ссылку на неё не получило.
+    const created = slice.evaluations.find((entry) => entry.id === mine?.submittedEvaluationId)
+    expect(created?.employeeId).toBe('employee-1')
+    const others = slice.workItems.filter(
+      (item) => item.id !== 'work-item-1' && item.submittedEvaluationId === created?.id,
+    )
+    expect(others).toHaveLength(0)
   })
 })

@@ -826,6 +826,15 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
           'Оценка по этому заданию уже отправлена. Исправление — отдельная операция (§19.18).',
         )
       }
+      // §19.33/§19.35 «оценивается фактический участник»: задание с
+      // неподтверждённым участием показывается (факт участия — часть контекста,
+      // §19.9), но ОЦЕНКУ не принимает. Формулировка — каноническая §19.30.
+      if (!item.participated) {
+        throw new RepositoryBusinessRuleError(
+          'PARTICIPATION_NOT_CONFIRMED',
+          'Фактическое участие сотрудника не подтверждено.',
+        )
+      }
       if (item.targetEmployeeId === null) {
         throw new RepositoryBusinessRuleError(
           'GROUP_EVALUATION_UNSUPPORTED',
