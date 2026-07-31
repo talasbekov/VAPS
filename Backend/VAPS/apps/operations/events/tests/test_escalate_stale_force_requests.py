@@ -115,3 +115,40 @@ def test_no_stale_requests_is_a_clean_noop(broker):
     escalated = escalate_stale_force_requests()
     assert escalated == []
     assert not AuditLog.objects.filter(action="GROUP_FORCE_REQUEST_ESCALATED").exists()
+
+
+@override_settings(VAPS_FORCE_REQUEST_ESCALATION_DAYS=2)
+def test_second_same_day_batch_merges_into_existing_digest(broker):
+    """Review finding (Edge Case Hunter): a second same-day escalation batch
+    must not lose its entries to `notify()`'s create-only
+    `(recipient, kind, business_date)` uniqueness."""
+    first = make_request("SENT", days_old=3, code="OBJ-ESCALATE-A")
+    escalate_stale_force_requests()
+
+    second = make_request("SENT", days_old=3, code="OBJ-ESCALATE-B")
+    escalated = escalate_stale_force_requests()
+    assert len(escalated) == 1
+    assert escalated[0].pk == second.pk
+
+    notification = Notification.objects.get(
+        recipient="broker-recipient", kind="GROUP_FORCE_REQUEST_ESCALATED"
+    )
+    escalated_ids = {entry["request_id"] for entry in notification.payload["escalated"]}
+    assert escalated_ids == {first.pk, second.pk}
+
+
+@override_settings(VAPS_FORCE_REQUEST_ESCALATION_DAYS=2)
+def test_notifies_admin_wildcard_holder(db):
+    """ADMIN's `"*"` permission wildcard resolves as an escalation recipient
+    too (same idiom as `test_rbac_matrix.py`'s `_holders()`), not just
+    `brokerage.manage` — verified explicitly per review finding."""
+    call_command("seed_operations")
+    admin_role = Role.objects.get(code="ADMIN")
+    UserRole.objects.create(user_id="admin-recipient", role_code=admin_role)
+    make_request("SENT", days_old=3)
+
+    escalate_stale_force_requests()
+
+    assert Notification.objects.filter(
+        recipient="admin-recipient", kind="GROUP_FORCE_REQUEST_ESCALATED"
+    ).exists()

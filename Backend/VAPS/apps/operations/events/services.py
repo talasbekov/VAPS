@@ -26,6 +26,7 @@ from django.db.models import Q
 from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
+from apps.notifications.models import Notification
 from apps.notifications.services import notify
 from apps.operations.events.models import (
     Group,
@@ -368,19 +369,33 @@ def escalate_stale_force_requests():
     """Story 15.10 (FR-42): find `GroupForceRequest` rows stuck in
     SENT/PARTIALLY_ALLOCATED (never ALLOCATED, never a no-op NOT_SENT
     draft) for longer than `VAPS_FORCE_REQUEST_ESCALATION_DAYS` (PROVISIONAL
-    — architecture.md's AR-11 marks the real threshold an explicit open
-    question), mark each `escalated_at` (per-row idempotency — a repeat
-    catch-up run skips already-marked rows, no external watermark needed
-    for this non-daily-batch check), and notify.
+    — architecture.md:278,675 marks the real threshold an open question to
+    the customer, not yet answered — corrected by review from an earlier,
+    inaccurate "STOP-marker" citation), mark each `escalated_at` (per-row
+    idempotency — a repeat catch-up run skips already-marked rows, no
+    external watermark needed for this non-daily-batch check), and notify.
 
     Recipients are `brokerage.manage` holders — a deliberate simplification
     of FR-42's full "управление → зам → рук. департамента" vertical, which
     has no confirmed selector/data in this domain (unlike FR-13's
-    purpose-built `NotifyRecipientSelector`). Grouped into ONE digest
-    `notify()` call per recipient per day (matches `notify()`'s own
-    `(recipient, kind, business_date)` one-per-day uniqueness — a per-row
-    notification would collide/be dropped for a recipient with 2+ stale
-    requests on the same day).
+    purpose-built `NotifyRecipientSelector`). Review flagged this
+    explicitly: `brokerage.manage` is the SAME role that performs
+    allocation (15.8/15.9), so notifying it is a reminder to the
+    non-acting role, not an escalation to a superior — FR-42's literal
+    text is not met, only its story-local AC. Left as-is (see story's Out
+    of Scope) pending real org-hierarchy data; not invented here. Grouped
+    into ONE digest `notify()` call per recipient per day (matches
+    `notify()`'s own `(recipient, kind, business_date)` one-per-day
+    uniqueness — a per-row notification would collide/be dropped for a
+    recipient with 2+ stale requests on the same day). A SECOND same-day
+    batch merges its entries into the existing day's row directly (see
+    below) rather than calling `notify()` again, which would otherwise
+    silently no-op per `notify()`'s own "first payload wins" contract.
+
+    The `"*"` (ADMIN) wildcard is included alongside `brokerage.manage` in
+    recipient resolution — the same idiom used elsewhere in this codebase
+    (`test_rbac_matrix.py`'s `_holders()`) — so any active ADMIN `UserRole`
+    also receives this digest.
 
     Beat-ready, NOT Celery — same split as `check_lagging_submissions`
     (5.7b2): this function has zero Celery imports/dependencies; a future
@@ -418,23 +433,46 @@ def escalate_stale_force_requests():
         for request in stale:
             request.escalated_at = now
         GroupForceRequest.objects.bulk_update(stale, ["escalated_at"])
+        new_entries = [
+            {
+                "request_id": r.pk,
+                "event_id": r.event_id,
+                "group_code": r.group_id,
+                "status": r.status,
+            }
+            for r in stale
+        ]
         for recipient in recipients:
-            notify(
-                recipient=recipient,
-                kind="GROUP_FORCE_REQUEST_ESCALATED",
-                business_date=today,
-                payload={
-                    "escalated": [
-                        {
-                            "request_id": r.pk,
-                            "event_id": r.event_id,
-                            "group_code": r.group_id,
-                            "status": r.status,
-                        }
-                        for r in stale
-                    ]
-                },
+            # `notify()`'s `(recipient, kind, business_date)` uniqueness means
+            # a SECOND same-day batch (a newly-stale row surfacing after an
+            # earlier run already escalated others today) would otherwise
+            # no-op — "first payload wins" (notify()'s own contract) would
+            # silently drop this batch's entries from the recipient-visible
+            # digest even though the row itself is correctly marked
+            # escalated_at (Edge Case Hunter finding, story 15.10 review).
+            # Locked update-in-place merges into the SAME day's row instead
+            # of relying on notify()'s create-only path.
+            existing = (
+                Notification.objects.select_for_update()
+                .filter(
+                    recipient=recipient,
+                    kind="GROUP_FORCE_REQUEST_ESCALATED",
+                    business_date=today,
+                )
+                .first()
             )
+            if existing is not None:
+                existing.payload = {
+                    "escalated": existing.payload.get("escalated", []) + new_entries
+                }
+                existing.save(update_fields=["payload"])
+            else:
+                notify(
+                    recipient=recipient,
+                    kind="GROUP_FORCE_REQUEST_ESCALATED",
+                    business_date=today,
+                    payload={"escalated": new_entries},
+                )
         record(
             actor="SYSTEM",
             action="GROUP_FORCE_REQUEST_ESCALATED",

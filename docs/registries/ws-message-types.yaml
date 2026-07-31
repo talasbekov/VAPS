@@ -241,5 +241,5 @@ types:
     recipients: "brokerage.manage holders (упрощение — не полная вертикаль FR-42)"
     repeat: "once per recipient per business_date (UniqueConstraint), digest per run"
     action_url: "/security-events"
-    trigger: "GroupForceRequest SENT/PARTIALLY_ALLOCATED дольше VAPS_FORCE_REQUEST_ESCALATION_DAYS (PROVISIONAL — architecture.md AR-11 STOP-маркер)"
+    trigger: "GroupForceRequest SENT/PARTIALLY_ALLOCATED дольше VAPS_FORCE_REQUEST_ESCALATION_DAYS (PROVISIONAL — architecture.md:278,675, вопрос заказчику, не блокирует)"
     source: "VAPS story 15.10 — реальный эмиттер, epics.md FR-42"
