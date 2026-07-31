@@ -30,11 +30,17 @@ from django.db import transaction
 from apps.audit.services import record
 from apps.operations.api.permissions import require_permission
 from apps.operations.events.api.serializers import (
+    ChecklistItemSerializer,
     SecurityEventCreateSerializer,
     SecurityEventSerializer,
+    SectorPostSerializer,
 )
 from apps.operations.events.models import SecurityEvent
-from apps.operations.events.services import issue_bulletin
+from apps.operations.events.services import (
+    issue_bulletin,
+    replace_checklist_items,
+    replace_sector_posts,
+)
 
 _PERMISSION = "event.manage"
 
@@ -44,10 +50,16 @@ class SecurityEventPagination(LimitOffsetPagination):
     max_limit = 200
 
 
+def _get_event_or_404(pk):
+    if not (pk or "").isdigit():
+        raise Http404("ОМ не найден.")
+    return get_object_or_404(SecurityEvent, pk=pk)
+
+
 class SecurityEventViewSet(viewsets.ViewSet):
     """Story 15.2a: create/list security events (ОМ)."""
 
-    http_method_names = ["get", "post", "options"]
+    http_method_names = ["get", "post", "put", "options"]
     pagination_class = SecurityEventPagination
 
     @extend_schema(
@@ -115,9 +127,40 @@ class SecurityEventViewSet(viewsets.ViewSet):
         # integer, and get_object_or_404() only catches DoesNotExist, not
         # the ValueError Django raises casting a malformed string to an int
         # field lookup (same bug class as 14.11d's shift_id fix). Guard so
-        # bad input is a clean 404, not a bare 500.
-        if not (pk or "").isdigit():
-            raise Http404("ОМ не найден.")
-        event = get_object_or_404(SecurityEvent, pk=pk)
+        # bad input is a clean 404, not a bare 500. Story 15.3b extracted
+        # this into `_get_event_or_404()` for its own two new actions.
+        event = _get_event_or_404(pk)
         event = issue_bulletin(event, actor=request.actor_id)
         return Response(SecurityEventSerializer(event).data)
+
+    @extend_schema(
+        operation_id="security_event_checklist_replace",
+        request=ChecklistItemSerializer(many=True),
+        responses={200: ChecklistItemSerializer(many=True)},
+        description="Заменить чек-лист рекогносцировки целиком (FR-22). "
+        "Требует event.manage. Пустой массив допустим (сброс чек-листа).",
+    )
+    @action(detail=True, methods=["put"], url_path="checklist")
+    def checklist(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        form = ChecklistItemSerializer(data=request.data, many=True)
+        form.is_valid(raise_exception=True)
+        items = replace_checklist_items(event, form.validated_data)
+        return Response(ChecklistItemSerializer(items, many=True).data)
+
+    @extend_schema(
+        operation_id="security_event_sector_posts_replace",
+        request=SectorPostSerializer(many=True),
+        responses={200: SectorPostSerializer(many=True)},
+        description="Заменить строки пересчёта постов/секторов целиком "
+        "(FR-22). Требует event.manage. Пустой массив допустим.",
+    )
+    @action(detail=True, methods=["put"], url_path="sector-posts")
+    def sector_posts(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        form = SectorPostSerializer(data=request.data, many=True)
+        form.is_valid(raise_exception=True)
+        posts = replace_sector_posts(event, form.validated_data)
+        return Response(SectorPostSerializer(posts, many=True).data)

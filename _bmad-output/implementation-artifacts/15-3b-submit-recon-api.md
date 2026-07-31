@@ -4,7 +4,7 @@ baseline_commit: d2c7b23
 
 # Story 15.3b: `PUT /security-events/{id}/checklist` + `/sector-posts` — захват данных рекогносцировки (FR-22)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -39,18 +39,18 @@ so that **15.3c может проверить их наличие перед д�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Сериализаторы (AC: 1, 2)
-  - [ ] `ChecklistItemSerializer` (read+write), `SectorPostSerializer` (read+write)
-- [ ] Task 2 — `services.py`: `replace_checklist_items()`/`replace_sector_posts()` (AC: 1-3)
-  - [ ] `transaction.atomic()`: `.all().delete()` + `bulk_create()`
-- [ ] Task 3 — ViewSet `@action`-ы (AC: 1-5)
-  - [ ] `PUT .../checklist`, `PUT .../sector-posts` — `require_permission` + `isdigit()`-гвард + вызов сервиса
-- [ ] Task 4 — Живые реестры (AC: 6)
-  - [ ] `AUDIT_MATRIX` — `_DeferredAudit` с обоснованием (обе route)
-  - [ ] RBAC `MATRIX` — `_Gate("event.manage")` (обе route)
-- [ ] Task 5 — Тесты (AC: 1-6)
-  - [ ] Replace-семантика (старые строки удалены), пустой массив, 403, 404 нечисловой id
-- [ ] Task 6 — Гейт + схема (AC: 6)
+- [x] Task 1 — Сериализаторы (AC: 1, 2)
+  - [x] `ChecklistItemSerializer` (read+write), `SectorPostSerializer` (read+write)
+- [x] Task 2 — `services.py`: `replace_checklist_items()`/`replace_sector_posts()` (AC: 1-3)
+  - [x] `transaction.atomic()`: `.all().delete()` + `bulk_create()`
+- [x] Task 3 — ViewSet `@action`-ы (AC: 1-5)
+  - [x] `PUT .../checklist`, `PUT .../sector-posts` — `require_permission` + `isdigit()`-гвард (общий `_get_event_or_404()`-хелпер) + вызов сервиса
+- [x] Task 4 — Живые реестры (AC: 6)
+  - [x] `AUDIT_MATRIX` — `_DeferredAudit` с обоснованием (обе route)
+  - [x] RBAC `MATRIX` — `_Gate("event.manage")` (обе route)
+- [x] Task 5 — Тесты (AC: 1-6)
+  - [x] Replace-семантика (старые строки удалены), пустой массив, 403, 404 нечисловой id
+- [x] Task 6 — Гейт + схема (AC: 6)
 
 ## Dev Notes
 
@@ -72,14 +72,21 @@ _(заполняется dev-story)_
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано по AC 1-6. `ChecklistItemSerializer`/`SectorPostSerializer` (`ModelSerializer`, `id`-read-only). `replace_checklist_items()`/`replace_sector_posts()` — `services.py`, `transaction.atomic()`-блок `.all().delete()` + `bulk_create()`. `PUT .../checklist`/`PUT .../sector-posts` — новый общий `_get_event_or_404()`-хелпер (извлечён из `bulletin()`'s ревью-фикса 15.2b, теперь переиспользован трижды). Оба роута — `_DeferredAudit` в `AUDIT_MATRIX` (черновик-данные, не финализированное событие — тот же принцип, что `_NOTIF`/`_BUGREPORTS`), `_Gate("event.manage")` в RBAC-матрице. 7 новых тестов (create/replace-old-rows/empty-array-reset ×оба эндпоинта где применимо, 403, 404×2). `make gate` — 3453 passed (было 3426, +27 — включая параметризованные RBAC-кейсы на 2 новых роута), 0 regressions, schema регенерирована.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — `ChecklistItemSerializer`/`SectorPostSerializer`)
+- `Backend/VAPS/apps/operations/events/services.py` (modified — `replace_checklist_items()`/`replace_sector_posts()`)
+- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `checklist`/`sector_posts`-actions, `_get_event_or_404()`-хелпер, `bulletin()` рефакторен на хелпер)
+- `Backend/VAPS/apps/operations/events/tests/test_recon_capture_api.py` (new)
+- `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 2 `_DeferredAudit`-записи)
+- `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — 2 `_Gate`-записи)
+- `Backend/VAPS/schema.yaml` (regenerated)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story) — средняя часть разбитого `15-3`. PUT-replace-семантика выбрана вместо построчного CRUD; аудит намеренно deferred (черновик, не финализированное событие). |
+| 2026-07-31 | Dev-story: 2 PUT-replace-эндпоинта, общий `_get_event_or_404()`-хелпер (рефакторинг `bulletin()`), оба живых реестра обновлены (`_DeferredAudit`+`_Gate`), 7 новых тестов, схема регенерирована. `make gate` — 3453 passed. Status → review. |

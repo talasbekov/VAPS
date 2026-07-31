@@ -183,6 +183,10 @@ MATRIX = {
     # Story 15.2b: bulletin-issue action, same gate as create/list (single
     # ViewSet, single permission code).
     "ops-security-event-bulletin": _Gate("event.manage"),
+    # Story 15.3b: recon checklist/sector-posts replace-all actions, same
+    # gate as the rest of this ViewSet.
+    "ops-security-event-checklist": _Gate("event.manage"),
+    "ops-security-event-sector-posts": _Gate("event.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

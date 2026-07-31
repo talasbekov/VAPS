@@ -262,6 +262,21 @@ AUDIT_MATRIX = {
     # DRAFT->BULLETIN transition (idempotent replay emits nothing);
     # behavioral pin — test_security_event_bulletin.py.
     "ops-security-event-bulletin": _Audited(),
+    # Story 15.3b: checklist/sector-posts replace-all endpoints are
+    # DELIBERATELY deferred — these are working-draft rows captured during
+    # an in-progress recon pass, not a finalized business event (same
+    # reasoning as _NOTIF/_BUGREPORTS below). The audited event is the
+    # RECON transition itself (future story), not every intermediate edit.
+    "ops-security-event-checklist": _DeferredAudit(
+        "story 15.3b: checklist/sector-posts rows are working-draft data "
+        "captured during an in-progress recon pass, not a finalized "
+        "business event with a compliance trail — the RECON transition "
+        "itself (future story) is what gets audited, mirroring "
+        "duty-plan-validate's read-only/draft-data reasoning below"
+    ),
+    "ops-security-event-sector-posts": _DeferredAudit(
+        "story 15.3b: same reasoning as ops-security-event-checklist above"
+    ),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

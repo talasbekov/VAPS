@@ -22,7 +22,11 @@ from django.db import transaction
 
 from apps.audit.services import record
 from apps.core.exceptions import DomainError
-from apps.operations.events.models import SecurityEvent
+from apps.operations.events.models import (
+    SecurityEvent,
+    SecurityEventChecklistItem,
+    SecurityEventSectorPost,
+)
 
 
 def issue_bulletin(event, *, actor):
@@ -48,3 +52,25 @@ def issue_bulletin(event, *, actor):
             new_value={"event_id": event.pk, "status_code": event.status_code},
         )
     return event
+
+
+def replace_checklist_items(event, rows):
+    """Story 15.3b: replace-all-rows for `event.checklist_items` — a full
+    form submission, not an incremental CRUD (no donor spec confirms
+    per-row editing; replace-all avoids orphaned rows from a prior partial
+    attempt)."""
+    with transaction.atomic():
+        event.checklist_items.all().delete()
+        items = [SecurityEventChecklistItem(event=event, **row) for row in rows]
+        SecurityEventChecklistItem.objects.bulk_create(items)
+    return list(event.checklist_items.all())
+
+
+def replace_sector_posts(event, rows):
+    """Story 15.3b: replace-all-rows for `event.sector_posts` — same
+    semantics as `replace_checklist_items()`."""
+    with transaction.atomic():
+        event.sector_posts.all().delete()
+        posts = [SecurityEventSectorPost(event=event, **row) for row in rows]
+        SecurityEventSectorPost.objects.bulk_create(posts)
+    return list(event.sector_posts.all())

@@ -2146,6 +2146,106 @@ paths:
               schema:
                 $ref: '#/components/schemas/SecurityEvent'
           description: ''
+  /api/operations/security-events/{id}/checklist/:
+    put:
+      operationId: security_event_checklist_replace
+      description: Заменить чек-лист рекогносцировки целиком (FR-22). Требует event.manage.
+        Пустой массив допустим (сброс чек-листа).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ChecklistItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ChecklistItemRequest'
+          multipart/form-data:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ChecklistItemRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedChecklistItemList'
+          description: ''
+  /api/operations/security-events/{id}/sector-posts/:
+    put:
+      operationId: security_event_sector_posts_replace
+      description: Заменить строки пересчёта постов/секторов целиком (FR-22). Требует
+        event.manage. Пустой массив допустим.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/SectorPostRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/SectorPostRequest'
+          multipart/form-data:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/SectorPostRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSectorPostList'
+          description: ''
   /api/operations/statuses/bulk/:
     post:
       operationId: operations_statuses_bulk_create
@@ -2628,6 +2728,47 @@ components:
       - date_start
       - employee_id
       - status_type_code
+    ChecklistItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        label:
+          type: string
+          maxLength: 255
+        done:
+          type: boolean
+        result:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/ResultEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        comment:
+          type: string
+      required:
+      - id
+      - label
+    ChecklistItemRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 255
+        done:
+          type: boolean
+        result:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/ResultEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        comment:
+          type: string
+      required:
+      - label
     DailySubmission:
       type: object
       description: |-
@@ -3806,6 +3947,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BugReport'
+    PaginatedChecklistItemList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChecklistItem'
     PaginatedDivisionList:
       type: object
       required:
@@ -4013,6 +4177,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Role'
+    PaginatedSectorPostList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SectorPost'
     PaginatedSecurityEventList:
       type: object
       required:
@@ -4357,6 +4544,14 @@ components:
       required:
       - code
       - name
+    ResultEnum:
+      enum:
+      - MATCHES
+      - NEEDS_CHANGES
+      type: string
+      description: |-
+        * `MATCHES` - Соответствует
+        * `NEEDS_CHANGES` - Требует изменений
     Role:
       type: object
       properties:
@@ -4374,6 +4569,70 @@ components:
       required:
       - code
       - name
+    SectorPost:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        sector:
+          type: string
+          maxLength: 255
+        post:
+          type: string
+          maxLength: 255
+        task:
+          type: string
+          maxLength: 255
+        need:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        requirements:
+          type: string
+        result:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/ResultEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        comment:
+          type: string
+      required:
+      - id
+      - post
+      - sector
+    SectorPostRequest:
+      type: object
+      properties:
+        sector:
+          type: string
+          minLength: 1
+          maxLength: 255
+        post:
+          type: string
+          minLength: 1
+          maxLength: 255
+        task:
+          type: string
+          maxLength: 255
+        need:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        requirements:
+          type: string
+        result:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/ResultEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        comment:
+          type: string
+      required:
+      - post
+      - sector
     SecurityEvent:
       type: object
       properties:
