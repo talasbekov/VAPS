@@ -31,10 +31,13 @@ def update_passport_for_event(event, *, actor, fields):
     """
     if not (actor or "").strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
-    # events.models.SecurityEvent.StatusCode.RECON — imported lazily to
-    # avoid a facilities->events import at module load (facilities has no
-    # existing dependency on events; events already depends on facilities
-    # via its Object FK, so the reverse direction stays a one-way edge).
+    # Review (Blind Hunter): verified no circular-import risk exists either
+    # direction (facilities/models.py and facilities/api/serializers.py
+    # import nothing from events; events/models.py references facilities
+    # only via the lazy string FK "ops_facilities.Object", not a Python
+    # import) — a top-level import would be equally safe. Kept local here
+    # only to keep this cross-subdomain dependency visually scoped to the
+    # one function that needs it, not because it's structurally required.
     from apps.operations.events.models import SecurityEvent
 
     if event.status_code != SecurityEvent.StatusCode.RECON:
