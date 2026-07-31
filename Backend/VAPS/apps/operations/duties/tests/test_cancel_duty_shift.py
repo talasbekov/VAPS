@@ -2,6 +2,7 @@
 cancel facts on DutyShift)."""
 
 import datetime
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -204,3 +205,29 @@ def test_cancel_duty_shift_rejects_already_cancelled_shift(status_types):
             cancel_duty_shift(shift, actor="operator", reason="Повторная отмена")
     assert exc_info.value.code == "INVALID_LIFECYCLE_TRANSITION"
     assert exc_info.value.http_status == 422
+
+
+def test_cancel_duty_shift_rolls_back_deletion_if_save_fails(status_types):
+    # Review (Blind Hunter/Edge Case Hunter): delete + save must be atomic —
+    # a failure after the EmployeeStatus delete but before the shift save
+    # must not leave the projection gone with the shift still un-cancelled.
+    obj = make_object("OBJ-CDS-9")
+    plan = make_plan(obj)
+    shift = make_shift(
+        plan,
+        datetime.datetime(2026, 9, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 9, 1, 20, 0, tzinfo=LOCAL_TZ),
+    )
+    project_duty_shift(shift)
+
+    with clock.override(datetime.date(2026, 8, 1)):
+        with patch.object(DutyShift, "save", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                cancel_duty_shift(shift, actor="operator", reason="Отмена")
+
+    shift.refresh_from_db()
+    assert shift.cancelled_at is None
+    assert EmployeeStatus.objects.filter(source_ref=f"DUTY:{shift.pk}").exists()
+    assert EmployeeStatus.objects.filter(
+        source_ref=f"REST_AFTER_DUTY:{shift.pk}"
+    ).exists()

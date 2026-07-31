@@ -22,6 +22,7 @@ import datetime
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.db import transaction
 
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
@@ -164,23 +165,30 @@ def cancel_duty_shift(shift, *, actor, reason):
             message="Нельзя отменить уже начавшееся или прошедшее дежурство.",
         )
 
-    EmployeeStatus.objects.filter(
-        source_ref__in=[
-            f"DUTY:{shift.pk}",
-            f"REST_AFTER_DUTY:{shift.pk}",
-            f"BEFORE_DUTY:{shift.pk}",
-        ],
-        source=EmployeeStatus.Source.OM_AUTO,
-    ).delete()
+    # Review (Blind Hunter/Edge Case Hunter, independently confirmed): the
+    # delete + save must commit or roll back together — mirrors every
+    # comparable lifecycle mutation in status_service.py (create_status/
+    # cancel_status/update_status, all @transaction.atomic). Without this,
+    # a failure between the two statements could delete the projected
+    # statuses while leaving the shift not marked cancelled.
+    with transaction.atomic():
+        EmployeeStatus.objects.filter(
+            source_ref__in=[
+                f"DUTY:{shift.pk}",
+                f"REST_AFTER_DUTY:{shift.pk}",
+                f"BEFORE_DUTY:{shift.pk}",
+            ],
+            source=EmployeeStatus.Source.OM_AUTO,
+        ).delete()
 
-    shift.cancelled_at = Clock.now()
-    shift.cancelled_by = actor
-    shift.cancelled_reason = reason
-    shift.save(
-        update_fields=[
-            "cancelled_at",
-            "cancelled_by",
-            "cancelled_reason",
-            "updated_at",
-        ]
-    )
+        shift.cancelled_at = Clock.now()
+        shift.cancelled_by = actor
+        shift.cancelled_reason = reason
+        shift.save(
+            update_fields=[
+                "cancelled_at",
+                "cancelled_by",
+                "cancelled_reason",
+                "updated_at",
+            ]
+        )
