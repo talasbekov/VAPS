@@ -14,6 +14,7 @@ and this field becomes a real FK in a later migration once that table lands.
 is out of scope — likely 14.12 or a future story.
 """
 
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.operations.models import TimeStampedModel
@@ -244,3 +245,21 @@ class Post(TimeStampedModel):
 
     def __str__(self):
         return f"{self.object.code} / {self.code}"
+
+    def clean(self):
+        # Review (Blind Hunter/Edge Case Hunter, independently confirmed):
+        # `object` and `sector` are separate FKs — nothing else stops a
+        # Post pointing at a Sector belonging to a DIFFERENT Object. A
+        # DB CheckConstraint can't express this (Postgres CHECK can't
+        # reference another table's columns); this is the best-available
+        # enforcement layer, not a compromise below the project's usual
+        # DB-first bar. Same caveat as everywhere else in this codebase:
+        # .objects.create()/bulk_create() skip full_clean() — a future
+        # API/service story MUST call full_clean() (or replicate this
+        # check) on the write path, this alone is not sufficient at the
+        # DB level.
+        super().clean()
+        if self.sector_id and self.sector.object_id != self.object_id:
+            raise ValidationError(
+                {"sector": "Сектор должен принадлежать тому же объекту, что и пост."}
+            )

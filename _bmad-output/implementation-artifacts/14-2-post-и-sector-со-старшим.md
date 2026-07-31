@@ -4,7 +4,7 @@ baseline_commit: 04a038b
 
 # Story 14.2: `Post` и `Sector` (модели)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -103,7 +103,8 @@ so that **Epic 14's последующие стори (чек-лист 14.3, д�
 
 - `Backend/VAPS/apps/operations/facilities/models.py` (MOD) — классы `Sector`, `Post`.
 - `Backend/VAPS/apps/operations/facilities/migrations/0003_sector_post_sector_uq_object_sector_name_and_more.py` (NEW).
-- `Backend/VAPS/apps/operations/facilities/tests/test_post_sector.py` (NEW) — 17 тестов.
+- `Backend/VAPS/apps/operations/facilities/tests/test_post_sector.py` (MOD) — 17 тестов + 2 ревью-фикс теста.
+- `Backend/VAPS/apps/operations/facilities/models.py` (MOD, ревью-фикс) — `Post.clean()`.
 
 ## Change Log
 
@@ -111,3 +112,4 @@ so that **Epic 14's последующие стори (чек-лист 14.3, д�
 |---|---|
 | 2026-07-31 | Story создана (create-story). Вторая стори Epic 14, строится на `Object`/`ObjectPassport` (14.1, done). «Sector со старшим» — донор не даёт поля старшего на Sector; заголовок отнесён к RBAC-роли «Старший объекта» (FR-19), не к колонке модели — задокументировано явно в Scope Decision, не изобретено без основания. |
 | 2026-07-31 | dev-story: модели `Sector`+`Post` в существующий `models.py` (14.1), миграция `0003`, 17 тестов. `make gate` 3103 passed. Status → review |
+| 2026-07-31 | 3-агентное ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Acceptance Auditor — все 11 AC подтверждены невакуумными, прогнал тесты сам (45 passed = 17+28 существующих). Триаж: Blind Hunter И Edge Case Hunter НЕЗАВИСИМО нашли одну и ту же дыру — `Post.sector` может указывать на `Sector` ДРУГОГО объекта, ничем не защищено (DB `CheckConstraint` не может сравнивать колонки РАЗНЫХ таблиц) → добавлен `Post.clean()`-гард (`ValidationError`, если `sector.object_id != object_id`), задокументирован тот же честный caveat, что везде в проекте (`.objects.create()`/`bulk_create()` пропускают `full_clean()` — будущая API/сервис-стори ОБЯЗАНА вызывать `full_clean()` или продублировать проверку). 2 новых теста (`full_clean()` красная проба + позитивный путь). `min_rating` без floor-constraint — принято как есть (донор сам явно откладывает enforcement, `RATING-DECISION-002`). `make gate` — 3105 passed (было 3103, +2), "No changes detected". Status → done |

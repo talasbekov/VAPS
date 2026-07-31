@@ -1,6 +1,7 @@
 """Story 14.2 — Sector + Post models."""
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
 from apps.operations.facilities.models import Object, Post, Sector
@@ -138,3 +139,23 @@ def test_sector_sort_order_defaults_to_zero():
     obj = make_object("OBJ-PS-12")
     sector = Sector.objects.create(object=obj, name="Периметр")
     assert sector.sort_order == 0
+
+
+def test_sector_from_a_different_object_rejected_by_clean():
+    # Review (Blind Hunter/Edge Case Hunter, independently confirmed): no DB
+    # CheckConstraint can compare Post.object_id against Sector.object_id
+    # (different tables) — full_clean() is the enforcement layer.
+    obj_a = make_object("OBJ-PS-13A")
+    obj_b = make_object("OBJ-PS-13B")
+    sector_b = Sector.objects.create(object=obj_b, name="Периметр")
+
+    post = Post(object=obj_a, sector=sector_b, code="P-1", name="КПП-1")
+    with pytest.raises(ValidationError):
+        post.full_clean()
+
+
+def test_sector_from_the_same_object_passes_clean():
+    obj = make_object("OBJ-PS-14")
+    sector = Sector.objects.create(object=obj, name="Периметр")
+    post = Post(object=obj, sector=sector, code="P-1", name="КПП-1")
+    post.full_clean()  # must not raise
