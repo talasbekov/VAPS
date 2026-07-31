@@ -20,6 +20,7 @@ import type {
 } from '../model/types'
 import type { RatingAnalyticsFigures } from '../lib/analytics'
 import type { EventProgress, QueueCounters } from '../lib/workspace'
+import type { EvaluationRegistryRow } from '../lib/registry'
 
 export const OPERATIONAL_RATINGS_PATH = '/api/ops/operational-ratings/'
 /**
@@ -75,6 +76,54 @@ export function evaluationDetailPath(workItemId: string): string {
  */
 export const EVALUATION_DETAIL_PATH_PATTERN =
   '/api/ops/evaluation-work-items/:workItemId/detail/'
+
+/**
+ * Реестр итоговых оценок §19.15 и карточка агрегата сотрудника §19.17
+ * (aggregate-only ветка). Свои пути: путь сводки перехватил бы обоих, а
+ * коллизия в MSW разрешается молча в пользу первого handler'а.
+ */
+export const EVALUATION_REGISTRY_PATH = '/api/ops/evaluation-registry/'
+export const RATING_EMPLOYEE_DETAIL_PATH = '/api/ops/operational-rating-employee/'
+
+/** Значения, которыми можно фильтровать реестр. Их перечень даёт СЕРВЕР —
+ * автодополнение не должно раскрывать сотрудников вне разрешённого scope
+ * (§19.15), поэтому клиент не собирает список из полученных строк. */
+export interface EvaluationRegistryOptions {
+  events: { value: string; label: string }[]
+  units: { value: string; label: string }[]
+  employees: { value: string; label: string }[]
+}
+
+export interface EvaluationRegistryResponse {
+  results: EvaluationRegistryRow[]
+  total: number
+  page: number
+  pageCount: number
+  options: EvaluationRegistryOptions
+  /** Методика — ею подписан агрегат в строках (§19.19). */
+  policy: RatingPolicy | null
+  capabilities: { operationalRatings: boolean }
+  /**
+   * Какие колонки разрешены смотрящему (§19.16 «колонки адаптируются под
+   * permissions»). Решает СЕРВЕР: у него же и данные, которых в ответе нет.
+   */
+  columns: { sensitiveDetails: boolean }
+  unavailableViews: UnavailableRatingFactor[]
+}
+
+/**
+ * Карточка сотрудника при праве только на агрегат (§19.17, вторая ветка):
+ * итоговый рейтинг, количество учтённых, период, версия методики, дата расчёта
+ * и агрегированная динамика — БЕЗ отдельных оценок и оценщиков.
+ */
+export interface RatingEmployeeDetailResponse {
+  employeeId: string
+  safeLabel: string
+  unitSafeLabel: string
+  summary: OperationalRatingSummary
+  points: RatingDynamicsPoint[]
+  unavailableViews: UnavailableRatingFactor[]
+}
 
 /**
  * Задание в ответе. Оценщика в нём НЕТ ни одним полем: §19.7 «не передавай

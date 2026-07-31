@@ -73,3 +73,9 @@
 - `src/features/ratings/pages/SubmittedEvaluationCard.tsx` — карточка §19.17: история
   записи (correction chain), diff перед подтверждением, мутация с перезагруженной
   редакцией задания.
+- `src/features/ratings/lib/registry.ts` — отбор, страницы и безопасный контекст реестра
+  §19.15-19.16; строка реестра объявлена БЕЗ закрытых полей.
+- `src/features/ratings/pages/EvaluationRegistryPage.tsx` — маршрут `/ratings/evaluations`:
+  фильтры в URL, «Детали оценки закрыты» вместо величин.
+- `src/features/ratings/pages/RatingEmployeeDetailPage.tsx` — карточка агрегата участника
+  (§19.17, aggregate-only) и возврат на сохранённый отбор.

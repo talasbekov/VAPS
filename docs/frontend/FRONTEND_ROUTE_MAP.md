@@ -142,3 +142,13 @@ role-restricted administration. Вход — пункт «Настройки» �
 Соседство со СТАТИЧЕСКИМ `/ratings/analytics` безопасно: оба сегмента статические, и
 динамического маршрута под `/ratings` нет.
 
+## `/ratings/evaluations` и `/ratings/employees/:employeeId` (§19.15-19.17, Этап 59)
+
+Право входа обоих — `ops.rating.view_aggregate`. Реестр хранит весь отбор в search params
+(§19.15), ссылка в карточку несёт его параметром `back`, а «Вернуться к отбору» ведёт на
+него же: восстановление не зависит от истории браузера и работает по прямой ссылке.
+
+Динамический сегмент `/ratings/employees/:employeeId` соседствует со статическими
+`/ratings/analytics`, `/ratings/workspace` и `/ratings/evaluations`; React Router ранжирует
+статический сегмент выше, поэтому перехвата нет.
+

@@ -33,6 +33,8 @@ import { ServiceReportsPage } from '../features/service-reports/pages/ServiceRep
 import { RatingsPage } from '../features/ratings/pages/RatingsPage'
 import { RatingAnalyticsPage } from '../features/ratings/pages/RatingAnalyticsPage'
 import { EvaluationWorkspacePage } from '../features/ratings/pages/EvaluationWorkspacePage'
+import { EvaluationRegistryPage } from '../features/ratings/pages/EvaluationRegistryPage'
+import { RatingEmployeeDetailPage } from '../features/ratings/pages/RatingEmployeeDetailPage'
 import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
 import { ReportJobPage } from '../features/service-reports/pages/ReportJobPage'
 import { FeedbackPage } from '../features/feedback/pages/FeedbackPage'
@@ -322,6 +324,22 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="ops.rating.evaluate">
               <EvaluationWorkspacePage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.evaluationRegistry}
+          element={
+            <RequirePermission permission="ops.rating.view_aggregate">
+              <EvaluationRegistryPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.ratingEmployeeDetail}
+          element={
+            <RequirePermission permission="ops.rating.view_aggregate">
+              <RatingEmployeeDetailPage />
             </RequirePermission>
           }
         />

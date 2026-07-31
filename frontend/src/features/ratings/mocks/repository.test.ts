@@ -814,3 +814,137 @@ describe('исправление оценки (§19.18)', () => {
     expect(first.submitted.evaluationId).not.toBe(second.submitted.evaluationId)
   })
 })
+
+describe('реестр итоговых оценок (§19.15-19.16)', () => {
+  const FILTERS = {
+    from: null,
+    to: null,
+    event: null,
+    unit: null,
+    employee: null,
+    direction: null,
+    method: null,
+    correctedOnly: false,
+    search: '',
+    page: 1,
+  } as const
+
+  it('без права на агрегат реестр не отдаётся', async () => {
+    const { repository } = await setup()
+    await expect(repository.listEvaluationRegistry(NOBODY, { ...FILTERS })).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('в ответе нет ни одной закрытой величины — проверяется ВЕСЬ JSON', async () => {
+    const { repository } = await setup()
+    const response = await repository.listEvaluationRegistry(VIEWER, { ...FILTERS })
+    const json = JSON.stringify(response)
+    expect(json).not.toContain('demo-event-planner')
+    expect(json).not.toContain('Задержка на инструктаже')
+    // Ни значения отдельной оценки: у сеяного `employee-5` есть десятка, и
+    // именно её отсутствие в JSON отличает «скрыли колонку» от «не прислали».
+    expect(json).not.toContain('"score"')
+    expect(json).not.toContain('basisCode')
+    expect(response.columns.sensitiveDetails).toBe(false)
+  })
+
+  it('фильтры выполняет СЕРВЕР: отобранное меньше полного и содержит только своё', async () => {
+    const { repository } = await setup()
+    const all = await repository.listEvaluationRegistry(VIEWER, { ...FILTERS })
+    const filtered = await repository.listEvaluationRegistry(VIEWER, {
+      ...FILTERS,
+      employee: 'employee-2',
+    })
+    expect(filtered.total).toBeLessThan(all.total)
+    expect(filtered.results.every((row) => row.employeeId === 'employee-2')).toBe(true)
+    // Период отсекает: у `employee-4` единственная запись лежит в 2025 году.
+    const inPeriod = await repository.listEvaluationRegistry(VIEWER, {
+      ...FILTERS,
+      from: '2026-01-01',
+      employee: 'employee-4',
+    })
+    expect(inPeriod.total).toBe(0)
+  })
+
+  it('признак исправления берётся из цепочки: видны ОБЕ записи пары', async () => {
+    const { repository } = await setup()
+    const corrected = await repository.listEvaluationRegistry(VIEWER, {
+      ...FILTERS,
+      correctedOnly: true,
+    })
+    // `evaluation-4` вытеснена, `evaluation-5` — её замена: обе относятся к
+    // исправлению, и ни одна не определяется сравнением значений.
+    expect(corrected.results.map((row) => row.rowId).sort()).toEqual([
+      'row-evaluation-4',
+      'row-evaluation-5',
+    ])
+  })
+
+  it('страница и её счётчики считаются сервером, а порядок не совпадает с порядком по агрегату', async () => {
+    const { repository } = await setup()
+    const first = await repository.listEvaluationRegistry(VIEWER, { ...FILTERS })
+    expect(first.results).toHaveLength(10)
+    expect(first.pageCount).toBeGreaterThan(1)
+    const second = await repository.listEvaluationRegistry(VIEWER, { ...FILTERS, page: 2 })
+    expect(second.page).toBe(2)
+    // Пересечения между страницами нет — иначе часть записей была бы недоступна.
+    const ids = new Set(first.results.map((row) => row.rowId))
+    expect(second.results.some((row) => ids.has(row.rowId))).toBe(false)
+
+    // Порядок — по дате, а не по агрегату: сортировка по значению была бы
+    // таблицей лидеров (§22.16).
+    const byAggregate = [...first.results]
+      .sort((a, b) => (b.aggregateRating ?? 0) - (a.aggregateRating ?? 0))
+      .map((row) => row.rowId)
+    expect(first.results.map((row) => row.rowId)).not.toEqual(byAggregate)
+  })
+
+  it('значения фильтров даёт сервер и не собирает их из текущей страницы', async () => {
+    const { repository } = await setup()
+    const page = await repository.listEvaluationRegistry(VIEWER, { ...FILTERS, employee: 'employee-2' })
+    // Отобрана одна запись, а список сотрудников — полный: иначе автодополнение
+    // показывало бы только тех, кто уже виден (§19.15).
+    expect(page.results.length).toBeLessThan(page.options.employees.length)
+    expect(page.options.employees).toHaveLength(8)
+    expect(page.options.events.map((option) => option.value)).toEqual([
+      'ОМ-2026-014',
+      'ОМ-2026-015',
+    ])
+  })
+
+  it('выключенная функция отдаёт пустой реестр и говорит об этом', async () => {
+    const { repository } = await setup({ operationalRatings: false })
+    const response = await repository.listEvaluationRegistry(VIEWER, { ...FILTERS })
+    expect(response.results).toEqual([])
+    expect(response.capabilities.operationalRatings).toBe(false)
+    expect(response.policy).toBeNull()
+  })
+})
+
+describe('карточка агрегата участника (§19.17)', () => {
+  it('несёт агрегат, период, методику и точки — и ни одной отдельной оценки', async () => {
+    const { repository } = await setup()
+    const detail = await repository.getRatingEmployeeDetail(VIEWER, 'employee-1')
+    expect(detail.summary).toMatchObject({ dataState: 'READY', evaluationsCount: 5 })
+    expect(detail.points.length).toBeGreaterThan(0)
+    const json = JSON.stringify(detail)
+    expect(json).not.toContain('demo-event-planner')
+    expect(json).not.toContain('Задержка на инструктаже')
+    expect(json).not.toContain('evaluation-1')
+  })
+
+  it('неизвестный сотрудник — 404, а не первая попавшаяся карточка', async () => {
+    const { repository } = await setup()
+    await expect(repository.getRatingEmployeeDetail(VIEWER, 'employee-404')).rejects.toBeInstanceOf(
+      RepositoryNotFoundError,
+    )
+  })
+
+  it('без права на агрегат карточка не отдаётся', async () => {
+    const { repository } = await setup()
+    await expect(repository.getRatingEmployeeDetail(NOBODY, 'employee-1')).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+  })
+})

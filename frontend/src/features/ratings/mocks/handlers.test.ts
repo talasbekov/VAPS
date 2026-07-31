@@ -10,7 +10,9 @@ import { createMemoryPersistence } from '../../../shared/testing/mock-runtime/me
 import { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac-directory'
 import {
+  EVALUATION_REGISTRY_PATH,
   EVALUATION_WORKSPACE_PATH,
+  RATING_EMPLOYEE_DETAIL_PATH,
   evaluationCorrectPath,
   evaluationDetailPath,
   OPERATIONAL_RATINGS_PATH,
@@ -26,6 +28,8 @@ import type {
   SubmitEvaluationResponse,
   SubmittedEvaluationDetailResponse,
   CorrectEvaluationResponse,
+  EvaluationRegistryResponse,
+  RatingEmployeeDetailResponse,
 } from '../api/pending-contracts'
 import { createRatingsHandlers } from './handlers'
 import { buildRatingsSeed } from './fixtures'
@@ -290,6 +294,45 @@ describe('ratings handlers — карточка и исправление оце
           revision: 3,
         }),
       ),
+    ).toBe(403)
+  })
+})
+
+describe('ratings handlers — реестр итоговых оценок (§19.15-19.17)', () => {
+  it('фильтры доезжают до repository параметрами запроса, а не теряются', async () => {
+    const response = await client.get<EvaluationRegistryResponse>(
+      `${EVALUATION_REGISTRY_PATH}?employee=employee-2&corrected=true`,
+    )
+    // Оба параметра применены: у employee-2 исправленных записей нет, и
+    // потерянный фильтр вернул бы непустой список.
+    expect(response.total).toBe(0)
+    const onlyEmployee = await client.get<EvaluationRegistryResponse>(
+      `${EVALUATION_REGISTRY_PATH}?employee=employee-2`,
+    )
+    expect(onlyEmployee.total).toBe(4)
+  })
+
+  it('страница едет в запросе и возвращается в ответе', async () => {
+    const page2 = await client.get<EvaluationRegistryResponse>(
+      `${EVALUATION_REGISTRY_PATH}?page=2`,
+    )
+    expect(page2.page).toBe(2)
+    expect(page2.results.length).toBeGreaterThan(0)
+  })
+
+  it('карточка агрегата не перехватывается путём сводки', async () => {
+    const detail = await client.get<RatingEmployeeDetailResponse>(
+      `${RATING_EMPLOYEE_DETAIL_PATH}?employee=employee-3`,
+    )
+    // Проверяется НЕ первый сотрудник: потерянный параметр вернул бы первого.
+    expect(detail.employeeId).toBe('employee-3')
+    expect(detail.summary.dataState).toBe('INSUFFICIENT_DATA')
+  })
+
+  it('без права — 403 конвертом на обоих путях', async () => {
+    expect(await statusOf(() => stranger.get(EVALUATION_REGISTRY_PATH))).toBe(403)
+    expect(
+      await statusOf(() => stranger.get(`${RATING_EMPLOYEE_DETAIL_PATH}?employee=employee-1`)),
     ).toBe(403)
   })
 })
