@@ -1,5 +1,6 @@
-"""Story 14.11a/14.11b/14.11c: `POST|GET /api/operations/duty-plans
-[/{id}/shifts] [/{id}/approve]` (API-OPS-012).
+"""Story 14.11a/14.11b/14.11c/14.11d: `POST|GET /api/operations/duty-plans
+[/{id}/shifts] [/{id}/approve] [/{id}/shifts/{shift_id}/cancel]`
+(API-OPS-012).
 
 Deliberately a plain `viewsets.ViewSet` + the free `require_permission`
 function (`apps.operations.api.permissions`), not `RequirePermissionMixin`:
@@ -34,11 +35,12 @@ from apps.operations.api.permissions import require_permission
 from apps.operations.duties.api.serializers import (
     DutyPlanCreateSerializer,
     DutyPlanSerializer,
+    DutyShiftCancelSerializer,
     DutyShiftCreateSerializer,
     DutyShiftSerializer,
 )
 from apps.operations.duties.models import DutyPlan, DutyShift
-from apps.operations.duties.services import approve_duty_plan
+from apps.operations.duties.services import approve_duty_plan, cancel_duty_shift
 
 _PERMISSION = "duty.manage"
 
@@ -173,3 +175,37 @@ class DutyPlanViewSet(viewsets.ViewSet):
         plan = get_object_or_404(DutyPlan, pk=pk)
         plan = approve_duty_plan(plan)
         return Response(DutyPlanSerializer(plan).data)
+
+    @extend_schema(
+        operation_id="duty_plan_cancel_shift",
+        request=DutyShiftCancelSerializer,
+        responses={200: DutyShiftSerializer},
+        description="Отменить смену дежурства. Требует duty.manage.",
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"shifts/(?P<shift_id>[^/.]+)/cancel",
+    )
+    def cancel_shift(self, request, pk=None, shift_id=None, *args, **kwargs):
+        # Story 14.11d: DutyShift has no top-level ViewSet of its own (it's
+        # not a standalone resource, only ever reached through its plan,
+        # 14.9a's design) — a plain @action(detail=True) only yields ONE
+        # path param from the router, so a second ID (shift_id) is carried
+        # via a custom url_path regex instead of a new ViewSet.
+        require_permission(request, _PERMISSION)
+        plan = get_object_or_404(DutyPlan, pk=pk)
+        # get_object_or_404 against plan.shifts (not DutyShift.objects)
+        # also enforces the shift actually belongs to THIS plan — a
+        # cross-plan shift id in the URL 404s instead of silently
+        # cancelling a shift in a different plan.
+        shift = get_object_or_404(plan.shifts, pk=shift_id)
+        form = DutyShiftCancelSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        # actor is never taken from the request body (ARCH-SEC-030) — it
+        # comes from the auth contract, same as every other actor-taking
+        # call in this codebase.
+        cancel_duty_shift(
+            shift, actor=request.actor_id, reason=form.validated_data["reason"]
+        )
+        return Response(DutyShiftSerializer(shift).data)

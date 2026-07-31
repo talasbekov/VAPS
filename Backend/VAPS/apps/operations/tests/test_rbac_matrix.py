@@ -161,6 +161,9 @@ MATRIX = {
     # Story 14.11c: approve a duty plan (thin wrapper over approve_duty_plan(),
     # idempotent — no state-machine guard beyond the existing service).
     "ops-duty-plan-approve": _Gate("duty.manage"),
+    # Story 14.11d: cancel a shift within a plan (nested @action, custom
+    # url_path carrying a second ID).
+    "ops-duty-plan-cancel-shift": _Gate("duty.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется
@@ -447,7 +450,14 @@ def _url_for(name):
     try:
         return reverse(name)
     except NoReverseMatch:
+        pass
+    try:
         return reverse(name, kwargs={"pk": "0"})
+    except NoReverseMatch:
+        # Story 14.11d: cancel_shift's url_path carries a SECOND id
+        # (shift_id) via its custom regex — the first two attempts (no
+        # kwargs / single "pk") don't resolve nested-under-nested routes.
+        return reverse(name, kwargs={"pk": "0", "shift_id": "0"})
 
 
 def test_unmapped_method_on_action_route_is_405():

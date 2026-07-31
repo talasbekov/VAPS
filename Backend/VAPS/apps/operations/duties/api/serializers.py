@@ -1,4 +1,4 @@
-"""Story 14.11a/14.11b — duty plan/shift API serializers."""
+"""Story 14.11a/14.11b/14.11d — duty plan/shift API serializers."""
 
 from rest_framework import serializers
 
@@ -71,3 +71,7 @@ class DutyShiftCreateSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
     starts_at = serializers.DateTimeField()
     ends_at = serializers.DateTimeField()
+
+
+class DutyShiftCancelSerializer(serializers.Serializer):
+    reason = serializers.CharField()

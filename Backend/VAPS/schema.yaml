@@ -1689,6 +1689,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/DutyShift'
           description: ''
+  /api/operations/duty-plans/{id}/shifts/{shift_id}/cancel/:
+    post:
+      operationId: duty_plan_cancel_shift
+      description: Отменить смену дежурства. Требует duty.manage.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: shift_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DutyShiftCancelRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DutyShiftCancelRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DutyShiftCancelRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyShift'
+          description: ''
   /api/operations/expense-reports/:
     get:
       operationId: operations_expense_reports_list
@@ -2785,6 +2821,14 @@ components:
       - plan
       - starts_at
       - updated_at
+    DutyShiftCancelRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+      required:
+      - reason
     DutyShiftCreateRequest:
       type: object
       properties:
