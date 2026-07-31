@@ -1,5 +1,5 @@
-"""Story 14.6/14.7/14.9a: OM_AUTO projection service (BR-017 —
-DUTY/REST_AFTER_DUTY; BR-DUTY-TYPE-003 — BEFORE_DUTY) + cancel.
+"""Story 14.6/14.7/14.9a/14.9b: OM_AUTO projection service (BR-017 —
+DUTY/REST_AFTER_DUTY; BR-DUTY-TYPE-003 — BEFORE_DUTY) + cancel + replan.
 
 Deliberately does NOT reuse `apps.operations.statuses.services.status_service
 .create_status()`: that function forces `source=USER` (its own docstring:
@@ -26,6 +26,7 @@ from django.db import transaction
 
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
+from apps.operations.duties.models import DutyShift
 from apps.operations.statuses.models import EmployeeStatus
 
 REST_AFTER_DUTY_HOURS = 24
@@ -192,3 +193,55 @@ def cancel_duty_shift(shift, *, actor, reason):
                 "updated_at",
             ]
         )
+
+
+REPLANNABLE_FIELDS = (
+    "employee_id",
+    "post",
+    "duty_type",
+    "duty_role_code",
+    "notes",
+    "starts_at",
+    "ends_at",
+)
+
+
+def replan_duty_shift(shift, *, actor, reason, **new_fields):
+    """Story 14.9b: replan a duty shift — cancel the OLD shift (14.9a's
+    `cancel_duty_shift`, reusing its actor/reason/already-cancelled/
+    already-started guards verbatim, not duplicated here) and create a NEW
+    `DutyShift` in the SAME plan with `new_fields` applied over the old
+    shift's values, then project it (`project_duty_shift`). Returns the
+    new shift.
+
+    Not an in-place edit: `project_duty_shift()`'s `get_or_create` never
+    updates an existing `EmployeeStatus` row, so editing `starts_at`/
+    `ends_at` in place would leave stale projected dates (the exact class
+    of bug reviews caught in 14.6/14.7) — and 14.9a already established an
+    append-once/immutable-history pattern for cancellation that an
+    in-place edit would break.
+
+    `new_fields` is a closed whitelist (`REPLANNABLE_FIELDS`) — `plan` is
+    deliberately excluded, replan stays within the same `DutyPlan` (moving
+    a shift across plans/months is a separate, unscoped concern).
+    """
+    unknown = set(new_fields) - set(REPLANNABLE_FIELDS)
+    if unknown:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"fields": sorted(unknown)},
+            message=f"Недопустимые поля перепланирования: {sorted(unknown)}.",
+        )
+
+    with transaction.atomic():
+        cancel_duty_shift(shift, actor=actor, reason=reason)
+
+        values = {field: getattr(shift, field) for field in REPLANNABLE_FIELDS}
+        values.update(new_fields)
+        new_shift = DutyShift(plan=shift.plan, **values)
+        new_shift.full_clean()
+        new_shift.save()
+        project_duty_shift(new_shift)
+
+    return new_shift
