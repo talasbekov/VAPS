@@ -4,6 +4,7 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
+from apps.core.models import Division, DivisionType, Organization
 from apps.operations.rbac.models import Role, TemporaryDutyPermission, UserRole
 from apps.operations.services import PermissionService
 
@@ -110,6 +111,80 @@ def test_permanent_and_duty_orgd_together_keeps_full_permissions(orgd_duty_role)
         created_by="admin",
     )
     assert PermissionService.has_permission("dual-orgd", "personnel.edit") is True
+
+
+@pytest.fixture
+def two_divisions():
+    org = Organization.objects.create(name="Организация", code="ORG-PTD")
+    dtype = DivisionType.objects.get_or_create(
+        code="department", defaults={"name": "Отдел"}
+    )[0]
+    division_a = Division.objects.create(
+        organization=org, type_code=dtype, name="A", code="PTD-A"
+    )
+    division_b = Division.objects.create(
+        organization=org, type_code=dtype, name="B", code="PTD-B"
+    )
+    return division_a, division_b
+
+
+def test_permanent_orgd_in_one_division_does_not_exempt_duty_orgd_elsewhere(
+    orgd_duty_role, two_divisions
+):
+    """Review finding (Edge Case Hunter, HIGH): a permanent ORGD grant in
+    division A must NOT exempt an unrelated temporary ORGD duty grant in
+    division B from the read-only restriction — the exemption is scoped
+    per-grant, not "holds ORGD permanently anywhere"."""
+    division_a, division_b = two_divisions
+    now = timezone.now()
+    UserRole.objects.create(
+        user_id="cross-orgd", role_code_id="ORGD", scope_division_id=division_a.id
+    )
+    TemporaryDutyPermission.objects.create(
+        user_id="cross-orgd", duty_role_code="ORGD", scope_division_id=division_b.id,
+        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        created_by="admin",
+    )
+    assert PermissionService.has_permission(
+        "cross-orgd", "personnel.edit", division_id=division_b.id
+    ) is False
+    assert PermissionService.has_permission(
+        "cross-orgd", "personnel.view", division_id=division_b.id
+    ) is True
+    # The permanent grant's own division is untouched.
+    assert PermissionService.has_permission(
+        "cross-orgd", "personnel.edit", division_id=division_a.id
+    ) is True
+
+
+def test_permanent_orgd_covering_parent_division_exempts_duty_orgd_in_child(
+    orgd_duty_role, two_divisions
+):
+    """A permanent ORGD grant scoped at a PARENT division DOES cover a
+    temporary duty grant scoped at a child division — the same subtree
+    semantics `_scope_matches` already uses everywhere else."""
+    org = Organization.objects.create(name="Организация", code="ORG-PTD2")
+    dtype = DivisionType.objects.get_or_create(
+        code="department", defaults={"name": "Отдел"}
+    )[0]
+    parent = Division.objects.create(
+        organization=org, type_code=dtype, name="Parent", code="PTD2-P"
+    )
+    child = Division.objects.create(
+        organization=org, type_code=dtype, name="Child", code="PTD2-C", parent=parent
+    )
+    now = timezone.now()
+    UserRole.objects.create(
+        user_id="nested-orgd", role_code_id="ORGD", scope_division_id=parent.id
+    )
+    TemporaryDutyPermission.objects.create(
+        user_id="nested-orgd", duty_role_code="ORGD", scope_division_id=child.id,
+        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        created_by="admin",
+    )
+    assert PermissionService.has_permission(
+        "nested-orgd", "personnel.edit", division_id=child.id
+    ) is True
 
 
 def test_omd_duty_unaffected_by_orgd_read_only_filter(omd_duty_role):

@@ -4,7 +4,7 @@ baseline_commit: fec21b13671e031c20f88c9230798eee0c641148
 
 # Story 15.11b: ОРГД read-only для временных дежурных полномочий (дотяжка FR-34, часть 2/3)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -73,10 +73,18 @@ so that **срочное дежурство не даёт случайно бо�
 
 Реализовано по AC 1-6. `_active_grants()` теперь возвращает `(scope_division_id, role_code, source)` (`source ∈ {"role", "duty"}`) — оба места деструктуризации (`effective_permissions`, `visible_division_ids`) обновлены. Новый `_duty_only_role_codes(grants)`-хелпер возвращает role_code'ы, встречающиеся ИСКЛЮЧИТЕЛЬНО через `"duty"`-источник для конкретного пользователя. `effective_permissions()` для `role_code ∈ (_duty_only_role_codes ∩ {"ORGD"})` отбрасывает permission_code'ы, не оканчивающиеся на `.view` (и не `WILDCARD`) — реализовано построчной фильтрацией на уровне `(role_code, permission_code)`-пар из `RolePermission`, а не постфактум над уже объединённым множеством (иначе теряется атрибуция «какой код от какого гранта пришёл» при union). `visible_division_ids()` получил симметричный фильтр — исключает те же `read_only_role_codes` из `holding_roles`, когда `permission_code` сам мутирующий (не `.view`/не `WILDCARD`), чтобы «видимое для мутации» не расходилось с «может мутировать». Пользователь с ОДНОВРЕМЕННО постоянной И временной ролью ОРГД сохраняет полные права (постоянная роль не урезается временной) — покрыто отдельным тестом. ОМД-дежурство не затронуто (фильтр применяется только к `"ORGD"`). 8 новых тестов в `test_permission_temp_duty.py`. `make gate` — 3651 passed (было 3645, +6 — часть тестов покрывает несколько AC сразу), 0 regressions, no drift.
 
+**3-агентное ревью (Blind Hunter / Edge Case Hunter / Acceptance Auditor) — 1 HIGH найден и исправлен, остальное чисто:**
+- **HIGH (Edge Case Hunter, живой пробник — подтверждён и Blind Hunter статически): междивизионная утечка прав, исправлено.** Первая реализация `_duty_only_role_codes(grants)` считала «duty-only» ПО ПОЛЬЗОВАТЕЛЮ И ROLE_CODE ЦЕЛИКОМ, без учёта дивизиона — постоянная роль ОРГД в ОДНОЙ (даже крошечной, несвязанной) дивизии полностью снимала read-only-ограничение с ЛЮБОГО временного дежурного гранта ОРГД в ЛЮБОЙ другой дивизии. Живой пробник подтвердил: `has_permission(cross-orgd, "personnel.edit", division_id=division_B)` возвращал `True`, хотя постоянная роль пользователя покрывала только `division_A`. **Исправлено** заменой `_duty_only_role_codes(grants) -> set[role_code]` на `_duty_read_only_scopes(grants) -> set[(scope_division_id, role_code)]` — новый хелпер `_scope_covers(outer, inner)` (та же subtree-семантика, что `_scope_matches`) проверяет, ЧТО КОНКРЕТНО постоянная роль покрывает; дежурный грант исключается из read-only ТОЛЬКО если существует постоянный грант ТОГО ЖЕ role_code, чья зона реально покрывает зону дежурного гранта (сама дивизия, дивизия-предок, или глобальный `None`). `effective_permissions()`/`visible_division_ids()` переписаны на per-grant (не per-role_code) фильтрацию. 2 новых регресс-теста: междивизионная утечка закрыта; постоянная роль на дивизии-РОДИТЕЛЕ корректно покрывает дежурство на дивизии-ребёнке (не ломает легитимный случай).
+- Blind Hunter (статически): порядок scope-matching → source-filtering безопасен, `_DUTY_READ_ONLY_ROLE_CODES` используется консистентно, все текущие call-сайты `visible_division_ids()` используют не-ОРГД/`.view`-коды — коллизии нет.
+- Edge Case Hunter (живой прогон): базовый кейс (view/edit split) — корректен; unscoped/global duty-грант — `visible_division_ids` корректно возвращает `set()`, не `None` (fail-closed); несвязанная постоянная роль (`DIVISION_OPERATOR`) не освобождает ОРГД от ограничения; полный прогон `apps/operations/` — только известные pre-existing concurrency-teardown ошибки, не регресс.
+- Acceptance Auditor: все 6 AC PASS; `ROLE_PERMISSIONS["ORGD"]` сверен напрямую с кодом (9 кодов, тестовый набор точен); текущие call-сайты `visible_division_ids()` проверены — коллизий нет; Out-of-Scope соблюдён.
+
+`make gate` (после исправления) — **3653 passed** (было 3651 после dev-story, +2 регресс-теста ревью), 0 regressions, no drift. Status → done.
+
 ### File List
 
-- `Backend/VAPS/apps/operations/services.py` (modified — `PermissionService._active_grants()`/`_duty_only_role_codes()`/`effective_permissions()`/`visible_division_ids()`)
-- `Backend/VAPS/apps/operations/tests/test_permission_temp_duty.py` (modified — 8 новых тестов)
+- `Backend/VAPS/apps/operations/services.py` (modified — `PermissionService._active_grants()`/`_scope_covers()`/`_duty_read_only_scopes()`/`effective_permissions()`/`visible_division_ids()`)
+- `Backend/VAPS/apps/operations/tests/test_permission_temp_duty.py` (modified — 10 новых тестов: 8 dev-story + 2 ревью)
 
 ## Change Log
 
@@ -84,3 +92,4 @@ so that **срочное дежурство не даёт случайно бо�
 |---|---|
 | 2026-08-01 | Story создана (create-story). Часть 2/3 расщепления Story 15.11. Разрыв найден чтением `seed_operations.py`+`services.py` — временный дежурный грант ОРГД сегодня даёт полные (включая мутирующие) права постоянной роли, FR-34's «read-only» не соблюдается. |
 | 2026-08-01 | Dev-story: source-тег на `_active_grants()` + read-only фильтр для duty-only ОРГД в `effective_permissions()`/`visible_division_ids()`. Постоянная роль ОРГД не урезается. 8 новых тестов. `make gate` — 3651 passed. Status → review. |
+| 2026-08-01 | 3-агентное ревью: 1 HIGH исправлен (междивизионная утечка прав — постоянная роль в одной дивизии снимала read-only с дежурства в другой; исправлено scope-aware `_duty_read_only_scopes()`). 2 новых регресс-теста. `make gate` — 3653 passed, 0 regressions. Status → done. |

@@ -46,7 +46,7 @@ class PermissionService:
 
         ``source`` exists for FR-34's "ОРГД read-only" (15.11b): the same
         role_code can arrive via either path, and only the ``duty`` path is
-        restricted — see ``_duty_only_role_codes``.
+        restricted — see ``_duty_read_only_scopes``.
         """
         grants = [
             (ur.scope_division_id, ur.role_code_id, "role")
@@ -62,46 +62,76 @@ class PermissionService:
         return grants
 
     @staticmethod
-    def _duty_only_role_codes(grants) -> set:
-        """role_codes present in *grants* EXCLUSIVELY via the ``"duty"``
-        source (never also via a permanent ``"role"`` grant) — the set FR-34's
-        read-only restriction may apply to. A user holding BOTH a permanent
-        ORGD role and a temporary ORGD duty grant keeps full permissions:
-        the temporary grant must never downgrade an already-standing one.
+    def _scope_covers(outer_scope_division_id, inner_scope_division_id) -> bool:
+        """Does a grant scoped at *outer_scope_division_id* fully cover a
+        grant scoped at *inner_scope_division_id*? ``None`` outer = global,
+        covers anything. ``None`` inner (a global grant) is covered ONLY by
+        another global (``None``) outer — a division-scoped grant can never
+        cover a global one."""
+        if outer_scope_division_id is None:
+            return True
+        if inner_scope_division_id is None:
+            return False
+        return inner_scope_division_id in CoreDivisionTreeSelector.subtree_ids(
+            outer_scope_division_id
+        )
+
+    @classmethod
+    def _duty_read_only_scopes(cls, grants) -> set:
+        """``(scope_division_id, role_code)`` pairs — from *this user's*
+        ``"duty"``-sourced grants in ``_DUTY_READ_ONLY_ROLE_CODES`` — that
+        are NOT covered by any of the user's own ``"role"``-sourced grants
+        of the same role_code (FR-34's "ОРГД read-only").
+
+        Deliberately scope-aware, not merely "does this user hold the role
+        code permanently ANYWHERE": a permanent ORGD assignment in one
+        division must not exempt an unrelated temporary ORGD duty grant in
+        a different division from the read-only restriction (review finding,
+        15.11b — the naive per-user/per-role_code version leaked full
+        mutate rights system-wide off a single unrelated permanent grant).
+        A permanent grant only exempts a duty grant it actually covers
+        (same division, an ancestor division, or itself global).
         """
-        sources_by_role = {}
-        for _, role_code, source in grants:
-            sources_by_role.setdefault(role_code, set()).add(source)
-        return {
-            role_code
-            for role_code, sources in sources_by_role.items()
-            if sources == {"duty"}
-        }
+        permanent_scopes = [
+            (scope_division_id, role_code)
+            for scope_division_id, role_code, source in grants
+            if source == "role"
+        ]
+        restricted = set()
+        for scope_division_id, role_code, source in grants:
+            if source != "duty" or role_code not in _DUTY_READ_ONLY_ROLE_CODES:
+                continue
+            covered = any(
+                perm_role_code == role_code
+                and cls._scope_covers(perm_scope_division_id, scope_division_id)
+                for perm_scope_division_id, perm_role_code in permanent_scopes
+            )
+            if not covered:
+                restricted.add((scope_division_id, role_code))
+        return restricted
 
     @classmethod
     def effective_permissions(cls, user_id, division_id=None) -> set:
         grants = cls._active_grants(user_id)
-        matching_role_codes = {
-            role_code
+        matching = [
+            (scope_division_id, role_code)
             for scope_division_id, role_code, _source in grants
             if cls._scope_matches(scope_division_id, division_id)
-        }
-        if not matching_role_codes:
+        ]
+        if not matching:
             return set()
-        read_only_role_codes = (
-            cls._duty_only_role_codes(grants) & _DUTY_READ_ONLY_ROLE_CODES
-        )
-        result = set()
+        restricted_scopes = cls._duty_read_only_scopes(grants)
+        perms_by_role = {}
         for role_code, permission_code in RolePermission.objects.filter(
-            role_code_id__in=matching_role_codes
+            role_code_id__in={role_code for _, role_code in matching}
         ).values_list("role_code_id", "permission_code_id"):
-            if (
-                role_code in read_only_role_codes
-                and permission_code != WILDCARD
-                and not permission_code.endswith(".view")
-            ):
-                continue
-            result.add(permission_code)
+            perms_by_role.setdefault(role_code, set()).add(permission_code)
+        result = set()
+        for scope_division_id, role_code in matching:
+            codes = perms_by_role.get(role_code, set())
+            if (scope_division_id, role_code) in restricted_scopes:
+                codes = {c for c in codes if c == WILDCARD or c.endswith(".view")}
+            result |= codes
         return result
 
     @classmethod
@@ -126,12 +156,14 @@ class PermissionService:
         never call per division in a loop; one adjacency scan covers all
         scoped grants (``children_map`` reuse).
 
-        Story 15.11b: a role_code restricted to ``.view``-only via
-        ``_duty_only_role_codes`` (FR-34's duty-ORGD read-only) is excluded
-        from ``holding_roles`` when *permission_code* itself is a mutating
-        (non-``.view``) code — kept consistent with ``effective_permissions``
-        so a duty-ORGD holder never sees a "visible for mutation" division
-        their ``has_permission`` check would then reject.
+        Story 15.11b: a specific ``(scope_division_id, role_code)`` duty
+        grant restricted by ``_duty_read_only_scopes`` (FR-34's duty-ORGD
+        read-only) contributes no divisions when *permission_code* itself is
+        a mutating (non-``.view``) code — kept consistent with
+        ``effective_permissions`` so a duty-ORGD holder never sees a
+        "visible for mutation" division their ``has_permission`` check would
+        then reject. Scope-aware per grant (not per role_code globally) —
+        see ``_duty_read_only_scopes`` for why.
         """
         grants = cls._active_grants(user_id)
         if not grants:
@@ -143,14 +175,18 @@ class PermissionService:
                 permission_code_id__in=[permission_code, WILDCARD],
             ).values_list("role_code_id", flat=True)
         )
-        if permission_code != WILDCARD and not permission_code.endswith(".view"):
-            holding_roles -= (
-                cls._duty_only_role_codes(grants) & _DUTY_READ_ONLY_ROLE_CODES
-            )
+        is_write_permission = (
+            permission_code != WILDCARD and not permission_code.endswith(".view")
+        )
+        restricted_scopes = (
+            cls._duty_read_only_scopes(grants) if is_write_permission else set()
+        )
         visible = set()
         children_map = None
         for scope_division_id, role_code, _source in grants:
             if role_code not in holding_roles:
+                continue
+            if (scope_division_id, role_code) in restricted_scopes:
                 continue
             if scope_division_id is None:
                 return None
