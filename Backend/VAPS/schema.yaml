@@ -2356,6 +2356,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedStaffingDemandList'
           description: ''
+  /api/operations/security-events/{id}/staffing-demand/approve/:
+    post:
+      operationId: security_event_staffing_demand_approve
+      description: Утвердить Потребность (RECON->DEMAND, FR-23). Требует event.manage.
+        Идемпотентно на уже-DEMAND; 422 из любого другого статуса.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityEvent'
+          description: ''
   /api/operations/statuses/bulk/:
     post:
       operationId: operations_statuses_bulk_create

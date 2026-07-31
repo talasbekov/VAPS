@@ -296,6 +296,11 @@ AUDIT_MATRIX = {
         "story 15.5b: same reasoning as ops-security-event-checklist "
         "(15.3b) — working-draft rows until 15.5c's approval"
     ),
+    # Story 15.5c: SECURITY_EVENT_DEMAND_APPROVED emits via
+    # apps.operations.events.services.approve_staffing_demand() only on
+    # the real RECON->DEMAND transition; behavioral pin —
+    # test_security_event_demand_approve.py.
+    "ops-security-event-staffing-demand-approve": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

@@ -196,6 +196,8 @@ MATRIX = {
     # Story 15.5b: staffing-demand replace-all, same gate as the rest of
     # this ViewSet's event.manage actions.
     "ops-security-event-staffing-demand": _Gate("event.manage"),
+    # Story 15.5c: staffing-demand approval, same gate.
+    "ops-security-event-staffing-demand-approve": _Gate("event.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

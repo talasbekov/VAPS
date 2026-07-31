@@ -269,6 +269,11 @@ actions:
     description: "Паспорт объекта обновлён в контексте ОМ (только пока ОМ в статусе RECON, FR-22). entity_id — uuid.UUID(int=passport.pk). Реальная мутация с compliance-следом (не черновик, в отличие от 15.3b's чек-листа) — аудируется на каждом вызове."
     provenance: derived-from-mutation
     source: "epics.md FR-22; Story 15.4"
+  SECURITY_EVENT_DEMAND_APPROVED:
+    entity_type: security_event
+    description: "Потребность в силах утверждена (RECON->DEMAND). Эмитится ТОЛЬКО на реальном переходе, содержит снимок утверждённых строк staffing_demand для прослеживаемости. Single-actor гейт (не двойной контроль — FR-23 его не требует, в отличие от FR-22)."
+    provenance: derived-from-mutation
+    source: "epics.md FR-23; Story 15.5c"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

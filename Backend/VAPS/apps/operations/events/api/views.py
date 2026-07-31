@@ -38,6 +38,7 @@ from apps.operations.events.api.serializers import (
 )
 from apps.operations.events.models import SecurityEvent
 from apps.operations.events.services import (
+    approve_staffing_demand,
     confirm_recon,
     issue_bulletin,
     replace_checklist_items,
@@ -230,3 +231,17 @@ class SecurityEventViewSet(viewsets.ViewSet):
         form.is_valid(raise_exception=True)
         demands = replace_staffing_demand(event, form.validated_data)
         return Response(StaffingDemandSerializer(demands, many=True).data)
+
+    @extend_schema(
+        operation_id="security_event_staffing_demand_approve",
+        responses={200: SecurityEventSerializer},
+        description="Утвердить Потребность (RECON->DEMAND, FR-23). Требует "
+        "event.manage. Идемпотентно на уже-DEMAND; 422 из любого другого "
+        "статуса.",
+    )
+    @action(detail=True, methods=["post"], url_path="staffing-demand/approve")
+    def staffing_demand_approve(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        event = approve_staffing_demand(event, actor=request.actor_id)
+        return Response(SecurityEventSerializer(event).data)

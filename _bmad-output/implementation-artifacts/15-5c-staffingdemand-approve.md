@@ -4,7 +4,7 @@ baseline_commit: 6cbf0a4
 
 # Story 15.5c: `POST /security-events/{id}/staffing-demand/approve` — утверждение Потребности (FR-23)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -37,11 +37,11 @@ so that **ОМ может продвинуться к брокериджу (Epic
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `services.py`: `approve_staffing_demand(event, *, actor)` — буквальный образец `issue_bulletin()`
-- [ ] Task 2 — ViewSet `@action` `POST .../staffing-demand/approve`
-- [ ] Task 3 — Живые реестры
-- [ ] Task 4 — Тесты (успех, идемпотентность, конфликт, 403, аудит-снимок)
-- [ ] Task 5 — Гейт + схема
+- [x] Task 1 — `services.py`: `approve_staffing_demand(event, *, actor)` — буквальный образец `issue_bulletin()`
+- [x] Task 2 — ViewSet `@action` `POST .../staffing-demand/approve`
+- [x] Task 3 — Живые реестры
+- [x] Task 4 — Тесты (успех, идемпотентность, конфликт, 403, аудит-снимок)
+- [x] Task 5 — Гейт + схема
 
 ## Dev Notes
 
@@ -60,14 +60,21 @@ _(заполняется dev-story)_
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано по AC 1-6. `approve_staffing_demand()` — буквальный образец `issue_bulletin()`: непустой-`actor`-гвард, `select_for_update()`, строгий `RECON`-гейт, идемпотентный no-op на `DEMAND`, `INVALID_LIFECYCLE_TRANSITION`(422) на прочих статусах. Аудит `SECURITY_EVENT_DEMAND_APPROVED` содержит снимок всех строк `staffing_demands` на момент утверждения (прослеживаемость). `POST .../staffing-demand/approve` — тонкий `@action`. Оба живых реестра обновлены (`_Audited()`+`_Gate`). 5 новых тестов (успех/идемпотентность/конфликт/403/аудит-снимок). `make gate` — 3521 passed (было 3506, +15), 0 regressions, no drift.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/events/services.py` (modified — `approve_staffing_demand()`)
+- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `staffing_demand_approve`-action)
+- `Backend/VAPS/apps/operations/events/tests/test_staffing_demand_approve.py` (new)
+- `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — `_Audited()`-запись)
+- `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — `_Gate`-запись)
+- `docs/registries/audit-events.yaml` (modified — `SECURITY_EVENT_DEMAND_APPROVED`-запись)
+- `Backend/VAPS/schema.yaml` (regenerated)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Single-actor гейт выбран (не двойной контроль) — FR-23, в отличие от FR-22, не упоминает двойной контроль буквально. |
+| 2026-07-31 | Dev-story: `approve_staffing_demand()` + `POST .../approve`-action. 5 новых тестов, оба живых реестра обновлены, схема регенерирована. `make gate` — 3521 passed. Status → review. |
