@@ -8,6 +8,7 @@ from apps.operations.api.views import (
     UserRoleViewSet,
 )
 from apps.operations.duties.api.views import DutyPlanViewSet
+from apps.operations.events.api.views import SecurityEventViewSet
 from apps.operations.statuses.api.views import StatusTypeViewSet, StatusViewSet
 from apps.operations.submissions.api.views import (
     DailySubmissionViewSet,
@@ -27,6 +28,9 @@ router.register(
 router.register("expense-reports", ExpenseReportViewSet, basename="ops-expense-report")
 router.register("traffic-light", TrafficLightViewSet, basename="ops-traffic-light")
 router.register("duty-plans", DutyPlanViewSet, basename="ops-duty-plan")
+router.register(
+    "security-events", SecurityEventViewSet, basename="ops-security-event"
+)
 router.register("statuses", StatusViewSet, basename="ops-status")
 router.register("statuses/types", StatusTypeViewSet, basename="ops-status-type")
 

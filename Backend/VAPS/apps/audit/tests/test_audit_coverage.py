@@ -252,6 +252,11 @@ AUDIT_MATRIX = {
     "ops-duty-plan-approve": _Audited(),
     "ops-duty-plan-cancel-shift": _Audited(),
     "ops-duty-plan-replan-shift": _Audited(),
+    # Story 15.2a: SECURITY_EVENT_CREATED emits via apps.audit.services
+    # .record() directly in views.py (create has no service function of its
+    # own — same shape as ops-duty-plan-list's create/list pair); behavioral
+    # pin — test_security_event_audit.py.
+    "ops-security-event-list": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

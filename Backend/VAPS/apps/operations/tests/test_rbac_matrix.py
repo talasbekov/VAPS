@@ -174,6 +174,12 @@ MATRIX = {
     # gate. RBAC matrix covers all registered routes (not just mutating
     # ones), unlike the audit matrix below.
     "ops-duty-plan-conflicts": _Gate("duty.manage"),
+    # Story 15.2a: create+list ОМ (SecurityEvent). Reuses the existing
+    # event.manage code (already in seed_operations.PERMISSIONS) — no role
+    # other than ADMIN holds it yet, same situation duty.manage was in before
+    # 14.12 (role-binding stays flexible/admin-configurable, not hardcoded
+    # here).
+    "ops-security-event-list": _Gate("event.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется
