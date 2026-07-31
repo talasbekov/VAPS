@@ -110,6 +110,15 @@ class GroupForceRequestSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class AllocateForceRequestSerializer(serializers.Serializer):
+    """Story 15.8: broker's allocation body — quantitative only, matches
+    the frontend prototype's `UpdateForceAllocationRequest` shape (soft
+    signal, not source of truth)."""
+
+    allocated_count = serializers.IntegerField(min_value=0)
+    comment = serializers.CharField(required=False, allow_blank=True)
+
+
 class GenerateForceRequestsResponseSerializer(serializers.Serializer):
     """Story 15.7b: wraps the generated/updated rows plus any StaffingDemand
     group-text that failed to match an active Group (AC-2 — reported, not

@@ -279,6 +279,11 @@ actions:
     description: "Запросы Группам сгенерированы и отправлены (агрегация StaffingDemand по группе). Эмитится на каждом вызове (включая идемпотентный regenerate) — реальная бизнес-операция (рассылка), не черновик. new_value включает requested_groups + unmatched_groups для прослеживаемости."
     provenance: derived-from-mutation
     source: "epics.md FR-24; Story 15.7b"
+  GROUP_FORCE_REQUEST_ALLOCATED:
+    entity_type: group_force_request
+    description: "Брокер выделил людей на запрос Группы. entity_id — uuid.UUID(int=request.pk). Эмитится ТОЛЬКО на реальном изменении (allocated_count и/или comment) — идемпотентный повтор того же значения не дублирует строку. status выводится из allocated_count vs requested_count, не отдельный клиентский вход."
+    provenance: derived-from-mutation
+    source: "epics.md FR-24; Story 15.8"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

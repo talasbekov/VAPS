@@ -305,6 +305,11 @@ AUDIT_MATRIX = {
     # call (including idempotent regenerate) — a real dispatch operation,
     # not draft data; behavioral pin — test_force_requests_generate.py.
     "ops-security-event-force-requests-generate": _Audited(),
+    # Story 15.8: GROUP_FORCE_REQUEST_ALLOCATED emits via
+    # apps.operations.events.services.allocate_force_request() only on a
+    # real change (allocated_count and/or comment); behavioral pin —
+    # test_group_force_request_allocate.py.
+    "ops-force-request-allocate": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

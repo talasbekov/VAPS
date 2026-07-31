@@ -1975,6 +1975,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExpensePeriodResponse'
           description: ''
+  /api/operations/force-requests/{id}/allocate/:
+    patch:
+      operationId: group_force_request_allocate
+      description: Выделить людей на запрос Группы (FR-24). Требует brokerage.manage.
+        Статус выводится из allocated_count vs requested_count. allocated_count >
+        requested_count → 400.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAllocateForceRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAllocateForceRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAllocateForceRequestRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupForceRequest'
+          description: ''
   /api/operations/groups/:
     get:
       operationId: groups_list
@@ -4583,6 +4615,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StaffingSlot'
+    PatchedAllocateForceRequestRequest:
+      type: object
+      description: |-
+        Story 15.8: broker's allocation body — quantitative only, matches
+        the frontend prototype's `UpdateForceAllocationRequest` shape (soft
+        signal, not source of truth).
+      properties:
+        allocated_count:
+          type: integer
+          minimum: 0
+        comment:
+          type: string
     PatchedDivisionRequest:
       type: object
       properties:

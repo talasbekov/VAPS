@@ -205,6 +205,10 @@ MATRIX = {
     # Story 15.6: read-only Groups reference list, same gate (used only in
     # Epic 15's context today).
     "ops-group-list": _Gate("event.manage"),
+    # Story 15.8: broker allocation, gated on the existing brokerage.manage
+    # code (already seeded, already granted to OMD) — not event.manage,
+    # this mutates a GroupForceRequest row directly, not a SecurityEvent.
+    "ops-force-request-allocate": _Gate("brokerage.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

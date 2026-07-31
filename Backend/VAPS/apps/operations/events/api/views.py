@@ -30,6 +30,7 @@ from django.db import transaction
 from apps.audit.services import record
 from apps.operations.api.permissions import require_permission
 from apps.operations.events.api.serializers import (
+    AllocateForceRequestSerializer,
     ChecklistItemSerializer,
     GenerateForceRequestsResponseSerializer,
     GroupForceRequestSerializer,
@@ -39,8 +40,9 @@ from apps.operations.events.api.serializers import (
     SectorPostSerializer,
     StaffingDemandSerializer,
 )
-from apps.operations.events.models import Group, SecurityEvent
+from apps.operations.events.models import Group, GroupForceRequest, SecurityEvent
 from apps.operations.events.services import (
+    allocate_force_request,
     approve_staffing_demand,
     confirm_recon,
     generate_force_requests,
@@ -324,3 +326,41 @@ class GroupViewSet(viewsets.ViewSet):
         require_permission(request, _PERMISSION)
         groups = Group.objects.filter(is_active=True)
         return Response(GroupSerializer(groups, many=True).data)
+
+
+def _get_force_request_or_404(pk):
+    if not (pk or "").isdigit():
+        raise Http404("Запрос на Группу не найден.")
+    return get_object_or_404(GroupForceRequest, pk=pk)
+
+
+class GroupForceRequestViewSet(viewsets.ViewSet):
+    """Story 15.8: `PATCH /api/operations/force-requests/{id}/allocate` —
+    выделение брокером. Отдельный ViewSet (не вложен в
+    `SecurityEventViewSet`) — мутирует КОНКРЕТНУЮ `GroupForceRequest`-
+    строку по её собственному id, не event-scoped список."""
+
+    http_method_names = ["patch", "options"]
+    _BROKERAGE_PERMISSION = "brokerage.manage"
+
+    @extend_schema(
+        operation_id="group_force_request_allocate",
+        request=AllocateForceRequestSerializer,
+        responses={200: GroupForceRequestSerializer},
+        description="Выделить людей на запрос Группы (FR-24). Требует "
+        "brokerage.manage. Статус выводится из allocated_count vs "
+        "requested_count. allocated_count > requested_count → 400.",
+    )
+    @action(detail=True, methods=["patch"], url_path="allocate")
+    def allocate(self, request, pk=None, *args, **kwargs):
+        require_permission(request, self._BROKERAGE_PERMISSION)
+        force_request = _get_force_request_or_404(pk)
+        form = AllocateForceRequestSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        updated = allocate_force_request(
+            force_request,
+            actor=request.actor_id,
+            allocated_count=form.validated_data["allocated_count"],
+            comment=form.validated_data.get("comment"),
+        )
+        return Response(GroupForceRequestSerializer(updated).data)

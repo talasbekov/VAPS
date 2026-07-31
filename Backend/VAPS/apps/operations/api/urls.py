@@ -8,7 +8,11 @@ from apps.operations.api.views import (
     UserRoleViewSet,
 )
 from apps.operations.duties.api.views import DutyPlanViewSet
-from apps.operations.events.api.views import GroupViewSet, SecurityEventViewSet
+from apps.operations.events.api.views import (
+    GroupForceRequestViewSet,
+    GroupViewSet,
+    SecurityEventViewSet,
+)
 from apps.operations.statuses.api.views import StatusTypeViewSet, StatusViewSet
 from apps.operations.submissions.api.views import (
     DailySubmissionViewSet,
@@ -30,6 +34,9 @@ router.register("traffic-light", TrafficLightViewSet, basename="ops-traffic-ligh
 router.register("duty-plans", DutyPlanViewSet, basename="ops-duty-plan")
 router.register("security-events", SecurityEventViewSet, basename="ops-security-event")
 router.register("groups", GroupViewSet, basename="ops-group")
+router.register(
+    "force-requests", GroupForceRequestViewSet, basename="ops-force-request"
+)
 router.register("statuses", StatusViewSet, basename="ops-status")
 router.register("statuses/types", StatusTypeViewSet, basename="ops-status-type")
 

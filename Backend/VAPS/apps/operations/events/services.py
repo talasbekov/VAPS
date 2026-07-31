@@ -304,3 +304,56 @@ def generate_force_requests(event, *, actor):
             },
         )
     return list(event.force_requests.all()), unmatched_groups, stale_groups
+
+
+def allocate_force_request(request, *, actor, allocated_count, comment=None):
+    """Story 15.8: broker sets `allocated_count` on a `GroupForceRequest`,
+    deriving `status` from the count vs `requested_count` — quantitative
+    allocation only (no per-employee tracking; matches both 15.7a's model
+    shape and the frontend prototype's `UpdateForceAllocationRequest`,
+    soft signal).
+
+    Deliberately NOT gated on the request's current status (no spec rules
+    out re-adjusting an already-ALLOCATED request) and does NOT transition
+    `SecurityEvent.status_code` to BROKERAGE — no backend evidence pins
+    that as this call's trigger (see the story's Scope Decision); left an
+    open question for a future story.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    with transaction.atomic():
+        request = GroupForceRequest.objects.select_for_update().get(pk=request.pk)
+        if allocated_count > request.requested_count:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                message="allocated_count не может превышать requested_count.",
+                detail={"allocated_count": "Превышает запрошенное количество."},
+            )
+        count_unchanged = allocated_count == request.allocated_count
+        comment_unchanged = comment is None or comment == request.comment
+        if count_unchanged and comment_unchanged:
+            return request
+        if allocated_count == 0:
+            new_status = GroupForceRequest.Status.SENT
+        elif allocated_count >= request.requested_count:
+            new_status = GroupForceRequest.Status.ALLOCATED
+        else:
+            new_status = GroupForceRequest.Status.PARTIALLY_ALLOCATED
+        old_count, old_status = request.allocated_count, request.status
+        request.allocated_count = allocated_count
+        request.status = new_status
+        update_fields = ["allocated_count", "status", "updated_at"]
+        if comment is not None:
+            request.comment = comment
+            update_fields.append("comment")
+        request.save(update_fields=update_fields)
+        record(
+            actor=actor,
+            action="GROUP_FORCE_REQUEST_ALLOCATED",
+            entity_type="group_force_request",
+            entity_id=uuid.UUID(int=request.pk),
+            old_value={"allocated_count": old_count, "status": old_status},
+            new_value={"allocated_count": allocated_count, "status": new_status},
+        )
+    return request
