@@ -22,6 +22,7 @@ validation logic duplicated in this layer.
 """
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
@@ -195,6 +196,15 @@ class DutyPlanViewSet(viewsets.ViewSet):
         # via a custom url_path regex instead of a new ViewSet.
         require_permission(request, _PERMISSION)
         plan = get_object_or_404(DutyPlan, pk=pk)
+        # Review (Blind Hunter, 14.11d): the custom url_path regex
+        # ([^/.]+) accepts non-numeric shift_id — DutyShift's PK is a
+        # plain integer, and get_object_or_404() only catches
+        # DoesNotExist, not the ValueError Django raises casting a
+        # malformed string to an int field lookup (same bug class as
+        # 14.11a's ?object= query-param fix). Guard so bad input is a
+        # clean 404, not a bare 500.
+        if not shift_id.isdigit():
+            raise Http404("Смена не найдена.")
         # get_object_or_404 against plan.shifts (not DutyShift.objects)
         # also enforces the shift actually belongs to THIS plan — a
         # cross-plan shift id in the URL 404s instead of silently
@@ -205,7 +215,9 @@ class DutyPlanViewSet(viewsets.ViewSet):
         # actor is never taken from the request body (ARCH-SEC-030) — it
         # comes from the auth contract, same as every other actor-taking
         # call in this codebase.
-        cancel_duty_shift(
+        # Uses the RETURNED shift (re-fetched under lock inside the
+        # service, 14.11d review fix), not the pre-lock instance above.
+        shift = cancel_duty_shift(
             shift, actor=request.actor_id, reason=form.validated_data["reason"]
         )
         return Response(DutyShiftSerializer(shift).data)

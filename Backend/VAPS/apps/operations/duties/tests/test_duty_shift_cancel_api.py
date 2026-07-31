@@ -143,6 +143,38 @@ def test_cancel_empty_reason_rejected(duty_manager_client):
     assert resp.status_code == 400, resp.data
 
 
+def test_cancel_whitespace_only_reason_rejected(duty_manager_client):
+    # Review (Edge Case Hunter): DRF's CharField trims whitespace by
+    # default before the allow_blank check, so "   " is rejected the same
+    # clean way as "" — pin this so a future serializer tweak (e.g.
+    # trim_whitespace=False) doesn't silently let it slip through to the
+    # service's own .strip() guard with a different error shape.
+    obj = make_object("OBJ-CANCEL-10")
+    plan = make_plan(obj)
+    shift = make_shift(
+        plan,
+        "2026-09-01T08:00:00+05:00",
+        "2026-09-01T20:00:00+05:00",
+    )
+    resp = duty_manager_client.post(
+        cancel_url(plan.pk, shift.pk), {"reason": "   "}, format="json"
+    )
+    assert resp.status_code == 400, resp.data
+    shift.refresh_from_db()
+    assert shift.cancelled_at is None
+
+
+def test_cancel_malformed_shift_id_returns_404(duty_manager_client):
+    # Review (Blind Hunter): DutyShift's PK is an integer — a non-numeric
+    # shift_id must be a clean 404, not an unhandled ValueError/500.
+    obj = make_object("OBJ-CANCEL-11")
+    plan = make_plan(obj)
+    resp = duty_manager_client.post(
+        cancel_url(plan.pk, "not-a-number"), {"reason": "Отмена"}, format="json"
+    )
+    assert resp.status_code == 404, resp.data
+
+
 def test_cancel_already_cancelled_shift_rejected(duty_manager_client):
     obj = make_object("OBJ-CANCEL-8")
     plan = make_plan(obj)

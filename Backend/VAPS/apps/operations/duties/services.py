@@ -175,20 +175,6 @@ def cancel_duty_shift(shift, *, actor, reason):
             detail={"field": "reason"},
             message="При отмене дежурства обязательна непустая причина.",
         )
-    if shift.cancelled_at is not None:
-        raise DomainError(
-            "INVALID_LIFECYCLE_TRANSITION",
-            422,
-            message="Дежурство уже отменено.",
-        )
-    local_tz = ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)
-    shift_start_date = shift.starts_at.astimezone(local_tz).date()
-    if shift_start_date <= Clock.today_local():
-        raise DomainError(
-            "INVALID_LIFECYCLE_TRANSITION",
-            422,
-            message="Нельзя отменить уже начавшееся или прошедшее дежурство.",
-        )
 
     # Review (Blind Hunter/Edge Case Hunter, independently confirmed): the
     # delete + save must commit or roll back together — mirrors every
@@ -196,7 +182,30 @@ def cancel_duty_shift(shift, *, actor, reason):
     # cancel_status/update_status, all @transaction.atomic). Without this,
     # a failure between the two statements could delete the projected
     # statuses while leaving the shift not marked cancelled.
+    #
+    # Review (Edge Case Hunter, 14.11d): re-fetch under select_for_update()
+    # and re-check the lifecycle guards against the LOCKED row — mirrors
+    # approve_duty_plan()'s same fix (14.11c). Without this, two concurrent
+    # cancel calls (now HTTP-reachable) could both read cancelled_at=None
+    # before either commits, and the second save() would silently
+    # overwrite the first's cancel facts instead of raising 422.
     with transaction.atomic():
+        shift = DutyShift.objects.select_for_update().get(pk=shift.pk)
+        if shift.cancelled_at is not None:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Дежурство уже отменено.",
+            )
+        local_tz = ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)
+        shift_start_date = shift.starts_at.astimezone(local_tz).date()
+        if shift_start_date <= Clock.today_local():
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Нельзя отменить уже начавшееся или прошедшее дежурство.",
+            )
+
         EmployeeStatus.objects.filter(
             source_ref__in=[
                 f"DUTY:{shift.pk}",
@@ -217,6 +226,7 @@ def cancel_duty_shift(shift, *, actor, reason):
                 "updated_at",
             ]
         )
+    return shift
 
 
 REPLANNABLE_FIELDS = (
