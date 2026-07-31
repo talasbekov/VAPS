@@ -126,6 +126,33 @@ def test_replan_duty_shift_inherits_unspecified_fields(status_types):
     assert new_shift.notes == "Особые указания"
 
 
+def test_replan_duty_shift_explicit_none_clears_nullable_field(status_types):
+    # Review (Blind Hunter/Edge Case Hunter): values.update(new_fields) must
+    # apply an explicit None (clear the post), not fall back to the old
+    # shift's value via a truthy-check bug.
+    obj = make_object("OBJ-RPL-8")
+    plan = make_plan(obj)
+    post = Post.objects.create(object=obj, code="P-1", name="КПП-1")
+    old_shift = make_shift(
+        plan,
+        datetime.datetime(2026, 9, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 9, 1, 20, 0, tzinfo=LOCAL_TZ),
+        post=post,
+    )
+
+    with clock.override(datetime.date(2026, 8, 1)):
+        new_shift = replan_duty_shift(
+            old_shift,
+            actor="operator",
+            reason="Снятие поста",
+            post=None,
+            starts_at=datetime.datetime(2026, 9, 1, 9, 0, tzinfo=LOCAL_TZ),
+            ends_at=datetime.datetime(2026, 9, 1, 21, 0, tzinfo=LOCAL_TZ),
+        )
+
+    assert new_shift.post_id is None
+
+
 def test_replan_duty_shift_rejects_already_cancelled_shift(status_types):
     obj = make_object("OBJ-RPL-4")
     plan = make_plan(obj)
