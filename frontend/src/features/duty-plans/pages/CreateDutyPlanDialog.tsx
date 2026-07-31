@@ -10,13 +10,22 @@ import { z } from 'zod'
 import { Button } from '../../../shared/ui/Button'
 import { Input } from '../../../shared/ui/Input'
 import { Label } from '../../../shared/ui/Label'
-import { ApiError } from '../../../shared/api/errors'
+import { ValidationError } from '../../../shared/api/errors'
+import { GENERIC_FAILURE_MESSAGE } from '../../../shared/api/useApiMutation'
 import { useCreateDutyPlan } from '../api/queries'
 
 const formSchema = z.object({
   object: z.coerce.number().int().positive('Укажите ID объекта.'),
-  year: z.coerce.number().int().min(2026).max(2100),
-  month: z.coerce.number().int().min(1).max(12),
+  year: z.coerce
+    .number()
+    .int()
+    .min(2026, 'Год должен быть не раньше 2026.')
+    .max(2100, 'Год должен быть не позже 2100.'),
+  month: z.coerce
+    .number()
+    .int()
+    .min(1, 'Месяц — число от 1 до 12.')
+    .max(12, 'Месяц — число от 1 до 12.'),
 })
 
 type FormInput = z.input<typeof formSchema>
@@ -53,9 +62,15 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
     mutation.mutate(values)
   }
 
-  // 400 (форма) → RHF setError по деталям DRF-стиля (§7.4/8.5 конверт)
+  // 400 (форма) → RHF setError по деталям DRF-стиля (§7.4/8.5 конверт).
+  // Review (Blind Hunter/Edge Case Hunter, 14.11j): ТОЛЬКО ValidationError
+  // (400) — ConflictError/ServerError и т.д. тоже extends ApiError, но их
+  // details не гарантированно поле-формы (409 DUTY_PLAN_ALREADY_EXISTS
+  // сегодня шлёт details: {} — молчаливый no-op, но НЕ архитектурная
+  // гарантия для будущих кодов). Сужение до ValidationError — тот класс, чей
+  // контракт (§7.4/8.5) реально обещает "details = поля формы".
   useEffect(() => {
-    if (!(mutation.error instanceof ApiError)) return
+    if (!(mutation.error instanceof ValidationError)) return
     for (const [field, value] of Object.entries(mutation.error.details)) {
       const message = Array.isArray(value) ? String(value[0]) : String(value)
       setError(field as keyof FormValues, { message })
@@ -105,9 +120,14 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
             <p className="mt-1 text-xs text-destructive">{errors.month.message}</p>
           )}
         </div>
-        {mutation.error !== null && (
+        {mutation.error !== null && !(mutation.error instanceof ValidationError) && (
           <p className="text-sm text-destructive" role="alert">
-            Не удалось создать план. Проверьте поля и попробуйте снова.
+            {/* UX L208 / useApiMutation.ts's own canon: 5xx/сеть — generic БЕЗ
+                деталей наружу; остальное (409 «план уже существует» и т.п.) —
+                серверное message безопасно показать как есть. */}
+            {mutation.error.kind === 'server' || mutation.error.kind === 'network'
+              ? GENERIC_FAILURE_MESSAGE
+              : mutation.error.message}
           </p>
         )}
         <div className="mt-2 flex justify-end gap-2">

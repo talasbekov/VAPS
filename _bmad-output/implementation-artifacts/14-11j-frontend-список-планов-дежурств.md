@@ -4,7 +4,7 @@ baseline_commit: a18deed
 
 # Story 14.11j: Frontend — список + создание планов дежурств
 
-Status: review
+Status: done
 
 ## Story
 
@@ -88,14 +88,16 @@ so that **планы дежурств видны и создаются чере�
 
 **Браузер-верификация**: попытка через preview-инструмент упёрлась в рассинхрон портов (vite dev:mock забиндился на 5174, прокси-инструмент ждал 42673) — не решено в рамках этой стори (инфраструктурная проблема окружения, не кода). Верификация опирается на 6 RTL+MSW page-тестов через РЕАЛЬНУЮ композицию `Providers`+`AppRoutes` (тот же рендер-путь, что реальное приложение), не изолированный юнит-тест компонента — разумная замена интерактивной проверки.
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** Acceptance Auditor подтвердил все 8 AC PASS (полный gate — 1027 passed). Blind Hunter и Edge Case Hunter независимо нашли ОДИН и тот же класс дефекта: 400-ошибка обрабатывалась через `mutation.error instanceof ApiError` — слишком широкий тип (ловит ЛЮБОЙ `ApiError`-подкласс: `ConflictError`/`ServerError`/базовый, не только `ValidationError`), а `object`/`year`/`month`-поля Zod-схемы не несли кастомных русских сообщений при пустом вводе (Zod default → английский текст в русском UI). Оба нашли независимо. Edge Case Hunter дополнительно проследил, что сегодня это НЕ триггерится (единственный 409 `DUTY_PLAN_ALREADY_EXISTS` шлёт `details: {}` — молчаливый no-op), но это архитектурная не-гарантия для будущих кодов, и что специфичное серверное сообщение 409 («план уже существует») терялось за жёстко зашитым generic-текстом. Исправлено: (1) `setError`-эффект сужен до `ValidationError` (импорт `ValidationError`, не `ApiError`); (2) `year`/`month` получили кастомные русские Zod-сообщения; (3) generic-баннер теперь показывает `mutation.error.message` для non-ValidationError случаев — НО с явным исключением 5xx/network (`kind === 'server' | 'network'` → жёстко зашитый `GENERIC_FAILURE_MESSAGE`, канон UX L208 «5xx — generic БЕЗ деталей»; риск: показ сырого `.message` для ServerError мог бы утечь backend-детали, если бы применялось бездумно ко ВСЕМ non-ValidationError случаям). Добавлен 7-й тест (409-путь: специфичное сообщение видно, форма остаётся открытой). `make gate`/`npm run gate` после фиксов — 1028 passed, 0 regressions.
+
 ### File List
 
 - `frontend/src/features/duty-plans/pages/DutyPlansListPage.tsx` (new)
-- `frontend/src/features/duty-plans/pages/CreateDutyPlanDialog.tsx` (new)
+- `frontend/src/features/duty-plans/pages/CreateDutyPlanDialog.tsx` (new, review fix: ValidationError-сужение, кастомные Zod-сообщения, безопасный generic-баннер)
 - `frontend/src/features/duty-plans/mocks/handlers.ts` (new)
 - `frontend/src/features/duty-plans/mocks/fixtures.ts` (new)
 - `frontend/src/features/duty-plans/api/queries.ts` (modified — exported `DutyPlansListResponse`/`DutyPlanCreateRequest`/`DutyPlanCreateResponse`)
-- `frontend/src/app/duty-plans-list.qa.test.tsx` (new)
+- `frontend/src/app/duty-plans-list.qa.test.tsx` (new, +1 review test — 409-путь)
 - `frontend/src/app/App.tsx` (modified — новый route)
 - `frontend/src/app/mocks/compose-handlers.ts` (modified — регистрация `dutyPlansHandlers`)
 - `frontend/src/app/changelog-routing.test.tsx` (modified — `NAV_SECTIONS`-пин 11→12)
@@ -108,3 +110,4 @@ so that **планы дежурств видны и создаются чере�
 |---|---|
 | 2026-07-31 | Story создана (create-story). Десятая (вторая frontend) из ~12 подсторий разделения 14.11. Новый route /duty-plans (не /duties — та занята Smart Josparlau). Object-picker — числовое ID-поле (stopgap, нет backend-эндпоинта списка объектов). После создания — остаться на списке (14.11k деталь-страницы ещё нет). Тесты прав — server.use()-оверрайд, не новая demo-персона. |
 | 2026-07-31 | Dev-story: `DutyPlansListPage`/`CreateDutyPlanDialog`, MSW-хендлеры, роутинг, 6 page-тестов (перенесены в src/app/ — ARCH-FE-013 layer boundary). `npm run gate` — 1027 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): Acceptance Auditor — все 8 AC PASS. Blind Hunter/Edge Case Hunter независимо нашли один класс дефекта (слишком широкий ApiError-catch вместо ValidationError, нелокализованные Zod-сообщения, потерянное 409-сообщение). Исправлено с явным UX L208-исключением для 5xx/network. +1 тест (409-путь). `npm run gate` — 1028 passed, 0 regressions. Status → done. |

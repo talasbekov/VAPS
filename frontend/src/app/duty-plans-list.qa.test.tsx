@@ -184,4 +184,41 @@ describe('DutyPlansListPage', () => {
     expect(await screen.findByText('Объект не найден.')).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
+
+  it('AC-7 (доп.): 409 дубль плана — серверное сообщение показано, не generic-текст, форма остаётся открытой', async () => {
+    usePermissionsResponse({ permissions: ['duty.manage'] })
+    server.use(
+      http.get('*/api/operations/duty-plans/', () =>
+        HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+      ),
+      http.post('*/api/operations/duty-plans/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'DUTY_PLAN_ALREADY_EXISTS',
+            message: 'План на этот месяц уже существует.',
+            details: {},
+            request_id: null,
+            timestamp: '2026-07-31T00:00:00Z',
+          },
+          { status: 409 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderApp()
+
+    await screen.findByText('Планы дежурств не найдены')
+    await user.click(screen.getByRole('button', { name: '+ Создать план' }))
+
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('ID объекта'), '5')
+    await user.type(within(dialog).getByLabelText('Год'), '2026')
+    await user.type(within(dialog).getByLabelText('Месяц (1-12)'), '9')
+    await user.click(within(dialog).getByRole('button', { name: 'Создать' }))
+
+    expect(
+      await screen.findByText('План на этот месяц уже существует.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
 })
