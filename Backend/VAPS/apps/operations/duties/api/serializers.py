@@ -102,3 +102,16 @@ class DutyShiftReplanSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
     starts_at = serializers.DateTimeField(required=False)
     ends_at = serializers.DateTimeField(required=False)
+
+
+class DutyPlanConflictSerializer(serializers.Serializer):
+    """Story 14.11f: one entry per detected overlap — plain output-only
+    serializer (`validate_duty_plan()` already returns a list of dicts in
+    this shape, no model behind it).
+    """
+
+    shift_id = serializers.IntegerField()
+    employee_id = serializers.UUIDField()
+    conflict_code = serializers.CharField()
+    severity = serializers.CharField()
+    message = serializers.CharField()

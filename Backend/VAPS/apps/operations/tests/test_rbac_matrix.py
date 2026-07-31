@@ -167,6 +167,9 @@ MATRIX = {
     # Story 14.11e: replan a shift within a plan (nested @action, same
     # two-kwarg url_path pattern as cancel_shift).
     "ops-duty-plan-replan-shift": _Gate("duty.manage"),
+    # Story 14.11f: read-only conflict dry-run for a plan (single-kwarg
+    # @action, no nested shift id).
+    "ops-duty-plan-validate": _Gate("duty.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

@@ -1764,6 +1764,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/DutyShift'
           description: ''
+  /api/operations/duty-plans/{id}/validate/:
+    post:
+      operationId: duty_plan_validate
+      description: Проверить план дежурств на конфликты занятости сотрудников БЕЗ
+        утверждения (dry-run, ничего не пишет в БД). Требует duty.manage. Пустой список
+        — конфликтов нет.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDutyPlanConflictList'
+          description: ''
   /api/operations/expense-reports/:
     get:
       operationId: operations_expense_reports_list
@@ -2787,6 +2820,30 @@ components:
       - status_code
       - updated_at
       - year
+    DutyPlanConflict:
+      type: object
+      description: |-
+        Story 14.11f: one entry per detected overlap — plain output-only
+        serializer (`validate_duty_plan()` already returns a list of dicts in
+        this shape, no model behind it).
+      properties:
+        shift_id:
+          type: integer
+        employee_id:
+          type: string
+          format: uuid
+        conflict_code:
+          type: string
+        severity:
+          type: string
+        message:
+          type: string
+      required:
+      - conflict_code
+      - employee_id
+      - message
+      - severity
+      - shift_id
     DutyPlanCreateRequest:
       type: object
       properties:
@@ -3681,6 +3738,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Division'
+    PaginatedDutyPlanConflictList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DutyPlanConflict'
     PaginatedDutyPlanList:
       type: object
       required:

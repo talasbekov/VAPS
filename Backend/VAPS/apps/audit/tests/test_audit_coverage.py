@@ -252,6 +252,10 @@ AUDIT_MATRIX = {
     "ops-duty-plan-approve": _DeferredAudit(_DUTY),
     "ops-duty-plan-cancel-shift": _DeferredAudit(_DUTY),
     "ops-duty-plan-replan-shift": _DeferredAudit(_DUTY),
+    # Story 14.11f: validate is POST but read-only (dry-run, no writes) —
+    # still classified here since the completeness gate is method-based
+    # (POST/PUT/PATCH/DELETE), not write-behavior-based.
+    "ops-duty-plan-validate": _DeferredAudit(_DUTY),
     # submissions (5.8a → 5.9): DAILY_SUBMISSION_SUBMITTED эмитится на
     # СЕРВИС-уровне (submit_day, канон 4.4); поведенческие пины + HTTP-smoke
     # сквозь роут — test_submission_audit (5.9).

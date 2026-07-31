@@ -34,6 +34,7 @@ from rest_framework import status as http_status
 
 from apps.operations.api.permissions import require_permission
 from apps.operations.duties.api.serializers import (
+    DutyPlanConflictSerializer,
     DutyPlanCreateSerializer,
     DutyPlanSerializer,
     DutyShiftCancelSerializer,
@@ -46,6 +47,7 @@ from apps.operations.duties.services import (
     approve_duty_plan,
     cancel_duty_shift,
     replan_duty_shift,
+    validate_duty_plan,
 )
 
 _PERMISSION = "duty.manage"
@@ -268,3 +270,18 @@ class DutyPlanViewSet(viewsets.ViewSet):
         return Response(
             DutyShiftSerializer(new_shift).data, status=http_status.HTTP_201_CREATED
         )
+
+    @extend_schema(
+        operation_id="duty_plan_validate",
+        request=None,
+        responses={200: DutyPlanConflictSerializer(many=True)},
+        description="Проверить план дежурств на конфликты занятости сотрудников "
+        "БЕЗ утверждения (dry-run, ничего не пишет в БД). Требует duty.manage. "
+        "Пустой список — конфликтов нет.",
+    )
+    @action(detail=True, methods=["post"])
+    def validate(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        plan = get_object_or_404(DutyPlan, pk=pk)
+        conflicts = validate_duty_plan(plan)
+        return Response(DutyPlanConflictSerializer(conflicts, many=True).data)

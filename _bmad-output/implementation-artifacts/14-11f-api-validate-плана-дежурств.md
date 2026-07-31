@@ -4,7 +4,7 @@ baseline_commit: 30ca1a9
 
 # Story 14.11f: API — валидация плана дежурств (dry-run конфликтов)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -47,14 +47,14 @@ so that **план дежурств можно проверить на конф�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `@action` `validate` на `DutyPlanViewSet` (AC: 1-7)
-  - [ ] `require_permission` → `get_object_or_404` → для каждой не отменённой смены плана собрать overlap-кандидатов (другие смены плана того же сотрудника + `EmployeeStatus` того же сотрудника) → `detect_conflicts()` на пару → сериализовать непустой список
-- [ ] Task 2 — MATRIX/AUDIT_MATRIX-строка (AC: 6, 8)
-  - [ ] `ops-duty-plan-validate` — `_Gate("duty.manage")`/`_DeferredAudit(_DUTY)`
-- [ ] Task 3 — `make schema` регенерация
-- [ ] Task 4 — Тесты (AC: 1-8)
-  - [ ] чистый план, self-overlap (SOFT), hard-overlap с внешним EmployeeStatus, отменённая смена исключена, 404, 403, read-only snapshot до/после
-  - [ ] `make gate` зелёный, явно прогнан
+- [x] Task 1 — `@action` `validate` на `DutyPlanViewSet` (AC: 1-7)
+  - [x] `require_permission` → `get_object_or_404` → для каждой не отменённой смены плана собрать overlap-кандидатов (другие смены плана того же сотрудника + `EmployeeStatus` того же сотрудника) → `classify_pair()` на пару → сериализовать непустой список
+- [x] Task 2 — MATRIX/AUDIT_MATRIX-строка (AC: 6, 8)
+  - [x] `ops-duty-plan-validate` — `_Gate("duty.manage")`/`_DeferredAudit(_DUTY)`
+- [x] Task 3 — `make schema` регенерация
+- [x] Task 4 — Тесты (AC: 1-8)
+  - [x] чистый план, self-overlap (SOFT), hard-overlap с внешним EmployeeStatus, отменённая смена исключена, 404, 403, read-only snapshot до/после
+  - [x] `make gate` зелёный, явно прогнан
 
 ## Dev Notes
 
@@ -76,10 +76,21 @@ so that **план дежурств можно проверить на конф�
 
 ### Completion Notes
 
+Реализовано по AC 1-8. `validate_duty_plan(plan)` (services.py) — для каждой не отменённой смены плана собирает overlap-кандидатов (другие смены того же плана/сотрудника через datetime-пересечение starts_at/ends_at, плюс живые `EmployeeStatus`-строки того же сотрудника через date-пересечение, исключая source_ref самой смены) и классифицирует каждую пару через `conflict_matrix.classify_pair()` напрямую (не `detect_conflicts()` — PLANNED/WARNING-различение неактуально для dry-run, который никогда не блокирует). `@action` `validate` на `DutyPlanViewSet`: `require_permission` → `get_object_or_404` → `validate_duty_plan(plan)` → `200` с `DutyPlanConflictSerializer(many=True)`. Новый output-only сериализатор (`shift_id`/`employee_id`/`conflict_code`/`severity`/`message`), ничего не пишет. 7 новых тестов (чистый план, self-overlap SOFT с обеими сменами, hard-overlap с внешним `EmployeeStatus`, отменённая смена исключена, 404, 403, read-only snapshot до/после через полный dict-сравнение всех строк `DutyShift`/`EmployeeStatus`), все зелёные под реальным Postgres с первой попытки; `make schema` регенерирован (drift-free); `make gate` — 3348 passed (было 3331, +17), 0 regressions.
+
 ### File List
+
+- `apps/operations/duties/services.py` (modified — `validate_duty_plan()`)
+- `apps/operations/duties/api/serializers.py` (modified — `DutyPlanConflictSerializer`)
+- `apps/operations/duties/api/views.py` (modified — `validate`-action)
+- `apps/operations/tests/test_rbac_matrix.py` (modified — `MATRIX`'s новая строка)
+- `apps/audit/tests/test_audit_coverage.py` (modified — `AUDIT_MATRIX`'s новая строка)
+- `apps/operations/duties/tests/test_duty_plan_validate_api.py` (new)
+- `schema.yaml` (regenerated — `make schema`)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Шестая из ~12 подсторий разделения 14.11. Донор специфицирует полный BR-DUTY-CONFLICT-001 чек-лист, но эта стори намеренно сужена до self-overlap (план) + hard/soft overlap с существующими EmployeeStatus, переиспользуя conflict_matrix.detect_conflicts() (3.4/14.8) — полная широта отложена на Story 16.3. Read-only, 200 с плоским списком конфликтов, ничего не пишет. |
+| 2026-07-31 | Dev-story: `validate_duty_plan()` (classify_pair() напрямую, не detect_conflicts() — PLANNED-различение неактуально для dry-run), `validate`-action, `DutyPlanConflictSerializer`, MATRIX/AUDIT_MATRIX-строки, 7 новых тестов, все зелёные с первой попытки. `make gate` — 3348 passed. Status → done. |

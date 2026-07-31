@@ -27,6 +27,7 @@ from django.db import transaction
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.operations.duties.models import DutyPlan, DutyShift
+from apps.operations.statuses.conflict_matrix import ConflictSeverity, classify_pair
 from apps.operations.statuses.models import EmployeeStatus
 
 REST_AFTER_DUTY_HOURS = 24
@@ -285,3 +286,84 @@ def replan_duty_shift(shift, *, actor, reason, **new_fields):
         project_duty_shift(new_shift)
 
     return new_shift
+
+
+def validate_duty_plan(plan):
+    """Story 14.11f: read-only conflict scan of a plan's (non-cancelled)
+    shifts — no DB writes, no state transition. Narrow slice of the donor's
+    full BR-DUTY-CONFLICT-001 checklist (assignments/workload/post-
+    requirements have no supporting machinery yet — Story 16.3's territory);
+    this checks only employee-availability overlap, reusing
+    `conflict_matrix.classify_pair()` (3.4/14.8) — the same pure classifier
+    `status_service._assert_no_conflict()` uses for manual statuses.
+
+    Each shift is checked against two candidate sources of overlap:
+    - other non-cancelled shifts of the SAME employee in THIS plan (no DB
+      constraint enforces this — DutyShift isn't unique per employee/time);
+    - existing live `EmployeeStatus` rows of the employee (hard-block
+      statuses, or DUTY/REST_AFTER_DUTY projections from OTHER, already-
+      approved plans), excluding rows this exact shift itself projects
+      (relevant only if the plan is already APPROVED and re-validated).
+
+    Deliberately calls `classify_pair()` directly rather than
+    `detect_conflicts()`: the latter's PLANNED/WARNING split exists to
+    downgrade a not-yet-started SOFT conflict to a non-blocking warning for
+    a *mutating* call (FR-10) — irrelevant here, since `validate` never
+    blocks anything; every non-COMPATIBLE overlap is simply reported.
+    """
+    conflicts = []
+    shifts = list(plan.shifts.filter(cancelled_at__isnull=True))
+    for shift in shifts:
+        shift_start, shift_end = _to_date_range(shift.starts_at, shift.ends_at)
+        candidates = []
+        for other in shifts:
+            if other.pk == shift.pk or other.employee_id != shift.employee_id:
+                continue
+            if shift.starts_at < other.ends_at and shift.ends_at > other.starts_at:
+                candidates.append(
+                    {"status_type_code": "DUTY", "other_shift_id": other.pk}
+                )
+
+        own_refs = [
+            f"DUTY:{shift.pk}",
+            f"REST_AFTER_DUTY:{shift.pk}",
+            f"BEFORE_DUTY:{shift.pk}",
+        ]
+        overlapping_statuses = EmployeeStatus.objects.filter(
+            employee_id=shift.employee_id,
+            cancelled_at__isnull=True,
+            date_start__lt=shift_end,
+            date_end__gt=shift_start,
+        ).exclude(source_ref__in=own_refs)
+        for status_type_code in overlapping_statuses.values_list(
+            "status_type_code", flat=True
+        ):
+            candidates.append(
+                {"status_type_code": status_type_code, "other_shift_id": None}
+            )
+
+        for candidate in candidates:
+            other_type = candidate["status_type_code"]
+            severity = classify_pair("DUTY", other_type)
+            if severity is ConflictSeverity.COMPATIBLE:
+                continue
+            if candidate["other_shift_id"] is not None:
+                message = (
+                    f"Смена пересекается с другой сменой того же сотрудника "
+                    f"(id={candidate['other_shift_id']})."
+                )
+            else:
+                message = (
+                    f"Смена пересекается со статусом {other_type} "
+                    f"того же сотрудника."
+                )
+            conflicts.append(
+                {
+                    "shift_id": shift.pk,
+                    "employee_id": shift.employee_id,
+                    "conflict_code": f"OVERLAP_{other_type}",
+                    "severity": severity.value,
+                    "message": message,
+                }
+            )
+    return conflicts
