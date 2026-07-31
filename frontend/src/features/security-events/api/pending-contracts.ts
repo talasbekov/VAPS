@@ -9,6 +9,7 @@ import type {
   PassportBinding,
   JournalEntryType,
   PersonnelSummarySnapshot,
+  PlacementRatingRow,
   ReconChecklistItem,
   ReconSectorPost,
   SecurityEvent,
@@ -156,6 +157,14 @@ export function securityEventForcesCompletePath(id: string): string {
 export interface AssignPlacementRequest extends Record<string, unknown> {
   postId: string
   employeeId: string
+  /**
+   * Протокол обхода мягкого конфликта (§19.24 «используй существующий workflow
+   * override»). Оба поля добавляет `useApiMutation.confirmOverride` В КОРЕНЬ
+   * тела — своего протокола у рейтинга нет намеренно: второй путь обхода
+   * разошёлся бы с общим `ConflictDialog`.
+   */
+  override?: boolean
+  override_reason?: string
 }
 export type AssignPlacementResponse = SecurityEvent
 export type UnassignPlacementResponse = SecurityEvent
@@ -177,6 +186,24 @@ export function securityEventPlacementUnassignPath(id: string, assignmentId: str
 
 export function securityEventPlacementCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/placement/complete/`
+}
+
+/**
+ * §19.24: краткая сводка рейтинга назначенных — ОТДЕЛЬНЫЙ ресурс, а не поле
+ * мероприятия. Так у него своё право и свой отказ: закрытая сводка не отбирает
+ * у расстановщика саму расстановку, а её отсутствие не притворяется пустым
+ * списком назначений.
+ */
+export function securityEventPlacementRatingsPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/placement/ratings/`
+}
+
+export interface ListPlacementRatingsResponse {
+  results: PlacementRatingRow[]
+  /** §19.3: выключенный флаг конфликтов виден клиенту, а не угадывается. */
+  ratingConflictsEnabled: boolean
+  /** `false` — сводка закрыта смотрящему: значения в строках `null`. */
+  aggregateVisible: boolean
 }
 
 export function securityEventApprovalApprovePath(id: string): string {

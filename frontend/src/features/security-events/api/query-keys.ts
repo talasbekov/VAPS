@@ -11,5 +11,9 @@ export const securityEventKeys = {
   /** Производный взгляд на привязку к версии паспорта (§9.6) — отдельный ключ:
    *  он инвалидируется публикацией версии, а карточка ОМ — нет. */
   passport: (id: string) => [...securityEventKeys.detail(id), 'passport'] as const,
+  /** §19.24: сводка рейтинга назначенных — свой ключ: её инвалидирует
+   *  назначение/снятие, а карточку ОМ мутация и так кладёт setQueryData. */
+  placementRatings: (id: string) =>
+    [...securityEventKeys.detail(id), 'placement-ratings'] as const,
   bindableObjects: () => [...securityEventKeys.all, 'bindable-objects'] as const,
 }

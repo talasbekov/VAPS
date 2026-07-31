@@ -93,10 +93,14 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // Работы и артефакты экспорта рейтинга (§19.29) появились в слайсе `ratings` —
 // 35→36: в старом снапшоте полей `exportJobs`/`exportArtifacts` нет вовсе, и
 // чтение списка выгрузок упало бы на `undefined.map`.
+// Требование поста к рейтингу и след обхода (§19.24) — 36→37: у строк
+// `reconSectorPosts` появилось поле `minRating`, у `placementAssignments` —
+// `ratingOverrideReason`, а флаг `ratingConflicts` слайса `ratings` включён:
+// старый снапшот с выключенным флагом молча гасил бы новую проверку.
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 36
+export const SCHEMA_VERSION = 37
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)

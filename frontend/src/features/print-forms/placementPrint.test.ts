@@ -106,6 +106,31 @@ describe('parsePlacementDocument', () => {
     ])
   })
 
+  it('требование поста и обоснование обхода рейтинга не доезжают до документа (§19.24)', () => {
+    // Ответ сервера НАРОЧНО несёт оба новых поля §19.24: требование поста и
+    // сохранённое обоснование обхода (в нём написано про рейтинг). В печатную
+    // расстановку §19.24 запрещает включать rating и sensitive reasons —
+    // проверяется ВЕСЬ JSON документа, а не знакомые ключи.
+    const raw = {
+      ...EVENT,
+      reconSectorPosts: (EVENT.reconSectorPosts as Record<string, unknown>[]).map((post) => ({
+        ...post,
+        minRating: 8,
+      })),
+      placementAssignments: (EVENT.placementAssignments as Record<string, unknown>[]).map(
+        (assignment) => ({
+          ...assignment,
+          ratingOverrideReason: 'Рейтинг 7,9 ниже требования, обход подтверждён',
+        }),
+      ),
+    }
+    const json = JSON.stringify(parsePlacementDocument(raw))
+    expect(json).not.toContain('minRating')
+    expect(json).not.toContain('ratingOverrideReason')
+    expect(json).not.toContain('7,9')
+    expect(json).not.toContain('обход')
+  })
+
   it('возвращает null на теле, которое не карточка ОМ', () => {
     expect(parsePlacementDocument(null)).toBeNull()
     expect(parsePlacementDocument([])).toBeNull()

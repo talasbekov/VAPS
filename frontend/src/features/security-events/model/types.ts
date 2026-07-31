@@ -79,6 +79,16 @@ export interface ReconSectorPost {
   sourceSectorId: string | null
   /** Пост привязанной версии паспорта, `null` у ручной строки. */
   sourcePostId: string | null
+  /**
+   * Требование поста к оперативному рейтингу (`post.min_rating`, §19.24).
+   * `null` — требования нет, и это ОТДЕЛЬНЫЙ случай, а не «ноль»: пост без
+   * требования не сравнивает рейтинг ни с чем.
+   *
+   * Требование — свойство ПОСТА, а не рейтинга: оно едет в расстановку даже
+   * тому, кому закрыто само значение рейтинга (§19.24 «показывай только
+   * разрешённую краткую сводку»).
+   */
+  minRating: number | null
 }
 
 /** Строка потребности в силах (Smart Josparlau.dc.html:551-583 «1 · Потребность в силах»). */
@@ -117,6 +127,62 @@ export interface PlacementAssignment {
   employeeName: string
   /** Ознакомление (Smart Josparlau.dc.html:1124-1149): null до подтверждения. */
   acknowledgedAt: string | null
+  /**
+   * Обоснование обхода мягкого предупреждения по рейтингу (§19.24). Заполнено
+   * ТОЛЬКО если предупреждение действительно возникло: обоснование при
+   * отсутствии конфликта потом читалось бы как «здесь что-то обходили»
+   * (тот же довод, что у смены дежурства).
+   */
+  ratingOverrideReason: string | null
+}
+
+/**
+ * Соответствие рейтинга требованию поста (§19.24 «соответствие `min_rating`»).
+ *
+ * `NOT_REQUIRED` — у поста нет требования; `NOT_CHECKED` — проверка выключена
+ * флагом `ENABLE_RATING_CONFLICTS` (§19.3 «`post.min_rating` не участвует в
+ * проверке назначения»). Оба отделены от `UNKNOWN` («требование есть, данных
+ * нет»): §19.3 требует ОТДЕЛЬНОЕ предупреждение об отсутствии данных, а не
+ * молчаливое «соответствует».
+ */
+export type PlacementRatingCompliance =
+  | 'MEETS'
+  | 'BELOW'
+  | 'UNKNOWN'
+  | 'NOT_REQUIRED'
+  | 'NOT_CHECKED'
+
+/**
+ * Разрешённая краткая сводка рейтинга назначенного сотрудника (§19.24).
+ *
+ * Перечень полей — это ровно список §19.24 («агрегированный рейтинг, состояние
+ * данных, количество учтённых оценок, если разрешено, соответствие
+ * `min_rating`, дата расчёта, policy version»). Запрещённого списка (последние
+ * персональные оценки, комментарии, оценщики, благодарности и замечания,
+ * sensitive documents) здесь нет ДАЖЕ В МОДЕЛИ: сервер их не собирает, а не
+ * прячет вёрсткой.
+ *
+ * `aggregateRating`, `evaluationsCount`, `policyVersion` и `calculatedAt`
+ * приходят `null` тому, кому закрыт просмотр агрегата: соответствие требованию
+ * поста — свойство НАЗНАЧЕНИЯ, и знать его расстановщик вправе, не видя самого
+ * значения рейтинга.
+ */
+export interface PlacementRatingRow {
+  assignmentId: string
+  postId: string
+  employeeId: string
+  employeeName: string
+  /** Требование поста — видно независимо от прав на рейтинг. */
+  postMinRating: number | null
+  compliance: PlacementRatingCompliance
+  /** Состояние данных рейтинга: `null`, если сводка закрыта смотрящему. */
+  dataState: 'READY' | 'INSUFFICIENT_DATA' | 'NOT_RECORDED' | 'FEATURE_DISABLED' | null
+  aggregateRating: number | null
+  evaluationsCount: number | null
+  policyVersion: string | null
+  calculatedAt: string | null
+  /** Обоснование обхода, если назначение прошло через предупреждение. */
+  ratingOverrideReason: string | null
 }
 
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'RETURNED'

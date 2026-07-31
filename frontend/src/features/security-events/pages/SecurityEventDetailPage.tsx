@@ -10,6 +10,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Link, useParams } from 'react-router'
 import { Button } from '../../../shared/ui/Button'
+import { ConflictDialog } from '../../../shared/ui/ConflictDialog'
 import { ROUTES } from '../../../shared/routes'
 import { ApiError } from '../../../shared/api/errors'
 import {
@@ -25,6 +26,7 @@ import {
   useCompleteRecon,
   useImportReconPostsFromPassport,
   usePersonnelRoster,
+  usePlacementRatings,
   useSecurityEventPassport,
   useReplaceAssignment,
   useReturnPlacement,
@@ -38,6 +40,8 @@ import { SECURITY_EVENT_STAGES } from '../model/types'
 import type {
   ForceRequest,
   PlacementAssignment,
+  PlacementRatingCompliance,
+  PlacementRatingRow,
   ReconChecklistItem,
   ReconSectorPost,
   SecurityEvent,
@@ -519,6 +523,9 @@ function ReconForm({ event }: { event: SecurityEvent }) {
         // event-specific расчёт), и подставлять сюда чужой id было бы ложью.
         sourceSectorId: null,
         sourcePostId: null,
+        // Требование к рейтингу (§19.24) форма рекогносцировки не задаёт —
+        // у ручной строки его нет, а не «ноль».
+        minRating: null,
       },
     ])
   }
@@ -1147,7 +1154,7 @@ function PlacementWorkspace({ event }: { event: SecurityEvent }) {
           </div>
         </aside>
 
-        <section className="rounded-xl border bg-card p-4">
+        <section className="rounded-xl border bg-card p-4" aria-label="Назначения поста">
           {(() => {
             const post = event.reconSectorPosts.find((p) => p.id === selectedPostId)
             if (post === undefined) {
@@ -1238,6 +1245,17 @@ function PlacementWorkspace({ event }: { event: SecurityEvent }) {
         </section>
       </div>
 
+      {/* §19.24: несоответствие рейтинга — МЯГКОЕ предупреждение через общий
+          протокол обхода (409 SOFT_CONFLICT_DETECTED → ConflictDialog →
+          повтор с обоснованием). Назначение не блокируется автоматически. */}
+      <ConflictDialog
+        conflict={assignMutation.conflict}
+        onOverride={(reason) => assignMutation.confirmOverride(reason)}
+        onCancel={() => assignMutation.dismissConflict()}
+      />
+
+      <PlacementRatingsSection event={event} />
+
       <section className="mt-3.5 rounded-xl border bg-card p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
@@ -1262,6 +1280,135 @@ function PlacementWorkspace({ event }: { event: SecurityEvent }) {
         )}
       </section>
     </>
+  )
+}
+
+/**
+ * Метки соответствия (§19.24). Формулировки не пересекаются подстроками —
+ * «Ниже требования», а не «Не соответствует» рядом с «Соответствует».
+ */
+const RATING_COMPLIANCE_LABEL: Record<PlacementRatingCompliance, string> = {
+  MEETS: 'Соответствует',
+  BELOW: 'Ниже требования',
+  UNKNOWN: 'Данных рейтинга нет',
+  NOT_REQUIRED: 'Требование не задано',
+  NOT_CHECKED: 'Проверка отключена',
+}
+
+/** Состояния данных сводки (§19.19: отсутствие данных — слова, не «0,0»). */
+const RATING_DATA_STATE_LABEL: Record<
+  NonNullable<PlacementRatingRow['dataState']>,
+  string
+> = {
+  READY: 'Рассчитан',
+  INSUFFICIENT_DATA: 'Оценок недостаточно',
+  NOT_RECORDED: 'Рейтинг не рассчитан',
+  FEATURE_DISABLED: 'Оперативный рейтинг недоступен',
+}
+
+/** «8,4» — та же запись, что на экранах рейтинга. */
+function formatAggregate(value: number): string {
+  return value.toFixed(1).replace('.', ',')
+}
+
+/**
+ * §19.24: разрешённая краткая сводка рейтинга по назначенным.
+ *
+ * Отдельный серверный ресурс: значения агрегата вырезает СЕРВЕР по праву
+ * `ops.rating.view_aggregate`, а соответствие требованию поста остаётся
+ * видимым расстановщику — оно свойство назначения. Запрещённый список §19.24
+ * (персональные оценки, комментарии, оценщики, sensitive documents) сюда не
+ * приходит ни одним полем.
+ */
+function PlacementRatingsSection({ event }: { event: SecurityEvent }) {
+  const ratingsQuery = usePlacementRatings(event.id, event.placementAssignments.length > 0)
+  if (event.placementAssignments.length === 0) return null
+  if (ratingsQuery.isPending) {
+    return (
+      <section className="mt-3.5 rounded-xl border bg-card p-4">
+        <p className="text-xs text-muted-foreground">Загрузка сводки рейтинга…</p>
+      </section>
+    )
+  }
+  if (ratingsQuery.isError || ratingsQuery.data === undefined) {
+    // Отказ вспомогательного запроса не отбирает расстановку: §19.33 «rating
+    // API failure не ломает» соседний экран. Причина названа словами.
+    return (
+      <section className="mt-3.5 rounded-xl border bg-card p-4">
+        <p className="text-xs text-muted-foreground">
+          Сводка рейтинга назначенных сейчас недоступна.
+        </p>
+      </section>
+    )
+  }
+  const data = ratingsQuery.data
+  return (
+    <section
+      className="mt-3.5 rounded-xl border bg-card p-4"
+      aria-label="Рейтинг назначенных"
+    >
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Рейтинг назначенных</h3>
+        {!data.ratingConflictsEnabled && (
+          <span className="text-[11px] text-muted-foreground">
+            Проверка требования поста отключена — рейтинг не участвует в назначении.
+          </span>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead>
+            <tr className="border-b text-[11px] text-muted-foreground">
+              <th scope="col" className="py-1.5 pr-3 font-semibold">Сотрудник</th>
+              <th scope="col" className="py-1.5 pr-3 font-semibold">Требование поста</th>
+              <th scope="col" className="py-1.5 pr-3 font-semibold">Соответствие</th>
+              <th scope="col" className="py-1.5 pr-3 font-semibold">Рейтинг</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.results.map((row) => (
+              <tr key={row.assignmentId} className="border-b last:border-b-0 align-top">
+                <td className="py-1.5 pr-3">{row.employeeName}</td>
+                <td className="py-1.5 pr-3">
+                  {row.postMinRating === null
+                    ? '—'
+                    : `не ниже ${formatAggregate(row.postMinRating)}`}
+                </td>
+                <td className="py-1.5 pr-3">
+                  {RATING_COMPLIANCE_LABEL[row.compliance]}
+                  {row.ratingOverrideReason !== null && (
+                    <span className="block text-[11px] text-muted-foreground">
+                      Обход подтверждён: {row.ratingOverrideReason}
+                    </span>
+                  )}
+                </td>
+                <td className="py-1.5 pr-3">
+                  {!data.aggregateVisible || row.dataState === null ? (
+                    <span className="text-muted-foreground">
+                      Сводка закрыта политикой доступа
+                    </span>
+                  ) : row.dataState === 'READY' && row.aggregateRating !== null ? (
+                    <>
+                      {formatAggregate(row.aggregateRating)}
+                      <span className="block text-[11px] text-muted-foreground">
+                        оценок: {row.evaluationsCount ?? 0}
+                        {row.policyVersion !== null && ` · методика ${row.policyVersion}`}
+                        {row.calculatedAt !== null &&
+                          ` · рассчитан ${row.calculatedAt.slice(0, 10)}`}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {RATING_DATA_STATE_LABEL[row.dataState]}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 

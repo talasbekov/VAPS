@@ -40,6 +40,7 @@ function makeEvent(overrides: Partial<SecurityEvent> = {}): SecurityEvent {
         comment: '',
         sourceSectorId: null,
         sourcePostId: null,
+        minRating: null,
       },
     ],
     demandRows: [],
@@ -78,8 +79,8 @@ describe('buildPostGroups', () => {
     const groups = buildPostGroups(
       makeEvent({
         placementAssignments: [
-          { id: 'a-1', postId: 'post-1', employeeId: 'e-1', employeeName: 'Иванов И.', acknowledgedAt: '2026-07-21T10:00:00+05:00' },
-          { id: 'a-2', postId: 'post-1', employeeId: 'e-2', employeeName: 'Петров П.', acknowledgedAt: null },
+          { id: 'a-1', postId: 'post-1', employeeId: 'e-1', employeeName: 'Иванов И.', acknowledgedAt: '2026-07-21T10:00:00+05:00', ratingOverrideReason: null },
+          { id: 'a-2', postId: 'post-1', employeeId: 'e-2', employeeName: 'Петров П.', acknowledgedAt: null, ratingOverrideReason: null },
         ],
       }),
     )
@@ -94,7 +95,7 @@ describe('buildPostGroups', () => {
     const groups = buildPostGroups(
       makeEvent({
         placementAssignments: [
-          { id: 'a-9', postId: 'post-удалён', employeeId: 'e-9', employeeName: 'Сидоров С.', acknowledgedAt: null },
+          { id: 'a-9', postId: 'post-удалён', employeeId: 'e-9', employeeName: 'Сидоров С.', acknowledgedAt: null, ratingOverrideReason: null },
         ],
       }),
     )
@@ -129,8 +130,8 @@ describe('buildArchiveCase — итоги закрытия', () => {
     const archive = buildArchiveCase(
       makeEvent({
         reconSectorPosts: [
-          { id: 'p-1', sector: 'A', post: 'Вход', task: '', need: 1, requirements: '', result: null, comment: '', sourceSectorId: null, sourcePostId: null },
-          { id: 'p-2', sector: 'B', post: 'Пресс-зона', task: '', need: 1, requirements: '', result: null, comment: '', sourceSectorId: null, sourcePostId: null },
+          { id: 'p-1', sector: 'A', post: 'Вход', task: '', need: 1, requirements: '', result: null, comment: '', sourceSectorId: null, sourcePostId: null, minRating: null },
+          { id: 'p-2', sector: 'B', post: 'Пресс-зона', task: '', need: 1, requirements: '', result: null, comment: '', sourceSectorId: null, sourcePostId: null, minRating: null },
         ],
         closureDirectionSummaries: [{ direction: 'A', summary: 'Без происшествий' }],
       }),
@@ -149,7 +150,7 @@ describe('buildArchiveCase — итоги закрытия', () => {
     const archive = buildArchiveCase(
       makeEvent({
         reconSectorPosts: [
-          { id: 'p-1', sector: '  ', post: 'Вход', task: '', need: 1, requirements: '', result: null, comment: '', sourceSectorId: null, sourcePostId: null },
+          { id: 'p-1', sector: '  ', post: 'Вход', task: '', need: 1, requirements: '', result: null, comment: '', sourceSectorId: null, sourcePostId: null, minRating: null },
         ],
         closureDirectionSummaries: [],
       }),
@@ -194,8 +195,8 @@ describe('buildArchiveCase — карточки разделов', () => {
     const archive = buildArchiveCase(
       makeEvent({
         placementAssignments: [
-          { id: 'a-1', postId: 'post-1', employeeId: 'e-1', employeeName: 'Иванов И.', acknowledgedAt: null },
-          { id: 'a-2', postId: 'нет-такого', employeeId: 'e-2', employeeName: 'Петров П.', acknowledgedAt: null },
+          { id: 'a-1', postId: 'post-1', employeeId: 'e-1', employeeName: 'Иванов И.', acknowledgedAt: null, ratingOverrideReason: null },
+          { id: 'a-2', postId: 'нет-такого', employeeId: 'e-2', employeeName: 'Петров П.', acknowledgedAt: null, ratingOverrideReason: null },
         ],
       }),
     )

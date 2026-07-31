@@ -80,8 +80,10 @@ export interface RatingsSlice {
    * выключенная функция обязана давать честное состояние недоступности на
    * живом экране, а `import.meta.env` такое состояние не проверить.
    *
-   * `ratingConflicts` выключен: `post.min_rating` в модели постов нет вовсе,
-   * и включённый флаг обещал бы проверку, которой не существует (§35).
+   * `ratingConflicts` включён с §19.24: `post.min_rating` появился в расчёте
+   * расстановки, и за флагом теперь стоит настоящая проверка — мягкое
+   * предупреждение при назначении. Пока проверки не существовало, флаг был
+   * выключен: включённый, он обещал бы то, чего нет (§35).
    */
   capabilities: { operationalRatings: boolean; ratingConflicts: boolean }
 }
@@ -620,7 +622,7 @@ export function buildRatingsSeed(): { sliceName: string; data: RatingsSlice } {
       exportJobs: [],
       exportArtifacts: [],
       dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
-      capabilities: { operationalRatings: true, ratingConflicts: false },
+      capabilities: { operationalRatings: true, ratingConflicts: true },
     },
   }
 }

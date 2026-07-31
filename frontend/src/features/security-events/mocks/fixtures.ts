@@ -46,7 +46,12 @@ function buildChecklist(ctx: SeedContext, doneCount: number): ReconChecklistItem
 
 function buildSectorPosts(
   ctx: SeedContext,
-  rows: ReadonlyArray<Omit<ReconSectorPost, 'id' | 'sourceSectorId' | 'sourcePostId'>>,
+  rows: ReadonlyArray<
+    Omit<ReconSectorPost, 'id' | 'sourceSectorId' | 'sourcePostId' | 'minRating'> & {
+      /** §19.24: требование к рейтингу задаётся у отдельных постов сида. */
+      minRating?: number
+    }
+  >,
 ): ReconSectorPost[] {
   // Сеяные строки расчёта — РУЧНЫЕ (`source*` = null). Это не упущение: они
   // заведены до того, как появился импорт из паспорта, и §9.6 прямо разрешает
@@ -58,6 +63,8 @@ function buildSectorPosts(
     ...row,
     sourceSectorId: null,
     sourcePostId: null,
+    // §19.24: у поста без заданного требования его НЕТ (`null`), а не ноль.
+    minRating: row.minRating ?? null,
   }))
 }
 
@@ -94,7 +101,11 @@ const SEED_EVENTS: ReadonlyArray<{
   /** Сколько пунктов чек-листа уже отмечены выполненными (0 = ещё не начата). */
   checklistDone: number
   /** Начальные строки «Посты и секторы» (пусто = ещё не рассчитано). */
-  sectorPosts: ReadonlyArray<Omit<ReconSectorPost, 'id' | 'sourceSectorId' | 'sourcePostId'>>
+  sectorPosts: ReadonlyArray<
+    Omit<ReconSectorPost, 'id' | 'sourceSectorId' | 'sourcePostId' | 'minRating'> & {
+      minRating?: number
+    }
+  >
   /** Строки потребности (пусто = этап ещё не начат). */
   demandRows: ReadonlyArray<Omit<StaffingDemandRow, 'id'>>
   demandApproved: boolean
@@ -134,6 +145,13 @@ const SEED_EVENTS: ReadonlyArray<{
         requirements: '—',
         result: 'MATCHES',
         comment: '',
+        // §19.24: единственный сеяный пост с требованием к рейтингу. Значение
+        // 8,0 подобрано к точкам динамики рейтинга: «Ерланов Д.» (8,6)
+        // проходит, «Абишев Н.» (7,9) даёт мягкое предупреждение, «Сейтказы М.»
+        // (агрегата за период нет) — предупреждение об отсутствии данных.
+        // Пост «Главный вход» намеренно БЕЗ требования: состояние «требования
+        // нет» тоже должно встречаться живьём, а не только в тесте.
+        minRating: 8,
       },
     ],
     demandRows: [
@@ -343,6 +361,9 @@ export function buildSecurityEventsSeed(ctx: SeedContext): {
         employeeId: employee.id,
         employeeName: employee.name,
         acknowledgedAt: null,
+        // Сеяные назначения сделаны ДО появления требования к рейтингу —
+        // обхода в их истории не было.
+        ratingOverrideReason: null,
       }
     })
     return {

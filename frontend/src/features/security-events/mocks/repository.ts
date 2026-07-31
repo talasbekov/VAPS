@@ -15,6 +15,7 @@ import type {
   CloseSecurityEventRequest,
   CreateSecurityEventRequest,
   ListBindableObjectsResponse,
+  ListPlacementRatingsResponse,
   ListSecurityEventsParams,
   ListSecurityEventsResponse,
   ReplaceAssignmentRequest,
@@ -28,6 +29,8 @@ import type {
   ForceRequest,
   JournalEntry,
   PlacementAssignment,
+  PlacementRatingCompliance,
+  PlacementRatingRow,
   ReconChecklistItem,
   ReconSectorPost,
   SecurityEvent,
@@ -43,6 +46,8 @@ import {
 import { RECON_CHECKLIST_TEMPLATE } from './fixtures'
 import type { SecurityEventsSlice } from './fixtures'
 import { findObjectById, readObjectsProjection } from './objectsSlice'
+import type { PlacementRatingProjection } from './ratingsSlice'
+import { readPlacementRating, readRatingCapabilities } from './ratingsSlice'
 import { STAGE_ORDER } from '../lib/stageMeta'
 import { aggregateForceRequests } from './demandLogic'
 import { findPersonnel } from './personnelRoster'
@@ -64,6 +69,22 @@ export class RepositoryBusinessRuleError extends Error {
     this.errorCode = errorCode
   }
 }
+/**
+ * 409: МЯГКИЙ конфликт — «назначить можно, нужно обоснование» (§19.24
+ * «рейтинг не блокирует назначение автоматически… используй soft warning и
+ * существующий workflow override»). Отличается от 422 именно этим: 422 —
+ * отказ, обойти который нечем.
+ */
+export class RepositoryConflictError extends Error {
+  readonly errorCode: string
+  /** Конверт §36 несёт `details.conflicts[]` — общий `ConflictDialog` их перечисляет. */
+  readonly details: Record<string, unknown>
+  constructor(errorCode: string, message: string, details: Record<string, unknown> = {}) {
+    super(message)
+    this.errorCode = errorCode
+    this.details = details
+  }
+}
 
 const SLICE_NAME = 'security-events'
 const VIEW_PERMISSION = 'ops.security_event.view'
@@ -74,9 +95,40 @@ const DEMAND_PERMISSION = 'ops.demand.manage'
 const FORCE_ALLOCATION_PERMISSION = 'ops.force_allocation.manage'
 const PLACEMENT_MANAGE_PERMISSION = 'ops.placement.manage'
 const PLACEMENT_APPROVE_PERMISSION = 'ops.placement.approve'
+/**
+ * §19.24: краткая сводка рейтинга при расстановке охраняется ТЕМ ЖЕ правом,
+ * что и сам агрегат (§19.22 «просмотр агрегированного рейтинга»). Своё право
+ * заводить не за что: операция та же — прочитать агрегат, только вход в неё
+ * с другого экрана, а второе право просто раздавало бы тот же доступ дважды.
+ */
+const RATING_VIEW_AGGREGATE_PERMISSION = 'ops.rating.view_aggregate'
 const ACKNOWLEDGEMENT_PERMISSION = 'ops.acknowledgement.manage'
 const CONDUCT_PERMISSION = 'ops.conduct.manage'
 const CLOSURE_PERMISSION = 'ops.closure.manage'
+
+/** Подпись требования поста: «8,0», а не «8» — сравнивается дробное значение. */
+function formatRating(value: number): string {
+  return value.toFixed(1).replace('.', ',')
+}
+
+/**
+ * Соответствие рейтинга требованию поста (§19.24).
+ *
+ * Порядок проверок ЗАКРЕПЛЁН и начинается не с данных: выключенный флаг §19.3
+ * снимает вопрос целиком («`post.min_rating` не участвует в проверке»), пост
+ * без требования — тоже, и только потом смотрят на состояние агрегата.
+ * Обратный порядок объявлял бы «данных нет» там, где их и не спрашивали.
+ */
+function resolveRatingCompliance(
+  minRating: number | null,
+  rating: PlacementRatingProjection,
+  conflictsEnabled: boolean,
+): PlacementRatingCompliance {
+  if (!conflictsEnabled) return 'NOT_CHECKED'
+  if (minRating === null) return 'NOT_REQUIRED'
+  if (rating.state !== 'READY' || rating.aggregateRating === null) return 'UNKNOWN'
+  return rating.aggregateRating >= minRating ? 'MEETS' : 'BELOW'
+}
 
 function readSlice(envelope: DemoStateEnvelope): SecurityEventsSlice {
   const slice = envelope.slices[SLICE_NAME]
@@ -532,6 +584,10 @@ export function createSecurityEventsRepository(
             comment: '',
             sourceSectorId: sector.id,
             sourcePostId: post.id,
+            // Паспорт объекта требования к рейтингу не несёт (§19.24 задаёт
+            // его посту РАСЧЁТА мероприятия) — импортированная строка приходит
+            // без требования, а не с выдуманным.
+            minRating: null,
           })
         }
       }
@@ -796,12 +852,56 @@ export function createSecurityEventsRepository(
           `${employee.name} уже назначен(а) на другой пост этого мероприятия.`,
         )
       }
+
+      // §19.24: требование поста к рейтингу — МЯГКОЕ предупреждение, не отказ
+      // («рейтинг не блокирует назначение автоматически»). Проверяется ПОСЛЕ
+      // жёстких правил: обходить обоснованием можно только то назначение,
+      // которое иначе состоялось бы.
+      const post = existing.reconSectorPosts.find((p) => p.id === request.postId)
+      const capabilities = readRatingCapabilities(current.slices)
+      const overrideReason =
+        request.override === true ? (request.override_reason ?? '').trim() : ''
+      let ratingConflictMessage: string | null = null
+      if (capabilities.ratingConflicts && post !== undefined && post.minRating !== null) {
+        const rating = readPlacementRating(current.slices, request.employeeId)
+        const compliance = resolveRatingCompliance(post.minRating, rating, true)
+        if (compliance === 'BELOW') {
+          ratingConflictMessage =
+            `Рейтинг сотрудника ниже требования поста (${formatRating(post.minRating)}).`
+        } else if (compliance === 'UNKNOWN') {
+          // §19.3: отсутствие данных — СВОЁ предупреждение (RATING_DATA_MISSING,
+          // код закреплён в docs/registries/error-codes.yaml как расширение
+          // BR-RATING-CONFLICT-002), а не молчаливое «соответствует» и не отказ.
+          ratingConflictMessage =
+            'Данных рейтинга для проверки требования поста нет.'
+        }
+        if (ratingConflictMessage !== null && overrideReason === '') {
+          // Код общий для протокола обхода: SOFT_CONFLICT_DETECTED уже в
+          // OVERRIDABLE_CODES — именно он включает канонический путь
+          // `useApiMutation.conflict` → ConflictDialog → повтор с override.
+          throw new RepositoryConflictError('SOFT_CONFLICT_DETECTED', ratingConflictMessage, {
+            conflicts: [
+              {
+                conflict_code:
+                  compliance === 'BELOW' ? 'POST_REQUIREMENT_MISMATCH_CONFLICT' : 'RATING_DATA_MISSING',
+                severity: 'WARNING',
+                employee_id: request.employeeId,
+                message: ratingConflictMessage,
+              },
+            ],
+          })
+        }
+      }
+
       const assignment: PlacementAssignment = {
         id: `${id}-assignment-${existing.placementAssignments.length + 1}`,
         postId: request.postId,
         employeeId: request.employeeId,
         employeeName: employee.name,
         acknowledgedAt: null,
+        // Обоснование сохраняется ТОЛЬКО при реально возникшем предупреждении:
+        // причина без конфликта читалась бы как «здесь что-то обходили».
+        ratingOverrideReason: ratingConflictMessage === null ? null : overrideReason,
       }
       updated = {
         ...existing,
@@ -814,6 +914,66 @@ export function createSecurityEventsRepository(
       )
     })
     return updated
+  }
+
+  /**
+   * §19.24: разрешённая краткая сводка рейтинга по назначенным.
+   *
+   * Право на ВХОД — право расстановки: строки с постом, сотрудником и
+   * соответствием требованию — часть самой расстановки. А вот ЗНАЧЕНИЯ
+   * агрегата (рейтинг, счётчик, версия методики, дата расчёта) вырезает
+   * СЕРВЕР, если у смотрящего нет `ops.rating.view_aggregate`: §19.21
+   * «закрытость обеспечивается API, а не скрытием колонок». Соответствие
+   * при этом остаётся видимым — оно свойство назначения, не рейтинга.
+   */
+  async function listPlacementRatings(
+    id: string,
+    actorUserId: string | null,
+  ): Promise<ListPlacementRatingsResponse> {
+    if (!hasPermission(actorUserId, PLACEMENT_MANAGE_PERMISSION)) {
+      throw new RepositoryPermissionError(PLACEMENT_MANAGE_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new Error('mock-runtime: чтение расстановки до инициализации demo-состояния')
+    }
+    const event = readSlice(envelope).events.find((e) => e.id === id)
+    if (event === undefined) {
+      throw new RepositoryNotFoundError(id)
+    }
+    const capabilities = readRatingCapabilities(envelope.slices)
+    const aggregateVisible = hasPermission(actorUserId, RATING_VIEW_AGGREGATE_PERMISSION)
+    const results: PlacementRatingRow[] = event.placementAssignments.map((assignment) => {
+      const post = event.reconSectorPosts.find((p) => p.id === assignment.postId)
+      const minRating = post?.minRating ?? null
+      const rating = readPlacementRating(envelope.slices, assignment.employeeId)
+      const compliance = resolveRatingCompliance(
+        minRating,
+        rating,
+        capabilities.ratingConflicts,
+      )
+      return {
+        assignmentId: assignment.id,
+        postId: assignment.postId,
+        employeeId: assignment.employeeId,
+        employeeName: assignment.employeeName,
+        postMinRating: minRating,
+        compliance,
+        // Закрытая сводка — `null` во ВСЕХ полях данных, включая состояние:
+        // «данных недостаточно» — тоже сведение о рейтинге человека.
+        dataState: aggregateVisible ? rating.state : null,
+        aggregateRating: aggregateVisible ? rating.aggregateRating : null,
+        evaluationsCount: aggregateVisible ? rating.evaluationsCount : null,
+        policyVersion: aggregateVisible ? rating.policyVersion : null,
+        calculatedAt: aggregateVisible ? rating.calculatedAt : null,
+        ratingOverrideReason: assignment.ratingOverrideReason,
+      }
+    })
+    return {
+      results,
+      ratingConflictsEnabled: capabilities.ratingConflicts,
+      aggregateVisible,
+    }
   }
 
   async function unassignPlacement(
@@ -1145,6 +1305,9 @@ export function createSecurityEventsRepository(
         employeeId: request.incomingEmployeeId,
         employeeName: incomingEmployee.name,
         acknowledgedAt: null,
+        // Замена в ходе проведения — операция §10, а не расстановка: мягкое
+        // предупреждение §19.24 к ней не привязано, обхода не было.
+        ratingOverrideReason: null,
       }
       const journalEntry: JournalEntry = {
         id: `${id}-journal-${existing.journalEntries.length + 1}`,
@@ -1245,6 +1408,7 @@ export function createSecurityEventsRepository(
     updateForceAllocation,
     completeForces,
     assignPlacement,
+    listPlacementRatings,
     unassignPlacement,
     completePlacement,
     approvePlacement,

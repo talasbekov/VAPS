@@ -24,6 +24,7 @@ import {
   securityEventPassportPath,
   securityEventPlacementAssignPath,
   securityEventPlacementCompletePath,
+  securityEventPlacementRatingsPath,
   securityEventPlacementUnassignPath,
   securityEventReconCompletePath,
   securityEventReconImportPath,
@@ -38,6 +39,7 @@ import type {
   ApproveDemandResponse,
   AssignPlacementRequest,
   AssignPlacementResponse,
+  ListPlacementRatingsResponse,
   CloseSecurityEventRequest,
   CloseSecurityEventResponse,
   CompleteAcknowledgementResponse,
@@ -220,6 +222,10 @@ export function useAssignPlacement(id: string) {
       apiClient.post<AssignPlacementResponse>(securityEventPlacementAssignPath(id), body),
     onSuccess: (data) => {
       queryClient.setQueryData(securityEventKeys.detail(id), data)
+      // §19.24: состав назначенных изменился — сводка рейтинга пересобирается.
+      void queryClient.invalidateQueries({
+        queryKey: securityEventKeys.placementRatings(id),
+      })
     },
   })
 }
@@ -233,7 +239,20 @@ export function useUnassignPlacement(id: string) {
       ),
     onSuccess: (data) => {
       queryClient.setQueryData(securityEventKeys.detail(id), data)
+      void queryClient.invalidateQueries({
+        queryKey: securityEventKeys.placementRatings(id),
+      })
     },
+  })
+}
+
+/** §19.24: разрешённая краткая сводка рейтинга назначенных. */
+export function usePlacementRatings(id: string, enabled: boolean) {
+  return useQuery<ListPlacementRatingsResponse, ApiFailure>({
+    queryKey: securityEventKeys.placementRatings(id),
+    queryFn: () =>
+      apiClient.get<ListPlacementRatingsResponse>(securityEventPlacementRatingsPath(id)),
+    enabled,
   })
 }
 

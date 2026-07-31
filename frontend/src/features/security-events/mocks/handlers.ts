@@ -23,6 +23,7 @@ import {
   securityEventPassportPath,
   securityEventPlacementAssignPath,
   securityEventPlacementCompletePath,
+  securityEventPlacementRatingsPath,
   securityEventPlacementUnassignPath,
   securityEventReconCompletePath,
   securityEventReconImportPath,
@@ -49,6 +50,7 @@ import { SECURITY_EVENT_STAGES } from '../model/types'
 import {
   createSecurityEventsRepository,
   RepositoryBusinessRuleError,
+  RepositoryConflictError,
   RepositoryNotFoundError,
   RepositoryPermissionError,
   RepositoryValidationError,
@@ -107,6 +109,10 @@ function normalizeSectorPosts(raw: unknown): ReconSectorPost[] {
       sourceSectorId:
         typeof record.sourceSectorId === 'string' ? record.sourceSectorId : null,
       sourcePostId: typeof record.sourcePostId === 'string' ? record.sourcePostId : null,
+      // §19.24: требование поста к рейтингу тоже переживает «Сохранить
+      // расчёт» — потерять его здесь значило бы молча снять требование первым
+      // же сохранением рекогносцировки (тот же класс, что source* выше).
+      minRating: typeof record.minRating === 'number' ? record.minRating : null,
     }
   })
 }
@@ -162,6 +168,18 @@ function mapRepositoryError(
       businessRuleEnvelope(clock, error.errorCode, error.message),
       { status: 422 },
     )
+  }
+  // §19.24: мягкий конфликт — 409, а не 422. Клиент различает их по статусу:
+  // 422 — отказ, 409 с overridable-кодом — «можно, но нужно обоснование».
+  if (error instanceof RepositoryConflictError) {
+    const envelope: ErrorEnvelope = {
+      error_code: error.errorCode,
+      message: error.message,
+      details: error.details,
+      request_id: null,
+      timestamp: clock.now(),
+    }
+    return HttpResponse.json(envelope, { status: 409 })
   }
   return null
 }
@@ -474,10 +492,31 @@ export function createSecurityEventsHandlers(
       const normalized: AssignPlacementRequest = {
         postId: typeof body.postId === 'string' ? body.postId : '',
         employeeId: typeof body.employeeId === 'string' ? body.employeeId : '',
+        // §19.24: поля протокола обхода. Потерять их при нормализации значило
+        // бы сделать `confirmOverride` вечным 409 — повтор с обоснованием
+        // приходил бы на сервер без него.
+        override: body.override === true,
+        override_reason:
+          typeof body.override_reason === 'string' ? body.override_reason : '',
       }
       try {
         const updated = await repository.assignPlacement(id, normalized, actorUserId)
         return HttpResponse.json(updated)
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock, id)
+        if (mapped) return mapped
+        throw error
+      }
+    }),
+
+    // §19.24: разрешённая краткая сводка рейтинга назначенных. GET и ровно
+    // одна операция — состав полей решает сервер по правам смотрящего.
+    http.get(`*${securityEventPlacementRatingsPath(':id')}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = String(params.id)
+      try {
+        const response = await repository.listPlacementRatings(id, actorUserId)
+        return HttpResponse.json(response)
       } catch (error) {
         const mapped = mapRepositoryError(error, clock, id)
         if (mapped) return mapped
