@@ -400,16 +400,33 @@ class ChecklistOverride(TimeStampedModel):
         # source_item belonging to a DIFFERENT template than
         # binding.template. Same caveat as Post.clean(): full_clean()
         # only, not enforced by .objects.create()/bulk_create().
+        #
+        # Review (Edge Case Hunter): the cross-template branch below
+        # guards on `self.binding_id`/`self.source_item_id` BEFORE
+        # dereferencing the related objects — comparing the descriptors
+        # directly (`self.binding`, `self.source_item`) on an unsaved
+        # instance whose FK isn't set raises an uncaught
+        # ObjectDoesNotExist instead of a clean ValidationError.
+        #
+        # Review (Blind Hunter): ADD/MODIFY/DISABLE were representable
+        # with any source_item state (e.g. ADD with a stale source_item,
+        # or MODIFY with none) — now validated explicitly.
         super().clean()
-        if (
+        errors = []
+        if self.override_type == self.OverrideType.ADD and self.source_item_id:
+            errors.append("Для ADD пункт-источник должен быть пустым.")
+        elif (
+            self.override_type in (self.OverrideType.MODIFY, self.OverrideType.DISABLE)
+            and not self.source_item_id
+        ):
+            errors.append("Для MODIFY/DISABLE пункт-источник обязателен.")
+        elif (
             self.source_item_id
+            and self.binding_id
             and self.source_item.template_id != self.binding.template_id
         ):
-            raise ValidationError(
-                {
-                    "source_item": (
-                        "Пункт-источник должен принадлежать тому же шаблону, "
-                        "что и привязка."
-                    )
-                }
+            errors.append(
+                "Пункт-источник должен принадлежать тому же шаблону, что и привязка."
             )
+        if errors:
+            raise ValidationError({"source_item": errors})

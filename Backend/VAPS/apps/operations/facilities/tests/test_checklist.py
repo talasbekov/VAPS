@@ -166,3 +166,64 @@ def test_override_source_item_from_the_same_template_passes_clean():
         override_type=ChecklistOverride.OverrideType.MODIFY,
     )
     override.full_clean()  # must not raise
+
+
+def test_add_override_with_source_item_rejected_by_clean():
+    # Review (Blind Hunter): ADD must not carry a stale source_item.
+    obj = make_object("OBJ-CL-10")
+    template = make_template("STD-11")
+    item = ChecklistItem.objects.create(template=template, text="Пункт")
+    binding = ChecklistBinding.objects.create(object=obj, template=template)
+
+    override = ChecklistOverride(
+        binding=binding,
+        source_item=item,
+        override_type=ChecklistOverride.OverrideType.ADD,
+    )
+    with pytest.raises(ValidationError):
+        override.full_clean()
+
+
+def test_add_override_without_source_item_passes_clean():
+    obj = make_object("OBJ-CL-11")
+    template = make_template("STD-12")
+    binding = ChecklistBinding.objects.create(object=obj, template=template)
+
+    override = ChecklistOverride(
+        binding=binding, override_type=ChecklistOverride.OverrideType.ADD
+    )
+    override.full_clean()  # must not raise
+
+
+@pytest.mark.parametrize(
+    "override_type",
+    [ChecklistOverride.OverrideType.MODIFY, ChecklistOverride.OverrideType.DISABLE],
+)
+def test_modify_or_disable_override_without_source_item_rejected_by_clean(
+    override_type,
+):
+    # Review (Blind Hunter): MODIFY/DISABLE must reference the item they
+    # modify/disable — a stray source_item-less MODIFY is meaningless.
+    obj = make_object(f"OBJ-CL-12-{override_type}")
+    template = make_template(f"STD-13-{override_type}")
+    binding = ChecklistBinding.objects.create(object=obj, template=template)
+
+    override = ChecklistOverride(binding=binding, override_type=override_type)
+    with pytest.raises(ValidationError):
+        override.full_clean()
+
+
+def test_clean_on_missing_binding_raises_validation_error_not_does_not_exist():
+    # Review (Edge Case Hunter): clean() must guard on binding_id BEFORE
+    # dereferencing self.binding — source_item IS set here (so the
+    # "MODIFY needs source_item" rule doesn't short-circuit first), binding
+    # is NOT, forcing the cross-template branch's `self.binding_id` guard
+    # to actually matter. Must raise a clean ValidationError (required
+    # `binding` field), never an uncaught ObjectDoesNotExist.
+    template = make_template("STD-14")
+    item = ChecklistItem.objects.create(template=template, text="Пункт")
+    override = ChecklistOverride(
+        source_item=item, override_type=ChecklistOverride.OverrideType.MODIFY
+    )
+    with pytest.raises(ValidationError):
+        override.full_clean()
