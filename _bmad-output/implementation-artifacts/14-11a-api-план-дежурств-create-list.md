@@ -4,7 +4,7 @@ baseline_commit: 7cbe09a
 
 # Story 14.11a: API — создание/список планов дежурств
 
-Status: review
+Status: done
 
 ## Story
 
@@ -83,13 +83,13 @@ so that **план дежурств можно завести и найти че
 
 - `apps/operations/duties/api/__init__.py` (new)
 - `apps/operations/duties/api/serializers.py` (new)
-- `apps/operations/duties/api/views.py` (new)
+- `apps/operations/duties/api/views.py` (new; ревью-фикс — `?object=`-query-param валидация)
 - `apps/operations/api/urls.py` (modified — регистрация `DutyPlanViewSet`)
 - `apps/core/api/exception_handler.py` (modified — 3 новые записи в `CONSTRAINT_ERROR_MAP`)
-- `docs/registries/error-codes.yaml` (modified — 2 новых кода, локальный/untracked файл)
-- `apps/operations/tests/test_rbac_matrix.py` (modified — `MATRIX`'s новая строка)
+- `docs/registries/error-codes.yaml` (modified — 2 новых кода)
+- `apps/operations/tests/test_rbac_matrix.py` (modified — `MATRIX`'s новая строка; ревью-фикс — точный комментарий про `ADMIN`'s wildcard)
 - `apps/audit/tests/test_audit_coverage.py` (modified — `AUDIT_MATRIX`'s новая строка)
-- `apps/operations/duties/tests/test_duty_plan_api.py` (new)
+- `apps/operations/duties/tests/test_duty_plan_api.py` (new; ревью-фикс — 2 доп. теста)
 - `schema.yaml` (regenerated — `make schema`)
 
 ## Change Log
@@ -98,3 +98,4 @@ so that **план дежурств можно завести и найти че
 |---|---|
 | 2026-07-31 | Story создана (create-story). Первая из ~12 подсторий разделения 14.11 (backend+frontend-микс нарушал CLAUDE.md). `duty.manage` уже засеян как код права — RBAC-строка (биндинг к роли) отложена на 14.12. Паттерн `viewsets.ViewSet`+`require_permission`, зеркалит `bugreports/api/`. |
 | 2026-07-31 | Dev-story: `duties/api/` пакет, регистрация в роутере, 3 записи `CONSTRAINT_ERROR_MAP`+2 кода реестра ошибок, MATRIX/AUDIT_MATRIX-строки, `make schema` регенерирован, 7 новых тестов, все зелёные под реальным Postgres. `make gate` — 3240 passed. Status → review. |
+| 2026-07-31 | 3-агентное ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor). Blind Hunter И Edge Case Hunter НЕЗАВИСИМО нашли ОДИН И ТОТ ЖЕ реальный дефект: `list`'s `?object=`-query-параметр фильтровался БЕЗ валидации типа — нечисловое значение (`Object`'s PK — integer) роняло queryset в необработанный `ValueError` (Postgres `invalid input syntax for type integer`), который `exception_handler.py` не маппит → голый `500 INTERNAL_ERROR`, ровно то, что весь файл-дизайн должен предотвращать. Асимметрия с `create`'s путём (`PrimaryKeyRelatedField` уже даёт чистый 400) была не перенесена на query-param-путь. Fix: `object_id.isdigit()`-гард → `ValidationError` (чистый 400) + 2 новых теста (malformed query-param, несуществующий `object` в create). Blind Hunter независимо отметил ВТОРУЮ находку (не баг, документационная неточность): MATRIX-комментарий утверждал «DENY для всех» — на деле `ADMIN`'s wildcard-право `*` уже даёт доступ СЕГОДНЯ (до 14.12's role-биндинга); комментарий исправлен на точную формулировку. Acceptance Auditor независимо подтвердил все 6 AC PASS, дефектов в логике/тестах не нашёл (проверял ДО применения фикса выше — ACs не покрывали этот edge case буквой). `make gate` — 3242 passed (было 3240, +2), без регрессий. Status → done. |

@@ -21,6 +21,7 @@ validation logic duplicated in this layer.
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
+from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework import status as http_status
@@ -73,6 +74,16 @@ class DutyPlanViewSet(viewsets.ViewSet):
         plans = DutyPlan.objects.order_by("-year", "-month")
         object_id = request.query_params.get("object")
         if object_id:
+            # Review (Blind Hunter/Edge Case Hunter, independently confirmed):
+            # Object's PK is a plain integer — filtering with a raw,
+            # unvalidated query-param string raises a bare ValueError deep
+            # inside the queryset (Postgres "invalid input syntax for type
+            # integer"), which exception_handler.py doesn't map and falls
+            # through to a bare 500. Validate/coerce here so bad input is a
+            # clean 400, same as create's PrimaryKeyRelatedField already
+            # gives for the request-body path.
+            if not object_id.isdigit():
+                raise ValidationError({"object": "Ожидается числовой id объекта."})
             plans = plans.filter(object_id=object_id)
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(plans, request)

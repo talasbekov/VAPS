@@ -89,6 +89,23 @@ def test_create_duty_plan_month_out_of_range_rejected(duty_manager_client):
     assert resp.data["error_code"] == "DUTY_PLAN_INVALID_PERIOD"
 
 
+def test_create_duty_plan_nonexistent_object_rejected(duty_manager_client):
+    resp = duty_manager_client.post(
+        reverse("ops-duty-plan-list"),
+        {"object": "999999", "year": 2026, "month": 8},
+        format="json",
+    )
+    assert resp.status_code == 400, resp.data
+
+
+def test_list_duty_plans_malformed_object_filter_rejected_cleanly(duty_manager_client):
+    # Review (Blind Hunter/Edge Case Hunter, independently confirmed): a
+    # non-numeric ?object= must be a clean 400, not a bare 500 from an
+    # unhandled ValueError deep in the queryset.
+    resp = duty_manager_client.get(reverse("ops-duty-plan-list"), {"object": "abc"})
+    assert resp.status_code == 400, resp.data
+
+
 def test_list_duty_plans_requires_permission(seeded):
     client = _client("plain-operator")
     resp = client.get(reverse("ops-duty-plan-list"))

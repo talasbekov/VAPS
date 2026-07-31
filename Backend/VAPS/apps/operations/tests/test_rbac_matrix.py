@@ -150,8 +150,10 @@ MATRIX = {
     "ops-temp-duty-expire": _Gate("admin.roles"),
     "ops-my-permissions-list": _AnyAuthenticated(),
     # Story 14.11a: create+list duty plans. Role-binding for duty.manage
-    # (which role actually carries it) is 14.12's job — no role holds it
-    # yet, so this row expects DENY for every actor until then.
+    # (which NON-ADMIN role carries it) is 14.12's job — no role other than
+    # ADMIN holds it yet (review: Blind Hunter — ADMIN already reaches this
+    # route today via its "*" wildcard, per _Gate._holders(); this row is
+    # NOT a universal-DENY gate, only DENY for everyone except ADMIN).
     "ops-duty-plan-list": _Gate("duty.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
