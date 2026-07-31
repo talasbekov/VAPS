@@ -14,6 +14,7 @@ import { Label } from '../../../shared/ui/Label'
 import { ValidationError } from '../../../shared/api/errors'
 import { GENERIC_FAILURE_MESSAGE } from '../../../shared/api/useApiMutation'
 import { useCreateDutyShift } from '../api/queries'
+import { zonedDateTimeToIso } from '../lib/localDateTime'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -39,8 +40,12 @@ const formSchema = z
       values.duty_type === '' || values.duty_type === undefined ? undefined : values.duty_type,
     duty_role_code: values.duty_role_code,
     notes: values.notes,
-    starts_at: new Date(values.starts_at).toISOString(),
-    ends_at: new Date(values.ends_at).toISOString(),
+    // Review (Blind Hunter/Edge Case Hunter): datetime-local входы трактуются
+    // как wall-clock в канонической business-таймзоне проекта
+    // (Asia/Qyzylorda), НЕ в ambient-таймзоне браузера оператора — иначе тот
+    // же ввод "08:00" даёт разный абсолютный UTC-момент на разных машинах.
+    starts_at: zonedDateTimeToIso(values.starts_at),
+    ends_at: zonedDateTimeToIso(values.ends_at),
   }))
 
 type FormInput = z.input<typeof formSchema>

@@ -4,7 +4,7 @@ baseline_commit: da60566
 
 # Story 14.11k: Frontend — деталь плана + грид смен дежурств
 
-Status: review
+Status: done
 
 ## Story
 
@@ -80,15 +80,19 @@ so that **можно посмотреть/наполнить конкретны�
 
 Реализовано по AC 1-9. `DutyPlanDetailPage.tsx` — `useParams`+`useDutyPlans()`-фильтр по id (нет retrieve-эндпоинта, Scope Decision), `useDutyShifts(planId)`-грид, isLoading/isError/not-found/empty-ветки (буквальный скелет `SecurityEventDetailPage`). `CreateDutyShiftDialog.tsx` — буквальный образец `CreateDutyPlanDialog.tsx` ПОСЛЕ review-фикса 14.11j (ValidationError-only setError, безопасный generic-баннер с UX L208-исключением для 5xx/network) — урок применён проактивно, не заново открыт. `post`/`duty_type` — числовой ID-stopgap (`.optional().or(z.literal(''))`, тот же паттерн, что `object` в 14.11j). Zod-`transform` конвертирует `datetime-local`-строки в ISO через `new Date(...).toISOString()`. `DutyPlansListPage.tsx`'s строки теперь `<Link>` на деталь. MSW-хендлеры `shifts`(GET+POST) добавлены в `duty-plans/mocks/handlers.ts`/`fixtures.ts`. 6 новых page-тестов (`src/app/duty-plan-detail.qa.test.tsx`, тот же слой, что `duty-plans-list.qa.test.tsx` — ARCH-FE-013), все зелёные с первой попытки. `npm run gate` — 1034 passed (было 1027, +7 — 6 новых + список-тест на ссылку), 0 regressions, build/size-gate зелёные (218.1KB/300KB).
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** Acceptance Auditor подтвердил все 9 AC PASS (полный gate — 1034 passed на момент ревью). Blind Hunter И Edge Case Hunter НЕЗАВИСИМО подтвердили ЭМПИРИЧЕСКИ (реальным запуском с разными timeZone) High-дефект: `new Date(values.starts_at).toISOString()` трактовал `datetime-local`-ввод как wall-clock АМБИЕНТНОЙ таймзоны браузера, не канонической business-таймзоны проекта (`VAPS_LOCAL_TIMEZONE = "Asia/Qyzylorda"`, `Backend/VAPS/config/settings.py`) — один и тот же ввод «08:00» давал разброс UTC-момента до 21 часа между зонами. Оба также независимо отметили, что `useDutyShifts(planId)` фаерился БЕЗУСЛОВНО, даже для нерезолвленного/битого `:id` (лишний запрос на `.../abc/shifts/`). Исправлено: (1) новый `duty-plans/lib/localDateTime.ts::zonedDateTimeToIso()` — без новых зависимостей (deps-gate allowlist), через документированный `Intl.DateTimeFormat`-offset-трюк, детерминированно интерпретирует ввод как Asia/Qyzylorda wall-clock; (2) `useDutyShifts` получил `enabled`-опцию, `DutyPlanDetailPage` передаёт `enabled: plan !== undefined` (план резолвится ДО вызова хука — Rules of Hooks соблюдены, вычисление `find()`, не условный вызов). Добавлены 3 юнит-теста на `zonedDateTimeToIso` (пин точного значения, explicit-timeZone override, переход через полночь) + 2 page-теста (битый `:id` не шлёт запрос смен; POST-тело create-смены содержит ТОЧНОЕ детерминированное ISO, не зависящее от TZ раннера). `npm run gate` после фиксов — 1038 passed, 0 regressions.
+
 ### File List
 
-- `frontend/src/features/duty-plans/pages/DutyPlanDetailPage.tsx` (new)
-- `frontend/src/features/duty-plans/pages/CreateDutyShiftDialog.tsx` (new)
+- `frontend/src/features/duty-plans/lib/localDateTime.ts` (new — review fix, `zonedDateTimeToIso()`)
+- `frontend/src/features/duty-plans/lib/localDateTime.test.ts` (new — review fix, 3 tests)
+- `frontend/src/features/duty-plans/pages/DutyPlanDetailPage.tsx` (new, review fix: `enabled: plan !== undefined` на `useDutyShifts`)
+- `frontend/src/features/duty-plans/pages/CreateDutyShiftDialog.tsx` (new, review fix: `zonedDateTimeToIso()` вместо `new Date(...).toISOString()`)
 - `frontend/src/features/duty-plans/pages/DutyPlansListPage.tsx` (modified — строки → `<Link>`)
-- `frontend/src/features/duty-plans/api/queries.ts` (modified — экспортированы `DutyShiftsListResponse`/`DutyShiftCreateRequest`)
+- `frontend/src/features/duty-plans/api/queries.ts` (modified — экспортированы `DutyShiftsListResponse`/`DutyShiftCreateRequest`; review fix: `useDutyShifts` — `enabled`-опция)
 - `frontend/src/features/duty-plans/mocks/handlers.ts` (modified — `shifts` GET+POST)
 - `frontend/src/features/duty-plans/mocks/fixtures.ts` (modified — `DutyShiftFixture`/`DUTY_SHIFTS`)
-- `frontend/src/app/duty-plan-detail.qa.test.tsx` (new)
+- `frontend/src/app/duty-plan-detail.qa.test.tsx` (new, +2 review tests)
 - `frontend/src/app/App.tsx` (modified — новый route)
 - `frontend/src/shared/routes.ts` (modified — `ROUTES.dutyPlanDetail`/`dutyPlanDetailTo`)
 
@@ -98,3 +102,4 @@ so that **можно посмотреть/наполнить конкретны�
 |---|---|
 | 2026-07-31 | Story создана (create-story). Одиннадцатая (третья frontend) из ~12 подсторий разделения 14.11. Нет retrieve-эндпоинта плана — решение переиспользовать useDutyPlans()-список с клиентским фильтром по id (работает и на прямом заходе — свой независимый fetch, не кэш-зависимость). post/duty_type — числовой ID-stopgap, как object в 14.11j. ValidationError-only setError с самого начала (не повторять 14.11j's review-находку). |
 | 2026-07-31 | Dev-story: `DutyPlanDetailPage`/`CreateDutyShiftDialog`, ссылка со списка, MSW shifts-хендлеры, 6 page-тестов, все зелёные с первой попытки (14.11j's review-урок применён проактивно). `npm run gate` — 1034 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): Acceptance Auditor — все 9 AC PASS. Blind Hunter И Edge Case Hunter НЕЗАВИСИМО эмпирически подтвердили High-дефект (timezone-зависимая ISO-конвертация, до 21ч разброса между зонами) + unconditional useDutyShifts-фетч на битый id. Исправлено: `zonedDateTimeToIso()` (Intl-offset-трюк, без новых deps), `enabled`-опция на `useDutyShifts`. +5 тестов (3 юнит + 2 page). `npm run gate` — 1038 passed, 0 regressions. Status → done. |

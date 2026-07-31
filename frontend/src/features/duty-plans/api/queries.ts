@@ -72,11 +72,12 @@ export function useCreateDutyPlan() {
   })
 }
 
-export function useDutyShifts(planId: string) {
+export function useDutyShifts(planId: string, options?: { enabled?: boolean }) {
   return useQuery<DutyShiftsListResponse, ApiFailure>({
     queryKey: dutyPlanKeys.shifts(planId),
     queryFn: () =>
       apiClient.get<DutyShiftsListResponse>(`/api/operations/duty-plans/${planId}/shifts/`),
+    enabled: options?.enabled ?? true,
   })
 }
 

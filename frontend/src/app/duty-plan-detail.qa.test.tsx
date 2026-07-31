@@ -116,6 +116,26 @@ describe('DutyPlanDetailPage', () => {
     ).toHaveAttribute('href', ROUTES.dutyPlans)
   })
 
+  it('AC-2 (доп.): битый :id (не число) — не найдено, БЕЗ запроса смен', async () => {
+    usePermissionsResponse({ permissions: ['duty.manage'] })
+    let shiftsRequested = false
+    server.use(
+      http.get('*/api/operations/duty-plans/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [PLAN] }),
+      ),
+      http.get('*/api/operations/duty-plans/abc/shifts/', () => {
+        shiftsRequested = true
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] })
+      }),
+    )
+    renderApp(ROUTES.dutyPlanDetailTo('abc'))
+
+    expect(await screen.findByText('План не найден.')).toBeInTheDocument()
+    // Review (Blind Hunter/Edge Case Hunter): useDutyShifts должен быть
+    // enabled только когда план разрешён — иначе лишний запрос на битый id.
+    expect(shiftsRequested).toBe(false)
+  })
+
   it('AC-4: пустой грид смен показывает сообщение', async () => {
     usePermissionsResponse({ permissions: ['duty.manage'] })
     server.use(
@@ -144,9 +164,10 @@ describe('DutyPlanDetailPage', () => {
     expect(link).toHaveAttribute('href', ROUTES.dutyPlanDetailTo(1))
   })
 
-  it('AC-6/7: создание смены — форма, успех обновляет грид', async () => {
+  it('AC-6/7: создание смены — форма, успех обновляет грид, ISO не зависит от TZ раннера', async () => {
     usePermissionsResponse({ permissions: ['duty.manage'] })
     const shifts: Array<Record<string, unknown>> = []
+    let receivedBody: Record<string, unknown> | null = null
     server.use(
       http.get('*/api/operations/duty-plans/', () =>
         HttpResponse.json({ count: 1, next: null, previous: null, results: [PLAN] }),
@@ -154,7 +175,8 @@ describe('DutyPlanDetailPage', () => {
       http.get('*/api/operations/duty-plans/1/shifts/', () =>
         HttpResponse.json({ count: shifts.length, next: null, previous: null, results: shifts }),
       ),
-      http.post('*/api/operations/duty-plans/1/shifts/', () => {
+      http.post('*/api/operations/duty-plans/1/shifts/', async ({ request }) => {
+        receivedBody = (await request.json()) as Record<string, unknown>
         const shift = {
           id: 7,
           plan: 1,
@@ -199,6 +221,13 @@ describe('DutyPlanDetailPage', () => {
     expect(
       await screen.findByText('22222222-2222-2222-2222-222222222222'),
     ).toBeInTheDocument()
+    // Review (Blind Hunter/Edge Case Hunter): "08:00"/"20:00" вводятся как
+    // wall-clock Asia/Qyzylorda (+05:00) — фиксирует ТОЧНОЕ ISO-значение,
+    // не зависящее от таймзоны машины, где гоняется тест.
+    expect(receivedBody).toMatchObject({
+      starts_at: '2026-09-05T03:00:00.000Z',
+      ends_at: '2026-09-05T15:00:00.000Z',
+    })
   })
 
   it('AC-8: 400 (валидация) — инлайн-ошибка поля, форма остаётся открытой', async () => {

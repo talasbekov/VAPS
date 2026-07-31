@@ -34,7 +34,11 @@ export function DutyPlanDetailPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const plansQuery = useDutyPlans()
-  const shiftsQuery = useDutyShifts(planId)
+  // Review (Blind Hunter/Edge Case Hunter): плюс-и-минус смены не должны
+  // фаериться, пока план ещё не разрешён (не загружен/не найден/битый id
+  // в URL) — иначе гарантирован лишний запрос вида GET .../abc/shifts/.
+  const plan = plansQuery.data?.results.find((p) => String(p.id) === planId)
+  const shiftsQuery = useDutyShifts(planId, { enabled: plan !== undefined })
 
   if (plansQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Загрузка плана…</p>
@@ -44,7 +48,6 @@ export function DutyPlanDetailPage() {
       <NotFound message="Не удалось загрузить план дежурств. Попробуйте обновить страницу." />
     )
   }
-  const plan = plansQuery.data?.results.find((p) => String(p.id) === planId)
   if (plan === undefined) {
     return <NotFound message="План не найден." />
   }
