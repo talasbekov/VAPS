@@ -151,6 +151,45 @@ def test_replan_explicit_null_clears_post_but_absent_field_inherits(
     assert resp.data["duty_role_code"] == "SENIOR"
 
 
+def test_replan_reason_only_clones_shift_fields(duty_manager_client, status_types):
+    obj = make_object("OBJ-REPLAN-4B")
+    plan = make_plan(obj)
+    post = Post.objects.create(object=obj, code="P-1", name="КПП-1")
+    old_shift = make_shift(
+        plan,
+        "2026-09-01T08:00:00+05:00",
+        "2026-09-01T20:00:00+05:00",
+        post=post,
+        duty_role_code="SENIOR",
+    )
+    resp = duty_manager_client.post(
+        replan_url(plan.pk, old_shift.pk),
+        {"reason": "Без изменений полей"},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.data
+    assert resp.data["post"] == post.pk
+    assert resp.data["duty_role_code"] == "SENIOR"
+    assert resp.data["starts_at"].startswith("2026-09-01")
+
+    old_shift.refresh_from_db()
+    assert old_shift.cancelled_at is not None
+    new_shift_id = resp.data["id"]
+    assert EmployeeStatus.objects.filter(source_ref=f"DUTY:{new_shift_id}").exists()
+
+
+def test_replan_employee_id_null_rejected(duty_manager_client):
+    obj = make_object("OBJ-REPLAN-4C")
+    plan = make_plan(obj)
+    shift = make_shift(plan, "2026-09-01T08:00:00+05:00", "2026-09-01T20:00:00+05:00")
+    resp = duty_manager_client.post(
+        replan_url(plan.pk, shift.pk),
+        {"reason": "x", "employee_id": None},
+        format="json",
+    )
+    assert resp.status_code == 400, resp.data
+
+
 def test_replan_nonexistent_plan_returns_404(duty_manager_client):
     obj = make_object("OBJ-REPLAN-5")
     plan = make_plan(obj)

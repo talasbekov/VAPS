@@ -269,7 +269,13 @@ def replan_duty_shift(shift, *, actor, reason, **new_fields):
         )
 
     with transaction.atomic():
-        cancel_duty_shift(shift, actor=actor, reason=reason)
+        # Review (Edge Case Hunter, 14.11e): use the RETURNED (locked,
+        # re-fetched) shift, not the pre-lock instance passed in — mirrors
+        # cancel_shift's own established idiom (views.py). Safe today either
+        # way (cancel_duty_shift only mutates cancelled_at/by/reason, none of
+        # which are in REPLANNABLE_FIELDS), but reading off the stale
+        # pre-lock object is a latent trap if that invariant ever changes.
+        shift = cancel_duty_shift(shift, actor=actor, reason=reason)
 
         values = {field: getattr(shift, field) for field in REPLANNABLE_FIELDS}
         values.update(new_fields)
