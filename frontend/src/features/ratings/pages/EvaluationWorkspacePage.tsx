@@ -357,7 +357,11 @@ export function EvaluationWorkspacePage() {
           {activeTab === 'pending' && (
             <section className="rounded-xl border bg-card p-4" aria-label={TAB_LABEL.pending}>
               {data.pending.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Заданий на оценивание нет.</p>
+                // §19.31: каноническая формулировка пустого списка заданий —
+                // дословно из промпта, не пересказ.
+                <p className="text-sm text-muted-foreground">
+                  У вас нет участников для оценивания по этому мероприятию.
+                </p>
               ) : (
                 <ul className="flex flex-col gap-3">
                   {data.pending.map((item) => (

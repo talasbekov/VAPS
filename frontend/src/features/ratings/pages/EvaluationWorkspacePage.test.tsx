@@ -213,6 +213,20 @@ describe('очередь заданий (§19.14)', () => {
       await screen.findByText(/Оценивание выключено сервером \(ENABLE_OPERATIONAL_RATINGS\)/),
     ).toBeInTheDocument()
   })
+
+  it('пустая очередь заданий — каноническая формулировка §19.31 дословно', async () => {
+    server.use(
+      http.get(WORKSPACE_URL, () =>
+        HttpResponse.json(
+          response({ pending: [], queue: { total: 1, submitted: 1, remaining: 0 } }),
+        ),
+      ),
+    )
+    renderPage()
+    expect(
+      await screen.findByText('У вас нет участников для оценивания по этому мероприятию.'),
+    ).toBeInTheDocument()
+  })
 })
 
 describe('форма оценивания (§19.9-19.10)', () => {

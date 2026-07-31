@@ -187,13 +187,17 @@ describe('состояние отбора в URL §19.15', () => {
     expect(restored.get('page')).toBe('2')
   })
 
-  it('пустой результат объясняется отбором, а не выдаётся за отсутствие оценивания', async () => {
+  it('пустой результат — каноническая формулировка §19.31, и она объясняется отбором', async () => {
     server.use(
       http.get(REGISTRY_URL, () => HttpResponse.json(response({ results: [], total: 0 }))),
     )
     renderPage()
+    // Канон §19.31 дословно (лечится только правкой канона, не пересказом).
     expect(
-      await screen.findByText(/Это результат фильтра, а не отсутствие оценивания/),
+      await screen.findByText(/По выбранным условиям оценки не найдены\./),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Это результат отбора, а не отсутствие оценивания/),
     ).toBeInTheDocument()
   })
 })

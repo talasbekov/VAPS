@@ -65,6 +65,22 @@ export function RatingEmployeeDetailPage() {
               <dt className="font-semibold">Рассчитано</dt>
               <dd>{data.summary.calculatedAt}</dd>
             </dl>
+            {/* §19.31: канонические формулировки отсутствующего агрегата —
+                ДОСЛОВНО из промпта. Причина при этом остаётся в строке
+                «Состояние» (§19.30 требует различать её точно): предложение
+                ниже говорит, ЧТО отсутствует, строка состояния — ПОЧЕМУ.
+                Выключенная функция канона не получает: «пока не сформирован»
+                обещал бы расчёт, которого при выключенном флаге не будет. */}
+            {data.summary.dataState === 'INSUFFICIENT_DATA' && (
+              <p className="mt-2 text-xs text-muted-foreground" role="status">
+                Оценок пока недостаточно для отображения итогового рейтинга.
+              </p>
+            )}
+            {data.summary.dataState === 'POLICY_UNDEFINED' && (
+              <p className="mt-2 text-xs text-muted-foreground" role="status">
+                Итоговый рейтинг пока не сформирован.
+              </p>
+            )}
           </section>
 
           <section className="mb-4 rounded-xl border bg-card p-4" aria-label="Агрегированная динамика">

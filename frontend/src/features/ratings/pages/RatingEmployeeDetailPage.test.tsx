@@ -119,6 +119,35 @@ describe('карточка агрегата §19.17', () => {
     renderPage()
     const card = await screen.findByLabelText('Агрегат участника')
     expect(within(card).getByText('Недостаточно данных')).toBeInTheDocument()
+    // §19.31: канон дословно — предложение говорит, ЧТО отсутствует, строка
+    // «Состояние» выше — ПОЧЕМУ (§19.30 различает причины точно).
+    expect(
+      within(card).getByText('Оценок пока недостаточно для отображения итогового рейтинга.'),
+    ).toBeInTheDocument()
+    expect(
+      within(card).queryByText('Итоговый рейтинг пока не сформирован.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('без методики агрегат — «Итоговый рейтинг пока не сформирован.» (§19.31), причина названа отдельно', async () => {
+    server.use(
+      http.get(DETAIL_URL, () =>
+        HttpResponse.json(
+          response({
+            summary: {
+              ...response().summary,
+              aggregateRating: null,
+              calculationPolicyVersion: null,
+              dataState: 'POLICY_UNDEFINED',
+            },
+          }),
+        ),
+      ),
+    )
+    renderPage()
+    const card = await screen.findByLabelText('Агрегат участника')
+    expect(within(card).getByText('Итоговый рейтинг пока не сформирован.')).toBeInTheDocument()
+    expect(within(card).getByText('Методика расчёта не определена')).toBeInTheDocument()
   })
 
   it('возврат ведёт на СОХРАНЁННЫЙ отбор, а не на пустой реестр (§19.15)', async () => {
