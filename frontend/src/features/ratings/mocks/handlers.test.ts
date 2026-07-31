@@ -13,6 +13,7 @@ import {
   EVALUATION_REGISTRY_PATH,
   EVALUATION_WORKSPACE_PATH,
   RATING_AUDIT_PATH,
+  RATING_NOTIFICATIONS_PATH,
   RATING_EMPLOYEE_DETAIL_PATH,
   evaluationCorrectPath,
   evaluationDetailPath,
@@ -32,6 +33,7 @@ import type {
   EvaluationRegistryResponse,
   RatingEmployeeDetailResponse,
   RatingAuditResponse,
+  RatingNotificationsResponse,
 } from '../api/pending-contracts'
 import { createRatingsHandlers } from './handlers'
 import { buildRatingsSeed } from './fixtures'
@@ -89,8 +91,8 @@ beforeEach(async () => {
   }
   await adapter.reset({
     application: 'smart-josparlau',
-    schema_version: 34,
-    seed_version: 'test-v34',
+    schema_version: 35,
+    seed_version: 'test-v35',
     scenario: 'normal',
     revision: 0,
     created_at: CLOCK_ISO,
@@ -423,5 +425,24 @@ describe('ratings handlers — журнал оценивания (§19.27)', () 
 
   it('держателю сводки журнал закрыт — 403 конвертом', async () => {
     expect(await statusOf(() => client.get(RATING_AUDIT_PATH))).toBe(403)
+  })
+})
+
+describe('ratings handlers — уведомления (§19.28)', () => {
+  it('GET уведомлений отбирает по адресату из заголовка запроса', async () => {
+    const mine = await evaluator.get<RatingNotificationsResponse>(RATING_NOTIFICATIONS_PATH)
+    expect(mine.results.map((item) => item.recipientUserId)).toEqual([EVALUATOR])
+    // Другой клиент — другой адресат: заголовок не теряется по дороге, иначе
+    // все получали бы одну и ту же ленту.
+    const foreign = await client.get<RatingNotificationsResponse>(RATING_NOTIFICATIONS_PATH)
+    expect(foreign.results).toEqual([])
+  })
+
+  it('deep link уведомления ведёт на маршрут, а не на API-путь', async () => {
+    const mine = await evaluator.get<RatingNotificationsResponse>(RATING_NOTIFICATIONS_PATH)
+    for (const item of mine.results) {
+      expect(item.deepLink.startsWith('/ratings/')).toBe(true)
+      expect(item.deepLink).not.toContain('/api/')
+    }
   })
 })

@@ -9,6 +9,7 @@
 // кандидатов в `security-events` (§20.3 — разные bounded context).
 import type {
   RatingAuditEntry,
+  RatingNotification,
   EvaluationBasis,
   EvaluationCorrection,
   EvaluationWorkItem,
@@ -46,6 +47,13 @@ export interface RatingsSlice {
    * события закрытого раздела значило бы раздавать их вместе с ним.
    */
   auditEntries: RatingAuditEntry[]
+  /**
+   * §19.28: уведомления раздела. Свой слайс, а не общая лента `shared/
+   * notifications`: та читает контракт донорского бэкенда (GET-only, свои типы),
+   * и класть в неё события pending-контракта значило бы выдать их за
+   * существующие на сервере.
+   */
+  notifications: RatingNotification[]
   /**
    * §19.20: ряд точек динамики — ЗАПИСАННЫЕ агрегаты закрытых периодов, а не
    * производное от `evaluations`. Пересчитывать их из оценок при каждом
@@ -559,6 +567,30 @@ export const SEED_AUDIT_ENTRIES: readonly RatingAuditEntry[] = [
   },
 ]
 
+/**
+ * Сеяные уведомления (§19.28). Адресованы ТЕМ, у кого в сиде есть незакрытые
+ * задания: уведомление «вам доступно оценивание» человеку без заданий было бы
+ * ложью, а пустая лента не проверяла бы адресность.
+ */
+export const SEED_NOTIFICATIONS: readonly RatingNotification[] = [
+  {
+    id: 'rating-notification-1',
+    createdAt: '2026-07-18T19:30:00+05:00',
+    recipientUserId: 'demo-event-planner',
+    code: 'EVALUATION_AVAILABLE',
+    deepLink: '/ratings/workspace?event=event-1',
+    securityEventId: 'event-1',
+  },
+  {
+    id: 'rating-notification-2',
+    createdAt: '2026-07-18T19:30:00+05:00',
+    recipientUserId: 'demo-recon-officer',
+    code: 'EVALUATION_AVAILABLE',
+    deepLink: '/ratings/workspace?event=event-1',
+    securityEventId: 'event-1',
+  },
+]
+
 export function buildRatingsSeed(): { sliceName: string; data: RatingsSlice } {
   return {
     sliceName: 'ratings',
@@ -568,6 +600,7 @@ export function buildRatingsSeed(): { sliceName: string; data: RatingsSlice } {
       corrections: CORRECTIONS.map((item) => ({ ...item })),
       idempotency: [],
       auditEntries: SEED_AUDIT_ENTRIES.map((item) => ({ ...item })),
+      notifications: SEED_NOTIFICATIONS.map((item) => ({ ...item })),
       dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
       capabilities: { operationalRatings: true, ratingConflicts: false },
     },

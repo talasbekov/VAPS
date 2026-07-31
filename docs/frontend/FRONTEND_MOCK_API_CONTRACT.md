@@ -489,3 +489,17 @@ unitSafeLabel, summary, points[], unavailableViews[] }` — §19.17 в aggregate
 `EVALUATION_LOW_SCORE_WITHOUT_COMMENT`, `EVALUATION_CORRECTED`,
 `EVALUATION_CORRECTION_REJECTED`, `EVALUATION_ACCESS_DENIED`.
 
+### `/api/ops/rating-notifications/` (§19.28)
+
+`backend-contract-pending`. Отдельного права нет: отбор по адресату (`X-User-Id`) делает
+сервер, и это и есть право прочитать — чужие записи в ответ не попадают.
+
+`GET` → `{ results[], unavailableViews[] }`. Запись: `id`, `createdAt`, `recipientUserId`,
+`code`, `deepLink`, `securityEventId`. **Текста в записи нет** — только код
+(`EVALUATION_AVAILABLE`, `EVALUATION_SUBMITTED`, `EVALUATION_CORRECTED`); формулировка
+живёт фиксированной строкой на экране, подстановок в ней не предусмотрено (§19.28
+запрещает нести ФИО оценщика, score, комментарий и причину снижения).
+
+Записи создаются в ТОЙ ЖЕ транзакции, что и коммит оценки/исправления. `deepLink` ведёт на
+маршрут портала (не на API-путь), и маршрут ПЕРЕПРОВЕРЯЕТ права.
+

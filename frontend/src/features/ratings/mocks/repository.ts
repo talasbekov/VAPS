@@ -29,6 +29,7 @@ import type {
   EvaluationRegistryResponse,
   EvaluationWorkItemView,
   RatingAuditResponse,
+  RatingNotificationsResponse,
   RatingEmployeeDetailResponse,
   EvaluationWorkspaceResponse,
   ListOperationalRatingsResponse,
@@ -45,6 +46,7 @@ import type {
   EventEvaluation,
   RatingAuditEntry,
   RatingAuditEventCode,
+  RatingNotification,
 } from '../model/types'
 import { EVALUATION_BASES, EVALUATION_EVENTS, RATED_EMPLOYEES, RATING_GROUPS } from './fixtures'
 import type { RatingsSlice } from './fixtures'
@@ -133,6 +135,22 @@ const UNAVAILABLE_AUDIT_VIEWS: readonly { code: string; label: string; reason: s
 ]
 
 const AUDIT_PAGE_SIZE = 20
+
+/** §35: уведомления §19.28, которых нет, и почему. */
+const UNAVAILABLE_NOTIFICATION_VIEWS: readonly { code: string; label: string; reason: string }[] = [
+  {
+    code: 'AGGREGATE_UPDATED_NOTICE',
+    label: 'Уведомление «Итоговая сводка оперативного рейтинга обновлена»',
+    reason:
+      '§19.28 называет его допустимым, но адресатов у него нет: перечня людей с правом на агрегат в сборке не существует (права резолвятся для запрашивающего, а не перечисляются). Разослать «всем» значило бы придумать список получателей, а адресовать себе — сделать вид, что уведомление работает.',
+  },
+  {
+    code: 'EMPLOYEE_NOTICE',
+    label: 'Уведомления оцениваемому сотруднику',
+    reason:
+      'Связь persona↔сотрудник в demo-режиме не определена (§8.9), поэтому доставить уведомление «вашу оценку исправили» некому. Отправить его оценщику вместо участника значило бы адресовать чужое сообщение.',
+  },
+]
 
 /** §35: чего нет в ОТЧЁТЕ (не в расчёте) и почему. */
 const UNAVAILABLE_ANALYTICS_VIEWS: readonly { code: string; label: string; reason: string }[] = [
@@ -507,6 +525,53 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
   }
 
   /**
+   * Уведомление (§19.28). Текст НЕ хранится — только код: готовая строка
+   * однажды была бы собрана из закрытых полей и не замечена, а в фиксированную
+   * формулировку экрана подставлять нечего.
+   */
+  function notification(
+    current: { revision: number },
+    index: number,
+    input: {
+      recipientUserId: string
+      code: RatingNotification['code']
+      deepLink: string
+      securityEventId: string | null
+    },
+  ): RatingNotification {
+    return {
+      id: `rating-notification-${current.revision + 1}-${index}`,
+      createdAt: clock.now(),
+      recipientUserId: input.recipientUserId,
+      code: input.code,
+      deepLink: input.deepLink,
+      securityEventId: input.securityEventId,
+    }
+  }
+
+  /**
+   * Свои уведомления (§19.28). Отбор по адресату делает СЕРВЕР: чужие в ответ
+   * не попадают, поэтому и отдельного права «видеть чужие» нет — охранять им
+   * нечего.
+   */
+  async function listRatingNotifications(
+    actorUserId: string | null,
+  ): Promise<RatingNotificationsResponse> {
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new Error('mock-runtime: чтение уведомлений рейтинга до инициализации состояния')
+    }
+    const slice = readSlice(envelope.slices)
+    return {
+      results: slice.notifications
+        .filter((item) => item.recipientUserId === actorUserId)
+        .map((item) => ({ ...item }))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      unavailableViews: UNAVAILABLE_NOTIFICATION_VIEWS.map((item) => ({ ...item })),
+    }
+  }
+
+  /**
    * Подробности конфликта (§19.25): актуальная редакция и ДЕЙСТВУЮЩИЕ значения
    * записи. Без них экран может сказать только «повторите» — а промпт требует
    * показать человеку diff, то есть то, что изменилось, пока он заполнял форму.
@@ -786,6 +851,18 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
           ...slice,
           workItems,
           evaluations,
+          notifications: [
+            ...slice.notifications,
+            // §19.28 «уведомления создаются только после commit»: запись живёт в
+            // ТОЙ ЖЕ транзакции, что и оценка, — отдельная могла бы пережить
+            // неудавшийся коммит и сообщить о том, чего не произошло.
+            notification(current, slice.notifications.length + 1, {
+              recipientUserId: actorUserId ?? '',
+              code: 'EVALUATION_SUBMITTED',
+              deepLink: `/ratings/workspace?event=${item.securityEventId}`,
+              securityEventId: item.securityEventId,
+            }),
+          ],
           auditEntries: [
             ...slice.auditEntries,
             auditEntry(current, slice.auditEntries.length + 1, {
@@ -1089,6 +1166,20 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
           workItems,
           evaluations,
           corrections,
+          notifications: [
+            ...slice.notifications,
+            // Адресат — АВТОР исходной записи, а не тот, кто исправил: §19.28
+            // «оценка была исправлена уполномоченным пользователем» сообщает
+            // человеку о ЕГО записи. В сборке исправление ограничено своей
+            // записью, поэтому автор и актор совпадают, — но адресность взята
+            // из записи, а не из того, кто нажал кнопку.
+            notification(current, slice.notifications.length + 1, {
+              recipientUserId: original.evaluatorUserId ?? actorUserId ?? '',
+              code: 'EVALUATION_CORRECTED',
+              deepLink: `/ratings/workspace?event=${item.securityEventId}`,
+              securityEventId: item.securityEventId,
+            }),
+          ],
           auditEntries: [
             ...slice.auditEntries,
             auditEntry(current, slice.auditEntries.length + 1, {
@@ -1310,6 +1401,7 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     getSubmittedEvaluationDetail,
     correctEvaluation,
     listRatingAudit,
+    listRatingNotifications,
     listEvaluationRegistry,
     getRatingEmployeeDetail,
   }

@@ -15,6 +15,7 @@ import type {
   EvaluationWorkItem,
   OperationalRatingSummary,
   RatingAuditEntry,
+  RatingNotification,
   RatingDynamicsPoint,
   RatingPolicy,
   RatingPolicyBoundary,
@@ -86,6 +87,12 @@ export const EVALUATION_DETAIL_PATH_PATTERN =
 export const EVALUATION_REGISTRY_PATH = '/api/ops/evaluation-registry/'
 /** Журнал оценивания §19.27 — свой путь и СВОЁ право (`ops.rating.view_audit`). */
 export const RATING_AUDIT_PATH = '/api/ops/rating-audit/'
+/**
+ * Уведомления раздела §19.28. Права под них НЕ заводилось: уведомление
+ * адресовано человеку, и отбор по адресату — это и есть право его прочитать.
+ * Чужие в ответ не попадают, поэтому «право видеть чужие» нечему охранять.
+ */
+export const RATING_NOTIFICATIONS_PATH = '/api/ops/rating-notifications/'
 export const RATING_EMPLOYEE_DETAIL_PATH = '/api/ops/operational-rating-employee/'
 
 /** Значения, которыми можно фильтровать реестр. Их перечень даёт СЕРВЕР —
@@ -125,6 +132,12 @@ export interface RatingEmployeeDetailResponse {
   unitSafeLabel: string
   summary: OperationalRatingSummary
   points: RatingDynamicsPoint[]
+  unavailableViews: UnavailableRatingFactor[]
+}
+
+export interface RatingNotificationsResponse {
+  /** Только СВОИ: отбор по адресату делает сервер (§19.28). */
+  results: RatingNotification[]
   unavailableViews: UnavailableRatingFactor[]
 }
 

@@ -10,6 +10,7 @@ import {
   EVALUATION_REGISTRY_PATH,
   EVALUATION_WORKSPACE_PATH,
   RATING_AUDIT_PATH,
+  RATING_NOTIFICATIONS_PATH,
   RATING_EMPLOYEE_DETAIL_PATH,
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
@@ -156,6 +157,17 @@ export function createRatingsHandlers(adapter: PersistenceAdapter, clock: DemoCl
             page: number('page', 1),
           }),
         )
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.get(`*${RATING_NOTIFICATIONS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.listRatingNotifications(actorUserId))
       } catch (error) {
         const mapped = mapRepositoryError(error, clock)
         if (mapped !== null) return mapped

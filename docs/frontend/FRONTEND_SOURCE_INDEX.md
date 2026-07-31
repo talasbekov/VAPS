@@ -73,6 +73,8 @@
 - `src/features/ratings/pages/SubmittedEvaluationCard.tsx` — карточка §19.17: история
   записи (correction chain), diff перед подтверждением, мутация с перезагруженной
   редакцией задания.
+- `src/features/ratings/pages/RatingNotificationsSection.tsx` — уведомления §19.28:
+  фиксированные формулировки по коду, deep link на маршрут с перепроверкой прав.
 - `src/features/ratings/pages/RatingAuditPage.tsx` — маршрут `/ratings/audit`, право
   `ops.rating.view_audit`: события и отказы оценивания БЕЗ значений оценок.
 - `src/features/ratings/lib/idempotency.ts` — ключ §19.26: один на форму, без значений записи.
