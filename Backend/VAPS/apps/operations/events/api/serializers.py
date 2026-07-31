@@ -20,10 +20,24 @@ class SecurityEventSerializer(serializers.ModelSerializer):
             "title",
             "status_code",
             "senior_employee_id",
+            # Story 15.3c review (Blind Hunter): without these, a client
+            # polling between the first and second recon/confirm call has
+            # no way to see a confirmation is pending except the 202/200
+            # status code of its own last call — exposed read-only so a
+            # second confirmer's UI can show "awaiting your confirmation".
+            "recon_first_confirmed_by",
+            "recon_first_confirmed_at",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "status_code", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "status_code",
+            "recon_first_confirmed_by",
+            "recon_first_confirmed_at",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class SecurityEventCreateSerializer(serializers.Serializer):

@@ -4,7 +4,7 @@ baseline_commit: d002649
 
 # Story 15.3c: `POST /security-events/{id}/recon/confirm` — двойной контроль + переход в RECON (FR-22)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -68,12 +68,15 @@ so that **переход контролируется вторым незави�
 
 Реализовано по AC 1-6. Миграция `0003` — 2 новых nullable-поля (`recon_first_confirmed_by`/`_at`). `confirm_recon()` — новый паттерн двойного контроля с нуля (нет прецедента в кодбейзе): `select_for_update()` на родительском `SecurityEvent` (тот же паттерн, что `issue_bulletin()`), строгий `BULLETIN`-гейт (симметрично `DRAFT`-гейту 15.2b), первое подтверждение → 202 + запись полей, второе от ДРУГОГО actor'а → 200 + переход в `RECON` + очистка полей + аудит, тот же actor дважды → 422, уже-`RECON` → идемпотентный 200 без дублирования аудита. `POST .../recon/confirm` — `@action`, переиспользует `_get_event_or_404()` (третий потребитель хелпера). Аудит `SECURITY_EVENT_RECON_CONFIRMED` — только на реальном переходе (второе подтверждение), с полями `first_confirmed_by`/`second_confirmed_by` для полной прослеживаемости. Оба живых реестра обновлены (`_Audited()`/`_Gate`). 8 новых тестов (первое-подтверждение-202, второе-другим-актором-200, тот-же-actor-422, не-BULLETIN-422, уже-RECON-идемпотентно, 403, аудит-содержимое). `make gate` — 3473 passed (было 3453, +20), 0 regressions, schema регенерирована.
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** Все три агента — 0 реальных багов. Blind Hunter прошёл КАЖДУЮ ветку `confirm_recon()` (5 веток, взаимоисключающие и исчерпывающие), перепроверил lock-before-read порядок, порядок операций при самоподтверждении, миграцию-vs-модель дрифт — всё корректно; единственное замечание — сериализатор не отдавал `recon_first_confirmed_by/_at` клиенту (нет способа увидеть «ожидает второго подтверждения» кроме кода ответа своего же вызова). Edge Case Hunter эмпирически прогнал 8 раз concurrency-пробу (два разных actor'а почти одновременно) — каждый раз ровно один 202+один 200+один аудит-ряд, без сплит-брейна; также прогнал последовательность A→A→B и post-RECON replay тем же actor'ом — оба случая корректны. Acceptance Auditor — 6/6 AC PASS, независимо подтвердил отсутствие прецедента двойного контроля в кодбейзе (личный grep) и что «обновление Паспорта» имеет ЗАРЕЗЕРВИРОВАННУЮ будущую стори (`epics.md:1419`, Story 15.4) без деталей полей — Out of Scope этой стори корректен, не переоценён. Единственный реальный фикс — добавлены `recon_first_confirmed_by`/`_at` в `SecurityEventSerializer` (read-only), чтобы второй подтверждающий видел «ожидает вас» в ответе API. `make gate` — 3473 passed (без изменений в счётчике — только сериализатор+схема). Status → done.
+
 ### File List
 
 - `Backend/VAPS/apps/operations/events/models.py` (modified — 2 новых поля)
 - `Backend/VAPS/apps/operations/events/migrations/0003_securityevent_recon_first_confirmed_at_and_more.py` (new)
 - `Backend/VAPS/apps/operations/events/services.py` (modified — `confirm_recon()`)
 - `Backend/VAPS/apps/operations/events/api/views.py` (modified — `recon_confirm`-action)
+- `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — ревью-фикс: 2 новых read-only поля в `SecurityEventSerializer`)
 - `Backend/VAPS/apps/operations/events/tests/test_security_event_recon_confirm.py` (new)
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — `_Audited()`-запись)
 - `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — `_Gate`-запись)
@@ -86,3 +89,4 @@ so that **переход контролируется вторым незави�
 |---|---|
 | 2026-07-31 | Story создана (create-story) — финальная часть разбитого `15-3`. Двойной контроль — новый паттерн (нет прецедента в кодбейзе), синтезирован с нуля: два разных actor'а через один эндпоинт. Обновление Паспорта явно вынесено за объём — нет спеки, открытый вопрос. |
 | 2026-07-31 | Dev-story: `confirm_recon()` + `POST .../recon/confirm`-action. AC-3/AC-4 переиспользуют один 422-код вместо изобретения 409. Самостоятельно найден и исправлен баг возвращаемого значения (pending vs already-RECON путались) до отправки на ревью. 8 новых тестов, оба живых реестра обновлены, схема регенерирована. `make gate` — 3473 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): 0 реальных багов — Blind Hunter прошёл все 5 веток state machine, Edge Case Hunter 8× подтвердил concurrency-корректность, Acceptance Auditor 6/6 AC PASS. Единственный фикс — `SecurityEventSerializer` теперь отдаёт `recon_first_confirmed_by/_at` (было невидимо клиенту). Status → done. |

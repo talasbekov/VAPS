@@ -4680,6 +4680,14 @@ components:
           type: string
           format: uuid
           nullable: true
+        recon_first_confirmed_by:
+          type: string
+          readOnly: true
+        recon_first_confirmed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -4692,6 +4700,8 @@ components:
       - created_at
       - id
       - object
+      - recon_first_confirmed_at
+      - recon_first_confirmed_by
       - status_code
       - title
       - updated_at
