@@ -10,8 +10,10 @@
 // Исходная запись с экрана не исчезает: §19.18 «нельзя скрыть старое значение».
 import { useState } from 'react'
 import { useCorrectEvaluation, useSubmittedEvaluationDetail } from '../api/queries'
+import { EvaluationConflictNotice } from './EvaluationConflictNotice'
 import { buildCorrectionDiff, validateCorrection } from '../lib/correction'
 import { DIRECTION_LABEL } from '../lib/workspace'
+import { newIdempotencyKey } from '../lib/idempotency'
 import type { SubmissionField, SubmissionViolation } from '../lib/workspace'
 import { RATING_DEFAULT_SCORE, RATING_SCALE_MAX, RATING_SCALE_MIN } from '../model/types'
 
@@ -53,6 +55,7 @@ export function SubmittedEvaluationCard({
   const [reason, setReason] = useState('')
   const [violation, setViolation] = useState<SubmissionViolation | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [idempotencyKey] = useState(newIdempotencyKey)
 
   const mutation = useCorrectEvaluation(workItemId, () => {
     setEditing(false)
@@ -135,6 +138,7 @@ export function SubmittedEvaluationCard({
       // Редакция — та, что пришла ЭТИМ запросом карточки (шаг 3), а не та, что
       // лежала в списке заданий.
       revision: data?.workItem.revision ?? 0,
+      idempotencyKey,
     })
   }
 
@@ -335,9 +339,23 @@ export function SubmittedEvaluationCard({
             </ul>
           )}
           <p className="mb-2 text-xs text-muted-foreground">Причина: {reason}</p>
-          {mutation.error !== null && serverField === null && (
-            <p className="mb-2 text-xs text-destructive">{mutation.error.message}</p>
-          )}
+          <EvaluationConflictNotice
+            error={mutation.error}
+            attempted={{
+              score: nextScore,
+              basisLabel: selectedBasis?.label ?? null,
+              comment: nextComment === '' ? null : nextComment,
+            }}
+            onRecheck={() => {
+              void query.refetch()
+            }}
+          />
+          {mutation.error !== null &&
+            serverField === null &&
+            mutation.error.name !== 'NetworkError' &&
+            !('details' in mutation.error && 'currentRevision' in mutation.error.details) && (
+              <p className="mb-2 text-xs text-destructive">{mutation.error.message}</p>
+            )}
           <div className="flex gap-2">
             <button
               type="button"

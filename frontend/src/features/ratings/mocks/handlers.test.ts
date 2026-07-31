@@ -186,7 +186,14 @@ describe('ratings handlers — рабочее пространство оцен�
   it('POST отправки сопоставляется со строкой задания и коммитит оценку', async () => {
     const created = await evaluator.post<SubmitEvaluationResponse>(
       evaluationSubmitPath('work-item-5'),
-      { score: 9, basisCode: 'DISCIPLINE', basisNote: null, comment: null, revision: 1 },
+      {
+        score: 9,
+        basisCode: 'DISCIPLINE',
+        basisNote: null,
+        comment: null,
+        revision: 1,
+        idempotencyKey: 'idem-handler-submit',
+      },
     )
     expect(created.workItem).toMatchObject({ id: 'work-item-5', status: 'SUBMITTED' })
     const after = await evaluator.get<EvaluationWorkspaceResponse>(
@@ -204,6 +211,7 @@ describe('ratings handlers — рабочее пространство оцен�
         basisNote: null,
         comment: null,
         revision: 1,
+        idempotencyKey: 'idem-handler-low',
       })
       expect.unreachable('отправка без комментария к низкой оценке обязана быть отвергнута')
     } catch (error) {
@@ -221,6 +229,7 @@ describe('ratings handlers — рабочее пространство оцен�
           basisNote: null,
           comment: null,
           revision: 1,
+          idempotencyKey: 'idem-handler-foreign',
         }),
       ),
     ).toBe(404)
@@ -253,6 +262,7 @@ describe('ratings handlers — карточка и исправление оце
         comment: null,
         reason: 'Учтён рапорт старшего смены',
         revision: detail.workItem.revision,
+        idempotencyKey: 'idem-handler-correct',
       },
     )
     expect(corrected.submitted.score).toBe(10)
@@ -272,6 +282,7 @@ describe('ratings handlers — карточка и исправление оце
         comment: null,
         reason: '',
         revision: detail.workItem.revision,
+        idempotencyKey: 'idem-handler-1',
       })
       expect.unreachable('исправление без причины обязано быть отвергнуто')
     } catch (error) {
@@ -292,6 +303,7 @@ describe('ratings handlers — карточка и исправление оце
           comment: null,
           reason: 'Попытка без права',
           revision: 3,
+          idempotencyKey: 'idem-handler-denied',
         }),
       ),
     ).toBe(403)
@@ -334,5 +346,51 @@ describe('ratings handlers — реестр итоговых оценок (§19.
     expect(
       await statusOf(() => stranger.get(`${RATING_EMPLOYEE_DETAIL_PATH}?employee=employee-1`)),
     ).toBe(403)
+  })
+})
+
+describe('ratings handlers — конфликт редакции (§19.25)', () => {
+  it('конфликт едет 409 со СВОИМ кодом и подробностями, а не 422', async () => {
+    try {
+      await evaluator.post(evaluationCorrectPath('work-item-9'), {
+        score: 10,
+        basisCode: 'DISCIPLINE',
+        basisNote: null,
+        comment: null,
+        reason: 'Учтён рапорт',
+        revision: 99,
+        idempotencyKey: 'idem-handler-conflict',
+      })
+      expect.unreachable('устаревшая редакция обязана быть отвергнута')
+    } catch (error) {
+      const failure = error as ApiError
+      expect(failure).toMatchObject({ status: 409, errorCode: 'EVALUATION_REVISION_MISMATCH' })
+      // Подробности доезжают до клиента ЧЕРЕЗ HTTP: без них экран не покажет
+      // diff, которого требует §19.25.
+      expect(failure.details).toMatchObject({ currentRevision: 3, currentScore: 9 })
+      // И код НЕ overridable: общий ConflictDialog для конфликта версии оценки
+      // запрещён прямо (§19.25).
+      expect((failure as { overridable?: boolean }).overridable).toBe(false)
+    }
+  })
+
+  it('повтор отправки с тем же ключом через HTTP возвращает прежний результат', async () => {
+    const body = {
+      score: 9,
+      basisCode: 'DISCIPLINE',
+      basisNote: null,
+      comment: null,
+      revision: 1,
+      idempotencyKey: 'idem-handler-repeat',
+    }
+    const first = await evaluator.post<SubmitEvaluationResponse>(
+      evaluationSubmitPath('work-item-5'),
+      body,
+    )
+    const second = await evaluator.post<SubmitEvaluationResponse>(
+      evaluationSubmitPath('work-item-5'),
+      body,
+    )
+    expect(second.submitted.evaluationId).toBe(first.submitted.evaluationId)
   })
 })

@@ -281,18 +281,58 @@ describe('форма оценивания (§19.9-19.10)', () => {
     await userEvent.selectOptions(screen.getByLabelText('Основание'), 'DISCIPLINE')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить оценку' }))
     await waitFor(() => expect(body).not.toBeNull())
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       score: 8,
       basisCode: 'DISCIPLINE',
       basisNote: null,
       comment: null,
       revision: 1,
     })
+    // §19.26: ключ идемпотентности едет в теле и НЕ несёт значений записи —
+    // ключ, собранный из полей формы, вёз бы закрытый комментарий целиком.
+    const key = (body as { idempotencyKey: string }).idempotencyKey
+    expect(key.length).toBeGreaterThan(0)
+    expect(key).not.toContain('DISCIPLINE')
     // Проверяется ВЕСЬ JSON тела: подменить оценщика или target нечем, потому
     // что этих полей в нём нет вовсе.
     const json = JSON.stringify(body)
     expect(json).not.toContain('employee-1')
     expect(json).not.toContain('demo-event-planner')
+  })
+
+  it('ключ идемпотентности ОДИН на форму и переживает повторную отправку (§19.26)', async () => {
+    const keys: string[] = []
+    let attempt = 0
+    server.use(
+      http.get(WORKSPACE_URL, () => HttpResponse.json(response())),
+      http.post(SUBMIT_URL, async ({ request }) => {
+        const body = (await request.json()) as { idempotencyKey: string }
+        keys.push(body.idempotencyKey)
+        attempt += 1
+        // Первый ответ теряется (исход неизвестен), второй — успех: ровно тот
+        // случай, ради которого §19.26 и требует ключ.
+        if (attempt === 1) return HttpResponse.error()
+        return HttpResponse.json(
+          {
+            workItem: workItem({ status: 'SUBMITTED', revision: 2 }),
+            submitted: response().submitted[0],
+            queue: { total: 2, submitted: 2, remaining: 0 },
+          },
+          { status: 201 },
+        )
+      }),
+    )
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: /Оценить: Ерланов Д./ }))
+    await userEvent.selectOptions(screen.getByLabelText('Основание'), 'DISCIPLINE')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить оценку' }))
+    expect(await screen.findByLabelText('Исход неизвестен')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить оценку' }))
+    await waitFor(() => expect(keys).toHaveLength(2))
+    // Ключ ТОТ ЖЕ: новый на каждую попытку сделал бы защиту бессмысленной
+    // ровно тогда, когда она нужна.
+    expect(keys[0]).toBe(keys[1])
   })
 
   it('отказ сервера показывается рядом с полем — по коду, а не по тексту', async () => {

@@ -193,7 +193,7 @@ describe('исправление §19.18', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
     await waitFor(() => expect(body).not.toBeNull())
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       score: 10,
       basisCode: 'EXECUTION_OF_DUTIES',
       basisNote: null,
@@ -202,6 +202,7 @@ describe('исправление §19.18', () => {
       // Редакция — из ответа КАРТОЧКИ (§19.18 шаг 3), а не из списка заданий.
       revision: 3,
     })
+    expect((body as { idempotencyKey: string }).idempotencyKey.length).toBeGreaterThan(0)
     const json = JSON.stringify(body)
     expect(json).not.toContain('employee-1')
     expect(json).not.toContain('demo-event-planner')
@@ -280,5 +281,87 @@ describe('исправление §19.18', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Показать изменения' }))
     await userEvent.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
     await waitFor(() => expect(attempts).toBe(2))
+  })
+})
+
+describe('конфликт и неизвестный исход (§19.25-19.26)', () => {
+  function conflictResponse() {
+    return HttpResponse.json(
+      {
+        error_code: 'EVALUATION_REVISION_MISMATCH',
+        message: 'Запись изменилась: сравните значения и решите, что отправлять.',
+        details: {
+          currentRevision: 4,
+          currentScore: 6,
+          currentBasisLabel: 'Дисциплина',
+          currentComment: 'Разбор со старшим',
+          currentEvaluationId: 'evaluation-9',
+        },
+        request_id: null,
+        timestamp: '2026-07-20T08:00:00+05:00',
+      },
+      { status: 409 },
+    )
+  }
+
+  it('конфликт показывает diff «сейчас / вы вводите» и НЕ стирает введённое', async () => {
+    server.use(
+      http.get(DETAIL_URL, () => HttpResponse.json(detail())),
+      http.post(CORRECT_URL, () => conflictResponse()),
+    )
+    renderCard()
+    await userEvent.click(await screen.findByRole('button', { name: 'Исправить оценку' }))
+    await userEvent.selectOptions(screen.getByLabelText('Новая оценка'), '10')
+    await userEvent.type(screen.getByLabelText(/Причина исправления/), 'Учтён рапорт')
+    await userEvent.click(screen.getByRole('button', { name: 'Показать изменения' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+    const notice = await screen.findByLabelText('Запись изменилась')
+    expect(notice.textContent).toContain('Актуальная редакция: 4')
+    expect(notice.textContent).toContain('сейчас 6')
+    expect(notice.textContent).toContain('вы вводите 10')
+    // §19.25: введённый текст сохраняется для ручного восстановления — панель
+    // стоит РЯДОМ с формой и ничего не сбрасывает.
+    await userEvent.click(screen.getByRole('button', { name: 'Вернуться к правке' }))
+    expect(screen.getByLabelText(/Причина исправления/)).toHaveValue('Учтён рапорт')
+    expect((screen.getByLabelText('Новая оценка') as HTMLSelectElement).value).toBe('10')
+  })
+
+  it('общий ConflictDialog для конфликта версии НЕ открывается (§19.25)', async () => {
+    server.use(
+      http.get(DETAIL_URL, () => HttpResponse.json(detail())),
+      http.post(CORRECT_URL, () => conflictResponse()),
+    )
+    renderCard()
+    await userEvent.click(await screen.findByRole('button', { name: 'Исправить оценку' }))
+    await userEvent.selectOptions(screen.getByLabelText('Новая оценка'), '10')
+    await userEvent.type(screen.getByLabelText(/Причина исправления/), 'Учтён рапорт')
+    await userEvent.click(screen.getByRole('button', { name: 'Показать изменения' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+    await screen.findByLabelText('Запись изменилась')
+    // Ни диалога, ни кнопки «повторить с обоснованием»: конфликт версии оценки
+    // не разрешается override'ом.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /обоснован/i })).not.toBeInTheDocument()
+  })
+
+  it('неизвестный исход не выдаётся за успех и предлагает проверить состояние (§19.26)', async () => {
+    server.use(
+      http.get(DETAIL_URL, () => HttpResponse.json(detail())),
+      http.post(CORRECT_URL, () => HttpResponse.error()),
+    )
+    renderCard()
+    await userEvent.click(await screen.findByRole('button', { name: 'Исправить оценку' }))
+    await userEvent.selectOptions(screen.getByLabelText('Новая оценка'), '10')
+    await userEvent.type(screen.getByLabelText(/Причина исправления/), 'Учтён рапорт')
+    await userEvent.click(screen.getByRole('button', { name: 'Показать изменения' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Подтвердить исправление' }))
+
+    const notice = await screen.findByLabelText('Исход неизвестен')
+    expect(notice.textContent).toContain('результат отправки неизвестен')
+    expect(screen.getByRole('button', { name: 'Проверить состояние' })).toBeInTheDocument()
+    // Никакого «сохранено» и никакого перехода в состояние «отправлено».
+    expect(screen.queryByText(/сохранена/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Подтвердить исправление' })).toBeInTheDocument()
   })
 })

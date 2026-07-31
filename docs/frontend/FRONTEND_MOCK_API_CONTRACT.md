@@ -452,3 +452,22 @@ unitSafeLabel, summary, points[], unavailableViews[] }` — §19.17 в aggregate
 агрегат, количество учтённых, период, версия методики, дата расчёта и записанные точки
 динамики. Неизвестный сотрудник — `ENTITY_NOT_FOUND` (404), а не первая карточка.
 
+### Идемпотентность и конфликты оценивания (§19.25-19.26)
+
+Тела `submit` и `correct` несут `idempotencyKey` (случайная строка, БЕЗ значений записи).
+Повтор с тем же ключом возвращает прежний результат: вторая оценка не создаётся, агрегат не
+пересчитывается как новая операция. Сервер хранит по ключу идентификаторы результата, а не
+снимок ответа.
+
+Конфликты едут **409** и своими кодами (ни один не входит в `OVERRIDABLE_CODES` — общий
+`ConflictDialog` для конфликта версии оценки запрещён §19.25):
+
+| Код | Когда | `details` |
+| --- | --- | --- |
+| `EVALUATION_REVISION_MISMATCH` | редакция задания устарела | `currentRevision`, `currentScore`, `currentBasisLabel`, `currentComment`, `currentEvaluationId` |
+| `EVALUATION_ALREADY_CORRECTED` | правится уже вытесненная запись | то же |
+
+Остальные конфликты списка §19.25 (`target no longer eligible`, `assignment replaced`,
+`event scope changed`, `archive locked`) НЕ заведены: ни eligibility, ни scope, ни архива в
+сборке нет — код без источника не отличался бы от выдуманного.
+

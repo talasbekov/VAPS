@@ -21,12 +21,18 @@ import type {
 import {
   createRatingsRepository,
   RepositoryBusinessRuleError,
+  RepositoryConflictError,
   RepositoryNotFoundError,
   RepositoryPermissionError,
 } from './repository'
 
-function envelope(clock: DemoClock, code: string, message: string): ErrorEnvelope {
-  return { error_code: code, message, details: {}, request_id: null, timestamp: clock.now() }
+function envelope(
+  clock: DemoClock,
+  code: string,
+  message: string,
+  details: Record<string, unknown> = {},
+): ErrorEnvelope {
+  return { error_code: code, message, details, request_id: null, timestamp: clock.now() }
 }
 
 /**
@@ -43,6 +49,15 @@ function mapRepositoryError(error: unknown, clock: DemoClock): Response | null {
   if (error instanceof RepositoryNotFoundError) {
     return HttpResponse.json(envelope(clock, 'ENTITY_NOT_FOUND', 'Задание не найдено.'), {
       status: 404,
+    })
+  }
+  // §19.25: конфликт редакции — 409 и СВОЙ код, которого нет в
+  // `OVERRIDABLE_CODES`. Это не формальность: overridable-код открыл бы общий
+  // `ConflictDialog` с кнопкой «повторить с обоснованием», а промпт прямо
+  // запрещает вести конфликт версии оценки через диалог назначений.
+  if (error instanceof RepositoryConflictError) {
+    return HttpResponse.json(envelope(clock, error.errorCode, error.message, error.details), {
+      status: 409,
     })
   }
   if (error instanceof RepositoryBusinessRuleError) {

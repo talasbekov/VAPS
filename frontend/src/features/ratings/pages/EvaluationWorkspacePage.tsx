@@ -12,9 +12,12 @@
 // их не отдаёт сервер (§19.14).
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { useEvaluationWorkspace, useSubmitEvaluation } from '../api/queries'
 import { SubmittedEvaluationCard } from './SubmittedEvaluationCard'
+import { EvaluationConflictNotice } from './EvaluationConflictNotice'
 import { DIRECTION_LABEL, validateSubmission } from '../lib/workspace'
+import { newIdempotencyKey } from '../lib/idempotency'
 import type { SubmissionField, SubmissionViolation } from '../lib/workspace'
 import { RATING_DEFAULT_SCORE, RATING_SCALE_MAX, RATING_SCALE_MIN } from '../model/types'
 import type { EvaluationBasis } from '../model/types'
@@ -63,6 +66,7 @@ interface FormProps {
 }
 
 function EvaluationForm({ item, bases, onClose }: FormProps) {
+  const queryClient = useQueryClient()
   // Начальное значение приходит из ЗАДАНИЯ (§19.8) — восьмёрка здесь не
   // константа формы, а то, что прислал сервер.
   const [score, setScore] = useState(item.initialScore)
@@ -70,6 +74,10 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
   const [basisNote, setBasisNote] = useState('')
   const [comment, setComment] = useState('')
   const [violation, setViolation] = useState<SubmissionViolation | null>(null)
+  // Ключ рождается вместе с формой и переживает её повторные отправки (§19.26):
+  // повтор после неизвестного исхода обязан вернуть прежний результат, а не
+  // создать вторую оценку.
+  const [idempotencyKey] = useState(newIdempotencyKey)
 
   const mutation = useSubmitEvaluation(item.id, () => {
     onClose()
@@ -105,7 +113,7 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
     const found = validateSubmission(input, bases)
     setViolation(found)
     if (found !== null) return
-    mutation.mutate({ ...input, revision: item.revision })
+    mutation.mutate({ ...input, revision: item.revision, idempotencyKey })
   }
 
   return (
@@ -191,7 +199,21 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
         <p className="mb-2 text-xs text-destructive">{errorFor('comment')}</p>
       )}
 
-      {mutation.error !== null && serverField === null && (
+      {/* Конфликт редакции и неизвестный исход — СВОЯ панель рядом с формой
+          (§19.25): введённый текст не стирается, а `ConflictDialog` назначений
+          здесь запрещён прямо. */}
+      <EvaluationConflictNotice
+        error={mutation.error}
+        attempted={{
+          score,
+          basisLabel: selectedBasis?.label ?? null,
+          comment: comment === '' ? null : comment,
+        }}
+        onRecheck={() => {
+          void queryClient.invalidateQueries({ queryKey: ['ratings'] })
+        }}
+      />
+      {mutation.error !== null && serverField === null && mutation.error.name !== 'NetworkError' && (
         <p className="mb-2 text-xs text-destructive">{mutation.error.message}</p>
       )}
 

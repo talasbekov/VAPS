@@ -31,6 +31,15 @@ export interface RatingsSlice {
    */
   corrections: EvaluationCorrection[]
   /**
+   * §19.26: выполненные операции по ключу идемпотентности. Хранится РЕЗУЛЬТАТ,
+   * а не факт «ключ видели»: повторный запрос обязан вернуть тот же ответ, а не
+   * просто не сломать состояние.
+   *
+   * ⚠️ В записи лежат идентификаторы, а не значения оценки: снимок ответа нёс
+   * бы закрытый комментарий целиком.
+   */
+  idempotency: { key: string; operation: string; workItemId: string; evaluationId: string }[]
+  /**
    * §19.20: ряд точек динамики — ЗАПИСАННЫЕ агрегаты закрытых периодов, а не
    * производное от `evaluations`. Пересчитывать их из оценок при каждом
    * запросе значило бы применять к прошлому СЕГОДНЯШНЮЮ методику — ровно то,
@@ -511,6 +520,7 @@ export function buildRatingsSeed(): { sliceName: string; data: RatingsSlice } {
       evaluations: EVALUATIONS.map((item) => ({ ...item })),
       workItems: WORK_ITEMS.map((item) => ({ ...item })),
       corrections: CORRECTIONS.map((item) => ({ ...item })),
+      idempotency: [],
       dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
       capabilities: { operationalRatings: true, ratingConflicts: false },
     },
