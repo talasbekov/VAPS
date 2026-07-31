@@ -299,7 +299,7 @@ AUDIT_MATRIX = {
     # Story 15.5c: SECURITY_EVENT_DEMAND_APPROVED emits via
     # apps.operations.events.services.approve_staffing_demand() only on
     # the real RECON->DEMAND transition; behavioral pin —
-    # test_security_event_demand_approve.py.
+    # test_staffing_demand_approve.py.
     "ops-security-event-staffing-demand-approve": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the

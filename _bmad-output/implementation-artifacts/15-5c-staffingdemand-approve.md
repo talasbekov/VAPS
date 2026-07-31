@@ -4,7 +4,7 @@ baseline_commit: 6cbf0a4
 
 # Story 15.5c: `POST /security-events/{id}/staffing-demand/approve` — утверждение Потребности (FR-23)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -62,6 +62,8 @@ _(заполняется dev-story)_
 
 Реализовано по AC 1-6. `approve_staffing_demand()` — буквальный образец `issue_bulletin()`: непустой-`actor`-гвард, `select_for_update()`, строгий `RECON`-гейт, идемпотентный no-op на `DEMAND`, `INVALID_LIFECYCLE_TRANSITION`(422) на прочих статусах. Аудит `SECURITY_EVENT_DEMAND_APPROVED` содержит снимок всех строк `staffing_demands` на момент утверждения (прослеживаемость). `POST .../staffing-demand/approve` — тонкий `@action`. Оба живых реестра обновлены (`_Audited()`+`_Gate`). 5 новых тестов (успех/идемпотентность/конфликт/403/аудит-снимок). `make gate` — 3521 passed (было 3506, +15), 0 regressions, no drift.
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** все три агента — 0 багов. Blind Hunter лично проверил через DRF-исходники, что вложенный `url_path="staffing-demand/approve"` резолвится в правильное route-имя (`url_name` берётся из имени метода, не из `url_path`) — оба живых реестра корректны. Edge Case Hunter эмпирически подтвердил отсутствие URL-коллизии между `staffing-demand` (PUT) и `staffing-demand/approve` (POST) — кросс-методные пробы дают чистый 405, не путаницу; также прогнал полную цепочку DRAFT→BULLETIN→RECON(двойной контроль)→PUT потребность→POST утверждение — всё выжило нетронутым. Acceptance Auditor — 6/6 AC PASS, независимо перепроверил single-actor-vs-dual-control обоснование (FR-22 явно называет двойной контроль, FR-23 — нет), нашёл косметическую опечатку в имени тест-файла в комментарии — исправлено. Status → done.
+
 ### File List
 
 - `Backend/VAPS/apps/operations/events/services.py` (modified — `approve_staffing_demand()`)
@@ -78,3 +80,4 @@ _(заполняется dev-story)_
 |---|---|
 | 2026-07-31 | Story создана (create-story). Single-actor гейт выбран (не двойной контроль) — FR-23, в отличие от FR-22, не упоминает двойной контроль буквально. |
 | 2026-07-31 | Dev-story: `approve_staffing_demand()` + `POST .../approve`-action. 5 новых тестов, оба живых реестра обновлены, схема регенерирована. `make gate` — 3521 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): 0 багов, 6/6 AC PASS, URL-роутинг вложенного пути верифицирован через DRF-исходники + эмпирически. Косметический фикс комментария. Status → done. Epic 15's Story 15.5 (a/b/c) полностью закрыта. |
