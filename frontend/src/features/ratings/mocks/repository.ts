@@ -14,7 +14,11 @@ import {
   summarizeQueue,
   validateSubmission,
 } from '../lib/workspace'
+import { validateCorrection } from '../lib/correction'
 import type {
+  CorrectEvaluationRequest,
+  CorrectEvaluationResponse,
+  CorrectionChainLink,
   EvaluationWorkItemView,
   EvaluationWorkspaceResponse,
   ListOperationalRatingsResponse,
@@ -22,9 +26,10 @@ import type {
   RatingDynamicsResponse,
   SubmitEvaluationRequest,
   SubmitEvaluationResponse,
+  SubmittedEvaluationDetailResponse,
   SubmittedEvaluationView,
 } from '../api/pending-contracts'
-import type { EvaluationWorkItem, EventEvaluation } from '../model/types'
+import type { EvaluationCorrection, EvaluationWorkItem, EventEvaluation } from '../model/types'
 import { EVALUATION_BASES, EVALUATION_EVENTS, RATED_EMPLOYEES, RATING_GROUPS } from './fixtures'
 import type { RatingsSlice } from './fixtures'
 import { readRatingPolicy, readRatingSuppressionMinGroup } from './settingsSlice'
@@ -63,6 +68,16 @@ const VIEW_ANALYTICS_PERMISSION = 'ops.analytics.view'
  * рейтинг человека, — иначе оценивание превращается в подгонку под число.
  */
 const EVALUATE_PERMISSION = 'ops.rating.evaluate'
+/**
+ * §19.22 перечисляет «исправление оценки» и «просмотр correction chain»
+ * ОТДЕЛЬНЫМИ пунктами — здесь они и заведены порознь. Разница не формальная:
+ * видеть, что запись правили и почему, — контрольная функция; править —
+ * распорядительная. Исправление ограничено СОБСТВЕННОЙ записью: §19.21 требует
+ * для чужой ещё organization scope, event scope и срок полномочия, которых в
+ * этой сборке нет (см. `UNAVAILABLE_WORKSPACE_VIEWS`).
+ */
+const CORRECT_PERMISSION = 'ops.rating.correct'
+const VIEW_CHAIN_PERMISSION = 'ops.rating.view_correction_chain'
 
 /** §35: чего нет в ОТЧЁТЕ (не в расчёте) и почему. */
 const UNAVAILABLE_ANALYTICS_VIEWS: readonly { code: string; label: string; reason: string }[] = [
@@ -555,11 +570,210 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     return response
   }
 
+  /**
+   * Цепочка исправлений записи (§19.17 correction chain). Строится ОТ КОРНЯ
+   * вперёд по ссылкам `supersededById`, а не сортировкой по времени: время
+   * говорит, когда записи появились, а цепочка — что чем замещено.
+   */
+  function buildChain(
+    evaluations: readonly EventEvaluation[],
+    corrections: readonly EvaluationCorrection[],
+    currentId: string,
+  ): CorrectionChainLink[] {
+    // Корень — запись, которую никто не замещал.
+    let root = evaluations.find((item) => item.id === currentId)
+    if (root === undefined) return []
+    let guard = 0
+    for (;;) {
+      const previous = evaluations.find((item) => item.supersededById === root?.id)
+      if (previous === undefined || guard > 50) break
+      root = previous
+      guard += 1
+    }
+
+    const links: CorrectionChainLink[] = []
+    let node: EventEvaluation | undefined = root
+    while (node !== undefined && links.length <= 50) {
+      const correction = corrections.find((item) => item.originalEvaluationId === node?.id)
+      links.push({
+        correctionId: correction?.id ?? null,
+        evaluationId: node.id,
+        score: node.score,
+        basisLabel: basisLabel(node.basisCode),
+        basisNote: node.basisNote,
+        comment: node.comment,
+        // Старое значение остаётся видимым вместе с причиной замещения:
+        // §19.18 «нельзя скрыть старое значение».
+        supersededReason: correction?.reason ?? null,
+        supersededAt: correction?.correctedAt ?? null,
+        current: node.supersededById === null,
+      })
+      const nextId: string | null = node.supersededById
+      node = nextId === null ? undefined : evaluations.find((item) => item.id === nextId)
+    }
+    return links
+  }
+
+  /**
+   * Карточка отправленной оценки (§19.17) — только СВОЕЙ.
+   *
+   * Отдельная операция от рабочего пространства, потому что §19.18 шаг 3
+   * требует ПЕРЕЗАГРУЗИТЬ актуальную редакцию задания перед исправлением:
+   * взять её из списка, прочитанного минуту назад, значит исправлять запись,
+   * которой, возможно, уже нет в том виде.
+   */
+  async function getSubmittedEvaluationDetail(
+    actorUserId: string | null,
+    workItemId: string,
+  ): Promise<SubmittedEvaluationDetailResponse> {
+    if (!hasPermission(actorUserId, EVALUATE_PERMISSION)) {
+      throw new RepositoryPermissionError(EVALUATE_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new Error('mock-runtime: чтение карточки оценки до инициализации demo-состояния')
+    }
+    const slice = readSlice(envelope.slices)
+    const item = slice.workItems.find((entry) => entry.id === workItemId)
+    if (item === undefined || item.evaluatorUserId !== actorUserId) {
+      throw new RepositoryNotFoundError(workItemId)
+    }
+    const submitted = toSubmittedView(item, slice.evaluations, actorUserId)
+    if (submitted === null) throw new RepositoryNotFoundError(workItemId)
+
+    return {
+      workItem: toWorkItemView(item),
+      submitted,
+      // Цепочка — СВОЁ право (§19.22): видеть, что запись правили, — контрольная
+      // функция, отдельная от права её править.
+      chain: hasPermission(actorUserId, VIEW_CHAIN_PERMISSION)
+        ? buildChain(slice.evaluations, slice.corrections, submitted.evaluationId)
+        : null,
+      bases: EVALUATION_BASES.map((basis) => ({ ...basis })),
+      // Право решает СЕРВЕР и присылает готовым: кнопка, выключенная только на
+      // клиенте, ограничением доступа не является.
+      canCorrect:
+        hasPermission(actorUserId, CORRECT_PERMISSION) && slice.capabilities.operationalRatings,
+      loadedAt: clock.now(),
+    }
+  }
+
+  /**
+   * Исправление оценки (§19.18).
+   *
+   * Исходная запись НЕ переписывается и не удаляется: создаётся замещающая
+   * оценка, исходная помечается ссылкой, а связь между ними и причина ложатся
+   * отдельной записью `EvaluationCorrection`. Агрегат после этого считает
+   * сервер — вытесненные записи он исключает сам (§19.19).
+   */
+  async function correctEvaluation(
+    actorUserId: string | null,
+    workItemId: string,
+    body: CorrectEvaluationRequest,
+  ): Promise<CorrectEvaluationResponse> {
+    if (!hasPermission(actorUserId, CORRECT_PERMISSION)) {
+      throw new RepositoryPermissionError(CORRECT_PERMISSION)
+    }
+    let response: CorrectEvaluationResponse | null = null
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current.slices)
+      const item = slice.workItems.find((entry) => entry.id === workItemId)
+      // Чужая запись — 404: исправлять её нельзя вовсе (§19.21 требует scope и
+      // срока полномочия, которых нет), и отказ по праву подтвердил бы её
+      // существование.
+      if (item === undefined || item.evaluatorUserId !== actorUserId) {
+        throw new RepositoryNotFoundError(workItemId)
+      }
+      if (!slice.capabilities.operationalRatings) {
+        throw new RepositoryBusinessRuleError(
+          'RATING_DISABLED',
+          'Оперативный рейтинг выключен: исправления не принимаются.',
+        )
+      }
+      const originalId = item.submittedEvaluationId
+      if (item.status !== 'SUBMITTED' || originalId === null) {
+        throw new RepositoryBusinessRuleError(
+          'EVALUATION_NOT_SUBMITTED',
+          'Исправлять нечего: оценка по заданию ещё не отправлена.',
+        )
+      }
+      if (item.revision !== body.revision) {
+        throw new RepositoryBusinessRuleError(
+          'EVALUATION_REVISION_MISMATCH',
+          'Задание изменилось: обновите страницу и повторите.',
+        )
+      }
+      const original = slice.evaluations.find((entry) => entry.id === originalId)
+      if (original === undefined) throw new RepositoryNotFoundError(originalId)
+      const violation = validateCorrection(body, EVALUATION_BASES)
+      if (violation !== null) {
+        throw new RepositoryBusinessRuleError(violation.code, violation.message)
+      }
+
+      const now = clock.now()
+      const replacement: EventEvaluation = {
+        ...original,
+        id: `evaluation-${current.revision + 1}-${slice.evaluations.length + 1}`,
+        score: body.score,
+        basisCode: body.basisCode,
+        basisNote: (body.basisNote ?? '').trim() === '' ? null : (body.basisNote ?? '').trim(),
+        comment: (body.comment ?? '').trim() === '' ? null : (body.comment ?? '').trim(),
+        // Оценщик, target, мероприятие и направление наследуются от исходной
+        // записи — §19.18 запрещает их менять, и `...original` это гарантирует
+        // структурно, а не аккуратностью перечисления.
+        evaluatedAt: original.evaluatedAt,
+        supersededById: null,
+      }
+      const correction: EvaluationCorrection = {
+        id: `correction-${current.revision + 1}-${slice.corrections.length + 1}`,
+        originalEvaluationId: original.id,
+        replacementEvaluationId: replacement.id,
+        reason: body.reason.trim(),
+        correctedBy: actorUserId ?? '',
+        correctedAt: now,
+        revision: item.revision,
+      }
+      const evaluations = slice.evaluations
+        .map((entry) =>
+          // Исходная запись остаётся в истории — меняется ровно одна ссылка.
+          entry.id === original.id ? { ...entry, supersededById: replacement.id } : entry,
+        )
+        .concat(replacement)
+      const nextItem: EvaluationWorkItem = {
+        ...item,
+        revision: item.revision + 1,
+        submittedEvaluationId: replacement.id,
+        submittedAt: now,
+      }
+      const workItems = slice.workItems.map((entry) => (entry.id === item.id ? nextItem : entry))
+      const corrections = [...slice.corrections, correction]
+      const submitted = toSubmittedView(nextItem, evaluations, actorUserId)
+      if (submitted === null) {
+        throw new Error('mock-runtime: исправленная оценка не собралась в проекцию')
+      }
+      response = {
+        workItem: toWorkItemView(nextItem),
+        submitted,
+        chain: hasPermission(actorUserId, VIEW_CHAIN_PERMISSION)
+          ? buildChain(evaluations, corrections, replacement.id)
+          : null,
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: { ...slice, workItems, evaluations, corrections },
+      }
+    })
+    if (response === null) throw new Error('mock-runtime: исправление не вернуло результат')
+    return response
+  }
+
   return {
     listOperationalRatings,
     getRatingDynamics,
     getRatingAnalytics,
     getEvaluationWorkspace,
     submitEvaluation,
+    getSubmittedEvaluationDetail,
+    correctEvaluation,
   }
 }

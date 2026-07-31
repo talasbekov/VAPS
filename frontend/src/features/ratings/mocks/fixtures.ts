@@ -9,6 +9,7 @@
 // кандидатов в `security-events` (§20.3 — разные bounded context).
 import type {
   EvaluationBasis,
+  EvaluationCorrection,
   EvaluationWorkItem,
   EventEvaluation,
   RatingDynamicsPoint,
@@ -23,6 +24,12 @@ export interface RatingsSlice {
    * evaluation ID»), поэтому они и лежат в слайсе, а не собираются в ответе.
    */
   workItems: EvaluationWorkItem[]
+  /**
+   * §19.18: исправления — ОТДЕЛЬНЫЕ записи. Исходная оценка не переписывается и
+   * не удаляется; цепочка «что чем заменено и почему» живёт здесь, а не в
+   * изменённых полях оценки.
+   */
+  corrections: EvaluationCorrection[]
   /**
    * §19.20: ряд точек динамики — ЗАПИСАННЫЕ агрегаты закрытых периодов, а не
    * производное от `evaluations`. Пересчитывать их из оценок при каждом
@@ -430,6 +437,19 @@ export const WORK_ITEMS: readonly EvaluationWorkItem[] = [
     submittedEvaluationId: 'evaluation-21',
     submittedAt: '2026-07-18T20:05:00+05:00',
   }),
+  // Задание с УЖЕ исправленной оценкой: его отправленная запись —
+  // `evaluation-5`, замещающая `evaluation-4` (см. `CORRECTIONS`). Без него
+  // цепочку исправлений неоткуда было бы открыть на экране.
+  workItem('work-item-9', {
+    securityEventId: 'event-1',
+    evaluatorUserId: 'demo-event-planner',
+    targetEmployeeId: 'employee-1',
+    postLabel: 'Пост 1 — главный вход (повторная смена)',
+    status: 'SUBMITTED',
+    revision: 3,
+    submittedEvaluationId: 'evaluation-5',
+    submittedAt: '2026-07-15T09:20:00+05:00',
+  }),
   workItem('work-item-5', {
     securityEventId: 'event-2',
     evaluatorUserId: 'demo-event-planner',
@@ -467,12 +487,30 @@ export const WORK_ITEMS: readonly EvaluationWorkItem[] = [
   }),
 ]
 
+/**
+ * Исправления (§19.18). В сиде есть УЖЕ исправленная оценка (`evaluation-4` →
+ * `evaluation-5`): без неё correction chain на экране была бы пустой с первого
+ * запуска, а «цепочка показывается» проверялось бы на отсутствующих данных.
+ */
+export const CORRECTIONS: readonly EvaluationCorrection[] = [
+  {
+    id: 'correction-1',
+    originalEvaluationId: 'evaluation-4',
+    replacementEvaluationId: 'evaluation-5',
+    reason: 'Оценка выставлена по ошибке не тому участнику',
+    correctedBy: 'demo-event-planner',
+    correctedAt: '2026-07-15T09:20:00+05:00',
+    revision: 1,
+  },
+]
+
 export function buildRatingsSeed(): { sliceName: string; data: RatingsSlice } {
   return {
     sliceName: 'ratings',
     data: {
       evaluations: EVALUATIONS.map((item) => ({ ...item })),
       workItems: WORK_ITEMS.map((item) => ({ ...item })),
+      corrections: CORRECTIONS.map((item) => ({ ...item })),
       dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
       capabilities: { operationalRatings: true, ratingConflicts: false },
     },

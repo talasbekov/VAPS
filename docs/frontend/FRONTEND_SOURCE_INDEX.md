@@ -68,3 +68,8 @@
 - `src/features/ratings/pages/EvaluationWorkspacePage.tsx` — маршрут `/ratings/workspace`,
   право `ops.rating.evaluate`: очередь заданий, форма, «Отправленные мной», сводка
   мероприятия (только с правом на агрегат).
+- `src/features/ratings/lib/correction.ts` — правила исправления §19.18 (причина +
+  повтор правила комментария) и diff «было → стало», печатающий только изменившееся.
+- `src/features/ratings/pages/SubmittedEvaluationCard.tsx` — карточка §19.17: история
+  записи (correction chain), diff перед подтверждением, мутация с перезагруженной
+  редакцией задания.

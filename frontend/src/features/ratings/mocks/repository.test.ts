@@ -11,7 +11,7 @@ import {
   RepositoryNotFoundError,
   RepositoryPermissionError,
 } from './repository'
-import { DYNAMICS_POINTS, EVALUATIONS, WORK_ITEMS } from './fixtures'
+import { CORRECTIONS, DYNAMICS_POINTS, EVALUATIONS, WORK_ITEMS } from './fixtures'
 
 const VIEWER = 'rating-viewer'
 const ANALYST = 'rating-analyst'
@@ -89,6 +89,7 @@ function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
       ratings: {
         evaluations: EVALUATIONS.map((item) => ({ ...item })),
         workItems: WORK_ITEMS.map((item) => ({ ...item })),
+        corrections: CORRECTIONS.map((item) => ({ ...item })),
         dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
         capabilities: {
           operationalRatings: overrides.operationalRatings ?? true,
@@ -118,7 +119,17 @@ beforeEach(() => {
     // Оценщик БЕЗ права на агрегат: §19.14 «Сводка мероприятия показывается
     // только при наличии permission» иначе была бы недемонстрируема — у второго
     // оценщика право есть, у этого нет, и оба держат задания в одном событии.
-    { userId: EVALUATOR, permissions: ['ops.rating.evaluate'] },
+    // §19.22 перечисляет исправление и просмотр цепочки отдельными пунктами:
+    // у этого оценщика они есть, у второго — нет, и только на этой паре
+    // достижимы оба отказа.
+    {
+      userId: EVALUATOR,
+      permissions: [
+        'ops.rating.evaluate',
+        'ops.rating.correct',
+        'ops.rating.view_correction_chain',
+      ],
+    },
     {
       userId: EVALUATOR_WITH_AGGREGATE,
       permissions: ['ops.rating.evaluate', 'ops.rating.view_aggregate'],
@@ -417,8 +428,10 @@ describe('рабочее пространство оценивания (§19.7, 
   it('«Отправленные мной» показывает СВОЮ оценку и не показывает чужую', async () => {
     const { repository } = await setup()
     const mine = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
-    expect(mine.submitted.map((item) => item.workItemId)).toEqual(['work-item-4'])
-    expect(mine.submitted[0]).toMatchObject({ evaluationId: 'evaluation-21', score: 7 })
+    // work-item-9 несёт УЖЕ исправленную запись (`evaluation-5`), work-item-4 —
+    // обычную; порядок задаёт сервер по подписи участника.
+    expect(mine.submitted.map((item) => item.workItemId)).toEqual(['work-item-9', 'work-item-4'])
+    expect(mine.submitted[1]).toMatchObject({ evaluationId: 'evaluation-21', score: 7 })
     // Чужая отправленная оценка (work-item-7 офицера рекогносцировки) не
     // попадает ни строкой, ни комментарием.
     const other = await repository.getEvaluationWorkspace(EVALUATOR_WITH_AGGREGATE, 'event-1')
@@ -449,7 +462,7 @@ describe('рабочее пространство оценивания (§19.7, 
     // Сводка считает работу ВСЕХ оценщиков — оттого и охраняется отдельно.
     expect(withPermission.eventProgress).toMatchObject({
       participants: 7,
-      counters: { total: 7, submitted: 2, remaining: 5 },
+      counters: { total: 8, submitted: 3, remaining: 5 },
     })
   })
 
@@ -504,7 +517,7 @@ describe('отправка оценки (§19.7-19.10)', () => {
       comment: '  опоздание на пост  ',
     })
     expect(result.workItem).toMatchObject({ status: 'SUBMITTED', revision: 2 })
-    expect(result.queue).toEqual({ total: 4, submitted: 2, remaining: 2 })
+    expect(result.queue).toEqual({ total: 5, submitted: 3, remaining: 2 })
 
     const envelope = await adapter.load()
     const slice = envelope?.slices.ratings as {
@@ -612,5 +625,192 @@ describe('отправка оценки (§19.7-19.10)', () => {
     await expect(
       repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, score: 5 }),
     ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
+  })
+})
+
+describe('карточка отправленной оценки (§19.17)', () => {
+  it('карточка отдаётся только автору записи', async () => {
+    const { repository } = await setup()
+    // work-item-9 — задание организатора; офицер рекогносцировки получает 404,
+    // а не отказ по праву: отказ подтвердил бы существование записи.
+    await expect(
+      repository.getSubmittedEvaluationDetail(EVALUATOR_WITH_AGGREGATE, 'work-item-9'),
+    ).rejects.toBeInstanceOf(RepositoryNotFoundError)
+    const detail = await repository.getSubmittedEvaluationDetail(EVALUATOR, 'work-item-9')
+    expect(detail.submitted.evaluationId).toBe('evaluation-5')
+  })
+
+  it('карточка несёт АКТУАЛЬНУЮ редакцию задания (§19.18 шаг 3)', async () => {
+    const { repository } = await setup()
+    const before = await repository.getSubmittedEvaluationDetail(EVALUATOR, 'work-item-9')
+    await repository.correctEvaluation(EVALUATOR, 'work-item-9', {
+      score: 10,
+      basisCode: 'DISCIPLINE',
+      basisNote: null,
+      comment: null,
+      reason: 'Учтён рапорт старшего смены',
+      revision: before.workItem.revision,
+    })
+    const after = await repository.getSubmittedEvaluationDetail(EVALUATOR, 'work-item-9')
+    expect(after.workItem.revision).toBe(before.workItem.revision + 1)
+  })
+
+  it('цепочка исправлений идёт от корня и хранит старое значение с причиной', async () => {
+    const { repository } = await setup()
+    const detail = await repository.getSubmittedEvaluationDetail(EVALUATOR, 'work-item-9')
+    expect(detail.chain).not.toBeNull()
+    expect(detail.chain?.map((link) => link.evaluationId)).toEqual([
+      'evaluation-4',
+      'evaluation-5',
+    ])
+    // Старое значение НЕ скрыто (§19.18), и рядом с ним лежит причина замещения.
+    expect(detail.chain?.[0]).toMatchObject({
+      score: 3,
+      supersededReason: 'Оценка выставлена по ошибке не тому участнику',
+      current: false,
+    })
+    expect(detail.chain?.[1]).toMatchObject({ score: 9, supersededReason: null, current: true })
+  })
+
+  it('без права на цепочку она НЕ приходит, а сама карточка приходит', async () => {
+    const { repository } = await setup()
+    const detail = await repository.getSubmittedEvaluationDetail(
+      EVALUATOR_WITH_AGGREGATE,
+      'work-item-7',
+    )
+    expect(detail.chain).toBeNull()
+    expect(detail.submitted.evaluationId).toBe('evaluation-11')
+    // И право исправления у него тоже отсутствует — сервер говорит это прямо,
+    // а не оставляет кнопку выключенной на клиенте.
+    expect(detail.canCorrect).toBe(false)
+  })
+
+  it('право исправления решает СЕРВЕР и гасится выключенной функцией', async () => {
+    const { repository } = await setup()
+    expect((await repository.getSubmittedEvaluationDetail(EVALUATOR, 'work-item-9')).canCorrect).toBe(
+      true,
+    )
+    const disabled = await setup({ operationalRatings: false })
+    expect(
+      (await disabled.repository.getSubmittedEvaluationDetail(EVALUATOR, 'work-item-9')).canCorrect,
+    ).toBe(false)
+  })
+})
+
+describe('исправление оценки (§19.18)', () => {
+  const VALID = {
+    score: 10,
+    basisCode: 'DISCIPLINE',
+    basisNote: null,
+    comment: null,
+    reason: 'Учтён рапорт старшего смены',
+    revision: 3,
+  }
+
+  it('без права исправления отвергается, даже у автора записи', async () => {
+    const { repository } = await setup()
+    await expect(
+      repository.correctEvaluation(EVALUATOR_WITH_AGGREGATE, 'work-item-7', {
+        ...VALID,
+        revision: 2,
+      }),
+    ).rejects.toBeInstanceOf(RepositoryPermissionError)
+  })
+
+  it('исходная запись остаётся и лишь помечается ссылкой; создаётся НОВАЯ', async () => {
+    const { repository, adapter } = await setup()
+    const before = (await adapter.load())?.slices.ratings as { evaluations: unknown[] }
+    const result = await repository.correctEvaluation(EVALUATOR, 'work-item-9', VALID)
+    const slice = (await adapter.load())?.slices.ratings as {
+      evaluations: {
+        id: string
+        score: number
+        supersededById: string | null
+        evaluatorUserId: string | null
+        employeeId: string
+      }[]
+      corrections: { originalEvaluationId: string; replacementEvaluationId: string; reason: string }[]
+    }
+    // Записей стало БОЛЬШЕ, а не столько же: правка на месте была бы стиранием.
+    expect(slice.evaluations).toHaveLength(before.evaluations.length + 1)
+    const original = slice.evaluations.find((item) => item.id === 'evaluation-5')
+    expect(original).toMatchObject({ score: 9, supersededById: result.submitted.evaluationId })
+    const replacement = slice.evaluations.find(
+      (item) => item.id === result.submitted.evaluationId,
+    )
+    // Оценщик и target унаследованы от исходной записи — §19.18 запрещает их менять.
+    expect(replacement).toMatchObject({
+      score: 10,
+      evaluatorUserId: EVALUATOR,
+      employeeId: 'employee-1',
+      supersededById: null,
+    })
+    expect(slice.corrections.at(-1)).toMatchObject({
+      originalEvaluationId: 'evaluation-5',
+      replacementEvaluationId: result.submitted.evaluationId,
+      reason: 'Учтён рапорт старшего смены',
+    })
+  })
+
+  it('агрегат после исправления считает СЕРВЕР и вытесненную запись не учитывает', async () => {
+    const { repository } = await setup()
+    const before = (await repository.listOperationalRatings(VIEWER)).results.find(
+      (item) => item.employeeId === 'employee-1',
+    )
+    await repository.correctEvaluation(EVALUATOR, 'work-item-9', VALID)
+    const after = (await repository.listOperationalRatings(VIEWER)).results.find(
+      (item) => item.employeeId === 'employee-1',
+    )
+    // Число учтённых НЕ выросло: замещающая запись встала на место вытесненной,
+    // а не добавилась к ней.
+    expect(after?.evaluationsCount).toBe(before?.evaluationsCount)
+    expect(after?.aggregateRating).not.toBe(before?.aggregateRating)
+  })
+
+  it('устаревшая редакция и незаполненная причина отвергаются своими кодами', async () => {
+    const { repository } = await setup()
+    await expect(
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, revision: 99 }),
+    ).rejects.toMatchObject({ errorCode: 'EVALUATION_REVISION_MISMATCH' })
+    await expect(
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, reason: '  ' }),
+    ).rejects.toMatchObject({ errorCode: 'CORRECTION_REASON_REQUIRED' })
+    // Правило комментария повторяется и на исправлении (§19.18 шаг 7).
+    await expect(
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, score: 5 }),
+    ).rejects.toMatchObject({ errorCode: 'COMMENT_REQUIRED' })
+  })
+
+  it('неотправленное задание исправить нельзя', async () => {
+    const { repository } = await setup()
+    await expect(
+      repository.correctEvaluation(EVALUATOR, 'work-item-1', { ...VALID, revision: 1 }),
+    ).rejects.toMatchObject({ errorCode: 'EVALUATION_NOT_SUBMITTED' })
+  })
+
+  it('выключенная функция не принимает исправлений', async () => {
+    const { repository } = await setup({ operationalRatings: false })
+    await expect(
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', VALID),
+    ).rejects.toMatchObject({ errorCode: 'RATING_DISABLED' })
+  })
+
+  it('исправление исправления удлиняет цепочку, а не переписывает её', async () => {
+    const { repository } = await setup()
+    const first = await repository.correctEvaluation(EVALUATOR, 'work-item-9', VALID)
+    const second = await repository.correctEvaluation(EVALUATOR, 'work-item-9', {
+      ...VALID,
+      score: 6,
+      comment: 'Подтверждено рапортом: уход с поста',
+      reason: 'Повторный разбор',
+      revision: 4,
+    })
+    expect(second.chain?.map((link) => link.score)).toEqual([3, 9, 10, 6])
+    expect(second.chain?.filter((link) => link.current)).toHaveLength(1)
+    expect(second.chain?.at(-1)).toMatchObject({
+      evaluationId: second.submitted.evaluationId,
+      current: true,
+    })
+    expect(first.submitted.evaluationId).not.toBe(second.submitted.evaluationId)
   })
 })

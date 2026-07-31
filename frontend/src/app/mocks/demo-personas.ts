@@ -47,6 +47,13 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       // показывается только при наличии permission»: у него вкладки нет, у
       // администратора — есть.
       'ops.rating.evaluate',
+      // §19.22 перечисляет «исправление оценки» и «просмотр correction chain»
+      // отдельными пунктами — организатору выданы оба, офицеру
+      // рекогносцировки только оценивание. Без persona БЕЗ этих прав ни
+      // отсутствие кнопки «Исправить», ни закрытая история записи не были бы
+      // достижимы: у администратора wildcard.
+      'ops.rating.correct',
+      'ops.rating.view_correction_chain',
     ],
     // Этап 2 реализовал только реестр/бюллетень ОМ — реальная посадочная
     // страница этой persona, не «/» (там status.view, которого нет ни у одной
@@ -63,6 +70,10 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
       'ops.recon.manage',
       'ops.dictionary.view',
       'ops.calendar.view',
+      // §19.7: у офицера рекогносцировки есть свои задания в сиде. Права
+      // ИСПРАВЛЯТЬ и видеть цепочку ему НЕ выданы — на этом разделении
+      // держится демонстрация §19.18/§19.22.
+      'ops.rating.evaluate',
     ],
     homeRoute: ROUTES.securityEvents,
   },

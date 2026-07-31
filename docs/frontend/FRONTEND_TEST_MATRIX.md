@@ -811,4 +811,12 @@ severity конфликта занижается ✓, пороги игнори�
 | Путь отправки сопоставляется MSW на живом клиенте (шаблон не прогнан через `encodeURIComponent`) | features/ratings/mocks/handlers.test.ts | Verified (дефект пойман в ходе работы: `%3AworkItemId`) |
 | Отправленная оценка входит в агрегат СЕРВЕРА и переживает перечитывание; задание не задваивается | features/ratings/mocks/repository.test.ts, e2e-mock/evaluation-workspace.spec.ts | Verified |
 | **e2e: очередь, форма, отправка, отказ без комментария, разделение права сводки в реальном chromium** | e2e-mock/evaluation-workspace.spec.ts | Verified (6 тестов) |
+| Исправление создаёт НОВУЮ запись, исходная остаётся с ссылкой и причиной; цепочка удлиняется при повторном исправлении | features/ratings/mocks/repository.test.ts | Verified (красная проба: правка записи на месте) |
+| Агрегат после исправления считает сервер: число учтённых не растёт, значение меняется | features/ratings/mocks/repository.test.ts | Verified |
+| Исправление и просмотр цепочки — разные права; `canCorrect` решает СЕРВЕР | features/ratings/mocks/repository.test.ts, features/ratings/pages/SubmittedEvaluationCard.test.tsx | Verified (3 красные пробы: право не проверяется / цепочка без права / `canCorrect: true` захардкожен) |
+| Причина исправления обязательна, правило комментария повторяется (§19.18 шаг 7) | features/ratings/lib/correction.test.ts, features/ratings/mocks/repository.test.ts, mocks/handlers.test.ts | Verified (красная проба: `validateSubmission` вместо `validateCorrection`) |
+| Diff показывается ДО мутации и содержит только изменившееся; пустой diff запрещает подтверждение | features/ratings/lib/correction.test.ts, features/ratings/pages/SubmittedEvaluationCard.test.tsx | Verified (красная проба: подтверждение шлёт мутацию сразу) |
+| Карточка читается ОТДЕЛЬНЫМ запросом и только при открытии (§19.17-19.18 шаг 3) | features/ratings/pages/EvaluationWorkspacePage.test.tsx | Verified (красная проба: запрос выключен) |
+| Отказ сервера не выдаёт исправление за успешное, а возврат к правке снимает ошибку — путь не заперт | features/ratings/pages/SubmittedEvaluationCard.test.tsx | Verified (проверен ПОВТОРНЫЙ вход) |
+| **e2e: история записи, diff и исправление в реальном chromium; оценщик без права исправления** | e2e-mock/evaluation-workspace.spec.ts | Verified (2 теста) |
 

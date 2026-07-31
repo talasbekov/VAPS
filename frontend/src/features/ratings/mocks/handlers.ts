@@ -4,13 +4,18 @@ import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import type { ErrorEnvelope } from '../../../shared/api/errors'
 import {
+  EVALUATION_CORRECT_PATH_PATTERN,
+  EVALUATION_DETAIL_PATH_PATTERN,
   EVALUATION_SUBMIT_PATH_PATTERN,
   EVALUATION_WORKSPACE_PATH,
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
   RATING_ANALYTICS_PATH,
 } from '../api/pending-contracts'
-import type { SubmitEvaluationRequest } from '../api/pending-contracts'
+import type {
+  CorrectEvaluationRequest,
+  SubmitEvaluationRequest,
+} from '../api/pending-contracts'
 import {
   createRatingsRepository,
   RepositoryBusinessRuleError,
@@ -59,6 +64,35 @@ export function createRatingsHandlers(adapter: PersistenceAdapter, clock: DemoCl
         return HttpResponse.json(
           await repository.submitEvaluation(actorUserId, workItemId, body),
           { status: 201 },
+        )
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.post(`*${EVALUATION_CORRECT_PATH_PATTERN}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const workItemId = String(params.workItemId)
+      const body = (await request.json()) as CorrectEvaluationRequest
+      try {
+        return HttpResponse.json(
+          await repository.correctEvaluation(actorUserId, workItemId, body),
+          { status: 201 },
+        )
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.get(`*${EVALUATION_DETAIL_PATH_PATTERN}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(
+          await repository.getSubmittedEvaluationDetail(actorUserId, String(params.workItemId)),
         )
       } catch (error) {
         const mapped = mapRepositoryError(error, clock)

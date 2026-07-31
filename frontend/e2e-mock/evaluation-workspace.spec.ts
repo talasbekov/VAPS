@@ -112,7 +112,7 @@ test.describe('Оценивание участников §19.14 (mock-режи�
     await page.goto('/ratings/workspace')
     await page.getByRole('tab', { name: 'Сводка мероприятия' }).click()
     const panel = page.getByRole('region', { name: 'Сводка мероприятия' })
-    await expect(panel).toContainText('Заданий: 7')
+    await expect(panel).toContainText('Заданий: 8')
     await expect(panel).toContainText('Старший → сотрудник')
     // Прогресс — не содержание: ни одной оценки и ни одного комментария.
     await expect(panel).not.toContainText('Задержка на инструктаже')
@@ -129,6 +129,54 @@ test.describe('Оценивание участников §19.14 (mock-режи�
     await expect(page.getByText('Доступ запрещён')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Оценивание участников' })).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Оценивание участников' })).toHaveCount(0)
+  })
+})
+
+test.describe('Исправление оценки §19.17-19.18 (mock-режим)', () => {
+  test('карточка показывает историю записи, а исправление создаёт НОВУЮ запись', async ({
+    page,
+  }) => {
+    await asEvaluator(page)
+    await page.goto('/ratings/workspace')
+    await page.getByRole('tab', { name: 'Отправленные мной' }).click()
+    await page.getByRole('button', { name: 'Открыть отправленную оценку: Ерланов Д.' }).click()
+
+    const card = page.getByRole('region', { name: 'Отправленная оценка' })
+    // Сеяная цепочка: тройка была заменена девяткой, и старое значение видно
+    // вместе с причиной (§19.18 «нельзя скрыть старое значение»).
+    await expect(card).toContainText('оценка 3')
+    await expect(card).toContainText('Оценка выставлена по ошибке не тому участнику')
+
+    await card.getByRole('button', { name: 'Исправить оценку' }).click()
+    await card.getByLabel('Новая оценка').selectOption('10')
+    await card.getByLabel(/Причина исправления/).fill('Учтён рапорт старшего смены')
+    await card.getByRole('button', { name: 'Показать изменения' }).click()
+    // Шаг 8: diff показан ДО подтверждения.
+    const preview = page.getByLabel('Подтверждение исправления')
+    await expect(preview).toContainText('Оценка: 9 → 10')
+    await preview.getByRole('button', { name: 'Подтвердить исправление' }).click()
+
+    // Цепочка удлинилась, вытесненная запись осталась в истории.
+    await expect(card).toContainText('оценка 9')
+    await expect(card).toContainText('Учтён рапорт старшего смены')
+  })
+
+  test('оценщику без права исправления кнопка не показывается', async ({ page }) => {
+    // Офицер рекогносцировки оценивает, но не исправляет и цепочки не видит:
+    // без persona БЕЗ этих прав закрытое состояние недостижимо.
+    await page.addInitScript(() => {
+      sessionStorage.setItem(
+        'vaps.credential',
+        JSON.stringify({ kind: 'dev', userId: 'demo-recon-officer' }),
+      )
+    })
+    await page.goto('/ratings/workspace')
+    await page.getByRole('tab', { name: 'Отправленные мной' }).click()
+    await page.getByRole('button', { name: /Открыть отправленную оценку/ }).click()
+    const card = page.getByRole('region', { name: 'Отправленная оценка' })
+    await expect(card).toContainText('право на исправление оценки не выдано')
+    await expect(card).toContainText('право на просмотр цепочки исправлений не выдано')
+    await expect(card.getByRole('button', { name: 'Исправить оценку' })).toHaveCount(0)
   })
 })
 

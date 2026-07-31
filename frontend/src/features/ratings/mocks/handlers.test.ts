@@ -11,6 +11,8 @@ import { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac-directory'
 import {
   EVALUATION_WORKSPACE_PATH,
+  evaluationCorrectPath,
+  evaluationDetailPath,
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
   RATING_ANALYTICS_PATH,
@@ -22,6 +24,8 @@ import type {
   RatingAnalyticsResponse,
   RatingDynamicsResponse,
   SubmitEvaluationResponse,
+  SubmittedEvaluationDetailResponse,
+  CorrectEvaluationResponse,
 } from '../api/pending-contracts'
 import { createRatingsHandlers } from './handlers'
 import { buildRatingsSeed } from './fixtures'
@@ -78,8 +82,8 @@ beforeEach(async () => {
   }
   await adapter.reset({
     application: 'smart-josparlau',
-    schema_version: 33,
-    seed_version: 'test-v33',
+    schema_version: 34,
+    seed_version: 'test-v34',
     scenario: 'normal',
     revision: 0,
     created_at: CLOCK_ISO,
@@ -90,7 +94,14 @@ beforeEach(async () => {
     { userId: VIEWER, permissions: ['ops.rating.view_aggregate'] },
     { userId: ANALYST, permissions: ['ops.analytics.view'] },
     { userId: NOBODY, permissions: [] },
-    { userId: EVALUATOR, permissions: ['ops.rating.evaluate'] },
+    {
+      userId: EVALUATOR,
+      permissions: [
+        'ops.rating.evaluate',
+        'ops.rating.correct',
+        'ops.rating.view_correction_chain',
+      ],
+    },
   ])
 })
 
@@ -209,5 +220,76 @@ describe('ratings handlers — рабочее пространство оцен�
         }),
       ),
     ).toBe(404)
+  })
+})
+
+describe('ratings handlers — карточка и исправление оценки (§19.17-19.18)', () => {
+  it('GET карточки не перехватывается путём отправки и отдаёт цепочку', async () => {
+    const detail = await evaluator.get<SubmittedEvaluationDetailResponse>(
+      evaluationDetailPath('work-item-9'),
+    )
+    expect(detail.submitted.evaluationId).toBe('evaluation-5')
+    expect(detail.chain?.map((link) => link.evaluationId)).toEqual([
+      'evaluation-4',
+      'evaluation-5',
+    ])
+    expect(detail.canCorrect).toBe(true)
+  })
+
+  it('POST исправления сопоставляется со своим путём и коммитит замещающую запись', async () => {
+    const detail = await evaluator.get<SubmittedEvaluationDetailResponse>(
+      evaluationDetailPath('work-item-9'),
+    )
+    const corrected = await evaluator.post<CorrectEvaluationResponse>(
+      evaluationCorrectPath('work-item-9'),
+      {
+        score: 10,
+        basisCode: 'DISCIPLINE',
+        basisNote: null,
+        comment: null,
+        reason: 'Учтён рапорт старшего смены',
+        revision: detail.workItem.revision,
+      },
+    )
+    expect(corrected.submitted.score).toBe(10)
+    // Цепочка удлинилась — и это видно через HTTP, а не только в репозитории.
+    expect(corrected.chain).toHaveLength(3)
+  })
+
+  it('отказ по причине исправления едет 422 со СВОИМ кодом', async () => {
+    const detail = await evaluator.get<SubmittedEvaluationDetailResponse>(
+      evaluationDetailPath('work-item-9'),
+    )
+    try {
+      await evaluator.post(evaluationCorrectPath('work-item-9'), {
+        score: 10,
+        basisCode: 'DISCIPLINE',
+        basisNote: null,
+        comment: null,
+        reason: '',
+        revision: detail.workItem.revision,
+      })
+      expect.unreachable('исправление без причины обязано быть отвергнуто')
+    } catch (error) {
+      expect(error as ApiError).toMatchObject({
+        status: 422,
+        errorCode: 'CORRECTION_REASON_REQUIRED',
+      })
+    }
+  })
+
+  it('без права исправления — 403 конвертом', async () => {
+    expect(
+      await statusOf(() =>
+        client.post(evaluationCorrectPath('work-item-9'), {
+          score: 10,
+          basisCode: 'DISCIPLINE',
+          basisNote: null,
+          comment: null,
+          reason: 'Попытка без права',
+          revision: 3,
+        }),
+      ),
+    ).toBe(403)
   })
 })

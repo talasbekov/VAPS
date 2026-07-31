@@ -411,3 +411,21 @@ queue }`. Ни оценщика, ни target, ни мероприятия, ни 
 | `GROUP_EVALUATION_UNSUPPORTED` | групповая оценка (§19.13) — состав группы на момент мероприятия не записан |
 | `ENTITY_NOT_FOUND` (404) | задания нет ИЛИ оно принадлежит другому оценщику: отказ по праву подтвердил бы его существование |
 
+### `/api/ops/evaluation-work-items/:id/detail/` и `.../correct/` (§19.17-19.18)
+
+`backend-contract-pending`. `detail` — ЯВНЫЙ сегмент: путь строки перехватил бы и
+`/submit/`, и `/correct/` (MSW разрешает коллизию молча).
+
+`GET .../detail/` → `{ workItem, submitted, chain, bases, canCorrect, loadedAt }`.
+Отдаётся ТОЛЬКО автору записи (иначе 404). `chain` — `null` без
+`ops.rating.view_correction_chain`; `canCorrect` решает сервер (право + feature flag).
+
+`POST .../correct/` тело `{ score, basisCode, basisNote, comment, reason, revision }` →
+`201 { workItem, submitted, chain }`. Право — `ops.rating.correct`. Исходная запись не
+переписывается: создаётся замещающая, исходная получает `supersededById`, связь и причина
+ложатся записью `EvaluationCorrection`.
+
+Дополнительные коды отказов: `CORRECTION_REASON_REQUIRED` (причина обязательна),
+`EVALUATION_NOT_SUBMITTED` (по заданию ещё нечего исправлять), плюс те же
+`EVALUATION_REVISION_MISMATCH`, `RATING_DISABLED` и правила формы, что у отправки.
+
