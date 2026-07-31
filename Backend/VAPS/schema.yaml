@@ -1975,6 +1975,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExpensePeriodResponse'
           description: ''
+  /api/operations/groups/:
+    get:
+      operationId: groups_list
+      description: Активный справочник Групп (is_active=True), отсортирован по sort_order.
+        Требует event.manage.
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Group'
+          description: ''
   /api/operations/my-permissions/:
     get:
       operationId: operations_my_permissions_list
@@ -3854,6 +3870,22 @@ components:
       description: |-
         * `M` - Мужской
         * `F` - Женский
+    Group:
+      type: object
+      properties:
+        code:
+          type: string
+          maxLength: 50
+        name:
+          type: string
+          maxLength: 255
+        sort_order:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+      required:
+      - code
+      - name
     IssuedExpenseReport:
       type: object
       description: |-

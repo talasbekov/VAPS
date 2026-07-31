@@ -4,6 +4,7 @@ serializers."""
 from rest_framework import serializers
 
 from apps.operations.events.models import (
+    Group,
     SecurityEvent,
     SecurityEventChecklistItem,
     SecurityEventSectorPost,
@@ -84,3 +85,9 @@ class StaffingDemandSerializer(serializers.ModelSerializer):
             "comment",
         ]
         read_only_fields = ["id"]
+
+
+class GroupSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Group
+        fields = ["code", "name", "sort_order"]

@@ -31,12 +31,13 @@ from apps.audit.services import record
 from apps.operations.api.permissions import require_permission
 from apps.operations.events.api.serializers import (
     ChecklistItemSerializer,
+    GroupSerializer,
     SecurityEventCreateSerializer,
     SecurityEventSerializer,
     SectorPostSerializer,
     StaffingDemandSerializer,
 )
-from apps.operations.events.models import SecurityEvent
+from apps.operations.events.models import Group, SecurityEvent
 from apps.operations.events.services import (
     approve_staffing_demand,
     confirm_recon,
@@ -245,3 +246,23 @@ class SecurityEventViewSet(viewsets.ViewSet):
         event = _get_event_or_404(pk)
         event = approve_staffing_demand(event, actor=request.actor_id)
         return Response(SecurityEventSerializer(event).data)
+
+
+class GroupViewSet(viewsets.ViewSet):
+    """Story 15.6: `GET /api/operations/groups` — справочник Групп (FR-39).
+    Read-only, буквальный образец `StatusTypeViewSet`
+    (apps.operations.statuses.api.views) — только `list`, только активные
+    записи, отсортировано по `sort_order`."""
+
+    http_method_names = ["get", "options"]
+
+    @extend_schema(
+        operation_id="groups_list",
+        responses={200: GroupSerializer(many=True)},
+        description="Активный справочник Групп (is_active=True), "
+        "отсортирован по sort_order. Требует event.manage.",
+    )
+    def list(self, request, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        groups = Group.objects.filter(is_active=True)
+        return Response(GroupSerializer(groups, many=True).data)

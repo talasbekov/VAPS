@@ -198,6 +198,9 @@ MATRIX = {
     "ops-security-event-staffing-demand": _Gate("event.manage"),
     # Story 15.5c: staffing-demand approval, same gate.
     "ops-security-event-staffing-demand-approve": _Gate("event.manage"),
+    # Story 15.6: read-only Groups reference list, same gate (used only in
+    # Epic 15's context today).
+    "ops-group-list": _Gate("event.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

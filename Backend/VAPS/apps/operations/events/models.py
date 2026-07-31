@@ -202,3 +202,32 @@ class SecurityEventStaffingDemand(TimeStampedModel):
 
     def __str__(self):
         return f"{self.sector}/{self.group} ({self.event_id})"
+
+
+class Group(models.Model):
+    """Story 15.6: справочник Групп (FR-39), read-only reference table.
+
+    Литеральный образец `apps.operations.statuses.models.status_type
+    .StatusType` (простая flat-справочник-модель), минус статус-
+    специфичные поля (`is_hard_block` и т.п. — не применимы к Группам).
+    Донор-спека не даёт полей за пределами названия «Группы» в FR-39's
+    общем списке справочников — PROVISIONAL 3-поля форма.
+
+    `SecurityEventStaffingDemand.group` НЕ переведён на FK сюда в этой
+    стори (уже закрытая 15.5a-модель, свободный текст) — открытый вопрос
+    для будущей стори, если понадобится реальная связность.
+    """
+
+    code = models.CharField(primary_key=True, max_length=50)
+    name = models.CharField(max_length=255)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "ops_groups"
+        ordering = ["sort_order", "code"]
+        verbose_name = "Группа"
+        verbose_name_plural = "Группы"
+
+    def __str__(self):
+        return self.code
