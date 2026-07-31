@@ -20,6 +20,7 @@ import { ObjectsListPage } from '../features/objects/pages/ObjectsListPage'
 import { AuditLogPage } from '../features/audit/pages/AuditLogPage'
 import { DutyPlanPage } from '../features/duties/pages/DutyPlanPage'
 import { DutyPlansListPage } from '../features/duty-plans/pages/DutyPlansListPage'
+import { DutyPlanDetailPage } from '../features/duty-plans/pages/DutyPlanDetailPage'
 import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -147,6 +148,14 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="duty.manage">
               <DutyPlansListPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.dutyPlanDetail}
+          element={
+            <RequirePermission permission="duty.manage">
+              <DutyPlanDetailPage />
             </RequirePermission>
           }
         />

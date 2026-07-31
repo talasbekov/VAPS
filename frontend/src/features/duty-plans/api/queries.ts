@@ -26,9 +26,9 @@ type DutyPlanConflictsResponse =
   paths['/api/operations/duty-plans/{id}/conflicts/']['get']['responses']['200']['content']['application/json']
 type DutyPlanValidateResponse =
   paths['/api/operations/duty-plans/{id}/validate/']['post']['responses']['200']['content']['application/json']
-type DutyShiftsListResponse =
+export type DutyShiftsListResponse =
   paths['/api/operations/duty-plans/{id}/shifts/']['get']['responses']['200']['content']['application/json']
-type DutyShiftCreateRequest =
+export type DutyShiftCreateRequest =
   paths['/api/operations/duty-plans/{id}/shifts/']['post']['requestBody']['content']['application/json']
 type DutyShiftCreateResponse =
   paths['/api/operations/duty-plans/{id}/shifts/']['post']['responses']['201']['content']['application/json']

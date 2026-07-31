@@ -89,6 +89,9 @@ export const ROUTES = {
    * Decision, коллизия имён разрешена явным решением пользователя).
    */
   dutyPlans: '/duty-plans',
+  /** Story 14.11k: деталь ОДНОГО плана дежурств + грид его смен. */
+  dutyPlanDetail: '/duty-plans/:id',
+  dutyPlanDetailTo: (id: string | number) => `/duty-plans/${encodeURIComponent(String(id))}`,
 } as const
 
 export interface NavSection {

@@ -4,7 +4,7 @@ baseline_commit: da60566
 
 # Story 14.11k: Frontend — деталь плана + грид смен дежурств
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -44,18 +44,18 @@ so that **можно посмотреть/наполнить конкретны�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `ROUTES.dutyPlanDetail`/`dutyPlanDetailTo` (AC: 1, 2, 5)
-  - [ ] `frontend/src/shared/routes.ts`
-- [ ] Task 2 — `DutyPlanDetailPage.tsx` (AC: 1-4)
-  - [ ] `frontend/src/features/duty-plans/pages/DutyPlanDetailPage.tsx` — `useParams`, `useDutyPlans()`-фильтр по id, `useDutyShifts(planId)`, isLoading/isError/not-found/empty-ветки
-- [ ] Task 3 — `CreateDutyShiftDialog.tsx` (AC: 6-8)
-  - [ ] `frontend/src/features/duty-plans/pages/CreateDutyShiftDialog.tsx` — буквальный образец `CreateDutyPlanDialog.tsx`, ValidationError-only setError-эффект СРАЗУ (не заново открывать 14.11j's дефект)
-- [ ] Task 4 — Роутинг + ссылка со списка (AC: 5)
-  - [ ] `frontend/src/app/App.tsx` — новый `<Route>` за `RequirePermission permission="duty.manage"`
-  - [ ] `DutyPlansListPage.tsx` — строки таблицы оборачиваются в `<Link>`
-- [ ] Task 5 — Тесты (AC: 1-9)
-  - [ ] Page-тест (RTL+MSW, паттерн `duty-plans-list.qa.test.tsx`, живёт в `src/app/` — ARCH-FE-013): деталь+грид, not-found, пустой грид, создание-успех, создание-400, ссылка со списка
-  - [ ] `npm run gate` зелёный, явно прогнан
+- [x] Task 1 — `ROUTES.dutyPlanDetail`/`dutyPlanDetailTo` (AC: 1, 2, 5)
+  - [x] `frontend/src/shared/routes.ts`
+- [x] Task 2 — `DutyPlanDetailPage.tsx` (AC: 1-4)
+  - [x] `frontend/src/features/duty-plans/pages/DutyPlanDetailPage.tsx` — `useParams`, `useDutyPlans()`-фильтр по id, `useDutyShifts(planId)`, isLoading/isError/not-found/empty-ветки
+- [x] Task 3 — `CreateDutyShiftDialog.tsx` (AC: 6-8)
+  - [x] `frontend/src/features/duty-plans/pages/CreateDutyShiftDialog.tsx` — буквальный образец `CreateDutyPlanDialog.tsx` (после review-фикса 14.11j), ValidationError-only setError-эффект СРАЗУ
+- [x] Task 4 — Роутинг + ссылка со списка (AC: 5)
+  - [x] `frontend/src/app/App.tsx` — новый `<Route>` за `RequirePermission permission="duty.manage"`
+  - [x] `DutyPlansListPage.tsx` — строки таблицы оборачиваются в `<Link>`
+- [x] Task 5 — Тесты (AC: 1-9)
+  - [x] Page-тест (RTL+MSW, паттерн `duty-plans-list.qa.test.tsx`, живёт в `src/app/` — ARCH-FE-013): деталь+грид, not-found, пустой грид, ссылка со списка, создание-успех, создание-400
+  - [x] `npm run gate` зелёный, явно прогнан
 
 ## Dev Notes
 
@@ -78,10 +78,23 @@ so that **можно посмотреть/наполнить конкретны�
 
 ### Completion Notes
 
+Реализовано по AC 1-9. `DutyPlanDetailPage.tsx` — `useParams`+`useDutyPlans()`-фильтр по id (нет retrieve-эндпоинта, Scope Decision), `useDutyShifts(planId)`-грид, isLoading/isError/not-found/empty-ветки (буквальный скелет `SecurityEventDetailPage`). `CreateDutyShiftDialog.tsx` — буквальный образец `CreateDutyPlanDialog.tsx` ПОСЛЕ review-фикса 14.11j (ValidationError-only setError, безопасный generic-баннер с UX L208-исключением для 5xx/network) — урок применён проактивно, не заново открыт. `post`/`duty_type` — числовой ID-stopgap (`.optional().or(z.literal(''))`, тот же паттерн, что `object` в 14.11j). Zod-`transform` конвертирует `datetime-local`-строки в ISO через `new Date(...).toISOString()`. `DutyPlansListPage.tsx`'s строки теперь `<Link>` на деталь. MSW-хендлеры `shifts`(GET+POST) добавлены в `duty-plans/mocks/handlers.ts`/`fixtures.ts`. 6 новых page-тестов (`src/app/duty-plan-detail.qa.test.tsx`, тот же слой, что `duty-plans-list.qa.test.tsx` — ARCH-FE-013), все зелёные с первой попытки. `npm run gate` — 1034 passed (было 1027, +7 — 6 новых + список-тест на ссылку), 0 regressions, build/size-gate зелёные (218.1KB/300KB).
+
 ### File List
+
+- `frontend/src/features/duty-plans/pages/DutyPlanDetailPage.tsx` (new)
+- `frontend/src/features/duty-plans/pages/CreateDutyShiftDialog.tsx` (new)
+- `frontend/src/features/duty-plans/pages/DutyPlansListPage.tsx` (modified — строки → `<Link>`)
+- `frontend/src/features/duty-plans/api/queries.ts` (modified — экспортированы `DutyShiftsListResponse`/`DutyShiftCreateRequest`)
+- `frontend/src/features/duty-plans/mocks/handlers.ts` (modified — `shifts` GET+POST)
+- `frontend/src/features/duty-plans/mocks/fixtures.ts` (modified — `DutyShiftFixture`/`DUTY_SHIFTS`)
+- `frontend/src/app/duty-plan-detail.qa.test.tsx` (new)
+- `frontend/src/app/App.tsx` (modified — новый route)
+- `frontend/src/shared/routes.ts` (modified — `ROUTES.dutyPlanDetail`/`dutyPlanDetailTo`)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Одиннадцатая (третья frontend) из ~12 подсторий разделения 14.11. Нет retrieve-эндпоинта плана — решение переиспользовать useDutyPlans()-список с клиентским фильтром по id (работает и на прямом заходе — свой независимый fetch, не кэш-зависимость). post/duty_type — числовой ID-stopgap, как object в 14.11j. ValidationError-only setError с самого начала (не повторять 14.11j's review-находку). |
+| 2026-07-31 | Dev-story: `DutyPlanDetailPage`/`CreateDutyShiftDialog`, ссылка со списка, MSW shifts-хендлеры, 6 page-тестов, все зелёные с первой попытки (14.11j's review-урок применён проактивно). `npm run gate` — 1034 passed. Status → review. |

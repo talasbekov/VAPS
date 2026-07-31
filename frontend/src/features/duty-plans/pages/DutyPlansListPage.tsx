@@ -1,11 +1,14 @@
 // Story 14.11j: список планов дежурств + создание. Буквальный образец —
 // security-events/pages/SecurityEventsListPage.tsx (isLoading/isError/isEmpty
 // -ветки, dialog-триггер). Без грида смен и approve/cancel/replan-кнопок —
-// 14.11k/l. После создания — остаться на списке (детали-страницы 14.11k ещё
-// нет), поэтому здесь нет Link/навигации на строку.
+// 14.11k/l.
+// Story 14.11k: строки теперь Link на деталь-страницу плана (14.11j's
+// комментарий "нет Link на строку, деталь-страницы ещё нет" устарел).
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router'
 import { Button } from '../../../shared/ui/Button'
+import { ROUTES } from '../../../shared/routes'
 import { useDutyPlans } from '../api/queries'
 import type { DutyPlansListResponse } from '../api/queries'
 import { CreateDutyPlanDialog } from './CreateDutyPlanDialog'
@@ -97,7 +100,11 @@ function ResultsTable({
         <tbody>
           {plans.map((plan) => (
             <tr key={plan.id} className="border-t hover:bg-muted/30">
-              <td className="p-3.5 text-sm font-semibold text-foreground">{plan.object}</td>
+              <td className="p-3.5 text-sm font-semibold text-foreground">
+                <Link to={ROUTES.dutyPlanDetailTo(plan.id)} className="block">
+                  {plan.object}
+                </Link>
+              </td>
               <td className="p-3.5 text-sm tabular-nums">{plan.year}</td>
               <td className="p-3.5 text-sm">{MONTH_LABEL[plan.month - 1] ?? plan.month}</td>
               <td className="p-3.5 text-sm">
