@@ -180,6 +180,9 @@ MATRIX = {
     # 14.12 (role-binding stays flexible/admin-configurable, not hardcoded
     # here).
     "ops-security-event-list": _Gate("event.manage"),
+    # Story 15.2b: bulletin-issue action, same gate as create/list (single
+    # ViewSet, single permission code).
+    "ops-security-event-bulletin": _Gate("event.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

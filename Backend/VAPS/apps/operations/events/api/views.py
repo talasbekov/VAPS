@@ -15,9 +15,11 @@ role-binding stays flexible/admin-configurable, no per-story hardcoding
 
 import uuid
 
+from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import status as http_status
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
@@ -31,6 +33,7 @@ from apps.operations.events.api.serializers import (
     SecurityEventSerializer,
 )
 from apps.operations.events.models import SecurityEvent
+from apps.operations.events.services import issue_bulletin
 
 _PERMISSION = "event.manage"
 
@@ -95,3 +98,17 @@ class SecurityEventViewSet(viewsets.ViewSet):
         return paginator.get_paginated_response(
             SecurityEventSerializer(page, many=True).data
         )
+
+    @extend_schema(
+        operation_id="security_event_bulletin",
+        responses={200: SecurityEventSerializer},
+        description="Выпустить бюллетень (DRAFT->BULLETIN). Требует "
+        "event.manage. Идемпотентно на уже-BULLETIN; 422 из любого другого "
+        "статуса.",
+    )
+    @action(detail=True, methods=["post"], url_path="bulletin")
+    def bulletin(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = get_object_or_404(SecurityEvent, pk=pk)
+        event = issue_bulletin(event, actor=request.actor_id)
+        return Response(SecurityEventSerializer(event).data)

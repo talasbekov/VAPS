@@ -257,6 +257,11 @@ AUDIT_MATRIX = {
     # own — same shape as ops-duty-plan-list's create/list pair); behavioral
     # pin — test_security_event_audit.py.
     "ops-security-event-list": _Audited(),
+    # Story 15.2b: SECURITY_EVENT_BULLETIN_ISSUED emits via
+    # apps.operations.events.services.issue_bulletin() only on a real
+    # DRAFT->BULLETIN transition (idempotent replay emits nothing);
+    # behavioral pin — test_security_event_bulletin.py.
+    "ops-security-event-bulletin": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

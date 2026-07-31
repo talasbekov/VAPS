@@ -2126,6 +2126,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/SecurityEvent'
           description: ''
+  /api/operations/security-events/{id}/bulletin/:
+    post:
+      operationId: security_event_bulletin
+      description: Выпустить бюллетень (DRAFT->BULLETIN). Требует event.manage. Идемпотентно
+        на уже-BULLETIN; 422 из любого другого статуса.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityEvent'
+          description: ''
   /api/operations/statuses/bulk/:
     post:
       operationId: operations_statuses_bulk_create

@@ -254,6 +254,11 @@ actions:
     description: "Создан ОМ (DRAFT), опционально со Старшим объекта (senior_employee_id). entity_id — uuid.UUID(int=event.pk)."
     provenance: derived-from-mutation
     source: "epics.md FR-21; Story 15.2a"
+  SECURITY_EVENT_BULLETIN_ISSUED:
+    entity_type: security_event
+    description: "Бюллетень выпущен (DRAFT->BULLETIN). Эмитится ТОЛЬКО на реальном переходе — идемпотентный повторный вызов на уже-BULLETIN не дублирует строку."
+    provenance: derived-from-mutation
+    source: "epics.md FR-21; Story 15.2b"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.
