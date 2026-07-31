@@ -544,6 +544,20 @@ def form_draft_placement(event, *, actor):
                     }
                 )
                 continue
+            # Review note (Blind Hunter/Edge Case Hunter): `full_clean()`
+            # here can ONLY ever raise for `post.object_id != version.event
+            # .object_id` today, because `posts_by_code` is built strictly
+            # from `Post.objects.filter(object=event.object)` — the
+            # cross-object clean() guard is structurally unreachable from
+            # this resolution path. Left UNCAUGHT deliberately: a future
+            # widening of the resolution surface (16.3+) that DOES let a
+            # ValidationError fire here would abort the WHOLE draft
+            # (transaction.atomic rolls back already-matched rows too),
+            # unlike the Post-resolution miss above (which lands in
+            # `unmatched`, never blocking). Whether that all-or-nothing
+            # blast radius is the right failure mode once reachable is an
+            # open design question for whichever story widens this — not
+            # decided here, since nothing today can actually trigger it.
             assignment = PlacementAssignment(
                 version=version, employee_id=direct.employee_id, post=post
             )
