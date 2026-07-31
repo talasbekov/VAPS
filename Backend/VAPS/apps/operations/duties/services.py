@@ -18,6 +18,9 @@ permission check, or audit logging. Those are 14.11's territory.
 """
 
 import datetime
+from zoneinfo import ZoneInfo
+
+from django.conf import settings
 
 from apps.operations.statuses.models import EmployeeStatus
 
@@ -28,16 +31,27 @@ def _to_date_range(starts_at, ends_at):
     """Convert a half-open datetime interval to a half-open calendar-date
     interval `[date_start, date_end)` (ARCH-DATA-023).
 
+    Review (Edge Case Hunter): calendar dates must be derived in the
+    project's local business timezone, same as `Clock.today_local()`
+    (`apps.core.clock`) — never straight off a UTC-stored DateTimeField's
+    `.date()`/`.time()`. A shift stored as e.g. local 00:30-08:30
+    Asia/Qyzylorda (+05) is 19:30-03:30 UTC; reading `.date()` on the raw
+    UTC value would silently put the projected status on the wrong
+    calendar day whenever the shift crosses the UTC day boundary.
+
     A single-day interval `[D, D+1)` is valid (status_service's own
     `_validate_interval` comment). `ends_at` lands on the NEXT calendar day
-    unless it falls exactly on midnight (i.e. the interval doesn't actually
-    touch that day).
+    unless it falls exactly on local midnight (i.e. the interval doesn't
+    actually touch that day).
     """
-    date_start = starts_at.date()
-    if ends_at.time() == datetime.time(0, 0):
-        date_end = ends_at.date()
+    local_tz = ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)
+    local_start = starts_at.astimezone(local_tz)
+    local_end = ends_at.astimezone(local_tz)
+    date_start = local_start.date()
+    if local_end.time() == datetime.time(0, 0):
+        date_end = local_end.date()
     else:
-        date_end = ends_at.date() + datetime.timedelta(days=1)
+        date_end = local_end.date() + datetime.timedelta(days=1)
     return date_start, date_end
 
 

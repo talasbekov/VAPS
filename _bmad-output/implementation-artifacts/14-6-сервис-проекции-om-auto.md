@@ -4,7 +4,7 @@ baseline_commit: ad55f47
 
 # Story 14.6: Сервис проекции OM_AUTO (DUTY/REST_AFTER_DUTY)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -92,8 +92,8 @@ so that **BR-017's «утверждённая смена автоматичес�
 
 ### File List
 
-- `apps/operations/duties/services.py` (new)
-- `apps/operations/duties/tests/test_services.py` (new)
+- `apps/operations/duties/services.py` (new; ревью-фикс — localизация к Asia/Qyzylorda в `_to_date_range`)
+- `apps/operations/duties/tests/test_services.py` (new; ревью-фикс — 4 доп. теста на timezone-границу/полночь)
 
 ## Change Log
 
@@ -101,3 +101,4 @@ so that **BR-017's «утверждённая смена автоматичес�
 |---|---|
 | 2026-07-31 | Story создана (create-story). Шестая стори Epic 14, строится на `DutyPlan`/`DutyShift` (14.5, done) и на уже существующей статусной инфраструктуре (`Source.OM_AUTO`/`source_ref`, спроектированной под эту стори ещё в Epic 3). Новый writer-путь (не переиспользует `create_status()`, форсирующий `source=USER` и лишние employee/conflict-проверки, которых BR-017 не требует). `approve_duty_plan()` включает чистый доменный переход статуса БЕЗ HTTP/permission/audit — они зарезервированы за 14.11. |
 | 2026-07-31 | Dev-story: `services.py` (`_to_date_range`/`project_duty_shift`/`approve_duty_plan`), 6 новых тестов, все зелёные под реальным Postgres. `make gate` — 3169 passed. Status → review. |
+| 2026-07-31 | 3-агентное ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor). Acceptance Auditor подтвердил все 10 AC PASS, дефектов нет. Edge Case Hunter нашёл РЕАЛЬНЫЙ HIGH-баг: `_to_date_range()` брал `.date()`/`.time()` НАПРЯМУЮ с UTC-хранимых datetime, минуя локализацию в `Asia/Qyzylorda` — вопреки установленному в кодовой базе паттерну (`Clock.today_local()`: `now().astimezone(_local_tz()).date()`). Смена, реально запланированная на локальную дату (напр. 00:30-08:30 Asia/Qyzylorda), при пересечении UTC-суточной границы проецировалась бы на ПРЕДЫДУЩИЙ календарный день. Blind Hunter независимо отметил ту же зону риска (get_or_create-«заморозка» дат при правке смены — признано приемлемым, явно отложено на 14.9's re-проекцию; риск гонки без unique-constraint на `source_ref` — признано приемлемым, отложено на 14.11's locked-эндпоинт). Fix: `_to_date_range()` локализует через `ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)` (тот же паттерн, что `personal_export_service.py`/`bugreports/serializers.py`), + 4 новых теста (UTC-граница, полночь-точно, ночная смена через полночь, сквозной end-to-end). Существующие тесты (написанные с `tzinfo=UTC`) переведены на `tzinfo=LOCAL_TZ` — они тестировали фиксированные часы дня, не UTC-специфику, семантика теста не изменилась. `make gate` — 3173 passed (было 3169, +4), без регрессий, без drift миграции. Status → done. |

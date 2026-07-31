@@ -1,13 +1,18 @@
 """Story 14.6 — OM_AUTO projection service (project_duty_shift/approve_duty_plan)."""
 
 import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from apps.core.exceptions import DomainError
 from apps.core.models import Division, DivisionType, Employee, Organization
 from apps.operations.duties.models import DutyPlan, DutyShift
-from apps.operations.duties.services import approve_duty_plan, project_duty_shift
+from apps.operations.duties.services import (
+    _to_date_range,
+    approve_duty_plan,
+    project_duty_shift,
+)
 from apps.operations.facilities.models import Object as FacilityObject
 from apps.operations.statuses.models import EmployeeStatus, StatusType
 from apps.operations.statuses.services.status_service import cancel_status
@@ -15,6 +20,7 @@ from apps.operations.statuses.services.status_service import cancel_status
 pytestmark = pytest.mark.django_db
 
 UTC = datetime.timezone.utc
+LOCAL_TZ = ZoneInfo("Asia/Qyzylorda")
 _IIN = iter(f"9001014{n:05d}" for n in range(1, 9999))
 
 
@@ -81,8 +87,8 @@ def test_project_duty_shift_creates_duty_and_rest_after_duty(status_types, div):
     shift = make_shift(
         plan,
         emp.id,
-        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=UTC),
-        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=UTC),
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
     )
 
     project_duty_shift(shift)
@@ -109,8 +115,8 @@ def test_project_duty_shift_is_idempotent_by_source_ref(status_types, div):
     shift = make_shift(
         plan,
         emp.id,
-        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=UTC),
-        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=UTC),
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
     )
 
     project_duty_shift(shift)
@@ -130,8 +136,8 @@ def test_approve_duty_plan_transitions_status_and_projects_shifts(status_types, 
     shift = make_shift(
         plan,
         emp.id,
-        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=UTC),
-        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=UTC),
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
     )
 
     approve_duty_plan(plan)
@@ -151,8 +157,8 @@ def test_approve_duty_plan_is_idempotent(status_types, div):
     make_shift(
         plan,
         emp.id,
-        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=UTC),
-        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=UTC),
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
     )
 
     approve_duty_plan(plan)
@@ -172,8 +178,8 @@ def test_om_auto_row_is_not_manually_editable(status_types, div):
     shift = make_shift(
         plan,
         emp.id,
-        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=UTC),
-        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=UTC),
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
     )
     project_duty_shift(shift)
     duty = EmployeeStatus.objects.get(source_ref=f"DUTY:{shift.pk}")
@@ -192,14 +198,14 @@ def test_overlapping_shifts_both_project_without_conflict_error(status_types, di
     shift_a = make_shift(
         plan,
         emp.id,
-        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=UTC),
-        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=UTC),
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
     )
     shift_b = make_shift(
         plan,
         emp.id,
-        datetime.datetime(2026, 8, 1, 12, 0, tzinfo=UTC),
-        datetime.datetime(2026, 8, 2, 0, 0, tzinfo=UTC),
+        datetime.datetime(2026, 8, 1, 12, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 2, 0, 0, tzinfo=LOCAL_TZ),
     )
 
     project_duty_shift(shift_a)
@@ -207,3 +213,68 @@ def test_overlapping_shifts_both_project_without_conflict_error(status_types, di
 
     assert EmployeeStatus.objects.filter(source_ref=f"DUTY:{shift_a.pk}").exists()
     assert EmployeeStatus.objects.filter(source_ref=f"DUTY:{shift_b.pk}").exists()
+
+
+# -- Review (Edge Case Hunter): _to_date_range must localize to
+# Asia/Qyzylorda before deriving calendar dates, same as Clock.today_local()
+# — a shift's UTC-stored datetime crossing the local day boundary must land
+# on the LOCAL calendar date, not the UTC one. -------------------------------
+
+
+def test_to_date_range_localizes_to_local_timezone_not_utc():
+    # Local 00:30-08:30 Asia/Qyzylorda (+05) == UTC 19:30 (prev day)-03:30.
+    # Reading .date() straight off the UTC values would give Jul 31 (wrong);
+    # the local calendar date is Aug 1.
+    starts_local = datetime.datetime(2026, 8, 1, 0, 30, tzinfo=LOCAL_TZ)
+    ends_local = datetime.datetime(2026, 8, 1, 8, 30, tzinfo=LOCAL_TZ)
+    starts_at = starts_local.astimezone(UTC)
+    ends_at = ends_local.astimezone(UTC)
+    assert starts_at.date() == datetime.date(2026, 7, 31)  # sanity: UTC differs
+
+    date_start, date_end = _to_date_range(starts_at, ends_at)
+
+    assert date_start == datetime.date(2026, 8, 1)
+    assert date_end == datetime.date(2026, 8, 2)
+
+
+def test_to_date_range_ends_exactly_at_local_midnight_does_not_spill_over():
+    starts_at = datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ).astimezone(UTC)
+    ends_at = datetime.datetime(2026, 8, 2, 0, 0, tzinfo=LOCAL_TZ).astimezone(UTC)
+
+    date_start, date_end = _to_date_range(starts_at, ends_at)
+
+    assert date_start == datetime.date(2026, 8, 1)
+    assert date_end == datetime.date(2026, 8, 2)
+
+
+def test_to_date_range_overnight_shift_spans_two_calendar_days():
+    starts_at = datetime.datetime(2026, 8, 1, 22, 0, tzinfo=LOCAL_TZ).astimezone(UTC)
+    ends_at = datetime.datetime(2026, 8, 2, 6, 0, tzinfo=LOCAL_TZ).astimezone(UTC)
+
+    date_start, date_end = _to_date_range(starts_at, ends_at)
+
+    assert date_start == datetime.date(2026, 8, 1)
+    assert date_end == datetime.date(2026, 8, 3)
+
+
+def test_project_duty_shift_across_utc_day_boundary_lands_on_local_date(
+    status_types, div
+):
+    # End-to-end version of the timezone bug: a shift entirely within local
+    # Aug 1 but straddling the UTC day boundary must project DUTY onto Aug 1,
+    # not Jul 31.
+    obj = make_object("OBJ-OM-8")
+    plan = make_plan(obj)
+    emp = make_employee(div)
+    shift = make_shift(
+        plan,
+        emp.id,
+        datetime.datetime(2026, 8, 1, 0, 30, tzinfo=LOCAL_TZ).astimezone(UTC),
+        datetime.datetime(2026, 8, 1, 8, 30, tzinfo=LOCAL_TZ).astimezone(UTC),
+    )
+
+    project_duty_shift(shift)
+
+    duty = EmployeeStatus.objects.get(source_ref=f"DUTY:{shift.pk}")
+    assert duty.date_start == datetime.date(2026, 8, 1)
+    assert duty.date_end == datetime.date(2026, 8, 2)
