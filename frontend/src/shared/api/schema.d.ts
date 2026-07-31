@@ -1031,6 +1031,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/duty-plans/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Список планов дежурств. Требует duty.manage. limit/offset-пагинация (дефолт 50, потолок 200). Опциональный фильтр по object (query-параметр). */
+        get: operations["duty_plans_list"];
+        put?: never;
+        /** @description Создать план дежурств (DRAFT). Требует duty.manage. */
+        post: operations["duty_plans_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/duty-plans/{id}/approve/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Утвердить план дежурств (BR-017 — запускает проекцию DUTY/REST_AFTER_DUTY/BEFORE_DUTY). Требует duty.manage. Идемпотентно — повторный вызов на уже APPROVED-плане не ошибка. */
+        post: operations["duty_plan_approve"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/duty-plans/{id}/conflicts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Прочитать конфликты плана дежурств (то же вычисление, что validate, под GET). Требует duty.manage. Пустой список — конфликтов нет. */
+        get: operations["duty_plan_conflicts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/duty-plans/{id}/shifts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Список смен плана. Требует duty.manage. limit/offset-пагинация (дефолт 50, потолок 200). */
+        get: operations["duty_plan_shifts_list"];
+        put?: never;
+        /** @description Создать смену в плане. Требует duty.manage. */
+        post: operations["duty_plan_shifts_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/duty-plans/{id}/shifts/{shift_id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Отменить смену дежурства. Требует duty.manage. */
+        post: operations["duty_plan_cancel_shift"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/duty-plans/{id}/shifts/{shift_id}/replan/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Перепланировать смену дежурства (отменяет старую, создаёт новую с изменёнными полями). Требует duty.manage. Поля кроме reason опциональны — отсутствующее поле наследуется от старой смены, явный null снимает пост/вид дежурства. */
+        post: operations["duty_plan_replan_shift"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/duty-plans/{id}/validate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Проверить план дежурств на конфликты занятости сотрудников БЕЗ утверждения (dry-run, ничего не пишет в БД). Требует duty.manage. Пустой список — конфликтов нет. */
+        post: operations["duty_plan_validate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/expense-reports/": {
         parameters: {
             query?: never;
@@ -1591,6 +1712,95 @@ export interface components {
             code: string;
             is_active?: boolean;
         };
+        DutyPlan: {
+            readonly id: number;
+            object: number;
+            year: number;
+            month: number;
+            readonly status_code: components["schemas"]["StatusCodeEnum"];
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description Story 14.11f: one entry per detected overlap — plain output-only
+         *     serializer (`validate_duty_plan()` already returns a list of dicts in
+         *     this shape, no model behind it).
+         */
+        DutyPlanConflict: {
+            shift_id: number;
+            /** Format: uuid */
+            employee_id: string;
+            conflict_code: string;
+            severity: string;
+            message: string;
+        };
+        DutyPlanCreateRequest: {
+            object: number;
+            year: number;
+            month: number;
+        };
+        DutyShift: {
+            readonly id: number;
+            readonly plan: number;
+            /** Format: uuid */
+            employee_id: string;
+            post?: number | null;
+            duty_type?: number | null;
+            duty_role_code?: string;
+            notes?: string;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            /** Format: date-time */
+            readonly cancelled_at: string | null;
+            readonly cancelled_by: string | null;
+            readonly cancelled_reason: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        DutyShiftCancelRequest: {
+            reason: string;
+        };
+        DutyShiftCreateRequest: {
+            /** Format: uuid */
+            employee_id: string;
+            post?: number | null;
+            duty_type?: number | null;
+            duty_role_code?: string;
+            notes?: string;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+        };
+        /**
+         * @description Story 14.11e: partial-update semantics — every field except `reason`
+         *     is optional. An ABSENT field means "inherit the old shift's value"
+         *     (`replan_duty_shift()`'s own contract, 14.9b); an explicit `null` on
+         *     `post`/`duty_type` means "clear it". Empirically confirmed (create-
+         *     story): DRF's `PrimaryKeyRelatedField(required=False, allow_null=True)`
+         *     correctly omits an absent field from `validated_data` while keeping an
+         *     explicit `null` present as `None` — the two cases ARE distinguishable
+         *     through this serializer, not just at the service layer.
+         */
+        DutyShiftReplanRequest: {
+            reason: string;
+            /** Format: uuid */
+            employee_id?: string;
+            post?: number | null;
+            duty_type?: number | null;
+            duty_role_code?: string;
+            notes?: string;
+            /** Format: date-time */
+            starts_at?: string;
+            /** Format: date-time */
+            ends_at?: string;
+        };
         Employee: {
             /** Format: uuid */
             readonly id: string;
@@ -1920,6 +2130,36 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Division"][];
         };
+        PaginatedDutyPlanList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["DutyPlan"][];
+        };
+        PaginatedDutyShiftList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["DutyShift"][];
+        };
         PaginatedEmployeeList: {
             /** @example 123 */
             count: number;
@@ -2161,6 +2401,12 @@ export interface components {
             /** Format: date-time */
             valid_to?: string | null;
         };
+        /**
+         * @description * `DRAFT` - Черновик
+         *     * `APPROVED` - Утверждён
+         * @enum {string}
+         */
+        StatusCodeEnum: "DRAFT" | "APPROVED";
         /**
          * @description Плоская проекция живого статуса на дату — прямо из ``.values()``-словарей
          *     ``EmployeeStatusSelector.overlapping_on`` (не ORM-объекты).
@@ -3350,6 +3596,227 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SummaryFreshnessResponse"];
+                };
+            };
+        };
+    };
+    duty_plans_list: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedDutyPlanList"];
+                };
+            };
+        };
+    };
+    duty_plans_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DutyPlanCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DutyPlanCreateRequest"];
+                "multipart/form-data": components["schemas"]["DutyPlanCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DutyPlan"];
+                };
+            };
+        };
+    };
+    duty_plan_approve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DutyPlan"];
+                };
+            };
+        };
+    };
+    duty_plan_conflicts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DutyPlanConflict"][];
+                };
+            };
+        };
+    };
+    duty_plan_shifts_list: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedDutyShiftList"];
+                };
+            };
+        };
+    };
+    duty_plan_shifts_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DutyShiftCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DutyShiftCreateRequest"];
+                "multipart/form-data": components["schemas"]["DutyShiftCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DutyShift"];
+                };
+            };
+        };
+    };
+    duty_plan_cancel_shift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                shift_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DutyShiftCancelRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DutyShiftCancelRequest"];
+                "multipart/form-data": components["schemas"]["DutyShiftCancelRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DutyShift"];
+                };
+            };
+        };
+    };
+    duty_plan_replan_shift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                shift_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DutyShiftReplanRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DutyShiftReplanRequest"];
+                "multipart/form-data": components["schemas"]["DutyShiftReplanRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DutyShift"];
+                };
+            };
+        };
+    };
+    duty_plan_validate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DutyPlanConflict"][];
                 };
             };
         };

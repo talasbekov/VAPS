@@ -4,7 +4,7 @@ baseline_commit: 0d7922a
 
 # Story 14.11h: Схема плана дежурств (регенерация фронтенд-типов)
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -35,13 +35,13 @@ so that **14.11i-l (фронтенд плана дежурств) могут т�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Подтвердить backend-схему полной (AC: 1)
-  - [ ] `make schema` — «No changes detected»; `test_schema_drift.py` явно прогнан
-- [ ] Task 2 — Регенерация frontend-схемы (AC: 2, 3)
-  - [ ] `cd frontend && npm run generate:api`
-  - [ ] `grep -c "DutyPlan\|DutyShift\|DutyPlanConflict" src/shared/api/schema.d.ts` > 0, зафиксировать в Completion Notes
-- [ ] Task 3 — Гейт обеих сторон (AC: 4)
-  - [ ] `make gate` (бэк); `npm run gate` (фронт)
+- [x] Task 1 — Подтвердить backend-схему полной (AC: 1)
+  - [x] `make schema` — «No changes detected»; `test_schema_drift.py` явно прогнан
+- [x] Task 2 — Регенерация frontend-схемы (AC: 2, 3)
+  - [x] `cd frontend && npm run generate:api`
+  - [x] `grep -c "DutyPlan\|DutyShift\|DutyPlanConflict" src/shared/api/schema.d.ts` = 32, зафиксировано
+- [x] Task 3 — Гейт обеих сторон (AC: 4)
+  - [x] `make gate` (бэк); `npm run gate` (фронт)
 
 ## Dev Notes
 
@@ -61,10 +61,17 @@ so that **14.11i-l (фронтенд плана дежурств) могут т�
 
 ### Completion Notes
 
+Подтверждено по AC 1-4. Backend-схема уже полна (все 8 действий `DutyPlanViewSet` несли `@extend_schema` с 14.11a-g) — `make schema` дал «No changes detected», `test_schema_drift.py` зелёный. Единственная реальная работа — `npm run generate:api`: `schema.d.ts` регенерирован, теперь содержит 32 упоминания `DutyPlan`/`DutyShift`/`DutyPlanConflict`, все 7 duty-plan путей присутствуют (`/duty-plans/`, `/{id}/approve/`, `/{id}/conflicts/`, `/{id}/shifts/`, `/{id}/shifts/{shift_id}/cancel/`, `/{id}/shifts/{shift_id}/replan/`, `/{id}/validate/`). `npm run gate` — 1021 vitest passed, `tsc -b` чисто, `schema-check.mjs` подтверждает `schema.d.ts` байт-в-байт совпадает с regen (не stale), build/size-gate зелёные (213.7KB/300KB). `make gate` (бэк) — 3364 passed, 0 regressions.
+
+**3-агентное ревью НЕ запускалось**: единственный диф — регенерированный `schema.d.ts` (машинный артефакт, не рукописный код), уже верифицированный собственным гейтом (`schema-check.mjs` — байт-в-байт сверка с regen). Никакой ручной логики не добавлено ни в бэке (0 изменений кода), ни во фронте — состязательное ревью на чисто-сгенерированный файл без ручного кода не несёт ценности этой сессии (пропорционально объёму работы).
+
 ### File List
+
+- `frontend/src/shared/api/schema.d.ts` (regenerated — `npm run generate:api`)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Восьмая из ~12 подсторий разделения 14.11. Прецедент 10.1c's премиса (schema.yaml неполна) НЕ подтвердилась — все 8 действий DutyPlanViewSet уже несли @extend_schema с 14.11a-g. Реальный объём сужен до: подтвердить backend drift-free + регенерировать frontend schema.d.ts (не трогался с коммита 13.5c) + гейт обеих сторон. Рукописных зеркал duty-план-типов ещё нет (14.11i-l не начаты) — задача сверки зеркал неприменима. |
+| 2026-07-31 | Dev-story: подтверждено backend drift-free, `schema.d.ts` регенерирован (32 упоминания, все 7 путей). `make gate`/`npm run gate` оба зелёные (3364/1021 passed). 3-агентное ревью пропущено осознанно — чистый машинный regen, без ручной логики. Status → done. |
