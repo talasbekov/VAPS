@@ -89,6 +89,8 @@ function settingsSlice(
 interface SeedOverrides {
   operationalRatings?: boolean
   settings?: unknown
+  /** §19.23: чужой слайс `security-events` рукописной узкой формой. */
+  securityEvents?: unknown
 }
 
 function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
@@ -117,6 +119,9 @@ function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
         },
       },
       ...(overrides.settings === null ? {} : { settings: overrides.settings ?? settingsSlice() }),
+      ...(overrides.securityEvents === undefined
+        ? {}
+        : { 'security-events': overrides.securityEvents }),
     },
   }
 }
@@ -1593,5 +1598,100 @@ describe('экспорт рейтинга (§19.29)', () => {
     expect(list.formats).toEqual(['CSV'])
     expect(list.unavailableFormats.map((item) => item.code)).toEqual(['XLSX', 'PDF'])
     expect(list.unavailableScopes.map((item) => item.code)).toEqual(['INDIVIDUAL'])
+  })
+})
+
+describe('замок закрытого мероприятия §19.23', () => {
+  const SUBMIT_BODY = {
+    score: 9,
+    basisCode: 'EXECUTION_OF_DUTIES',
+    basisNote: null,
+    comment: null,
+    revision: 1,
+    idempotencyKey: 'idem-lock-base',
+  }
+  /** Узкая рукописная форма чужого слайса (ARCH-FE-013). */
+  function securityEvents(stage: string): unknown {
+    return {
+      events: [
+        {
+          id: 'event-1',
+          stage,
+          closedAt: stage === 'CLOSED' ? '2026-07-19T21:00:00+05:00' : null,
+        },
+      ],
+    }
+  }
+
+  it('отправка оценки по закрытому мероприятию отвергается EVALUATION_ARCHIVE_LOCKED', async () => {
+    const { repository } = await setup({ securityEvents: securityEvents('CLOSED') })
+    const error: unknown = await repository
+      .submitEvaluation(EVALUATOR, 'work-item-1', { ...SUBMIT_BODY, idempotencyKey: nextKey() })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      )
+    expect(error).toBeInstanceOf(RepositoryBusinessRuleError)
+    expect((error as RepositoryBusinessRuleError).errorCode).toBe('EVALUATION_ARCHIVE_LOCKED')
+  })
+
+  it('отказ замка ложится в журнал СВОЕЙ транзакцией с кодом причины', async () => {
+    const { repository, adapter } = await setup({ securityEvents: securityEvents('CLOSED') })
+    await repository
+      .submitEvaluation(EVALUATOR, 'work-item-1', { ...SUBMIT_BODY, idempotencyKey: nextKey() })
+      .catch(() => null)
+    const envelope = await adapter.load()
+    const slice = envelope?.slices.ratings as { auditEntries: { reasonCode: string | null; outcome: string }[] }
+    const rejection = slice.auditEntries.find(
+      (entry) => entry.reasonCode === 'EVALUATION_ARCHIVE_LOCKED',
+    )
+    expect(rejection).toBeDefined()
+    expect(rejection?.outcome).toBe('REJECTED')
+  })
+
+  it('незакрытое мероприятие оценку принимает — замок только на CLOSED', async () => {
+    const { repository } = await setup({ securityEvents: securityEvents('CONDUCT') })
+    const result = await repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+      ...SUBMIT_BODY,
+      idempotencyKey: nextKey(),
+    })
+    expect(result.workItem.status).toBe('SUBMITTED')
+  })
+
+  it('мероприятие вне реестра ОМ (исторические задания сида) замка не получает', async () => {
+    // Слайс security-events есть, но события с таким id в нём нет: §19.23
+    // применим только к тому, что существует и закрыто.
+    const { repository } = await setup({
+      securityEvents: { events: [{ id: 'другое-событие', stage: 'CLOSED', closedAt: null }] },
+    })
+    const result = await repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+      ...SUBMIT_BODY,
+      idempotencyKey: nextKey(),
+    })
+    expect(result.workItem.status).toBe('SUBMITTED')
+  })
+
+  it('ПОЗДНЕЕ ИСПРАВЛЕНИЕ после закрытия проходит: исходная запись неизменна, создаётся замещение (§19.34)', async () => {
+    const { repository, adapter } = await setup({ securityEvents: securityEvents('CLOSED') })
+    const before = await repository.getSubmittedEvaluationDetail(EVALUATOR, 'work-item-9')
+    const result = await repository.correctEvaluation(EVALUATOR, 'work-item-9', {
+      score: 10,
+      basisCode: 'DISCIPLINE',
+      basisNote: null,
+      comment: null,
+      reason: 'Позднее исправление после закрытия мероприятия',
+      revision: before.workItem.revision,
+      idempotencyKey: nextKey(),
+    })
+    expect(result.workItem.revision).toBe(before.workItem.revision + 1)
+    // Исходная запись НЕ переписана — она вытеснена ссылкой (§19.23 «archive
+    // snapshot не изменяется»: исправление — новая запись, а не правка).
+    const envelope = await adapter.load()
+    const slice = envelope?.slices.ratings as {
+      evaluations: { id: string; score: number; supersededById: string | null }[]
+    }
+    const original = slice.evaluations.find((entry) => entry.id === 'evaluation-5')
+    expect(original?.score).toBe(9)
+    expect(original?.supersededById).not.toBeNull()
   })
 })

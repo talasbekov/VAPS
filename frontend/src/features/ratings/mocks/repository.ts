@@ -67,6 +67,7 @@ import type {
 import { EVALUATION_BASES, EVALUATION_EVENTS, RATED_EMPLOYEES, RATING_GROUPS } from './fixtures'
 import type { RatingsSlice } from './fixtures'
 import { readRatingPolicy, readRatingSuppressionMinGroup } from './settingsSlice'
+import { readSecurityEventClosure } from './securityEventsSlice'
 
 export class RepositoryPermissionError extends Error {}
 export class RepositoryNotFoundError extends Error {}
@@ -802,6 +803,21 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
         throw new RepositoryBusinessRuleError(
           'RATING_DISABLED',
           'Оперативный рейтинг выключен: оценки не принимаются.',
+        )
+      }
+      // §19.23: закрытое мероприятие обычная rating mutation не изменяет —
+      // поздняя ОЦЕНКА оформлялась бы «разрешённым дополнением», которого в
+      // контракте нет. Замок стоит ДО состояния задания и правил формы — иначе
+      // причина отказа зависела бы от того, что именно человек ввёл. `null` —
+      // мероприятия нет в реестре ОМ (исторические задания сида): замок
+      // неприменим. ИСПРАВЛЕНИЕ (§19.34) замка НЕ получает: оно и так не
+      // меняет ни исходную запись, ни архивный снимок — создаётся связанное
+      // замещение, ровно как требует сценарий «позднее исправление».
+      const closure = readSecurityEventClosure(current.slices, item.securityEventId)
+      if (closure !== null && closure.closed) {
+        throw new RepositoryBusinessRuleError(
+          'EVALUATION_ARCHIVE_LOCKED',
+          'Мероприятие закрыто, архив сформирован: оценка оформляется только разрешённым дополнением, которого в контракте нет.',
         )
       }
       if (item.status !== 'PENDING') {
