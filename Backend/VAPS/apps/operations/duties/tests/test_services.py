@@ -331,6 +331,18 @@ def test_approve_duty_plan_transitions_status_and_projects_shifts(status_types, 
     ).exists()
 
 
+def test_approve_duty_plan_rejects_empty_actor(div):
+    # Review (Edge Case Hunter, 14.12a): symmetry with cancel_duty_shift's
+    # own guard — clean 400, not a raw 500 from record()'s ValueError.
+    obj = make_object("OBJ-OM-EMPTY-ACTOR")
+    plan = make_plan(obj)
+    with pytest.raises(DomainError) as exc_info:
+        approve_duty_plan(plan, actor="")
+    assert exc_info.value.code == "VALIDATION_ERROR"
+    plan.refresh_from_db()
+    assert plan.status_code == DutyPlan.StatusCode.DRAFT
+
+
 def test_approve_duty_plan_is_idempotent(status_types, div):
     obj = make_object("OBJ-OM-5")
     plan = make_plan(obj)

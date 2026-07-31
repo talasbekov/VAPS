@@ -155,7 +155,18 @@ def approve_duty_plan(plan, *, actor):
     Story 14.12a: emits `DUTY_PLAN_APPROVED` only on a REAL DRAFT->APPROVED
     transition — a no-op re-approve (idempotent by design) leaves no
     duplicate audit trail for a status flip that didn't happen.
+
+    Review (Edge Case Hunter, 14.12a): explicit non-empty `actor` guard,
+    matching `cancel_duty_shift()`'s own — today `views.py::approve()` is
+    the only caller and `require_permission()` already guarantees a
+    non-empty `request.actor_id` before this runs, so this is defense-in-
+    depth (symmetry with the sibling functions, not a live gap): without
+    it, an empty actor would sail through the lock/status-flip/projection
+    and only fail deep inside `record()`'s own `ValueError`, as a raw 500
+    instead of a clean 400.
     """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
     with transaction.atomic():
         plan = DutyPlan.objects.select_for_update().get(pk=plan.pk)
         was_draft = plan.status_code != plan.StatusCode.APPROVED
