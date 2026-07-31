@@ -209,6 +209,12 @@ codes:
     category: state
     description: "План дежурств для этого объекта и месяца уже существует (backstop — uq_duty_plan_object_month)."
     source: "Story 14.5 (DutyPlan.uq_duty_plan_object_month); Story 14.11a API backstop"
+  PLACEMENT_DRAFT_ALREADY_EXISTS:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "У события уже есть текущая версия Расстановки (AssignmentVersion.is_current=True) — авто-формирование черновика создаёт НОВУЮ текущую версию только когда её ещё нет (backstop — unique_assignment_version_current)."
+    source: "Story 16.2 (AssignmentVersion.unique_assignment_version_current, 16.1)"
   DUTY_PLAN_INVALID_PERIOD:
     http_status: 422
     overridable: false

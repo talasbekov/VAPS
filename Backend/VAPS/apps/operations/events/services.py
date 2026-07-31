@@ -29,13 +29,16 @@ from apps.core.exceptions import DomainError
 from apps.notifications.models import Notification
 from apps.notifications.services import notify
 from apps.operations.events.models import (
+    AssignmentVersion,
     Group,
     GroupForceRequest,
+    PlacementAssignment,
     SecurityEvent,
     SecurityEventChecklistItem,
     SecurityEventSectorPost,
     SecurityEventStaffingDemand,
 )
+from apps.operations.facilities.models import Post
 from apps.operations.rbac.models import UserRole
 
 
@@ -488,3 +491,75 @@ def escalate_stale_force_requests():
             },
         )
     return stale
+
+
+def form_draft_placement(event, *, actor):
+    """Story 16.2 (FR-26): auto-form a DRAFT `AssignmentVersion` from an
+    event's `SecurityEventDirectAssignment` rows (физнаряд, 15.9) — the
+    ONLY Epic 15 structure carrying real named `employee_id`s.
+    `GroupForceRequest`'s `allocated_count` is a bare headcount with no
+    roster anywhere in the codebase and is deliberately NOT a source here
+    (research-confirmed premise gap, story's Scope Decision) — a future
+    story fills those in manually once a roster model exists, if ever.
+
+    Post resolution is best-effort by `(event.object, sector_post.post)`
+    matching `facilities.Post`'s `(object, code)` — the ONLY link between
+    `SecurityEventSectorPost`'s free-text demand label and a real `Post`
+    row, since no FK connects them today. A direct assignment whose post
+    text doesn't resolve lands in `unmatched` (same transparency principle
+    as `generate_force_requests()`'s `unmatched_groups`, 15.7b) — never
+    silently dropped, never auto-created.
+
+    One call = one NEW draft version. A second call while a current
+    version already exists (any status) is a real conflict, not a no-op —
+    `AssignmentVersion`'s own `unique_assignment_version_current`
+    (16.1) would raise a raw `IntegrityError`; guarded here first so the
+    caller sees `PLACEMENT_DRAFT_ALREADY_EXISTS` (409) instead.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    with transaction.atomic():
+        event = SecurityEvent.objects.select_for_update().get(pk=event.pk)
+        if AssignmentVersion.objects.filter(event=event, is_current=True).exists():
+            raise DomainError(
+                "PLACEMENT_DRAFT_ALREADY_EXISTS",
+                409,
+                message="У события уже есть текущая версия Расстановки.",
+            )
+        version = AssignmentVersion.objects.create(
+            event=event, status=AssignmentVersion.Status.DRAFT
+        )
+        posts_by_code = {
+            post.code: post for post in Post.objects.filter(object=event.object)
+        }
+        unmatched = []
+        created_assignments = []
+        for direct in event.direct_assignments.select_related("sector_post"):
+            post = posts_by_code.get(direct.sector_post.post)
+            if post is None:
+                unmatched.append(
+                    {
+                        "employee_id": str(direct.employee_id),
+                        "post_text": direct.sector_post.post,
+                    }
+                )
+                continue
+            assignment = PlacementAssignment(
+                version=version, employee_id=direct.employee_id, post=post
+            )
+            assignment.full_clean()
+            assignment.save()
+            created_assignments.append(assignment)
+        record(
+            actor=actor,
+            action="PLACEMENT_DRAFT_FORMED",
+            entity_type="assignment_version",
+            entity_id=uuid.UUID(int=version.pk),
+            new_value={
+                "event_id": event.pk,
+                "matched_count": len(created_assignments),
+                "unmatched_count": len(unmatched),
+                "unmatched": unmatched,
+            },
+        )
+    return version, created_assignments, unmatched
