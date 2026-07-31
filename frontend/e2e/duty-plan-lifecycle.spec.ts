@@ -55,6 +55,19 @@ async function stubApi(page: Page) {
     route.fulfill({ json: { permissions: ['duty.manage'] } }),
   )
 
+  // Review (Edge Case Hunter): harness mounts the REAL AppLayout, which
+  // unconditionally renders ConnectionIndicator → opens a real WebSocket and
+  // fires a real GET /api/notifications/ — unrelated to duty-plans, but left
+  // unstubbed it hits nonexistent :8001 for the test's whole lifetime
+  // (ECONNREFUSED noise, latent CI-flakiness risk). Same stubs as
+  // notifications.spec.ts (11.4) — fulfil the GET, route the WS to a
+  // never-sending stub connection so it settles into "open" instead of
+  // erroring/retrying.
+  await page.route('**/api/notifications/**', (route) =>
+    route.fulfill({ json: { count: 0, next: null, previous: null, results: [] } }),
+  )
+  await page.routeWebSocket(/\/ws\/notifications\//, () => {})
+
   await page.route('**/api/operations/duty-plans/', async (route) => {
     const request = route.request()
     if (request.method() === 'POST') {
@@ -221,8 +234,22 @@ test('полный цикл: создать план → 2 смены → утв
 
   // Итог: смена A отменена, старая B отменена (заменена новой), новая
   // смена — без поста («—» в колонке).
+  //
+  // Review (Blind Hunter): после replan старая и новая строки B делят один
+  // employee_id — точечная проверка ПО КОНКРЕТНОЙ строке (не только
+  // агрегатные счётчики), пересечением `.filter()` (AND, не только hasText
+  // по одному employee_id, который матчит ОБЕ строки B).
   const cancelledRows = page.locator('tr', { hasText: 'Отменена' })
   await expect(cancelledRows).toHaveCount(2)
   const activeRows = page.locator('tr', { hasText: 'Активна' })
   await expect(activeRows).toHaveCount(1)
+
+  const newShiftBRow = page
+    .locator('tr')
+    .filter({ hasText: '22222222-2222-2222-2222-222222222222' })
+    .filter({ hasText: 'Активна' })
+  await expect(newShiftBRow).toHaveCount(1)
+  // Пост-колонка — 2-я <td>: подтверждает, что explicit-null РЕАЛЬНО снял
+  // пост у НОВОЙ строки, не только что где-то в таблице есть "—".
+  await expect(newShiftBRow.locator('td').nth(1)).toHaveText('—')
 })
