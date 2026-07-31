@@ -279,7 +279,17 @@ class DutyPlanViewSet(viewsets.ViewSet):
         "БЕЗ утверждения (dry-run, ничего не пишет в БД). Требует duty.manage. "
         "Пустой список — конфликтов нет.",
     )
-    @action(detail=True, methods=["post"])
+    # Review (Blind Hunter): DutyPlanViewSet.pagination_class is a bare class
+    # attribute — drf-spectacular's schema generation detects it on ANY
+    # action whose response is declared `Serializer(many=True)` (a
+    # ListSerializer), regardless of whether that action actually paginates.
+    # Without pagination_class=None here, schema.yaml wrongly documented
+    # this endpoint as returning a paginated envelope (limit/offset params +
+    # PaginatedDutyPlanConflictList), while the real response is a bare
+    # array — @action's kwargs override viewset-level *_classes per-route
+    # (DRF's own documented mechanism), fixing both runtime (moot, this
+    # action never paginates) and schema generation.
+    @action(detail=True, methods=["post"], pagination_class=None)
     def validate(self, request, pk=None, *args, **kwargs):
         require_permission(request, _PERMISSION)
         plan = get_object_or_404(DutyPlan, pk=pk)

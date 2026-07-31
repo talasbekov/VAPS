@@ -1776,18 +1776,6 @@ paths:
         schema:
           type: string
         required: true
-      - name: limit
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: The initial index from which to return the results.
-        schema:
-          type: integer
       tags:
       - operations
       responses:
@@ -1795,7 +1783,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedDutyPlanConflictList'
+                type: array
+                items:
+                  $ref: '#/components/schemas/DutyPlanConflict'
           description: ''
   /api/operations/expense-reports/:
     get:
@@ -3738,29 +3728,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Division'
-    PaginatedDutyPlanConflictList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=400&limit=100
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=200&limit=100
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/DutyPlanConflict'
     PaginatedDutyPlanList:
       type: object
       required:

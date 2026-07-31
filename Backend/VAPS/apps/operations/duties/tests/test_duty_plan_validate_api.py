@@ -125,6 +125,76 @@ def test_validate_hard_overlap_with_existing_status(duty_manager_client):
     assert resp.data[0]["conflict_code"] == "OVERLAP_SICK_LEAVE"
 
 
+def test_validate_cancelled_employee_status_excluded(duty_manager_client):
+    obj = make_object("OBJ-VALIDATE-5B")
+    plan = make_plan(obj)
+    employee = uuid.uuid4()
+    make_shift(
+        plan,
+        "2026-09-01T08:00:00+05:00",
+        "2026-09-01T20:00:00+05:00",
+        employee_id=employee,
+    )
+    EmployeeStatus.objects.create(
+        employee_id=employee,
+        status_type_code="SICK_LEAVE",
+        date_start="2026-08-25",
+        date_end="2026-09-15",
+        cancelled_at="2026-08-20T00:00:00+05:00",
+        cancelled_by="tester",
+        cancelled_reason="test",
+    )
+    resp = duty_manager_client.post(validate_url(plan.pk), format="json")
+    assert resp.status_code == 200, resp.data
+    assert resp.data == []
+
+
+def test_validate_sibling_shift_projection_not_double_reported(duty_manager_client):
+    """Review (Blind Hunter): re-validating an APPROVED plan must not report
+    the same shift-vs-shift conflict twice — once directly, once via a
+    sibling shift's own EmployeeStatus projection."""
+    obj = make_object("OBJ-VALIDATE-5C")
+    plan = make_plan(obj)
+    employee = uuid.uuid4()
+    shift_a = make_shift(
+        plan,
+        "2026-09-01T08:00:00+05:00",
+        "2026-09-01T20:00:00+05:00",
+        employee_id=employee,
+    )
+    shift_b = make_shift(
+        plan,
+        "2026-09-01T14:00:00+05:00",
+        "2026-09-02T02:00:00+05:00",
+        employee_id=employee,
+    )
+    # Simulate an already-approved plan: both shifts have their own DUTY
+    # EmployeeStatus projection.
+    EmployeeStatus.objects.create(
+        employee_id=employee,
+        status_type_code="DUTY",
+        date_start="2026-09-01",
+        date_end="2026-09-02",
+        source=EmployeeStatus.Source.OM_AUTO,
+        source_ref=f"DUTY:{shift_a.pk}",
+    )
+    EmployeeStatus.objects.create(
+        employee_id=employee,
+        status_type_code="DUTY",
+        date_start="2026-09-01",
+        date_end="2026-09-02",
+        source=EmployeeStatus.Source.OM_AUTO,
+        source_ref=f"DUTY:{shift_b.pk}",
+    )
+    resp = duty_manager_client.post(validate_url(plan.pk), format="json")
+    assert resp.status_code == 200, resp.data
+    # Exactly one entry per direction of the direct shift-vs-shift overlap —
+    # NOT duplicated via each shift's sibling's own projection.
+    assert len(resp.data) == 2
+    reported_shift_ids = {entry["shift_id"] for entry in resp.data}
+    assert reported_shift_ids == {shift_a.pk, shift_b.pk}
+
+
 def test_validate_cancelled_shift_excluded(duty_manager_client):
     obj = make_object("OBJ-VALIDATE-6")
     plan = make_plan(obj)

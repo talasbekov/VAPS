@@ -4,7 +4,7 @@ baseline_commit: 30ca1a9
 
 # Story 14.11f: API — валидация плана дежурств (dry-run конфликтов)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -78,19 +78,22 @@ so that **план дежурств можно проверить на конф�
 
 Реализовано по AC 1-8. `validate_duty_plan(plan)` (services.py) — для каждой не отменённой смены плана собирает overlap-кандидатов (другие смены того же плана/сотрудника через datetime-пересечение starts_at/ends_at, плюс живые `EmployeeStatus`-строки того же сотрудника через date-пересечение, исключая source_ref самой смены) и классифицирует каждую пару через `conflict_matrix.classify_pair()` напрямую (не `detect_conflicts()` — PLANNED/WARNING-различение неактуально для dry-run, который никогда не блокирует). `@action` `validate` на `DutyPlanViewSet`: `require_permission` → `get_object_or_404` → `validate_duty_plan(plan)` → `200` с `DutyPlanConflictSerializer(many=True)`. Новый output-only сериализатор (`shift_id`/`employee_id`/`conflict_code`/`severity`/`message`), ничего не пишет. 7 новых тестов (чистый план, self-overlap SOFT с обеими сменами, hard-overlap с внешним `EmployeeStatus`, отменённая смена исключена, 404, 403, read-only snapshot до/после через полный dict-сравнение всех строк `DutyShift`/`EmployeeStatus`), все зелёные под реальным Postgres с первой попытки; `make schema` регенерирован (drift-free); `make gate` — 3348 passed (было 3331, +17), 0 regressions.
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** Acceptance Auditor подтвердил все 8 AC PASS против реального кода и реального прогона Postgres (895 passed на целевом срезе), включая независимую пробу AC-4 (живая смена vs отменённый EmployeeStatus — не флагуется). Edge Case Hunter не нашёл багов, разрешил все спекуляции Blind Hunter'а как non-issues (timezone-граница, classify_pair("DUTY","DUTY")→SOFT, симметрия self-overlap, ветвление сообщения, исключение отменённых EmployeeStatus), отметил O(n²) Python-цикл как не блокирующий (масштаб — план на месяц, десятки смен) и один пробел покрытия (отменённый EmployeeStatus, не только отменённая смена). Blind Hunter нашёл ДВА реальных дефекта: (1) **schema.yaml неверно документировал ответ как paginated envelope** (`PaginatedDutyPlanConflictList` + limit/offset query-параметры) вместо реального плоского массива — причина: `DutyPlanViewSet.pagination_class` — classовый атрибут, drf-spectacular детектирует его на ЛЮБОМ action с `Serializer(many=True)`-ответом независимо от факта пагинации; исправлено через `@action(..., pagination_class=None)` (DRF's собственный документированный механизм переопределения `*_classes` per-action через kwargs); (2) **`own_refs`-исключение было scoped только на ТЕКУЩУЮ смену**, не на все смены плана — при повторной валидации уже APPROVED-плана с несколькими сменами одного сотрудника, спроецированный EmployeeStatus СОСЕДНЕЙ смены плана не исключался и попадал в кандидаты, дублируя тот же самый конфликт (уже пойманный прямым shift-vs-shift сравнением) вторым, паразитным входом через другой `conflict_code`. Исправлено — `plan_own_refs` теперь собирается по ВСЕМ сменам плана, вычисляется один раз до цикла. Добавлены 2 теста (отменённый EmployeeStatus исключён; sibling-проекция не дублирует конфликт). `make gate` после фиксов — 3350 passed, 0 regressions, schema.yaml drift-free (подтверждён верный плоский `type: array` вместо paginated-обёртки).
+
 ### File List
 
-- `apps/operations/duties/services.py` (modified — `validate_duty_plan()`)
+- `apps/operations/duties/services.py` (modified — `validate_duty_plan()`, review fix: `plan_own_refs` по всем сменам плана)
 - `apps/operations/duties/api/serializers.py` (modified — `DutyPlanConflictSerializer`)
-- `apps/operations/duties/api/views.py` (modified — `validate`-action)
+- `apps/operations/duties/api/views.py` (modified — `validate`-action, review fix: `pagination_class=None`)
 - `apps/operations/tests/test_rbac_matrix.py` (modified — `MATRIX`'s новая строка)
 - `apps/audit/tests/test_audit_coverage.py` (modified — `AUDIT_MATRIX`'s новая строка)
-- `apps/operations/duties/tests/test_duty_plan_validate_api.py` (new)
-- `schema.yaml` (regenerated — `make schema`)
+- `apps/operations/duties/tests/test_duty_plan_validate_api.py` (new, +2 review tests)
+- `schema.yaml` (regenerated — `make schema`, review fix confirmed: bare array, not paginated envelope)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Шестая из ~12 подсторий разделения 14.11. Донор специфицирует полный BR-DUTY-CONFLICT-001 чек-лист, но эта стори намеренно сужена до self-overlap (план) + hard/soft overlap с существующими EmployeeStatus, переиспользуя conflict_matrix.detect_conflicts() (3.4/14.8) — полная широта отложена на Story 16.3. Read-only, 200 с плоским списком конфликтов, ничего не пишет. |
-| 2026-07-31 | Dev-story: `validate_duty_plan()` (classify_pair() напрямую, не detect_conflicts() — PLANNED-различение неактуально для dry-run), `validate`-action, `DutyPlanConflictSerializer`, MATRIX/AUDIT_MATRIX-строки, 7 новых тестов, все зелёные с первой попытки. `make gate` — 3348 passed. Status → done. |
+| 2026-07-31 | Dev-story: `validate_duty_plan()` (classify_pair() напрямую, не detect_conflicts() — PLANNED-различение неактуально для dry-run), `validate`-action, `DutyPlanConflictSerializer`, MATRIX/AUDIT_MATRIX-строки, 7 новых тестов, все зелёные с первой попытки. `make gate` — 3348 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): Acceptance Auditor — все 8 AC PASS. Blind Hunter — 2 реальных дефекта (schema.yaml false-pagination artifact; own_refs scoped только на текущую смену, не на весь план). Edge Case Hunter — багов не нашёл, разрешил спекуляции, отметил 1 пробел покрытия. Фиксы применены (`pagination_class=None`, `plan_own_refs`), +2 теста, `make gate` — 3350 passed, 0 regressions. Status → done. |

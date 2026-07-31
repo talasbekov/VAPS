@@ -302,8 +302,12 @@ def validate_duty_plan(plan):
       constraint enforces this — DutyShift isn't unique per employee/time);
     - existing live `EmployeeStatus` rows of the employee (hard-block
       statuses, or DUTY/REST_AFTER_DUTY projections from OTHER, already-
-      approved plans), excluding rows this exact shift itself projects
-      (relevant only if the plan is already APPROVED and re-validated).
+      approved plans), excluding rows ANY shift of THIS plan itself projects
+      (relevant only if the plan is already APPROVED and re-validated —
+      review, Blind Hunter: excluding only the current shift's own refs
+      would leave a SIBLING shift's projection visible as a status-overlap
+      candidate, double-reporting the exact same conflict the shift-vs-shift
+      loop above already catches, once directly and once via its projection).
 
     Deliberately calls `classify_pair()` directly rather than
     `detect_conflicts()`: the latter's PLANNED/WARNING split exists to
@@ -313,6 +317,11 @@ def validate_duty_plan(plan):
     """
     conflicts = []
     shifts = list(plan.shifts.filter(cancelled_at__isnull=True))
+    plan_own_refs = [
+        ref
+        for s in shifts
+        for ref in (f"DUTY:{s.pk}", f"REST_AFTER_DUTY:{s.pk}", f"BEFORE_DUTY:{s.pk}")
+    ]
     for shift in shifts:
         shift_start, shift_end = _to_date_range(shift.starts_at, shift.ends_at)
         candidates = []
@@ -324,17 +333,12 @@ def validate_duty_plan(plan):
                     {"status_type_code": "DUTY", "other_shift_id": other.pk}
                 )
 
-        own_refs = [
-            f"DUTY:{shift.pk}",
-            f"REST_AFTER_DUTY:{shift.pk}",
-            f"BEFORE_DUTY:{shift.pk}",
-        ]
         overlapping_statuses = EmployeeStatus.objects.filter(
             employee_id=shift.employee_id,
             cancelled_at__isnull=True,
             date_start__lt=shift_end,
             date_end__gt=shift_start,
-        ).exclude(source_ref__in=own_refs)
+        ).exclude(source_ref__in=plan_own_refs)
         for status_type_code in overlapping_statuses.values_list(
             "status_type_code", flat=True
         ):
