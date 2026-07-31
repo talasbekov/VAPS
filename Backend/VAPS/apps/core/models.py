@@ -278,6 +278,47 @@ class EmployeeDivisionHistory(UUIDTimeStampedModel):
         return f"{self.employee_id}@{self.division_id}"
 
 
+class EmployeeOperationalProfile(UUIDTimeStampedModel):
+    """Story 14.10: «Оперативный блок карточки» (FR-3) — 1:1 extension of
+    `Employee`'s card, data for the future FR-25 post-requirement matching
+    (Story 16.3). Donor spec gives no schema for this block (only a
+    redaction list for printed rosters) — fields are VAPS-original, built
+    per epics.md's own field list at the customer's explicit request. No
+    matching/validation logic here — models + migration only.
+
+    `known_object_codes` is a flat list of `Object.code` strings, NOT an
+    FK/M2M to `apps.operations.facilities.Object`: `core` must never
+    import `operations` (`apps/core/tests/test_isolation.py::
+    test_core_does_not_import_other_context_models`).
+    """
+
+    employee = models.OneToOneField(
+        Employee, on_delete=models.PROTECT, related_name="operational_profile"
+    )
+    weight_kg = models.PositiveSmallIntegerField(null=True, blank=True)
+    clearance_level = models.CharField(max_length=100, blank=True)
+    has_weapon_permit = models.BooleanField(default=False)
+    weapon_permit_expires_at = models.DateField(null=True, blank=True)
+    has_uniform_issued = models.BooleanField(default=False)
+    has_special_equipment = models.BooleanField(default=False)
+    known_object_codes = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = "core_employee_operational_profiles"
+        verbose_name = "Оперативный блок карточки"
+        verbose_name_plural = "Оперативные блоки карточек"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(has_weapon_permit=True)
+                | models.Q(weapon_permit_expires_at__isnull=True),
+                name="ck_emp_op_profile_weapon_permit_expiry_requires_permit",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Оперативный блок {self.employee_id}"
+
+
 class UserEmployeeBinding(UUIDTimeStampedModel):
     # BR-ACCOUNT-001: external auth account id as string, NOT employee UUID.
     user_id = models.CharField(max_length=100, unique=True)
