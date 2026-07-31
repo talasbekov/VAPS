@@ -4,7 +4,7 @@ baseline_commit: ced993d
 
 # Story 14.11i: Frontend — контракт (API-клиент) плана дежурств
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -40,10 +40,10 @@ so that **14.11j-l (список/грид/действия) строятся н�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `frontend/src/features/duty-plans/api/queries.ts` (AC: 1-4)
-  - [ ] 9 хуков, `paths[...]`-производные типы, `apiClient`, query keys `['duty-plans', ...]`, инвалидация на мутациях
-- [ ] Task 2 — Гейт (AC: 2, 5, 6)
-  - [ ] `npm run gate` — `tsc -b`/`eslint`/`vitest`/build/size-gate
+- [x] Task 1 — `frontend/src/features/duty-plans/api/queries.ts` (AC: 1-4)
+  - [x] 9 хуков, `paths[...]`-производные типы, `apiClient`, query keys `['duty-plans', ...]`, инвалидация на мутациях
+- [x] Task 2 — Гейт (AC: 2, 5, 6)
+  - [x] `npm run gate` — `tsc -b`/`eslint`/`vitest`/build/size-gate
 
 ## Dev Notes
 
@@ -66,10 +66,15 @@ so that **14.11j-l (список/грид/действия) строятся н�
 
 ### Completion Notes
 
+Реализовано по AC 1-6. `frontend/src/features/duty-plans/api/queries.ts` — 9 хуков (`useDutyPlans`, `useCreateDutyPlan`, `useDutyShifts`, `useCreateDutyShift`, `useApproveDutyPlan`, `useCancelDutyShift`, `useReplanDutyShift`, `useValidateDutyPlan`, `useDutyPlanConflicts`), все типы request/response выведены из `paths['/api/operations/duty-plans/...']` (schema.d.ts, 14.11h) — ни один тип не задублирован вручную. Мутации — через `useApiMutation` (не сырой `useMutation`, ARCH-FE-015). `dutyPlanKeys`-фабрика (прецедент `securityEventKeys`), мутации инвалидируют релевантные ключи (`useCreateDutyPlan`→lists, `useCreateDutyShift`/`useCancelDutyShift`/`useReplanDutyShift`→shifts(planId), `useApproveDutyPlan`→lists+shifts). `useValidateDutyPlan` (dry-run) намеренно НЕ инвалидирует ничего — она ничего не меняет на сервере. `features/duties/` (Smart Josparlau) не тронута ни байтом. `npm run gate` — 1021 vitest passed (без новых тестов, по Scope Decision), `tsc -b`/`eslint` чисто, build/size-gate зелёные (213.7KB/300KB).
+
 ### File List
+
+- `frontend/src/features/duty-plans/api/queries.ts` (new)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Девятая (первая frontend) из ~12 подсторий разделения 14.11. КОЛЛИЗИЯ с существующей features/duties/ (Smart Josparlau, чужой бэк /api/ops/*) обнаружена research-агентом, разрешена AskUserQuestion — новая папка features/duty-plans/, старая не трогается. Паттерн — personnel/api/queries.ts's paths[...]-производные типы. Без MSW/UI/юнит-тестов на сам queries.ts (нет прецедента в кодовой базе) — приходит с 14.11j. |
+| 2026-07-31 | Dev-story: `duty-plans/api/queries.ts` (9 хуков), `npm run gate` зелёный (1021 passed, tsc/eslint чисто). Status → done. |
