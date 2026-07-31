@@ -4,7 +4,7 @@ baseline_commit: c2ffa64
 
 # Story 15.3a: Recon-чек-лист + пересчёт постов/секторов — модели (FR-22)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -65,7 +65,9 @@ so that **15.3b (захват данных) и 15.3c (двойной контр�
 
 ### Completion Notes
 
-Реализовано по AC 1-6. `SecurityEventChecklistItem`/`SecurityEventSectorPost` — event-scoped child-модели, `CASCADE` на удаление `SecurityEvent` (не `PROTECT`, как у `Object`→`SecurityEvent` — эти строки не имеют самостоятельной ценности без своего ОМ). `result`-поле — общий `ReconCheckResult`-TextChoices (`MATCHES`/`NEEDS_CHANGES`), nullable + DB-level CheckConstraint (`result__in=[...] | result__isnull=True`). Поля синтезированы из `frontend/src/features/security-events/model/types.ts`'s `ReconChecklistItem`/`ReconSectorPost` (soft-сигнал, донор-спека недоступна). Миграция `0002` — единственная, применилась чисто. 8 новых тестов (db_table-смок ×2, nullable-persist, CheckConstraint-пруф ×2, CASCADE-пруф). `make gate` — 3426 passed (было 3420, +6), 0 regressions, no drift.
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** все 6 AC PASS (независимо подтверждено Acceptance Auditor). Blind Hunter — 0 блокирующих находок, 2 информационных заметки на будущее (CASCADE вместо PROTECT — оправдано сегодня, пересмотреть когда появится delete-API; `need=0` не запрещён CheckConstraint'ом — открытый вопрос для будущей API-стори, не баг). Edge Case Hunter эмпирически прогнал: пустая строка `result=""` корректно ОТВЕРГАЕТСЯ constraint'ом (не NULL, не в списке); CASCADE удаляет ВСЕ строки обеих моделей, не частично; `need`-поле реально запрещено на DB-уровне уходить в отрицательные значения (найден авто-сгенерированный Django'ом `CHECK (need >= 0)`, не только Python-валидация) — подтверждено сырым SQL-обходом ORM. Acceptance Auditor поймал КОСМЕТИЧЕСКУЮ неточность: Completion Notes ранее заявляли «8 новых тестов», реальное число — 6 (`grep -c "^def test_"` подтверждает). Исправлено в этой правке. Багов в коде не найдено ни одним агентом.
+
+Реализовано по AC 1-6. `SecurityEventChecklistItem`/`SecurityEventSectorPost` — event-scoped child-модели, `CASCADE` на удаление `SecurityEvent` (не `PROTECT`, как у `Object`→`SecurityEvent` — эти строки не имеют самостоятельной ценности без своего ОМ). `result`-поле — общий `ReconCheckResult`-TextChoices (`MATCHES`/`NEEDS_CHANGES`), nullable + DB-level CheckConstraint (`result__in=[...] | result__isnull=True`). Поля синтезированы из `frontend/src/features/security-events/model/types.ts`'s `ReconChecklistItem`/`ReconSectorPost` (soft-сигнал, донор-спека недоступна). Миграция `0002` — единственная, применилась чисто. 6 новых тестов (db_table-смок ×2, nullable-persist, CheckConstraint-пруф ×2, CASCADE-пруф). `make gate` — 3426 passed (было 3420, +6), 0 regressions, no drift.
 
 ### File List
 
@@ -78,4 +80,5 @@ so that **15.3b (захват данных) и 15.3c (двойной контр�
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story), разбита из планового `15-3` на 15.3a (модели)/15.3b (захват данных)/15.3c (двойной контроль+переход+паспорт) — FR-22 структурно больше 15.2b's чистого статус-перехода. |
-| 2026-07-31 | Dev-story: 2 новые event-scoped child-модели + миграция + 8 тестов. `make gate` — 3426 passed. Status → review. |
+| 2026-07-31 | Dev-story: 2 новые event-scoped child-модели + миграция + 6 тестов. `make gate` — 3426 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): 0 багов, 6/6 AC PASS. Единственная находка — косметическая (Completion Notes «8 тестов»→исправлено на «6»). Status → done. |
