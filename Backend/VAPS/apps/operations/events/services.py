@@ -16,13 +16,17 @@ BULLETIN is a no-op (200, no duplicate audit row) — mirrors
 `approve_duty_plan()`'s `was_draft`-guard shape.
 """
 
+import datetime
 import uuid
 
+from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 
 from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
+from apps.notifications.services import notify
 from apps.operations.events.models import (
     Group,
     GroupForceRequest,
@@ -31,6 +35,7 @@ from apps.operations.events.models import (
     SecurityEventSectorPost,
     SecurityEventStaffingDemand,
 )
+from apps.operations.rbac.models import UserRole
 
 
 def issue_bulletin(event, *, actor):
@@ -357,3 +362,91 @@ def allocate_force_request(request, *, actor, allocated_count, comment=None):
             new_value={"allocated_count": allocated_count, "status": new_status},
         )
     return request
+
+
+def escalate_stale_force_requests():
+    """Story 15.10 (FR-42): find `GroupForceRequest` rows stuck in
+    SENT/PARTIALLY_ALLOCATED (never ALLOCATED, never a no-op NOT_SENT
+    draft) for longer than `VAPS_FORCE_REQUEST_ESCALATION_DAYS` (PROVISIONAL
+    — architecture.md's AR-11 marks the real threshold an explicit open
+    question), mark each `escalated_at` (per-row idempotency — a repeat
+    catch-up run skips already-marked rows, no external watermark needed
+    for this non-daily-batch check), and notify.
+
+    Recipients are `brokerage.manage` holders — a deliberate simplification
+    of FR-42's full "управление → зам → рук. департамента" vertical, which
+    has no confirmed selector/data in this domain (unlike FR-13's
+    purpose-built `NotifyRecipientSelector`). Grouped into ONE digest
+    `notify()` call per recipient per day (matches `notify()`'s own
+    `(recipient, kind, business_date)` one-per-day uniqueness — a per-row
+    notification would collide/be dropped for a recipient with 2+ stale
+    requests on the same day).
+
+    Beat-ready, NOT Celery — same split as `check_lagging_submissions`
+    (5.7b2): this function has zero Celery imports/dependencies; a future
+    story wraps it in a `@shared_task` and registers the beat schedule.
+
+    Returns the list of newly-escalated `GroupForceRequest` rows.
+    """
+    threshold = Clock.now() - datetime.timedelta(
+        days=settings.VAPS_FORCE_REQUEST_ESCALATION_DAYS
+    )
+    stale = list(
+        GroupForceRequest.objects.filter(
+            Q(status=GroupForceRequest.Status.SENT)
+            | Q(status=GroupForceRequest.Status.PARTIALLY_ALLOCATED),
+            escalated_at__isnull=True,
+            updated_at__lt=threshold,
+        ).select_related("event", "group")
+    )
+    if not stale:
+        return []
+    recipients = list(
+        UserRole.objects.filter(
+            is_active=True,
+            role_code__role_permissions__permission_code_id__in=[
+                "brokerage.manage",
+                "*",
+            ],
+        )
+        .values_list("user_id", flat=True)
+        .distinct()
+    )
+    now = Clock.now()
+    today = Clock.today_local()
+    with transaction.atomic():
+        for request in stale:
+            request.escalated_at = now
+        GroupForceRequest.objects.bulk_update(stale, ["escalated_at"])
+        for recipient in recipients:
+            notify(
+                recipient=recipient,
+                kind="GROUP_FORCE_REQUEST_ESCALATED",
+                business_date=today,
+                payload={
+                    "escalated": [
+                        {
+                            "request_id": r.pk,
+                            "event_id": r.event_id,
+                            "group_code": r.group_id,
+                            "status": r.status,
+                        }
+                        for r in stale
+                    ]
+                },
+            )
+        record(
+            actor="SYSTEM",
+            action="GROUP_FORCE_REQUEST_ESCALATED",
+            entity_type="group_force_request",
+            # A batch run escalates N rows in one call — no single row is
+            # "the" entity. Same sentinel pattern as bulk_status_service
+            # .py's _BULK_SUMMARY_ENTITY_ID (a deterministic all-zero UUID,
+            # not a real row's identity) for a batch-summary audit row.
+            entity_id=uuid.UUID(int=0),
+            new_value={
+                "escalated_request_ids": [r.pk for r in stale],
+                "recipients": recipients,
+            },
+        )
+    return stale

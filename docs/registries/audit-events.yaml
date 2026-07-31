@@ -294,6 +294,11 @@ actions:
     description: "Физнаряд снят (человеческое решение спора за человека)."
     provenance: derived-from-mutation
     source: "epics.md FR-24; Story 15.9"
+  GROUP_FORCE_REQUEST_ESCALATED:
+    entity_type: group_force_request
+    description: "Батч-эскалация неотработанных запросов Группам (FR-42) — один аудит-ряд на прогон catch-up-job'а, entity_id — сентинел uuid.UUID(int=0) (тот же паттерн, что bulk_status_service's _BULK_SUMMARY_ENTITY_ID), new_value несёт полный список escalated_request_ids. Актор — SYSTEM (автоматический прогон, не пользователь)."
+    provenance: derived-from-mutation
+    source: "epics.md FR-42; Story 15.10"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

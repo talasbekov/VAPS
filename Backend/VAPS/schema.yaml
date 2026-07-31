@@ -4193,11 +4193,13 @@ components:
       - SUBMISSION_LAGGING
       - SUBMISSION_THRESHOLD_ALERT
       - PILOT_PULSE_DIGEST
+      - GROUP_FORCE_REQUEST_ESCALATED
       type: string
       description: |-
         * `SUBMISSION_LAGGING` - Отставание по сдаче
         * `SUBMISSION_THRESHOLD_ALERT` - Порог сдачи не достигнут
         * `PILOT_PULSE_DIGEST` - Пульс пилота
+        * `GROUP_FORCE_REQUEST_ESCALATED` - Эскалация неотработанного запроса
     MyPermissionsResponse:
       type: object
       properties:

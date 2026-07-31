@@ -232,3 +232,14 @@ types:
     action_url: "/admin/import-export"
     trigger: "импорт-джоба провалилась"
     source: "VAPS_7.8.2 §33.2"
+  # Story 15.10, FR-42. Полная иерархия «управление → зам → рук.
+  # департамента» упрощена до brokerage.manage-держателей (открытый вопрос,
+  # нет данных/селектора для полной вертикали в этом домене) — recipients
+  # ниже отражает РЕАЛЬНОГО получателя, не буквальный FR-42-текст.
+  GROUP_FORCE_REQUEST_ESCALATED:
+    priority: WARNING
+    recipients: "brokerage.manage holders (упрощение — не полная вертикаль FR-42)"
+    repeat: "once per recipient per business_date (UniqueConstraint), digest per run"
+    action_url: "/security-events"
+    trigger: "GroupForceRequest SENT/PARTIALLY_ALLOCATED дольше VAPS_FORCE_REQUEST_ESCALATION_DAYS (PROVISIONAL — architecture.md AR-11 STOP-маркер)"
+    source: "VAPS story 15.10 — реальный эмиттер, epics.md FR-42"

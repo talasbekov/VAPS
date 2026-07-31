@@ -272,6 +272,11 @@ class GroupForceRequest(TimeStampedModel):
         max_length=20, choices=Status.choices, default=Status.NOT_SENT
     )
     comment = models.TextField(blank=True)
+    # Story 15.10: FR-42 escalation marker — set once, never cleared, so a
+    # repeat catch-up run skips an already-escalated row (per-row
+    # idempotency, no external watermark needed for this non-daily-batch
+    # use case).
+    escalated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_group_force_requests"

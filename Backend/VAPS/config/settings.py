@@ -545,3 +545,12 @@ LOGGING = {
         },
     },
 }
+
+# Story 15.10 (FR-42): days a GroupForceRequest may sit unfulfilled
+# (SENT/PARTIALLY_ALLOCATED) before escalation. PROVISIONAL — architecture.md
+# AR-11 marks the real threshold an explicit open STOP-marker question, not
+# yet answered by product; env-overridable so it can be corrected without a
+# code change once decided.
+VAPS_FORCE_REQUEST_ESCALATION_DAYS = int(
+    os.environ.get("VAPS_FORCE_REQUEST_ESCALATION_DAYS", "2")
+)

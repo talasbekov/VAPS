@@ -33,6 +33,15 @@ class Notification(TimeStampedModel):
         # trigger (fixed daily cutoff, not alert_hour) and aggregation
         # (always emits, not just on shortfall) than either kind above.
         PILOT_PULSE_DIGEST = "PILOT_PULSE_DIGEST", "Пульс пилота"
+        # Story 15.10, FR-42: once-daily digest of newly-escalated
+        # GroupForceRequest rows (stale, unfulfilled) for a given recipient
+        # — same "one per recipient per day" shape as PILOT_PULSE_DIGEST,
+        # not a per-request notification (notify()'s uniqueness key is
+        # (recipient, kind, business_date), not per-entity).
+        GROUP_FORCE_REQUEST_ESCALATED = (
+            "GROUP_FORCE_REQUEST_ESCALATED",
+            "Эскалация неотработанного запроса",
+        )
 
     recipient = models.CharField(max_length=100)
     kind = models.CharField(max_length=50, choices=Kind.choices)
@@ -81,6 +90,7 @@ class Notification(TimeStampedModel):
                         "SUBMISSION_LAGGING",
                         "SUBMISSION_THRESHOLD_ALERT",
                         "PILOT_PULSE_DIGEST",
+                        "GROUP_FORCE_REQUEST_ESCALATED",
                     ]
                 ),
                 name="chk_notification_kind",
