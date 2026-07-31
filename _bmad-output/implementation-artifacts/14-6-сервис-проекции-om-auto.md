@@ -4,7 +4,7 @@ baseline_commit: ad55f47
 
 # Story 14.6: Сервис проекции OM_AUTO (DUTY/REST_AFTER_DUTY)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -49,20 +49,20 @@ so that **BR-017's «утверждённая смена автоматичес�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `project_duty_shift()` (AC: 1, 2, 3)
-  - [ ] `apps/operations/duties/services.py` — функция конвертации datetime→calendar-date (правило из Scope Decision)
-  - [ ] `project_duty_shift(shift)` — DUTY + REST_AFTER_DUTY, `get_or_create` по `source_ref`
-- [ ] Task 2 — `approve_duty_plan()` (AC: 4, 5, 6)
-  - [ ] `approve_duty_plan(plan)` — идемпотентный переход + вызов `project_duty_shift` для каждой смены
-- [ ] Task 3 — Тесты (AC: 7, 8, 9, 10)
-  - [ ] Юнит: DUTY/REST_AFTER_DUTY созданы с правильными полями/датами
-  - [ ] Юнит: повторный `project_duty_shift` — идемпотентность (0 новых строк)
-  - [ ] Юнит: `approve_duty_plan` — status_code меняется, смены проецируются
-  - [ ] Юнит: повторный `approve_duty_plan` — идемпотентность
-  - [ ] Юнит: ручная правка OM_AUTO-записи через `cancel_status` → `DomainError AUTO_STATUS_READONLY`
-  - [ ] Юнит: пересекающиеся смены — обе проецируются без исключения (AC-8)
-  - [ ] `test_isolation.py` прогнан явно
-  - [ ] `make gate` зелёный, явно прогнан
+- [x] Task 1 — `project_duty_shift()` (AC: 1, 2, 3)
+  - [x] `apps/operations/duties/services.py` — функция конвертации datetime→calendar-date (правило из Scope Decision)
+  - [x] `project_duty_shift(shift)` — DUTY + REST_AFTER_DUTY, `get_or_create` по `source_ref`
+- [x] Task 2 — `approve_duty_plan()` (AC: 4, 5, 6)
+  - [x] `approve_duty_plan(plan)` — идемпотентный переход + вызов `project_duty_shift` для каждой смены
+- [x] Task 3 — Тесты (AC: 7, 8, 9, 10)
+  - [x] Юнит: DUTY/REST_AFTER_DUTY созданы с правильными полями/датами
+  - [x] Юнит: повторный `project_duty_shift` — идемпотентность (0 новых строк)
+  - [x] Юнит: `approve_duty_plan` — status_code меняется, смены проецируются
+  - [x] Юнит: повторный `approve_duty_plan` — идемпотентность
+  - [x] Юнит: ручная правка OM_AUTO-записи через `cancel_status` → `DomainError AUTO_STATUS_READONLY`
+  - [x] Юнит: пересекающиеся смены — обе проецируются без исключения (AC-8)
+  - [x] `test_isolation.py` прогнан явно
+  - [x] `make gate` зелёный, явно прогнан
 
 ## Dev Notes
 
@@ -88,14 +88,16 @@ so that **BR-017's «утверждённая смена автоматичес�
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано буквально по AC 1-10. `apps/operations/duties/services.py`: `_to_date_range()` — приватная конвертация datetime→calendar-date (правило из Scope Decision — полночь не «захватывает» день); `project_duty_shift()` — `EmployeeStatus.objects.get_or_create(source_ref=...)`, идемпотентно, без обращения к `create_status()`; `approve_duty_plan()` — идемпотентный переход `status_code`+вызов проекции для всех смен плана. AC-7's тест (`test_om_auto_row_is_not_manually_editable`) подтвердил СУЩЕСТВУЮЩИЙ `assert_user_editable()`-гард (вызывается изнутри `cancel_status`'s `_lock_for_edit`, ДО проверки PLANNED-состояния) на РЕАЛЬНО спроецированной этой стори записи — новый код гарда не строил. AC-8's тест подтвердил: `project_duty_shift()` не вызывает `_assert_no_conflict`, пересекающиеся смены проецируются без исключения. Все 6 новых тестов + все существующие статусные тесты (Epic 3-11) прогнаны под реальным Postgres, все зелёные; `make gate` — 3169 passed (было 3163, +6), 0 regressions, no migration drift (новых миграций эта стори не добавляет — только сервисный слой).
 
 ### File List
 
-_(заполняется dev-story)_
+- `apps/operations/duties/services.py` (new)
+- `apps/operations/duties/tests/test_services.py` (new)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Шестая стори Epic 14, строится на `DutyPlan`/`DutyShift` (14.5, done) и на уже существующей статусной инфраструктуре (`Source.OM_AUTO`/`source_ref`, спроектированной под эту стори ещё в Epic 3). Новый writer-путь (не переиспользует `create_status()`, форсирующий `source=USER` и лишние employee/conflict-проверки, которых BR-017 не требует). `approve_duty_plan()` включает чистый доменный переход статуса БЕЗ HTTP/permission/audit — они зарезервированы за 14.11. |
+| 2026-07-31 | Dev-story: `services.py` (`_to_date_range`/`project_duty_shift`/`approve_duty_plan`), 6 новых тестов, все зелёные под реальным Postgres. `make gate` — 3169 passed. Status → review. |
