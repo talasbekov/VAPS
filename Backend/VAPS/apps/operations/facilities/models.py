@@ -53,8 +53,7 @@ class Object(TimeStampedModel):
                 name="ck_object_latitude_range",
             ),
             models.CheckConstraint(
-                condition=models.Q(longitude__gte=-180)
-                & models.Q(longitude__lte=180),
+                condition=models.Q(longitude__gte=-180) & models.Q(longitude__lte=180),
                 name="ck_object_longitude_range",
             ),
         ]
@@ -135,12 +134,113 @@ class ObjectPassport(TimeStampedModel):
             # (lesson: feedback_vaps_db_integrity_checks) — mirror the
             # ck_<table>_<field>_choices pattern established in 13.5a/13.5c.
             models.CheckConstraint(
-                condition=models.Q(
-                    completeness_status__in=["RED", "YELLOW", "GREEN"]
-                ),
+                condition=models.Q(completeness_status__in=["RED", "YELLOW", "GREEN"]),
                 name="ck_object_passport_completeness_status_choices",
             ),
         ]
 
     def __str__(self):
         return f"Паспорт {self.object.code} ({self.completeness_status})"
+
+
+class Sector(TimeStampedModel):
+    """Сектор объекта (donor `ops_object_sectors`, DB-OPS-005).
+
+    Story 14.2 — built literally per the donor's 6 fields. NO "senior" field:
+    the story title's "Sector со старшим" maps to PRD FR-19's «Старший
+    объекта» — an RBAC persona administering the whole Object (including its
+    sectors), not a Sector-level data column the donor schema doesn't have.
+    See the story's Scope Decision before adding one without product backing.
+    """
+
+    object = models.ForeignKey(Object, on_delete=models.CASCADE, related_name="sectors")
+    name = models.CharField(max_length=255)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "ops_object_sectors"
+        verbose_name = "Сектор"
+        verbose_name_plural = "Секторы"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["object", "name"], name="uq_object_sector_name"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.object.code} / {self.name}"
+
+
+class Post(TimeStampedModel):
+    """Пост охраны (donor `ops_object_posts`, DB-OPS-005 + DB-OPS-016).
+
+    `object` and `sector` are BOTH present, not mutually exclusive: the
+    donor keeps `object_id` NOT NULL even when `sector_id` is set — a
+    sector groups posts WITHIN an object, it doesn't replace the direct
+    post-to-object link.
+    """
+
+    object = models.ForeignKey(Object, on_delete=models.CASCADE, related_name="posts")
+    # SET_NULL, nullable: a post can exist without a sector (donor:
+    # `sector_id ... ON DELETE SET NULL`) — sector is optional grouping.
+    sector = models.ForeignKey(
+        Sector,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="posts",
+    )
+    code = models.CharField(max_length=50)
+    name = models.CharField(max_length=255)
+    # Donor FK -> ops_post_types (doesn't exist yet) — plain field, same
+    # deferred-FK pattern as Object.importance_level_code (14.1).
+    post_type_code = models.CharField(max_length=50, default="FIXED")
+    max_service_minutes = models.PositiveIntegerField(default=480)
+    # Donor's requirements JSON schema (schema_version/min_height_cm/gender/
+    # min_rank_index/max_rank_index/required_position_codes/
+    # allow_overqualification, DB-OPS-006) is stored as-is — validating that
+    # nested schema is a service/API concern, out of scope for this
+    # models-only story (mirrors 14.1's deferred completeness_status
+    # auto-computation).
+    requirements = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    # DB-OPS-016 extension (9 fields, verbatim from donor). is_outdoor/
+    # max_continuous_minutes have NO donor DEFAULT (null by default,
+    # deliberately distinct from requires_weapon/requires_uniform below,
+    # which DO have explicit donor defaults) — do not "fix" this asymmetry.
+    tasks = models.TextField(blank=True)
+    features = models.TextField(blank=True)
+    location_description = models.TextField(blank=True)
+    is_outdoor = models.BooleanField(null=True, blank=True)
+    max_continuous_minutes = models.PositiveIntegerField(null=True, blank=True)
+    # Donor: NUMERIC(3,1). RATING-DECISION-002 — stored only, NOT enforced
+    # in this story (or any story until a minimal-rating-aggregate module
+    # is explicitly built).
+    min_rating = models.DecimalField(
+        max_digits=3, decimal_places=1, null=True, blank=True
+    )
+    requires_weapon = models.BooleanField(default=False)
+    requires_special_equipment = models.BooleanField(default=False)
+    requires_uniform = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "ops_object_posts"
+        verbose_name = "Пост"
+        verbose_name_plural = "Посты"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["object", "code"], name="uq_object_post_code"
+            ),
+            # Review-round precedent (14.1's lat/long CheckConstraint) —
+            # DB-level range guard, not just PositiveIntegerField's >0.
+            models.CheckConstraint(
+                condition=models.Q(max_service_minutes__gte=30)
+                & models.Q(max_service_minutes__lte=1440),
+                name="ck_post_max_service_minutes_range",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.object.code} / {self.code}"

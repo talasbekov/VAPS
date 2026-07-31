@@ -4,7 +4,7 @@ baseline_commit: 04a038b
 
 # Story 14.2: `Post` и `Sector` (модели)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -48,22 +48,24 @@ so that **Epic 14's последующие стори (чек-лист 14.3, д�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Модель `Sector` (AC: 1)
-  - [ ] `apps/operations/facilities/models.py` — класс `Sector`, `UniqueConstraint(object, name)`
-- [ ] Task 2 — Модель `Post` (AC: 2, 3, 4, 5, 6, 7)
-  - [ ] `apps/operations/facilities/models.py` — класс `Post`, все поля AC-2..AC-7
-  - [ ] `CheckConstraint` на `max_service_minutes` `[30, 1440]`
-  - [ ] `UniqueConstraint(object, code)`
-- [ ] Task 3 — Миграция (AC: 8)
-  - [ ] `makemigrations` — `0003_...`
-- [ ] Task 4 — Тесты + реальный прогон (AC: 10, 11)
-  - [ ] Юнит: создание `Sector`/`Post`, уникальность на обеих моделях
-  - [ ] Юнит: `Post` без `sector` (NULL допустим)
-  - [ ] Юнит: удаление `Sector` → `Post.sector` NULL (`SET_NULL`, не удаляет `Post`)
-  - [ ] Юнит: удаление `Object` каскадно удаляет `Sector`+`Post`
-  - [ ] Юнит: `max_service_minutes` red-probe (мин. 2 невалидных значения вне `[30,1440]`, DB-уровень)
-  - [ ] `test_isolation.py` прогнан явно
-  - [ ] `make gate` зелёный, явно прогнан
+- [x] Task 1 — Модель `Sector` (AC: 1)
+  - [x] `apps/operations/facilities/models.py` — класс `Sector`, `UniqueConstraint(object, name)`
+- [x] Task 2 — Модель `Post` (AC: 2, 3, 4, 5, 6, 7)
+  - [x] `apps/operations/facilities/models.py` — класс `Post`, все поля AC-2..AC-7
+  - [x] `CheckConstraint` на `max_service_minutes` `[30, 1440]`
+  - [x] `UniqueConstraint(object, code)`
+- [x] Task 3 — Миграция (AC: 8)
+  - [x] `makemigrations` — `0003_sector_post_sector_uq_object_sector_name_and_more.py`
+- [x] Task 4 — Тесты + реальный прогон (AC: 10, 11)
+  - [x] Юнит: создание `Sector`/`Post`, уникальность на обеих моделях (+ имя сектора может повторяться МЕЖДУ разными объектами)
+  - [x] Юнит: `Post` без `sector` (NULL допустим)
+  - [x] Юнит: удаление `Sector` → `Post.sector` NULL (`SET_NULL`, не удаляет `Post`)
+  - [x] Юнит: удаление `Object` каскадно удаляет `Sector`+`Post`
+  - [x] Юнит: `max_service_minutes` red-probe (4 невалидных значения: 0/29/1441/5000) + boundary-тест (30/480/1440 приняты)
+  - [x] Юнит: расширение-поля (`is_outdoor`/`max_continuous_minutes`/`min_rating` — `None` по умолчанию; `requires_weapon`/`requires_special_equipment` — `False`; `requires_uniform` — `True`)
+  - [x] Юнит: `requirements` JSON хранится как есть, без валидации схемы
+  - [x] `test_isolation.py` прогнан явно — зелёный (3 passed)
+  - [x] `make gate` зелёный, явно прогнан (3103 passed)
 
 ## Dev Notes
 
@@ -89,14 +91,23 @@ so that **Epic 14's последующие стори (чек-лист 14.3, д�
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+- **AC-1**: `Sector(TimeStampedModel)` — `object`/`name`/`sort_order`/`is_active`, `db_table="ops_object_sectors"`, `UniqueConstraint(object, name)`. НЕТ поля «старший» (Scope Decision — донор не даёт такого поля).
+- **AC-2/AC-3/AC-4/AC-5/AC-6/AC-7**: `Post(TimeStampedModel)` — `object`(CASCADE)/`sector`(SET_NULL, nullable)/`code`/`name`/`post_type_code`(deferred-FK-стиль, default `"FIXED"`)/`max_service_minutes`(default 480, `CheckConstraint` `[30,1440]`)/`requirements`(JSONField, схема не валидируется)/`is_active` + 9 DB-OPS-016-полей (`tasks`/`features`/`location_description`/`is_outdoor`/`max_continuous_minutes`/`min_rating`/`requires_weapon`/`requires_special_equipment`/`requires_uniform`) — асимметрия дефолтов (`is_outdoor`/`max_continuous_minutes` без дефолта=NULL, `requires_weapon`/`requires_uniform` с явными донор-дефолтами) сохранена буквально, доказана тестом `test_post_extension_fields_default_correctly`.
+- **AC-8**: миграция `0003_sector_post_sector_uq_object_sector_name_and_more.py` — обе модели, оба `UniqueConstraint`, `CheckConstraint` на `max_service_minutes`.
+- **AC-9**: Admin не регистрируется — тот же аргумент, что 14.1.
+- **AC-10**: 17 новых тестов (`test_post_sector.py`) — уникальность (`object`+`name` на секторе, `object`+`code` на посте, с явным контр-тестом «имя сектора МОЖЕТ повторяться между разными объектами»), `SET_NULL`/`CASCADE`-поведение доказано живым удалением (не просто `on_delete=`-параметром в коде), red-probe на `max_service_minutes` (4 невалидных + 3 граничных валидных значения), дефолты расширения-полей, `requirements`-JSON без валидации схемы. `test_isolation.py` прогнан явно — 3 passed, без правок самого теста.
+- **AC-11**: `make gate` — 3103 passed (было 3086 после 14.1, +17), "No changes detected".
+- **Ключевая находка (Scope Decision подтверждена буквально)**: `Sector` содержит РОВНО 6 полей донора, ни одного «старшего» — заголовок стори «Sector со старшим» относится к RBAC-роли (FR-19 «Старший объекта»), не к колонке модели. Не изобретено без основания продукта.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/facilities/models.py` (MOD) — классы `Sector`, `Post`.
+- `Backend/VAPS/apps/operations/facilities/migrations/0003_sector_post_sector_uq_object_sector_name_and_more.py` (NEW).
+- `Backend/VAPS/apps/operations/facilities/tests/test_post_sector.py` (NEW) — 17 тестов.
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Вторая стори Epic 14, строится на `Object`/`ObjectPassport` (14.1, done). «Sector со старшим» — донор не даёт поля старшего на Sector; заголовок отнесён к RBAC-роли «Старший объекта» (FR-19), не к колонке модели — задокументировано явно в Scope Decision, не изобретено без основания. |
+| 2026-07-31 | dev-story: модели `Sector`+`Post` в существующий `models.py` (14.1), миграция `0003`, 17 тестов. `make gate` 3103 passed. Status → review |
