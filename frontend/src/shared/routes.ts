@@ -139,6 +139,12 @@ export const ROUTES = {
    */
   ratingEmployeeDetail: '/ratings/employees/:employeeId',
   /**
+   * §19.27 журнал оценивания — СВОЙ маршрут и своё право
+   * (`ops.rating.view_audit`). Не секция общего `/audit`: тот читают люди без
+   * права на рейтинг, и события закрытого раздела раздавались бы вместе с ним.
+   */
+  ratingAudit: '/ratings/audit',
+  /**
    * Отчёт §22.16 «Аналитика рейтинга» — ОТДЕЛЬНЫЙ маршрут со СВОИМ правом
    * (`ops.analytics.view`). Секцией на `/ratings` он быть не мог: там правом
    * входа служит `ops.rating.view_aggregate`, и отчёт раздела аналитики
@@ -311,6 +317,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Оперативный рейтинг',
     icon: BarChart3,
     permission: 'ops.rating.view_aggregate',
+  },
+  {
+    route: ROUTES.ratingAudit,
+    label: 'Журнал оценивания',
+    icon: ScrollText,
+    permission: 'ops.rating.view_audit',
   },
   {
     route: ROUTES.ratingAnalytics,

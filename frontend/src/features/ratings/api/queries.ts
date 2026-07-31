@@ -7,6 +7,7 @@ import type { RegistryFilters } from '../lib/registry'
 import {
   EVALUATION_REGISTRY_PATH,
   EVALUATION_WORKSPACE_PATH,
+  RATING_AUDIT_PATH,
   RATING_EMPLOYEE_DETAIL_PATH,
   evaluationCorrectPath,
   evaluationDetailPath,
@@ -16,6 +17,7 @@ import {
   evaluationSubmitPath,
 } from './pending-contracts'
 import type {
+  RatingAuditResponse,
   EvaluationRegistryResponse,
   RatingEmployeeDetailResponse,
   CorrectEvaluationRequest,
@@ -176,6 +178,17 @@ export function useRatingEmployeeDetail(employeeId: string | null) {
         `${RATING_EMPLOYEE_DETAIL_PATH}?employee=${encodeURIComponent(employeeId ?? '')}`,
       ),
     enabled: employeeId !== null,
+  })
+}
+
+/** Журнал оценивания (§19.27). Своё право — своё состояние отказа. */
+export function useRatingAudit(page: number) {
+  return useQuery<RatingAuditResponse, ApiFailure>({
+    queryKey: ['ratings', 'audit', page],
+    queryFn: () =>
+      apiClient.get<RatingAuditResponse>(
+        page === 1 ? RATING_AUDIT_PATH : `${RATING_AUDIT_PATH}?page=${page}`,
+      ),
   })
 }
 

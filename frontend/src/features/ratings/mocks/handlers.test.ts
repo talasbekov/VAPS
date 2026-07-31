@@ -12,6 +12,7 @@ import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac
 import {
   EVALUATION_REGISTRY_PATH,
   EVALUATION_WORKSPACE_PATH,
+  RATING_AUDIT_PATH,
   RATING_EMPLOYEE_DETAIL_PATH,
   evaluationCorrectPath,
   evaluationDetailPath,
@@ -30,6 +31,7 @@ import type {
   CorrectEvaluationResponse,
   EvaluationRegistryResponse,
   RatingEmployeeDetailResponse,
+  RatingAuditResponse,
 } from '../api/pending-contracts'
 import { createRatingsHandlers } from './handlers'
 import { buildRatingsSeed } from './fixtures'
@@ -39,6 +41,7 @@ const VIEWER = 'rating-viewer'
 const ANALYST = 'rating-analyst'
 const NOBODY = 'nobody-user'
 const EVALUATOR = 'demo-event-planner'
+const AUDITOR = 'rating-auditor'
 const BASE = 'http://localhost'
 
 const adapter = createMemoryPersistence()
@@ -98,6 +101,7 @@ beforeEach(async () => {
     { userId: VIEWER, permissions: ['ops.rating.view_aggregate'] },
     { userId: ANALYST, permissions: ['ops.analytics.view'] },
     { userId: NOBODY, permissions: [] },
+    { userId: AUDITOR, permissions: ['ops.rating.view_audit'] },
     {
       userId: EVALUATOR,
       permissions: [
@@ -113,6 +117,7 @@ const client = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': V
 const stranger = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': NOBODY } })
 const analyst = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': ANALYST } })
 const evaluator = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': EVALUATOR } })
+const auditor = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': AUDITOR } })
 
 async function statusOf(call: () => Promise<unknown>): Promise<number> {
   try {
@@ -392,5 +397,31 @@ describe('ratings handlers — конфликт редакции (§19.25)', () 
       body,
     )
     expect(second.submitted.evaluationId).toBe(first.submitted.evaluationId)
+  })
+})
+
+describe('ratings handlers — журнал оценивания (§19.27)', () => {
+  it('GET журнала доходит до repository и отдаёт сеяные события', async () => {
+    const audit = await auditor.get<RatingAuditResponse>(RATING_AUDIT_PATH)
+    expect(audit.results.length).toBeGreaterThan(0)
+    expect(audit.results.map((entry) => entry.eventCode)).toContain('EVALUATION_CORRECTED')
+  })
+
+  it('отправка через HTTP оставляет след в журнале с requestId запроса', async () => {
+    await evaluator.post(evaluationSubmitPath('work-item-5'), {
+      score: 9,
+      basisCode: 'DISCIPLINE',
+      basisNote: null,
+      comment: null,
+      revision: 1,
+      idempotencyKey: 'idem-handler-audit',
+    })
+    const audit = await auditor.get<RatingAuditResponse>(RATING_AUDIT_PATH)
+    const entry = audit.results.find((item) => item.requestId === 'idem-handler-audit')
+    expect(entry).toMatchObject({ eventCode: 'EVALUATION_SUBMITTED', outcome: 'SUCCESS' })
+  })
+
+  it('держателю сводки журнал закрыт — 403 конвертом', async () => {
+    expect(await statusOf(() => client.get(RATING_AUDIT_PATH))).toBe(403)
   })
 })

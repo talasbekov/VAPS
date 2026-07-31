@@ -180,13 +180,58 @@ test.describe('Исправление оценки §19.17-19.18 (mock-режи�
   })
 })
 
-// §19.25 «одна оценка открыта в двух вкладках» ЖИВЬЁМ здесь не проверяется, и
-// это отказ с причиной, а не пропуск: вторая вкладка mock-режима не видит
-// изменений первой (её запись не доезжает до общего снапшота), поэтому
-// «конфликт» в такой пробе был бы не конфликтом, а расхождением двух
-// изолированных состояний — то есть зелёным тестом ни о чём. Конфликт редакции
-// и повтор по ключу идемпотентности проверяются на уровне repository и
-// handler'ов, где обе стороны работают с ОДНИМ состоянием.
+test.describe('Конфликт редакции §19.25 (mock-режим)', () => {
+  test('запись, исправленная в другой вкладке, даёт diff вместо ложного успеха', async ({
+    page,
+    context,
+  }) => {
+    // §19.25 дословно: «одна оценка открыта в двух вкладках». Обе вкладки живут
+    // в одном контексте и делят demo-снапшот, поэтому конфликт НАСТОЯЩИЙ —
+    // редакцию двигает вторая вкладка, а не подменённый транспорт.
+    await asEvaluator(page)
+    await page.goto('/ratings/workspace')
+    await page.getByRole('tab', { name: 'Отправленные мной' }).click()
+    await page.getByRole('button', { name: 'Открыть отправленную оценку: Ерланов Д.' }).click()
+    const card = page.getByRole('region', { name: 'Отправленная оценка' })
+    await card.getByRole('button', { name: 'Исправить оценку' }).click()
+    await card.getByLabel('Новая оценка').selectOption('10')
+    await card.getByLabel(/Причина исправления/).fill('Учтён рапорт старшего смены')
+
+    const other = await context.newPage()
+    // Credential — init-скрипт СТРАНИЦЫ, а не контекста: новая вкладка его не
+    // наследует.
+    await seedCredential(other)
+    await asEvaluator(other)
+    await other.goto('/ratings/workspace')
+    await other.getByRole('tab', { name: 'Отправленные мной' }).click()
+    await other.getByRole('button', { name: 'Открыть отправленную оценку: Ерланов Д.' }).click()
+    const otherCard = other.getByRole('region', { name: 'Отправленная оценка' })
+    await otherCard.getByRole('button', { name: 'Исправить оценку' }).click()
+    await otherCard.getByLabel('Новая оценка').selectOption('7')
+    await otherCard.getByLabel(/Комментарий/).fill('Уход с поста подтверждён рапортом')
+    await otherCard.getByLabel(/Причина исправления/).fill('Разбор во второй вкладке')
+    await otherCard.getByRole('button', { name: 'Показать изменения' }).click()
+    await otherCard.getByRole('button', { name: 'Подтвердить исправление' }).click()
+    // Дождаться КОММИТА, а не появления текста в форме подтверждения: закрыв
+    // вкладку раньше, проба меряла бы собственную спешку, а не конфликт.
+    await expect(otherCard).toContainText('Редакция4')
+    await expect(otherCard).toContainText('заменена')
+    await other.close()
+
+    // Первая вкладка отправляет свою редакцию — и получает diff, а не «успешно».
+    await card.getByRole('button', { name: 'Показать изменения' }).click()
+    await card.getByRole('button', { name: 'Подтвердить исправление' }).click()
+    const notice = page.getByLabel('Запись изменилась')
+    await expect(notice).toContainText('Актуальная редакция: 4')
+    await expect(notice).toContainText('вы вводите 10')
+    // Общий ConflictDialog назначений здесь запрещён прямо (§19.25).
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    // Введённое сохранено — человеку есть что восстановить вручную (§19.25).
+    await card.getByRole('button', { name: 'Вернуться к правке' }).click()
+    await expect(card.getByLabel(/Причина исправления/)).toHaveValue('Учтён рапорт старшего смены')
+  })
+})
 
 test.beforeEach(async ({ page }) => {
   await seedCredential(page)

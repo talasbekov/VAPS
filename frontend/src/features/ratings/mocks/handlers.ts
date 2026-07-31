@@ -9,6 +9,7 @@ import {
   EVALUATION_SUBMIT_PATH_PATTERN,
   EVALUATION_REGISTRY_PATH,
   EVALUATION_WORKSPACE_PATH,
+  RATING_AUDIT_PATH,
   RATING_EMPLOYEE_DETAIL_PATH,
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
@@ -154,6 +155,20 @@ export function createRatingsHandlers(adapter: PersistenceAdapter, clock: DemoCl
             search: params.get('search') ?? '',
             page: number('page', 1),
           }),
+        )
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.get(`*${RATING_AUDIT_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const raw = Number(new URL(request.url).searchParams.get('page') ?? '1')
+      try {
+        return HttpResponse.json(
+          await repository.listRatingAudit(actorUserId, Number.isFinite(raw) ? raw : 1),
         )
       } catch (error) {
         const mapped = mapRepositoryError(error, clock)

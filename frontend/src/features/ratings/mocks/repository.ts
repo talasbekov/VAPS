@@ -28,6 +28,7 @@ import type {
   CorrectionChainLink,
   EvaluationRegistryResponse,
   EvaluationWorkItemView,
+  RatingAuditResponse,
   RatingEmployeeDetailResponse,
   EvaluationWorkspaceResponse,
   ListOperationalRatingsResponse,
@@ -38,7 +39,13 @@ import type {
   SubmittedEvaluationDetailResponse,
   SubmittedEvaluationView,
 } from '../api/pending-contracts'
-import type { EvaluationCorrection, EvaluationWorkItem, EventEvaluation } from '../model/types'
+import type {
+  EvaluationCorrection,
+  EvaluationWorkItem,
+  EventEvaluation,
+  RatingAuditEntry,
+  RatingAuditEventCode,
+} from '../model/types'
 import { EVALUATION_BASES, EVALUATION_EVENTS, RATED_EMPLOYEES, RATING_GROUPS } from './fixtures'
 import type { RatingsSlice } from './fixtures'
 import { readRatingPolicy, readRatingSuppressionMinGroup } from './settingsSlice'
@@ -102,6 +109,30 @@ const EVALUATE_PERMISSION = 'ops.rating.evaluate'
  */
 const CORRECT_PERMISSION = 'ops.rating.correct'
 const VIEW_CHAIN_PERMISSION = 'ops.rating.view_correction_chain'
+/**
+ * §19.22 «просмотр rating audit» — свой пункт списка прав. Журнал показывает
+ * действия ЛЮДЕЙ (кто отправлял, кто исправлял, кому отказали), и это
+ * контрольная функция, отдельная и от оценивания, и от чтения агрегатов.
+ */
+const VIEW_AUDIT_PERMISSION = 'ops.rating.view_audit'
+
+/** §35: чего нет в журнале и почему. */
+const UNAVAILABLE_AUDIT_VIEWS: readonly { code: string; label: string; reason: string }[] = [
+  {
+    code: 'AUDIT_SENSITIVE_VALUES',
+    label: 'Старое и новое значение оценки, комментарии, оценщик',
+    reason:
+      '§19.27 отдаёт их отдельной audit privacy permission, а §19.21 требует к ней тот же scope и срок полномочия, что и к sensitive-просмотру. Ни того, ни другого в сборке нет, поэтому значений нет в записи журнала вовсе — иначе «обычный пользователь раскрывал бы закрытые оценки через общий экран аудита» (§19.27).',
+  },
+  {
+    code: 'AUDIT_EXPORT',
+    label: 'Экспорт журнала',
+    reason:
+      '§19.29 требует отдельного права на экспорт и собственной audit-записи о нём. Экспорт рейтинга не реализован (§19.29 целиком), и кнопка выгрузки журнала обещала бы файл, которого никто не собирает.',
+  },
+]
+
+const AUDIT_PAGE_SIZE = 20
 
 /** §35: чего нет в ОТЧЁТЕ (не в расчёте) и почему. */
 const UNAVAILABLE_ANALYTICS_VIEWS: readonly { code: string; label: string; reason: string }[] = [
@@ -370,6 +401,112 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
   }
 
   /**
+   * Запись журнала (§19.27). Собирается ПОЛЕМ ЗА ПОЛЕМ и по построению не
+   * может нести значение оценки или комментарий: их просто нет среди
+   * параметров — это дешевле, чем помнить про фильтрацию на каждом вызове.
+   */
+  function auditEntry(
+    current: { revision: number },
+    index: number,
+    input: {
+      actorUserId: string | null
+      eventCode: RatingAuditEventCode
+      outcome: 'SUCCESS' | 'REJECTED'
+      reasonCode?: string | null
+      item?: EvaluationWorkItem
+      evaluationId?: string | null
+      correctionId?: string | null
+      requestId?: string | null
+      revision?: number | null
+    },
+  ): RatingAuditEntry {
+    return {
+      id: `rating-audit-${current.revision + 1}-${index}`,
+      occurredAt: clock.now(),
+      actorUserId: input.actorUserId,
+      eventCode: input.eventCode,
+      outcome: input.outcome,
+      reasonCode: input.reasonCode ?? null,
+      securityEventId: input.item?.securityEventId ?? null,
+      eventRunId: input.item?.eventRunId ?? null,
+      assignmentId: input.item?.assignmentId ?? null,
+      evaluationId: input.evaluationId ?? null,
+      correctionId: input.correctionId ?? null,
+      requestId: input.requestId ?? null,
+      revision: input.revision ?? input.item?.revision ?? null,
+    }
+  }
+
+  /**
+   * Запись об ОТКАЗЕ идёт СВОЕЙ транзакцией. Внутри отклонённой мутации она
+   * исчезла бы вместе с откатом: отказ на то и отказ, что состояние не
+   * меняется, — а журнал обязан его помнить (§19.27 «отклонённое исправление»,
+   * «попытка снижения без комментария», «запрещённая попытка просмотра»).
+   */
+  async function recordRejection(input: {
+    actorUserId: string | null
+    eventCode: RatingAuditEventCode
+    reasonCode: string
+    workItemId?: string
+    requestId?: string | null
+  }): Promise<void> {
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current.slices)
+      const item = slice.workItems.find((entry) => entry.id === input.workItemId)
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          auditEntries: [
+            ...slice.auditEntries,
+            auditEntry(current, slice.auditEntries.length + 1, {
+              actorUserId: input.actorUserId,
+              eventCode: input.eventCode,
+              outcome: 'REJECTED',
+              reasonCode: input.reasonCode,
+              item,
+              requestId: input.requestId ?? null,
+            }),
+          ],
+        },
+      }
+    })
+  }
+
+  /**
+   * Журнал оценивания (§19.27). Право СВОЁ: контроль над действиями людей —
+   * не то же, что участие в них.
+   */
+  async function listRatingAudit(
+    actorUserId: string | null,
+    page: number,
+  ): Promise<RatingAuditResponse> {
+    if (!hasPermission(actorUserId, VIEW_AUDIT_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_AUDIT_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new Error('mock-runtime: чтение журнала рейтинга до инициализации demo-состояния')
+    }
+    const slice = readSlice(envelope.slices)
+    // Порядок — от свежего к старому: журнал читают, чтобы увидеть последнее.
+    const ordered = [...slice.auditEntries].sort((a, b) =>
+      b.occurredAt.localeCompare(a.occurredAt),
+    )
+    const pageCount = Math.max(1, Math.ceil(ordered.length / AUDIT_PAGE_SIZE))
+    const safePage = Math.min(Math.max(1, page), pageCount)
+    return {
+      results: ordered
+        .slice((safePage - 1) * AUDIT_PAGE_SIZE, safePage * AUDIT_PAGE_SIZE)
+        .map((item) => ({ ...item })),
+      total: ordered.length,
+      page: safePage,
+      pageCount,
+      unavailableViews: UNAVAILABLE_AUDIT_VIEWS.map((item) => ({ ...item })),
+    }
+  }
+
+  /**
    * Подробности конфликта (§19.25): актуальная редакция и ДЕЙСТВУЮЩИЕ значения
    * записи. Без них экран может сказать только «повторите» — а промпт требует
    * показать человеку diff, то есть то, что изменилось, пока он заполнял форму.
@@ -526,10 +663,17 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     body: SubmitEvaluationRequest,
   ): Promise<SubmitEvaluationResponse> {
     if (!hasPermission(actorUserId, EVALUATE_PERMISSION)) {
+      await recordRejection({
+        actorUserId,
+        eventCode: 'EVALUATION_ACCESS_DENIED',
+        reasonCode: 'PERMISSION_DENIED',
+        workItemId,
+        requestId: body.idempotencyKey,
+      })
       throw new RepositoryPermissionError(EVALUATE_PERMISSION)
     }
     let response: SubmitEvaluationResponse | null = null
-    await runMutation(adapter, clock, (current) => {
+    const mutation = runMutation(adapter, clock, (current) => {
       const slice = readSlice(current.slices)
       // §19.26: повтор с тем же ключом возвращает ПРЕЖНИЙ результат и не
       // создаёт второй оценки. Проверка стоит до всех прочих: повторный запрос
@@ -642,6 +786,32 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
           ...slice,
           workItems,
           evaluations,
+          auditEntries: [
+            ...slice.auditEntries,
+            auditEntry(current, slice.auditEntries.length + 1, {
+              actorUserId,
+              eventCode: 'EVALUATION_SUBMITTED',
+              outcome: 'SUCCESS',
+              item: nextItem,
+              evaluationId: evaluation.id,
+              requestId: body.idempotencyKey,
+            }),
+            // §19.27 требует отдельного события «изменение значения
+            // относительно начального»: отправка восьмёрки и снижение до
+            // четвёрки — разные факты, и общая запись их не различила бы.
+            ...(evaluation.score === item.initialScore
+              ? []
+              : [
+                  auditEntry(current, slice.auditEntries.length + 2, {
+                    actorUserId,
+                    eventCode: 'EVALUATION_SCORE_CHANGED_FROM_INITIAL',
+                    outcome: 'SUCCESS',
+                    item: nextItem,
+                    evaluationId: evaluation.id,
+                    requestId: body.idempotencyKey,
+                  }),
+                ]),
+          ],
           idempotency: [
             ...slice.idempotency,
             {
@@ -656,6 +826,26 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
         },
       }
     })
+    try {
+      await mutation
+    } catch (error) {
+      // Отказ пишется СВОЕЙ транзакцией: внутри отклонённой он откатился бы
+      // вместе с ней. Попытка снижения без комментария названа своим событием —
+      // §19.27 перечисляет её отдельно от прочих отказов формы.
+      if (error instanceof RepositoryBusinessRuleError || error instanceof RepositoryConflictError) {
+        await recordRejection({
+          actorUserId,
+          eventCode:
+            error.errorCode === 'COMMENT_REQUIRED'
+              ? 'EVALUATION_LOW_SCORE_WITHOUT_COMMENT'
+              : 'EVALUATION_ACCESS_DENIED',
+          reasonCode: error.errorCode,
+          workItemId,
+          requestId: body.idempotencyKey,
+        })
+      }
+      throw error
+    }
     if (response === null) throw new Error('mock-runtime: отправка оценки не вернула результат')
     return response
   }
@@ -726,6 +916,15 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     const slice = readSlice(envelope.slices)
     const item = slice.workItems.find((entry) => entry.id === workItemId)
     if (item === undefined || item.evaluatorUserId !== actorUserId) {
+      // §19.27 «запрещённая попытка просмотра sensitive evaluation»: наружу
+      // по-прежнему 404 (существование записи не подтверждаем), но в журнале
+      // попытка остаётся — иначе контролировать было бы нечего.
+      await recordRejection({
+        actorUserId,
+        eventCode: 'EVALUATION_ACCESS_DENIED',
+        reasonCode: 'FOREIGN_EVALUATION',
+        workItemId,
+      })
       throw new RepositoryNotFoundError(workItemId)
     }
     const submitted = toSubmittedView(item, slice.evaluations, actorUserId)
@@ -762,10 +961,17 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     body: CorrectEvaluationRequest,
   ): Promise<CorrectEvaluationResponse> {
     if (!hasPermission(actorUserId, CORRECT_PERMISSION)) {
+      await recordRejection({
+        actorUserId,
+        eventCode: 'EVALUATION_ACCESS_DENIED',
+        reasonCode: 'PERMISSION_DENIED',
+        workItemId,
+        requestId: body.idempotencyKey,
+      })
       throw new RepositoryPermissionError(CORRECT_PERMISSION)
     }
     let response: CorrectEvaluationResponse | null = null
-    await runMutation(adapter, clock, (current) => {
+    const mutation = runMutation(adapter, clock, (current) => {
       const slice = readSlice(current.slices)
       const done = slice.idempotency.find(
         (entry) => entry.key === body.idempotencyKey && entry.operation === 'correct',
@@ -883,6 +1089,18 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
           workItems,
           evaluations,
           corrections,
+          auditEntries: [
+            ...slice.auditEntries,
+            auditEntry(current, slice.auditEntries.length + 1, {
+              actorUserId,
+              eventCode: 'EVALUATION_CORRECTED',
+              outcome: 'SUCCESS',
+              item: nextItem,
+              evaluationId: replacement.id,
+              correctionId: correction.id,
+              requestId: body.idempotencyKey,
+            }),
+          ],
           idempotency: [
             ...slice.idempotency,
             {
@@ -895,6 +1113,20 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
         },
       }
     })
+    try {
+      await mutation
+    } catch (error) {
+      if (error instanceof RepositoryBusinessRuleError || error instanceof RepositoryConflictError) {
+        await recordRejection({
+          actorUserId,
+          eventCode: 'EVALUATION_CORRECTION_REJECTED',
+          reasonCode: error.errorCode,
+          workItemId,
+          requestId: body.idempotencyKey,
+        })
+      }
+      throw error
+    }
     if (response === null) throw new Error('mock-runtime: исправление не вернуло результат')
     return response
   }
@@ -1077,6 +1309,7 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     submitEvaluation,
     getSubmittedEvaluationDetail,
     correctEvaluation,
+    listRatingAudit,
     listEvaluationRegistry,
     getRatingEmployeeDetail,
   }
