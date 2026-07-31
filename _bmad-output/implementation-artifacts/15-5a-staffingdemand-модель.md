@@ -4,7 +4,7 @@ baseline_commit: 6cbf0a4
 
 # Story 15.5a: `SecurityEventStaffingDemand` — модель (FR-23)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -62,6 +62,8 @@ so that **15.5b (захват данных) и 15.5c (утверждение) и
 
 Реализовано по AC 1-4. `SecurityEventStaffingDemand` — event-scoped child-модель, `CASCADE` (тот же паттерн, что `SecurityEventSectorPost`, 15.3a). Поля синтезированы из frontend's `StaffingDemandRow` (soft-сигнал). Никакого CheckConstraint не требуется (нет choices-полей, в отличие от recon-моделей с `result`). Миграция `0004` — единственная. 3 новых теста (db_table, create+persist, CASCADE). `make gate` — 3491 passed (было 3488, +3), 0 regressions, no drift.
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** все три агента — 0 реальных багов. Blind Hunter — миграция-vs-модель без дрифта, CASCADE консистентен с прецедентом, `group`-поле (SQL reserved keyword) безопасно (Django всегда квотирует идентификаторы). Edge Case Hunter эмпирически подтвердил: `need`-поле уже защищено АВТО-сгенерированным Django/Postgres `CHECK (need >= 0)` (та же авто-защита, что у sibling-модели) — отрицательное значение реально отвергается на DB-уровне без явного CheckConstraint. Acceptance Auditor — 3/4 чистый PASS, AC-4 PARTIAL (справедливое замечание: `test_isolation.py` технически покрывает, но тривиально — реальное покрытие даёт `test_staffing_demand_model.py`, не более); не блокирующая формулировка-неточность, тот же паттерн фразеровки, что 15.1/15.3a уже приняли. Status → done.
+
 ### File List
 
 - `Backend/VAPS/apps/operations/events/models.py` (modified — новая модель)
@@ -74,3 +76,4 @@ so that **15.5b (захват данных) и 15.5c (утверждение) и
 |---|---|
 | 2026-07-31 | Story создана (create-story), разбита из планового `15-5` на 15.5a (модель)/15.5b (захват)/15.5c (утверждение). Коллизия имён с существующей сущностью проверена и исключена. |
 | 2026-07-31 | Dev-story: `SecurityEventStaffingDemand`-модель + миграция + 3 теста. `make gate` — 3491 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): 0 багов, 3/4 AC чистый PASS + 1 PARTIAL (некритичная формулировка AC-4). Status → done. |
