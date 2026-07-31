@@ -4,7 +4,7 @@ baseline_commit: 3e28e60
 
 # Story 15.5b: `PUT /security-events/{id}/staffing-demand` — захват данных потребности (FR-23)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -61,6 +61,8 @@ _(заполняется dev-story)_
 
 Реализовано по AC 1-6. `StaffingDemandSerializer` + `replace_staffing_demand()` — буквальный образец 15.3b, `select_for_update()` на родительском `SecurityEvent` применён СРАЗУ (урок 15.3b's ревью учтён с первого прохода, не повторно открыт). `PUT .../staffing-demand` — `@action`, переиспользует `_get_event_or_404()` (четвёртый потребитель хелпера). Аудит — deferred (черновик до 15.5c's утверждения). Оба живых реестра обновлены. 5 HTTP-поведенческих теста + 1 concurrency-regression (`@pytest.mark.concurrency`, тот же паттерн, что 15.3b's — доказывает ровно один писатель побеждает при гонке, не union). `make gate` — 3506 passed (было 3491, +15), 0 regressions, no drift.
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** все три агента — 0 багов. Blind Hunter лично проверил `select_for_update()` byte-for-byte позиционное совпадение с sibling-функциями, подтвердил отсутствие cross-event-write-эксплойта (клиент не может передать `event` в PUT-теле). Edge Case Hunter прогнал concurrency-тест 3 раза подряд — стабильно зелёный; невалидный payload (отсутствующее поле, одиночный объект вместо массива) → чистый 400. Acceptance Auditor — 6/6 AC PASS, явно подтвердил AC-5 (concurrency) доказан РЕАЛЬНЫМ тестом с гонкой, не заявлением в комментарии. Status → done.
+
 ### File List
 
 - `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — `StaffingDemandSerializer`)
@@ -78,3 +80,4 @@ _(заполняется dev-story)_
 |---|---|
 | 2026-07-31 | Story создана (create-story). Буквальный образец 15.3b, `select_for_update()` применён сразу (не как ревью-фикс, урок уже учтён). |
 | 2026-07-31 | Dev-story: `replace_staffing_demand()` + `PUT .../staffing-demand`-action. `select_for_update()` с первого прохода (concurrency-regression-тест сразу зелёный, не как ревью-фикс). 6 новых тестов, оба живых реестра обновлены, схема регенерирована. `make gate` — 3506 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): 0 багов, 6/6 AC PASS, concurrency-фикс независимо подтверждён РЕАЛЬНЫМ прогоном (не заявлением). Status → done. |
