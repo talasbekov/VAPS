@@ -16,6 +16,14 @@ import {
 } from '../lib/workspace'
 import { validateCorrection } from '../lib/correction'
 import {
+  RATING_EXPORT_FORMATS,
+  UNAVAILABLE_EXPORT_FORMATS,
+  UNAVAILABLE_EXPORT_SCOPES,
+  buildAggregateExportContent,
+  exportFileName,
+  validateExportRequest,
+} from '../lib/export'
+import {
   UNAVAILABLE_REGISTRY_VIEWS,
   matchesFilters,
   pageCount,
@@ -23,8 +31,13 @@ import {
 } from '../lib/registry'
 import type { EvaluationRegistryRow, RegistryFilters } from '../lib/registry'
 import type {
+  CancelRatingExportResponse,
   CorrectEvaluationRequest,
   CorrectEvaluationResponse,
+  CreateRatingExportRequest,
+  CreateRatingExportResponse,
+  DownloadRatingExportResponse,
+  ListRatingExportsResponse,
   CorrectionChainLink,
   EvaluationRegistryResponse,
   EvaluationWorkItemView,
@@ -44,6 +57,9 @@ import type {
   EvaluationCorrection,
   EvaluationWorkItem,
   EventEvaluation,
+  OperationalRatingSummary,
+  RatingExportArtifact,
+  RatingExportJob,
   RatingAuditEntry,
   RatingAuditEventCode,
   RatingNotification,
@@ -117,6 +133,17 @@ const VIEW_CHAIN_PERMISSION = 'ops.rating.view_correction_chain'
  * контрольная функция, отдельная и от оценивания, и от чтения агрегатов.
  */
 const VIEW_AUDIT_PERMISSION = 'ops.rating.view_audit'
+/**
+ * §19.29 «только при наличии соответствующего permission» — своё право на
+ * выгрузку. Правом чтения агрегата его охранять нельзя: файл переживает экран,
+ * уходит из системы и требует audit-записи, а просмотр — нет.
+ *
+ * ОТДЕЛЬНОГО права на sensitive export не заведено НАМЕРЕННО: индивидуальная
+ * выгрузка не выдаётся вовсе (§19.21 — нет ни scope, ни срока полномочия), а
+ * право под неотданную операцию у эталонного администратора с wildcard
+ * немедленно открыло бы её (см. `UNAVAILABLE_EXPORT_SCOPES`).
+ */
+const EXPORT_PERMISSION = 'ops.rating.export'
 
 /** §35: чего нет в журнале и почему. */
 const UNAVAILABLE_AUDIT_VIEWS: readonly { code: string; label: string; reason: string }[] = [
@@ -130,7 +157,7 @@ const UNAVAILABLE_AUDIT_VIEWS: readonly { code: string; label: string; reason: s
     code: 'AUDIT_EXPORT',
     label: 'Экспорт журнала',
     reason:
-      '§19.29 требует отдельного права на экспорт и собственной audit-записи о нём. Экспорт рейтинга не реализован (§19.29 целиком), и кнопка выгрузки журнала обещала бы файл, которого никто не собирает.',
+      '§19.29 требует отдельного права на экспорт и собственной audit-записи о нём. Выгрузка §19.29 сделана для АГРЕГИРОВАННОЙ СВОДКИ; журнал — другой раздел с другим правом (`ops.rating.view_audit`), и своего генератора у него нет. Кнопка здесь обещала бы файл, которого никто не собирает.',
   },
 ]
 
@@ -1392,8 +1419,341 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     }
   }
 
+  /**
+   * Агрегированные сводки всех участников — тем же расчётом, что и экран
+   * (§19.19 считает СЕРВЕР). Выгрузка обязана совпадать с тем, что человек
+   * видел: собрать её отдельной формулой значило бы завести вторую методику,
+   * о которой никакая `policyVersion` не сообщает.
+   */
+  function buildAllSummaries(
+    slice: RatingsSlice,
+    policy: ReturnType<typeof readRatingPolicy>,
+  ): OperationalRatingSummary[] {
+    const featureEnabled = slice.capabilities.operationalRatings
+    const businessDate = clock.businessDate()
+    const calculatedAt = clock.now()
+    const results = RATED_EMPLOYEES.map((employee) =>
+      buildSummary({
+        employeeId: employee.employeeId,
+        safeLabel: employee.safeLabel,
+        evaluations: slice.evaluations,
+        policy,
+        featureEnabled,
+        businessDate,
+        calculatedAt,
+      }),
+    )
+    // Порядок тот же, что в сводке: по подписи. Сортировка по значению —
+    // таблица лидеров, запрещённая §22.16, и в файле она жила бы дольше экрана.
+    results.sort((a, b) => a.safeLabel.localeCompare(b.safeLabel, 'ru'))
+    return results
+  }
+
+  /**
+   * §19.29, продвижение работы экспорта. Ступень выполняется на ЧТЕНИИ:
+   * фонового исполнителя в demo нет (§8.8). Упрощён ИСПОЛНИТЕЛЬ, а не модель
+   * состояний — состояния лежат в слайсе и меняются только здесь.
+   *
+   * Файл собирается РОВНО на переходе в `READY` и больше не пересобирается:
+   * иначе содержимое менялось бы от опроса, и «тот же файл» у двух скачиваний
+   * оказался бы разным.
+   */
+  function advanceExport(
+    slice: RatingsSlice,
+    job: RatingExportJob,
+    sourceSlices: Record<string, unknown>,
+  ): { job: RatingExportJob; artifact: RatingExportArtifact | null } {
+    if (job.state === 'READY' || job.state === 'FAILED' || job.state === 'CANCELLED') {
+      return { job, artifact: null }
+    }
+    if (job.state === 'QUEUED') {
+      return { job: { ...job, state: 'GENERATING' }, artifact: null }
+    }
+    // Выключенная за время сборки функция — СОСТОЯНИЕ работы, а не исключение
+    // наружу: одна неудачная выгрузка иначе роняла бы чтение всего списка, и
+    // человек не увидел бы ни готовых файлов, ни причины (§19.3 + §19.30).
+    if (!slice.capabilities.operationalRatings) {
+      return {
+        job: {
+          ...job,
+          state: 'FAILED',
+          finishedAt: clock.now(),
+          failureCode: 'RATING_DISABLED',
+          safeFailureMessage:
+            'Оперативный рейтинг выключен: сводки, по которой собирается файл, не существует.',
+        },
+        artifact: null,
+      }
+    }
+    const policy = readRatingPolicy(sourceSlices)
+    const summaries = buildAllSummaries(slice, policy)
+    const generatedAt = clock.now()
+    const artifact: RatingExportArtifact = {
+      artifactId: `rating-export-artifact-${job.exportJobId}`,
+      exportJobId: job.exportJobId,
+      scope: job.scope,
+      format: job.format,
+      fileName: exportFileName(job.scope, job.format, clock.businessDate()),
+      generatedAt,
+      // Методика замораживается В ФАЙЛЕ: её могли сменить после выгрузки, и
+      // сравнивать значения разных редакций как однородные нельзя (§19.20).
+      policyVersion: policy?.policyVersion ?? null,
+      rowCount: summaries.length,
+      content: buildAggregateExportContent(summaries, policy),
+    }
+    return {
+      job: { ...job, state: 'READY', finishedAt: generatedAt, artifactId: artifact.artifactId },
+      artifact,
+    }
+  }
+
+  /**
+   * Свои работы экспорта (§19.29). Чужие в ответ не попадают: сам факт
+   * выгрузки — действие человека, и показывать его соседям незачем; контроль
+   * над ним ведёт журнал (§19.27), у которого своё право.
+   */
+  async function listRatingExports(
+    actorUserId: string | null,
+  ): Promise<ListRatingExportsResponse> {
+    if (!hasPermission(actorUserId, EXPORT_PERMISSION)) {
+      throw new RepositoryPermissionError(EXPORT_PERMISSION)
+    }
+    let response!: ListRatingExportsResponse
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current.slices)
+      const artifacts = [...slice.exportArtifacts]
+      // Продвигаются ВСЕ работы, а не только видимые смотрящему: ступень
+      // выполняется на чтении, и чужая работа иначе застревала бы навсегда.
+      const jobs = slice.exportJobs.map((job) => {
+        const stepped = advanceExport(slice, job, current.slices)
+        if (stepped.artifact !== null) artifacts.push(stepped.artifact)
+        return stepped.job
+      })
+      const mine = jobs.filter((job) => job.createdBy === (actorUserId ?? ''))
+      const mineIds = new Set(mine.map((job) => job.exportJobId))
+
+      response = {
+        results: [...mine]
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .map((job) => ({ ...job })),
+        // Содержимое в список НЕ едет: файл выдаётся отдельной операцией.
+        artifacts: artifacts
+          .filter((artifact) => mineIds.has(artifact.exportJobId))
+          .map((artifact) => {
+            // Содержимое вырезается КОПИЕЙ, а не destructuring-омитом:
+            // `varsIgnorePattern` в конфиге нет, и `_content` красит гейт.
+            const summary = { ...artifact }
+            delete (summary as Partial<RatingExportArtifact>).content
+            return summary as Omit<RatingExportArtifact, 'content'>
+          }),
+        formats: [...RATING_EXPORT_FORMATS],
+        unavailableFormats: UNAVAILABLE_EXPORT_FORMATS.map((item) => ({ ...item })),
+        unavailableScopes: UNAVAILABLE_EXPORT_SCOPES.map((item) => ({ ...item })),
+        capabilities: { operationalRatings: slice.capabilities.operationalRatings },
+        serverTime: clock.now(),
+      }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: { ...slice, exportJobs: jobs, exportArtifacts: artifacts },
+      }
+    })
+    return response
+  }
+
+  /**
+   * Заказ выгрузки (§19.29).
+   *
+   * Работа создаётся в `QUEUED` и НИКАКОЙ ссылки на файл не несёт: §19.29
+   * «Не добавляй фиктивную ссылку на файл», «файл считается готовым только
+   * после ответа repository». Audit-запись живёт в ТОЙ ЖЕ транзакции, что и
+   * работа: отдельная пережила бы неудавшийся коммит и сообщила бы о выгрузке,
+   * которой не заказывали.
+   */
+  async function createRatingExport(
+    actorUserId: string | null,
+    body: CreateRatingExportRequest,
+  ): Promise<CreateRatingExportResponse> {
+    if (!hasPermission(actorUserId, EXPORT_PERMISSION)) {
+      await recordRejection({
+        actorUserId,
+        eventCode: 'RATING_EXPORT_REJECTED',
+        reasonCode: 'PERMISSION_DENIED',
+        requestId: body.idempotencyKey,
+      })
+      throw new RepositoryPermissionError(EXPORT_PERMISSION)
+    }
+    // Проверка режима и формата — ДО транзакции и независимо от прав
+    // смотрящего: индивидуальная выгрузка не выдаётся никому, включая
+    // эталонного администратора с wildcard (§19.21 — нет ни scope, ни срока
+    // полномочия). Отказ фиксируется своей записью, как и прочие отказы §19.27.
+    const violation = validateExportRequest({ scope: body.scope, format: body.format })
+    if (violation !== null) {
+      await recordRejection({
+        actorUserId,
+        eventCode: 'RATING_EXPORT_REJECTED',
+        reasonCode: violation.code,
+        requestId: body.idempotencyKey,
+      })
+      throw new RepositoryBusinessRuleError(violation.code, violation.message)
+    }
+
+    let response: CreateRatingExportResponse | null = null
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current.slices)
+      // §19.26: повтор с тем же ключом возвращает ПРЕЖНЮЮ работу. Без этого
+      // повторное нажатие после таймаута заводило бы вторую выгрузку — и
+      // вторую запись в журнале о том, что данные покидали систему дважды.
+      const repeated = slice.exportJobs.find((job) => job.idempotencyKey === body.idempotencyKey)
+      if (repeated !== undefined) {
+        response = { job: { ...repeated } }
+        return current.slices
+      }
+      const job: RatingExportJob = {
+        // Идентификатор генерирует СЕРВЕР и он устойчив между перезагрузками.
+        exportJobId: `rating-export-${current.revision + 1}-${slice.exportJobs.length + 1}`,
+        scope: body.scope,
+        format: body.format,
+        state: 'QUEUED',
+        createdAt: clock.now(),
+        createdBy: actorUserId ?? '',
+        finishedAt: null,
+        failureCode: null,
+        safeFailureMessage: null,
+        artifactId: null,
+        idempotencyKey: body.idempotencyKey,
+      }
+      response = { job: { ...job } }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          exportJobs: [...slice.exportJobs, job],
+          auditEntries: [
+            ...slice.auditEntries,
+            auditEntry(current, slice.auditEntries.length + 1, {
+              actorUserId,
+              eventCode: 'RATING_EXPORT_REQUESTED',
+              outcome: 'SUCCESS',
+              requestId: body.idempotencyKey,
+            }),
+          ],
+        },
+      }
+    })
+    if (response === null) throw new Error('mock-runtime: заказ выгрузки не вернул результат')
+    return response
+  }
+
+  /**
+   * Отмена выгрузки (§19.29 `CANCELLED`). Отменить можно ТОЛЬКО незавершённую
+   * работу: у готовой отмена ничего не отменяет — файл уже собран, а состояние
+   * `CANCELLED` на нём означало бы, что его не существует.
+   */
+  async function cancelRatingExport(
+    actorUserId: string | null,
+    exportJobId: string,
+  ): Promise<CancelRatingExportResponse> {
+    if (!hasPermission(actorUserId, EXPORT_PERMISSION)) {
+      throw new RepositoryPermissionError(EXPORT_PERMISSION)
+    }
+    let response: CancelRatingExportResponse | null = null
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current.slices)
+      const job = slice.exportJobs.find((entry) => entry.exportJobId === exportJobId)
+      // Чужая работа — 404, а не 403: отказ по праву подтвердил бы, что
+      // выгрузка с таким идентификатором существует и кем-то заказана.
+      if (job === undefined || job.createdBy !== (actorUserId ?? '')) {
+        throw new RepositoryNotFoundError(exportJobId)
+      }
+      if (job.state !== 'QUEUED' && job.state !== 'GENERATING') {
+        throw new RepositoryBusinessRuleError(
+          'EXPORT_NOT_CANCELLABLE',
+          'Работа уже завершена: отменять нечего.',
+        )
+      }
+      const cancelled: RatingExportJob = { ...job, state: 'CANCELLED', finishedAt: clock.now() }
+      response = { job: { ...cancelled } }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          exportJobs: slice.exportJobs.map((entry) =>
+            entry.exportJobId === job.exportJobId ? cancelled : entry,
+          ),
+        },
+      }
+    })
+    if (response === null) throw new Error('mock-runtime: отмена выгрузки не вернула результат')
+    return response
+  }
+
+  /**
+   * Выдача файла (§19.29). ОТДЕЛЬНАЯ операция, повторно проверяющая право,
+   * владельца и состояние: пришедший по ссылке не считается допущенным потому,
+   * что ссылка у него есть.
+   *
+   * Запись в журнал — о ВЫДАЧЕ, а не о заказе: §19.29 требует audit за
+   * выгрузку, и главный вопрос контроля — что покинуло систему, а не что было
+   * поставлено в очередь и отменено.
+   */
+  async function downloadRatingExport(
+    actorUserId: string | null,
+    artifactId: string,
+  ): Promise<DownloadRatingExportResponse> {
+    if (!hasPermission(actorUserId, EXPORT_PERMISSION)) {
+      await recordRejection({
+        actorUserId,
+        eventCode: 'RATING_EXPORT_REJECTED',
+        reasonCode: 'PERMISSION_DENIED',
+      })
+      throw new RepositoryPermissionError(EXPORT_PERMISSION)
+    }
+    let response: DownloadRatingExportResponse | null = null
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current.slices)
+      const artifact = slice.exportArtifacts.find((entry) => entry.artifactId === artifactId)
+      const job =
+        artifact === undefined
+          ? undefined
+          : slice.exportJobs.find((entry) => entry.exportJobId === artifact.exportJobId)
+      if (artifact === undefined || job === undefined || job.createdBy !== (actorUserId ?? '')) {
+        throw new RepositoryNotFoundError(artifactId)
+      }
+      // Состояние работы перепроверяется ЗАНОВО: файл отменённой или упавшей
+      // работы выдавать нечем, даже если артефакт когда-то успел собраться.
+      if (job.state !== 'READY') {
+        throw new RepositoryBusinessRuleError(
+          'EXPORT_NOT_READY',
+          'Файл не выдан: работа не в состоянии «Готов».',
+        )
+      }
+      response = { fileName: artifact.fileName, content: artifact.content }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          auditEntries: [
+            ...slice.auditEntries,
+            auditEntry(current, slice.auditEntries.length + 1, {
+              actorUserId,
+              eventCode: 'RATING_EXPORT_DOWNLOADED',
+              outcome: 'SUCCESS',
+              requestId: job.idempotencyKey,
+            }),
+          ],
+        },
+      }
+    })
+    if (response === null) throw new Error('mock-runtime: выдача файла не вернула результат')
+    return response
+  }
+
   return {
     listOperationalRatings,
+    listRatingExports,
+    createRatingExport,
+    cancelRatingExport,
+    downloadRatingExport,
     getRatingDynamics,
     getRatingAnalytics,
     getEvaluationWorkspace,

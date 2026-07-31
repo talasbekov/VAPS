@@ -145,6 +145,13 @@ export const ROUTES = {
    */
   ratingAudit: '/ratings/audit',
   /**
+   * §19.29 выгрузка рейтинга — СВОЙ маршрут и своё право (`ops.rating.export`).
+   * Не секция `/ratings`: там правом входа служит `ops.rating.view_aggregate`,
+   * и заказ файла открывался бы каждому, кто вправе посмотреть сводку на
+   * экране. Файл переживает экран и уходит из системы — это другое действие.
+   */
+  ratingExport: '/ratings/export',
+  /**
    * Отчёт §22.16 «Аналитика рейтинга» — ОТДЕЛЬНЫЙ маршрут со СВОИМ правом
    * (`ops.analytics.view`). Секцией на `/ratings` он быть не мог: там правом
    * входа служит `ops.rating.view_aggregate`, и отчёт раздела аналитики
@@ -323,6 +330,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Журнал оценивания',
     icon: ScrollText,
     permission: 'ops.rating.view_audit',
+  },
+  {
+    route: ROUTES.ratingExport,
+    label: 'Выгрузка рейтинга',
+    icon: FileText,
+    permission: 'ops.rating.export',
   },
   {
     route: ROUTES.ratingAnalytics,

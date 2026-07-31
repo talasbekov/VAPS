@@ -75,6 +75,11 @@
   редакцией задания.
 - `src/features/ratings/pages/RatingNotificationsSection.tsx` — уведомления §19.28:
   фиксированные формулировки по коду, deep link на маршрут с перепроверкой прав.
+- `src/features/ratings/lib/export.ts` — сборка файла §19.29 ИЗ СВОДКИ (закрытых полей в
+  источнике нет вовсе), перечни недоступных форматов/режимов с причиной и проверка заказа.
+- `src/features/ratings/pages/RatingExportPage.tsx` — маршрут `/ratings/export`, право
+  `ops.rating.export`: серверные состояния `QUEUED/GENERATING/READY/FAILED/CANCELLED`,
+  отмена, скачивание отдельной операцией, ссылки на файл в строке нет.
 - `src/features/ratings/pages/RatingAuditPage.tsx` — маршрут `/ratings/audit`, право
   `ops.rating.view_audit`: события и отказы оценивания БЕЗ значений оценок.
 - `src/features/ratings/lib/idempotency.ts` — ключ §19.26: один на форму, без значений записи.

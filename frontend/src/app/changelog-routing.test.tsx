@@ -286,9 +286,10 @@ describe('доступ к журналу (AC-6)', () => {
     // + 1 (ratingAnalytics, §22.16 — своё право `ops.analytics.view`)
     // + 1 (evaluationWorkspace, §19.14 — своё право `ops.rating.evaluate`)
     // + 1 (evaluationRegistry, §19.15 — реестр итоговых оценок)
+    // + 1 (ratingExport, §19.29 — выгрузка рейтинга, `ops.rating.export`)
     // + 1 (ratingAudit, §19.27 — журнал оценивания, `ops.rating.view_audit`)
     // — changelog среди них нет
-    expect(NAV_SECTIONS).toHaveLength(22)
+    expect(NAV_SECTIONS).toHaveLength(23)
   })
 })
 

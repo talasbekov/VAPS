@@ -90,10 +90,13 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // старом снапшоте поля `dynamicsPoints` нет вовсе, а достроить его миграцией
 // нельзя: значения точек записаны при закрытии периодов и из текущих оценок не
 // выводятся (§19.20 «не пересчитывай старые точки»).
+// Работы и артефакты экспорта рейтинга (§19.29) появились в слайсе `ratings` —
+// 35→36: в старом снапшоте полей `exportJobs`/`exportArtifacts` нет вовсе, и
+// чтение списка выгрузок упало бы на `undefined.map`.
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 35
+export const SCHEMA_VERSION = 36
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)

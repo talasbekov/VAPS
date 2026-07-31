@@ -17,6 +17,10 @@ import type {
   RatingAuditEntry,
   RatingNotification,
   RatingDynamicsPoint,
+  RatingExportArtifact,
+  RatingExportFormat,
+  RatingExportJob,
+  RatingExportScope,
   RatingPolicy,
   RatingPolicyBoundary,
 } from '../model/types'
@@ -94,6 +98,32 @@ export const RATING_AUDIT_PATH = '/api/ops/rating-audit/'
  */
 export const RATING_NOTIFICATIONS_PATH = '/api/ops/rating-notifications/'
 export const RATING_EMPLOYEE_DETAIL_PATH = '/api/ops/operational-rating-employee/'
+/**
+ * Экспорт §19.29 — СВОЙ путь и своё право (`ops.rating.export`). Не хвост под
+ * путём сводки: коллизия путей в MSW разрешается молча в пользу первого
+ * handler'а (инцидент Этапа 39), и все три пути ниже грепнуты по `src` до
+ * заведения.
+ */
+export const RATING_EXPORTS_PATH = '/api/ops/rating-exports/'
+export function ratingExportCancelPath(exportJobId: string): string {
+  return `/api/ops/rating-exports/${encodeURIComponent(exportJobId)}/cancel/`
+}
+/**
+ * Шаблон того же пути для MSW. Отдельная константа, а не вызов фабрики с
+ * `:exportJobId`: фабрика прогоняет сегмент через `encodeURIComponent`, и
+ * двоеточие уехало бы в шаблон как `%3AexportJobId` — дефект Этапа 49.
+ */
+export const RATING_EXPORT_CANCEL_PATH_PATTERN = '/api/ops/rating-exports/:exportJobId/cancel/'
+/**
+ * §19.29 «Файл считается готовым только после ответа repository»: скачивание —
+ * ОТДЕЛЬНАЯ серверная операция, повторно проверяющая право и состояние. Ссылки
+ * на файл в работе нет вовсе, поэтому и путь ведёт к артефакту, а не к работе.
+ */
+export function ratingExportDownloadPath(artifactId: string): string {
+  return `/api/ops/rating-export-artifacts/${encodeURIComponent(artifactId)}/download/`
+}
+export const RATING_EXPORT_DOWNLOAD_PATH_PATTERN =
+  '/api/ops/rating-export-artifacts/:artifactId/download/'
 
 /** Значения, которыми можно фильтровать реестр. Их перечень даёт СЕРВЕР —
  * автодополнение не должно раскрывать сотрудников вне разрешённого scope
@@ -396,4 +426,54 @@ export interface RatingDynamicsResponse {
   capabilities: { operationalRatings: boolean }
   /** Кого можно выбрать — тот же безопасный список, что в сводке. */
   employees: { employeeId: string; safeLabel: string }[]
+}
+
+/**
+ * Заказ выгрузки (§19.29). Ни периода, ни списка участников в теле нет:
+ * агрегированная сводка считается по ДЕЙСТВУЮЩЕЙ методике (§19.19 — период
+ * задаёт policy, а не форма), и позволить экрану прислать свой период значило
+ * бы выдать за агрегат выборку по произвольным границам.
+ */
+export interface CreateRatingExportRequest {
+  scope: RatingExportScope
+  format: RatingExportFormat
+  /** §19.26 — та же защита, что у отправки оценки: повтор не создаёт второй работы. */
+  idempotencyKey: string
+}
+
+export interface CreateRatingExportResponse {
+  job: RatingExportJob
+}
+
+/**
+ * Артефакт В СПИСКЕ — без содержимого: файл едет только в ответе на скачивание
+ * (§19.29 «Не добавляй фиктивную ссылку на файл»: ссылки нет, а содержимое не
+ * лежит в списке заранее).
+ */
+export type RatingExportArtifactSummary = Omit<RatingExportArtifact, 'content'>
+
+export interface ListRatingExportsResponse {
+  /** Только СВОИ работы: чужая выгрузка — чужое действие (§19.29 + §22.25). */
+  results: RatingExportJob[]
+  artifacts: RatingExportArtifactSummary[]
+  /** Форматы, которые сервер реально собирает. Экран не знает их сам. */
+  formats: RatingExportFormat[]
+  /** §35: форматы и режимы §19.29, которых нет, — с причиной. */
+  unavailableFormats: UnavailableRatingFactor[]
+  unavailableScopes: UnavailableRatingFactor[]
+  capabilities: { operationalRatings: boolean }
+  serverTime: string
+}
+
+export interface CancelRatingExportResponse {
+  job: RatingExportJob
+}
+
+/**
+ * Ответ скачивания: имя и содержимое. Формируется на сервере ЦЕЛИКОМ — браузер
+ * не собирает файл из полученных строк и не придумывает ему имя.
+ */
+export interface DownloadRatingExportResponse {
+  fileName: string
+  content: string
 }

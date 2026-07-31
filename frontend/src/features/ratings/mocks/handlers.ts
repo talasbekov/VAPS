@@ -15,9 +15,13 @@ import {
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
   RATING_ANALYTICS_PATH,
+  RATING_EXPORTS_PATH,
+  RATING_EXPORT_CANCEL_PATH_PATTERN,
+  RATING_EXPORT_DOWNLOAD_PATH_PATTERN,
 } from '../api/pending-contracts'
 import type {
   CorrectEvaluationRequest,
+  CreateRatingExportRequest,
   SubmitEvaluationRequest,
 } from '../api/pending-contracts'
 import {
@@ -49,7 +53,10 @@ function mapRepositoryError(error: unknown, clock: DemoClock): Response | null {
     })
   }
   if (error instanceof RepositoryNotFoundError) {
-    return HttpResponse.json(envelope(clock, 'ENTITY_NOT_FOUND', 'Задание не найдено.'), {
+    // Формулировка общая: через этот же маппинг проходят и задание, и работа
+    // экспорта, и артефакт — «задание не найдено» на скачивании файла называло
+    // бы человеку не ту сущность.
+    return HttpResponse.json(envelope(clock, 'ENTITY_NOT_FOUND', 'Запись не найдена.'), {
       status: 404,
     })
   }
@@ -100,6 +107,60 @@ export function createRatingsHandlers(adapter: PersistenceAdapter, clock: DemoCl
           await repository.correctEvaluation(actorUserId, workItemId, body),
           { status: 201 },
         )
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    // Отмена и скачивание зарегистрированы ДО чтения списка выгрузок: путь
+    // строки работы похож формой на путь коллекции, а MSW разрешает коллизию
+    // молча в пользу первого совпавшего handler'а (инцидент Этапа 39).
+    http.post(`*${RATING_EXPORT_CANCEL_PATH_PATTERN}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(
+          await repository.cancelRatingExport(actorUserId, String(params.exportJobId)),
+        )
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.post(`*${RATING_EXPORT_DOWNLOAD_PATH_PATTERN}`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(
+          await repository.downloadRatingExport(actorUserId, String(params.artifactId)),
+        )
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.post(`*${RATING_EXPORTS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const body = (await request.json()) as CreateRatingExportRequest
+      try {
+        return HttpResponse.json(await repository.createRatingExport(actorUserId, body), {
+          status: 201,
+        })
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.get(`*${RATING_EXPORTS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.listRatingExports(actorUserId))
       } catch (error) {
         const mapped = mapRepositoryError(error, clock)
         if (mapped !== null) return mapped

@@ -15,6 +15,8 @@ import type {
   EvaluationWorkItem,
   EventEvaluation,
   RatingDynamicsPoint,
+  RatingExportArtifact,
+  RatingExportJob,
 } from '../model/types'
 
 export interface RatingsSlice {
@@ -54,6 +56,17 @@ export interface RatingsSlice {
    * существующие на сервере.
    */
   notifications: RatingNotification[]
+  /**
+   * §19.29: работы экспорта и собранные файлы. Живут в слайсе, а не собираются
+   * в ответе: §19.29 «Файл считается готовым только после ответа repository» —
+   * работа обязана пережить перезагрузку вкладки, иначе состояние `QUEUED`
+   * означало бы «пока открыт этот экран».
+   *
+   * ⚠️ Содержимое артефакта собирается ИЗ СВОДКИ и закрытых полей не несёт
+   * (§19.29 перечисляет запрещённое списком).
+   */
+  exportJobs: RatingExportJob[]
+  exportArtifacts: RatingExportArtifact[]
   /**
    * §19.20: ряд точек динамики — ЗАПИСАННЫЕ агрегаты закрытых периодов, а не
    * производное от `evaluations`. Пересчитывать их из оценок при каждом
@@ -601,6 +614,11 @@ export function buildRatingsSeed(): { sliceName: string; data: RatingsSlice } {
       idempotency: [],
       auditEntries: SEED_AUDIT_ENTRIES.map((item) => ({ ...item })),
       notifications: SEED_NOTIFICATIONS.map((item) => ({ ...item })),
+      // Сеяных выгрузок нет намеренно: работа экспорта — след ДЕЙСТВИЯ
+      // человека, и готовый файл «из коробки» приписывал бы кому-то выгрузку,
+      // которой он не заказывал (§19.29 требует за неё audit-запись).
+      exportJobs: [],
+      exportArtifacts: [],
       dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
       capabilities: { operationalRatings: true, ratingConflicts: false },
     },

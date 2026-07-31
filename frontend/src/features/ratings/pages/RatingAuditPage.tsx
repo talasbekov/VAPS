@@ -19,6 +19,11 @@ const EVENT_LABEL: Record<RatingAuditEntry['eventCode'], string> = {
   EVALUATION_CORRECTED: 'Оценка исправлена',
   EVALUATION_CORRECTION_REJECTED: 'Исправление отклонено',
   EVALUATION_ACCESS_DENIED: 'Запрещённая попытка',
+  // §19.29: заказ и ВЫДАЧА файла названы по отдельности — работа могла быть
+  // создана и отменена, так и не покинув систему.
+  RATING_EXPORT_REQUESTED: 'Выгрузка заказана',
+  RATING_EXPORT_DOWNLOADED: 'Файл выгрузки выдан',
+  RATING_EXPORT_REJECTED: 'Выгрузка отклонена',
 }
 
 function dateTime(value: string): string {

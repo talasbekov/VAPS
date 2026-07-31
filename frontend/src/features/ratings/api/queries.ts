@@ -15,9 +15,17 @@ import {
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
   RATING_ANALYTICS_PATH,
+  RATING_EXPORTS_PATH,
   evaluationSubmitPath,
+  ratingExportCancelPath,
+  ratingExportDownloadPath,
 } from './pending-contracts'
 import type {
+  CancelRatingExportResponse,
+  CreateRatingExportRequest,
+  CreateRatingExportResponse,
+  DownloadRatingExportResponse,
+  ListRatingExportsResponse,
   RatingAuditResponse,
   RatingNotificationsResponse,
   EvaluationRegistryResponse,
@@ -210,5 +218,67 @@ export function useRatingAnalytics() {
   return useQuery<RatingAnalyticsResponse, ApiFailure>({
     queryKey: ['ratings', 'analytics'],
     queryFn: () => apiClient.get<RatingAnalyticsResponse>(RATING_ANALYTICS_PATH),
+  })
+}
+
+/**
+ * §19.29: пока есть незавершённые работы, список опрашивается. Опрос —
+ * единственный честный способ узнать состояние без фонового исполнителя, и он
+ * ОСТАНАВЛИВАЕТСЯ на терминальных состояниях: бесконечный поллинг готовой
+ * выгрузки грузил бы сервер ради неизменного ответа.
+ */
+export const RATING_EXPORT_POLL_INTERVAL_MS = 700
+
+export function useRatingExports() {
+  return useQuery<ListRatingExportsResponse, ApiFailure>({
+    queryKey: ['ratings', 'exports'],
+    queryFn: () => apiClient.get<ListRatingExportsResponse>(RATING_EXPORTS_PATH),
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (data === undefined) return false
+      const running = data.results.some(
+        (job) => job.state === 'QUEUED' || job.state === 'GENERATING',
+      )
+      return running ? RATING_EXPORT_POLL_INTERVAL_MS : false
+    },
+  })
+}
+
+export function useCreateRatingExport() {
+  const queryClient = useQueryClient()
+  return useApiMutation<
+    CreateRatingExportResponse,
+    CreateRatingExportRequest & Record<string, unknown>
+  >({
+    mutationFn: (body) => apiClient.post<CreateRatingExportResponse>(RATING_EXPORTS_PATH, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ratings', 'exports'] })
+    },
+  })
+}
+
+/** §19.29 `CANCELLED`. Тело пустое: что именно отменяется, знает путь работы. */
+export function useCancelRatingExport() {
+  const queryClient = useQueryClient()
+  return useApiMutation<CancelRatingExportResponse, { exportJobId: string }>({
+    mutationFn: ({ exportJobId }) =>
+      apiClient.post<CancelRatingExportResponse>(ratingExportCancelPath(exportJobId), {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ratings', 'exports'] })
+    },
+  })
+}
+
+/**
+ * §19.29 «Файл считается готовым только после ответа repository»: скачивание —
+ * МУТАЦИЯ, а не query. У неё есть побочный эффект (audit-запись о выдаче на
+ * сервере и сам факт выдачи), и кэшировать ответ значило бы держать содержимое
+ * файла в памяти вкладки дольше, чем оно нужно.
+ */
+export function useDownloadRatingExport(onReady: (file: DownloadRatingExportResponse) => void) {
+  return useApiMutation<DownloadRatingExportResponse, { artifactId: string }>({
+    mutationFn: ({ artifactId }) =>
+      apiClient.post<DownloadRatingExportResponse>(ratingExportDownloadPath(artifactId), {}),
+    onSuccess: (file) => onReady(file),
   })
 }

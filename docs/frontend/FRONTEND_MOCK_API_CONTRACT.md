@@ -487,7 +487,43 @@ unitSafeLabel, summary, points[], unavailableViews[] }` — §19.17 в aggregate
 
 Коды событий: `EVALUATION_SUBMITTED`, `EVALUATION_SCORE_CHANGED_FROM_INITIAL`,
 `EVALUATION_LOW_SCORE_WITHOUT_COMMENT`, `EVALUATION_CORRECTED`,
-`EVALUATION_CORRECTION_REJECTED`, `EVALUATION_ACCESS_DENIED`.
+`EVALUATION_CORRECTION_REJECTED`, `EVALUATION_ACCESS_DENIED`, `RATING_EXPORT_REQUESTED`,
+`RATING_EXPORT_DOWNLOADED`, `RATING_EXPORT_REJECTED`.
+
+### `/api/ops/rating-exports/` (§19.29)
+
+`backend-contract-pending`. Право — `ops.rating.export`, СВОЁ: право чтения агрегата им не
+служит (файл переживает экран и уходит из системы).
+
+`GET` → `{ results[], artifacts[], formats[], unavailableFormats[], unavailableScopes[],
+capabilities, serverTime }`. В списке только СВОИ работы. Работа: `exportJobId`, `scope`,
+`format`, `state`, `createdAt`, `createdBy`, `finishedAt`, `failureCode`,
+`safeFailureMessage`, `artifactId`, `idempotencyKey`. **Ссылки на файл в работе нет вовсе**
+(§19.29 «Не добавляй фиктивную ссылку на файл»); `artifactId` — `null` до `READY`.
+Артефакт в списке едет БЕЗ содержимого.
+
+Состояния — серверные и ровно списком §19.29: `QUEUED`, `GENERATING`, `READY`, `FAILED`,
+`CANCELLED`. Ступень продвигает сервер при чтении (фонового исполнителя в demo нет, §8.8);
+файл собирается ровно на переходе в `READY` и больше не пересобирается.
+
+`POST` `{ scope, format, idempotencyKey }` → `201 { job }`. Повтор с тем же ключом
+возвращает ПРЕЖНЮЮ работу (§19.26). Отказы: `403` без права; `422
+SENSITIVE_EXPORT_UNAVAILABLE` на `scope: INDIVIDUAL` — режим не выдаётся никому, включая
+wildcard-администратора (§19.21: нет ни scope, ни срока полномочия); `422
+EXPORT_FORMAT_UNAVAILABLE` на формате, которого сборка не собирает (`formats` = `['CSV']`,
+XLSX/PDF названы в `unavailableFormats` с причиной).
+
+`POST /api/ops/rating-exports/:exportJobId/cancel/` → `{ job }` в `CANCELLED`. Только для
+`QUEUED`/`GENERATING`: `422 EXPORT_NOT_CANCELLABLE` на завершённой. Чужая работа — `404`.
+
+`POST /api/ops/rating-export-artifacts/:artifactId/download/` → `{ fileName, content }`.
+Отдельная операция: перепроверяет право, владельца и состояние работы (`422
+EXPORT_NOT_READY`), пишет в журнал событие ВЫДАЧИ. Содержимое собрано из агрегированной
+сводки — отдельных score, оценщиков, комментариев и оснований в нём нет ни одного.
+
+Журнал (§19.27) пополняется кодами `RATING_EXPORT_REQUESTED` (в транзакции создания
+работы), `RATING_EXPORT_DOWNLOADED` (в транзакции выдачи) и `RATING_EXPORT_REJECTED`
+(своей транзакцией — отказ не должен откатываться вместе с отклонённой мутацией).
 
 ### `/api/ops/rating-notifications/` (§19.28)
 

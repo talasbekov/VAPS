@@ -23,6 +23,14 @@ import {
 const VIEWER = 'rating-viewer'
 const ANALYST = 'rating-analyst'
 const NOBODY = 'nobody-user'
+/** §19.27: контролёр журнала. Право видеть журнал — не право выгружать. */
+const EXPORT_AUDITOR = 'rating-export-auditor'
+/** §19.29: право на выгрузку — СВОЁ. Держатель сводки (`VIEWER`) его не имеет,
+ * иначе «отдельный permission» промпта был бы формальностью. */
+const EXPORTER = 'rating-exporter'
+/** Эталонный администратор с wildcard: на нём проверяется, что индивидуальная
+ * выгрузка не выдаётся ВООБЩЕ, а не «пока не выдали право». */
+const WILDCARD = 'rating-wildcard'
 /** Оценщики сида (§19.7): задания привязаны к учётным записям, а не к экрану. */
 const EVALUATOR = 'demo-event-planner'
 const EVALUATOR_WITH_AGGREGATE = 'demo-recon-officer'
@@ -101,6 +109,8 @@ function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
         auditEntries: SEED_AUDIT_ENTRIES.map((item) => ({ ...item })),
         notifications: SEED_NOTIFICATIONS.map((item) => ({ ...item })),
         dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
+        exportJobs: [],
+        exportArtifacts: [],
         capabilities: {
           operationalRatings: overrides.operationalRatings ?? true,
           ratingConflicts: false,
@@ -126,6 +136,9 @@ beforeEach(() => {
     // иначе разделение прав было бы недемонстрируемо (обе роли у одного лица).
     { userId: ANALYST, permissions: ['ops.analytics.view'] },
     { userId: NOBODY, permissions: [] },
+    { userId: EXPORTER, permissions: ['ops.rating.export'] },
+    { userId: EXPORT_AUDITOR, permissions: ['ops.rating.view_audit'] },
+    { userId: WILDCARD, permissions: ['*'] },
     // Оценщик БЕЗ права на агрегат: §19.14 «Сводка мероприятия показывается
     // только при наличии permission» иначе была бы недемонстрируема — у второго
     // оценщика право есть, у этого нет, и оба держат задания в одном событии.
@@ -1345,4 +1358,240 @@ describe('уведомления оценивания (§19.28)', () => {
   // (`toSubmittedView`) законно отказывается собирать чужую запись. Свойство
   // станет проверяемым вместе с sensitive-исправлением §19.21, когда появятся
   // scope и срок полномочия.
+})
+
+describe('экспорт рейтинга (§19.29)', () => {
+  async function orderExport(
+    repository: ReturnType<typeof createRatingsRepository>,
+    actor = EXPORTER,
+    key = 'idem-export-1',
+  ) {
+    return repository.createRatingExport(actor, {
+      scope: 'AGGREGATE',
+      format: 'CSV',
+      idempotencyKey: key,
+    })
+  }
+
+  /** Довести работу до терминального состояния: ступень идёт на ЧТЕНИИ. */
+  async function drain(
+    repository: ReturnType<typeof createRatingsRepository>,
+    actor = EXPORTER,
+  ) {
+    let list = await repository.listRatingExports(actor)
+    for (let guard = 0; guard < 5; guard += 1) {
+      if (!list.results.some((job) => job.state === 'QUEUED' || job.state === 'GENERATING')) break
+      list = await repository.listRatingExports(actor)
+    }
+    return list
+  }
+
+  it('право на выгрузку — своё: держателю сводки файл не заказывается', async () => {
+    const { repository } = await setup()
+    await expect(orderExport(repository, VIEWER)).rejects.toBeInstanceOf(RepositoryPermissionError)
+    await expect(repository.listRatingExports(VIEWER)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('заказ создаёт работу в QUEUED без артефакта и без ссылки на файл', async () => {
+    const { repository } = await setup()
+    const created = await orderExport(repository)
+    expect(created.job).toMatchObject({ state: 'QUEUED', artifactId: null, scope: 'AGGREGATE' })
+    // §19.29 «Не добавляй фиктивную ссылку на файл»: ни одного поля со ссылкой
+    // в работе нет вовсе — проверяется по ВСЕМУ JSON, а не по знакомым именам.
+    const json = JSON.stringify(created.job)
+    expect(json).not.toContain('http')
+    expect(json).not.toContain('/download')
+    expect(json).not.toContain('.csv')
+  })
+
+  it('состояния проходят QUEUED → GENERATING → READY, файл появляется только на READY', async () => {
+    const { repository } = await setup()
+    await orderExport(repository)
+    const first = await repository.listRatingExports(EXPORTER)
+    expect(first.results[0].state).toBe('GENERATING')
+    expect(first.artifacts).toEqual([])
+    const second = await repository.listRatingExports(EXPORTER)
+    expect(second.results[0].state).toBe('READY')
+    expect(second.results[0].artifactId).toBe(second.artifacts[0].artifactId)
+    expect(second.artifacts[0].fileName).toBe('operational-rating-aggregate-2026-07-20.csv')
+  })
+
+  it('готовый файл не пересобирается повторным чтением (§19.29: файл один)', async () => {
+    const { repository } = await setup()
+    await orderExport(repository)
+    const ready = await drain(repository)
+    const generatedAt = ready.artifacts[0].generatedAt
+    const again = await repository.listRatingExports(EXPORTER)
+    expect(again.artifacts).toHaveLength(1)
+    expect(again.artifacts[0].generatedAt).toBe(generatedAt)
+  })
+
+  it('содержимое собирается из СВОДКИ: закрытых величин в файле нет ни одной', async () => {
+    const { repository } = await setup()
+    await orderExport(repository)
+    await drain(repository)
+    const artifactId = (await repository.listRatingExports(EXPORTER)).artifacts[0].artifactId
+    const file = await repository.downloadRatingExport(EXPORTER, artifactId)
+    // Ассерт по ВСЕМУ ответу, включая содержимое: производное поле несёт
+    // закрытое значение так же, как своё (§19.29 перечисляет запрещённое
+    // списком — оценщик, комментарий, отдельная оценка, основание).
+    const json = JSON.stringify(file)
+    expect(json).not.toContain('demo-event-planner')
+    expect(json).not.toContain('Задержка на инструктаже')
+    expect(json).not.toContain('evaluation-1')
+    expect(json).not.toContain('TIMELY_ARRIVAL')
+    expect(file.content).toContain('Ерланов Д.')
+    expect(file.content).toContain(RATING_POLICY_VERSION)
+  })
+
+  it('повтор с тем же ключом не создаёт вторую работу (§19.26)', async () => {
+    const { repository } = await setup()
+    const first = await orderExport(repository)
+    const repeated = await orderExport(repository)
+    expect(repeated.job.exportJobId).toBe(first.job.exportJobId)
+    expect((await repository.listRatingExports(EXPORTER)).results).toHaveLength(1)
+  })
+
+  it('индивидуальная выгрузка не выдаётся НИКОМУ — включая wildcard-администратора', async () => {
+    const { repository } = await setup()
+    await expect(
+      repository.createRatingExport(WILDCARD, {
+        scope: 'INDIVIDUAL',
+        format: 'CSV',
+        idempotencyKey: 'idem-sensitive',
+      }),
+    ).rejects.toMatchObject({ errorCode: 'SENSITIVE_EXPORT_UNAVAILABLE' })
+    expect((await repository.listRatingExports(WILDCARD)).results).toEqual([])
+  })
+
+  it('формат, которого никто не собирает, отклоняется до создания работы', async () => {
+    const { repository } = await setup()
+    await expect(
+      repository.createRatingExport(EXPORTER, {
+        scope: 'AGGREGATE',
+        format: 'PDF' as never,
+        idempotencyKey: 'idem-pdf',
+      }),
+    ).rejects.toMatchObject({ errorCode: 'EXPORT_FORMAT_UNAVAILABLE' })
+    expect((await repository.listRatingExports(EXPORTER)).results).toEqual([])
+  })
+
+  it('отмена работает на незавершённой работе и отвергается на готовой', async () => {
+    const { repository } = await setup()
+    const created = await orderExport(repository)
+    const cancelled = await repository.cancelRatingExport(EXPORTER, created.job.exportJobId)
+    expect(cancelled.job).toMatchObject({ state: 'CANCELLED' })
+    expect(cancelled.job.finishedAt).not.toBeNull()
+    // Отменённая работа не продвигается дальше чтением: файла у неё не будет.
+    const list = await repository.listRatingExports(EXPORTER)
+    expect(list.results[0].state).toBe('CANCELLED')
+    expect(list.artifacts).toEqual([])
+
+    const second = await orderExport(repository, EXPORTER, 'idem-export-2')
+    await drain(repository)
+    await expect(
+      repository.cancelRatingExport(EXPORTER, second.job.exportJobId),
+    ).rejects.toMatchObject({ errorCode: 'EXPORT_NOT_CANCELLABLE' })
+  })
+
+  it('чужая работа отвечает «не найдено», а не «нет прав»', async () => {
+    const { repository } = await setup()
+    const created = await orderExport(repository)
+    await drain(repository)
+    const artifactId = (await repository.listRatingExports(EXPORTER)).artifacts[0].artifactId
+    // У WILDCARD право есть — и всё равно чужая работа для него не существует:
+    // отказ по праву подтвердил бы, что выгрузка с таким идентификатором есть.
+    await expect(
+      repository.cancelRatingExport(WILDCARD, created.job.exportJobId),
+    ).rejects.toBeInstanceOf(RepositoryNotFoundError)
+    await expect(repository.downloadRatingExport(WILDCARD, artifactId)).rejects.toBeInstanceOf(
+      RepositoryNotFoundError,
+    )
+    expect((await repository.listRatingExports(WILDCARD)).results).toEqual([])
+  })
+
+  it('выключенный рейтинг роняет работу в FAILED с кодом, а не молча собирает файл', async () => {
+    const { repository, adapter } = await setup()
+    await orderExport(repository)
+    // Работа уже в очереди — функцию выключают между заказом и сборкой.
+    await repository.listRatingExports(EXPORTER)
+    const envelope = await adapter.load()
+    if (envelope === null) throw new Error('нет состояния')
+    const slice = envelope.slices.ratings as { capabilities: { operationalRatings: boolean } }
+    await adapter.reset({
+      ...envelope,
+      slices: {
+        ...envelope.slices,
+        ratings: { ...slice, capabilities: { ...slice.capabilities, operationalRatings: false } },
+      },
+    })
+    const list = await repository.listRatingExports(EXPORTER)
+    expect(list.results[0]).toMatchObject({ state: 'FAILED', failureCode: 'RATING_DISABLED' })
+    expect(list.artifacts).toEqual([])
+  })
+
+  it('файл упавшей работы не выдаётся, даже если артефакт был собран', async () => {
+    const { repository, adapter } = await setup()
+    await orderExport(repository)
+    await drain(repository)
+    const artifactId = (await repository.listRatingExports(EXPORTER)).artifacts[0].artifactId
+    // Состояние работы перепроверяется ЗАНОВО на выдаче: артефакт остаётся, а
+    // право на него исчезает вместе с состоянием READY.
+    const envelope = await adapter.load()
+    if (envelope === null) throw new Error('нет состояния')
+    const slice = envelope.slices.ratings as { exportJobs: { state: string }[] }
+    await adapter.reset({
+      ...envelope,
+      slices: {
+        ...envelope.slices,
+        ratings: {
+          ...slice,
+          exportJobs: slice.exportJobs.map((job) => ({ ...job, state: 'CANCELLED' })),
+        },
+      },
+    })
+    await expect(repository.downloadRatingExport(EXPORTER, artifactId)).rejects.toMatchObject({
+      errorCode: 'EXPORT_NOT_READY',
+    })
+  })
+
+  it('журнал помнит заказ, выдачу и отказ — и не несёт значений (§19.27/§19.29)', async () => {
+    const { repository } = await setup()
+    await orderExport(repository)
+    await drain(repository)
+    const artifactId = (await repository.listRatingExports(EXPORTER)).artifacts[0].artifactId
+    await repository.downloadRatingExport(EXPORTER, artifactId)
+    await expect(
+      repository.createRatingExport(EXPORTER, {
+        scope: 'INDIVIDUAL',
+        format: 'CSV',
+        idempotencyKey: 'idem-sensitive-2',
+      }),
+    ).rejects.toMatchObject({ errorCode: 'SENSITIVE_EXPORT_UNAVAILABLE' })
+
+    const audit = await repository.listRatingAudit(EXPORT_AUDITOR, 1)
+    const codes = audit.results.map((entry) => entry.eventCode)
+    expect(codes).toContain('RATING_EXPORT_REQUESTED')
+    expect(codes).toContain('RATING_EXPORT_DOWNLOADED')
+    // Отказ пишется СВОЕЙ транзакцией: внутри отклонённой мутации он
+    // откатился бы вместе с ней, и журнал помнил бы только удачные выгрузки.
+    const rejected = audit.results.find((entry) => entry.outcome === 'REJECTED')
+    expect(rejected).toMatchObject({
+      eventCode: 'RATING_EXPORT_REJECTED',
+      reasonCode: 'SENSITIVE_EXPORT_UNAVAILABLE',
+    })
+    const json = JSON.stringify(audit.results)
+    expect(json).not.toContain('Ерланов')
+    expect(json).not.toContain('Задержка на инструктаже')
+  })
+
+  it('§35-блоки называют недоступные форматы и режим с причиной', async () => {
+    const { repository } = await setup()
+    const list = await repository.listRatingExports(EXPORTER)
+    expect(list.formats).toEqual(['CSV'])
+    expect(list.unavailableFormats.map((item) => item.code)).toEqual(['XLSX', 'PDF'])
+    expect(list.unavailableScopes.map((item) => item.code)).toEqual(['INDIVIDUAL'])
+  })
 })

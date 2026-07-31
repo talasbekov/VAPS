@@ -20,7 +20,10 @@ import {
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
   RATING_ANALYTICS_PATH,
+  RATING_EXPORTS_PATH,
   evaluationSubmitPath,
+  ratingExportCancelPath,
+  ratingExportDownloadPath,
 } from '../api/pending-contracts'
 import type {
   EvaluationWorkspaceResponse,
@@ -34,6 +37,10 @@ import type {
   RatingEmployeeDetailResponse,
   RatingAuditResponse,
   RatingNotificationsResponse,
+  CancelRatingExportResponse,
+  CreateRatingExportResponse,
+  DownloadRatingExportResponse,
+  ListRatingExportsResponse,
 } from '../api/pending-contracts'
 import { createRatingsHandlers } from './handlers'
 import { buildRatingsSeed } from './fixtures'
@@ -44,6 +51,7 @@ const ANALYST = 'rating-analyst'
 const NOBODY = 'nobody-user'
 const EVALUATOR = 'demo-event-planner'
 const AUDITOR = 'rating-auditor'
+const EXPORTER = 'rating-exporter'
 const BASE = 'http://localhost'
 
 const adapter = createMemoryPersistence()
@@ -91,8 +99,8 @@ beforeEach(async () => {
   }
   await adapter.reset({
     application: 'smart-josparlau',
-    schema_version: 35,
-    seed_version: 'test-v35',
+    schema_version: 36,
+    seed_version: 'test-v36',
     scenario: 'normal',
     revision: 0,
     created_at: CLOCK_ISO,
@@ -104,6 +112,7 @@ beforeEach(async () => {
     { userId: ANALYST, permissions: ['ops.analytics.view'] },
     { userId: NOBODY, permissions: [] },
     { userId: AUDITOR, permissions: ['ops.rating.view_audit'] },
+    { userId: EXPORTER, permissions: ['ops.rating.export'] },
     {
       userId: EVALUATOR,
       permissions: [
@@ -120,6 +129,7 @@ const stranger = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id':
 const analyst = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': ANALYST } })
 const evaluator = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': EVALUATOR } })
 const auditor = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': AUDITOR } })
+const exporter = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': EXPORTER } })
 
 async function statusOf(call: () => Promise<unknown>): Promise<number> {
   try {
@@ -444,5 +454,57 @@ describe('ratings handlers — уведомления (§19.28)', () => {
       expect(item.deepLink.startsWith('/ratings/')).toBe(true)
       expect(item.deepLink).not.toContain('/api/')
     }
+  })
+})
+
+describe('экспорт рейтинга — маршруты §19.29', () => {
+  it('POST заказа, GET списка, POST отмены и POST скачивания доходят до repository', async () => {
+    const created = await exporter.post<CreateRatingExportResponse>(RATING_EXPORTS_PATH, {
+      scope: 'AGGREGATE',
+      format: 'CSV',
+      idempotencyKey: 'handler-export-1',
+    })
+    expect(created.job.state).toBe('QUEUED')
+
+    // Путь строки работы (`/rating-exports/:id/cancel/`) НЕ перехватывается
+    // путём коллекции: MSW разрешает коллизию молча в пользу первого handler'а.
+    const second = await exporter.post<CreateRatingExportResponse>(RATING_EXPORTS_PATH, {
+      scope: 'AGGREGATE',
+      format: 'CSV',
+      idempotencyKey: 'handler-export-2',
+    })
+    const cancelled = await exporter.post<CancelRatingExportResponse>(
+      ratingExportCancelPath(second.job.exportJobId),
+      {},
+    )
+    expect(cancelled.job.state).toBe('CANCELLED')
+
+    let list = await exporter.get<ListRatingExportsResponse>(RATING_EXPORTS_PATH)
+    for (let guard = 0; guard < 5 && list.artifacts.length === 0; guard += 1) {
+      list = await exporter.get<ListRatingExportsResponse>(RATING_EXPORTS_PATH)
+    }
+    expect(list.artifacts).toHaveLength(1)
+    const file = await exporter.post<DownloadRatingExportResponse>(
+      ratingExportDownloadPath(list.artifacts[0].artifactId),
+      {},
+    )
+    expect(file.fileName).toContain('.csv')
+    expect(file.content).toContain('Участник;Агрегат')
+  })
+
+  it('отказы едут своими статусами: 403 без права, 422 на индивидуальной выгрузке', async () => {
+    expect(await statusOf(() => stranger.get(RATING_EXPORTS_PATH))).toBe(403)
+    expect(
+      await statusOf(() =>
+        exporter.post(RATING_EXPORTS_PATH, {
+          scope: 'INDIVIDUAL',
+          format: 'CSV',
+          idempotencyKey: 'handler-export-sensitive',
+        }),
+      ),
+    ).toBe(422)
+    expect(
+      await statusOf(() => exporter.post(ratingExportDownloadPath('missing-artifact'), {})),
+    ).toBe(404)
   })
 })
