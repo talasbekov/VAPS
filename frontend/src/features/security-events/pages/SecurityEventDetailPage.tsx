@@ -1348,7 +1348,7 @@ function PlacementRatingsSection({ event }: { event: SecurityEvent }) {
       aria-label="Рейтинг назначенных"
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold">Рейтинг назначенных</h3>
+        <h2 className="text-sm font-semibold">Рейтинг назначенных</h2>
         {!data.ratingConflictsEnabled && (
           <span className="text-[11px] text-muted-foreground">
             Проверка требования поста отключена — рейтинг не участвует в назначении.
