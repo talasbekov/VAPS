@@ -1606,6 +1606,68 @@ paths:
               schema:
                 $ref: '#/components/schemas/DutyPlan'
           description: ''
+  /api/operations/duty-plans/{id}/shifts/:
+    get:
+      operationId: duty_plan_shifts_list
+      description: Список смен плана. Требует duty.manage. limit/offset-пагинация
+        (дефолт 50, потолок 200).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDutyShiftList'
+          description: ''
+    post:
+      operationId: duty_plan_shifts_create
+      description: Создать смену в плане. Требует duty.manage.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DutyShiftCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DutyShiftCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DutyShiftCreateRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyShift'
+          description: ''
   /api/operations/expense-reports/:
     get:
       operationId: operations_expense_reports_list
@@ -2642,6 +2704,93 @@ components:
       - month
       - object
       - year
+    DutyShift:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        plan:
+          type: integer
+          readOnly: true
+        employee_id:
+          type: string
+          format: uuid
+        post:
+          type: integer
+          nullable: true
+        duty_type:
+          type: integer
+          nullable: true
+        duty_role_code:
+          type: string
+          maxLength: 100
+        notes:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        cancelled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        cancelled_by:
+          type: string
+          readOnly: true
+          nullable: true
+        cancelled_reason:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - cancelled_at
+      - cancelled_by
+      - cancelled_reason
+      - created_at
+      - employee_id
+      - ends_at
+      - id
+      - plan
+      - starts_at
+      - updated_at
+    DutyShiftCreateRequest:
+      type: object
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+        post:
+          type: integer
+          nullable: true
+        duty_type:
+          type: integer
+          nullable: true
+        duty_role_code:
+          type: string
+          maxLength: 100
+        notes:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+      required:
+      - employee_id
+      - ends_at
+      - starts_at
     Employee:
       type: object
       properties:
@@ -3414,6 +3563,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DutyPlan'
+    PaginatedDutyShiftList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DutyShift'
     PaginatedEmployeeList:
       type: object
       required:

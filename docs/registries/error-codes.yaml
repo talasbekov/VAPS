@@ -215,6 +215,12 @@ codes:
     category: validation
     description: "year/month плана дежурств вне допустимого диапазона (backstop — ck_duty_plan_year_range/ck_duty_plan_month_range)."
     source: "Story 14.5 (DutyPlan CheckConstraints); Story 14.11a API backstop"
+  DUTY_SHIFT_INVALID_INTERVAL:
+    http_status: 422
+    overridable: false
+    category: validation
+    description: "starts_at >= ends_at у смены дежурства (backstop — ck_duty_shift_starts_before_ends; основная валидация — full_clean() до save())."
+    source: "Story 14.5 (DutyShift CheckConstraint); Story 14.11b API race backstop"
   REST_AFTER_DUTY_BLOCK:
     http_status: 422
     overridable: false

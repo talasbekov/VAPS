@@ -155,6 +155,9 @@ MATRIX = {
     # route today via its "*" wildcard, per _Gate._holders(); this row is
     # NOT a universal-DENY gate, only DENY for everyone except ADMIN).
     "ops-duty-plan-list": _Gate("duty.manage"),
+    # Story 14.11b: create+list shifts within a plan (@action(detail=True),
+    # both GET/POST gated on the same duty.manage code).
+    "ops-duty-plan-shifts": _Gate("duty.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

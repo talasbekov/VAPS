@@ -41,6 +41,13 @@ CONSTRAINT_ERROR_MAP = {
     "uq_duty_plan_object_month": ("DUTY_PLAN_ALREADY_EXISTS", 409, False),
     "ck_duty_plan_year_range": ("DUTY_PLAN_INVALID_PERIOD", 422, False),
     "ck_duty_plan_month_range": ("DUTY_PLAN_INVALID_PERIOD", 422, False),
+    # Story 14.11b: RACE backstop only — full_clean() (views.py) already
+    # validates this constraint up front (Django 4.1+'s
+    # Model.validate_constraints()) and converts it to a 400 before save(),
+    # but two concurrent creates could both pass full_clean() before either
+    # commits; the loser trips the real DB constraint. Same reasoning as
+    # unique_daily_submission_current above.
+    "ck_duty_shift_starts_before_ends": ("DUTY_SHIFT_INVALID_INTERVAL", 422, False),
 }
 
 # DRF-handled HTTP status → registry code (re-shaped into the §36 envelope).

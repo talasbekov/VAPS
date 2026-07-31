@@ -248,6 +248,7 @@ AUDIT_MATRIX = {
     "ops-temp-duty-list": _DeferredAudit(_RBAC),
     "ops-temp-duty-expire": _DeferredAudit(_RBAC),
     "ops-duty-plan-list": _DeferredAudit(_DUTY),
+    "ops-duty-plan-shifts": _DeferredAudit(_DUTY),
     # submissions (5.8a → 5.9): DAILY_SUBMISSION_SUBMITTED эмитится на
     # СЕРВИС-уровне (submit_day, канон 4.4); поведенческие пины + HTTP-smoke
     # сквозь роут — test_submission_audit (5.9).
