@@ -56,6 +56,27 @@ export const EVALUATION_SUBMIT_PATH_PATTERN =
   '/api/ops/evaluation-work-items/:workItemId/submit/'
 
 /**
+ * Исправление оценки (§19.18) и карточка отправленной записи (§19.17). Оба —
+ * СВОИ пути под той же коллекцией; шаблоны заведены константами по той же
+ * причине, что и у отправки, и грепнуты по `src` до заведения.
+ */
+export function evaluationCorrectPath(workItemId: string): string {
+  return `/api/ops/evaluation-work-items/${encodeURIComponent(workItemId)}/correct/`
+}
+export const EVALUATION_CORRECT_PATH_PATTERN =
+  '/api/ops/evaluation-work-items/:workItemId/correct/'
+export function evaluationDetailPath(workItemId: string): string {
+  return `/api/ops/evaluation-work-items/${encodeURIComponent(workItemId)}/detail/`
+}
+/**
+ * `detail` — ЯВНЫЙ сегмент, а не «просто строка коллекции». Путь строки
+ * (`/evaluation-work-items/:id/`) перехватил бы и `/submit/`, и `/correct/`:
+ * MSW разрешает коллизию молча в пользу первого совпавшего handler'а.
+ */
+export const EVALUATION_DETAIL_PATH_PATTERN =
+  '/api/ops/evaluation-work-items/:workItemId/detail/'
+
+/**
  * Задание в ответе. Оценщика в нём НЕТ ни одним полем: §19.7 «не передавай
  * evaluator через редактируемое поле» — здесь он не передаётся вовсе, а
  * берётся сервером из учётной записи запрашивающего. Очередь и так отобрана
@@ -126,6 +147,61 @@ export interface EvaluationWorkspaceResponse {
   /** `FEATURE_DISABLED` — оценивание выключено целиком (§19.3). */
   unavailableReason: 'FEATURE_DISABLED' | null
   unavailableViews: UnavailableRatingFactor[]
+}
+
+/**
+ * Звено correction chain (§19.17). Это ИСТОРИЯ, а не текущее состояние:
+ * вытесненная запись остаётся видимой автору со своим значением, потому что
+ * §19.18 запрещает скрывать старое значение.
+ */
+export interface CorrectionChainLink {
+  correctionId: string | null
+  evaluationId: string
+  score: number
+  basisLabel: string | null
+  basisNote: string | null
+  comment: string | null
+  /** Причина, по которой запись была ЗАМЕЩЕНА. `null` у действующей записи. */
+  supersededReason: string | null
+  supersededAt: string | null
+  /** Действующая запись цепочки — та, что участвует в агрегате. */
+  current: boolean
+}
+
+/**
+ * Карточка отправленной оценки (§19.17) — только СВОЕЙ. Ответ несёт актуальную
+ * `revision` задания: §19.18 шаг 3 требует перезагрузить её перед исправлением,
+ * а не брать ту, что лежала на экране с прошлого чтения.
+ */
+export interface SubmittedEvaluationDetailResponse {
+  workItem: EvaluationWorkItemView
+  submitted: SubmittedEvaluationView
+  /** `null` без права `ops.rating.view_correction_chain` — §19.22 отдельный пункт. */
+  chain: CorrectionChainLink[] | null
+  bases: EvaluationBasis[]
+  /** Решает СЕРВЕР: кнопка, выключенная только на клиенте, ограничением не является. */
+  canCorrect: boolean
+  loadedAt: string
+}
+
+/**
+ * Тело исправления (§19.18). Оценщик, target, мероприятие и назначение
+ * отсутствуют по той же причине, что и в отправке, — их запрещено менять.
+ */
+export interface CorrectEvaluationRequest {
+  score: number
+  basisCode: string | null
+  basisNote: string | null
+  comment: string | null
+  /** §19.18 шаг 6: обязательная причина исправления. */
+  reason: string
+  revision: number
+}
+
+export interface CorrectEvaluationResponse {
+  workItem: EvaluationWorkItemView
+  submitted: SubmittedEvaluationView
+  chain: CorrectionChainLink[] | null
 }
 
 /**

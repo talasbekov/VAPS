@@ -5,13 +5,18 @@ import { useApiMutation } from '../../../shared/api/useApiMutation'
 import type { ApiFailure } from '../../../shared/api/errors'
 import {
   EVALUATION_WORKSPACE_PATH,
+  evaluationCorrectPath,
+  evaluationDetailPath,
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
   RATING_ANALYTICS_PATH,
   evaluationSubmitPath,
 } from './pending-contracts'
 import type {
+  CorrectEvaluationRequest,
+  CorrectEvaluationResponse,
   EvaluationWorkspaceResponse,
+  SubmittedEvaluationDetailResponse,
   ListOperationalRatingsResponse,
   RatingAnalyticsResponse,
   RatingDynamicsResponse,
@@ -87,6 +92,47 @@ export function useSubmitEvaluation(
       },
     },
   )
+}
+
+/**
+ * Карточка отправленной оценки (§19.17). Отдельный запрос, а не строка из
+ * списка: §19.18 шаг 3 требует ПЕРЕЗАГРУЗИТЬ актуальную редакцию задания перед
+ * исправлением. `enabled` — карточка читается только когда её открыли.
+ */
+export function useSubmittedEvaluationDetail(workItemId: string | null) {
+  return useQuery<SubmittedEvaluationDetailResponse, ApiFailure>({
+    queryKey: ['ratings', 'evaluation-detail', workItemId],
+    queryFn: () =>
+      apiClient.get<SubmittedEvaluationDetailResponse>(evaluationDetailPath(workItemId ?? '')),
+    enabled: workItemId !== null,
+    // Редакция задания — то, ради чего этот запрос и делается: отдать её из
+    // кэша значило бы вернуть ровно ту устаревшую версию, от которой §19.18
+    // защищается.
+    staleTime: 0,
+  })
+}
+
+/**
+ * Исправление оценки (§19.18). Успех — только после commit: оптимистичного
+ * обновления нет («не показывай исправление успешным до commit»), а агрегат
+ * после ответа перечитывается сервером, а не пересчитывается на клиенте.
+ */
+export function useCorrectEvaluation(
+  workItemId: string | null,
+  onCorrected: (result: CorrectEvaluationResponse) => void,
+) {
+  const queryClient = useQueryClient()
+  return useApiMutation<
+    CorrectEvaluationResponse,
+    CorrectEvaluationRequest & Record<string, unknown>
+  >({
+    mutationFn: (variables) =>
+      apiClient.post<CorrectEvaluationResponse>(evaluationCorrectPath(workItemId ?? ''), variables),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['ratings'] })
+      onCorrected(result)
+    },
+  })
 }
 
 /** Отчёт аналитики рейтинга (§22.16). Своё право — своё состояние ошибки. */

@@ -13,6 +13,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useEvaluationWorkspace, useSubmitEvaluation } from '../api/queries'
+import { SubmittedEvaluationCard } from './SubmittedEvaluationCard'
 import { DIRECTION_LABEL, validateSubmission } from '../lib/workspace'
 import type { SubmissionField, SubmissionViolation } from '../lib/workspace'
 import { RATING_DEFAULT_SCORE, RATING_SCALE_MAX, RATING_SCALE_MIN } from '../model/types'
@@ -219,6 +220,9 @@ export function EvaluationWorkspacePage() {
   const eventId = searchParams.get('event')
   const [tab, setTab] = useState<TabKey>('pending')
   const [openItemId, setOpenItemId] = useState<string | null>(null)
+  // Карточка отправленной оценки (§19.17) открывается ОТДЕЛЬНЫМ запросом —
+  // §19.18 шаг 3 требует актуальной редакции задания, а не строки из списка.
+  const [openSubmittedId, setOpenSubmittedId] = useState<string | null>(null)
   const query = useEvaluationWorkspace(eventId)
   const data = query.data
 
@@ -395,6 +399,20 @@ export function EvaluationWorkspacePage() {
                       <p className="mt-1 text-xs text-muted-foreground">
                         Отправлено: {dateTime(entry.submittedAt)} · Редакция {entry.revision}
                       </p>
+                      {openSubmittedId === entry.workItemId ? (
+                        <SubmittedEvaluationCard
+                          workItemId={entry.workItemId}
+                          onClose={() => setOpenSubmittedId(null)}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="mt-2 rounded-md border px-3 py-1.5 text-sm"
+                          onClick={() => setOpenSubmittedId(entry.workItemId)}
+                        >
+                          Открыть отправленную оценку: {entry.targetSafeLabel}
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>

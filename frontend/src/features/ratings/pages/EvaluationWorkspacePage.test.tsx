@@ -336,6 +336,29 @@ describe('чего на экране нет (§19.14, §19.21)', () => {
     ])
   })
 
+  it('карточка отправленной оценки уходит ОТДЕЛЬНЫМ запросом (§19.18 шаг 3)', async () => {
+    const detailRequests: string[] = []
+    server.use(
+      http.get(WORKSPACE_URL, () => HttpResponse.json(response())),
+      http.get('*/api/ops/evaluation-work-items/:workItemId/detail/', ({ request }) => {
+        detailRequests.push(request.url)
+        return HttpResponse.json({}, { status: 500 })
+      }),
+    )
+    renderPage()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Отправленные мной' }))
+    // Пока карточку не открыли, лишнего запроса нет — и это важно: карточка
+    // несёт закрытые поля, и возить их списком не нужно (§19.17 «не загружай
+    // sensitive detail заранее в общий list endpoint»).
+    expect(detailRequests).toHaveLength(0)
+    await userEvent.click(
+      screen.getByRole('button', { name: /Открыть отправленную оценку: Жумабек С./ }),
+    )
+    // Редакция задания читается ЗАНОВО, а не берётся из уже полученного списка.
+    await waitFor(() => expect(detailRequests).toHaveLength(1))
+    expect(detailRequests[0]).toContain('work-item-4/detail/')
+  })
+
   it('своя отправленная оценка видна целиком — это собственный акт человека', async () => {
     server.use(http.get(WORKSPACE_URL, () => HttpResponse.json(response())))
     renderPage()
