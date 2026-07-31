@@ -819,4 +819,12 @@ severity конфликта занижается ✓, пороги игнори�
 | Карточка читается ОТДЕЛЬНЫМ запросом и только при открытии (§19.17-19.18 шаг 3) | features/ratings/pages/EvaluationWorkspacePage.test.tsx | Verified (красная проба: запрос выключен) |
 | Отказ сервера не выдаёт исправление за успешное, а возврат к правке снимает ошибку — путь не заперт | features/ratings/pages/SubmittedEvaluationCard.test.tsx | Verified (проверен ПОВТОРНЫЙ вход) |
 | **e2e: история записи, diff и исправление в реальном chromium; оценщик без права исправления** | e2e-mock/evaluation-workspace.spec.ts | Verified (2 теста) |
+| Строка реестра не несёт score/комментария/основания/оценщика — ассерт по всему JSON, включая значения сеяных оценок | features/ratings/lib/registry.test.ts, mocks/repository.test.ts, e2e-mock/evaluation-registry.spec.ts | Verified (красная проба: `score` добавлен в строку) |
+| Отбор и страницы считает СЕРВЕР; границы периода включительны с обеих сторон | features/ratings/lib/registry.test.ts, mocks/repository.test.ts, mocks/handlers.test.ts | Verified (2 красные пробы: отбор снят; правая граница исключительна) |
+| Перечень значений фильтров приходит с сервера и не собирается из текущей страницы | features/ratings/mocks/repository.test.ts | Verified (красная проба: список собран из строк страницы) |
+| Признак исправления — из correction chain, а не сравнения значений; видны обе записи пары | features/ratings/mocks/repository.test.ts | Verified (красная проба: признак по значению оценки) |
+| Состояние отбора живёт в URL; правка фильтра сбрасывает страницу; ссылка в карточку несёт отбор целиком | features/ratings/pages/EvaluationRegistryPage.test.tsx | Verified (2 красные пробы: страница сохраняется; `back` удалён) |
+| Безопасный контекст называет роль, системная оценка — себя; «Детали оценки закрыты» вместо величин | features/ratings/lib/registry.test.ts, pages/EvaluationRegistryPage.test.tsx | Verified (красная проба: системная оценка подписана ролью старшего) |
+| Карточка §19.17 (aggregate-only): агрегат, период, методика, точки; пропуск прочерком, не нулём | features/ratings/pages/RatingEmployeeDetailPage.test.tsx, mocks/repository.test.ts | Verified |
+| **e2e: отбор в URL, возврат из карточки с восстановлением, закрытые поля не приходят в браузер** | e2e-mock/evaluation-registry.spec.ts | Verified (4 теста) |
 

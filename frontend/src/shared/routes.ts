@@ -124,6 +124,21 @@ export const ROUTES = {
    */
   evaluationWorkspace: '/ratings/workspace',
   /**
+   * §19.15 сводный экран «Итоговые оценки участников». Право входа —
+   * `ops.rating.view_aggregate`: экран показывает РАЗРЕШЁННЫЙ агрегат и
+   * безопасный контекст, а закрытых величин в нём нет ни одной (§19.16).
+   * Состояние отбора живёт в search params — маршрут их только несёт.
+   */
+  evaluationRegistry: '/ratings/evaluations',
+  /**
+   * Карточка агрегата участника (§19.17, aggregate-only ветка). Динамический
+   * сегмент соседствует со СТАТИЧЕСКИМИ `/ratings/analytics`, `/ratings/workspace`
+   * и `/ratings/evaluations` — React Router ранжирует статический сегмент выше,
+   * поэтому перехвата нет; порядок объявления на это не влияет, но проверен
+   * тестом маршрутизации.
+   */
+  ratingEmployeeDetail: '/ratings/employees/:employeeId',
+  /**
    * Отчёт §22.16 «Аналитика рейтинга» — ОТДЕЛЬНЫЙ маршрут со СВОИМ правом
    * (`ops.analytics.view`). Секцией на `/ratings` он быть не мог: там правом
    * входа служит `ops.rating.view_aggregate`, и отчёт раздела аналитики
@@ -284,6 +299,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Оценивание участников',
     icon: ClipboardCheck,
     permission: 'ops.rating.evaluate',
+  },
+  {
+    route: ROUTES.evaluationRegistry,
+    label: 'Итоговые оценки',
+    icon: ClipboardList,
+    permission: 'ops.rating.view_aggregate',
   },
   {
     route: ROUTES.ratings,

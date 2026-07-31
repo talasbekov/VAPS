@@ -3,8 +3,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../../shared/api/client'
 import { useApiMutation } from '../../../shared/api/useApiMutation'
 import type { ApiFailure } from '../../../shared/api/errors'
+import type { RegistryFilters } from '../lib/registry'
 import {
+  EVALUATION_REGISTRY_PATH,
   EVALUATION_WORKSPACE_PATH,
+  RATING_EMPLOYEE_DETAIL_PATH,
   evaluationCorrectPath,
   evaluationDetailPath,
   OPERATIONAL_RATINGS_PATH,
@@ -13,6 +16,8 @@ import {
   evaluationSubmitPath,
 } from './pending-contracts'
 import type {
+  EvaluationRegistryResponse,
+  RatingEmployeeDetailResponse,
   CorrectEvaluationRequest,
   CorrectEvaluationResponse,
   EvaluationWorkspaceResponse,
@@ -132,6 +137,45 @@ export function useCorrectEvaluation(
       void queryClient.invalidateQueries({ queryKey: ['ratings'] })
       onCorrected(result)
     },
+  })
+}
+
+/**
+ * Реестр итоговых оценок (§19.15). Фильтры едут В ЗАПРОС и входят в ключ кэша:
+ * иначе отфильтрованный ответ подменял бы собой полный реестр, а отбор пришлось
+ * бы делать в браузере — то есть сначала привезти туда лишние строки.
+ */
+export function useEvaluationRegistry(filters: RegistryFilters) {
+  const search = new URLSearchParams()
+  if (filters.from !== null) search.set('from', filters.from)
+  if (filters.to !== null) search.set('to', filters.to)
+  if (filters.event !== null) search.set('event', filters.event)
+  if (filters.unit !== null) search.set('unit', filters.unit)
+  if (filters.employee !== null) search.set('employee', filters.employee)
+  if (filters.direction !== null) search.set('direction', filters.direction)
+  if (filters.method !== null) search.set('method', filters.method)
+  if (filters.correctedOnly) search.set('corrected', 'true')
+  if (filters.search !== '') search.set('search', filters.search)
+  if (filters.page !== 1) search.set('page', String(filters.page))
+  const query = search.toString()
+  return useQuery<EvaluationRegistryResponse, ApiFailure>({
+    queryKey: ['ratings', 'registry', query],
+    queryFn: () =>
+      apiClient.get<EvaluationRegistryResponse>(
+        query === '' ? EVALUATION_REGISTRY_PATH : `${EVALUATION_REGISTRY_PATH}?${query}`,
+      ),
+  })
+}
+
+/** Карточка агрегата сотрудника (§19.17, aggregate-only ветка). */
+export function useRatingEmployeeDetail(employeeId: string | null) {
+  return useQuery<RatingEmployeeDetailResponse, ApiFailure>({
+    queryKey: ['ratings', 'employee-detail', employeeId],
+    queryFn: () =>
+      apiClient.get<RatingEmployeeDetailResponse>(
+        `${RATING_EMPLOYEE_DETAIL_PATH}?employee=${encodeURIComponent(employeeId ?? '')}`,
+      ),
+    enabled: employeeId !== null,
   })
 }
 

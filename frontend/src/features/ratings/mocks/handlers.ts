@@ -7,7 +7,9 @@ import {
   EVALUATION_CORRECT_PATH_PATTERN,
   EVALUATION_DETAIL_PATH_PATTERN,
   EVALUATION_SUBMIT_PATH_PATTERN,
+  EVALUATION_REGISTRY_PATH,
   EVALUATION_WORKSPACE_PATH,
+  RATING_EMPLOYEE_DETAIL_PATH,
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
   RATING_ANALYTICS_PATH,
@@ -106,6 +108,52 @@ export function createRatingsHandlers(adapter: PersistenceAdapter, clock: DemoCl
       const eventId = new URL(request.url).searchParams.get('event')
       try {
         return HttpResponse.json(await repository.getEvaluationWorkspace(actorUserId, eventId))
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.get(`*${EVALUATION_REGISTRY_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const params = new URL(request.url).searchParams
+      // Фильтры разбираются ЗДЕСЬ, на границе: в repository приходит уже
+      // типизированный объект, а не сырые строки запроса.
+      const number = (name: string, fallback: number): number => {
+        const raw = params.get(name)
+        const parsed = raw === null ? Number.NaN : Number(raw)
+        return Number.isFinite(parsed) ? parsed : fallback
+      }
+      try {
+        return HttpResponse.json(
+          await repository.listEvaluationRegistry(actorUserId, {
+            from: params.get('from'),
+            to: params.get('to'),
+            event: params.get('event'),
+            unit: params.get('unit'),
+            employee: params.get('employee'),
+            direction: params.get('direction') as never,
+            method: params.get('method') as never,
+            correctedOnly: params.get('corrected') === 'true',
+            search: params.get('search') ?? '',
+            page: number('page', 1),
+          }),
+        )
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock)
+        if (mapped !== null) return mapped
+        throw error
+      }
+    }),
+
+    http.get(`*${RATING_EMPLOYEE_DETAIL_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const employeeId = new URL(request.url).searchParams.get('employee')
+      try {
+        return HttpResponse.json(
+          await repository.getRatingEmployeeDetail(actorUserId, employeeId),
+        )
       } catch (error) {
         const mapped = mapRepositoryError(error, clock)
         if (mapped !== null) return mapped

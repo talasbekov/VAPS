@@ -429,3 +429,26 @@ queue }`. Ни оценщика, ни target, ни мероприятия, ни 
 `EVALUATION_NOT_SUBMITTED` (по заданию ещё нечего исправлять), плюс те же
 `EVALUATION_REVISION_MISMATCH`, `RATING_DISABLED` и правила формы, что у отправки.
 
+### `/api/ops/evaluation-registry/` и `/api/ops/operational-rating-employee/` (§19.15-19.17)
+
+`backend-contract-pending`. Право обоих — `ops.rating.view_aggregate`.
+
+`GET /api/ops/evaluation-registry/?from&to&event&unit&employee&direction&method&corrected&search&page`
+→ `{ results[], total, page, pageCount, options, policy, capabilities, columns,
+unavailableViews[] }`.
+
+- строка (`EvaluationRegistryRow`) НЕ содержит `score`, `comment`, `basisCode` и оценщика:
+  §19.16 закрывает их держателю права на агрегат, и они отсутствуют в ответе, а не скрыты
+  в вёрстке. Идентификатор — `rowId`, а не идентификатор оценки;
+- `options` (мероприятия, подразделения, сотрудники) даёт сервер: собранный из строк
+  список раскрывал бы только видимых и выглядел бы полным (§19.15);
+- `columns.sensitiveDetails` всегда `false`: право под sensitive-просмотр не заведено —
+  §19.21 требует к нему scope и срок полномочия;
+- границы периода включительны с обеих сторон; порядок — по дате, затем по подписи
+  участника (сортировка по агрегату была бы таблицей лидеров, §22.16).
+
+`GET /api/ops/operational-rating-employee/?employee=<id>` → `{ employeeId, safeLabel,
+unitSafeLabel, summary, points[], unavailableViews[] }` — §19.17 в aggregate-only ветке:
+агрегат, количество учтённых, период, версия методики, дата расчёта и записанные точки
+динамики. Неизвестный сотрудник — `ENTITY_NOT_FOUND` (404), а не первая карточка.
+

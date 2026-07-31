@@ -15,11 +15,20 @@ import {
   validateSubmission,
 } from '../lib/workspace'
 import { validateCorrection } from '../lib/correction'
+import {
+  UNAVAILABLE_REGISTRY_VIEWS,
+  matchesFilters,
+  pageCount,
+  pageOf,
+} from '../lib/registry'
+import type { EvaluationRegistryRow, RegistryFilters } from '../lib/registry'
 import type {
   CorrectEvaluationRequest,
   CorrectEvaluationResponse,
   CorrectionChainLink,
+  EvaluationRegistryResponse,
   EvaluationWorkItemView,
+  RatingEmployeeDetailResponse,
   EvaluationWorkspaceResponse,
   ListOperationalRatingsResponse,
   RatingAnalyticsResponse,
@@ -767,6 +776,176 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     return response
   }
 
+  /**
+   * Реестр итоговых оценок (§19.15-19.16).
+   *
+   * Строка собирается ПОЛЕМ ЗА ПОЛЕМ из закрытой записи, и ни score, ни
+   * комментарий, ни основание, ни оценщик в неё не попадают: §19.16 требует
+   * скрыть их от держателя права на агрегат, а §19.21 — обеспечивать это API.
+   * Отбор и страница считаются здесь же: отдать всё и отфильтровать в браузере
+   * значило бы сначала привезти туда строки вне разрешённого периода.
+   */
+  async function listEvaluationRegistry(
+    actorUserId: string | null,
+    filters: RegistryFilters,
+  ): Promise<EvaluationRegistryResponse> {
+    if (!hasPermission(actorUserId, VIEW_AGGREGATE_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_AGGREGATE_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new Error('mock-runtime: чтение реестра оценок до инициализации demo-состояния')
+    }
+    const slice = readSlice(envelope.slices)
+    const policy = readRatingPolicy(envelope.slices)
+    const featureEnabled = slice.capabilities.operationalRatings
+    const businessDate = clock.businessDate()
+    const calculatedAt = clock.now()
+
+    const summaries = new Map(
+      RATED_EMPLOYEES.map((employee) => [
+        employee.employeeId,
+        buildSummary({
+          employeeId: employee.employeeId,
+          safeLabel: employee.safeLabel,
+          evaluations: slice.evaluations,
+          policy,
+          featureEnabled,
+          businessDate,
+          calculatedAt,
+        }),
+      ]),
+    )
+
+    const rows: EvaluationRegistryRow[] = featureEnabled
+      ? slice.evaluations.map((evaluation) => {
+          const employee = RATED_EMPLOYEES.find(
+            (item) => item.employeeId === evaluation.employeeId,
+          )
+          const group = RATING_GROUPS.find((item) => item.groupCode === employee?.groupCode)
+          const event = EVALUATION_EVENTS.find(
+            (item) => item.securityEventId === evaluation.securityEventId,
+          )
+          const workItem = slice.workItems.find(
+            (item) => item.submittedEvaluationId === evaluation.id,
+          )
+          const summary = summaries.get(evaluation.employeeId)
+          return {
+            // Идентификатор СТРОКИ, а не оценки: по идентификатору закрытой
+            // записи её можно было бы спрашивать поимённо.
+            rowId: `row-${evaluation.id}`,
+            employeeId: evaluation.employeeId,
+            employeeSafeLabel: employee?.safeLabel ?? '—',
+            unitSafeLabel: group?.safeLabel ?? '—',
+            eventNumber: event?.number ?? '—',
+            eventTitle: event?.title ?? '—',
+            objectLabel: event?.objectLabel ?? '—',
+            postLabel: workItem?.postLabel ?? null,
+            // `null`, а не `false`: отсутствие сведений об участии и
+            // зафиксированное неучастие — разные утверждения.
+            participated: workItem?.participated ?? null,
+            evaluationDirection: evaluation.evaluationDirection,
+            method: evaluation.method,
+            evaluatedAt: evaluation.evaluatedAt,
+            // Признак исправления — по цепочке (запись вытеснена ИЛИ сама
+            // является заменой), а не сравнением старого и нового значения
+            // во фронте (§19.11).
+            corrected:
+              evaluation.supersededById !== null ||
+              slice.corrections.some((item) => item.replacementEvaluationId === evaluation.id),
+            aggregateRating: summary?.aggregateRating ?? null,
+            aggregateState: summary?.dataState ?? 'INSUFFICIENT_DATA',
+          }
+        })
+      : []
+
+    const filtered = rows.filter((row) => matchesFilters(row, filters))
+    // Порядок задаёт сервер: сначала свежие записи, при равной дате — по
+    // подписи участника. Сортировка по агрегату была бы таблицей лидеров,
+    // запрещённой §22.16, здесь ровно так же, как в сводке.
+    filtered.sort(
+      (a, b) =>
+        b.evaluatedAt.localeCompare(a.evaluatedAt) ||
+        a.employeeSafeLabel.localeCompare(b.employeeSafeLabel, 'ru'),
+    )
+
+    return {
+      results: pageOf(filtered, filters.page),
+      total: filtered.length,
+      page: Math.min(Math.max(1, filters.page), pageCount(filtered.length)),
+      pageCount: pageCount(filtered.length),
+      // Значения фильтров даёт СЕРВЕР: собрать их из полученных строк значило бы
+      // показать только тех, кто уже попал в текущую страницу, а автодополнение
+      // §19.15 не должно раскрывать и тех, кто вне scope.
+      options: {
+        events: EVALUATION_EVENTS.map((event) => ({
+          value: event.number,
+          label: `${event.number} — ${event.title}`,
+        })),
+        units: RATING_GROUPS.map((group) => ({
+          value: group.safeLabel,
+          label: group.safeLabel,
+        })),
+        employees: RATED_EMPLOYEES.map((employee) => ({
+          value: employee.employeeId,
+          label: employee.safeLabel,
+        })),
+      },
+      policy: featureEnabled ? policy : null,
+      capabilities: { operationalRatings: featureEnabled },
+      // Sensitive-колонок нет ни у кого: право под них не заведено, потому что
+      // §19.21 требует к нему scope и срок полномочия (см. §35-блок).
+      columns: { sensitiveDetails: false },
+      unavailableViews: UNAVAILABLE_REGISTRY_VIEWS.map((item) => ({ ...item })),
+    }
+  }
+
+  /**
+   * Карточка сотрудника при праве только на агрегат (§19.17, вторая ветка).
+   * Отдельных оценок и оценщиков в ней нет ни одного поля — только агрегат,
+   * период, версия методики и записанные точки динамики.
+   */
+  async function getRatingEmployeeDetail(
+    actorUserId: string | null,
+    employeeId: string | null,
+  ): Promise<RatingEmployeeDetailResponse> {
+    if (!hasPermission(actorUserId, VIEW_AGGREGATE_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_AGGREGATE_PERMISSION)
+    }
+    const employee = RATED_EMPLOYEES.find((item) => item.employeeId === employeeId)
+    if (employee === undefined) throw new RepositoryNotFoundError(employeeId ?? '')
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new Error('mock-runtime: чтение карточки агрегата до инициализации demo-состояния')
+    }
+    const slice = readSlice(envelope.slices)
+    const policy = readRatingPolicy(envelope.slices)
+    const featureEnabled = slice.capabilities.operationalRatings
+    const group = RATING_GROUPS.find((item) => item.groupCode === employee.groupCode)
+
+    return {
+      employeeId: employee.employeeId,
+      safeLabel: employee.safeLabel,
+      unitSafeLabel: group?.safeLabel ?? '—',
+      summary: buildSummary({
+        employeeId: employee.employeeId,
+        safeLabel: employee.safeLabel,
+        evaluations: slice.evaluations,
+        policy,
+        featureEnabled,
+        businessDate: clock.businessDate(),
+        calculatedAt: clock.now(),
+      }),
+      points: featureEnabled
+        ? slice.dynamicsPoints
+            .filter((point) => point.employeeId === employee.employeeId)
+            .map((point) => ({ ...point }))
+            .sort((a, b) => a.periodStartsAt.localeCompare(b.periodStartsAt))
+        : [],
+      unavailableViews: UNAVAILABLE_REGISTRY_VIEWS.map((item) => ({ ...item })),
+    }
+  }
+
   return {
     listOperationalRatings,
     getRatingDynamics,
@@ -775,5 +954,7 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     submitEvaluation,
     getSubmittedEvaluationDetail,
     correctEvaluation,
+    listEvaluationRegistry,
+    getRatingEmployeeDetail,
   }
 }
