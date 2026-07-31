@@ -313,6 +313,17 @@ class EmployeeOperationalProfile(UUIDTimeStampedModel):
                 | models.Q(weapon_permit_expires_at__isnull=True),
                 name="ck_emp_op_profile_weapon_permit_expiry_requires_permit",
             ),
+            # Review (Edge Case Hunter): Employee.height_cm (the sibling
+            # anthropometry field) has MinValueValidator/MaxValueValidator —
+            # Python-only validators are skipped by .objects.create()/
+            # bulk_create() (lesson: feedback_vaps_db_integrity_checks), so
+            # weight_kg needs the same floor/ceiling enforced at the DB
+            # level, not just field-level validators.
+            models.CheckConstraint(
+                condition=models.Q(weight_kg__isnull=True)
+                | (models.Q(weight_kg__gte=30) & models.Q(weight_kg__lte=300)),
+                name="ck_emp_op_profile_weight_kg_range",
+            ),
         ]
 
     def __str__(self):
