@@ -289,6 +289,13 @@ AUDIT_MATRIX = {
     # checklist/sector-posts drafts; behavioral pin —
     # test_object_passport_update.py.
     "ops-security-event-passport": _Audited(),
+    # Story 15.5b: staffing-demand replace-all is DEFERRED, same reasoning
+    # as ops-security-event-checklist above — working-draft rows until
+    # 15.5c's approval, not a finalized business event.
+    "ops-security-event-staffing-demand": _DeferredAudit(
+        "story 15.5b: same reasoning as ops-security-event-checklist "
+        "(15.3b) — working-draft rows until 15.5c's approval"
+    ),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

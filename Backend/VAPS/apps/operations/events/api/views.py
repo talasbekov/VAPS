@@ -34,6 +34,7 @@ from apps.operations.events.api.serializers import (
     SecurityEventCreateSerializer,
     SecurityEventSerializer,
     SectorPostSerializer,
+    StaffingDemandSerializer,
 )
 from apps.operations.events.models import SecurityEvent
 from apps.operations.events.services import (
@@ -41,6 +42,7 @@ from apps.operations.events.services import (
     issue_bulletin,
     replace_checklist_items,
     replace_sector_posts,
+    replace_staffing_demand,
 )
 from apps.operations.facilities.api.serializers import (
     ObjectPassportSerializer,
@@ -212,3 +214,19 @@ class SecurityEventViewSet(viewsets.ViewSet):
             event, actor=request.actor_id, fields=form.validated_data
         )
         return Response(ObjectPassportSerializer(updated).data)
+
+    @extend_schema(
+        operation_id="security_event_staffing_demand_replace",
+        request=StaffingDemandSerializer(many=True),
+        responses={200: StaffingDemandSerializer(many=True)},
+        description="Заменить строки потребности в силах целиком (FR-23). "
+        "Требует event.manage. Пустой массив допустим (сброс).",
+    )
+    @action(detail=True, methods=["put"], url_path="staffing-demand")
+    def staffing_demand(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        form = StaffingDemandSerializer(data=request.data, many=True)
+        form.is_valid(raise_exception=True)
+        demands = replace_staffing_demand(event, form.validated_data)
+        return Response(StaffingDemandSerializer(demands, many=True).data)

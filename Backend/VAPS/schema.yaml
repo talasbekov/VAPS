@@ -2306,6 +2306,56 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedSectorPostList'
           description: ''
+  /api/operations/security-events/{id}/staffing-demand/:
+    put:
+      operationId: security_event_staffing_demand_replace
+      description: Заменить строки потребности в силах целиком (FR-23). Требует event.manage.
+        Пустой массив допустим (сброс).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/StaffingDemandRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/StaffingDemandRequest'
+          multipart/form-data:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/StaffingDemandRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStaffingDemandList'
+          description: ''
   /api/operations/statuses/bulk/:
     post:
       operationId: operations_statuses_bulk_create
@@ -4424,6 +4474,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SecurityEvent'
+    PaginatedStaffingDemandList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffingDemand'
     PaginatedStaffingSlotList:
       type: object
       required:
@@ -4918,6 +4991,61 @@ components:
         * `IN_PROGRESS` - Проведение
         * `CLOSED` - Закрыто
         * `CANCELLED` - Отменено
+    StaffingDemand:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        sector:
+          type: string
+          maxLength: 255
+        task:
+          type: string
+          maxLength: 255
+        shift:
+          type: string
+          maxLength: 100
+        need:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        group:
+          type: string
+          maxLength: 255
+        requirements:
+          type: string
+        comment:
+          type: string
+      required:
+      - id
+      - sector
+    StaffingDemandRequest:
+      type: object
+      properties:
+        sector:
+          type: string
+          minLength: 1
+          maxLength: 255
+        task:
+          type: string
+          maxLength: 255
+        shift:
+          type: string
+          maxLength: 100
+        need:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        group:
+          type: string
+          maxLength: 255
+        requirements:
+          type: string
+        comment:
+          type: string
+      required:
+      - sector
     StaffingSlot:
       type: object
       properties:

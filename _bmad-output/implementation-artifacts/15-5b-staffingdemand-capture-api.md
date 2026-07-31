@@ -4,7 +4,7 @@ baseline_commit: 3e28e60
 
 # Story 15.5b: `PUT /security-events/{id}/staffing-demand` — захват данных потребности (FR-23)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -35,12 +35,12 @@ so that **15.5c может утвердить их**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Сериализатор `StaffingDemandSerializer`
-- [ ] Task 2 — `services.py`: `replace_staffing_demand(event, rows)` — `select_for_update()`+delete+bulk_create
-- [ ] Task 3 — ViewSet `@action` `PUT .../staffing-demand`
-- [ ] Task 4 — Живые реестры
-- [ ] Task 5 — Тесты (replace, пустой массив, 403, 404)
-- [ ] Task 6 — Гейт + схема
+- [x] Task 1 — Сериализатор `StaffingDemandSerializer`
+- [x] Task 2 — `services.py`: `replace_staffing_demand(event, rows)` — `select_for_update()`+delete+bulk_create
+- [x] Task 3 — ViewSet `@action` `PUT .../staffing-demand`
+- [x] Task 4 — Живые реестры
+- [x] Task 5 — Тесты (replace, пустой массив, 403, 404, concurrency)
+- [x] Task 6 — Гейт + схема
 
 ## Dev Notes
 
@@ -59,14 +59,22 @@ _(заполняется dev-story)_
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано по AC 1-6. `StaffingDemandSerializer` + `replace_staffing_demand()` — буквальный образец 15.3b, `select_for_update()` на родительском `SecurityEvent` применён СРАЗУ (урок 15.3b's ревью учтён с первого прохода, не повторно открыт). `PUT .../staffing-demand` — `@action`, переиспользует `_get_event_or_404()` (четвёртый потребитель хелпера). Аудит — deferred (черновик до 15.5c's утверждения). Оба живых реестра обновлены. 5 HTTP-поведенческих теста + 1 concurrency-regression (`@pytest.mark.concurrency`, тот же паттерн, что 15.3b's — доказывает ровно один писатель побеждает при гонке, не union). `make gate` — 3506 passed (было 3491, +15), 0 regressions, no drift.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — `StaffingDemandSerializer`)
+- `Backend/VAPS/apps/operations/events/services.py` (modified — `replace_staffing_demand()`)
+- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `staffing_demand`-action)
+- `Backend/VAPS/apps/operations/events/tests/test_staffing_demand_capture_api.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/test_staffing_demand_concurrency.py` (new)
+- `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — `_DeferredAudit`-запись)
+- `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — `_Gate`-запись)
+- `Backend/VAPS/schema.yaml` (regenerated)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Буквальный образец 15.3b, `select_for_update()` применён сразу (не как ревью-фикс, урок уже учтён). |
+| 2026-07-31 | Dev-story: `replace_staffing_demand()` + `PUT .../staffing-demand`-action. `select_for_update()` с первого прохода (concurrency-regression-тест сразу зелёный, не как ревью-фикс). 6 новых тестов, оба живых реестра обновлены, схема регенерирована. `make gate` — 3506 passed. Status → review. |

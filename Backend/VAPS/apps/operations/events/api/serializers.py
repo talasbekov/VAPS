@@ -7,6 +7,7 @@ from apps.operations.events.models import (
     SecurityEvent,
     SecurityEventChecklistItem,
     SecurityEventSectorPost,
+    SecurityEventStaffingDemand,
 )
 from apps.operations.facilities.models import Object as FacilityObject
 
@@ -64,6 +65,22 @@ class SectorPostSerializer(serializers.ModelSerializer):
             "need",
             "requirements",
             "result",
+            "comment",
+        ]
+        read_only_fields = ["id"]
+
+
+class StaffingDemandSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SecurityEventStaffingDemand
+        fields = [
+            "id",
+            "sector",
+            "task",
+            "shift",
+            "need",
+            "group",
+            "requirements",
             "comment",
         ]
         read_only_fields = ["id"]

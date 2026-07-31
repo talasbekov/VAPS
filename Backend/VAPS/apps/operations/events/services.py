@@ -27,6 +27,7 @@ from apps.operations.events.models import (
     SecurityEvent,
     SecurityEventChecklistItem,
     SecurityEventSectorPost,
+    SecurityEventStaffingDemand,
 )
 
 
@@ -166,3 +167,16 @@ def confirm_recon(event, *, actor):
             },
         )
     return event, False
+
+
+def replace_staffing_demand(event, rows):
+    """Story 15.5b: replace-all-rows for `event.staffing_demands` — same
+    semantics as `replace_checklist_items()`/`replace_sector_posts()`
+    (15.3b), `select_for_update()` applied from the start (that lesson was
+    already learned in 15.3b's review, not re-discovered here)."""
+    with transaction.atomic():
+        SecurityEvent.objects.select_for_update().get(pk=event.pk)
+        event.staffing_demands.all().delete()
+        demands = [SecurityEventStaffingDemand(event=event, **row) for row in rows]
+        SecurityEventStaffingDemand.objects.bulk_create(demands)
+    return list(event.staffing_demands.all())
