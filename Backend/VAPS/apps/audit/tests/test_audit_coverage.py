@@ -240,8 +240,13 @@ AUDIT_MATRIX = {
     # operations RBAC admin:
     "ops-user-role-list": _DeferredAudit(_RBAC),
     "ops-user-role-detail": _DeferredAudit(_RBAC),
-    "ops-temp-duty-list": _DeferredAudit(_RBAC),
-    "ops-temp-duty-expire": _DeferredAudit(_RBAC),
+    # Story 15.11a: grant_temporary_duty()/expire_temporary_duty() now emit
+    # TEMP_DUTY_GRANTED/TEMP_DUTY_EXPIRED via apps.audit.services.record();
+    # "ops-temp-duty-list" is the SAME router URL for GET list and POST
+    # create (DRF SimpleRouter convention) — the audit obligation is on the
+    # create half, pinned by test_temp_duty_grant_emits_audit_row.
+    "ops-temp-duty-list": _Audited(),
+    "ops-temp-duty-expire": _Audited(),
     # Story 14.12a: DUTY_PLAN_CREATED/DUTY_SHIFT_CREATED/DUTY_PLAN_APPROVED/
     # DUTY_SHIFT_CANCELLED/DUTY_SHIFT_REPLANNED emit via apps.audit.services
     # .record() (views.py for create/create-shift — no service function of

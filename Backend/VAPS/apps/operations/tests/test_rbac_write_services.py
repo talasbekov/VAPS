@@ -52,6 +52,6 @@ def test_expire_temporary_duty_deactivates(seeded):
         user_id="u1", duty_role_code="OMD",
         starts_at=now, ends_at=now + dt.timedelta(hours=8), created_by="admin",
     )
-    RoleAdminService.expire_temporary_duty(grant.id)
+    RoleAdminService.expire_temporary_duty(grant.id, actor="admin")
     grant.refresh_from_db()
     assert grant.is_active is False

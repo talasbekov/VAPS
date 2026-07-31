@@ -118,7 +118,7 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
     @action(detail=True, methods=["post"])
     def expire(self, request, pk=None, *args, **kwargs):
         require_permission(request, "admin.roles")
-        RoleAdminService.expire_temporary_duty(pk)
+        RoleAdminService.expire_temporary_duty(pk, actor=request.actor_id)
         return Response({"expired": True}, status=status.HTTP_200_OK)
 
 

@@ -1,6 +1,9 @@
+import uuid
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.selectors import CoreDivisionTreeSelector
 from apps.operations.rbac.models import (
@@ -159,9 +162,39 @@ class RoleAdminService:
         )
         grant.full_clean()
         grant.save()
+        record(
+            actor=created_by,
+            action="TEMP_DUTY_GRANTED",
+            entity_type="temporary_duty_permission",
+            entity_id=uuid.UUID(int=grant.pk),
+            new_value={
+                "user_id": grant.user_id,
+                "duty_role_code": grant.duty_role_code,
+                "starts_at": grant.starts_at.isoformat(),
+                "ends_at": grant.ends_at.isoformat(),
+                "scope_division_id": str(grant.scope_division_id)
+                if grant.scope_division_id
+                else None,
+                "event_id": str(grant.event_id) if grant.event_id else None,
+            },
+        )
         return grant
 
     @staticmethod
     @transaction.atomic
-    def expire_temporary_duty(grant_id):
-        TemporaryDutyPermission.objects.filter(id=grant_id).update(is_active=False)
+    def expire_temporary_duty(grant_id, *, actor):
+        # Idempotent audit: only a REAL is_active True→False transition is
+        # worth a row (mirrors notify.mark_read's "first call wins" — a
+        # repeat expire() on an already-gone/already-expired grant is a
+        # no-op, not a second audit entry for nothing).
+        updated = TemporaryDutyPermission.objects.filter(
+            id=grant_id, is_active=True
+        ).update(is_active=False)
+        if updated:
+            record(
+                actor=actor,
+                action="TEMP_DUTY_EXPIRED",
+                entity_type="temporary_duty_permission",
+                entity_id=uuid.UUID(int=int(grant_id)),
+                new_value={"is_active": False},
+            )
