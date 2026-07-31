@@ -3,7 +3,7 @@
 // the SAME UTC instant, deterministically, regardless of the test runner's
 // own local timezone (unlike the old `new Date(value).toISOString()`).
 import { describe, expect, it } from 'vitest'
-import { zonedDateTimeToIso } from './localDateTime'
+import { isoToZonedDateTimeLocal, zonedDateTimeToIso } from './localDateTime'
 
 describe('zonedDateTimeToIso', () => {
   it('interprets input as Asia/Qyzylorda (+05:00) wall-clock, not the runner TZ', () => {
@@ -19,5 +19,16 @@ describe('zonedDateTimeToIso', () => {
 
   it('handles a date crossing midnight when converted to UTC', () => {
     expect(zonedDateTimeToIso('2026-09-05T02:00')).toBe('2026-09-04T21:00:00.000Z')
+  })
+})
+
+describe('isoToZonedDateTimeLocal', () => {
+  it('is the exact inverse of zonedDateTimeToIso (round-trip)', () => {
+    const original = '2026-09-05T08:00'
+    expect(isoToZonedDateTimeLocal(zonedDateTimeToIso(original))).toBe(original)
+  })
+
+  it('renders a UTC instant as Asia/Qyzylorda wall-clock for pre-filling the replan form', () => {
+    expect(isoToZonedDateTimeLocal('2026-09-05T03:00:00.000Z')).toBe('2026-09-05T08:00')
   })
 })

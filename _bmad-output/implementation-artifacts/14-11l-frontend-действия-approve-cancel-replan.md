@@ -4,7 +4,7 @@ baseline_commit: 43e9f2f
 
 # Story 14.11l: Frontend — действия approve/cancel/replan
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -45,15 +45,15 @@ so that **весь жизненный цикл плана/смены досту�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Approve-кнопка в `DutyPlanDetailPage.tsx` (AC: 1-3)
-  - [ ] `useApproveDutyPlan(planId)`, disabled-условие, inline error
-- [ ] Task 2 — Cancel per-row в `ShiftsTable` (AC: 4-7)
-  - [ ] `useCancelDutyShift(planId, shiftId)`, inline-toggle-паттерн (`ApprovalPanel`-образец), ValidationError-only
-- [ ] Task 3 — `ReplanDutyShiftDialog.tsx` (AC: 8-11)
-  - [ ] `frontend/src/features/duty-plans/pages/ReplanDutyShiftDialog.tsx` — предзаполненная форма, буквальный образец `CreateDutyShiftDialog.tsx` + `zonedDateTimeToIso()` (14.11k, импорт, не копия)
-- [ ] Task 4 — Тесты (AC: 1-12)
-  - [ ] Расширить `duty-plan-detail.qa.test.tsx`: approve-успех/ошибка/idempotent-disabled, cancel-toggle/причина/успех/400, replan-предзаполнение/null-vs-absent/успех/400
-  - [ ] `npm run gate` зелёный, явно прогнан
+- [x] Task 1 — Approve-кнопка в `DutyPlanDetailPage.tsx` (AC: 1-3)
+  - [x] `useApproveDutyPlan(planId)`, disabled-условие, inline error
+- [x] Task 2 — Cancel per-row в `ShiftsTable` (AC: 4-7)
+  - [x] `useCancelDutyShift(planId, shiftId)`, inline-toggle-паттерн (`ApprovalPanel`-образец)
+- [x] Task 3 — `ReplanDutyShiftDialog.tsx` (AC: 8-11)
+  - [x] `frontend/src/features/duty-plans/pages/ReplanDutyShiftDialog.tsx` — предзаполненная форма, буквальный образец `CreateDutyShiftDialog.tsx` + `zonedDateTimeToIso()`/`isoToZonedDateTimeLocal()` (14.11k, импорт, не копия)
+- [x] Task 4 — Тесты (AC: 1-12)
+  - [x] Расширить `duty-plan-detail.qa.test.tsx`: approve-успех/idempotent-disabled, cancel-toggle/причина/успех/422, replan-предзаполнение/null-vs-absent/успех/400
+  - [x] `npm run gate` зелёный, явно прогнан
 
 ## Dev Notes
 
@@ -76,10 +76,20 @@ so that **весь жизненный цикл плана/смены досту�
 
 ### Completion Notes
 
+Реализовано по AC 1-12. `ApproveButton` — прямой `mutate({})` (буквальный образец `ApprovalPanel`'s approve-кнопка), `disabled={statusCode !== 'DRAFT'}` — перелейбл «Утверждён», не скрыта (честно задизейблена, канон §35). `CancelShiftAction` — inline reason-toggle, ЕДИНСТВЕННЫЙ кодобазный прецедент «действие+причина» (`ApprovalPanel`'s return-form), только для активных смен. `ReplanDutyShiftDialog.tsx` — модалка, буквальный образец `CreateDutyShiftDialog.tsx`, `defaultValues` из текущей строки, `post_clear`/`duty_type_clear`-чекбоксы для explicit-null (единственный способ отличить «не менять» от «явно снять» — backend различает absent vs null, 14.11e). Добавлен `isoToZonedDateTimeLocal()` (`duty-plans/lib/localDateTime.ts`) — точный инверс `zonedDateTimeToIso()` (14.11k) для предзаполнения формы; +2 юнит-теста (round-trip, конкретное значение). MSW-хендлеры approve/cancel/replan добавлены (стейтфулные — реально мутируют фикстуры). Все действия используют `ApiError.kind`-ветвление (5xx/network → generic, остальное → `mutation.error.message`) — та же архитектура, что 14.11j/k, не старый хардкод-текст `ApprovalPanel`. validate/conflicts-UI НЕ добавлены (вне объёма, title стори их не называет). 8 новых page-тестов, все зелёные с первой попытки (после мелкой правки — стейтфулный approve-мок, дубль-текст-ассерт). `npm run gate` — 1046 passed (было 1038, +8), 0 regressions, build/size-gate зелёные (219.6KB/300KB).
+
 ### File List
+
+- `frontend/src/features/duty-plans/pages/ReplanDutyShiftDialog.tsx` (new)
+- `frontend/src/features/duty-plans/pages/DutyPlanDetailPage.tsx` (modified — `ApproveButton`, `CancelShiftAction`, Actions-колонка)
+- `frontend/src/features/duty-plans/lib/localDateTime.ts` (modified — `isoToZonedDateTimeLocal()`)
+- `frontend/src/features/duty-plans/lib/localDateTime.test.ts` (modified — +2 теста)
+- `frontend/src/features/duty-plans/mocks/handlers.ts` (modified — approve/cancel/replan)
+- `frontend/src/app/duty-plan-detail.qa.test.tsx` (modified — +8 тестов)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Двенадцатая (четвёртая, последняя frontend) из ~12 подсторий разделения 14.11. Только approve/cancel/replan (title стори в sprint-status.yaml не называет validate/conflicts — вне объёма, future work если понадобится). Approve/cancel — буквальный образец SecurityEventDetailPage's ApprovalPanel (inline reason-toggle, единственный прецедент). Replan — модалка, буквальный образец CreateDutyShiftDialog (14.11k), предзаполненная текущими значениями строки. |
+| 2026-07-31 | Dev-story: `ApproveButton`/`CancelShiftAction`/`ReplanDutyShiftDialog`, `isoToZonedDateTimeLocal()`, MSW-хендлеры, 8 новых page-тестов + 2 юнит. `npm run gate` — 1046 passed. Status → review. |

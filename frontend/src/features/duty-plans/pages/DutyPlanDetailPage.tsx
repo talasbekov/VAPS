@@ -1,7 +1,8 @@
 // Story 14.11k: деталь ОДНОГО плана дежурств + грид его смен. Буквальный
 // образец скелета — SecurityEventDetailPage.tsx (useParams/isLoading/
-// isError-not-found ветки ДО тела). Нет approve/cancel/replan/validate/
-// conflicts-UI — 14.11l.
+// isError-not-found ветки ДО тела).
+// Story 14.11l: approve-кнопка в заголовке + per-row cancel/replan. Нет
+// validate/conflicts-UI — вне объёма (title стори их не называет).
 //
 // Scope Decision (14.11k): НЕТ GET /api/operations/duty-plans/{id}/
 // (retrieve) в схеме — заголовок плана берётся из useDutyPlans() (list),
@@ -14,9 +15,18 @@ import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { Button } from '../../../shared/ui/Button'
 import { ROUTES } from '../../../shared/routes'
-import { useDutyPlans, useDutyShifts } from '../api/queries'
+import { GENERIC_FAILURE_MESSAGE } from '../../../shared/api/useApiMutation'
+import {
+  useApproveDutyPlan,
+  useCancelDutyShift,
+  useDutyPlans,
+  useDutyShifts,
+} from '../api/queries'
 import type { DutyShiftsListResponse } from '../api/queries'
 import { CreateDutyShiftDialog } from './CreateDutyShiftDialog'
+import { ReplanDutyShiftDialog } from './ReplanDutyShiftDialog'
+
+type DutyShift = DutyShiftsListResponse['results'][number]
 
 const MONTH_LABEL = [
   'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -32,6 +42,7 @@ export function DutyPlanDetailPage() {
   const { id } = useParams<{ id: string }>()
   const planId = id ?? ''
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [replanShift, setReplanShift] = useState<DutyShift | null>(null)
 
   const plansQuery = useDutyPlans()
   // Review (Blind Hunter/Edge Case Hunter): плюс-и-минус смены не должны
@@ -73,7 +84,10 @@ export function DutyPlanDetailPage() {
             {STATUS_LABEL[plan.status_code] ?? plan.status_code}
           </span>
         </div>
-        <Button onClick={() => setDialogOpen(true)}>+ Создать смену</Button>
+        <div className="flex gap-2">
+          <ApproveButton planId={planId} statusCode={plan.status_code} />
+          <Button onClick={() => setDialogOpen(true)}>+ Создать смену</Button>
+        </div>
       </header>
 
       <ShiftsTable
@@ -81,6 +95,8 @@ export function DutyPlanDetailPage() {
         isError={shiftsQuery.isError}
         shifts={shiftsQuery.data?.results ?? []}
         isEmpty={shiftsQuery.data !== undefined && shiftsQuery.data.results.length === 0}
+        planId={planId}
+        onReplan={setReplanShift}
       />
 
       <CreateDutyShiftDialog
@@ -88,6 +104,35 @@ export function DutyPlanDetailPage() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
       />
+      <ReplanDutyShiftDialog
+        planId={planId}
+        shift={replanShift}
+        onClose={() => setReplanShift(null)}
+      />
+    </div>
+  )
+}
+
+function ApproveButton({ planId, statusCode }: { planId: string; statusCode: string }) {
+  const mutation = useApproveDutyPlan(planId)
+  const isApproved = statusCode !== 'DRAFT'
+
+  return (
+    <div>
+      <Button
+        variant="outline"
+        disabled={isApproved || mutation.isPending}
+        onClick={() => mutation.mutate({})}
+      >
+        {isApproved ? 'Утверждён' : mutation.isPending ? 'Утверждение…' : 'Утвердить план'}
+      </Button>
+      {mutation.error !== null && (
+        <p className="mt-1 text-xs text-destructive" role="alert">
+          {mutation.error.kind === 'server' || mutation.error.kind === 'network'
+            ? GENERIC_FAILURE_MESSAGE
+            : mutation.error.message}
+        </p>
+      )}
     </div>
   )
 }
@@ -111,11 +156,15 @@ function ShiftsTable({
   isError,
   shifts,
   isEmpty,
+  planId,
+  onReplan,
 }: {
   isLoading: boolean
   isError: boolean
   shifts: DutyShiftsListResponse['results']
   isEmpty: boolean
+  planId: string
+  onReplan: (shift: DutyShift) => void
 }) {
   if (isLoading) {
     return (
@@ -150,6 +199,7 @@ function ShiftsTable({
             <Th>Начало</Th>
             <Th>Окончание</Th>
             <Th>Статус</Th>
+            <Th>Действия</Th>
           </tr>
         </thead>
         <tbody>
@@ -172,11 +222,83 @@ function ShiftsTable({
                   </span>
                 )}
               </td>
+              <td className="p-3.5">
+                {shift.cancelled_at === null && (
+                  <div className="flex items-start gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onReplan(shift)}
+                    >
+                      Перепланировать
+                    </Button>
+                    <CancelShiftAction planId={planId} shift={shift} />
+                  </div>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
     </section>
+  )
+}
+
+function CancelShiftAction({ planId, shift }: { planId: string; shift: DutyShift }) {
+  const mutation = useCancelDutyShift(planId, String(shift.id))
+  const [showForm, setShowForm] = useState(false)
+  const [reason, setReason] = useState('')
+
+  if (!showForm) {
+    return (
+      <Button type="button" variant="outline" size="sm" onClick={() => setShowForm(true)}>
+        Отменить
+      </Button>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label
+        htmlFor={`cancel-reason-${shift.id}`}
+        className="text-[11px] font-semibold text-muted-foreground"
+      >
+        Причина отмены
+      </label>
+      <input
+        id={`cancel-reason-${shift.id}`}
+        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      <div className="flex gap-1.5">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={mutation.isPending || reason.trim() === ''}
+          onClick={() => mutation.mutate({ reason })}
+        >
+          {mutation.isPending ? 'Отмена…' : 'Подтвердить'}
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => setShowForm(false)}>
+          Отмена
+        </Button>
+      </div>
+      {mutation.error !== null && (
+        <p className="text-xs text-destructive" role="alert">
+          {/* Отмена — не RHF-форма (одно controlled-поле), setError
+              неприменим; backend's DomainError.detail здесь несёт {"field":
+              "reason"}, не {"reason": [...]} — не field-keyed record, как у
+              DRF-serializer ошибок. mutation.error.message (человекочитаемое
+              сообщение из конверта) — правильный источник текста, не details. */}
+          {mutation.error.kind === 'server' || mutation.error.kind === 'network'
+            ? GENERIC_FAILURE_MESSAGE
+            : mutation.error.message}
+        </p>
+      )}
+    </div>
   )
 }
 

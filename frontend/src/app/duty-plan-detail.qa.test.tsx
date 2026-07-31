@@ -272,4 +272,227 @@ describe('DutyPlanDetailPage', () => {
     expect(await screen.findByText('Некорректный UUID.')).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
+
+  it('AC-1/2: approve — активна на DRAFT, успех обновляет статус на Утверждён', async () => {
+    usePermissionsResponse({ permissions: ['duty.manage'] })
+    // Стейтфулный мок: GET после approve должен реально отразить APPROVED —
+    // иначе invalidateQueries()'s рефетч не докажет AC-2 (статус обновился).
+    let plan = { ...PLAN }
+    server.use(
+      http.get('*/api/operations/duty-plans/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [plan] }),
+      ),
+      http.get('*/api/operations/duty-plans/1/shifts/', () =>
+        HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+      ),
+      http.post('*/api/operations/duty-plans/1/approve/', () => {
+        plan = { ...plan, status_code: 'APPROVED' }
+        return HttpResponse.json(plan)
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(ROUTES.dutyPlanDetailTo(1))
+
+    const approveButton = await screen.findByRole('button', { name: 'Утвердить план' })
+    expect(approveButton).not.toBeDisabled()
+    await user.click(approveButton)
+
+    expect(await screen.findByRole('button', { name: 'Утверждён' })).toBeDisabled()
+    expect(screen.getAllByText('Утверждён').length).toBeGreaterThan(0)
+  })
+
+  it('AC-1: approve задизейблена/перелейблена на уже APPROVED плане', async () => {
+    usePermissionsResponse({ permissions: ['duty.manage'] })
+    server.use(
+      http.get('*/api/operations/duty-plans/', () =>
+        HttpResponse.json({
+          count: 1,
+          next: null,
+          previous: null,
+          results: [{ ...PLAN, status_code: 'APPROVED' }],
+        }),
+      ),
+      http.get('*/api/operations/duty-plans/1/shifts/', () =>
+        HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+      ),
+    )
+    renderApp(ROUTES.dutyPlanDetailTo(1))
+
+    expect(await screen.findByRole('button', { name: 'Утверждён' })).toBeDisabled()
+  })
+
+  const SHIFT: {
+    id: number
+    plan: number
+    employee_id: string
+    post: number | null
+    duty_type: number | null
+    duty_role_code: string
+    notes: string
+    starts_at: string
+    ends_at: string
+    cancelled_at: string | null
+    cancelled_by: string | null
+    cancelled_reason: string
+  } = {
+    id: 1,
+    plan: 1,
+    employee_id: '11111111-1111-1111-1111-111111111111',
+    post: 3,
+    duty_type: 2,
+    duty_role_code: 'SENIOR',
+    notes: '',
+    starts_at: '2026-09-01T03:00:00Z',
+    ends_at: '2026-09-01T15:00:00Z',
+    cancelled_at: null,
+    cancelled_by: null,
+    cancelled_reason: '',
+  }
+
+  it('AC-4/5/6: cancel — toggle требует причину, успех помечает строку отменённой', async () => {
+    usePermissionsResponse({ permissions: ['duty.manage'] })
+    let shift = { ...SHIFT }
+    server.use(
+      http.get('*/api/operations/duty-plans/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [PLAN] }),
+      ),
+      http.get('*/api/operations/duty-plans/1/shifts/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [shift] }),
+      ),
+      http.post('*/api/operations/duty-plans/1/shifts/1/cancel/', async ({ request }) => {
+        const body = (await request.json()) as { reason: string }
+        shift = { ...shift, cancelled_at: '2026-08-01T00:00:00Z', cancelled_reason: body.reason }
+        return HttpResponse.json(shift)
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(ROUTES.dutyPlanDetailTo(1))
+
+    await screen.findByText(SHIFT.employee_id)
+    const cancelToggle = screen.getByRole('button', { name: 'Отменить' })
+    const confirmBeforeReason = within(cancelToggle.closest('td') as HTMLElement)
+    await user.click(cancelToggle)
+
+    const confirmButton = confirmBeforeReason.getByRole('button', { name: 'Подтвердить' })
+    expect(confirmButton).toBeDisabled()
+
+    const reasonInput = screen.getByLabelText('Причина отмены')
+    await user.type(reasonInput, 'Болезнь сотрудника')
+    expect(confirmButton).not.toBeDisabled()
+    await user.click(confirmButton)
+
+    expect(await screen.findByText('Отменена')).toBeInTheDocument()
+  })
+
+  it('AC-7: cancel — 400 (пустая причина от сервера) показывает сообщение', async () => {
+    usePermissionsResponse({ permissions: ['duty.manage'] })
+    server.use(
+      http.get('*/api/operations/duty-plans/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [PLAN] }),
+      ),
+      http.get('*/api/operations/duty-plans/1/shifts/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [SHIFT] }),
+      ),
+      http.post('*/api/operations/duty-plans/1/shifts/1/cancel/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'INVALID_LIFECYCLE_TRANSITION',
+            message: 'Дежурство уже отменено.',
+            details: {},
+            request_id: null,
+            timestamp: '2026-07-31T00:00:00Z',
+          },
+          { status: 422 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderApp(ROUTES.dutyPlanDetailTo(1))
+
+    await screen.findByText(SHIFT.employee_id)
+    await user.click(screen.getByRole('button', { name: 'Отменить' }))
+    await user.type(screen.getByLabelText('Причина отмены'), 'x')
+    await user.click(screen.getByRole('button', { name: 'Подтвердить' }))
+
+    expect(await screen.findByText('Дежурство уже отменено.')).toBeInTheDocument()
+  })
+
+  it('AC-8/9/10: replan — модалка предзаполнена, explicit-null снимает пост, успех обновляет грид', async () => {
+    usePermissionsResponse({ permissions: ['duty.manage'] })
+    let shifts = [{ ...SHIFT }]
+    server.use(
+      http.get('*/api/operations/duty-plans/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [PLAN] }),
+      ),
+      http.get('*/api/operations/duty-plans/1/shifts/', () =>
+        HttpResponse.json({ count: shifts.length, next: null, previous: null, results: shifts }),
+      ),
+      http.post('*/api/operations/duty-plans/1/shifts/1/replan/', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>
+        expect(body.post).toBeNull() // AC-9: explicit null, снятие поста
+        const newShift = {
+          ...SHIFT,
+          id: 9,
+          post: null,
+          starts_at: '2026-09-02T03:00:00Z',
+        }
+        shifts = [newShift]
+        return HttpResponse.json(newShift, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(ROUTES.dutyPlanDetailTo(1))
+
+    await screen.findByText(SHIFT.employee_id)
+    await user.click(screen.getByRole('button', { name: 'Перепланировать' }))
+
+    const dialog = await screen.findByRole('dialog')
+    // AC-8: предзаполнено текущим значением поста.
+    expect(within(dialog).getByLabelText('ID поста')).toHaveValue(3)
+
+    await user.type(within(dialog).getByLabelText('Причина перепланирования'), 'Замена поста')
+    await user.click(within(dialog).getByLabelText('Снять пост'))
+    await user.click(within(dialog).getByRole('button', { name: 'Перепланировать' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(shifts[0].id).toBe(9)
+  })
+
+  it('AC-11: replan — 400 (пустая причина от сервера) показывает inline-ошибку', async () => {
+    usePermissionsResponse({ permissions: ['duty.manage'] })
+    server.use(
+      http.get('*/api/operations/duty-plans/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [PLAN] }),
+      ),
+      http.get('*/api/operations/duty-plans/1/shifts/', () =>
+        HttpResponse.json({ count: 1, next: null, previous: null, results: [SHIFT] }),
+      ),
+      http.post('*/api/operations/duty-plans/1/shifts/1/replan/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'VALIDATION_ERROR',
+            message: 'Ошибка валидации',
+            details: { reason: ['Обязательное поле.'] },
+            request_id: null,
+            timestamp: '2026-07-31T00:00:00Z',
+          },
+          { status: 400 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderApp(ROUTES.dutyPlanDetailTo(1))
+
+    await screen.findByText(SHIFT.employee_id)
+    await user.click(screen.getByRole('button', { name: 'Перепланировать' }))
+
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Причина перепланирования'), 'x')
+    await user.click(within(dialog).getByRole('button', { name: 'Перепланировать' }))
+
+    expect(await screen.findByText('Обязательное поле.')).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
 })

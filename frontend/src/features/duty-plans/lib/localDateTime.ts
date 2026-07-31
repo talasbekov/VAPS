@@ -49,3 +49,30 @@ export function zonedDateTimeToIso(
   const offsetMs = asIfUtcInZone - asIfUtc.getTime()
   return new Date(asIfUtc.getTime() - offsetMs).toISOString()
 }
+
+/**
+ * Inverse of `zonedDateTimeToIso`: render an ISO 8601 UTC instant as a
+ * `datetime-local` input value (`"YYYY-MM-DDTHH:mm"`) showing wall-clock
+ * time in `timeZone` — used to pre-fill the replan form (14.11l) with a
+ * shift's existing `starts_at`/`ends_at` in the same business timezone the
+ * create form writes in.
+ */
+export function isoToZonedDateTimeLocal(
+  iso: string,
+  timeZone: string = VAPS_LOCAL_TIMEZONE,
+): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const parts: Record<string, string> = {}
+  for (const part of formatter.formatToParts(new Date(iso))) {
+    if (part.type !== 'literal') parts[part.type] = part.value
+  }
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
