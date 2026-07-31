@@ -370,3 +370,44 @@ policyVersion, dataState, recordedAt), `boundaries[]` (границы смены
 полосы, восьмёрка — своя), `groups[]` (`READY` | `SUPPRESSED` | `NO_AGGREGATE`).
 Подавленная группа приходит БЕЗ `aggregateRating` — значение не считается вовсе.
 **Общего среднего в ответе нет и появиться не должно** (§22.17, A117).
+
+### `/api/ops/evaluation-workspace/` и `/api/ops/evaluation-work-items/:id/submit/` (§19.7-19.14)
+
+`backend-contract-pending`. Право обоих — `ops.rating.evaluate` (§19.22 «выставление
+оценки» — отдельный пункт списка прав), НЕ право сводки.
+
+`GET /api/ops/evaluation-workspace/?event=<securityEventId>` →
+`{ events[], selectedEvent, pending[], submitted[], queue, eventProgress, bases[], policy,
+loadedAt, capabilities, unavailableReason, unavailableViews[] }`.
+
+- `pending[]` — задания (§19.7) БЕЗ поля `evaluatorUserId`: очередь уже отобрана по
+  оценщику, а поле было бы лишь поводом его подменить. Проекция собирается полем за
+  полем, а не «всё, кроме оценщика».
+- `submitted[]` — СВОИ отправленные оценки (автор = запрашивающий). Чужая запись не
+  попадает в ответ ни одной строкой; оценки, полученные смотрящим от других лиц, не
+  отдаются вовсе (§19.14).
+- `eventProgress` — `null` без `ops.rating.view_aggregate`: счёт работы ДРУГИХ людей
+  охраняется правом сводки. Значений оценок в нём нет ни одним полем.
+- `bases[]` — основания из policy (§19.10), `requiresNote: true` у «Другое».
+- `unavailableReason: 'FEATURE_DISABLED' | null` — §19.3. Отсутствие МЕТОДИКИ оценивать
+  не мешает: она управляет расчётом агрегата, а не правом поставить оценку.
+
+`POST /api/ops/evaluation-work-items/:workItemId/submit/`
+тело `{ score, basisCode, basisNote, comment, revision }` → `201 { workItem, submitted,
+queue }`. Ни оценщика, ни target, ни мероприятия, ни направления в теле нет — это
+свойства ЗАДАНИЯ (§19.18 «нельзя изменить оценщика/target/event»).
+
+Коды отказов (422, кроме отмеченных):
+
+| Код | Когда |
+| --- | --- |
+| `SCORE_OUT_OF_SCALE` / `SCORE_NOT_INTEGER` | вне шкалы 1–10 (нуля в шкале нет) / дробное |
+| `BASIS_REQUIRED` / `BASIS_UNKNOWN` | основание не указано / код вне перечня policy |
+| `BASIS_NOTE_REQUIRED` | основание требует пояснения (`Другое`) |
+| `COMMENT_REQUIRED` | оценка ниже 8 без комментария (§19.9) |
+| `EVALUATION_REVISION_MISMATCH` | редакция задания устарела — проверяется РАНЬШЕ правил формы |
+| `EVALUATION_ALREADY_SUBMITTED` | по заданию уже отправлена оценка (исправление §19.18 — отдельная операция) |
+| `RATING_DISABLED` | оценивание выключено сервером (§19.3) |
+| `GROUP_EVALUATION_UNSUPPORTED` | групповая оценка (§19.13) — состав группы на момент мероприятия не записан |
+| `ENTITY_NOT_FOUND` (404) | задания нет ИЛИ оно принадлежит другому оценщику: отказ по праву подтвердил бы его существование |
+

@@ -284,8 +284,9 @@ describe('доступ к журналу (AC-6)', () => {
     // + 1 (serviceReports, §22.18, Этап 40) + 1 (feedback, §28)
     // + 1 (settings, §29) + 1 (ratings, §19.4)
     // + 1 (ratingAnalytics, §22.16 — своё право `ops.analytics.view`)
+    // + 1 (evaluationWorkspace, §19.14 — своё право `ops.rating.evaluate`)
     // — changelog среди них нет
-    expect(NAV_SECTIONS).toHaveLength(19)
+    expect(NAV_SECTIONS).toHaveLength(20)
   })
 })
 

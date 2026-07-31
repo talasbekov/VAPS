@@ -63,3 +63,8 @@
   групп и подавление малых (`SUPPRESSED`). Общего среднего не считает намеренно.
 - `src/features/ratings/pages/RatingAnalyticsPage.tsx` — маршрут `/ratings/analytics`,
   право `ops.analytics.view` (не право сводки).
+- `src/features/ratings/lib/workspace.ts` — ОДНО правило формы оценивания на клиента и
+  сервер (§19.9-19.10) + счётчики очереди и прогресса мероприятия.
+- `src/features/ratings/pages/EvaluationWorkspacePage.tsx` — маршрут `/ratings/workspace`,
+  право `ops.rating.evaluate`: очередь заданий, форма, «Отправленные мной», сводка
+  мероприятия (только с правом на агрегат).

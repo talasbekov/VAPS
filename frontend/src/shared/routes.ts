@@ -10,6 +10,7 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
+  ClipboardCheck,
   ClipboardList,
   FileText,
   LayoutDashboard,
@@ -105,12 +106,23 @@ export const ROUTES = {
   operationsAnalytics: '/analytics/operations',
   /**
    * §19.4 второй маршрут — сводный экран итоговых оценок и оперативного
-   * рейтинга. Первый (`/security-events/:id/evaluations`) и третий
-   * (`/employees/:id/operational-rating`) не заведены: за первым стоят формы
-   * оценивания, которых ещё нет, а третий требует связи persona↔сотрудник —
-   * маршрут без операции вёл бы на честно пустой экран.
+   * рейтинга. Третий (`/employees/:id/operational-rating`) не заведён: он
+   * требует связи persona↔сотрудник, и маршрут без неё вёл бы на честно
+   * пустой экран.
    */
   ratings: '/ratings',
+  /**
+   * §19.14 «Рабочее пространство мероприятия» — то, что §19.4 называет первым
+   * маршрутом (`/security-events/:id/evaluations`). Здесь мероприятие приходит
+   * параметром `?event=`, а не сегментом: очередь принадлежит ОЦЕНЩИКУ, и
+   * человек с заданиями в двух мероприятиях иначе не имел бы входа «показать
+   * мои задания» вовсе.
+   *
+   * Право своё — `ops.rating.evaluate`. Правом сводки (`view_aggregate`) его
+   * охранять нельзя: оценщик обязан выставить оценку, не видя, как она
+   * сложится в рейтинг человека.
+   */
+  evaluationWorkspace: '/ratings/workspace',
   /**
    * Отчёт §22.16 «Аналитика рейтинга» — ОТДЕЛЬНЫЙ маршрут со СВОИМ правом
    * (`ops.analytics.view`). Секцией на `/ratings` он быть не мог: там правом
@@ -266,6 +278,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Аналитика мероприятий',
     icon: BarChart3,
     permission: 'ops.analytics.operations',
+  },
+  {
+    route: ROUTES.evaluationWorkspace,
+    label: 'Оценивание участников',
+    icon: ClipboardCheck,
+    permission: 'ops.rating.evaluate',
   },
   {
     route: ROUTES.ratings,

@@ -4,19 +4,41 @@
 import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import { hasPermission } from '../../../shared/testing/mock-runtime/rbac-directory'
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
+import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
 import { UNAVAILABLE_RATING_FACTORS, buildSummary } from '../lib/rating'
 import { policyBoundaries } from '../lib/dynamics'
 import { buildRatingAnalytics } from '../lib/analytics'
+import {
+  UNAVAILABLE_WORKSPACE_VIEWS,
+  summarizeEventProgress,
+  summarizeQueue,
+  validateSubmission,
+} from '../lib/workspace'
 import type {
+  EvaluationWorkItemView,
+  EvaluationWorkspaceResponse,
   ListOperationalRatingsResponse,
   RatingAnalyticsResponse,
   RatingDynamicsResponse,
+  SubmitEvaluationRequest,
+  SubmitEvaluationResponse,
+  SubmittedEvaluationView,
 } from '../api/pending-contracts'
-import { RATED_EMPLOYEES, RATING_GROUPS } from './fixtures'
+import type { EvaluationWorkItem, EventEvaluation } from '../model/types'
+import { EVALUATION_BASES, EVALUATION_EVENTS, RATED_EMPLOYEES, RATING_GROUPS } from './fixtures'
 import type { RatingsSlice } from './fixtures'
 import { readRatingPolicy, readRatingSuppressionMinGroup } from './settingsSlice'
 
 export class RepositoryPermissionError extends Error {}
+export class RepositoryNotFoundError extends Error {}
+export class RepositoryBusinessRuleError extends Error {
+  readonly errorCode: string
+
+  constructor(errorCode: string, message: string) {
+    super(message)
+    this.errorCode = errorCode
+  }
+}
 
 const SLICE_NAME = 'ratings'
 /**
@@ -34,6 +56,13 @@ const VIEW_AGGREGATE_PERMISSION = 'ops.rating.view_aggregate'
  * не заводится.
  */
 const VIEW_ANALYTICS_PERMISSION = 'ops.analytics.view'
+/**
+ * §19.22 «выставление оценки» — отдельный пункт списка прав, и теперь за ним
+ * стоит операция, поэтому право и заводится. Оно НЕ подразумевает права на
+ * агрегат: оценщик обязан выставить оценку, не видя, как она сложится в
+ * рейтинг человека, — иначе оценивание превращается в подгонку под число.
+ */
+const EVALUATE_PERMISSION = 'ops.rating.evaluate'
 
 /** §35: чего нет в ОТЧЁТЕ (не в расчёте) и почему. */
 const UNAVAILABLE_ANALYTICS_VIEWS: readonly { code: string; label: string; reason: string }[] = [
@@ -268,5 +297,269 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     }
   }
 
-  return { listOperationalRatings, getRatingDynamics, getRatingAnalytics }
+  /**
+   * Проекция задания наружу. Собирается ПОЛЕМ ЗА ПОЛЕМ, а не «всё, кроме
+   * оценщика»: при появлении нового закрытого поля перечисление оставит его
+   * дома, а исключающий список молча отдал бы его клиенту.
+   */
+  function toWorkItemView(item: EvaluationWorkItem): EvaluationWorkItemView {
+    return {
+      id: item.id,
+      securityEventId: item.securityEventId,
+      eventRunId: item.eventRunId,
+      assignmentId: item.assignmentId,
+      targetEmployeeId: item.targetEmployeeId,
+      targetGroupId: item.targetGroupId,
+      targetSafeLabel: item.targetSafeLabel,
+      targetSafeUnitLabel: item.targetSafeUnitLabel,
+      postLabel: item.postLabel,
+      actualStartsAt: item.actualStartsAt,
+      actualEndsAt: item.actualEndsAt,
+      participated: item.participated,
+      evaluationDirection: item.evaluationDirection,
+      initialScore: item.initialScore,
+      status: item.status,
+      revision: item.revision,
+      submittedEvaluationId: item.submittedEvaluationId,
+      submittedAt: item.submittedAt,
+    }
+  }
+
+  function basisLabel(code: string | null): string | null {
+    if (code === null) return null
+    return EVALUATION_BASES.find((item) => item.code === code)?.label ?? code
+  }
+
+  /**
+   * Своя отправленная оценка. Собирается ТОЛЬКО для записи, автором которой
+   * является запрашивающий: проверка на `evaluatorUserId` стоит здесь, а не в
+   * вёрстке, потому что чужой комментарий не должен доехать до браузера вовсе.
+   */
+  function toSubmittedView(
+    item: EvaluationWorkItem,
+    evaluations: readonly EventEvaluation[],
+    actorUserId: string | null,
+  ): SubmittedEvaluationView | null {
+    if (item.submittedEvaluationId === null || item.submittedAt === null) return null
+    const evaluation = evaluations.find((entry) => entry.id === item.submittedEvaluationId)
+    if (evaluation === undefined) return null
+    if (evaluation.evaluatorUserId !== actorUserId) return null
+    return {
+      workItemId: item.id,
+      evaluationId: evaluation.id,
+      targetSafeLabel: item.targetSafeLabel,
+      postLabel: item.postLabel,
+      evaluationDirection: evaluation.evaluationDirection,
+      method: evaluation.method,
+      score: evaluation.score,
+      basisLabel: basisLabel(evaluation.basisCode),
+      basisNote: evaluation.basisNote,
+      comment: evaluation.comment,
+      submittedAt: item.submittedAt,
+      revision: item.revision,
+    }
+  }
+
+  /**
+   * Рабочее пространство оценивания (§19.14).
+   *
+   * Очередь отбирается ПО ОЦЕНЩИКУ на сервере: §19.14 «не показывай
+   * пользователю оценки, полученные им от других лиц» выполняется тем, что
+   * чужие задания и чужие оценки в ответ не попадают, а не тем, что экран их
+   * не рисует.
+   */
+  async function getEvaluationWorkspace(
+    actorUserId: string | null,
+    eventId: string | null,
+  ): Promise<EvaluationWorkspaceResponse> {
+    if (!hasPermission(actorUserId, EVALUATE_PERMISSION)) {
+      throw new RepositoryPermissionError(EVALUATE_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new Error('mock-runtime: чтение заданий оценивания до инициализации demo-состояния')
+    }
+    const slice = readSlice(envelope.slices)
+    const policy = readRatingPolicy(envelope.slices)
+    const featureEnabled = slice.capabilities.operationalRatings
+
+    const base = {
+      bases: EVALUATION_BASES.map((item) => ({ ...item })),
+      policy,
+      loadedAt: clock.now(),
+      capabilities: { operationalRatings: featureEnabled },
+      unavailableViews: UNAVAILABLE_WORKSPACE_VIEWS.map((item) => ({ ...item })),
+    }
+    // Выключенная функция не отдаёт ни одного задания: показать очередь и не
+    // дать отправить оценку значило бы позвать на работу, которой нет (§19.3).
+    if (!featureEnabled) {
+      return {
+        ...base,
+        events: [],
+        selectedEvent: null,
+        pending: [],
+        submitted: [],
+        queue: { total: 0, submitted: 0, remaining: 0 },
+        eventProgress: null,
+        unavailableReason: 'FEATURE_DISABLED',
+      }
+    }
+
+    const mine = slice.workItems.filter((item) => item.evaluatorUserId === actorUserId)
+    const events = EVALUATION_EVENTS.filter((event) =>
+      mine.some((item) => item.securityEventId === event.securityEventId),
+    ).map((event) => ({
+      securityEventId: event.securityEventId,
+      number: event.number,
+      title: event.title,
+      objectLabel: event.objectLabel,
+      actualStartsAt: event.actualStartsAt,
+      actualEndsAt: event.actualEndsAt,
+      stateLabel: event.stateLabel,
+    }))
+    const selectedEvent =
+      events.find((event) => event.securityEventId === eventId) ?? events[0] ?? null
+    const scoped =
+      selectedEvent === null
+        ? []
+        : mine.filter((item) => item.securityEventId === selectedEvent.securityEventId)
+    // Порядок задаёт СЕРВЕР и задаёт его по подписи участника: очередь,
+    // отсортированная по начальной оценке, была бы подсказкой «кого снижать».
+    const ordered = [...scoped].sort((a, b) => a.targetSafeLabel.localeCompare(b.targetSafeLabel, 'ru'))
+
+    return {
+      ...base,
+      events,
+      selectedEvent,
+      pending: ordered.filter((item) => item.status === 'PENDING').map(toWorkItemView),
+      submitted: ordered
+        .filter((item) => item.status === 'SUBMITTED')
+        .map((item) => toSubmittedView(item, slice.evaluations, actorUserId))
+        .filter((item): item is SubmittedEvaluationView => item !== null),
+      queue: summarizeQueue(scoped),
+      // Сводка мероприятия — работа ВСЕХ оценщиков, поэтому и охраняется
+      // отдельным правом (§19.14). Без права её нет в ответе, а не скрыта.
+      eventProgress:
+        selectedEvent !== null && hasPermission(actorUserId, VIEW_AGGREGATE_PERMISSION)
+          ? summarizeEventProgress(
+              slice.workItems.filter(
+                (item) => item.securityEventId === selectedEvent.securityEventId,
+              ),
+            )
+          : null,
+      unavailableReason: null,
+    }
+  }
+
+  /**
+   * Отправка оценки по заданию (§19.7-19.10).
+   *
+   * Оценщик берётся из учётной записи, target/мероприятие/направление — из
+   * ЗАДАНИЯ: тело запроса не несёт ни одного из этих полей и подменить их не
+   * может. Проверка формы выполняется ЗАНОВО той же функцией, что и на клиенте
+   * (§19.9 «backend повторно выполняет ту же проверку»).
+   */
+  async function submitEvaluation(
+    actorUserId: string | null,
+    workItemId: string,
+    body: SubmitEvaluationRequest,
+  ): Promise<SubmitEvaluationResponse> {
+    if (!hasPermission(actorUserId, EVALUATE_PERMISSION)) {
+      throw new RepositoryPermissionError(EVALUATE_PERMISSION)
+    }
+    let response: SubmitEvaluationResponse | null = null
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current.slices)
+      const item = slice.workItems.find((entry) => entry.id === workItemId)
+      // Чужое задание — 404, а не 403: отказ по праву подтвердил бы, что
+      // задание с таким идентификатором существует и кем-то оценивается.
+      if (item === undefined || item.evaluatorUserId !== actorUserId) {
+        throw new RepositoryNotFoundError(workItemId)
+      }
+      if (!slice.capabilities.operationalRatings) {
+        throw new RepositoryBusinessRuleError(
+          'RATING_DISABLED',
+          'Оперативный рейтинг выключен: оценки не принимаются.',
+        )
+      }
+      if (item.status !== 'PENDING') {
+        throw new RepositoryBusinessRuleError(
+          'EVALUATION_ALREADY_SUBMITTED',
+          'Оценка по этому заданию уже отправлена. Исправление — отдельная операция (§19.18).',
+        )
+      }
+      if (item.targetEmployeeId === null) {
+        throw new RepositoryBusinessRuleError(
+          'GROUP_EVALUATION_UNSUPPORTED',
+          'Групповая оценка не поддерживается: состав группы на момент мероприятия не записан.',
+        )
+      }
+      // Редакция задания: человек отправляет ту версию, которую видел. Совпадение
+      // проверяется ДО правил формы — иначе про устаревшую строку сначала
+      // сообщили бы о комментарии, а потом всё равно отвергли.
+      if (item.revision !== body.revision) {
+        throw new RepositoryBusinessRuleError(
+          'EVALUATION_REVISION_MISMATCH',
+          'Задание изменилось: обновите страницу и повторите.',
+        )
+      }
+      const violation = validateSubmission(body, EVALUATION_BASES)
+      if (violation !== null) {
+        throw new RepositoryBusinessRuleError(violation.code, violation.message)
+      }
+
+      const now = clock.now()
+      const evaluation: EventEvaluation = {
+        // Идентификатор генерирует СЕРВЕР (§19.7 «не генерируй evaluation ID»),
+        // и он устойчив между перезагрузками, как в остальных repositories.
+        id: `evaluation-${current.revision + 1}-${slice.evaluations.length + 1}`,
+        securityEventId: item.securityEventId,
+        employeeId: item.targetEmployeeId,
+        evaluatorUserId: actorUserId,
+        score: body.score,
+        comment: (body.comment ?? '').trim() === '' ? null : (body.comment ?? '').trim(),
+        evaluationDirection: item.evaluationDirection,
+        method: 'MANUAL',
+        basisCode: body.basisCode,
+        basisNote: (body.basisNote ?? '').trim() === '' ? null : (body.basisNote ?? '').trim(),
+        evaluatedAt: clock.businessDate(),
+        supersededById: null,
+      }
+      const nextItem: EvaluationWorkItem = {
+        ...item,
+        status: 'SUBMITTED',
+        revision: item.revision + 1,
+        submittedEvaluationId: evaluation.id,
+        submittedAt: now,
+      }
+      const workItems = slice.workItems.map((entry) => (entry.id === item.id ? nextItem : entry))
+      const evaluations = [...slice.evaluations, evaluation]
+      const submitted = toSubmittedView(nextItem, evaluations, actorUserId)
+      if (submitted === null) {
+        throw new Error('mock-runtime: отправленная оценка не собралась в проекцию')
+      }
+      response = {
+        workItem: toWorkItemView(nextItem),
+        submitted,
+        queue: summarizeQueue(
+          workItems.filter(
+            (entry) =>
+              entry.evaluatorUserId === actorUserId &&
+              entry.securityEventId === item.securityEventId,
+          ),
+        ),
+      }
+      return { ...current.slices, [SLICE_NAME]: { ...slice, workItems, evaluations } }
+    })
+    if (response === null) throw new Error('mock-runtime: отправка оценки не вернула результат')
+    return response
+  }
+
+  return {
+    listOperationalRatings,
+    getRatingDynamics,
+    getRatingAnalytics,
+    getEvaluationWorkspace,
+    submitEvaluation,
+  }
 }

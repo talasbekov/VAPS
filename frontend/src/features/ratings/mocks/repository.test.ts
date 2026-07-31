@@ -5,12 +5,20 @@ import { createMemoryPersistence } from '../../../shared/testing/mock-runtime/me
 import { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac-directory'
 import type { DemoStateEnvelope } from '../../../shared/testing/mock-runtime/persistence'
-import { createRatingsRepository, RepositoryPermissionError } from './repository'
-import { DYNAMICS_POINTS, EVALUATIONS } from './fixtures'
+import {
+  createRatingsRepository,
+  RepositoryBusinessRuleError,
+  RepositoryNotFoundError,
+  RepositoryPermissionError,
+} from './repository'
+import { DYNAMICS_POINTS, EVALUATIONS, WORK_ITEMS } from './fixtures'
 
 const VIEWER = 'rating-viewer'
 const ANALYST = 'rating-analyst'
 const NOBODY = 'nobody-user'
+/** Оценщики сида (§19.7): задания привязаны к учётным записям, а не к экрану. */
+const EVALUATOR = 'demo-event-planner'
+const EVALUATOR_WITH_AGGREGATE = 'demo-recon-officer'
 const BUSINESS_DATE = '2026-07-20'
 
 /** §19.19: методика лежит в ЧУЖОМ слайсе «Настроек» — тест сеет его рукописной
@@ -71,8 +79,8 @@ interface SeedOverrides {
 function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
   return {
     application: 'smart-josparlau',
-    schema_version: 32,
-    seed_version: 'test-v32',
+    schema_version: 33,
+    seed_version: 'test-v33',
     scenario: 'normal',
     revision: 0,
     created_at: '2026-07-20T08:00:00+05:00',
@@ -80,6 +88,7 @@ function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
     slices: {
       ratings: {
         evaluations: EVALUATIONS.map((item) => ({ ...item })),
+        workItems: WORK_ITEMS.map((item) => ({ ...item })),
         dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
         capabilities: {
           operationalRatings: overrides.operationalRatings ?? true,
@@ -106,6 +115,14 @@ beforeEach(() => {
     // иначе разделение прав было бы недемонстрируемо (обе роли у одного лица).
     { userId: ANALYST, permissions: ['ops.analytics.view'] },
     { userId: NOBODY, permissions: [] },
+    // Оценщик БЕЗ права на агрегат: §19.14 «Сводка мероприятия показывается
+    // только при наличии permission» иначе была бы недемонстрируема — у второго
+    // оценщика право есть, у этого нет, и оба держат задания в одном событии.
+    { userId: EVALUATOR, permissions: ['ops.rating.evaluate'] },
+    {
+      userId: EVALUATOR_WITH_AGGREGATE,
+      permissions: ['ops.rating.evaluate', 'ops.rating.view_aggregate'],
+    },
   ])
 })
 
@@ -361,5 +378,239 @@ describe('аналитика рейтинга (§22.16-22.17)', () => {
     const { figures } = await repository.getRatingAnalytics(ANALYST)
     // В сиде ровно одна вытесненная исправлением оценка.
     expect(figures?.correctedEvaluations).toBe(1)
+  })
+})
+
+describe('рабочее пространство оценивания (§19.7, §19.14)', () => {
+  it('без права оценивания задания не отдаются', async () => {
+    const { repository } = await setup()
+    await expect(repository.getEvaluationWorkspace(VIEWER, null)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('очередь отбирается по ОЦЕНЩИКУ: чужие задания в ответ не попадают', async () => {
+    const { repository } = await setup()
+    const mine = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
+    const ids = mine.pending.map((item) => item.id)
+    // work-item-6 — задание другого оценщика в том же мероприятии.
+    expect(ids).not.toContain('work-item-6')
+    expect(ids).toEqual(['work-item-2', 'work-item-1', 'work-item-3'])
+    // Порядок задаёт сервер и задаёт его по подписи участника: он НЕ совпадает
+    // ни с порядком заданий в сиде, ни с порядком начальных оценок.
+    expect(mine.pending.map((item) => item.targetSafeLabel)).toEqual([
+      'Абишев Н.',
+      'Ерланов Д.',
+      'Тлеуов А.',
+    ])
+  })
+
+  it('оценщик не едет наружу ни одним полем задания (§19.7)', async () => {
+    const { repository } = await setup()
+    const response = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
+    const json = JSON.stringify(response)
+    expect(json).not.toContain('demo-event-planner')
+    expect(json).not.toContain('demo-recon-officer')
+    expect(json).not.toContain('evaluatorUserId')
+  })
+
+  it('«Отправленные мной» показывает СВОЮ оценку и не показывает чужую', async () => {
+    const { repository } = await setup()
+    const mine = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
+    expect(mine.submitted.map((item) => item.workItemId)).toEqual(['work-item-4'])
+    expect(mine.submitted[0]).toMatchObject({ evaluationId: 'evaluation-21', score: 7 })
+    // Чужая отправленная оценка (work-item-7 офицера рекогносцировки) не
+    // попадает ни строкой, ни комментарием.
+    const other = await repository.getEvaluationWorkspace(EVALUATOR_WITH_AGGREGATE, 'event-1')
+    expect(other.submitted.map((item) => item.workItemId)).toEqual(['work-item-7'])
+  })
+
+  it('мероприятия — только те, где у смотрящего есть задания; отбор по event работает', async () => {
+    const { repository } = await setup()
+    const first = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
+    expect(first.events.map((event) => event.securityEventId)).toEqual(['event-1', 'event-2'])
+    const second = await repository.getEvaluationWorkspace(EVALUATOR, 'event-2')
+    expect(second.pending.map((item) => item.id)).toEqual(['work-item-5'])
+    expect(second.queue).toEqual({ total: 1, submitted: 0, remaining: 1 })
+    // У офицера рекогносцировки заданий во втором мероприятии нет — и самого
+    // мероприятия в списке тоже нет.
+    const other = await repository.getEvaluationWorkspace(EVALUATOR_WITH_AGGREGATE, null)
+    expect(other.events.map((event) => event.securityEventId)).toEqual(['event-1'])
+  })
+
+  it('сводка мероприятия приходит только с правом на агрегат (§19.14)', async () => {
+    const { repository } = await setup()
+    const without = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
+    expect(without.eventProgress).toBeNull()
+    const withPermission = await repository.getEvaluationWorkspace(
+      EVALUATOR_WITH_AGGREGATE,
+      'event-1',
+    )
+    // Сводка считает работу ВСЕХ оценщиков — оттого и охраняется отдельно.
+    expect(withPermission.eventProgress).toMatchObject({
+      participants: 7,
+      counters: { total: 7, submitted: 2, remaining: 5 },
+    })
+  })
+
+  it('выключенная функция не отдаёт заданий и называет причину (§19.3)', async () => {
+    const { repository } = await setup({ operationalRatings: false })
+    const response = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
+    expect(response.unavailableReason).toBe('FEATURE_DISABLED')
+    expect(response.pending).toEqual([])
+    expect(response.submitted).toEqual([])
+    expect(response.events).toEqual([])
+  })
+
+  it('без методики оценивать МОЖНО: она управляет расчётом, а не правом оценки', async () => {
+    const { repository } = await setup({ settings: null })
+    const response = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
+    expect(response.policy).toBeNull()
+    expect(response.unavailableReason).toBeNull()
+    expect(response.pending.length).toBeGreaterThan(0)
+  })
+})
+
+describe('отправка оценки (§19.7-19.10)', () => {
+  const VALID = {
+    score: 9,
+    basisCode: 'EXECUTION_OF_DUTIES',
+    basisNote: null,
+    comment: null,
+    revision: 1,
+  }
+
+  it('без права оценивания отправка отвергается', async () => {
+    const { repository } = await setup()
+    await expect(repository.submitEvaluation(VIEWER, 'work-item-1', VALID)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('чужое задание — 404, а не отказ по праву', async () => {
+    const { repository } = await setup()
+    // work-item-6 принадлежит другому оценщику: отказ по праву подтвердил бы,
+    // что задание существует и кем-то оценивается.
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-6', VALID),
+    ).rejects.toBeInstanceOf(RepositoryNotFoundError)
+  })
+
+  it('оценка записывается, задание закрывается, и всё это переживает перечитывание', async () => {
+    const { repository, adapter } = await setup()
+    const result = await repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+      ...VALID,
+      score: 6,
+      comment: '  опоздание на пост  ',
+    })
+    expect(result.workItem).toMatchObject({ status: 'SUBMITTED', revision: 2 })
+    expect(result.queue).toEqual({ total: 4, submitted: 2, remaining: 2 })
+
+    const envelope = await adapter.load()
+    const slice = envelope?.slices.ratings as {
+      evaluations: { id: string; comment: string | null; evaluatorUserId: string | null }[]
+      workItems: { id: string; status: string; submittedEvaluationId: string | null }[]
+    }
+    const created = slice.evaluations.find((item) => item.id === result.submitted.evaluationId)
+    // Идентификатор сгенерировал СЕРВЕР (§19.7), комментарий сохранён обрезанным.
+    expect(created).toMatchObject({ comment: 'опоздание на пост', evaluatorUserId: EVALUATOR })
+    // Задание не пересоздано и не задвоено: их по-прежнему столько же.
+    expect(slice.workItems).toHaveLength(WORK_ITEMS.length)
+    expect(
+      slice.workItems.find((item) => item.id === 'work-item-1'),
+    ).toMatchObject({ status: 'SUBMITTED', submittedEvaluationId: created?.id })
+
+    // Повторное чтение видит ту же отправленную оценку — состояние
+    // repository-backed, а не жившее в ответе одной мутации.
+    const reread = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
+    expect(reread.pending.map((item) => item.id)).not.toContain('work-item-1')
+    expect(reread.submitted.map((item) => item.workItemId)).toContain('work-item-1')
+  })
+
+  it('новая оценка входит в агрегат — считает его СЕРВЕР, а не экран', async () => {
+    const { repository } = await setup()
+    const before = await repository.listOperationalRatings(VIEWER)
+    const countBefore =
+      before.results.find((item) => item.employeeId === 'employee-1')?.evaluationsCount ?? 0
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', VALID)
+    const after = await repository.listOperationalRatings(VIEWER)
+    expect(after.results.find((item) => item.employeeId === 'employee-1')?.evaluationsCount).toBe(
+      countBefore + 1,
+    )
+  })
+
+  it('повторная отправка по тому же заданию отвергается своим кодом', async () => {
+    const { repository } = await setup()
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', VALID)
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, revision: 2 }),
+    ).rejects.toMatchObject({ errorCode: 'EVALUATION_ALREADY_SUBMITTED' })
+  })
+
+  it('устаревшая редакция задания отвергается ДО правил формы', async () => {
+    const { repository } = await setup()
+    // Тело негодно сразу двумя способами: редакция старая И комментарий к
+    // низкой оценке отсутствует. Ответ обязан быть про редакцию.
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+        ...VALID,
+        score: 5,
+        revision: 99,
+      }),
+    ).rejects.toMatchObject({ errorCode: 'EVALUATION_REVISION_MISMATCH' })
+  })
+
+  it('сервер повторяет проверку формы на СВОИХ данных (§19.9)', async () => {
+    const { repository } = await setup()
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, score: 5 }),
+    ).rejects.toMatchObject({ errorCode: 'COMMENT_REQUIRED' })
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, score: 0 }),
+    ).rejects.toMatchObject({ errorCode: 'SCORE_OUT_OF_SCALE' })
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, basisCode: 'INVENTED' }),
+    ).rejects.toMatchObject({ errorCode: 'BASIS_UNKNOWN' })
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, basisCode: 'OTHER' }),
+    ).rejects.toMatchObject({ errorCode: 'BASIS_NOTE_REQUIRED' })
+    // Ни одна отвергнутая попытка не оставила следа: задание всё ещё в очереди.
+    const response = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
+    expect(response.pending.map((item) => item.id)).toContain('work-item-1')
+  })
+
+  it('выключенная функция не принимает оценок', async () => {
+    const { repository } = await setup({ operationalRatings: false })
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', VALID),
+    ).rejects.toMatchObject({ errorCode: 'RATING_DISABLED' })
+  })
+
+  it('направление и target берутся из ЗАДАНИЯ, а не из тела запроса', async () => {
+    const { repository, adapter } = await setup()
+    // Поля, которых в контракте тела нет: попытка подменить target и
+    // направление не должна ни на что повлиять. Тело собирается как `unknown`
+    // и приводится на границе — так же, как его приносит HTTP.
+    const tampered = {
+      ...VALID,
+      targetEmployeeId: 'employee-8',
+      evaluationDirection: 'SENIOR_TO_GROUP',
+    } as unknown as typeof VALID
+    const result = await repository.submitEvaluation(EVALUATOR, 'work-item-3', tampered)
+    expect(result.submitted.evaluationDirection).toBe('EMPLOYEE_TO_SENIOR')
+    const envelope = await adapter.load()
+    const slice = envelope?.slices.ratings as {
+      evaluations: { id: string; employeeId: string }[]
+    }
+    expect(
+      slice.evaluations.find((item) => item.id === result.submitted.evaluationId)?.employeeId,
+    ).toBe('employee-5')
+  })
+
+  it('ошибка бизнес-правила — экземпляр своего класса, а не строка', async () => {
+    const { repository } = await setup()
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, score: 5 }),
+    ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
   })
 })
