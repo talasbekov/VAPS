@@ -263,3 +263,153 @@ class Post(TimeStampedModel):
             raise ValidationError(
                 {"sector": "Сектор должен принадлежать тому же объекту, что и пост."}
             )
+
+
+class ChecklistTemplate(TimeStampedModel):
+    """Типовой шаблон чек-листа (donor `ops_object_checklist_templates`,
+    DB-OPS-017) — GLOBAL catalog, no link to any particular `Object`.
+    """
+
+    code = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "ops_object_checklist_templates"
+        verbose_name = "Шаблон чек-листа"
+        verbose_name_plural = "Шаблоны чек-листов"
+
+    def __str__(self):
+        return f"{self.code} — {self.name}"
+
+
+class ChecklistItem(TimeStampedModel):
+    """Пункт типового чек-листа (donor `ops_object_checklist_items`,
+    DB-OPS-018). Belongs to a `ChecklistTemplate`, NOT to an `Object`
+    directly — a template (and its items) is shared across every object
+    bound to it via `ChecklistBinding`.
+    """
+
+    template = models.ForeignKey(
+        ChecklistTemplate, on_delete=models.CASCADE, related_name="items"
+    )
+    text = models.TextField()
+    category = models.CharField(max_length=100, blank=True)
+    is_required = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "ops_object_checklist_items"
+        verbose_name = "Пункт чек-листа"
+        verbose_name_plural = "Пункты чек-листа"
+
+    def __str__(self):
+        return f"{self.template.code} / {self.text[:40]}"
+
+
+class ChecklistBinding(TimeStampedModel):
+    """Привязка шаблона к объекту (donor `ops_object_checklist_bindings`,
+    DB-OPS-048, §50 "High Fix" — the per-object half of "типовой +
+    дополнения"). `created_by` is NOT redeclared here: `TimeStampedModel`
+    already has it (donor's NOT NULL is looser here — nullable — living
+    base class wins over literal donor SQL, same call as 14.1's PK type).
+    """
+
+    object = models.ForeignKey(
+        Object, on_delete=models.CASCADE, related_name="checklist_bindings"
+    )
+    # PROTECT, not RESTRICT: donor says ON DELETE RESTRICT, but this file
+    # already established PROTECT for "must not vanish silently" (14.1's
+    # ObjectPassport.object) — semantically equivalent for this story's
+    # purposes, consistency with sibling models wins over the literal
+    # donor keyword.
+    template = models.ForeignKey(
+        ChecklistTemplate, on_delete=models.PROTECT, related_name="bindings"
+    )
+    name = models.CharField(max_length=255, blank=True)
+    is_default = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "ops_object_checklist_bindings"
+        verbose_name = "Привязка чек-листа"
+        verbose_name_plural = "Привязки чек-листов"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["object", "template"], name="uq_object_checklist_binding"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.object.code} ← {self.template.code}"
+
+
+class ChecklistOverride(TimeStampedModel):
+    """Per-объектная дельта чек-листа (donor `ops_object_checklist_overrides`,
+    DB-OPS-049, §50). Resolving "template items + overrides" into one
+    effective checklist (BR-CHECKLIST-003) is a service/API concern, out
+    of scope for this models-only story.
+    """
+
+    class OverrideType(models.TextChoices):
+        ADD = "ADD", "Добавление"
+        MODIFY = "MODIFY", "Изменение"
+        DISABLE = "DISABLE", "Отключение"
+
+    binding = models.ForeignKey(
+        ChecklistBinding, on_delete=models.CASCADE, related_name="overrides"
+    )
+    # NULL for a pure ADD; set for MODIFY/DISABLE (donor: SET_NULL — a
+    # MODIFY/DISABLE override survives even if the original template item
+    # is later deleted).
+    source_item = models.ForeignKey(
+        ChecklistItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="overrides",
+    )
+    override_type = models.CharField(max_length=10, choices=OverrideType.choices)
+    text = models.TextField(blank=True)
+    category = models.CharField(max_length=100, blank=True)
+    # NULL = "not overridden" (donor: nullable, distinct from False).
+    is_required = models.BooleanField(null=True, blank=True)
+    sort_order = models.PositiveIntegerField(null=True, blank=True)
+    reason = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "ops_object_checklist_overrides"
+        verbose_name = "Дополнение чек-листа"
+        verbose_name_plural = "Дополнения чек-листа"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(override_type__in=["ADD", "MODIFY", "DISABLE"]),
+                name="ck_checklist_override_type_choices",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.binding} / {self.override_type}"
+
+    def clean(self):
+        # Proactive fix (lesson from 14.2's review, applied BEFORE a new
+        # review round could find the same class of gap in a new form):
+        # source_item and binding are separate FKs — nothing else stops
+        # source_item belonging to a DIFFERENT template than
+        # binding.template. Same caveat as Post.clean(): full_clean()
+        # only, not enforced by .objects.create()/bulk_create().
+        super().clean()
+        if (
+            self.source_item_id
+            and self.source_item.template_id != self.binding.template_id
+        ):
+            raise ValidationError(
+                {
+                    "source_item": (
+                        "Пункт-источник должен принадлежать тому же шаблону, "
+                        "что и привязка."
+                    )
+                }
+            )
