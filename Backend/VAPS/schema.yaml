@@ -2196,6 +2196,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedChecklistItemList'
           description: ''
+  /api/operations/security-events/{id}/recon/confirm/:
+    post:
+      operationId: security_event_recon_confirm
+      description: 'Двойной контроль: подтвердить рекогносцировку (BULLETIN->RECON,
+        FR-22). Первый вызов → 202 (принято, ждёт второго ДРУГОГО актора). Второй
+        вызов другим актором → 200, переход завершён. Тот же актор дважды → 422. Идемпотентно
+        на уже-RECON. Требует event.manage.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityEvent'
+          description: ''
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityEvent'
+          description: ''
   /api/operations/security-events/{id}/sector-posts/:
     put:
       operationId: security_event_sector_posts_replace

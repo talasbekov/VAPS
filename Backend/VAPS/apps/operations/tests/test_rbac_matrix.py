@@ -187,6 +187,8 @@ MATRIX = {
     # gate as the rest of this ViewSet.
     "ops-security-event-checklist": _Gate("event.manage"),
     "ops-security-event-sector-posts": _Gate("event.manage"),
+    # Story 15.3c: dual-control recon-confirm action, same gate.
+    "ops-security-event-recon-confirm": _Gate("event.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

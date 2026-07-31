@@ -37,6 +37,7 @@ from apps.operations.events.api.serializers import (
 )
 from apps.operations.events.models import SecurityEvent
 from apps.operations.events.services import (
+    confirm_recon,
     issue_bulletin,
     replace_checklist_items,
     replace_sector_posts,
@@ -164,3 +165,20 @@ class SecurityEventViewSet(viewsets.ViewSet):
         form.is_valid(raise_exception=True)
         posts = replace_sector_posts(event, form.validated_data)
         return Response(SectorPostSerializer(posts, many=True).data)
+
+    @extend_schema(
+        operation_id="security_event_recon_confirm",
+        responses={200: SecurityEventSerializer, 202: SecurityEventSerializer},
+        description="Двойной контроль: подтвердить рекогносцировку "
+        "(BULLETIN->RECON, FR-22). Первый вызов → 202 (принято, ждёт "
+        "второго ДРУГОГО актора). Второй вызов другим актором → 200, "
+        "переход завершён. Тот же актор дважды → 422. Идемпотентно на "
+        "уже-RECON. Требует event.manage.",
+    )
+    @action(detail=True, methods=["post"], url_path="recon/confirm")
+    def recon_confirm(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        event, pending = confirm_recon(event, actor=request.actor_id)
+        code = http_status.HTTP_202_ACCEPTED if pending else http_status.HTTP_200_OK
+        return Response(SecurityEventSerializer(event).data, status=code)

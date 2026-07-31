@@ -21,6 +21,7 @@ import uuid
 from django.db import transaction
 
 from apps.audit.services import record
+from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.operations.events.models import (
     SecurityEvent,
@@ -87,3 +88,81 @@ def replace_sector_posts(event, rows):
         posts = [SecurityEventSectorPost(event=event, **row) for row in rows]
         SecurityEventSectorPost.objects.bulk_create(posts)
     return list(event.sector_posts.all())
+
+
+def confirm_recon(event, *, actor):
+    """Story 15.3c: BULLETIN->RECON transition, gated by dual control — no
+    precedent anywhere in this codebase, synthesized from scratch. Two
+    DISTINCT actors must call this. First call records
+    `recon_first_confirmed_by/_at` and returns `pending=True` (caller
+    returns 202). Second call from a DIFFERENT actor completes the
+    transition, clears the confirmation fields (consumed), audits, and
+    returns `pending=False`. The SAME actor calling twice is rejected (422)
+    — dual control's entire point is a SECOND, independent confirmer.
+    Idempotent replay on already-RECON also returns `pending=False` (200,
+    no-op, no duplicate audit) — distinct from "first confirmation
+    recorded", which the caller must NOT treat as a completed 200.
+
+    Strict BULLETIN-only source, symmetric with `issue_bulletin()`'s
+    DRAFT-only gate: RECON is the next linear step after BULLETIN.
+
+    Returns `(event, pending)` — NOT a plain bool of "did it transition
+    just now", since both "already RECON" and "second confirmation just
+    completed it" must map to the caller's 200, while only "first
+    confirmation recorded" maps to 202.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    with transaction.atomic():
+        event = SecurityEvent.objects.select_for_update().get(pk=event.pk)
+        if event.status_code == SecurityEvent.StatusCode.RECON:
+            return event, False
+        if event.status_code != SecurityEvent.StatusCode.BULLETIN:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Рекогносцировку можно подтвердить только из статуса BULLETIN.",
+            )
+        if not event.recon_first_confirmed_by:
+            event.recon_first_confirmed_by = actor
+            event.recon_first_confirmed_at = Clock.now()
+            event.save(
+                update_fields=[
+                    "recon_first_confirmed_by",
+                    "recon_first_confirmed_at",
+                    "updated_at",
+                ]
+            )
+            return event, True
+        if event.recon_first_confirmed_by == actor:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Второе подтверждение должно быть от ДРУГОГО актора "
+                "(двойной контроль).",
+            )
+        first_confirmed_by = event.recon_first_confirmed_by
+        event.status_code = SecurityEvent.StatusCode.RECON
+        event.recon_first_confirmed_by = ""
+        event.recon_first_confirmed_at = None
+        event.save(
+            update_fields=[
+                "status_code",
+                "recon_first_confirmed_by",
+                "recon_first_confirmed_at",
+                "updated_at",
+            ]
+        )
+        record(
+            actor=actor,
+            action="SECURITY_EVENT_RECON_CONFIRMED",
+            entity_type="security_event",
+            entity_id=uuid.UUID(int=event.pk),
+            new_value={
+                "event_id": event.pk,
+                "status_code": event.status_code,
+                "first_confirmed_by": first_confirmed_by,
+                "second_confirmed_by": actor,
+            },
+        )
+    return event, False

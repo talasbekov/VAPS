@@ -259,6 +259,11 @@ actions:
     description: "Бюллетень выпущен (DRAFT->BULLETIN). Эмитится ТОЛЬКО на реальном переходе — идемпотентный повторный вызов на уже-BULLETIN не дублирует строку."
     provenance: derived-from-mutation
     source: "epics.md FR-21; Story 15.2b"
+  SECURITY_EVENT_RECON_CONFIRMED:
+    entity_type: security_event
+    description: "Рекогносцировка подтверждена двойным контролем (BULLETIN->RECON), два РАЗНЫХ актора. Эмитится ТОЛЬКО на реальном переходе (второе подтверждение) — первое подтверждение не аудируется (промежуточное состояние)."
+    provenance: derived-from-mutation
+    source: "epics.md FR-22; Story 15.3c"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

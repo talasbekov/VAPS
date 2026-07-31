@@ -62,6 +62,12 @@ class SecurityEvent(TimeStampedModel):
     # FK — тот же паттерн, что `DutyShift.employee_id`. FR-21: «Старший
     # объекта» назначается на создании ОМ.
     senior_employee_id = models.UUIDField(null=True, blank=True)
+    # Story 15.3c: двойной контроль перехода BULLETIN->RECON — минимальное
+    # хранилище «первого подтверждения» (kто/когда), очищается на реальном
+    # переходе (второе подтверждение ДРУГИМ actor'ом). ARCH-002/003: flat
+    # actor-id, тот же паттерн, что `senior_employee_id`.
+    recon_first_confirmed_by = models.CharField(max_length=100, blank=True)
+    recon_first_confirmed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_security_events"

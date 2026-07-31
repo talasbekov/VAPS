@@ -277,6 +277,12 @@ AUDIT_MATRIX = {
     "ops-security-event-sector-posts": _DeferredAudit(
         "story 15.3b: same reasoning as ops-security-event-checklist above"
     ),
+    # Story 15.3c: SECURITY_EVENT_RECON_CONFIRMED emits via
+    # apps.operations.events.services.confirm_recon() only on the real
+    # BULLETIN->RECON transition (second, distinct-actor confirmation) —
+    # the first confirmation is an intermediate state, not audited;
+    # behavioral pin — test_security_event_recon_confirm.py.
+    "ops-security-event-recon-confirm": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).
