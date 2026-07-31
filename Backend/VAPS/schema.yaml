@@ -1725,6 +1725,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/DutyShift'
           description: ''
+  /api/operations/duty-plans/{id}/shifts/{shift_id}/replan/:
+    post:
+      operationId: duty_plan_replan_shift
+      description: Перепланировать смену дежурства (отменяет старую, создаёт новую
+        с изменёнными полями). Требует duty.manage. Поля кроме reason опциональны
+        — отсутствующее поле наследуется от старой смены, явный null снимает пост/вид
+        дежурства.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: shift_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DutyShiftReplanRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DutyShiftReplanRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DutyShiftReplanRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyShift'
+          description: ''
   /api/operations/expense-reports/:
     get:
       operationId: operations_expense_reports_list
@@ -2856,6 +2895,43 @@ components:
       - employee_id
       - ends_at
       - starts_at
+    DutyShiftReplanRequest:
+      type: object
+      description: |-
+        Story 14.11e: partial-update semantics — every field except `reason`
+        is optional. An ABSENT field means "inherit the old shift's value"
+        (`replan_duty_shift()`'s own contract, 14.9b); an explicit `null` on
+        `post`/`duty_type` means "clear it". Empirically confirmed (create-
+        story): DRF's `PrimaryKeyRelatedField(required=False, allow_null=True)`
+        correctly omits an absent field from `validated_data` while keeping an
+        explicit `null` present as `None` — the two cases ARE distinguishable
+        through this serializer, not just at the service layer.
+      properties:
+        reason:
+          type: string
+          minLength: 1
+        employee_id:
+          type: string
+          format: uuid
+        post:
+          type: integer
+          nullable: true
+        duty_type:
+          type: integer
+          nullable: true
+        duty_role_code:
+          type: string
+          maxLength: 100
+        notes:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+      required:
+      - reason
     Employee:
       type: object
       properties:

@@ -1,6 +1,6 @@
-"""Story 14.11a/14.11b/14.11c/14.11d: `POST|GET /api/operations/duty-plans
-[/{id}/shifts] [/{id}/approve] [/{id}/shifts/{shift_id}/cancel]`
-(API-OPS-012).
+"""Story 14.11a/14.11b/14.11c/14.11d/14.11e: `POST|GET /api/operations/
+duty-plans [/{id}/shifts] [/{id}/approve] [/{id}/shifts/{shift_id}/cancel]
+[/{id}/shifts/{shift_id}/replan]` (API-OPS-012).
 
 Deliberately a plain `viewsets.ViewSet` + the free `require_permission`
 function (`apps.operations.api.permissions`), not `RequirePermissionMixin`:
@@ -38,10 +38,15 @@ from apps.operations.duties.api.serializers import (
     DutyPlanSerializer,
     DutyShiftCancelSerializer,
     DutyShiftCreateSerializer,
+    DutyShiftReplanSerializer,
     DutyShiftSerializer,
 )
 from apps.operations.duties.models import DutyPlan, DutyShift
-from apps.operations.duties.services import approve_duty_plan, cancel_duty_shift
+from apps.operations.duties.services import (
+    approve_duty_plan,
+    cancel_duty_shift,
+    replan_duty_shift,
+)
 
 _PERMISSION = "duty.manage"
 
@@ -221,3 +226,45 @@ class DutyPlanViewSet(viewsets.ViewSet):
             shift, actor=request.actor_id, reason=form.validated_data["reason"]
         )
         return Response(DutyShiftSerializer(shift).data)
+
+    @extend_schema(
+        operation_id="duty_plan_replan_shift",
+        request=DutyShiftReplanSerializer,
+        responses={201: DutyShiftSerializer},
+        description="Перепланировать смену дежурства (отменяет старую, "
+        "создаёт новую с изменёнными полями). Требует duty.manage. Поля "
+        "кроме reason опциональны — отсутствующее поле наследуется от "
+        "старой смены, явный null снимает пост/вид дежурства.",
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"shifts/(?P<shift_id>[^/.]+)/replan",
+    )
+    def replan_shift(self, request, pk=None, shift_id=None, *args, **kwargs):
+        # Story 14.11e: mirrors cancel_shift's URL/guard pattern exactly
+        # (14.11d) — same isdigit() guard on shift_id, same plan-scoped
+        # lookup via plan.shifts.
+        require_permission(request, _PERMISSION)
+        plan = get_object_or_404(DutyPlan, pk=pk)
+        if not shift_id.isdigit():
+            raise Http404("Смена не найдена.")
+        shift = get_object_or_404(plan.shifts, pk=shift_id)
+        form = DutyShiftReplanSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        new_fields = dict(form.validated_data)
+        reason = new_fields.pop("reason")
+        # replan_duty_shift() calls new_shift.full_clean() internally and
+        # does NOT catch django.core.exceptions.ValidationError itself
+        # (same DRF-conversion gotcha as 14.11b's _create_shift) — convert
+        # explicitly here so a cross-FK guard failure (post/duty_type not
+        # belonging to the plan's object) is a clean 400, not a bare 500.
+        try:
+            new_shift = replan_duty_shift(
+                shift, actor=request.actor_id, reason=reason, **new_fields
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.message_dict) from exc
+        return Response(
+            DutyShiftSerializer(new_shift).data, status=http_status.HTTP_201_CREATED
+        )

@@ -1,4 +1,4 @@
-"""Story 14.11a/14.11b/14.11d — duty plan/shift API serializers."""
+"""Story 14.11a/14.11b/14.11d/14.11e — duty plan/shift API serializers."""
 
 from rest_framework import serializers
 
@@ -75,3 +75,30 @@ class DutyShiftCreateSerializer(serializers.Serializer):
 
 class DutyShiftCancelSerializer(serializers.Serializer):
     reason = serializers.CharField()
+
+
+class DutyShiftReplanSerializer(serializers.Serializer):
+    """Story 14.11e: partial-update semantics — every field except `reason`
+    is optional. An ABSENT field means "inherit the old shift's value"
+    (`replan_duty_shift()`'s own contract, 14.9b); an explicit `null` on
+    `post`/`duty_type` means "clear it". Empirically confirmed (create-
+    story): DRF's `PrimaryKeyRelatedField(required=False, allow_null=True)`
+    correctly omits an absent field from `validated_data` while keeping an
+    explicit `null` present as `None` — the two cases ARE distinguishable
+    through this serializer, not just at the service layer.
+    """
+
+    reason = serializers.CharField()
+    employee_id = serializers.UUIDField(required=False)
+    post = serializers.PrimaryKeyRelatedField(
+        queryset=Post.objects.all(), required=False, allow_null=True
+    )
+    duty_type = serializers.PrimaryKeyRelatedField(
+        queryset=DutyType.objects.all(), required=False, allow_null=True
+    )
+    duty_role_code = serializers.CharField(
+        max_length=100, required=False, allow_blank=True
+    )
+    notes = serializers.CharField(required=False, allow_blank=True)
+    starts_at = serializers.DateTimeField(required=False)
+    ends_at = serializers.DateTimeField(required=False)
