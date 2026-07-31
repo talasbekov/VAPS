@@ -245,6 +245,16 @@ def generate_force_requests(event, *, actor):
     NOT include `status`/`allocated_count` — a second call after 15.8's
     broker has started allocating must not reset that progress back to
     NOT_SENT/0.
+
+    Review (Edge Case Hunter): a group dropped entirely from the current
+    `staffing_demands` (e.g. a `replace_staffing_demand()` PUT removed its
+    rows) leaves its prior `GroupForceRequest` row untouched — deliberately
+    NOT auto-deleted/cancelled (no spec states whether an already-dispatched
+    request should silently vanish just because a later plan edit stopped
+    mentioning it; auto-removing could un-request forces already in
+    transit). Reported back as `stale_groups` instead, so the operator sees
+    it rather than it silently lingering unexplained — same transparency
+    principle as `unmatched_groups`.
     """
     if not (actor or "").strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
@@ -276,6 +286,11 @@ def generate_force_requests(event, *, actor):
                 request.status = GroupForceRequest.Status.SENT
                 request.save(update_fields=["status", "updated_at"])
             requests.append(request)
+        stale_groups = [
+            existing.group.name
+            for existing in event.force_requests.select_related("group").all()
+            if existing.group.name not in totals
+        ]
         record(
             actor=actor,
             action="SECURITY_EVENT_FORCE_REQUESTS_GENERATED",
@@ -285,6 +300,7 @@ def generate_force_requests(event, *, actor):
                 "event_id": event.pk,
                 "requested_groups": list(totals.keys()),
                 "unmatched_groups": unmatched_groups,
+                "stale_groups": stale_groups,
             },
         )
-    return list(event.force_requests.all()), unmatched_groups
+    return list(event.force_requests.all()), unmatched_groups, stale_groups

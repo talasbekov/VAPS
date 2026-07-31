@@ -2173,18 +2173,6 @@ paths:
         schema:
           type: string
         required: true
-      - name: limit
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: The initial index from which to return the results.
-        schema:
-          type: integer
       tags:
       - operations
       requestBody:
@@ -2210,7 +2198,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedChecklistItemList'
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChecklistItem'
           description: ''
   /api/operations/security-events/{id}/force-requests/:
     get:
@@ -2222,18 +2212,6 @@ paths:
         schema:
           type: string
         required: true
-      - name: limit
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: The initial index from which to return the results.
-        schema:
-          type: integer
       tags:
       - operations
       responses:
@@ -2241,7 +2219,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedGroupForceRequestList'
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupForceRequest'
           description: ''
   /api/operations/security-events/{id}/force-requests/generate/:
     post:
@@ -2336,18 +2316,6 @@ paths:
         schema:
           type: string
         required: true
-      - name: limit
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: The initial index from which to return the results.
-        schema:
-          type: integer
       tags:
       - operations
       requestBody:
@@ -2373,7 +2341,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedSectorPostList'
+                type: array
+                items:
+                  $ref: '#/components/schemas/SectorPost'
           description: ''
   /api/operations/security-events/{id}/staffing-demand/:
     put:
@@ -2386,18 +2356,6 @@ paths:
         schema:
           type: string
         required: true
-      - name: limit
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: The initial index from which to return the results.
-        schema:
-          type: integer
       tags:
       - operations
       requestBody:
@@ -2423,7 +2381,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedStaffingDemandList'
+                type: array
+                items:
+                  $ref: '#/components/schemas/StaffingDemand'
           description: ''
   /api/operations/security-events/{id}/staffing-demand/approve/:
     post:
@@ -3928,7 +3888,9 @@ components:
       description: |-
         Story 15.7b: wraps the generated/updated rows plus any StaffingDemand
         group-text that failed to match an active Group (AC-2 — reported, not
-        silently dropped).
+        silently dropped), and any PRIOR `GroupForceRequest` whose group no
+        longer appears in the current demand (review, Edge Case Hunter —
+        reported for visibility, not auto-cancelled).
       properties:
         force_requests:
           type: array
@@ -3938,8 +3900,13 @@ components:
           type: array
           items:
             type: string
+        stale_groups:
+          type: array
+          items:
+            type: string
       required:
       - force_requests
+      - stale_groups
       - unmatched_groups
     Group:
       type: object
@@ -4363,29 +4330,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BugReport'
-    PaginatedChecklistItemList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=400&limit=100
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=200&limit=100
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/ChecklistItem'
     PaginatedDivisionList:
       type: object
       required:
@@ -4478,29 +4422,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Employee'
-    PaginatedGroupForceRequestList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=400&limit=100
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=200&limit=100
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/GroupForceRequest'
     PaginatedNotificationList:
       type: object
       required:
@@ -4616,29 +4537,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Role'
-    PaginatedSectorPostList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=400&limit=100
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=200&limit=100
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/SectorPost'
     PaginatedSecurityEventList:
       type: object
       required:
@@ -4662,29 +4560,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SecurityEvent'
-    PaginatedStaffingDemandList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=400&limit=100
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=200&limit=100
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/StaffingDemand'
     PaginatedStaffingSlotList:
       type: object
       required:

@@ -4,7 +4,7 @@ baseline_commit: 017a74f
 
 # Story 15.7b: `POST /security-events/{id}/force-requests/generate` — генерация+рассылка запросов Группам (FR-24)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -66,12 +66,14 @@ _(заполняется dev-story)_
 
 Реализовано по AC 1-7. `generate_force_requests()` — агрегация `event.staffing_demands` по `group`-тексту в Python-словаре (малый event-scoped набор строк, не требует SQL-уровневой `Sum`), строгий матчинг на активные `Group.name` (несовпадения — в `unmatched_groups`, не молча теряются и не роняют запрос). `update_or_create()` с `defaults={"requested_count": total_need}` — НЕ включает `status`/`allocated_count`, поэтому regenerate обновляет только счётчик, сохраняя уже начатый брокериджем прогресс (доказано тестом с явной сменой `allocated_count`/`status` перед повторной генерацией). `status=SENT` проставляется явно ТОЛЬКО на реально созданных строках (`created=True`-ветка `update_or_create`). Строгий `DEMAND`-гейт, `select_for_update()`. `POST .../force-requests/generate` + `GET .../force-requests` — оба на `SecurityEventViewSet`, `event.manage`. Аудит на КАЖДОМ вызове (реальная рассылка, не черновик). 7 новых тестов (агрегация+SENT, несовпадения-репортятся, regenerate-сохраняет-прогресс, конфликт-статуса, 403, аудит, список). `make gate` — 3569 passed (было 3542, +27), 0 regressions, no drift.
 
+**Ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor, параллельно):** Blind Hunter — 0 блокирующих находок, подтвердил `update_or_create`'s `created`-ветку, порядок `select_for_update()`, route-имена через DRF-исходники; отметил strict-matching как намеренное, но непокрытое тестом. Edge Case Hunter эмпирически нашёл РЕАЛЬНУЮ Medium-проблему: строка `GroupForceRequest`, чья Группа исчезла из текущей Потребности (после `replace_staffing_demand`), остаётся молча висеть без сигнала — не баг (намеренно НЕ авто-отменяется, нет спеки для этого), но должна быть видна оператору. Acceptance Auditor — 6/7 PASS, нашёл РЕАЛЬНЫЙ schema-дрифт: `GET .../force-requests` документирован как paginated (`PaginatedGroupForceRequestList` + limit/offset), но реально отдаёт голый массив (класс-уровневый `pagination_class` утекал в drf-spectacular's `_is_list_view()`-эвристику для ЛЮБОГО `many=True`-ответа, до проверки `self.action`). ИСПРАВЛЕНО: (1) `pagination_class` — теперь `@property`, ограничивающая пагинацию только `list`-экшеном (схема регенерирована, подтверждён голый массив); (2) `generate_force_requests()` теперь возвращает `stale_groups` (существующие `GroupForceRequest`, чья Группа выпала из текущей Потребности) — не удаляется/отменяется автоматически (нет спеки для политики отмены), но репортится в ответе + аудите, тем же принципом прозрачности, что `unmatched_groups`. +2 регресс-теста (whitespace-несовпадение репортится не молча, stale-группа репортится и НЕ трогается). `make gate` — 3571 passed. Status → done.
+
 ### File List
 
-- `Backend/VAPS/apps/operations/events/services.py` (modified — `generate_force_requests()`)
-- `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — `GroupForceRequestSerializer`/`GenerateForceRequestsResponseSerializer`)
-- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `force_requests_generate`/`force_requests`-actions)
-- `Backend/VAPS/apps/operations/events/tests/test_force_requests_generate.py` (new)
+- `Backend/VAPS/apps/operations/events/services.py` (modified — `generate_force_requests()` + ревью-фикс `stale_groups`)
+- `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — `GroupForceRequestSerializer`/`GenerateForceRequestsResponseSerializer` + `stale_groups`-поле)
+- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `force_requests_generate`/`force_requests`-actions + ревью-фикс `pagination_class`-property)
+- `Backend/VAPS/apps/operations/events/tests/test_force_requests_generate.py` (new, +2 регресс-теста после ревью)
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — `_Audited()`-запись)
 - `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — 2 `_Gate`-записи)
 - `docs/registries/audit-events.yaml` (modified — `SECURITY_EVENT_FORCE_REQUESTS_GENERATED`-запись)
@@ -83,3 +85,4 @@ _(заполняется dev-story)_
 |---|---|
 | 2026-07-31 | Story создана (create-story). Генерация+рассылка объединены в одно действие (нет спеки, различающей их). Текст↔справочник матчинг — строгий, несовпадения не молча теряются. Regenerate сохраняет allocated-прогресс. |
 | 2026-07-31 | Dev-story: `generate_force_requests()` + 2 API-эндпоинта. 7 новых тестов, оба живых реестра обновлены, схема регенерирована. `make gate` — 3569 passed. Status → review. |
+| 2026-07-31 | Ревью (3 агента параллельно): Edge Case Hunter нашёл РЕАЛЬНЫЙ Medium-гэп (stale-группы молчат) — исправлено `stale_groups`-полем. Acceptance Auditor нашёл РЕАЛЬНЫЙ schema-дрифт (pagination) — исправлено `pagination_class`-property. +2 регресс-теста. `make gate` — 3571 passed. Status → done. Epic 15's Story 15.7 (a/b) полностью закрыта. |

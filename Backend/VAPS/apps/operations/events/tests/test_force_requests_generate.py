@@ -128,6 +128,46 @@ def test_generate_emits_audited_row(event_manager_client):
     assert log.new_value["requested_groups"] == ["Кинология"]
 
 
+def test_generate_with_trailing_whitespace_mismatch_is_unmatched_not_silent(
+    event_manager_client,
+):
+    # Review (Blind Hunter/Edge Case Hunter): strict string matching is
+    # intentional (documented in the service docstring) — this proves the
+    # near-miss is surfaced via unmatched_groups, not silently swallowed.
+    event = make_event("OBJ-FORCEREQ-API-8")
+    Group.objects.create(code="DOGS8", name="Кинология")
+    SecurityEventStaffingDemand.objects.create(
+        event=event, sector="A", need=1, group="Кинология "
+    )
+    resp = event_manager_client.post(generate_url(event))
+    assert resp.status_code == 200
+    assert resp.data["force_requests"] == []
+    assert resp.data["unmatched_groups"] == ["Кинология "]
+
+
+def test_regenerate_reports_stale_group_when_demand_removed(event_manager_client):
+    # Review (Edge Case Hunter): a group dropped from staffing_demands
+    # leaves its prior GroupForceRequest row untouched (not auto-deleted —
+    # see services.py docstring) but must be surfaced as stale, not silent.
+    event = make_event("OBJ-FORCEREQ-API-9")
+    Group.objects.create(code="DOGS9", name="Кинология")
+    Group.objects.create(code="MED9", name="Медицина")
+    SecurityEventStaffingDemand.objects.create(
+        event=event, sector="A", need=2, group="Кинология"
+    )
+    SecurityEventStaffingDemand.objects.create(
+        event=event, sector="B", need=1, group="Медицина"
+    )
+    event_manager_client.post(generate_url(event))
+
+    SecurityEventStaffingDemand.objects.filter(event=event, group="Кинология").delete()
+    resp = event_manager_client.post(generate_url(event))
+    assert resp.status_code == 200
+    assert resp.data["stale_groups"] == ["Кинология"]
+    # Stale row survives untouched — not auto-cancelled.
+    assert GroupForceRequest.objects.filter(event=event).count() == 2
+
+
 def test_list_returns_generated_requests(event_manager_client):
     event = make_event("OBJ-FORCEREQ-API-7")
     Group.objects.create(code="DOGS7", name="Кинология")

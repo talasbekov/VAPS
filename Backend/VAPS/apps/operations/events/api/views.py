@@ -78,7 +78,24 @@ class SecurityEventViewSet(viewsets.ViewSet):
     """Story 15.2a: create/list security events (ОМ)."""
 
     http_method_names = ["get", "post", "put", "options"]
-    pagination_class = SecurityEventPagination
+    _pagination_class = SecurityEventPagination
+
+    @property
+    def pagination_class(self):
+        # Review (Acceptance Auditor, 15.7b): drf-spectacular's
+        # `_is_list_view()` triggers on ANY `many=True` response serializer
+        # (checked BEFORE it looks at `self.action`), so a class-level
+        # `pagination_class` leaks a `Paginated...List` wrapper + limit/
+        # offset params onto the `force_requests` action's schema even
+        # though that action never calls `self.paginate_queryset()` and
+        # genuinely returns a bare array — a real schema/behavior
+        # mismatch, not cosmetic. Scoping pagination to the `list` action
+        # only (the one action that actually paginates) fixes the
+        # generated schema without touching runtime behavior of either
+        # action.
+        if self.action == "list":
+            return self._pagination_class
+        return None
 
     @extend_schema(
         operation_id="security_events_create",
@@ -263,12 +280,16 @@ class SecurityEventViewSet(viewsets.ViewSet):
     def force_requests_generate(self, request, pk=None, *args, **kwargs):
         require_permission(request, _PERMISSION)
         event = _get_event_or_404(pk)
-        requests, unmatched_groups = generate_force_requests(
+        requests, unmatched_groups, stale_groups = generate_force_requests(
             event, actor=request.actor_id
         )
         return Response(
             GenerateForceRequestsResponseSerializer(
-                {"force_requests": requests, "unmatched_groups": unmatched_groups}
+                {
+                    "force_requests": requests,
+                    "unmatched_groups": unmatched_groups,
+                    "stale_groups": stale_groups,
+                }
             ).data
         )
 

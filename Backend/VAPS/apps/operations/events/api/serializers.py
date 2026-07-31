@@ -113,7 +113,10 @@ class GroupForceRequestSerializer(serializers.ModelSerializer):
 class GenerateForceRequestsResponseSerializer(serializers.Serializer):
     """Story 15.7b: wraps the generated/updated rows plus any StaffingDemand
     group-text that failed to match an active Group (AC-2 — reported, not
-    silently dropped)."""
+    silently dropped), and any PRIOR `GroupForceRequest` whose group no
+    longer appears in the current demand (review, Edge Case Hunter —
+    reported for visibility, not auto-cancelled)."""
 
     force_requests = GroupForceRequestSerializer(many=True)
     unmatched_groups = serializers.ListField(child=serializers.CharField())
+    stale_groups = serializers.ListField(child=serializers.CharField())
