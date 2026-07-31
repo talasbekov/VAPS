@@ -42,8 +42,18 @@ from apps.operations.events.services import (
     replace_checklist_items,
     replace_sector_posts,
 )
+from apps.operations.facilities.api.serializers import (
+    ObjectPassportSerializer,
+    ObjectPassportUpdateSerializer,
+)
+from apps.operations.facilities.services import update_passport_for_event
 
 _PERMISSION = "event.manage"
+# Story 15.4: passport mutations are Object-level, gated on the existing
+# object.manage code, not event.manage (which only covers SecurityEvent
+# mutations) — same separation-of-concerns choice as 14.x's per-domain
+# permission codes.
+_PASSPORT_PERMISSION = "object.manage"
 
 
 class SecurityEventPagination(LimitOffsetPagination):
@@ -182,3 +192,23 @@ class SecurityEventViewSet(viewsets.ViewSet):
         event, pending = confirm_recon(event, actor=request.actor_id)
         code = http_status.HTTP_202_ACCEPTED if pending else http_status.HTTP_200_OK
         return Response(SecurityEventSerializer(event).data, status=code)
+
+    @extend_schema(
+        operation_id="security_event_passport_update",
+        request=ObjectPassportUpdateSerializer,
+        responses={200: ObjectPassportSerializer},
+        description="Обновить Паспорт объекта этого ОМ (FR-22). Требует "
+        "object.manage. Доступно ТОЛЬКО пока ОМ в статусе RECON (422 иначе). "
+        "Partial-update — непереданные поля не затираются. Создаёт паспорт, "
+        "если его ещё нет.",
+    )
+    @action(detail=True, methods=["put"], url_path="passport")
+    def passport(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PASSPORT_PERMISSION)
+        event = _get_event_or_404(pk)
+        form = ObjectPassportUpdateSerializer(data=request.data, partial=True)
+        form.is_valid(raise_exception=True)
+        updated = update_passport_for_event(
+            event, actor=request.actor_id, fields=form.validated_data
+        )
+        return Response(ObjectPassportSerializer(updated).data)

@@ -283,6 +283,12 @@ AUDIT_MATRIX = {
     # the first confirmation is an intermediate state, not audited;
     # behavioral pin — test_security_event_recon_confirm.py.
     "ops-security-event-recon-confirm": _Audited(),
+    # Story 15.4: OBJECT_PASSPORT_UPDATED emits via apps.operations
+    # .facilities.services.update_passport_for_event() on every call — a
+    # real Object-level mutation with a compliance trail, unlike 15.3b's
+    # checklist/sector-posts drafts; behavioral pin —
+    # test_object_passport_update.py.
+    "ops-security-event-passport": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

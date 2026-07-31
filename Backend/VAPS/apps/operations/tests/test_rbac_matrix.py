@@ -189,6 +189,10 @@ MATRIX = {
     "ops-security-event-sector-posts": _Gate("event.manage"),
     # Story 15.3c: dual-control recon-confirm action, same gate.
     "ops-security-event-recon-confirm": _Gate("event.manage"),
+    # Story 15.4: passport update gated on object.manage (Object-level
+    # mutation), not event.manage — deliberate separation, see the story's
+    # Scope Decision. ADMIN's "*" wildcard already holds it, per _Gate.
+    "ops-security-event-passport": _Gate("object.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

@@ -264,6 +264,11 @@ actions:
     description: "Рекогносцировка подтверждена двойным контролем (BULLETIN->RECON), два РАЗНЫХ актора. Эмитится ТОЛЬКО на реальном переходе (второе подтверждение) — первое подтверждение не аудируется (промежуточное состояние)."
     provenance: derived-from-mutation
     source: "epics.md FR-22; Story 15.3c"
+  OBJECT_PASSPORT_UPDATED:
+    entity_type: object_passport
+    description: "Паспорт объекта обновлён в контексте ОМ (только пока ОМ в статусе RECON, FR-22). entity_id — uuid.UUID(int=passport.pk). Реальная мутация с compliance-следом (не черновик, в отличие от 15.3b's чек-листа) — аудируется на каждом вызове."
+    provenance: derived-from-mutation
+    source: "epics.md FR-22; Story 15.4"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

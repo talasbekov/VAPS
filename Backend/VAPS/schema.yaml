@@ -2196,6 +2196,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedChecklistItemList'
           description: ''
+  /api/operations/security-events/{id}/passport/:
+    put:
+      operationId: security_event_passport_update
+      description: Обновить Паспорт объекта этого ОМ (FR-22). Требует object.manage.
+        Доступно ТОЛЬКО пока ОМ в статусе RECON (422 иначе). Partial-update — непереданные
+        поля не затираются. Создаёт паспорт, если его ещё нет.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObjectPassportUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ObjectPassportUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ObjectPassportUpdateRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectPassport'
+          description: ''
   /api/operations/security-events/{id}/recon/confirm/:
     post:
       operationId: security_event_recon_confirm
@@ -2797,6 +2829,16 @@ components:
           type: string
       required:
       - label
+    CompletenessStatusEnum:
+      enum:
+      - RED
+      - YELLOW
+      - GREEN
+      type: string
+      description: |-
+        * `RED` - Не заполнен
+        * `YELLOW` - Частично заполнен
+        * `GREEN` - Заполнен
     DailySubmission:
       type: object
       description: |-
@@ -3906,6 +3948,137 @@ components:
     NullEnum:
       enum:
       - null
+    ObjectPassport:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        object:
+          type: integer
+          readOnly: true
+        object_type:
+          type: string
+          maxLength: 100
+        responsible_user_id:
+          type: string
+          maxLength: 100
+        responsible_employee_id:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+        security_notes:
+          type: string
+        vulnerable_places:
+          type: string
+        access_routes: {}
+        entrances: {}
+        exits: {}
+        service_entrances: {}
+        parking_zones: {}
+        dropoff_zones: {}
+        elevators: {}
+        stairs: {}
+        roofs: {}
+        basements: {}
+        technical_rooms: {}
+        cameras: {}
+        power_supply:
+          type: string
+        ventilation:
+          type: string
+        communication:
+          type: string
+        internet:
+          type: string
+        nearby_high_buildings:
+          type: string
+        public_zones:
+          type: string
+        crowd_places:
+          type: string
+        repair_works:
+          type: string
+        completeness_status:
+          $ref: '#/components/schemas/CompletenessStatusEnum'
+        last_verified_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        last_verified_by:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - last_verified_at
+      - last_verified_by
+      - object
+      - updated_at
+    ObjectPassportUpdateRequest:
+      type: object
+      description: |-
+        Partial-update body — every model field here has `blank=True`, so
+        DRF already derives `required=False` for all of them (AC-3:
+        непереданные поля не затираются — `is_valid()` never demands them).
+        `object`/`last_verified_*` excluded — server-assigned, not client
+        input.
+      properties:
+        object_type:
+          type: string
+          maxLength: 100
+        responsible_user_id:
+          type: string
+          maxLength: 100
+        responsible_employee_id:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+        security_notes:
+          type: string
+        vulnerable_places:
+          type: string
+        access_routes: {}
+        entrances: {}
+        exits: {}
+        service_entrances: {}
+        parking_zones: {}
+        dropoff_zones: {}
+        elevators: {}
+        stairs: {}
+        roofs: {}
+        basements: {}
+        technical_rooms: {}
+        cameras: {}
+        power_supply:
+          type: string
+        ventilation:
+          type: string
+        communication:
+          type: string
+        internet:
+          type: string
+        nearby_high_buildings:
+          type: string
+        public_zones:
+          type: string
+        crowd_places:
+          type: string
+        repair_works:
+          type: string
+        completeness_status:
+          $ref: '#/components/schemas/CompletenessStatusEnum'
     PaginatedAuditLogList:
       type: object
       required:
