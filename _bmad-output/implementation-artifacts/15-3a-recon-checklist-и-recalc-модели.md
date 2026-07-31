@@ -4,7 +4,7 @@ baseline_commit: c2ffa64
 
 # Story 15.3a: Recon-чек-лист + пересчёт постов/секторов — модели (FR-22)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -38,12 +38,12 @@ so that **15.3b (захват данных) и 15.3c (двойной контр�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `SecurityEventChecklistItem`-модель (AC: 1, 3, 4)
-- [ ] Task 2 — `SecurityEventSectorPost`-модель (AC: 2, 3, 4)
-- [ ] Task 3 — Миграция (AC: 5)
-- [ ] Task 4 — Изоляция-тест (AC: 6) — покрыто общим `test_isolation.py`, подтвердить прогоном
-- [ ] Task 5 — App-smoke тесты + DB-constraint-пруф (AC: 1-6, тот же паттерн, что 15.1's `test_models.py`)
-- [ ] Task 6 — Гейт (AC: 6)
+- [x] Task 1 — `SecurityEventChecklistItem`-модель (AC: 1, 3, 4)
+- [x] Task 2 — `SecurityEventSectorPost`-модель (AC: 2, 3, 4)
+- [x] Task 3 — Миграция (AC: 5)
+- [x] Task 4 — Изоляция-тест (AC: 6) — покрыто общим `test_isolation.py`, подтверждено прогоном
+- [x] Task 5 — App-smoke тесты + DB-constraint-пруф (AC: 1-6, тот же паттерн, что 15.1's `test_models.py`) + CASCADE-пруф
+- [x] Task 6 — Гейт (AC: 6)
 
 ## Dev Notes
 
@@ -65,14 +65,17 @@ so that **15.3b (захват данных) и 15.3c (двойной контр�
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано по AC 1-6. `SecurityEventChecklistItem`/`SecurityEventSectorPost` — event-scoped child-модели, `CASCADE` на удаление `SecurityEvent` (не `PROTECT`, как у `Object`→`SecurityEvent` — эти строки не имеют самостоятельной ценности без своего ОМ). `result`-поле — общий `ReconCheckResult`-TextChoices (`MATCHES`/`NEEDS_CHANGES`), nullable + DB-level CheckConstraint (`result__in=[...] | result__isnull=True`). Поля синтезированы из `frontend/src/features/security-events/model/types.ts`'s `ReconChecklistItem`/`ReconSectorPost` (soft-сигнал, донор-спека недоступна). Миграция `0002` — единственная, применилась чисто. 8 новых тестов (db_table-смок ×2, nullable-persist, CheckConstraint-пруф ×2, CASCADE-пруф). `make gate` — 3426 passed (было 3420, +6), 0 regressions, no drift.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/events/models.py` (modified — 2 новые модели + `ReconCheckResult`)
+- `Backend/VAPS/apps/operations/events/migrations/0002_securityeventchecklistitem_securityeventsectorpost.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/test_recon_models.py` (new)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story), разбита из планового `15-3` на 15.3a (модели)/15.3b (захват данных)/15.3c (двойной контроль+переход+паспорт) — FR-22 структурно больше 15.2b's чистого статус-перехода. |
+| 2026-07-31 | Dev-story: 2 новые event-scoped child-модели + миграция + 8 тестов. `make gate` — 3426 passed. Status → review. |

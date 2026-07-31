@@ -89,3 +89,82 @@ class SecurityEvent(TimeStampedModel):
 
     def __str__(self):
         return f"{self.title} / {self.object.code} ({self.status_code})"
+
+
+class ReconCheckResult(models.TextChoices):
+    """Story 15.3a: результат проверки пункта чек-листа/строки пересчёта
+    рекогносцировки — общий для `SecurityEventChecklistItem` и
+    `SecurityEventSectorPost` (FR-22)."""
+
+    MATCHES = "MATCHES", "Соответствует"
+    NEEDS_CHANGES = "NEEDS_CHANGES", "Требует изменений"
+
+
+class SecurityEventChecklistItem(TimeStampedModel):
+    """Story 15.3a: пункт чек-листа рекогносцировки (FR-22), event-scoped —
+    разовый пропуск для КОНКРЕТНОГО `SecurityEvent`, НЕ переиспользует
+    14.3's `ChecklistTemplate`/`ChecklistItem` (те — per-Object шаблон-
+    каталог с overrides, структурно другая задача). Поля синтезированы из
+    soft-сигнала `frontend/src/features/security-events/model/types.ts`'s
+    `ReconChecklistItem` (Smart Josparlau прототип — НЕ источник истины,
+    донор-спека недоступна в этом worktree)."""
+
+    event = models.ForeignKey(
+        SecurityEvent, on_delete=models.CASCADE, related_name="checklist_items"
+    )
+    label = models.CharField(max_length=255)
+    done = models.BooleanField(default=False)
+    result = models.CharField(
+        max_length=20, choices=ReconCheckResult.choices, null=True, blank=True
+    )
+    comment = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "ops_security_event_checklist_items"
+        verbose_name = "Пункт чек-листа рекогносцировки"
+        verbose_name_plural = "Пункты чек-листа рекогносцировки"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(result__in=["MATCHES", "NEEDS_CHANGES"])
+                | models.Q(result__isnull=True),
+                name="ck_security_event_checklist_item_result_choices",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.label} ({self.event_id})"
+
+
+class SecurityEventSectorPost(TimeStampedModel):
+    """Story 15.3a: строка пересчёта постов/секторов рекогносцировки
+    (FR-22), event-scoped — та же обоснование не-переиспользования 14.3,
+    что `SecurityEventChecklistItem` (см. её докстринг). Поля синтезированы
+    из `ReconSectorPost` (frontend soft-сигнал, не источник истины)."""
+
+    event = models.ForeignKey(
+        SecurityEvent, on_delete=models.CASCADE, related_name="sector_posts"
+    )
+    sector = models.CharField(max_length=255)
+    post = models.CharField(max_length=255)
+    task = models.CharField(max_length=255, blank=True)
+    need = models.PositiveIntegerField(default=0)
+    requirements = models.TextField(blank=True)
+    result = models.CharField(
+        max_length=20, choices=ReconCheckResult.choices, null=True, blank=True
+    )
+    comment = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "ops_security_event_sector_posts"
+        verbose_name = "Строка пересчёта постов/секторов рекогносцировки"
+        verbose_name_plural = "Строки пересчёта постов/секторов"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(result__in=["MATCHES", "NEEDS_CHANGES"])
+                | models.Q(result__isnull=True),
+                name="ck_security_event_sector_post_result_choices",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.sector}/{self.post} ({self.event_id})"
