@@ -1606,6 +1606,27 @@ paths:
               schema:
                 $ref: '#/components/schemas/DutyPlan'
           description: ''
+  /api/operations/duty-plans/{id}/approve/:
+    post:
+      operationId: duty_plan_approve
+      description: Утвердить план дежурств (BR-017 — запускает проекцию DUTY/REST_AFTER_DUTY/BEFORE_DUTY).
+        Требует duty.manage. Идемпотентно — повторный вызов на уже APPROVED-плане
+        не ошибка.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyPlan'
+          description: ''
   /api/operations/duty-plans/{id}/shifts/:
     get:
       operationId: duty_plan_shifts_list

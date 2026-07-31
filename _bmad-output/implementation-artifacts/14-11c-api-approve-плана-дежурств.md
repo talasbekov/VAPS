@@ -4,7 +4,7 @@ baseline_commit: c3306f9
 
 # Story 14.11c: API — утверждение плана дежурств
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -43,14 +43,14 @@ so that **план дежурств можно перевести в `APPROVED` 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `@action(detail=True)` `approve` на `DutyPlanViewSet` (AC: 1-6)
-  - [ ] `apps/operations/duties/api/views.py` — `require_permission` → `get_object_or_404` → `approve_duty_plan(plan)` → сериализованный ответ
-- [ ] Task 2 — MATRIX/AUDIT_MATRIX-строка (AC: 5, 7)
-  - [ ] `ops-duty-plan-approve` — `_Gate("duty.manage")`/`_DeferredAudit(_DUTY)`
-- [ ] Task 3 — `make schema` регенерация
-- [ ] Task 4 — Тесты (AC: 1-7)
-  - [ ] happy path (статус+проекция), 403, 404, повторный вызов (идемпотентность), план без смен
-  - [ ] `make gate` зелёный, явно прогнан
+- [x] Task 1 — `@action(detail=True)` `approve` на `DutyPlanViewSet` (AC: 1-6)
+  - [x] `apps/operations/duties/api/views.py` — `require_permission` → `get_object_or_404` → `approve_duty_plan(plan)` → сериализованный ответ
+- [x] Task 2 — MATRIX/AUDIT_MATRIX-строка (AC: 5, 7)
+  - [x] `ops-duty-plan-approve` — `_Gate("duty.manage")`/`_DeferredAudit(_DUTY)`
+- [x] Task 3 — `make schema` регенерация
+- [x] Task 4 — Тесты (AC: 1-7)
+  - [x] happy path (статус+проекция), 403, 404, повторный вызов (идемпотентность), план без смен
+  - [x] `make gate` зелёный, явно прогнан
 
 ## Dev Notes
 
@@ -70,14 +70,19 @@ so that **план дежурств можно перевести в `APPROVED` 
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано буквально по AC 1-7. `@action(detail=True, methods=["post"])` `approve` на `DutyPlanViewSet`: `require_permission` → `get_object_or_404` → `approve_duty_plan(plan)` → сериализованный ответ. Никакой собственной идемпотентности/state-machine-гарда не добавлено — переиспользуется существующая гарантия сервиса (14.6). MATRIX/AUDIT_MATRIX-строка `ops-duty-plan-approve` добавлена. 5 новых тестов (happy path+проекция, 403, 404, идемпотентность, план без смен), все зелёные под реальным Postgres с первой попытки; `make schema` регенерирован; `make gate` — 3287 passed (было 3272, +15), 0 regressions, no migration drift (чисто API-слой, новых DB-констрейнтов не требуется).
 
 ### File List
 
-_(заполняется dev-story)_
+- `apps/operations/duties/api/views.py` (modified — `approve`-action)
+- `apps/operations/tests/test_rbac_matrix.py` (modified — `MATRIX`'s новая строка)
+- `apps/audit/tests/test_audit_coverage.py` (modified — `AUDIT_MATRIX`'s новая строка)
+- `apps/operations/duties/tests/test_duty_plan_approve_api.py` (new)
+- `schema.yaml` (regenerated — `make schema`)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Третья из ~12 подсторий разделения 14.11. Тонкая HTTP-обёртка над `approve_duty_plan()` (14.6) — идемпотентность переиспользуется, не дублируется. `BR-DUTY-TYPE-004`'s гейт остаётся отложенным (реальный блокер — отсутствующая модель разведки, не отсутствие API-стори, как ошибочно сформулировала 14.7). |
+| 2026-07-31 | Dev-story: `approve`-action, MATRIX/AUDIT_MATRIX-строка, 5 новых тестов, все зелёные под реальным Postgres с первой попытки. `make gate` — 3287 passed. Status → review. |

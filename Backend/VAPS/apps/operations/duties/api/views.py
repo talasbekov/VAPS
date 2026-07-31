@@ -1,5 +1,5 @@
-"""Story 14.11a/14.11b: `POST|GET /api/operations/duty-plans[/{id}/shifts]`
-(API-OPS-012).
+"""Story 14.11a/14.11b/14.11c: `POST|GET /api/operations/duty-plans
+[/{id}/shifts] [/{id}/approve]` (API-OPS-012).
 
 Deliberately a plain `viewsets.ViewSet` + the free `require_permission`
 function (`apps.operations.api.permissions`), not `RequirePermissionMixin`:
@@ -38,6 +38,7 @@ from apps.operations.duties.api.serializers import (
     DutyShiftSerializer,
 )
 from apps.operations.duties.models import DutyPlan, DutyShift
+from apps.operations.duties.services import approve_duty_plan
 
 _PERMISSION = "duty.manage"
 
@@ -150,3 +151,22 @@ class DutyPlanViewSet(viewsets.ViewSet):
         return paginator.get_paginated_response(
             DutyShiftSerializer(page, many=True).data
         )
+
+    @extend_schema(
+        operation_id="duty_plan_approve",
+        request=None,
+        responses={200: DutyPlanSerializer},
+        description="Утвердить план дежурств (BR-017 — запускает проекцию "
+        "DUTY/REST_AFTER_DUTY/BEFORE_DUTY). Требует duty.manage. "
+        "Идемпотентно — повторный вызов на уже APPROVED-плане не ошибка.",
+    )
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None, *args, **kwargs):
+        # Story 14.11c: thin wrapper — approve_duty_plan() (14.6) is already
+        # idempotent by design (status flip guarded, project_duty_shift()'s
+        # get_or_create is idempotent by source_ref), so this action adds
+        # no state-machine guard of its own.
+        require_permission(request, _PERMISSION)
+        plan = get_object_or_404(DutyPlan, pk=pk)
+        approve_duty_plan(plan)
+        return Response(DutyPlanSerializer(plan).data)
