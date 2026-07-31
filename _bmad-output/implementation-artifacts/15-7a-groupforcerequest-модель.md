@@ -4,7 +4,7 @@ baseline_commit: 6cbf0a4
 
 # Story 15.7a: `GroupForceRequest` — модель (FR-24, Story 15.7 «Запросы Группам»)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -38,10 +38,10 @@ so that **15.7b (генерация+рассылка) и 15.8 (выделени�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `GroupForceRequest`-модель (AC: 1-4)
-- [ ] Task 2 — Миграция (AC: 5)
-- [ ] Task 3 — Тесты: app-smoke + unique-constraint-пруф + CheckConstraint-пруф + CASCADE (AC: 1-6)
-- [ ] Task 4 — Гейт (AC: 6)
+- [x] Task 1 — `GroupForceRequest`-модель (AC: 1-4)
+- [x] Task 2 — Миграция (AC: 5)
+- [x] Task 3 — Тесты: app-smoke + unique-constraint-пруф + CheckConstraint-пруф + CASCADE + PROTECT (AC: 1-6)
+- [x] Task 4 — Гейт (AC: 6)
 
 ## Dev Notes
 
@@ -63,14 +63,17 @@ so that **15.7b (генерация+рассылка) и 15.8 (выделени�
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано по AC 1-6. `GroupForceRequest` — event-scoped модель, `group` FK на `Group` (`PROTECT` — справочник не должен исчезать под ссылками, доказано `test_deleting_group_is_protected`), `event` FK `CASCADE`. `Status`-enum (4 значения) + DB-level CheckConstraint. `UniqueConstraint(event, group)` — один агрегированный запрос на пару. Миграция `0006` — единственная. 6 новых тестов (db_table, create+persist, unique-together-пруф, CheckConstraint-пруф, CASCADE-пруф, PROTECT-пруф). `make gate` — 3542 passed (было 3536, +6), 0 regressions, no drift.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/events/models.py` (modified — `GroupForceRequest`-модель)
+- `Backend/VAPS/apps/operations/events/migrations/0006_groupforcerequest.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/test_group_force_request_model.py` (new)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story), разбита из планового `15-7` на 15.7a (модель)/15.7b (генерация+рассылка API). `group`-поле — FK на 15.6's справочник с самого начала (не текст, в отличие от уже-закрытой `SecurityEventStaffingDemand.group`). |
+| 2026-07-31 | Dev-story: `GroupForceRequest`-модель + миграция + 6 тестов. `make gate` — 3542 passed. Status → review. |

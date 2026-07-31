@@ -231,3 +231,61 @@ class Group(models.Model):
 
     def __str__(self):
         return self.code
+
+
+class GroupForceRequest(TimeStampedModel):
+    """Story 15.7a: агрегированный запрос на Группу (FR-24 «запросы
+    Группам»), event-scoped. Никакой backend-сущности с этим смыслом не
+    существовало (личная проверка research-агента). Поля синтезированы из
+    frontend-прототипа's `ForceRequest` (soft-сигнал, не источник истины):
+    `types.ts:60-74` — `{group, requestedCount, allocatedCount, status,
+    comment}`.
+
+    `group` — FK на 15.6's `Group`-справочник с самого начала (новая
+    модель, никакого конфликта с решением НЕ переводить уже-закрытую
+    `SecurityEventStaffingDemand.group` на FK). `allocated_count`
+    присутствует с дефолтом 0, но НЕ записывается этой стори — запись
+    (переход в `PARTIALLY_ALLOCATED`/`ALLOCATED`) — Story 15.8's работа."""
+
+    class Status(models.TextChoices):
+        NOT_SENT = "NOT_SENT", "Не отправлен"
+        SENT = "SENT", "Отправлен"
+        PARTIALLY_ALLOCATED = "PARTIALLY_ALLOCATED", "Частично выделено"
+        ALLOCATED = "ALLOCATED", "Выделено"
+
+    event = models.ForeignKey(
+        SecurityEvent, on_delete=models.CASCADE, related_name="force_requests"
+    )
+    group = models.ForeignKey(
+        Group, on_delete=models.PROTECT, related_name="force_requests"
+    )
+    requested_count = models.PositiveIntegerField(default=0)
+    allocated_count = models.PositiveIntegerField(default=0)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.NOT_SENT
+    )
+    comment = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "ops_group_force_requests"
+        verbose_name = "Запрос на Группу"
+        verbose_name_plural = "Запросы на Группы"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["event", "group"], name="uq_group_force_request_event_group"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=[
+                        "NOT_SENT",
+                        "SENT",
+                        "PARTIALLY_ALLOCATED",
+                        "ALLOCATED",
+                    ]
+                ),
+                name="ck_group_force_request_status_choices",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.group_id} ({self.event_id})"
