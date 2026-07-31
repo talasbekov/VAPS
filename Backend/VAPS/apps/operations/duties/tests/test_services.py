@@ -253,6 +253,61 @@ def test_before_duty_row_is_not_manually_editable(status_types, div):
     assert exc_info.value.code == "AUTO_STATUS_READONLY"
 
 
+def test_before_duty_spans_into_previous_calendar_month(status_types, div):
+    # Review (Edge Case Hunter): a shift near local midnight with a large
+    # before_duty_minutes pushes the BEFORE_DUTY interval into the PREVIOUS
+    # calendar day/month — EmployeeStatus has no FK to DutyPlan (flat,
+    # employee-scoped row), so this is not a structural conflict, just an
+    # untested date-math path shared with _to_date_range's month-spillover
+    # case (already proven for REST_AFTER_DUTY in 14.6).
+    obj = make_object("OBJ-OM-14")
+    plan = make_plan(obj)
+    emp = make_employee(div)
+    duty_type = DutyType.objects.create(
+        object=obj, code="DAY", name="Дневное", before_duty_minutes=60
+    )
+    shift = make_shift(
+        plan,
+        emp.id,
+        datetime.datetime(2026, 8, 1, 0, 30, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 8, 30, tzinfo=LOCAL_TZ),
+        duty_type=duty_type,
+    )
+
+    project_duty_shift(shift)
+
+    before = EmployeeStatus.objects.get(source_ref=f"BEFORE_DUTY:{shift.pk}")
+    # before_ends_at = shift.starts_at = Aug 1 00:30 local — not exactly
+    # midnight, so it "touches" Aug 1 and date_end rolls to Aug 2.
+    assert before.date_start == datetime.date(2026, 7, 31)
+    assert before.date_end == datetime.date(2026, 8, 2)
+
+
+def test_approve_duty_plan_projects_before_duty_for_shifts_with_duty_type(
+    status_types, div
+):
+    # AC-5 substantiated at the plan level, not just via project_duty_shift
+    # directly — proves approve_duty_plan's select_related("duty_type")
+    # path actually triggers the BEFORE_DUTY leg.
+    obj = make_object("OBJ-OM-15")
+    plan = make_plan(obj)
+    emp = make_employee(div)
+    duty_type = DutyType.objects.create(
+        object=obj, code="DAY", name="Дневное", before_duty_minutes=60
+    )
+    shift = make_shift(
+        plan,
+        emp.id,
+        datetime.datetime(2026, 8, 1, 8, 0, tzinfo=LOCAL_TZ),
+        datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
+        duty_type=duty_type,
+    )
+
+    approve_duty_plan(plan)
+
+    assert EmployeeStatus.objects.filter(source_ref=f"BEFORE_DUTY:{shift.pk}").exists()
+
+
 def test_approve_duty_plan_transitions_status_and_projects_shifts(status_types, div):
     obj = make_object("OBJ-OM-4")
     plan = make_plan(obj)

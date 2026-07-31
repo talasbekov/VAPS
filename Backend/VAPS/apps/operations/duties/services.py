@@ -119,5 +119,8 @@ def approve_duty_plan(plan):
     if plan.status_code != plan.StatusCode.APPROVED:
         plan.status_code = plan.StatusCode.APPROVED
         plan.save(update_fields=["status_code", "updated_at"])
-    for shift in plan.shifts.all():
+    # Review (Edge Case Hunter, 14.7): project_duty_shift() dereferences
+    # shift.duty_type when set — select_related avoids an N+1 query per
+    # shift for plans where most shifts carry a duty_type.
+    for shift in plan.shifts.select_related("duty_type").all():
         project_duty_shift(shift)

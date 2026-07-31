@@ -4,7 +4,7 @@ baseline_commit: 8393dcd
 
 # Story 14.7: BEFORE_DUTY-проекция
 
-Status: review
+Status: done
 
 ## Story
 
@@ -77,8 +77,8 @@ so that **BR-DUTY-TYPE-003 выполняется: оператор видит �
 
 ### File List
 
-- `apps/operations/duties/services.py` (modified — BEFORE_DUTY-блок в `project_duty_shift()`)
-- `apps/operations/duties/tests/test_services.py` (modified — 5 новых тестов + `BEFORE_DUTY` в фикстуре `status_types`)
+- `apps/operations/duties/services.py` (modified — BEFORE_DUTY-блок в `project_duty_shift()`; ревью-фикс — `select_related("duty_type")` в `approve_duty_plan()`)
+- `apps/operations/duties/tests/test_services.py` (modified — 5 новых тестов + `BEFORE_DUTY` в фикстуре `status_types`; ревью-фикс — 2 доп. теста: месяц-граница + plan-уровневая интеграция)
 
 ## Change Log
 
@@ -86,3 +86,4 @@ so that **BR-DUTY-TYPE-003 выполняется: оператор видит �
 |---|---|
 | 2026-07-31 | Story создана (create-story). Седьмая стори Epic 14, прямое расширение `project_duty_shift()` (14.6, done). Донор резервирует BEFORE_DUTY «до решения заказчика» (OQ-010) — заказчик подтвердил: строить полноценно в MVP, симметрично `REST_AFTER_DUTY`. `BR-DUTY-TYPE-004` (reconnaissance-гейт на approve) явно вне этой стори — 14.11. |
 | 2026-07-31 | Dev-story: BEFORE_DUTY-блок в `project_duty_shift()`, 5 новых тестов, все зелёные под реальным Postgres. `make gate` — 3178 passed. Status → review. |
+| 2026-07-31 | 3-агентное ревью (Blind Hunter/Edge Case Hunter/Acceptance Auditor). Acceptance Auditor подтвердил все 8 AC PASS, дефектов в логике проекции нет. Blind Hunter нашёл только пробелы в тест-покрытии (нет теста на большой `before_duty_minutes`, пересекающий границу дня). Edge Case Hunter независимо нашёл ТО ЖЕ + один реальный, дешёвый perf-дефект: `approve_duty_plan()`'s цикл по сменам плана разыменовывает `shift.duty_type` (новое в 14.7) БЕЗ `select_related` — N+1 запрос на смену с заданным `duty_type`. Конфликт BEFORE_DUTY с предыдущей сменой того же сотрудника (при большом `before_duty_minutes`) — подтверждён как ТОТ ЖЕ класс отложенного вопроса, что и AC-8 (14.6) — 14.8's территория, не баг. Fix: `select_related("duty_type")` добавлен в `approve_duty_plan()`'s `plan.shifts.all()`; +2 теста (BEFORE_DUTY пересекает месяц/предыдущий день; `approve_duty_plan()`'s собственный путь реально триггерит BEFORE_DUTY-проекцию, не только прямой вызов `project_duty_shift()`). `make gate` — 3180 passed (было 3178, +2), без регрессий, без drift миграции. Status → done. |
