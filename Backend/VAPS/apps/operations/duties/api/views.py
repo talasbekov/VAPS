@@ -295,3 +295,22 @@ class DutyPlanViewSet(viewsets.ViewSet):
         plan = get_object_or_404(DutyPlan, pk=pk)
         conflicts = validate_duty_plan(plan)
         return Response(DutyPlanConflictSerializer(conflicts, many=True).data)
+
+    @extend_schema(
+        operation_id="duty_plan_conflicts",
+        responses={200: DutyPlanConflictSerializer(many=True)},
+        description="Прочитать конфликты плана дежурств (то же вычисление, "
+        "что validate, под GET). Требует duty.manage. Пустой список — "
+        "конфликтов нет.",
+    )
+    @action(detail=True, methods=["get"], pagination_class=None)
+    def conflicts(self, request, pk=None, *args, **kwargs):
+        # Story 14.11g: donor treats validate (POST, "check now") and
+        # conflicts (GET, "read what was found") as two distinct logical
+        # endpoints even though nothing in the codebase persists conflicts
+        # yet (no ops_duty_conflicts table) — both call the exact same
+        # read-only validate_duty_plan(), no logic duplicated.
+        require_permission(request, _PERMISSION)
+        plan = get_object_or_404(DutyPlan, pk=pk)
+        conflicts = validate_duty_plan(plan)
+        return Response(DutyPlanConflictSerializer(conflicts, many=True).data)

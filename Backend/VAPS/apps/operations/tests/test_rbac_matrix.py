@@ -170,6 +170,10 @@ MATRIX = {
     # Story 14.11f: read-only conflict dry-run for a plan (single-kwarg
     # @action, no nested shift id).
     "ops-duty-plan-validate": _Gate("duty.manage"),
+    # Story 14.11g: read-only GET twin of validate — same computation, same
+    # gate. RBAC matrix covers all registered routes (not just mutating
+    # ones), unlike the audit matrix below.
+    "ops-duty-plan-conflicts": _Gate("duty.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

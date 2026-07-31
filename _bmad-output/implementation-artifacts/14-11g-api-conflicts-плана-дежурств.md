@@ -4,7 +4,7 @@ baseline_commit: 3c8acf2
 
 # Story 14.11g: API — список конфликтов плана дежурств
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -39,14 +39,14 @@ so that **конфликты плана можно ПРОЧИТАТЬ (без п
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `@action` `conflicts` на `DutyPlanViewSet` (AC: 1-5)
-  - [ ] `GET`, `require_permission` → `get_object_or_404` → `validate_duty_plan(plan)` (14.11f, без изменений) → `200` с `DutyPlanConflictSerializer(many=True)`, `pagination_class=None`
-- [ ] Task 2 — MATRIX/AUDIT_MATRIX-строка (AC: 4, 6)
-  - [ ] `ops-duty-plan-conflicts` — `_Gate("duty.manage")`/`_DeferredAudit(_DUTY)`
-- [ ] Task 3 — `make schema` регенерация
-- [ ] Task 4 — Тесты (AC: 1-6)
-  - [ ] чистый план, идентичность с `validate`'s результатом на том же fixture, 404, 403
-  - [ ] `make gate` зелёный, явно прогнан
+- [x] Task 1 — `@action` `conflicts` на `DutyPlanViewSet` (AC: 1-5)
+  - [x] `GET`, `require_permission` → `get_object_or_404` → `validate_duty_plan(plan)` (14.11f, без изменений) → `200` с `DutyPlanConflictSerializer(many=True)`, `pagination_class=None`
+- [x] Task 2 — MATRIX-строка (AC: 4, 6)
+  - [x] `ops-duty-plan-conflicts` — `_Gate("duty.manage")` (RBAC-матрица покрывает все роуты; AUDIT_MATRIX — только мутирующие методы, GET не входит, строка НЕ добавлена намеренно)
+- [x] Task 3 — `make schema` регенерация
+- [x] Task 4 — Тесты (AC: 1-6)
+  - [x] чистый план, идентичность с `validate`'s результатом на том же fixture, 404, 403
+  - [x] `make gate` зелёный, явно прогнан
 
 ## Dev Notes
 
@@ -66,10 +66,18 @@ so that **конфликты плана можно ПРОЧИТАТЬ (без п
 
 ### Completion Notes
 
+Реализовано по AC 1-6. `@action(detail=True, methods=["get"], pagination_class=None)` `conflicts` на `DutyPlanViewSet` — буквальная копия `validate`'s тела (`require_permission` → `get_object_or_404` → `validate_duty_plan(plan)` → `DutyPlanConflictSerializer(many=True)`), только `GET` вместо `POST`, свой `operation_id`/description. **Исправлено при dev-story**: story изначально предполагала AUDIT_MATRIX-строку тоже нужна — при реализации подтверждено (докстринг `test_audit_coverage.py`), что audit-полнота-гейт завязан ТОЛЬКО на мутирующие методы (POST/PUT/PATCH/DELETE), `GET` в него не входит — строка НЕ добавлена (намеренно, не пропуск). RBAC-строка добавлена (та матрица покрывает все роуты). 4 новых теста (чистый план, идентичность результата с `validate` на одном и том же fixture — sanity, что оба action'а реально вызывают тот же сервис, 404, 403), все зелёные с первой попытки; `make schema` регенерирован (bare array, без пагинации — тот же паттерн, что 14.11f); `make gate` — 3364 passed (было 3350, +14), 0 regressions.
+
 ### File List
+
+- `apps/operations/duties/api/views.py` (modified — `conflicts`-action)
+- `apps/operations/tests/test_rbac_matrix.py` (modified — `MATRIX`'s новая строка)
+- `apps/operations/duties/tests/test_duty_plan_conflicts_api.py` (new)
+- `schema.yaml` (regenerated — `make schema`)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Седьмая (последняя backend) из ~12 подсторий разделения 14.11. `conflicts` — тонкая GET-обёртка над `validate_duty_plan()` (14.11f), без новой таблицы персистентности (донор не даёт полной схемы `ops_duty_conflicts`, ничто в backlog её не строит). Тот же bare-array/pagination_class=None паттерн, что 14.11f's review-фикс. |
+| 2026-07-31 | Dev-story: `conflicts`-action, MATRIX-строка (AUDIT_MATRIX сознательно пропущена — GET не входит в audit-полноту-гейт), 4 новых теста, все зелёные с первой попытки. `make gate` — 3364 passed. Status → review. |
