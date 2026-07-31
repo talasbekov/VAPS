@@ -4,7 +4,7 @@ baseline_commit: b69fe71
 
 # Story 15.1: App operations/events — SecurityEvent + жизненный цикл
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -43,16 +43,16 @@ so that **Story 15.2+ (бюллетень/рекогносцировка/пот�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Новое Django-приложение `apps/operations/events/` (AC: 5)
-  - [ ] `apps.py`, `__init__.py`, регистрация в `INSTALLED_APPS`, зеркалит структуру `duties`/`facilities`
-- [ ] Task 2 — `SecurityEvent`-модель (AC: 1-3)
-  - [ ] `models.py`, `TimeStampedModel`-наследование, FK на `Object`, `status_code`-choices+CheckConstraint
-- [ ] Task 3 — Миграция (AC: 4)
-  - [ ] `makemigrations`, применить на тестовой БД
-- [ ] Task 4 — Изоляция-тест (AC: 5)
-  - [ ] `apps/operations/events/tests/test_isolation.py` (или добавление в общий, если такой уже параметризован по app) — зеркалит `duties`/`facilities`'s образец
-- [ ] Task 5 — Гейт (AC: 6)
-  - [ ] `make gate`, явно прогнан
+- [x] Task 1 — Новое Django-приложение `apps/operations/events/` (AC: 5)
+  - [x] `apps.py`, `__init__.py`, регистрация в `INSTALLED_APPS`, зеркалит структуру `duties`/`facilities`
+- [x] Task 2 — `SecurityEvent`-модель (AC: 1-3)
+  - [x] `models.py`, `TimeStampedModel`-наследование, FK на `Object`, `status_code`-choices+CheckConstraint
+- [x] Task 3 — Миграция (AC: 4)
+  - [x] `makemigrations`, применить на тестовой БД
+- [x] Task 4 — Изоляция-тест (AC: 5)
+  - [x] Уже покрыто ОБЩИМ `apps/operations/tests/test_isolation.py` (AST-скан по всей `operations/`, не требует нового файла на app) — подтверждено прогоном
+- [x] Task 5 — Гейт (AC: 6)
+  - [x] `make gate`, явно прогнан
 
 ## Dev Notes
 
@@ -75,10 +75,23 @@ so that **Story 15.2+ (бюллетень/рекогносцировка/пот�
 
 ### Completion Notes
 
+Реализовано по AC 1-6. Новое приложение `apps/operations/events/` (label `ops_events`), зеркалит структуру `duties`/`facilities`. `SecurityEvent`-модель — FK на `Object` (`on_delete=PROTECT`, тот же паттерн, что 14.2-14.4, не CASCADE как у `DutyPlan`, — ОМ не должно исчезать молча при удалении объекта), `status_code` (10-значный `TextChoices`+CheckConstraint, синтезирован из `epics.md:58-68`'s FR-21..FR-30, донор-спека недоступна в этом worktree — см. Scope Decision), `senior_employee_id` (flat UUID, ARCH-002/003, FR-21 «Старший объекта»). `db_table = ops_security_events`. Миграция `0001_initial` — единственная, применилась чисто. Изоляция — покрыта общим `test_isolation.py` (AST-скан по всей `operations/`, новый app подхвачен автоматически, отдельный файл не нужен). 6 новых тестов: app-smoke (4, буквальный образец `facilities/tests/test_app.py`) + DB-уровневый CheckConstraint-пруф через `queryset.update()` (bypass `full_clean()`, доказывает именно DB-constraint, не Python-валидацию) + PROTECT-пруф через прямой `.delete()`. `make gate` — 3378 passed (было 3372, +6), 0 regressions, no migration drift.
+
 ### File List
+
+- `Backend/VAPS/apps/operations/events/__init__.py` (new)
+- `Backend/VAPS/apps/operations/events/apps.py` (new)
+- `Backend/VAPS/apps/operations/events/models.py` (new)
+- `Backend/VAPS/apps/operations/events/migrations/__init__.py` (new)
+- `Backend/VAPS/apps/operations/events/migrations/0001_initial.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/__init__.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/test_app.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/test_models.py` (new)
+- `Backend/VAPS/config/settings.py` (modified — `INSTALLED_APPS`)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story). Первая стори Epic 15. Research-агент процитировал architecture.md:215 как источник статус-enum — цитата оказалась ложной при личной проверке (та строка про Vite-стартер). Статус-enum вместо этого синтезирован из epics.md's FR-21..FR-30 (личная проверка). Донор-спека недоступна в этом worktree. Существующий frontend/security-events (Smart Josparlau прототип) НЕ источник истины для backend-модели. |
+| 2026-07-31 | Dev-story: новое приложение `apps/operations/events/`, `SecurityEvent`-модель, миграция, 6 новых тестов (app-smoke + DB-constraint-пруф), все зелёные с первой попытки (после `ruff format` на длинных choices-строках). `make gate` — 3378 passed. Status → review. |
