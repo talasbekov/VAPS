@@ -139,11 +139,10 @@ def test_full_chain_create_to_allocated(
     assert resp.data["status"] == "ALLOCATED"
 
     # AC-4 — the chain leaves a full audit trail, not just status changes.
-    audited_actions = set(
-        AuditLog.objects.filter(entity_id__isnull=False).values_list(
-            "action", flat=True
-        )
-    )
+    # `entity_id` is a required (non-nullable) column, so this file's own
+    # `pytest.mark.django_db` per-test isolation (no `transaction=True`) is
+    # what actually scopes this to the current test, not a filter clause.
+    audited_actions = set(AuditLog.objects.values_list("action", flat=True))
     for expected_action in {
         "SECURITY_EVENT_BULLETIN_ISSUED",
         "SECURITY_EVENT_RECON_CONFIRMED",
@@ -171,8 +170,10 @@ def test_force_requests_generate_before_demand_approved_is_rejected(
     event_id = resp.data["id"]
     assert resp.data["status_code"] == "DRAFT"
 
-    # Still DRAFT — never went through bulletin/recon/approve.
+    # Still DRAFT — never went through bulletin/recon/approve. The route
+    # raises DomainError("INVALID_LIFECYCLE_TRANSITION", 422) deterministically
+    # for a non-DEMAND event (services.py) — pinned exactly, not a wide range.
     resp = event_manager_client.post(
         reverse("ops-security-event-force-requests-generate", args=[event_id])
     )
-    assert resp.status_code in (400, 404, 409, 422)
+    assert resp.status_code == 422, resp.data
