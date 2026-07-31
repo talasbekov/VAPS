@@ -73,6 +73,9 @@
 - `src/features/ratings/pages/SubmittedEvaluationCard.tsx` — карточка §19.17: история
   записи (correction chain), diff перед подтверждением, мутация с перезагруженной
   редакцией задания.
+- `src/features/ratings/lib/idempotency.ts` — ключ §19.26: один на форму, без значений записи.
+- `src/features/ratings/pages/EvaluationConflictNotice.tsx` — конфликт редакции и неизвестный
+  исход §19.25-19.26; НЕ `ConflictDialog` (override здесь запрещён).
 - `src/features/ratings/lib/registry.ts` — отбор, страницы и безопасный контекст реестра
   §19.15-19.16; строка реестра объявлена БЕЗ закрытых полей.
 - `src/features/ratings/pages/EvaluationRegistryPage.tsx` — маршрут `/ratings/evaluations`:

@@ -90,6 +90,7 @@ function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
         evaluations: EVALUATIONS.map((item) => ({ ...item })),
         workItems: WORK_ITEMS.map((item) => ({ ...item })),
         corrections: CORRECTIONS.map((item) => ({ ...item })),
+        idempotency: [],
         dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
         capabilities: {
           operationalRatings: overrides.operationalRatings ?? true,
@@ -484,6 +485,14 @@ describe('рабочее пространство оценивания (§19.7, 
   })
 })
 
+/** §19.26: у каждой ЛОГИЧЕСКОЙ операции свой ключ. Повтор с тем же ключом —
+ * отдельный случай, и в тестах он задаётся явно, а не получается случайно. */
+let keyCounter = 0
+function nextKey(): string {
+  keyCounter += 1
+  return `idem-test-${keyCounter}`
+}
+
 describe('отправка оценки (§19.7-19.10)', () => {
   const VALID = {
     score: 9,
@@ -491,6 +500,7 @@ describe('отправка оценки (§19.7-19.10)', () => {
     basisNote: null,
     comment: null,
     revision: 1,
+    idempotencyKey: 'idem-submit-base',
   }
 
   it('без права оценивания отправка отвергается', async () => {
@@ -545,7 +555,7 @@ describe('отправка оценки (§19.7-19.10)', () => {
     const before = await repository.listOperationalRatings(VIEWER)
     const countBefore =
       before.results.find((item) => item.employeeId === 'employee-1')?.evaluationsCount ?? 0
-    await repository.submitEvaluation(EVALUATOR, 'work-item-1', VALID)
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, idempotencyKey: nextKey() })
     const after = await repository.listOperationalRatings(VIEWER)
     expect(after.results.find((item) => item.employeeId === 'employee-1')?.evaluationsCount).toBe(
       countBefore + 1,
@@ -554,9 +564,9 @@ describe('отправка оценки (§19.7-19.10)', () => {
 
   it('повторная отправка по тому же заданию отвергается своим кодом', async () => {
     const { repository } = await setup()
-    await repository.submitEvaluation(EVALUATOR, 'work-item-1', VALID)
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, idempotencyKey: nextKey() })
     await expect(
-      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, revision: 2 }),
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, revision: 2 , idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'EVALUATION_ALREADY_SUBMITTED' })
   })
 
@@ -576,16 +586,16 @@ describe('отправка оценки (§19.7-19.10)', () => {
   it('сервер повторяет проверку формы на СВОИХ данных (§19.9)', async () => {
     const { repository } = await setup()
     await expect(
-      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, score: 5 }),
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, score: 5 , idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'COMMENT_REQUIRED' })
     await expect(
-      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, score: 0 }),
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, score: 0 , idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'SCORE_OUT_OF_SCALE' })
     await expect(
-      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, basisCode: 'INVENTED' }),
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, basisCode: 'INVENTED' , idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'BASIS_UNKNOWN' })
     await expect(
-      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, basisCode: 'OTHER' }),
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, basisCode: 'OTHER' , idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'BASIS_NOTE_REQUIRED' })
     // Ни одна отвергнутая попытка не оставила следа: задание всё ещё в очереди.
     const response = await repository.getEvaluationWorkspace(EVALUATOR, 'event-1')
@@ -595,7 +605,7 @@ describe('отправка оценки (§19.7-19.10)', () => {
   it('выключенная функция не принимает оценок', async () => {
     const { repository } = await setup({ operationalRatings: false })
     await expect(
-      repository.submitEvaluation(EVALUATOR, 'work-item-1', VALID),
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'RATING_DISABLED' })
   })
 
@@ -623,7 +633,7 @@ describe('отправка оценки (§19.7-19.10)', () => {
   it('ошибка бизнес-правила — экземпляр своего класса, а не строка', async () => {
     const { repository } = await setup()
     await expect(
-      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, score: 5 }),
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', { ...VALID, score: 5 , idempotencyKey: nextKey() }),
     ).rejects.toBeInstanceOf(RepositoryBusinessRuleError)
   })
 })
@@ -650,6 +660,7 @@ describe('карточка отправленной оценки (§19.17)', () 
       comment: null,
       reason: 'Учтён рапорт старшего смены',
       revision: before.workItem.revision,
+      idempotencyKey: nextKey(),
     })
     const after = await repository.getSubmittedEvaluationDetail(EVALUATOR, 'work-item-9')
     expect(after.workItem.revision).toBe(before.workItem.revision + 1)
@@ -705,6 +716,7 @@ describe('исправление оценки (§19.18)', () => {
     comment: null,
     reason: 'Учтён рапорт старшего смены',
     revision: 3,
+    idempotencyKey: 'idem-correct-base',
   }
 
   it('без права исправления отвергается, даже у автора записи', async () => {
@@ -720,7 +732,7 @@ describe('исправление оценки (§19.18)', () => {
   it('исходная запись остаётся и лишь помечается ссылкой; создаётся НОВАЯ', async () => {
     const { repository, adapter } = await setup()
     const before = (await adapter.load())?.slices.ratings as { evaluations: unknown[] }
-    const result = await repository.correctEvaluation(EVALUATOR, 'work-item-9', VALID)
+    const result = await repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, idempotencyKey: nextKey() })
     const slice = (await adapter.load())?.slices.ratings as {
       evaluations: {
         id: string
@@ -757,7 +769,7 @@ describe('исправление оценки (§19.18)', () => {
     const before = (await repository.listOperationalRatings(VIEWER)).results.find(
       (item) => item.employeeId === 'employee-1',
     )
-    await repository.correctEvaluation(EVALUATOR, 'work-item-9', VALID)
+    await repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, idempotencyKey: nextKey() })
     const after = (await repository.listOperationalRatings(VIEWER)).results.find(
       (item) => item.employeeId === 'employee-1',
     )
@@ -770,34 +782,34 @@ describe('исправление оценки (§19.18)', () => {
   it('устаревшая редакция и незаполненная причина отвергаются своими кодами', async () => {
     const { repository } = await setup()
     await expect(
-      repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, revision: 99 }),
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, revision: 99 , idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'EVALUATION_REVISION_MISMATCH' })
     await expect(
-      repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, reason: '  ' }),
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, reason: '  ' , idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'CORRECTION_REASON_REQUIRED' })
     // Правило комментария повторяется и на исправлении (§19.18 шаг 7).
     await expect(
-      repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, score: 5 }),
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, score: 5 , idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'COMMENT_REQUIRED' })
   })
 
   it('неотправленное задание исправить нельзя', async () => {
     const { repository } = await setup()
     await expect(
-      repository.correctEvaluation(EVALUATOR, 'work-item-1', { ...VALID, revision: 1 }),
+      repository.correctEvaluation(EVALUATOR, 'work-item-1', { ...VALID, revision: 1 , idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'EVALUATION_NOT_SUBMITTED' })
   })
 
   it('выключенная функция не принимает исправлений', async () => {
     const { repository } = await setup({ operationalRatings: false })
     await expect(
-      repository.correctEvaluation(EVALUATOR, 'work-item-9', VALID),
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, idempotencyKey: nextKey() }),
     ).rejects.toMatchObject({ errorCode: 'RATING_DISABLED' })
   })
 
   it('исправление исправления удлиняет цепочку, а не переписывает её', async () => {
     const { repository } = await setup()
-    const first = await repository.correctEvaluation(EVALUATOR, 'work-item-9', VALID)
+    const first = await repository.correctEvaluation(EVALUATOR, 'work-item-9', { ...VALID, idempotencyKey: nextKey() })
     const second = await repository.correctEvaluation(EVALUATOR, 'work-item-9', {
       ...VALID,
       score: 6,
@@ -946,5 +958,141 @@ describe('карточка агрегата участника (§19.17)', () =>
     await expect(repository.getRatingEmployeeDetail(NOBODY, 'employee-1')).rejects.toBeInstanceOf(
       RepositoryPermissionError,
     )
+  })
+})
+
+describe('идемпотентность и конфликты (§19.25-19.26)', () => {
+  const SUBMIT = {
+    score: 9,
+    basisCode: 'EXECUTION_OF_DUTIES',
+    basisNote: null,
+    comment: null,
+    revision: 1,
+    idempotencyKey: 'idem-repeat-1',
+  }
+
+  it('повтор с тем же ключом возвращает ПРЕЖНИЙ результат и не создаёт второй оценки', async () => {
+    const { repository, adapter } = await setup()
+    const first = await repository.submitEvaluation(EVALUATOR, 'work-item-1', SUBMIT)
+    const before = (await adapter.load())?.slices.ratings as { evaluations: unknown[] }
+    const second = await repository.submitEvaluation(EVALUATOR, 'work-item-1', SUBMIT)
+    const after = (await adapter.load())?.slices.ratings as { evaluations: unknown[] }
+
+    expect(second.submitted.evaluationId).toBe(first.submitted.evaluationId)
+    // Записей не прибавилось — это и есть §19.26, а не «повтор не сломался».
+    expect(after.evaluations).toHaveLength(before.evaluations.length)
+    // И агрегат не пересчитан как новая операция: счёт учтённых тот же.
+    const summary = (await repository.listOperationalRatings(VIEWER)).results.find(
+      (item) => item.employeeId === 'employee-1',
+    )
+    expect(summary?.evaluationsCount).toBe(6)
+  })
+
+  it('повтор БЕЗ ключа (новый ключ) получает честный отказ «уже отправлено»', async () => {
+    const { repository } = await setup()
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', SUBMIT)
+    // Разница между «тот же запрос» и «вторая отправка» — только в ключе, и
+    // ответы обязаны быть разными: иначе ключ ничего не различает.
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+        ...SUBMIT,
+        revision: 2,
+        idempotencyKey: 'idem-repeat-2',
+      }),
+    ).rejects.toMatchObject({ errorCode: 'EVALUATION_ALREADY_SUBMITTED' })
+  })
+
+  it('ключ не хранит закрытых значений — проверяется ВЕСЬ слайс ключей', async () => {
+    const { repository, adapter } = await setup()
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+      ...SUBMIT,
+      score: 5,
+      comment: 'Уход с поста до смены',
+      idempotencyKey: 'idem-secret-check',
+    })
+    const slice = (await adapter.load())?.slices.ratings as { idempotency: unknown[] }
+    expect(JSON.stringify(slice.idempotency)).not.toContain('Уход с поста')
+  })
+
+  it('конфликт редакции несёт актуальную редакцию и текущие значения (§19.25)', async () => {
+    const { repository } = await setup()
+    await expect(
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', {
+        score: 10,
+        basisCode: 'DISCIPLINE',
+        basisNote: null,
+        comment: null,
+        reason: 'Учтён рапорт',
+        revision: 99,
+        idempotencyKey: nextKey(),
+      }),
+    ).rejects.toMatchObject({
+      errorCode: 'EVALUATION_REVISION_MISMATCH',
+      details: {
+        currentRevision: 3,
+        currentScore: 9,
+        currentEvaluationId: 'evaluation-5',
+      },
+    })
+  })
+
+  it('«уже исправлена» — отдельный конфликт, а не повтор конфликта редакции', async () => {
+    const { repository, adapter } = await setup()
+    // Ставим редакцию задания на устаревшую запись: редакция совпадёт, а
+    // запись окажется вытесненной — §19.25 требует различать эти случаи.
+    await repository.correctEvaluation(EVALUATOR, 'work-item-9', {
+      score: 10,
+      basisCode: 'DISCIPLINE',
+      basisNote: null,
+      comment: null,
+      reason: 'Первое исправление',
+      revision: 3,
+      idempotencyKey: nextKey(),
+    })
+    await adapter.transaction((current) => {
+      const slice = current.slices.ratings as {
+        workItems: { id: string; submittedEvaluationId: string | null }[]
+      }
+      return {
+        ...current.slices,
+        ratings: {
+          ...slice,
+          workItems: slice.workItems.map((item) =>
+            item.id === 'work-item-9'
+              ? { ...item, submittedEvaluationId: 'evaluation-5' }
+              : item,
+          ),
+        },
+      }
+    }, '2026-07-20T09:00:00+05:00')
+
+    await expect(
+      repository.correctEvaluation(EVALUATOR, 'work-item-9', {
+        score: 7,
+        basisCode: 'DISCIPLINE',
+        basisNote: null,
+        comment: 'Разбор повторный',
+        reason: 'Повторное исправление',
+        revision: 4,
+        idempotencyKey: nextKey(),
+      }),
+    ).rejects.toMatchObject({ errorCode: 'EVALUATION_ALREADY_CORRECTED' })
+  })
+
+  it('исправление тоже идемпотентно: повтор не удлиняет цепочку', async () => {
+    const { repository } = await setup()
+    const body = {
+      score: 10,
+      basisCode: 'DISCIPLINE',
+      basisNote: null,
+      comment: null,
+      reason: 'Учтён рапорт',
+      revision: 3,
+      idempotencyKey: 'idem-correct-repeat',
+    }
+    const first = await repository.correctEvaluation(EVALUATOR, 'work-item-9', body)
+    const second = await repository.correctEvaluation(EVALUATOR, 'work-item-9', body)
+    expect(second.submitted.evaluationId).toBe(first.submitted.evaluationId)
+    expect(second.chain).toHaveLength(first.chain?.length ?? 0)
   })
 })

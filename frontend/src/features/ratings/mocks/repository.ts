@@ -54,6 +54,21 @@ export class RepositoryBusinessRuleError extends Error {
   }
 }
 
+/**
+ * Конфликт состояния (§19.25) — ОТДЕЛЬНЫЙ от правила формы: он несёт актуальную
+ * редакцию и текущие значения, чтобы экран показал diff, а не просто «повторите».
+ */
+export class RepositoryConflictError extends Error {
+  readonly errorCode: string
+  readonly details: Record<string, unknown>
+
+  constructor(errorCode: string, message: string, details: Record<string, unknown>) {
+    super(message)
+    this.errorCode = errorCode
+    this.details = details
+  }
+}
+
 const SLICE_NAME = 'ratings'
 /**
  * §19.22 перечисляет права порознь: «просмотр агрегированного рейтинга» и
@@ -355,6 +370,28 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
   }
 
   /**
+   * Подробности конфликта (§19.25): актуальная редакция и ДЕЙСТВУЮЩИЕ значения
+   * записи. Без них экран может сказать только «повторите» — а промпт требует
+   * показать человеку diff, то есть то, что изменилось, пока он заполнял форму.
+   */
+  function conflictDetails(
+    item: EvaluationWorkItem,
+    evaluations: readonly EventEvaluation[],
+  ): Record<string, unknown> {
+    const current =
+      item.submittedEvaluationId === null
+        ? undefined
+        : evaluations.find((entry) => entry.id === item.submittedEvaluationId)
+    return {
+      currentRevision: item.revision,
+      currentScore: current?.score ?? null,
+      currentBasisLabel: basisLabel(current?.basisCode ?? null),
+      currentComment: current?.comment ?? null,
+      currentEvaluationId: current?.id ?? null,
+    }
+  }
+
+  /**
    * Своя отправленная оценка. Собирается ТОЛЬКО для записи, автором которой
    * является запрашивающий: проверка на `evaluatorUserId` стоит здесь, а не в
    * вёрстке, потому что чужой комментарий не должен доехать до браузера вовсе.
@@ -494,6 +531,31 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     let response: SubmitEvaluationResponse | null = null
     await runMutation(adapter, clock, (current) => {
       const slice = readSlice(current.slices)
+      // §19.26: повтор с тем же ключом возвращает ПРЕЖНИЙ результат и не
+      // создаёт второй оценки. Проверка стоит до всех прочих: повторный запрос
+      // после таймаута приходит на задание, которое уже не `PENDING`, и без неё
+      // человек получил бы «уже отправлено» вместо своего же результата.
+      const done = slice.idempotency.find(
+        (entry) => entry.key === body.idempotencyKey && entry.operation === 'submit',
+      )
+      if (done !== undefined) {
+        const repeated = slice.workItems.find((entry) => entry.id === done.workItemId)
+        const view = repeated === undefined ? null : toSubmittedView(repeated, slice.evaluations, actorUserId)
+        if (repeated !== undefined && view !== null) {
+          response = {
+            workItem: toWorkItemView(repeated),
+            submitted: view,
+            queue: summarizeQueue(
+              slice.workItems.filter(
+                (entry) =>
+                  entry.evaluatorUserId === actorUserId &&
+                  entry.securityEventId === repeated.securityEventId,
+              ),
+            ),
+          }
+          return current.slices
+        }
+      }
       const item = slice.workItems.find((entry) => entry.id === workItemId)
       // Чужое задание — 404, а не 403: отказ по праву подтвердил бы, что
       // задание с таким идентификатором существует и кем-то оценивается.
@@ -522,9 +584,10 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
       // проверяется ДО правил формы — иначе про устаревшую строку сначала
       // сообщили бы о комментарии, а потом всё равно отвергли.
       if (item.revision !== body.revision) {
-        throw new RepositoryBusinessRuleError(
+        throw new RepositoryConflictError(
           'EVALUATION_REVISION_MISMATCH',
-          'Задание изменилось: обновите страницу и повторите.',
+          'Задание изменилось: сравните значения и решите, что отправлять.',
+          conflictDetails(item, slice.evaluations),
         )
       }
       const violation = validateSubmission(body, EVALUATION_BASES)
@@ -573,7 +636,25 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
           ),
         ),
       }
-      return { ...current.slices, [SLICE_NAME]: { ...slice, workItems, evaluations } }
+      return {
+        ...current.slices,
+        [SLICE_NAME]: {
+          ...slice,
+          workItems,
+          evaluations,
+          idempotency: [
+            ...slice.idempotency,
+            {
+              key: body.idempotencyKey,
+              operation: 'submit',
+              workItemId: item.id,
+              // В записи только идентификаторы: снимок ответа нёс бы закрытый
+              // комментарий целиком.
+              evaluationId: evaluation.id,
+            },
+          ],
+        },
+      }
     })
     if (response === null) throw new Error('mock-runtime: отправка оценки не вернула результат')
     return response
@@ -686,6 +767,23 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
     let response: CorrectEvaluationResponse | null = null
     await runMutation(adapter, clock, (current) => {
       const slice = readSlice(current.slices)
+      const done = slice.idempotency.find(
+        (entry) => entry.key === body.idempotencyKey && entry.operation === 'correct',
+      )
+      if (done !== undefined) {
+        const repeated = slice.workItems.find((entry) => entry.id === done.workItemId)
+        const view = repeated === undefined ? null : toSubmittedView(repeated, slice.evaluations, actorUserId)
+        if (repeated !== undefined && view !== null) {
+          response = {
+            workItem: toWorkItemView(repeated),
+            submitted: view,
+            chain: hasPermission(actorUserId, VIEW_CHAIN_PERMISSION)
+              ? buildChain(slice.evaluations, slice.corrections, done.evaluationId)
+              : null,
+          }
+          return current.slices
+        }
+      }
       const item = slice.workItems.find((entry) => entry.id === workItemId)
       // Чужая запись — 404: исправлять её нельзя вовсе (§19.21 требует scope и
       // срока полномочия, которых нет), и отказ по праву подтвердил бы её
@@ -707,13 +805,24 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
         )
       }
       if (item.revision !== body.revision) {
-        throw new RepositoryBusinessRuleError(
+        throw new RepositoryConflictError(
           'EVALUATION_REVISION_MISMATCH',
-          'Задание изменилось: обновите страницу и повторите.',
+          'Запись изменилась: сравните значения и решите, что отправлять.',
+          conflictDetails(item, slice.evaluations),
         )
       }
       const original = slice.evaluations.find((entry) => entry.id === originalId)
       if (original === undefined) throw new RepositoryNotFoundError(originalId)
+      // §19.25 перечисляет «evaluation already corrected» ОТДЕЛЬНЫМ конфликтом:
+      // редакция могла совпасть, а запись уже быть вытесненной — тогда человек
+      // правит не ту строку, и сказать это надо прямо.
+      if (original.supersededById !== null) {
+        throw new RepositoryConflictError(
+          'EVALUATION_ALREADY_CORRECTED',
+          'Эта запись уже исправлена: откройте действующую и повторите.',
+          conflictDetails(item, slice.evaluations),
+        )
+      }
       const violation = validateCorrection(body, EVALUATION_BASES)
       if (violation !== null) {
         throw new RepositoryBusinessRuleError(violation.code, violation.message)
@@ -769,7 +878,21 @@ export function createRatingsRepository(adapter: PersistenceAdapter, clock: Demo
       }
       return {
         ...current.slices,
-        [SLICE_NAME]: { ...slice, workItems, evaluations, corrections },
+        [SLICE_NAME]: {
+          ...slice,
+          workItems,
+          evaluations,
+          corrections,
+          idempotency: [
+            ...slice.idempotency,
+            {
+              key: body.idempotencyKey,
+              operation: 'correct',
+              workItemId: item.id,
+              evaluationId: replacement.id,
+            },
+          ],
+        },
       }
     })
     if (response === null) throw new Error('mock-runtime: исправление не вернуло результат')

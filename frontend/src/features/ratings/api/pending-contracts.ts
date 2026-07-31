@@ -245,6 +245,8 @@ export interface CorrectEvaluationRequest {
   /** §19.18 шаг 6: обязательная причина исправления. */
   reason: string
   revision: number
+  /** §19.26 — та же защита, что у отправки: повтор не создаёт второй записи. */
+  idempotencyKey: string
 }
 
 export interface CorrectEvaluationResponse {
@@ -265,6 +267,31 @@ export interface SubmitEvaluationRequest {
   basisNote: string | null
   comment: string | null
   revision: number
+  /**
+   * §19.26: ключ идемпотентности. Повторный запрос с тем же ключом НЕ создаёт
+   * вторую оценку и не пересчитывает агрегат заново — возвращается прежний
+   * результат. Ключ генерирует клиент один раз на открытую форму: сгенерируй
+   * его при отправке — и повтор после таймаута приедет с НОВЫМ ключом, то есть
+   * ровно тогда, когда защита и нужна.
+   *
+   * ⚠️ В ключе нет ни одного закрытого значения: он случайный. Ключ, собранный
+   * из полей записи, нёс бы комментарий и оценку целиком.
+   */
+  idempotencyKey: string
+}
+
+/**
+ * Подробности конфликта редакций (§19.25). Ответ несёт АКТУАЛЬНУЮ редакцию и
+ * текущие значения — иначе экран не может показать diff и человеку негде
+ * увидеть, что именно изменилось, пока он заполнял форму.
+ */
+export interface EvaluationConflictDetails {
+  currentRevision: number
+  currentScore: number | null
+  currentBasisLabel: string | null
+  currentComment: string | null
+  /** Действующая запись задания на момент отказа. */
+  currentEvaluationId: string | null
 }
 
 export interface SubmitEvaluationResponse {

@@ -827,4 +827,11 @@ severity конфликта занижается ✓, пороги игнори�
 | Безопасный контекст называет роль, системная оценка — себя; «Детали оценки закрыты» вместо величин | features/ratings/lib/registry.test.ts, pages/EvaluationRegistryPage.test.tsx | Verified (красная проба: системная оценка подписана ролью старшего) |
 | Карточка §19.17 (aggregate-only): агрегат, период, методика, точки; пропуск прочерком, не нулём | features/ratings/pages/RatingEmployeeDetailPage.test.tsx, mocks/repository.test.ts | Verified |
 | **e2e: отбор в URL, возврат из карточки с восстановлением, закрытые поля не приходят в браузер** | e2e-mock/evaluation-registry.spec.ts | Verified (4 теста) |
+| Повтор с тем же ключом возвращает прежний результат: второй оценки нет, агрегат не пересчитан; новый ключ даёт честный отказ «уже отправлено» | features/ratings/mocks/repository.test.ts, mocks/handlers.test.ts | Verified (2 красные пробы: ключ игнорируется на отправке и на исправлении) |
+| Ключ не хранит закрытых значений — ассерт по всему слайсу ключей | features/ratings/mocks/repository.test.ts | Verified (красная проба: в запись добавлен снимок комментария) |
+| Ключ ОДИН на форму и переживает повторную отправку после неизвестного исхода | features/ratings/pages/EvaluationWorkspacePage.test.tsx | Verified (красная проба: ключ генерируется на каждый рендер) |
+| Конфликт редакции: 409, свой код вне `OVERRIDABLE_CODES`, подробности с актуальной редакцией и текущими значениями | features/ratings/mocks/repository.test.ts, mocks/handlers.test.ts | Verified (3 красные пробы: 422 вместо 409; подробности пусты; «уже исправлена» слита с конфликтом редакции) |
+| Экран показывает diff «сейчас / вы вводите», НЕ открывает общий ConflictDialog и не стирает введённое | features/ratings/pages/SubmittedEvaluationCard.test.tsx | Verified (проверен повторный вход в правку) |
+| Неизвестный исход не выдаётся за успех: панель «Исход неизвестен» + «Проверить состояние», состояние не меняется | features/ratings/pages/SubmittedEvaluationCard.test.tsx | Verified (красная проба: сетевой сбой обрабатывается как обычная ошибка) |
+| ⚠️ §19.25 «две вкладки» ЖИВЬЁМ не проверяется: вторая вкладка mock-режима не видит изменений первой — проба была бы зелёной ни о чём | e2e-mock/evaluation-workspace.spec.ts (отказ назван в комментарии спеки) | N/A с причиной |
 
