@@ -4,7 +4,7 @@ baseline_commit: fec21b13671e031c20f88c9230798eee0c641148
 
 # Story 15.11b: ОРГД read-only для временных дежурных полномочий (дотяжка FR-34, часть 2/3)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -41,12 +41,12 @@ so that **срочное дежурство не даёт случайно бо�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `_active_grants()`: вернуть `(scope_division_id, role_code, source)`
-- [ ] Task 2 — Хелпер `_duty_only_role_codes(grants)`: role_code, встречающийся ИСКЛЮЧИТЕЛЬНО через `"duty"`-источник (не через `"role"`)
-- [ ] Task 3 — `effective_permissions()`: для `role_code == "ORGD"` из `_duty_only_role_codes` — исключить не-`.view`/не-wildcard коды
-- [ ] Task 4 — `visible_division_ids()`: тот же фильтр на `holding_roles` для мутирующего `permission_code`
-- [ ] Task 5 — Тесты (AC 1-5 по отдельности + смешанный случай постоянная+временная роль)
-- [ ] Task 6 — Гейт
+- [x] Task 1 — `_active_grants()`: вернуть `(scope_division_id, role_code, source)`
+- [x] Task 2 — Хелпер `_duty_only_role_codes(grants)`: role_code, встречающийся ИСКЛЮЧИТЕЛЬНО через `"duty"`-источник (не через `"role"`)
+- [x] Task 3 — `effective_permissions()`: для `role_code == "ORGD"` из `_duty_only_role_codes` — исключить не-`.view`/не-wildcard коды
+- [x] Task 4 — `visible_division_ids()`: тот же фильтр на `holding_roles` для мутирующего `permission_code`
+- [x] Task 5 — Тесты (AC 1-5 по отдельности + смешанный случай постоянная+временная роль)
+- [x] Task 6 — Гейт
 
 ## Dev Notes
 
@@ -71,14 +71,16 @@ so that **срочное дежурство не даёт случайно бо�
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано по AC 1-6. `_active_grants()` теперь возвращает `(scope_division_id, role_code, source)` (`source ∈ {"role", "duty"}`) — оба места деструктуризации (`effective_permissions`, `visible_division_ids`) обновлены. Новый `_duty_only_role_codes(grants)`-хелпер возвращает role_code'ы, встречающиеся ИСКЛЮЧИТЕЛЬНО через `"duty"`-источник для конкретного пользователя. `effective_permissions()` для `role_code ∈ (_duty_only_role_codes ∩ {"ORGD"})` отбрасывает permission_code'ы, не оканчивающиеся на `.view` (и не `WILDCARD`) — реализовано построчной фильтрацией на уровне `(role_code, permission_code)`-пар из `RolePermission`, а не постфактум над уже объединённым множеством (иначе теряется атрибуция «какой код от какого гранта пришёл» при union). `visible_division_ids()` получил симметричный фильтр — исключает те же `read_only_role_codes` из `holding_roles`, когда `permission_code` сам мутирующий (не `.view`/не `WILDCARD`), чтобы «видимое для мутации» не расходилось с «может мутировать». Пользователь с ОДНОВРЕМЕННО постоянной И временной ролью ОРГД сохраняет полные права (постоянная роль не урезается временной) — покрыто отдельным тестом. ОМД-дежурство не затронуто (фильтр применяется только к `"ORGD"`). 8 новых тестов в `test_permission_temp_duty.py`. `make gate` — 3651 passed (было 3645, +6 — часть тестов покрывает несколько AC сразу), 0 regressions, no drift.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/services.py` (modified — `PermissionService._active_grants()`/`_duty_only_role_codes()`/`effective_permissions()`/`visible_division_ids()`)
+- `Backend/VAPS/apps/operations/tests/test_permission_temp_duty.py` (modified — 8 новых тестов)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-01 | Story создана (create-story). Часть 2/3 расщепления Story 15.11. Разрыв найден чтением `seed_operations.py`+`services.py` — временный дежурный грант ОРГД сегодня даёт полные (включая мутирующие) права постоянной роли, FR-34's «read-only» не соблюдается. |
+| 2026-08-01 | Dev-story: source-тег на `_active_grants()` + read-only фильтр для duty-only ОРГД в `effective_permissions()`/`visible_division_ids()`. Постоянная роль ОРГД не урезается. 8 новых тестов. `make gate` — 3651 passed. Status → review. |

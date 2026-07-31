@@ -15,6 +15,13 @@ from apps.operations.selectors import OpsUserRoleSelector
 
 WILDCARD = "*"
 
+# Story 15.11b (FR-34, "ОРГД read-only"): a role_code whose read-only
+# restriction applies ONLY when granted through a temporary duty window,
+# never a permanent UserRole. ORGD staff have full (mutate-capable)
+# permissions permanently; FR-34's "read-only" clause is specifically about
+# the URGENT/temporary duty path, not the standing role.
+_DUTY_READ_ONLY_ROLE_CODES = {"ORGD"}
+
 
 class PermissionService:
     """Stateless authorization resolution (spec §1254). All checks go through here."""
@@ -30,37 +37,72 @@ class PermissionService:
 
     @classmethod
     def _active_grants(cls, user_id) -> list:
-        """``(scope_division_id, role_code)`` pairs from BOTH grant sources —
-        active role assignments and active (time-windowed) temporary duties.
-        The single enumeration behind ``effective_permissions`` AND
+        """``(scope_division_id, role_code, source)`` triples from BOTH grant
+        sources — active role assignments (``source="role"``) and active
+        (time-windowed) temporary duties (``source="duty"``). The single
+        enumeration behind ``effective_permissions`` AND
         ``visible_division_ids``: the point-check and the visibility
         resolution read the same grants by construction, not by convention.
+
+        ``source`` exists for FR-34's "ОРГД read-only" (15.11b): the same
+        role_code can arrive via either path, and only the ``duty`` path is
+        restricted — see ``_duty_only_role_codes``.
         """
         grants = [
-            (ur.scope_division_id, ur.role_code_id)
+            (ur.scope_division_id, ur.role_code_id, "role")
             for ur in OpsUserRoleSelector.active_for_user(user_id)
         ]
         now = Clock.now()
         active_duties = TemporaryDutyPermission.objects.filter(
             user_id=user_id, is_active=True, starts_at__lte=now, ends_at__gte=now
         )
-        grants += [(d.scope_division_id, d.duty_role_code) for d in active_duties]
+        grants += [
+            (d.scope_division_id, d.duty_role_code, "duty") for d in active_duties
+        ]
         return grants
+
+    @staticmethod
+    def _duty_only_role_codes(grants) -> set:
+        """role_codes present in *grants* EXCLUSIVELY via the ``"duty"``
+        source (never also via a permanent ``"role"`` grant) — the set FR-34's
+        read-only restriction may apply to. A user holding BOTH a permanent
+        ORGD role and a temporary ORGD duty grant keeps full permissions:
+        the temporary grant must never downgrade an already-standing one.
+        """
+        sources_by_role = {}
+        for _, role_code, source in grants:
+            sources_by_role.setdefault(role_code, set()).add(source)
+        return {
+            role_code
+            for role_code, sources in sources_by_role.items()
+            if sources == {"duty"}
+        }
 
     @classmethod
     def effective_permissions(cls, user_id, division_id=None) -> set:
-        matching_role_codes = [
+        grants = cls._active_grants(user_id)
+        matching_role_codes = {
             role_code
-            for scope_division_id, role_code in cls._active_grants(user_id)
+            for scope_division_id, role_code, _source in grants
             if cls._scope_matches(scope_division_id, division_id)
-        ]
+        }
         if not matching_role_codes:
             return set()
-        return set(
-            RolePermission.objects.filter(
-                role_code_id__in=matching_role_codes
-            ).values_list("permission_code_id", flat=True)
+        read_only_role_codes = (
+            cls._duty_only_role_codes(grants) & _DUTY_READ_ONLY_ROLE_CODES
         )
+        result = set()
+        for role_code, permission_code in RolePermission.objects.filter(
+            role_code_id__in=matching_role_codes
+        ).values_list("role_code_id", "permission_code_id"):
+            if (
+                role_code in read_only_role_codes
+                and permission_code != WILDCARD
+                and not permission_code.endswith(".view")
+            ):
+                continue
+            result.add(permission_code)
+        return result
 
     @classmethod
     def has_permission(cls, user_id, permission_code, division_id=None) -> bool:
@@ -83,6 +125,13 @@ class PermissionService:
         enumerate the same grants. One call feeds one ``division_id__in`` —
         never call per division in a loop; one adjacency scan covers all
         scoped grants (``children_map`` reuse).
+
+        Story 15.11b: a role_code restricted to ``.view``-only via
+        ``_duty_only_role_codes`` (FR-34's duty-ORGD read-only) is excluded
+        from ``holding_roles`` when *permission_code* itself is a mutating
+        (non-``.view``) code — kept consistent with ``effective_permissions``
+        so a duty-ORGD holder never sees a "visible for mutation" division
+        their ``has_permission`` check would then reject.
         """
         grants = cls._active_grants(user_id)
         if not grants:
@@ -90,13 +139,17 @@ class PermissionService:
 
         holding_roles = set(
             RolePermission.objects.filter(
-                role_code_id__in={code for _, code in grants},
+                role_code_id__in={code for _, code, _source in grants},
                 permission_code_id__in=[permission_code, WILDCARD],
             ).values_list("role_code_id", flat=True)
         )
+        if permission_code != WILDCARD and not permission_code.endswith(".view"):
+            holding_roles -= (
+                cls._duty_only_role_codes(grants) & _DUTY_READ_ONLY_ROLE_CODES
+            )
         visible = set()
         children_map = None
-        for scope_division_id, role_code in grants:
+        for scope_division_id, role_code, _source in grants:
             if role_code not in holding_roles:
                 continue
             if scope_division_id is None:
