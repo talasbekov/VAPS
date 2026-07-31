@@ -34,6 +34,13 @@ from enum import Enum
 # Single Python source for hard-block status types (Решение №3=A). Synced to
 # StatusType.is_hard_block rows by the 2.2 seed test, AND frozen into the GiST
 # constraint of migration 0001 — editing this tuple needs a NEW migration.
+#
+# Story 14.8 / BR-DUTY-REST-002: REST_AFTER_DUTY is deliberately NOT listed
+# here — donor spec offers a configurable REST_AFTER_DUTY_POLICY
+# (HARD_BLOCK|SOFT_OVERRIDE, default HARD_BLOCK); VAPS fixes the policy to
+# SOFT_OVERRIDE (epics.md's Story 14.8 title: "soft+override по матрице
+# 3.4"), so REST_AFTER_DUTY classifies as SOFT by omission. Do not add it
+# here without a new story revisiting that decision.
 HARD_STATUS_TYPE_CODES = ("SICK_LEAVE", "LEAVE_BY_REPORT", "VACATION", "COMMAND")
 
 # Declarative exceptions: unordered type pairs that may legitimately coexist.
@@ -115,6 +122,4 @@ def detect_conflicts(*, new_type, existing_rows, business_date):
             warnings.append(conflict)
         else:
             soft.append(conflict)
-    return ConflictReport(
-        hard=tuple(hard), soft=tuple(soft), warnings=tuple(warnings)
-    )
+    return ConflictReport(hard=tuple(hard), soft=tuple(soft), warnings=tuple(warnings))
