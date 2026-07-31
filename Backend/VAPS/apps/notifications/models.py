@@ -42,6 +42,18 @@ class Notification(TimeStampedModel):
             "GROUP_FORCE_REQUEST_ESCALATED",
             "Эскалация неотработанного запроса",
         )
+        # Story 15.11c, FR-34: per-grant (not digest) — the duty holder
+        # themselves, one notification per (recipient, kind, business_date)
+        # like every other kind here; a rare same-day double-grant collision
+        # is an accepted limitation (see story's Out of Scope).
+        TEMP_PERMISSION_ACTIVE = (
+            "TEMP_PERMISSION_ACTIVE",
+            "Временное полномочие активно",
+        )
+        TEMP_PERMISSION_EXPIRED = (
+            "TEMP_PERMISSION_EXPIRED",
+            "Временное полномочие истекло",
+        )
 
     recipient = models.CharField(max_length=100)
     kind = models.CharField(max_length=50, choices=Kind.choices)
@@ -91,6 +103,8 @@ class Notification(TimeStampedModel):
                         "SUBMISSION_THRESHOLD_ALERT",
                         "PILOT_PULSE_DIGEST",
                         "GROUP_FORCE_REQUEST_ESCALATED",
+                        "TEMP_PERMISSION_ACTIVE",
+                        "TEMP_PERMISSION_EXPIRED",
                     ]
                 ),
                 name="chk_notification_kind",

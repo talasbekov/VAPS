@@ -6,6 +6,7 @@ from django.db import transaction
 from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.selectors import CoreDivisionTreeSelector
+from apps.notifications.services import notify
 from apps.operations.rbac.models import (
     RolePermission,
     TemporaryDutyPermission,
@@ -287,3 +288,85 @@ class RoleAdminService:
                 entity_id=uuid.UUID(int=int(grant_id)),
                 new_value={"is_active": False},
             )
+
+
+def process_temp_duty_transitions():
+    """Story 15.11c (FR-34): catch-up for the two boundaries a
+    `TemporaryDutyPermission` window crosses — "started" and "ended".
+
+    `PermissionService` already enforces the window live, per request
+    (ARCH-SEC-031) — this function does NOT touch authorization. It closes
+    two separate gaps: (1) `is_active` never auto-flips on `ends_at` without
+    a manual `POST /expire`, and (2) `TEMP_PERMISSION_ACTIVE`/
+    `TEMP_PERMISSION_EXPIRED` are registered in `ws-message-types.yaml` but
+    had zero emitters anywhere in the codebase.
+
+    Activation: a grant with `starts_at <= now <= ends_at` and
+    `activated_notified_at IS NULL` gets notified once and marked — the
+    ONLY idempotency signal available for this direction, since nothing
+    else about the row changes when it merely "becomes" active.
+
+    Expiry: reuses `RoleAdminService.expire_temporary_duty(actor="SYSTEM")`
+    literally (15.11a) rather than re-implementing the `is_active` flip —
+    its own `is_active=True` filter is already the idempotency guard for
+    this direction, and it already writes the `TEMP_DUTY_EXPIRED` audit row.
+    A grant that expires before ever being caught by the activation branch
+    (e.g. the first catch-up run after a long gap) is expired without ever
+    receiving a `TEMP_PERMISSION_ACTIVE` notification — not a bug, just a
+    boundary the "activation" signal never crossed while being watched.
+
+    Per-grant (not digest, unlike 15.10's `escalate_stale_force_requests`):
+    the registry's `recipients: "duty user"` means the grant holder
+    themselves, not a role-wide audience, so `notify()`'s
+    `(recipient, kind, business_date)` collision is a rare, accepted edge
+    (two grants for the same user activating/expiring the same day) — see
+    the story's Out of Scope.
+
+    Returns `{"activated": [...], "expired": [...]}` — the two lists of
+    `TemporaryDutyPermission` rows touched this run.
+    """
+    now = Clock.now()
+    today = Clock.today_local()
+
+    activating = list(
+        TemporaryDutyPermission.objects.filter(
+            is_active=True,
+            activated_notified_at__isnull=True,
+            starts_at__lte=now,
+            ends_at__gte=now,
+        )
+    )
+    activated = []
+    for grant in activating:
+        result = notify(
+            recipient=grant.user_id,
+            kind="TEMP_PERMISSION_ACTIVE",
+            business_date=today,
+            payload={
+                "grant_id": grant.pk,
+                "duty_role_code": grant.duty_role_code,
+                "ends_at": grant.ends_at.isoformat(),
+            },
+        )
+        if result is not None:
+            TemporaryDutyPermission.objects.filter(pk=grant.pk).update(
+                activated_notified_at=now
+            )
+            activated.append(grant)
+
+    expiring = list(
+        TemporaryDutyPermission.objects.filter(is_active=True, ends_at__lt=now)
+    )
+    expired = []
+    for grant in expiring:
+        RoleAdminService.expire_temporary_duty(grant.pk, actor="SYSTEM")
+        result = notify(
+            recipient=grant.user_id,
+            kind="TEMP_PERMISSION_EXPIRED",
+            business_date=today,
+            payload={"grant_id": grant.pk, "duty_role_code": grant.duty_role_code},
+        )
+        if result is not None:
+            expired.append(grant)
+
+    return {"activated": activated, "expired": expired}

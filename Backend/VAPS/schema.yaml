@@ -4194,12 +4194,16 @@ components:
       - SUBMISSION_THRESHOLD_ALERT
       - PILOT_PULSE_DIGEST
       - GROUP_FORCE_REQUEST_ESCALATED
+      - TEMP_PERMISSION_ACTIVE
+      - TEMP_PERMISSION_EXPIRED
       type: string
       description: |-
         * `SUBMISSION_LAGGING` - Отставание по сдаче
         * `SUBMISSION_THRESHOLD_ALERT` - Порог сдачи не достигнут
         * `PILOT_PULSE_DIGEST` - Пульс пилота
         * `GROUP_FORCE_REQUEST_ESCALATED` - Эскалация неотработанного запроса
+        * `TEMP_PERMISSION_ACTIVE` - Временное полномочие активно
+        * `TEMP_PERMISSION_EXPIRED` - Временное полномочие истекло
     MyPermissionsResponse:
       type: object
       properties:

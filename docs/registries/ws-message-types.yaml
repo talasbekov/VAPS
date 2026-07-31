@@ -209,15 +209,15 @@ types:
     recipients: "duty user"
     repeat: "no"
     action_url: "/"
-    trigger: "временное полномочие началось"
-    source: "VAPS_7.8.2 §33.2"
+    trigger: "временное полномочие началось (starts_at достигнут, catch-up-джоба)"
+    source: "VAPS_7.8.2 §33.2; реальный эмиттер — Story 15.11c, FR-34"
   TEMP_PERMISSION_EXPIRED:
     priority: INFO
     recipients: "duty user"
     repeat: "no"
     action_url: "/"
-    trigger: "временное полномочие истекло"
-    source: "VAPS_7.8.2 §33.2"
+    trigger: "временное полномочие истекло (ends_at пройден, авто-гашение is_active)"
+    source: "VAPS_7.8.2 §33.2; реальный эмиттер — Story 15.11c, FR-34"
   IMPORT_COMPLETED:
     priority: INFO
     recipients: "requester"

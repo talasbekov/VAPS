@@ -78,6 +78,11 @@ class TemporaryDutyPermission(TimeStampedModel):
     ends_at = models.DateTimeField()
     is_active = models.BooleanField(default=True)
     created_by = models.CharField(max_length=100)
+    # Story 15.11c: FR-34 WS "TEMP_PERMISSION_ACTIVE" marker — set once,
+    # never cleared, so a repeat catch-up run doesn't re-notify. Expiry
+    # needs no equivalent marker: `is_active` itself is the idempotency
+    # signal (mirrors 15.11a's expire_temporary_duty guard).
+    activated_notified_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_temporary_duty_permissions"
