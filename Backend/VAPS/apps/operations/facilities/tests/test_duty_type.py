@@ -90,3 +90,18 @@ def test_rest_after_and_before_duty_minutes_configurable():
     )
     assert duty_type.rest_after_minutes == 2880
     assert duty_type.before_duty_minutes == 30
+
+
+@pytest.mark.parametrize("field", ["rest_after_minutes", "before_duty_minutes"])
+def test_rest_after_and_before_duty_minutes_negative_rejected_by_db(field):
+    # Review (Edge Case Hunter): the design decision NOT to add a redundant
+    # named >=0 CheckConstraint here relies on PositiveIntegerField's own
+    # implicit DB-level guard (confirmed by Acceptance Auditor's empirical
+    # probe and Edge Case Hunter's Django-source read) — this test makes
+    # that reliance verifiable in-suite, not just documented in a comment.
+    obj = make_object(f"OBJ-DT-9-{field}")
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            DutyType.objects.create(
+                object=obj, code="DAY", name="Дневное", **{field: -1}
+            )
