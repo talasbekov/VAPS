@@ -174,3 +174,31 @@ class SecurityEventSectorPost(TimeStampedModel):
 
     def __str__(self):
         return f"{self.sector}/{self.post} ({self.event_id})"
+
+
+class SecurityEventStaffingDemand(TimeStampedModel):
+    """Story 15.5a: строка потребности в силах (FR-23 «StaffingDemand»),
+    event-scoped, тот же паттерн, что `SecurityEventSectorPost` — отдельно
+    вводимая строка, НЕ производная от `SectorPost.need` (никакой формулы
+    «расчёта» нигде не найдено, frontend-прототип трактует оба поля как
+    независимые). Поля синтезированы из `StaffingDemandRow` (frontend
+    soft-сигнал, не источник истины)."""
+
+    event = models.ForeignKey(
+        SecurityEvent, on_delete=models.CASCADE, related_name="staffing_demands"
+    )
+    sector = models.CharField(max_length=255)
+    task = models.CharField(max_length=255, blank=True)
+    shift = models.CharField(max_length=100, blank=True)
+    need = models.PositiveIntegerField(default=0)
+    group = models.CharField(max_length=255, blank=True)
+    requirements = models.TextField(blank=True)
+    comment = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "ops_security_event_staffing_demands"
+        verbose_name = "Строка потребности в силах"
+        verbose_name_plural = "Строки потребности в силах"
+
+    def __str__(self):
+        return f"{self.sector}/{self.group} ({self.event_id})"

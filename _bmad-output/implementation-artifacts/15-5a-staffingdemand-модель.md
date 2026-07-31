@@ -4,7 +4,7 @@ baseline_commit: 6cbf0a4
 
 # Story 15.5a: `SecurityEventStaffingDemand` — модель (FR-23)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -36,10 +36,10 @@ so that **15.5b (захват данных) и 15.5c (утверждение) и
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `SecurityEventStaffingDemand`-модель (AC: 1, 2)
-- [ ] Task 2 — Миграция (AC: 3)
-- [ ] Task 3 — Тесты: app-smoke + `db_table` (AC: 1-4)
-- [ ] Task 4 — Гейт (AC: 4)
+- [x] Task 1 — `SecurityEventStaffingDemand`-модель (AC: 1, 2)
+- [x] Task 2 — Миграция (AC: 3)
+- [x] Task 3 — Тесты: app-smoke + `db_table` + CASCADE (AC: 1-4)
+- [x] Task 4 — Гейт (AC: 4)
 
 ## Dev Notes
 
@@ -60,14 +60,17 @@ so that **15.5b (захват данных) и 15.5c (утверждение) и
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано по AC 1-4. `SecurityEventStaffingDemand` — event-scoped child-модель, `CASCADE` (тот же паттерн, что `SecurityEventSectorPost`, 15.3a). Поля синтезированы из frontend's `StaffingDemandRow` (soft-сигнал). Никакого CheckConstraint не требуется (нет choices-полей, в отличие от recon-моделей с `result`). Миграция `0004` — единственная. 3 новых теста (db_table, create+persist, CASCADE). `make gate` — 3491 passed (было 3488, +3), 0 regressions, no drift.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/events/models.py` (modified — новая модель)
+- `Backend/VAPS/apps/operations/events/migrations/0004_securityeventstaffingdemand.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/test_staffing_demand_model.py` (new)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-07-31 | Story создана (create-story), разбита из планового `15-5` на 15.5a (модель)/15.5b (захват)/15.5c (утверждение). Коллизия имён с существующей сущностью проверена и исключена. |
+| 2026-07-31 | Dev-story: `SecurityEventStaffingDemand`-модель + миграция + 3 теста. `make gate` — 3491 passed. Status → review. |
