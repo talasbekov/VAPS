@@ -8,10 +8,9 @@ two actions don't earn a `permission_map` declaration — mirrors
 `apps.operations.bugreports.api.views.BugReportViewSet`, the most recent
 precedent for this shape.
 
-`duty.manage`'s RBAC role-binding row (which roles actually carry this
-code) and HTTP audit logging are explicitly 14.12's territory — this story
-only gates on the permission code, which already exists in the seed
-(`apps/operations/management/commands/seed_operations.py`).
+`duty.manage`'s RBAC role-binding (which roles carry it) stays flexible/
+admin-configurable — no per-story hardcoding (14.12a's Scope Decision).
+Audit logging is wired here + in services.py (14.12a).
 
 Duplicate-plan (409/422) and year/month-range (422) rejections are NOT
 re-validated here: the existing DB-level `UniqueConstraint`/
@@ -20,6 +19,8 @@ existing exception handler already maps the resulting `IntegrityError` to
 a 4xx response (Story 3.3's "IntegrityError -> 422" backstop) — no new
 validation logic duplicated in this layer.
 """
+
+import uuid
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404
@@ -32,6 +33,7 @@ from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework import status as http_status
 
+from apps.audit.services import record
 from apps.operations.api.permissions import require_permission
 from apps.operations.duties.api.serializers import (
     DutyPlanConflictSerializer,
@@ -75,6 +77,21 @@ class DutyPlanViewSet(viewsets.ViewSet):
         form = DutyPlanCreateSerializer(data=request.data)
         form.is_valid(raise_exception=True)
         plan = DutyPlan.objects.create(**form.validated_data)
+        # Story 14.12a: create/create-shift have no service function of
+        # their own (plain one-line ORM creates) — record() lives here
+        # instead of services.py, unlike approve/cancel/replan.
+        record(
+            actor=request.actor_id,
+            action="DUTY_PLAN_CREATED",
+            entity_type="duty_plan",
+            entity_id=uuid.UUID(int=plan.pk),
+            new_value={
+                "plan_id": plan.pk,
+                "object_id": plan.object_id,
+                "year": plan.year,
+                "month": plan.month,
+            },
+        )
         return Response(
             DutyPlanSerializer(plan).data, status=http_status.HTTP_201_CREATED
         )
@@ -150,6 +167,18 @@ class DutyPlanViewSet(viewsets.ViewSet):
         except DjangoValidationError as exc:
             raise ValidationError(exc.message_dict) from exc
         shift.save()
+        # Story 14.12a — see create()'s comment on why record() lives here.
+        record(
+            actor=request.actor_id,
+            action="DUTY_SHIFT_CREATED",
+            entity_type="duty_shift",
+            entity_id=uuid.UUID(int=shift.pk),
+            new_value={
+                "shift_id": shift.pk,
+                "plan_id": shift.plan_id,
+                "employee_id": str(shift.employee_id),
+            },
+        )
         return Response(
             DutyShiftSerializer(shift).data, status=http_status.HTTP_201_CREATED
         )
@@ -181,7 +210,7 @@ class DutyPlanViewSet(viewsets.ViewSet):
         # get_object_or_404 above, which the lock doesn't mutate in place.
         require_permission(request, _PERMISSION)
         plan = get_object_or_404(DutyPlan, pk=pk)
-        plan = approve_duty_plan(plan)
+        plan = approve_duty_plan(plan, actor=request.actor_id)
         return Response(DutyPlanSerializer(plan).data)
 
     @extend_schema(

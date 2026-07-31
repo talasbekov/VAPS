@@ -305,7 +305,7 @@ def test_approve_duty_plan_projects_before_duty_for_shifts_with_duty_type(
         duty_type=duty_type,
     )
 
-    approve_duty_plan(plan)
+    approve_duty_plan(plan, actor="test-actor")
 
     assert EmployeeStatus.objects.filter(source_ref=f"BEFORE_DUTY:{shift.pk}").exists()
 
@@ -321,7 +321,7 @@ def test_approve_duty_plan_transitions_status_and_projects_shifts(status_types, 
         datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
     )
 
-    approve_duty_plan(plan)
+    approve_duty_plan(plan, actor="test-actor")
 
     plan.refresh_from_db()
     assert plan.status_code == DutyPlan.StatusCode.APPROVED
@@ -342,8 +342,8 @@ def test_approve_duty_plan_is_idempotent(status_types, div):
         datetime.datetime(2026, 8, 1, 20, 0, tzinfo=LOCAL_TZ),
     )
 
-    approve_duty_plan(plan)
-    approve_duty_plan(plan)
+    approve_duty_plan(plan, actor="test-actor")
+    approve_duty_plan(plan, actor="test-actor")
 
     plan.refresh_from_db()
     assert plan.status_code == DutyPlan.StatusCode.APPROVED
@@ -367,14 +367,14 @@ def test_reapproving_plan_does_not_resurrect_a_cancelled_shifts_statuses(
         datetime.datetime(2026, 9, 1, 20, 0, tzinfo=LOCAL_TZ),
     )
 
-    approve_duty_plan(plan)
+    approve_duty_plan(plan, actor="test-actor")
     assert EmployeeStatus.objects.filter(source_ref=f"DUTY:{shift.pk}").exists()
 
     with clock.override(datetime.date(2026, 8, 1)):
         cancel_duty_shift(shift, actor="operator", reason="Отмена")
     assert not EmployeeStatus.objects.filter(source_ref=f"DUTY:{shift.pk}").exists()
 
-    approve_duty_plan(plan)
+    approve_duty_plan(plan, actor="test-actor")
 
     assert not EmployeeStatus.objects.filter(source_ref=f"DUTY:{shift.pk}").exists()
     assert not EmployeeStatus.objects.filter(

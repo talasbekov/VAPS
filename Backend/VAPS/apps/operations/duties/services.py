@@ -14,16 +14,26 @@ forbids `operations` importing `apps.core.models` directly
 one operations subdomain importing another (same class as `duties`'s
 existing FK into `facilities`, story 14.5).
 
-`approve_duty_plan()` is a plain domain transition — no HTTP layer,
-permission check, or audit logging. Those are 14.11's territory.
+`approve_duty_plan()`/`cancel_duty_shift()`/`replan_duty_shift()` emit audit
+rows (Story 14.12a) — HTTP layer/permission check remain 14.11's territory.
+
+Story 14.12a: `AuditLog.entity_id` is a NOT NULL `UUIDField` (apps/audit/
+models.py), but `DutyPlan`/`DutyShift` use plain integer PKs (14.5's own
+docstring: not a deferred-FK reference table). `uuid.UUID(int=pk)`
+deterministically embeds the integer into a valid UUID — the same technique
+already sanctioned in this codebase for a different purpose (bulk_status_
+service.py's `_BULK_SUMMARY_ENTITY_ID = uuid.UUID(int=0)` sentinel); here it
+represents the REAL entity id, not a sentinel.
 """
 
 import datetime
+import uuid
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db import transaction
 
+from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.operations.duties.models import DutyPlan, DutyShift
@@ -125,7 +135,7 @@ def project_duty_shift(shift):
         )
 
 
-def approve_duty_plan(plan):
+def approve_duty_plan(plan, *, actor):
     """BR-017: DRAFT->APPROVED transition + projection of every shift in the
     plan. Idempotent — re-approving an already-APPROVED plan is a no-op for
     the status_code flip; `project_duty_shift()`'s own idempotency covers
@@ -141,10 +151,15 @@ def approve_duty_plan(plan):
     `get_or_create()` alone is not race-safe; the lock serializes
     concurrent approvers of the SAME plan onto the same execution, closing
     the window without touching `EmployeeStatus`'s schema.
+
+    Story 14.12a: emits `DUTY_PLAN_APPROVED` only on a REAL DRAFT->APPROVED
+    transition — a no-op re-approve (idempotent by design) leaves no
+    duplicate audit trail for a status flip that didn't happen.
     """
     with transaction.atomic():
         plan = DutyPlan.objects.select_for_update().get(pk=plan.pk)
-        if plan.status_code != plan.StatusCode.APPROVED:
+        was_draft = plan.status_code != plan.StatusCode.APPROVED
+        if was_draft:
             plan.status_code = plan.StatusCode.APPROVED
             plan.save(update_fields=["status_code", "updated_at"])
         # Review (Edge Case Hunter, 14.7): project_duty_shift() dereferences
@@ -152,6 +167,20 @@ def approve_duty_plan(plan):
         # shift for plans where most shifts carry a duty_type.
         for shift in plan.shifts.select_related("duty_type").all():
             project_duty_shift(shift)
+        if was_draft:
+            record(
+                actor=actor,
+                action="DUTY_PLAN_APPROVED",
+                entity_type="duty_plan",
+                entity_id=uuid.UUID(int=plan.pk),
+                new_value={
+                    "plan_id": plan.pk,
+                    "object_id": plan.object_id,
+                    "year": plan.year,
+                    "month": plan.month,
+                    "status_code": plan.status_code,
+                },
+            )
     return plan
 
 
@@ -227,6 +256,23 @@ def cancel_duty_shift(shift, *, actor, reason):
                 "updated_at",
             ]
         )
+        # Story 14.12a: fires on EVERY real cancellation, including when
+        # called internally by replan_duty_shift() below — the old shift
+        # genuinely IS cancelled in the DB either way, so the audit trail
+        # should show it either way. replan additionally emits its own
+        # DUTY_SHIFT_REPLANNED after creating the new shift.
+        record(
+            actor=actor,
+            action="DUTY_SHIFT_CANCELLED",
+            entity_type="duty_shift",
+            entity_id=uuid.UUID(int=shift.pk),
+            reason=reason,
+            new_value={
+                "shift_id": shift.pk,
+                "plan_id": shift.plan_id,
+                "cancelled_by": actor,
+            },
+        )
     return shift
 
 
@@ -284,6 +330,20 @@ def replan_duty_shift(shift, *, actor, reason, **new_fields):
         new_shift.full_clean()
         new_shift.save()
         project_duty_shift(new_shift)
+
+        # Story 14.12a: own audit row IN ADDITION TO cancel_duty_shift()'s
+        # DUTY_SHIFT_CANCELLED (emitted above, inside the same call) — the
+        # old-shift cancellation and the new-shift creation are both real,
+        # distinct facts.
+        record(
+            actor=actor,
+            action="DUTY_SHIFT_REPLANNED",
+            entity_type="duty_shift",
+            entity_id=uuid.UUID(int=new_shift.pk),
+            reason=reason,
+            old_value={"old_shift_id": shift.pk},
+            new_value={"new_shift_id": new_shift.pk, "plan_id": new_shift.plan_id},
+        )
 
     return new_shift
 

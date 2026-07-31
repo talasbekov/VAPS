@@ -217,11 +217,6 @@ _BUGREPORTS = (
     "финансовым следом (в отличие от DOCUMENT_ISSUED/DAILY_SUBMISSION_*), "
     "аналогично _NOTIF; отдельный AuditLog-канал не мотивирован"
 )
-_DUTY = (
-    "story 14.11a: create-duty-plan — HTTP audit-логирование явно отложено "
-    "на Story 14.12 («Аудит + RBAC-строки»), тот же паттерн отсрочки, что "
-    "в Out of Scope 14.6/14.7/14.9a/14.9b"
-)
 
 # Declarative registry: route name → audit verdict. UPDATE when a mutating route
 # is added (AR-9 living registry; a missing row fails test_audit_matrix_covers_*).
@@ -247,15 +242,24 @@ AUDIT_MATRIX = {
     "ops-user-role-detail": _DeferredAudit(_RBAC),
     "ops-temp-duty-list": _DeferredAudit(_RBAC),
     "ops-temp-duty-expire": _DeferredAudit(_RBAC),
-    "ops-duty-plan-list": _DeferredAudit(_DUTY),
-    "ops-duty-plan-shifts": _DeferredAudit(_DUTY),
-    "ops-duty-plan-approve": _DeferredAudit(_DUTY),
-    "ops-duty-plan-cancel-shift": _DeferredAudit(_DUTY),
-    "ops-duty-plan-replan-shift": _DeferredAudit(_DUTY),
-    # Story 14.11f: validate is POST but read-only (dry-run, no writes) —
-    # still classified here since the completeness gate is method-based
-    # (POST/PUT/PATCH/DELETE), not write-behavior-based.
-    "ops-duty-plan-validate": _DeferredAudit(_DUTY),
+    # Story 14.12a: DUTY_PLAN_CREATED/DUTY_SHIFT_CREATED/DUTY_PLAN_APPROVED/
+    # DUTY_SHIFT_CANCELLED/DUTY_SHIFT_REPLANNED emit via apps.audit.services
+    # .record() (views.py for create/create-shift — no service function of
+    # their own; services.py for approve/cancel/replan); behavioral pins —
+    # test_duty_plan_audit.py.
+    "ops-duty-plan-list": _Audited(),
+    "ops-duty-plan-shifts": _Audited(),
+    "ops-duty-plan-approve": _Audited(),
+    "ops-duty-plan-cancel-shift": _Audited(),
+    "ops-duty-plan-replan-shift": _Audited(),
+    # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
+    # writes) — nothing to audit, stays deferred with an updated reason (the
+    # completeness gate is method-based, so the row itself can't be removed).
+    "ops-duty-plan-validate": _DeferredAudit(
+        "story 14.11f/14.12a: validate is a POST dry-run with NO mutation — "
+        "there is nothing to emit an AuditLog row for (unlike the other "
+        "duty-plan routes, this isn't audit debt, it's a structural no-op)"
+    ),
     # submissions (5.8a → 5.9): DAILY_SUBMISSION_SUBMITTED эмитится на
     # СЕРВИС-уровне (submit_day, канон 4.4); поведенческие пины + HTTP-smoke
     # сквозь роут — test_submission_audit (5.9).

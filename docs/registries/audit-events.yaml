@@ -224,6 +224,31 @@ actions:
     description: "manage.py export_diagnostics — багрепорты+audit-журнал за период выгружены в архив для выноса носителем; ПЕРВАЯ management-команда, пишущая AuditLog вне HTTP-контекста (record()'s _SYSTEM_IP-сентинел)."
     provenance: derived-from-mutation
     source: "epics.md Story 13.2"
+  DUTY_PLAN_CREATED:
+    entity_type: duty_plan
+    description: "Создан план дежурств (DRAFT). entity_id — uuid.UUID(int=plan.pk) (DutyPlan — integer PK, не UUID)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 14.11a; Story 14.12a"
+  DUTY_PLAN_APPROVED:
+    entity_type: duty_plan
+    description: "План дежурств утверждён (DRAFT→APPROVED, BR-017). Эмитится ТОЛЬКО на реальном переходе — идемпотентный повторный вызов на уже-APPROVED не дублирует строку."
+    provenance: derived-from-mutation
+    source: "epics.md Story 14.11c; Story 14.12a"
+  DUTY_SHIFT_CREATED:
+    entity_type: duty_shift
+    description: "Создана смена дежурства в плане. entity_id — uuid.UUID(int=shift.pk)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 14.11b; Story 14.12a"
+  DUTY_SHIFT_CANCELLED:
+    entity_type: duty_shift
+    description: "Смена дежурства отменена (причина обязательна). Эмитится и при прямой отмене, и внутри перепланирования (старая смена реально отменяется в обоих случаях)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 14.11d; Story 14.12a"
+  DUTY_SHIFT_REPLANNED:
+    entity_type: duty_shift
+    description: "Смена перепланирована — старая отменена (свой DUTY_SHIFT_CANCELLED), новая создана. entity_id — uuid.UUID(int=new_shift.pk)."
+    provenance: derived-from-mutation
+    source: "epics.md Story 14.11e; Story 14.12a"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.
