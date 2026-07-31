@@ -1,5 +1,5 @@
-"""Story 14.6/14.7: OM_AUTO projection service (BR-017 — DUTY/REST_AFTER_DUTY;
-BR-DUTY-TYPE-003 — BEFORE_DUTY).
+"""Story 14.6/14.7/14.9a: OM_AUTO projection service (BR-017 —
+DUTY/REST_AFTER_DUTY; BR-DUTY-TYPE-003 — BEFORE_DUTY) + cancel.
 
 Deliberately does NOT reuse `apps.operations.statuses.services.status_service
 .create_status()`: that function forces `source=USER` (its own docstring:
@@ -23,6 +23,8 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 
+from apps.core.clock import Clock
+from apps.core.exceptions import DomainError
 from apps.operations.statuses.models import EmployeeStatus
 
 REST_AFTER_DUTY_HOURS = 24
@@ -124,3 +126,61 @@ def approve_duty_plan(plan):
     # shift for plans where most shifts carry a duty_type.
     for shift in plan.shifts.select_related("duty_type").all():
         project_duty_shift(shift)
+
+
+def cancel_duty_shift(shift, *, actor, reason):
+    """Story 14.9a: cancel a duty shift — removes its projected `DUTY`/
+    `REST_AFTER_DUTY`/`BEFORE_DUTY` `EmployeeStatus` rows outright (they are
+    derivative data, not an append-once fact — the shift itself is the
+    source of truth) and records an append-once cancel fact on `DutyShift`
+    (mirrors `EmployeeStatus`'s own cancelled_at/by/reason shape).
+
+    Does NOT go through `status_service.cancel_status()`: `EmployeeStatus
+    .assert_user_editable()` unconditionally rejects any non-USER row, not
+    a state gate — the only architecturally consistent path is a direct
+    OM_AUTO write, same as `project_duty_shift()`.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    if not (reason or "").strip():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"field": "reason"},
+            message="При отмене дежурства обязательна непустая причина.",
+        )
+    if shift.cancelled_at is not None:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            message="Дежурство уже отменено.",
+        )
+    local_tz = ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)
+    shift_start_date = shift.starts_at.astimezone(local_tz).date()
+    if shift_start_date <= Clock.today_local():
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            message="Нельзя отменить уже начавшееся или прошедшее дежурство.",
+        )
+
+    EmployeeStatus.objects.filter(
+        source_ref__in=[
+            f"DUTY:{shift.pk}",
+            f"REST_AFTER_DUTY:{shift.pk}",
+            f"BEFORE_DUTY:{shift.pk}",
+        ],
+        source=EmployeeStatus.Source.OM_AUTO,
+    ).delete()
+
+    shift.cancelled_at = Clock.now()
+    shift.cancelled_by = actor
+    shift.cancelled_reason = reason
+    shift.save(
+        update_fields=[
+            "cancelled_at",
+            "cancelled_by",
+            "cancelled_reason",
+            "updated_at",
+        ]
+    )

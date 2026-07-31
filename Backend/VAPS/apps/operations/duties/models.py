@@ -105,6 +105,13 @@ class DutyShift(TimeStampedModel):
     notes = models.TextField(blank=True)
     starts_at = models.DateTimeField()
     ends_at = models.DateTimeField()
+    # Story 14.9a — append-once cancel facts, same shape as
+    # EmployeeStatus's own (apps/operations/statuses/migrations/
+    # 0006_status_cancel_facts.py): written once by cancel_duty_shift(),
+    # never cleared at the service level.
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.CharField(max_length=255, null=True, blank=True)
+    cancelled_reason = models.TextField(blank=True, default="")
 
     class Meta:
         db_table = "ops_duty_shifts"
