@@ -7,10 +7,22 @@
 // Состав оцениваемых — СВОЙ, а не импорт кадрового справочника: фичи не читают
 // чужие `mocks/` (ARCH-FE-013), и это тот же осознанный дубль, что ростер
 // кандидатов в `security-events` (§20.3 — разные bounded context).
-import type { EventEvaluation, RatingDynamicsPoint } from '../model/types'
+import type {
+  EvaluationBasis,
+  EvaluationWorkItem,
+  EventEvaluation,
+  RatingDynamicsPoint,
+} from '../model/types'
 
 export interface RatingsSlice {
   evaluations: EventEvaluation[]
+  /**
+   * §19.7: задания на оценивание — repository-backed состояние с устойчивыми
+   * идентификаторами, переживающее refresh. Фронт их не создаёт и не
+   * пересоздаёт («не создавай work item после refresh», «не генерируй
+   * evaluation ID»), поэтому они и лежат в слайсе, а не собираются в ответе.
+   */
+  workItems: EvaluationWorkItem[]
   /**
    * §19.20: ряд точек динамики — ЗАПИСАННЫЕ агрегаты закрытых периодов, а не
    * производное от `evaluations`. Пересчитывать их из оценок при каждом
@@ -79,6 +91,10 @@ function evaluation(
     // Комментарий обязателен при оценке НИЖЕ 8 (§19.1 — прежнее правило
     // «выше 8 или ниже 6» ошибочно). В сиде он есть ровно там, где обязателен.
     comment: score < 8 ? 'Задержка на инструктаже, разобрано со старшим' : null,
+    evaluationDirection: 'SENIOR_TO_EMPLOYEE',
+    method: 'MANUAL',
+    basisCode: score < 8 ? 'TIMELY_ARRIVAL' : 'EXECUTION_OF_DUTIES',
+    basisNote: null,
     evaluatedAt,
     supersededById: null,
     ...extra,
@@ -113,12 +129,26 @@ export const EVALUATIONS: readonly EventEvaluation[] = [
   evaluation('evaluation-9', 'employee-2', 7, '2026-07-13'),
   evaluation('evaluation-10', 'employee-2', 9, '2026-07-18'),
 
-  evaluation('evaluation-11', 'employee-3', 8, '2026-07-06'),
+  // Оценка ДРУГОГО оценщика: без неё «в отправленных только свои» проверялось
+  // бы на пустом множестве — чужой записи просто не существовало бы.
+  evaluation('evaluation-11', 'employee-3', 8, '2026-07-06', {
+    evaluatorUserId: 'demo-recon-officer',
+  }),
   evaluation('evaluation-12', 'employee-3', 9, '2026-07-16'),
 
   // Оценка ЗА ПРЕДЕЛАМИ периода расчёта: без неё период было бы нечем
   // проверить — все оценки и так попадали бы в окно.
-  evaluation('evaluation-13', 'employee-4', 10, '2025-11-04'),
+  //
+  // Она же — СИСТЕМНАЯ оценка по умолчанию (§19.8): политика зафиксировала
+  // восьмёрку участнику, которого никто не оценивал. Оценщика у неё нет
+  // (`evaluatorUserId: null`) — приписать её человеку значило бы сказать, что
+  // он этого участника смотрел. Задания она не порождает и в очередь не
+  // попадает: задание — это работа, а системная восьмёрка её отсутствие.
+  evaluation('evaluation-13', 'employee-4', 8, '2025-11-04', {
+    evaluatorUserId: null,
+    method: 'SYSTEM_DEFAULT',
+    basisCode: null,
+  }),
 
   // Участники, добавленные ради аналитики §22.16: их агрегаты намеренно
   // попадают в РАЗНЫЕ полосы распределения — одинаковые значения скрыли бы
@@ -261,11 +291,188 @@ export const DYNAMICS_POINTS: readonly RatingDynamicsPoint[] = DYNAMICS_VALUES.f
   }),
 )
 
+/**
+ * Мероприятия, по которым есть задания (§19.14 шапка). Свой перечень — фичи не
+ * читают чужие `mocks/` (ARCH-FE-013), тот же осознанный дубль, что и состав
+ * оцениваемых. Мероприятий ДВА намеренно: с одним переключатель мероприятия
+ * был бы декорацией, а отбор заданий по мероприятию — непроверяемым.
+ */
+export const EVALUATION_EVENTS: readonly {
+  securityEventId: string
+  eventRunId: string
+  number: string
+  title: string
+  objectLabel: string
+  actualStartsAt: string
+  actualEndsAt: string
+  stateLabel: string
+}[] = [
+  {
+    securityEventId: 'event-1',
+    eventRunId: 'run-1',
+    number: 'ОМ-2026-014',
+    title: 'Международный форум',
+    objectLabel: 'Конгресс-холл',
+    actualStartsAt: '2026-07-18T07:40:00+05:00',
+    actualEndsAt: '2026-07-18T19:20:00+05:00',
+    stateLabel: 'Завершено',
+  },
+  {
+    securityEventId: 'event-2',
+    eventRunId: 'run-2',
+    number: 'ОМ-2026-015',
+    title: 'Рабочая поездка',
+    objectLabel: 'Аэропорт',
+    actualStartsAt: '2026-07-20T05:10:00+05:00',
+    actualEndsAt: '2026-07-20T12:05:00+05:00',
+    stateLabel: 'Завершено',
+  },
+]
+
+/**
+ * Основания оценки (§19.10). Перечень отдаёт СЕРВЕР — «основание не должно
+ * быть произвольным frontend-only справочником». Коды здесь свои, потому что
+ * backend Smart Josparlau не существует (`backend-contract-pending`), и это
+ * сказано вслух, а не выдано за подтверждённые коды.
+ */
+export const EVALUATION_BASES: readonly EvaluationBasis[] = [
+  { code: 'EXECUTION_OF_DUTIES', label: 'Исполнение обязанностей', requiresNote: false },
+  { code: 'TIMELY_ARRIVAL', label: 'Своевременное прибытие', requiresNote: false },
+  { code: 'DISCIPLINE', label: 'Дисциплина', requiresNote: false },
+  { code: 'POST_KNOWLEDGE', label: 'Знание задач поста', requiresNote: false },
+  { code: 'ORDERS_EXECUTION', label: 'Исполнение указаний', requiresNote: false },
+  { code: 'INTERACTION', label: 'Взаимодействие', requiresNote: false },
+  { code: 'NON_STANDARD_SITUATION', label: 'Действия в нестандартной ситуации', requiresNote: false },
+  // §19.10: «если выбрано „Другое“, требуй пояснение согласно policy».
+  { code: 'OTHER', label: 'Другое', requiresNote: true },
+]
+
+function workItem(
+  id: string,
+  overrides: Partial<EvaluationWorkItem> & {
+    securityEventId: string
+    evaluatorUserId: string
+    targetEmployeeId: string
+    postLabel: string
+  },
+): EvaluationWorkItem {
+  const event = EVALUATION_EVENTS.find(
+    (item) => item.securityEventId === overrides.securityEventId,
+  )
+  if (event === undefined) throw new Error(`fixtures: неизвестное мероприятие ${id}`)
+  const target = RATED_EMPLOYEES.find((item) => item.employeeId === overrides.targetEmployeeId)
+  if (target === undefined) throw new Error(`fixtures: неизвестный участник ${id}`)
+  const group = RATING_GROUPS.find((item) => item.groupCode === target.groupCode)
+  return {
+    id,
+    eventRunId: event.eventRunId,
+    assignmentId: `assignment-${id}`,
+    targetGroupId: null,
+    targetSafeLabel: target.safeLabel,
+    targetSafeUnitLabel: group?.safeLabel ?? '—',
+    actualStartsAt: event.actualStartsAt,
+    actualEndsAt: event.actualEndsAt,
+    participated: true,
+    evaluationDirection: 'SENIOR_TO_EMPLOYEE',
+    // Начальное значение даёт СЕРВЕР (§19.8): в форме его не подставляют.
+    initialScore: 8,
+    status: 'PENDING',
+    revision: 1,
+    submittedEvaluationId: null,
+    submittedAt: null,
+    ...overrides,
+  }
+}
+
+/**
+ * Задания на оценивание (§19.7).
+ *
+ * Состав подобран так, чтобы правила §19.14 были ПРОВЕРЯЕМЫ, а не
+ * подразумевались: у одного оценщика задания в двух мероприятиях (отбор по
+ * мероприятию), одно уже отправлено (вкладка «Отправленные мной» не пуста с
+ * первого запуска), одно направлено снизу вверх (`EMPLOYEE_TO_SENIOR`), у
+ * одного участника отмечено НЕучастие (факт участия — не то же, что наличие
+ * задания), и есть задания ЧУЖОГО оценщика (иначе отбор по оценщику был бы
+ * вакуумным: чужого задания просто не существовало бы).
+ */
+export const WORK_ITEMS: readonly EvaluationWorkItem[] = [
+  workItem('work-item-1', {
+    securityEventId: 'event-1',
+    evaluatorUserId: 'demo-event-planner',
+    targetEmployeeId: 'employee-1',
+    postLabel: 'Пост 1 — главный вход',
+  }),
+  workItem('work-item-2', {
+    securityEventId: 'event-1',
+    evaluatorUserId: 'demo-event-planner',
+    targetEmployeeId: 'employee-2',
+    postLabel: 'Пост 2 — зона делегаций',
+    // Участник заявлен, но не присутствовал: §19.9 требует показывать факт
+    // участия отдельно, а не выводить его из наличия задания.
+    participated: false,
+  }),
+  workItem('work-item-3', {
+    securityEventId: 'event-1',
+    evaluatorUserId: 'demo-event-planner',
+    targetEmployeeId: 'employee-5',
+    postLabel: 'Старший смены',
+    evaluationDirection: 'EMPLOYEE_TO_SENIOR',
+  }),
+  // Отправленное задание. Оценка, которую оно породило, лежит в `EVALUATIONS`
+  // (`evaluation-6`): связь идёт от задания к записи, а не наоборот.
+  workItem('work-item-4', {
+    securityEventId: 'event-1',
+    evaluatorUserId: 'demo-event-planner',
+    targetEmployeeId: 'employee-6',
+    postLabel: 'Пост 3 — периметр',
+    status: 'SUBMITTED',
+    revision: 2,
+    submittedEvaluationId: 'evaluation-21',
+    submittedAt: '2026-07-18T20:05:00+05:00',
+  }),
+  workItem('work-item-5', {
+    securityEventId: 'event-2',
+    evaluatorUserId: 'demo-event-planner',
+    targetEmployeeId: 'employee-7',
+    postLabel: 'Пост 1 — накопитель',
+  }),
+  // Чужие задания: они не должны попадать ни в очередь, ни в отправленные
+  // другого человека (§19.14), зато обязаны попадать в сводку мероприятия —
+  // она считает работу ВСЕХ оценщиков.
+  workItem('work-item-6', {
+    securityEventId: 'event-1',
+    evaluatorUserId: 'demo-recon-officer',
+    targetEmployeeId: 'employee-8',
+    postLabel: 'Пост 4 — стоянка',
+  }),
+  // Задание администратора-эталона: у него wildcard, поэтому только на нём
+  // демонстрируется вкладка «Сводка мероприятия» ЖИВЬЁМ (§19.14). Организатор
+  // ОМ права на агрегат не имеет — вкладки у него нет, и это разделение
+  // недемонстрируемо, если у обеих persona одинаковые права.
+  workItem('work-item-8', {
+    securityEventId: 'event-1',
+    evaluatorUserId: 'demo-admin',
+    targetEmployeeId: 'employee-4',
+    postLabel: 'Пост 6 — пресс-центр',
+  }),
+  workItem('work-item-7', {
+    securityEventId: 'event-1',
+    evaluatorUserId: 'demo-recon-officer',
+    targetEmployeeId: 'employee-3',
+    postLabel: 'Пост 5 — служебный вход',
+    status: 'SUBMITTED',
+    revision: 2,
+    submittedEvaluationId: 'evaluation-11',
+    submittedAt: '2026-07-18T20:40:00+05:00',
+  }),
+]
+
 export function buildRatingsSeed(): { sliceName: string; data: RatingsSlice } {
   return {
     sliceName: 'ratings',
     data: {
       evaluations: EVALUATIONS.map((item) => ({ ...item })),
+      workItems: WORK_ITEMS.map((item) => ({ ...item })),
       dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
       capabilities: { operationalRatings: true, ratingConflicts: false },
     },

@@ -9,12 +9,17 @@
 // обеспечиваться API, а не только скрытием колонок»). Это свойство ответа
 // закреплено тестом по ВСЕМУ JSON, а не по знакомым именам полей.
 import type {
+  EvaluationBasis,
+  EvaluationDirection,
+  EvaluationMethod,
+  EvaluationWorkItem,
   OperationalRatingSummary,
   RatingDynamicsPoint,
   RatingPolicy,
   RatingPolicyBoundary,
 } from '../model/types'
 import type { RatingAnalyticsFigures } from '../lib/analytics'
+import type { EventProgress, QueueCounters } from '../lib/workspace'
 
 export const OPERATIONAL_RATINGS_PATH = '/api/ops/operational-ratings/'
 /**
@@ -25,6 +30,123 @@ export const OPERATIONAL_RATINGS_PATH = '/api/ops/operational-ratings/'
 export const OPERATIONAL_RATING_DYNAMICS_PATH = '/api/ops/operational-rating-dynamics/'
 /** Отчёт аналитики рейтинга §22.16 — свой путь и СВОЁ право (`ops.analytics.view`). */
 export const RATING_ANALYTICS_PATH = '/api/ops/rating-analytics/'
+/**
+ * Рабочее пространство оценивания (§19.14). Своё право (`ops.rating.evaluate`)
+ * и свой путь; мероприятие приезжает параметром `event`, а не сегментом —
+ * очередь принадлежит человеку, мероприятие лишь сужает её.
+ */
+export const EVALUATION_WORKSPACE_PATH = '/api/ops/evaluation-workspace/'
+/**
+ * Отправка оценки по заданию. Путь СТРОКИ задания — отдельная коллекция
+ * (`evaluation-work-items`), а не хвост под путём рабочего пространства:
+ * коллизия путей в MSW разрешается молча в пользу первого handler'а
+ * (инцидент Этапа 39), и оба пути грепнуты по `src` до заведения.
+ */
+export function evaluationSubmitPath(workItemId: string): string {
+  return `/api/ops/evaluation-work-items/${encodeURIComponent(workItemId)}/submit/`
+}
+/**
+ * Шаблон того же пути для MSW. Отдельная константа, а не
+ * `evaluationSubmitPath(':workItemId')`: фабрика прогоняет сегмент через
+ * `encodeURIComponent`, и двоеточие уехало бы в шаблон как `%3AworkItemId` —
+ * ровно дефект Этапа 49, когда PATCH не совпадал ни с одним handler'ом.
+ * Handler-тест ловит это на живом клиенте.
+ */
+export const EVALUATION_SUBMIT_PATH_PATTERN =
+  '/api/ops/evaluation-work-items/:workItemId/submit/'
+
+/**
+ * Задание в ответе. Оценщика в нём НЕТ ни одним полем: §19.7 «не передавай
+ * evaluator через редактируемое поле» — здесь он не передаётся вовсе, а
+ * берётся сервером из учётной записи запрашивающего. Очередь и так отобрана
+ * по нему, поэтому поле было бы лишь поводом его подменить.
+ */
+export type EvaluationWorkItemView = Omit<EvaluationWorkItem, 'evaluatorUserId'>
+
+/**
+ * СВОЯ отправленная оценка (§19.14 «Открыть отправленную оценку»).
+ *
+ * Это не нарушение §19.21: закрыты оценки, ПОЛУЧЕННЫЕ человеком, и чужие
+ * оценки; собственный отправленный акт человек видит, потому что он его и
+ * совершил. Отбор идёт по оценщику на сервере — в ответ не попадает ни одна
+ * запись, автором которой запрашивающий не является.
+ */
+export interface SubmittedEvaluationView {
+  workItemId: string
+  evaluationId: string
+  targetSafeLabel: string
+  postLabel: string
+  evaluationDirection: EvaluationDirection
+  method: EvaluationMethod
+  score: number
+  basisLabel: string | null
+  basisNote: string | null
+  comment: string | null
+  submittedAt: string
+  revision: number
+}
+
+/** Шапка мероприятия (§19.14). Фактические времена — факт, а не план. */
+export interface EvaluationWorkspaceEvent {
+  securityEventId: string
+  number: string
+  title: string
+  objectLabel: string
+  actualStartsAt: string
+  actualEndsAt: string
+  stateLabel: string
+}
+
+export interface EvaluationWorkspaceResponse {
+  /** Мероприятия, по которым у запрашивающего ЕСТЬ задания. Чужие не видны. */
+  events: EvaluationWorkspaceEvent[]
+  selectedEvent: EvaluationWorkspaceEvent | null
+  pending: EvaluationWorkItemView[]
+  submitted: SubmittedEvaluationView[]
+  /** Счётчики шапки — по заданиям СМОТРЯЩЕГО (§19.14). */
+  queue: QueueCounters
+  /**
+   * Прогресс оценивания по мероприятию ЦЕЛИКОМ — работа других людей, поэтому
+   * `null` без права `ops.rating.view_aggregate` (§19.14 «Сводка мероприятия
+   * показывается только при наличии permission»). Значений оценок в нём нет.
+   */
+  eventProgress: EventProgress | null
+  /** Основания приходят с сервера (§19.10), а не из справочника в коде экрана. */
+  bases: EvaluationBasis[]
+  /**
+   * Методика — для подписи (§19.14 «policy version»). `null` не мешает
+   * оценивать: методика управляет РАСЧЁТОМ агрегата (§19.19), а не правом
+   * поставить оценку. Гасить форму из-за неё значило бы остановить работу
+   * из-за настройки, которой она не пользуется.
+   */
+  policy: RatingPolicy | null
+  /** Момент ответа — им подписано состояние синхронизации в шапке. */
+  loadedAt: string
+  capabilities: { operationalRatings: boolean }
+  /** `FEATURE_DISABLED` — оценивание выключено целиком (§19.3). */
+  unavailableReason: 'FEATURE_DISABLED' | null
+  unavailableViews: UnavailableRatingFactor[]
+}
+
+/**
+ * Тело отправки. Ни оценщика, ни target, ни мероприятия: всё это — свойства
+ * ЗАДАНИЯ, и переслать их значило бы позволить их подменить (§19.7, §19.18
+ * «нельзя изменить оценщика/target/event»). `revision` — та редакция задания,
+ * которую видел человек.
+ */
+export interface SubmitEvaluationRequest {
+  score: number
+  basisCode: string | null
+  basisNote: string | null
+  comment: string | null
+  revision: number
+}
+
+export interface SubmitEvaluationResponse {
+  workItem: EvaluationWorkItemView
+  submitted: SubmittedEvaluationView
+  queue: QueueCounters
+}
 
 /** §35: чего в расчёте нет и почему. Форма та же, что у блоков аналитики. */
 export interface UnavailableRatingFactor {

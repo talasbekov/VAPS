@@ -10,14 +10,18 @@ import { createMemoryPersistence } from '../../../shared/testing/mock-runtime/me
 import { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac-directory'
 import {
+  EVALUATION_WORKSPACE_PATH,
   OPERATIONAL_RATINGS_PATH,
   OPERATIONAL_RATING_DYNAMICS_PATH,
   RATING_ANALYTICS_PATH,
+  evaluationSubmitPath,
 } from '../api/pending-contracts'
 import type {
+  EvaluationWorkspaceResponse,
   ListOperationalRatingsResponse,
   RatingAnalyticsResponse,
   RatingDynamicsResponse,
+  SubmitEvaluationResponse,
 } from '../api/pending-contracts'
 import { createRatingsHandlers } from './handlers'
 import { buildRatingsSeed } from './fixtures'
@@ -26,6 +30,7 @@ const CLOCK_ISO = '2026-07-20T08:00:00+05:00'
 const VIEWER = 'rating-viewer'
 const ANALYST = 'rating-analyst'
 const NOBODY = 'nobody-user'
+const EVALUATOR = 'demo-event-planner'
 const BASE = 'http://localhost'
 
 const adapter = createMemoryPersistence()
@@ -73,8 +78,8 @@ beforeEach(async () => {
   }
   await adapter.reset({
     application: 'smart-josparlau',
-    schema_version: 32,
-    seed_version: 'test-v32',
+    schema_version: 33,
+    seed_version: 'test-v33',
     scenario: 'normal',
     revision: 0,
     created_at: CLOCK_ISO,
@@ -85,12 +90,14 @@ beforeEach(async () => {
     { userId: VIEWER, permissions: ['ops.rating.view_aggregate'] },
     { userId: ANALYST, permissions: ['ops.analytics.view'] },
     { userId: NOBODY, permissions: [] },
+    { userId: EVALUATOR, permissions: ['ops.rating.evaluate'] },
   ])
 })
 
 const client = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': VIEWER } })
 const stranger = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': NOBODY } })
 const analyst = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': ANALYST } })
+const evaluator = createApiClient({ baseUrl: BASE, defaultHeaders: { 'X-User-Id': EVALUATOR } })
 
 async function statusOf(call: () => Promise<unknown>): Promise<number> {
   try {
@@ -143,5 +150,64 @@ describe('ratings handlers — аналитика рейтинга (§22.16)', (
 
   it('держателю одной лишь сводки отчёт закрыт — 403 конвертом', async () => {
     expect(await statusOf(() => client.get(RATING_ANALYTICS_PATH))).toBe(403)
+  })
+})
+
+describe('ratings handlers — рабочее пространство оценивания (§19.14)', () => {
+  it('GET заданий доходит до repository, и параметр мероприятия не теряется', async () => {
+    const response = await evaluator.get<EvaluationWorkspaceResponse>(
+      `${EVALUATION_WORKSPACE_PATH}?event=event-2`,
+    )
+    // Проверяется НЕ первое мероприятие: потерянный параметр вернул бы очередь
+    // первого и остался бы незамеченным.
+    expect(response.selectedEvent?.securityEventId).toBe('event-2')
+    expect(response.pending.map((item) => item.id)).toEqual(['work-item-5'])
+  })
+
+  it('без права оценивания — 403 конвертом, а не пустой очередью', async () => {
+    expect(await statusOf(() => client.get(EVALUATION_WORKSPACE_PATH))).toBe(403)
+  })
+
+  it('POST отправки сопоставляется со строкой задания и коммитит оценку', async () => {
+    const created = await evaluator.post<SubmitEvaluationResponse>(
+      evaluationSubmitPath('work-item-5'),
+      { score: 9, basisCode: 'DISCIPLINE', basisNote: null, comment: null, revision: 1 },
+    )
+    expect(created.workItem).toMatchObject({ id: 'work-item-5', status: 'SUBMITTED' })
+    const after = await evaluator.get<EvaluationWorkspaceResponse>(
+      `${EVALUATION_WORKSPACE_PATH}?event=event-2`,
+    )
+    expect(after.pending).toEqual([])
+    expect(after.submitted.map((item) => item.workItemId)).toEqual(['work-item-5'])
+  })
+
+  it('отказ правила формы едет 422 со СВОИМ кодом', async () => {
+    try {
+      await evaluator.post(evaluationSubmitPath('work-item-5'), {
+        score: 5,
+        basisCode: 'DISCIPLINE',
+        basisNote: null,
+        comment: null,
+        revision: 1,
+      })
+      expect.unreachable('отправка без комментария к низкой оценке обязана быть отвергнута')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError)
+      expect(error as ApiError).toMatchObject({ status: 422, errorCode: 'COMMENT_REQUIRED' })
+    }
+  })
+
+  it('чужое задание — 404, и путь строки не перехватывается путём раздела', async () => {
+    expect(
+      await statusOf(() =>
+        evaluator.post(evaluationSubmitPath('work-item-6'), {
+          score: 9,
+          basisCode: 'DISCIPLINE',
+          basisNote: null,
+          comment: null,
+          revision: 1,
+        }),
+      ),
+    ).toBe(404)
   })
 })
