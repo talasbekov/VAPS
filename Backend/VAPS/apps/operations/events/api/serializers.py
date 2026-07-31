@@ -5,6 +5,7 @@ from rest_framework import serializers
 
 from apps.operations.events.models import (
     Group,
+    GroupForceRequest,
     SecurityEvent,
     SecurityEventChecklistItem,
     SecurityEventSectorPost,
@@ -91,3 +92,28 @@ class GroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = Group
         fields = ["code", "name", "sort_order"]
+
+
+class GroupForceRequestSerializer(serializers.ModelSerializer):
+    group = GroupSerializer(read_only=True)
+
+    class Meta:
+        model = GroupForceRequest
+        fields = [
+            "id",
+            "group",
+            "requested_count",
+            "allocated_count",
+            "status",
+            "comment",
+        ]
+        read_only_fields = fields
+
+
+class GenerateForceRequestsResponseSerializer(serializers.Serializer):
+    """Story 15.7b: wraps the generated/updated rows plus any StaffingDemand
+    group-text that failed to match an active Group (AC-2 — reported, not
+    silently dropped)."""
+
+    force_requests = GroupForceRequestSerializer(many=True)
+    unmatched_groups = serializers.ListField(child=serializers.CharField())

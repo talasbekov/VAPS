@@ -301,6 +301,10 @@ AUDIT_MATRIX = {
     # the real RECON->DEMAND transition; behavioral pin —
     # test_staffing_demand_approve.py.
     "ops-security-event-staffing-demand-approve": _Audited(),
+    # Story 15.7b: SECURITY_EVENT_FORCE_REQUESTS_GENERATED emits on every
+    # call (including idempotent regenerate) — a real dispatch operation,
+    # not draft data; behavioral pin — test_force_requests_generate.py.
+    "ops-security-event-force-requests-generate": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

@@ -274,6 +274,11 @@ actions:
     description: "Потребность в силах утверждена (RECON->DEMAND). Эмитится ТОЛЬКО на реальном переходе, содержит снимок утверждённых строк staffing_demand для прослеживаемости. Single-actor гейт (не двойной контроль — FR-23 его не требует, в отличие от FR-22)."
     provenance: derived-from-mutation
     source: "epics.md FR-23; Story 15.5c"
+  SECURITY_EVENT_FORCE_REQUESTS_GENERATED:
+    entity_type: security_event
+    description: "Запросы Группам сгенерированы и отправлены (агрегация StaffingDemand по группе). Эмитится на каждом вызове (включая идемпотентный regenerate) — реальная бизнес-операция (рассылка), не черновик. new_value включает requested_groups + unmatched_groups для прослеживаемости."
+    provenance: derived-from-mutation
+    source: "epics.md FR-24; Story 15.7b"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

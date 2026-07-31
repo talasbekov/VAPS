@@ -198,6 +198,10 @@ MATRIX = {
     "ops-security-event-staffing-demand": _Gate("event.manage"),
     # Story 15.5c: staffing-demand approval, same gate.
     "ops-security-event-staffing-demand-approve": _Gate("event.manage"),
+    # Story 15.7b: generate+dispatch force requests, and read them back —
+    # same gate.
+    "ops-security-event-force-requests-generate": _Gate("event.manage"),
+    "ops-security-event-force-requests": _Gate("event.manage"),
     # Story 15.6: read-only Groups reference list, same gate (used only in
     # Epic 15's context today).
     "ops-group-list": _Gate("event.manage"),

@@ -31,6 +31,8 @@ from apps.audit.services import record
 from apps.operations.api.permissions import require_permission
 from apps.operations.events.api.serializers import (
     ChecklistItemSerializer,
+    GenerateForceRequestsResponseSerializer,
+    GroupForceRequestSerializer,
     GroupSerializer,
     SecurityEventCreateSerializer,
     SecurityEventSerializer,
@@ -41,6 +43,7 @@ from apps.operations.events.models import Group, SecurityEvent
 from apps.operations.events.services import (
     approve_staffing_demand,
     confirm_recon,
+    generate_force_requests,
     issue_bulletin,
     replace_checklist_items,
     replace_sector_posts,
@@ -246,6 +249,40 @@ class SecurityEventViewSet(viewsets.ViewSet):
         event = _get_event_or_404(pk)
         event = approve_staffing_demand(event, actor=request.actor_id)
         return Response(SecurityEventSerializer(event).data)
+
+    @extend_schema(
+        operation_id="security_event_force_requests_generate",
+        responses={200: GenerateForceRequestsResponseSerializer},
+        description="Сгенерировать и отправить запросы Группам (FR-24). "
+        "Требует event.manage. Доступно только из статуса DEMAND. "
+        "Идемпотентно (regenerate обновляет requested_count, не сбрасывает "
+        "уже начатое выделение). Несматченные Группы — в unmatched_groups, "
+        "не молча теряются.",
+    )
+    @action(detail=True, methods=["post"], url_path="force-requests/generate")
+    def force_requests_generate(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        requests, unmatched_groups = generate_force_requests(
+            event, actor=request.actor_id
+        )
+        return Response(
+            GenerateForceRequestsResponseSerializer(
+                {"force_requests": requests, "unmatched_groups": unmatched_groups}
+            ).data
+        )
+
+    @extend_schema(
+        operation_id="security_event_force_requests_list",
+        responses={200: GroupForceRequestSerializer(many=True)},
+        description="Список запросов Группам для этого ОМ. Требует event.manage.",
+    )
+    @action(detail=True, methods=["get"], url_path="force-requests")
+    def force_requests(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        requests = event.force_requests.select_related("group").all()
+        return Response(GroupForceRequestSerializer(requests, many=True).data)
 
 
 class GroupViewSet(viewsets.ViewSet):

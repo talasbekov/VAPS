@@ -24,6 +24,8 @@ from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.operations.events.models import (
+    Group,
+    GroupForceRequest,
     SecurityEvent,
     SecurityEventChecklistItem,
     SecurityEventSectorPost,
@@ -222,3 +224,67 @@ def approve_staffing_demand(event, *, actor):
             },
         )
     return event
+
+
+def generate_force_requests(event, *, actor):
+    """Story 15.7b: aggregate `event.staffing_demands` by group-name into
+    `GroupForceRequest` rows and dispatch (status=SENT) in one action — no
+    spec text anywhere distinguishes "generate" from "send" as separate
+    operator actions (only an indirect frontend-comment citation of the
+    donor HTML says "requests will be formed automatically"), so this
+    deliberately does NOT split them into two endpoints.
+
+    Strict DEMAND-only gate — Potребность must be approved (15.5c) first.
+    Text->reference matching against `StaffingDemand.group` (still free
+    text, 15.5a) is STRICT: no fuzzy matching, no auto-creating new Group
+    rows from typos. Unmatched text is reported back, never silently
+    dropped or a 500.
+
+    Idempotent regenerate: existing rows are updated (requested_count
+    only) via `update_or_create`'s `defaults`, which deliberately does
+    NOT include `status`/`allocated_count` — a second call after 15.8's
+    broker has started allocating must not reset that progress back to
+    NOT_SENT/0.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    with transaction.atomic():
+        event = SecurityEvent.objects.select_for_update().get(pk=event.pk)
+        if event.status_code != SecurityEvent.StatusCode.DEMAND:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Запросы Группам можно сгенерировать только из статуса DEMAND.",
+            )
+        totals = {}
+        for demand in event.staffing_demands.all():
+            totals[demand.group] = totals.get(demand.group, 0) + demand.need
+        active_groups = {g.name: g for g in Group.objects.filter(is_active=True)}
+        unmatched_groups = []
+        requests = []
+        for group_name, total_need in totals.items():
+            group = active_groups.get(group_name)
+            if group is None:
+                unmatched_groups.append(group_name)
+                continue
+            request, created = GroupForceRequest.objects.update_or_create(
+                event=event,
+                group=group,
+                defaults={"requested_count": total_need},
+            )
+            if created:
+                request.status = GroupForceRequest.Status.SENT
+                request.save(update_fields=["status", "updated_at"])
+            requests.append(request)
+        record(
+            actor=actor,
+            action="SECURITY_EVENT_FORCE_REQUESTS_GENERATED",
+            entity_type="security_event",
+            entity_id=uuid.UUID(int=event.pk),
+            new_value={
+                "event_id": event.pk,
+                "requested_groups": list(totals.keys()),
+                "unmatched_groups": unmatched_groups,
+            },
+        )
+    return list(event.force_requests.all()), unmatched_groups
