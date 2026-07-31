@@ -841,4 +841,10 @@ severity конфликта занижается ✓, пороги игнори�
 | Ссылки §19.27 (evaluationId, assignmentId, requestId, revision) доезжают до экрана | features/ratings/pages/RatingAuditPage.test.tsx, mocks/handlers.test.ts | Verified (красная проба: `requestId` обнулён) |
 | Исход отказа печатается отлично от успеха, с кодом причины | features/ratings/pages/RatingAuditPage.test.tsx | Verified (красная проба: всё печатается «Выполнено») |
 | **e2e: отправка в одном разделе оставляет след в журнале другого, закрытые значения туда не едут** | e2e-mock/rating-audit.spec.ts | Verified (2 теста) |
+| Уведомления приходят ТОЛЬКО адресату; чужие в ответ не попадают | features/ratings/mocks/repository.test.ts, mocks/handlers.test.ts | Verified (красная проба: отбор по адресату снят) |
+| Уведомление создаётся только после commit; отклонённая отправка его не создаёт | features/ratings/mocks/repository.test.ts | Verified (красная проба: код события подменён) |
+| В уведомлении нет ни значений, ни готового текста — ассерт по всему JSON; формулировка берётся из фиксированного словаря по коду | features/ratings/mocks/repository.test.ts, pages/RatingNotificationsSection.test.tsx | Verified (2 красные пробы: текст в записи; вольная формулировка на экране) |
+| Deep link ведёт на маршрут (не на API-путь) и перепроверяет права | features/ratings/mocks/handlers.test.ts, e2e-mock/rating-notifications.spec.ts | Verified |
+| ⚠️ «Адресат исправления берётся из записи, а не из актора» НЕ покрыт: состояние «автор ≠ исправляющий» в сборке недостижимо (исправление ограничено своей записью), красная проба остаётся зелёной — отказ назван в комментарии теста | features/ratings/mocks/repository.test.ts | N/A с причиной |
+| **e2e: уведомление появляется после commit, ведёт по deep link; без права маршрут отвечает отказом** | e2e-mock/rating-notifications.spec.ts | Verified (2 теста) |
 

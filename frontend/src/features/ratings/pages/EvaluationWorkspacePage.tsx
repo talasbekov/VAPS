@@ -16,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEvaluationWorkspace, useSubmitEvaluation } from '../api/queries'
 import { SubmittedEvaluationCard } from './SubmittedEvaluationCard'
 import { EvaluationConflictNotice } from './EvaluationConflictNotice'
+import { RatingNotificationsSection } from './RatingNotificationsSection'
 import { DIRECTION_LABEL, validateSubmission } from '../lib/workspace'
 import { newIdempotencyKey } from '../lib/idempotency'
 import type { SubmissionField, SubmissionViolation } from '../lib/workspace'
@@ -276,6 +277,10 @@ export function EvaluationWorkspacePage() {
               что работа выполнена, — функция не работает целиком.
             </p>
           )}
+
+          {/* §19.28: уведомления адресованы человеку, поэтому живут там, где он
+              работает, — над очередью, а не отдельным разделом. */}
+          <RatingNotificationsSection />
 
           {data.events.length > 1 && (
             <label className="mb-4 block text-xs font-semibold" htmlFor="workspace-event">

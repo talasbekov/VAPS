@@ -16,6 +16,7 @@ import {
   DYNAMICS_POINTS,
   EVALUATIONS,
   SEED_AUDIT_ENTRIES,
+  SEED_NOTIFICATIONS,
   WORK_ITEMS,
 } from './fixtures'
 
@@ -98,6 +99,7 @@ function seedEnvelope(overrides: SeedOverrides = {}): DemoStateEnvelope {
         corrections: CORRECTIONS.map((item) => ({ ...item })),
         idempotency: [],
         auditEntries: SEED_AUDIT_ENTRIES.map((item) => ({ ...item })),
+        notifications: SEED_NOTIFICATIONS.map((item) => ({ ...item })),
         dynamicsPoints: DYNAMICS_POINTS.map((item) => ({ ...item })),
         capabilities: {
           operationalRatings: overrides.operationalRatings ?? true,
@@ -1255,4 +1257,92 @@ describe('журнал оценивания (§19.27)', () => {
     expect(audit.page).toBe(1)
     expect(audit.total).toBeGreaterThanOrEqual(3)
   })
+})
+
+describe('уведомления оценивания (§19.28)', () => {
+  const SUBMIT = {
+    score: 9,
+    basisCode: 'EXECUTION_OF_DUTIES',
+    basisNote: null,
+    comment: null,
+    revision: 1,
+    idempotencyKey: 'idem-notify-1',
+  }
+
+  it('приходят ТОЛЬКО свои: чужое уведомление в ответ не попадает', async () => {
+    const { repository } = await setup()
+    const mine = await repository.listRatingNotifications(EVALUATOR)
+    expect(mine.results.map((item) => item.id)).toEqual(['rating-notification-1'])
+    const other = await repository.listRatingNotifications(EVALUATOR_WITH_AGGREGATE)
+    expect(other.results.map((item) => item.id)).toEqual(['rating-notification-2'])
+    // Посторонний не получает ничего — и это не пустая лента «пока нет», а
+    // отсутствие адресованных ему записей.
+    expect((await repository.listRatingNotifications(NOBODY)).results).toEqual([])
+  })
+
+  it('уведомление создаётся ПОСЛЕ commit и в той же транзакции', async () => {
+    const { repository } = await setup()
+    const before = (await repository.listRatingNotifications(EVALUATOR)).results.length
+    // Отклонённая отправка уведомления НЕ создаёт: §19.28 «только после commit».
+    await expect(
+      repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+        ...SUBMIT,
+        score: 5,
+        idempotencyKey: 'idem-notify-rejected',
+      }),
+    ).rejects.toMatchObject({ errorCode: 'COMMENT_REQUIRED' })
+    expect((await repository.listRatingNotifications(EVALUATOR)).results).toHaveLength(before)
+
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', SUBMIT)
+    const after = await repository.listRatingNotifications(EVALUATOR)
+    expect(after.results).toHaveLength(before + 1)
+    expect(after.results[0]).toMatchObject({
+      code: 'EVALUATION_SUBMITTED',
+      recipientUserId: EVALUATOR,
+      deepLink: '/ratings/workspace?event=event-1',
+    })
+  })
+
+  it('в уведомлении нет ни текста, ни значений — ВЕСЬ JSON', async () => {
+    const { repository } = await setup()
+    await repository.submitEvaluation(EVALUATOR, 'work-item-1', {
+      ...SUBMIT,
+      score: 4,
+      comment: 'Уход с поста до смены',
+      idempotencyKey: 'idem-notify-secret',
+    })
+    const json = JSON.stringify((await repository.listRatingNotifications(EVALUATOR)).results)
+    expect(json).not.toContain('Уход с поста')
+    expect(json).not.toContain('"score"')
+    // И готового текста тоже нет: подставлять в фиксированную формулировку
+    // экрана нечего, потому что подстановок в ней не предусмотрено.
+    expect(json).not.toContain('Оценивание успешно отправлено')
+  })
+
+  it('уведомление об исправлении адресовано АВТОРУ записи, а не тому, кто нажал', async () => {
+    const { repository } = await setup()
+    await repository.correctEvaluation(EVALUATOR, 'work-item-9', {
+      score: 10,
+      basisCode: 'DISCIPLINE',
+      basisNote: null,
+      comment: null,
+      reason: 'Учтён рапорт',
+      revision: 3,
+      idempotencyKey: 'idem-notify-correct',
+    })
+    const mine = await repository.listRatingNotifications(EVALUATOR)
+    expect(mine.results[0]).toMatchObject({
+      code: 'EVALUATION_CORRECTED',
+      recipientUserId: EVALUATOR,
+    })
+  })
+
+  // ⚠️ НЕ ПОКРЫТО, и это отказ с причиной. «Адресат берётся из записи, а не из
+  // того, кто нажал» на сеяных данных ВАКУУМНО (красная проба с подменой на
+  // актора остаётся зелёной): исправление ограничено СОБСТВЕННОЙ записью, и
+  // автор с актором всегда совпадают. Состояние «автор ≠ исправляющий»
+  // построить принудительно нельзя — оно противоречиво: проекция ответа
+  // (`toSubmittedView`) законно отказывается собирать чужую запись. Свойство
+  // станет проверяемым вместе с sensitive-исправлением §19.21, когда появятся
+  // scope и срок полномочия.
 })

@@ -8,6 +8,7 @@ import {
   EVALUATION_REGISTRY_PATH,
   EVALUATION_WORKSPACE_PATH,
   RATING_AUDIT_PATH,
+  RATING_NOTIFICATIONS_PATH,
   RATING_EMPLOYEE_DETAIL_PATH,
   evaluationCorrectPath,
   evaluationDetailPath,
@@ -18,6 +19,7 @@ import {
 } from './pending-contracts'
 import type {
   RatingAuditResponse,
+  RatingNotificationsResponse,
   EvaluationRegistryResponse,
   RatingEmployeeDetailResponse,
   CorrectEvaluationRequest,
@@ -178,6 +180,17 @@ export function useRatingEmployeeDetail(employeeId: string | null) {
         `${RATING_EMPLOYEE_DETAIL_PATH}?employee=${encodeURIComponent(employeeId ?? '')}`,
       ),
     enabled: employeeId !== null,
+  })
+}
+
+/**
+ * Свои уведомления раздела (§19.28). Отдельного права нет: отбор по адресату и
+ * есть право прочитать — чужие в ответ не попадают.
+ */
+export function useRatingNotifications() {
+  return useQuery<RatingNotificationsResponse, ApiFailure>({
+    queryKey: ['ratings', 'notifications'],
+    queryFn: () => apiClient.get<RatingNotificationsResponse>(RATING_NOTIFICATIONS_PATH),
   })
 }
 
