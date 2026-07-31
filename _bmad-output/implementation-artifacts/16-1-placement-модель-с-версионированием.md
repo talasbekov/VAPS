@@ -4,7 +4,7 @@ baseline_commit: 2f0e3547fb09c367d666b85607095f786990b3ac
 
 # Story 16.1: Placement — модель с версионированием
 
-Status: review
+Status: done
 
 ## Story
 
@@ -75,11 +75,19 @@ so that **черновик→согласование→утверждение (
 
 Реализовано по AC 1-6. `AssignmentVersion` — заголовок версии (FK на `SecurityEvent`, `status` TextChoices+CheckConstraint DRAFT/SUBMITTED/RETURNED/APPROVED, `version`/`is_current` — буквальный паттерн `DailySubmission`: partial-unique `is_current` + unique `(event, version)` + `CheckConstraint(version__gte=1)`). `PlacementAssignment` — построчное назначение (FK на `AssignmentVersion` CASCADE, `employee_id` плоский UUID, `post` FK на `ops_facilities.Post` PROTECT, `acknowledged_at` nullable-заглушка для 16.6, `conflict_severity` blank-заглушка для 16.3 с asymmetric-CHECK — тот же паттерн, что `chk_daily_submission_amended_requires_reason_sanction`). 10 новых тестов, все на реальных DB-уровневых инвариантах (`bulk`-`update()` в обход `full_clean()` — тот же метод, что `test_models.py`'s `SecurityEvent`-тесты). Одна мелкая правка по ходу: первая попытка теста CHECK-constraint использовала значение длиннее `max_length=10` колонки, что упало на `DataError` (усечение varchar) ДО достижения самого CHECK — заменено на короткое невалидное значение, реально изолирующее именно CHECK-инвариант. `make gate` — 3675 passed (было 3665, +10), 0 regressions, no drift.
 
+**3-агентное ревью (Blind Hunter / Edge Case Hunter / Acceptance Auditor) — 1 Medium найден и исправлен, остальное чисто:**
+- **Medium (Blind Hunter статически + Edge Case Hunter живым пробником — оба независимо нашли): отсутствовал `clean()`-гард для `PlacementAssignment.post` vs `version.event.object`, исправлено.** `post` и `version.event.object` — ДВА независимых пути к `Object`, ничто не мешало Посту из ОДНОГО объекта попасть в расстановку СОВСЕМ ДРУГОГО ОМ. Живой пробник Edge Case Hunter подтвердил: назначение с чужим Постом создавалось молча, без ошибки. Это ТОТ ЖЕ класс разрыва, что `Post.clean()`(14.2)/`ChecklistOverride.clean()`(14.3)/`DutyShift.clean()`(14.5) — в кодовой базе `clean()`-гарды на пересекающихся FK добавляются ПРИ введении полей, не откладываются на «сервисную» стори (в отличие от конфликт-детекции/уведомлений, которые эта стори КОРРЕКТНО откладывает на 16.3/16.6). **Исправлено**: добавлен `PlacementAssignment.clean()` буквально по образцу `DutyShift.clean()` — `post.object_id != version.event.object_id` → `ValidationError`. Только `full_clean()`-путь (не `.objects.create()`/`bulk_create()`), тот же ограниченный охват, что у всех трёх прецедентов — будущий сервис (16.2+) обязан вызывать `full_clean()` на пути записи. 2 новых теста (гард отклоняет чужой Пост; гард пропускает Пост того же объекта).
+- Blind Hunter (2 доп. находки, обе Low/некритичные, не изменены): (1) `AssignmentVersion`'s class-докстринг не повторяет явно «сервис обязан флипать `is_current` в той же транзакции» (контракт есть только в комментарии на уровне поля) — минорная асимметрия документации, не функциональный баг. (2) докстринг называет `conflict_severity`'s CHECK «той же формой», что `chk_daily_submission_amended_requires_reason_sanction» — верно на уровне формы (asymmetric-OR с пустой строкой как легальным состоянием), хотя конкретный предикат другой (`__in` vs `__regex`) — докстринг сам это уже хеджирует словом «форма», не «идентичный constraint».
+- Edge Case Hunter (живой прогон): версионный инвариант — race-safe под реальным Postgres; `conflict_severity`-CHECK — точная граница (case-sensitive, `""` ∪ {SOFT, HARD}, ничего шире); ARCH-002/003-boundary тесты (`test_authz_boundary.py`/`test_isolation.py`) — 5/5 passed, флоат-UUID+строковый FK не задевают AST-сканер.
+- Acceptance Auditor: все 6 AC PASS (AC-6 — не мог сам перезапустить `make gate` в общем дереве, доверился заявлению стори — я перезапустил лично, подтверждено); независимо перепроверил премису «схема не зафиксирована в architecture.md» и «DailySubmission-паттерн переиспользован буквально» — обе подтверждены; models-only объём — защитим тем же стандартом, что 15.5a/15.6/15.7a/15.9.
+
+`make gate` (после исправления) — **3677 passed** (было 3675 после dev-story, +2 регресс-теста ревью), 0 regressions, no drift. Status → done.
+
 ### File List
 
-- `Backend/VAPS/apps/operations/events/models.py` (modified — `AssignmentVersion`/`PlacementAssignment`)
+- `Backend/VAPS/apps/operations/events/models.py` (modified — `AssignmentVersion`/`PlacementAssignment` + `clean()`-гард)
 - `Backend/VAPS/apps/operations/events/migrations/0009_assignmentversion_placementassignment_and_more.py` (new)
-- `Backend/VAPS/apps/operations/events/tests/test_placement_model.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/test_placement_model.py` (new, +2 модифицирован ревью)
 
 ## Change Log
 
@@ -87,3 +95,4 @@ so that **черновик→согласование→утверждение (
 |---|---|
 | 2026-08-01 | Story создана (create-story). Epic 15 закрыт, начало Epic 16. Модель+миграция only — тот же паттерн, что 15.5a/15.6/15.7a/15.9. Версионирование — буквальный образец `DailySubmission` (ARCH-DATA-021/025), НЕ `duties`-app паттерн. |
 | 2026-08-01 | Dev-story: `AssignmentVersion`+`PlacementAssignment`-модели+миграция. 10 новых DB-уровневых тестов. `make gate` — 3675 passed. Status → review. |
+| 2026-08-01 | 3-агентное ревью: 1 Medium исправлен (отсутствовал `clean()`-гард `post` vs `version.event.object` — та же практика, что `Post`/`ChecklistOverride`/`DutyShift`, добавлена при введении полей). 2 новых регресс-теста. `make gate` — 3677 passed, 0 regressions. Status → done. |

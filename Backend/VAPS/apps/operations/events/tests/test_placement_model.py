@@ -2,7 +2,10 @@
 invariant proofs (versioning per DailySubmission's pattern, DB-level
 CheckConstraints proven via bulk update() which bypasses full_clean())."""
 
+import uuid
+
 import pytest
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
 from apps.operations.events.models import (
@@ -91,7 +94,6 @@ def test_placement_assignment_creates_with_blank_conflict_severity():
         event=event, status=AssignmentVersion.Status.DRAFT
     )
     post = make_post(event)
-    import uuid
 
     assignment = PlacementAssignment.objects.create(
         version=version, employee_id=uuid.uuid4(), post=post
@@ -106,7 +108,6 @@ def test_placement_assignment_conflict_severity_check_constraint():
         event=event, status=AssignmentVersion.Status.DRAFT
     )
     post = make_post(event)
-    import uuid
 
     assignment = PlacementAssignment.objects.create(
         version=version, employee_id=uuid.uuid4(), post=post
@@ -123,7 +124,6 @@ def test_post_protected_from_deletion_when_referenced():
         event=event, status=AssignmentVersion.Status.DRAFT
     )
     post = make_post(event)
-    import uuid
 
     PlacementAssignment.objects.create(
         version=version, employee_id=uuid.uuid4(), post=post
@@ -140,10 +140,45 @@ def test_version_cascade_deletes_its_assignments():
         event=event, status=AssignmentVersion.Status.DRAFT
     )
     post = make_post(event)
-    import uuid
 
     PlacementAssignment.objects.create(
         version=version, employee_id=uuid.uuid4(), post=post
     )
     version.delete()
     assert PlacementAssignment.objects.count() == 0
+
+
+def test_clean_rejects_post_from_a_different_object():
+    """Review finding (Blind Hunter/Edge Case Hunter): a Post belonging to
+    a DIFFERENT Object than the AssignmentVersion's event must be rejected
+    by full_clean() — same cross-FK guard class as Post.clean()/
+    ChecklistOverride.clean()/DutyShift.clean(). `.objects.create()` alone
+    does NOT call full_clean() (Django convention) — this proves the
+    validation exists at the model level for a future service to invoke."""
+    event = make_event("OBJ-PLACEMENT-11")
+    other_obj = FacilityObject.objects.create(
+        code="OBJ-PLACEMENT-11-OTHER", name="Другой штаб", address="г. Астана"
+    )
+    foreign_post = Post.objects.create(
+        object=other_obj, code="FOREIGN-POST", name="Чужой пост"
+    )
+    version = AssignmentVersion.objects.create(
+        event=event, status=AssignmentVersion.Status.DRAFT
+    )
+    assignment = PlacementAssignment(
+        version=version, employee_id=uuid.uuid4(), post=foreign_post
+    )
+    with pytest.raises(ValidationError):
+        assignment.full_clean()
+
+
+def test_clean_accepts_post_from_the_same_object():
+    event = make_event("OBJ-PLACEMENT-12")
+    post = make_post(event, code="POST-12")
+    version = AssignmentVersion.objects.create(
+        event=event, status=AssignmentVersion.Status.DRAFT
+    )
+    assignment = PlacementAssignment(
+        version=version, employee_id=uuid.uuid4(), post=post
+    )
+    assignment.full_clean()  # must not raise

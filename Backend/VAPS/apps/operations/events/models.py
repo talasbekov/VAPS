@@ -27,6 +27,7 @@ Scope (15.1): models + migration ONLY — без API/services/RBAC, буквал
 реальный FK, 14.1's Scope Decision) — НЕ эта стори, эта стори её не строит.
 """
 
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.operations.models import TimeStampedModel
@@ -433,6 +434,16 @@ class PlacementAssignment(TimeStampedModel):
     намеренно), а `PlacementAssignment` — концепт СТАДИИ PLACEMENT,
     структурно другой уровень цикла ОМ; hard-block (если появится) —
     предмет Story 16.3, не изобретается здесь.
+
+    `clean()` (найдено ревью, Blind Hunter/Edge Case Hunter — тот же
+    класс разрыва, что `Post.clean()`(14.2)/`ChecklistOverride.clean()`
+    (14.3)/`DutyShift.clean()`(14.5): `post` и `version.event.object` —
+    ДВА независимых пути к `Object`, ничто без гарда не мешает Посту из
+    ОДНОГО объекта попасть в расстановку СОВСЕМ ДРУГОГО ОМ). Проверено
+    живым пробником: без гарда назначение с чужим Постом создавалось
+    молча. Как и у `DutyShift.clean()` — только `full_clean()`-путь, не
+    `.objects.create()`/`bulk_create()`; будущий сервис (16.2+) обязан
+    вызывать `full_clean()` на пути записи.
     """
 
     class ConflictSeverity(models.TextChoices):
@@ -475,3 +486,19 @@ class PlacementAssignment(TimeStampedModel):
 
     def __str__(self):
         return f"{self.employee_id} -> {self.post_id} (v{self.version_id})"
+
+    def clean(self):
+        super().clean()
+        if (
+            self.post_id
+            and self.version_id
+            and self.post.object_id != self.version.event.object_id
+        ):
+            raise ValidationError(
+                {
+                    "post": (
+                        "Пост должен принадлежать тому же объекту, что и "
+                        "событие версии расстановки."
+                    )
+                }
+            )
