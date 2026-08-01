@@ -74,11 +74,17 @@ class SecurityEvent(TimeStampedModel):
     # without knowing WHEN this event happens. Nullable: retrofit onto an
     # already-shipped Epic 15 model, so existing/in-flight rows and any
     # workflow step that hasn't set them yet stay valid. The interval
-    # belongs to the EVENT, not each individual PlacementAssignment — every
-    # assignment in one ОМ shares the same planned window (confirmed with
-    # Bratan directly, not an autonomous PROVISIONAL call — this is a
-    # structural gap in a closed epic, not an open numeric/interpretive
-    # question).
+    # belongs to the EVENT, not each individual PlacementAssignment
+    # (confirmed with Bratan directly, not an autonomous PROVISIONAL call —
+    # this is a structural gap in a closed epic, not an open numeric/
+    # interpretive question). "Every assignment in one ОМ shares the same
+    # planned window" is a v1 APPROXIMATION, not a verified fact (review,
+    # Acceptance Auditor): a post staffed only for a sub-slot within a
+    # longer event would, under this model, be checked for rest/double-
+    # assignment conflicts against the FULL event window — conservative
+    # (never under-flags) but can false-positive on real sub-event timing.
+    # Whichever story builds the rest/double-assignment checks (16.3b+)
+    # should treat this as an open question, not inherit it as settled.
     starts_at = models.DateTimeField(null=True, blank=True)
     ends_at = models.DateTimeField(null=True, blank=True)
 
