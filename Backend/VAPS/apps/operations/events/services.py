@@ -635,12 +635,19 @@ def _post_requirement_conflicts(post, profile):
     # the requirements JSON explicitly opts into the restriction — matches
     # error-codes.yaml's own "...при allow_overqualification=false"
     # phrasing (an opt-in restriction, not an opt-out).
+    #
+    # Review finding (Edge Case Hunter, live-confirmed): `Post.requirements`
+    # is unvalidated client JSON — `allow_overqualification: 0` (int, not
+    # bool `false`) previously slipped past an `is False` identity check
+    # (`0 is False` is False in Python) and was silently treated as
+    # permissive. `in (False, 0)` catches both without touching the
+    # permissive default for any other truthy/absent value.
     allow_overqualification = requirements.get("allow_overqualification", True)
     if (
         isinstance(max_rank_index, (int, float))
         and rank_index is not None
         and rank_index > max_rank_index
-        and allow_overqualification is False
+        and allow_overqualification in (False, 0)
     ):
         codes.append("OVERQUALIFICATION_DETECTED")
 

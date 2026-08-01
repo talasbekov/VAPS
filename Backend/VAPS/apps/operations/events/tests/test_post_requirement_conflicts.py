@@ -140,6 +140,25 @@ def test_overqualification_flagged_when_explicitly_disallowed(division):
     assert "OVERQUALIFICATION_DETECTED" in assignment.conflict_codes
 
 
+def test_overqualification_flagged_when_disallowed_via_int_zero(division):
+    """Review finding (Edge Case Hunter, live-confirmed): unvalidated JSON
+    from a client could send `0` instead of `false` — `0 is False` is
+    False in Python, so an identity-only check silently ignored this and
+    treated it as permissive. Must be treated the same as bool `False`."""
+    event = make_event("OBJ-POSTREQ-6B")
+    employee = make_employee(division, "900101300613", rank_index=9)
+    post = make_post(
+        event,
+        requirements={"max_rank_index": 5, "allow_overqualification": 0},
+    )
+    version, assignment = make_assignment(event, employee, post)
+
+    detect_placement_conflicts(version)
+
+    assignment.refresh_from_db()
+    assert "OVERQUALIFICATION_DETECTED" in assignment.conflict_codes
+
+
 def test_overqualification_not_flagged_by_default(division):
     event = make_event("OBJ-POSTREQ-7")
     employee = make_employee(division, "900101300606", rank_index=9)
@@ -166,6 +185,33 @@ def test_position_code_not_in_required_list(division):
 
     assignment.refresh_from_db()
     assert "POST_REQUIREMENT_MISMATCH_CONFLICT" in assignment.conflict_codes
+
+
+def test_orphan_employee_id_skips_post_requirement_check_without_crashing(division):
+    """Review finding (Blind Hunter, confirmed live by Edge Case Hunter):
+    a PlacementAssignment.employee_id with no matching core.Employee row
+    (employee_id is a bare UUIDField, never FK'd — reachable in practice
+    via form_draft_placement()'s 16.2 copy of SecurityEventDirectAssignment,
+    which itself validates nothing against core.Employee, "система
+    пассивна" by 15.9's own design) must not crash the whole conflict
+    scan — the post-requirement check is skipped for that row entirely,
+    same "absent data, no invented assumption" principle as everywhere
+    else in this detector, just at row level instead of field level."""
+    import uuid
+
+    event = make_event("OBJ-POSTREQ-9B")
+    post = make_post(event, requires_weapon=True)
+    version = AssignmentVersion.objects.create(
+        event=event, status=AssignmentVersion.Status.DRAFT
+    )
+    assignment = PlacementAssignment.objects.create(
+        version=version, employee_id=uuid.uuid4(), post=post
+    )
+
+    detect_placement_conflicts(version)  # must not raise
+
+    assignment.refresh_from_db()
+    assert assignment.conflict_codes == []
 
 
 def test_missing_weapon_permit_is_mismatch(division):
