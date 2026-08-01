@@ -406,6 +406,14 @@ class AssignmentVersion(TimeStampedModel):
     # guarantees at most one current per event — same "ровно одна
     # текущая" contract as DailySubmission's is_current.
     is_current = models.BooleanField(default=True)
+    # Story 16.4 (FR-26): "hash-ready заглушка ЭЦП" — architecture.md
+    # itself defers REAL digital signing to MVP-2 ("Честно отложены: ЭЦП
+    # (OQ-1, hash-заглушка)"). No cryptographic/PKI precedent exists
+    # anywhere in this codebase — this is a plain hashlib.sha256() digest
+    # of the version's PlacementAssignment rows, computed once on
+    # approval, an honest stub rather than a fake integration. Blank
+    # until approved.
+    signature_hash = models.CharField(max_length=64, blank=True)
 
     class Meta:
         db_table = "ops_assignment_versions"

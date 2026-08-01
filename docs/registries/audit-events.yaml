@@ -314,6 +314,21 @@ actions:
     description: "Авто-формирование ЧЕРНОВОЙ версии Расстановки из физнаряда (SecurityEventDirectAssignment) — entity_id=uuid.UUID(int=version.pk) (operations — integer PK). new_value несёт matched_count/unmatched_count/unmatched (список нерезолвленных постов). Первая аудит-запись Epic 16."
     provenance: derived-from-mutation
     source: "epics.md FR-26; Story 16.2"
+  ASSIGNMENT_VERSION_SUBMITTED:
+    entity_type: assignment_version
+    description: "Черновая версия Расстановки подана на согласование (DRAFT→SUBMITTED) — только на реальном переходе, не на идемпотентном повторе."
+    provenance: derived-from-mutation
+    source: "epics.md FR-26; Story 16.4"
+  ASSIGNMENT_VERSION_RETURNED:
+    entity_type: assignment_version
+    description: "Версия возвращена на доработку (SUBMITTED→RETURNED) — терминально для этой версии; new_value несёт reason и id новой созданной DRAFT-версии (flip-before-insert, тот же паттерн, что amend_day)."
+    provenance: derived-from-mutation
+    source: "epics.md FR-26; Story 16.4"
+  ASSIGNMENT_VERSION_APPROVED:
+    entity_type: assignment_version
+    description: "Версия утверждена (SUBMITTED→APPROVED), один approver — только на реальном переходе. new_value несёт signature_hash (hash-ready заглушка ЭЦП — architecture.md откладывает реальное ЭЦП на MVP-2) и override/override_reason, если утверждение прошло несмотря на конфликты (SOFT_CONFLICT_DETECTED)."
+    provenance: derived-from-mutation
+    source: "epics.md FR-26; Story 16.4"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

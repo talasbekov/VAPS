@@ -17,6 +17,8 @@ BULLETIN is a no-op (200, no duplicate audit row) — mirrors
 """
 
 import datetime
+import hashlib
+import json
 import uuid
 
 from django.conf import settings
@@ -804,3 +806,182 @@ def detect_placement_conflicts(version):
         touched.append(assignment)
 
     return touched
+
+
+def submit_assignment_version(version, *, actor):
+    """Story 16.4 (FR-26): `DRAFT`->`SUBMITTED`. Idempotent replay on
+    already-`SUBMITTED` (no-op, no duplicate audit) — same shape as
+    `issue_bulletin()`. Strict `DRAFT`-only source; any other status is a
+    real state conflict (`INVALID_LIFECYCLE_TRANSITION`, 422), reusing the
+    generic registry code already established across 15.2b/15.3c for the
+    same class of guard.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    with transaction.atomic():
+        version = AssignmentVersion.objects.select_for_update().get(pk=version.pk)
+        if version.status == AssignmentVersion.Status.SUBMITTED:
+            return version
+        if version.status != AssignmentVersion.Status.DRAFT:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Подать на согласование можно только черновик.",
+            )
+        version.status = AssignmentVersion.Status.SUBMITTED
+        version.save(update_fields=["status", "updated_at"])
+        record(
+            actor=actor,
+            action="ASSIGNMENT_VERSION_SUBMITTED",
+            entity_type="assignment_version",
+            entity_id=uuid.UUID(int=version.pk),
+            new_value={"event_id": version.event_id, "status": version.status},
+        )
+    return version
+
+
+def return_assignment_version(version, *, actor, reason):
+    """Story 16.4 (FR-26): `SUBMITTED`->`RETURNED` — NOT an in-place
+    mutation (`AssignmentVersion`'s own docstring, 16.1, states versions
+    are immutable per `DailySubmission`'s pattern). `RETURNED` is a
+    terminal lifecycle status on the CURRENT row (flipping `status` is a
+    lifecycle fact, not editing the row's assignment content); the row
+    then flips `is_current=False` and a NEW `DRAFT` row (`version+1`) is
+    INSERTED, copying every `PlacementAssignment` of the returned version
+    so the planner revises a real starting point, not a blank slate.
+    Literal reuse of `amend_day()`'s (`apps.operations.submissions`)
+    flip-before-insert ordering: the partial-unique `is_current` guard
+    would reject inserting the new current row before the old one clears.
+
+    `reason` is required non-blank — same "material change needs
+    justification" convention as `amend_day()`'s own `reason`/`sanction`
+    guard, not invented fresh here.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    if not (reason or "").strip():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"field": "reason"},
+            message="Причина возврата обязательна.",
+        )
+    reason = reason.strip()
+    with transaction.atomic():
+        version = AssignmentVersion.objects.select_for_update().get(pk=version.pk)
+        if version.status != AssignmentVersion.Status.SUBMITTED:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Вернуть на доработку можно только поданную версию.",
+            )
+        version.status = AssignmentVersion.Status.RETURNED
+        version.is_current = False
+        version.save(update_fields=["status", "is_current", "updated_at"])
+
+        new_version = AssignmentVersion.objects.create(
+            event=version.event,
+            status=AssignmentVersion.Status.DRAFT,
+            version=version.version + 1,
+            is_current=True,
+        )
+        PlacementAssignment.objects.bulk_create(
+            [
+                PlacementAssignment(
+                    version=new_version,
+                    employee_id=a.employee_id,
+                    post_id=a.post_id,
+                )
+                for a in version.assignments.all()
+            ]
+        )
+        record(
+            actor=actor,
+            action="ASSIGNMENT_VERSION_RETURNED",
+            entity_type="assignment_version",
+            entity_id=uuid.UUID(int=version.pk),
+            new_value={
+                "event_id": version.event_id,
+                "reason": reason,
+                "new_draft_version_id": new_version.pk,
+            },
+        )
+    return version, new_version
+
+
+def approve_assignment_version(version, *, actor, override=False, override_reason=""):
+    """Story 16.4 (FR-26): `SUBMITTED`->`APPROVED`, single approver
+    (literal reuse of `approve_duty_plan()`'s idempotent single-actor
+    shape — NOT 15.3c's dual-control, a bespoke pattern the epics.md text
+    itself never asks 16.4 to repeat: this story is explicitly
+    "one-approver").
+
+    Re-runs `detect_placement_conflicts()` FRESH before checking (never
+    trusts a possibly-stale prior recompute — the draft could have been
+    edited since the last scan). Both 16.3b's and 16.3c's conflict types
+    are fixed-SOFT (`error-codes.yaml`'s `SOFT_CONFLICT_DETECTED`,
+    overridable) — reuses the SAME `override`/`override_reason` guard
+    shape as `apps.operations.statuses.services.status_service`, not a
+    bespoke gate for this app.
+
+    On a real transition, computes `signature_hash` — a plain
+    `hashlib.sha256()` digest of the version's `(employee_id, post_id)`
+    pairs, ordered by `id` for determinism. This is the "hash-ready
+    заглушка ЭЦП": architecture.md itself defers REAL digital signing to
+    MVP-2 — no PKI/external signing call belongs here.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    if override and not (override_reason or "").strip():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"field": "override_reason"},
+            message="override_reason обязателен при override=True.",
+        )
+    with transaction.atomic():
+        version = AssignmentVersion.objects.select_for_update().get(pk=version.pk)
+        if version.status == AssignmentVersion.Status.APPROVED:
+            return version
+        if version.status != AssignmentVersion.Status.SUBMITTED:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Утвердить можно только поданную на согласование версию.",
+            )
+
+        detect_placement_conflicts(version)
+        has_conflicts = version.assignments.exclude(conflict_severity="").exists()
+        if has_conflicts and not (override and (override_reason or "").strip()):
+            raise DomainError(
+                "SOFT_CONFLICT_DETECTED",
+                409,
+                overridable=True,
+                message="В версии есть непросмотренные конфликты назначений.",
+            )
+
+        pairs = list(
+            version.assignments.order_by("id").values_list("employee_id", "post_id")
+        )
+        digest_input = json.dumps(
+            [[str(employee_id), post_id] for employee_id, post_id in pairs],
+            separators=(",", ":"),
+        )
+        signature_hash = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()
+
+        version.status = AssignmentVersion.Status.APPROVED
+        version.signature_hash = signature_hash
+        version.save(update_fields=["status", "signature_hash", "updated_at"])
+        record(
+            actor=actor,
+            action="ASSIGNMENT_VERSION_APPROVED",
+            entity_type="assignment_version",
+            entity_id=uuid.UUID(int=version.pk),
+            new_value={
+                "event_id": version.event_id,
+                "signature_hash": signature_hash,
+                "override": override,
+                "override_reason": override_reason if override else "",
+            },
+        )
+    return version
