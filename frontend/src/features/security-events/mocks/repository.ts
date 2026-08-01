@@ -610,6 +610,49 @@ export function createSecurityEventsRepository(
     return updated
   }
 
+  /**
+   * Завершение бюллетеня — переход BULLETIN → RECON. Живой прогон Этапа 72
+   * (провал ручного теста) показал: перехода не существовало ВОВСЕ — свежее
+   * мероприятие навсегда застревало на этапе 1, а подпись «Что дальше»
+   * обещала рекогносцировку, к которой не вела ни одна операция.
+   */
+  async function completeBulletin(
+    id: string,
+    actorUserId: string | null,
+  ): Promise<SecurityEvent> {
+    if (!hasPermission(actorUserId, BULLETIN_PERMISSION)) {
+      throw new RepositoryPermissionError(BULLETIN_PERMISSION)
+    }
+    let updated!: SecurityEvent
+    await runMutation(adapter, clock, (current) => {
+      const slice = readSlice(current)
+      const existing = slice.events.find((e) => e.id === id)
+      if (existing === undefined) {
+        throw new RepositoryNotFoundError(id)
+      }
+      if (existing.stage !== 'BULLETIN') {
+        throw new RepositoryBusinessRuleError(
+          'INVALID_STAGE_TRANSITION',
+          'Бюллетень можно завершить только на этапе «Бюллетень».',
+        )
+      }
+      // Пустой бюллетень не завершается: следующему этапу не с чем работать —
+      // рекогносцировка отталкивается от задач направлениям.
+      if (existing.briefDescription.trim() === '' || existing.initialTasks.trim() === '') {
+        throw new RepositoryBusinessRuleError(
+          'BULLETIN_INCOMPLETE',
+          'Заполните и сохраните описание и первичные задачи, прежде чем завершать этап.',
+        )
+      }
+      updated = { ...existing, stage: 'RECON', updatedAt: clock.now() }
+      return commitEvents(
+        current,
+        slice.events.map((e) => (e.id === id ? updated : e)),
+      )
+    })
+    return updated
+  }
+
   async function completeRecon(
     id: string,
     actorUserId: string | null,
@@ -1401,6 +1444,7 @@ export function createSecurityEventsRepository(
     listBindableObjects,
     getPassportView,
     updateBulletin,
+    completeBulletin,
     updateRecon,
     importReconPostsFromPassport,
     completeRecon,

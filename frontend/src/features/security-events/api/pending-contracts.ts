@@ -92,6 +92,7 @@ export interface UpdateBulletinRequest extends Record<string, unknown> {
 }
 
 export type UpdateBulletinResponse = SecurityEvent
+export type CompleteBulletinResponse = SecurityEvent
 
 export interface UpdateReconRequest extends Record<string, unknown> {
   checklist: ReconChecklistItem[]
@@ -103,6 +104,11 @@ export type CompleteReconResponse = SecurityEvent
 
 export function securityEventDetailPath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/`
+}
+
+/** Этап 72: переход BULLETIN → RECON — своя операция, как у остальных стадий. */
+export function securityEventBulletinCompletePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/bulletin/complete/`
 }
 
 export function securityEventBulletinPath(id: string): string {

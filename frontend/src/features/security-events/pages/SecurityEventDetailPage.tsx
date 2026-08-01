@@ -21,6 +21,7 @@ import {
   useAssignPlacement,
   useCloseSecurityEvent,
   useCompleteAcknowledgement,
+  useCompleteBulletin,
   useCompleteForces,
   useCompletePlacement,
   useCompleteRecon,
@@ -162,6 +163,43 @@ export function SecurityEventDetailPage() {
  * опубликованной версии на дату нет, версия устарела. Молчание здесь читалось
  * бы как «привязка есть, просто её не показали».
  */
+/**
+ * Переход BULLETIN → RECON (Этап 72). Живой прогон провала ручного теста
+ * показал: перехода не существовало вовсе — свежесозданное мероприятие
+ * навсегда застревало на этапе 1, а «Что дальше» обещало этап, к которому не
+ * вела ни одна операция. Готовность бюллетеня проверяет СЕРВЕР: пустой не
+ * завершается (422 BULLETIN_INCOMPLETE), и причина печатается словами.
+ */
+function CompleteBulletinSection({ event }: { event: SecurityEvent }) {
+  const completeMutation = useCompleteBulletin(event.id)
+  const filled = event.briefDescription.trim() !== '' && event.initialTasks.trim() !== ''
+  return (
+    <section className="mt-3.5 rounded-xl border bg-card p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          {filled
+            ? 'Бюллетень сохранён — можно переходить к рекогносцировке.'
+            : 'Заполните и сохраните описание и первичные задачи, чтобы завершить этап.'}
+        </p>
+        <Button
+          type="button"
+          disabled={completeMutation.isPending}
+          onClick={() => completeMutation.mutate({})}
+        >
+          {completeMutation.isPending ? 'Переход…' : 'Завершить этап и начать рекогносцировку'}
+        </Button>
+      </div>
+      {completeMutation.error !== null && (
+        <p className="mt-2 text-sm text-destructive" role="alert">
+          {completeMutation.error instanceof ApiError
+            ? completeMutation.error.message
+            : 'Не удалось завершить этап.'}
+        </p>
+      )}
+    </section>
+  )
+}
+
 function PassportBindingBar({ eventId }: { eventId: string }) {
   const query = useSecurityEventPassport(eventId)
   if (query.isPending || query.isError || query.data === undefined) {
@@ -224,6 +262,7 @@ function StageContent({ event }: { event: SecurityEvent }) {
             </p>
           </aside>
         </div>
+        <CompleteBulletinSection event={event} />
       </>
     )
   }

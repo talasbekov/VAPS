@@ -14,6 +14,7 @@ import {
   securityEventAcknowledgementCompletePath,
   securityEventApprovalApprovePath,
   securityEventApprovalReturnPath,
+  securityEventBulletinCompletePath,
   securityEventBulletinPath,
   securityEventClosePath,
   securityEventDemandApprovePath,
@@ -32,6 +33,7 @@ import {
   securityEventReplaceAssignmentPath,
 } from './pending-contracts'
 import type {
+  CompleteBulletinResponse,
   AcknowledgePlacementResponse,
   AddJournalEntryRequest,
   AddJournalEntryResponse,
@@ -147,6 +149,19 @@ export function useUpdateBulletin(id: string) {
   return useApiMutation<UpdateBulletinResponse, UpdateBulletinRequest>({
     mutationFn: (body) =>
       apiClient.patch<UpdateBulletinResponse>(securityEventBulletinPath(id), body),
+    onSuccess: (data) => {
+      queryClient.setQueryData(securityEventKeys.detail(id), data)
+      void queryClient.invalidateQueries({ queryKey: securityEventKeys.lists() })
+    },
+  })
+}
+
+/** Этап 72: завершение бюллетеня — переход BULLETIN → RECON. */
+export function useCompleteBulletin(id: string) {
+  const queryClient = useQueryClient()
+  return useApiMutation<CompleteBulletinResponse, Record<string, never>>({
+    mutationFn: () =>
+      apiClient.post<CompleteBulletinResponse>(securityEventBulletinCompletePath(id), {}),
     onSuccess: (data) => {
       queryClient.setQueryData(securityEventKeys.detail(id), data)
       void queryClient.invalidateQueries({ queryKey: securityEventKeys.lists() })

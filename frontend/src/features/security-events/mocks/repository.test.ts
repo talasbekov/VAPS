@@ -1540,3 +1540,73 @@ describe('рейтинг при расстановке §19.24 (soft warning + �
     expect(row.aggregateRating).toBeNull()
   })
 })
+
+describe('завершение бюллетеня — переход BULLETIN → RECON (Этап 72)', () => {
+  beforeEach(() => {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.security_event.view'] },
+      {
+        userId: CREATOR,
+        permissions: ['ops.security_event.view', 'ops.security_event.create', 'ops.bulletin.manage'],
+      },
+    ])
+  })
+
+  const FILLED = {
+    ...SAMPLE_EVENT,
+    id: 'evt-bulletin-filled',
+    briefDescription: 'Описание готово',
+    initialTasks: 'Задачи направлениям поставлены',
+  }
+
+  it('требует ops.bulletin.manage', async () => {
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([FILLED]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    await expect(repo.completeBulletin(FILLED.id, VIEWER)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('пустой бюллетень не завершается — 422 BULLETIN_INCOMPLETE, стадия не движется', async () => {
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([SAMPLE_EVENT]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    const error: unknown = await repo.completeBulletin(SAMPLE_EVENT.id, CREATOR).then(
+      () => null,
+      (e: unknown) => e,
+    )
+    expect(error).toBeInstanceOf(RepositoryBusinessRuleError)
+    expect((error as RepositoryBusinessRuleError).errorCode).toBe('BULLETIN_INCOMPLETE')
+    const reread = await repo.get(SAMPLE_EVENT.id, VIEWER)
+    expect(reread.stage).toBe('BULLETIN')
+  })
+
+  it('заполненный бюллетень завершается: RECON персистентно + запись журнала переходов', async () => {
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([FILLED]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    const updated = await repo.completeBulletin(FILLED.id, CREATOR)
+    expect(updated.stage).toBe('RECON')
+    const envelope = await adapter.load()
+    const slice = envelope?.slices['security-events'] as SecurityEventsSlice
+    expect(slice.events.find((e) => e.id === FILLED.id)?.stage).toBe('RECON')
+    // Переход записан диффом commitEvents — операция о журнале не знает.
+    const transition = (slice.transitions ?? []).find(
+      (t) => t.eventId === FILLED.id && t.toStage === 'RECON',
+    )
+    expect(transition?.fromStage).toBe('BULLETIN')
+    expect(transition?.kind).toBe('FORWARD')
+  })
+
+  it('не на стадии «Бюллетень» переход отвергается своим кодом', async () => {
+    const adapter = createMemoryPersistence()
+    await adapter.reset(seedEnvelope([{ ...FILLED, id: 'evt-recon-now', stage: 'RECON' }]))
+    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    const error: unknown = await repo.completeBulletin('evt-recon-now', CREATOR).then(
+      () => null,
+      (e: unknown) => e,
+    )
+    expect((error as RepositoryBusinessRuleError).errorCode).toBe('INVALID_STAGE_TRANSITION')
+  })
+})

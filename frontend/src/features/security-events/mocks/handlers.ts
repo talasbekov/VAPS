@@ -308,6 +308,20 @@ export function createSecurityEventsHandlers(
       }
     }),
 
+    // Этап 72: переход BULLETIN → RECON. ⚠️ ПОРЯДОК: обязан стоять ДО PATCH
+    // bulletin/ — msw отдал бы совпавший путь первому handler'у.
+    http.post(`*${SECURITY_EVENTS_PATH}:id/bulletin/complete/`, async ({ request, params }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      const id = String(params.id)
+      try {
+        const updated = await repository.completeBulletin(id, actorUserId)
+        return HttpResponse.json(updated)
+      } catch (error) {
+        const mapped = mapRepositoryError(error, clock, id)
+        if (mapped) return mapped
+        throw error
+      }
+    }),
     http.patch(`*${SECURITY_EVENTS_PATH}:id/bulletin/`, async ({ request, params }) => {
       const actorUserId = request.headers.get('X-User-Id')
       const id = String(params.id)
