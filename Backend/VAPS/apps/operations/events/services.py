@@ -602,12 +602,24 @@ def detect_placement_conflicts(version):
     hard-block status" check would be broader than this story's own title
     and isn't built here).
 
-    Double-assignment is checked at EVENT granularity (16.3a's flagged v1
-    approximation): the SAME `employee_id` in another CURRENT version whose
-    event's `[starts_at, ends_at)` overlaps this version's event window.
-    Either side missing a schedule makes the overlap UNDETERMINABLE — such
-    pairs are skipped, never treated as conflict-free NOR conflicted (no
-    invented assumption from absent data).
+    Double-assignment has TWO independent sources, both checked (review
+    finding, Blind Hunter — the first cut only checked the cross-version
+    source, leaving a same-version duplicate structurally invisible since
+    `.exclude(version_id=version.pk)` drops the whole current version,
+    including any OTHER row in it):
+    (a) intra-version — the SAME `employee_id` appears on 2+ rows of THIS
+        version (e.g. `form_draft_placement()`, 16.2, copies
+        `SecurityEventDirectAssignment` rows 1:1 with no employee dedup,
+        and that model's own docstring states it deliberately carries no
+        uniqueness guard). Unambiguous — both rows are the SAME event, no
+        schedule needed to know they clash.
+    (b) cross-version — the SAME `employee_id` in another CURRENT version
+        whose event's `[starts_at, ends_at)` overlaps this version's event
+        window (16.3a's flagged v1 approximation: event granularity, not
+        per-assignment). Either side missing a schedule makes the overlap
+        UNDETERMINABLE — such pairs are skipped, never treated as
+        conflict-free NOR conflicted (no invented assumption from absent
+        data).
 
     Rest-violation reuses `duties.services._to_date_range()` verbatim (the
     same review-hardened local-timezone conversion `validate_duty_plan()`
@@ -621,34 +633,47 @@ def detect_placement_conflicts(version):
     event = version.event
     event_has_schedule = bool(event.starts_at and event.ends_at)
 
+    employee_ids = [a.employee_id for a in assignments]
+    intra_version_duplicates = {
+        employee_id
+        for employee_id in employee_ids
+        if employee_ids.count(employee_id) > 1
+    }
+
     other_current_assignments = list(
         PlacementAssignment.objects.filter(
             version__is_current=True,
-            employee_id__in={a.employee_id for a in assignments},
+            employee_id__in=set(employee_ids),
         )
         .exclude(version_id=version.pk)
         .select_related("version__event")
     )
 
+    if event_has_schedule:
+        event_start, event_end = _to_date_range(event.starts_at, event.ends_at)
+
     touched = []
     for assignment in assignments:
         codes = []
 
-        if event_has_schedule:
-            for other in other_current_assignments:
-                if other.employee_id != assignment.employee_id:
-                    continue
-                other_event = other.version.event
-                if not (other_event.starts_at and other_event.ends_at):
-                    continue
-                if (
-                    event.starts_at < other_event.ends_at
-                    and event.ends_at > other_event.starts_at
-                ):
-                    codes.append("DOUBLE_ASSIGNMENT_CONFLICT")
-                    break
+        if assignment.employee_id in intra_version_duplicates:
+            codes.append("DOUBLE_ASSIGNMENT_CONFLICT")
 
-            event_start, event_end = _to_date_range(event.starts_at, event.ends_at)
+        if event_has_schedule:
+            if "DOUBLE_ASSIGNMENT_CONFLICT" not in codes:
+                for other in other_current_assignments:
+                    if other.employee_id != assignment.employee_id:
+                        continue
+                    other_event = other.version.event
+                    if not (other_event.starts_at and other_event.ends_at):
+                        continue
+                    if (
+                        event.starts_at < other_event.ends_at
+                        and event.ends_at > other_event.starts_at
+                    ):
+                        codes.append("DOUBLE_ASSIGNMENT_CONFLICT")
+                        break
+
             has_rest_conflict = EmployeeStatus.objects.filter(
                 employee_id=assignment.employee_id,
                 status_type_code="REST_AFTER_DUTY",

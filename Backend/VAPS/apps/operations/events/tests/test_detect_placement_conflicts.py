@@ -73,6 +73,36 @@ def test_double_assignment_detected_across_overlapping_events(db):
     assert assignment_a.conflict_severity == "SOFT"
 
 
+def test_same_version_duplicate_employee_is_flagged(db):
+    """Review finding (Blind Hunter, HIGH): a single employee assigned
+    twice within the SAME version (e.g. two different posts) was
+    structurally invisible to the double-assignment check — the
+    cross-version query excludes the whole current version, including
+    other rows of it. No schedule needed: two rows in ONE version are the
+    SAME event by construction."""
+    employee_id = uuid.uuid4()
+    event = make_event("OBJ-CONFLICT-2C")  # no schedule at all
+    post_a = Post.objects.create(object=event.object, code="POST-A", name="A")
+    post_b = Post.objects.create(object=event.object, code="POST-B", name="B")
+    version = AssignmentVersion.objects.create(
+        event=event, status=AssignmentVersion.Status.DRAFT
+    )
+    assignment_a = PlacementAssignment.objects.create(
+        version=version, employee_id=employee_id, post=post_a
+    )
+    assignment_b = PlacementAssignment.objects.create(
+        version=version, employee_id=employee_id, post=post_b
+    )
+
+    detect_placement_conflicts(version)
+
+    assignment_a.refresh_from_db()
+    assignment_b.refresh_from_db()
+    assert "DOUBLE_ASSIGNMENT_CONFLICT" in assignment_a.conflict_codes
+    assert "DOUBLE_ASSIGNMENT_CONFLICT" in assignment_b.conflict_codes
+    assert assignment_a.conflict_severity == "SOFT"
+
+
 def test_non_overlapping_events_no_double_assignment_conflict(db):
     employee_id = uuid.uuid4()
     now = timezone.now()
