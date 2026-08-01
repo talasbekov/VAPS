@@ -9,6 +9,9 @@ DRF их отбросит (ARCH-SEC-030 — identity из auth-контракт�
 
 Story 10.1b — фильтры и форма ответа GET-списка статусов на дату (префилл
 «вчера» экрана массового обновления).
+
+Story 10.1d — строка справочника статус-типов (GET /statuses/types/), каталог
+для combobox грида.
 """
 
 from drf_spectacular.utils import extend_schema_serializer
@@ -40,6 +43,26 @@ class BulkStatusCreateSerializer(serializers.Serializer):
     rows = BulkStatusCreateRowSerializer(
         many=True, allow_empty=False, max_length=MAX_BULK_ROWS
     )
+
+
+class StatusTypeSerializer(serializers.Serializer):
+    """Одна строка справочника статус-типов (story 10.1d) — ровно 6 полей.
+
+    ``serializers.Serializer``, а НЕ ``ModelSerializer``: последний тянет весь
+    набор колонок модели по умолчанию и превратил бы добавление поля в
+    ``StatusType`` в молчаливое расширение публичного контракта. Явный список —
+    граница. ``restricts_editing``/``max_duration_days``/``counts_in_*``/
+    ``is_ku_owned`` принадлежат другим владельцам; ``is_active`` не отдаём — в
+    ответе только активные, поле было бы константой.
+    """
+
+    code = serializers.CharField()
+    name = serializers.CharField()
+    is_hard_block = serializers.BooleanField()
+    priority = serializers.IntegerField()
+    report_column_code = serializers.CharField()
+    # В модели blank=True, default="" — объявляем честно.
+    color = serializers.CharField(allow_blank=True)
 
 
 class StatusListFilterSerializer(serializers.Serializer):

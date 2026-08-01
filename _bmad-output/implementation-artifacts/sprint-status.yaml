@@ -342,7 +342,7 @@ development_status:
   #           statusTypes.test.ts (зеркало 17 типов) и DailyUpdatePage.catalog.test.tsx.
   # Порядок: 10.1b → 10.1e ; 10.1d → 10.1f. Бэк-пара независима между собой.
   10-1b-get-списка-статусов-на-дату: done
-  10-1d-справочник-статус-типов: ready-for-dev
+  10-1d-справочник-статус-типов: review
   10-1e-префилл-вчера-от-живого-get: backlog
   10-1f-справочник-статус-типов-во-фронте: backlog
   # Вынесено cross-model ревью 10.1b (Fable 5, 2026-07-27, APPROVE 0 исправлений).

@@ -17,6 +17,14 @@ Story 10.1b — GET списка на дату (префилл «вчера»). 
 submissions и импорту НЕ подлежит (test_statuses_does_not_import_submissions;
 поток подобластей односторонний вниз, architecture.md#L587), поэтому проверка
 написана на месте зеркалом его семантики.
+
+Story 10.1d — GET каталога статус-типов (`/statuses/types/`) для combobox
+грида. Экшеном на ЭТОМ ViewSet, а не отдельным роутом: отдельный ViewSet
+потребовал бы правки `api/urls.py` и вывел бы стори за потолок в 5 файлов
+(гейт декомпозиции проекта), а дробить нечего — разрез по слоям дал бы
+стори-селектор без потребителя. Путь `/statuses/types/` читается как «типы
+статусов», и контракт ещё никем не потреблён. Ни scope-гейта, ни параметров:
+справочник глобален.
 """
 
 from drf_spectacular.utils import extend_schema, inline_serializer
@@ -33,8 +41,12 @@ from apps.operations.statuses.api.serializers import (
     EmployeeStatusListResponseSerializer,
     EmployeeStatusRowSerializer,
     StatusListFilterSerializer,
+    StatusTypeSerializer,
 )
-from apps.operations.statuses.selectors import EmployeeStatusSelector
+from apps.operations.statuses.selectors import (
+    EmployeeStatusSelector,
+    StatusTypeSelector,
+)
 from apps.operations.statuses.services import bulk_create_statuses
 
 _BULK_PERMISSION = "status.manage"
@@ -44,9 +56,13 @@ _READ_PERMISSION = "status.view"
 
 
 class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """POST bulk — массовое создание; GET list — живые статусы на дату."""
+    """POST bulk — создание; GET list — статусы на дату; GET types — каталог."""
 
-    permission_map = {"bulk": _BULK_PERMISSION, "list": _READ_PERMISSION}
+    permission_map = {
+        "bulk": _BULK_PERMISSION,
+        "list": _READ_PERMISSION,
+        "types": _READ_PERMISSION,
+    }
     # Экшен вне карты — 403 (миксин fail-closed), а не открытый роут.
     http_method_names = ["get", "post", "options"]
 
@@ -88,6 +104,28 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "division_id": str(division_id),
                 "rows": EmployeeStatusRowSerializer(rows, many=True).data,
             }
+        )
+
+    @extend_schema(
+        # many=True объявляется РУКАМИ: drf-spectacular решает «список ли это»
+        # по имени экшена (action == "list"), а здесь оно "types" — эвристика
+        # молчит, и без override схема объявила бы 200 одиночным объектом при
+        # массиве в рантайме. Случай ЗЕРКАЛЬНЫЙ ловушке 10.1b — не переносить
+        # сюда extend_schema_serializer(many=False) соседа по аналогии.
+        responses={200: StatusTypeSerializer(many=True)},
+        description=(
+            "Справочник статус-типов для выбора в гриде: активные типы в "
+            "порядке (priority, code), плоский массив без пагинации. "
+            "Деактивированные типы НЕ отдаются — предложить оператору тип, "
+            "который отвергнет создание, значит поставить тихую ловушку "
+            "(историческая подпись деактивированного типа резолвится не "
+            "здесь, а в снапшоте сдачи). 403 нет права status.view."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="types", url_name="types")
+    def types(self, request, *args, **kwargs):
+        return Response(
+            StatusTypeSerializer(StatusTypeSelector.catalog(), many=True).data
         )
 
     @extend_schema(

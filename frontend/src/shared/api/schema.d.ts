@@ -1101,6 +1101,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/statuses/types/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Справочник статус-типов для выбора в гриде: активные типы в порядке (priority, code), плоский массив без пагинации. Деактивированные типы НЕ отдаются — предложить оператору тип, который отвергнет создание, значит поставить тихую ловушку (историческая подпись деактивированного типа резолвится не здесь, а в снапшоте сдачи). 403 нет права status.view. */
+        get: operations["operations_statuses_types_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/temporary-duty/": {
         parameters: {
             query?: never;
@@ -1715,6 +1732,24 @@ export interface components {
             valid_from: string;
             /** Format: date-time */
             valid_to?: string | null;
+        };
+        /**
+         * @description Одна строка справочника статус-типов (story 10.1d) — ровно 6 полей.
+         *
+         *     ``serializers.Serializer``, а НЕ ``ModelSerializer``: последний тянет весь
+         *     набор колонок модели по умолчанию и превратил бы добавление поля в
+         *     ``StatusType`` в молчаливое расширение публичного контракта. Явный список —
+         *     граница. ``restricts_editing``/``max_duration_days``/``counts_in_*``/
+         *     ``is_ku_owned`` принадлежат другим владельцам; ``is_active`` не отдаём — в
+         *     ответе только активные, поле было бы константой.
+         */
+        StatusType: {
+            code: string;
+            name: string;
+            is_hard_block: boolean;
+            priority: number;
+            report_column_code: string;
+            color: string;
         };
         /**
          * @description POST-body form (6.10b) — the date whose «на завтра» block is legally
@@ -2911,6 +2946,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BulkStatusCreateResponse"];
+                };
+            };
+        };
+    };
+    operations_statuses_types_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusType"][];
                 };
             };
         };

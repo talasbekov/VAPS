@@ -25,6 +25,36 @@ class StatusTypeSelector:
         """
         return dict(StatusType.objects.values_list("code", "name"))
 
+    @staticmethod
+    def catalog() -> list:
+        """Активные типы для ВЫБОРА — плоский список, ONE query (story 10.1d).
+
+        Сознательно НЕ симметрична ``names_map``: та включает деактивированные
+        типы намеренно (снапшот законно цитирует тип, деактивированный после
+        сдачи), эта — намеренно нет. Потребитель здесь — combobox грида:
+        предложить оператору тип, который сервис создания отвергнет, значит
+        поставить тихую ловушку в UI. Исторический резолв ≠ активный выбор;
+        унифицировать эти два метода нельзя.
+
+        ``order_by`` явный, хотя ``Meta.ordering`` даёт то же: порядок ответа
+        не должен зависеть от того, чего в этом файле не написано (сама Meta
+        пинится отдельным тестом). Шесть полей — контракт combobox'а и
+        подсветки; остальные колонки модели принадлежат другим владельцам
+        (сервис создания, расход, КУ).
+        """
+        return list(
+            StatusType.objects.filter(is_active=True)
+            .order_by("priority", "code")
+            .values(
+                "code",
+                "name",
+                "is_hard_block",
+                "priority",
+                "report_column_code",
+                "color",
+            )
+        )
+
 
 class EmployeeStatusSelector:
     """Bulk-first status reads — the ONLY data channel for aggregation."""

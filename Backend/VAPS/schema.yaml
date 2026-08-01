@@ -1603,6 +1603,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkStatusCreateResponse'
           description: ''
+  /api/operations/statuses/types/:
+    get:
+      operationId: operations_statuses_types_list
+      description: 'Справочник статус-типов для выбора в гриде: активные типы в порядке
+        (priority, code), плоский массив без пагинации. Деактивированные типы НЕ отдаются
+        — предложить оператору тип, который отвергнет создание, значит поставить тихую
+        ловушку (историческая подпись деактивированного типа резолвится не здесь,
+        а в снапшоте сдачи). 403 нет права status.view.'
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatusType'
+          description: ''
   /api/operations/temporary-duty/:
     get:
       operationId: operations_temporary_duty_retrieve
@@ -2911,6 +2930,37 @@ components:
       - division
       - position_code
       - valid_from
+    StatusType:
+      type: object
+      description: |-
+        Одна строка справочника статус-типов (story 10.1d) — ровно 6 полей.
+
+        ``serializers.Serializer``, а НЕ ``ModelSerializer``: последний тянет весь
+        набор колонок модели по умолчанию и превратил бы добавление поля в
+        ``StatusType`` в молчаливое расширение публичного контракта. Явный список —
+        граница. ``restricts_editing``/``max_duration_days``/``counts_in_*``/
+        ``is_ku_owned`` принадлежат другим владельцам; ``is_active`` не отдаём — в
+        ответе только активные, поле было бы константой.
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        is_hard_block:
+          type: boolean
+        priority:
+          type: integer
+        report_column_code:
+          type: string
+        color:
+          type: string
+      required:
+      - code
+      - color
+      - is_hard_block
+      - name
+      - priority
+      - report_column_code
     TomorrowBlockOverrideRequest:
       type: object
       description: |-

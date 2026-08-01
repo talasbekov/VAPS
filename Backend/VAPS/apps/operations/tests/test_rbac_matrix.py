@@ -180,6 +180,11 @@ MATRIX = {
     # энфорсит сама (403, а НЕ пустой список); матрицей это не проверяется:
     # безпараметрический GET держателя = 400 сериализатора = ALLOW по канону.
     "ops-status-list": _MethodGate({"get": "status.view"}),
+    # справочник статус-типов (story 10.1d, GET /statuses/types/) — то же право
+    # status.view. Параметров у роута нет и scope на глобальный каталог не
+    # влияет, поэтому GET держателя — чистый 200 = ALLOW (в отличие от соседа
+    # ops-status-list, где безпараметрический GET даёт 400 сериализатора).
+    "ops-status-types": _MethodGate({"get": "status.view"}),
     # override «на завтра»-блока (story 6.10b, POST-only) — своё право
     # daily_report.override_block (обход ≠ выпуск); scope не применяется (обход
     # уровня дня, без division). ValueError сервиса → 400 = ALLOW по канону.
