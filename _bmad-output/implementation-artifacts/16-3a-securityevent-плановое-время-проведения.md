@@ -4,7 +4,7 @@ baseline_commit: 8476a25f52074e56c7776d80e8f8b4d33d171926
 
 # Story 16.3a: SecurityEvent — плановое время проведения (пререквизит FR-25, часть 1/4)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -33,10 +33,10 @@ so that **проверки двойного назначения/Отдыха/п
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `SecurityEvent.starts_at`/`ends_at` + миграция
-- [ ] Task 2 — `clean()`-гард (`starts_at < ends_at`, только если оба заполнены)
-- [ ] Task 3 — Тесты (создание без полей валидно; корректный интервал валиден; `starts_at >= ends_at` — `ValidationError`)
-- [ ] Task 4 — Гейт
+- [x] Task 1 — `SecurityEvent.starts_at`/`ends_at` + миграция
+- [x] Task 2 — `clean()`-гард (`starts_at < ends_at`, только если оба заполнены)
+- [x] Task 3 — Тесты (создание без полей валидно; корректный интервал валиден; `starts_at >= ends_at` — `ValidationError`)
+- [x] Task 4 — Гейт
 
 ## Dev Notes
 
@@ -59,14 +59,17 @@ so that **проверки двойного назначения/Отдыха/п
 
 ### Completion Notes
 
-_(заполняется dev-story)_
+Реализовано по AC 1-3. `SecurityEvent.starts_at`/`ends_at` — `DateTimeField(null=True, blank=True)`, миграция `0010`. `clean()` — гард `starts_at < ends_at` СРАБАТЫВАЕТ ТОЛЬКО когда оба поля заполнены (nullable-пара — DB-уровневый CheckConstraint был бы вакуумен на `NULL`-операнде, тот же принцип, что `NULL-пробел conditional-CHECK`-урок этой сессии, 14.3a). 6 новых тестов: без полей — валидно; корректный интервал — валиден; `starts_at >= ends_at` (строго `>=`, включая равенство) — `ValidationError`; только одно поле заполнено — валидно (нет пары для сравнения). `make gate` — 3690 passed (было 3684, +6), 0 regressions, no drift.
 
 ### File List
 
-_(заполняется dev-story)_
+- `Backend/VAPS/apps/operations/events/models.py` (modified — `SecurityEvent.starts_at`/`ends_at`/`clean()`)
+- `Backend/VAPS/apps/operations/events/migrations/0010_securityevent_ends_at_securityevent_starts_at.py` (new)
+- `Backend/VAPS/apps/operations/events/tests/test_security_event_schedule.py` (new)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-01 | Story создана (create-story). Критический блокирующий разрыв, найденный при проектировании 16.3: SecurityEvent не несёт времени проведения, все FR-25's интервальные проверки заблокированы. Решение (поля на SecurityEvent, ретрофит Epic 15) подтверждено Bratan напрямую. |
+| 2026-08-01 | Dev-story: `starts_at`/`ends_at`+`clean()`-гард. 6 новых тестов. `make gate` — 3690 passed. Status → review. |

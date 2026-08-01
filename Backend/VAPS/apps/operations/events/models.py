@@ -69,6 +69,18 @@ class SecurityEvent(TimeStampedModel):
     # actor-id, тот же паттерн, что `senior_employee_id`.
     recon_first_confirmed_by = models.CharField(max_length=100, blank=True)
     recon_first_confirmed_at = models.DateTimeField(null=True, blank=True)
+    # Story 16.3a: prerequisite for FR-25's interval-based conflict checks
+    # (double-assignment/rest/duty-overlap) — none of them are computable
+    # without knowing WHEN this event happens. Nullable: retrofit onto an
+    # already-shipped Epic 15 model, so existing/in-flight rows and any
+    # workflow step that hasn't set them yet stay valid. The interval
+    # belongs to the EVENT, not each individual PlacementAssignment — every
+    # assignment in one ОМ shares the same planned window (confirmed with
+    # Bratan directly, not an autonomous PROVISIONAL call — this is a
+    # structural gap in a closed epic, not an open numeric/interpretive
+    # question).
+    starts_at = models.DateTimeField(null=True, blank=True)
+    ends_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_security_events"
@@ -96,6 +108,21 @@ class SecurityEvent(TimeStampedModel):
 
     def __str__(self):
         return f"{self.title} / {self.object.code} ({self.status_code})"
+
+    def clean(self):
+        # Nullable fields, unlike DutyShift's NOT-NULL starts_at/ends_at
+        # (whose CheckConstraint(starts_at__lt=ends_at) is a real DB guard)
+        # — a CHECK against a nullable pair is vacuously true whenever
+        # either side is NULL, so this ordering guard can only live at the
+        # full_clean() layer, same limited-scope caveat as every other
+        # clean()-only guard in this codebase (Post/ChecklistOverride/
+        # DutyShift/PlacementAssignment): .objects.create()/bulk_create()
+        # bypass it; a future write-path service must call full_clean().
+        super().clean()
+        if self.starts_at and self.ends_at and self.starts_at >= self.ends_at:
+            raise ValidationError(
+                {"ends_at": "starts_at должен быть раньше ends_at."}
+            )
 
 
 class ReconCheckResult(models.TextChoices):
