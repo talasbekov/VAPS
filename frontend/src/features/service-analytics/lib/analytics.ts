@@ -18,6 +18,9 @@ export interface AnalyticsSourceShift {
   id: string
   businessDate: string
   employeeName: string
+  /** §22.9: устойчивая связь с человеком/подразделением; `null` — связи нет. */
+  employeeId: string | null
+  unitId: string | null
   objectLabel: string
   stateCode: string
   dutyTypeCode: string
@@ -32,6 +35,8 @@ export interface AnalyticsSourceShift {
 export interface AnalyticsDutyType {
   dutyTypeCode: string
   restAfterMinutes: number
+  /** §22.9: плановая длительность смены — атрибут вида (A55). */
+  defaultDurationMinutes: number
 }
 
 /** Режим нарушения отдыха §21.35. Аналитика читает ТУ ЖЕ политику, что и
@@ -45,6 +50,9 @@ export interface AnalyticsSource {
   shifts: AnalyticsSourceShift[]
   dutyTypes: AnalyticsDutyType[]
   restMode: AnalyticsRestMode
+  /** §22.9: подписи подразделений из справочника кандидатов ТОГО ЖЕ слайса —
+   * ключ `unitId`. Неизвестный ключ печатается кодом, а не выдуманным именем. */
+  unitLabels: Record<string, string>
 }
 
 export const CALCULATION_VERSION = 'service-analytics-2026.07.1'
@@ -292,12 +300,6 @@ export const UNAVAILABLE_METRICS = [
     label: 'Доступно для назначения',
     reason:
       'Доступность складывается из кадровой недоступности (отпуск, больничный, командировка), которой в demo-модели нет (§21.30 называет эти слои недоступными по той же причине). Разница «все минус дежурящие» — не доступность, а её видимость.',
-  },
-  {
-    code: 'WORKLOAD',
-    label: 'Перегрузка по серверной политике',
-    reason:
-      'Политики нагрузки (норма часов на период, порог перегрузки) в demo-срезе не существует, а §22.5 прямо запрещает хардкодить порог перегрузки. Показатель без политики был бы числом без смысла.',
   },
   {
     code: 'SECURITY_EVENT_ENGAGED',

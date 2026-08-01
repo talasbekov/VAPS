@@ -23,6 +23,8 @@ export const ANALYTICS_ATTENTION_PATH = '/api/ops/service-analytics-attention/'
 /** §22.13-22.15 аналитика ОМ. Снова СИБЛИНГ-путь: вложенный `…/service-analytics/…`
  * msw отдал бы первому совпавшему handler'у молча. */
 export const OPERATIONS_ANALYTICS_PATH = '/api/ops/operations-analytics/'
+/** §22.9 аналитика нагрузки. СИБЛИНГ-путь по той же причине (коллизии MSW). */
+export const LOAD_ANALYTICS_PATH = '/api/ops/load-analytics/'
 
 /** Блок §35 в ответе. Форма та же, что у `UnavailableMetric`: «чего нет и
  * почему» — одно понятие, и второй тип с теми же полями разошёлся бы с первым.
@@ -90,3 +92,11 @@ export type OperationsAnalyticsResponse = AnalyticsSnapshot<OperationsAnalyticsD
 /** §22.11. `policyVersion` конверта здесь — версия политики НАБЛЮДЕНИЙ, а не
  * порогов показателей: у этого снимка другая методика. */
 export type AttentionResponse = AnalyticsSnapshot<AttentionData>
+
+/** §22.9: ответ ресурса нагрузки. Форма `LoadAnalyticsView` из lib + §35-блок. */
+export interface LoadAnalyticsResponse {
+  businessDate: string
+  generatedAt: string
+  view: import('../lib/load').LoadAnalyticsView
+  unavailable: { code: string; label: string; reason: string }[]
+}

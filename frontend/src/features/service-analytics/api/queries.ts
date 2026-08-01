@@ -4,6 +4,7 @@ import { apiClient } from '../../../shared/api/client'
 import type { ApiFailure } from '../../../shared/api/errors'
 import {
   ANALYTICS_ATTENTION_PATH,
+  LOAD_ANALYTICS_PATH,
   ANALYTICS_DRILLDOWN_PATH,
   ANALYTICS_PRESETS_PATH,
   ANALYTICS_SNAPSHOT_PATH,
@@ -12,6 +13,7 @@ import {
 import type {
   AnalyticsPresetsResponse,
   AttentionResponse,
+  LoadAnalyticsResponse,
   OperationsAnalyticsResponse,
   OperationsQuery,
   DrilldownQuery,
@@ -88,6 +90,15 @@ export function useAttentionItems(period: AnalyticsPeriodRequest | null) {
         `${ANALYTICS_ATTENTION_PATH}?${periodParams(period as AnalyticsPeriodRequest).toString()}`,
       ),
     enabled: period !== null,
+  })
+}
+
+/** §22.9: нагрузка. Периодом владеет ПОЛИТИКА (окно из «Настроек»), поэтому
+ * параметров запроса нет — сервер сам знает своё окно. */
+export function useLoadAnalytics() {
+  return useQuery<LoadAnalyticsResponse, ApiFailure>({
+    queryKey: ['service-analytics', 'load'],
+    queryFn: () => apiClient.get<LoadAnalyticsResponse>(LOAD_ANALYTICS_PATH),
   })
 }
 

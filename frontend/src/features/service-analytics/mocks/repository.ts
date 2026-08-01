@@ -52,10 +52,16 @@ import {
 } from '../lib/operations'
 import type { OpsSourceEvent } from '../lib/operations'
 import { readAnalyticsSource } from './dutiesSlice'
-import { readAnalyticsCustomPeriodLimit, readAttentionPolicy } from './settingsSlice'
+import { LOAD_UNAVAILABLE, buildLoadAnalytics } from '../lib/load'
+import {
+  readAnalyticsCustomPeriodLimit,
+  readAttentionPolicy,
+  readLoadPolicy,
+} from './settingsSlice'
 import { readOperationsSource, readOperationsTransitions } from './securityEventsSlice'
 import type { ServiceAnalyticsSlice } from './fixtures'
 import type {
+  LoadAnalyticsResponse,
   AnalyticsPresetsResponse,
   AttentionResponse,
   OperationsAnalyticsResponse,
@@ -490,6 +496,36 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
    * Право СВОЁ: §22.26 перечисляет «просмотр аналитики службы» и «просмотр
    * аналитики ОМ» разными пунктами, и здесь они разные права.
    */
+  /**
+   * §22.9 аналитика нагрузки. Отдельный ресурс-сиблинг (коллизии MSW, Этап 39);
+   * право то же, что у аналитики службы, — это её блок, а не новый раздел.
+   * Расчёт целиком серверный: `loadState` красится порогами LOAD_POLICY, и ни
+   * одно frontend-правило вида «больше N смен» здесь не живёт.
+   */
+  async function getLoadAnalytics(actorUserId: string | null): Promise<LoadAnalyticsResponse> {
+    if (!hasPermission(actorUserId, VIEW_PERMISSION)) {
+      throw new RepositoryPermissionError(VIEW_PERMISSION)
+    }
+    const envelope = await adapter.load()
+    if (envelope === null) {
+      throw new RepositoryBusinessRuleError('SNAPSHOT_UNAVAILABLE', 'Снимок недоступен.')
+    }
+    const source = readAnalyticsSource(envelope.slices)
+    if (source === null) {
+      throw new RepositoryBusinessRuleError(
+        'SOURCE_UNAVAILABLE',
+        'Источник смен недоступен: нагрузку посчитать не из чего.',
+      )
+    }
+    const policy = readLoadPolicy(envelope.slices)
+    return {
+      businessDate: clock.businessDate(),
+      generatedAt: clock.now(),
+      view: buildLoadAnalytics(source, policy, clock.businessDate()),
+      unavailable: LOAD_UNAVAILABLE.map((item) => ({ ...item })),
+    }
+  }
+
   async function getOperationsAnalytics(
     actorUserId: string | null,
     query: OperationsQuery,
@@ -745,6 +781,7 @@ export function createServiceAnalyticsRepository(adapter: PersistenceAdapter, cl
     getServiceAnalytics,
     getDrilldown,
     getAttention,
+    getLoadAnalytics,
     getOperationsAnalytics,
   }
 }

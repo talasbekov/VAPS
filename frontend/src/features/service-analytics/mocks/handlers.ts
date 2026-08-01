@@ -5,6 +5,7 @@ import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/pe
 import type { ErrorEnvelope } from '../../../shared/api/errors'
 import {
   ANALYTICS_ATTENTION_PATH,
+  LOAD_ANALYTICS_PATH,
   ANALYTICS_DRILLDOWN_PATH,
   ANALYTICS_PRESETS_PATH,
   ANALYTICS_SNAPSHOT_PATH,
@@ -84,6 +85,15 @@ export function createServiceAnalyticsHandlers(adapter: PersistenceAdapter, cloc
             postId: params.get('post_id') ?? undefined,
           }),
         )
+      } catch (error) {
+        return mapRepositoryError(error, clock) ?? HttpResponse.error()
+      }
+    }),
+    // §22.9: нагрузка — свой сиблинг-ресурс (коллизии MSW, Этап 39).
+    http.get(`*${LOAD_ANALYTICS_PATH}`, async ({ request }) => {
+      const actorUserId = request.headers.get('X-User-Id')
+      try {
+        return HttpResponse.json(await repository.getLoadAnalytics(actorUserId))
       } catch (error) {
         return mapRepositoryError(error, clock) ?? HttpResponse.error()
       }

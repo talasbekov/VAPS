@@ -80,6 +80,13 @@ const MANAGE_PERMISSION: Record<SettingSectionCode, string> = {
    * наблюдения аналитики.
    */
   RATING_POLICY: 'ops.settings.manage_rating_policy',
+  /**
+   * §22.9: пороги нагрузки — методика НАБЛЮДЕНИЯ (правка меняет окраску
+   * аналитики, не исход операции планирования), поэтому право то же, что у
+   * политики наблюдений, а не отдельное: два права на одинаковый класс
+   * воздействия раздавали бы один доступ дважды.
+   */
+  LOAD_POLICY: 'ops.settings.manage',
 }
 
 const NO_PERMISSION_REASON: Record<SettingSectionCode, string> = {
@@ -89,6 +96,7 @@ const NO_PERMISSION_REASON: Record<SettingSectionCode, string> = {
   ANALYTICS_LIMITS: 'Право на изменение пределов аналитики не выдано.',
   REPORT_LIMITS: 'Право на изменение пределов отчётности не выдано.',
   RATING_POLICY: 'Право на изменение методики расчёта рейтинга не выдано.',
+  LOAD_POLICY: 'Право на администрирование порогов нагрузки не выдано.',
 }
 
 /** Решение о доступности правки принимает сервер (см. `SettingAction`). */

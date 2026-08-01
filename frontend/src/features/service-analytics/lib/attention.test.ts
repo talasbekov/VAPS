@@ -32,6 +32,8 @@ function shift(overrides: Partial<AnalyticsSourceShift> = {}): AnalyticsSourceSh
     id: 'shift-1',
     businessDate: BUSINESS_DATE,
     employeeName: 'Ерланов Д.',
+    employeeId: null,
+    unitId: null,
     objectLabel: 'Штаб управления',
     stateCode: 'PLANNED',
     dutyTypeCode: 'OWN_OBJECT_DAILY',
@@ -43,7 +45,7 @@ function shift(overrides: Partial<AnalyticsSourceShift> = {}): AnalyticsSourceSh
 }
 
 const DUTY_TYPES = [
-  { dutyTypeCode: 'OWN_OBJECT_DAILY', restAfterMinutes: 24 * 60, restPolicy: 'HARD_BLOCK' as const },
+  { dutyTypeCode: 'OWN_OBJECT_DAILY', restAfterMinutes: 24 * 60, defaultDurationMinutes: 1440, restPolicy: 'HARD_BLOCK' as const },
 ]
 
 function detector(
@@ -71,7 +73,7 @@ function build(
 ) {
   return buildAttentionItems(
     definitions,
-    { shifts, dutyTypes: DUTY_TYPES, restMode: 'HARD_BLOCK' },
+    { shifts, dutyTypes: DUTY_TYPES, restMode: 'HARD_BLOCK', unitLabels: {} },
     { ...CONTEXT, ...context },
   )
 }

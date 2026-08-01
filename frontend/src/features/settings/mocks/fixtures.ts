@@ -34,6 +34,8 @@ export const INITIAL_SECTION_VERSIONS: Record<SettingSectionCode, string> = {
   // «Методика: OPERATIONAL-RATING-2.1»), поэтому её префикс — имя методики,
   // а не имя раздела настроек.
   RATING_POLICY: 'OPERATIONAL-RATING-2026.07.1',
+  // §22.9: версия методики нагрузки — ею подписан каждый LoadMetric.
+  LOAD_POLICY: 'LOAD-POLICY-2026.08.1',
 }
 
 /**
@@ -544,6 +546,71 @@ export const RATING_POLICY_SETTINGS: readonly StoredSetting[] = [
   },
 ]
 
+/**
+ * §22.9: пороги нагрузки. Значения намеренно не круглые (28 суток, 2800/4200
+ * минут): совпадение с «30 днями» или «2/3 сменами ровно» скрыло бы
+ * захардкоженный порог, если бы он где-то остался. Ночного окна здесь НЕТ
+ * намеренно: граница дневной/ночной работы — открытый вопрос самого промпта
+ * (NIGHT-WINDOW-001), и завести её решением фронта значило бы закрыть чужой
+ * вопрос молча; `nightMinutes` едет `null` с причиной.
+ */
+export const LOAD_POLICY_SETTINGS: readonly StoredSetting[] = [
+  {
+    settingCode: 'LOAD.PERIOD.PARAMETER',
+    kind: 'NUMBER',
+    sectionCode: 'LOAD_POLICY',
+    groupCode: 'WORKLOAD',
+    field: 'PARAMETER',
+    safeLabel: 'Окно расчёта нагрузки',
+    description:
+      'За сколько последних суток суммируются плановые и фактические минуты. Смена старше окна в нагрузку не входит.',
+    valueType: 'DAYS',
+    value: 28,
+    minValue: 7,
+    maxValue: 92,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+  {
+    settingCode: 'LOAD.WARNING_MINUTES.PARAMETER',
+    kind: 'NUMBER',
+    sectionCode: 'LOAD_POLICY',
+    groupCode: 'WORKLOAD',
+    field: 'WARNING_FROM',
+    safeLabel: 'Порог предупреждения, минут за окно',
+    description:
+      'С какой суммы плановых минут за окно нагрузка помечается WARNING. Это окраска аналитики, а не запрет назначения.',
+    valueType: 'MINUTES',
+    value: 2800,
+    minValue: 60,
+    maxValue: 40320,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+  {
+    settingCode: 'LOAD.OVERLOAD_MINUTES.PARAMETER',
+    kind: 'NUMBER',
+    sectionCode: 'LOAD_POLICY',
+    groupCode: 'WORKLOAD',
+    field: 'CRITICAL_FROM',
+    safeLabel: 'Порог перегрузки, минут за окно',
+    description:
+      'С какой суммы плановых минут за окно нагрузка помечается OVERLOADED. §22.5 прямо запрещает держать этот порог в коде.',
+    valueType: 'MINUTES',
+    value: 4200,
+    minValue: 60,
+    maxValue: 40320,
+    updatedAt: null,
+    updatedBy: null,
+    editable: true,
+    lockedReason: null,
+  },
+]
+
 export function buildSettingsSeed(): { sliceName: string; data: SettingsSlice } {
   return {
     sliceName: 'settings',
@@ -556,6 +623,7 @@ export function buildSettingsSeed(): { sliceName: string; data: SettingsSlice } 
         ...ANALYTICS_LIMIT_SETTINGS,
         ...REPORT_LIMIT_SETTINGS,
         ...RATING_POLICY_SETTINGS,
+        ...LOAD_POLICY_SETTINGS,
       ].map((item) => ({ ...item })),
       // Журнал пуст: сеяных «изменений» не бывает — они не происходили.
       changeLog: [],

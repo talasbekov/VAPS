@@ -15,6 +15,8 @@ interface ShiftProjection {
   id?: unknown
   businessDate?: unknown
   employeeName?: unknown
+  employeeId?: unknown
+  unitId?: unknown
   stateCode?: unknown
   dutyTypeCode?: unknown
   actualStart?: unknown
@@ -26,6 +28,7 @@ interface ShiftProjection {
 interface TypeProjection {
   dutyTypeCode?: unknown
   restAfterMinutes?: unknown
+  defaultDurationMinutes?: unknown
 }
 
 function asString(value: unknown): string {
@@ -58,6 +61,8 @@ export function readAnalyticsSource(
     id: asString(shift.id),
     businessDate: asString(shift.businessDate),
     employeeName: asString(shift.employeeName),
+    employeeId: asNullableString(shift.employeeId),
+    unitId: asNullableString(shift.unitId),
     objectLabel: asString(shift.target?.safeLabel),
     stateCode: asString(shift.stateCode),
     dutyTypeCode: asString(shift.dutyTypeCode),
@@ -69,10 +74,23 @@ export function readAnalyticsSource(
   const dutyTypes = (rawTypes as TypeProjection[]).map((type) => ({
     dutyTypeCode: asString(type.dutyTypeCode),
     restAfterMinutes: typeof type.restAfterMinutes === 'number' ? type.restAfterMinutes : 0,
+    defaultDurationMinutes:
+      typeof type.defaultDurationMinutes === 'number' ? type.defaultDurationMinutes : 0,
   }))
+
+  // §22.9: подписи подразделений — из справочника кандидатов того же слайса.
+  const rawCandidates = (slice as { dutyCandidates?: unknown }).dutyCandidates
+  const unitLabels: Record<string, string> = {}
+  if (Array.isArray(rawCandidates)) {
+    for (const item of rawCandidates as { unitId?: unknown; unitName?: unknown }[]) {
+      if (typeof item.unitId === 'string' && typeof item.unitName === 'string') {
+        unitLabels[item.unitId] = item.unitName
+      }
+    }
+  }
 
   // Режим отдыха приходит из ЧУЖОГО слайса настроек — аналитика и планирование
   // читают одну политику (§21.35), иначе один конфликт был бы жёстким на плане
   // и мягким в аналитике.
-  return { shifts, dutyTypes, restMode: readRestAfterDutyMode(slices) }
+  return { shifts, dutyTypes, restMode: readRestAfterDutyMode(slices), unitLabels }
 }

@@ -112,3 +112,36 @@ export function readAnalyticsCustomPeriodLimit(
   if (typeof record?.value !== 'number') return null
   return { maxDays: record.value, policyVersion }
 }
+
+/**
+ * §22.9: пороги нагрузки из раздела LOAD_POLICY. `null` — методика не задана
+ * ИЛИ неполна: посчитать по половине политики и подписать её версией значило
+ * бы соврать о том, как получено состояние (тот же довод, что у методики
+ * рейтинга).
+ */
+export function readLoadPolicy(
+  slices: Readonly<Record<string, unknown>>,
+): { periodDays: number; warningMinutes: number; overloadMinutes: number; policyVersion: string } | null {
+  const slice = slices[SETTINGS_SLICE_NAME]
+  if (slice === undefined || slice === null || typeof slice !== 'object') return null
+  const raw = (slice as { settings?: unknown }).settings
+  const versions = (slice as { sectionVersions?: unknown }).sectionVersions
+  const policyVersion =
+    versions !== null && typeof versions === 'object'
+      ? (versions as Record<string, unknown>).LOAD_POLICY
+      : undefined
+  if (!Array.isArray(raw) || typeof policyVersion !== 'string' || policyVersion === '') return null
+
+  let periodDays: number | null = null
+  let warningMinutes: number | null = null
+  let overloadMinutes: number | null = null
+  for (const item of raw as SettingProjection[]) {
+    if (item.sectionCode !== 'LOAD_POLICY') continue
+    if (typeof item.value !== 'number') continue
+    if (item.settingCode === 'LOAD.PERIOD.PARAMETER') periodDays = item.value
+    if (item.settingCode === 'LOAD.WARNING_MINUTES.PARAMETER') warningMinutes = item.value
+    if (item.settingCode === 'LOAD.OVERLOAD_MINUTES.PARAMETER') overloadMinutes = item.value
+  }
+  if (periodDays === null || warningMinutes === null || overloadMinutes === null) return null
+  return { periodDays, warningMinutes, overloadMinutes, policyVersion }
+}

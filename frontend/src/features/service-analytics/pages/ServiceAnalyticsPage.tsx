@@ -16,6 +16,7 @@ import {
   useAnalyticsPresets,
   useAttentionItems,
   useServiceAnalytics,
+  useLoadAnalytics,
 } from '../api/queries'
 import type { AnalyticsPeriodRequest } from '../api/queries'
 import type {
@@ -409,6 +410,8 @@ export function ServiceAnalyticsPage() {
             </section>
           )}
 
+          <LoadSection />
+
           <section className="rounded-xl border border-dashed bg-muted/30 p-4">
             <h2 className="mb-2 text-sm font-semibold">Чего в этом снимке нет</h2>
             <ul className="flex flex-col gap-2">
@@ -517,5 +520,131 @@ function MetricCard({
         {open ? 'Свернуть строки' : 'Показать строки'}
       </Button>
     </div>
+  )
+}
+
+
+/** Подпись минут: «46,5 ч» — часами, десятичная запятая. */
+function formatMinutes(minutes: number | null): string {
+  if (minutes === null) return '—'
+  return `${(minutes / 60).toFixed(1).replace('.', ',')} ч`
+}
+
+const LOAD_STATE_LABEL: Record<string, string> = {
+  NORMAL: 'Норма',
+  WARNING: 'Предупреждение',
+  OVERLOADED: 'Перегрузка',
+  UNKNOWN: 'Не рассчитано',
+}
+
+/**
+ * §22.9 «Аналитика нагрузки». Блок читает СВОЙ серверный ресурс: план и факт
+ * приезжают разными полями и печатаются разными колонками — план не
+ * подставляется вместо факта ни в одной клетке. Состояние красит сервер по
+ * порогам LOAD_POLICY; здесь нет ни одного числа-правила.
+ */
+function LoadSection() {
+  const query = useLoadAnalytics()
+  if (query.isPending) {
+    return (
+      <section className="mb-4 rounded-xl border bg-card p-4" aria-label="Нагрузка">
+        <p className="text-xs text-muted-foreground">Загрузка нагрузки…</p>
+      </section>
+    )
+  }
+  if (query.isError || query.data === undefined) {
+    return (
+      <section className="mb-4 rounded-xl border bg-card p-4" aria-label="Нагрузка">
+        <p className="text-xs text-muted-foreground">
+          Аналитика нагрузки сейчас недоступна.
+        </p>
+      </section>
+    )
+  }
+  const { view, unavailable } = query.data
+  return (
+    <section className="mb-4 rounded-xl border bg-card p-4" aria-label="Нагрузка">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold">Нагрузка</h2>
+        {view.policy !== null ? (
+          <span className="text-[11px] text-muted-foreground">
+            Окно {view.policy.periodDays} сут. · методика {view.policy.policyVersion}
+          </span>
+        ) : (
+          <span className="text-[11px] text-muted-foreground" role="status">
+            Методика нагрузки не задана — состояния не рассчитываются.
+          </span>
+        )}
+      </div>
+      {view.units.length === 0 && view.employees.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Смен в окне расчёта нет.</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <caption className="mb-1 text-left text-[11px] font-semibold text-muted-foreground">
+                По подразделениям
+              </caption>
+              <thead>
+                <tr className="border-b text-[11px] text-muted-foreground">
+                  <th scope="col" className="py-1 pr-2 font-semibold">Подразделение</th>
+                  <th scope="col" className="py-1 pr-2 font-semibold">План</th>
+                  <th scope="col" className="py-1 pr-2 font-semibold">Факт</th>
+                  <th scope="col" className="py-1 pr-2 font-semibold">Состояние</th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.units.map((row) => (
+                  <tr key={row.organizationUnitId} className="border-b last:border-b-0">
+                    <td className="py-1 pr-2">{row.safeLabel}</td>
+                    <td className="py-1 pr-2 tabular-nums">{formatMinutes(row.plannedMinutes)}</td>
+                    <td className="py-1 pr-2 tabular-nums">{formatMinutes(row.actualMinutes)}</td>
+                    <td className="py-1 pr-2">{LOAD_STATE_LABEL[row.loadState] ?? row.loadState}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <caption className="mb-1 text-left text-[11px] font-semibold text-muted-foreground">
+                По сотрудникам
+              </caption>
+              <thead>
+                <tr className="border-b text-[11px] text-muted-foreground">
+                  <th scope="col" className="py-1 pr-2 font-semibold">Сотрудник</th>
+                  <th scope="col" className="py-1 pr-2 font-semibold">План</th>
+                  <th scope="col" className="py-1 pr-2 font-semibold">Факт</th>
+                  <th scope="col" className="py-1 pr-2 font-semibold">Состояние</th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.employees.map((row) => (
+                  <tr key={row.employeeId ?? row.safeLabel} className="border-b last:border-b-0">
+                    <td className="py-1 pr-2">{row.safeLabel}</td>
+                    <td className="py-1 pr-2 tabular-nums">{formatMinutes(row.plannedMinutes)}</td>
+                    <td className="py-1 pr-2 tabular-nums">{formatMinutes(row.actualMinutes)}</td>
+                    <td className="py-1 pr-2">{LOAD_STATE_LABEL[row.loadState] ?? row.loadState}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {view.unlinkedShiftsCount > 0 && (
+        <p className="mt-2 text-[11px] text-muted-foreground" role="status">
+          Смен без установленной связи с сотрудником: {view.unlinkedShiftsCount} — их минуты
+          никому не приписаны.
+        </p>
+      )}
+      <ul className="mt-2 flex flex-col gap-1">
+        {unavailable.map((item) => (
+          <li key={item.code} className="text-[11px] text-muted-foreground">
+            <span className="font-semibold">{item.label}</span> — {item.reason}
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }

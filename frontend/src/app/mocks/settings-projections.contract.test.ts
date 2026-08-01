@@ -22,6 +22,7 @@ import { readFreshnessPolicy } from '../../features/objects/mocks/settingsSlice'
 import {
   readAnalyticsCustomPeriodLimit,
   readAttentionPolicy,
+  readLoadPolicy,
   readRestAfterDutyMode,
 } from '../../features/service-analytics/mocks/settingsSlice'
 import { readReportLimits } from '../../features/service-reports/mocks/settingsSlice'
@@ -64,6 +65,18 @@ describe('проекции слайса «Настройки» понимают 
     // изменившейся методику блока «Требует внимания».
     expect(limit?.policyVersion).toBe(data.sectionVersions.ANALYTICS_LIMITS)
     expect(limit?.policyVersion).not.toBe(data.sectionVersions.ATTENTION_POLICY)
+  })
+
+  it('аналитика службы читает пороги нагрузки §22.9', () => {
+    const policy = readLoadPolicy(slices)
+    expect(policy).not.toBeNull()
+    expect(policy?.periodDays).toBe(28)
+    expect(policy?.warningMinutes).toBe(2800)
+    expect(policy?.overloadMinutes).toBe(4200)
+    // Редакция СВОЯ: правка порога нагрузки не должна объявлять изменившейся
+    // ни методику наблюдений, ни пределы аналитики.
+    expect(policy?.policyVersion).toBe(data.sectionVersions.LOAD_POLICY)
+    expect(policy?.policyVersion).not.toBe(data.sectionVersions.ATTENTION_POLICY)
   })
 
   it('отчётный реестр читает предел периода и срок хранения §22.5/§22.22', () => {

@@ -5,7 +5,7 @@
 // ответа (тот же приём, что action policy §21.28 и §22.25).
 import '@testing-library/jest-dom/vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
@@ -526,5 +526,112 @@ describe('блок «Требует внимания» (§22.11)', () => {
     expect(
       screen.getByText('Переход к записям закрыт: раздел требует отдельного доступа.'),
     ).toBeInTheDocument()
+  })
+})
+
+
+describe('блок «Нагрузка» (§22.9)', () => {
+  const LOAD_URL = '*/api/ops/load-analytics/'
+
+  function loadResponse() {
+    return {
+      businessDate: '2026-07-20',
+      generatedAt: '2026-07-20T08:00:00+05:00',
+      view: {
+        units: [
+          {
+            employeeId: null,
+            safeLabel: '1-й отдел охраны',
+            organizationUnitId: 'unit-guard-1',
+            plannedMinutes: 2880,
+            actualMinutes: 750,
+            nightMinutes: null,
+            loadState: 'WARNING',
+            safeReasonCodes: ['PLANNED_WARNING'],
+            policyVersion: 'LOAD-POLICY-test.1',
+          },
+        ],
+        employees: [
+          {
+            employeeId: 'employee-1',
+            safeLabel: 'Ерланов Д.',
+            organizationUnitId: 'unit-guard-1',
+            plannedMinutes: 2880,
+            actualMinutes: 750,
+            nightMinutes: null,
+            loadState: 'WARNING',
+            safeReasonCodes: ['PLANNED_WARNING'],
+            policyVersion: 'LOAD-POLICY-test.1',
+          },
+        ],
+        unlinkedShiftsCount: 1,
+        policy: {
+          periodDays: 28,
+          warningMinutes: 2800,
+          overloadMinutes: 4200,
+          policyVersion: 'LOAD-POLICY-test.1',
+        },
+      },
+      unavailable: [
+        { code: 'NIGHT_MINUTES', label: 'Ночные часы', reason: 'Окна NIGHT-WINDOW-001 нет.' },
+      ],
+    }
+  }
+
+  it('план и факт печатаются РАЗНЫМИ колонками из ответа, состояние — словами', async () => {
+    server.use(
+      http.get(PRESETS_URL, () => HttpResponse.json(presets())),
+      http.get(SNAPSHOT_URL, () => HttpResponse.json(snapshot())),
+      http.get(LOAD_URL, () => HttpResponse.json(loadResponse())),
+    )
+    renderPage()
+    const section = await screen.findByRole('region', { name: 'Нагрузка' })
+    const { findAllByText, getAllByText, getByText } = within(section)
+    // План 2880 мин → «48,0 ч», факт 750 → «12,5 ч»: обе величины из ответа,
+    // ни одна не подменяет другую. Первый ассерт ждёт данные (query async).
+    expect((await findAllByText('48,0 ч')).length).toBeGreaterThan(0)
+    expect(getAllByText('12,5 ч').length).toBeGreaterThan(0)
+    expect(getAllByText('Предупреждение').length).toBeGreaterThan(0)
+    expect(getByText(/методика LOAD-POLICY-test\.1/)).toBeInTheDocument()
+    expect(getByText(/Смен без установленной связи с сотрудником: 1/)).toBeInTheDocument()
+    expect(getByText('Ночные часы')).toBeInTheDocument()
+  })
+
+  it('без методики блок называет причину, а не рисует «Норма» с нулями', async () => {
+    server.use(
+      http.get(PRESETS_URL, () => HttpResponse.json(presets())),
+      http.get(SNAPSHOT_URL, () => HttpResponse.json(snapshot())),
+      http.get(LOAD_URL, () =>
+        HttpResponse.json({
+          ...loadResponse(),
+          view: {
+            units: [],
+            employees: [
+              {
+                employeeId: 'employee-1',
+                safeLabel: 'Ерланов Д.',
+                organizationUnitId: 'unit-guard-1',
+                plannedMinutes: null,
+                actualMinutes: null,
+                nightMinutes: null,
+                loadState: 'UNKNOWN',
+                safeReasonCodes: ['POLICY_UNDEFINED'],
+                policyVersion: null,
+              },
+            ],
+            unlinkedShiftsCount: 0,
+            policy: null,
+          },
+        }),
+      ),
+    )
+    renderPage()
+    const section = await screen.findByRole('region', { name: 'Нагрузка' })
+    const { findByText, queryByText, getAllByText } = within(section)
+    expect(await findByText(/Методика нагрузки не задана/)).toBeInTheDocument()
+    expect(getAllByText('Не рассчитано').length).toBeGreaterThan(0)
+    expect(getAllByText('—').length).toBeGreaterThan(0)
+    expect(queryByText('Норма')).not.toBeInTheDocument()
+    expect(queryByText('0,0 ч')).not.toBeInTheDocument()
   })
 })

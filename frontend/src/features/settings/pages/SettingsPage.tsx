@@ -16,6 +16,7 @@ import { EditSettingDialog } from './EditSettingDialog'
 
 const UNIT_LABEL: Record<PolicySetting['valueType'], string> = {
   DAYS: 'сут.',
+  MINUTES: 'мин',
   HOURS: 'ч',
   PERCENT: '%',
   COUNT: 'шт.',
@@ -36,6 +37,7 @@ const GROUP_LABEL: Record<string, string> = {
   PERSONNEL_EXPENSE: 'Отчёт «Расход личного состава»',
   REPORT_RETENTION: 'Хранение сформированных файлов',
   AGGREGATION: 'Агрегирование оценок',
+  WORKLOAD: 'Плановая нагрузка',
 }
 
 const SECTION_TITLE: Record<PolicySetting['sectionCode'], string> = {
@@ -45,6 +47,7 @@ const SECTION_TITLE: Record<PolicySetting['sectionCode'], string> = {
   ANALYTICS_LIMITS: 'Пределы аналитики',
   REPORT_LIMITS: 'Пределы отчётности',
   RATING_POLICY: 'Методика оперативного рейтинга',
+  LOAD_POLICY: 'Пороги нагрузки',
 }
 
 const SECTION_HINT: Record<PolicySetting['sectionCode'], string> = {
@@ -58,6 +61,8 @@ const SECTION_HINT: Record<PolicySetting['sectionCode'], string> = {
     'Насколько глубокий период разрешено запрашивать у аналитики службы вручную. Проверяет сервер: превышение отвергается, а не обрезается молча (§22.5).',
   REPORT_LIMITS:
     'Глубина периода отчёта и срок жизни сформированного файла (§22.5, §22.22). Срок хранения назначается при сборке файла — у уже собранных он не меняется.',
+  LOAD_POLICY:
+    'Окно расчёта и пороги плановой нагрузки (§22.9). Это окраска аналитики, а не запрет: назначение при перегрузке не блокируется этим разделом.',
   RATING_POLICY:
     'По этим порогам сервер считает оперативный рейтинг участников мероприятий (§19.19). Редакция раздела печатается как версия методики: значения, посчитанные по разным редакциям, несопоставимы.',
 }

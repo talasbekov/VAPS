@@ -985,3 +985,79 @@ describe('предел произвольного периода приходи�
     expect(presets.limitPolicyVersion).not.toBe(ATTENTION_POLICY_VERSION)
   })
 })
+
+describe('аналитика нагрузки (§22.9)', () => {
+  const LOAD_SETTINGS = {
+    sectionVersions: {
+      ATTENTION_POLICY: ATTENTION_POLICY_VERSION,
+      ANALYTICS_LIMITS: ANALYTICS_LIMITS_VERSION,
+      LOAD_POLICY: 'LOAD-POLICY-test.1',
+    },
+    settings: [
+      { settingCode: 'LOAD.PERIOD.PARAMETER', sectionCode: 'LOAD_POLICY', groupCode: 'WORKLOAD', field: 'PARAMETER', value: 28 },
+      { settingCode: 'LOAD.WARNING_MINUTES.PARAMETER', sectionCode: 'LOAD_POLICY', groupCode: 'WORKLOAD', field: 'WARNING_FROM', value: 2800 },
+      { settingCode: 'LOAD.OVERLOAD_MINUTES.PARAMETER', sectionCode: 'LOAD_POLICY', groupCode: 'WORKLOAD', field: 'CRITICAL_FROM', value: 4200 },
+    ],
+  }
+  const LOAD_DUTIES = {
+    dutyTypes: [
+      {
+        dutyTypeCode: 'OWN_OBJECT_DAILY',
+        restAfterMinutes: 24 * 60,
+        defaultDurationMinutes: 1440,
+        restPolicy: 'HARD_BLOCK',
+      },
+    ],
+    dutyCandidates: [
+      { employeeId: 'employee-1', employeeName: 'Ерланов Д.', unitId: 'unit-guard-1', unitName: '1-й отдел охраны', positionName: 'Инспектор' },
+    ],
+    shifts: [
+      shift('l1', BUSINESS_DATE, 'Ерланов Д.', 'PLANNED', {
+        employeeId: 'employee-1',
+        unitId: 'unit-guard-1',
+      }),
+      shift('l2', '2026-07-19', 'Ерланов Д.', 'PLANNED', {
+        employeeId: 'employee-1',
+        unitId: 'unit-guard-1',
+      }),
+      // Смена без связи §22.9 — минуты не должны никому приписаться.
+      shift('l3', BUSINESS_DATE, 'Внешний С.', 'PLANNED'),
+    ],
+  }
+
+  it('требует ops.analytics.view', async () => {
+    const { repository } = await setup({ duties: LOAD_DUTIES, settings: LOAD_SETTINGS })
+    await expect(repository.getLoadAnalytics(NOBODY)).rejects.toBeInstanceOf(
+      RepositoryPermissionError,
+    )
+  })
+
+  it('loadState красится по порогам LOAD_POLICY и подписан её редакцией', async () => {
+    const { repository } = await setup({ duties: LOAD_DUTIES, settings: LOAD_SETTINGS })
+    const response = await repository.getLoadAnalytics(VIEWER)
+    const row = response.view.employees[0]
+    // 2 × 1440 = 2880 ≥ 2800 → WARNING; факт при этом нулевой и не подменён.
+    expect(row?.plannedMinutes).toBe(2880)
+    expect(row?.actualMinutes).toBe(0)
+    expect(row?.loadState).toBe('WARNING')
+    expect(row?.policyVersion).toBe('LOAD-POLICY-test.1')
+    expect(response.view.units[0]?.safeLabel).toBe('1-й отдел охраны')
+    expect(response.view.unlinkedShiftsCount).toBe(1)
+  })
+
+  it('без раздела LOAD_POLICY — UNKNOWN и null, не нули', async () => {
+    const { repository } = await setup({ duties: LOAD_DUTIES })
+    const response = await repository.getLoadAnalytics(VIEWER)
+    const row = response.view.employees[0]
+    expect(row?.loadState).toBe('UNKNOWN')
+    expect(row?.plannedMinutes).toBeNull()
+    expect(response.view.policy).toBeNull()
+  })
+
+  it('ночные часы и слагаемые без источника названы в §35-блоке ответа', async () => {
+    const { repository } = await setup({ duties: LOAD_DUTIES, settings: LOAD_SETTINGS })
+    const response = await repository.getLoadAnalytics(VIEWER)
+    expect(response.unavailable.map((item) => item.code)).toContain('NIGHT_MINUTES')
+    expect(response.view.employees[0]?.nightMinutes).toBeNull()
+  })
+})

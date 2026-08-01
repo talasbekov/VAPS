@@ -25,7 +25,7 @@
 //   обоснования), а не окраску экрана.
 
 /** Единица измерения значения. Нужна, чтобы экран не подписывал «3» без смысла. */
-export type SettingValueType = 'DAYS' | 'PERCENT' | 'COUNT' | 'HOURS' | 'MODE'
+export type SettingValueType = 'DAYS' | 'PERCENT' | 'COUNT' | 'HOURS' | 'MINUTES' | 'MODE'
 
 /** Поле определения, которым управляет запись настройки. */
 export type SettingField = 'PARAMETER' | 'WARNING_FROM' | 'CRITICAL_FROM' | 'MODE'
@@ -58,6 +58,13 @@ export type SettingSectionCode =
    * этом сказать.
    */
   | 'RATING_POLICY'
+  /**
+   * §22.9: порог перегрузки и severity «приходят из Load Repository», а §22.5
+   * запрещает хардкодить порог перегрузки. Раздел владеет ПОРОГАМИ нагрузки
+   * (окно расчёта, warning/overload в минутах); его редакция — версия
+   * методики, которой подписан каждый LoadMetric.
+   */
+  | 'LOAD_POLICY'
 
 /** Вариант значения-перечисления (§21.35 `HARD_BLOCK` / `SOFT_OVERRIDE`). */
 export interface SettingOption {

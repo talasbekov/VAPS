@@ -28,10 +28,12 @@ const BUSINESS_DATE = '2026-07-20'
 const HARD_TYPE: AnalyticsDutyType = {
   dutyTypeCode: 'OWN_OBJECT_DAILY',
   restAfterMinutes: 24 * 60,
+  defaultDurationMinutes: 1440,
 }
 const SOFT_TYPE: AnalyticsDutyType = {
   dutyTypeCode: 'PROTECTED_OBJECT_DAILY',
   restAfterMinutes: 24 * 60,
+  defaultDurationMinutes: 1440,
 }
 
 function shift(overrides: Partial<AnalyticsSourceShift> = {}): AnalyticsSourceShift {
@@ -39,6 +41,8 @@ function shift(overrides: Partial<AnalyticsSourceShift> = {}): AnalyticsSourceSh
     id: 'shift-1',
     businessDate: BUSINESS_DATE,
     employeeName: 'Ерланов Д.',
+    employeeId: null,
+    unitId: null,
     objectLabel: 'Штаб управления',
     stateCode: 'PLANNED',
     dutyTypeCode: HARD_TYPE.dutyTypeCode,
