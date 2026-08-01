@@ -929,6 +929,16 @@ def approve_assignment_version(version, *, actor, override=False, override_reaso
     pairs, ordered by `id` for determinism. This is the "hash-ready
     заглушка ЭЦП": architecture.md itself defers REAL digital signing to
     MVP-2 — no PKI/external signing call belongs here.
+
+    Review note (Edge Case Hunter, live-confirmed): the digest is
+    content-only — no `version.pk`/`event_id`/`actor`/timestamp is mixed
+    in — so two DIFFERENT approvals (different versions, different
+    events, different approvers) of assignment sets that happen to share
+    the same `(employee_id, post_id)` pairs produce the IDENTICAL hash.
+    This matches the stub's stated scope literally (a content digest, not
+    an approval-event signature) and isn't a defect against it — but
+    whichever story wires real ЭЦП (MVP-2) will need a richer signed
+    payload than this stub's bare content hash.
     """
     if not (actor or "").strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
