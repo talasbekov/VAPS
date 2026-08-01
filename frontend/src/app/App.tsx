@@ -5,7 +5,7 @@
 // из seed_operations дословно). Разделы пока — заглушки app/section-stubs
 // (экраны — E9/E10). /admin/* в карте нет (Д5); catch-all/404 не в карте UX.
 import { Suspense, lazy } from 'react'
-import { BrowserRouter, Route, Routes } from 'react-router'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { getFrontendEnv } from '../shared/config/env'
 import { LoginPage } from '../features/auth/LoginPage'
 import { ChangelogPage } from '../features/changelog/ChangelogPage'
@@ -49,6 +49,22 @@ import { ROUTES } from '../shared/routes'
 import { AppLayout } from '../shared/ui/AppLayout'
 import { RouteChunkBoundary } from './RouteChunkBoundary'
 import { DashboardStub } from './section-stubs'
+import { usePermissions } from '../shared/auth/usePermissions'
+
+/**
+ * «/» — дашборд линии «Расход» (E9-E10, ещё не построен). Живой прогон
+ * Этапа 71 поймал: администратор-wildcard после входа попадал ровно на эту
+ * заглушку — первым экраном системы оказывалось «появится позже». Тому, кому
+ * доступен командный центр, «/» честно ведёт туда; заглушка остаётся только
+ * той persona, у которой другой оперативной посадочной нет.
+ */
+function HomeGate() {
+  const { hasPermission } = usePermissions()
+  if (hasPermission('ops.dashboard.view')) {
+    return <Navigate to={ROUTES.commandCenter} replace />
+  }
+  return <DashboardStub />
+}
 
 // `React.lazy`, а НЕ статический импорт: `import.meta.env.MODE === 'mock'`
 // (build-time литерал, Vite ARCH L459) даёт Rollup статически исключить весь
@@ -140,7 +156,7 @@ export function AppRoutes() {
           path={ROUTES.home}
           element={
             <RequirePermission permission="status.view">
-              <DashboardStub />
+              <HomeGate />
             </RequirePermission>
           }
         />
