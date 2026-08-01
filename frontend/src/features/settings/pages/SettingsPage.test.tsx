@@ -159,6 +159,37 @@ function renderPage() {
 }
 
 describe('SettingsPage (§29)', () => {
+  it('каждый раздел ответа отрисован — включая пороги нагрузки §22.9 (живой дефект Этапа 70)', async () => {
+    // Живой прогон поймал: захардкоженный перечень разделов молча спрятал
+    // новый LOAD_POLICY. Ответ несёт настройку раздела — раздел обязан быть.
+    server.use(
+      http.get('*/api/ops/settings/', () =>
+        HttpResponse.json({
+          results: [
+            withAction(
+              {
+                ...PARAMETER,
+                settingCode: 'LOAD.PERIOD.PARAMETER',
+                sectionCode: 'LOAD_POLICY' as const,
+                groupCode: 'WORKLOAD',
+                safeLabel: 'Окно расчёта нагрузки',
+                valueType: 'DAYS' as const,
+                value: 28,
+              },
+              false,
+            ),
+          ],
+          sectionVersions: { LOAD_POLICY: 'LOAD-POLICY-2026.08.1' },
+        }),
+      ),
+      http.get('*/api/ops/setting-changes/', () => HttpResponse.json({ results: [] })),
+    )
+    renderPage()
+    expect(await screen.findByText('Пороги нагрузки')).toBeInTheDocument()
+    expect(screen.getByText('Окно расчёта нагрузки')).toBeInTheDocument()
+    expect(screen.getByText(/LOAD-POLICY-2026\.08\.1/)).toBeInTheDocument()
+  })
+
   it('печатает действующую версию политики и значения с их единицами', async () => {
     seedHandlers({ canManage: true })
     renderPage()

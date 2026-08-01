@@ -93,14 +93,11 @@ export function SettingsPage() {
       groups.push({ groupCode: setting.groupCode, sectionCode: setting.sectionCode, items: [setting] })
     }
   }
-  const sections = ([
-    'ATTENTION_POLICY',
-    'CONFLICT_RULES',
-    'PASSPORT_FRESHNESS',
-    'ANALYTICS_LIMITS',
-    'REPORT_LIMITS',
-    'RATING_POLICY',
-  ] as const)
+  // Перечень разделов выводится из SECTION_TITLE — Record над ПОЛНЫМ типом
+  // SettingSectionCode: новый раздел без заголовка не компилируется, и потому
+  // не может молча выпасть из экрана. Живой прогон Этапа 70 поймал ровно это:
+  // отдельный захардкоженный список спрятал LOAD_POLICY.
+  const sections = (Object.keys(SECTION_TITLE) as PolicySetting['sectionCode'][])
     .map((sectionCode) => ({
       sectionCode,
       groups: groups.filter((group) => group.sectionCode === sectionCode),
