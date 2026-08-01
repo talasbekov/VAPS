@@ -10,6 +10,7 @@ from apps.core.models import (
     DivisionHistoricalSlot,
     Employee,
     EmployeeDivisionHistory,
+    EmployeeOperationalProfile,
     Position,
     Rank,
 )
@@ -216,6 +217,56 @@ class CoreEmployeeSelector:
             }
             for e in employees
         }
+
+    @staticmethod
+    def operational_profile_for(employee_ids) -> dict:
+        """employee_id -> {rank_index, position_code, gender, height_cm,
+        has_weapon_permit, has_uniform_issued, has_special_equipment} for
+        FR-25's post-requirement conflict check (Story 16.3c — the
+        EmployeeOperationalProfile model's own docstring, 14.10, names
+        itself "data for the future FR-25 post-requirement matching").
+
+        Two bulk queries (Employee + EmployeeOperationalProfile), same
+        shape as `denorm_for()`. An employee with no `operational_profile`
+        row (14.10's model is a 1:1 extension, not auto-created) gets
+        `None` for all three operational-block booleans — the caller must
+        treat that as "unknown", not "false"/"missing the permit", per
+        this story's own Scope Decision (absent data skips the check,
+        never fails it).
+        """
+        employees = list(
+            Employee.objects.filter(id__in=employee_ids).values(
+                "id", "rank_index", "position_code", "gender", "height_cm"
+            )
+        )
+        profiles = {
+            p["employee_id"]: p
+            for p in EmployeeOperationalProfile.objects.filter(
+                employee_id__in=employee_ids
+            ).values(
+                "employee_id",
+                "has_weapon_permit",
+                "has_uniform_issued",
+                "has_special_equipment",
+            )
+        }
+        result = {}
+        for e in employees:
+            profile = profiles.get(e["id"])
+            result[e["id"]] = {
+                "rank_index": e["rank_index"],
+                "position_code": e["position_code"],
+                "gender": e["gender"],
+                "height_cm": e["height_cm"],
+                "has_weapon_permit": profile["has_weapon_permit"] if profile else None,
+                "has_uniform_issued": profile["has_uniform_issued"]
+                if profile
+                else None,
+                "has_special_equipment": (
+                    profile["has_special_equipment"] if profile else None
+                ),
+            }
+        return result
 
     @staticmethod
     def working_by_division(division_ids=None) -> dict:

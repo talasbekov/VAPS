@@ -26,6 +26,7 @@ from django.db.models import Q
 from apps.audit.services import record
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
+from apps.core.selectors import CoreEmployeeSelector
 from apps.notifications.models import Notification
 from apps.notifications.services import notify
 from apps.operations.events.models import (
@@ -581,6 +582,92 @@ def form_draft_placement(event, *, actor):
     return version, created_assignments, unmatched
 
 
+def _post_requirement_conflicts(post, profile):
+    """Story 16.3c (FR-25): compare *post*'s requirements against an
+    employee's `operational_profile_for()` snapshot. Returns a list of
+    `conflict_codes` (never raises) — `Post.requirements` is completely
+    unvalidated JSON (14.1's own deferred decision, this function's whole
+    reason to exist), so every lookup is defensive: a missing key or a
+    value of the wrong type SKIPS that specific check rather than
+    crashing the whole conflict scan. A `None` profile field (employee
+    exists but has no `EmployeeOperationalProfile`/that field is unset)
+    is likewise treated as "unknown" — skip, never a mismatch.
+
+    `min_rank_index`/`max_rank_index` compare against the employee's OWN
+    `rank_index` («звание»), never `Position.rank_index` (a different
+    axis, the DUTY/job-position's level, not the person's rank) — the
+    registry's own conflict-code descriptions name «звание» and
+    «должность» as two separate checks.
+    """
+    requirements = post.requirements if isinstance(post.requirements, dict) else {}
+    codes = []
+
+    min_height_cm = requirements.get("min_height_cm")
+    height_cm = profile.get("height_cm")
+    if (
+        isinstance(min_height_cm, (int, float))
+        and height_cm is not None
+        and height_cm < min_height_cm
+    ):
+        codes.append("POST_REQUIREMENT_MISMATCH_CONFLICT")
+
+    required_gender = requirements.get("gender")
+    gender = profile.get("gender")
+    if (
+        isinstance(required_gender, str)
+        and required_gender
+        and gender is not None
+        and gender != required_gender
+    ):
+        codes.append("POST_REQUIREMENT_MISMATCH_CONFLICT")
+
+    rank_index = profile.get("rank_index")
+    min_rank_index = requirements.get("min_rank_index")
+    if (
+        isinstance(min_rank_index, (int, float))
+        and rank_index is not None
+        and rank_index < min_rank_index
+    ):
+        codes.append("POST_REQUIREMENT_MISMATCH_CONFLICT")
+
+    max_rank_index = requirements.get("max_rank_index")
+    # PROVISIONAL default: permissive (overqualification allowed) unless
+    # the requirements JSON explicitly opts into the restriction — matches
+    # error-codes.yaml's own "...при allow_overqualification=false"
+    # phrasing (an opt-in restriction, not an opt-out).
+    allow_overqualification = requirements.get("allow_overqualification", True)
+    if (
+        isinstance(max_rank_index, (int, float))
+        and rank_index is not None
+        and rank_index > max_rank_index
+        and allow_overqualification is False
+    ):
+        codes.append("OVERQUALIFICATION_DETECTED")
+
+    required_position_codes = requirements.get("required_position_codes")
+    position_code = profile.get("position_code")
+    if (
+        isinstance(required_position_codes, list)
+        and required_position_codes
+        and position_code is not None
+        and position_code not in required_position_codes
+    ):
+        codes.append("POST_REQUIREMENT_MISMATCH_CONFLICT")
+
+    # requires_weapon/requires_special_equipment/requires_uniform are
+    # plain Post columns, NOT part of the requirements JSON.
+    permit_checks = (
+        (post.requires_weapon, profile.get("has_weapon_permit")),
+        (post.requires_special_equipment, profile.get("has_special_equipment")),
+        (post.requires_uniform, profile.get("has_uniform_issued")),
+    )
+    for required, has_it in permit_checks:
+        if required and has_it is False:
+            codes.append("POST_REQUIREMENT_MISMATCH_CONFLICT")
+
+    return codes
+
+
 def detect_placement_conflicts(version):
     """Story 16.3b (FR-25, part 2/4): double-assignment + rest-violation
     conflict scan for *version*'s `PlacementAssignment` rows.
@@ -626,10 +713,19 @@ def detect_placement_conflicts(version):
     uses) rather than re-deriving calendar dates from a UTC-stored
     DateTimeField, which would silently misplace an overnight event.
 
+    Story 16.3c: also checks post-requirement mismatch, in the SAME pass
+    (appending into the SAME `codes` list before the one write) — a
+    second, independent full-recompute function would silently erase this
+    function's earlier findings on its own `.update()` call, with no
+    guaranteed ordering between the two. `Post.requirements` is read
+    defensively via `_post_requirement_conflicts()` (completely
+    unvalidated JSON, 14.1's own deferred decision) — a missing/
+    wrong-typed key skips that specific check rather than raising.
+
     Returns the list of `PlacementAssignment` rows touched (all rows in
     the version, since every row is recomputed).
     """
-    assignments = list(version.assignments.select_related("version__event"))
+    assignments = list(version.assignments.select_related("version__event", "post"))
     event = version.event
     event_has_schedule = bool(event.starts_at and event.ends_at)
 
@@ -651,6 +747,10 @@ def detect_placement_conflicts(version):
 
     if event_has_schedule:
         event_start, event_end = _to_date_range(event.starts_at, event.ends_at)
+
+    operational_profiles = CoreEmployeeSelector.operational_profile_for(
+        set(employee_ids)
+    )
 
     touched = []
     for assignment in assignments:
@@ -683,6 +783,10 @@ def detect_placement_conflicts(version):
             ).exists()
             if has_rest_conflict:
                 codes.append("REST_VIOLATION_CONFLICT")
+
+        profile = operational_profiles.get(assignment.employee_id)
+        if profile is not None:
+            codes.extend(_post_requirement_conflicts(assignment.post, profile))
 
         severity = PlacementAssignment.ConflictSeverity.SOFT if codes else ""
         PlacementAssignment.objects.filter(pk=assignment.pk).update(
