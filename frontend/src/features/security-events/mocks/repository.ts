@@ -9,6 +9,14 @@ import type {
   PersistenceAdapter,
 } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
+import {
+  RepositoryBusinessRuleError,
+  RepositoryConflictError,
+  RepositoryNotFoundError,
+  RepositoryPermissionError,
+  RepositoryValidationError,
+} from '../../../shared/testing/mock-runtime/repository-errors'
+import { formatDecimalComma } from '../../../shared/lib/format'
 import type {
   AddJournalEntryRequest,
   AssignPlacementRequest,
@@ -47,44 +55,26 @@ import { RECON_CHECKLIST_TEMPLATE } from './fixtures'
 import type { SecurityEventsSlice } from './fixtures'
 import { findObjectById, readObjectsProjection } from './objectsSlice'
 import type { PlacementRatingProjection } from './ratingsSlice'
-import { readPlacementRating, readRatingCapabilities } from './ratingsSlice'
+import {
+  readPlacementRating,
+  readPlacementRatings,
+  readRatingCapabilities,
+} from './ratingsSlice'
 import { STAGE_ORDER } from '../lib/stageMeta'
 import { aggregateForceRequests } from './demandLogic'
 import { findPersonnel } from './personnelRoster'
 
-export class RepositoryPermissionError extends Error {}
-export class RepositoryNotFoundError extends Error {}
-export class RepositoryValidationError extends Error {
-  readonly fieldErrors: Record<string, string[]>
-  constructor(fieldErrors: Record<string, string[]>) {
-    super('validation')
-    this.fieldErrors = fieldErrors
-  }
-}
-/** 422: бизнес-правило нарушено (не форма) — например, завершение рекогносцировки без выполненного чек-листа. */
-export class RepositoryBusinessRuleError extends Error {
-  readonly errorCode: string
-  constructor(errorCode: string, message: string) {
-    super(message)
-    this.errorCode = errorCode
-  }
-}
-/**
- * 409: МЯГКИЙ конфликт — «назначить можно, нужно обоснование» (§19.24
- * «рейтинг не блокирует назначение автоматически… используй soft warning и
- * существующий workflow override»). Отличается от 422 именно этим: 422 —
- * отказ, обойти который нечем.
- */
-export class RepositoryConflictError extends Error {
-  readonly errorCode: string
-  /** Конверт §36 несёт `details.conflicts[]` — общий `ConflictDialog` их перечисляет. */
-  readonly details: Record<string, unknown>
-  constructor(errorCode: string, message: string, details: Record<string, unknown> = {}) {
-    super(message)
-    this.errorCode = errorCode
-    this.details = details
-  }
-}
+// Ошибки — канонические классы shared/testing/mock-runtime (ревью Этапа 73:
+// это была 4-я копия таксономии; формы 409-конверта обязаны совпадать у всех
+// фич, потому что их читает ОБЩИЙ ConflictDialog). Re-export сохраняет
+// существующие импорты handlers/тестов.
+export {
+  RepositoryBusinessRuleError,
+  RepositoryConflictError,
+  RepositoryNotFoundError,
+  RepositoryPermissionError,
+  RepositoryValidationError,
+} from '../../../shared/testing/mock-runtime/repository-errors'
 
 const SLICE_NAME = 'security-events'
 const VIEW_PERMISSION = 'ops.security_event.view'
@@ -108,7 +98,7 @@ const CLOSURE_PERMISSION = 'ops.closure.manage'
 
 /** Подпись требования поста: «8,0», а не «8» — сравнивается дробное значение. */
 function formatRating(value: number): string {
-  return value.toFixed(1).replace('.', ',')
+  return formatDecimalComma(value)
 }
 
 /**
@@ -907,7 +897,13 @@ export function createSecurityEventsRepository(
       let ratingConflictMessage: string | null = null
       if (capabilities.ratingConflicts && post !== undefined && post.minRating !== null) {
         const rating = readPlacementRating(current.slices, request.employeeId)
-        const compliance = resolveRatingCompliance(post.minRating, rating, true)
+        // Флаг передаётся ЖИВОЙ, а не литералом true: у порядка проверок
+        // resolveRatingCompliance один владелец — она сама (ревью Этапа 73).
+        const compliance = resolveRatingCompliance(
+          post.minRating,
+          rating,
+          capabilities.ratingConflicts,
+        )
         if (compliance === 'BELOW') {
           ratingConflictMessage =
             `Рейтинг сотрудника ниже требования поста (${formatRating(post.minRating)}).`
@@ -986,10 +982,19 @@ export function createSecurityEventsRepository(
     }
     const capabilities = readRatingCapabilities(envelope.slices)
     const aggregateVisible = hasPermission(actorUserId, RATING_VIEW_AGGREGATE_PERMISSION)
+    // Индексы строятся ОДИН раз: скан точек динамики и поиск поста на каждого
+    // назначенного делали сводку квадратичной (ревью Этапа 73).
+    const ratingByEmployee = readPlacementRatings(
+      envelope.slices,
+      event.placementAssignments.map((assignment) => assignment.employeeId),
+    )
+    const postById = new Map(event.reconSectorPosts.map((post) => [post.id, post]))
     const results: PlacementRatingRow[] = event.placementAssignments.map((assignment) => {
-      const post = event.reconSectorPosts.find((p) => p.id === assignment.postId)
+      const post = postById.get(assignment.postId)
       const minRating = post?.minRating ?? null
-      const rating = readPlacementRating(envelope.slices, assignment.employeeId)
+      const rating =
+        ratingByEmployee.get(assignment.employeeId) ??
+        readPlacementRating(envelope.slices, assignment.employeeId)
       const compliance = resolveRatingCompliance(
         minRating,
         rating,

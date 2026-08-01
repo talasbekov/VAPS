@@ -8,6 +8,12 @@ import type {
   PersistenceAdapter,
 } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
+import {
+  RepositoryBusinessRuleError,
+  RepositoryConflictError,
+  RepositoryNotFoundError,
+  RepositoryPermissionError,
+} from '../../../shared/testing/mock-runtime/repository-errors'
 import { buildMonthlyPlan, detectConflicts, isValidMonth, monthOf } from '../lib/monthlyPlan'
 import type { MonthlyDutyPlanConflict, UnavailableMetric } from '../lib/monthlyPlan'
 import {
@@ -69,32 +75,15 @@ import type {
 } from '../model/types'
 import type { DutiesSlice } from './fixtures'
 
-export class RepositoryPermissionError extends Error {}
-export class RepositoryNotFoundError extends Error {}
-export class RepositoryBusinessRuleError extends Error {
-  readonly errorCode: string
-  constructor(errorCode: string, message: string) {
-    super(message)
-    this.errorCode = errorCode
-  }
-}
-/**
- * §21.34 «Soft conflict → 409»: сохранение возможно, но требует явного
- * обхода — это КОНФЛИКТ состояния, а не нарушенное бизнес-правило (422,
- * обойти нельзя). Разные коды состояния здесь несут разный смысл для формы:
- * на 422 она показывает отказ, на 409 — предлагает обоснование.
- */
-export class RepositoryConflictError extends Error {
-  readonly errorCode: string
-  /** Конверт §36 несёт `details.conflicts[]` — общий `ConflictDialog` их
-   * перечисляет. Пустой объект тут был бы диалогом без содержания. */
-  readonly details: Record<string, unknown>
-  constructor(errorCode: string, message: string, details: Record<string, unknown> = {}) {
-    super(message)
-    this.errorCode = errorCode
-    this.details = details
-  }
-}
+// Ошибки — канонические классы shared/testing/mock-runtime (ревью Этапа 73:
+// копии таксономии в каждой фиче разъезжались бы формой 409-конверта, которую
+// читает общий ConflictDialog). Re-export сохраняет существующие импорты.
+export {
+  RepositoryBusinessRuleError,
+  RepositoryConflictError,
+  RepositoryNotFoundError,
+  RepositoryPermissionError,
+} from '../../../shared/testing/mock-runtime/repository-errors'
 
 const SLICE_NAME = 'duties'
 const VIEW_PERMISSION = 'ops.duty.view'

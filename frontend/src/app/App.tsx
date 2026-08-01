@@ -60,10 +60,17 @@ import { usePermissions } from '../shared/auth/usePermissions'
  */
 function HomeGate() {
   const { hasPermission } = usePermissions()
+  // Решение о посадочной стоит ДО гейта заглушки: persona с командным центром,
+  // но без status.view, иначе получала бы отказ на «/» вместо редиректа
+  // (ревью Этапа 73). Заглушка остаётся под СВОИМ правом.
   if (hasPermission('ops.dashboard.view')) {
     return <Navigate to={ROUTES.commandCenter} replace />
   }
-  return <DashboardStub />
+  return (
+    <RequirePermission permission="status.view">
+      <DashboardStub />
+    </RequirePermission>
+  )
 }
 
 // `React.lazy`, а НЕ статический импорт: `import.meta.env.MODE === 'mock'`
@@ -152,14 +159,7 @@ export function AppRoutes() {
           </RequireAuth>
         }
       >
-        <Route
-          path={ROUTES.home}
-          element={
-            <RequirePermission permission="status.view">
-              <HomeGate />
-            </RequirePermission>
-          }
-        />
+        <Route path={ROUTES.home} element={<HomeGate />} />
         <Route
           path={ROUTES.employees}
           element={

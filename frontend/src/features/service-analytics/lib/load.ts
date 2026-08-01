@@ -11,7 +11,8 @@
 // хардкодить порог перегрузки): политики нет → каждая строка `UNKNOWN`, а не
 // «нормально». Frontend-правил вида «больше N смен за месяц» здесь нет —
 // ровно их §22.9 велит удалить.
-import type { AnalyticsSource, AnalyticsSourceShift } from './analytics'
+import type { AnalyticsSource } from './analytics'
+import { addDays, inPeriod } from './analytics'
 
 export interface LoadPolicyView {
   periodDays: number
@@ -73,18 +74,6 @@ function minutesBetween(startIso: string, endIso: string): number {
   return Math.round((end - start) / 60_000)
 }
 
-function addDaysIso(businessDate: string, days: number): string {
-  const parsed = new Date(`${businessDate}T00:00:00Z`)
-  parsed.setUTCDate(parsed.getUTCDate() + days)
-  return parsed.toISOString().slice(0, 10)
-}
-
-/** Смены ОКНА: от `businessDate - periodDays + 1` до бизнес-даты включительно. */
-function inWindow(shift: AnalyticsSourceShift, businessDate: string, periodDays: number): boolean {
-  const from = addDaysIso(businessDate, -(periodDays - 1))
-  return shift.businessDate >= from && shift.businessDate <= businessDate
-}
-
 function resolveState(planned: number, policy: LoadPolicyView): LoadState {
   if (planned >= policy.overloadMinutes) return 'OVERLOADED'
   if (planned >= policy.warningMinutes) return 'WARNING'
@@ -126,15 +115,26 @@ export function buildLoadAnalytics(
   // Политики нет — окна нет: фильтровать «за последние N суток» было бы
   // выдумыванием N. Строки строятся по ВСЕМ неотменённым сменам, но значения
   // едут null, а состояние — UNKNOWN: «посчитать нельзя», не «нормально».
+  //
+  // Окно [businessDate−(N−1), businessDate] — теми же addDays/inPeriod, что
+  // остальная аналитика: второй date-хелпер разошёлся бы с первым при первом
+  // же tz-фиксе (ревью Этапа 73). Начало окна считается ОДИН раз.
+  const windowFrom =
+    policy === null ? null : addDays(businessDate, -(policy.periodDays - 1))
   const windowShifts = source.shifts.filter(
     (shift) =>
       shift.stateCode !== 'CANCELLED' &&
-      (policy === null || inWindow(shift, businessDate, policy.periodDays)),
+      (windowFrom === null || inPeriod(shift.businessDate, windowFrom, businessDate)),
   )
   for (const shift of windowShifts) {
-    const planned = durationByType.get(shift.dutyTypeCode) ?? 0
+    // Без политики суммы не считаются вовсе: toMetric их всё равно отбросит,
+    // а вычисленное-и-выброшенное число читалось бы как живой путь.
+    const planned = policy === null ? 0 : (durationByType.get(shift.dutyTypeCode) ?? 0)
     const actual =
-      shift.stateCode === 'COMPLETED' && shift.actualStart !== null && shift.actualEnd !== null
+      policy !== null &&
+      shift.stateCode === 'COMPLETED' &&
+      shift.actualStart !== null &&
+      shift.actualEnd !== null
         ? minutesBetween(shift.actualStart, shift.actualEnd)
         : 0
     if (shift.employeeId === null || shift.unitId === null) {

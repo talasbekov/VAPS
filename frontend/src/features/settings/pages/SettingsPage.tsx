@@ -50,6 +50,23 @@ const SECTION_TITLE: Record<PolicySetting['sectionCode'], string> = {
   LOAD_POLICY: 'Пороги нагрузки',
 }
 
+const SECTION_ORDER = [
+  'ATTENTION_POLICY',
+  'CONFLICT_RULES',
+  'PASSPORT_FRESHNESS',
+  'ANALYTICS_LIMITS',
+  'REPORT_LIMITS',
+  'RATING_POLICY',
+  'LOAD_POLICY',
+] as const satisfies readonly PolicySetting['sectionCode'][]
+
+// Проверка полноты: раздел, отсутствующий в SECTION_ORDER, не компилируется
+// (первая редакция через `[] satisfies never[]` была вакуумной — пустой массив
+// удовлетворяет never[]; поймано красной пробой ревью Этапа 73).
+type MissingSection = Exclude<PolicySetting['sectionCode'], (typeof SECTION_ORDER)[number]>
+const _allSectionsOrdered: MissingSection extends never ? true : never = true
+void _allSectionsOrdered
+
 const SECTION_HINT: Record<PolicySetting['sectionCode'], string> = {
   ATTENTION_POLICY:
     'Допуски и пороги, по которым аналитика службы решает, что показать в блоке «Требует внимания».',
@@ -93,11 +110,12 @@ export function SettingsPage() {
       groups.push({ groupCode: setting.groupCode, sectionCode: setting.sectionCode, items: [setting] })
     }
   }
-  // Перечень разделов выводится из SECTION_TITLE — Record над ПОЛНЫМ типом
-  // SettingSectionCode: новый раздел без заголовка не компилируется, и потому
-  // не может молча выпасть из экрана. Живой прогон Этапа 70 поймал ровно это:
-  // отдельный захардкоженный список спрятал LOAD_POLICY.
-  const sections = (Object.keys(SECTION_TITLE) as PolicySetting['sectionCode'][])
+  // ПОРЯДОК разделов — явное решение, а не порядок ключей Record: форматтер
+  // или merge переставили бы экран молча (ревью Этапа 73). Полноту при этом
+  // охраняет тип: пропущенный раздел не компилируется (`_missing` ниже) —
+  // живой прогон Этапа 70 поймал, что рукописный список без такой проверки
+  // молча спрятал LOAD_POLICY.
+  const sections = SECTION_ORDER
     .map((sectionCode) => ({
       sectionCode,
       groups: groups.filter((group) => group.sectionCode === sectionCode),

@@ -5,6 +5,12 @@ import type { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import { hasPermission } from '../../../shared/testing/mock-runtime/rbac-directory'
 import type { PersistenceAdapter } from '../../../shared/testing/mock-runtime/persistence'
 import { runMutation } from '../../../shared/testing/mock-runtime/transaction'
+import {
+  RepositoryBusinessRuleError,
+  RepositoryConflictError,
+  RepositoryNotFoundError,
+  RepositoryPermissionError,
+} from '../../../shared/testing/mock-runtime/repository-errors'
 import { UNAVAILABLE_RATING_FACTORS, buildSummary } from '../lib/rating'
 import { policyBoundaries } from '../lib/dynamics'
 import { buildRatingAnalytics } from '../lib/analytics'
@@ -69,31 +75,15 @@ import type { RatingsSlice } from './fixtures'
 import { readRatingPolicy, readRatingSuppressionMinGroup } from './settingsSlice'
 import { readSecurityEventClosure } from './securityEventsSlice'
 
-export class RepositoryPermissionError extends Error {}
-export class RepositoryNotFoundError extends Error {}
-export class RepositoryBusinessRuleError extends Error {
-  readonly errorCode: string
-
-  constructor(errorCode: string, message: string) {
-    super(message)
-    this.errorCode = errorCode
-  }
-}
-
-/**
- * Конфликт состояния (§19.25) — ОТДЕЛЬНЫЙ от правила формы: он несёт актуальную
- * редакцию и текущие значения, чтобы экран показал diff, а не просто «повторите».
- */
-export class RepositoryConflictError extends Error {
-  readonly errorCode: string
-  readonly details: Record<string, unknown>
-
-  constructor(errorCode: string, message: string, details: Record<string, unknown>) {
-    super(message)
-    this.errorCode = errorCode
-    this.details = details
-  }
-}
+// Ошибки — канонические классы shared/testing/mock-runtime (ревью Этапа 73:
+// копии таксономии в каждой фиче разъезжались бы формой 409-конверта, которую
+// читает общий ConflictDialog). Re-export сохраняет существующие импорты.
+export {
+  RepositoryBusinessRuleError,
+  RepositoryConflictError,
+  RepositoryNotFoundError,
+  RepositoryPermissionError,
+} from '../../../shared/testing/mock-runtime/repository-errors'
 
 const SLICE_NAME = 'ratings'
 /**

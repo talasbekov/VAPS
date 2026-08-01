@@ -7,6 +7,10 @@
 //
 // Инвариант: ТОЛЬКО ЧТЕНИЕ. Аналитика ничего не меняет в чужом агрегате.
 import type { AnalyticsSource } from '../lib/analytics'
+import {
+  asNullableString,
+  asString,
+} from '../../../shared/testing/mock-runtime/projection'
 import { readRestAfterDutyMode } from './settingsSlice'
 
 export const DUTIES_SLICE_NAME = 'duties'
@@ -29,14 +33,6 @@ interface TypeProjection {
   dutyTypeCode?: unknown
   restAfterMinutes?: unknown
   defaultDurationMinutes?: unknown
-}
-
-function asString(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function asNullableString(value: unknown): string | null {
-  return typeof value === 'string' && value !== '' ? value : null
 }
 
 /**

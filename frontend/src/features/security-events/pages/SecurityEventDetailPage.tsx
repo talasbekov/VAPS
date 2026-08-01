@@ -12,6 +12,7 @@ import { Link, useParams } from 'react-router'
 import { Button } from '../../../shared/ui/Button'
 import { ConflictDialog } from '../../../shared/ui/ConflictDialog'
 import { ROUTES } from '../../../shared/routes'
+import { formatDecimalComma } from '../../../shared/lib/format'
 import { ApiError } from '../../../shared/api/errors'
 import {
   useAcknowledgePlacement,
@@ -1345,9 +1346,39 @@ const RATING_DATA_STATE_LABEL: Record<
   FEATURE_DISABLED: 'Оперативный рейтинг недоступен',
 }
 
+/**
+ * Значение сводки одной строки. Сигнал «закрыто политикой» ОДИН —
+ * `dataState === null` (сервер выставляет его вместе с остальными null-ами
+ * по построению; дублирующий OR с `aggregateVisible` прятал бы, какой из двух
+ * авторитетен — ревью Этапа 73). READY без числа не печатает «Рассчитан» без
+ * значения: отсутствие значения — словами (§19.19).
+ */
+function RatingCell({ row }: { row: PlacementRatingRow }) {
+  if (row.dataState === null) {
+    return <span className="text-muted-foreground">Сводка закрыта политикой доступа</span>
+  }
+  if (row.dataState !== 'READY' || row.aggregateRating === null) {
+    return (
+      <span className="text-muted-foreground">
+        {row.dataState === 'READY' ? 'Итоговый рейтинг пока не сформирован.' : RATING_DATA_STATE_LABEL[row.dataState]}
+      </span>
+    )
+  }
+  return (
+    <>
+      {formatAggregate(row.aggregateRating)}
+      <span className="block text-[11px] text-muted-foreground">
+        оценок: {row.evaluationsCount ?? 0}
+        {row.policyVersion !== null && ` · методика ${row.policyVersion}`}
+        {row.calculatedAt !== null && ` · рассчитан ${row.calculatedAt.slice(0, 10)}`}
+      </span>
+    </>
+  )
+}
+
 /** «8,4» — та же запись, что на экранах рейтинга. */
 function formatAggregate(value: number): string {
-  return value.toFixed(1).replace('.', ',')
+  return formatDecimalComma(value)
 }
 
 /**
@@ -1422,25 +1453,7 @@ function PlacementRatingsSection({ event }: { event: SecurityEvent }) {
                   )}
                 </td>
                 <td className="py-1.5 pr-3">
-                  {!data.aggregateVisible || row.dataState === null ? (
-                    <span className="text-muted-foreground">
-                      Сводка закрыта политикой доступа
-                    </span>
-                  ) : row.dataState === 'READY' && row.aggregateRating !== null ? (
-                    <>
-                      {formatAggregate(row.aggregateRating)}
-                      <span className="block text-[11px] text-muted-foreground">
-                        оценок: {row.evaluationsCount ?? 0}
-                        {row.policyVersion !== null && ` · методика ${row.policyVersion}`}
-                        {row.calculatedAt !== null &&
-                          ` · рассчитан ${row.calculatedAt.slice(0, 10)}`}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {RATING_DATA_STATE_LABEL[row.dataState]}
-                    </span>
-                  )}
+                  <RatingCell row={row} />
                 </td>
               </tr>
             ))}

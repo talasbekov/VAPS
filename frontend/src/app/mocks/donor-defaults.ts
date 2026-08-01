@@ -17,8 +17,8 @@
 import { HttpResponse, http, ws } from 'msw'
 import type { HttpHandler, WebSocketHandler } from 'msw'
 import { DIVISIONS } from '../../features/personnel/mocks/fixtures'
+import { emptyLimitOffsetPage } from '../../shared/api/testing/envelopes'
 
-const EMPTY_PAGE = { count: 0, next: null, previous: null, results: [] }
 
 function demoUnavailableEnvelope(message: string) {
   return {
@@ -37,11 +37,16 @@ export function donorDefaultHandlers(): (HttpHandler | WebSocketHandler)[] {
   return [
     // Колокольчик уведомлений (донорский контракт, GET-only): уведомлений
     // линии в demo не существует — пустая страница, а не 500 с ретрай-потопом.
-    http.get('*/api/notifications/', () => HttpResponse.json(EMPTY_PAGE)),
+    http.get('*/api/notifications/', () => HttpResponse.json(emptyLimitOffsetPage())),
     // WS-канал уведомлений: соединение принимается и молчит. Без обработчика
-    // MSW печатал ошибку на каждый reconnect.
+    // MSW печатал ошибку на каждый reconnect. ДВЕ схемы: клиент выводит её из
+    // location.protocol (notificationsSocket.ts) — на https-развёртке это
+    // wss://, и ws-только паттерн вернул бы тот самый потоп (ревью Этапа 73).
     ws.link('ws://*/ws/notifications/*').addEventListener('connection', () => {
       // Событий нет намеренно: push-уведомления линии в demo не происходят.
+    }),
+    ws.link('wss://*/ws/notifications/*').addEventListener('connection', () => {
+      // См. выше: тот же молчащий канал для https-развёртки.
     }),
 
     // Дерево светофора «Подразделения»: те же подразделения, что отдаёт
@@ -63,7 +68,7 @@ export function donorDefaultHandlers(): (HttpHandler | WebSocketHandler)[] {
 
     // Сдача дня: сдач не было — пустая страница, панель честно показывает
     // «день не сдавался», а не крутится вечно.
-    http.get('*/api/operations/daily-submissions/', () => HttpResponse.json(EMPTY_PAGE)),
+    http.get('*/api/operations/daily-submissions/', () => HttpResponse.json(emptyLimitOffsetPage())),
     http.post('*/api/operations/daily-submissions/', () =>
       HttpResponse.json(demoUnavailableEnvelope(LINE_UNAVAILABLE_TEXT), { status: 422 }),
     ),

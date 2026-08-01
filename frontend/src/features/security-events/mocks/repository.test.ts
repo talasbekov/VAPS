@@ -1258,11 +1258,22 @@ describe('рейтинг при расстановке §19.24 (soft warning + �
     return { ...envelope, slices: { ...envelope.slices, ratings: ratingsSlice(overrides) } }
   }
 
-  it('назначение ниже требования поста даёт 409 SOFT_CONFLICT_DETECTED, а не отказ', async () => {
+  /** Общий сетап §19.24 (ревью Этапа 73: 12 одинаковых 4-строчных блоков). */
+  async function makeRatingRepo(
+    events: SecurityEventsSlice['events'],
+    overrides?: Parameters<typeof ratingsSlice>[0],
+  ) {
     registerRatingRbac()
     const adapter = createMemoryPersistence()
-    await adapter.reset(ratingSeed([RATING_EVENT]))
-    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    await adapter.reset(ratingSeed(events, overrides))
+    return {
+      repo: createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00')),
+      adapter,
+    }
+  }
+
+  it('назначение ниже требования поста даёт 409 SOFT_CONFLICT_DETECTED, а не отказ', async () => {
+    const { repo } = await makeRatingRepo([RATING_EVENT])
     // employee-2: последний закрытый период 7,9 < 8. Старая точка 9,9 и свежая
     // оценка 10 в слайсе НЕ должны пройти вместо него.
     const attempt = repo.assignPlacement(
@@ -1282,10 +1293,7 @@ describe('рейтинг при расстановке §19.24 (soft warning + �
   })
 
   it('повтор с override+reason проходит и сохраняет обоснование у назначения', async () => {
-    registerRatingRbac()
-    const adapter = createMemoryPersistence()
-    await adapter.reset(ratingSeed([RATING_EVENT]))
-    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    const { repo, adapter } = await makeRatingRepo([RATING_EVENT])
     const updated = await repo.assignPlacement(
       RATING_EVENT.id,
       {
@@ -1308,10 +1316,7 @@ describe('рейтинг при расстановке §19.24 (soft warning + �
   })
 
   it('отсутствие данных рейтинга — ОТДЕЛЬНОЕ предупреждение RATING_DATA_MISSING, не молчаливый допуск', async () => {
-    registerRatingRbac()
-    const adapter = createMemoryPersistence()
-    await adapter.reset(ratingSeed([RATING_EVENT]))
-    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    const { repo } = await makeRatingRepo([RATING_EVENT])
     // employee-3: точка есть, агрегата в ней нет (INSUFFICIENT_DATA).
     const attempt = repo.assignPlacement(
       RATING_EVENT.id,
@@ -1330,10 +1335,7 @@ describe('рейтинг при расстановке §19.24 (soft warning + �
   })
 
   it('соответствующий требованию сотрудник назначается без предупреждения и без следа обхода', async () => {
-    registerRatingRbac()
-    const adapter = createMemoryPersistence()
-    await adapter.reset(ratingSeed([RATING_EVENT]))
-    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    const { repo } = await makeRatingRepo([RATING_EVENT])
     // employee-1: 8,6 >= 8. Поля override посланы, но конфликта не было —
     // обоснование НЕ сохраняется (иначе читалось бы как «здесь обходили»).
     const updated = await repo.assignPlacement(
@@ -1352,10 +1354,7 @@ describe('рейтинг при расстановке §19.24 (soft warning + �
   })
 
   it('ENABLE_RATING_CONFLICTS=false: min_rating игнорируется, назначение проходит (§19.3)', async () => {
-    registerRatingRbac()
-    const adapter = createMemoryPersistence()
-    await adapter.reset(ratingSeed([RATING_EVENT], { ratingConflicts: false }))
-    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    const { repo } = await makeRatingRepo([RATING_EVENT], { ratingConflicts: false })
     const updated = await repo.assignPlacement(
       RATING_EVENT.id,
       { postId: RATED_POST.id, employeeId: 'employee-2' },
@@ -1365,10 +1364,7 @@ describe('рейтинг при расстановке §19.24 (soft warning + �
   })
 
   it('жёсткое правило первее мягкого: двойное назначение — 422 и с override', async () => {
-    registerRatingRbac()
-    const adapter = createMemoryPersistence()
-    await adapter.reset(ratingSeed([RATING_EVENT]))
-    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    const { repo } = await makeRatingRepo([RATING_EVENT])
     await repo.assignPlacement(
       RATING_EVENT.id,
       { postId: FREE_POST.id, employeeId: 'employee-2' },
@@ -1389,10 +1385,7 @@ describe('рейтинг при расстановке §19.24 (soft warning + �
   })
 
   it('без override двойное назначение — 422 DOUBLE_ASSIGNMENT, а не 409 рейтинга: у отказа один владелец', async () => {
-    registerRatingRbac()
-    const adapter = createMemoryPersistence()
-    await adapter.reset(ratingSeed([RATING_EVENT]))
-    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    const { repo } = await makeRatingRepo([RATING_EVENT])
     await repo.assignPlacement(
       RATING_EVENT.id,
       { postId: FREE_POST.id, employeeId: 'employee-2' },
@@ -1416,10 +1409,7 @@ describe('рейтинг при расстановке §19.24 (soft warning + �
   })
 
   it('listPlacementRatings() требует ops.placement.manage', async () => {
-    registerRatingRbac()
-    const adapter = createMemoryPersistence()
-    await adapter.reset(ratingSeed([RATING_EVENT]))
-    const repo = createSecurityEventsRepository(adapter, new DemoClock('2026-07-20T08:00:00+05:00'))
+    const { repo } = await makeRatingRepo([RATING_EVENT])
     await expect(repo.listPlacementRatings(RATING_EVENT.id, VIEWER_ONLY)).rejects.toBeInstanceOf(
       RepositoryPermissionError,
     )

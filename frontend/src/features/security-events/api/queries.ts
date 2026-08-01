@@ -261,13 +261,16 @@ export function useUnassignPlacement(id: string) {
   })
 }
 
-/** §19.24: разрешённая краткая сводка рейтинга назначенных. */
+/** §19.24: разрешённая краткая сводка рейтинга назначенных. Свежесть держат
+ * ЯВНЫЕ инвалидации assign/unassign — рефетч на каждый фокус окна гонял бы
+ * серверный пересчёт без изменения данных (ревью Этапа 73). */
 export function usePlacementRatings(id: string, enabled: boolean) {
   return useQuery<ListPlacementRatingsResponse, ApiFailure>({
     queryKey: securityEventKeys.placementRatings(id),
     queryFn: () =>
       apiClient.get<ListPlacementRatingsResponse>(securityEventPlacementRatingsPath(id)),
     enabled,
+    staleTime: 60_000,
   })
 }
 

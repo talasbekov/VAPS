@@ -37,6 +37,28 @@ afterEach(() => server.resetHandlers(...createSecurityEventsHandlers(adapter, cl
 
 const EVENT_ID = 'evt-h19'
 
+const HANDLER_EVENT_BASE = {
+  objectId: null,
+  objectName: 'Объект',
+  passportBinding: null,
+  forceNeed: 1,
+  conflictsCount: 0,
+  ownerName: 'demo',
+  briefDescription: '',
+  initialTasks: '',
+  reconChecklist: [],
+  demandRows: [],
+  forceRequests: [],
+  placementAssignments: [],
+  approvalStatus: 'PENDING',
+  approvalComment: '',
+  journalEntries: [],
+  closureDirectionSummaries: [],
+  closedAt: null,
+  createdAt: CLOCK_ISO,
+  updatedAt: CLOCK_ISO,
+}
+
 beforeEach(async () => {
   await adapter.reset({
     application: 'smart-josparlau',
@@ -48,23 +70,19 @@ beforeEach(async () => {
     updated_at: CLOCK_ISO,
     slices: {
       'security-events': {
+        // Общая база двух сеяных событий (ревью Этапа 73: два полных литерала
+        // расходились бы при каждом новом поле слайса — их разница названа
+        // спредами поимённо).
         events: [
           {
+            ...HANDLER_EVENT_BASE,
             id: EVENT_ID,
             code: 'ОМ-2026-Х',
             title: 'Handler-тест',
-            objectId: null,
-            objectName: 'Объект',
-            passportBinding: null,
             businessDate: '2026-07-25',
             stage: 'PLACEMENT',
             readinessPercent: 50,
-            forceNeed: 1,
-            conflictsCount: 0,
-            ownerName: 'demo',
-            briefDescription: '',
-            initialTasks: '',
-            reconChecklist: [],
+            demandApproved: true,
             reconSectorPosts: [
               {
                 id: 'post-rated',
@@ -80,46 +98,17 @@ beforeEach(async () => {
                 minRating: 8,
               },
             ],
-            demandRows: [],
-            demandApproved: true,
-            forceRequests: [],
-            placementAssignments: [],
-            approvalStatus: 'PENDING',
-            approvalComment: '',
-            journalEntries: [],
-            closureDirectionSummaries: [],
-            closedAt: null,
-            createdAt: CLOCK_ISO,
-            updatedAt: CLOCK_ISO,
           },
           {
+            ...HANDLER_EVENT_BASE,
             id: 'evt-h19-recon',
             code: 'ОМ-2026-Р',
             title: 'Handler-тест рекогносцировки',
-            objectId: null,
-            objectName: 'Объект',
-            passportBinding: null,
             businessDate: '2026-07-26',
             stage: 'RECON',
             readinessPercent: 30,
-            forceNeed: 1,
-            conflictsCount: 0,
-            ownerName: 'demo',
-            briefDescription: '',
-            initialTasks: '',
-            reconChecklist: [],
-            reconSectorPosts: [],
-            demandRows: [],
             demandApproved: false,
-            forceRequests: [],
-            placementAssignments: [],
-            approvalStatus: 'PENDING',
-            approvalComment: '',
-            journalEntries: [],
-            closureDirectionSummaries: [],
-            closedAt: null,
-            createdAt: CLOCK_ISO,
-            updatedAt: CLOCK_ISO,
+            reconSectorPosts: [],
           },
         ],
         transitions: [],

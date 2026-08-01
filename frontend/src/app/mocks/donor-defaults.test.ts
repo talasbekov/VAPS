@@ -3,15 +3,18 @@
 // 'error') — вечная загрузка /organization, потоп ретраев колокольчика.
 // Handler-уровень (приём Этапа 49): setupServer + реальный apiClient.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { WebSocketHandler } from 'msw'
 import { setupServer } from 'msw/node'
 import { createApiClient } from '../../shared/api/client'
 import { ApiError } from '../../shared/api/errors'
 import { DIVISIONS } from '../../features/personnel/mocks/fixtures'
 import { donorDefaultHandlers } from './donor-defaults'
 
-// WS-handler в env node не поднимается (WebSocket-перехват — браузерный);
-// HTTP-дефолты отделяются фильтром, как их отделяет и сам MSW.
-const httpOnly = donorDefaultHandlers().filter((handler) => 'info' in handler && !('__kind' in handler))
+// WS-handlers в env node не поднимаются (WebSocket-перехват — браузерный);
+// HTTP-дефолты отделяются так же, как их различает сам MSW — по классу.
+const httpOnly = donorDefaultHandlers().filter(
+  (handler) => !(handler instanceof WebSocketHandler),
+)
 const server = setupServer(...(httpOnly as Parameters<typeof setupServer>))
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))

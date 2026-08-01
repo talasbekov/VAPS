@@ -8,6 +8,7 @@
 // `state` из ответа — цвет по числу здесь не назначается нигде.
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import { formatDecimalComma } from '../../../shared/lib/format'
 import { usePermissions } from '../../../shared/auth/usePermissions'
 import { Button } from '../../../shared/ui/Button'
 import { Input } from '../../../shared/ui/Input'
@@ -527,7 +528,7 @@ function MetricCard({
 /** Подпись минут: «46,5 ч» — часами, десятичная запятая. */
 function formatMinutes(minutes: number | null): string {
   if (minutes === null) return '—'
-  return `${(minutes / 60).toFixed(1).replace('.', ',')} ч`
+  return `${formatDecimalComma(minutes / 60)} ч`
 }
 
 const LOAD_STATE_LABEL: Record<string, string> = {

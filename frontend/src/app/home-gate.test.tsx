@@ -11,6 +11,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it } from 'vitest'
+import { emptyLimitOffsetPage } from '../shared/api/testing/envelopes'
 import { server } from '../shared/api/testing/server'
 import { clearCredential, setCredential } from '../shared/auth/credential'
 import { AppRoutes } from './App'
@@ -47,7 +48,7 @@ describe('«/» после входа (Этап 71)', () => {
     server.use(
       // Командному центру хватает пустого реестра — важен сам переход.
       http.get('*/api/ops/security-events/', () =>
-        HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+        HttpResponse.json(emptyLimitOffsetPage()),
       ),
     )
     renderHome()
@@ -57,6 +58,19 @@ describe('«/» после входа (Этап 71)', () => {
       await screen.findByText('Готовность охранных мероприятий'),
     ).toBeInTheDocument()
     expect(screen.queryByText('Экран появится в E9–E10')).not.toBeInTheDocument()
+  })
+
+  it('persona с командным центром, но БЕЗ status.view — тоже редирект, а не отказ (ревью Этапа 73)', async () => {
+    grantPermissions(['ops.dashboard.view', 'ops.security_event.view'])
+    server.use(
+      http.get('*/api/ops/security-events/', () =>
+        HttpResponse.json(emptyLimitOffsetPage()),
+      ),
+    )
+    renderHome()
+    expect(
+      await screen.findByText('Готовность охранных мероприятий'),
+    ).toBeInTheDocument()
   })
 
   it('линия status.view без командного центра остаётся на своей заглушке', async () => {

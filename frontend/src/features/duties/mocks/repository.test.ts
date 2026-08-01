@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createMemoryPersistence } from '../../../shared/testing/mock-runtime/memory-persistence'
 import { DemoClock } from '../../../shared/testing/mock-runtime/demo-clock'
 import { registerRbacDirectory } from '../../../shared/testing/mock-runtime/rbac-directory'
+import { DUTY_CANDIDATES } from './fixtures'
 import type { DemoStateEnvelope } from '../../../shared/testing/mock-runtime/persistence'
 import {
   createDutiesRepository,
@@ -3059,5 +3060,18 @@ describe('устойчивый ID сотрудника на смене (§22.9)'
     const response = await repository.listDutyCandidates('2026-07-24', VIEWER)
     expect(response.results[0]?.employeeId).toBe('employee-1')
     expect(response.results[0]?.unitId).toBe('unit-guard-1')
+  })
+})
+
+describe('справочник кандидатов — инвариант резолва §22.9 (ревью Этапа 73)', () => {
+  it('подписи кандидатов уникальны: резолв связи по имени однозначен', async () => {
+    // Форма создания передаёт ИМЯ, сервер резолвит employeeId по справочнику.
+    // Однофамильцы сделали бы резолв тихо неоднозначным — этот инвариант и
+    // держит транспорт-по-имени честным (A153); при появлении тёзки тест
+    // требует перейти на передачу employeeId, а не молча слинковать первого.
+    const names = DUTY_CANDIDATES.map((candidate) => candidate.employeeName)
+    expect(new Set(names).size).toBe(names.length)
+    const ids = DUTY_CANDIDATES.map((candidate) => candidate.employeeId)
+    expect(new Set(ids).size).toBe(ids.length)
   })
 })

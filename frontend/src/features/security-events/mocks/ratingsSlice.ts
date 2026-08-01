@@ -144,3 +144,66 @@ export function readPlacementRating(
     state: 'READY',
   }
 }
+
+/**
+ * Батч-версия для сводки расстановки: ОДИН проход по точкам динамики вместо
+ * линейного скана на каждого назначенного (ревью Этапа 73). Семантика той же
+ * readPlacementRating — последний закрытый период на сотрудника.
+ */
+export function readPlacementRatings(
+  slices: Readonly<Record<string, unknown>>,
+  employeeIds: readonly string[],
+): Map<string, PlacementRatingProjection> {
+  const wanted = new Set(employeeIds)
+  const capabilities = readRatingCapabilities(slices)
+  const result = new Map<string, PlacementRatingProjection>()
+  const empty = (employeeId: string, state: PlacementRatingState): PlacementRatingProjection => ({
+    employeeId,
+    aggregateRating: null,
+    evaluationsCount: 0,
+    policyVersion: null,
+    calculatedAt: null,
+    period: null,
+    state,
+  })
+  const fallbackState: PlacementRatingState = capabilities.operationalRatings
+    ? 'NOT_RECORDED'
+    : 'FEATURE_DISABLED'
+
+  const slice = readRawSlice(slices)
+  const points = slice === null ? null : slice.dynamicsPoints
+  const latestByEmployee = new Map<string, PointProjection>()
+  if (capabilities.operationalRatings && Array.isArray(points)) {
+    for (const item of points as PointProjection[]) {
+      if (typeof item.employeeId !== 'string' || !wanted.has(item.employeeId)) continue
+      if (typeof item.period !== 'string') continue
+      const known = latestByEmployee.get(item.employeeId)
+      if (known === undefined || item.period > (known.period as string)) {
+        latestByEmployee.set(item.employeeId, item)
+      }
+    }
+  }
+
+  for (const employeeId of wanted) {
+    const latest = latestByEmployee.get(employeeId)
+    if (latest === undefined) {
+      result.set(employeeId, empty(employeeId, fallbackState))
+      continue
+    }
+    const count = typeof latest.evaluationsCount === 'number' ? latest.evaluationsCount : 0
+    const policyVersion = typeof latest.policyVersion === 'string' ? latest.policyVersion : null
+    const calculatedAt = typeof latest.recordedAt === 'string' ? latest.recordedAt : null
+    const period = latest.period as string
+    result.set(employeeId, {
+      employeeId,
+      aggregateRating:
+        typeof latest.aggregateRating === 'number' ? latest.aggregateRating : null,
+      evaluationsCount: count,
+      policyVersion,
+      calculatedAt,
+      period,
+      state: typeof latest.aggregateRating === 'number' ? 'READY' : 'INSUFFICIENT_DATA',
+    })
+  }
+  return result
+}

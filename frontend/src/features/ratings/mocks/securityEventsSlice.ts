@@ -35,9 +35,15 @@ export function readSecurityEventClosure(
   if (!Array.isArray(events)) return null
   for (const item of events as EventProjection[]) {
     if (item.id !== securityEventId) continue
+    const closedAt = typeof item.closedAt === 'string' ? item.closedAt : null
     return {
-      closed: item.stage === 'CLOSED',
-      closedAt: typeof item.closedAt === 'string' ? item.closedAt : null,
+      // Владелец факта — ШТАМП закрытия, а не имя стадии: чужой enum стадий
+      // может получить пост-архивные состояния или переименоваться, и литерал
+      // 'CLOSED' в чужой фиче отвязался бы молча (класс «узкая проекция
+      // ломается молча», ревью Этапа 73). closedAt ставит ровно операция
+      // закрытия и не снимает никто.
+      closed: closedAt !== null || item.stage === 'CLOSED',
+      closedAt,
     }
   }
   return null
