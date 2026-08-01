@@ -125,6 +125,30 @@ def test_catalog_order_is_priority_then_code(env):
     assert codes != sorted(codes)
 
 
+def test_equal_priority_is_broken_by_code(env):
+    """Tie-break `code` — второй владелец порядка, и он проверяем.
+
+    Все 17 приоритетов сида уникальны, поэтому AC-2 остаётся зелёным даже
+    при `-code` или полном отсутствии tie-break: на живом каталоге эта
+    половина `order_by` вакуумна. Равный priority бывает — `priority`
+    операторски правится в Admin, — и без пина порядок combobox стал бы
+    нестабильным между запросами и разъехался бы с Admin/`names_map`.
+    """
+    _grant("op-1", "DIVISION_OPERATOR")
+    for code in ("ZZ_TIE", "AA_TIE"):
+        StatusType.objects.create(
+            code=code, name=f"Тай-брейк {code}", priority=500,
+            report_column_code="OTHER",
+        )
+
+    codes = [row["code"] for row in _get("op-1").data]
+
+    assert codes.index("AA_TIE") < codes.index("ZZ_TIE")
+    # И оба сели строго между priority 80 и 990 — priority остаётся первичным.
+    assert codes.index("EVENT_ASSIGNMENT") < codes.index("AA_TIE")
+    assert codes.index("ZZ_TIE") < codes.index("PENDING_CLARIFICATION")
+
+
 # --- AC-3: деактивированные не отдаются -------------------------------------
 
 

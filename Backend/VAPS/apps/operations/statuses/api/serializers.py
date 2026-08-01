@@ -45,16 +45,18 @@ class BulkStatusCreateSerializer(serializers.Serializer):
     )
 
 
+# ⚠️ Докстринг класса уезжает в публичный OpenAPI как description схемы —
+# внутренней доктрине там не место (её увидит потребитель в тултипах IDE),
+# поэтому обоснование живёт комментарием, а докстринг короткий.
+#
+# ``serializers.Serializer``, а НЕ ``ModelSerializer``: последний тянет весь
+# набор колонок модели по умолчанию и превратил бы добавление поля в
+# ``StatusType`` в молчаливое расширение публичного контракта. Явный список —
+# граница. ``restricts_editing``/``max_duration_days``/``counts_in_*``/
+# ``is_ku_owned`` принадлежат другим владельцам; ``is_active`` не отдаём — в
+# ответе только активные, поле было бы константой.
 class StatusTypeSerializer(serializers.Serializer):
-    """Одна строка справочника статус-типов (story 10.1d) — ровно 6 полей.
-
-    ``serializers.Serializer``, а НЕ ``ModelSerializer``: последний тянет весь
-    набор колонок модели по умолчанию и превратил бы добавление поля в
-    ``StatusType`` в молчаливое расширение публичного контракта. Явный список —
-    граница. ``restricts_editing``/``max_duration_days``/``counts_in_*``/
-    ``is_ku_owned`` принадлежат другим владельцам; ``is_active`` не отдаём — в
-    ответе только активные, поле было бы константой.
-    """
+    """Строка справочника статус-типов: тип, доступный для выбора."""
 
     code = serializers.CharField()
     name = serializers.CharField()
