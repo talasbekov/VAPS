@@ -59,6 +59,8 @@ const BOUND_SHIFT: DutyShift = {
   note: null,
   cancellation: null,
   overrideReason: null,
+  employeeId: null,
+  unitId: null,
 }
 
 const UNBOUND_SHIFT: DutyShift = {

@@ -78,6 +78,8 @@ function shift(
   note: null,
   cancellation: null,
   overrideReason: null,
+  employeeId: null,
+  unitId: null,
   }
 }
 
@@ -331,6 +333,8 @@ describe('buildEmployeeRows (§21.30)', () => {
       note: null,
       cancellation: null,
       overrideReason: null,
+      employeeId: null,
+      unitId: null,
       ...overrides,
     }
   }

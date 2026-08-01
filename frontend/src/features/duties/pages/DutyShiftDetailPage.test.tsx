@@ -119,6 +119,8 @@ const BASE_DETAIL: DutyShiftDetail = {
     note: null,
     cancellation: null,
     overrideReason: null,
+    employeeId: null,
+    unitId: null,
   },
   passportStatus: {
     shiftId: 'duty-1',

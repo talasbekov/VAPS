@@ -31,6 +31,8 @@ function shift(id: string, overrides: Partial<DutyShift> = {}): DutyShift {
     note: null,
     cancellation: null,
     overrideReason: null,
+    employeeId: null,
+    unitId: null,
     ...overrides,
   }
 }

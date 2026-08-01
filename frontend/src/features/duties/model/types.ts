@@ -181,7 +181,17 @@ export interface DutyTypeDefinition {
  * Причины перечисляет `unavailableAttributes` в ответе, а не молчание.
  */
 export interface DutyCandidate {
+  /**
+   * Устойчивый идентификатор человека (§22.9 «назначение и actual связаны
+   * устойчивым ID»). Для людей, которых demo-снапшот знает как ОДНОГО человека
+   * с оцениваемым набором рейтинга, id ОБЩИЙ с ним (прецедент A146: без общего
+   * ключа связь недостижима ни для кого); остальные — в своём пространстве
+   * `duty-emp-*`.
+   */
+  employeeId: string
   employeeName: string
+  /** Подразделение кандидата — доменный ключ, не подпись. */
+  unitId: string
   unitName: string
   positionName: string
 }
@@ -249,6 +259,15 @@ export interface DutyShift {
     safeLabel: string
   }
   employeeName: string
+  /**
+   * §22.9: связь назначения с человеком — устойчивый ID, а не подпись.
+   * Резолвится СЕРВЕРОМ из справочника кандидатов при создании и хранится на
+   * смене. `null` — исполнитель заведён вне справочника (исторические данные):
+   * связь не установлена, и это названное состояние, а не пустая строка.
+   */
+  employeeId: string | null
+  /** Подразделение НА МОМЕНТ назначения — снимок, не живая ссылка. */
+  unitId: string | null
   stateCode: DutyShiftState
   acknowledgedAt: string | null
   actualStart: string | null

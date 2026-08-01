@@ -1091,6 +1091,8 @@ describe('createDutiesRepository — привязка дежурства к ве
       note: null,
       cancellation: null,
       overrideReason: null,
+      employeeId: null,
+      unitId: null,
       ...overrides,
     }
   }
@@ -1245,6 +1247,8 @@ describe('createDutiesRepository — месячный план дежурств 
       note: null,
       cancellation: null,
       overrideReason: null,
+      employeeId: null,
+      unitId: null,
     }
   }
 
@@ -1430,6 +1434,8 @@ describe('createDutiesRepository — создание дежурства (§21.3
       note: null,
       cancellation: null,
       overrideReason: null,
+      employeeId: null,
+      unitId: null,
     }
   }
 
@@ -1446,8 +1452,8 @@ describe('createDutiesRepository — создание дежурства (§21.3
           shifts,
           dutyTypes: CREATE_DUTY_TYPES,
           dutyCandidates: [
-            { employeeName: 'Ахметов Б.', unitName: '1-й отдел', positionName: 'Инспектор' },
-            { employeeName: 'Оразов К.', unitName: '2-й отдел', positionName: 'Инспектор' },
+            { employeeId: 'duty-emp-1', employeeName: 'Ахметов Б.', unitId: 'unit-guard-1', unitName: '1-й отдел', positionName: 'Инспектор' },
+            { employeeId: 'duty-emp-3', employeeName: 'Оразов К.', unitId: 'unit-guard-2', unitName: '2-й отдел', positionName: 'Инспектор' },
           ],
         },
       },
@@ -1806,6 +1812,8 @@ describe('createDutiesRepository — карточка дежурства (§21.3
       note: null,
       cancellation: null,
       overrideReason: null,
+      employeeId: null,
+      unitId: null,
       ...overrides,
     }
   }
@@ -2048,6 +2056,8 @@ describe('createDutiesRepository — правка и отмена дежурст
       note: null,
       cancellation: null,
       overrideReason: null,
+      employeeId: null,
+      unitId: null,
       ...overrides,
     }
   }
@@ -2349,6 +2359,8 @@ describe('createDutiesRepository — список дежурств и истор
       note: null,
       cancellation: null,
       overrideReason: null,
+      employeeId: null,
+      unitId: null,
       ...overrides,
     }
   }
@@ -2571,6 +2583,8 @@ describe('createDutiesRepository — lifecycle месячного плана (§
       note: null,
       cancellation: null,
       overrideReason: null,
+      employeeId: null,
+      unitId: null,
       ...overrides,
     }
   }
@@ -2932,5 +2946,118 @@ describe('createDutiesRepository — lifecycle месячного плана (§
       await repository.getMonthlyPlan('2026-07', BOTH)
       expect((await adapter.load())?.revision).toBe(before)
     })
+  })
+})
+
+describe('устойчивый ID сотрудника на смене (§22.9)', () => {
+  beforeEach(() => {
+    registerRbacDirectory([
+      { userId: VIEWER, permissions: ['ops.duty.view'] },
+      { userId: PLANNER, permissions: ['ops.duty.view', 'ops.duty.manage'] },
+    ])
+  })
+
+  const DUTY_TYPES_LOCAL = [
+    {
+      dutyTypeCode: 'OWN_OBJECT_DAILY',
+      safeLabel: 'Суточное дежурство на собственном объекте',
+      targetType: 'OWN_OBJECT' as const,
+      defaultDurationMinutes: 1440,
+      requiresSenior: true,
+      restAfterMinutes: 1440,
+      requiresCurrentPassport: false,
+    },
+  ]
+  const OBJECT = {
+    id: 'link-object-1',
+    name: 'Штаб связи',
+    code: 'OBJ-L1',
+    passportState: 'GREEN',
+    passportVersions: [
+      {
+        id: 'link-object-1-v1',
+        versionNumber: 1,
+        effectiveFrom: '2026-07-01',
+        sectors: [
+          {
+            id: 'sector-a',
+            name: 'Сектор A',
+            posts: [{ id: 'post-1', name: 'Пост 1', task: '', requirements: '' }],
+          },
+        ],
+      },
+    ],
+  }
+
+  async function setupLink() {
+    const envelope = seedEnvelope([])
+    const adapter = createMemoryPersistence()
+    await adapter.reset({
+      ...envelope,
+      slices: {
+        ...envelope.slices,
+        objects: { objects: [OBJECT] },
+        duties: {
+          ...(envelope.slices.duties as object),
+          shifts: [],
+          dutyTypes: DUTY_TYPES_LOCAL,
+          dutyCandidates: [
+            {
+              employeeId: 'employee-1',
+              employeeName: 'Ерланов Д.',
+              unitId: 'unit-guard-1',
+              unitName: '1-й отдел охраны',
+              positionName: 'Инспектор',
+            },
+          ],
+        },
+      },
+    })
+    return {
+      repository: createDutiesRepository(adapter, new DemoClock('2026-07-24T09:00:00+05:00')),
+      adapter,
+    }
+  }
+
+  const REQUEST = {
+    businessDate: '2026-07-24',
+    dutyTypeCode: 'OWN_OBJECT_DAILY',
+    objectId: 'link-object-1',
+    sectorId: 'sector-a',
+    postId: 'post-1',
+    note: null,
+  }
+
+  it('создание смены сохраняет employeeId и unitId из справочника — проверено из БД', async () => {
+    const { repository, adapter } = await setupLink()
+    const created = await repository.createDutyShift(
+      { ...REQUEST, employeeName: 'Ерланов Д.' },
+      PLANNER,
+    )
+    expect(created.employeeId).toBe('employee-1')
+    expect(created.unitId).toBe('unit-guard-1')
+    const envelope = await adapter.load()
+    const stored = (envelope?.slices.duties as { shifts: DutyShift[] }).shifts.find(
+      (shift) => shift.id === created.id,
+    )
+    expect(stored?.employeeId).toBe('employee-1')
+    expect(stored?.unitId).toBe('unit-guard-1')
+  })
+
+  it('имя вне справочника — связь null, а не отказ и не пустая строка', async () => {
+    const { repository } = await setupLink()
+    const created = await repository.createDutyShift(
+      { ...REQUEST, employeeName: 'Внешний Сотрудник' },
+      PLANNER,
+    )
+    expect(created.employeeId).toBeNull()
+    expect(created.unitId).toBeNull()
+  })
+
+  it('кандидаты наружу несут employeeId и unitId', async () => {
+    const { repository } = await setupLink()
+    const response = await repository.listDutyCandidates('2026-07-24', VIEWER)
+    expect(response.results[0]?.employeeId).toBe('employee-1')
+    expect(response.results[0]?.unitId).toBe('unit-guard-1')
   })
 })

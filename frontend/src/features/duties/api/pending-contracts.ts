@@ -183,7 +183,11 @@ export interface ListDutyPlanObjectsResponse {
 /** §21.33: кандидат + ЕДИНСТВЕННЫЙ выводимый из модели признак занятости —
  * ближайшее уже запланированное дежурство. */
 export interface DutyCandidateOption {
+  /** §22.9: устойчивый идентификатор человека — наружу, а не только в слайсе. */
+  employeeId: string
   employeeName: string
+  /** Доменный ключ подразделения (снимок его уедет на смену при назначении). */
+  unitId: string
   unitName: string
   positionName: string
   /** Ближайшее дежурство не раньше запрошенной даты; `null` — таких нет. */

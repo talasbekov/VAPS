@@ -908,7 +908,9 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
           .map((shift) => shift.businessDate)
           .sort()
         return {
+          employeeId: candidate.employeeId,
           employeeName: candidate.employeeName,
+          unitId: candidate.unitId,
           unitName: candidate.unitName,
           positionName: candidate.positionName,
           nearestDutyDate: own.find((date) => date >= businessDate) ?? null,
@@ -990,6 +992,16 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
         )
       }
 
+      // §22.9 «назначение и actual связаны устойчивым ID»: связь резолвит
+      // СЕРВЕР из своего справочника кандидатов и хранит на смене снимком
+      // (unitId — подразделение НА МОМЕНТ назначения). Имя вне справочника —
+      // связь не установлена (`null`), это названное состояние: падать здесь
+      // значило бы запретить исторические/внешние имена задним числом.
+      // `?? []`: частично сеяные тестовые слайсы без справочника — связь
+      // просто не устанавливается, это не ошибка конфигурации.
+      const link = (slice.dutyCandidates ?? []).find(
+        (entry) => entry.employeeName === request.employeeName.trim(),
+      )
       const candidate: DutyShift = {
         id: `duty-shift-${current.revision + 1}-${slice.shifts.length + 1}`,
         businessDate: request.businessDate,
@@ -1000,6 +1012,8 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
           safeLabel: object.name,
         },
         employeeName: request.employeeName.trim(),
+        employeeId: link?.employeeId ?? null,
+        unitId: link?.unitId ?? null,
         stateCode: 'PLANNED',
         acknowledgedAt: null,
         actualStart: null,
@@ -1107,9 +1121,17 @@ export function createDutiesRepository(adapter: PersistenceAdapter, clock: DemoC
       // ознакомления снимается — иначе она приписывала бы согласие человеку,
       // который его не давал.
       const employeeChanged = employeeName !== existing.employeeName
+      // §22.9: при смене исполнителя связь резолвится заново тем же
+      // справочником, что при создании. Прежний id не наследуется — он
+      // принадлежал прежнему человеку.
+      const link = employeeChanged
+        ? (slice.dutyCandidates ?? []).find((entry) => entry.employeeName === employeeName)
+        : null
       const candidate: DutyShift = {
         ...existing,
         employeeName,
+        employeeId: employeeChanged ? (link?.employeeId ?? null) : existing.employeeId,
+        unitId: employeeChanged ? (link?.unitId ?? null) : existing.unitId,
         passportBinding: binding,
         note: request.note?.trim() === '' ? null : (request.note?.trim() ?? null),
         stateCode: employeeChanged ? 'PLANNED' : existing.stateCode,

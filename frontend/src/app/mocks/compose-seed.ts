@@ -97,10 +97,13 @@ const FEATURE_SEED_BUILDERS: readonly FeatureSeedBuilder[] = [
 // `reconSectorPosts` появилось поле `minRating`, у `placementAssignments` —
 // `ratingOverrideReason`, а флаг `ratingConflicts` слайса `ratings` включён:
 // старый снапшот с выключенным флагом молча гасил бы новую проверку.
+// Устойчивый ID сотрудника в дежурствах (§22.9) — 37→38: у кандидатов и смен
+// появились `employeeId`/`unitId`; старый снапшот нёс бы смены без связи там,
+// где сид её устанавливает.
 // `ensureSeeded()` при несовпадении версии делает
 // безопасный полный reset (§8.6 «несовместимая схема мигрируется ЛИБО
 // безопасно сбрасывается» — тонкой per-field миграции демо-данных не стоит).
-export const SCHEMA_VERSION = 37
+export const SCHEMA_VERSION = 38
 
 export function composeSeed(scenario: DemoScenarioDefinition): DemoStateEnvelope {
   const clock = new DemoClock(scenario.startIso)

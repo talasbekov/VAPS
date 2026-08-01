@@ -82,16 +82,31 @@ export const DUTY_TYPES: readonly DutyTypeDefinition[] = [
  * разных процесса по ФИО (та же ловушка, что A44-A46/A50).
  */
 export const DUTY_CANDIDATES: readonly DutyCandidate[] = [
-  { employeeName: 'Ахметов Б.', unitName: '1-й отдел охраны', positionName: 'Старший инспектор' },
-  { employeeName: 'Ерланов Д.', unitName: '1-й отдел охраны', positionName: 'Инспектор' },
-  { employeeName: 'Сагинова А.', unitName: '2-й отдел охраны', positionName: 'Инспектор' },
-  { employeeName: 'Оразов К.', unitName: '2-й отдел охраны', positionName: 'Старший инспектор' },
-  { employeeName: 'Нурланов Е.', unitName: '2-й отдел охраны', positionName: 'Инспектор' },
-  { employeeName: 'Жумабаев Р.', unitName: '3-й отдел охраны', positionName: 'Инспектор' },
-  { employeeName: 'Сейтказы М.', unitName: '3-й отдел охраны', positionName: 'Инспектор' },
-  { employeeName: 'Абишев Н.', unitName: '3-й отдел охраны', positionName: 'Инспектор' },
-  { employeeName: 'Мукашева Л.', unitName: '1-й отдел охраны', positionName: 'Инспектор' },
+  // §22.9: у кандидата устойчивый employeeId. Общие с оцениваемым набором
+  // рейтинга люди носят ЕГО id (A146: id общий, пока это один человек);
+  // остальные — своё пространство duty-emp-*. unitId — доменный ключ
+  // подразделения, подпись остаётся подписью.
+  { employeeId: 'duty-emp-1', employeeName: 'Ахметов Б.', unitId: 'unit-guard-1', unitName: '1-й отдел охраны', positionName: 'Старший инспектор' },
+  { employeeId: 'employee-1', employeeName: 'Ерланов Д.', unitId: 'unit-guard-1', unitName: '1-й отдел охраны', positionName: 'Инспектор' },
+  { employeeId: 'duty-emp-2', employeeName: 'Сагинова А.', unitId: 'unit-guard-2', unitName: '2-й отдел охраны', positionName: 'Инспектор' },
+  { employeeId: 'duty-emp-3', employeeName: 'Оразов К.', unitId: 'unit-guard-2', unitName: '2-й отдел охраны', positionName: 'Старший инспектор' },
+  { employeeId: 'employee-4', employeeName: 'Нурланов Е.', unitId: 'unit-guard-2', unitName: '2-й отдел охраны', positionName: 'Инспектор' },
+  { employeeId: 'duty-emp-4', employeeName: 'Жумабаев Р.', unitId: 'unit-guard-3', unitName: '3-й отдел охраны', positionName: 'Инспектор' },
+  { employeeId: 'employee-3', employeeName: 'Сейтказы М.', unitId: 'unit-guard-3', unitName: '3-й отдел охраны', positionName: 'Инспектор' },
+  { employeeId: 'employee-2', employeeName: 'Абишев Н.', unitId: 'unit-guard-3', unitName: '3-й отдел охраны', positionName: 'Инспектор' },
+  { employeeId: 'duty-emp-5', employeeName: 'Мукашева Л.', unitId: 'unit-guard-1', unitName: '1-й отдел охраны', positionName: 'Инспектор' },
 ]
+
+/** Связь сеяной смены с кандидатом — по СВОЕМУ справочнику на этапе сида.
+ * Падает громко: смена с именем вне справочника в сиде — ошибка фикстуры,
+ * а не «историческая запись» (те появляются только через живые данные). */
+function candidateLink(employeeName: string): { employeeId: string; unitId: string } {
+  const found = DUTY_CANDIDATES.find((c) => c.employeeName === employeeName)
+  if (found === undefined) {
+    throw new Error(`duties seed: "${employeeName}" нет в справочнике кандидатов`)
+  }
+  return { employeeId: found.employeeId, unitId: found.unitId }
+}
 
 // §24.3: два минимальных вида дежурства боевой группы.
 export const COMBAT_DUTY_TYPES: readonly CombatDutyTypeDefinition[] = [
@@ -193,6 +208,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       dutyTypeCode: 'OWN_OBJECT_DAILY',
       target: { targetType: 'OWN_OBJECT', objectId: hq.objectId, safeLabel: 'Штаб управления' },
       employeeName: 'Ахметов Б.',
+      ...candidateLink('Ахметов Б.'),
       stateCode: 'ACTIVE',
       acknowledgedAt: now,
       actualStart: now,
@@ -213,6 +229,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
         safeLabel: 'Дворец Независимости',
       },
       employeeName: 'Ерланов Д.',
+      ...candidateLink('Ерланов Д.'),
       stateCode: 'ACKNOWLEDGED',
       acknowledgedAt: now,
       actualStart: null,
@@ -233,6 +250,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
         safeLabel: 'Дом Министерств',
       },
       employeeName: 'Сагинова А.',
+      ...candidateLink('Сагинова А.'),
       stateCode: 'PLANNED',
       acknowledgedAt: null,
       actualStart: null,
@@ -249,6 +267,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
       dutyTypeCode: 'OWN_OBJECT_DAILY',
       target: { targetType: 'OWN_OBJECT', objectId: hq.objectId, safeLabel: 'Штаб управления' },
       employeeName: 'Оразов К.',
+      ...candidateLink('Оразов К.'),
       stateCode: 'COMPLETED',
       acknowledgedAt: now,
       actualStart: now,
@@ -293,6 +312,7 @@ export function buildDutiesSeed(ctx: SeedContext): { sliceName: string; data: Du
         safeLabel: objectName,
       },
       employeeName,
+      ...candidateLink(employeeName),
       stateCode,
       acknowledgedAt: stateCode === 'PLANNED' ? null : now,
       actualStart: completed ? now : null,
