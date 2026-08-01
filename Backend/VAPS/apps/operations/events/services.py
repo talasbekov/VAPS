@@ -677,6 +677,72 @@ def _post_requirement_conflicts(post, profile):
     return codes
 
 
+def _workload_conflicts(
+    assignment, event, event_start, event_end, other_current_assignments
+):
+    """Story 16.3d (FR-25, part 4/4): 3-consecutive-day overload check
+    (`WORKLOAD_EXCEEDED_CONFLICT`, BR-006: "3 дня подряд: total_hours +
+    новые > 8.0").
+
+    Scope (see story's Scope Decision for the full rationale): `total_hours`
+    is summed ONLY from OTHER current `PlacementAssignment` rows of this
+    employee (the Расстановка domain) — `DutyShift`/Дежурства is NOT a
+    source here, since the only Duty-side signal reachable without a new,
+    unestablished convention (filtering by `DutyPlan.status_code`) is the
+    `EmployeeStatus` `DUTY` projection, which carries calendar-DATE
+    granularity only (`_to_date_range()`), not the precise hours this
+    8.0-hour threshold needs. Full Дежурства+ОМ workload is FR-32/Epic 19's
+    territory, not this assignment-time SOFT-conflict check.
+
+    Event-level hour granularity, same approximation
+    `detect_placement_conflicts()` already uses for double-assignment
+    (16.3a/16.3b): an event's full duration counts toward EVERY calendar
+    day its `[date_start, date_end)` window touches, not split
+    proportionally.
+
+    Window is `[D-1, D, D+1]` where `D` = *event*'s own calendar start date
+    (`event_start`, already computed by the caller via `_to_date_range()`).
+    Flags the conflict only if ALL THREE days' `total_hours` (other current
+    assignments' events touching that day, plus *event*'s own hours on the
+    days it touches) exceed 8.0 — a single overloaded day is not enough.
+
+    `other_current_assignments` is the caller's already-fetched, per-batch
+    query (`version__is_current=True`, `employee_id__in=...`,
+    `.exclude(version_id=version.pk)`) — reused, not re-queried. Rows are
+    deduped by event id so a duplicate current-assignment referencing the
+    SAME event (or an intra-version duplicate, which never appears in this
+    excluded-current-version queryset at all) never double-counts that
+    event's hours.
+    """
+    other_events = {}
+    for other in other_current_assignments:
+        if other.employee_id != assignment.employee_id:
+            continue
+        other_event = other.version.event
+        if not (other_event.starts_at and other_event.ends_at):
+            continue
+        other_events[other_event.pk] = other_event
+
+    def _hours(ev):
+        return (ev.ends_at - ev.starts_at).total_seconds() / 3600
+
+    window = [event_start + datetime.timedelta(days=offset) for offset in (-1, 0, 1)]
+    for day in window:
+        total_hours = 0.0
+        for other_event in other_events.values():
+            other_start, other_end = _to_date_range(
+                other_event.starts_at, other_event.ends_at
+            )
+            if other_start <= day < other_end:
+                total_hours += _hours(other_event)
+        if event_start <= day < event_end:
+            total_hours += _hours(event)
+        if total_hours <= 8.0:
+            return []
+
+    return ["WORKLOAD_EXCEEDED_CONFLICT"]
+
+
 def detect_placement_conflicts(version):
     """Story 16.3b (FR-25, part 2/4): double-assignment + rest-violation
     conflict scan for *version*'s `PlacementAssignment` rows.
@@ -730,6 +796,10 @@ def detect_placement_conflicts(version):
     defensively via `_post_requirement_conflicts()` (completely
     unvalidated JSON, 14.1's own deferred decision) — a missing/
     wrong-typed key skips that specific check rather than raising.
+
+    Story 16.3d: also checks 3-consecutive-day overload (same SAME-pass
+    principle), via `_workload_conflicts()` — see that function's
+    docstring for the `total_hours` source and window scoping.
 
     Returns the list of `PlacementAssignment` rows touched (all rows in
     the version, since every row is recomputed).
@@ -792,6 +862,12 @@ def detect_placement_conflicts(version):
             ).exists()
             if has_rest_conflict:
                 codes.append("REST_VIOLATION_CONFLICT")
+
+            codes.extend(
+                _workload_conflicts(
+                    assignment, event, event_start, event_end, other_current_assignments
+                )
+            )
 
         profile = operational_profiles.get(assignment.employee_id)
         if profile is not None:
