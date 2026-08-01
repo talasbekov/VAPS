@@ -126,9 +126,7 @@ class SecurityEvent(TimeStampedModel):
         # bypass it; a future write-path service must call full_clean().
         super().clean()
         if self.starts_at and self.ends_at and self.starts_at >= self.ends_at:
-            raise ValidationError(
-                {"ends_at": "starts_at должен быть раньше ends_at."}
-            )
+            raise ValidationError({"ends_at": "starts_at должен быть раньше ends_at."})
 
 
 class ReconCheckResult(models.TextChoices):
@@ -498,6 +496,14 @@ class PlacementAssignment(TimeStampedModel):
     conflict_severity = models.CharField(
         max_length=10, choices=ConflictSeverity.choices, blank=True
     )
+    # Story 16.3b: `conflict_severity` несёт только worst-case severity, не
+    # КАКОЙ конфликт сработал — `conflict_codes` (список из
+    # docs/registries/error-codes.yaml's `conflict_codes`-ключей, напр.
+    # `DOUBLE_ASSIGNMENT_CONFLICT`/`REST_VIOLATION_CONFLICT`) несёт детали.
+    # Общее хранилище для ВСЕХ детекторов (16.3b/16.3c/16.3d) — каждый
+    # добавляет свои коды в ОДИН и тот же список при полном пересчёте, не
+    # создаёт параллельное поле.
+    conflict_codes = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = "ops_placement_assignments"

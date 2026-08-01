@@ -38,8 +38,10 @@ from apps.operations.events.models import (
     SecurityEventSectorPost,
     SecurityEventStaffingDemand,
 )
+from apps.operations.duties.services import _to_date_range
 from apps.operations.facilities.models import Post
 from apps.operations.rbac.models import UserRole
+from apps.operations.statuses.models import EmployeeStatus
 
 
 def issue_bulletin(event, *, actor):
@@ -577,3 +579,92 @@ def form_draft_placement(event, *, actor):
             },
         )
     return version, created_assignments, unmatched
+
+
+def detect_placement_conflicts(version):
+    """Story 16.3b (FR-25, part 2/4): double-assignment + rest-violation
+    conflict scan for *version*'s `PlacementAssignment` rows.
+
+    Read+recompute, NOT blocking (that's 16.4's approval-workflow
+    territory) and NOT audited (a read-only recompute that may be called
+    often — same convention as `validate_duty_plan()`, 14.11f, whose own
+    docstring names this exact scope as "Story 16.3's territory", reused
+    literally here). Full recompute every call — `conflict_severity`/
+    `conflict_codes` are OVERWRITTEN, not accumulated, so a row whose
+    conflict is resolved (e.g. the other version stopped being current)
+    is correctly cleared back to blank/`[]`, not left stuck.
+
+    Both conflict types are fixed-SOFT: `docs/registries/error-codes.yaml`'s
+    `conflict_codes` registry nests `DOUBLE_ASSIGNMENT_CONFLICT`/
+    `REST_VIOLATION_CONFLICT` ONLY under `SOFT_CONFLICT_DETECTED` — no HARD
+    variant exists at the assignment level (FR-11's hard-block mechanism is
+    a status-level concern, not invoked here; a generic "overlaps ANY
+    hard-block status" check would be broader than this story's own title
+    and isn't built here).
+
+    Double-assignment is checked at EVENT granularity (16.3a's flagged v1
+    approximation): the SAME `employee_id` in another CURRENT version whose
+    event's `[starts_at, ends_at)` overlaps this version's event window.
+    Either side missing a schedule makes the overlap UNDETERMINABLE — such
+    pairs are skipped, never treated as conflict-free NOR conflicted (no
+    invented assumption from absent data).
+
+    Rest-violation reuses `duties.services._to_date_range()` verbatim (the
+    same review-hardened local-timezone conversion `validate_duty_plan()`
+    uses) rather than re-deriving calendar dates from a UTC-stored
+    DateTimeField, which would silently misplace an overnight event.
+
+    Returns the list of `PlacementAssignment` rows touched (all rows in
+    the version, since every row is recomputed).
+    """
+    assignments = list(version.assignments.select_related("version__event"))
+    event = version.event
+    event_has_schedule = bool(event.starts_at and event.ends_at)
+
+    other_current_assignments = list(
+        PlacementAssignment.objects.filter(
+            version__is_current=True,
+            employee_id__in={a.employee_id for a in assignments},
+        )
+        .exclude(version_id=version.pk)
+        .select_related("version__event")
+    )
+
+    touched = []
+    for assignment in assignments:
+        codes = []
+
+        if event_has_schedule:
+            for other in other_current_assignments:
+                if other.employee_id != assignment.employee_id:
+                    continue
+                other_event = other.version.event
+                if not (other_event.starts_at and other_event.ends_at):
+                    continue
+                if (
+                    event.starts_at < other_event.ends_at
+                    and event.ends_at > other_event.starts_at
+                ):
+                    codes.append("DOUBLE_ASSIGNMENT_CONFLICT")
+                    break
+
+            event_start, event_end = _to_date_range(event.starts_at, event.ends_at)
+            has_rest_conflict = EmployeeStatus.objects.filter(
+                employee_id=assignment.employee_id,
+                status_type_code="REST_AFTER_DUTY",
+                cancelled_at__isnull=True,
+                date_start__lt=event_end,
+                date_end__gt=event_start,
+            ).exists()
+            if has_rest_conflict:
+                codes.append("REST_VIOLATION_CONFLICT")
+
+        severity = PlacementAssignment.ConflictSeverity.SOFT if codes else ""
+        PlacementAssignment.objects.filter(pk=assignment.pk).update(
+            conflict_severity=severity, conflict_codes=codes
+        )
+        assignment.conflict_severity = severity
+        assignment.conflict_codes = codes
+        touched.append(assignment)
+
+    return touched
