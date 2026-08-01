@@ -25,3 +25,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# Перенос Smart Josparlau (Этап M1): корневой .gitignore VAPS глушит `lib/`
+# (python-паттерн) — фронтовые lib-каталоги здесь ЯВНО разглушены, иначе
+# половина перенесённой логики молча не коммитится (поймано при первом же
+# git add).
+!lib/
+!shared/lib/
+!features/**/lib/
+!josparlau/**/lib/

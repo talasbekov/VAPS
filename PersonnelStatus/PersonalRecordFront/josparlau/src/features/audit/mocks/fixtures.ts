@@ -1,0 +1,47 @@
+// Демо-данные аудит-лога (§8.7: только синтетические данные).
+import type { AuditLog } from '../model/types'
+
+export const AUDIT_LOGS: readonly AuditLog[] = [
+  {
+    id: 'audit-1',
+    actor_user_id: 'demo-event-planner',
+    action: 'security_event.approval.approve',
+    entity_type: 'SecurityEvent',
+    entity_id: 'security-event-normal-3',
+    old_value: { approvalStatus: 'PENDING' },
+    new_value: { approvalStatus: 'APPROVED' },
+    reason: '',
+    request_id: 'req-1001',
+    ip_address: '10.0.0.12',
+    user_agent: 'Mozilla/5.0',
+    created_at: '2026-07-20T08:00:00.000+05:00',
+  },
+  {
+    id: 'audit-2',
+    actor_user_id: 'demo-objects-admin',
+    action: 'object.passport.update',
+    entity_type: 'SecurityObject',
+    entity_id: 'object-1',
+    old_value: { sectorsCount: 2 },
+    new_value: { sectorsCount: 2 },
+    reason: '',
+    request_id: 'req-1002',
+    ip_address: '10.0.0.14',
+    user_agent: 'Mozilla/5.0',
+    created_at: '2026-07-19T14:32:00.000+05:00',
+  },
+  {
+    id: 'audit-3',
+    actor_user_id: 'demo-event-planner',
+    action: 'security_event.create',
+    entity_type: 'SecurityEvent',
+    entity_id: 'security-event-normal-2',
+    old_value: null,
+    new_value: { title: 'Официальный визит делегации' },
+    reason: '',
+    request_id: 'req-1003',
+    ip_address: '10.0.0.12',
+    user_agent: 'Mozilla/5.0',
+    created_at: '2026-07-18T09:15:00.000+05:00',
+  },
+]
