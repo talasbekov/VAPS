@@ -985,6 +985,44 @@ def return_assignment_version(version, *, actor, reason):
     return version, new_version
 
 
+def project_placement_assignment(assignment, event):
+    """Story 16.5: project one `PlacementAssignment` into an
+    `EmployeeStatus` row (`EVENT_ASSIGNMENT`, `source=OM_AUTO`) — literal
+    analogue of `apps.operations.duties.services.project_duty_shift()`
+    (14.9a/BR-017), moved into the Расстановка domain. Idempotent by
+    `source_ref` (`get_or_create()`, same shape as `project_duty_shift()`).
+
+    `event` is passed explicitly (the caller's already-loaded
+    `version.event`) rather than dereferenced via `assignment.version.event`
+    — `PlacementAssignment` doesn't select_related `version__event`, so
+    resolving it per-row here would cost one query per assignment.
+
+    `EVENT_ASSIGNMENT` is already seeded (`seed_statuses.py`) and NOT in
+    `HARD_BLOCK_CODES` — SOFT, outside `EmployeeStatus`'s
+    `excl_hard_status_overlap` exclusion constraint, so no DB-level overlap
+    rejection is possible here; conflicts are already gated earlier by
+    `detect_placement_conflicts()` inside `approve_assignment_version()`.
+
+    No-op (returns without writing) when the event has no schedule
+    (`starts_at`/`ends_at` unset) — event-level granularity, same "no
+    data = skip, not invented" convention 16.3a-d already establish for
+    this same event/assignment pair.
+    """
+    if not (event.starts_at and event.ends_at):
+        return
+    date_start, date_end = _to_date_range(event.starts_at, event.ends_at)
+    EmployeeStatus.objects.get_or_create(
+        source_ref=f"EVENT_ASSIGNMENT:{assignment.pk}",
+        defaults={
+            "employee_id": assignment.employee_id,
+            "status_type_code": "EVENT_ASSIGNMENT",
+            "date_start": date_start,
+            "date_end": date_end,
+            "source": EmployeeStatus.Source.OM_AUTO,
+        },
+    )
+
+
 def approve_assignment_version(version, *, actor, override=False, override_reason=""):
     """Story 16.4 (FR-26): `SUBMITTED`->`APPROVED`, single approver
     (literal reuse of `approve_duty_plan()`'s idempotent single-actor
@@ -1015,6 +1053,10 @@ def approve_assignment_version(version, *, actor, override=False, override_reaso
     an approval-event signature) and isn't a defect against it — but
     whichever story wires real ЭЦП (MVP-2) will need a richer signed
     payload than this stub's bare content hash.
+
+    Story 16.5: also projects `EVENT_ASSIGNMENT` `EmployeeStatus` rows for
+    every participant on this REAL transition — see
+    `project_placement_assignment()`'s own docstring.
     """
     if not (actor or "").strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
@@ -1054,6 +1096,13 @@ def approve_assignment_version(version, *, actor, override=False, override_reaso
             separators=(",", ":"),
         )
         signature_hash = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()
+
+        # Story 16.5: project EVENT_ASSIGNMENT status for every participant
+        # of this version, ONLY on this real SUBMITTED->APPROVED transition
+        # (the idempotent-replay early-return above already exited before
+        # this point for an already-APPROVED version).
+        for assignment in version.assignments.all():
+            project_placement_assignment(assignment, version.event)
 
         version.status = AssignmentVersion.Status.APPROVED
         version.signature_hash = signature_hash
