@@ -14,6 +14,7 @@
 // URL API — не маршрут портала, ARCH-FE-012 на него не распространяется
 // (тот же приём, что `ExpensePrintPage`). Узкая ручная поверхность ответа и
 // её обоснование — в `placementPrint.ts`.
+import { usePrintDocumentIsolation } from '../../shared/lib/usePrintDocumentIsolation'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
 import { apiClient } from '../../shared/api/client'
@@ -43,6 +44,7 @@ import type { PlacementDocument } from './placementPrint'
 const SECURITY_EVENTS_PATH = '/api/ops/security-events/'
 
 export function PlacementPrintPage() {
+  usePrintDocumentIsolation()
   const [searchParams] = useSearchParams()
   const eventId = searchParams.get('security_event_id') ?? ''
 

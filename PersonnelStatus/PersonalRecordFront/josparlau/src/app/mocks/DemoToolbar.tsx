@@ -21,6 +21,19 @@ export function DemoToolbar() {
   const navigate = useNavigate()
   const [personaId, setPersonaId] = useState(() => readDemoSettings().personaId)
   const [resetting, setResetting] = useState(false)
+  // Свёрнут ПО УМОЛЧАНИЮ: развёрнутая панель физически перекрывала кнопки
+  // нижнего края страниц (давняя боль тестов — hideDemoToolbar; host-прогон
+  // Этапа M2 поймал перекрытие «Опубликовать версию» кликом). Выбор
+  // переживает навигацию, но не вкладку — dev-удобство, не состояние.
+  const [expanded, setExpanded] = useState(
+    () => sessionStorage.getItem('vaps.demo-toolbar-expanded') === 'true',
+  )
+  function toggleExpanded(): void {
+    setExpanded((prev) => {
+      sessionStorage.setItem('vaps.demo-toolbar-expanded', String(!prev))
+      return !prev
+    })
+  }
 
   function switchPersona(nextId: string): void {
     const persona = findDemoPersona(nextId)
@@ -49,11 +62,28 @@ export function DemoToolbar() {
     }
   }
 
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={toggleExpanded}
+        className="fixed bottom-4 right-4 z-50 rounded-full border bg-card px-3 py-1.5 text-xs font-semibold shadow-lg"
+      >
+        Demo
+      </button>
+    )
+  }
+
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 rounded-md border bg-card p-3 text-xs shadow-lg">
-      <span className="font-semibold text-muted-foreground">
-        Demo-режим (без backend)
-      </span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-muted-foreground">
+          Demo-режим (без backend)
+        </span>
+        <button type="button" onClick={toggleExpanded} aria-label="Свернуть demo-панель">
+          ×
+        </button>
+      </div>
       <label className="flex flex-col gap-1">
         Persona
         <select
