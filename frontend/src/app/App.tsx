@@ -5,7 +5,7 @@
 // из seed_operations дословно). Разделы пока — заглушки app/section-stubs
 // (экраны — E9/E10). /admin/* в карте нет (Д5); catch-all/404 не в карте UX.
 import { Suspense, lazy } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router'
 import { getFrontendEnv } from '../shared/config/env'
 import { LoginPage } from '../features/auth/LoginPage'
 import { ChangelogPage } from '../features/changelog/ChangelogPage'
@@ -470,6 +470,22 @@ export function AppRoutes() {
   )
 }
 
+/**
+ * Тулбар НЕ рендерится на печатных маршрутах: печатный документ обязан нести
+ * только print-разметку (канон placement-print), а dev-виджет в углу попадал
+ * бы и в DOM канона, и под руку печати (host-прогон Этапа M2 поймал это на
+ * канон-спеке — в Vite-прод тулбар вырезан сборкой, в host он рантаймовый).
+ */
+function DemoToolbarGate() {
+  const location = useLocation()
+  if (location.pathname.startsWith('/print/')) return null
+  return (
+    <Suspense fallback={null}>
+      <DemoToolbar />
+    </Suspense>
+  )
+}
+
 function App() {
   const env = getFrontendEnv()
   // `import.meta.env.MODE === 'mock'` — ОБЯЗАТЕЛЬНО первым в `&&`: build-time
@@ -481,11 +497,7 @@ function App() {
       <AppRoutes />
       {/* mock-only-demo (§8.3): переключатель persona/reset, НЕ продуктовый UI.
           Внутри BrowserRouter — DemoToolbar зовёт useNavigate(). */}
-      {showDemoToolbar ? (
-        <Suspense fallback={null}>
-          <DemoToolbar />
-        </Suspense>
-      ) : null}
+      {showDemoToolbar ? <DemoToolbarGate /> : null}
     </BrowserRouter>
   )
 }

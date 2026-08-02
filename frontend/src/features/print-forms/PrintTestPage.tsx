@@ -7,9 +7,11 @@
 // doc-print (DESIGN L139-145/L310): казахская шапка, таблица с ИИН-маской
 // (****** + last4), жирный итог «Общее», примечание 8pt. Кнопки «Печать» нет
 // (Д6: Ctrl+P); реальные формы приезжают в этот слот со сториями E10 / 16.7.
+import { usePrintDocumentIsolation } from '../../shared/lib/usePrintDocumentIsolation'
 import './print.css'
 
 export function PrintTestPage() {
+  usePrintDocumentIsolation()
   return (
     <main className="print-root">
       <p className="print-screen-hint">

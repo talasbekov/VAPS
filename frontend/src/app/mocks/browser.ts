@@ -6,15 +6,23 @@ import { registerRbacDirectory } from '../../shared/testing/mock-runtime/rbac-di
 import { composeHandlers } from './compose-handlers'
 import { DEMO_PERSONAS } from './demo-personas'
 
-let started = false
+// Promise, а не флаг: два ПАРАЛЛЕЛЬНЫХ вызова (StrictMode-эффект host-моста)
+// проходили гонкой мимо булевого guard'а и поднимали ДВА инстанса worker'а —
+// каждый исполнял handler, мутация писалась дважды (Этап M2).
+let startPromise: Promise<void> | null = null
 
 /**
  * Запускает MSW worker и ждёт его готовности ПЕРЕД монтированием React —
  * иначе первые queries уходят в сеть до перехвата (§8.1 «это предотвращает
  * гонку»). Идемпотентно: повторный вызов (HMR) не плодит вторую регистрацию.
  */
-export async function startMockWorker(): Promise<void> {
-  if (started) return
+export function startMockWorker(): Promise<void> {
+  if (startPromise !== null) return startPromise
+  startPromise = start()
+  return startPromise
+}
+
+async function start(): Promise<void> {
   // Регистрация ОДИН раз до первого перехваченного запроса: feature-хендлеры
   // (не могут импортировать app/mocks/demo-personas, ARCH-FE-013) проверяют
   // права через shared/testing/mock-runtime/rbac-directory.
@@ -24,5 +32,4 @@ export async function startMockWorker(): Promise<void> {
     onUnhandledRequest: 'error',
     serviceWorker: { url: '/mockServiceWorker.js' },
   })
-  started = true
 }

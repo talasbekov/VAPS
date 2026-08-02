@@ -15,6 +15,7 @@
 // контракту» закрыт частично: числовая таблица соответствует, ячейки — без
 // членов. НЕ дорисовывать это на клиенте: потребовало бы переписать
 // `resolve_status` и таблицу приоритетов (прямой запрет 10.6 / 10.1b).
+import { usePrintDocumentIsolation } from '../../shared/lib/usePrintDocumentIsolation'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
 import { apiClient } from '../../shared/api/client'
@@ -74,6 +75,7 @@ function cellText(
 }
 
 export function ExpensePrintPage() {
+  usePrintDocumentIsolation()
   const [searchParams] = useSearchParams()
   const divisionId = searchParams.get('division_id') ?? ''
   const businessDate = searchParams.get('business_date') ?? ''
