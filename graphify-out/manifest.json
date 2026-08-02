@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785569157.5277917,
-    "ast_hash": "3505d1be27aa3800cc8b5c454653cfab",
+    "mtime": 1785629484.9736123,
+    "ast_hash": "7d6650b89ebed84af9347bda70b90c33",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -23345,8 +23345,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/events/services.py": {
-    "mtime": 1785568831.5131388,
-    "ast_hash": "ba1c8fc35762f7a86bf688424c4f5e87",
+    "mtime": 1785628771.6707778,
+    "ast_hash": "f862a1f6fa2e799f1a59f8a5acf3c821",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/events/tests/__init__.py": {
@@ -24542,6 +24542,16 @@
   "frontend/e2e-harness/duty-plan.html": {
     "mtime": 1785510019.8079782,
     "ast_hash": "dc818b56d7b74d8d159f90ae4a7dcec7",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/events/tests/test_event_assignment_projection.py": {
+    "mtime": 1785629243.1144917,
+    "ast_hash": "d58b2314afc99fc6a12033a3c4dcc005",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/16-5-\u043f\u0440\u043e\u0435\u043a\u0446\u0438\u044f-\u0441\u0442\u0430\u0442\u0443\u0441\u043e\u0432-\u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u043e\u0432.md": {
+    "mtime": 1785629480.4658477,
+    "ast_hash": "3a0516c0f6d18964909d05c1d002e2d1",
     "semantic_hash": ""
   }
 }
