@@ -8,6 +8,7 @@ import uuid
 import pytest
 from django.utils import timezone
 
+from apps.operations.duties.services import _to_date_range
 from apps.operations.events.models import (
     AssignmentVersion,
     PlacementAssignment,
@@ -44,6 +45,14 @@ def make_draft_version(event, employee_id=None, post_code="POST-1"):
 
 
 def test_approve_projects_event_assignment_status(db):
+    """Review finding (Blind Hunter, live-confirmed): the naive assertion
+    `status.date_start == now.date()` compares a UTC calendar date
+    (`timezone.now()` is UTC-aware) against `_to_date_range()`'s
+    LOCAL-timezone conversion (`TIME_ZONE = "Asia/Qyzylorda"`, UTC+5,
+    `config/settings.py`) — the two dates DIVERGE whenever the test runs
+    between 19:00-23:59 UTC (00:00-04:59 local), a real, reproducible
+    flake window, not a hypothetical one. Asserting against
+    `_to_date_range()`'s own output instead is correct at any run time."""
     now = timezone.now()
     event = make_event(
         "OBJ-PROJ-1", now, now + datetime.timedelta(hours=8)
@@ -55,10 +64,12 @@ def test_approve_projects_event_assignment_status(db):
     approve_assignment_version(version, actor="approver-1")
 
     status = EmployeeStatus.objects.get(source_ref=f"EVENT_ASSIGNMENT:{assignment.pk}")
+    expected_start, expected_end = _to_date_range(event.starts_at, event.ends_at)
     assert status.employee_id == employee_id
     assert status.status_type_code == "EVENT_ASSIGNMENT"
     assert status.source == EmployeeStatus.Source.OM_AUTO
-    assert status.date_start == now.date()
+    assert status.date_start == expected_start
+    assert status.date_end == expected_end
 
 
 def test_projection_idempotent_by_source_ref(db):
