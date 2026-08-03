@@ -127,6 +127,28 @@ def test_senior_not_set_skips_senior_notification(division):
     ).recipient == "user-704"
 
 
+def test_senior_who_is_also_assigned_gets_one_notification(division):
+    """Review coverage gap (Blind/Edge Case Hunter): the employee_ids set
+    is built from BOTH assignments and event.senior_employee_id — if the
+    same person is both a participant and the senior, the two dedup
+    layers (employee_ids set, then set(user_ids.values())) must collapse
+    to exactly one notify() call, not two."""
+    employee = make_employee(division, "900101300707")
+    UserEmployeeBinding.objects.create(user_id="user-707", employee=employee)
+    event = make_event("OBJ-NOTIFY-7", senior_employee_id=employee.id)
+    version, assignment = make_draft_version(event, employee.id)
+    submit_assignment_version(version, actor="planner-1")
+
+    approve_assignment_version(version, actor="approver-1")
+
+    assert (
+        Notification.objects.filter(
+            recipient="user-707", kind=Notification.Kind.ASSIGNMENT_APPROVED
+        ).count()
+        == 1
+    )
+
+
 def test_idempotent_replay_approve_does_not_duplicate_notification(division):
     employee = make_employee(division, "900101300705")
     UserEmployeeBinding.objects.create(user_id="user-705", employee=employee)
