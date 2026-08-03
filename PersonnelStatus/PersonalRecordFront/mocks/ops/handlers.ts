@@ -6,6 +6,9 @@ import { identityHandlers } from "./identity";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
 import { dutiesHandlers } from "./duties-handlers";
+import { auditHandlers } from "./audit-store";
+import { settingsHandlers } from "./settings-store";
+import { dictionariesHandlers } from "./dictionaries-handlers";
 
 export function composeOpsHandlers() {
   return [
@@ -13,5 +16,8 @@ export function composeOpsHandlers() {
     ...objectsHandlers,
     ...securityEventsHandlers,
     ...dutiesHandlers,
+    ...auditHandlers,
+    ...settingsHandlers,
+    ...dictionariesHandlers,
   ];
 }

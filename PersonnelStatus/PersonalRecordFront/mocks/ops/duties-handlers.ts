@@ -26,7 +26,6 @@ import {
 } from "@/entities/duty-shift";
 import type {
   CancelDutyShiftRequest,
-  ConflictPolicy,
   CreateDutyShiftRequest,
   DutyCandidateOption,
   DutyPassportStatus,
@@ -42,6 +41,8 @@ import type {
 import { resolveApplicableVersion } from "@/entities/security-event";
 import { readObjectsStore } from "./objects-handlers";
 import { PERSONNEL_ROSTER, findPersonnel } from "./fixtures/personnel";
+import { readConflictPolicy } from "./settings-store";
+import { appendAudit } from "./audit-store";
 
 const SHIFTS_KEY = "ops-mock-duty-shifts";
 const PLANS_KEY = "ops-mock-duty-plans";
@@ -68,10 +69,8 @@ const DUTY_TYPES: DutyTypeDefinition[] = [
   },
 ];
 
-const CONFLICT_POLICY: ConflictPolicy = {
-  restAfterDutyMode: "SOFT_OVERRIDE",
-  conflictPolicyVersion: "conflict-policy-v1",
-};
+// политика конфликтов живёт в «Настройках» — здесь только читается:
+// правка режима отдыха там меняет исход создания смены здесь
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -272,7 +271,7 @@ function planLocked(date: string): boolean {
 
 export const dutiesHandlers = [
   http.get(`*${DUTY_TYPES_PATH}`, () =>
-    HttpResponse.json({ results: DUTY_TYPES, conflictPolicy: CONFLICT_POLICY })
+    HttpResponse.json({ results: DUTY_TYPES, conflictPolicy: readConflictPolicy() })
   ),
 
   // месячный план одним ответом: шапка + смены + конфликты + KPI
@@ -281,7 +280,7 @@ export const dutiesHandlers = [
     const month = url.searchParams.get("month") ?? businessDate().slice(0, 7);
     const record = getPlans()[month] ?? null;
     const shiftsOfMonth = monthShifts(month);
-    const conflicts = detectDutyConflicts(shiftsOfMonth, DUTY_TYPES, CONFLICT_POLICY);
+    const conflicts = detectDutyConflicts(shiftsOfMonth, DUTY_TYPES, readConflictPolicy());
     const fingerprint = planFingerprint(month, shiftsOfMonth);
     const active = shiftsOfMonth.filter((s) => s.stateCode !== "CANCELLED");
     const response: MonthlyDutyPlanResponse = {
@@ -298,7 +297,7 @@ export const dutiesHandlers = [
       ),
       passportStatuses: shiftsOfMonth.map(passportStatusOf),
       conflicts,
-      conflictPolicy: CONFLICT_POLICY,
+      conflictPolicy: readConflictPolicy(),
       kpi: {
         totalShifts: shiftsOfMonth.length,
         activeShifts: active.length,
@@ -350,7 +349,7 @@ export const dutiesHandlers = [
     }
     const now = nowIso();
     const shiftsOfMonth = monthShifts(body.month);
-    const conflicts = detectDutyConflicts(shiftsOfMonth, DUTY_TYPES, CONFLICT_POLICY);
+    const conflicts = detectDutyConflicts(shiftsOfMonth, DUTY_TYPES, readConflictPolicy());
     const validation = buildValidation(
       now,
       conflicts,
@@ -519,14 +518,14 @@ export const dutiesHandlers = [
     const dayConflicts = detectDutyConflicts(
       getShifts().filter((s) => s.employeeName === shift.employeeName),
       DUTY_TYPES,
-      CONFLICT_POLICY
+      readConflictPolicy()
     ).filter((c) => c.businessDate === shift.businessDate);
     const detail: DutyShiftDetail = {
       shift,
       passportStatus: passportStatusOf(shift),
       dutyType: DUTY_TYPES.find((t) => t.dutyTypeCode === shift.dutyTypeCode) ?? null,
       conflicts: dayConflicts,
-      conflictPolicy: CONFLICT_POLICY,
+      conflictPolicy: readConflictPolicy(),
     };
     return HttpResponse.json(detail);
   }),
@@ -609,7 +608,7 @@ export const dutiesHandlers = [
     const restConflicts = detectDutyConflicts(
       [...active.filter((s) => s.employeeId === person.id), probe],
       DUTY_TYPES,
-      CONFLICT_POLICY
+      readConflictPolicy()
     ).filter((c) => c.code === "REST_AFTER_DUTY");
     if (restConflicts.length > 0) {
       const hard = restConflicts.some((c) => c.severity === "HARD");
@@ -659,6 +658,16 @@ export const dutiesHandlers = [
       updatedAt: now,
     };
     addShift(created);
+    appendAudit({
+      action: "duty_shift.create",
+      entityType: "DutyShift",
+      entityId: created.id,
+      newValue: {
+        businessDate: created.businessDate,
+        employeeName: created.employeeName,
+      },
+      reason: created.overrideReason ?? "",
+    });
     return HttpResponse.json(created, { status: 201 });
   }),
 
@@ -685,6 +694,14 @@ export const dutiesHandlers = [
       );
     }
     const now = nowIso();
+    appendAudit({
+      action: "duty_shift.cancel",
+      entityType: "DutyShift",
+      entityId: shift.id,
+      oldValue: { stateCode: shift.stateCode },
+      newValue: { stateCode: "CANCELLED" },
+      reason: body.reason.trim(),
+    });
     return HttpResponse.json(
       saveShift({
         ...shift,

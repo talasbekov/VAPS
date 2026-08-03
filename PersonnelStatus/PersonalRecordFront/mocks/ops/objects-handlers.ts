@@ -19,9 +19,11 @@ import type {
 } from "@/entities/security-object";
 import {
   buildObjectsFixtures,
-  DEMO_FRESHNESS_POLICY,
   UNAVAILABLE_OBJECT_KPI,
 } from "./fixtures/objects";
+// политика свежести живёт в «Настройках» — здесь только читается
+import { readFreshnessPolicy } from "./settings-store";
+import { appendAudit } from "./audit-store";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -109,13 +111,13 @@ export const objectsHandlers = [
     const sorted = [...getObjects()].sort((a, b) => a.code.localeCompare(b.code));
     const date = businessDate();
     const freshness = sorted.map((object) =>
-      resolveFreshness(object, DEMO_FRESHNESS_POLICY, date)
+      resolveFreshness(object, readFreshnessPolicy(), date)
     );
     const response: ListObjectsResponse = {
       results: sorted,
       freshness,
       kpi: buildObjectsKpi(sorted, freshness),
-      freshnessPolicy: DEMO_FRESHNESS_POLICY,
+      freshnessPolicy: readFreshnessPolicy(),
       unavailableKpi: UNAVAILABLE_OBJECT_KPI,
     };
     return HttpResponse.json(response);
@@ -210,6 +212,12 @@ export const objectsHandlers = [
         updatedAt: nowIso(),
       };
       replaceObject(updated);
+      appendAudit({
+        action: "object.passport.publish",
+        entityType: "SecurityObject",
+        entityId: updated.code,
+        newValue: { versionNumber },
+      });
       return HttpResponse.json(updated, { status: 201 });
     }
   ),
