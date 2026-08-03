@@ -170,10 +170,127 @@ function buildSeed(): SettingsState {
         editable: true,
         lockedReason: null,
       },
+      {
+        settingCode: "LIMITS.ANALYTICS_CUSTOM_PERIOD.PARAMETER",
+        sectionCode: "ANALYTICS_LIMITS",
+        kind: "NUMBER",
+        valueType: "DAYS",
+        safeLabel: "Предел произвольного периода аналитики",
+        description:
+          "Максимальная глубина произвольного периода на дашборде аналитики службы. Проверяет сервер при запросе снимка.",
+        value: 92,
+        minValue: 7,
+        maxValue: 366,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
+      {
+        settingCode: "LOAD.PERIOD.PARAMETER",
+        sectionCode: "LOAD_POLICY",
+        kind: "NUMBER",
+        valueType: "DAYS",
+        safeLabel: "Окно расчёта нагрузки",
+        description:
+          "Сколько суток назад от бизнес-даты входит в расчёт плановой и фактической нагрузки.",
+        value: 30,
+        minValue: 7,
+        maxValue: 92,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
+      {
+        settingCode: "LOAD.WARNING_MINUTES.PARAMETER",
+        sectionCode: "LOAD_POLICY",
+        kind: "NUMBER",
+        valueType: "MINUTES",
+        safeLabel: "Порог предупреждения нагрузки",
+        description:
+          "Плановые минуты окна, с которых строка нагрузки получает состояние «Предупреждение».",
+        value: 2880,
+        minValue: 480,
+        maxValue: 20160,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
+      {
+        settingCode: "LOAD.OVERLOAD_MINUTES.PARAMETER",
+        sectionCode: "LOAD_POLICY",
+        kind: "NUMBER",
+        valueType: "MINUTES",
+        safeLabel: "Порог перегрузки",
+        description:
+          "Плановые минуты окна, с которых строка нагрузки получает состояние «Перегрузка».",
+        value: 5760,
+        minValue: 960,
+        maxValue: 40320,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
+      // Политика наблюдений §22.11: методику (меры, тексты) держит аналитика,
+      // ЧИСЛА — здесь. Код: ATTENTION.<детектор>.<PARAMETER|WARNING_FROM|CRITICAL_FROM>.
+      {
+        settingCode: "ATTENTION.CONFLICT_SHARE.WARNING_FROM",
+        sectionCode: "ATTENTION_POLICY",
+        kind: "NUMBER",
+        valueType: "PERCENT",
+        safeLabel: "Доля конфликтных смен: предупреждение",
+        description:
+          "Доля смен периода с конфликтом планирования, с которой блок «Требует внимания» фиксирует наблюдение.",
+        value: 18,
+        minValue: 1,
+        maxValue: 100,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
+      {
+        settingCode: "ATTENTION.CONFLICT_SHARE.CRITICAL_FROM",
+        sectionCode: "ATTENTION_POLICY",
+        kind: "NUMBER",
+        valueType: "PERCENT",
+        safeLabel: "Доля конфликтных смен: критично",
+        description:
+          "Доля смен периода с конфликтом, с которой наблюдение становится критическим.",
+        value: 34,
+        minValue: 1,
+        maxValue: 100,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
+      {
+        settingCode: "ATTENTION.ACKNOWLEDGEMENT_MISSING.PARAMETER",
+        sectionCode: "ATTENTION_POLICY",
+        kind: "NUMBER",
+        valueType: "DAYS",
+        safeLabel: "Срок упреждения ознакомления",
+        description:
+          "За сколько дней до заступления отсутствие отметки об ознакомлении становится наблюдением «Требуется проверка».",
+        value: 3,
+        minValue: 1,
+        maxValue: 14,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
     ],
     sectionVersions: {
       CONFLICT_RULES: "conflict-policy-v1",
       PASSPORT_FRESHNESS: "policy-v1",
+      ANALYTICS_LIMITS: "analytics-limits-v1",
+      LOAD_POLICY: "load-policy-v1",
+      ATTENTION_POLICY: "attention-policy-v1",
       // Формат версии методики рейтинга — свой (OPERATIONAL-RATING-<год>.<мес>.N):
       // ею подписываются агрегаты, и точки динамики прошлых редакций несут
       // версии того же формата.
@@ -270,6 +387,96 @@ export function readRatingSuppressionMinGroup(): number | null {
     return item.kind === "NUMBER" ? item.value : null;
   }
   return null;
+}
+
+function numberValue(
+  sectionCode: SettingSectionCode,
+  settingCode: string
+): number | null {
+  const s = getState();
+  for (const item of s.settings) {
+    if (item.sectionCode !== sectionCode || item.settingCode !== settingCode)
+      continue;
+    return item.kind === "NUMBER" ? item.value : null;
+  }
+  return null;
+}
+
+/**
+ * §22.5 предел произвольного периода аналитики. `null` — политика не задана
+ * (стейл-сид), и это НЕ «ограничения нет»: произвольный период не принимается
+ * вовсе, именованные пресеты продолжают работать.
+ */
+export function readAnalyticsCustomPeriodLimit(): {
+  maxDays: number;
+  policyVersion: string;
+} | null {
+  const s = getState();
+  const policyVersion = s.sectionVersions.ANALYTICS_LIMITS;
+  if (typeof policyVersion !== "string" || policyVersion === "") return null;
+  const maxDays = numberValue(
+    "ANALYTICS_LIMITS",
+    "LIMITS.ANALYTICS_CUSTOM_PERIOD.PARAMETER"
+  );
+  if (maxDays === null) return null;
+  return { maxDays, policyVersion };
+}
+
+/** §22.9 пороги нагрузки. `null` — методика не задана ИЛИ неполна: посчитать
+ * по половине политики и подписать её версией значило бы соврать. */
+export function readLoadPolicy(): {
+  periodDays: number;
+  warningMinutes: number;
+  overloadMinutes: number;
+  policyVersion: string;
+} | null {
+  const s = getState();
+  const policyVersion = s.sectionVersions.LOAD_POLICY;
+  if (typeof policyVersion !== "string" || policyVersion === "") return null;
+  const periodDays = numberValue("LOAD_POLICY", "LOAD.PERIOD.PARAMETER");
+  const warningMinutes = numberValue("LOAD_POLICY", "LOAD.WARNING_MINUTES.PARAMETER");
+  const overloadMinutes = numberValue(
+    "LOAD_POLICY",
+    "LOAD.OVERLOAD_MINUTES.PARAMETER"
+  );
+  if (periodDays === null || warningMinutes === null || overloadMinutes === null)
+    return null;
+  return { periodDays, warningMinutes, overloadMinutes, policyVersion };
+}
+
+/**
+ * §22.11 политика наблюдений: числа по детекторам из кодов вида
+ * ATTENTION.<детектор>.<PARAMETER|WARNING_FROM|CRITICAL_FROM>. `null`, а не
+ * пустая политика, когда раздела нет: пустая означала бы «порогов не задано»
+ * и молча превратила бы меры в бинарные.
+ */
+export function readAttentionPolicy(): {
+  policyVersion: string;
+  byDetector: Map<
+    string,
+    { parameter?: number; warningFrom?: number; criticalFrom?: number }
+  >;
+} | null {
+  const s = getState();
+  const policyVersion = s.sectionVersions.ATTENTION_POLICY;
+  if (typeof policyVersion !== "string" || policyVersion === "") return null;
+  const byDetector = new Map<
+    string,
+    { parameter?: number; warningFrom?: number; criticalFrom?: number }
+  >();
+  for (const item of s.settings) {
+    if (item.sectionCode !== "ATTENTION_POLICY" || item.kind !== "NUMBER") continue;
+    const match = /^ATTENTION\.([A-Z_]+)\.(PARAMETER|WARNING_FROM|CRITICAL_FROM)$/.exec(
+      item.settingCode
+    );
+    if (match === null) continue;
+    const bucket = byDetector.get(match[1]) ?? {};
+    if (match[2] === "PARAMETER") bucket.parameter = item.value;
+    if (match[2] === "WARNING_FROM") bucket.warningFrom = item.value;
+    if (match[2] === "CRITICAL_FROM") bucket.criticalFrom = item.value;
+    byDetector.set(match[1], bucket);
+  }
+  return { policyVersion, byDetector };
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────
