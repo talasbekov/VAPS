@@ -36,9 +36,12 @@ test.describe('Сотрудники: реестр → поиск/фильтр �
     await expect(rowsLocator).toHaveCount(totalCount)
     await page.getByLabel('Подразделение').selectOption({ label: 'Штаб охранных мероприятий' })
 
-    const filteredCount = await rowsLocator.count()
-    expect(filteredCount).toBeGreaterThanOrEqual(1)
-    expect(filteredCount).toBeLessThan(totalCount)
+    // Счёт — ЧЕРЕЗ ожидание: мгновенный count() после selectOption — гонка,
+    // вскрывшаяся на медленной среде host-прогона (Этап M2).
+    await expect
+      .poll(async () => rowsLocator.count(), { timeout: 10_000 })
+      .toBeLessThan(totalCount)
+    expect(await rowsLocator.count()).toBeGreaterThanOrEqual(1)
 
     await page.getByRole('link', { name: /Нуртаев/ }).click()
 

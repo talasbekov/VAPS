@@ -32,8 +32,13 @@ test.describe('Аналитика службы (§22.3-22.12, mock-режим)',
     // Показатели §22.7, под которыми есть реальные данные.
     await expect(page.getByText('Запланировано смен')).toBeVisible()
     await expect(page.getByText('Жёсткие конфликты')).toBeVisible()
-    // §35: то, чего в срезе нет, названо с причиной, а не показано нулём.
-    await expect(page.getByText('Перегрузка по серверной политике')).toBeVisible()
+    // §22.9: нагрузка — ЖИВОЙ блок с планом и фактом порознь; отказ
+    // «Перегрузка по серверной политике» снят — политика теперь существует.
+    const load = page.getByRole('region', { name: 'Нагрузка' })
+    await expect(load.getByText(/методика LOAD-POLICY-/)).toBeVisible()
+    await expect(load.getByText('По подразделениям')).toBeVisible()
+    await expect(load.getByText('По сотрудникам')).toBeVisible()
+    await expect(page.getByText('Перегрузка по серверной политике')).toHaveCount(0)
   })
 
   test('§22.12: строки запрашиваются отдельно и по snapshotId', async ({ page }) => {

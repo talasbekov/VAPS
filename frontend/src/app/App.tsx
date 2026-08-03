@@ -5,7 +5,7 @@
 // из seed_operations дословно). Разделы пока — заглушки app/section-stubs
 // (экраны — E9/E10). /admin/* в карте нет (Д5); catch-all/404 не в карте UX.
 import { Suspense, lazy } from 'react'
-import { BrowserRouter, Route, Routes } from 'react-router'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router'
 import { getFrontendEnv } from '../shared/config/env'
 import { LoginPage } from '../features/auth/LoginPage'
 import { ChangelogPage } from '../features/changelog/ChangelogPage'
@@ -36,6 +36,7 @@ import { EvaluationWorkspacePage } from '../features/ratings/pages/EvaluationWor
 import { EvaluationRegistryPage } from '../features/ratings/pages/EvaluationRegistryPage'
 import { RatingEmployeeDetailPage } from '../features/ratings/pages/RatingEmployeeDetailPage'
 import { RatingAuditPage } from '../features/ratings/pages/RatingAuditPage'
+import { RatingExportPage } from '../features/ratings/pages/RatingExportPage'
 import { ReportHistoryPage } from '../features/service-reports/pages/ReportHistoryPage'
 import { ReportJobPage } from '../features/service-reports/pages/ReportJobPage'
 import { FeedbackPage } from '../features/feedback/pages/FeedbackPage'
@@ -48,6 +49,29 @@ import { ROUTES } from '../shared/routes'
 import { AppLayout } from '../shared/ui/AppLayout'
 import { RouteChunkBoundary } from './RouteChunkBoundary'
 import { DashboardStub } from './section-stubs'
+import { usePermissions } from '../shared/auth/usePermissions'
+
+/**
+ * «/» — дашборд линии «Расход» (E9-E10, ещё не построен). Живой прогон
+ * Этапа 71 поймал: администратор-wildcard после входа попадал ровно на эту
+ * заглушку — первым экраном системы оказывалось «появится позже». Тому, кому
+ * доступен командный центр, «/» честно ведёт туда; заглушка остаётся только
+ * той persona, у которой другой оперативной посадочной нет.
+ */
+function HomeGate() {
+  const { hasPermission } = usePermissions()
+  // Решение о посадочной стоит ДО гейта заглушки: persona с командным центром,
+  // но без status.view, иначе получала бы отказ на «/» вместо редиректа
+  // (ревью Этапа 73). Заглушка остаётся под СВОИМ правом.
+  if (hasPermission('ops.dashboard.view')) {
+    return <Navigate to={ROUTES.commandCenter} replace />
+  }
+  return (
+    <RequirePermission permission="status.view">
+      <DashboardStub />
+    </RequirePermission>
+  )
+}
 
 // `React.lazy`, а НЕ статический импорт: `import.meta.env.MODE === 'mock'`
 // (build-time литерал, Vite ARCH L459) даёт Rollup статически исключить весь
@@ -135,14 +159,7 @@ export function AppRoutes() {
           </RequireAuth>
         }
       >
-        <Route
-          path={ROUTES.home}
-          element={
-            <RequirePermission permission="status.view">
-              <DashboardStub />
-            </RequirePermission>
-          }
-        />
+        <Route path={ROUTES.home} element={<HomeGate />} />
         <Route
           path={ROUTES.employees}
           element={
@@ -345,6 +362,14 @@ export function AppRoutes() {
           }
         />
         <Route
+          path={ROUTES.ratingExport}
+          element={
+            <RequirePermission permission="ops.rating.export">
+              <RatingExportPage />
+            </RequirePermission>
+          }
+        />
+        <Route
           path={ROUTES.ratingAudit}
           element={
             <RequirePermission permission="ops.rating.view_audit">
@@ -445,6 +470,22 @@ export function AppRoutes() {
   )
 }
 
+/**
+ * Тулбар НЕ рендерится на печатных маршрутах: печатный документ обязан нести
+ * только print-разметку (канон placement-print), а dev-виджет в углу попадал
+ * бы и в DOM канона, и под руку печати (host-прогон Этапа M2 поймал это на
+ * канон-спеке — в Vite-прод тулбар вырезан сборкой, в host он рантаймовый).
+ */
+function DemoToolbarGate() {
+  const location = useLocation()
+  if (location.pathname.startsWith('/print/')) return null
+  return (
+    <Suspense fallback={null}>
+      <DemoToolbar />
+    </Suspense>
+  )
+}
+
 function App() {
   const env = getFrontendEnv()
   // `import.meta.env.MODE === 'mock'` — ОБЯЗАТЕЛЬНО первым в `&&`: build-time
@@ -456,11 +497,7 @@ function App() {
       <AppRoutes />
       {/* mock-only-demo (§8.3): переключатель persona/reset, НЕ продуктовый UI.
           Внутри BrowserRouter — DemoToolbar зовёт useNavigate(). */}
-      {showDemoToolbar ? (
-        <Suspense fallback={null}>
-          <DemoToolbar />
-        </Suspense>
-      ) : null}
+      {showDemoToolbar ? <DemoToolbarGate /> : null}
     </BrowserRouter>
   )
 }
