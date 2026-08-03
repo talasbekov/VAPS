@@ -10,6 +10,7 @@ import { auditHandlers } from "./audit-store";
 import { settingsHandlers } from "./settings-store";
 import { dictionariesHandlers } from "./dictionaries-handlers";
 import { ratingsHandlers } from "./ratings-handlers";
+import { analyticsHandlers } from "./analytics-handlers";
 
 export function composeOpsHandlers() {
   return [
@@ -21,5 +22,6 @@ export function composeOpsHandlers() {
     ...settingsHandlers,
     ...dictionariesHandlers,
     ...ratingsHandlers,
+    ...analyticsHandlers,
   ];
 }

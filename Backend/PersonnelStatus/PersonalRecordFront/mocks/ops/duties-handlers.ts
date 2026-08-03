@@ -191,6 +191,16 @@ function getShifts(): DutyShift[] {
   return shifts;
 }
 
+/** Узкая проекция для аналитики службы (§22.3): ТОЛЬКО чтение — аналитика
+ * потребитель смен, а их владелец — план дежурств. */
+export function readDutyShiftsStore(): DutyShift[] {
+  return getShifts();
+}
+
+export function readDutyTypesRegistry(): DutyTypeDefinition[] {
+  return DUTY_TYPES.map((type) => ({ ...type }));
+}
+
 function saveShift(updated: DutyShift): DutyShift {
   shifts = getShifts().map((s) => (s.id === updated.id ? updated : s));
   persist(SHIFTS_KEY, shifts);
