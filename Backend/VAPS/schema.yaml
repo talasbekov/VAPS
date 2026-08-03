@@ -1414,6 +1414,27 @@ paths:
               schema:
                 $ref: '#/components/schemas/AssignmentVersionDetail'
           description: ''
+  /api/operations/assignment-versions/{id}/submit/:
+    post:
+      operationId: assignment_version_submit
+      description: Подать Расстановку на согласование (DRAFT->SUBMITTED, FR-26). Требует
+        assignment.submit. Идемпотентно на уже-SUBMITTED (чистый 200, не ошибка);
+        422 INVALID_LIFECYCLE_TRANSITION из любого другого статуса.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentVersionDetail'
+          description: ''
   /api/operations/daily-submissions/:
     get:
       operationId: operations_daily_submissions_list

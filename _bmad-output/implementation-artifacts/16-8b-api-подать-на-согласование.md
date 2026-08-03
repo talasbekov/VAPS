@@ -4,7 +4,7 @@ baseline_commit: 30f3ab0
 
 # Story 16.8b: API — подать Расстановку на согласование
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -41,12 +41,12 @@ so that **черновик Расстановки можно перевести 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `@action(detail=True, methods=["post"])` `submit` на `AssignmentVersionViewSet` (AC: 1-4)
-- [ ] Task 2 — MATRIX/AUDIT_MATRIX-строка (AC: 5, 6)
-  - [ ] `ops-assignment-version-submit` — `_Gate("assignment.submit")` в `test_rbac_matrix.py`, `_Audited()` в `test_audit_coverage.py` (уточнить: аудит уже внутри сервиса — `_Audited()`, не `_DeferredAudit`)
-- [ ] Task 3 — `make schema` регенерация
-- [ ] Task 4 — Тесты (AC 1-6)
-- [ ] Task 5 — Гейт
+- [x] Task 1 — `@action(detail=True, methods=["post"])` `submit` на `AssignmentVersionViewSet` (AC: 1-4)
+- [x] Task 2 — MATRIX/AUDIT_MATRIX-строка (AC: 5, 6)
+  - [x] `ops-assignment-version-submit` — `_Gate("assignment.submit")` в `test_rbac_matrix.py`, `_Audited()` в `test_audit_coverage.py`
+- [x] Task 3 — `make schema` регенерация
+- [x] Task 4 — Тесты (AC 1-6)
+- [x] Task 5 — Гейт
 
 ## Dev Notes
 
@@ -66,14 +66,25 @@ so that **черновик Расстановки можно перевести 
 
 ### Agent Model Used
 
+Claude Sonnet 5
+
 ### Debug Log References
 
 ### Completion Notes List
 
+Реализовано по AC 1-6. `submit`-action добавлен на `AssignmentVersionViewSet` (16.8a) — `require_permission(request, "assignment.submit")` → `_get_assignment_version_or_404()` → `submit_assignment_version()` → `AssignmentVersionDetailSerializer`. **Найдено при реализации, не в Scope Decision**: `AssignmentVersionViewSet.http_method_names` (16.8a) был `["get", "options"]` — чисто read-only ViewSet, POST-actions физически не проходили бы (405, подтверждено живым красным прогоном тестов) — расширено до `["get", "post", "options"]`, докстринг ViewSet'а обновлён (16.8b и далее ЖИВУТ на этом же ViewSet'е, не read-only навсегда, как было заявлено в 16.8a's докстринге). Новые строки в `test_rbac_matrix.py` (`_Gate("assignment.submit")`) и `test_audit_coverage.py` (`_Audited()`, эмиссия внутри сервиса, не дублируется). 5 новых поведенческих тестов (AC 1-6, кроме AC-6 — гейт), все прошли после исправления `http_method_names` (изначально 5 из 5 падали 405, живой сигнал ошибки — не тихий пропуск). `make gate` — 3834 passed (было 3819, +15), 0 regressions, ruff чист, `make schema` (21 новых строк для нового эндпоинта), миграций нет.
+
 ### File List
+
+- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `submit`-action, `http_method_names` расширен до `["get", "post", "options"]`)
+- `Backend/VAPS/apps/operations/events/tests/test_assignment_version_submit_api.py` (new)
+- `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — 1 новая строка MATRIX)
+- `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 1 новая строка AUDIT_MATRIX)
+- `Backend/VAPS/schema.yaml` (regenerated — `make schema`, новый эндпоинт)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-01 | Story создана (create-story). Часть 2/9 расщепления Story 16.8. Тонкая HTTP-обёртка над уже идемпотентным `submit_assignment_version()` (16.4), буквальный образец 14.11c (`approve`-action для `DutyPlan`). Право `assignment.submit` уже засеяно/привязано (16.8a's находка) — не изобретается. |
+| 2026-08-01 | Dev-story: `submit`-action. Найдено живым красным прогоном — `AssignmentVersionViewSet.http_method_names` (16.8a) был read-only (`["get","options"]`), расширен до `["get","post","options"]`. 5 новых тестов, прошли после исправления. `make gate` — 3834 passed, 0 regressions, ruff чист, `make schema`. Status → review. |

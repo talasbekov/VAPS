@@ -324,6 +324,11 @@ AUDIT_MATRIX = {
     # Story 16.8a: PLACEMENT_DRAFT_FORMED emits inside form_draft_placement()
     # itself (16.2), not the view — behavioral pin — test_form_draft_placement.py.
     "ops-security-event-placement-draft": _Audited(),
+    # Story 16.8b: ASSIGNMENT_VERSION_SUBMITTED emits inside
+    # submit_assignment_version() itself (16.4), only on the real
+    # transition (not the idempotent replay) — behavioral pin —
+    # test_assignment_version_workflow.py.
+    "ops-assignment-version-submit": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

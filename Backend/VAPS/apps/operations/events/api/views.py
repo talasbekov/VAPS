@@ -60,6 +60,7 @@ from apps.operations.events.services import (
     replace_checklist_items,
     replace_sector_posts,
     replace_staffing_demand,
+    submit_assignment_version,
 )
 from apps.operations.facilities.api.serializers import (
     ObjectPassportSerializer,
@@ -527,13 +528,17 @@ def _get_assignment_version_or_404(pk):
 class AssignmentVersionViewSet(viewsets.ViewSet):
     """Story 16.8a: `GET /api/operations/assignment-versions` (list) +
     `GET /api/operations/assignment-versions/{id}` (detail, with nested
-    `PlacementAssignment` rows). Read-only — `create`/mutating actions
-    (`placement/draft`, submit/return/approve, acknowledge) live
-    elsewhere: `placement/draft` is nested under `SecurityEventViewSet`
-    (needs an `event`, not a raw `AssignmentVersion` id); submit/return/
-    approve/acknowledge are 16.8b-e, not this story."""
+    `PlacementAssignment` rows). `create` (`placement/draft`) is nested
+    under `SecurityEventViewSet` instead (needs an `event`, not a raw
+    `AssignmentVersion` id) — never lives here.
 
-    http_method_names = ["get", "options"]
+    Story 16.8b onward: lifecycle-transition `@action`s (`submit`, then
+    `return`/`approve`/`acknowledge` in later stories) DO live on this
+    ViewSet — each is a thin wrapper over an already-idempotent service
+    function (16.4/16.6b), same shape as `DutyPlanViewSet.approve`
+    (14.11c)."""
+
+    http_method_names = ["get", "post", "options"]
     _pagination_class = SecurityEventPagination
 
     @property
@@ -575,4 +580,20 @@ class AssignmentVersionViewSet(viewsets.ViewSet):
     def retrieve(self, request, pk=None, *args, **kwargs):
         _require_any_permission(request, _ASSIGNMENT_READ_PERMISSIONS)
         version = _get_assignment_version_or_404(pk)
+        return Response(AssignmentVersionDetailSerializer(version).data)
+
+    @extend_schema(
+        operation_id="assignment_version_submit",
+        request=None,
+        responses={200: AssignmentVersionDetailSerializer},
+        description="Подать Расстановку на согласование (DRAFT->SUBMITTED, "
+        "FR-26). Требует assignment.submit. Идемпотентно на уже-SUBMITTED "
+        "(чистый 200, не ошибка); 422 INVALID_LIFECYCLE_TRANSITION из "
+        "любого другого статуса.",
+    )
+    @action(detail=True, methods=["post"], url_path="submit")
+    def submit(self, request, pk=None, *args, **kwargs):
+        require_permission(request, "assignment.submit")
+        version = _get_assignment_version_or_404(pk)
+        version = submit_assignment_version(version, actor=request.actor_id)
         return Response(AssignmentVersionDetailSerializer(version).data)
