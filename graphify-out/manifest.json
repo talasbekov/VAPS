@@ -2050,8 +2050,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/selectors.py": {
-    "mtime": 1785564564.9244971,
-    "ast_hash": "cfbfa08409d10ab39dcd848cafcf0483",
+    "mtime": 1785736697.432033,
+    "ast_hash": "434972b0a20837d205ac719e83e6b941",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/core/services.py": {
@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785629484.9736123,
-    "ast_hash": "7d6650b89ebed84af9347bda70b90c33",
+    "mtime": 1785737505.6471798,
+    "ast_hash": "867ef89d73277451187faf398406c196",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -19360,8 +19360,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/notifications/models.py": {
-    "mtime": 1785528033.0177448,
-    "ast_hash": "d396d3855424a129370360e4e2a39d14",
+    "mtime": 1785736652.1177683,
+    "ast_hash": "d719f616d5aa992fefb79b66d2a158c6",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/notifications/selectors.py": {
@@ -21115,8 +21115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/schema.yaml": {
-    "mtime": 1785528270.9562736,
-    "ast_hash": "c6c82f0217aa9510c9e32c84bd558f90",
+    "mtime": 1785736931.0942168,
+    "ast_hash": "bb14d9849203f5e2494c0fc62e5fb515",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/5-10-property-\u0438\u043c\u043c\u0443\u0442\u0430\u0431\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c-\u0441\u043d\u0430\u043f\u0448\u043e\u0442\u0430.md": {
@@ -23345,8 +23345,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/events/services.py": {
-    "mtime": 1785628771.6707778,
-    "ast_hash": "f862a1f6fa2e799f1a59f8a5acf3c821",
+    "mtime": 1785736750.0039732,
+    "ast_hash": "d141dcf5626a774559210135334eda13",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/events/tests/__init__.py": {
@@ -24552,6 +24552,21 @@
   "_bmad-output/implementation-artifacts/16-5-\u043f\u0440\u043e\u0435\u043a\u0446\u0438\u044f-\u0441\u0442\u0430\u0442\u0443\u0441\u043e\u0432-\u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u043e\u0432.md": {
     "mtime": 1785629480.4658477,
     "ast_hash": "3a0516c0f6d18964909d05c1d002e2d1",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/notifications/migrations/0008_remove_notification_chk_notification_kind_and_more.py": {
+    "mtime": 1785737075.824774,
+    "ast_hash": "3617f8c361397709e185ee2057b47244",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/events/tests/test_assignment_approved_notification.py": {
+    "mtime": 1785737305.0173943,
+    "ast_hash": "706510f44183bf7c4fab0ce97981c26b",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/16-6a-\u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u0435-\u043e\u0431-\u0443\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u0438-\u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0430\u043c.md": {
+    "mtime": 1785737498.6623602,
+    "ast_hash": "1e1f1ca773b00970654ece9afe2af0fe",
     "semantic_hash": ""
   }
 }
