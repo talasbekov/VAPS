@@ -9,6 +9,7 @@ import { dutiesHandlers } from "./duties-handlers";
 import { auditHandlers } from "./audit-store";
 import { settingsHandlers } from "./settings-store";
 import { dictionariesHandlers } from "./dictionaries-handlers";
+import { ratingsHandlers } from "./ratings-handlers";
 
 export function composeOpsHandlers() {
   return [
@@ -19,5 +20,6 @@ export function composeOpsHandlers() {
     ...auditHandlers,
     ...settingsHandlers,
     ...dictionariesHandlers,
+    ...ratingsHandlers,
   ];
 }
