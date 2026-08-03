@@ -32,6 +32,8 @@ function bootstrapOnce(): Promise<Loaded> {
       BASENAME: '/ops',
       VITE_DATA_SOURCE: 'mock',
       VITE_ENABLE_DEMO_TOOLS: 'true',
+      // Этап M4: SPA живёт в каркасе host'а — свой сайдбар/шапку не рисует.
+      VITE_EMBEDDED_CHROME: 'true',
     }
     // Worker и сид — ДО первого рендера SPA (§8.1: иначе первые queries
     // уходят в сеть до перехвата).

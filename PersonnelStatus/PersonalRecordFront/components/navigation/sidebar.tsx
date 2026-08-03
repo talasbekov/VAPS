@@ -10,6 +10,14 @@ import {
   Settings,
   BarChart3,
   MessageSquarePlus,
+  // Иконки раздела «Охранные мероприятия» (Smart Josparlau, Этап M4) — только
+  // добавка, существующая навигация не изменялась.
+  CalendarDays,
+  ClipboardList,
+  Landmark,
+  LineChart,
+  ScrollText,
+  Star,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -73,6 +81,42 @@ export function Sidebar() {
     hasPermission(item.resource, item.action)
   );
 
+  // Раздел «Охранные мероприятия» (Smart Josparlau, Этап M4) — ДОБАВКА:
+  // ссылки ведут в перенесённый SPA на /ops/*, права внутри проверяет он сам
+  // (demo-persona). Донорские дубли (персонал, расход, отчёты) не дублируются —
+  // их живые версии выше, в основной навигации.
+  const opsNavigation = [
+    { name: "Командный центр", href: "/ops/command-center", icon: LineChart },
+    { name: "Реестр ОМ", href: "/ops/security-events", icon: ClipboardList },
+    { name: "Объекты и паспорта", href: "/ops/objects", icon: Landmark },
+    { name: "План дежурств", href: "/ops/duties", icon: CalendarDays },
+    { name: "Календарь смен", href: "/ops/calendar", icon: CalendarDays },
+    { name: "Аналитика службы", href: "/ops/analytics", icon: BarChart3 },
+    { name: "Аналитика мероприятий", href: "/ops/analytics/operations", icon: BarChart3 },
+    { name: "Оценивание участников", href: "/ops/ratings/workspace", icon: Star },
+    { name: "Итоговые оценки", href: "/ops/ratings/evaluations", icon: Star },
+    { name: "Оперативный рейтинг", href: "/ops/ratings", icon: Star },
+    { name: "Журнал оценивания", href: "/ops/ratings/audit", icon: ScrollText },
+    { name: "Выгрузка рейтинга", href: "/ops/ratings/export", icon: FileText },
+    { name: "Аналитика рейтинга", href: "/ops/ratings/analytics", icon: BarChart3 },
+    { name: "Отчёты службы", href: "/ops/service-reports", icon: FileText },
+    { name: "Аудит", href: "/ops/audit", icon: ScrollText },
+    { name: "Справочники", href: "/ops/dictionaries", icon: ClipboardList },
+    { name: "Настройки ОМ", href: "/ops/settings", icon: Settings },
+  ];
+
+  // Раздел «Охранные мероприятия (натив)» — ДОБАВКА нативного порта Smart
+  // Josparlau: страницы в стеке хоста (app/security-ops/*), в отличие от
+  // /ops/* (смонтированная SPA). Права проверяют сами страницы
+  // (hooks/use-ops-permissions), фильтрации здесь нет — как у opsNavigation.
+  const nativeOpsNavigation = [
+    { name: "Командный центр", href: "/security-ops/command-center", icon: LineChart },
+    { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList },
+    { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
+    { name: "План дежурств", href: "/security-ops/duties", icon: CalendarDays },
+    { name: "Календарь смен", href: "/security-ops/calendar", icon: CalendarDays },
+  ];
+
   return (
     <aside className="h-screen w-full bg-sidebar border-r border-sidebar-border shadow-lg flex flex-col">
       {/* Логотип */}
@@ -122,6 +166,60 @@ export function Sidebar() {
             </li>
           ))}
         </ul>
+
+        {/* Охранные мероприятия (натив) — добавка нативного порта. */}
+        <div className="mt-6">
+          <div className="px-6 pb-2 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
+            Охранные мероприятия (натив)
+          </div>
+          <ul className="space-y-1">
+            {nativeOpsNavigation.map((item) => (
+              <li key={item.href} className="sidebar-nav-item">
+                <motion.a
+                  href={item.href}
+                  className="flex items-center px-6 py-3 text-sm font-semibold rounded-xl transition-colors text-sidebar-foreground hover:bg-sidebar-accent"
+                  whileHover={{ x: 4 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={{
+                    type: "spring" as const,
+                    stiffness: 400,
+                    damping: 25,
+                  }}
+                >
+                  <item.icon className="mr-4 h-5 w-5" />
+                  <span>{item.name}</span>
+                </motion.a>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Охранные мероприятия (Smart Josparlau, Этап M4) — добавка. */}
+        <div className="mt-6">
+          <div className="px-6 pb-2 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
+            Охранные мероприятия
+          </div>
+          <ul className="space-y-1">
+            {opsNavigation.map((item) => (
+              <li key={item.href} className="sidebar-nav-item">
+                <motion.a
+                  href={item.href}
+                  className="flex items-center px-6 py-3 text-sm font-semibold rounded-xl transition-colors text-sidebar-foreground hover:bg-sidebar-accent"
+                  whileHover={{ x: 4 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={{
+                    type: "spring" as const,
+                    stiffness: 400,
+                    damping: 25,
+                  }}
+                >
+                  <item.icon className="mr-4 h-5 w-5" />
+                  <span>{item.name}</span>
+                </motion.a>
+              </li>
+            ))}
+          </ul>
+        </div>
       </nav>
 
       {/* Обратная связь */}
