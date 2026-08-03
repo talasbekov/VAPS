@@ -21,7 +21,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status as http_status
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
@@ -31,6 +31,8 @@ from apps.audit.services import record
 from apps.operations.api.permissions import require_permission
 from apps.operations.events.api.serializers import (
     AllocateForceRequestSerializer,
+    AssignmentVersionDetailSerializer,
+    AssignmentVersionSerializer,
     ChecklistItemSerializer,
     DirectAssignmentSerializer,
     GenerateForceRequestsResponseSerializer,
@@ -42,6 +44,7 @@ from apps.operations.events.api.serializers import (
     StaffingDemandSerializer,
 )
 from apps.operations.events.models import (
+    AssignmentVersion,
     Group,
     GroupForceRequest,
     SecurityEvent,
@@ -51,6 +54,7 @@ from apps.operations.events.services import (
     allocate_force_request,
     approve_staffing_demand,
     confirm_recon,
+    form_draft_placement,
     generate_force_requests,
     issue_bulletin,
     replace_checklist_items,
@@ -62,6 +66,7 @@ from apps.operations.facilities.api.serializers import (
     ObjectPassportUpdateSerializer,
 )
 from apps.operations.facilities.services import update_passport_for_event
+from apps.operations.services import PermissionService
 
 _PERMISSION = "event.manage"
 # Story 15.4: passport mutations are Object-level, gated on the existing
@@ -69,6 +74,33 @@ _PERMISSION = "event.manage"
 # mutations) — same separation-of-concerns choice as 14.x's per-domain
 # permission codes.
 _PASSPORT_PERMISSION = "object.manage"
+
+# Story 16.8a: no dedicated assignment.view code exists (unlike duty-plans,
+# where read/write share duty.manage) — reading a Placement version is
+# gated on holding ANY of the codes that participate in its lifecycle
+# (OMD/SENIOR_COORDINATOR create+submit, APPROVER return+approve), not a
+# new code invented for this story.
+_ASSIGNMENT_READ_PERMISSIONS = (
+    "assignment.create",
+    "assignment.submit",
+    "assignment.return",
+    "assignment.approve",
+)
+
+
+def _require_any_permission(request, codes):
+    """Story 16.8a: `require_permission()`'s single-code contract has no
+    "any of" variant — this is the local helper for it, same 403
+    PERMISSION_DENIED shape, checked directly via `PermissionService`
+    (not by calling `require_permission()` in a loop and swallowing N-1
+    exceptions, which would mask a genuine non-permission error from a
+    later code)."""
+    user_id = getattr(request, "actor_id", None)
+    if not user_id:
+        raise PermissionDenied("PERMISSION_DENIED")
+    if not any(PermissionService.has_permission(user_id, code) for code in codes):
+        raise PermissionDenied("PERMISSION_DENIED")
+    return user_id
 
 
 class SecurityEventPagination(LimitOffsetPagination):
@@ -362,6 +394,32 @@ class SecurityEventViewSet(viewsets.ViewSet):
             status=http_status.HTTP_201_CREATED,
         )
 
+    @extend_schema(
+        operation_id="security_event_placement_draft",
+        request=None,
+        responses={201: AssignmentVersionDetailSerializer},
+        description="Сформировать черновик Расстановки из физнарядов "
+        "(FR-26). Требует assignment.create. 409 "
+        "PLACEMENT_DRAFT_ALREADY_EXISTS, если у события уже есть текущая "
+        "версия.",
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="placement/draft",
+        url_name="placement-draft",
+    )
+    def placement_draft(self, request, pk=None, *args, **kwargs):
+        require_permission(request, "assignment.create")
+        event = _get_event_or_404(pk)
+        version, _created_assignments, _unmatched = form_draft_placement(
+            event, actor=request.actor_id
+        )
+        return Response(
+            AssignmentVersionDetailSerializer(version).data,
+            status=http_status.HTTP_201_CREATED,
+        )
+
 
 class GroupViewSet(viewsets.ViewSet):
     """Story 15.6: `GET /api/operations/groups` — справочник Групп (FR-39).
@@ -458,3 +516,63 @@ class SecurityEventDirectAssignmentViewSet(viewsets.ViewSet):
             )
             assignment.delete()
         return Response(status=http_status.HTTP_204_NO_CONTENT)
+
+
+def _get_assignment_version_or_404(pk):
+    if not (pk or "").isdigit():
+        raise Http404("Версия Расстановки не найдена.")
+    return get_object_or_404(AssignmentVersion, pk=pk)
+
+
+class AssignmentVersionViewSet(viewsets.ViewSet):
+    """Story 16.8a: `GET /api/operations/assignment-versions` (list) +
+    `GET /api/operations/assignment-versions/{id}` (detail, with nested
+    `PlacementAssignment` rows). Read-only — `create`/mutating actions
+    (`placement/draft`, submit/return/approve, acknowledge) live
+    elsewhere: `placement/draft` is nested under `SecurityEventViewSet`
+    (needs an `event`, not a raw `AssignmentVersion` id); submit/return/
+    approve/acknowledge are 16.8b-e, not this story."""
+
+    http_method_names = ["get", "options"]
+    _pagination_class = SecurityEventPagination
+
+    @property
+    def pagination_class(self):
+        if self.action == "list":
+            return self._pagination_class
+        return None
+
+    @extend_schema(
+        operation_id="assignment_versions_list",
+        responses={200: AssignmentVersionSerializer(many=True)},
+        description="Список версий Расстановки. Требует любой из "
+        "assignment.create/.submit/.return/.approve. limit/offset-"
+        "пагинация (дефолт 50, потолок 200). Опциональный фильтр по event.",
+    )
+    def list(self, request, *args, **kwargs):
+        _require_any_permission(request, _ASSIGNMENT_READ_PERMISSIONS)
+        versions = AssignmentVersion.objects.order_by("-created_at")
+        event_id = request.query_params.get("event")
+        if event_id:
+            if not event_id.isdigit():
+                raise ValidationError({"event": "Ожидается числовой id события."})
+            versions = versions.filter(event_id=event_id)
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(versions, request)
+        return paginator.get_paginated_response(
+            AssignmentVersionSerializer(page, many=True).data
+        )
+
+    @extend_schema(
+        operation_id="assignment_versions_retrieve",
+        responses={200: AssignmentVersionDetailSerializer},
+        description="Деталь версии Расстановки со вложенными назначениями "
+        "(conflict_severity/conflict_codes/acknowledged_at/"
+        "ack_escalated_at — персистентные значения, не пересчитываются на "
+        "чтении). Требует любой из assignment.create/.submit/.return/"
+        ".approve.",
+    )
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        _require_any_permission(request, _ASSIGNMENT_READ_PERMISSIONS)
+        version = _get_assignment_version_or_404(pk)
+        return Response(AssignmentVersionDetailSerializer(version).data)

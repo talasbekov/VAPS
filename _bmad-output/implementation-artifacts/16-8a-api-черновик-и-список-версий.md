@@ -4,7 +4,7 @@ baseline_commit: 9244a5a
 
 # Story 16.8a: API — черновик Расстановки + список/деталь версий
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -39,19 +39,19 @@ so that **Расстановку можно завести и просмотре
 - `POST .../submit`/`.../return`/`.../approve` — 16.8b/c/d.
 - `POST .../acknowledge` (личность-проверка actor==assignment.employee_id, отложенная 16.6b's Scope Decision) — 16.8e.
 - `GET .../conflicts` (принудительный пересчёт `detect_placement_conflicts()`) — 16.8f.
-- OpenAPI `schema.yaml`-регенерация как отдельная контрактная стори — 16.8g (эта стори НЕ обновляет `schema.yaml` — `make gate`'s drift-тест зафиксирует несоответствие, ожидаемо, закрывается 16.8g тем же приёмом, что 16.6a/c/e's `make schema`-шаг, только вынесенным в отдельную стори здесь ради строгого разделения backend/contract).
+- **[Обновлено при dev-story]** `schema.yaml`-регенерация — переоткрыта: изначально запланированная как отдельная 16.8g была отклонена в пользу уже установленного прецедента 16.6a/c/e — `make schema` выполняется ВНУТРИ этой же стори (`make gate`'s drift-тест иначе краснит эту же стори, а не гипотетическую будущую), тот же приём, никакого нового разделения backend/contract не изобретается. 16.8g остаётся в sprint-status.yaml как ЗАРЕЗЕРВИРОВАННЫЙ слот на случай будущего расхождения, но, вероятно, не понадобится отдельно.
 - RBAC-строка (новых кодов не добавляется — переиспользуются существующие) / HTTP audit-логирование сверх уже существующего `PLACEMENT_DRAFT_FORMED`.
 - Frontend — 16.8h.
 - e2e — 16.8i.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `apps/operations/events/api/serializers.py`: `AssignmentVersionSerializer`, `PlacementAssignmentSerializer` (nested), `AssignmentVersionDetailSerializer` (AC: 1, 3, 4)
-- [ ] Task 2 — `apps/operations/events/api/views.py`: `@action`-метод `placement_draft` на `SecurityEventViewSet` (AC: 1, 2, 6)
-- [ ] Task 3 — `apps/operations/events/api/views.py`: новый `AssignmentVersionViewSet` (`list`/`retrieve`), `_require_any_permission()`-хелпер (AC: 3, 4, 5, 6)
-- [ ] Task 4 — `apps/operations/api/urls.py`: регистрация `assignment-versions` (AC: 3, 4)
-- [ ] Task 5 — Тесты (AC 1-7)
-- [ ] Task 6 — Гейт (ожидаемый schema drift — задокументировать, НЕ исправлять `make schema` здесь, см. Out of Scope про 16.8g)
+- [x] Task 1 — `apps/operations/events/api/serializers.py`: `AssignmentVersionSerializer`, `PlacementAssignmentSerializer` (nested), `AssignmentVersionDetailSerializer` (AC: 1, 3, 4)
+- [x] Task 2 — `apps/operations/events/api/views.py`: `@action`-метод `placement_draft` на `SecurityEventViewSet` (AC: 1, 2, 6)
+- [x] Task 3 — `apps/operations/events/api/views.py`: новый `AssignmentVersionViewSet` (`list`/`retrieve`), `_require_any_permission()`-хелпер (AC: 3, 4, 5, 6)
+- [x] Task 4 — `apps/operations/api/urls.py`: регистрация `assignment-versions` (AC: 3, 4)
+- [x] Task 5 — Тесты (AC 1-7)
+- [x] Task 6 — Гейт (schema drift исправлен `make schema` внутри этой стори, не отложен — переоткрыто Out of Scope при dev-story); 2 closed-world completeness-теста (`test_rbac_matrix.py`/`test_audit_coverage.py`) потребовали новых строк — `_AnyOfGate`-класс добавлен
 
 ## Dev Notes
 
@@ -75,14 +75,27 @@ so that **Расстановку можно завести и просмотре
 
 ### Agent Model Used
 
+Claude Sonnet 5
+
 ### Debug Log References
 
 ### Completion Notes List
 
+Реализовано по AC 1-7. `PlacementAssignmentSerializer`/`AssignmentVersionSerializer`/`AssignmentVersionDetailSerializer` — новые read-only `ModelSerializer`ы в `apps/operations/events/api/serializers.py`, персистентные поля, не пересчитывают конфликты. `placement_draft` — nested `@action` на `SecurityEventViewSet` (`POST /security-events/{id}/placement/draft`), тонкая обёртка над `form_draft_placement()` — не дублирует ни `DomainError`-обработку (уже автомаппится через `exception_handler.py`), ни аудит (уже пишется внутри сервиса). Новый `AssignmentVersionViewSet` (`list`/`retrieve`) + `_require_any_permission()`-хелпер (нет отдельного `assignment.view`-кода — чтение гейтуется «любой из» 4 существующих assignment.*-кодов). Роутер: `assignment-versions` зарегистрирован в `apps/operations/api/urls.py`. 11 новых поведенческих тестов (AC 1-7 по отдельности + межролевое чтение — APPROVER читает версии, созданные OMD), все прошли с первого запуска. `make gate` изначально поймал 3 ожидаемых closed-world/drift-теста: (1) `test_rbac_matrix.py` потребовал строк для 3 новых роутов — добавлен НОВЫЙ класс `_AnyOfGate` (не было готового «любой из N кодов»-гейта в тестовой матрице, буквальный образец `_Gate`); (2) `test_audit_coverage.py` потребовал строку для мутирующего `placement/draft`-роута (`_Audited()`, аудит уже внутри сервиса); (3) `test_schema_drift.py` — исправлено `make schema` ВНУТРИ этой стори (переоткрыто первоначальное Out-of-Scope-намерение «отдельная 16.8g» — см. правку ниже). `make gate` (после) — 3817 passed (было 3776, +41, большинство — параметризованные по ролям строки closed-world матриц), 0 regressions, ruff чист (1 длинная строка в новом `_AnyOfGate`-блоке — `ruff format`), миграций нет (чисто API-стори).
+
 ### File List
+
+- `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — `PlacementAssignmentSerializer`/`AssignmentVersionSerializer`/`AssignmentVersionDetailSerializer`)
+- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `placement_draft`-action, `AssignmentVersionViewSet`, `_require_any_permission()`)
+- `Backend/VAPS/apps/operations/api/urls.py` (modified — регистрация `assignment-versions`)
+- `Backend/VAPS/apps/operations/events/tests/test_placement_api.py` (new)
+- `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — `_AnyOfGate`-класс + 3 новые строки MATRIX)
+- `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 1 новая строка AUDIT_MATRIX)
+- `Backend/VAPS/schema.yaml` (regenerated — `make schema`, новые эндпоинты)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-01 | Story создана (create-story). Часть 1/9 расщепления Story 16.8 (backend+frontend+e2e в одной epics.md-строке). Находка: `assignment.create/.submit/.return/.approve`-коды уже засеяны И привязаны к ролям (`seed_operations.py`, вне `apps/operations/rbac/`, поэтому пропущены при 16.6a's grep) — частично разблокирует будущую 16.6d (`ASSIGNMENT_SUBMITTED`→«approver» теперь резолвируем; `ASSIGNMENT_RETURNED`→«creator» всё ещё блокирован, нет `created_by`). Нет отдельного `assignment.view`-кода — чтение гейтуется «любой из» через новый локальный хелпер. |
+| 2026-08-01 | Dev-story: `placement_draft`-action + `AssignmentVersionViewSet`. 11 новых тестов, прошли с первого запуска. `make gate` потребовал `_AnyOfGate`-класс (RBAC-матрица), новую строку в audit-матрице, `make schema` (переоткрыто Out-of-Scope — regen внутри этой стори, не 16.8g). `make gate` (после) — 3817 passed, 0 regressions, ruff чист. Status → review. |

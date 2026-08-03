@@ -4,8 +4,10 @@ serializers."""
 from rest_framework import serializers
 
 from apps.operations.events.models import (
+    AssignmentVersion,
     Group,
     GroupForceRequest,
+    PlacementAssignment,
     SecurityEvent,
     SecurityEventChecklistItem,
     SecurityEventDirectAssignment,
@@ -137,3 +139,46 @@ class DirectAssignmentSerializer(serializers.ModelSerializer):
         model = SecurityEventDirectAssignment
         fields = ["id", "sector_post", "employee_id", "comment", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+
+class PlacementAssignmentSerializer(serializers.ModelSerializer):
+    """Story 16.8a: read-only — persisted conflict/acknowledgement state,
+    not recomputed on GET (same convention the rest of this read-API
+    already follows)."""
+
+    class Meta:
+        model = PlacementAssignment
+        fields = [
+            "id",
+            "employee_id",
+            "post",
+            "conflict_severity",
+            "conflict_codes",
+            "acknowledged_at",
+            "ack_escalated_at",
+        ]
+        read_only_fields = fields
+
+
+class AssignmentVersionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssignmentVersion
+        fields = [
+            "id",
+            "event",
+            "status",
+            "version",
+            "is_current",
+            "signature_hash",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class AssignmentVersionDetailSerializer(AssignmentVersionSerializer):
+    assignments = PlacementAssignmentSerializer(many=True, read_only=True)
+
+    class Meta(AssignmentVersionSerializer.Meta):
+        fields = AssignmentVersionSerializer.Meta.fields + ["assignments"]
+        read_only_fields = fields

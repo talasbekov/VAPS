@@ -1366,6 +1366,54 @@ paths:
               schema:
                 $ref: '#/components/schemas/NotificationMarkReadResponse'
           description: ''
+  /api/operations/assignment-versions/:
+    get:
+      operationId: assignment_versions_list
+      description: Список версий Расстановки. Требует любой из assignment.create/.submit/.return/.approve.
+        limit/offset-пагинация (дефолт 50, потолок 200). Опциональный фильтр по event.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAssignmentVersionList'
+          description: ''
+  /api/operations/assignment-versions/{id}/:
+    get:
+      operationId: assignment_versions_retrieve
+      description: Деталь версии Расстановки со вложенными назначениями (conflict_severity/conflict_codes/acknowledged_at/ack_escalated_at
+        — персистентные значения, не пересчитываются на чтении). Требует любой из
+        assignment.create/.submit/.return/.approve.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentVersionDetail'
+          description: ''
   /api/operations/daily-submissions/:
     get:
       operationId: operations_daily_submissions_list
@@ -2379,6 +2427,27 @@ paths:
               schema:
                 $ref: '#/components/schemas/ObjectPassport'
           description: ''
+  /api/operations/security-events/{id}/placement/draft/:
+    post:
+      operationId: security_event_placement_draft
+      description: Сформировать черновик Расстановки из физнарядов (FR-26). Требует
+        assignment.create. 409 PLACEMENT_DRAFT_ALREADY_EXISTS, если у события уже
+        есть текущая версия.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentVersionDetail'
+          description: ''
   /api/operations/security-events/{id}/recon/confirm/:
     post:
       operationId: security_event_recon_confirm
@@ -2706,6 +2775,92 @@ paths:
           description: No response body
 components:
   schemas:
+    AssignmentVersion:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        event:
+          type: integer
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusD87Enum'
+          readOnly: true
+        version:
+          type: integer
+          readOnly: true
+          default: 1
+        is_current:
+          type: boolean
+          readOnly: true
+        signature_hash:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - event
+      - id
+      - is_current
+      - signature_hash
+      - status
+      - updated_at
+      - version
+    AssignmentVersionDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        event:
+          type: integer
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusD87Enum'
+          readOnly: true
+        version:
+          type: integer
+          readOnly: true
+          default: 1
+        is_current:
+          type: boolean
+          readOnly: true
+        signature_hash:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlacementAssignment'
+          readOnly: true
+      required:
+      - assignments
+      - created_at
+      - event
+      - id
+      - is_current
+      - signature_hash
+      - status
+      - updated_at
+      - version
     Attachment:
       type: object
       description: Read-only проекция Attachment — ответ upload (201) и retrieve-форм.
@@ -3040,6 +3195,14 @@ components:
         * `RED` - Не заполнен
         * `YELLOW` - Частично заполнен
         * `GREEN` - Заполнен
+    ConflictSeverityEnum:
+      enum:
+      - SOFT
+      - HARD
+      type: string
+      description: |-
+        * `SOFT` - Мягкий конфликт
+        * `HARD` - Жёсткий конфликт
     DailySubmission:
       type: object
       description: |-
@@ -4410,6 +4573,29 @@ components:
           type: string
         completeness_status:
           $ref: '#/components/schemas/CompletenessStatusEnum'
+    PaginatedAssignmentVersionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignmentVersion'
     PaginatedAuditLogList:
       type: object
       required:
@@ -4950,6 +5136,47 @@ components:
       required:
       - code
       - name
+    PlacementAssignment:
+      type: object
+      description: |-
+        Story 16.8a: read-only — persisted conflict/acknowledgement state,
+        not recomputed on GET (same convention the rest of this read-API
+        already follows).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        employee_id:
+          type: string
+          format: uuid
+          readOnly: true
+        post:
+          type: integer
+          readOnly: true
+        conflict_severity:
+          allOf:
+          - $ref: '#/components/schemas/ConflictSeverityEnum'
+          readOnly: true
+        conflict_codes:
+          readOnly: true
+        acknowledged_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        ack_escalated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - ack_escalated_at
+      - acknowledged_at
+      - conflict_codes
+      - conflict_severity
+      - employee_id
+      - id
+      - post
     Position:
       type: object
       properties:
@@ -5334,6 +5561,18 @@ components:
       - division
       - position_code
       - valid_from
+    StatusD87Enum:
+      enum:
+      - DRAFT
+      - SUBMITTED
+      - RETURNED
+      - APPROVED
+      type: string
+      description: |-
+        * `DRAFT` - Черновик
+        * `SUBMITTED` - Подано на согласование
+        * `RETURNED` - Возвращено на доработку
+        * `APPROVED` - Утверждено
     StatusOnDateRow:
       type: object
       description: |-

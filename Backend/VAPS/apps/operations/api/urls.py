@@ -9,6 +9,7 @@ from apps.operations.api.views import (
 )
 from apps.operations.duties.api.views import DutyPlanViewSet
 from apps.operations.events.api.views import (
+    AssignmentVersionViewSet,
     GroupForceRequestViewSet,
     GroupViewSet,
     SecurityEventDirectAssignmentViewSet,
@@ -42,6 +43,9 @@ router.register(
     "direct-assignments",
     SecurityEventDirectAssignmentViewSet,
     basename="ops-direct-assignment",
+)
+router.register(
+    "assignment-versions", AssignmentVersionViewSet, basename="ops-assignment-version"
 )
 router.register("statuses", StatusViewSet, basename="ops-status")
 router.register("statuses/types", StatusTypeViewSet, basename="ops-status-type")

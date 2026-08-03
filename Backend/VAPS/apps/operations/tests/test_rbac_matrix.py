@@ -88,6 +88,21 @@ class _Gate:
 _ANY_AUTH = "__any_authenticated__"
 
 
+class _AnyOfGate:
+    """Story 16.8a: ALLOW держателям ЛЮБОГО из ``codes`` (нет отдельного
+    read-only права для Расстановки — чтение открыто всем сторонам её
+    жизненного цикла: OMD/SENIOR_COORDINATOR создают/подают,
+    APPROVER возвращает/утверждает). Аноним DENY."""
+
+    def __init__(self, codes):
+        self.codes = codes
+
+    def expected(self, actor, method=None):
+        if actor == ANON:
+            return DENY
+        return ALLOW if any(actor in _holders(code) for code in self.codes) else DENY
+
+
 class _MethodGate:
     """Per-method страж: разные коды на разные HTTP-методы одного роута
     (смешанная view/edit политика, story 2.14 / deferred 2.9 #L215).
@@ -213,6 +228,28 @@ MATRIX = {
     # (separate ViewSet), both gated on event.manage.
     "ops-security-event-direct-assignments": _Gate("event.manage"),
     "ops-direct-assignment-detail": _Gate("event.manage"),
+    # Story 16.8a: draft-formation gated on assignment.create (same code
+    # form_draft_placement()'s only caller-facing precondition maps to).
+    # list/retrieve are read-only across the whole Placement lifecycle —
+    # ANY of the codes that participate in it (create/submit/return/
+    # approve), no dedicated assignment.view code exists.
+    "ops-security-event-placement-draft": _Gate("assignment.create"),
+    "ops-assignment-version-list": _AnyOfGate(
+        [
+            "assignment.create",
+            "assignment.submit",
+            "assignment.return",
+            "assignment.approve",
+        ]
+    ),
+    "ops-assignment-version-detail": _AnyOfGate(
+        [
+            "assignment.create",
+            "assignment.submit",
+            "assignment.return",
+            "assignment.approve",
+        ]
+    ),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется
