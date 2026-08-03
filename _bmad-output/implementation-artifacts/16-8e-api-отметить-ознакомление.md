@@ -4,7 +4,7 @@ baseline_commit: 770fdb6
 
 # Story 16.8e: API — отметить ознакомление
 
-Status: review
+Status: done
 
 ## Story
 
@@ -97,9 +97,14 @@ Claude Sonnet 5
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 1 новая строка AUDIT_MATRIX)
 - `Backend/VAPS/schema.yaml` (regenerated — `make schema`, новый эндпоинт)
 
+**После ревью:**
+- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `initial()`'s `"metadata"`-карвин-аут)
+- `Backend/VAPS/apps/operations/events/tests/test_placement_assignment_acknowledge_api.py` (modified — 1 новый тест)
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-03 | Story создана (create-story). Часть 5/9 расщепления Story 16.8. НОВЫЙ ресурс `PlacementAssignmentViewSet` (не действие на `AssignmentVersionViewSet` — другая модель). Identity-based авторизация (не RBAC-код) — образец `NotificationViewSet` (5.7c/11.4a). Найден ОБЯЗАТЕЛЬНЫЙ новый reverse-селектор `CoreEmployeeSelector.employee_id_for()` — ARCH-003 запрещает прямой импорт `core.models` из `operations`. Ultimate context engine analysis completed - comprehensive developer guide created. |
 | 2026-08-03 | Dev-story: `employee_id_for()` + `PlacementAssignmentViewSet.acknowledge`. 8 новых тестов (потребовались реальные `Employee`-строки для FK, не голый uuid). `test_isolation.py` подтверждён непробитым. `make gate` — 3896 passed, 0 regressions, ruff чист, `make schema`. Status → review. |
+| 2026-08-03 | 3-agent ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Acceptance Auditor: 0 расхождений, ARCH-003 подтверждён прямым чтением импортов (не только Completion Notes). Edge Case Hunter нашёл реальный пробел: `initial()`'s карвин-аут не зеркалил `NotificationViewSet`'s `self.action == "metadata"`-исключение буквально (единственное отличие от заявленного "literal mirror") — OPTIONS-preflight без actor_id получал вводящий в заблуждение 403 вместо metadata-ответа. Исправлено + 1 новый тест (`test_acknowledge_anonymous_options_is_not_403`). Blind Hunter's "High"-находка (None==None bypass при NULL employee_id) — ложное срабатывание: `PlacementAssignment.employee_id = models.UUIDField()` БЕЗ `null=True` (DB NOT NULL), `UserEmployeeBinding.user_id` — `unique=True` (не может быть несколько строк на actor'а) — обе посылки находки опровергнуты чтением модели. Остальные находки — вне объёма (rate-limiting, IDOR-теоретизирование на несуществующих данных, `.isdigit()`-эджкейсы уже идентичны конвенции 16.8a-d). `make gate` повторно — 3897 passed, 0 regressions, ruff чист, миграций нет. Status → done. |

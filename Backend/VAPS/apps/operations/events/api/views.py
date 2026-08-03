@@ -683,7 +683,12 @@ class PlacementAssignmentViewSet(viewsets.ViewSet):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        if self.action is None:
+        # Same carve-out as NotificationViewSet.initial(): `self.action is
+        # None` when the route doesn't serve the current verb (405, not a
+        # misleading 403); `"metadata"` is the OPTIONS preflight action —
+        # let it through instead of demanding actor_id for a CORS/schema
+        # probe (review, Edge Case Hunter).
+        if self.action is None or self.action == "metadata":
             return
         if not getattr(request, "actor_id", None):
             raise PermissionDenied("PERMISSION_DENIED")

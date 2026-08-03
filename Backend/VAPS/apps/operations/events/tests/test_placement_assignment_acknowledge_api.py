@@ -236,3 +236,18 @@ def test_acknowledge_anonymous_is_403(
     resp = APIClient().post(acknowledge_url(assignment))
 
     assert resp.status_code == 403
+
+
+def test_acknowledge_anonymous_options_is_not_403(
+    creator_client, submitter_client, approver_client, division
+):
+    """OPTIONS preflight (self.action == "metadata") must not require
+    actor_id — same carve-out as NotificationViewSet.initial(); a missing
+    carve-out here would turn a CORS/schema probe into a misleading 403."""
+    assignment, _employee_id = make_approved_assignment(
+        creator_client, submitter_client, approver_client, division, "OBJ-ACK-7"
+    )
+
+    resp = APIClient().options(acknowledge_url(assignment))
+
+    assert resp.status_code != 403
