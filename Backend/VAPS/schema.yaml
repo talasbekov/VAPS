@@ -1447,6 +1447,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/AssignmentVersionDetail'
           description: ''
+  /api/operations/assignment-versions/{id}/conflicts/:
+    get:
+      operationId: assignment_version_conflicts
+      description: Свежий (пересчитанный) список конфликтующих назначений версии —
+        ТОЛЬКО строки с непустым conflict_severity (в отличие от retrieve's полного
+        вложенного списка). Требует любой из assignment.create/.submit/.return/.approve.
+        Пересчёт пишет conflict_severity/conflict_codes в БД на каждый вызов (detect_placement_conflicts()'s
+        собственное поведение, 16.3b-d) — не аудируется (read+recompute, тот же класс,
+        что validate-эндпоинты).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlacementAssignment'
+          description: ''
   /api/operations/assignment-versions/{id}/return/:
     post:
       operationId: assignment_version_return

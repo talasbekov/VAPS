@@ -62,6 +62,7 @@ from apps.operations.events.services import (
     approve_assignment_version,
     approve_staffing_demand,
     confirm_recon,
+    detect_placement_conflicts,
     form_draft_placement,
     generate_force_requests,
     issue_bulletin,
@@ -590,6 +591,26 @@ class AssignmentVersionViewSet(viewsets.ViewSet):
         _require_any_permission(request, _ASSIGNMENT_READ_PERMISSIONS)
         version = _get_assignment_version_or_404(pk)
         return Response(AssignmentVersionDetailSerializer(version).data)
+
+    @extend_schema(
+        operation_id="assignment_version_conflicts",
+        responses={200: PlacementAssignmentSerializer(many=True)},
+        description="Свежий (пересчитанный) список конфликтующих назначений "
+        "версии — ТОЛЬКО строки с непустым conflict_severity (в отличие от "
+        "retrieve's полного вложенного списка). Требует любой из "
+        "assignment.create/.submit/.return/.approve. Пересчёт пишет "
+        "conflict_severity/conflict_codes в БД на каждый вызов "
+        "(detect_placement_conflicts()'s собственное поведение, 16.3b-d) — "
+        "не аудируется (read+recompute, тот же класс, что validate-"
+        "эндпоинты).",
+    )
+    @action(detail=True, methods=["get"], url_path="conflicts")
+    def conflicts(self, request, pk=None, *args, **kwargs):
+        _require_any_permission(request, _ASSIGNMENT_READ_PERMISSIONS)
+        version = _get_assignment_version_or_404(pk)
+        touched = detect_placement_conflicts(version)
+        conflicted = [a for a in touched if a.conflict_severity]
+        return Response(PlacementAssignmentSerializer(conflicted, many=True).data)
 
     @extend_schema(
         operation_id="assignment_version_submit",

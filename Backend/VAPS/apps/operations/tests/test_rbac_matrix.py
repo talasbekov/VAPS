@@ -259,6 +259,16 @@ MATRIX = {
     # Story 16.8d: approve (SUBMITTED->APPROVED), thin wrapper over the
     # idempotent approve_assignment_version() (16.4).
     "ops-assignment-version-approve": _Gate("assignment.approve"),
+    # Story 16.8f: conflicts (GET, fresh recompute) — same read-access
+    # class as list/retrieve, any of the lifecycle codes.
+    "ops-assignment-version-conflicts": _AnyOfGate(
+        [
+            "assignment.create",
+            "assignment.submit",
+            "assignment.return",
+            "assignment.approve",
+        ]
+    ),
     # Story 16.8e: acknowledge — self-scope identity check (actor == the
     # assigned employee via UserEmployeeBinding), NOT an RBAC permission
     # code (mirrors NotificationViewSet's any-auth+self-scope gate).
