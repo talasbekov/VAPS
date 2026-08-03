@@ -14,7 +14,10 @@ from apps.operations.events.models import (
     SecurityEvent,
     SecurityEventDirectAssignment,
 )
-from apps.operations.events.services import approve_assignment_version
+from apps.operations.events.services import (
+    approve_assignment_version,
+    return_assignment_version,
+)
 from apps.operations.facilities.models import Object as FacilityObject
 from apps.operations.facilities.models import Post
 from apps.operations.rbac.models import Role, RolePermission, UserRole
@@ -122,6 +125,36 @@ def test_submit_nonexistent_version_is_404(submitter_client):
         reverse("ops-assignment-version-submit", args=[999999])
     )
     assert resp.status_code == 404
+
+
+def test_submit_non_numeric_pk_is_404_not_500(submitter_client):
+    """Review coverage gap (Edge Case Hunter): only the nonexistent-
+    numeric-pk path was pinned by a test — the isdigit() guard itself
+    (16.8a's established pattern) was untested on THIS action."""
+    resp = submitter_client.post(
+        "/api/operations/assignment-versions/abc/submit/"
+    )
+    assert resp.status_code == 404
+
+
+def test_submit_returned_version_is_422(creator_client, submitter_client):
+    """Review coverage gap (Edge Case Hunter): AC-3 was only exercised via
+    an APPROVED-source version — RETURNED is a DISTINCT status hitting
+    the same "not DRAFT and not SUBMITTED" branch, worth pinning
+    separately since it's the OLD (now non-current) version, not the
+    fresh DRAFT return_assignment_version() also creates."""
+    event = make_draft_version("OBJ-SUB-5")
+    created = creator_client.post(draft_url(event))
+    version = AssignmentVersion.objects.get(pk=created.data["id"])
+    submitter_client.post(submit_url(version))
+    return_assignment_version(version, actor="approver-1", reason="Проверить")
+    version.refresh_from_db()
+    assert version.status == "RETURNED"
+
+    resp = submitter_client.post(submit_url(version))
+
+    assert resp.status_code == 422
+    assert resp.data["error_code"] == "INVALID_LIFECYCLE_TRANSITION"
 
 
 def test_submit_without_permission_is_403(creator_client, no_permission_client):

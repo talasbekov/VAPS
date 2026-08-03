@@ -4,7 +4,7 @@ baseline_commit: 30f3ab0
 
 # Story 16.8b: API — подать Расстановку на согласование
 
-Status: review
+Status: done
 
 ## Story
 
@@ -82,9 +82,20 @@ Claude Sonnet 5
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 1 новая строка AUDIT_MATRIX)
 - `Backend/VAPS/schema.yaml` (regenerated — `make schema`, новый эндпоинт)
 
+**3-агентное ревью — 0 регрессов, 2 пробела покрытия закрыты, остальное — false positive/соответствие уже принятым паттернам:**
+- **Coverage-gap (Edge Case Hunter): нечисловой `pk` на `submit` не был протестирован отдельно от «несуществующий числовой» (тот же класс пробела, что был найден и закрыт в 16.8a's ревью).** Добавлен `test_submit_non_numeric_pk_is_404_not_500`.
+- **Coverage-gap (Edge Case Hunter): AC-3 проверял 422 только для `APPROVED`-версии — `RETURNED` — другой статус, попадающий в ТУ ЖЕ ветку `INVALID_LIFECYCLE_TRANSITION`, отдельно не запиннен.** Добавлен `test_submit_returned_version_is_422` — на СТАРОЙ (уже не текущей) версии после `return_assignment_version()`.
+- **False positive (Blind Hunter): «расширение `http_method_names` на весь ViewSet — уязвимость».** Подтверждено Edge Case Hunter'ом через прямое чтение `DefaultRouter`'s механики — маршрутизация строго по зарегистрированным action×method парам, `http_method_names` — только сужающий фильтр поверх уже смаршрутизированного, не открывает НИЧЕГО нового сверх явно объявленных actions.
+- **False positive (Blind Hunter): «422-тест обходит HTTP-путь, не доказывает маппинг `error_code`».** Неверная интерпретация — тест вызывает РЕАЛЬНЫЙ HTTP `submit`-эндпоинт и проверяет ЕГО ответ; обходной сервисный вызов используется ТОЛЬКО чтобы ДОСТИЧЬ `APPROVED`-состояния (approve-API ещё не существует, 16.8d), не чтобы обойти проверку самого `submit`-ответа.
+- **Low (Blind Hunter, приняты без правки): порядок permission-до-lookup (утечка существования через 403 vs 404), отсутствие concurrency-теста, `*args/**kwargs`, `_pagination_class`-«мёртвый код».** Все — либо буквально тот же паттерн, что ВЕЗДЕ в этом файле (порядок проверок, `*args/**kwargs`), либо неверная характеристика (`_pagination_class` активно используется `list()`), либо соответствуют проектной конвенции не писать concurrency-тесты в основном гейте (отдельный excluded marker).
+- Acceptance Auditor: все 6 AC PASS, `http_method_names`-отклонение подтверждено как честно отражённое (код+докстринг+Completion Notes+commit message), не «замылено».
+
+`make gate` (после добавления 2 тестов) — **3836 passed** (было 3834, +2), 0 regressions, ruff чист. Status → done.
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-01 | Story создана (create-story). Часть 2/9 расщепления Story 16.8. Тонкая HTTP-обёртка над уже идемпотентным `submit_assignment_version()` (16.4), буквальный образец 14.11c (`approve`-action для `DutyPlan`). Право `assignment.submit` уже засеяно/привязано (16.8a's находка) — не изобретается. |
 | 2026-08-01 | Dev-story: `submit`-action. Найдено живым красным прогоном — `AssignmentVersionViewSet.http_method_names` (16.8a) был read-only (`["get","options"]`), расширен до `["get","post","options"]`. 5 новых тестов, прошли после исправления. `make gate` — 3834 passed, 0 regressions, ruff чист, `make schema`. Status → review. |
+| 2026-08-01 | 3-агентное ревью: 0 регрессов. 2 пробела покрытия закрыты (нечисловой pk, 422 на RETURNED-версии). Остальные находки — false positive (http_method_names-«уязвимость», «обход HTTP-пути») либо соответствуют уже принятым паттернам файла. `make gate` — 3836 passed, 0 regressions. Status → done. |
