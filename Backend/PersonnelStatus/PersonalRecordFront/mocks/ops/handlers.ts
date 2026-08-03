@@ -4,7 +4,8 @@
 // trailingSlash: true, паттерны без слэша промахиваются мимо перехвата.
 import { identityHandlers } from "./identity";
 import { objectsHandlers } from "./objects-handlers";
+import { securityEventsHandlers } from "./security-events-handlers";
 
 export function composeOpsHandlers() {
-  return [...identityHandlers, ...objectsHandlers];
+  return [...identityHandlers, ...objectsHandlers, ...securityEventsHandlers];
 }

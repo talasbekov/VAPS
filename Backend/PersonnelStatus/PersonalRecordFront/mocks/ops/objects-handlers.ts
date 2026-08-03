@@ -67,6 +67,11 @@ function replaceObject(updated: SecurityObject): void {
   persist(objects);
 }
 
+/** Read-доступ для соседних слайсов мока (ОМ привязывается к объектам). */
+export function readObjectsStore(): SecurityObject[] {
+  return getObjects();
+}
+
 // Конверт ошибок — форма ответа реального бэка ОМ (lib/ops-errors.ts)
 function errorEnvelope(
   errorCode: string,
