@@ -28,6 +28,7 @@ from rest_framework.response import Response
 from django.db import transaction
 
 from apps.audit.services import record
+from apps.core.selectors import CoreEmployeeSelector
 from apps.operations.api.permissions import require_permission
 from apps.operations.events.api.serializers import (
     AllocateForceRequestSerializer,
@@ -40,6 +41,7 @@ from apps.operations.events.api.serializers import (
     GenerateForceRequestsResponseSerializer,
     GroupForceRequestSerializer,
     GroupSerializer,
+    PlacementAssignmentSerializer,
     ReturnVersionSerializer,
     SecurityEventCreateSerializer,
     SecurityEventSerializer,
@@ -50,10 +52,12 @@ from apps.operations.events.models import (
     AssignmentVersion,
     Group,
     GroupForceRequest,
+    PlacementAssignment,
     SecurityEvent,
     SecurityEventDirectAssignment,
 )
 from apps.operations.events.services import (
+    acknowledge_placement_assignment,
     allocate_force_request,
     approve_assignment_version,
     approve_staffing_demand,
@@ -654,3 +658,53 @@ class AssignmentVersionViewSet(viewsets.ViewSet):
             override_reason=form.validated_data.get("override_reason", ""),
         )
         return Response(AssignmentVersionDetailSerializer(version).data)
+
+
+def _get_placement_assignment_or_404(pk):
+    if not (pk or "").isdigit():
+        raise Http404("Назначение не найдено.")
+    return get_object_or_404(PlacementAssignment, pk=pk)
+
+
+class PlacementAssignmentViewSet(viewsets.ViewSet):
+    """Story 16.8e: `POST /api/operations/placement-assignments/{id}/
+    acknowledge` — separate resource from `AssignmentVersionViewSet`
+    (acts on `PlacementAssignment`, not `AssignmentVersion`). Any-auth +
+    self-scope, NOT an RBAC permission code — literal mirror of
+    `apps.notifications.api.views.NotificationViewSet`'s "any
+    authenticated actor acts only on their own row" gate (5.7c/11.4a):
+    there `recipient == request.actor_id` directly; here `employee_id`
+    is a UUID (not the flat actor_id string), so the identity check goes
+    through `CoreEmployeeSelector.employee_id_for()` (ARCH-003 forbids
+    importing `UserEmployeeBinding` from `apps.core.models` directly in
+    this app)."""
+
+    http_method_names = ["post", "options"]
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if self.action is None:
+            return
+        if not getattr(request, "actor_id", None):
+            raise PermissionDenied("PERMISSION_DENIED")
+
+    @extend_schema(
+        operation_id="placement_assignment_acknowledge",
+        request=None,
+        responses={200: PlacementAssignmentSerializer},
+        description="Отметить ознакомление со своим назначением (FR-27). "
+        "Любой аутентифицированный actor — НЕ RBAC-право, а самообслуживание: "
+        "403, если actor не привязан к employee_id этого назначения. "
+        "Идемпотентно на уже-отмеченном (чистый 200, acknowledged_at не "
+        "меняется); 422 INVALID_LIFECYCLE_TRANSITION, если версия не APPROVED.",
+    )
+    @action(detail=True, methods=["post"], url_path="acknowledge")
+    def acknowledge(self, request, pk=None, *args, **kwargs):
+        assignment = _get_placement_assignment_or_404(pk)
+        actor_employee_id = CoreEmployeeSelector.employee_id_for(request.actor_id)
+        if actor_employee_id != assignment.employee_id:
+            raise PermissionDenied("PERMISSION_DENIED")
+        assignment = acknowledge_placement_assignment(
+            assignment, actor=request.actor_id
+        )
+        return Response(PlacementAssignmentSerializer(assignment).data)

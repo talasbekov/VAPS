@@ -290,6 +290,20 @@ class CoreEmployeeSelector:
         )
 
     @staticmethod
+    def employee_id_for(user_id):
+        """user_id -> employee_id, the reverse of `user_ids_for()` — for
+        Story 16.8e's self-scope identity check ("actor == the assigned
+        employee", 16.6b's deferred check). Single-row lookup (not bulk —
+        one caller's own identity per request, not a batch), `None` if the
+        actor has no bound account.
+        """
+        return (
+            UserEmployeeBinding.objects.filter(user_id=user_id)
+            .values_list("employee_id", flat=True)
+            .first()
+        )
+
+    @staticmethod
     def working_by_division(division_ids=None) -> dict:
         """division_id -> [employee_id] for WORKING & active employees.
 

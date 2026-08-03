@@ -2231,6 +2231,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/Permission'
           description: ''
+  /api/operations/placement-assignments/{id}/acknowledge/:
+    post:
+      operationId: placement_assignment_acknowledge
+      description: 'Отметить ознакомление со своим назначением (FR-27). Любой аутентифицированный
+        actor — НЕ RBAC-право, а самообслуживание: 403, если actor не привязан к employee_id
+        этого назначения. Идемпотентно на уже-отмеченном (чистый 200, acknowledged_at
+        не меняется); 422 INVALID_LIFECYCLE_TRANSITION, если версия не APPROVED.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacementAssignment'
+          description: ''
   /api/operations/roles/:
     get:
       operationId: operations_roles_list

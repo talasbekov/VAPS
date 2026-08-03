@@ -259,6 +259,10 @@ MATRIX = {
     # Story 16.8d: approve (SUBMITTED->APPROVED), thin wrapper over the
     # idempotent approve_assignment_version() (16.4).
     "ops-assignment-version-approve": _Gate("assignment.approve"),
+    # Story 16.8e: acknowledge — self-scope identity check (actor == the
+    # assigned employee via UserEmployeeBinding), NOT an RBAC permission
+    # code (mirrors NotificationViewSet's any-auth+self-scope gate).
+    "ops-placement-assignment-acknowledge": _AnyAuthenticated(),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

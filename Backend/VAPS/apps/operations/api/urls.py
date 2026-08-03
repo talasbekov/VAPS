@@ -12,6 +12,7 @@ from apps.operations.events.api.views import (
     AssignmentVersionViewSet,
     GroupForceRequestViewSet,
     GroupViewSet,
+    PlacementAssignmentViewSet,
     SecurityEventDirectAssignmentViewSet,
     SecurityEventViewSet,
 )
@@ -46,6 +47,11 @@ router.register(
 )
 router.register(
     "assignment-versions", AssignmentVersionViewSet, basename="ops-assignment-version"
+)
+router.register(
+    "placement-assignments",
+    PlacementAssignmentViewSet,
+    basename="ops-placement-assignment",
 )
 router.register("statuses", StatusViewSet, basename="ops-status")
 router.register("statuses/types", StatusTypeViewSet, basename="ops-status-type")

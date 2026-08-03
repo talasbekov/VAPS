@@ -338,6 +338,11 @@ AUDIT_MATRIX = {
     # transition (not the idempotent replay) — behavioral pin —
     # test_assignment_version_workflow.py.
     "ops-assignment-version-approve": _Audited(),
+    # Story 16.8e: PLACEMENT_ASSIGNMENT_ACKNOWLEDGED emits inside
+    # acknowledge_placement_assignment() itself (16.6b), only on the real
+    # transition (not the idempotent replay) — behavioral pin —
+    # test_placement_assignment_acknowledge_api.py.
+    "ops-placement-assignment-acknowledge": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).
