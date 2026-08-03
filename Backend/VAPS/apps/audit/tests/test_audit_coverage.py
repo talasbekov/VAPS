@@ -329,6 +329,10 @@ AUDIT_MATRIX = {
     # transition (not the idempotent replay) — behavioral pin —
     # test_assignment_version_workflow.py.
     "ops-assignment-version-submit": _Audited(),
+    # Story 16.8c: ASSIGNMENT_VERSION_RETURNED emits inside
+    # return_assignment_version() itself (16.4) — behavioral pin —
+    # test_assignment_version_workflow.py.
+    "ops-assignment-version-return": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

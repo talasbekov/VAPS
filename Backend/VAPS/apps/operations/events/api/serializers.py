@@ -182,3 +182,13 @@ class AssignmentVersionDetailSerializer(AssignmentVersionSerializer):
     class Meta(AssignmentVersionSerializer.Meta):
         fields = AssignmentVersionSerializer.Meta.fields + ["assignments"]
         read_only_fields = fields
+
+
+class ReturnVersionSerializer(serializers.Serializer):
+    """Story 16.8c: write-only request body for `POST .../return` —
+    `return_assignment_version()` (16.4) already requires a non-blank
+    `reason`; this validates presence BEFORE the service call (same
+    is_valid(raise_exception=True) idiom as DirectAssignmentSerializer),
+    not a duplicate of the service's own blank-check."""
+
+    reason = serializers.CharField()

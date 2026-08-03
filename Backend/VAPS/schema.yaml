@@ -1414,6 +1414,40 @@ paths:
               schema:
                 $ref: '#/components/schemas/AssignmentVersionDetail'
           description: ''
+  /api/operations/assignment-versions/{id}/return/:
+    post:
+      operationId: assignment_version_return
+      description: Вернуть Расстановку на доработку (SUBMITTED->RETURNED + новая DRAFT-версия,
+        FR-26). Требует assignment.return и непустой reason в теле. НЕ идемпотентно
+        — 422 INVALID_LIFECYCLE_TRANSITION из любого статуса, кроме SUBMITTED (включая
+        повторный вызов на уже-RETURNED).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReturnVersionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReturnVersionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReturnVersionRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentVersionDetail'
+          description: ''
   /api/operations/assignment-versions/{id}/submit/:
     post:
       operationId: assignment_version_submit
@@ -5298,6 +5332,20 @@ components:
       description: |-
         * `MATCHES` - Соответствует
         * `NEEDS_CHANGES` - Требует изменений
+    ReturnVersionRequest:
+      type: object
+      description: |-
+        Story 16.8c: write-only request body for `POST .../return` —
+        `return_assignment_version()` (16.4) already requires a non-blank
+        `reason`; this validates presence BEFORE the service call (same
+        is_valid(raise_exception=True) idiom as DirectAssignmentSerializer),
+        not a duplicate of the service's own blank-check.
+      properties:
+        reason:
+          type: string
+          minLength: 1
+      required:
+      - reason
     Role:
       type: object
       properties:

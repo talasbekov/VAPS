@@ -38,6 +38,7 @@ from apps.operations.events.api.serializers import (
     GenerateForceRequestsResponseSerializer,
     GroupForceRequestSerializer,
     GroupSerializer,
+    ReturnVersionSerializer,
     SecurityEventCreateSerializer,
     SecurityEventSerializer,
     SectorPostSerializer,
@@ -60,6 +61,7 @@ from apps.operations.events.services import (
     replace_checklist_items,
     replace_sector_posts,
     replace_staffing_demand,
+    return_assignment_version,
     submit_assignment_version,
 )
 from apps.operations.facilities.api.serializers import (
@@ -597,3 +599,31 @@ class AssignmentVersionViewSet(viewsets.ViewSet):
         version = _get_assignment_version_or_404(pk)
         version = submit_assignment_version(version, actor=request.actor_id)
         return Response(AssignmentVersionDetailSerializer(version).data)
+
+    @extend_schema(
+        operation_id="assignment_version_return",
+        request=ReturnVersionSerializer,
+        responses={200: AssignmentVersionDetailSerializer},
+        description="Вернуть Расстановку на доработку (SUBMITTED->RETURNED "
+        "+ новая DRAFT-версия, FR-26). Требует assignment.return и "
+        "непустой reason в теле. НЕ идемпотентно — 422 "
+        "INVALID_LIFECYCLE_TRANSITION из любого статуса, кроме SUBMITTED "
+        "(включая повторный вызов на уже-RETURNED).",
+    )
+    @action(detail=True, methods=["post"], url_path="return", url_name="return")
+    def return_(self, request, pk=None, *args, **kwargs):
+        # Story 16.8c: "return" is a reserved Python keyword — the method
+        # can't literally be named `return`, hence `return_` + explicit
+        # `url_path`/`url_name="return"` so the route/reverse-name stay
+        # `ops-assignment-version-return`, unaffected by the Python-side
+        # workaround.
+        require_permission(request, "assignment.return")
+        form = ReturnVersionSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        version = _get_assignment_version_or_404(pk)
+        returned_version, new_version = return_assignment_version(
+            version, actor=request.actor_id, reason=form.validated_data["reason"]
+        )
+        data = AssignmentVersionDetailSerializer(returned_version).data
+        data["new_draft_version"] = AssignmentVersionSerializer(new_version).data
+        return Response(data)
