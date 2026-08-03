@@ -284,6 +284,40 @@ function buildSeed(): SettingsState {
         editable: true,
         lockedReason: null,
       },
+      // Пределы отчётности §22.5: глубина периода ПО ТИПУ отчёта (тип — хвост
+      // кода LIMITS.REPORT_PERIOD.<TYPE>) и срок хранения артефактов §22.22.
+      {
+        settingCode: "LIMITS.REPORT_PERIOD.PERSONNEL_EXPENSE",
+        sectionCode: "REPORT_LIMITS",
+        kind: "NUMBER",
+        valueType: "DAYS",
+        safeLabel: "Предел периода «Расход личного состава»",
+        description:
+          "Максимальная глубина периода отчёта. Проверяет сервер при запуске работы.",
+        value: 92,
+        minValue: 7,
+        maxValue: 366,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
+      {
+        settingCode: "LIMITS.REPORT_RETENTION.PARAMETER",
+        sectionCode: "REPORT_LIMITS",
+        kind: "NUMBER",
+        valueType: "DAYS",
+        safeLabel: "Срок хранения артефактов отчётов",
+        description:
+          "Сколько дней собранный файл доступен для скачивания. Срок замораживается в артефакте при сборке.",
+        value: 14,
+        minValue: 1,
+        maxValue: 366,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
     ],
     sectionVersions: {
       CONFLICT_RULES: "conflict-policy-v1",
@@ -291,6 +325,7 @@ function buildSeed(): SettingsState {
       ANALYTICS_LIMITS: "analytics-limits-v1",
       LOAD_POLICY: "load-policy-v1",
       ATTENTION_POLICY: "attention-policy-v1",
+      REPORT_LIMITS: "report-limits-v1",
       // Формат версии методики рейтинга — свой (OPERATIONAL-RATING-<год>.<мес>.N):
       // ею подписываются агрегаты, и точки динамики прошлых редакций несут
       // версии того же формата.
@@ -477,6 +512,36 @@ export function readAttentionPolicy(): {
     byDetector.set(match[1], bucket);
   }
   return { policyVersion, byDetector };
+}
+
+export interface ReportLimits {
+  /** Глубина периода ПО ТИПУ отчёта: тип — хвост кода записи. Типа нет в
+   * карте — политика про него молчит, и это не «без ограничения». */
+  maxPeriodDaysByType: Map<string, number>;
+  /** null — срок хранения не задан; сборка файла невозможна: артефакт без
+   * expiresAt жил бы вечно. */
+  retentionDays: number | null;
+  policyVersion: string | null;
+}
+
+/** §22.5 пределы отчётности. Отсутствие раздела (стейл-сид) даёт пустую карту
+ * и null, а не «привычные» значения по умолчанию. */
+export function readReportLimits(): ReportLimits {
+  const s = getState();
+  const policyVersion = s.sectionVersions.REPORT_LIMITS;
+  if (typeof policyVersion !== "string" || policyVersion === "") {
+    return { maxPeriodDaysByType: new Map(), retentionDays: null, policyVersion: null };
+  }
+  const maxPeriodDaysByType = new Map<string, number>();
+  let retentionDays: number | null = null;
+  for (const item of s.settings) {
+    if (item.sectionCode !== "REPORT_LIMITS" || item.kind !== "NUMBER") continue;
+    const match = /^LIMITS\.REPORT_PERIOD\.([A-Z_]+)$/.exec(item.settingCode);
+    if (match !== null) maxPeriodDaysByType.set(match[1], item.value);
+    if (item.settingCode === "LIMITS.REPORT_RETENTION.PARAMETER")
+      retentionDays = item.value;
+  }
+  return { maxPeriodDaysByType, retentionDays, policyVersion };
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────

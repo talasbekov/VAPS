@@ -123,6 +123,7 @@ export function Sidebar() {
     { name: "Календарь смен", href: "/security-ops/calendar", icon: CalendarDays },
     { name: "Оперативный рейтинг", href: "/security-ops/ratings", icon: Star },
     { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
+    { name: "Отчёты службы", href: "/security-ops/service-reports", icon: ScrollText },
     { name: "Справочники", href: "/security-ops/dictionaries", icon: ClipboardList },
     { name: "Настройки ОМ", href: "/security-ops/settings", icon: Settings },
     { name: "Аудит", href: "/security-ops/audit", icon: ScrollText },
