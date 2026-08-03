@@ -5,6 +5,7 @@
 // из useQuery(['me']) (ARCH-FE-010, копий в state нет). «Выйти» зовёт
 // logout() — навигацию на /login делает RequireAuth реактивно (Д7-8.6,
 // window.location запрещён). h-screen, не h-dvh (dvh — FF101+, Ловушка 4).
+import { getFrontendEnv } from '../config/env'
 import { LogOut } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
@@ -35,6 +36,17 @@ export function AppLayout() {
   const sections = NAV_SECTIONS.filter((s) => hasPermission(s.permission))
   // JWT-вход: userId = null (SPA токен не разбирает, ARCH-SEC-030) → «??»
   const initials = userId === null ? '??' : userId.slice(0, 2).toUpperCase()
+
+  // Host-встраивание (Этап M4): вокруг уже живут сайдбар и шапка
+  // host-приложения — свой chrome здесь был бы вторым каркасом в каркасе.
+  // Рендерится только контент; skip-link не нужен (пунктов навигации своих нет).
+  if (getFrontendEnv().embeddedChrome) {
+    return (
+      <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-6 focus:outline-none">
+        <Outlet />
+      </main>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
