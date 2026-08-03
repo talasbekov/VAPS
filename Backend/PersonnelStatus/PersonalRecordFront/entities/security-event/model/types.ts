@@ -208,3 +208,130 @@ export interface BindableObject {
 export interface ListBindableObjectsResponse {
   results: BindableObject[];
 }
+
+// ── Контракты операций этапов карточки ОМ ────────────────────────────────
+
+export interface UpdateBulletinRequest extends Record<string, unknown> {
+  briefDescription: string;
+  initialTasks: string;
+}
+
+export interface UpdateReconRequest extends Record<string, unknown> {
+  checklist: ReconChecklistItem[];
+  sectorPosts: ReconSectorPost[];
+}
+
+/** Секция потребности не даёт отдельного «сохранить черновик» — одна операция
+ * сохраняет строки И утверждает потребность (без «сохранено, не утверждено»). */
+export interface UpdateDemandRequest extends Record<string, unknown> {
+  rows: StaffingDemandRow[];
+}
+
+export interface UpdateForceAllocationRequest extends Record<string, unknown> {
+  allocatedCount: number;
+  comment: string;
+}
+
+export interface AssignPlacementRequest extends Record<string, unknown> {
+  postId: string;
+  employeeId: string;
+  /** Протокол обхода мягкого конфликта: оба поля добавляет confirmOverride
+   * в корень тела — своего протокола у рейтинга нет намеренно. */
+  override?: boolean;
+  override_reason?: string;
+}
+
+export interface ReturnPlacementRequest extends Record<string, unknown> {
+  comment: string;
+}
+
+export interface AddJournalEntryRequest extends Record<string, unknown> {
+  type: JournalEntryType;
+  title: string;
+  description: string;
+}
+
+export interface CloseSecurityEventRequest extends Record<string, unknown> {
+  directionSummaries: ClosureDirectionSummary[];
+}
+
+/** Замена выбывшего: без авто-подбора кандидата — только ручной выбор,
+ * атомарная замена одной мутацией (снять + назначить + запись в журнал). */
+export interface ReplaceAssignmentRequest extends Record<string, unknown> {
+  assignmentId: string;
+  incomingEmployeeId: string;
+  reasonCode: string;
+}
+
+export const OPS_PERSONNEL_PATH = "/api/ops/personnel/";
+
+export interface ListPersonnelResponse {
+  results: PersonnelSummarySnapshot[];
+}
+
+export function securityEventBulletinPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/bulletin/`;
+}
+export function securityEventBulletinCompletePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/bulletin/complete/`;
+}
+export function securityEventReconPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/recon/`;
+}
+export function securityEventReconImportPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/recon/import-from-passport/`;
+}
+export function securityEventReconCompletePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/recon/complete/`;
+}
+export function securityEventDemandApprovePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/demand/approve/`;
+}
+export function securityEventForceAllocationPath(
+  id: string,
+  requestId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/${requestId}/`;
+}
+export function securityEventForcesCompletePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/forces/complete/`;
+}
+export function securityEventPlacementAssignPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/placement/assign/`;
+}
+export function securityEventPlacementUnassignPath(
+  id: string,
+  assignmentId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/placement/${assignmentId}/`;
+}
+export function securityEventPlacementCompletePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/placement/complete/`;
+}
+export function securityEventApprovalApprovePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/approve/`;
+}
+export function securityEventApprovalReturnPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/return/`;
+}
+// Раздельные сегменты ("acknowledge" vs "acknowledgement/complete") — иначе
+// path-to-regexp у MSW матчит /acknowledgement/complete/ более ранним
+// :assignmentId-роутом (assignmentId="complete") и отвечает не тот handler.
+export function securityEventAcknowledgePath(
+  id: string,
+  assignmentId: string
+): string {
+  return `${SECURITY_EVENTS_PATH}${id}/acknowledge/${assignmentId}/`;
+}
+export function securityEventAcknowledgementCompletePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/acknowledgement/complete/`;
+}
+export function securityEventJournalPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/journal/`;
+}
+export function securityEventReplaceAssignmentPath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/conduct/replace/`;
+}
+export function securityEventClosePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/close/`;
+}
