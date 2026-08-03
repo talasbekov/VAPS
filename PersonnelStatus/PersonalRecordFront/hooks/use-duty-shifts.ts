@@ -24,7 +24,16 @@ import type {
   DutyShiftDetail,
   ListDutyCandidatesResponse,
   ListDutyPlanObjectsResponse,
+  ListDutyShiftsResponse,
 } from "@/entities/duty-shift";
+
+export function useDutyShiftsAll(options?: { enabled?: boolean }) {
+  return useQuery<ListDutyShiftsResponse, OpsApiFailure>({
+    queryKey: ["ops-duty-shifts", "all"],
+    queryFn: () => opsApiClient.get<ListDutyShiftsResponse>(DUTY_SHIFTS_PATH),
+    enabled: options?.enabled ?? true,
+  });
+}
 
 export function useDutyShiftDetail(id: string) {
   return useQuery<DutyShiftDetail, OpsApiFailure>({
