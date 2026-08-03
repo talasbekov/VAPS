@@ -732,8 +732,17 @@ development_status:
   16-8d-api-утвердить: done
   16-8e-api-отметить-ознакомление: done
   16-8f-api-конфликты-версии: done
-  16-8g-openapi-schema-regen: backlog
-  16-8h-экраны-расстановки: backlog
+  16-8g-openapi-schema-regen: done  # folded inline into 16.8a-f, no separate story needed
+  # 16.8h decomposed (create-story, 2026-08-03) — frontend has NO existing
+  # Placement UI; CLAUDE.md forbids one "build the screens" story.
+  16-8h1-frontend-api-client: backlog
+  16-8h2-frontend-список-версий: backlog
+  16-8h3-frontend-деталь-версии: backlog
+  16-8h4-frontend-подать: backlog
+  16-8h5-frontend-вернуть: backlog
+  16-8h6-frontend-утвердить: backlog
+  16-8h7-frontend-отметить-ознакомление: backlog
+  16-8h8-frontend-маршрутизация-и-права: backlog
   16-8i-e2e-цепочка-расстановки: backlog
   epic-16-retrospective: optional
 

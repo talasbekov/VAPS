@@ -900,6 +900,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/assignment-versions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Список версий Расстановки. Требует любой из assignment.create/.submit/.return/.approve. limit/offset-пагинация (дефолт 50, потолок 200). Опциональный фильтр по event. */
+        get: operations["assignment_versions_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/assignment-versions/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Деталь версии Расстановки со вложенными назначениями (conflict_severity/conflict_codes/acknowledged_at/ack_escalated_at — персистентные значения, не пересчитываются на чтении). Требует любой из assignment.create/.submit/.return/.approve. */
+        get: operations["assignment_versions_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/assignment-versions/{id}/approve/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Утвердить Расстановку (SUBMITTED->APPROVED, FR-26). Требует assignment.approve. Идемпотентно на уже-APPROVED (чистый 200, не ошибка); 422 INVALID_LIFECYCLE_TRANSITION из любого другого статуса; 409 SOFT_CONFLICT_DETECTED (overridable) при непросмотренных конфликтах без override=true+override_reason. */
+        post: operations["assignment_version_approve"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/assignment-versions/{id}/conflicts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Свежий (пересчитанный) список конфликтующих назначений версии — ТОЛЬКО строки с непустым conflict_severity (в отличие от retrieve's полного вложенного списка). Требует любой из assignment.create/.submit/.return/.approve. Пересчёт пишет conflict_severity/conflict_codes в БД на каждый вызов (detect_placement_conflicts()'s собственное поведение, 16.3b-d) — не аудируется (read+recompute, тот же класс, что validate-эндпоинты). */
+        get: operations["assignment_version_conflicts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/assignment-versions/{id}/return/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Вернуть Расстановку на доработку (SUBMITTED->RETURNED + новая DRAFT-версия, FR-26). Требует assignment.return и непустой reason в теле. НЕ идемпотентно — 422 INVALID_LIFECYCLE_TRANSITION из любого статуса, кроме SUBMITTED (включая повторный вызов на уже-RETURNED). */
+        post: operations["assignment_version_return"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/assignment-versions/{id}/submit/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Подать Расстановку на согласование (DRAFT->SUBMITTED, FR-26). Требует assignment.submit. Идемпотентно на уже-SUBMITTED (чистый 200, не ошибка); 422 INVALID_LIFECYCLE_TRANSITION из любого другого статуса. */
+        post: operations["assignment_version_submit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/daily-submissions/": {
         parameters: {
             query?: never;
@@ -1026,6 +1128,23 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/direct-assignments/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Снять физнаряд (FR-24). Требует event.manage. Человеческое решение спора за человека — не статус-машина. */
+        delete: operations["security_event_direct_assignment_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1238,6 +1357,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/force-requests/{id}/allocate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Выделить людей на запрос Группы (FR-24). Требует brokerage.manage. Статус выводится из allocated_count vs requested_count. allocated_count > requested_count → 400. */
+        patch: operations["group_force_request_allocate"];
+        trace?: never;
+    };
+    "/api/operations/groups/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Активный справочник Групп (is_active=True), отсортирован по sort_order. Требует event.manage. */
+        get: operations["groups_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/my-permissions/": {
         parameters: {
             query?: never;
@@ -1286,6 +1439,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/placement-assignments/{id}/acknowledge/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Отметить ознакомление со своим назначением (FR-27). Любой аутентифицированный actor — НЕ RBAC-право, а самообслуживание: 403, если actor не привязан к employee_id этого назначения. Идемпотентно на уже-отмеченном (чистый 200, acknowledged_at не меняется); 422 INVALID_LIFECYCLE_TRANSITION, если версия не APPROVED. */
+        post: operations["placement_assignment_acknowledge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/roles/": {
         parameters: {
             query?: never;
@@ -1312,6 +1482,212 @@ export interface paths {
         get: operations["operations_roles_retrieve"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Список ОМ. Требует event.manage. limit/offset-пагинация (дефолт 50, потолок 200). Опциональный фильтр по object. */
+        get: operations["security_events_list"];
+        put?: never;
+        /** @description Создать ОМ (DRAFT). Требует event.manage. */
+        post: operations["security_events_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/bulletin/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Выпустить бюллетень (DRAFT->BULLETIN). Требует event.manage. Идемпотентно на уже-BULLETIN; 422 из любого другого статуса. */
+        post: operations["security_event_bulletin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/checklist/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Заменить чек-лист рекогносцировки целиком (FR-22). Требует event.manage. Пустой массив допустим (сброс чек-листа). */
+        put: operations["security_event_checklist_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/direct-assignments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Список физнарядов (прямых назначений ОМД) для этого ОМ. Требует event.manage. */
+        get: operations["security_event_direct_assignments"];
+        put?: never;
+        /** @description Создать физнаряд — прямое назначение сотрудника на пост, минуя запрос Группе/брокеридж (FR-24). Требует event.manage. Система пассивна: НЕТ проверки двойного назначения — разрешение «спора за человека» вне системы. */
+        post: operations["security_event_direct_assignment_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/force-requests/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Список запросов Группам для этого ОМ. Требует event.manage. */
+        get: operations["security_event_force_requests_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/force-requests/generate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Сгенерировать и отправить запросы Группам (FR-24). Требует event.manage. Доступно только из статуса DEMAND. Идемпотентно (regenerate обновляет requested_count, не сбрасывает уже начатое выделение). Несматченные Группы — в unmatched_groups, не молча теряются. */
+        post: operations["security_event_force_requests_generate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/passport/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Обновить Паспорт объекта этого ОМ (FR-22). Требует object.manage. Доступно ТОЛЬКО пока ОМ в статусе RECON (422 иначе). Partial-update — непереданные поля не затираются. Создаёт паспорт, если его ещё нет. */
+        put: operations["security_event_passport_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/placement/draft/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Сформировать черновик Расстановки из физнарядов (FR-26). Требует assignment.create. 409 PLACEMENT_DRAFT_ALREADY_EXISTS, если у события уже есть текущая версия. */
+        post: operations["security_event_placement_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/recon/confirm/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Двойной контроль: подтвердить рекогносцировку (BULLETIN->RECON, FR-22). Первый вызов → 202 (принято, ждёт второго ДРУГОГО актора). Второй вызов другим актором → 200, переход завершён. Тот же актор дважды → 422. Идемпотентно на уже-RECON. Требует event.manage. */
+        post: operations["security_event_recon_confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/sector-posts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Заменить строки пересчёта постов/секторов целиком (FR-22). Требует event.manage. Пустой массив допустим. */
+        put: operations["security_event_sector_posts_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/staffing-demand/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Заменить строки потребности в силах целиком (FR-23). Требует event.manage. Пустой массив допустим (сброс). */
+        put: operations["security_event_staffing_demand_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/staffing-demand/approve/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Утвердить Потребность (RECON->DEMAND, FR-23). Требует event.manage. Идемпотентно на уже-DEMAND; 422 из любого другого статуса. */
+        post: operations["security_event_staffing_demand_approve"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1487,6 +1863,68 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description Story 16.8d: optional request body for `POST .../approve` —
+         *     literal copy of `apps.operations.statuses.api.serializers.
+         *     BulkStatusCreateSerializer`'s `override`/`override_reason` fields
+         *     (10.2a). No `default=` deliberately (same rationale as that
+         *     serializer): openapi-typescript treats a `default=`'d field as
+         *     always-present in the generated TS type, `required=False` reads as
+         *     optional — matches the field actually being optional here.
+         */
+        ApproveVersionRequest: {
+            override?: boolean;
+            override_reason?: string;
+        };
+        AssignmentVersion: {
+            readonly id: number;
+            readonly event: number;
+            readonly status: components["schemas"]["StatusD87Enum"];
+            /** @default 1 */
+            readonly version: number;
+            readonly is_current: boolean;
+            readonly signature_hash: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        AssignmentVersionDetail: {
+            readonly id: number;
+            readonly event: number;
+            readonly status: components["schemas"]["StatusD87Enum"];
+            /** @default 1 */
+            readonly version: number;
+            readonly is_current: boolean;
+            readonly signature_hash: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+            readonly assignments: components["schemas"]["PlacementAssignment"][];
+        };
+        /**
+         * @description Story 16.8c: `AssignmentVersionDetailSerializer` (the returned/old
+         *     version) plus `new_draft_version` — the actual response shape returned
+         *     by `AssignmentVersionViewSet.return_`. Exists only so `@extend_schema`
+         *     documents the injected `new_draft_version` key instead of silently
+         *     omitting it (schema.yaml previously understated the real response).
+         */
+        AssignmentVersionReturnResponse: {
+            readonly id: number;
+            readonly event: number;
+            readonly status: components["schemas"]["StatusD87Enum"];
+            /** @default 1 */
+            readonly version: number;
+            readonly is_current: boolean;
+            readonly signature_hash: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+            readonly assignments: components["schemas"]["PlacementAssignment"][];
+            readonly new_draft_version: components["schemas"]["AssignmentVersion"];
+        };
         /** @description Read-only проекция Attachment — ответ upload (201) и retrieve-форм. */
         Attachment: {
             /** Format: uuid */
@@ -1606,6 +2044,32 @@ export interface components {
             document_basis?: string;
             source_ref?: string;
         };
+        ChecklistItem: {
+            readonly id: number;
+            label: string;
+            done?: boolean;
+            result?: (components["schemas"]["ResultEnum"] | components["schemas"]["BlankEnum"] | components["schemas"]["NullEnum"]) | null;
+            comment?: string;
+        };
+        ChecklistItemRequest: {
+            label: string;
+            done?: boolean;
+            result?: (components["schemas"]["ResultEnum"] | components["schemas"]["BlankEnum"] | components["schemas"]["NullEnum"]) | null;
+            comment?: string;
+        };
+        /**
+         * @description * `RED` - Не заполнен
+         *     * `YELLOW` - Частично заполнен
+         *     * `GREEN` - Заполнен
+         * @enum {string}
+         */
+        CompletenessStatusEnum: "RED" | "YELLOW" | "GREEN";
+        /**
+         * @description * `SOFT` - Мягкий конфликт
+         *     * `HARD` - Жёсткий конфликт
+         * @enum {string}
+         */
+        ConflictSeverityEnum: "SOFT" | "HARD";
         /**
          * @description 201/list projection — flat, snake_case, WITHOUT the heavy snapshot JSON
          *     (tens–hundreds of KB per row) and without the amend-only fields
@@ -1690,6 +2154,21 @@ export interface components {
             previous: string | null;
             results: components["schemas"]["DailySubmission"][];
         };
+        DirectAssignment: {
+            readonly id: number;
+            sector_post: number;
+            /** Format: uuid */
+            employee_id: string;
+            comment?: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        DirectAssignmentRequest: {
+            sector_post: number;
+            /** Format: uuid */
+            employee_id: string;
+            comment?: string;
+        };
         Division: {
             /** Format: uuid */
             readonly id: string;
@@ -1717,7 +2196,7 @@ export interface components {
             object: number;
             year: number;
             month: number;
-            readonly status_code: components["schemas"]["StatusCodeEnum"];
+            readonly status_code: components["schemas"]["DutyPlanStatusCodeEnum"];
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
@@ -1741,6 +2220,12 @@ export interface components {
             year: number;
             month: number;
         };
+        /**
+         * @description * `DRAFT` - Черновик
+         *     * `APPROVED` - Утверждён
+         * @enum {string}
+         */
+        DutyPlanStatusCodeEnum: "DRAFT" | "APPROVED";
         DutyShift: {
             readonly id: number;
             readonly plan: number;
@@ -1997,6 +2482,39 @@ export interface components {
          */
         GenderEnum: "M" | "F";
         /**
+         * @description Story 15.7b: wraps the generated/updated rows plus any StaffingDemand
+         *     group-text that failed to match an active Group (AC-2 — reported, not
+         *     silently dropped), and any PRIOR `GroupForceRequest` whose group no
+         *     longer appears in the current demand (review, Edge Case Hunter —
+         *     reported for visibility, not auto-cancelled).
+         */
+        GenerateForceRequestsResponse: {
+            force_requests: components["schemas"]["GroupForceRequest"][];
+            unmatched_groups: string[];
+            stale_groups: string[];
+        };
+        Group: {
+            code: string;
+            name: string;
+            sort_order?: number;
+        };
+        GroupForceRequest: {
+            readonly id: number;
+            readonly group: components["schemas"]["Group"];
+            readonly requested_count: number;
+            readonly allocated_count: number;
+            readonly status: components["schemas"]["GroupForceStatusEnum"];
+            readonly comment: string;
+        };
+        /**
+         * @description * `NOT_SENT` - Не отправлен
+         *     * `SENT` - Отправлен
+         *     * `PARTIALLY_ALLOCATED` - Частично выделено
+         *     * `ALLOCATED` - Выделено
+         * @enum {string}
+         */
+        GroupForceStatusEnum: "NOT_SENT" | "SENT" | "PARTIALLY_ALLOCATED" | "ALLOCATED";
+        /**
          * @description Issued расход projection (6.10a) — flat metadata + the attachment ref and
          *     sha256 for download via 6.7 (X-Accel). The byte file is NOT streamed here.
          *
@@ -2037,9 +2555,15 @@ export interface components {
          * @description * `SUBMISSION_LAGGING` - Отставание по сдаче
          *     * `SUBMISSION_THRESHOLD_ALERT` - Порог сдачи не достигнут
          *     * `PILOT_PULSE_DIGEST` - Пульс пилота
+         *     * `GROUP_FORCE_REQUEST_ESCALATED` - Эскалация неотработанного запроса
+         *     * `TEMP_PERMISSION_ACTIVE` - Временное полномочие активно
+         *     * `TEMP_PERMISSION_EXPIRED` - Временное полномочие истекло
+         *     * `ASSIGNMENT_APPROVED` - Расстановка утверждена
+         *     * `ACK_MISSING_ESCALATION` - Ознакомление не получено — эскалация
+         *     * `ACK_REQUIRED` - Требуется ознакомление
          * @enum {string}
          */
-        KindEnum: "SUBMISSION_LAGGING" | "SUBMISSION_THRESHOLD_ALERT" | "PILOT_PULSE_DIGEST";
+        KindEnum: "SUBMISSION_LAGGING" | "SUBMISSION_THRESHOLD_ALERT" | "PILOT_PULSE_DIGEST" | "GROUP_FORCE_REQUEST_ESCALATED" | "TEMP_PERMISSION_ACTIVE" | "TEMP_PERMISSION_EXPIRED" | "ASSIGNMENT_APPROVED" | "ACK_MISSING_ESCALATION" | "ACK_REQUIRED";
         MyPermissionsResponse: {
             permissions: string[];
         };
@@ -2070,6 +2594,95 @@ export interface components {
         };
         /** @enum {unknown} */
         NullEnum: null;
+        ObjectPassport: {
+            readonly id: number;
+            readonly object: number;
+            object_type?: string;
+            responsible_user_id?: string;
+            responsible_employee_id?: string;
+            description?: string;
+            security_notes?: string;
+            vulnerable_places?: string;
+            access_routes?: unknown;
+            entrances?: unknown;
+            exits?: unknown;
+            service_entrances?: unknown;
+            parking_zones?: unknown;
+            dropoff_zones?: unknown;
+            elevators?: unknown;
+            stairs?: unknown;
+            roofs?: unknown;
+            basements?: unknown;
+            technical_rooms?: unknown;
+            cameras?: unknown;
+            power_supply?: string;
+            ventilation?: string;
+            communication?: string;
+            internet?: string;
+            nearby_high_buildings?: string;
+            public_zones?: string;
+            crowd_places?: string;
+            repair_works?: string;
+            completeness_status?: components["schemas"]["CompletenessStatusEnum"];
+            /** Format: date-time */
+            readonly last_verified_at: string | null;
+            readonly last_verified_by: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description Partial-update body — every model field here has `blank=True`, so
+         *     DRF already derives `required=False` for all of them (AC-3:
+         *     непереданные поля не затираются — `is_valid()` never demands them).
+         *     `object`/`last_verified_*` excluded — server-assigned, not client
+         *     input.
+         */
+        ObjectPassportUpdateRequest: {
+            object_type?: string;
+            responsible_user_id?: string;
+            responsible_employee_id?: string;
+            description?: string;
+            security_notes?: string;
+            vulnerable_places?: string;
+            access_routes?: unknown;
+            entrances?: unknown;
+            exits?: unknown;
+            service_entrances?: unknown;
+            parking_zones?: unknown;
+            dropoff_zones?: unknown;
+            elevators?: unknown;
+            stairs?: unknown;
+            roofs?: unknown;
+            basements?: unknown;
+            technical_rooms?: unknown;
+            cameras?: unknown;
+            power_supply?: string;
+            ventilation?: string;
+            communication?: string;
+            internet?: string;
+            nearby_high_buildings?: string;
+            public_zones?: string;
+            crowd_places?: string;
+            repair_works?: string;
+            completeness_status?: components["schemas"]["CompletenessStatusEnum"];
+        };
+        PaginatedAssignmentVersionList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["AssignmentVersion"][];
+        };
         PaginatedAuditLogList: {
             /** @example 123 */
             count: number;
@@ -2250,6 +2863,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Role"][];
         };
+        PaginatedSecurityEventList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["SecurityEvent"][];
+        };
         PaginatedStaffingSlotList: {
             /** @example 123 */
             count: number;
@@ -2264,6 +2892,15 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["StaffingSlot"][];
+        };
+        /**
+         * @description Story 15.8: broker's allocation body — quantitative only, matches
+         *     the frontend prototype's `UpdateForceAllocationRequest` shape (soft
+         *     signal, not source of truth).
+         */
+        PatchedAllocateForceRequestRequest: {
+            allocated_count?: number;
+            comment?: string;
         };
         PatchedDivisionRequest: {
             /** Format: uuid */
@@ -2339,6 +2976,23 @@ export interface components {
             description?: string | null;
             is_active?: boolean;
         };
+        /**
+         * @description Story 16.8a: read-only — persisted conflict/acknowledgement state,
+         *     not recomputed on GET (same convention the rest of this read-API
+         *     already follows).
+         */
+        PlacementAssignment: {
+            readonly id: number;
+            /** Format: uuid */
+            readonly employee_id: string;
+            readonly post: number;
+            readonly conflict_severity: components["schemas"]["ConflictSeverityEnum"];
+            readonly conflict_codes: unknown;
+            /** Format: date-time */
+            readonly acknowledged_at: string | null;
+            /** Format: date-time */
+            readonly ack_escalated_at: string | null;
+        };
         Position: {
             code: string;
             name: string;
@@ -2367,11 +3021,100 @@ export interface components {
             rank_index?: number;
             is_active?: boolean;
         };
+        /**
+         * @description * `MATCHES` - Соответствует
+         *     * `NEEDS_CHANGES` - Требует изменений
+         * @enum {string}
+         */
+        ResultEnum: "MATCHES" | "NEEDS_CHANGES";
+        /**
+         * @description Story 16.8c: write-only request body for `POST .../return` —
+         *     `return_assignment_version()` (16.4) already requires a non-blank
+         *     `reason`; this validates presence BEFORE the service call (same
+         *     is_valid(raise_exception=True) idiom as DirectAssignmentSerializer),
+         *     not a duplicate of the service's own blank-check.
+         */
+        ReturnVersionRequest: {
+            reason: string;
+        };
         Role: {
             code: string;
             name: string;
             description?: string | null;
             is_active?: boolean;
+        };
+        SectorPost: {
+            readonly id: number;
+            sector: string;
+            post: string;
+            task?: string;
+            need?: number;
+            requirements?: string;
+            result?: (components["schemas"]["ResultEnum"] | components["schemas"]["BlankEnum"] | components["schemas"]["NullEnum"]) | null;
+            comment?: string;
+        };
+        SectorPostRequest: {
+            sector: string;
+            post: string;
+            task?: string;
+            need?: number;
+            requirements?: string;
+            result?: (components["schemas"]["ResultEnum"] | components["schemas"]["BlankEnum"] | components["schemas"]["NullEnum"]) | null;
+            comment?: string;
+        };
+        SecurityEvent: {
+            readonly id: number;
+            object: number;
+            title: string;
+            readonly status_code: components["schemas"]["SecurityEventStatusCodeEnum"];
+            /** Format: uuid */
+            senior_employee_id?: string | null;
+            readonly recon_first_confirmed_by: string;
+            /** Format: date-time */
+            readonly recon_first_confirmed_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        SecurityEventCreateRequest: {
+            object: number;
+            title: string;
+            /** Format: uuid */
+            senior_employee_id?: string | null;
+        };
+        /**
+         * @description * `DRAFT` - Черновик
+         *     * `BULLETIN` - Бюллетень выпущен
+         *     * `RECON` - Рекогносцировка
+         *     * `DEMAND` - Потребность
+         *     * `BROKERAGE` - Брокеридж
+         *     * `PLACEMENT` - Расстановка
+         *     * `APPROVED` - Утверждено
+         *     * `IN_PROGRESS` - Проведение
+         *     * `CLOSED` - Закрыто
+         *     * `CANCELLED` - Отменено
+         * @enum {string}
+         */
+        SecurityEventStatusCodeEnum: "DRAFT" | "BULLETIN" | "RECON" | "DEMAND" | "BROKERAGE" | "PLACEMENT" | "APPROVED" | "IN_PROGRESS" | "CLOSED" | "CANCELLED";
+        StaffingDemand: {
+            readonly id: number;
+            sector: string;
+            task?: string;
+            shift?: string;
+            need?: number;
+            group?: string;
+            requirements?: string;
+            comment?: string;
+        };
+        StaffingDemandRequest: {
+            sector: string;
+            task?: string;
+            shift?: string;
+            need?: number;
+            group?: string;
+            requirements?: string;
+            comment?: string;
         };
         StaffingSlot: {
             /** Format: uuid */
@@ -2403,10 +3146,12 @@ export interface components {
         };
         /**
          * @description * `DRAFT` - Черновик
-         *     * `APPROVED` - Утверждён
+         *     * `SUBMITTED` - Подано на согласование
+         *     * `RETURNED` - Возвращено на доработку
+         *     * `APPROVED` - Утверждено
          * @enum {string}
          */
-        StatusCodeEnum: "DRAFT" | "APPROVED";
+        StatusD87Enum: "DRAFT" | "SUBMITTED" | "RETURNED" | "APPROVED";
         /**
          * @description Плоская проекция живого статуса на дату — прямо из ``.values()``-словарей
          *     ``EmployeeStatusSelector.overlapping_on`` (не ORM-объекты).
@@ -3462,6 +4207,147 @@ export interface operations {
             };
         };
     };
+    assignment_versions_list: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedAssignmentVersionList"];
+                };
+            };
+        };
+    };
+    assignment_versions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentVersionDetail"];
+                };
+            };
+        };
+    };
+    assignment_version_approve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApproveVersionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ApproveVersionRequest"];
+                "multipart/form-data": components["schemas"]["ApproveVersionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentVersionDetail"];
+                };
+            };
+        };
+    };
+    assignment_version_conflicts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementAssignment"][];
+                };
+            };
+        };
+    };
+    assignment_version_return: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnVersionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReturnVersionRequest"];
+                "multipart/form-data": components["schemas"]["ReturnVersionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentVersionReturnResponse"];
+                };
+            };
+        };
+    };
+    assignment_version_submit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentVersionDetail"];
+                };
+            };
+        };
+    };
     operations_daily_submissions_list: {
         parameters: {
             query?: {
@@ -3597,6 +4483,26 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SummaryFreshnessResponse"];
                 };
+            };
+        };
+    };
+    security_event_direct_assignment_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -3959,6 +4865,52 @@ export interface operations {
             };
         };
     };
+    group_force_request_allocate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedAllocateForceRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAllocateForceRequestRequest"];
+                "multipart/form-data": components["schemas"]["PatchedAllocateForceRequestRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupForceRequest"];
+                };
+            };
+        };
+    };
+    groups_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"][];
+                };
+            };
+        };
+    };
     operations_my_permissions_list: {
         parameters: {
             query?: never;
@@ -4024,6 +4976,27 @@ export interface operations {
             };
         };
     };
+    placement_assignment_acknowledge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementAssignment"];
+                };
+            };
+        };
+    };
     operations_roles_list: {
         parameters: {
             query?: {
@@ -4066,6 +5039,345 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Role"];
+                };
+            };
+        };
+    };
+    security_events_list: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedSecurityEventList"];
+                };
+            };
+        };
+    };
+    security_events_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecurityEventCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SecurityEventCreateRequest"];
+                "multipart/form-data": components["schemas"]["SecurityEventCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityEvent"];
+                };
+            };
+        };
+    };
+    security_event_bulletin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityEvent"];
+                };
+            };
+        };
+    };
+    security_event_checklist_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChecklistItemRequest"][];
+                "application/x-www-form-urlencoded": components["schemas"]["ChecklistItemRequest"][];
+                "multipart/form-data": components["schemas"]["ChecklistItemRequest"][];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChecklistItem"][];
+                };
+            };
+        };
+    };
+    security_event_direct_assignments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectAssignment"][];
+                };
+            };
+        };
+    };
+    security_event_direct_assignment_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectAssignmentRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DirectAssignmentRequest"];
+                "multipart/form-data": components["schemas"]["DirectAssignmentRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectAssignment"];
+                };
+            };
+        };
+    };
+    security_event_force_requests_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupForceRequest"][];
+                };
+            };
+        };
+    };
+    security_event_force_requests_generate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateForceRequestsResponse"];
+                };
+            };
+        };
+    };
+    security_event_passport_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ObjectPassportUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ObjectPassportUpdateRequest"];
+                "multipart/form-data": components["schemas"]["ObjectPassportUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectPassport"];
+                };
+            };
+        };
+    };
+    security_event_placement_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentVersionDetail"];
+                };
+            };
+        };
+    };
+    security_event_recon_confirm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityEvent"];
+                };
+            };
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityEvent"];
+                };
+            };
+        };
+    };
+    security_event_sector_posts_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SectorPostRequest"][];
+                "application/x-www-form-urlencoded": components["schemas"]["SectorPostRequest"][];
+                "multipart/form-data": components["schemas"]["SectorPostRequest"][];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SectorPost"][];
+                };
+            };
+        };
+    };
+    security_event_staffing_demand_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffingDemandRequest"][];
+                "application/x-www-form-urlencoded": components["schemas"]["StaffingDemandRequest"][];
+                "multipart/form-data": components["schemas"]["StaffingDemandRequest"][];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffingDemand"][];
+                };
+            };
+        };
+    };
+    security_event_staffing_demand_approve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityEvent"];
                 };
             };
         };
