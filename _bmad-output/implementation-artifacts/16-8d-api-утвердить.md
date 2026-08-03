@@ -4,7 +4,7 @@ baseline_commit: d8e488c
 
 # Story 16.8d: API — утвердить Расстановку
 
-Status: review
+Status: done
 
 ## Story
 
@@ -94,9 +94,13 @@ Claude Sonnet 5
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 1 новая строка AUDIT_MATRIX)
 - `Backend/VAPS/schema.yaml` (regenerated — `make schema`, новый эндпоинт)
 
+**После ревью:**
+- `Backend/VAPS/apps/operations/events/tests/test_assignment_version_approve_api.py` (modified — 3 новых теста)
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-03 | Story создана (create-story). Часть 4/9 расщепления Story 16.8. Тонкая HTTP-обёртка над `approve_assignment_version()` (16.4) — ИДЕМПОТЕНТНА (в отличие от 16.8c's return), опциональные `override`/`override_reason` (копия 10.2a's сериализатора), 409 `SOFT_CONFLICT_DETECTED` overridable при непросмотренных конфликтах. Ultimate context engine analysis completed - comprehensive developer guide created. |
 | 2026-08-03 | Dev-story: `ApproveVersionSerializer` + `approve`-action. Уточнено AC-3 — `overridable` не в HTTP-конверте, только атрибут исключения. 9 новых тестов, включая реальный двойной-конфликт через overlapping-события. `make gate` — 3875 passed, 0 regressions, ruff чист, `make schema`. Status → review. |
+| 2026-08-03 | 3-agent ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Acceptance Auditor: red-probe подтвердил AC-3's конфликт-тест НЕ вакуумен (нейтрализация `has_conflicts` в сервисе красит тест). Edge Case Hunter и Acceptance Auditor независимо совпали на пробеле AC-6 (`RETURNED`-статус не тестировался отдельно от `DRAFT`). Добавлены 3 новых теста: whitespace-only `override_reason` (отдельный код-путь от полностью-пустого), идемпотентный повтор ПОСЛЕ появления конфликта у другой версии (доказывает ранний идемпотентный `return` пропускает `detect_placement_conflicts()`), `RETURNED`-версия → 422. Blind Hunter's находки — все ложные срабатывания/вне-скоупа: "override_reason не аудируется" опровергнуто чтением кода сервиса (аудируется, `new_value["override_reason"]`); "нет отдельного права на override" / "нет optimistic concurrency" / "overridable выпадает из конверта" — архитектурные вне-скоупа для тонкой HTTP-обёртки, последнее уже задокументировано в AC-3. `make gate` повторно — 3878 passed, 0 regressions, ruff чист, миграций нет. Status → done. |

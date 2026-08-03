@@ -67,6 +67,16 @@ def approver_client(seeded):
 
 
 @pytest.fixture
+def returner_client(seeded):
+    role = Role.objects.create(code="TEST_APPROVE_RETURNER", name="Test")
+    RolePermission.objects.create(
+        role_code=role, permission_code_id="assignment.return"
+    )
+    UserRole.objects.create(user_id="returner-1", role_code=role)
+    return _client("returner-1")
+
+
+@pytest.fixture
 def no_permission_client(seeded):
     return _client("nobody-with-no-role")
 
@@ -193,6 +203,77 @@ def test_approve_override_true_without_reason_is_400(
 
     assert resp.status_code == 400
     assert resp.data["error_code"] == "VALIDATION_ERROR"
+
+
+def test_approve_override_true_whitespace_only_reason_is_400(
+    creator_client, submitter_client, approver_client
+):
+    """override_reason='   ' passes CharField's allow_blank=True check (a
+    non-empty string) and is only caught by approve_assignment_version()'s
+    own .strip() guard — a different code path than the fully-omitted
+    case above, still a clean 400."""
+    version = make_submitted_version(creator_client, submitter_client, "OBJ-APR-5B")
+
+    resp = approver_client.post(
+        approve_url(version), {"override": True, "override_reason": "   "}
+    )
+
+    assert resp.status_code == 400
+    assert resp.data["error_code"] == "VALIDATION_ERROR"
+
+
+def test_approve_idempotent_replay_skips_conflict_recheck(
+    creator_client, submitter_client, approver_client
+):
+    """The idempotent early-return (status already APPROVED) happens BEFORE
+    detect_placement_conflicts() runs (services.py) — a version approved
+    while conflict-free must still replay 200 even if a conflicting
+    version for the same employee is submitted afterwards, not surface a
+    stale 409."""
+    employee_id = uuid.uuid4()
+    now = timezone.now()
+    version_a = make_submitted_version(
+        creator_client,
+        submitter_client,
+        "OBJ-APR-5C-A",
+        employee_id,
+        now,
+        now + datetime.timedelta(hours=8),
+    )
+    approver_client.post(approve_url(version_a), {})
+    make_submitted_version(
+        creator_client,
+        submitter_client,
+        "OBJ-APR-5C-B",
+        employee_id,
+        now + datetime.timedelta(hours=4),
+        now + datetime.timedelta(hours=12),
+    )
+
+    resp = approver_client.post(approve_url(version_a), {})
+
+    assert resp.status_code == 200
+    assert resp.data["status"] == "APPROVED"
+
+
+def test_approve_returned_version_is_422(
+    creator_client, submitter_client, returner_client, approver_client
+):
+    """RETURNED is a distinct reachable status (16.8c) hitting the same
+    `!= SUBMITTED` guard as DRAFT — tested separately since it's a
+    different source status, even though the code path is identical."""
+    version = make_submitted_version(creator_client, submitter_client, "OBJ-APR-5D")
+    returner_client.post(
+        reverse("ops-assignment-version-return", args=[version.pk]),
+        {"reason": "Проверить состав"},
+    )
+    version.refresh_from_db()
+    assert version.status == "RETURNED"
+
+    resp = approver_client.post(approve_url(version), {})
+
+    assert resp.status_code == 422
+    assert resp.data["error_code"] == "INVALID_LIFECYCLE_TRANSITION"
 
 
 def test_approve_draft_version_is_422(creator_client, approver_client):
