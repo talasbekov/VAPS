@@ -329,6 +329,11 @@ actions:
     description: "Версия утверждена (SUBMITTED→APPROVED), один approver — только на реальном переходе. new_value несёт signature_hash (hash-ready заглушка ЭЦП — architecture.md откладывает реальное ЭЦП на MVP-2) и override/override_reason, если утверждение прошло несмотря на конфликты (SOFT_CONFLICT_DETECTED)."
     provenance: derived-from-mutation
     source: "epics.md FR-26; Story 16.4"
+  PLACEMENT_ASSIGNMENT_ACKNOWLEDGED:
+    entity_type: placement_assignment
+    description: "Сотрудник отметил ознакомление со своим назначением (acknowledged_at: null→timestamp) — только на реальном переходе, не на идемпотентном повторе; entity_id=uuid.UUID(int=assignment.pk) (operations — integer PK). Доступно только для APPROVED-версии; личность актора не проверяется (16.8's территория)."
+    provenance: derived-from-mutation
+    source: "epics.md FR-27; Story 16.6b"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

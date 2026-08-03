@@ -1167,3 +1167,63 @@ def approve_assignment_version(version, *, actor, override=False, override_reaso
             },
         )
     return version
+
+
+def acknowledge_placement_assignment(assignment, *, actor):
+    """Story 16.6b (FR-27): mark `PlacementAssignment.acknowledged_at` —
+    the employee's one-time confirmation they've seen their assignment
+    (16.1's stub field, "заполняется Story 16.6's сервисом").
+
+    Only `acknowledged_at` is written — no `acknowledged_by` column
+    exists (16.1 never designed one: the "who" here is never ambiguous,
+    it's always `assignment.employee_id`, unlike `cancelled_by` which
+    can differ from the row's own subject). Identity of `actor` against
+    `assignment.employee_id` is NOT checked — the same convention
+    `submit_assignment_version()`/`return_assignment_version()`/
+    `approve_assignment_version()` (16.4) already establish (no
+    service-level role/identity check, only non-blank `actor`); that
+    verification is 16.8's API/permissions layer, not invented here
+    (same conclusion as 16.6a's Scope Decision on the missing "approver"
+    permission code).
+
+    Only reachable for a `PlacementAssignment` whose `version.status` is
+    `APPROVED` — acknowledging is meaningless before approval (nothing
+    was projected/notified yet, 16.5/16.6a). Any other status raises
+    `INVALID_LIFECYCLE_TRANSITION` (422), the same registry code
+    `submit_assignment_version()`/`approve_assignment_version()` already
+    use for "wrong state for this transition" — not a new code.
+
+    Idempotent: a replay call on an already-acknowledged row is a no-op
+    (200, `acknowledged_at` keeps its FIRST value, no duplicate audit
+    row) — "first ack wins", the same idempotent-replay shape as
+    `submit_assignment_version()`.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    with transaction.atomic():
+        assignment = PlacementAssignment.objects.select_for_update().get(
+            pk=assignment.pk
+        )
+        if assignment.acknowledged_at is not None:
+            return assignment
+        if assignment.version.status != AssignmentVersion.Status.APPROVED:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Отметить ознакомление можно только для утверждённого "
+                "назначения.",
+            )
+        assignment.acknowledged_at = Clock.now()
+        assignment.save(update_fields=["acknowledged_at", "updated_at"])
+        record(
+            actor=actor,
+            action="PLACEMENT_ASSIGNMENT_ACKNOWLEDGED",
+            entity_type="placement_assignment",
+            entity_id=uuid.UUID(int=assignment.pk),
+            new_value={
+                "assignment_id": assignment.pk,
+                "employee_id": str(assignment.employee_id),
+                "acknowledged_at": assignment.acknowledged_at.isoformat(),
+            },
+        )
+    return assignment
