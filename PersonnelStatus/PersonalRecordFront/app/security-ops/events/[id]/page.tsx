@@ -1,17 +1,31 @@
 "use client";
 
-// Карточка ОМ — каркас Фазы 2: шапка, привязка паспорта, текущая стадия.
-// Шесть этапов (бюллетень → ознакомление), журнал и закрытие — Фаза 3.
+// Карточка ОМ: шапка + степпер стадий + активный этап. Компонент этапа
+// получает key по updatedAt — успешная операция пересоздаёт его от свежего
+// серверного состояния (локальные черновики не переживают переходы).
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useSecurityEvent } from "@/hooks/use-security-events";
+import { EventStepper } from "@/widgets/security-event-stepper";
+import {
+  AcknowledgementStage,
+  ApprovalStage,
+  BulletinStage,
+  ClosedView,
+  ConductStage,
+  DemandStage,
+  ForcesStage,
+  PlacementStage,
+  ReconStage,
+} from "@/features/security-event-stages";
 import {
   NO_OBJECT_TEXT,
   NO_PUBLISHED_VERSION_TEXT,
   StageBadge,
 } from "@/entities/security-event";
+import type { SecurityEvent } from "@/entities/security-event";
 
 export default function SecurityEventPage() {
   const params = useParams<{ id: string }>();
@@ -59,6 +73,9 @@ export default function SecurityEventPage() {
               {event.code}
             </span>
             <StageBadge stage={event.stage} />
+            <span className="text-xs text-muted-foreground tabular-nums">
+              готовность {event.readinessPercent}%
+            </span>
           </div>
           <h1 className="text-xl font-bold">{event.title}</h1>
           <p className="text-sm text-muted-foreground">
@@ -72,19 +89,36 @@ export default function SecurityEventPage() {
                 ? NO_PUBLISHED_VERSION_TEXT
                 : NO_OBJECT_TEXT}
           </p>
+          <div className="mt-3">
+            <EventStepper stage={event.stage} />
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Этапы мероприятия</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Работа с этапами (бюллетень, рекогносцировка, потребность, силы,
-          расстановка, ознакомление), журнал штаба и закрытие появятся в
-          следующей фазе порта.
-        </CardContent>
-      </Card>
+      <ActiveStage key={`${event.stage}-${event.updatedAt}`} event={event} />
     </DashboardLayout>
   );
+}
+
+function ActiveStage({ event }: { event: SecurityEvent }) {
+  switch (event.stage) {
+    case "BULLETIN":
+      return <BulletinStage event={event} />;
+    case "RECON":
+      return <ReconStage event={event} />;
+    case "DEMAND":
+      return <DemandStage event={event} />;
+    case "FORCES":
+      return <ForcesStage event={event} />;
+    case "PLACEMENT":
+      return <PlacementStage event={event} />;
+    case "APPROVAL":
+      return <ApprovalStage event={event} />;
+    case "ACKNOWLEDGEMENT":
+      return <AcknowledgementStage event={event} />;
+    case "CONDUCT":
+      return <ConductStage event={event} />;
+    case "CLOSED":
+      return <ClosedView event={event} />;
+  }
 }
