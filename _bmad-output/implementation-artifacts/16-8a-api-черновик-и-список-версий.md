@@ -4,7 +4,7 @@ baseline_commit: 9244a5a
 
 # Story 16.8a: API — черновик Расстановки + список/деталь версий
 
-Status: review
+Status: done
 
 ## Story
 
@@ -91,6 +91,17 @@ Claude Sonnet 5
 - `Backend/VAPS/apps/operations/events/tests/test_placement_api.py` (new)
 - `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — `_AnyOfGate`-класс + 3 новые строки MATRIX)
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 1 новая строка AUDIT_MATRIX)
+
+**3-агентное ревью — 0 регрессов, 1 пробел покрытия закрыт двумя тестами, остальное — false positive/соответствие уже принятым паттернам того же файла:**
+- **Coverage-gap (Acceptance Auditor): нечисловой `pk` (не только «несуществующий числовой») не был напрямую протестирован ни на `placement_draft`, ни на `retrieve`.** `isdigit()`-гард УЖЕ был корректен по коду, но не запиннен тестом отдельно от «несуществующий числовой id»-сценария. Добавлены `test_create_draft_non_numeric_event_pk_is_404_not_500`/`test_retrieve_non_numeric_pk_is_404_not_500` — оба подтверждают 404, не 500.
+- **False positive (Blind Hunter): «нет division-scoping — IDOR».** Сверено с уже существующим `SecurityEventViewSet.list()` (ТОТ ЖЕ файл, не эта стори) — идентичный паттерн: глобальные permission-коды без division-scoping для operations-ресурсов, установленная конвенция проекта, не новая дыра.
+- **False positive (Blind Hunter): «race condition в `placement_draft` — нет `select_for_update()`».** Проверено чтением `form_draft_placement()` (16.2, СУЩЕСТВУЮЩИЙ сервис) — уже использует `select_for_update()`+`transaction.atomic()` до проверки уникальности; вьюха — тонкая обёртка, ничего не переоткрывает.
+- **False positive (Blind Hunter, подтверждено Edge Case Hunter): «N+1 на вложенной сериализации».** `list()` использует `AssignmentVersionSerializer` (БЕЗ вложенных `assignments`), только `retrieve()` (один объект) несёт вложенный список — одна дополнительная выборка на ОДИН объект, не N+1.
+- **Low (оба хантера, приняты без правки): дублирование `isdigit()`-валидации между `_get_event_or_404`/`_get_assignment_version_or_404`, `http_method_names`-паттерн, `PermissionDenied`-строка вместо структуры, отсутствие tie-breaker в `order_by("-created_at")`.** Все — буквально тот же паттерн, что УЖЕ 3+ раза повторён в этом же файле (`_get_force_request_or_404`, `_get_direct_assignment_or_404`, `SecurityEventViewSet.list()`'s `order_by`) — не регресс этой стори, системная правка вне объёма.
+- **Genuine but pre-existing (Edge Case Hunter): `str.isdigit()` не гардирует переполнение Postgres bigint (500 вместо 404/400 на гигантском числовом pk).** Тот же гард уже используется идентично в 3+ существующих хелперах ТОГО ЖЕ файла (до этой стори) — исправление только двух НОВЫХ сайтов было бы непоследовательным; системная правка — вне объёма этой узкой стори.
+- Acceptance Auditor: все 8 AC (включая скрытые критерии из docstring'ов) PASS, `test_approver_can_read_versions_created_by_omd` подтверждён как НЕ вакуумный (реальная кросс-ролевая проверка), `PLACEMENT_DRAFT_FORMED`-аудит подтверждён как НЕ дублируется, `schema.yaml`-regen подтверждён `git log` тем же коммитом.
+
+`make gate` (после добавления 2 тестов) — **3819 passed** (было 3817, +2), 0 regressions, ruff чист. Status → done.
 - `Backend/VAPS/schema.yaml` (regenerated — `make schema`, новые эндпоинты)
 
 ## Change Log
@@ -99,3 +110,4 @@ Claude Sonnet 5
 |---|---|
 | 2026-08-01 | Story создана (create-story). Часть 1/9 расщепления Story 16.8 (backend+frontend+e2e в одной epics.md-строке). Находка: `assignment.create/.submit/.return/.approve`-коды уже засеяны И привязаны к ролям (`seed_operations.py`, вне `apps/operations/rbac/`, поэтому пропущены при 16.6a's grep) — частично разблокирует будущую 16.6d (`ASSIGNMENT_SUBMITTED`→«approver» теперь резолвируем; `ASSIGNMENT_RETURNED`→«creator» всё ещё блокирован, нет `created_by`). Нет отдельного `assignment.view`-кода — чтение гейтуется «любой из» через новый локальный хелпер. |
 | 2026-08-01 | Dev-story: `placement_draft`-action + `AssignmentVersionViewSet`. 11 новых тестов, прошли с первого запуска. `make gate` потребовал `_AnyOfGate`-класс (RBAC-матрица), новую строку в audit-матрице, `make schema` (переоткрыто Out-of-Scope — regen внутри этой стори, не 16.8g). `make gate` (после) — 3817 passed, 0 regressions, ruff чист. Status → review. |
+| 2026-08-01 | 3-агентное ревью: 0 регрессов. 1 пробел покрытия закрыт (нечисловой pk на обоих 404-путях, +2 теста). Остальные находки — false positive либо соответствуют уже принятым паттернам того же файла (division-scoping, `select_for_update()`, N+1). `make gate` — 3819 passed, 0 regressions. Status → done. |

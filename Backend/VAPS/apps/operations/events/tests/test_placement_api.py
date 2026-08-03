@@ -117,6 +117,14 @@ def test_create_draft_nonexistent_event_is_404(creator_client):
     assert resp.status_code == 404
 
 
+def test_create_draft_non_numeric_event_pk_is_404_not_500(creator_client):
+    """Review coverage gap (Acceptance Auditor): only the nonexistent-
+    numeric-pk path was pinned by a test — the isdigit() guard itself
+    (distinct from get_object_or_404's own DoesNotExist) was untested."""
+    resp = creator_client.post("/api/operations/security-events/abc/placement/draft/")
+    assert resp.status_code == 404
+
+
 def test_list_versions(creator_client):
     event, post = make_event_with_direct_assignment("OBJ-PL-4")
     creator_client.post(draft_url(event))
@@ -176,6 +184,11 @@ def test_retrieve_version_detail(creator_client):
 
 def test_retrieve_nonexistent_version_is_404(creator_client):
     resp = creator_client.get(reverse("ops-assignment-version-detail", args=[999999]))
+    assert resp.status_code == 404
+
+
+def test_retrieve_non_numeric_pk_is_404_not_500(creator_client):
+    resp = creator_client.get("/api/operations/assignment-versions/abc/")
     assert resp.status_code == 404
 
 
