@@ -12,6 +12,7 @@ import { dictionariesHandlers } from "./dictionaries-handlers";
 import { ratingsHandlers } from "./ratings-handlers";
 import { analyticsHandlers } from "./analytics-handlers";
 import { reportsHandlers } from "./reports-handlers";
+import { feedbackHandlers } from "./feedback-handlers";
 
 export function composeOpsHandlers() {
   return [
@@ -25,5 +26,6 @@ export function composeOpsHandlers() {
     ...ratingsHandlers,
     ...analyticsHandlers,
     ...reportsHandlers,
+    ...feedbackHandlers,
   ];
 }
