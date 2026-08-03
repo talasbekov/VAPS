@@ -77,9 +77,15 @@ export function Sidebar() {
     },
   ];
 
-  const filteredNavigation = navigation.filter((item) =>
-    hasPermission(item.resource, item.action)
-  );
+  // FIX: на /ops и /security-ops пользователь может быть не залогинен в хост
+  // (middleware эти пути не закрывает) — фильтр по правам оставлял верх
+  // сайдбара пустым, и старые модули «исчезали». Без host-логина показываем
+  // базовую навигацию целиком (страницы защищают себя сами); для
+  // залогиненных фильтр по ролям работает как раньше.
+  const filteredNavigation =
+    user === null
+      ? navigation
+      : navigation.filter((item) => hasPermission(item.resource, item.action));
 
   // Раздел «Охранные мероприятия» (Smart Josparlau, Этап M4) — ДОБАВКА:
   // ссылки ведут в перенесённый SPA на /ops/*, права внутри проверяет он сам
