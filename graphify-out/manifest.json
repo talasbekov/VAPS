@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785769013.5204268,
-    "ast_hash": "acf97800d3c14c2642357ea0594672a6",
+    "mtime": 1785769756.183017,
+    "ast_hash": "4abe4873d9995a5cca8f616a8f35ac48",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -19115,8 +19115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_rbac_matrix.py": {
-    "mtime": 1785768374.0495763,
-    "ast_hash": "472a573ba061508ef22337145a2b8663",
+    "mtime": 1785769225.914028,
+    "ast_hash": "405540a8ff26d2e82ad3e61fe37ea58a",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/2-10-admin-\u043f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430-django-auth-\u0432\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435.md": {
@@ -21115,8 +21115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/schema.yaml": {
-    "mtime": 1785768441.0955336,
-    "ast_hash": "dfb7cbd26089c75f4cd4b0e0092e3c70",
+    "mtime": 1785769286.0244696,
+    "ast_hash": "dd9a13062e8e8ad82a3955f5f38c96aa",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/5-10-property-\u0438\u043c\u043c\u0443\u0442\u0430\u0431\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c-\u0441\u043d\u0430\u043f\u0448\u043e\u0442\u0430.md": {
@@ -23250,8 +23250,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/events/api/views.py": {
-    "mtime": 1785768831.4780517,
-    "ast_hash": "09cb26e181852b10f1e68dc486874f3d",
+    "mtime": 1785769174.161638,
+    "ast_hash": "2f7c2967ae8171413f01079035018077",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/events/apps.py": {
@@ -24662,6 +24662,16 @@
   "_bmad-output/implementation-artifacts/16-8e-api-\u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c-\u043e\u0437\u043d\u0430\u043a\u043e\u043c\u043b\u0435\u043d\u0438\u0435.md": {
     "mtime": 1785769004.7033603,
     "ast_hash": "c1ccb8aa32c5e55268c437dd1bd43734",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/events/tests/test_assignment_version_conflicts_api.py": {
+    "mtime": 1785769563.9805722,
+    "ast_hash": "677db8cc2ac1d7320ee835cd2ee1e082",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/16-8f-api-\u043a\u043e\u043d\u0444\u043b\u0438\u043a\u0442\u044b-\u0432\u0435\u0440\u0441\u0438\u0438.md": {
+    "mtime": 1785769736.9458725,
+    "ast_hash": "2e3f86cbe5e0aeb8b49e418559c3b07a",
     "semantic_hash": ""
   }
 }
