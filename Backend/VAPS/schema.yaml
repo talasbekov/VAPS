@@ -1414,6 +1414,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/AssignmentVersionDetail'
           description: ''
+  /api/operations/assignment-versions/{id}/approve/:
+    post:
+      operationId: assignment_version_approve
+      description: Утвердить Расстановку (SUBMITTED->APPROVED, FR-26). Требует assignment.approve.
+        Идемпотентно на уже-APPROVED (чистый 200, не ошибка); 422 INVALID_LIFECYCLE_TRANSITION
+        из любого другого статуса; 409 SOFT_CONFLICT_DETECTED (overridable) при непросмотренных
+        конфликтах без override=true+override_reason.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveVersionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ApproveVersionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ApproveVersionRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentVersionDetail'
+          description: ''
   /api/operations/assignment-versions/{id}/return/:
     post:
       operationId: assignment_version_return
@@ -2830,6 +2863,21 @@ paths:
           description: No response body
 components:
   schemas:
+    ApproveVersionRequest:
+      type: object
+      description: |-
+        Story 16.8d: optional request body for `POST .../approve` —
+        literal copy of `apps.operations.statuses.api.serializers.
+        BulkStatusCreateSerializer`'s `override`/`override_reason` fields
+        (10.2a). No `default=` deliberately (same rationale as that
+        serializer): openapi-typescript treats a `default=`'d field as
+        always-present in the generated TS type, `required=False` reads as
+        optional — matches the field actually being optional here.
+      properties:
+        override:
+          type: boolean
+        override_reason:
+          type: string
     AssignmentVersion:
       type: object
       properties:

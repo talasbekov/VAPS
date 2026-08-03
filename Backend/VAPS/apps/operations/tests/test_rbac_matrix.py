@@ -256,6 +256,9 @@ MATRIX = {
     # Story 16.8c: return (SUBMITTED->RETURNED + new DRAFT), thin wrapper
     # over the NOT-idempotent return_assignment_version() (16.4).
     "ops-assignment-version-return": _Gate("assignment.return"),
+    # Story 16.8d: approve (SUBMITTED->APPROVED), thin wrapper over the
+    # idempotent approve_assignment_version() (16.4).
+    "ops-assignment-version-approve": _Gate("assignment.approve"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

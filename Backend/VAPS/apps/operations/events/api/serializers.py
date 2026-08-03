@@ -194,6 +194,19 @@ class ReturnVersionSerializer(serializers.Serializer):
     reason = serializers.CharField()
 
 
+class ApproveVersionSerializer(serializers.Serializer):
+    """Story 16.8d: optional request body for `POST .../approve` —
+    literal copy of `apps.operations.statuses.api.serializers.
+    BulkStatusCreateSerializer`'s `override`/`override_reason` fields
+    (10.2a). No `default=` deliberately (same rationale as that
+    serializer): openapi-typescript treats a `default=`'d field as
+    always-present in the generated TS type, `required=False` reads as
+    optional — matches the field actually being optional here."""
+
+    override = serializers.BooleanField(required=False)
+    override_reason = serializers.CharField(required=False, allow_blank=True)
+
+
 class AssignmentVersionReturnResponseSerializer(AssignmentVersionDetailSerializer):
     """Story 16.8c: `AssignmentVersionDetailSerializer` (the returned/old
     version) plus `new_draft_version` — the actual response shape returned

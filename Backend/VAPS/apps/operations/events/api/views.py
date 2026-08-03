@@ -31,6 +31,7 @@ from apps.audit.services import record
 from apps.operations.api.permissions import require_permission
 from apps.operations.events.api.serializers import (
     AllocateForceRequestSerializer,
+    ApproveVersionSerializer,
     AssignmentVersionDetailSerializer,
     AssignmentVersionReturnResponseSerializer,
     AssignmentVersionSerializer,
@@ -54,6 +55,7 @@ from apps.operations.events.models import (
 )
 from apps.operations.events.services import (
     allocate_force_request,
+    approve_assignment_version,
     approve_staffing_demand,
     confirm_recon,
     form_draft_placement,
@@ -628,3 +630,27 @@ class AssignmentVersionViewSet(viewsets.ViewSet):
         data = AssignmentVersionDetailSerializer(returned_version).data
         data["new_draft_version"] = AssignmentVersionSerializer(new_version).data
         return Response(data)
+
+    @extend_schema(
+        operation_id="assignment_version_approve",
+        request=ApproveVersionSerializer,
+        responses={200: AssignmentVersionDetailSerializer},
+        description="Утвердить Расстановку (SUBMITTED->APPROVED, FR-26). "
+        "Требует assignment.approve. Идемпотентно на уже-APPROVED (чистый "
+        "200, не ошибка); 422 INVALID_LIFECYCLE_TRANSITION из любого "
+        "другого статуса; 409 SOFT_CONFLICT_DETECTED (overridable) при "
+        "непросмотренных конфликтах без override=true+override_reason.",
+    )
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None, *args, **kwargs):
+        require_permission(request, "assignment.approve")
+        form = ApproveVersionSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        version = _get_assignment_version_or_404(pk)
+        version = approve_assignment_version(
+            version,
+            actor=request.actor_id,
+            override=form.validated_data.get("override", False),
+            override_reason=form.validated_data.get("override_reason", ""),
+        )
+        return Response(AssignmentVersionDetailSerializer(version).data)
