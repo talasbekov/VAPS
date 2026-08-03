@@ -88,7 +88,15 @@ export const placementHandlers = [
       status: 'DRAFT',
       version: version.version + 1,
       is_current: true,
-      assignments: version.assignments.map((a) => ({ ...a })),
+      // Real backend bulk_creates new rows carrying only version/employee_id/
+      // post_id (services.py) — conflict/ack state resets, never copied.
+      assignments: version.assignments.map((a) => ({
+        ...a,
+        conflict_severity: '' as const,
+        conflict_codes: [],
+        acknowledged_at: null,
+        ack_escalated_at: null,
+      })),
     }
     ASSIGNMENT_VERSIONS.push(newDraft)
     return HttpResponse.json({ ...version, new_draft_version: newDraft })

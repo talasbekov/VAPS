@@ -4,7 +4,7 @@ baseline_commit: 5b8f177
 
 # Story 16.8h1: Frontend — API client для Расстановки
 
-Status: review
+Status: done
 
 ## Story
 
@@ -85,9 +85,14 @@ Claude Sonnet 5
 - `frontend/src/features/placement/mocks/handlers.ts` (new)
 - `frontend/src/app/mocks/compose-handlers.ts` (modified — регистрация `placementHandlers`)
 
+**После ревью:**
+- `frontend/src/features/placement/mocks/handlers.ts` (modified — `return`-хендлер сбрасывает conflict/ack-поля на новом драфте)
+- `frontend/src/features/placement/api/queries.test.tsx` (modified — 2 новых теста + инвалидация-ассерты в 2 существующих)
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-03 | Story создана (create-story). Часть 1/8 расщепления 16.8h — фундамент (API client), без UI. |
 | 2026-08-03 | Dev-story: `queries.ts` + MSW-мок. 7 новых тестов. `npm run gate` — 1054 passed, 0 regressions, build/size-gate ok. Status → review. |
+| 2026-08-03 | 3-agent ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Edge Case Hunter (independently confirmed, High): mock's `return`-хендлер копировал `conflict_severity`/`acknowledged_at` на новый драфт, реальный бэк их сбрасывает (`bulk_create` только `version`/`employee_id`/`post_id`) — исправлено. Acceptance Auditor + Edge Case Hunter независимо совпали: `useCreatePlacementDraft` не имел тестов вовсе, инвалидация кэша нигде не ассертилась (только успех запроса) — добавлены 2 новых теста + `getQueryState(...).isInvalidated`-ассерты в `submit`/`acknowledge`. Blind Hunter's "list strips assignments — silent type lie" — ложное срабатывание: реальная схема (`AssignmentVersion` vs `AssignmentVersionDetail`) подтверждает список НЕ несёт `assignments` — мок корректен. Остальные находки — вне объёма (нет UI-потребителя ещё) или совпадают с существующей конвенцией `duty-plans`. `npm run gate` повторно — 1056 passed, 0 regressions, tsc/eslint чисты. Status → done. |

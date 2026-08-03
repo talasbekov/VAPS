@@ -11,9 +11,11 @@ import { server } from '../../../shared/api/testing/server'
 import { ConflictError } from '../../../shared/api/errors'
 import { ToastProvider } from '../../../shared/ui/toast'
 import {
+  assignmentVersionKeys,
   useAssignmentVersions,
   useAssignmentVersion,
   useAssignmentVersionConflicts,
+  useCreatePlacementDraft,
   useSubmitAssignmentVersion,
   useReturnAssignmentVersion,
   useApproveAssignmentVersion,
@@ -26,13 +28,14 @@ function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return function Wrapper({ children }: { children: ReactNode }) {
+  const Wrapper = function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
         <ToastProvider>{children}</ToastProvider>
       </QueryClientProvider>
     )
   }
+  return { Wrapper, queryClient }
 }
 
 describe('useAssignmentVersions/useAssignmentVersion/useAssignmentVersionConflicts', () => {
@@ -42,7 +45,8 @@ describe('useAssignmentVersions/useAssignmentVersion/useAssignmentVersionConflic
         HttpResponse.json({ count: 1, next: null, previous: null, results: [{ id: 1 }] }),
       ),
     )
-    const { result } = renderHook(() => useAssignmentVersions(), { wrapper: createWrapper() })
+    const { Wrapper } = createWrapper()
+    const { result } = renderHook(() => useAssignmentVersions(), { wrapper: Wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data?.results).toHaveLength(1)
   })
@@ -53,7 +57,8 @@ describe('useAssignmentVersions/useAssignmentVersion/useAssignmentVersionConflic
         HttpResponse.json({ id: 7, status: 'DRAFT', assignments: [] }),
       ),
     )
-    const { result } = renderHook(() => useAssignmentVersion('7'), { wrapper: createWrapper() })
+    const { Wrapper } = createWrapper()
+    const { result } = renderHook(() => useAssignmentVersion('7'), { wrapper: Wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data?.id).toBe(7)
   })
@@ -64,27 +69,82 @@ describe('useAssignmentVersions/useAssignmentVersion/useAssignmentVersionConflic
         HttpResponse.json([{ id: 1, conflict_severity: 'SOFT' }]),
       ),
     )
+    const { Wrapper } = createWrapper()
     const { result } = renderHook(() => useAssignmentVersionConflicts('7'), {
-      wrapper: createWrapper(),
+      wrapper: Wrapper,
     })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(Array.isArray(result.current.data)).toBe(true)
   })
 })
 
+describe('useCreatePlacementDraft', () => {
+  it('POSTs to placement/draft and invalidates the versions list cache', async () => {
+    server.use(
+      http.post('*/api/operations/security-events/9/placement/draft/', () =>
+        HttpResponse.json({ id: 42, event: 9, status: 'DRAFT' }, { status: 201 }),
+      ),
+    )
+    const { Wrapper, queryClient } = createWrapper()
+    queryClient.setQueryData(assignmentVersionKeys.lists(), {
+      count: 0,
+      results: [],
+    })
+    const { result } = renderHook(() => useCreatePlacementDraft(9), { wrapper: Wrapper })
+
+    act(() => result.current.mutate({}))
+    await waitFor(() => expect(result.current.isPending).toBe(false))
+
+    expect(result.current.error).toBeNull()
+    expect(
+      queryClient.getQueryState(assignmentVersionKeys.lists())?.isInvalidated,
+    ).toBe(true)
+  })
+
+  it('surfaces 409 PLACEMENT_DRAFT_ALREADY_EXISTS as a plain error', async () => {
+    server.use(
+      http.post('*/api/operations/security-events/9/placement/draft/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'PLACEMENT_DRAFT_ALREADY_EXISTS',
+            message: 'Уже есть текущая версия.',
+            details: {},
+            request_id: null,
+            timestamp: new Date().toISOString(),
+          },
+          { status: 409 },
+        ),
+      ),
+    )
+    const { Wrapper } = createWrapper()
+    const { result } = renderHook(() => useCreatePlacementDraft(9), { wrapper: Wrapper })
+
+    act(() => result.current.mutate({}))
+    await waitFor(() => expect(result.current.error).not.toBeNull())
+
+    // Non-overridable 409 → plain mutation.error, not the conflict channel.
+    expect(result.current.conflict).toBeNull()
+  })
+})
+
 describe('useSubmitAssignmentVersion', () => {
-  it('POSTs to submit and caches the response as the detail', async () => {
+  it('POSTs to submit and seeds the detail cache with the response', async () => {
     server.use(
       http.post('*/api/operations/assignment-versions/7/submit/', () =>
         HttpResponse.json({ id: 7, status: 'SUBMITTED' }),
       ),
     )
+    const { Wrapper, queryClient } = createWrapper()
     const { result } = renderHook(() => useSubmitAssignmentVersion('7'), {
-      wrapper: createWrapper(),
+      wrapper: Wrapper,
     })
     act(() => result.current.mutate({}))
     await waitFor(() => expect(result.current.isPending).toBe(false))
     expect(result.current.error).toBeNull()
+    expect(queryClient.getQueryData(assignmentVersionKeys.detail('7'))).toEqual({
+      id: 7,
+      status: 'SUBMITTED',
+    })
   })
 })
 
@@ -101,8 +161,9 @@ describe('useReturnAssignmentVersion', () => {
         })
       }),
     )
+    const { Wrapper } = createWrapper()
     const { result } = renderHook(() => useReturnAssignmentVersion('7'), {
-      wrapper: createWrapper(),
+      wrapper: Wrapper,
     })
     act(() => result.current.mutate({ reason: 'Проверить состав' }))
     await waitFor(() => expect(result.current.isPending).toBe(false))
@@ -126,8 +187,9 @@ describe('useApproveAssignmentVersion', () => {
         ),
       ),
     )
+    const { Wrapper } = createWrapper()
     const { result } = renderHook(() => useApproveAssignmentVersion('7'), {
-      wrapper: createWrapper(),
+      wrapper: Wrapper,
     })
     act(() => result.current.mutate({}))
     await waitFor(() => expect(result.current.conflict).toBeInstanceOf(ConflictError))
@@ -135,17 +197,22 @@ describe('useApproveAssignmentVersion', () => {
 })
 
 describe('useAcknowledgePlacementAssignment', () => {
-  it('POSTs to acknowledge', async () => {
+  it('POSTs to acknowledge and invalidates the parent version detail', async () => {
     server.use(
       http.post('*/api/operations/placement-assignments/3/acknowledge/', () =>
         HttpResponse.json({ id: 3, acknowledged_at: '2026-08-03T10:00:00Z' }),
       ),
     )
+    const { Wrapper, queryClient } = createWrapper()
+    queryClient.setQueryData(assignmentVersionKeys.detail('7'), { id: 7, status: 'APPROVED' })
     const { result } = renderHook(() => useAcknowledgePlacementAssignment('3', '7'), {
-      wrapper: createWrapper(),
+      wrapper: Wrapper,
     })
     act(() => result.current.mutate({}))
     await waitFor(() => expect(result.current.isPending).toBe(false))
     expect(result.current.error).toBeNull()
+    expect(queryClient.getQueryState(assignmentVersionKeys.detail('7'))?.isInvalidated).toBe(
+      true,
+    )
   })
 })
