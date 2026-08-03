@@ -5,7 +5,13 @@
 import { identityHandlers } from "./identity";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
+import { dutiesHandlers } from "./duties-handlers";
 
 export function composeOpsHandlers() {
-  return [...identityHandlers, ...objectsHandlers, ...securityEventsHandlers];
+  return [
+    ...identityHandlers,
+    ...objectsHandlers,
+    ...securityEventsHandlers,
+    ...dutiesHandlers,
+  ];
 }
