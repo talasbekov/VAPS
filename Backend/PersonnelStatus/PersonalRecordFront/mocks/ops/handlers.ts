@@ -13,6 +13,7 @@ import { ratingsHandlers } from "./ratings-handlers";
 import { analyticsHandlers } from "./analytics-handlers";
 import { reportsHandlers } from "./reports-handlers";
 import { feedbackHandlers } from "./feedback-handlers";
+import { dailyHandlers } from "./daily-handlers";
 
 export function composeOpsHandlers() {
   return [
@@ -27,5 +28,6 @@ export function composeOpsHandlers() {
     ...analyticsHandlers,
     ...reportsHandlers,
     ...feedbackHandlers,
+    ...dailyHandlers,
   ];
 }
