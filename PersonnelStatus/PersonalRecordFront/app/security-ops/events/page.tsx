@@ -1,0 +1,246 @@
+"use client";
+
+// Реестр ОМ: поиск, фильтр по этапу, таблица, создание. Фильтры — в URL
+// (обновление страницы не сбрасывает фильтр, ссылкой можно поделиться).
+import { useState } from "react";
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { DashboardLayout } from "@/components/dashboard-layout";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ClipboardList } from "lucide-react";
+import { useSecurityEvents } from "@/hooks/use-security-events";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { CreateSecurityEventDialog } from "@/features/create-security-event";
+import {
+  SECURITY_EVENT_STAGES,
+  STAGE_LABEL,
+  StageBadge,
+} from "@/entities/security-event";
+import type {
+  ListSecurityEventsParams,
+  SecurityEvent,
+  SecurityEventStage,
+} from "@/entities/security-event";
+
+const PAGE_SIZE = 20;
+
+function isStage(value: string | null): value is SecurityEventStage {
+  return (SECURITY_EVENT_STAGES as readonly string[]).includes(value ?? "");
+}
+
+export default function SecurityEventsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+
+  const stageParam = searchParams.get("stage");
+  const params: ListSecurityEventsParams = {
+    search: searchParams.get("search") ?? "",
+    stage: isStage(stageParam) ? stageParam : "ALL",
+    page: Number(searchParams.get("page") ?? "1") || 1,
+    pageSize: PAGE_SIZE,
+  };
+
+  const query = useSecurityEvents(params);
+
+  function updateParam(key: string, value: string): void {
+    const next = new URLSearchParams(searchParams);
+    if (value === "") next.delete(key);
+    else next.set(key, value);
+    next.delete("page"); // фильтр меняется — начинаем с первой страницы
+    const qs = next.toString();
+    router.replace(qs === "" ? pathname : `${pathname}?${qs}`, { scroll: false });
+  }
+
+  if (!permissionsLoading && !hasPermission("ops.security_event.view")) {
+    return (
+      <DashboardLayout>
+        <Card>
+          <CardContent className="p-9 text-center text-sm text-muted-foreground">
+            Недостаточно прав для просмотра реестра ОМ.
+          </CardContent>
+        </Card>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-4">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <ClipboardList className="h-8 w-8 text-primary" />
+            <div>
+              <h1 className="text-2xl font-bold">Реестр ОМ</h1>
+              <p className="text-muted-foreground">
+                Полный цикл: от бюллетеня и рекогносцировки до закрытия и архива
+              </p>
+            </div>
+          </div>
+          <Button onClick={() => setDialogOpen(true)}>+ Создать ОМ</Button>
+        </header>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            className="min-w-56 flex-1"
+            placeholder="Поиск по названию, объекту или ответственному"
+            value={params.search}
+            onChange={(e) => updateParam("search", e.target.value)}
+          />
+          <select
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            aria-label="Этап"
+            value={params.stage}
+            onChange={(e) =>
+              updateParam("stage", e.target.value === "ALL" ? "" : e.target.value)
+            }
+          >
+            <option value="ALL">Все этапы</option>
+            {SECURITY_EVENT_STAGES.map((stage) => (
+              <option key={stage} value={stage}>
+                {STAGE_LABEL[stage]}
+              </option>
+            ))}
+          </select>
+          {(params.search !== "" || params.stage !== "ALL") && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.replace(pathname, { scroll: false })}
+            >
+              Сбросить фильтры
+            </Button>
+          )}
+        </div>
+
+        <ResultsTable
+          isLoading={query.isLoading}
+          isError={query.isError}
+          events={query.data?.results ?? []}
+          isEmpty={query.data !== undefined && query.data.results.length === 0}
+        />
+
+        <CreateSecurityEventDialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+        />
+      </div>
+    </DashboardLayout>
+  );
+}
+
+function ResultsTable({
+  isLoading,
+  isError,
+  events,
+  isEmpty,
+}: {
+  isLoading: boolean;
+  isError: boolean;
+  events: SecurityEvent[];
+  isEmpty: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-9 text-center text-sm text-muted-foreground">
+          Загрузка реестра…
+        </CardContent>
+      </Card>
+    );
+  }
+  if (isError) {
+    return (
+      <Card>
+        <CardContent className="p-9 text-center text-sm text-destructive">
+          Не удалось загрузить реестр ОМ. Попробуйте обновить страницу.
+        </CardContent>
+      </Card>
+    );
+  }
+  if (isEmpty) {
+    return (
+      <Card>
+        <CardContent className="p-9 text-center text-sm text-muted-foreground">
+          Мероприятия не найдены
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <Th>ОМ</Th>
+            <Th>Дата и объект</Th>
+            <Th>Этап</Th>
+            <Th>Готовность</Th>
+            <Th>Потребность</Th>
+            <Th>Конфликты</Th>
+            <Th>Ответственный</Th>
+            <Th>
+              <span className="sr-only">Действия</span>
+            </Th>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {events.map((event) => (
+            <TableRow key={event.id}>
+              <TableCell>
+                <Link href={`/security-ops/events/${event.id}`} className="block">
+                  <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800">
+                    {event.code}
+                  </span>
+                  <span className="mt-1 block font-semibold">{event.title}</span>
+                </Link>
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {event.businessDate} · {event.objectName}
+              </TableCell>
+              <TableCell>
+                <StageBadge stage={event.stage} />
+              </TableCell>
+              <TableCell className="tabular-nums">
+                {event.readinessPercent}%
+              </TableCell>
+              <TableCell className="tabular-nums">{event.forceNeed}</TableCell>
+              <TableCell>
+                <span
+                  className={
+                    event.conflictsCount > 0
+                      ? "inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800"
+                      : "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-800"
+                  }
+                >
+                  {event.conflictsCount}
+                </span>
+              </TableCell>
+              <TableCell>{event.ownerName}</TableCell>
+              <TableCell className="text-center text-muted-foreground">
+                <Link href={`/security-ops/events/${event.id}`}>›</Link>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
+  );
+}
+
+function Th({ children }: { children?: ReactNode }) {
+  return <TableHead>{children}</TableHead>;
+}
