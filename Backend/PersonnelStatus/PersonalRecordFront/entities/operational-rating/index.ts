@@ -119,6 +119,15 @@ export type RatingNotificationCode =
   | "EVALUATION_SUBMITTED"
   | "EVALUATION_CORRECTED";
 
+/** §19.28: фиксированный словарь формулировок — текст подставляется ПО КОДУ,
+ * подстановок в формулировках нет вовсе. Общий для секции уведомлений и
+ * колокольчика раздела. */
+export const RATING_NOTIFICATION_TEXT: Record<RatingNotificationCode, string> = {
+  EVALUATION_AVAILABLE: "Вам доступно итоговое оценивание мероприятия",
+  EVALUATION_SUBMITTED: "Оценивание успешно отправлено",
+  EVALUATION_CORRECTED: "Оценка была исправлена уполномоченным пользователем",
+};
+
 export type RatingExportScope = "AGGREGATE" | "INDIVIDUAL";
 /** XLSX/PDF не собираются в сборке — причина едет клиенту, а не молчит. */
 export type RatingExportFormat = "CSV";

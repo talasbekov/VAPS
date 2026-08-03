@@ -1,11 +1,14 @@
 "use client";
 
 // Layout сегмента /security-ops: поднимает host-MSW ДО рендера страниц
-// (иначе первые запросы TanStack Query уйдут в сеть до готовности перехвата)
-// и монтирует Toaster для канала 5xx-тостов use-ops-mutation.
+// (иначе первые запросы TanStack Query уйдут в сеть до готовности перехвата),
+// монтирует Toaster для канала 5xx-тостов use-ops-mutation, запускает
+// транспорт уведомлений и колокольчик раздела.
 // DashboardLayout страницы оборачивают сами — по конвенции остальных страниц.
 import { useEffect, useState, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/toaster";
+import { OpsNotificationBell } from "@/features/ops-notifications/notification-bell";
+import { startOpsWs, stopOpsWs } from "@/lib/ops-ws";
 
 export default function SecurityOpsLayout({
   children,
@@ -28,6 +31,16 @@ export default function SecurityOpsLayout({
     };
   }, []);
 
+  useEffect(() => {
+    // Транспорт стартует ПОСЛЕ готовности мок-слоя: его REST-инвалидации
+    // должны попадать в перехват. start/stop идемпотентны (StrictMode).
+    if (!ready) return;
+    startOpsWs();
+    return () => {
+      stopOpsWs();
+    };
+  }, [ready]);
+
   if (!ready) {
     return (
       <div className="flex h-screen items-center justify-center text-muted-foreground">
@@ -40,6 +53,7 @@ export default function SecurityOpsLayout({
     <>
       {children}
       <Toaster />
+      <OpsNotificationBell />
     </>
   );
 }
