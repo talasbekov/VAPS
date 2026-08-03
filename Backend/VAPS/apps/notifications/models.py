@@ -54,6 +54,13 @@ class Notification(TimeStampedModel):
             "TEMP_PERMISSION_EXPIRED",
             "Временное полномочие истекло",
         )
+        # Story 16.6a, FR-27: fired once per (recipient, business_date) on
+        # AssignmentVersion's real SUBMITTED->APPROVED transition —
+        # recipient is either an assigned PlacementAssignment.employee_id
+        # or the event's senior_employee_id, resolved to a user_id via
+        # CoreEmployeeSelector.user_ids_for() (docs/registries/
+        # ws-message-types.yaml::ASSIGNMENT_APPROVED).
+        ASSIGNMENT_APPROVED = "ASSIGNMENT_APPROVED", "Расстановка утверждена"
 
     recipient = models.CharField(max_length=100)
     kind = models.CharField(max_length=50, choices=Kind.choices)
@@ -105,6 +112,7 @@ class Notification(TimeStampedModel):
                         "GROUP_FORCE_REQUEST_ESCALATED",
                         "TEMP_PERMISSION_ACTIVE",
                         "TEMP_PERMISSION_EXPIRED",
+                        "ASSIGNMENT_APPROVED",
                     ]
                 ),
                 name="chk_notification_kind",

@@ -13,6 +13,7 @@ from apps.core.models import (
     EmployeeOperationalProfile,
     Position,
     Rank,
+    UserEmployeeBinding,
 )
 from apps.core.sorting import (
     UNKNOWN_LEVEL,
@@ -267,6 +268,26 @@ class CoreEmployeeSelector:
                 ),
             }
         return result
+
+    @staticmethod
+    def user_ids_for(employee_ids) -> dict:
+        """employee_id -> user_id, for Story 16.6a's notification bridge
+        (`notify()`'s `recipient` is a flat external-auth actor id, never
+        an `Employee` UUID). Single bulk query on `UserEmployeeBinding`
+        (`BR-ACCOUNT-001`) — the model already exists (never read
+        cross-context before this story).
+
+        An employee with no bound account (no `UserEmployeeBinding` row —
+        not every `Employee` has a login yet) is simply ABSENT from the
+        result dict — "nobody to notify", not an error, same "no data =
+        skip" convention `operational_profile_for()`/16.3b-d already
+        establish.
+        """
+        return dict(
+            UserEmployeeBinding.objects.filter(
+                employee_id__in=employee_ids
+            ).values_list("employee_id", "user_id")
+        )
 
     @staticmethod
     def working_by_division(division_ids=None) -> dict:

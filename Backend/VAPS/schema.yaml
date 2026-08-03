@@ -4196,6 +4196,7 @@ components:
       - GROUP_FORCE_REQUEST_ESCALATED
       - TEMP_PERMISSION_ACTIVE
       - TEMP_PERMISSION_EXPIRED
+      - ASSIGNMENT_APPROVED
       type: string
       description: |-
         * `SUBMISSION_LAGGING` - Отставание по сдаче
@@ -4204,6 +4205,7 @@ components:
         * `GROUP_FORCE_REQUEST_ESCALATED` - Эскалация неотработанного запроса
         * `TEMP_PERMISSION_ACTIVE` - Временное полномочие активно
         * `TEMP_PERMISSION_EXPIRED` - Временное полномочие истекло
+        * `ASSIGNMENT_APPROVED` - Расстановка утверждена
     MyPermissionsResponse:
       type: object
       properties:

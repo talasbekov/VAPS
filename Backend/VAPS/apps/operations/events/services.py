@@ -1023,6 +1023,46 @@ def project_placement_assignment(assignment, event):
     )
 
 
+def _notify_assignment_approved(version):
+    """Story 16.6a (FR-27): fire `Notification.Kind.ASSIGNMENT_APPROVED`
+    for every assigned participant and the event's senior, on
+    `approve_assignment_version()`'s real transition (called alongside
+    16.5's `project_placement_assignment()` loop, same conditions).
+
+    `notify()`'s `recipient` is a flat external-auth actor id, never an
+    `Employee` UUID — `CoreEmployeeSelector.user_ids_for()` bridges
+    `PlacementAssignment.employee_id`/`SecurityEvent.senior_employee_id`
+    to a `recipient` string via `UserEmployeeBinding`. An employee with no
+    bound account is simply absent from that dict — no notification for
+    them, not an error (same "no data = skip" convention this whole
+    domain already establishes).
+
+    One `notify()` call per UNIQUE recipient (a `set`, not a loop over
+    `PlacementAssignment` rows) — an employee assigned to 2+ posts in this
+    version (16.3b's intra-version duplicate) gets exactly one
+    notification, matching `notify()`'s own `(recipient, kind,
+    business_date)` "one per day" contract rather than relying on it to
+    silently dedupe repeat calls.
+    """
+    employee_ids = set(version.assignments.values_list("employee_id", flat=True))
+    event = version.event
+    if event.senior_employee_id:
+        employee_ids.add(event.senior_employee_id)
+    if not employee_ids:
+        return
+
+    user_ids = CoreEmployeeSelector.user_ids_for(employee_ids)
+    business_date = Clock.today_local()
+    payload = {"event_id": event.pk, "version_id": version.pk}
+    for user_id in set(user_ids.values()):
+        notify(
+            recipient=user_id,
+            kind=Notification.Kind.ASSIGNMENT_APPROVED,
+            business_date=business_date,
+            payload=payload,
+        )
+
+
 def approve_assignment_version(version, *, actor, override=False, override_reason=""):
     """Story 16.4 (FR-26): `SUBMITTED`->`APPROVED`, single approver
     (literal reuse of `approve_duty_plan()`'s idempotent single-actor
@@ -1057,6 +1097,9 @@ def approve_assignment_version(version, *, actor, override=False, override_reaso
     Story 16.5: also projects `EVENT_ASSIGNMENT` `EmployeeStatus` rows for
     every participant on this REAL transition — see
     `project_placement_assignment()`'s own docstring.
+
+    Story 16.6a: also notifies assigned employees + event senior — see
+    `_notify_assignment_approved()`'s own docstring.
     """
     if not (actor or "").strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
@@ -1103,6 +1146,10 @@ def approve_assignment_version(version, *, actor, override=False, override_reaso
         # this point for an already-APPROVED version).
         for assignment in version.assignments.all():
             project_placement_assignment(assignment, version.event)
+
+        # Story 16.6a: notify assigned employees + event senior — same
+        # real-transition-only condition as the projection loop above.
+        _notify_assignment_approved(version)
 
         version.status = AssignmentVersion.Status.APPROVED
         version.signature_hash = signature_hash
