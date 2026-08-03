@@ -4,7 +4,7 @@ baseline_commit: 26e3c13
 
 # Story 16.8f: API — конфликты версии
 
-Status: review
+Status: done
 
 ## Story
 
@@ -80,9 +80,13 @@ Claude Sonnet 5
 - `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — 1 новая строка MATRIX)
 - `Backend/VAPS/schema.yaml` (regenerated — `make schema`, новый эндпоинт)
 
+**После ревью:**
+- `Backend/VAPS/apps/operations/events/tests/test_assignment_version_conflicts_api.py` (modified — 2 новых теста)
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-03 | Story создана (create-story). Часть 6/9 расщепления Story 16.8. GET-действие на `AssignmentVersionViewSet` (не новый ресурс) — тонкая обёртка над `detect_placement_conflicts()` (16.3b-d), READ+RECOMPUTE (сервис сам пишет в БД на каждый вызов — существующее поведение, не изобретается здесь), фильтр на ТОЛЬКО конфликтующие строки (отличие от `retrieve`'s полного списка). Ultimate context engine analysis completed - comprehensive developer guide created. |
 | 2026-08-03 | Dev-story: `conflicts`-действие. 6 новых тестов, включая доказательство свежего пересчёта. `make gate` — 3913 passed, 0 regressions, ruff чист, `make schema`. Status → review. |
+| 2026-08-03 | 3-agent ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Acceptance Auditor: 0 расхождений, AC-6's audit-исключение подтверждено чтением `test_audit_coverage.py`'s собственной логики (`_served_mutating()`'s `_WRITE_METHODS`-фильтр), не просто доверием тексту стори. Edge Case Hunter нашёл 2 реальных пробела: обратное направление "конфликт→чисто" (тестировался только "чисто→конфликт") и форма ответа (plain list, не paginated-конверт `list`'а) — добавлены `test_conflicts_clears_when_resolved` и `test_conflicts_is_plain_unpaginated_list`. Blind Hunter's находки (GET-триггерит-запись, нет транзакции/лока, permission-scope) — все про НЕИЗМЕНЁННОЕ поведение `detect_placement_conflicts()` (16.3b-d), уже идентично используемое внутри `approve` (16.8d) — вне объёма тонкой HTTP-обёртки. `make gate` повторно — 3915 passed, 0 regressions, ruff чист, миграций нет. Status → done. |

@@ -125,6 +125,52 @@ def test_conflicts_empty_when_no_conflict(creator_client, submitter_client):
     assert resp.data == []
 
 
+def test_conflicts_is_plain_unpaginated_list(creator_client, submitter_client):
+    """Distinct from list's paginated {count, next, previous, results}
+    envelope — a future accidental pagination-wrap would silently break
+    consumers expecting a bare array."""
+    version = make_submitted_version(creator_client, submitter_client, "OBJ-CONF-2B")
+
+    resp = submitter_client.get(conflicts_url(version))
+
+    assert isinstance(resp.data, list)
+    assert "results" not in resp.data
+
+
+def test_conflicts_clears_when_resolved(creator_client, submitter_client):
+    """Reverse direction of test_conflicts_reflects_fresh_recompute: a row
+    that WAS conflicting must disappear from the response once the
+    underlying overlap is resolved — not remain stuck from a stale
+    snapshot."""
+    employee_id = uuid.uuid4()
+    now = timezone.now()
+    version_a = make_submitted_version(
+        creator_client,
+        submitter_client,
+        "OBJ-CONF-2C-A",
+        employee_id,
+        now,
+        now + datetime.timedelta(hours=8),
+    )
+    version_b = make_submitted_version(
+        creator_client,
+        submitter_client,
+        "OBJ-CONF-2C-B",
+        employee_id,
+        now + datetime.timedelta(hours=4),
+        now + datetime.timedelta(hours=12),
+    )
+    first = submitter_client.get(conflicts_url(version_a))
+    assert len(first.data) == 1
+
+    version_b.event.starts_at = now + datetime.timedelta(hours=20)
+    version_b.event.ends_at = now + datetime.timedelta(hours=24)
+    version_b.event.save(update_fields=["starts_at", "ends_at"])
+    second = submitter_client.get(conflicts_url(version_a))
+
+    assert second.data == []
+
+
 def test_conflicts_reflects_fresh_recompute(creator_client, submitter_client):
     employee_id = uuid.uuid4()
     now = timezone.now()
