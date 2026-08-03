@@ -4198,6 +4198,7 @@ components:
       - TEMP_PERMISSION_EXPIRED
       - ASSIGNMENT_APPROVED
       - ACK_MISSING_ESCALATION
+      - ACK_REQUIRED
       type: string
       description: |-
         * `SUBMISSION_LAGGING` - Отставание по сдаче
@@ -4208,6 +4209,7 @@ components:
         * `TEMP_PERMISSION_EXPIRED` - Временное полномочие истекло
         * `ASSIGNMENT_APPROVED` - Расстановка утверждена
         * `ACK_MISSING_ESCALATION` - Ознакомление не получено — эскалация
+        * `ACK_REQUIRED` - Требуется ознакомление
     MyPermissionsResponse:
       type: object
       properties:

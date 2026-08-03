@@ -1346,3 +1346,72 @@ def escalate_missing_acknowledgements():
             },
         )
     return stale
+
+
+def send_ack_reminders():
+    """Story 16.6e (FR-27): remind the ASSIGNED EMPLOYEE themselves (not
+    the senior — that's `escalate_missing_acknowledgements()`, 16.6c) to
+    acknowledge, while `acknowledged_at` stays null and the event is
+    within `VAPS_ACK_REMINDER_DAYS_BEFORE_EVENT` days of starting.
+
+    Deliberately narrowed from `ws-message-types.yaml::ACK_REQUIRED`'s
+    literal "every 2h until ack" cadence to "once per business_date" —
+    `notify()`'s own `(recipient, kind, business_date)` contract IS the
+    recurrence mechanism here: a fresh `business_date` on the NEXT day's
+    batch run naturally re-fires the reminder for a still-unacknowledged
+    row, with NO watermark field needed (unlike `ack_escalated_at`,
+    16.6c's one-time escalation fact — a permanent flag here would
+    silently kill the reminder after its first day, defeating "until
+    ack"). Independent of 16.6c's escalation: a row with
+    `ack_escalated_at` already set still gets reminded here if still
+    unacknowledged.
+
+    One `notify()` call per UNIQUE recipient (same set-based dedup as
+    16.6a's `_notify_assignment_approved()`) — an employee with 2+
+    unacknowledged assignments gets exactly one reminder per day.
+
+    Beat-ready, NOT Celery — same split as `escalate_stale_force_
+    requests()`/`escalate_missing_acknowledgements()`.
+
+    Returns the list of `PlacementAssignment` rows a reminder was
+    computed for (regardless of whether a recipient was resolvable).
+    """
+    now = Clock.now()
+    threshold = now + datetime.timedelta(
+        days=settings.VAPS_ACK_REMINDER_DAYS_BEFORE_EVENT
+    )
+    pending = list(
+        PlacementAssignment.objects.filter(
+            version__status=AssignmentVersion.Status.APPROVED,
+            version__is_current=True,
+            acknowledged_at__isnull=True,
+            version__event__starts_at__isnull=False,
+            version__event__starts_at__gt=now,
+            version__event__starts_at__lte=threshold,
+        )
+    )
+    if not pending:
+        return []
+
+    employee_ids = {a.employee_id for a in pending}
+    user_ids = CoreEmployeeSelector.user_ids_for(employee_ids)
+
+    today = Clock.today_local()
+    with transaction.atomic():
+        for recipient in set(user_ids.values()):
+            notify(
+                recipient=recipient,
+                kind=Notification.Kind.ACK_REQUIRED,
+                business_date=today,
+                payload={},
+            )
+        record(
+            actor="SYSTEM",
+            action="PLACEMENT_ACK_REMINDER_SENT",
+            entity_type="placement_assignment",
+            entity_id=uuid.UUID(int=0),
+            new_value={
+                "reminded_assignment_ids": [a.pk for a in pending],
+            },
+        )
+    return pending

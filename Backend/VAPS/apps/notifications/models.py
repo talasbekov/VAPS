@@ -70,6 +70,15 @@ class Notification(TimeStampedModel):
             "ACK_MISSING_ESCALATION",
             "Ознакомление не получено — эскалация",
         )
+        # Story 16.6e, FR-27: recurring reminder to the ASSIGNED EMPLOYEE
+        # themselves (not the senior — that's ACK_MISSING_ESCALATION above)
+        # while acknowledged_at stays null. Deliberately narrowed from the
+        # registry's literal "every 2h" cadence to "once per business_date"
+        # — notify()'s own (recipient, kind, business_date) contract IS the
+        # recurrence mechanism (a fresh business_date each day re-fires the
+        # reminder); no watermark field backs this kind, unlike
+        # ACK_MISSING_ESCALATION's one-time ack_escalated_at fact.
+        ACK_REQUIRED = "ACK_REQUIRED", "Требуется ознакомление"
 
     recipient = models.CharField(max_length=100)
     kind = models.CharField(max_length=50, choices=Kind.choices)
@@ -123,6 +132,7 @@ class Notification(TimeStampedModel):
                         "TEMP_PERMISSION_EXPIRED",
                         "ASSIGNMENT_APPROVED",
                         "ACK_MISSING_ESCALATION",
+                        "ACK_REQUIRED",
                     ]
                 ),
                 name="chk_notification_kind",

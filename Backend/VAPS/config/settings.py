@@ -564,3 +564,14 @@ VAPS_FORCE_REQUEST_ESCALATION_DAYS = int(
 VAPS_ACK_ESCALATION_HOURS_BEFORE_EVENT = int(
     os.environ.get("VAPS_ACK_ESCALATION_HOURS_BEFORE_EVENT", "4")
 )
+
+# Story 16.6e (FR-27): days before a SecurityEvent's starts_at at which
+# reminders (ACK_REQUIRED) begin for an unacknowledged PlacementAssignment,
+# sent to the employee themselves. PROVISIONAL — "во время подготовки к
+# мероприятию" is not quantified anywhere in architecture.md; same
+# open-question framing as the settings above. Deliberately a separate,
+# WIDER window (days, not hours) than VAPS_ACK_ESCALATION_HOURS_BEFORE_EVENT
+# — reminders start earlier than the senior's escalation.
+VAPS_ACK_REMINDER_DAYS_BEFORE_EVENT = int(
+    os.environ.get("VAPS_ACK_REMINDER_DAYS_BEFORE_EVENT", "3")
+)

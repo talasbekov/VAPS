@@ -4,7 +4,7 @@ baseline_commit: a50abe0
 
 # Story 16.6e: Напоминание об ознакомлении (FR-27, часть 4/4)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -43,11 +43,11 @@ so that **я не забуду подтвердить до начала (FR-27, 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — `apps/notifications/models.py`: `Kind.ACK_REQUIRED` + миграция (буквальный образец 16.6a/16.6c)
-- [ ] Task 2 — `config/settings.py`: `VAPS_ACK_REMINDER_DAYS_BEFORE_EVENT` (PROVISIONAL, env-overridable)
-- [ ] Task 3 — `apps/operations/events/services.py`: `send_ack_reminders()` — выборка, set-based дедуп получателей (образец 16.6a), `notify()` БЕЗ watermark-поля, аудит
-- [ ] Task 4 — Тесты (AC 1-8 по отдельности)
-- [ ] Task 5 — Гейт
+- [x] Task 1 — `apps/notifications/models.py`: `Kind.ACK_REQUIRED` + миграция (буквальный образец 16.6a/16.6c)
+- [x] Task 2 — `config/settings.py`: `VAPS_ACK_REMINDER_DAYS_BEFORE_EVENT` (PROVISIONAL, env-overridable)
+- [x] Task 3 — `apps/operations/events/services.py`: `send_ack_reminders()` — выборка, set-based дедуп получателей (образец 16.6a), `notify()` БЕЗ watermark-поля, аудит
+- [x] Task 4 — Тесты (AC 1-8 по отдельности)
+- [x] Task 5 — Гейт
 
 ## Dev Notes
 
@@ -68,14 +68,27 @@ so that **я не забуду подтвердить до начала (FR-27, 
 
 ### Agent Model Used
 
+Claude Sonnet 5
+
 ### Debug Log References
 
 ### Completion Notes List
 
+Реализовано по AC 1-8. `Notification.Kind.ACK_REQUIRED` + миграция `0010` (буквальный образец `0008`/`0009`). `VAPS_ACK_REMINDER_DAYS_BEFORE_EVENT` (PROVISIONAL, дефолт 3 дня, env-overridable, отдельная единица от `VAPS_ACK_ESCALATION_HOURS_BEFORE_EVENT`). `send_ack_reminders()` — новая функция в `apps/operations/events/services.py`: выборка `PlacementAssignment` (текущая `APPROVED`-версия, `acknowledged_at IS NULL`, событие в окне `(now, now+threshold]`), set-дедуп `employee_id -> user_id` через `CoreEmployeeSelector.user_ids_for()` (16.6a), один `notify()` на уникального получателя, БЕЗ bulk_update/watermark-поля (сознательное архитектурное отличие от 16.6c — см. Scope Decision), аудит `PLACEMENT_ACK_REMINDER_SENT` с batch-sentinel `entity_id`. Новая запись в `docs/registries/audit-events.yaml`. 8 новых тестов (AC 1-7 по отдельности + явный `test_no_watermark_field_added_to_placement_assignment`, проверяющий `PlacementAssignment._meta.get_fields()` НЕ содержит нового поля-флага — прямое утверждение AC-8's «без watermark»), все прошли с первого запуска (одна правка — `ruff format` на длинной строке теста, без изменения поведения). `make gate` поймал ожидаемый schema drift (новый `Kind`-choice) — исправлено `make schema`. `make gate` (после) — 3776 passed (было 3768, +8), 0 regressions, ruff чист, миграции чистые (только `Kind`-констрейнт, НЕТ новых полей на `PlacementAssignment` — AC-8 подтверждён).
+
 ### File List
+
+- `Backend/VAPS/apps/notifications/models.py` (modified — `Kind.ACK_REQUIRED` + `chk_notification_kind` расширен)
+- `Backend/VAPS/apps/notifications/migrations/0010_remove_notification_chk_notification_kind_and_more.py` (new)
+- `Backend/VAPS/config/settings.py` (modified — `VAPS_ACK_REMINDER_DAYS_BEFORE_EVENT`)
+- `Backend/VAPS/apps/operations/events/services.py` (modified — `send_ack_reminders()`)
+- `Backend/VAPS/apps/operations/events/tests/test_send_ack_reminders.py` (new)
+- `Backend/VAPS/schema.yaml` (regenerated — `make schema`, новый `Kind`-choice)
+- `docs/registries/audit-events.yaml` (modified — `PLACEMENT_ACK_REMINDER_SENT` запись)
 
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-01 | Story создана (create-story). Часть 4/4 расщепления Story 16.6, последняя. Разрешает архитектурное расхождение, найденное при 16.6c: «каждые 2 часа» из ws-message-types.yaml сужено до «раз в день, пока не подтверждено» — честно достижимо через `notify()`'s штатный `(recipient, kind, business_date)`-контракт БЕЗ нового watermark-поля (в отличие от 16.6c's `ack_escalated_at`, разового факта эскалации). Получатель — сам сотрудник, не старший. |
+| 2026-08-01 | Dev-story: `send_ack_reminders()` — без watermark, полагается на `notify()`'s собственный контракт. 8 новых тестов, прошли с первого запуска. `make gate` поймал ожидаемый schema drift — исправлено `make schema`. `make gate` (после) — 3776 passed, 0 regressions, ruff чист. Status → review. |

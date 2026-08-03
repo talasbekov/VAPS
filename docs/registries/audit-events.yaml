@@ -339,6 +339,11 @@ actions:
     description: "Батч-эскалация отсутствующего ознакомления старшему события (ack_escalated_at: null→timestamp на N строках за один прогон) — entity_id=uuid.UUID(int=0) (batch-summary sentinel, тот же приём, что GROUP_FORCE_REQUEST_ESCALATED). Актор — SYSTEM (беспилотный batch, не HTTP-запрос)."
     provenance: derived-from-mutation
     source: "epics.md FR-27; Story 16.6c"
+  PLACEMENT_ACK_REMINDER_SENT:
+    entity_type: placement_assignment
+    description: "Батч-напоминание об ознакомлении назначенным сотрудникам (ACK_REQUIRED) — не мутирует ни одной строки (нет watermark-поля, намеренно, см. Story 16.6e's Scope Decision), только фиксирует факт прогона; entity_id=uuid.UUID(int=0) (batch-summary sentinel). Актор — SYSTEM."
+    provenance: derived-from-mutation
+    source: "epics.md FR-27; Story 16.6e"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.
