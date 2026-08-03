@@ -127,6 +127,7 @@ export function Sidebar() {
     { name: "Справочники", href: "/security-ops/dictionaries", icon: ClipboardList },
     { name: "Настройки ОМ", href: "/security-ops/settings", icon: Settings },
     { name: "Аудит", href: "/security-ops/audit", icon: ScrollText },
+    { name: "Журнал изменений", href: "/security-ops/changelog", icon: ClipboardList },
   ];
 
   return (

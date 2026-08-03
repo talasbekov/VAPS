@@ -5,13 +5,9 @@
 // нет вовсе. Deep link ведёт на маршрут, который перепроверяет права.
 import Link from "next/link";
 import { useRatingNotifications } from "@/hooks/use-ops-ratings";
-import type { RatingNotificationCode } from "@/entities/operational-rating";
+import { RATING_NOTIFICATION_TEXT } from "@/entities/operational-rating";
 
-const NOTIFICATION_TEXT: Record<RatingNotificationCode, string> = {
-  EVALUATION_AVAILABLE: "Вам доступно итоговое оценивание мероприятия",
-  EVALUATION_SUBMITTED: "Оценивание успешно отправлено",
-  EVALUATION_CORRECTED: "Оценка была исправлена уполномоченным пользователем",
-};
+const NOTIFICATION_TEXT = RATING_NOTIFICATION_TEXT;
 
 function dateTime(value: string): string {
   const parsed = new Date(value);
