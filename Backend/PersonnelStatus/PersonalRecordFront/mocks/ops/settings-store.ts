@@ -21,6 +21,7 @@ import type {
 } from "@/entities/policy-setting";
 import type { ConflictPolicy } from "@/entities/duty-shift";
 import type { PassportFreshnessPolicy } from "@/entities/security-object";
+import type { RatingPolicy } from "@/entities/operational-rating";
 import { appendAudit } from "./audit-store";
 
 const STORE_KEY = "ops-mock-settings";
@@ -121,10 +122,62 @@ function buildSeed(): SettingsState {
         editable: true,
         lockedReason: null,
       },
+      {
+        settingCode: "RATING.PERIOD.PARAMETER",
+        sectionCode: "RATING_POLICY",
+        kind: "NUMBER",
+        valueType: "DAYS",
+        safeLabel: "Период расчёта рейтинга",
+        description:
+          "Сколько суток назад от бизнес-даты входит в расчёт агрегата. Правка меняет сводку рейтинга, а не окраску экрана настроек.",
+        value: 90,
+        minValue: 7,
+        maxValue: 365,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
+      {
+        settingCode: "RATING.MIN_EVALUATIONS.PARAMETER",
+        sectionCode: "RATING_POLICY",
+        kind: "NUMBER",
+        valueType: "COUNT",
+        safeLabel: "Минимум оценок для агрегата",
+        description:
+          "Меньше этого числа учтённых оценок — состояние «Недостаточно данных», а не нулевой рейтинг.",
+        value: 4,
+        minValue: 1,
+        maxValue: 20,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
+      {
+        settingCode: "RATING.SUPPRESSION_MIN_GROUP.PARAMETER",
+        sectionCode: "RATING_POLICY",
+        kind: "NUMBER",
+        valueType: "COUNT",
+        safeLabel: "Порог безопасной агрегации",
+        description:
+          "Минимальный размер группы, для которой публикуется средний агрегат в аналитике. Меньше — значение подавляется, а не показывается.",
+        value: 3,
+        minValue: 2,
+        maxValue: 10,
+        updatedAt: null,
+        updatedBy: null,
+        editable: true,
+        lockedReason: null,
+      },
     ],
     sectionVersions: {
       CONFLICT_RULES: "conflict-policy-v1",
       PASSPORT_FRESHNESS: "policy-v1",
+      // Формат версии методики рейтинга — свой (OPERATIONAL-RATING-<год>.<мес>.N):
+      // ею подписываются агрегаты, и точки динамики прошлых редакций несут
+      // версии того же формата.
+      RATING_POLICY: "OPERATIONAL-RATING-2026.07.1",
     },
     changeLog: [],
   };
@@ -180,6 +233,43 @@ export function readFreshnessPolicy(): PassportFreshnessPolicy {
       interval?.kind === "NUMBER" ? interval.value : 120,
     dueSoonPercent: dueSoon?.kind === "NUMBER" ? dueSoon.value : 25,
   };
+}
+
+/**
+ * Методика рейтинга (§19.19: период, минимум и версия приходят от policy).
+ * `null` — методика не определена, и это ОТДЕЛЬНОЕ состояние, а не повод взять
+ * умолчания: подставленный период вернул бы захардкоженные «90 дней». Неполная
+ * политика (стейл-сид sessionStorage без раздела RATING_POLICY) — тоже null.
+ */
+export function readRatingPolicy(): RatingPolicy | null {
+  const s = getState();
+  const policyVersion = s.sectionVersions.RATING_POLICY;
+  if (typeof policyVersion !== "string" || policyVersion === "") return null;
+  let periodDays: number | null = null;
+  let minEvaluations: number | null = null;
+  for (const item of s.settings) {
+    if (item.sectionCode !== "RATING_POLICY" || item.kind !== "NUMBER") continue;
+    if (item.settingCode === "RATING.PERIOD.PARAMETER") periodDays = item.value;
+    if (item.settingCode === "RATING.MIN_EVALUATIONS.PARAMETER")
+      minEvaluations = item.value;
+  }
+  if (periodDays === null || minEvaluations === null) return null;
+  return { periodDays, minEvaluations, policyVersion };
+}
+
+/**
+ * Порог безопасной агрегации (§22.17) — отдельная проекция, не поле политики:
+ * методика управляет РАСЧЁТОМ, порог — ПУБЛИКАЦИЕЙ отчёта. `null` — правило не
+ * задано, и отчёт аналитики не публикуется, а не берёт умолчание.
+ */
+export function readRatingSuppressionMinGroup(): number | null {
+  const s = getState();
+  for (const item of s.settings) {
+    if (item.sectionCode !== "RATING_POLICY") continue;
+    if (item.settingCode !== "RATING.SUPPRESSION_MIN_GROUP.PARAMETER") continue;
+    return item.kind === "NUMBER" ? item.value : null;
+  }
+  return null;
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────

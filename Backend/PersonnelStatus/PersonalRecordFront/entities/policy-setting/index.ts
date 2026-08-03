@@ -7,11 +7,15 @@
 /** Единица измерения значения — чтобы экран не подписывал «3» без смысла. */
 export type SettingValueType = "DAYS" | "PERCENT" | "COUNT" | "HOURS" | "MINUTES" | "MODE";
 
-export type SettingSectionCode = "CONFLICT_RULES" | "PASSPORT_FRESHNESS";
+export type SettingSectionCode =
+  | "CONFLICT_RULES"
+  | "PASSPORT_FRESHNESS"
+  | "RATING_POLICY";
 
 export const SECTION_LABEL: Record<SettingSectionCode, string> = {
   CONFLICT_RULES: "Правила конфликтов дежурств",
   PASSPORT_FRESHNESS: "Актуальность паспортов объектов",
+  RATING_POLICY: "Методика оперативного рейтинга",
 };
 
 /** Вариант значения-перечисления. description — следствие для планирующего,
