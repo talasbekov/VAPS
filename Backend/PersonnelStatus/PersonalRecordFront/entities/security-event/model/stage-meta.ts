@@ -35,6 +35,20 @@ export const JOURNAL_TYPE_LABEL: Record<JournalEntryType, string> = {
   REPLACEMENT: "Замена",
 };
 
+/** Заливка полосы готовности — та же цветовая семья, что бейдж стадии,
+ * но сплошной тон вместо светлого фона. */
+export const STAGE_PROGRESS_CLASS: Record<SecurityEventStage, string> = {
+  BULLETIN: "bg-purple-600",
+  RECON: "bg-purple-600",
+  DEMAND: "bg-amber-600",
+  FORCES: "bg-amber-600",
+  PLACEMENT: "bg-primary",
+  APPROVAL: "bg-green-600",
+  ACKNOWLEDGEMENT: "bg-primary",
+  CONDUCT: "bg-green-600",
+  CLOSED: "bg-muted-foreground/40",
+};
+
 /** Классы бейджа стадии — целые Tailwind-классы (JIT видит только литералы). */
 export const STAGE_BADGE_CLASS: Record<SecurityEventStage, string> = {
   BULLETIN: "bg-purple-100 text-purple-800 hover:bg-purple-100",

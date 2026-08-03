@@ -3,6 +3,7 @@ export {
   STAGE_ORDER,
   STAGE_LABEL,
   STAGE_BADGE_CLASS,
+  STAGE_PROGRESS_CLASS,
   JOURNAL_TYPE_LABEL,
 } from "./model/stage-meta";
 export {
