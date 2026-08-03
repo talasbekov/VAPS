@@ -32,6 +32,7 @@ from apps.operations.api.permissions import require_permission
 from apps.operations.events.api.serializers import (
     AllocateForceRequestSerializer,
     AssignmentVersionDetailSerializer,
+    AssignmentVersionReturnResponseSerializer,
     AssignmentVersionSerializer,
     ChecklistItemSerializer,
     DirectAssignmentSerializer,
@@ -603,7 +604,7 @@ class AssignmentVersionViewSet(viewsets.ViewSet):
     @extend_schema(
         operation_id="assignment_version_return",
         request=ReturnVersionSerializer,
-        responses={200: AssignmentVersionDetailSerializer},
+        responses={200: AssignmentVersionReturnResponseSerializer},
         description="Вернуть Расстановку на доработку (SUBMITTED->RETURNED "
         "+ новая DRAFT-версия, FR-26). Требует assignment.return и "
         "непустой reason в теле. НЕ идемпотентно — 422 "

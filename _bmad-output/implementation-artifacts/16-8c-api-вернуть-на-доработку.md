@@ -4,7 +4,7 @@ baseline_commit: 90ecf13
 
 # Story 16.8c: API — вернуть Расстановку на доработку
 
-Status: review
+Status: done
 
 ## Story
 
@@ -84,9 +84,16 @@ Claude Sonnet 5
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 1 новая строка AUDIT_MATRIX)
 - `Backend/VAPS/schema.yaml` (regenerated — `make schema`, новый эндпоинт)
 
+**После ревью:**
+- `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — новый `AssignmentVersionReturnResponseSerializer`)
+- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `@extend_schema`'s `responses` теперь указывает на него)
+- `Backend/VAPS/apps/operations/events/tests/test_assignment_version_return_api.py` (modified — 2 новых теста)
+- `Backend/VAPS/schema.yaml` (regenerated повторно)
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-01 | Story создана (create-story). Часть 3/9 расщепления Story 16.8. Тонкая HTTP-обёртка над `return_assignment_version()` (16.4) — НЕ идемпотентна (в отличие от submit/approve), требует `reason` в теле, возвращает `(старая RETURNED-версия, новая DRAFT-версия)` — ответ несёт оба через расширенный словарь, не новый formal serializer. Найдена ловушка именования метода — `return` зарезервировано Python. |
 | 2026-08-01 | Dev-story: `ReturnVersionSerializer` + `return_`-action. Уточнена форма AC-2's ошибки (DRF-путь, не сервисный). 9 новых тестов, прошли с первого запуска. `make gate` — 3855 passed, 0 regressions, ruff чист, `make schema`. Status → review. |
+| 2026-08-01 | 3-agent ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Acceptance Auditor: 0 расхождений, все AC 1-7 неотвакуумны. Найдены и исправлены 2 реальных пробела (Blind Hunter + Edge Case Hunter независимо совпали): (1) `AssignmentVersionDetailSerializer` в `@extend_schema`'s `responses` не декларировал реально инжектируемый `new_draft_version` — заменён на новый `AssignmentVersionReturnResponseSerializer` (наследник, добавляет только это поле, schema.yaml перегенерирован); (2) reason из одних пробелов (`"   "`) проходит `ReturnVersionSerializer`'s `allow_blank=False`, ловится только сервисным `.strip()`-гардом — отдельный от пустой-строки код-путь, был непокрыт — добавлен `test_return_whitespace_only_reason_is_400`; также добавлен ассерт отсутствия `assignments`-ключа в `new_draft_version` (заявленная форма, была недоказана). Отклонены как не-баги / не-в-скоупе: non-string reason (DRF валидирует штатно), порядок 403-до-404 (совпадает с уже существующей конвенцией `submit`-action'а), actor-blank через HTTP (вне зоны — общая инфраструктура авторизации), кросс-экшен RETURNED→submit-422 (принадлежит тестам `submit`, не этой стори). `make gate` повторно — 3856 passed, 0 regressions, ruff чист, миграций нет. Status → done. |

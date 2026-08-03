@@ -192,3 +192,17 @@ class ReturnVersionSerializer(serializers.Serializer):
     not a duplicate of the service's own blank-check."""
 
     reason = serializers.CharField()
+
+
+class AssignmentVersionReturnResponseSerializer(AssignmentVersionDetailSerializer):
+    """Story 16.8c: `AssignmentVersionDetailSerializer` (the returned/old
+    version) plus `new_draft_version` — the actual response shape returned
+    by `AssignmentVersionViewSet.return_`. Exists only so `@extend_schema`
+    documents the injected `new_draft_version` key instead of silently
+    omitting it (schema.yaml previously understated the real response)."""
+
+    new_draft_version = AssignmentVersionSerializer(read_only=True)
+
+    class Meta(AssignmentVersionDetailSerializer.Meta):
+        fields = AssignmentVersionDetailSerializer.Meta.fields + ["new_draft_version"]
+        read_only_fields = fields

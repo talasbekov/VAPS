@@ -1446,7 +1446,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AssignmentVersionDetail'
+                $ref: '#/components/schemas/AssignmentVersionReturnResponse'
           description: ''
   /api/operations/assignment-versions/{id}/submit/:
     post:
@@ -2912,6 +2912,63 @@ components:
       - event
       - id
       - is_current
+      - signature_hash
+      - status
+      - updated_at
+      - version
+    AssignmentVersionReturnResponse:
+      type: object
+      description: |-
+        Story 16.8c: `AssignmentVersionDetailSerializer` (the returned/old
+        version) plus `new_draft_version` — the actual response shape returned
+        by `AssignmentVersionViewSet.return_`. Exists only so `@extend_schema`
+        documents the injected `new_draft_version` key instead of silently
+        omitting it (schema.yaml previously understated the real response).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        event:
+          type: integer
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusD87Enum'
+          readOnly: true
+        version:
+          type: integer
+          readOnly: true
+          default: 1
+        is_current:
+          type: boolean
+          readOnly: true
+        signature_hash:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlacementAssignment'
+          readOnly: true
+        new_draft_version:
+          allOf:
+          - $ref: '#/components/schemas/AssignmentVersion'
+          readOnly: true
+      required:
+      - assignments
+      - created_at
+      - event
+      - id
+      - is_current
+      - new_draft_version
       - signature_hash
       - status
       - updated_at

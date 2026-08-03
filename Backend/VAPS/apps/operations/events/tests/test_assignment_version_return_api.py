@@ -98,6 +98,7 @@ def test_return_submitted_version(creator_client, submitter_client, approver_cli
     assert resp.data["status"] == "RETURNED"
     assert resp.data["new_draft_version"]["status"] == "DRAFT"
     assert resp.data["new_draft_version"]["version"] == version.version + 1
+    assert "assignments" not in resp.data["new_draft_version"]
 
 
 def test_return_copies_assignments_to_new_draft(
@@ -130,6 +131,21 @@ def test_return_blank_reason_is_400(creator_client, submitter_client, approver_c
     version = make_submitted_version(creator_client, submitter_client, "OBJ-RET-4")
 
     resp = approver_client.post(return_url(version), {"reason": ""})
+
+    assert resp.status_code == 400
+    assert resp.data["error_code"] == "VALIDATION_ERROR"
+
+
+def test_return_whitespace_only_reason_is_400(
+    creator_client, submitter_client, approver_client
+):
+    """Whitespace-only reason passes ReturnVersionSerializer's allow_blank=False
+    check (non-empty string) and is only caught by return_assignment_version()'s
+    own .strip() guard — a different code path than the blank-string case above,
+    still a clean 400, not a 500 or a silently-accepted reason."""
+    version = make_submitted_version(creator_client, submitter_client, "OBJ-RET-8")
+
+    resp = approver_client.post(return_url(version), {"reason": "   "})
 
     assert resp.status_code == 400
     assert resp.data["error_code"] == "VALIDATION_ERROR"
