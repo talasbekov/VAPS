@@ -1,66 +1,85 @@
-# systemd deploy artifacts (VPS 81.17.99.96)
+# systemd deploy artifacts (VPS 81.17.99.96, `/root/projects/VAPS`)
 
 ## Why these files exist
 
 Sentry issue `PYTHON-DJANGO-1` fires a burst of
 `redis.exceptions.TimeoutError: Timeout reading from 127.0.0.1:6380` on
 every server reboot. Root cause: `vaps-backend.service` (uvicorn) starts as
-soon as `docker.service` is up, but the `redis` container (channel layer,
-`docker-compose.yml`) needs a few more seconds to actually accept
-connections. The first WS `connect()`/`group_add()` calls during that
-window hit `channels_redis` before Redis is listening. It's self-healing —
-retries stop once Redis comes up — but it floods Sentry every restart.
+soon as `docker.service` is up, but the `vaps-redis-1` container (channel
+layer, host port 6380) needs a few more seconds to actually accept
+connections. The first WS `connect()`/`group_add()` calls during that window
+hit `channels_redis` before Redis is listening. It's self-healing — retries
+stop once Redis comes up — but it floods Sentry every restart. `vaps-db-1`
+(Postgres, host port 5433) races identically.
 
-`wait-for-redis.sh` closes that gap by blocking the unit's start until
-`redis-cli ping` succeeds (same check `docker-compose.yml`'s `redis`
-healthcheck already uses), instead of relying on `After=`/`Requires=`
-ordering alone, which only guarantees the *daemon* is up, not the
-*container*.
+`wait-for-deps.py` closes the gap: an `ExecStartPre` gate that blocks until
+Redis answers `PING` and Postgres serves `SELECT 1`, rather than relying on
+`After=`/`Requires=` ordering alone — that only guarantees the Docker
+*daemon* is up, not the *containers*.
 
-The `db` (Postgres) container races the same way, so `wait-for-postgres.sh`
-applies the identical fix using `pg_isready` (same check `docker-compose.yml`'s
-`db` healthcheck uses) — without it, Django could start before Postgres
-accepts connections after a reboot.
+## Two mistakes already made here — don't repeat them
 
-## This was written without VPS access
+**1. Do not check with `redis-cli` / `pg_isready`.** The first version of
+this fix did, and neither binary is installed on the VPS. The checks failed
+with "command not found", `ExecStartPre` exited 1, and systemd refused to
+start a backend whose Redis and Postgres were both perfectly healthy — a
+working service taken down by its own readiness check. `wait-for-deps.py`
+uses the backend venv's `redis` and `psycopg` instead; those are guaranteed
+present because the backend itself cannot run without them.
 
-This session has repo/GitHub access only, not SSH to 81.17.99.96 — these
-files were **not** diffed against whatever is actually installed at
-`/etc/systemd/system/vaps-backend.service` today. `WorkingDirectory`,
-`User`, and the `.venv`/checkout paths here are best-effort guesses that
-match the earlier deployment session's notes (backend on :8000,
-`redis` container on :6380 mapped to host). **Before installing, compare
-against the live unit** (`systemctl cat vaps-backend.service`) and adjust
-paths/user to match.
+**2. Do not check "is the TCP port open".** Docker binds published ports via
+docker-proxy as soon as the container is created, *before* the server inside
+finishes booting. A port probe passes instantly and leaves the original race
+completely unfixed.
 
 ## Install
 
 ```bash
-# on the VPS, as a user that can write to /etc/systemd/system and reload systemd
-sudo cp deploy/systemd/wait-for-redis.sh /opt/vaps/deploy/systemd/wait-for-redis.sh
-sudo cp deploy/systemd/wait-for-postgres.sh /opt/vaps/deploy/systemd/wait-for-postgres.sh
-sudo chmod +x /opt/vaps/deploy/systemd/wait-for-redis.sh /opt/vaps/deploy/systemd/wait-for-postgres.sh
+cd /root/projects/VAPS && git pull origin main
 
-# compare with what's live before overwriting:
-systemctl cat vaps-backend.service
-# reconcile any differences (paths, User=, extra Environment=) into
-# deploy/systemd/vaps-backend.service, then:
-sudo cp deploy/systemd/vaps-backend.service /etc/systemd/system/vaps-backend.service
+# sanity-check the interpreter has what the script imports
+/root/projects/VAPS/Backend/VAPS/.venv/bin/python -c "import redis, psycopg; print('ok')"
+
+# run the gate by hand FIRST — with everything already up it must exit 0 fast.
+# Never wire an ExecStartPre into systemd before seeing it pass manually.
+set -a; . <(systemctl show vaps-backend.service -p Environment --value | tr ' ' '\n'); set +a
+/root/projects/VAPS/Backend/VAPS/.venv/bin/python /root/projects/VAPS/deploy/systemd/wait-for-deps.py 10
+echo "exit=$?"
+
+# only then install the drop-in
+sudo mkdir -p /etc/systemd/system/vaps-backend.service.d
+sudo cp deploy/systemd/10-wait-for-deps.conf \
+        /etc/systemd/system/vaps-backend.service.d/10-wait-for-deps.conf
 sudo systemctl daemon-reload
 sudo systemctl restart vaps-backend.service
-sudo systemctl status vaps-backend.service
+sudo systemctl status vaps-backend.service --no-pager
 ```
 
-## Verify the fix
+The drop-in only appends `ExecStartPre`; the live
+`/etc/systemd/system/vaps-backend.service` — its `WorkingDirectory`,
+`ExecStart`, and every `Environment=` line including the Sentry DSN — stays
+untouched. `wait-for-deps.py` reads `VAPS_REDIS_URL` and `VAPS_DB_*` from
+that same unit environment, so the check can never drift away from what
+Django itself connects to.
+
+## Rollback
+
+If the gate ever blocks startup, this restores service immediately:
+
+```bash
+sudo rm -f /etc/systemd/system/vaps-backend.service.d/10-wait-for-deps.conf
+sudo systemctl daemon-reload
+sudo systemctl restart vaps-backend.service
+```
+
+## Verify
 
 ```bash
 sudo reboot
-# after it comes back:
-journalctl -u vaps-backend.service --since "-5 min"   # should show the wait, then a clean uvicorn start
+# once it's back:
+journalctl -u vaps-backend.service --since "-5 min"
 ```
 
-Sentry should stop receiving `PYTHON-DJANGO-1` bursts on subsequent
-reboots. If it still fires, increase the timeout in `ExecStartPre` (third
-arg to `wait-for-redis.sh`, default 60s) or check that the `redis`
-container itself has `restart: unless-stopped` and starts promptly on
-`docker.service` boot.
+Expect `wait-for-deps: redis and postgres ready` before uvicorn's startup
+line, and no `PYTHON-DJANGO-1` burst in Sentry afterwards. If the gate times
+out on a slow boot, raise the argument in the drop-in (seconds, default 60).
