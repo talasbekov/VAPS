@@ -54,6 +54,7 @@ import type {
 } from "@/entities/security-event";
 import { readObjectsStore } from "./objects-handlers";
 import { findPersonnel, PERSONNEL_ROSTER } from "./fixtures/personnel";
+import { appendAudit } from "./audit-store";
 
 const STORE_KEY = "ops-mock-security-events";
 
@@ -221,6 +222,11 @@ function getEvents(): SecurityEvent[] {
 function addEvent(created: SecurityEvent): void {
   events = [...getEvents(), created];
   persist(events);
+}
+
+/** Read-доступ для соседних слайсов (справочники считают связи журнала). */
+export function readSecurityEventsStore(): SecurityEvent[] {
+  return getEvents();
 }
 
 function errorEnvelope(
@@ -405,6 +411,12 @@ export const securityEventsHandlers = [
       created.passportBinding = bindPassportVersion(object!, applicable, now);
     }
     addEvent(created);
+    appendAudit({
+      action: "security_event.create",
+      entityType: "SecurityEvent",
+      entityId: created.code,
+      newValue: { title: created.title, businessDate: created.businessDate },
+    });
     return HttpResponse.json(created, { status: 201 });
   }),
 
@@ -1064,6 +1076,13 @@ export const securityEventsHandlers = [
           `Не хватает итогов направлений: ${missing.join(", ")}.`
         );
       }
+      appendAudit({
+        action: "security_event.close",
+        entityType: "SecurityEvent",
+        entityId: event.code,
+        oldValue: { stage: event.stage },
+        newValue: { stage: "CLOSED" },
+      });
       return HttpResponse.json(
         saveEvent({
           ...event,

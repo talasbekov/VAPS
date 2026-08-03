@@ -121,6 +121,9 @@ export function Sidebar() {
     { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
     { name: "План дежурств", href: "/security-ops/duties", icon: CalendarDays },
     { name: "Календарь смен", href: "/security-ops/calendar", icon: CalendarDays },
+    { name: "Справочники", href: "/security-ops/dictionaries", icon: ClipboardList },
+    { name: "Настройки ОМ", href: "/security-ops/settings", icon: Settings },
+    { name: "Аудит", href: "/security-ops/audit", icon: ScrollText },
   ];
 
   return (
