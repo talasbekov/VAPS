@@ -499,6 +499,11 @@ class PlacementAssignment(TimeStampedModel):
     # FR-27: заполняется Story 16.6's уведомление-об-ознакомлении сервисом;
     # nullable — «ещё не ознакомлен» по умолчанию.
     acknowledged_at = models.DateTimeField(null=True, blank=True)
+    # Story 16.6c (FR-27): watermark для батч-эскалации
+    # (escalate_missing_acknowledgements()) — тот же приём, что
+    # GroupForceRequest.escalated_at (15.10): once set, a row is never
+    # re-escalated by a later batch run, even if still unacknowledged.
+    ack_escalated_at = models.DateTimeField(null=True, blank=True)
     # FR-25: заполняется Story 16.3's конфликт-детектором; blank — ещё не
     # прогнан детектор ИЛИ конфликтов нет.
     conflict_severity = models.CharField(

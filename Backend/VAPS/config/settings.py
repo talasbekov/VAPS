@@ -554,3 +554,13 @@ LOGGING = {
 VAPS_FORCE_REQUEST_ESCALATION_DAYS = int(
     os.environ.get("VAPS_FORCE_REQUEST_ESCALATION_DAYS", "2")
 )
+
+# Story 16.6c (FR-27): hours before a SecurityEvent's starts_at at which an
+# unacknowledged PlacementAssignment is escalated to the event's senior
+# (ACK_MISSING_ESCALATION). PROVISIONAL — no threshold is fixed anywhere in
+# architecture.md ("близко начало события" is not quantified); same
+# open-question framing as VAPS_FORCE_REQUEST_ESCALATION_DAYS above,
+# env-overridable so it can be corrected without a code change once decided.
+VAPS_ACK_ESCALATION_HOURS_BEFORE_EVENT = int(
+    os.environ.get("VAPS_ACK_ESCALATION_HOURS_BEFORE_EVENT", "4")
+)

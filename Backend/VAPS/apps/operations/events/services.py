@@ -1227,3 +1227,122 @@ def acknowledge_placement_assignment(assignment, *, actor):
             },
         )
     return assignment
+
+
+def escalate_missing_acknowledgements():
+    """Story 16.6c (FR-27): find `PlacementAssignment` rows of a CURRENT
+    `APPROVED` version whose employee has NOT acknowledged
+    (`acknowledged_at IS NULL`) and whose event starts within
+    `VAPS_ACK_ESCALATION_HOURS_BEFORE_EVENT` hours (PROVISIONAL — no
+    threshold is fixed in architecture.md), mark each `ack_escalated_at`
+    (per-row watermark — a repeat run skips already-escalated rows, same
+    idempotency shape as `GroupForceRequest.escalated_at`, 15.10), and
+    notify the event's senior.
+
+    Literal analogue of `escalate_stale_force_requests()` (15.10) — same
+    structure (batch mark, digest per recipient per day, same-day merge
+    to avoid `notify()`'s "first payload wins" from dropping a second
+    same-day batch's entries), differing only in HOW the recipient is
+    resolved: not a role/permission_code_id lookup, but
+    `event.senior_employee_id` -> `user_id` via 16.6a's
+    `CoreEmployeeSelector.user_ids_for()` (per-event, not per-role).
+
+    Only events that HAVEN'T started yet (`starts_at > now`) are
+    considered — escalating "close to start" for an event already
+    underway/past is meaningless.
+
+    A row with no resolvable recipient (no `senior_employee_id`, or no
+    bound `UserEmployeeBinding`) is STILL marked `ack_escalated_at` —
+    batch idempotency doesn't depend on notification success, same "no
+    data = skip the notify, not the watermark" split already established
+    (16.6a's per-recipient skip is at the notify layer, not the mark
+    layer here, since marking is per-row while notifying is per-event).
+
+    Beat-ready, NOT Celery — same split as `escalate_stale_force_
+    requests()`: zero Celery imports/dependencies; a future story wraps
+    this in a `@shared_task` and registers the beat schedule.
+
+    Returns the list of newly-escalated `PlacementAssignment` rows.
+    """
+    now = Clock.now()
+    threshold = now + datetime.timedelta(
+        hours=settings.VAPS_ACK_ESCALATION_HOURS_BEFORE_EVENT
+    )
+    stale = list(
+        PlacementAssignment.objects.filter(
+            version__status=AssignmentVersion.Status.APPROVED,
+            version__is_current=True,
+            acknowledged_at__isnull=True,
+            ack_escalated_at__isnull=True,
+            version__event__starts_at__isnull=False,
+            version__event__starts_at__gt=now,
+            version__event__starts_at__lte=threshold,
+        ).select_related("version__event")
+    )
+    if not stale:
+        return []
+
+    senior_ids = {
+        a.version.event.senior_employee_id
+        for a in stale
+        if a.version.event.senior_employee_id
+    }
+    user_ids = CoreEmployeeSelector.user_ids_for(senior_ids) if senior_ids else {}
+
+    today = Clock.today_local()
+    with transaction.atomic():
+        for assignment in stale:
+            assignment.ack_escalated_at = now
+        PlacementAssignment.objects.bulk_update(stale, ["ack_escalated_at"])
+
+        by_event = {}
+        for assignment in stale:
+            by_event.setdefault(assignment.version.event, []).append(assignment)
+
+        for event, assignments in by_event.items():
+            senior_employee_id = event.senior_employee_id
+            recipient = user_ids.get(senior_employee_id) if senior_employee_id else None
+            if not recipient:
+                continue
+            new_entries = [
+                {
+                    "assignment_id": a.pk,
+                    "employee_id": str(a.employee_id),
+                    "event_id": event.pk,
+                }
+                for a in assignments
+            ]
+            existing = (
+                Notification.objects.select_for_update()
+                .filter(
+                    recipient=recipient,
+                    kind=Notification.Kind.ACK_MISSING_ESCALATION,
+                    business_date=today,
+                )
+                .first()
+            )
+            if existing is not None:
+                existing.payload = {
+                    "escalated": existing.payload.get("escalated", []) + new_entries
+                }
+                existing.save(update_fields=["payload"])
+            else:
+                notify(
+                    recipient=recipient,
+                    kind=Notification.Kind.ACK_MISSING_ESCALATION,
+                    business_date=today,
+                    payload={"escalated": new_entries},
+                )
+        record(
+            actor="SYSTEM",
+            action="PLACEMENT_ACKNOWLEDGEMENT_ESCALATED",
+            entity_type="placement_assignment",
+            # Batch run escalates N rows in one call — no single row is
+            # "the" entity, same batch-summary sentinel as
+            # escalate_stale_force_requests()' own record() call.
+            entity_id=uuid.UUID(int=0),
+            new_value={
+                "escalated_assignment_ids": [a.pk for a in stale],
+            },
+        )
+    return stale

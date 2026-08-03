@@ -61,6 +61,15 @@ class Notification(TimeStampedModel):
         # CoreEmployeeSelector.user_ids_for() (docs/registries/
         # ws-message-types.yaml::ASSIGNMENT_APPROVED).
         ASSIGNMENT_APPROVED = "ASSIGNMENT_APPROVED", "Расстановка утверждена"
+        # Story 16.6c, FR-27: once-daily digest (same shape as
+        # GROUP_FORCE_REQUEST_ESCALATED, 15.10) of PlacementAssignment rows
+        # newly escalated for missing acknowledgement — recipient is the
+        # event's senior_employee_id, resolved via
+        # CoreEmployeeSelector.user_ids_for().
+        ACK_MISSING_ESCALATION = (
+            "ACK_MISSING_ESCALATION",
+            "Ознакомление не получено — эскалация",
+        )
 
     recipient = models.CharField(max_length=100)
     kind = models.CharField(max_length=50, choices=Kind.choices)
@@ -113,6 +122,7 @@ class Notification(TimeStampedModel):
                         "TEMP_PERMISSION_ACTIVE",
                         "TEMP_PERMISSION_EXPIRED",
                         "ASSIGNMENT_APPROVED",
+                        "ACK_MISSING_ESCALATION",
                     ]
                 ),
                 name="chk_notification_kind",
