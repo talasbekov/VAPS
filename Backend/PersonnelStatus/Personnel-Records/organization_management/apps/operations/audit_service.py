@@ -48,6 +48,7 @@ SECONDMENT_INITIATED = "SECONDMENT_INITIATED"
 SECONDMENT_RETURN_REQUESTED = "SECONDMENT_RETURN_REQUESTED"
 SECONDMENT_RETURNED = "SECONDMENT_RETURNED"
 EMPLOYEE_DISMISSED = "EMPLOYEE_DISMISSED"
+DAILY_SUBMISSION_SUBMITTED = "DAILY_SUBMISSION_SUBMITTED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -67,6 +68,7 @@ ACTIONS = frozenset(
         SECONDMENT_RETURN_REQUESTED,
         SECONDMENT_RETURNED,
         EMPLOYEE_DISMISSED,
+        DAILY_SUBMISSION_SUBMITTED,
     }
 )
 
@@ -75,8 +77,11 @@ ACTIONS = frozenset(
 ENTITY_STATUS = "employee_status"
 ENTITY_SECONDMENT = "secondment"
 ENTITY_EMPLOYEE = "employee"
+ENTITY_SUBMISSION = "daily_submission"
 
-ENTITY_TYPES = frozenset({ENTITY_STATUS, ENTITY_SECONDMENT, ENTITY_EMPLOYEE})
+ENTITY_TYPES = frozenset(
+    {ENTITY_STATUS, ENTITY_SECONDMENT, ENTITY_EMPLOYEE, ENTITY_SUBMISSION}
+)
 
 
 def _build(
@@ -211,4 +216,23 @@ def secondment_snapshot(secondment):
             else None
         ),
         "return_confirmed_by": secondment.return_confirmed_by,
+    }
+
+
+def submission_snapshot(submission):
+    """Снимок версии сдачи дня — по тому же правилу, что и статус.
+
+    Сам снимок ДНЯ сюда не кладётся: он иммутабельно живёт в своей строке, а
+    в журнале раздулся бы до сотен килобайт на событие. Для восстановления
+    достаточно ссылки на строку.
+    """
+    return {
+        "submission_id": submission.pk,
+        "division_id": submission.division_id,
+        "business_date": str(submission.business_date),
+        "version": submission.version,
+        "event": submission.event,
+        "late": submission.late,
+        "is_current": submission.is_current,
+        "submitted_at": submission.submitted_at.isoformat(),
     }
