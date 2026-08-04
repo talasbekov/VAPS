@@ -16,6 +16,7 @@ from organization_management.apps.operations.models import (
     TemporaryDutyPermission,
     UserRole,
 )
+from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     Secondment,
@@ -268,3 +269,27 @@ class StatusCancelSerializer(serializers.Serializer):
     """
 
     reason = serializers.CharField(allow_blank=False, max_length=1000)
+
+
+class OpsAuditLogSerializer(serializers.ModelSerializer):
+    """Строка журнала раздела как её видит читатель.
+
+    Снимки old_value/new_value отдаются КАК ЕСТЬ: они уже плоские и
+    JSON-безопасные (см. audit_service.status_snapshot), и разбирать их на
+    поля здесь значило бы завести второе представление события, которое
+    разъедется с первым при первой же смене снимка.
+    """
+
+    class Meta:
+        model = OpsAuditLog
+        fields = [
+            "id",
+            "actor_user_id",
+            "action",
+            "entity_type",
+            "entity_id",
+            "old_value",
+            "new_value",
+            "reason",
+            "created_at",
+        ]

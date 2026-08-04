@@ -11,6 +11,7 @@ from django.db.models import Count
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.models import StatusType, UserRole
+from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     Secondment,
@@ -220,3 +221,58 @@ class StaffUnitSelector:
             for row in raw
         ]
         return slots, dismissed
+
+
+class OpsAuditLogSelector:
+    """Чтение журнала раздела: фильтры и ПОЛНЫЙ порядок.
+
+    Единственный канал чтения журнала — как audit_service единственный канал
+    записи. Вьюха сюда не заглядывает мимо: разъехавшийся порядок сортировки
+    у двух читателей означал бы, что «страница 2» у них про разные строки.
+
+    ОБЛАСТЬ ВИДИМОСТИ ПЛОСКАЯ: держатель audit.view видит журнал целиком.
+    Так же ведёт себя источник, и здесь это не недосмотр, а следствие
+    раскладки прав — audit.view выдан ORGD и админу, а не операторам
+    подразделений (см. seed_operations). Сузить журнал по подразделению
+    нечем одинаково для всех строк: у события статуса подразделение выводится
+    через сотрудника и штатную единицу, у события пары — через две стороны, а
+    у события сотрудника его нет вовсе. Разные правила на разные типы событий
+    дали бы читателю дырявую ленту, в которой пропажу не отличить от отказа.
+    Если область когда-нибудь понадобится, начинать надо отсюда.
+    """
+
+    @staticmethod
+    def list(
+        *,
+        entity_type=None,
+        entity_id=None,
+        actor_user_id=None,
+        action=None,
+        created_from=None,
+        created_to=None,
+    ):
+        """Строки журнала под И-фильтрами (применяются только заданные).
+
+        created_from/created_to — ПОЛУИНТЕРВАЛ [from, to), тот же уговор о
+        границах, что у периодов статусов: сосед, начинающийся ровно в `to`,
+        в окно не попадает, и два соседних окна не покажут одну строку дважды.
+        """
+        queryset = OpsAuditLog.objects.all()
+        if entity_type is not None:
+            queryset = queryset.filter(entity_type=entity_type)
+        if entity_id is not None:
+            queryset = queryset.filter(entity_id=entity_id)
+        if actor_user_id is not None:
+            queryset = queryset.filter(actor_user_id=actor_user_id)
+        if action is not None:
+            queryset = queryset.filter(action=action)
+        if created_from is not None:
+            queryset = queryset.filter(created_at__gte=created_from)
+        if created_to is not None:
+            queryset = queryset.filter(created_at__lt=created_to)
+        # Свежие первыми, id — ОБЯЗАТЕЛЬНЫЙ разрыв ничьей, а не украшение:
+        # record_many ставит всей пачке ОДНО время (см. audit_service), то
+        # есть равный created_at здесь — обычное дело, а не край. Без второго
+        # ключа страничная выдача теряла бы и дублировала строки пачки между
+        # страницами.
+        return queryset.order_by("-created_at", "-id")

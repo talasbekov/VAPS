@@ -9,7 +9,7 @@ apps/operations/api/views.py из Backend/VAPS).
   источнике), идентичность в теле не принимается — только из аутентификации.
 """
 from django.db.models import Q
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -32,6 +32,7 @@ from organization_management.apps.operations.api.serializers import (
     AssignRoleRequestSerializer,
     BulkStatusCreateSerializer,
     GrantTemporaryDutyRequestSerializer,
+    OpsAuditLogSerializer,
     OpsEmployeeStatusSerializer,
     PermissionSerializer,
     RoleSerializer,
@@ -61,8 +62,10 @@ from organization_management.apps.operations.models_status import (
     Secondment,
     SecondmentState,
 )
+from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.selectors import (
     DivisionTreeSelector,
+    OpsAuditLogSelector,
     StaffUnitSelector,
 )
 from organization_management.apps.operations.services import (
@@ -84,6 +87,9 @@ from organization_management.apps.operations.strength_report import (
 
 # Право на запись статусов; им же резолвится область видимости пачки.
 _BULK_STATUS_PERMISSION = "status.manage"
+# Право чтения журнала раздела — существующий код каталога (seed_operations),
+# нового не заводим: каталог прав закрытый мир.
+_AUDIT_PERMISSION = "audit.view"
 # Право на чтение статусов — то же, что у расхода: кто видит агрегат, тот
 # видит и строки, из которых он сложился.
 _READ_STATUS_PERMISSION = "status.view"
@@ -114,6 +120,46 @@ def _parse_date_param(request, name):
     if parsed is None:
         raise ValidationError({name: "Ожидается дата в формате ГГГГ-ММ-ДД."})
     return parsed
+
+
+def _parse_datetime_param(request, name):
+    """Момент ISO из query или None; мусор и НАИВНОЕ время — 400.
+
+    Зона обязательна, и это не придирка: журнал хранит момент в UTC, а
+    наивный «2026-08-04T00:00» в поясе +05 сдвигает границу окна на пять
+    часов — читатель, попросивший «за 4 августа», молча получил бы чужой
+    день. Ровно тем же доводом clock.override() отвергает наивные datetime;
+    двум границам раздела расходиться в этом незачем.
+    """
+    raw = request.query_params.get(name)
+    if raw is None:
+        return None
+    parsed = parse_datetime(raw)
+    if parsed is None:
+        raise ValidationError(
+            {name: "Ожидается момент в формате ISO 8601 с указанием зоны."}
+        )
+    if parsed.utcoffset() is None:
+        raise ValidationError({name: "Укажите часовой пояс (например, +05:00 или Z)."})
+    return parsed
+
+
+def _parse_choice_param(request, name, allowed):
+    """Значение из ЗАКРЫТОГО множества или None; чужое — 400, не пустой ответ.
+
+    Словарь событий и типов сущностей закрыт (audit_service), поэтому опечатка
+    в фильтре — это ошибка запроса, а не «ничего не найдено». Молчаливая
+    пустая страница на `action=STATUS_CREATE` убедила бы читателя, что таких
+    событий не было.
+    """
+    raw = request.query_params.get(name)
+    if raw is None:
+        return None
+    if raw not in allowed:
+        raise ValidationError(
+            {name: f"Допустимые значения: {', '.join(sorted(allowed))}."}
+        )
+    return raw
 
 
 def _parse_bool_param(request, name):
@@ -1104,3 +1150,136 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "warnings": report.warnings,
             }
         )
+
+
+class AuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Журнал раздела ОМ: только чтение.
+
+    GET /api/operations/audit-logs/      — лента с фильтрами
+    GET /api/operations/audit-logs/{id}/ — одна запись
+
+    ТОЛЬКО ЧТЕНИЕ, и это не формальность: журнал append-only на уровне БД
+    (триггер, срез 20), и открытая запись по HTTP обещала бы правку, которую
+    база всё равно отвергнет 500-м.
+
+    Держит это ОТСУТСТВИЕ пишущих действий: у ViewSet нет create/update/
+    destroy, роутер их и не маршрутизирует, поэтому POST/PUT/PATCH/DELETE
+    получают 405 — раньше, чем гейт права успел бы ответить сбивающим с толку
+    403. Владелец один: `http_method_names` здесь стоял и был снят как
+    декорация — его снятие не роняло ни одного теста (проверено красной
+    пробой). Открыть запись можно только новым действием — и это будет видно
+    в коде, а не спрятано за списком глаголов.
+
+    Право audit.view — уже существующий код каталога, нового не заводил:
+    каталог прав закрытый мир. Область ПЛОСКАЯ (владелец решения и довод —
+    OpsAuditLogSelector): держатель права видит журнал целиком.
+
+    Это ВТОРОЙ журнал проекта и он о другом: старый /api/audit/ пишет
+    middleware на каждый успешный HTTP-запрос, здесь же лежат доменные
+    события раздела. Ни его маршруты, ни его экраны не трогаются.
+    """
+
+    # Только ради схемы: документирует limit/offset (см. TemporaryDutyViewSet).
+    pagination_class = DefaultPagination
+
+    permission_map = {"list": _AUDIT_PERMISSION, "retrieve": _AUDIT_PERMISSION}
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "entity_type",
+                OpenApiTypes.STR,
+                description=(
+                    "Тип сущности из закрытого словаря "
+                    "(employee_status, secondment, employee)."
+                ),
+            ),
+            OpenApiParameter(
+                "entity_id",
+                OpenApiTypes.INT,
+                description="Идентификатор сущности; вместе с entity_type — её лента.",
+            ),
+            OpenApiParameter(
+                "actor", OpenApiTypes.STR, description="Актор события, точное совпадение."
+            ),
+            OpenApiParameter(
+                "action",
+                OpenApiTypes.STR,
+                description="Код события из закрытого словаря audit_service.ACTIONS.",
+            ),
+            OpenApiParameter(
+                "created_from",
+                OpenApiTypes.DATETIME,
+                description="Нижняя граница окна, включительно (ISO 8601 с зоной).",
+            ),
+            OpenApiParameter(
+                "created_to",
+                OpenApiTypes.DATETIME,
+                description="Верхняя граница окна, ИСКЛЮЧИТЕЛЬНО (ISO 8601 с зоной).",
+            ),
+        ],
+        responses=paginated_response_schema(
+            "PaginatedOpsAuditLogList", OpsAuditLogSerializer(many=True)
+        ),
+        description=(
+            "Лента журнала раздела под правом audit.view. Окно "
+            "[created_from, created_to) полуоткрытое — соседние окна не "
+            "покажут одну строку дважды. Неизвестный тип сущности или код "
+            "события — 400, а не пустая страница. Порядок задаёт сервер: "
+            "свежие первыми, при равном времени (пачка пишется одним "
+            "моментом) — по убыванию id."
+        ),
+    )
+    def list(self, request, *args, **kwargs):
+        queryset = OpsAuditLogSelector.list(
+            entity_type=_parse_choice_param(
+                request, "entity_type", audit_service.ENTITY_TYPES
+            ),
+            entity_id=_parse_int_param(request, "entity_id"),
+            actor_user_id=request.query_params.get("actor"),
+            action=_parse_choice_param(request, "action", audit_service.ACTIONS),
+            created_from=_parse_datetime_param(request, "created_from"),
+            created_to=_parse_datetime_param(request, "created_to"),
+        )
+        paginator = DefaultPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        return paginator.get_paginated_response(
+            OpsAuditLogSerializer(page, many=True).data
+        )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id записи журнала.",
+            )
+        ],
+        responses={200: OpsAuditLogSerializer},
+        description=(
+            "Одна запись журнала под правом audit.view. 404 — записи нет "
+            "либо идентификатор нечисловой."
+        ),
+    )
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        # int() ДО запроса: pk роутера — произвольная строка, и мусорный
+        # идентификатор ушёл бы ValueError → 500 вместо 404 (тот же приём, что
+        # у _get_status_or_404).
+        try:
+            entry_id = int(pk)
+        except (TypeError, ValueError):
+            entry_id = None
+        entry = (
+            OpsAuditLogSelector.list().filter(pk=entry_id).first()
+            if entry_id is not None
+            else None
+        )
+        if entry is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"audit_log_id": str(pk)},
+                message="Запись журнала не найдена.",
+            )
+        return Response(OpsAuditLogSerializer(entry).data)
