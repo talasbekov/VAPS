@@ -407,6 +407,15 @@ test('Story 17.7e (AC-2): «Снять и заменить» — реальны�
   await page.getByRole('link', { name: 'Событие #5' }).click()
   await expect(page.getByRole('heading', { name: /Утверждена/ })).toBeVisible()
 
+  // review (Acceptance Auditor, мутационно проверено): версия-в-заголовке
+  // (счётчик, не route id) сам по себе не различает «реальная навигация
+  // на новую версию» от «тот же URL, инкрементированное поле version» —
+  // стаб, возвращающий СТАРЫЙ id с version+1, прошёл бы старую пробу
+  // молча. Харнес — MemoryRouter (не BrowserRouter), page.url() НЕ
+  // отражает клиентский route (проверено — assertion на URL не работает
+  // структурно для этого харнеса), поэтому доказательство — данные:
+  // employee_id ЗАМЕНЫ виден, employee_id ВЫБЫВШЕГО больше нет (ниже).
+
   await page.getByRole('button', { name: /Снять и заменить/ }).click()
   const replaceDialog = page.getByRole('dialog')
   await expect(replaceDialog).toBeVisible()
@@ -417,4 +426,14 @@ test('Story 17.7e (AC-2): «Снять и заменить» — реальны�
   await expect(replaceDialog).not.toBeVisible()
   await expect(page.getByRole('heading', { name: /Версия 2/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Утверждена/ })).toBeVisible()
+  // Замена реально произошла — новый employee_id виден в таблице
+  // назначений, старого (выбывшего) больше нет. Скоуп на table —
+  // '99999999-…' совпадает и с ячейкой таблицы, и с чем-то ещё на
+  // странице (DemoToolbar/иной dev-furniture), таблица — однозначный
+  // семантический таргет.
+  const table = page.getByRole('table')
+  await expect(table.getByText('99999999-9999-9999-9999-999999999999')).toBeVisible()
+  await expect(
+    table.getByText('11111111-1111-1111-1111-111111111111'),
+  ).not.toBeVisible()
 })
