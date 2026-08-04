@@ -4,7 +4,7 @@ baseline_commit: 1403d5d
 
 # Story 16.8h2: Frontend — список и деталь версий Расстановки
 
-Status: review
+Status: done
 
 ## Story
 
@@ -75,9 +75,13 @@ Claude Sonnet 5
 - `frontend/src/features/placement/pages/PlacementVersionDetailPage.tsx` (new)
 - `frontend/src/features/placement/pages/PlacementVersionDetailPage.test.tsx` (new)
 
+**После ревью:**
+- `frontend/src/features/placement/pages/PlacementVersionDetailPage.test.tsx` (modified — 5 новых тестов, happy-path переписан на расходящиеся данные)
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-04 | Story создана (create-story). Часть 2/5 пересмотренного расщепления 16.8h — отдельный экран, не embedding в SecurityEventDetailPage (пользовательское решение). |
 | 2026-08-04 | Dev-story: список+деталь. 14 новых тестов. `npm run gate` — 1061 passed, 0 regressions. Status → review. |
+| 2026-08-04 | 3-agent ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Acceptance Auditor: happy-path тест детали использовал ИДЕНТИЧНЫЕ данные в detail и conflicts-ответах — не мог отличить "панель читает из своего запроса" от гипотетической регрессии re-derive из `version.assignments` — переписан на РАСХОДЯЩИЕСЯ данные (разные сотрудники/severity). Edge Case Hunter независимо совпал + добавил: панель-конфликтов не имела своих loading/error/empty-тестов, не было теста generic-(non-404)-ошибки детали (отличить от 404-сообщения), не было теста unmapped-status-фоллбэка. Добавлено 5 новых тестов. Blind Hunter's находки — все вне объёма (routing/nav — явно 16.8h5) или мелкие стилевые (дубль STATUS_LABEL — matches duty-plans' конвенция). `npm run gate` повторно — 1065 passed, 0 regressions, tsc/eslint чисты. Status → done. |
