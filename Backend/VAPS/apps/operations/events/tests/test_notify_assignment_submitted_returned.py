@@ -7,6 +7,7 @@ import uuid
 import pytest
 from django.core.management import call_command
 
+from apps.core.exceptions import DomainError
 from apps.core.models import (
     Division,
     DivisionType,
@@ -22,6 +23,7 @@ from apps.operations.events.models import (
     SecurityEventDirectAssignment,
 )
 from apps.operations.events.services import (
+    approve_assignment_version,
     form_draft_placement,
     return_assignment_version,
     submit_assignment_version,
@@ -221,6 +223,70 @@ def test_return_with_blank_created_by_skips_creator_notification_not_error():
     assert not Notification.objects.filter(
         kind=Notification.Kind.ASSIGNMENT_RETURNED
     ).exists()
+
+
+def test_return_blank_created_by_still_notifies_senior_only(division):
+    """AC-4's compound claim isolated (review, Acceptance Auditor):
+    test_return_with_blank_created_by_skips_creator_notification_not_error
+    above has NO senior either, so its assertion is trivially true for two
+    independent reasons — this test has a real senior AND blank created_by,
+    proving the creator-skip and senior-notify branches are independent."""
+    senior = make_employee(division, "900101300804")
+    UserEmployeeBinding.objects.create(user_id="user-senior-804", employee=senior)
+    event = make_event("OBJ-RETNOTIFY-5", senior_employee_id=senior.id)
+    version = make_draft_version(event)  # direct .objects.create(), created_by blank
+    submit_assignment_version(version, actor="planner-1")
+
+    return_assignment_version(version, actor="approver-1", reason="Проверить состав")
+
+    assert (
+        Notification.objects.filter(kind=Notification.Kind.ASSIGNMENT_RETURNED).count()
+        == 1
+    )
+    assert (
+        Notification.objects.get(kind=Notification.Kind.ASSIGNMENT_RETURNED).recipient
+        == "user-senior-804"
+    )
+
+
+def test_submit_no_notification_on_rejected_transition():
+    event = make_event("OBJ-SUBNOTIFY-6")
+    version = make_draft_version(event)
+    submit_assignment_version(version, actor="planner-1")  # DRAFT -> SUBMITTED
+    # A second real transition attempt is impossible (idempotent replay, not
+    # a rejection) — approve first so the NEXT submit call hits a genuine
+    # non-DRAFT rejection (422), the branch that must never notify.
+    approve_assignment_version(version, actor="approver-1")
+    Notification.objects.filter(kind=Notification.Kind.ASSIGNMENT_SUBMITTED).delete()
+
+    with pytest.raises(DomainError):
+        submit_assignment_version(version, actor="planner-1")
+
+    assert not Notification.objects.filter(
+        kind=Notification.Kind.ASSIGNMENT_SUBMITTED
+    ).exists()
+
+
+def test_return_no_notification_on_rejected_transition():
+    event = make_event("OBJ-RETNOTIFY-6")
+    version = make_draft_version(event)  # still DRAFT, return requires SUBMITTED
+
+    with pytest.raises(DomainError):
+        return_assignment_version(version, actor="approver-1", reason="Причина")
+
+    assert not Notification.objects.filter(
+        kind=Notification.Kind.ASSIGNMENT_RETURNED
+    ).exists()
+
+
+def test_return_new_draft_version_created_by_stays_blank():
+    event, version = make_submitted_version_via_draft("creator-901", "OBJ-RETNOTIFY-7")
+
+    _returned, new_draft = return_assignment_version(
+        version, actor="approver-1", reason="Проверить состав"
+    )
+
+    assert not new_draft.created_by
 
 
 def test_return_creator_who_is_also_senior_gets_one_notification(division):
