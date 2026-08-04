@@ -1582,6 +1582,48 @@ def _require_text(value, field):
         )
 
 
+def _notify_replacement(old_version, new_version):
+    """Story 17.6 (FR-28/FR-31): fire `Notification.Kind.REPLACEMENT_CREATED`
+    for every employee present in `old_version` but absent from
+    `new_version` — «снятый»/«заменённый», no distinction between the two
+    (17.3 allows both a straight replacement and a plain vacancy; either
+    way the removed employee is notified the same way) — plus
+    `event.senior_employee_id`, if set (registry: "senior/affected
+    users"). Buквальный образец `_notify_assignment_approved()`'s (16.6a)
+    bridging идиома: `CoreEmployeeSelector.user_ids_for()` +
+    `set(...values())`-дедуп, ОДИН `notify()` на уникального получателя,
+    не на строку.
+
+    Fires for BOTH direct `amend_assignment_version()` callers AND
+    `cascade_replace_departed()` (17.5, which delegates its whole
+    mutation here) — no 17.5-specific code needed.
+    """
+    old_employee_ids = set(
+        old_version.assignments.values_list("employee_id", flat=True)
+    )
+    new_employee_ids = set(
+        new_version.assignments.values_list("employee_id", flat=True)
+    )
+    removed_employee_ids = old_employee_ids - new_employee_ids
+    if not removed_employee_ids:
+        return
+
+    event = new_version.event
+    if event.senior_employee_id:
+        removed_employee_ids = removed_employee_ids | {event.senior_employee_id}
+
+    user_ids = CoreEmployeeSelector.user_ids_for(removed_employee_ids)
+    business_date = Clock.today_local()
+    payload = {"event_id": event.pk, "version_id": new_version.pk}
+    for user_id in set(user_ids.values()):
+        notify(
+            recipient=user_id,
+            kind=Notification.Kind.REPLACEMENT_CREATED,
+            business_date=business_date,
+            payload=payload,
+        )
+
+
 def amend_assignment_version(version, *, actor, reason, sanction, assignments):
     """Story 17.3 (FR-28): оперативное изменение Расстановки ПОСЛЕ
     утверждения — только с санкцией. Создаёт НОВУЮ версию сразу
@@ -1742,6 +1784,8 @@ def amend_assignment_version(version, *, actor, reason, sanction, assignments):
             digest_input.encode("utf-8")
         ).hexdigest()
         new_version.save(update_fields=["signature_hash", "updated_at"])
+
+        _notify_replacement(version, new_version)
 
         record(
             actor=actor,

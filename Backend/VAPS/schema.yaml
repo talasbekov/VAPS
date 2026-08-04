@@ -4572,6 +4572,7 @@ components:
       - ACK_REQUIRED
       - ASSIGNMENT_SUBMITTED
       - ASSIGNMENT_RETURNED
+      - REPLACEMENT_CREATED
       type: string
       description: |-
         * `SUBMISSION_LAGGING` - Отставание по сдаче
@@ -4585,6 +4586,7 @@ components:
         * `ACK_REQUIRED` - Требуется ознакомление
         * `ASSIGNMENT_SUBMITTED` - Расстановка подана
         * `ASSIGNMENT_RETURNED` - Расстановка возвращена
+        * `REPLACEMENT_CREATED` - Замена в расстановке
     MyPermissionsResponse:
       type: object
       properties:

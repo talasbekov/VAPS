@@ -94,6 +94,16 @@ class Notification(TimeStampedModel):
         # 16.6a/16.6c) (docs/registries/ws-message-types.yaml::
         # ASSIGNMENT_RETURNED).
         ASSIGNMENT_RETURNED = "ASSIGNMENT_RETURNED", "Расстановка возвращена"
+        # Story 17.6, FR-28/FR-31: fired once per (recipient, business_date)
+        # when amend_assignment_version() (17.3, also reached via 17.5's
+        # cascade_replace_departed()) removes an employee_id present in the
+        # OLD version but absent from the NEW one — recipients are every
+        # such removed employee (via CoreEmployeeSelector.user_ids_for(),
+        # same bridging idiom as 16.6a) plus event.senior_employee_id, if
+        # set. Already reserved by docs/registries/ws-message-types.yaml::
+        # REPLACEMENT_CREATED ("recipients: senior/affected users") — the
+        # literal name is reused as-is, not invented here.
+        REPLACEMENT_CREATED = "REPLACEMENT_CREATED", "Замена в расстановке"
 
     recipient = models.CharField(max_length=100)
     kind = models.CharField(max_length=50, choices=Kind.choices)
@@ -150,6 +160,7 @@ class Notification(TimeStampedModel):
                         "ACK_REQUIRED",
                         "ASSIGNMENT_SUBMITTED",
                         "ASSIGNMENT_RETURNED",
+                        "REPLACEMENT_CREATED",
                     ]
                 ),
                 name="chk_notification_kind",
