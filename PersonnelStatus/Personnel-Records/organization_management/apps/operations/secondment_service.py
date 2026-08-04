@@ -1,6 +1,6 @@
-"""Откомандирование: связанная пара DETACHED + ATTACHED (порт
-apps/operations/statuses/services/secondment_service.py из Backend/VAPS,
-часть «инициация»).
+"""Прикомандирование: связанная пара DETACHED + ATTACHED и возврат из неё
+(порт apps/operations/statuses/services/secondment_service.py из
+Backend/VAPS).
 
 Обе ноги и связь между ними пишутся ОДНОЙ транзакцией: пара либо есть
 целиком, либо её нет вовсе. Полупара — это сотрудник, который нигде не
@@ -11,8 +11,12 @@ _validate_interval / _assert_no_conflict), а не зовёт create_status дв
 create_status — операция оператора со своим гардом откомандированного, и
 второй вызов отказал бы сам себе на только что записанной первой ноге.
 
-НЕ портировано в этом срезе (отдельными кусками): возврат из
-прикомандирования (запрос/подтверждение) и проекция «+N» в расход — как и в
+Возврат — рукопожатие из двух append-once фактов: штатное подразделение
+запрашивает, принимающее подтверждает, и подтверждение закрывает обе ноги.
+Хранимого признака «вернулся» нет: состояние сотрудника после возврата
+выводится из статусов.
+
+НЕ портировано (отдельными кусками): проекция «+N» в расход — как и в
 источнике, где она отложена. Аудит раздела здесь не зовётся, как и во всех
 срезах переезда.
 
@@ -20,10 +24,15 @@ create_status — операция оператора со своим гардо
 - штатное подразделение берётся из ШТАТНОЙ ЕДИНИЦЫ (у старого Employee своего
   division_id нет); сотрудник без слота откомандировать нельзя — «откуда»
   неизвестно, а выдумывать источник пары нельзя;
-- принимающее подразделение проверяется через общий селектор дерева.
+- принимающее подразделение проверяется через общий селектор дерева;
+- возврат вступает в силу СО СЛЕДУЮЩЕГО дня, а не закрывает ноги сегодняшним
+  числом (см. confirm_return): сданный расход за сегодня не переписывается.
 """
+from datetime import timedelta
+
 from django.db import transaction
 
+from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
@@ -38,8 +47,10 @@ from organization_management.apps.operations.status_service import (
     _lock_employee,
     _require_actor,
     _resolve_status_type,
+    _lock_for_edit,
     _validate_interval,
     assert_employee_status_editable,
+    cancel_status,
 )
 
 DETACHED_CODE = "DETACHED"
@@ -157,3 +168,129 @@ def initiate_secondment(
         document_basis=document_basis,
         created_by=actor,
     )
+
+
+def _lock_secondment(secondment):
+    """Связь под блокировкой и ПЕРЕЧИТАННАЯ: факты возврата append-once.
+
+    Второй писатель, пришедший со своим устаревшим объектом (факты пустые),
+    после блокировки видит канонические факты первого и получает отказ, а не
+    переписывает их. Порядок захвата тот же, что всюду в разделе: сотрудник,
+    затем строка — иначе два оператора встали бы во взаимную блокировку.
+    """
+    _lock_employee(secondment.employee_id)
+    locked = (
+        Secondment.objects.select_for_update().filter(pk=secondment.pk).first()
+    )
+    if locked is None:
+        raise DomainError(
+            "ENTITY_NOT_FOUND",
+            404,
+            detail={"secondment_id": secondment.pk},
+            message="Прикомандирование не найдено.",
+        )
+    return locked
+
+
+def _end_leg_tomorrow(leg, *, actor, today):
+    """Закрыть идущую ногу завтрашним днём — окончание её действия.
+
+    Своя запись, а НЕ complete_status_early: то — фиксация факта, и её гард
+    «факт не бывает в будущем» здесь сработал бы против правила «возврат
+    вступает в силу со следующего дня». И не update_status: его гард
+    откомандированного заблокировал бы снятие самой ограничивающей строки, а
+    ослаблять операторский путь правки ради внутренней нужды нельзя — ноги
+    правятся через возврат, не PATCH'ем.
+
+    Блокировка, перечитка и гарды (строка проекции, отменённая терминальна)
+    приходят из общей преамбулы правки. Идущая нога заканчивается позже
+    сегодняшнего дня, поэтому запись здесь всегда СОКРАЩАЕТ интервал.
+    """
+    _require_actor(actor)
+    _, locked = _lock_for_edit(leg)
+    locked.date_end = today + timedelta(days=1)
+    # update_fields, а не голый save(): голый переписал бы source и
+    # генерируемый period чужими значениями.
+    locked.save(update_fields=["date_end", "updated_at"])
+    return locked
+
+
+@transaction.atomic
+def request_return(secondment, *, actor):
+    """Шаг 1: штатное подразделение запрашивает возврат — факт append-once.
+
+    Повторный запрос или запрос по уже подтверждённому возврату — 422:
+    рукопожатие не начинают заново, иначе первый запросивший стирается из
+    следа. Кто вправе запрашивать (штатный оператор) — вопрос гейта на
+    границе HTTP, здесь actor это просто строка.
+    """
+    _require_actor(actor)
+    locked = _lock_secondment(secondment)
+    if (
+        locked.return_requested_at is not None
+        or locked.return_confirmed_at is not None
+    ):
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"secondment_id": locked.pk},
+            message="Возврат уже запрошен или подтверждён.",
+        )
+    locked.return_requested_at = Clock.now()
+    locked.return_requested_by = actor
+    locked.save(
+        update_fields=["return_requested_at", "return_requested_by", "updated_at"]
+    )
+    return locked
+
+
+@transaction.atomic
+def confirm_return(secondment, *, actor, reason=""):
+    """Шаг 2: принимающее подразделение подтверждает — закрывает ОБЕ ноги.
+
+    Подтверждение без запроса — 422 (рукопожатие одностороннее не бывает),
+    повторное подтверждение — 422. Каждая нога закрывается по своему
+    состоянию: идущая — досрочно сегодняшним числом, не начавшаяся —
+    отменяется (её не было), уже закрытая пропускается. Признака «вернулся»
+    не пишется: состояние сотрудника после возврата выводится из статусов.
+
+    Возврат вступает в силу СО СЛЕДУЮЩЕГО дня: сегодня сотрудник ещё числится
+    прикомандированным, с завтрашнего — дома. Два довода против «закрыть
+    сегодняшним числом» (так делает источник): расход за сегодня уже сдан с
+    прикомандированным — закрытие задним числом переписало бы сданный день; и
+    полуинтервал не умеет пустых фактов, поэтому ногу, начавшуюся сегодня,
+    сегодняшним числом закрыть нельзя вовсе. Одна дата для обоих случаев —
+    одно правило, а не два поведения в зависимости от даты начала.
+    """
+    _require_actor(actor)
+    locked = _lock_secondment(secondment)
+    if locked.return_requested_at is None:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"secondment_id": locked.pk},
+            message="Нельзя подтвердить возврат без запроса.",
+        )
+    if locked.return_confirmed_at is not None:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"secondment_id": locked.pk},
+            message="Возврат уже подтверждён.",
+        )
+    today = Clock.today_local()
+    for leg in (locked.out_status, locked.in_status):
+        state = leg.state_on(today)
+        if state == OpsEmployeeStatus.LifecycleState.ACTIVE:
+            _end_leg_tomorrow(leg, actor=actor, today=today)
+        elif state == OpsEmployeeStatus.LifecycleState.PLANNED:
+            cancel_status(
+                leg, actor=actor, reason=reason or "возврат из прикомандирования"
+            )
+        # Завершённая или отменённая нога уже закрыта — закрывать нечего.
+    locked.return_confirmed_at = Clock.now()
+    locked.return_confirmed_by = actor
+    locked.save(
+        update_fields=["return_confirmed_at", "return_confirmed_by", "updated_at"]
+    )
+    return locked

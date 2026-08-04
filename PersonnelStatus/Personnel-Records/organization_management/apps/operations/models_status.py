@@ -217,6 +217,14 @@ class Secondment(TimeStampedModel):
     from_division_id = models.IntegerField()
     to_division_id = models.IntegerField()
     document_basis = models.TextField(blank=True, default="")
+    # Возврат — рукопожатие из двух ФАКТОВ, а не переключаемое состояние:
+    # штатное подразделение запрашивает, принимающее подтверждает, и
+    # подтверждение закрывает обе ноги. Хранимого признака «вернулся» нет —
+    # состояние сотрудника после возврата выводится из статусов.
+    return_requested_at = models.DateTimeField(null=True, blank=True)
+    return_requested_by = models.CharField(max_length=255, null=True, blank=True)
+    return_confirmed_at = models.DateTimeField(null=True, blank=True)
+    return_confirmed_by = models.CharField(max_length=255, null=True, blank=True)
 
     class Meta:
         db_table = "ops_status_secondments"
@@ -231,6 +239,40 @@ class Secondment(TimeStampedModel):
             models.CheckConstraint(
                 condition=~Q(out_status=F("in_status")),
                 name="chk_secondment_legs_differ",
+            ),
+            # Факт возврата целиком или его нет: «когда» без «кто» — след,
+            # по которому уже не спросить, кто принял решение. Пустая строка
+            # закрывается явно: она не NULL и проскочила бы проверку на NULL.
+            models.CheckConstraint(
+                condition=(
+                    Q(return_requested_at__isnull=True, return_requested_by__isnull=True)
+                    | (
+                        Q(return_requested_at__isnull=False)
+                        & Q(return_requested_by__isnull=False)
+                        & ~Q(return_requested_by="")
+                    )
+                ),
+                name="chk_secondment_request_fact_complete",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(return_confirmed_at__isnull=True, return_confirmed_by__isnull=True)
+                    | (
+                        Q(return_confirmed_at__isnull=False)
+                        & Q(return_confirmed_by__isnull=False)
+                        & ~Q(return_confirmed_by="")
+                    )
+                ),
+                name="chk_secondment_confirm_fact_complete",
+            ),
+            # Порядок рукопожатия — тоже инвариант данных, а не только
+            # сервиса: подтверждения без запроса не существует.
+            models.CheckConstraint(
+                condition=(
+                    Q(return_confirmed_at__isnull=True)
+                    | Q(return_requested_at__isnull=False)
+                ),
+                name="chk_secondment_confirm_after_request",
             ),
         ]
         indexes = [
