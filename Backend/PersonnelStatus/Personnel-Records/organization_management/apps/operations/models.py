@@ -141,3 +141,12 @@ class TemporaryDutyPermission(TimeStampedModel):
 
     def __str__(self):
         return f"{self.user_id}:{self.duty_role_code}"
+
+
+# Статусы раздела ОМ живут отдельным модулем (провенанс порта — в его
+# докстринге); импорт здесь нужен, чтобы Django нашёл модели приложения.
+# В конце файла: models_status импортирует TimeStampedModel отсюда.
+from organization_management.apps.operations.models_status import (  # noqa: F401,E402
+    OpsEmployeeStatus,
+    StatusOverride,
+)

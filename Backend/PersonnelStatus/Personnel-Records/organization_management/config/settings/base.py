@@ -140,6 +140,13 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 50,
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+
+    # Обработчик раздела ОМ: доменные ошибки и известные нарушения
+    # ограничений отдаются конвертом, ВСЁ остальное уходит штатному
+    # обработчику DRF без изменений формы (старые экраны не затронуты).
+    'EXCEPTION_HANDLER':
+        'organization_management.apps.operations.api.exception_handler'
+        '.ops_exception_handler',
 }
 
 
