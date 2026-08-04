@@ -165,6 +165,49 @@ def test_create_briefing_ignores_incident_only_params():
     assert entry.photo_attachment_id is None
 
 
+def test_create_directive_ignores_incident_only_params():
+    """review (Blind Hunter): the BRIEFING variant above didn't cover
+    DIRECTIVE's identical ignore-path directly."""
+    event = make_event("OBJ-JOURNAL-5e")
+    post = make_post(event.object)
+
+    entry = create_journal_entry(
+        event,
+        actor="staff-1",
+        entry_type=JournalEntry.EntryType.DIRECTIVE,
+        text="x",
+        post=post,
+        participant_ids=[uuid.uuid4()],
+        photo_attachment_id=uuid.uuid4(),
+    )
+
+    assert entry.post_id is None
+    assert entry.participant_ids == []
+    assert entry.photo_attachment_id is None
+
+
+def test_create_incident_rejects_post_from_a_different_object():
+    """review (Blind Hunter + Edge Case Hunter, independently confirmed):
+    буквальный образец PlacementAssignment.clean() (16.x) — post обязан
+    принадлежать тому же объекту, что событие."""
+    event = make_event("OBJ-JOURNAL-5f")
+    other_obj = FacilityObject.objects.create(
+        code="OBJ-JOURNAL-5f-OTHER", name="Штаб", address="г. Кызылорда"
+    )
+    foreign_post = make_post(other_obj, code="POST-FOREIGN")
+
+    with pytest.raises(DomainError):
+        create_journal_entry(
+            event,
+            actor="staff-1",
+            entry_type=JournalEntry.EntryType.INCIDENT,
+            text="x",
+            post=foreign_post,
+        )
+
+    assert not JournalEntry.objects.filter(event=event).exists()
+
+
 def test_create_writes_audit_row():
     event = make_event("OBJ-JOURNAL-6")
 

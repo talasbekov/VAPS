@@ -1521,6 +1521,15 @@ def create_journal_entry(
             400,
             message="post обязателен для entry_type=INCIDENT.",
         )
+    if is_incident and post.object_id != event.object_id:
+        # review (Blind Hunter + Edge Case Hunter, независимо совпали):
+        # буквальный образец PlacementAssignment.clean() (16.x) — пост
+        # обязан принадлежать тому же объекту, что событие.
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            message="post должен принадлежать тому же объекту, что и событие.",
+        )
     with transaction.atomic():
         event = SecurityEvent.objects.select_for_update().get(pk=event.pk)
         if event.status_code != SecurityEvent.StatusCode.IN_PROGRESS:
