@@ -20,6 +20,11 @@ PERMISSIONS = [
     ("object.manage", "Управление объектами"),
     ("event.manage", "Управление мероприятиями"),
     ("duty.manage", "Управление дежурствами"),
+    # Story 17.1: журнал штаба (режим проведения, FR-29) — раскладка ниже
+    # PROVISIONAL (тот же приём, что personnel.*/document.*): тест
+    # проверяет механизм, не политику; открытый вопрос Bratan.
+    ("event.journal.create", "Запись в журнал штаба"),
+    ("event.journal.view", "Просмотр журнала штаба"),
     ("audit.view", "Просмотр аудита"),
     # core API gating (story 2.13). Provisional role-mapping below — пометка
     # PROVISIONAL (открытый вопрос Bratan); тест проверяет механизм, не политику.
@@ -58,32 +63,60 @@ ROLES = [
 ROLE_PERMISSIONS = {
     "ADMIN": ["*"],
     "OMD": [
-        "assignment.create", "assignment.delete", "assignment.submit",
-        "daily_report.generate", "daily_report.override_block", "brokerage.manage",
-        "personnel.view", "orgstructure.view",
+        "assignment.create",
+        "assignment.delete",
+        "assignment.submit",
+        "daily_report.generate",
+        "daily_report.override_block",
+        "brokerage.manage",
+        "personnel.view",
+        "orgstructure.view",
+        "event.journal.create",
+        "event.journal.view",  # PROVISIONAL (17.1)
     ],
     "SENIOR_COORDINATOR": [
-        "assignment.create", "assignment.delete", "assignment.submit",
-        "personnel.view", "orgstructure.view",
+        "assignment.create",
+        "assignment.delete",
+        "assignment.submit",
+        "personnel.view",
+        "orgstructure.view",
+        "event.journal.create",
+        "event.journal.view",  # PROVISIONAL (17.1)
     ],
     "APPROVER": [
-        "assignment.return", "assignment.approve",
-        "personnel.view", "orgstructure.view",
+        "assignment.return",
+        "assignment.approve",
+        "personnel.view",
+        "orgstructure.view",
+        "event.journal.view",  # PROVISIONAL (17.1)
     ],
     "DIVISION_OPERATOR": [
-        "daily_report.mark_update", "daily_report.correct", "status.view",
-        "personnel.view", "orgstructure.view",
-        "document.upload", "document.view",  # PROVISIONAL (6.1, Д6)
+        "daily_report.mark_update",
+        "daily_report.correct",
+        "status.view",
+        "personnel.view",
+        "orgstructure.view",
+        "document.upload",
+        "document.view",  # PROVISIONAL (6.1, Д6)
     ],
     "ORGD": [
-        "audit.view", "daily_report.generate", "daily_report.override_block",
-        "personnel.view", "personnel.edit",
-        "orgstructure.view", "orgstructure.manage",
-        "document.upload", "document.view",  # PROVISIONAL (6.1, Д6)
+        "audit.view",
+        "daily_report.generate",
+        "daily_report.override_block",
+        "personnel.view",
+        "personnel.edit",
+        "orgstructure.view",
+        "orgstructure.manage",
+        "document.upload",
+        "document.view",  # PROVISIONAL (6.1, Д6)
+        "event.journal.view",  # PROVISIONAL (17.1)
     ],
     "VIEWER": [
-        "status.view", "personnel.view", "orgstructure.view",
+        "status.view",
+        "personnel.view",
+        "orgstructure.view",
         "document.view",  # PROVISIONAL (6.1, Д6)
+        "event.journal.view",  # PROVISIONAL (17.1)
     ],
     "INTEGRATION_USER": ["status.manage"],
     "DEVELOPER": ["bugreports.view"],

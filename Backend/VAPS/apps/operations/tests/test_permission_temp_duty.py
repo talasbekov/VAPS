@@ -21,8 +21,10 @@ def omd_duty_role():
 def test_active_temp_duty_grants_role_permissions(omd_duty_role):
     now = timezone.now()
     TemporaryDutyPermission.objects.create(
-        user_id="duty-1", duty_role_code="OMD",
-        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        user_id="duty-1",
+        duty_role_code="OMD",
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
         created_by="admin",
     )
     assert PermissionService.has_permission("duty-1", "assignment.create") is True
@@ -31,8 +33,10 @@ def test_active_temp_duty_grants_role_permissions(omd_duty_role):
 def test_expired_temp_duty_does_not_grant(omd_duty_role):
     now = timezone.now()
     TemporaryDutyPermission.objects.create(
-        user_id="duty-1", duty_role_code="OMD",
-        starts_at=now - dt.timedelta(hours=3), ends_at=now - dt.timedelta(hours=1),
+        user_id="duty-1",
+        duty_role_code="OMD",
+        starts_at=now - dt.timedelta(hours=3),
+        ends_at=now - dt.timedelta(hours=1),
         created_by="admin",
     )
     assert PermissionService.has_permission("duty-1", "assignment.create") is False
@@ -41,8 +45,10 @@ def test_expired_temp_duty_does_not_grant(omd_duty_role):
 def test_future_temp_duty_does_not_grant(omd_duty_role):
     now = timezone.now()
     TemporaryDutyPermission.objects.create(
-        user_id="duty-1", duty_role_code="OMD",
-        starts_at=now + dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=3),
+        user_id="duty-1",
+        duty_role_code="OMD",
+        starts_at=now + dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=3),
         created_by="admin",
     )
     assert PermissionService.has_permission("duty-1", "assignment.create") is False
@@ -51,8 +57,11 @@ def test_future_temp_duty_does_not_grant(omd_duty_role):
 def test_inactive_temp_duty_does_not_grant(omd_duty_role):
     now = timezone.now()
     TemporaryDutyPermission.objects.create(
-        user_id="duty-1", duty_role_code="OMD", is_active=False,
-        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        user_id="duty-1",
+        duty_role_code="OMD",
+        is_active=False,
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
         created_by="admin",
     )
     assert PermissionService.has_permission("duty-1", "assignment.create") is False
@@ -69,25 +78,34 @@ def orgd_duty_role():
 def test_orgd_duty_only_grants_view_permissions(orgd_duty_role):
     now = timezone.now()
     TemporaryDutyPermission.objects.create(
-        user_id="duty-orgd", duty_role_code="ORGD",
-        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        user_id="duty-orgd",
+        duty_role_code="ORGD",
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
         created_by="admin",
     )
     perms = PermissionService.effective_permissions("duty-orgd")
     # ROLE_PERMISSIONS["ORGD"] = audit.view, daily_report.generate,
     # daily_report.override_block, personnel.view, personnel.edit,
-    # orgstructure.view, orgstructure.manage, document.upload, document.view
-    # — only the .view-suffixed subset survives the duty-only read-only filter.
+    # orgstructure.view, orgstructure.manage, document.upload, document.view,
+    # event.journal.view (Story 17.1) — only the .view-suffixed subset
+    # survives the duty-only read-only filter.
     assert perms == {
-        "audit.view", "personnel.view", "orgstructure.view", "document.view"
+        "audit.view",
+        "personnel.view",
+        "orgstructure.view",
+        "document.view",
+        "event.journal.view",
     }
 
 
 def test_orgd_duty_denies_mutating_permission(orgd_duty_role):
     now = timezone.now()
     TemporaryDutyPermission.objects.create(
-        user_id="duty-orgd", duty_role_code="ORGD",
-        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        user_id="duty-orgd",
+        duty_role_code="ORGD",
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
         created_by="admin",
     )
     assert PermissionService.has_permission("duty-orgd", "personnel.edit") is False
@@ -106,8 +124,10 @@ def test_permanent_and_duty_orgd_together_keeps_full_permissions(orgd_duty_role)
     now = timezone.now()
     UserRole.objects.create(user_id="dual-orgd", role_code_id="ORGD")
     TemporaryDutyPermission.objects.create(
-        user_id="dual-orgd", duty_role_code="ORGD",
-        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        user_id="dual-orgd",
+        duty_role_code="ORGD",
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
         created_by="admin",
     )
     assert PermissionService.has_permission("dual-orgd", "personnel.edit") is True
@@ -141,20 +161,32 @@ def test_permanent_orgd_in_one_division_does_not_exempt_duty_orgd_elsewhere(
         user_id="cross-orgd", role_code_id="ORGD", scope_division_id=division_a.id
     )
     TemporaryDutyPermission.objects.create(
-        user_id="cross-orgd", duty_role_code="ORGD", scope_division_id=division_b.id,
-        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        user_id="cross-orgd",
+        duty_role_code="ORGD",
+        scope_division_id=division_b.id,
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
         created_by="admin",
     )
-    assert PermissionService.has_permission(
-        "cross-orgd", "personnel.edit", division_id=division_b.id
-    ) is False
-    assert PermissionService.has_permission(
-        "cross-orgd", "personnel.view", division_id=division_b.id
-    ) is True
+    assert (
+        PermissionService.has_permission(
+            "cross-orgd", "personnel.edit", division_id=division_b.id
+        )
+        is False
+    )
+    assert (
+        PermissionService.has_permission(
+            "cross-orgd", "personnel.view", division_id=division_b.id
+        )
+        is True
+    )
     # The permanent grant's own division is untouched.
-    assert PermissionService.has_permission(
-        "cross-orgd", "personnel.edit", division_id=division_a.id
-    ) is True
+    assert (
+        PermissionService.has_permission(
+            "cross-orgd", "personnel.edit", division_id=division_a.id
+        )
+        is True
+    )
 
 
 def test_permanent_orgd_covering_parent_division_exempts_duty_orgd_in_child(
@@ -178,20 +210,28 @@ def test_permanent_orgd_covering_parent_division_exempts_duty_orgd_in_child(
         user_id="nested-orgd", role_code_id="ORGD", scope_division_id=parent.id
     )
     TemporaryDutyPermission.objects.create(
-        user_id="nested-orgd", duty_role_code="ORGD", scope_division_id=child.id,
-        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        user_id="nested-orgd",
+        duty_role_code="ORGD",
+        scope_division_id=child.id,
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
         created_by="admin",
     )
-    assert PermissionService.has_permission(
-        "nested-orgd", "personnel.edit", division_id=child.id
-    ) is True
+    assert (
+        PermissionService.has_permission(
+            "nested-orgd", "personnel.edit", division_id=child.id
+        )
+        is True
+    )
 
 
 def test_omd_duty_unaffected_by_orgd_read_only_filter(omd_duty_role):
     now = timezone.now()
     TemporaryDutyPermission.objects.create(
-        user_id="duty-omd", duty_role_code="OMD",
-        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        user_id="duty-omd",
+        duty_role_code="OMD",
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
         created_by="admin",
     )
     assert PermissionService.has_permission("duty-omd", "assignment.create") is True
@@ -204,8 +244,11 @@ def test_orgd_duty_visible_division_ids_excludes_mutating_scope(orgd_duty_role):
     now = timezone.now()
     division_id = uuid_module.uuid4()
     TemporaryDutyPermission.objects.create(
-        user_id="duty-orgd", duty_role_code="ORGD", scope_division_id=division_id,
-        starts_at=now - dt.timedelta(hours=1), ends_at=now + dt.timedelta(hours=1),
+        user_id="duty-orgd",
+        duty_role_code="ORGD",
+        scope_division_id=division_id,
+        starts_at=now - dt.timedelta(hours=1),
+        ends_at=now + dt.timedelta(hours=1),
         created_by="admin",
     )
     denied = PermissionService.visible_division_ids("duty-orgd", "personnel.edit")

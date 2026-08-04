@@ -344,6 +344,11 @@ actions:
     description: "Батч-напоминание об ознакомлении назначенным сотрудникам (ACK_REQUIRED) — не мутирует ни одной строки (нет watermark-поля, намеренно, см. Story 16.6e's Scope Decision), только фиксирует факт прогона; entity_id=uuid.UUID(int=0) (batch-summary sentinel). Актор — SYSTEM."
     provenance: derived-from-mutation
     source: "epics.md FR-27; Story 16.6e"
+  JOURNAL_ENTRY_CREATED:
+    entity_type: security_event
+    description: "Запись журнала штаба создана (инструктаж/указание) — доступно только пока событие в статусе IN_PROGRESS (режим проведения). entity_id — uuid.UUID(int=event.pk) (тот же приём, что SECURITY_EVENT_BULLETIN_ISSUED)."
+    provenance: derived-from-mutation
+    source: "epics.md FR-29; Story 17.1"
 
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.

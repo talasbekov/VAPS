@@ -562,3 +562,40 @@ class PlacementAssignment(TimeStampedModel):
                     )
                 }
             )
+
+
+class JournalEntry(TimeStampedModel):
+    """Story 17.1 (FR-29): журнал штаба — инструктаж/указания в режиме
+    проведения ОМ (`SecurityEvent.status_code == IN_PROGRESS`). Только
+    `BRIEFING`/`DIRECTIVE` в этой стори; `INCIDENT` (фото/пост/участники) —
+    отдельная модель-расширение Story 17.2, не эта. Append-only (тот же
+    принцип, что `AuditLog`) — нет UPDATE/DELETE-пути, только `create()`
+    через сервис `create_journal_entry()`.
+    """
+
+    class EntryType(models.TextChoices):
+        BRIEFING = "BRIEFING", "Инструктаж"
+        DIRECTIVE = "DIRECTIVE", "Указание"
+
+    event = models.ForeignKey(
+        SecurityEvent, on_delete=models.CASCADE, related_name="journal_entries"
+    )
+    entry_type = models.CharField(max_length=20, choices=EntryType.choices)
+    text = models.TextField()
+
+    class Meta:
+        db_table = "ops_journal_entries"
+        verbose_name = "Запись журнала штаба"
+        verbose_name_plural = "Записи журнала штаба"
+        ordering = ["created_at"]
+        constraints = [
+            # entry_type без дефолта → .objects.create() без него запишет
+            # "" — тот же урок, что ck_assignment_version_status_choices.
+            models.CheckConstraint(
+                condition=models.Q(entry_type__in=["BRIEFING", "DIRECTIVE"]),
+                name="ck_journal_entry_type_choices",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.event_id} {self.entry_type} @ {self.created_at}"

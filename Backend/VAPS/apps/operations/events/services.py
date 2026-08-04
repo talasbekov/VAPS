@@ -35,6 +35,7 @@ from apps.operations.events.models import (
     AssignmentVersion,
     Group,
     GroupForceRequest,
+    JournalEntry,
     PlacementAssignment,
     SecurityEvent,
     SecurityEventChecklistItem,
@@ -1467,3 +1468,49 @@ def send_ack_reminders():
             },
         )
     return pending
+
+
+def create_journal_entry(event, *, actor, entry_type, text):
+    """Story 17.1 (FR-29): журнал штаба — инструктаж/указания в режиме
+    проведения. Guard-порядок буквально повторяет `issue_bulletin()`:
+    actor -> lifecycle -> mutation -> audit, внутри одной транзакции.
+
+    `entry_type` принимает только `JournalEntry.EntryType`-члены,
+    определённые в ЭТОЙ стори (`BRIEFING`/`DIRECTIVE`); `INCIDENT`
+    зарезервирован Story 17.2 и здесь отклоняется, а не тихо создаётся —
+    у Инцидента другая форма данных (пост/участники/фото), которых у
+    записи этой стори нет.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    if entry_type not in JournalEntry.EntryType.values:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            message=(
+                "Недопустимый entry_type для журнала штаба: "
+                f"{entry_type!r} (допустимо {JournalEntry.EntryType.values})."
+            ),
+        )
+    with transaction.atomic():
+        event = SecurityEvent.objects.select_for_update().get(pk=event.pk)
+        if event.status_code != SecurityEvent.StatusCode.IN_PROGRESS:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message=(
+                    "Запись в журнал штаба доступна только в режиме "
+                    "проведения (IN_PROGRESS)."
+                ),
+            )
+        entry = JournalEntry.objects.create(
+            event=event, entry_type=entry_type, text=text, created_by=actor.strip()
+        )
+        record(
+            actor=actor,
+            action="JOURNAL_ENTRY_CREATED",
+            entity_type="security_event",
+            entity_id=uuid.UUID(int=event.pk),
+            new_value={"entry_id": entry.pk, "entry_type": entry.entry_type},
+        )
+    return entry

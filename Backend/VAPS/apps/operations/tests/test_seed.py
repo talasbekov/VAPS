@@ -53,6 +53,9 @@ def test_omd_matrix():
         # core API perms (story 2.13, provisional): OMD needs roster visibility.
         "personnel.view",
         "orgstructure.view",
+        # Story 17.1 (provisional): OMD runs проведение → журнал штаба.
+        "event.journal.create",
+        "event.journal.view",
     }
 
 
@@ -66,12 +69,12 @@ def test_orgd_holds_override_block():
         )
     )
     assert "daily_report.override_block" in orgd_perms
-    assert len(orgd_perms) == 9
+    assert len(orgd_perms) == 10  # Story 17.1 added event.journal.view
 
 
 def test_seed_is_idempotent():
     call_command("seed_operations")
     call_command("seed_operations")
     assert Role.objects.count() == 9  # Story 13.1a added DEVELOPER
-    assert RolePermission.objects.filter(role_code="OMD").count() == 8
-    assert RolePermission.objects.filter(role_code="ORGD").count() == 9
+    assert RolePermission.objects.filter(role_code="OMD").count() == 10
+    assert RolePermission.objects.filter(role_code="ORGD").count() == 10
