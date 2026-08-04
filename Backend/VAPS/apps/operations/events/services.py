@@ -2139,9 +2139,16 @@ def record_assignment_actual_time(assignment, *, actor, actual_start_at, actual_
             message="actual_start_at должен быть раньше actual_end_at.",
         )
     with transaction.atomic():
-        assignment = PlacementAssignment.objects.select_related(
-            "version", "version__event"
-        ).get(pk=assignment.pk)
+        # review (Blind Hunter + Edge Case Hunter + Acceptance Auditor,
+        # независимо совпали): select_for_update() отсутствовал, хотя Dev
+        # Notes явно цитировали close_security_event() (18.1) как образец
+        # структуры — там лок ЕСТЬ. Добавлено, чтобы докстринг-claim о
+        # «буквальном образце» стал правдой.
+        assignment = (
+            PlacementAssignment.objects.select_for_update()
+            .select_related("version", "version__event")
+            .get(pk=assignment.pk)
+        )
         version = assignment.version
         if not version.is_current:
             raise DomainError(
@@ -2155,6 +2162,22 @@ def record_assignment_actual_time(assignment, *, actor, actual_start_at, actual_
                 422,
                 message="Факт можно записать только после закрытия события.",
             )
+        # review (Blind Hunter): audit-registry description явно обещает
+        # "Эмитится... включая исправление", но old_value не писался —
+        # исправление факта без следа ПРЕЖНЕГО значения подрывает саму
+        # цель аудита (буквальный образец GroupForceRequest's
+        # old_value-паттерна, allocate_force_request()).
+        existing = PlacementAssignmentActual.objects.filter(
+            assignment=assignment
+        ).first()
+        old_value = (
+            {
+                "actual_start_at": existing.actual_start_at.isoformat(),
+                "actual_end_at": existing.actual_end_at.isoformat(),
+            }
+            if existing
+            else None
+        )
         actual, _ = PlacementAssignmentActual.objects.update_or_create(
             assignment=assignment,
             defaults={
@@ -2168,6 +2191,7 @@ def record_assignment_actual_time(assignment, *, actor, actual_start_at, actual_
             action="ASSIGNMENT_ACTUAL_TIME_RECORDED",
             entity_type="placement_assignment_actual",
             entity_id=uuid.UUID(int=actual.pk),
+            old_value=old_value,
             new_value={
                 "assignment_id": assignment.pk,
                 "actual_start_at": actual.actual_start_at.isoformat(),

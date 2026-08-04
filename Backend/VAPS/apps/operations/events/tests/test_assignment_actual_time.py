@@ -50,7 +50,12 @@ def test_records_actual_time_for_closed_event_current_version():
     assert actual.actual_start_at == START
     assert actual.actual_end_at == END
     assert actual.recorded_by == "staff-1"
-    assert AuditLog.objects.filter(action="ASSIGNMENT_ACTUAL_TIME_RECORDED").exists()
+    audit_row = AuditLog.objects.get(action="ASSIGNMENT_ACTUAL_TIME_RECORDED")
+    # review (Blind Hunter): раньше проверялось только .exists() — пустой/
+    # неверный new_value прошёл бы незамеченным.
+    assert audit_row.new_value["actual_start_at"] == START.isoformat()
+    assert audit_row.new_value["actual_end_at"] == END.isoformat()
+    assert audit_row.old_value is None
 
 
 def test_repeated_call_upserts_not_duplicates():
@@ -69,6 +74,17 @@ def test_repeated_call_upserts_not_duplicates():
     row = PlacementAssignmentActual.objects.get(assignment=assignment)
     assert row.actual_end_at == corrected_end
     assert row.recorded_by == "staff-2"
+    # review (Blind Hunter): audit-registry обещает "включая исправление" —
+    # раньше old_value не писался вовсе, коррекция не несла следа ПРЕЖНЕГО
+    # значения.
+    correction_audit = AuditLog.objects.filter(
+        action="ASSIGNMENT_ACTUAL_TIME_RECORDED"
+    ).latest("created_at")
+    assert correction_audit.old_value == {
+        "actual_start_at": START.isoformat(),
+        "actual_end_at": END.isoformat(),
+    }
+    assert correction_audit.new_value["actual_end_at"] == corrected_end.isoformat()
 
 
 def test_rejected_when_start_not_before_end():
@@ -78,6 +94,22 @@ def test_rejected_when_start_not_before_end():
     with pytest.raises(DomainError) as exc_info:
         record_assignment_actual_time(
             assignment, actor="staff-1", actual_start_at=END, actual_end_at=START
+        )
+
+    assert exc_info.value.http_status == 400
+    assert not PlacementAssignmentActual.objects.filter(assignment=assignment).exists()
+
+
+def test_rejected_when_start_equals_end():
+    """review (Acceptance Auditor): only the fully-reversed case was
+    tested — the actual boundary (start == end) was never exercised, so
+    a `>` vs `>=` operator regression would slip through undetected."""
+    event = make_event("OBJ-ACTUAL-6")
+    assignment = make_assignment(event)
+
+    with pytest.raises(DomainError) as exc_info:
+        record_assignment_actual_time(
+            assignment, actor="staff-1", actual_start_at=START, actual_end_at=START
         )
 
     assert exc_info.value.http_status == 400
@@ -94,6 +126,7 @@ def test_rejected_when_event_not_closed():
         )
 
     assert exc_info.value.http_status == 422
+    assert exc_info.value.code == "INVALID_LIFECYCLE_TRANSITION"
 
 
 def test_rejected_when_version_not_current():
@@ -106,3 +139,4 @@ def test_rejected_when_version_not_current():
         )
 
     assert exc_info.value.http_status == 422
+    assert exc_info.value.code == "INVALID_LIFECYCLE_TRANSITION"
