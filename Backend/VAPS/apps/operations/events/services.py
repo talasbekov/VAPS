@@ -1563,3 +1563,133 @@ def create_journal_entry(
             new_value={"entry_id": entry.pk, "entry_type": entry.entry_type},
         )
     return entry
+
+
+def _require_text(value, field):
+    """Непустой (после strip) обязательный атрибут amendment → иначе 400.
+
+    Буквальный перенос `apps.operations.submissions.services
+    .amendment_service._require_text()` — тот же паттерн, чужой модуль
+    (`submissions`) не импортируется через границу приложений (ARCH-003-
+    родственный принцип: сервисный хелпер копируется, не шарится через
+    cross-app import).
+    """
+    if not value or not value.strip():
+        raise DomainError(
+            "VALIDATION_ERROR", 400, message=f"{field} обязателен для amendment."
+        )
+
+
+def amend_assignment_version(version, *, actor, reason, sanction, assignments):
+    """Story 17.3 (FR-28): оперативное изменение Расстановки ПОСЛЕ
+    утверждения — только с санкцией. Создаёт НОВУЮ версию сразу
+    `APPROVED` (не под-цикл submit/approve — `sanction` САМА ЕСТЬ
+    авторизация, буквальный образец `DailySubmission.amend_day()`'s
+    `AMENDED`-паттерна).
+
+    `assignments` — ПОЛНЫЙ новый состав версии (список `(employee_id,
+    post)`-пар), не diff/patch; 17.4/17.5 решают, КАК его построить
+    (снятие/замена конкретного человека), эта стори просто версионирует
+    готовый список.
+
+    Конфликты (`detect_placement_conflicts()`, 16.3) считаются и
+    ЗАПИСЫВАЮТСЯ на новую версию, но НЕ блокируют создание — все
+    конфликты в этой кодовой базе fixed-SOFT, а `sanction` уже есть
+    безусловная авторизация (Scope Decision — второй override-гейт
+    поверх санкции был бы избыточен).
+
+    НЕ вызывает 16.5's `project_placement_assignment()`/16.6a's
+    `_notify_assignment_approved()` — те специфичны обычному approve-
+    циклу; 17.4/17.5/17.6 решают точечно, кого проецировать/уведомлять
+    после конкретного типа изменения.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    _require_text(reason, "reason")
+    _require_text(sanction, "sanction")
+    reason, sanction = reason.strip(), sanction.strip()
+
+    with transaction.atomic():
+        version = AssignmentVersion.objects.select_for_update().get(pk=version.pk)
+        if (
+            not version.is_current
+            or version.status != AssignmentVersion.Status.APPROVED
+        ):
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message=(
+                    "Оперативное изменение возможно только для текущей "
+                    "утверждённой версии."
+                ),
+            )
+        event = SecurityEvent.objects.select_for_update().get(pk=version.event_id)
+        if event.status_code != SecurityEvent.StatusCode.IN_PROGRESS:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message=(
+                    "Оперативное изменение доступно только в режиме "
+                    "проведения (IN_PROGRESS)."
+                ),
+            )
+        for employee_id, post in assignments:
+            if post.object_id != event.object_id:
+                # review-прецедент 17.2 (Blind Hunter + Edge Case Hunter):
+                # пост обязан принадлежать тому же объекту, что событие.
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    400,
+                    message=(
+                        "post должен принадлежать тому же объекту, что и событие."
+                    ),
+                )
+
+        version.is_current = False
+        version.save(update_fields=["is_current", "updated_at"])
+
+        new_version = AssignmentVersion.objects.create(
+            event=event,
+            status=AssignmentVersion.Status.APPROVED,
+            version=version.version + 1,
+            is_current=True,
+            is_amendment=True,
+            reason=reason,
+            sanction=sanction,
+            created_by=actor.strip(),
+        )
+        PlacementAssignment.objects.bulk_create(
+            [
+                PlacementAssignment(
+                    version=new_version, employee_id=employee_id, post=post
+                )
+                for employee_id, post in assignments
+            ]
+        )
+        detect_placement_conflicts(new_version)
+
+        pairs = list(
+            new_version.assignments.order_by("id").values_list("employee_id", "post_id")
+        )
+        digest_input = json.dumps(
+            [[str(employee_id), post_id] for employee_id, post_id in pairs],
+            separators=(",", ":"),
+        )
+        new_version.signature_hash = hashlib.sha256(
+            digest_input.encode("utf-8")
+        ).hexdigest()
+        new_version.save(update_fields=["signature_hash", "updated_at"])
+
+        record(
+            actor=actor,
+            action="ASSIGNMENT_VERSION_AMENDED",
+            entity_type="assignment_version",
+            entity_id=uuid.UUID(int=new_version.pk),
+            old_value={"old_version_id": version.pk},
+            new_value={
+                "new_version_id": new_version.pk,
+                "reason": reason,
+                "sanction": sanction,
+            },
+        )
+    return new_version

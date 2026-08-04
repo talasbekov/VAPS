@@ -56,6 +56,9 @@ def test_omd_matrix():
         # Story 17.1 (provisional): OMD runs проведение → журнал штаба.
         "event.journal.create",
         "event.journal.view",
+        # Story 17.3 (provisional): OMD runs проведение → оперативные
+        # изменения.
+        "assignment.amend",
     }
 
 
@@ -76,5 +79,5 @@ def test_seed_is_idempotent():
     call_command("seed_operations")
     call_command("seed_operations")
     assert Role.objects.count() == 9  # Story 13.1a added DEVELOPER
-    assert RolePermission.objects.filter(role_code="OMD").count() == 10
+    assert RolePermission.objects.filter(role_code="OMD").count() == 11
     assert RolePermission.objects.filter(role_code="ORGD").count() == 10

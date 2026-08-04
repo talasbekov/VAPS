@@ -422,6 +422,15 @@ class AssignmentVersion(TimeStampedModel):
     # system-generated — "creator" is meaningless for it, stays blank
     # ("no data = skip" at notify time, `_notify_assignment_returned()`'s
     # own docstring).
+    # Story 17.3 (FR-28): версии, созданные `amend_assignment_version()`
+    # (пост-утверждённое оперативное изменение) несут `is_amendment=True`
+    # + обязательные `reason`/`sanction` — буквальный образец
+    # `DailySubmission`'s `AMENDED`-паттерна. Версии обычного 16.x-цикла
+    # (DRAFT→SUBMITTED→APPROVED) остаются `is_amendment=False`, оба поля
+    # пустые — симметричный CheckConstraint ниже.
+    is_amendment = models.BooleanField(default=False)
+    reason = models.TextField(blank=True, default="")
+    sanction = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         db_table = "ops_assignment_versions"
@@ -451,6 +460,21 @@ class AssignmentVersion(TimeStampedModel):
                     status__in=["DRAFT", "SUBMITTED", "RETURNED", "APPROVED"]
                 ),
                 name="ck_assignment_version_status_choices",
+            ),
+            # Story 17.3 — симметричный образец
+            # chk_daily_submission_amended_requires_reason_sanction: обе
+            # стороны проверены (не только «amendment требует reason/
+            # sanction», но и «не-amendment обязан быть пустым»).
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        is_amendment=True,
+                        reason__regex=r"\S",
+                        sanction__regex=r"\S",
+                    )
+                    | models.Q(is_amendment=False, reason="", sanction="")
+                ),
+                name="ck_assignment_version_amendment_requires_reason_sanction",
             ),
         ]
 

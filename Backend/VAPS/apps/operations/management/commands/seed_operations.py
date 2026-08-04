@@ -12,6 +12,10 @@ PERMISSIONS = [
     ("assignment.submit", "Отправка расстановки"),
     ("assignment.return", "Возврат расстановки"),
     ("assignment.approve", "Утверждение расстановки"),
+    # Story 17.3: оперативное изменение расстановки после утверждения
+    # (FR-28) — раскладка ниже PROVISIONAL, отдельная гранулярность прав
+    # от assignment.create (выше по риску — живое мероприятие).
+    ("assignment.amend", "Оперативное изменение расстановки"),
     ("brokerage.manage", "Брокеридж"),
     ("daily_report.generate", "Генерация суточного отчёта"),
     ("daily_report.mark_update", "Отметки в суточном отчёте"),
@@ -73,6 +77,7 @@ ROLE_PERMISSIONS = {
         "orgstructure.view",
         "event.journal.create",
         "event.journal.view",  # PROVISIONAL (17.1)
+        "assignment.amend",  # PROVISIONAL (17.3)
     ],
     "SENIOR_COORDINATOR": [
         "assignment.create",
@@ -82,6 +87,7 @@ ROLE_PERMISSIONS = {
         "orgstructure.view",
         "event.journal.create",
         "event.journal.view",  # PROVISIONAL (17.1)
+        "assignment.amend",  # PROVISIONAL (17.3)
     ],
     "APPROVER": [
         "assignment.return",
@@ -89,6 +95,7 @@ ROLE_PERMISSIONS = {
         "personnel.view",
         "orgstructure.view",
         "event.journal.view",  # PROVISIONAL (17.1)
+        "assignment.amend",  # PROVISIONAL (17.3)
     ],
     "DIVISION_OPERATOR": [
         "daily_report.mark_update",
