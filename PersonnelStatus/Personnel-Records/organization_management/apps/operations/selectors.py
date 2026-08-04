@@ -344,6 +344,20 @@ class DailySubmissionSelector:
         ).exists()
 
     @staticmethod
+    def current_for(division_id, business_date):
+        """ДЕЙСТВУЮЩАЯ версия дня или None.
+
+        Читатели сданного (светофор, расход по сдаче) спрашивают именно её, а
+        не голову цепочки: голова и текущая совпадают всегда, кроме
+        вырожденного «ноль текущих», и в этом случае читателю честнее
+        ответить «сдачи нет», чем показать версию, которую сам раздел
+        действующей не считает.
+        """
+        return OpsDailySubmission.objects.filter(
+            division_id=division_id, business_date=business_date, is_current=True
+        ).first()
+
+    @staticmethod
     def previous_for(division_id, business_date):
         """Ближайшая ПРЕДЫДУЩАЯ текущая сдача (строго раньше даты) или None.
 
