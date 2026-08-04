@@ -34,6 +34,7 @@ from organization_management.apps.operations.api.serializers import (
     OpsEmployeeStatusSerializer,
     PermissionSerializer,
     RoleSerializer,
+    StatusCancelSerializer,
     StatusTypeSerializer,
     StatusUpdateSerializer,
     TemporaryDutySerializer,
@@ -60,7 +61,10 @@ from organization_management.apps.operations.services import (
     PermissionService,
     RoleAdminService,
 )
-from organization_management.apps.operations.status_service import update_status
+from organization_management.apps.operations.status_service import (
+    cancel_status,
+    update_status,
+)
 from organization_management.apps.operations.strength_report import (
     StrengthReportService,
 )
@@ -284,8 +288,9 @@ class MyPermissionsViewSet(viewsets.ViewSet):
 class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """Статусы раздела ОМ: массовое создание и поштучная правка.
 
-    POST /api/operations/statuses/bulk/  — пачка (срез 6)
-    PATCH /api/operations/statuses/{id}/ — правка интервала и метаданных
+    POST /api/operations/statuses/bulk/        — пачка (срез 6)
+    PATCH /api/operations/statuses/{id}/       — правка интервала и метаданных
+    POST /api/operations/statuses/{id}/cancel/ — отмена не начавшейся строки
 
     Тонкая вьюха поверх готовых сервисов: сериализатор → резолв области
     видимости из RBAC → вызов сервиса. Ни бизнес-логики, ни детекта
@@ -302,11 +307,37 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_map = {
         "bulk": _BULK_STATUS_PERMISSION,
         "partial_update": _BULK_STATUS_PERMISSION,
+        "cancel": _BULK_STATUS_PERMISSION,
     }
-    # Поверхность: пачка и правка. Чтение статусов — отдельный срез, поэтому
-    # GET здесь не открыт; PUT не открыт намеренно (полная замена строки
-    # переписала бы неизменяемые поля — правка только частичная).
+    # Поверхность: пачка, правка, отмена. Чтение статусов — отдельный срез,
+    # поэтому GET здесь не открыт; PUT не открыт намеренно (полная замена
+    # строки переписала бы неизменяемые поля — правка только частичная).
     http_method_names = ["post", "patch", "options"]
+
+    def _get_status_or_404(self, pk):
+        """Строка по pk из пути; отсутствующая или нечисловая — 404 конвертом.
+
+        pk роутера — произвольная строка: int() ДО запроса, иначе мусорный
+        идентификатор ушёл бы ValueError → 500 вместо 404. Общий вход для
+        правки и отмены — разъехаться этим двум ответам незачем.
+        """
+        try:
+            status_id = int(pk)
+        except (TypeError, ValueError):
+            status_id = None
+        status_row = (
+            OpsEmployeeStatus.objects.filter(pk=status_id).first()
+            if status_id is not None
+            else None
+        )
+        if status_row is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"status_id": str(pk)},
+                message="Статус не найден.",
+            )
+        return status_row
 
     def _assert_status_in_scope(self, request, status_row):
         """Область видимости правимой строки — из RBAC актора.
@@ -362,24 +393,7 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
     def partial_update(self, request, pk=None, *args, **kwargs):
         form = StatusUpdateSerializer(data=request.data)
         form.is_valid(raise_exception=True)
-        # pk из пути — произвольная строка роутера: int() до запроса, иначе
-        # мусорный идентификатор ушёл бы ValueError → 500 вместо 404.
-        try:
-            status_id = int(pk)
-        except (TypeError, ValueError):
-            status_id = None
-        status_row = (
-            OpsEmployeeStatus.objects.filter(pk=status_id).first()
-            if status_id is not None
-            else None
-        )
-        if status_row is None:
-            raise DomainError(
-                "ENTITY_NOT_FOUND",
-                404,
-                detail={"status_id": str(pk)},
-                message="Статус не найден.",
-            )
+        status_row = self._get_status_or_404(pk)
         self._assert_status_in_scope(request, status_row)
         updated = update_status(
             status_row,
@@ -388,6 +402,42 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             **form.validated_data,
         )
         return Response(OpsEmployeeStatusSerializer(updated).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id отменяемой строки статуса.",
+            )
+        ],
+        request=StatusCancelSerializer,
+        responses={200: OpsEmployeeStatusSerializer},
+        description=(
+            "Отмена НЕ НАЧАВШЕЙСЯ (PLANNED) строки статуса с обязательной "
+            "причиной. Начавшаяся или завершённая строка — факт, который "
+            "случился: её закрывают раньше срока, а не отменяют (422). "
+            "Строка не удаляется: отмена — записанный факт, после неё период "
+            "снова свободен. 400 — причина пуста или не прислана; 403 — нет "
+            "права status.manage либо сотрудник вне области; 404 — строки "
+            "нет; 422 — не PLANNED, уже отменена или принадлежит проекции."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="cancel", url_name="cancel")
+    def cancel(self, request, pk=None, *args, **kwargs):
+        form = StatusCancelSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        status_row = self._get_status_or_404(pk)
+        self._assert_status_in_scope(request, status_row)
+        cancelled = cancel_status(
+            status_row,
+            # Кто отменил — из контракта аутентификации: cancelled_by это
+            # факт, и присланному в теле имени здесь не верят.
+            actor=resolve_actor_id(request),
+            reason=form.validated_data["reason"],
+        )
+        return Response(OpsEmployeeStatusSerializer(cancelled).data)
 
     @extend_schema(
         request=BulkStatusCreateSerializer,
