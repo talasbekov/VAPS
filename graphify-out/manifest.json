@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785770628.8521478,
-    "ast_hash": "8f440e2ff651714057a25d7842096d6d",
+    "mtime": 1785817936.689601,
+    "ast_hash": "934b24d8b50c6d84a5539e8e2ee03123",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -21015,8 +21015,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/routes.ts": {
-    "mtime": 1785504090.862858,
-    "ast_hash": "a6b6952ca2316ce5b16394e494e302ca",
+    "mtime": 1785817355.7875504,
+    "ast_hash": "ff16ec65ee421736806dddb9b67a80e2",
     "semantic_hash": ""
   },
   "frontend/src/shared/ui/AppLayout.tsx": {
@@ -24697,6 +24697,31 @@
   "_bmad-output/implementation-artifacts/16-8h1-frontend-api-client.md": {
     "mtime": 1785770618.7803526,
     "ast_hash": "90f97f8a65a8b5c5a4a58cfeb5da9462",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/placement/pages/PlacementVersionDetailPage.test.tsx": {
+    "mtime": 1785817854.4222605,
+    "ast_hash": "ae6e2102b2b898dc3db6e057578cf4e2",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/placement/pages/PlacementVersionDetailPage.tsx": {
+    "mtime": 1785817494.7369468,
+    "ast_hash": "91640cc976f784ab5804e3119475ed6d",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/placement/pages/PlacementVersionsListPage.test.tsx": {
+    "mtime": 1785817550.5061266,
+    "ast_hash": "ebaa719ef84c9c165fdb4469aab13908",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/placement/pages/PlacementVersionsListPage.tsx": {
+    "mtime": 1785817387.5016336,
+    "ast_hash": "b2f7e2dfebcbe759be95d145995975b6",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/16-8h2-frontend-\u0441\u043f\u0438\u0441\u043e\u043a-\u0438-\u0434\u0435\u0442\u0430\u043b\u044c.md": {
+    "mtime": 1785817925.6085544,
+    "ast_hash": "9db2e39c4f4d052cf81910d08716d0e4",
     "semantic_hash": ""
   }
 }
