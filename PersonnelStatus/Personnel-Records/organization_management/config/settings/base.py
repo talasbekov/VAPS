@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'organization_management.apps.audit',
     'organization_management.apps.dictionaries',
     'organization_management.apps.staff_unit',
+    'organization_management.apps.operations',
 ]
 
 MIDDLEWARE = [
