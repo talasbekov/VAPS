@@ -35,6 +35,7 @@ from organization_management.apps.operations.status_service import (
     cancel_status,
     complete_status_early,
     create_status,
+    extend_status,
     update_status,
 )
 from organization_management.apps.operations.tests.test_status_service import (
@@ -211,6 +212,47 @@ class TestStatusMutations:
         assert entry.old_value["cancelled_at"] is None
         assert entry.new_value["cancelled_at"] is not None
         assert entry.new_value["cancelled_reason"] == "приказ отменён"
+
+    def test_extend_writes_extended_event(self, types):
+        # У продления СВОЁ событие, а не STATUS_UPDATED: в ленте строки
+        # «продлили до» и «поправили даты» — разные истории.
+        employee = employee_in()
+        status = make_status(employee, end=TODAY + timedelta(days=5))
+        mark = watermark()
+
+        with clock.override(TODAY):
+            extend_status(status, actor="9", new_date_end=TODAY + timedelta(days=9))
+
+        entry = only_event(since=mark)
+        assert entry.action == audit_service.STATUS_EXTENDED
+        assert entry.entity_type == audit_service.ENTITY_STATUS
+        assert entry.entity_id == status.pk
+        assert entry.actor_user_id == "9"
+        assert entry.old_value["date_end"] == str(TODAY + timedelta(days=5))
+        assert entry.new_value["date_end"] == str(TODAY + timedelta(days=9))
+
+    def test_extend_override_reason_reaches_the_event(self, types):
+        # Как и у создания: причина обхода обязана быть в журнале, а не
+        # только в StatusOverride — лента строки читается отдельно.
+        employee = employee_in()
+        status = make_status(
+            employee, start=TODAY - timedelta(days=2), end=TODAY - timedelta(days=1)
+        )
+        make_status(employee, code="STUDY", start=TODAY, end=TODAY + timedelta(days=4))
+        mark = watermark()
+
+        with clock.override(TODAY):
+            extend_status(
+                status,
+                actor=ACTOR,
+                new_date_end=TODAY + timedelta(days=2),
+                override=True,
+                override_reason="приказ №7",
+            )
+
+        entry = only_event(since=mark)
+        assert entry.action == audit_service.STATUS_EXTENDED
+        assert entry.reason == "приказ №7"
 
 
 # ── Массовое обновление ──────────────────────────────────────────────────
@@ -526,6 +568,7 @@ def test_every_declared_action_is_actually_written(types, home, host):
     )
     with clock.override(TODAY):
         update_status(covering, actor=ACTOR, comment="уточнение")
+        extend_status(covering, actor=ACTOR, new_date_end=TODAY + timedelta(days=7))
         complete_status_early(covering, actor=ACTOR, actual_end=TODAY)
 
     planned = make_status(

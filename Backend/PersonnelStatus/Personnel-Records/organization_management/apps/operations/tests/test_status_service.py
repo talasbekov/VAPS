@@ -28,6 +28,7 @@ from organization_management.apps.operations.status_service import (
     complete_status_early,
     cancel_status,
     create_status,
+    extend_status,
     update_status,
 )
 
@@ -916,3 +917,415 @@ class TestCompleteStatusEarly:
             with pytest.raises(DomainError) as exc:
                 complete_status_early(status, actor="  ", actual_end=TODAY)
         assert exc.value.http_status == 400
+
+
+@pytest.mark.django_db
+class TestExtendStatus:
+    """Продление статуса более поздней датой конца."""
+
+    def _status(self, employee, **overrides):
+        payload = {
+            "employee_id": employee.id,
+            "status_type_code": "DUTY",
+            "date_start": TODAY + timedelta(days=3),
+            "date_end": TODAY + timedelta(days=5),
+            "actor": ACTOR,
+        }
+        payload.update(overrides)
+        return create_status(**payload)
+
+    def test_extension_is_persisted(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            before = OpsEmployeeStatus.objects.get(pk=status.pk).updated_at
+            returned = extend_status(
+                status, actor=ACTOR, new_date_end=TODAY + timedelta(days=9)
+            )
+        from_db = OpsEmployeeStatus.objects.get(pk=status.pk)
+        assert from_db.date_end == TODAY + timedelta(days=9)
+        assert from_db.updated_at > before
+        # Генерируемая колонка периода поехала за датой: продление не
+        # разъехалось с тем, по чему считают пересечения.
+        assert from_db.period.upper == TODAY + timedelta(days=9)
+        assert returned.date_end == TODAY + timedelta(days=9)
+        # Начало не тронуто: продление двигает ровно один конец.
+        assert from_db.date_start == TODAY + timedelta(days=3)
+
+    def test_returned_row_is_reread_not_the_passed_object(self):
+        # Возвращается перечитанная под блокировкой строка; переданный
+        # объект не мутируется — так же ведут себя update/cancel/complete.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            stale = OpsEmployeeStatus.objects.get(pk=status.pk)
+            returned = extend_status(
+                stale, actor=ACTOR, new_date_end=TODAY + timedelta(days=9)
+            )
+        assert returned is not stale
+        assert stale.date_end == TODAY + timedelta(days=5)
+
+    def test_same_date_end_is_422(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor=ACTOR, new_date_end=TODAY + timedelta(days=5)
+                )
+        assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+        assert exc.value.http_status == 422
+
+    def test_earlier_date_end_is_422_not_a_silent_shortening(self):
+        # Укорачивание — другая операция (complete_status_early). Молча
+        # исполненное здесь, оно стёрло бы факты чужим путём.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor=ACTOR, new_date_end=TODAY + timedelta(days=4)
+                )
+        assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == (
+            TODAY + timedelta(days=5)
+        )
+
+    def test_threshold_is_taken_from_the_fresh_row(self):
+        # Порог сравнивается со СВЕЖЕЙ строкой: устаревшая копия (конец +5,
+        # когда в базе уже +9) объявила бы продлением откат до +7.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            stale = OpsEmployeeStatus.objects.get(pk=status.pk)
+            extend_status(status, actor=ACTOR, new_date_end=TODAY + timedelta(days=9))
+            assert stale.date_end == TODAY + timedelta(days=5)  # копия устарела
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    stale, actor=ACTOR, new_date_end=TODAY + timedelta(days=7)
+                )
+        assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == (
+            TODAY + timedelta(days=9)
+        )
+
+    def test_completed_status_can_be_extended(self):
+        # Завершённый статус продлевается: отпуск, длившийся дольше, — это
+        # правка правды о прошлом, а не переход жизненного цикла.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(
+                employee,
+                date_start=TODAY - timedelta(days=10),
+                date_end=TODAY - timedelta(days=5),
+            )
+            assert status.state_on(TODAY) == OpsEmployeeStatus.LifecycleState.COMPLETED
+            extend_status(status, actor=ACTOR, new_date_end=TODAY - timedelta(days=2))
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == (
+            TODAY - timedelta(days=2)
+        )
+
+    def test_cancelled_row_is_terminal(self):
+        # Гард отменённой строки один на все пути правки (_lock_for_edit),
+        # и он читает канон под блокировкой, а не устаревший объект.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            stale = OpsEmployeeStatus.objects.get(pk=status.pk)
+            cancel_status(status, actor=ACTOR, reason="ошибка ввода")
+            assert stale.cancelled_at is None  # объект действительно устарел
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    stale, actor=ACTOR, new_date_end=TODAY + timedelta(days=9)
+                )
+        assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == (
+            TODAY + timedelta(days=5)
+        )
+
+    def test_projection_row_is_read_only(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            OpsEmployeeStatus.objects.filter(pk=status.pk).update(
+                source=OpsEmployeeStatus.Source.OM_AUTO
+            )
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor=ACTOR, new_date_end=TODAY + timedelta(days=9)
+                )
+        assert exc.value.code == "AUTO_STATUS_READONLY"
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == (
+            TODAY + timedelta(days=5)
+        )
+
+    def test_detached_employee_is_read_only(self):
+        # Отличие от источника: продление подчиняется гарду FR-16, как и
+        # правка. Продлеваемая строка стоит ВНЕ периода откомандирования,
+        # иначе отказ можно было бы списать на пересечение.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(
+                employee,
+                status_type_code="STUDY",
+                date_start=TODAY + timedelta(days=20),
+                date_end=TODAY + timedelta(days=21),
+            )
+            create_status(
+                employee_id=employee.id,
+                status_type_code="DETACHED",
+                date_start=TODAY,
+                date_end=TODAY + timedelta(days=10),
+                actor=ACTOR,
+            )
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor=ACTOR, new_date_end=TODAY + timedelta(days=22)
+                )
+        assert exc.value.code == "PERMISSION_DENIED"
+        assert exc.value.http_status == 403
+
+    def test_missing_row_is_404(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            OpsEmployeeStatus.objects.filter(pk=status.pk).delete()
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor=ACTOR, new_date_end=TODAY + timedelta(days=9)
+                )
+        assert exc.value.code == "ENTITY_NOT_FOUND"
+        assert exc.value.http_status == 404
+
+    def test_actor_required(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor="  ", new_date_end=TODAY + timedelta(days=9)
+                )
+        assert exc.value.http_status == 400
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == (
+            TODAY + timedelta(days=5)
+        )
+
+    def test_extension_past_dismissal_is_422(self):
+        seed_types()
+        employee = make_employee(dismissal_date=TODAY + timedelta(days=6))
+        with clock.override(TODAY):
+            status = self._status(employee)
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor=ACTOR, new_date_end=TODAY + timedelta(days=9)
+                )
+        assert exc.value.code == "DATE_OUTSIDE_EMPLOYMENT"
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == (
+            TODAY + timedelta(days=5)
+        )
+
+    def test_extension_over_max_duration_is_422(self):
+        seed_types()
+        StatusType.objects.filter(code="DUTY").update(max_duration_days=3)
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)  # [+3, +5) — ровно 2 дня, влезает
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor=ACTOR, new_date_end=TODAY + timedelta(days=30)
+                )
+        assert exc.value.code == "MAX_DURATION_EXCEEDED"
+
+    def test_deactivated_type_blocks_extension(self):
+        # В отличие от правки метаданных, продление ВСЕГДА трогает интервал,
+        # поэтому тип перепроверяется по справочнику.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            StatusType.objects.filter(code="DUTY").update(is_active=False)
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor=ACTOR, new_date_end=TODAY + timedelta(days=9)
+                )
+        assert exc.value.code == "INVALID_STATUS_TYPE"
+
+    def test_extension_does_not_conflict_with_itself(self):
+        # Себя из периметра исключаем: тип ЖЁСТКИЙ, иначе отказ был бы 409 и
+        # тест не отличал бы «себя не исключили» от мягкого предупреждения.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee, status_type_code="VACATION")
+            extend_status(status, actor=ACTOR, new_date_end=TODAY + timedelta(days=9))
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == (
+            TODAY + timedelta(days=9)
+        )
+
+    def test_extension_into_hard_overlap_is_422(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            create_status(
+                employee_id=employee.id,
+                status_type_code="VACATION",
+                date_start=TODAY + timedelta(days=10),
+                date_end=TODAY + timedelta(days=12),
+                actor=ACTOR,
+            )
+            status = self._status(employee, status_type_code="SICK_LEAVE")
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor=ACTOR, new_date_end=TODAY + timedelta(days=11)
+                )
+        assert exc.value.code == "OVERLAPPING_HARD_STATUS"
+        assert exc.value.overridable is False
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == (
+            TODAY + timedelta(days=5)
+        )
+
+    def test_hard_overlap_is_never_bypassed(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            create_status(
+                employee_id=employee.id,
+                status_type_code="VACATION",
+                date_start=TODAY + timedelta(days=10),
+                date_end=TODAY + timedelta(days=12),
+                actor=ACTOR,
+            )
+            status = self._status(employee, status_type_code="SICK_LEAVE")
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status,
+                    actor=ACTOR,
+                    new_date_end=TODAY + timedelta(days=11),
+                    override=True,
+                    override_reason="приказ №5",
+                )
+        assert exc.value.code == "OVERLAPPING_HARD_STATUS"
+        assert StatusOverride.objects.count() == 0
+
+    def test_extension_into_soft_overlap_is_409(self):
+        # Мягкий сосед взят ИДУЩИЙ: пересечение с ещё не начавшимся матрица
+        # понижает до необязывающего предупреждения, и проба была бы
+        # зелёной вхолостую.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(
+                employee,
+                date_start=TODAY - timedelta(days=2),
+                date_end=TODAY - timedelta(days=1),
+            )
+            create_status(
+                employee_id=employee.id,
+                status_type_code="STUDY",
+                date_start=TODAY,
+                date_end=TODAY + timedelta(days=4),
+                actor=ACTOR,
+            )
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status, actor=ACTOR, new_date_end=TODAY + timedelta(days=2)
+                )
+        assert exc.value.code == "STATUS_OVERLAP_WARNING"
+        assert exc.value.http_status == 409
+        assert exc.value.overridable is True
+        assert StatusOverride.objects.count() == 0
+
+    def test_soft_overlap_is_bypassed_with_reason(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(
+                employee,
+                date_start=TODAY - timedelta(days=2),
+                date_end=TODAY - timedelta(days=1),
+            )
+            create_status(
+                employee_id=employee.id,
+                status_type_code="STUDY",
+                date_start=TODAY,
+                date_end=TODAY + timedelta(days=4),
+                actor=ACTOR,
+            )
+            extend_status(
+                status,
+                actor=ACTOR,
+                new_date_end=TODAY + timedelta(days=2),
+                override=True,
+                override_reason="приказ №5",
+            )
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == (
+            TODAY + timedelta(days=2)
+        )
+        bypass = StatusOverride.objects.get()
+        assert bypass.status_id == status.pk
+        assert bypass.reason == "приказ №5"
+        assert bypass.created_by == ACTOR
+        assert bypass.status_type_code == "DUTY"
+        # Снимок обойдённого конфликта — значениями, а не ссылками.
+        assert bypass.conflicts == [
+            {
+                "status_type": "STUDY",
+                "date_start": str(TODAY),
+                "date_end": str(TODAY + timedelta(days=4)),
+            }
+        ]
+
+    def test_override_without_reason_is_400(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(
+                employee,
+                date_start=TODAY - timedelta(days=2),
+                date_end=TODAY - timedelta(days=1),
+            )
+            create_status(
+                employee_id=employee.id,
+                status_type_code="STUDY",
+                date_start=TODAY,
+                date_end=TODAY + timedelta(days=4),
+                actor=ACTOR,
+            )
+            with pytest.raises(DomainError) as exc:
+                extend_status(
+                    status,
+                    actor=ACTOR,
+                    new_date_end=TODAY + timedelta(days=2),
+                    override=True,
+                    override_reason="   ",
+                )
+        assert exc.value.http_status == 400
+        assert exc.value.detail["field"] == "override_reason"
+        assert StatusOverride.objects.count() == 0
+
+    def test_override_without_conflict_writes_no_bypass_row(self):
+        # Обход записывается ТОЛЬКО когда конфликт реально обойдён: иначе
+        # «обходов» в отчёте оказалось бы столько же, сколько продлений.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._status(employee)
+            extend_status(
+                status,
+                actor=ACTOR,
+                new_date_end=TODAY + timedelta(days=9),
+                override=True,
+                override_reason="на всякий случай",
+            )
+        assert StatusOverride.objects.count() == 0
