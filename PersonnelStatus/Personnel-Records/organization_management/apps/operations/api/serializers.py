@@ -312,6 +312,46 @@ class OpsDailySubmissionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class DailySubmissionAmendSerializer(serializers.Serializer):
+    """Тело POST поправки: ровно причина и санкция.
+
+    Обе обязательны и непусты — CharField по умолчанию режет пробелы, так
+    что "   " становится пустой строкой и отбивается здесь же. Одноимённый
+    гард в amend_day остаётся контрактом СЕРВИСА для остальных вызывающих
+    (будущий хук ретро-правки), и покрыт его собственными тестами.
+
+    Длина санкции ограничена так же, как колонка модели: без этого
+    великанское значение доехало бы до Postgres DataError → 500 вместо 400.
+    Причина — TextField, её не ограничиваем намеренно.
+
+    `triggered_by_status_id` НЕ принимается: это ссылка на строку статуса,
+    вызвавшую поправку, и её ставит система, когда научится дёргать поправку
+    сама. Принять её от клиента значило бы позволить ему приписать поправке
+    произвольное происхождение.
+    """
+
+    reason = serializers.CharField(allow_blank=False)
+    sanction = serializers.CharField(allow_blank=False, max_length=255)
+
+
+class OpsDailySubmissionAmendedSerializer(serializers.ModelSerializer):
+    """Проекция ПОПРАВКИ: строка сдачи плюс её объяснение.
+
+    Отличие от источника, где ответ на поправку — та же проекция, что у
+    первичной сдачи: там клиент не видит в ответе ни причины, ни санкции,
+    то есть не может убедиться, ЧТО именно записано (текст обрезается
+    сервисом, и присланное не равно сохранённому). Снимка здесь по-прежнему
+    нет — он едет своим маршрутом чтения.
+    """
+
+    class Meta:
+        model = OpsDailySubmission
+        fields = OpsDailySubmissionSerializer.Meta.fields + [
+            "reason", "sanction", "triggered_by_status_id",
+        ]
+        read_only_fields = fields
+
+
 class OpsAuditLogSerializer(serializers.ModelSerializer):
     """Строка журнала раздела как её видит читатель.
 
