@@ -330,6 +330,27 @@ class DailySubmissionSelector:
             .first()
         )
 
+    @staticmethod
+    def latest_for(division_id, business_date, *, lock=False):
+        """ГОЛОВА цепочки версий дня (старшая версия) или None.
+
+        Именно старшая версия, а не текущая: «ровно одна текущая» —
+        прикладной инвариант (база держит лишь «не более одной»), и в
+        вырожденном состоянии «ноль текущих» поиск по is_current вернул бы
+        None, то есть «день не сдан» — и поправка пошла бы писать версию 1
+        поверх существующей истории.
+
+        lock=True берёт строку под SELECT ... FOR UPDATE: две одновременные
+        поправки обязаны выстроиться в очередь, иначе обе прочитают одну и ту
+        же голову и запросят один номер версии.
+        """
+        queryset = OpsDailySubmission.objects.filter(
+            division_id=division_id, business_date=business_date
+        )
+        if lock:
+            queryset = queryset.select_for_update()
+        return queryset.order_by("-version").first()
+
 
 class OpsAuditLogSelector:
     """Чтение журнала раздела: фильтры и ПОЛНЫЙ порядок.

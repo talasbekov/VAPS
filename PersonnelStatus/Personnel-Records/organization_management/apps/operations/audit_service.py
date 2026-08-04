@@ -49,6 +49,7 @@ SECONDMENT_RETURN_REQUESTED = "SECONDMENT_RETURN_REQUESTED"
 SECONDMENT_RETURNED = "SECONDMENT_RETURNED"
 EMPLOYEE_DISMISSED = "EMPLOYEE_DISMISSED"
 DAILY_SUBMISSION_SUBMITTED = "DAILY_SUBMISSION_SUBMITTED"
+DAILY_SUBMISSION_AMENDED = "DAILY_SUBMISSION_AMENDED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -69,6 +70,7 @@ ACTIONS = frozenset(
         SECONDMENT_RETURNED,
         EMPLOYEE_DISMISSED,
         DAILY_SUBMISSION_SUBMITTED,
+        DAILY_SUBMISSION_AMENDED,
     }
 )
 
@@ -225,6 +227,12 @@ def submission_snapshot(submission):
     Сам снимок ДНЯ сюда не кладётся: он иммутабельно живёт в своей строке, а
     в журнале раздулся бы до сотен килобайт на событие. Для восстановления
     достаточно ссылки на строку.
+
+    Атрибуты поправки входят БЕЗУСЛОВНО, хотя у первичной сдачи они пусты
+    (отличие от источника: там они надстраиваются вызывающим только над
+    версиями-поправками). Условная форма означала бы, что две записи об одном
+    типе сущности несут разный набор ключей, и читатель ленты не смог бы
+    опереться ни на один — отсутствие ключа неотличимо от «причины не было».
     """
     return {
         "submission_id": submission.pk,
@@ -235,4 +243,7 @@ def submission_snapshot(submission):
         "late": submission.late,
         "is_current": submission.is_current,
         "submitted_at": submission.submitted_at.isoformat(),
+        "reason": submission.reason,
+        "sanction": submission.sanction,
+        "triggered_by_status_id": submission.triggered_by_status_id,
     }
