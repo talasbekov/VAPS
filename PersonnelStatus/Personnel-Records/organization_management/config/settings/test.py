@@ -1,3 +1,4 @@
+import hashlib
 import os
 
 from .base import *
@@ -16,6 +17,29 @@ DATABASES = {
         'HOST': os.environ.get('PR_DB_HOST', 'localhost'),
         'PORT': os.environ.get('PR_DB_PORT', '5434'),
     }
+}
+
+# Имя тестовой БД — своё у каждого чекаута.
+#
+# По умолчанию Django зовёт её test_<NAME>, то есть test_personnel_records:
+# одно имя на весь сервер. На машине, где проект выложен не один раз
+# (второй чекаут, worktree), параллельные прогоны делят одну базу — кто
+# закончил первым, тот её и удалил, а соседний посреди прогона получает
+# «database does not exist» и следом «relation ... does not exist».
+# Если соседний чекаут ещё и на другой версии Django, его миграции
+# оставляют в общей базе чужую схему, и падение выглядит дефектом кода:
+# так это и проявлялось — IntegrityError на django_content_type.name,
+# колонке, которой в Django 5 нет вовсе.
+#
+# Хэш берётся от пути чекаута, а не от pid: имя должно быть стабильным
+# между прогонами, иначе каждый запуск плодил бы новую базу и оставлял
+# брошенные после аварийного выхода. Два ОДНОВРЕМЕННЫХ прогона внутри
+# ОДНОГО чекаута по-прежнему делят базу — для них есть PR_TEST_DB_NAME.
+_CHECKOUT_TAG = hashlib.sha1(str(BASE_DIR).encode()).hexdigest()[:8]
+DATABASES['default']['TEST'] = {
+    'NAME': os.environ.get(
+        'PR_TEST_DB_NAME', f'test_personnel_records_{_CHECKOUT_TAG}'
+    ),
 }
 
 CACHES = {
