@@ -81,7 +81,7 @@ describe('ReplaceDepartedDialog (via PlacementVersionDetailPage)', () => {
     renderPage('/placement/7')
 
     expect(
-      await screen.findByRole('button', { name: 'Снять и заменить' }),
+      await screen.findByRole('button', { name: /Снять и заменить/ }),
     ).toBeInTheDocument()
   })
 
@@ -98,7 +98,7 @@ describe('ReplaceDepartedDialog (via PlacementVersionDetailPage)', () => {
 
     await screen.findByText(EMPLOYEE_A)
     expect(
-      screen.queryByRole('button', { name: 'Снять и заменить' }),
+      screen.queryByRole('button', { name: /Снять и заменить/ }),
     ).not.toBeInTheDocument()
   })
 
@@ -115,7 +115,7 @@ describe('ReplaceDepartedDialog (via PlacementVersionDetailPage)', () => {
 
     await screen.findByText(EMPLOYEE_A)
     expect(
-      screen.queryByRole('button', { name: 'Снять и заменить' }),
+      screen.queryByRole('button', { name: /Снять и заменить/ }),
     ).not.toBeInTheDocument()
   })
 
@@ -131,7 +131,7 @@ describe('ReplaceDepartedDialog (via PlacementVersionDetailPage)', () => {
     )
     renderPage('/placement/7')
 
-    await user.click(await screen.findByRole('button', { name: 'Снять и заменить' }))
+    await user.click(await screen.findByRole('button', { name: /Снять и заменить/ }))
     await user.click(screen.getByRole('button', { name: 'Заменить' }))
 
     expect(await screen.findByText('Укажите причину.')).toBeInTheDocument()
@@ -164,7 +164,7 @@ describe('ReplaceDepartedDialog (via PlacementVersionDetailPage)', () => {
     )
     renderPage('/placement/7')
 
-    await user.click(await screen.findByRole('button', { name: 'Снять и заменить' }))
+    await user.click(await screen.findByRole('button', { name: /Снять и заменить/ }))
     await user.type(screen.getByLabelText('Причина'), 'Выбыл по болезни')
     await user.type(screen.getByLabelText('Санкция'), 'Приказ №9')
     await user.click(screen.getByRole('button', { name: 'Заменить' }))
@@ -201,7 +201,7 @@ describe('ReplaceDepartedDialog (via PlacementVersionDetailPage)', () => {
     )
     renderPage('/placement/7')
 
-    await user.click(await screen.findByRole('button', { name: 'Снять и заменить' }))
+    await user.click(await screen.findByRole('button', { name: /Снять и заменить/ }))
     await user.type(screen.getByLabelText('Причина'), 'x')
     await user.type(screen.getByLabelText('Санкция'), 'y')
     await user.click(screen.getByRole('button', { name: 'Заменить' }))
@@ -225,7 +225,7 @@ describe('ReplaceDepartedDialog (via PlacementVersionDetailPage)', () => {
     )
     renderPage('/placement/7')
 
-    await user.click(await screen.findByRole('button', { name: 'Снять и заменить' }))
+    await user.click(await screen.findByRole('button', { name: /Снять и заменить/ }))
     await user.type(screen.getByLabelText('Причина'), 'x')
     await user.type(screen.getByLabelText('Санкция'), 'y')
     await user.click(screen.getByRole('button', { name: 'Заменить' }))
@@ -235,9 +235,78 @@ describe('ReplaceDepartedDialog (via PlacementVersionDetailPage)', () => {
     await user.click(screen.getByRole('button', { name: 'Отмена' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Снять и заменить' }))
+    await user.click(screen.getByRole('button', { name: /Снять и заменить/ }))
     const reopenedDialog = screen.getByRole('dialog')
     expect(within(reopenedDialog).queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Причина')).toHaveValue('')
+  })
+
+  it('review (Blind Hunter): rows have distinct accessible names and each wires the correct employee to the dialog', async () => {
+    const user = userEvent.setup()
+    const EMPLOYEE_B = '22222222-2222-2222-2222-222222222222'
+    let received: Record<string, unknown> | null = null
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(
+          approvedVersion({
+            assignments: [
+              {
+                id: 1,
+                employee_id: EMPLOYEE_A,
+                post: 5,
+                conflict_severity: '',
+                conflict_codes: [],
+                acknowledged_at: null,
+                ack_escalated_at: null,
+              },
+              {
+                id: 2,
+                employee_id: EMPLOYEE_B,
+                post: 6,
+                conflict_severity: '',
+                conflict_codes: [],
+                acknowledged_at: null,
+                ack_escalated_at: null,
+              },
+            ],
+          }),
+        ),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post(
+        '*/api/operations/assignment-versions/7/replace-departed/',
+        async ({ request }) => {
+          received = (await request.json()) as Record<string, unknown>
+          return HttpResponse.json(approvedVersion({ id: 9, version: 3 }), { status: 201 })
+        },
+      ),
+      http.get('*/api/operations/assignment-versions/9/', () =>
+        HttpResponse.json(approvedVersion({ id: 9, version: 3 })),
+      ),
+      http.get('*/api/operations/assignment-versions/9/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+    )
+    renderPage('/placement/7')
+    await screen.findByText(EMPLOYEE_A)
+
+    const buttons = await screen.findAllByRole('button', { name: /Снять и заменить/ })
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0].getAttribute('aria-label')).not.toBe(
+      buttons[1].getAttribute('aria-label'),
+    )
+
+    // review-precedent: clicking the SECOND row's button must submit
+    // EMPLOYEE_B, not fall back to the first row's employee_id.
+    await user.click(buttons[1])
+    await user.type(screen.getByLabelText('Причина'), 'x')
+    await user.type(screen.getByLabelText('Санкция'), 'y')
+    await user.click(screen.getByRole('button', { name: 'Заменить' }))
+
+    await waitFor(() =>
+      expect(received).toMatchObject({ departed_employee_id: EMPLOYEE_B }),
+    )
   })
 })

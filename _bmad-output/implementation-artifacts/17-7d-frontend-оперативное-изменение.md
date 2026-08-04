@@ -4,7 +4,7 @@ baseline_commit: 02888c9
 
 # Story 17.7d: Frontend — оперативное изменение (каскадная замена выбывшего)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -73,11 +73,13 @@ Claude Sonnet 5
 
 Реализовано по AC 1-7. `useReplaceDeparted` — образец `queries.ts`'s мутаций. `ReplaceDepartedDialog` — буквальный образец `ReturnVersionDialog.tsx` (native `<dialog>`, RHF+Zod, редирект на успех через `useNavigate`); диалог ПОЛНОСТЬЮ размонтируется при `open=false` (`if (!open) return null`) — это САМО закрывает 17.7c's review-урок (permanent-lockout): при следующем открытии `useReplaceDeparted()` — новый инстанс, `mutation.error` не переживает размонтирование, форма ВСЕГДА чистая при новом открытии, отдельный `reset()`-путь не понадобился (структурное решение, не поведенческий костыль). Кнопка «Снять и заменить» — новая колонка `AssignmentsTable`, видна только `status === 'APPROVED' && is_current` (тот же lifecycle-гард, что сервис). MSW-мок для dev:mock (детерминированный demo-id вместо реального штатного поиска — `find_replacement_candidates()` требует core-справочники, недоступные в mock-режиме). `npm run gate` (frontend) — 1124 passed (было 1117), tsc/eslint/build/size-gate все зелёные (223.3 KB gzip, бюджет 300 KB).
 
+После ревью (3 агента): Acceptance Auditor — PASS на всех 7 AC, независимо перепроверил мутационными пробами (visibility-гард, redirect-target, client-валидация — все три реально сломали соответствующие тесты). Blind Hunter нашёл реальный дефект: КАЖДАЯ строка `AssignmentsTable` с 2+ назначениями несла кнопку «Снять и заменить» с ОДНИМ и тем же accessible name — неоднозначно для screen reader И для любого теста, ищущего кнопку по имени (существующие тесты не ловили это — во всех фикстурах было ровно 1 назначение). Закрыто `aria-label` на основе `employee_id`; добавлен тест с 2 строками, подтверждающий и различимость имён, и правильную привязку employee_id ко ВТОРОЙ строке (не откат к первой) — мутационно проверен (снятие aria-label → тест падает). Отклонены находки: `ValidationError`-ветка "мёртвый код" — ложная предпосылка, `ReplaceDepartedRequestSerializer.departed_employee_id` реально может провалить DRF-валидацию поля (малформленный UUID), путь живой; 409-vs-403 без различения текста — established-конвенция (`ReturnVersionDialog` тоже рендерит generic-текст); stale-write без re-fetch-guard — сервер уже гардит через `select_for_update`+`is_current`-чек внутри `amend_assignment_version()`, 422 покрывает; "Отмена"-кнопка завязана на unmount-контракт диалога — тот же паттерн, что буквальный прецедент `ReturnVersionDialog`, не новый риск; mock module-state leak между тестами — мои тесты используют `server.use()`-оверрайды, не полагаются на общий mutable fixture; "scope creep" критика Scope Decision — уже решено с Bratan явным вопросом до старта implementation. `npm run gate` (frontend) — 1125 passed (было 1124), build/size-gate чисты (223.3 KB gzip).
+
 ### File List
 
 - `frontend/src/features/placement/api/queries.ts` (modified — `useReplaceDeparted`, `ReplaceDepartedRequest`/`Response`)
 - `frontend/src/features/placement/pages/ReplaceDepartedDialog.tsx` (new)
-- `frontend/src/features/placement/pages/ReplaceDepartedDialog.test.tsx` (new — 7 тестов)
+- `frontend/src/features/placement/pages/ReplaceDepartedDialog.test.tsx` (new — 7 тестов dev + 1 после ревью)
 - `frontend/src/features/placement/pages/PlacementVersionDetailPage.tsx` (modified — колонка «Действия», `ReplaceDepartedCell`)
 - `frontend/src/features/placement/mocks/handlers.ts` (modified — 1 новый обработчик)
 
@@ -87,3 +89,4 @@ Claude Sonnet 5
 |---|---|
 | 2026-08-04 | Story создана (create-story). Scope сужен до каскадной замены выбывшего (17.5/17.7b) — literal-текст эпика не просит полный amend-редактор; тот остаётся вне scope. |
 | 2026-08-04 | Dev-story: `ReplaceDepartedDialog` + хук + кнопка в `AssignmentsTable` + mock + 7 тестов. `npm run gate` — 1124 passed. Status → review. |
+| 2026-08-04 | Review закрыт (3 агента). Acceptance Auditor — PASS на всех 7 AC (мутационно). Реальный дефект: неоднозначный accessible name кнопки при 2+ назначениях — закрыт `aria-label` + тестом (мутационно проверен). `npm run gate` — 1125 passed. Status → done. |

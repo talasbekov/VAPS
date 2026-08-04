@@ -348,7 +348,17 @@ function ReplaceDepartedCell({
 
   return (
     <>
-      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
+      {/* review (Blind Hunter): каждая строка версии с 2+ назначениями
+          несла бы кнопку с ОДНИМ и тем же accessible name — неоднозначно
+          и для screen reader, и для любого теста, ищущего кнопку по
+          имени. aria-label различает строки по employee_id. */}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-label={`Снять и заменить: ${employeeId}`}
+        onClick={() => setOpen(true)}
+      >
         Снять и заменить
       </Button>
       <ReplaceDepartedDialog
