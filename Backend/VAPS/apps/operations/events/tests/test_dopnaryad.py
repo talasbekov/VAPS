@@ -110,6 +110,48 @@ def test_amend_rejects_unplanned_without_any_source():
     assert AssignmentVersion.objects.filter(event=event).count() == 1
 
 
+def test_amend_rejects_planned_row_with_source_set():
+    """review (Blind Hunter): the reverse direction of the same
+    constraint — is_unplanned=False (or omitted) with a source set — must
+    raise DomainError at the service layer, not a raw IntegrityError."""
+    event = make_event("OBJ-DOP-3b")
+    old = make_approved_version(event)
+    post = make_post(event.object)
+
+    with pytest.raises(DomainError):
+        amend_assignment_version(
+            old,
+            actor="staff-1",
+            reason="x",
+            sanction="y",
+            assignments=[
+                {
+                    "employee_id": uuid.uuid4(),
+                    "post": post,
+                    "source_division_id": uuid.uuid4(),
+                }
+            ],
+        )
+
+    assert AssignmentVersion.objects.filter(event=event).count() == 1
+
+
+def test_amend_rejects_spec_missing_employee_id():
+    """review (Blind Hunter + Edge Case Hunter, независимо совпали):
+    raw spec["employee_id"] in bulk_create raised KeyError, not
+    DomainError."""
+    event = make_event("OBJ-DOP-3c")
+    old = make_approved_version(event)
+    post = make_post(event.object)
+
+    with pytest.raises(DomainError):
+        amend_assignment_version(
+            old, actor="staff-1", reason="x", sanction="y", assignments=[{"post": post}]
+        )
+
+    assert AssignmentVersion.objects.filter(event=event).count() == 1
+
+
 def test_amend_without_unplanned_key_defaults_to_planned():
     """AC-4: backward compatibility with 17.3's plain dicts."""
     event = make_event("OBJ-DOP-4")

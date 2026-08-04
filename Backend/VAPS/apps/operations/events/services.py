@@ -1636,6 +1636,13 @@ def amend_assignment_version(version, *, actor, reason, sanction, assignments):
                 ),
             )
         for spec in assignments:
+            if "employee_id" not in spec:
+                # review (Blind Hunter + Edge Case Hunter, независимо
+                # совпали): raw spec["employee_id"] в bulk_create падал бы
+                # KeyError, не DomainError, на пропущенном ключе.
+                raise DomainError(
+                    "VALIDATION_ERROR", 400, message="employee_id обязателен."
+                )
             post = spec.get("post")
             if post is None or post.object_id != event.object_id:
                 # review (Edge Case Hunter): post=None must raise a domain
@@ -1649,19 +1656,38 @@ def amend_assignment_version(version, *, actor, reason, sanction, assignments):
                         "post должен принадлежать тому же объекту, что и событие."
                     ),
                 )
-            if spec.get("is_unplanned") and not (
-                spec.get("source_division_id") or spec.get("source_duty_shift_id")
-            ):
+            source_division_id = spec.get("source_division_id")
+            source_duty_shift_id = spec.get("source_duty_shift_id")
+            has_source = (
+                source_division_id is not None or source_duty_shift_id is not None
+            )
+            if spec.get("is_unplanned") and not has_source:
                 # Story 17.4 (FR-28): сервис отбивает пустой источник
                 # раньше DB-CheckConstraint — тот же приём, что
                 # `_require_text()` (backstop, не единственная линия
-                # защиты).
+                # защиты). `is not None`, не truthy — симметрично с DB
+                # констрейнта `__isnull=False` (review, Blind Hunter:
+                # truthy отбросил бы source_duty_shift_id=0 как «нет
+                # источника», хотя DB его бы приняла).
                 raise DomainError(
                     "VALIDATION_ERROR",
                     400,
                     message=(
                         "Допнаряд (is_unplanned=True) требует source_division_id "
                         "или source_duty_shift_id."
+                    ),
+                )
+            if not spec.get("is_unplanned") and has_source:
+                # review (Blind Hunter): обратное направление того же
+                # констрейнта — планового назначения с источником не
+                # существовало ни в одном service-level guard'е, отдавая
+                # его сырому IntegrityError вместо DomainError.
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    400,
+                    message=(
+                        "source_division_id/source_duty_shift_id допустимы только "
+                        "при is_unplanned=True."
                     ),
                 )
 
