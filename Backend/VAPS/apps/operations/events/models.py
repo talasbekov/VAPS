@@ -731,3 +731,36 @@ class SecurityEventClosureSummary(TimeStampedModel):
 
     def __str__(self):
         return f"{self.sector} ({self.event_id})"
+
+
+class PlacementAssignmentActual(TimeStampedModel):
+    """Story 18.3 (FR-43): «опрос по итогам» — фактическое время ОДНОГО
+    назначения на посту, записанное ПОСЛЕ закрытия события. Design-
+    решение (нет donor-спеки/UX-макета для «опроса»): одна фактическая
+    запись на `PlacementAssignment` (`OneToOne`), не анкета/список
+    вопросов — «опрос» здесь означает «сбор факта времени», основа для
+    Налёта часов (18.4), не построена этой стори.
+
+    `recorded_by` — плоская actor-строка (ARCH-002/003), тот же паттерн,
+    что `AssignmentVersion.created_by`."""
+
+    assignment = models.OneToOneField(
+        PlacementAssignment, on_delete=models.CASCADE, related_name="actual_time"
+    )
+    actual_start_at = models.DateTimeField()
+    actual_end_at = models.DateTimeField()
+    recorded_by = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        db_table = "ops_placement_assignment_actuals"
+        verbose_name = "Факт времени на посту"
+        verbose_name_plural = "Факты времени на постах"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(actual_start_at__lt=models.F("actual_end_at")),
+                name="ck_placement_assignment_actual_start_before_end",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.assignment_id}: {self.actual_start_at} — {self.actual_end_at}"

@@ -38,6 +38,7 @@ from apps.operations.events.models import (
     GroupForceRequest,
     JournalEntry,
     PlacementAssignment,
+    PlacementAssignmentActual,
     SecurityEvent,
     SecurityEventChecklistItem,
     SecurityEventClosureSummary,
@@ -2111,3 +2112,66 @@ def close_security_event(event, *, actor, summaries):
             },
         )
     return event
+
+
+def record_assignment_actual_time(assignment, *, actor, actual_start_at, actual_end_at):
+    """Story 18.3 (FR-43): «опрос по итогам» — фактическое время ОДНОГО
+    назначения, записываемое ПОСЛЕ закрытия события (основа для Налёта
+    часов, 18.4 — не построена здесь). Upsert — буквальный образец
+    `close_security_event()`'s `SecurityEventClosureSummary`-паттерна
+    (18.1): повторный вызов ИСПРАВЛЯЕТ факт, не создаёт вторую строку.
+
+    Гейт на `is_current` (не только `status_code == CLOSED`) — факт
+    имеет смысл только для АКТУАЛЬНОЙ версии Расстановки; устаревшая
+    версия (returned/replaced) не участвует в Налёте часов."""
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    if actual_start_at is None or actual_end_at is None:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            message="actual_start_at и actual_end_at обязательны.",
+        )
+    if actual_start_at >= actual_end_at:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            message="actual_start_at должен быть раньше actual_end_at.",
+        )
+    with transaction.atomic():
+        assignment = PlacementAssignment.objects.select_related(
+            "version", "version__event"
+        ).get(pk=assignment.pk)
+        version = assignment.version
+        if not version.is_current:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Факт можно записать только для актуальной версии Расстановки.",
+            )
+        if version.event.status_code != SecurityEvent.StatusCode.CLOSED:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Факт можно записать только после закрытия события.",
+            )
+        actual, _ = PlacementAssignmentActual.objects.update_or_create(
+            assignment=assignment,
+            defaults={
+                "actual_start_at": actual_start_at,
+                "actual_end_at": actual_end_at,
+                "recorded_by": actor.strip(),
+            },
+        )
+        record(
+            actor=actor,
+            action="ASSIGNMENT_ACTUAL_TIME_RECORDED",
+            entity_type="placement_assignment_actual",
+            entity_id=uuid.UUID(int=actual.pk),
+            new_value={
+                "assignment_id": assignment.pk,
+                "actual_start_at": actual.actual_start_at.isoformat(),
+                "actual_end_at": actual.actual_end_at.isoformat(),
+            },
+        )
+    return actual

@@ -274,6 +274,11 @@ actions:
     description: "ОМ закрыто (IN_PROGRESS->CLOSED) — требует итог по каждому направлению (SecurityEventSectorPost.sector). НЕ идемпотентно (терминальный переход, повторный вызов на уже-CLOSED — 422). new_value несёт снимок всех итогов направлений."
     provenance: derived-from-mutation
     source: "epics.md FR-30; Story 18.1"
+  ASSIGNMENT_ACTUAL_TIME_RECORDED:
+    entity_type: placement_assignment_actual
+    description: "Фактическое время назначения записано/исправлено (опрос по итогам, только для CLOSED-события и is_current версии). Эмитится на КАЖДОМ вызове (upsert, включая исправление) — реальная бизнес-данные, не черновик. entity_id — uuid.UUID(int=actual.pk)."
+    provenance: derived-from-mutation
+    source: "epics.md FR-43; Story 18.3"
   OBJECT_PASSPORT_UPDATED:
     entity_type: object_passport
     description: "Паспорт объекта обновлён в контексте ОМ (только пока ОМ в статусе RECON, FR-22). entity_id — uuid.UUID(int=passport.pk). Реальная мутация с compliance-следом (не черновик, в отличие от 15.3b's чек-листа) — аудируется на каждом вызове."
