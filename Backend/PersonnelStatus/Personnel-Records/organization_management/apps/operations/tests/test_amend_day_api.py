@@ -297,9 +297,11 @@ def test_amend_answers_only_to_post(types, division, method):
     assert response.status_code == 405
 
 
-def test_detail_route_itself_is_not_open(types, division):
-    # Чтения одной сдачи нет: маршрута /{id}/ не существует вовсе.
+def test_amend_url_is_not_a_read_url(types, division):
+    # У чтения одной сдачи свой адрес /{id}/; на /{id}/amend/ GET не отвечает
+    # даже теперь, когда чтение открыто.
     api, _ = client_for("amend-detail", "ADMIN", ["*"])
+    row = submitted(division, TODAY)
     with clock.override(TODAY):
-        response = api.get(f"{BASE}{submitted(division, TODAY).pk}/")
-    assert response.status_code == 404
+        assert api.get(amend_url(row.pk)).status_code == 405
+        assert api.get(f"{BASE}{row.pk}/").status_code == 200

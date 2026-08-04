@@ -35,6 +35,7 @@ from organization_management.apps.operations.api.serializers import (
     DailySubmissionCreateSerializer,
     GrantTemporaryDutyRequestSerializer,
     OpsDailySubmissionAmendedSerializer,
+    OpsDailySubmissionDetailSerializer,
     OpsDailySubmissionSerializer,
     OpsAuditLogSerializer,
     OpsEmployeeStatusSerializer,
@@ -75,6 +76,7 @@ from organization_management.apps.operations.models_submission import (
 )
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.selectors import (
+    DailySubmissionSelector,
     DivisionTreeSelector,
     OpsAuditLogSelector,
     StaffUnitSelector,
@@ -1318,7 +1320,9 @@ class AuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
 class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """Сдача дня подразделением.
 
-    POST /api/operations/daily-submissions/         — сдать день
+    GET  /api/operations/daily-submissions/            — список сдач
+    GET  /api/operations/daily-submissions/{id}/       — одна версия со снимком
+    POST /api/operations/daily-submissions/            — сдать день
     POST /api/operations/daily-submissions/{id}/amend/ — поправить сданное
 
     Тонкая вьюха поверх сервиса: форма тела → область записи → вызов. Окно
@@ -1326,24 +1330,132 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
     day_submission_service и покрыты его тестами; DomainError сервиса уходит
     наверх конвертом, вьюха его НЕ ловит.
 
-    Чтения здесь пока нет намеренно: список и деталь со снимком — отдельный
-    срез со своей областью видимости, и открывать их заодно с записью
-    значило бы отдать снимок раньше, чем решено, кому он виден.
+    ЧТЕНИЕ ИДЁТ ПОД status.view — тем же правом, что расход и строевая
+    записка. Снимок сдачи это тот же состав и те же факты статусов, которые
+    status.view уже открывает, а сдача добавляет к ним лишь момент и подпись;
+    заводить для них более строгое право значило бы защищать одни и те же
+    сведения по-разному в зависимости от маршрута. Право ЗАПИСИ на чтение не
+    ставится намеренно (в источнике читают под mark_update): наблюдатель не
+    обязан иметь права отмечать.
 
-    ПРАВА У ДВУХ ДЕЙСТВИЙ РАЗНЫЕ: сдача под daily_report.mark_update
+    ПРАВА У ДЕЙСТВИЙ ЗАПИСИ РАЗНЫЕ: сдача под daily_report.mark_update
     («отметки в суточном отчёте»), поправка под daily_report.correct
     («корректировка») — сдать день и переписать сданное разные полномочия,
     и общий код выдал бы право задним числом менять подписанное каждому,
     кому разрешили отмечать.
     """
 
+    # Только ради схемы: документирует limit/offset (см. TemporaryDutyViewSet).
+    pagination_class = DefaultPagination
+
     permission_map = {
+        "list": _READ_STATUS_PERMISSION,
+        "retrieve": _READ_STATUS_PERMISSION,
         "create": _SUBMIT_DAY_PERMISSION,
         "amend": _AMEND_DAY_PERMISSION,
     }
-    # GET/PATCH/DELETE не открыты: сдача иммутабельна, а её единственная
+    # PUT/PATCH/DELETE не открыты: сдача иммутабельна, её единственная
     # законная «правка» — поправка отдельным действием со своей причиной.
-    http_method_names = ["post", "options"]
+    http_method_names = ["get", "post", "options"]
+
+    def _get_submission_or_404(self, pk):
+        """Строка сдачи по pk из пути; отсутствующая или нечисловая — 404.
+
+        int() ДО запроса, как у статусов и пар: мусорный идентификатор ушёл
+        бы ValueError → 500 вместо 404.
+        """
+        try:
+            submission_id = int(pk)
+        except (TypeError, ValueError):
+            submission_id = None
+        row = (
+            OpsDailySubmission.objects.filter(pk=submission_id).first()
+            if submission_id is not None
+            else None
+        )
+        if row is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"submission_id": str(pk)},
+                message="Сдача не найдена.",
+            )
+        return row
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "division_id",
+                OpenApiTypes.INT,
+                description="Подразделение и его поддерево.",
+            ),
+            OpenApiParameter(
+                "business_date", OpenApiTypes.DATE, description="Один день."
+            ),
+            OpenApiParameter(
+                "history",
+                OpenApiTypes.BOOL,
+                description=(
+                    "true — вместе с вытесненными версиями; по умолчанию "
+                    "только действующие."
+                ),
+            ),
+        ],
+        responses=paginated_response_schema(
+            "PaginatedOpsDailySubmissionList", OpsDailySubmissionSerializer(many=True)
+        ),
+        description=(
+            "Список сдач под правом status.view — БЕЗ снимков (снимок отдаёт "
+            "только чтение одной версии). По умолчанию видны действующие "
+            "версии, история — по флагу. Запрос чужого подразделения — 403, "
+            "а не пустой список. Порядок задаёт сервер: свежий день первым, "
+            "внутри дня свежая версия. 400 — нечитаемый параметр."
+        ),
+    )
+    def list(self, request, *args, **kwargs):
+        division_id = _parse_int_param(request, "division_id")
+        # Область сужает выборку ВСЕГДА, даже без division_id — общий
+        # резолвер списков раздела; чужое подразделение даёт 403, а не
+        # пустую страницу, неотличимую от «там не сдавали».
+        scope = _resolve_division_scope(request, division_id, _READ_STATUS_PERMISSION)
+        queryset = DailySubmissionSelector.list(
+            scope=scope,
+            business_date=_parse_date_param(request, "business_date"),
+            history=bool(_parse_bool_param(request, "history")),
+        )
+        paginator = DefaultPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        return paginator.get_paginated_response(
+            OpsDailySubmissionSerializer(page, many=True).data
+        )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id КОНКРЕТНОЙ версии сдачи.",
+            )
+        ],
+        responses={200: OpsDailySubmissionDetailSerializer},
+        description=(
+            "Одна версия сдачи со СНИМКОМ состава и фактов — источник расхода "
+            "и светофора. Отдаётся ЗАПРОШЕННАЯ версия, действующая или "
+            "вытесненная: щит доказывает конкретное заявление, а не последнее. "
+            "403 — нет права status.view либо подразделение вне области; "
+            "404 — версии с таким id нет."
+        ),
+    )
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        submission = self._get_submission_or_404(pk)
+        # Область — по подразделению найденной строки, тем же правом, что и
+        # список: право записи чтения не открывает и наоборот.
+        _assert_division_in_scope(
+            request, submission.division_id, _READ_STATUS_PERMISSION,
+            field="division_id",
+        )
+        return Response(OpsDailySubmissionDetailSerializer(submission).data)
 
     @extend_schema(
         request=DailySubmissionCreateSerializer,
@@ -1376,30 +1488,6 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpsDailySubmissionSerializer(submission).data,
             status=status.HTTP_201_CREATED,
         )
-
-    def _get_submission_or_404(self, pk):
-        """Строка сдачи по pk из пути; отсутствующая или нечисловая — 404.
-
-        int() ДО запроса, как у статусов и пар: мусорный идентификатор ушёл
-        бы ValueError → 500 вместо 404.
-        """
-        try:
-            submission_id = int(pk)
-        except (TypeError, ValueError):
-            submission_id = None
-        row = (
-            OpsDailySubmission.objects.filter(pk=submission_id).first()
-            if submission_id is not None
-            else None
-        )
-        if row is None:
-            raise DomainError(
-                "ENTITY_NOT_FOUND",
-                404,
-                detail={"submission_id": str(pk)},
-                message="Сдача не найдена.",
-            )
-        return row
 
     @extend_schema(
         parameters=[

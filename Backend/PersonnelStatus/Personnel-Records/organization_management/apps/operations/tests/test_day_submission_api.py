@@ -248,15 +248,13 @@ def test_window_moves_with_the_clock(types, division):
 
 # ── Поверхность методов ──────────────────────────────────────────────────
 
-@pytest.mark.parametrize("method", ["get", "put", "patch", "delete"])
-def test_only_post_is_served(types, division, method):
-    """Кроме записи, маршрут не отвечает ничем.
+@pytest.mark.parametrize("method", ["put", "patch", "delete"])
+def test_the_row_cannot_be_rewritten_or_deleted(types, division, method):
+    """Сданное иммутабельно: правки и удаления у маршрута нет.
 
-    Пинится ОТСУТСТВИЕ действий, а не http_method_names: добавленный list()
-    сделает GET успешным (проверено красной пробой), и это уже другой срез —
-    у чтения снимка своя область видимости. Правки и удаления не будет и
-    потом: сданное иммутабельно, его единственная законная перезапись —
-    поправка отдельным действием со своей причиной.
+    Пинится ОТСУТСТВИЕ действий, а не http_method_names — появившийся
+    update()/destroy() сделал бы метод успешным. Единственная законная
+    перезапись сданного — поправка отдельным действием со своей причиной.
     """
     api, _ = client_for(f"day-method-{method}", "ADMIN", ["*"])
     with clock.override(TODAY):
