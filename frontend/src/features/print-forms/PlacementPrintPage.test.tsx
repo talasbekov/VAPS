@@ -163,4 +163,84 @@ describe('PlacementPrintPage', () => {
     expect(await screen.findByText(PRINT_EMPTY_MESSAGE)).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
+
+  it('review: renders assignments in server order, does not re-sort client-side', async () => {
+    const EMPLOYEE_C = '33333333-3333-3333-3333-333333333333'
+    const EMPLOYEE_A = '11111111-1111-1111-1111-111111111111'
+    const EMPLOYEE_B = '22222222-2222-2222-2222-222222222222'
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json({
+          id: 7,
+          event: 3,
+          status: 'DRAFT',
+          version: 1,
+          is_current: true,
+          signature_hash: '',
+          created_at: '2026-08-01T09:00:00Z',
+          updated_at: '2026-08-01T09:00:00Z',
+          assignments: [
+            {
+              id: 3,
+              employee_id: EMPLOYEE_C,
+              post: 1,
+              conflict_severity: '',
+              conflict_codes: [],
+              acknowledged_at: null,
+              ack_escalated_at: null,
+            },
+            {
+              id: 1,
+              employee_id: EMPLOYEE_A,
+              post: 2,
+              conflict_severity: '',
+              conflict_codes: [],
+              acknowledged_at: null,
+              ack_escalated_at: null,
+            },
+            {
+              id: 2,
+              employee_id: EMPLOYEE_B,
+              post: 3,
+              conflict_severity: '',
+              conflict_codes: [],
+              acknowledged_at: null,
+              ack_escalated_at: null,
+            },
+          ],
+        }),
+      ),
+    )
+    renderPage('/print/placement?version_id=7')
+
+    const rows = await screen.findAllByRole('row')
+    // rows[0] is the header row.
+    const bodyRows = rows.slice(1)
+    expect(bodyRows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining(EMPLOYEE_C),
+      expect.stringContaining(EMPLOYEE_A),
+      expect.stringContaining(EMPLOYEE_B),
+    ])
+  })
+
+  it('review: unmapped status falls back to the raw status string', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json({
+          id: 7,
+          event: 3,
+          status: 'UNKNOWN_FUTURE_STATUS',
+          version: 1,
+          is_current: true,
+          signature_hash: '',
+          created_at: '2026-08-01T09:00:00Z',
+          updated_at: '2026-08-01T09:00:00Z',
+          assignments: [],
+        }),
+      ),
+    )
+    renderPage('/print/placement?version_id=7')
+
+    expect(await screen.findByText(/UNKNOWN_FUTURE_STATUS/)).toBeInTheDocument()
+  })
 })
