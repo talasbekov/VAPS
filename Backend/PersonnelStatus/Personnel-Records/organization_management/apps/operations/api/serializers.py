@@ -16,6 +16,7 @@ from organization_management.apps.operations.models import (
     TemporaryDutyPermission,
     UserRole,
 )
+from organization_management.apps.operations.models_status import OpsEmployeeStatus
 from organization_management.apps.operations.validators import DUTY_ROLE_CHOICES
 
 
@@ -123,3 +124,73 @@ class BulkStatusCreateSerializer(serializers.Serializer):
     rows = BulkStatusCreateRowSerializer(
         many=True, allow_empty=False, max_length=MAX_BULK_ROWS
     )
+
+
+class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
+    """Строка статуса раздела ОМ наружу.
+
+    state не хранится, а выводится из дат и факта отмены на ТЕКУЩУЮ
+    бизнес-дату (Clock раздела) — клиенту незачем повторять этот вывод у
+    себя и расходиться с сервером в полночь.
+    """
+
+    state = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OpsEmployeeStatus
+        fields = [
+            "id", "employee_id", "status_type_code", "date_start", "date_end",
+            "state", "source", "source_ref", "comment", "document_basis",
+            "cancelled_at", "cancelled_by", "cancelled_reason",
+            "created_by", "created_at", "updated_at",
+        ]
+
+    def get_state(self, obj) -> str:
+        return str(obj.state)
+
+
+class StatusUpdateSerializer(serializers.Serializer):
+    """Тело PATCH правки статуса: интервал и метаданные, все поля
+    необязательные.
+
+    Пустое тело — 400, а не «успешный» no-op: правка без единого поля это
+    ошибка клиента, и отвечать на неё 200-м значило бы подтверждать
+    несделанную работу.
+
+    Неизменяемые поля перечислены явно и при попытке их прислать дают 400 с
+    указанием поля. Молчаливо игнорировать их (штатное поведение DRF для
+    неизвестных ключей) нельзя: клиент, отправивший смену status_type_code,
+    получил бы 200 и остался уверен, что тип сменился. Смена типа или
+    сотрудника — это ДРУГАЯ строка (отменить и создать), а факты отмены
+    append-once и правкой не переписываются.
+    """
+
+    IMMUTABLE_FIELDS = (
+        "employee_id",
+        "status_type_code",
+        "source",
+        "source_ref",
+        "cancelled_at",
+        "cancelled_by",
+        "cancelled_reason",
+    )
+
+    date_start = serializers.DateField(required=False)
+    date_end = serializers.DateField(required=False)
+    comment = serializers.CharField(required=False, allow_blank=True)
+    document_basis = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
+
+    def validate(self, attrs):
+        raw = self.initial_data if isinstance(self.initial_data, dict) else {}
+        forbidden = [name for name in self.IMMUTABLE_FIELDS if name in raw]
+        if forbidden:
+            raise serializers.ValidationError(
+                {name: "Поле неизменяемо." for name in forbidden}
+            )
+        if not attrs:
+            raise serializers.ValidationError(
+                "Пустое тело правки: укажите хотя бы одно изменяемое поле."
+            )
+        return attrs
