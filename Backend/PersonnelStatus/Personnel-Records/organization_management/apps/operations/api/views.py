@@ -31,7 +31,9 @@ from organization_management.apps.operations.api.permissions import (
 from organization_management.apps.operations.api.serializers import (
     AssignRoleRequestSerializer,
     BulkStatusCreateSerializer,
+    DailySubmissionCreateSerializer,
     GrantTemporaryDutyRequestSerializer,
+    OpsDailySubmissionSerializer,
     OpsAuditLogSerializer,
     OpsEmployeeStatusSerializer,
     PermissionSerializer,
@@ -56,6 +58,9 @@ from organization_management.apps.operations.bulk_status_service import (
     bulk_create_statuses,
 )
 from organization_management.apps.operations.clock import Clock
+from organization_management.apps.operations.day_submission_service import (
+    submit_day,
+)
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
@@ -93,6 +98,12 @@ _AUDIT_PERMISSION = "audit.view"
 # Право на чтение статусов — то же, что у расхода: кто видит агрегат, тот
 # видит и строки, из которых он сложился.
 _READ_STATUS_PERMISSION = "status.view"
+# Право на сдачу дня — существующий код каталога («отметки в суточном
+# отчёте»), нового не заводим. Поправка сданного пойдёт под
+# daily_report.correct: сдать день и переписать сданное — разные полномочия,
+# и одним кодом их объединять значило бы выдать каждому отмечающему право
+# задним числом менять подписанное.
+_SUBMIT_DAY_PERMISSION = "daily_report.mark_update"
 
 
 def _parse_int_param(request, name):
@@ -202,6 +213,32 @@ def _resolve_division_scope(request, division_id, permission_code):
     if not scope:
         raise PermissionDenied("PERMISSION_DENIED")
     return scope
+
+
+def _assert_division_in_scope(request, division_id, permission_code, *, field):
+    """Подразделение ЗАПИСИ обязано входить в область актора.
+
+    None = безскоуповый/wildcard грант → любое подразделение. Отказ —
+    DomainError (конверт {error_code}), а не PermissionDenied DRF: право у
+    оператора ЕСТЬ, ему не хватает именно области — и без различения форм
+    тест одного отказа зеленел бы от другого.
+
+    Отличие от `_resolve_division_scope` (списки): там подразделение может
+    быть не задано и область СУЖАЕТ выборку, здесь адресат записи всегда
+    один и вопрос двоичный — своё или чужое.
+    """
+    allowed = PermissionService.visible_division_ids(
+        resolve_actor_id(request), permission_code
+    )
+    if allowed is None:
+        return
+    if division_id not in allowed:
+        raise DomainError(
+            "PERMISSION_DENIED",
+            403,
+            detail={field: str(division_id)},
+            message="Подразделение вне области видимости оператора.",
+        )
 
 
 class DefaultPagination(LimitOffsetPagination):
@@ -826,25 +863,10 @@ class SecondmentViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return row
 
     def _assert_division_in_scope(self, request, division_id, *, field):
-        """Подразделение стороны обязано входить в область актора.
-
-        None = безскоуповый/wildcard грант → обе стороны. Отказ — DomainError
-        (конверт {error_code}), а не PermissionDenied DRF: право у оператора
-        ЕСТЬ, ему не хватает именно области — и без различения форм тест
-        одного отказа зеленел бы от другого.
-        """
-        allowed = PermissionService.visible_division_ids(
-            resolve_actor_id(request), _BULK_STATUS_PERMISSION
+        """Подразделение стороны обязано входить в область актора."""
+        _assert_division_in_scope(
+            request, division_id, _BULK_STATUS_PERMISSION, field=field
         )
-        if allowed is None:
-            return
-        if division_id not in allowed:
-            raise DomainError(
-                "PERMISSION_DENIED",
-                403,
-                detail={field: str(division_id)},
-                message="Подразделение вне области видимости оператора.",
-            )
 
     @extend_schema(
         parameters=[
@@ -1283,3 +1305,59 @@ class AuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 message="Запись журнала не найдена.",
             )
         return Response(OpsAuditLogSerializer(entry).data)
+
+
+class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Сдача дня подразделением.
+
+    POST /api/operations/daily-submissions/ — сдать день
+
+    Тонкая вьюха поверх сервиса: форма тела → область записи → вызов. Окно
+    дат, повторная сдача, событие и отметка опоздания живут в
+    day_submission_service и покрыты его тестами; DomainError сервиса уходит
+    наверх конвертом, вьюха его НЕ ловит.
+
+    Чтения здесь пока нет намеренно: список и деталь со снимком — отдельный
+    срез со своей областью видимости, и открывать их заодно с записью
+    значило бы отдать снимок раньше, чем решено, кому он виден. Право на
+    запись — daily_report.mark_update («отметки в суточном отчёте»);
+    поправка сданного дня пойдёт под своим daily_report.correct, потому что
+    сдать день и переписать сданное — разные полномочия.
+    """
+
+    permission_map = {"create": _SUBMIT_DAY_PERMISSION}
+    # GET/PATCH/DELETE не открыты: сдача иммутабельна, а её единственная
+    # законная «правка» — поправка отдельным действием со своей причиной.
+    http_method_names = ["post", "options"]
+
+    @extend_schema(
+        request=DailySubmissionCreateSerializer,
+        responses={201: OpsDailySubmissionSerializer},
+        description=(
+            "Сдать день за подразделение: собирается снимок состава и фактов, "
+            "пишется версия 1 и событие журнала. Актор — из аутентификации, "
+            "не из тела. 400 — форма тела; 403 — нет права "
+            "daily_report.mark_update либо подразделение вне области "
+            "оператора; 404 — подразделения нет; 409 — день уже сдан "
+            "(пересдача — это поправка); 422 — дата вне окна сдачи."
+        ),
+    )
+    def create(self, request, *args, **kwargs):
+        form = DailySubmissionCreateSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        # Область проверяется ДО сервиса: иначе чужак узнавал бы о
+        # существовании подразделения по разнице между 404 и 403.
+        _assert_division_in_scope(
+            request, division_id, _SUBMIT_DAY_PERMISSION, field="division_id"
+        )
+        submission = submit_day(
+            division_id=division_id,
+            business_date=form.validated_data["business_date"],
+            # Актор — из контракта аутентификации, НИКОГДА из тела запроса.
+            actor=resolve_actor_id(request),
+        )
+        return Response(
+            OpsDailySubmissionSerializer(submission).data,
+            status=status.HTTP_201_CREATED,
+        )

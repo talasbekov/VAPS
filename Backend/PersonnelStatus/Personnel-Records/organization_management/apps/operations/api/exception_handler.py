@@ -31,6 +31,12 @@ logger = logging.getLogger(__name__)
 # бизнес-правило, а не как 500.
 CONSTRAINT_ERROR_MAP = {
     "excl_hard_status_overlap": ("OVERLAPPING_HARD_STATUS", 422, False),
+    # Две сдачи одного дня, разошедшиеся с предпроверкой сервиса. Оба
+    # ограничения означают для клиента одно и то же — «день уже сдан», —
+    # и различать их в ответе нечем: проигравший гонку не узнал бы из кода
+    # ошибки ничего полезного о том, на какой именно уникальности он встал.
+    "unique_ops_submission_current": ("DAY_ALREADY_SUBMITTED", 409, False),
+    "unique_ops_submission_version": ("DAY_ALREADY_SUBMITTED", 409, False),
 }
 
 
