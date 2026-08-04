@@ -2,6 +2,8 @@
 DIRECTIVE only, INCIDENT reserved for 17.2), gated by
 SecurityEvent.status_code == IN_PROGRESS."""
 
+import uuid
+
 from django.db import IntegrityError
 
 import pytest
@@ -101,6 +103,7 @@ def test_create_writes_audit_row():
 
     audit = AuditLog.objects.get(action="JOURNAL_ENTRY_CREATED")
     assert audit.entity_type == "security_event"
+    assert audit.entity_id == uuid.UUID(int=event.pk)
     assert audit.new_value["entry_id"] == entry.pk
 
 
@@ -111,6 +114,40 @@ def test_create_requires_actor():
         create_journal_entry(
             event, actor="", entry_type=JournalEntry.EntryType.BRIEFING, text="x"
         )
+
+
+def test_create_rejects_actor_over_100_chars():
+    """review (Edge Case Hunter): created_by is CharField(max_length=100) —
+    reject before the DB truncates/errors mid-transaction."""
+    event = make_event("OBJ-JOURNAL-10")
+
+    with pytest.raises(DomainError):
+        create_journal_entry(
+            event,
+            actor="x" * 101,
+            entry_type=JournalEntry.EntryType.BRIEFING,
+            text="x",
+        )
+
+    assert not JournalEntry.objects.filter(event=event).exists()
+
+
+@pytest.mark.parametrize("blank_text", ["", "   ", "\n\t"])
+def test_create_rejects_blank_text(blank_text):
+    """review (Blind Hunter + Edge Case Hunter, independently confirmed):
+    an empty/whitespace-only entry in an append-only journal is
+    unrecoverable noise."""
+    event = make_event("OBJ-JOURNAL-11")
+
+    with pytest.raises(DomainError):
+        create_journal_entry(
+            event,
+            actor="staff-1",
+            entry_type=JournalEntry.EntryType.BRIEFING,
+            text=blank_text,
+        )
+
+    assert not JournalEntry.objects.filter(event=event).exists()
 
 
 def test_db_constraint_rejects_entry_type_outside_choices():

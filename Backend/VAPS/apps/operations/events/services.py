@@ -1483,6 +1483,13 @@ def create_journal_entry(event, *, actor, entry_type, text):
     """
     if not (actor or "").strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    # created_by (TimeStampedModel) — CharField(max_length=100); отклоняем
+    # ДО транзакции, а не даём БД оборвать вставку IntegrityError'ом
+    # (review, Edge Case Hunter).
+    if len(actor.strip()) > 100:
+        raise DomainError(
+            "VALIDATION_ERROR", 400, message="actor длиннее 100 символов."
+        )
     if entry_type not in JournalEntry.EntryType.values:
         raise DomainError(
             "VALIDATION_ERROR",
@@ -1492,6 +1499,11 @@ def create_journal_entry(event, *, actor, entry_type, text):
                 f"{entry_type!r} (допустимо {JournalEntry.EntryType.values})."
             ),
         )
+    if not (text or "").strip():
+        # Пустая/whitespace-only запись в append-only журнал бессмысленна и
+        # неисправима постфактум (review, Blind Hunter + Edge Case Hunter —
+        # оба независимо нашли этот пробел).
+        raise DomainError("VALIDATION_ERROR", 400, message="text обязателен.")
     with transaction.atomic():
         event = SecurityEvent.objects.select_for_update().get(pk=event.pk)
         if event.status_code != SecurityEvent.StatusCode.IN_PROGRESS:
