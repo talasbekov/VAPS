@@ -263,6 +263,11 @@ class UserRoleViewSet(viewsets.ViewSet):
 
 
 class TemporaryDutyViewSet(viewsets.ViewSet):
+    # В рантайме plain ViewSet этот атрибут не читает — list() создаёт
+    # DefaultPagination() сам. Он объявлен ради схемы: им spectacular
+    # документирует limit/offset, которые вьюха реально исполняет.
+    pagination_class = DefaultPagination
+
     @extend_schema(
         responses=paginated_response_schema(
             "PaginatedTemporaryDutyList", TemporaryDutySerializer(many=True)
@@ -400,6 +405,9 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
     Все резолвят её из RBAC актора: подразделению из тела запроса здесь не
     верят.
     """
+
+    # Только ради схемы: документирует limit/offset (см. TemporaryDutyViewSet).
+    pagination_class = DefaultPagination
 
     permission_map = {
         "list": _READ_STATUS_PERMISSION,
@@ -717,6 +725,9 @@ class SecondmentViewSet(RequirePermissionMixin, viewsets.ViewSet):
     и каждое из них должно видеть её целиком. Право чтения — status.view, как
     у статусов и расхода: право записи чтения не открывает и наоборот.
     """
+
+    # Только ради схемы: документирует limit/offset (см. TemporaryDutyViewSet).
+    pagination_class = DefaultPagination
 
     permission_map = {
         "list": _READ_STATUS_PERMISSION,
