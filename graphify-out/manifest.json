@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785817936.689601,
-    "ast_hash": "934b24d8b50c6d84a5539e8e2ee03123",
+    "mtime": 1785818854.967846,
+    "ast_hash": "311161645d9d6a9d9a9fc10894a1fc5f",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -24700,13 +24700,13 @@
     "semantic_hash": ""
   },
   "frontend/src/features/placement/pages/PlacementVersionDetailPage.test.tsx": {
-    "mtime": 1785817854.4222605,
-    "ast_hash": "ae6e2102b2b898dc3db6e057578cf4e2",
+    "mtime": 1785818712.9641593,
+    "ast_hash": "ee3c9e53585b45eb6eef6546117f6b5e",
     "semantic_hash": ""
   },
   "frontend/src/features/placement/pages/PlacementVersionDetailPage.tsx": {
-    "mtime": 1785817494.7369468,
-    "ast_hash": "91640cc976f784ab5804e3119475ed6d",
+    "mtime": 1785818754.413359,
+    "ast_hash": "d64886dbad7c0549baff04d4d12960df",
     "semantic_hash": ""
   },
   "frontend/src/features/placement/pages/PlacementVersionsListPage.test.tsx": {
@@ -24722,6 +24722,16 @@
   "_bmad-output/implementation-artifacts/16-8h2-frontend-\u0441\u043f\u0438\u0441\u043e\u043a-\u0438-\u0434\u0435\u0442\u0430\u043b\u044c.md": {
     "mtime": 1785817925.6085544,
     "ast_hash": "9db2e39c4f4d052cf81910d08716d0e4",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/placement/pages/ReturnVersionDialog.tsx": {
+    "mtime": 1785818153.2735426,
+    "ast_hash": "8e48b0c4eca580ec81ae108d98cb162a",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/16-8h3-frontend-\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044f-\u0436\u0438\u0437\u043d\u0435\u043d\u043d\u043e\u0433\u043e-\u0446\u0438\u043a\u043b\u0430.md": {
+    "mtime": 1785818842.5087855,
+    "ast_hash": "3ae60807ef63ad91920444e06dcf48d2",
     "semantic_hash": ""
   }
 }
