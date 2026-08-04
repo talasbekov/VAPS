@@ -1587,10 +1587,12 @@ def amend_assignment_version(version, *, actor, reason, sanction, assignments):
     авторизация, буквальный образец `DailySubmission.amend_day()`'s
     `AMENDED`-паттерна).
 
-    `assignments` — ПОЛНЫЙ новый состав версии (список `(employee_id,
-    post)`-пар), не diff/patch; 17.4/17.5 решают, КАК его построить
-    (снятие/замена конкретного человека), эта стори просто версионирует
-    готовый список.
+    `assignments` — ПОЛНЫЙ новый состав версии (список dict'ов
+    `{"employee_id", "post", "is_unplanned"?, "source_division_id"?,
+    "source_duty_shift_id"?}`, последние три — опциональны, Story 17.4),
+    не diff/patch; 17.4/17.5 решают, КАК его построить (снятие/замена
+    конкретного человека, допнаряд-маркировка), эта стори просто
+    версионирует готовый список.
 
     Конфликты (`detect_placement_conflicts()`, 16.3) считаются и
     ЗАПИСЫВАЮТСЯ на новую версию, но НЕ блокируют создание — все
@@ -1633,7 +1635,8 @@ def amend_assignment_version(version, *, actor, reason, sanction, assignments):
                     "проведения (IN_PROGRESS)."
                 ),
             )
-        for employee_id, post in assignments:
+        for spec in assignments:
+            post = spec.get("post")
             if post is None or post.object_id != event.object_id:
                 # review (Edge Case Hunter): post=None must raise a domain
                 # error, not AttributeError. review-прецедент 17.2 (Blind
@@ -1644,6 +1647,21 @@ def amend_assignment_version(version, *, actor, reason, sanction, assignments):
                     400,
                     message=(
                         "post должен принадлежать тому же объекту, что и событие."
+                    ),
+                )
+            if spec.get("is_unplanned") and not (
+                spec.get("source_division_id") or spec.get("source_duty_shift_id")
+            ):
+                # Story 17.4 (FR-28): сервис отбивает пустой источник
+                # раньше DB-CheckConstraint — тот же приём, что
+                # `_require_text()` (backstop, не единственная линия
+                # защиты).
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    400,
+                    message=(
+                        "Допнаряд (is_unplanned=True) требует source_division_id "
+                        "или source_duty_shift_id."
                     ),
                 )
 
@@ -1667,12 +1685,20 @@ def amend_assignment_version(version, *, actor, reason, sanction, assignments):
                 sanction=sanction,
                 created_by=actor.strip(),
             )
+            # Story 17.4: assignments — список dict'ов, обратная
+            # совместимость с 17.3-вызовами без допнаряд-ключей через
+            # .get(key, default), не [key] (KeyError на старой форме).
             PlacementAssignment.objects.bulk_create(
                 [
                     PlacementAssignment(
-                        version=new_version, employee_id=employee_id, post=post
+                        version=new_version,
+                        employee_id=spec["employee_id"],
+                        post=spec["post"],
+                        is_unplanned=spec.get("is_unplanned", False),
+                        source_division_id=spec.get("source_division_id"),
+                        source_duty_shift_id=spec.get("source_duty_shift_id"),
                     )
-                    for employee_id, post in assignments
+                    for spec in assignments
                 ]
             )
         detect_placement_conflicts(new_version)

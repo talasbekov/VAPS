@@ -35,6 +35,12 @@ def make_approved_version(event, version=1, is_current=True):
     )
 
 
+def assign(employee_id, post, **extra):
+    """Story 17.4: assignments moved from (employee_id, post) 2-tuples to
+    dicts — this helper keeps 17.3's tests concise after the refactor."""
+    return {"employee_id": employee_id, "post": post, **extra}
+
+
 def test_amend_creates_new_approved_current_version():
     event = make_event("OBJ-AMEND-1")
     old = make_approved_version(event)
@@ -46,7 +52,7 @@ def test_amend_creates_new_approved_current_version():
         actor="staff-1",
         reason="Замена выбывшего",
         sanction="Приказ №1",
-        assignments=[(employee, post)],
+        assignments=[assign(employee, post)],
     )
 
     assert new_version.status == "APPROVED"
@@ -70,7 +76,7 @@ def test_amend_rejects_blank_reason_or_sanction(missing_field):
 
     with pytest.raises(DomainError):
         amend_assignment_version(
-            old, actor="staff-1", assignments=[(uuid.uuid4(), post)], **kwargs
+            old, actor="staff-1", assignments=[assign(uuid.uuid4(), post)], **kwargs
         )
 
     assert AssignmentVersion.objects.filter(event=event).count() == 1
@@ -88,7 +94,7 @@ def test_amend_rejects_non_current_version():
             actor="staff-1",
             reason="x",
             sanction="y",
-            assignments=[(uuid.uuid4(), post)],
+            assignments=[assign(uuid.uuid4(), post)],
         )
 
 
@@ -105,7 +111,7 @@ def test_amend_rejects_non_approved_version():
             actor="staff-1",
             reason="x",
             sanction="y",
-            assignments=[(uuid.uuid4(), post)],
+            assignments=[assign(uuid.uuid4(), post)],
         )
 
 
@@ -128,7 +134,7 @@ def test_amend_rejected_when_event_not_in_progress(status_code):
             actor="staff-1",
             reason="x",
             sanction="y",
-            assignments=[(uuid.uuid4(), post)],
+            assignments=[assign(uuid.uuid4(), post)],
         )
 
     assert AssignmentVersion.objects.filter(event=event).count() == 1
@@ -149,7 +155,7 @@ def test_amend_does_not_block_on_conflicting_assignment():
         sanction="y",
         # Duplicate assignment for the same post — a real conflict shape
         # per detect_placement_conflicts(), but must not block creation.
-        assignments=[(same_employee, post), (same_employee, post)],
+        assignments=[assign(same_employee, post), assign(same_employee, post)],
     )
 
     assert new_version.pk is not None
@@ -180,7 +186,7 @@ def test_amend_rejects_post_from_a_different_object():
             actor="staff-1",
             reason="x",
             sanction="y",
-            assignments=[(uuid.uuid4(), foreign_post)],
+            assignments=[assign(uuid.uuid4(), foreign_post)],
         )
 
     assert AssignmentVersion.objects.filter(event=event).count() == 1
@@ -198,7 +204,7 @@ def test_amend_rejects_none_post():
             actor="staff-1",
             reason="x",
             sanction="y",
-            assignments=[(uuid.uuid4(), None)],
+            assignments=[assign(uuid.uuid4(), None)],
         )
 
     assert AssignmentVersion.objects.filter(event=event).count() == 1
@@ -214,7 +220,7 @@ def test_amend_writes_audit_row():
         actor="staff-1",
         reason="Причина",
         sanction="Санкция",
-        assignments=[(uuid.uuid4(), post)],
+        assignments=[assign(uuid.uuid4(), post)],
     )
 
     audit = AuditLog.objects.get(action="ASSIGNMENT_VERSION_AMENDED")
@@ -232,7 +238,11 @@ def test_amend_requires_actor():
 
     with pytest.raises(DomainError):
         amend_assignment_version(
-            old, actor="", reason="x", sanction="y", assignments=[(uuid.uuid4(), post)]
+            old,
+            actor="",
+            reason="x",
+            sanction="y",
+            assignments=[assign(uuid.uuid4(), post)],
         )
 
 

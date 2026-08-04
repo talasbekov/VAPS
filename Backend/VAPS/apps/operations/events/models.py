@@ -549,6 +549,18 @@ class PlacementAssignment(TimeStampedModel):
     # добавляет свои коды в ОДИН и тот же список при полном пересчёте, не
     # создаёт параллельное поле.
     conflict_codes = models.JSONField(default=list, blank=True)
+    # Story 17.4 (FR-28): допнаряд — флаг + источник снятия. Заполняются
+    # ТОЛЬКО через `amend_assignment_version()` (17.3); плановые
+    # назначения (form_draft_placement, 16.2) оставляют все три поля
+    # дефолтными. Источник — «подразделение ИЛИ наряд» (FR-28's «/»),
+    # ОБА плоские ссылки (ARCH-003): `source_division_id` на
+    # `core.Division` (никогда FK — operations не импортирует core.models),
+    # `source_duty_shift_id` на `duties.DutyShift` (реальная модель,
+    # сиблинг-поддомен — референциальная целостность не проверяется, тот
+    # же компромисс, что `photo_attachment_id`, 17.2).
+    is_unplanned = models.BooleanField(default=False)
+    source_division_id = models.UUIDField(null=True, blank=True)
+    source_duty_shift_id = models.BigIntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_placement_assignments"
@@ -565,6 +577,27 @@ class PlacementAssignment(TimeStampedModel):
                     | models.Q(conflict_severity__in=["SOFT", "HARD"])
                 ),
                 name="ck_placement_assignment_conflict_severity_choices",
+            ),
+            # Story 17.4 — ИЛИ-форма (не И, в отличие от 17.1-17.3's
+            # образцов): is_unplanned=True требует ХОТЯ БЫ ОДИН источник
+            # (подразделение ИЛИ наряд, FR-28's «/»), не оба сразу.
+            # is_unplanned=False требует ОБА источника пустыми.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        is_unplanned=True,
+                    )
+                    & (
+                        models.Q(source_division_id__isnull=False)
+                        | models.Q(source_duty_shift_id__isnull=False)
+                    )
+                    | models.Q(
+                        is_unplanned=False,
+                        source_division_id__isnull=True,
+                        source_duty_shift_id__isnull=True,
+                    )
+                ),
+                name="ck_placement_assignment_unplanned_requires_source",
             ),
         ]
 
