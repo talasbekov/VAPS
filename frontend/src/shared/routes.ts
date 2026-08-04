@@ -15,6 +15,7 @@ import {
   Radar,
   ScrollText,
   ShieldAlert,
+  UserCheck,
   Users,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -166,6 +167,19 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Планы дежурств',
     icon: CalendarClock,
     permission: 'duty.manage',
+  },
+  {
+    /**
+     * Story 16.8h5 (Epic 16): «Расстановка» — реальный бэк
+     * (`/api/operations/assignment-versions/`). Гейт — `assignment.create`
+     * (OMD), единственный код, хотя list/detail в бэке принимают любой из
+     * assignment.create/.submit/.return/.approve — `RequirePermission`
+     * несёт ОДИН код (тот же компромисс, что `dutyPlans`'s `duty.manage`).
+     */
+    route: ROUTES.placementVersions,
+    label: 'Расстановка',
+    icon: UserCheck,
+    permission: 'assignment.create',
   },
   {
     route: ROUTES.dailyExpense,

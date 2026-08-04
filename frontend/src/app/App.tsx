@@ -21,6 +21,8 @@ import { AuditLogPage } from '../features/audit/pages/AuditLogPage'
 import { DutyPlanPage } from '../features/duties/pages/DutyPlanPage'
 import { DutyPlansListPage } from '../features/duty-plans/pages/DutyPlansListPage'
 import { DutyPlanDetailPage } from '../features/duty-plans/pages/DutyPlanDetailPage'
+import { PlacementVersionsListPage } from '../features/placement/pages/PlacementVersionsListPage'
+import { PlacementVersionDetailPage } from '../features/placement/pages/PlacementVersionDetailPage'
 import { ServiceAnalyticsPage } from './ServiceAnalyticsPage'
 import { TrafficLightTreePage } from '../features/traffic-light/TrafficLightTreePage'
 import { RequireAuth, RequirePermission } from '../shared/auth/guards'
@@ -156,6 +158,22 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="duty.manage">
               <DutyPlanDetailPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.placementVersions}
+          element={
+            <RequirePermission permission="assignment.create">
+              <PlacementVersionsListPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.placementVersionDetail}
+          element={
+            <RequirePermission permission="assignment.create">
+              <PlacementVersionDetailPage />
             </RequirePermission>
           }
         />
