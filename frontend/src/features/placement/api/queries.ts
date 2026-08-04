@@ -30,6 +30,12 @@ export type AssignmentVersionApproveResponse =
   paths['/api/operations/assignment-versions/{id}/approve/']['post']['responses']['200']['content']['application/json']
 export type PlacementAssignmentAcknowledgeResponse =
   paths['/api/operations/placement-assignments/{id}/acknowledge/']['post']['responses']['200']['content']['application/json']
+export type JournalEntriesListResponse =
+  paths['/api/operations/security-events/{id}/journal-entries/']['get']['responses']['200']['content']['application/json']
+export type JournalEntryCreateRequest =
+  paths['/api/operations/security-events/{id}/journal-entries/']['post']['requestBody']['content']['application/json']
+export type JournalEntryCreateResponse =
+  paths['/api/operations/security-events/{id}/journal-entries/']['post']['responses']['201']['content']['application/json']
 
 export const assignmentVersionKeys = {
   all: ['assignment-versions'] as const,
@@ -41,6 +47,11 @@ export const assignmentVersionKeys = {
   detail: (versionId: string) => [...assignmentVersionKeys.all, 'detail', versionId] as const,
   conflicts: (versionId: string) =>
     [...assignmentVersionKeys.all, versionId, 'conflicts'] as const,
+}
+
+export const journalEntryKeys = {
+  all: ['journal-entries'] as const,
+  list: (eventId: number) => [...journalEntryKeys.all, 'list', eventId] as const,
 }
 
 export function useAssignmentVersions(eventId?: number) {
@@ -150,6 +161,31 @@ export function useAcknowledgePlacementAssignment(assignmentId: string, versionI
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: assignmentVersionKeys.detail(versionId) })
+    },
+  })
+}
+
+export function useJournalEntries(eventId: number, options?: { enabled?: boolean }) {
+  return useQuery<JournalEntriesListResponse, ApiFailure>({
+    queryKey: journalEntryKeys.list(eventId),
+    queryFn: () =>
+      apiClient.get<JournalEntriesListResponse>(
+        `/api/operations/security-events/${eventId}/journal-entries/`,
+      ),
+    enabled: options?.enabled ?? true,
+  })
+}
+
+export function useAddJournalEntry(eventId: number) {
+  const queryClient = useQueryClient()
+  return useApiMutation<JournalEntryCreateResponse, JournalEntryCreateRequest>({
+    mutationFn: (body) =>
+      apiClient.post<JournalEntryCreateResponse>(
+        `/api/operations/security-events/${eventId}/journal-entries/`,
+        body,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: journalEntryKeys.list(eventId) })
     },
   })
 }

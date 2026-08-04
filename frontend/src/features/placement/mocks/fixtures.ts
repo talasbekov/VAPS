@@ -22,6 +22,33 @@ export interface AssignmentVersionFixture {
   assignments: PlacementAssignmentFixture[]
 }
 
+// Story 17.7c: demo-фикстуры журнала штаба (17.7a's реальная схема).
+export interface JournalEntryFixture {
+  id: number
+  event: number
+  entry_type: 'BRIEFING' | 'DIRECTIVE' | 'INCIDENT'
+  text: string
+  post: number | null
+  participant_ids: string[]
+  photo_attachment_id: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export const JOURNAL_ENTRIES: JournalEntryFixture[] = [
+  {
+    id: 1,
+    event: 1,
+    entry_type: 'BRIEFING',
+    text: 'Инструктаж проведён, личный состав ознакомлен.',
+    post: null,
+    participant_ids: [],
+    photo_attachment_id: null,
+    created_by: 'demo-omd',
+    created_at: '2026-08-01T09:15:00Z',
+  },
+]
+
 export const ASSIGNMENT_VERSIONS: AssignmentVersionFixture[] = [
   {
     id: 1,

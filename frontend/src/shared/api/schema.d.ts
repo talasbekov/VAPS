@@ -934,6 +934,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/assignment-versions/{id}/amend/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Оперативное изменение Расстановки после утверждения (17.3, FR-28) — требует assignment.amend, непустые reason/sanction и полный новый assignments-список. Создаёт НОВУЮ версию (201). 422 INVALID_LIFECYCLE_TRANSITION, если версия не текущая/не APPROVED или событие не IN_PROGRESS; 400 VALIDATION_ERROR из сервиса на некорректных строках assignments. */
+        post: operations["assignment_version_amend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/assignment-versions/{id}/approve/": {
         parameters: {
             query?: never;
@@ -962,6 +979,23 @@ export interface paths {
         get: operations["assignment_version_conflicts"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/assignment-versions/{id}/replace-departed/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Каскадная замена выбывшего (17.5, FR-31) — требует assignment.amend. Ищет кандидата по штатной цепочке (Tier 1 — подразделение выбывшего, Tier 2 — родительское), если не передан manual_replacement_employee_id. Создаёт НОВУЮ версию (201). 409 REPLACEMENT_NOT_FOUND, если кандидат не найден ни на одном уровне — версия не создаётся, только эскалационный аудит-ряд. */
+        post: operations["assignment_version_replace_departed"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1391,6 +1425,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/journal-entries/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Story 17.7a: `GET /api/operations/journal-entries/{id}` — detail
+         *     read for a journal entry by its own id (not nested under the event —
+         *     the id is globally unique). Буквальный образец `AssignmentVersionViewSet`'s
+         *     `retrieve`-only shape before it grew lifecycle `@action`s.
+         */
+        get: operations["operations_journal_entries_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/my-permissions/": {
         parameters: {
             query?: never;
@@ -1586,6 +1642,24 @@ export interface paths {
         put?: never;
         /** @description Сгенерировать и отправить запросы Группам (FR-24). Требует event.manage. Доступно только из статуса DEMAND. Идемпотентно (regenerate обновляет requested_count, не сбрасывает уже начатое выделение). Несматченные Группы — в unmatched_groups, не молча теряются. */
         post: operations["security_event_force_requests_generate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/journal-entries/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Журнал штаба события (17.1/17.2) — все записи, хронологически. Требует event.journal.view. Опц. ?entry_type=BRIEFING|DIRECTIVE|INCIDENT фильтрует по типу. */
+        get: operations["security_event_journal_entries_list"];
+        put?: never;
+        /** @description Записать в журнал штаба (17.1/17.2) — требует event.journal.create и event.status_code == IN_PROGRESS. entry_type=INCIDENT требует post; 400 VALIDATION_ERROR/422 INVALID_LIFECYCLE_TRANSITION из сервиса. */
+        post: operations["security_event_journal_entries_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1863,6 +1937,33 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description Story 17.7b: one row of `amend_assignment_version()`'s `assignments`
+         *     list — mirrors the service's own dict-spec shape (17.4) exactly. Not a
+         *     ModelSerializer: `PlacementAssignment` rows don't exist yet at request
+         *     time, this is the client's PROPOSED full new composition.
+         */
+        AmendAssignmentSpecRequest: {
+            /** Format: uuid */
+            employee_id: string;
+            post: number;
+            /** @default false */
+            is_unplanned: boolean;
+            /** Format: uuid */
+            source_division_id?: string | null;
+            source_duty_shift_id?: number | null;
+        };
+        /**
+         * @description Story 17.7b: request body for `POST .../amend/` — thin pass-through
+         *     to `amend_assignment_version()` (17.3); per-spec validation (post
+         *     object-match, is_unplanned/source pairing) stays in the service, not
+         *     duplicated here.
+         */
+        AmendAssignmentVersionRequestRequest: {
+            reason: string;
+            sanction: string;
+            assignments: components["schemas"]["AmendAssignmentSpecRequest"][];
+        };
         /**
          * @description Story 16.8d: optional request body for `POST .../approve` —
          *     literal copy of `apps.operations.statuses.api.serializers.
@@ -2360,6 +2461,13 @@ export interface components {
          */
         EmploymentStatusEnum: "WORKING" | "FIRED" | "ARCHIVED";
         /**
+         * @description * `BRIEFING` - Инструктаж
+         *     * `DIRECTIVE` - Указание
+         *     * `INCIDENT` - Инцидент
+         * @enum {string}
+         */
+        EntryTypeEnum: "BRIEFING" | "DIRECTIVE" | "INCIDENT";
+        /**
          * @description * `CONFIRMED_NO_CHANGES` - Подтверждено без изменений
          *     * `CHANGED` - Изменено
          *     * `AMENDED` - Исправлено
@@ -2552,6 +2660,40 @@ export interface components {
          */
         IssuedExpenseReportStatusEnum: "ISSUED" | "SUPERSEDED";
         /**
+         * @description Story 17.7a: response shape for журнал штаба (17.1/17.2) rows —
+         *     read-only, all fields, same convention as `PlacementAssignmentSerializer`
+         *     (persisted state, not recomputed on GET).
+         */
+        JournalEntry: {
+            readonly id: number;
+            readonly event: number;
+            readonly entry_type: components["schemas"]["EntryTypeEnum"];
+            readonly text: string;
+            readonly post: number | null;
+            readonly participant_ids: unknown;
+            /** Format: uuid */
+            readonly photo_attachment_id: string | null;
+            readonly created_by: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /**
+         * @description Story 17.7a: write-only request body for `POST .../journal-entries/`
+         *     — thin field-mapping over `create_journal_entry()` (17.1/17.2); the
+         *     service itself owns all business validation (entry_type/post/actor/
+         *     text guards, IN_PROGRESS lifecycle) — this serializer validates only
+         *     field PRESENCE/TYPE, same division of labor as `ReturnVersionSerializer`
+         *     (16.8c).
+         */
+        JournalEntryCreateRequest: {
+            entry_type: components["schemas"]["EntryTypeEnum"];
+            text: string;
+            post?: number | null;
+            participant_ids?: string[];
+            /** Format: uuid */
+            photo_attachment_id?: string | null;
+        };
+        /**
          * @description * `SUBMISSION_LAGGING` - Отставание по сдаче
          *     * `SUBMISSION_THRESHOLD_ALERT` - Порог сдачи не достигнут
          *     * `PILOT_PULSE_DIGEST` - Пульс пилота
@@ -2563,9 +2705,10 @@ export interface components {
          *     * `ACK_REQUIRED` - Требуется ознакомление
          *     * `ASSIGNMENT_SUBMITTED` - Расстановка подана
          *     * `ASSIGNMENT_RETURNED` - Расстановка возвращена
+         *     * `REPLACEMENT_CREATED` - Замена в расстановке
          * @enum {string}
          */
-        KindEnum: "SUBMISSION_LAGGING" | "SUBMISSION_THRESHOLD_ALERT" | "PILOT_PULSE_DIGEST" | "GROUP_FORCE_REQUEST_ESCALATED" | "TEMP_PERMISSION_ACTIVE" | "TEMP_PERMISSION_EXPIRED" | "ASSIGNMENT_APPROVED" | "ACK_MISSING_ESCALATION" | "ACK_REQUIRED" | "ASSIGNMENT_SUBMITTED" | "ASSIGNMENT_RETURNED";
+        KindEnum: "SUBMISSION_LAGGING" | "SUBMISSION_THRESHOLD_ALERT" | "PILOT_PULSE_DIGEST" | "GROUP_FORCE_REQUEST_ESCALATED" | "TEMP_PERMISSION_ACTIVE" | "TEMP_PERMISSION_EXPIRED" | "ASSIGNMENT_APPROVED" | "ACK_MISSING_ESCALATION" | "ACK_REQUIRED" | "ASSIGNMENT_SUBMITTED" | "ASSIGNMENT_RETURNED" | "REPLACEMENT_CREATED";
         MyPermissionsResponse: {
             permissions: string[];
         };
@@ -3022,6 +3165,18 @@ export interface components {
             category?: string | null;
             rank_index?: number;
             is_active?: boolean;
+        };
+        /**
+         * @description Story 17.7b: request body for `POST .../replace-departed/` — thin
+         *     pass-through to `cascade_replace_departed()` (17.5).
+         */
+        ReplaceDepartedRequestRequest: {
+            /** Format: uuid */
+            departed_employee_id: string;
+            reason: string;
+            sanction: string;
+            /** Format: uuid */
+            manual_replacement_employee_id?: string | null;
         };
         /**
          * @description * `MATCHES` - Соответствует
@@ -4254,6 +4409,33 @@ export interface operations {
             };
         };
     };
+    assignment_version_amend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AmendAssignmentVersionRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AmendAssignmentVersionRequestRequest"];
+                "multipart/form-data": components["schemas"]["AmendAssignmentVersionRequestRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentVersionDetail"];
+                };
+            };
+        };
+    };
     assignment_version_approve: {
         parameters: {
             query?: never;
@@ -4298,6 +4480,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlacementAssignment"][];
+                };
+            };
+        };
+    };
+    assignment_version_replace_departed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceDepartedRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReplaceDepartedRequestRequest"];
+                "multipart/form-data": components["schemas"]["ReplaceDepartedRequestRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentVersionDetail"];
                 };
             };
         };
@@ -4913,6 +5122,26 @@ export interface operations {
             };
         };
     };
+    operations_journal_entries_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     operations_my_permissions_list: {
         parameters: {
             query?: never;
@@ -5228,6 +5457,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenerateForceRequestsResponse"];
+                };
+            };
+        };
+    };
+    security_event_journal_entries_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JournalEntry"][];
+                };
+            };
+        };
+    };
+    security_event_journal_entries_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JournalEntryCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["JournalEntryCreateRequest"];
+                "multipart/form-data": components["schemas"]["JournalEntryCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JournalEntry"];
                 };
             };
         };

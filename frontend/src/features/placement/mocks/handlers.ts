@@ -3,10 +3,11 @@
 // (прецедент duty-plans/mocks/handlers.ts). Покрывает list/retrieve/
 // conflicts/submit/return/approve/acknowledge (все 16.8a-f).
 import { http, HttpResponse } from 'msw'
-import { ASSIGNMENT_VERSIONS } from './fixtures'
-import type { AssignmentVersionFixture } from './fixtures'
+import { ASSIGNMENT_VERSIONS, JOURNAL_ENTRIES } from './fixtures'
+import type { AssignmentVersionFixture, JournalEntryFixture } from './fixtures'
 
 let nextVersionId = ASSIGNMENT_VERSIONS.length + 1
+let nextJournalEntryId = JOURNAL_ENTRIES.length + 1
 
 function findVersion(id: number) {
   return ASSIGNMENT_VERSIONS.find((v) => v.id === id)
@@ -127,4 +128,41 @@ export const placementHandlers = [
     }
     return HttpResponse.json({ error_code: 'ENTITY_NOT_FOUND' }, { status: 404 })
   }),
+  // Story 17.7c
+  http.get('*/api/operations/security-events/:id/journal-entries/', ({ params }) => {
+    const eventId = Number(params.id)
+    return HttpResponse.json(JOURNAL_ENTRIES.filter((e) => e.event === eventId))
+  }),
+  http.post(
+    '*/api/operations/security-events/:id/journal-entries/',
+    async ({ params, request }) => {
+      const eventId = Number(params.id)
+      const body = (await request.json()) as {
+        entry_type?: string
+        text?: string
+        post?: number | null
+        participant_ids?: string[]
+        photo_attachment_id?: string | null
+      }
+      if (!body.text?.trim()) {
+        return HttpResponse.json(
+          { error_code: 'VALIDATION_ERROR', details: { text: ['Обязательное поле.'] } },
+          { status: 400 },
+        )
+      }
+      const entry: JournalEntryFixture = {
+        id: nextJournalEntryId++,
+        event: eventId,
+        entry_type: (body.entry_type as JournalEntryFixture['entry_type']) ?? 'BRIEFING',
+        text: body.text,
+        post: body.post ?? null,
+        participant_ids: body.participant_ids ?? [],
+        photo_attachment_id: body.photo_attachment_id ?? null,
+        created_by: 'demo-user',
+        created_at: new Date().toISOString(),
+      }
+      JOURNAL_ENTRIES.push(entry)
+      return HttpResponse.json(entry, { status: 201 })
+    },
+  ),
 ]

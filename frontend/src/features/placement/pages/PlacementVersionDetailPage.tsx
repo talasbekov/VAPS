@@ -27,6 +27,7 @@ import type {
   AssignmentVersionConflictsResponse,
   AssignmentVersionDetailResponse,
 } from '../api/queries'
+import { JournalPanel } from './JournalPanel'
 import { ReturnVersionDialog } from './ReturnVersionDialog'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -101,6 +102,7 @@ export function PlacementVersionDetailPage() {
         isError={conflictsQuery.isError}
         conflicts={conflictsQuery.data ?? []}
       />
+      <JournalPanel eventId={version.event} />
     </div>
   )
 }

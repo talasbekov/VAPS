@@ -5,7 +5,7 @@
 // ToastProvider required (образец useApiMutation.test.tsx).
 import '@testing-library/jest-dom/vitest'
 import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -354,7 +354,8 @@ describe('LifecycleActions', () => {
     const approveButton = await screen.findByRole('button', { name: 'Утвердить' })
     await userEvent.click(approveButton)
 
-    const reasonInput = await screen.findByRole('textbox')
+    const dialog = await screen.findByRole('dialog')
+    const reasonInput = within(dialog).getByRole('textbox')
     await userEvent.type(reasonInput, 'Разрешено вручную после проверки')
     await userEvent.click(screen.getByRole('button', { name: /Подтвердить/ }))
 
@@ -483,7 +484,7 @@ describe('LifecycleActions', () => {
     renderPage('/placement/7')
     const approveButton = await screen.findByRole('button', { name: 'Утвердить' })
     await userEvent.click(approveButton)
-    await screen.findByRole('textbox')
+    await screen.findByRole('dialog')
 
     await userEvent.click(screen.getByRole('button', { name: 'Отмена' }))
 
