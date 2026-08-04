@@ -9,6 +9,7 @@ from django.core.management import call_command
 from django.urls import reverse
 from rest_framework.test import APIClient
 
+from apps.audit.models import AuditLog
 from apps.core.models import Division, DivisionType, Employee, Organization
 from apps.operations.events.models import (
     AssignmentVersion,
@@ -116,6 +117,111 @@ def test_amend_creates_new_version(amend_client):
     assert resp.data["is_current"] is True
     assert len(resp.data["assignments"]) == 1
 
+    version.refresh_from_db()
+    assert version.is_current is False
+
+    assert AuditLog.objects.filter(
+        action="ASSIGNMENT_VERSION_AMENDED",
+        entity_id=uuid.UUID(int=resp.data["id"]),
+    ).exists()
+
+
+def test_amend_full_replace_drops_stale_assignment(amend_client):
+    """review (Blind Hunter): amend_assignment_version() docstring warns
+    the assignments list is the FULL new composition, NOT a diff/patch —
+    no test proved a pre-existing row that isn't re-supplied actually
+    disappears."""
+    event = make_event("OBJ-AMD-FULL-1")
+    post_a = make_post(event.object, code="POST-A")
+    post_b = make_post(event.object, code="POST-B")
+    version = make_approved_version(event)
+    kept_employee_id = uuid.uuid4()
+    dropped_employee_id = uuid.uuid4()
+    assign(version, kept_employee_id, post_a)
+    assign(version, dropped_employee_id, post_b)
+
+    resp = amend_client.post(
+        amend_url(version),
+        {
+            "reason": "Уточнение состава",
+            "sanction": "Приказ №6",
+            "assignments": [{"employee_id": str(kept_employee_id), "post": post_a.pk}],
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 201
+    employee_ids = {row["employee_id"] for row in resp.data["assignments"]}
+    assert employee_ids == {str(kept_employee_id)}
+
+
+def test_amend_rejected_when_event_not_in_progress(amend_client):
+    """review (Blind Hunter): the event-status branch of amend's
+    lifecycle guard (distinct from the version-status branch already
+    covered by test_amend_non_current_version_is_422) was unexercised."""
+    event = make_event("OBJ-AMD-STATUS", status_code=SecurityEvent.StatusCode.DRAFT)
+    post = make_post(event.object)
+    version = make_approved_version(event)
+
+    resp = amend_client.post(
+        amend_url(version),
+        {
+            "reason": "x",
+            "sanction": "y",
+            "assignments": [{"employee_id": str(uuid.uuid4()), "post": post.pk}],
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 422
+
+
+def test_amend_is_unplanned_with_source_round_trips(amend_client):
+    """review (Blind Hunter): 17.4's is_unplanned/source_division_id
+    fields were wired into the serializer but never exercised through
+    the actual HTTP endpoint."""
+    event = make_event("OBJ-AMD-UNPLANNED")
+    post = make_post(event.object)
+    version = make_approved_version(event)
+    employee_id = str(uuid.uuid4())
+    source_division_id = str(uuid.uuid4())
+
+    resp = amend_client.post(
+        amend_url(version),
+        {
+            "reason": "Допнаряд",
+            "sanction": "Приказ №7",
+            "assignments": [
+                {
+                    "employee_id": employee_id,
+                    "post": post.pk,
+                    "is_unplanned": True,
+                    "source_division_id": source_division_id,
+                }
+            ],
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 201
+    row = resp.data["assignments"][0]
+    assert row["employee_id"] == employee_id
+
+
+def test_amend_permission_denied_before_404_on_missing_version(no_permission_client):
+    """review (Acceptance Auditor + Blind Hunter, independently converged):
+    the spec's Dev Notes cite 17.7a's guard-order bug (permission checked
+    AFTER the 404 lookup) as the literal precedent to avoid here — but no
+    prior test combined a no-permission actor with a NONEXISTENT pk, so
+    a regression back to that exact ordering bug would slip through
+    silently (mutation-verified during review)."""
+    resp = no_permission_client.post(
+        reverse("ops-assignment-version-amend", args=[999999]),
+        {"reason": "x", "sanction": "y", "assignments": []},
+        format="json",
+    )
+    assert resp.status_code == 403
+
 
 def test_amend_without_permission_is_403(no_permission_client):
     event = make_event("OBJ-AMD-2")
@@ -215,6 +321,46 @@ def test_replace_departed_no_candidate_is_409(amend_client):
     )
 
     assert resp.status_code == 409
+    assert AssignmentVersion.objects.filter(event=event).count() == 1
+
+    assert AuditLog.objects.filter(action="ASSIGNMENT_REPLACEMENT_ESCALATED").exists()
+
+
+def test_replace_departed_self_replacement_is_400(amend_client):
+    """review (Blind Hunter): services.py's self-replacement DomainError
+    (departed == manual_replacement) had no corresponding API-level test."""
+    division = make_division("DIV-AMD-SELF")
+    departed = make_employee(division, "900101400007")
+    event = make_event("OBJ-REPL-SELF")
+    post = make_post(event.object)
+    version = make_approved_version(event)
+    assign(version, departed.id, post)
+
+    resp = amend_client.post(
+        replace_url(version),
+        {
+            "departed_employee_id": str(departed.id),
+            "reason": "x",
+            "sanction": "y",
+            "manual_replacement_employee_id": str(departed.id),
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 400
+
+
+def test_replace_departed_permission_denied_before_404_on_missing_version(
+    no_permission_client,
+):
+    """review (Acceptance Auditor + Blind Hunter) — same guard-order
+    regression coverage as amend's equivalent test, for replace-departed."""
+    resp = no_permission_client.post(
+        reverse("ops-assignment-version-replace-departed", args=[999999]),
+        {"departed_employee_id": str(uuid.uuid4()), "reason": "x", "sanction": "y"},
+        format="json",
+    )
+    assert resp.status_code == 403
 
 
 def test_replace_departed_manual_replacement_round_trips(amend_client):

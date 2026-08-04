@@ -4,7 +4,7 @@ baseline_commit: 08ace73
 
 # Story 17.7b: API — оперативное изменение
 
-Status: review
+Status: done
 
 ## Story
 
@@ -81,11 +81,13 @@ Claude Sonnet 5
 
 Реализовано по AC 1-9. `amend`/`replace_departed` `@action`'ы на существующем `AssignmentVersionViewSet` (16.8), permission-ДО-404 с первого черновика (литерал 17.7a's review-фикса — не повторяю тот баг). Оба эндпоинта возвращают 201 (новая версия, не мутация существующей строки — отличие от `submit`/`approve`'s 200). `AmendAssignmentSpecSerializer` — nested list, зеркалит сервисный dict-spec 1:1 (17.4), per-spec-валидация НЕ дублируется — остаётся в сервисе. RBAC/audit-матрицы дополнены двумя строками (`assignment.amend` для обоих — 17.5's Scope Decision: `replace-departed` не заводит отдельный код). `make schema` перегенерирован — `assignment_version_amend`/`assignment_version_replace_departed` operationId подтверждены в `schema.yaml`. `make gate` — 4072 passed (было 4043), 0 regressions, ruff чист, drift-check чист.
 
+После ревью (3 агента): Blind Hunter, Edge Case Hunter и Acceptance Auditor независимо сошлись на ОДНОМ реальном пробеле — ни один тест не комбинировал «actor без права» с «несуществующий pk» ни для `amend`, ни для `replace-departed`, а именно эта комбинация форсирует 403-vs-404 порядок, который Dev Notes прямо называют «литеральным прецедентом 17.7a» (там баг был найден ревью). Код был написан правильно с первого раза, но регрессия НАЗАД к 17.7a's багу прошла бы мимо этого тест-сьюта незамеченной. Закрыто двумя новыми тестами (`test_amend_permission_denied_before_404_on_missing_version`, `test_replace_departed_permission_denied_before_404_on_missing_version`); реальность защиты подтверждена мутационной пробой (временный своп порядка `require_permission()`/`_get_..._or_404()` → тест падает 404≠403, ревёрт). Также приняты 6 находок Blind Hunter: не проверялось, что старая версия реально флипается в `is_current=False` (добавлен `refresh_from_db`-ассерт), не было audit-row-ассерта ни в одном тесте (добавлен `AuditLog.objects.filter(...).exists()` для amend и для эскалации replace-departed), «full replace, не diff/patch»-контракт сервиса не был протестирован (добавлен тест с 2 предсуществующими назначениями, где amend пересдаёт только 1 — второе должно исчезнуть), event-not-IN_PROGRESS-ветка `amend`'s lifecycle-гарда была непокрыта (уже была покрыта для version-not-current, но не для event-статуса — добавлен тест), 17.4's `is_unplanned`/`source_division_id`-поля никогда не проходили через реальный HTTP-эндпоинт (добавлен round-trip тест), self-replacement-DomainError (`departed == manual_replacement`) не имел API-уровневого теста (добавлен). Отклонены находки: FK-валидация `employee_id`/`post` против несуществующих сущностей (архитектурно корректно — `PlacementAssignment.employee_id` — plain `UUIDField`, не FK, ARCH-003 cross-context; `post` пере-валидируется сервисом) — статус-кво конвенция; `AttributeError` на отсутствующем `request.actor_id` — ложная находка, `require_permission()` уже гардит это первой строкой (`getattr(...) or raise PermissionDenied`); race-condition/`IntegrityError→409`-тест — не story-специфичный (тот же generic DomainError-handler, что и весь остальной API этого домена, без прецедента точечного теста в `submit`/`approve`); дубликаты `employee_id` в одном `assignments`-списке без DB-уникальности — реальный, но ДОсуществующий пробел сервисного слоя (17.3/17.4), вне scope тонкой API-обёртки этой стори; стилистические находки (RU/EN-микс в докстрингах, общий test-auth helper) — установленная конвенция всего проекта. `make gate` — 4078 passed (было 4072), 0 regressions, ruff чист, drift-check чист.
+
 ### File List
 
 - `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — `AmendAssignmentSpecSerializer`, `AmendAssignmentVersionRequestSerializer`, `ReplaceDepartedRequestSerializer`)
 - `Backend/VAPS/apps/operations/events/api/views.py` (modified — `AssignmentVersionViewSet.amend`, `.replace_departed`, imports)
-- `Backend/VAPS/apps/operations/events/tests/test_amend_replace_api.py` (new — 9 тестов)
+- `Backend/VAPS/apps/operations/events/tests/test_amend_replace_api.py` (new — 9 тестов dev + 6 после ревью)
 - `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — 2 новые строки матрицы)
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 2 новые строки матрицы)
 - `Backend/VAPS/schema.yaml` (regenerated)
@@ -96,3 +98,4 @@ Claude Sonnet 5
 |---|---|
 | 2026-08-04 | Story создана (create-story), часть декомпозиции 17.7 — расширяет существующий `AssignmentVersionViewSet` (16.8) двумя новыми `@action`'ами. |
 | 2026-08-04 | Dev-story: `amend`/`replace_departed` `@action`'ы + сериализаторы + 9 новых тестов + RBAC/audit-матрицы. `make gate` — 4072 passed, 0 regressions. Status → review. |
+| 2026-08-04 | Review закрыт (3 агента, независимо совпали). Реальный пробел: guard-order-регрессионный тест отсутствовал (403-vs-404 на no-permission+несуществующий pk) — закрыт 2 тестами, мутационно проверен. +4 теста из Blind Hunter (is_current-флип, audit-row, full-replace-контракт, event-статус-ветка, is_unplanned-round-trip, self-replacement-400). `make gate` — 4078 passed, 0 regressions. Status → done. |
