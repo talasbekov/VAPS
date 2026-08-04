@@ -41,6 +41,8 @@ from apps.operations.events.api.serializers import (
     GenerateForceRequestsResponseSerializer,
     GroupForceRequestSerializer,
     GroupSerializer,
+    JournalEntryCreateSerializer,
+    JournalEntrySerializer,
     PlacementAssignmentSerializer,
     ReturnVersionSerializer,
     SecurityEventCreateSerializer,
@@ -52,6 +54,7 @@ from apps.operations.events.models import (
     AssignmentVersion,
     Group,
     GroupForceRequest,
+    JournalEntry,
     PlacementAssignment,
     SecurityEvent,
     SecurityEventDirectAssignment,
@@ -62,6 +65,7 @@ from apps.operations.events.services import (
     approve_assignment_version,
     approve_staffing_demand,
     confirm_recon,
+    create_journal_entry,
     detect_placement_conflicts,
     form_draft_placement,
     generate_force_requests,
@@ -430,6 +434,63 @@ class SecurityEventViewSet(viewsets.ViewSet):
             AssignmentVersionDetailSerializer(version).data,
             status=http_status.HTTP_201_CREATED,
         )
+
+    @extend_schema(
+        operation_id="security_event_journal_entries_list",
+        request=None,
+        responses={200: JournalEntrySerializer(many=True)},
+        description="Журнал штаба события (17.1/17.2) — все записи, "
+        "хронологически. Требует event.journal.view. Опц. "
+        "?entry_type=BRIEFING|DIRECTIVE|INCIDENT фильтрует по типу.",
+    )
+    @extend_schema(
+        operation_id="security_event_journal_entries_create",
+        request=JournalEntryCreateSerializer,
+        responses={201: JournalEntrySerializer},
+        description="Записать в журнал штаба (17.1/17.2) — требует "
+        "event.journal.create и event.status_code == IN_PROGRESS. "
+        "entry_type=INCIDENT требует post; 400 VALIDATION_ERROR/422 "
+        "INVALID_LIFECYCLE_TRANSITION из сервиса.",
+        methods=["POST"],
+    )
+    @action(detail=True, methods=["get", "post"], url_path="journal-entries")
+    def journal_entries(self, request, pk=None, *args, **kwargs):
+        # review-прецедент (RBAC-матрица): permission-гейт ДО 404-lookup —
+        # анонимный/безправый actor обязан получить 403, не 404
+        # (тот же порядок, что все остальные @action'ы этого ViewSet).
+        if request.method == "GET":
+            require_permission(request, "event.journal.view")
+        else:
+            require_permission(request, "event.journal.create")
+        event = _get_event_or_404(pk)
+        if request.method == "GET":
+            entries = event.journal_entries.all()
+            entry_type = request.query_params.get("entry_type")
+            if entry_type:
+                entries = entries.filter(entry_type=entry_type)
+            return Response(JournalEntrySerializer(entries, many=True).data)
+        form = JournalEntryCreateSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        entry = create_journal_entry(
+            event, actor=request.actor_id, **form.validated_data
+        )
+        return Response(
+            JournalEntrySerializer(entry).data, status=http_status.HTTP_201_CREATED
+        )
+
+
+class JournalEntryViewSet(viewsets.ViewSet):
+    """Story 17.7a: `GET /api/operations/journal-entries/{id}` — detail
+    read for a journal entry by its own id (not nested under the event —
+    the id is globally unique). Буквальный образец `AssignmentVersionViewSet`'s
+    `retrieve`-only shape before it grew lifecycle `@action`s."""
+
+    http_method_names = ["get", "options"]
+
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        require_permission(request, "event.journal.view")
+        entry = get_object_or_404(JournalEntry, pk=pk)
+        return Response(JournalEntrySerializer(entry).data)
 
 
 class GroupViewSet(viewsets.ViewSet):

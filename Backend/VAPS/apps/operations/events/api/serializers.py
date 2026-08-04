@@ -7,6 +7,7 @@ from apps.operations.events.models import (
     AssignmentVersion,
     Group,
     GroupForceRequest,
+    JournalEntry,
     PlacementAssignment,
     SecurityEvent,
     SecurityEventChecklistItem,
@@ -15,6 +16,7 @@ from apps.operations.events.models import (
     SecurityEventStaffingDemand,
 )
 from apps.operations.facilities.models import Object as FacilityObject
+from apps.operations.facilities.models import Post
 
 
 class SecurityEventSerializer(serializers.ModelSerializer):
@@ -219,3 +221,43 @@ class AssignmentVersionReturnResponseSerializer(AssignmentVersionDetailSerialize
     class Meta(AssignmentVersionDetailSerializer.Meta):
         fields = AssignmentVersionDetailSerializer.Meta.fields + ["new_draft_version"]
         read_only_fields = fields
+
+
+class JournalEntrySerializer(serializers.ModelSerializer):
+    """Story 17.7a: response shape for журнал штаба (17.1/17.2) rows —
+    read-only, all fields, same convention as `PlacementAssignmentSerializer`
+    (persisted state, not recomputed on GET)."""
+
+    class Meta:
+        model = JournalEntry
+        fields = [
+            "id",
+            "event",
+            "entry_type",
+            "text",
+            "post",
+            "participant_ids",
+            "photo_attachment_id",
+            "created_by",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class JournalEntryCreateSerializer(serializers.Serializer):
+    """Story 17.7a: write-only request body for `POST .../journal-entries/`
+    — thin field-mapping over `create_journal_entry()` (17.1/17.2); the
+    service itself owns all business validation (entry_type/post/actor/
+    text guards, IN_PROGRESS lifecycle) — this serializer validates only
+    field PRESENCE/TYPE, same division of labor as `ReturnVersionSerializer`
+    (16.8c)."""
+
+    entry_type = serializers.ChoiceField(choices=JournalEntry.EntryType.choices)
+    text = serializers.CharField()
+    post = serializers.PrimaryKeyRelatedField(
+        queryset=Post.objects.all(), required=False, allow_null=True
+    )
+    participant_ids = serializers.ListField(
+        child=serializers.UUIDField(), required=False
+    )
+    photo_attachment_id = serializers.UUIDField(required=False, allow_null=True)

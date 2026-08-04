@@ -2201,6 +2201,25 @@ paths:
                 items:
                   $ref: '#/components/schemas/Group'
           description: ''
+  /api/operations/journal-entries/{id}/:
+    get:
+      operationId: operations_journal_entries_retrieve
+      description: |-
+        Story 17.7a: `GET /api/operations/journal-entries/{id}` — detail
+        read for a journal entry by its own id (not nested under the event —
+        the id is globally unique). Буквальный образец `AssignmentVersionViewSet`'s
+        `retrieve`-only shape before it grew lifecycle `@action`s.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          description: No response body
   /api/operations/my-permissions/:
     get:
       operationId: operations_my_permissions_list
@@ -2530,6 +2549,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenerateForceRequestsResponse'
+          description: ''
+  /api/operations/security-events/{id}/journal-entries/:
+    get:
+      operationId: security_event_journal_entries_list
+      description: Журнал штаба события (17.1/17.2) — все записи, хронологически.
+        Требует event.journal.view. Опц. ?entry_type=BRIEFING|DIRECTIVE|INCIDENT фильтрует
+        по типу.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JournalEntry'
+          description: ''
+    post:
+      operationId: security_event_journal_entries_list_2
+      description: Журнал штаба события (17.1/17.2) — все записи, хронологически.
+        Требует event.journal.view. Опц. ?entry_type=BRIEFING|DIRECTIVE|INCIDENT фильтрует
+        по типу.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JournalEntry'
           description: ''
   /api/operations/security-events/{id}/passport/:
     put:
@@ -4123,6 +4187,16 @@ components:
         * `WORKING` - Работает
         * `FIRED` - Уволен
         * `ARCHIVED` - В архиве
+    EntryTypeEnum:
+      enum:
+      - BRIEFING
+      - DIRECTIVE
+      - INCIDENT
+      type: string
+      description: |-
+        * `BRIEFING` - Инструктаж
+        * `DIRECTIVE` - Указание
+        * `INCIDENT` - Инцидент
     EventEnum:
       enum:
       - CONFIRMED_NO_CHANGES
@@ -4559,6 +4633,55 @@ components:
       description: |-
         * `ISSUED` - Выпущен
         * `SUPERSEDED` - Заменён
+    JournalEntry:
+      type: object
+      description: |-
+        Story 17.7a: response shape for журнал штаба (17.1/17.2) rows —
+        read-only, all fields, same convention as `PlacementAssignmentSerializer`
+        (persisted state, not recomputed on GET).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        event:
+          type: integer
+          readOnly: true
+        entry_type:
+          allOf:
+          - $ref: '#/components/schemas/EntryTypeEnum'
+          readOnly: true
+        text:
+          type: string
+          readOnly: true
+        post:
+          type: integer
+          readOnly: true
+          nullable: true
+        participant_ids:
+          readOnly: true
+        photo_attachment_id:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        created_by:
+          type: string
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - created_by
+      - entry_type
+      - event
+      - id
+      - participant_ids
+      - photo_attachment_id
+      - post
+      - text
     KindEnum:
       enum:
       - SUBMISSION_LAGGING

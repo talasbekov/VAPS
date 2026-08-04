@@ -324,6 +324,10 @@ AUDIT_MATRIX = {
     # Story 16.8a: PLACEMENT_DRAFT_FORMED emits inside form_draft_placement()
     # itself (16.2), not the view — behavioral pin — test_form_draft_placement.py.
     "ops-security-event-placement-draft": _Audited(),
+    # Story 17.7a: JOURNAL_ENTRY_CREATED emits inside create_journal_entry()
+    # itself (17.1), only on POST (the GET half of this combined action
+    # never mutates) — behavioral pin — test_journal_entry.py.
+    "ops-security-event-journal-entries": _Audited(),
     # Story 16.8b: ASSIGNMENT_VERSION_SUBMITTED emits inside
     # submit_assignment_version() itself (16.4), only on the real
     # transition (not the idempotent replay) — behavioral pin —

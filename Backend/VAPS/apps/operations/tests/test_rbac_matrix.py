@@ -234,6 +234,12 @@ MATRIX = {
     # ANY of the codes that participate in it (create/submit/return/
     # approve), no dedicated assignment.view code exists.
     "ops-security-event-placement-draft": _Gate("assignment.create"),
+    # Story 17.7a: GET (read journal)/POST (write journal) require
+    # DIFFERENT codes — event.journal.view vs event.journal.create.
+    "ops-security-event-journal-entries": _MethodGate(
+        {"get": "event.journal.view", "post": "event.journal.create"}
+    ),
+    "ops-journal-entry-detail": _Gate("event.journal.view"),
     "ops-assignment-version-list": _AnyOfGate(
         [
             "assignment.create",
