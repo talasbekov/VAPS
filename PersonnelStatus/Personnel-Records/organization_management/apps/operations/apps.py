@@ -14,3 +14,8 @@ class OperationsConfig(AppConfig):
     name = "organization_management.apps.operations"
     label = "operations"
     verbose_name = "Охранные мероприятия"
+
+    def ready(self):
+        # Приёмники увольнения. Импорт здесь, а не на уровне модуля: до
+        # готовности приложений модели ещё не загружены.
+        from organization_management.apps.operations import signals  # noqa: F401
