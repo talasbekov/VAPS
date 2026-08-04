@@ -8,8 +8,9 @@ Mirrors ``StatusTypeSelector``/``EmployeeStatusSelector``
 queries, one bulk query per method.
 """
 
+from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreEmployeeSelector
-from apps.operations.events.models import JournalEntry
+from apps.operations.events.models import JournalEntry, SecurityEvent
 from apps.operations.statuses.models import StatusType
 from apps.operations.statuses.selectors import EmployeeStatusSelector
 
@@ -70,3 +71,30 @@ def find_replacement_candidates(division_id, on_date, exclude_employee_ids):
         if row["status_type_code"] in hard_block_codes
     }
     return [e for e in candidates if e.id not in blocked_ids]
+
+
+class SecurityEventArchiveSelector:
+    """Story 18.2 (FR-30): read-only aggregation of a CLOSED event's full
+    history — every sub-history already lives on `SecurityEvent`'s
+    related models (18.1's `closure_summaries` included); this is a join,
+    not a new table. Plain-dict return (not a DRF serializer — that's
+    18.6's API-layer concern, not guaranteed JSON-primitive here)."""
+
+    @staticmethod
+    def full_history(event):
+        if event.status_code != SecurityEvent.StatusCode.CLOSED:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Архив доступен только для закрытого события.",
+            )
+        current_version = event.assignment_versions.filter(is_current=True).first()
+        return {
+            "event": event,
+            "checklist_items": list(event.checklist_items.all()),
+            "sector_posts": list(event.sector_posts.all()),
+            "staffing_demands": list(event.staffing_demands.all()),
+            "journal_entries": list(event.journal_entries.all()),
+            "closure_summaries": list(event.closure_summaries.all()),
+            "current_assignment_version": current_version,
+        }
