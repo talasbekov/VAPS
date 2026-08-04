@@ -430,4 +430,88 @@ describe('LifecycleActions', () => {
 
     expect(await screen.findByText('Нельзя подать эту версию.')).toBeInTheDocument()
   })
+
+  it('AC-6: approve non-conflict failure renders the error, and dismissing a conflict never leaks the raw ConflictError message', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(version({ status: 'SUBMITTED' })),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/assignment-versions/7/approve/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'INVALID_LIFECYCLE_TRANSITION',
+            message: 'Нельзя утвердить эту версию.',
+            details: {},
+            request_id: null,
+            timestamp: new Date().toISOString(),
+          },
+          { status: 422 },
+        ),
+      ),
+    )
+    renderPage('/placement/7')
+    const approveButton = await screen.findByRole('button', { name: 'Утвердить' })
+    await userEvent.click(approveButton)
+
+    expect(await screen.findByText('Нельзя утвердить эту версию.')).toBeInTheDocument()
+  })
+
+  it('AC-6 (review): dismissing the conflict dialog does not leak the raw ConflictError inline', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(version({ status: 'SUBMITTED' })),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/assignment-versions/7/approve/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'SOFT_CONFLICT_DETECTED',
+            message: 'Технический текст конфликта — не для инлайн-ошибки.',
+            details: {},
+            request_id: null,
+            timestamp: new Date().toISOString(),
+          },
+          { status: 409 },
+        ),
+      ),
+    )
+    renderPage('/placement/7')
+    const approveButton = await screen.findByRole('button', { name: 'Утвердить' })
+    await userEvent.click(approveButton)
+    await screen.findByRole('textbox')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+
+    expect(
+      screen.queryByText('Технический текст конфликта — не для инлайн-ошибки.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('RETURNED status renders no lifecycle action buttons', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(version({ status: 'RETURNED' })),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+    )
+    renderPage('/placement/7')
+
+    await waitFor(() =>
+      expect(screen.getByText(/Возвращена на доработку/)).toBeInTheDocument(),
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Подать на согласование' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Вернуть на доработку' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Утвердить' })).not.toBeInTheDocument()
+  })
 })

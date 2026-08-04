@@ -11,7 +11,7 @@ import { Link, useParams } from 'react-router'
 import { Button } from '../../../shared/ui/Button'
 import { ConflictDialog } from '../../../shared/ui/ConflictDialog'
 import { ROUTES } from '../../../shared/routes'
-import { ApiError } from '../../../shared/api/errors'
+import { ApiError, ConflictError } from '../../../shared/api/errors'
 import { GENERIC_FAILURE_MESSAGE } from '../../../shared/api/useApiMutation'
 import {
   useApproveAssignmentVersion,
@@ -35,7 +35,9 @@ const STATUS_LABEL: Record<string, string> = {
 export function PlacementVersionDetailPage() {
   const { id } = useParams<{ id: string }>()
   const versionId = id ?? ''
-  const versionQuery = useAssignmentVersion(versionId, { enabled: versionId !== '' })
+  const versionQuery = useAssignmentVersion(versionId, {
+    enabled: versionId !== '',
+  })
   const conflictsQuery = useAssignmentVersionConflicts(versionId, {
     enabled: versionId !== '',
   })
@@ -45,7 +47,8 @@ export function PlacementVersionDetailPage() {
   }
   if (versionQuery.isError) {
     const notFound =
-      versionQuery.error instanceof ApiError && versionQuery.error.status === 404
+      versionQuery.error instanceof ApiError &&
+      versionQuery.error.status === 404
     return (
       <NotFound
         message={
@@ -76,11 +79,13 @@ export function PlacementVersionDetailPage() {
           ОМ · Событие #{version.event}
         </p>
         <h1 className="text-2xl font-bold tracking-tight">
-          Версия {version.version} · {STATUS_LABEL[version.status] ?? version.status}
+          Версия {version.version} ·{' '}
+          {STATUS_LABEL[version.status] ?? version.status}
         </h1>
         <span className="text-sm text-muted-foreground">
           {version.is_current ? 'Текущая версия' : 'Не текущая версия'}
-          {version.signature_hash !== '' && ` · подпись: ${version.signature_hash}`}
+          {version.signature_hash !== '' &&
+            ` · подпись: ${version.signature_hash}`}
         </span>
       </header>
 
@@ -96,7 +101,13 @@ export function PlacementVersionDetailPage() {
   )
 }
 
-function LifecycleActions({ versionId, status }: { versionId: string; status: string }) {
+function LifecycleActions({
+  versionId,
+  status,
+}: {
+  versionId: string
+  status: string
+}) {
   const [returnDialogOpen, setReturnDialogOpen] = useState(false)
   const submitMutation = useSubmitAssignmentVersion(versionId)
   const approveMutation = useApproveAssignmentVersion(versionId)
@@ -133,7 +144,11 @@ function LifecycleActions({ versionId, status }: { versionId: string; status: st
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">На согласовании.</p>
           <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={() => setReturnDialogOpen(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setReturnDialogOpen(true)}
+            >
               Вернуть на доработку
             </Button>
             <Button
@@ -145,13 +160,14 @@ function LifecycleActions({ versionId, status }: { versionId: string; status: st
             </Button>
           </div>
         </div>
-        {approveMutation.error !== null && approveMutation.conflict === null && (
-          <p className="mt-2 text-sm text-destructive" role="alert">
-            {approveMutation.error instanceof ApiError
-              ? approveMutation.error.message
-              : GENERIC_FAILURE_MESSAGE}
-          </p>
-        )}
+        {approveMutation.error !== null &&
+          !(approveMutation.error instanceof ConflictError) && (
+            <p className="mt-2 text-sm text-destructive" role="alert">
+              {approveMutation.error instanceof ApiError
+                ? approveMutation.error.message
+                : GENERIC_FAILURE_MESSAGE}
+            </p>
+          )}
         <ConflictDialog
           conflict={approveMutation.conflict}
           onOverride={approveMutation.confirmOverride}
@@ -183,7 +199,11 @@ function NotFound({ message }: { message: string }) {
   )
 }
 
-function AssignmentsTable({ version }: { version: AssignmentVersionDetailResponse }) {
+function AssignmentsTable({
+  version,
+}: {
+  version: AssignmentVersionDetailResponse
+}) {
   if (version.assignments.length === 0) {
     return (
       <section className="mb-3.5 rounded-xl border bg-card p-9 text-center text-sm text-muted-foreground">
@@ -207,7 +227,9 @@ function AssignmentsTable({ version }: { version: AssignmentVersionDetailRespons
             <tr key={a.id} className="border-b last:border-0">
               <td className="px-3 py-2 font-mono text-xs">{a.employee_id}</td>
               <td className="px-3 py-2">{a.post}</td>
-              <td className="px-3 py-2">{conflictSeverityLabel(a.conflict_severity)}</td>
+              <td className="px-3 py-2">
+                {conflictSeverityLabel(a.conflict_severity)}
+              </td>
               <td className="px-3 py-2">
                 {a.acknowledged_at === null
                   ? 'Нет'
@@ -232,10 +254,16 @@ function ConflictsPanel({
 }) {
   return (
     <section className="rounded-xl border bg-card p-4">
-      <div className="mb-2 text-sm font-semibold">Конфликты (свежий пересчёт)</div>
-      {isLoading && <p className="text-sm text-muted-foreground">Проверка конфликтов…</p>}
+      <div className="mb-2 text-sm font-semibold">
+        Конфликты (свежий пересчёт)
+      </div>
+      {isLoading && (
+        <p className="text-sm text-muted-foreground">Проверка конфликтов…</p>
+      )}
       {isError && (
-        <p className="text-sm text-destructive">Не удалось проверить конфликты.</p>
+        <p className="text-sm text-destructive">
+          Не удалось проверить конфликты.
+        </p>
       )}
       {!isLoading && !isError && conflicts.length === 0 && (
         <p className="text-sm text-muted-foreground">Конфликтов нет.</p>
@@ -245,7 +273,8 @@ function ConflictsPanel({
           {conflicts.map((c) => (
             <li key={c.id} className="text-sm">
               <span className="font-mono text-xs">{c.employee_id}</span> —{' '}
-              {c.conflict_severity}: {conflictCodesOf(c.conflict_codes).join(', ')}
+              {c.conflict_severity}:{' '}
+              {conflictCodesOf(c.conflict_codes).join(', ')}
             </li>
           ))}
         </ul>

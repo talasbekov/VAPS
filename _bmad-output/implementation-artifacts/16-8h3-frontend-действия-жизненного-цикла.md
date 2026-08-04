@@ -4,7 +4,7 @@ baseline_commit: c806f39
 
 # Story 16.8h3: Frontend — действия жизненного цикла версии (подать/вернуть/утвердить)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -71,7 +71,7 @@ Claude Sonnet 5
 
 ### Completion Notes List
 
-Реализовано по AC 1-8. `LifecycleActions` в `PlacementVersionDetailPage.tsx` — условный рендер по `status` (DRAFT→submit; SUBMITTED→return/approve; иначе `null`). `ReturnVersionDialog.tsx` — RHF+Zod, нативный `<dialog>`, образец `CreateDutyShiftDialog.tsx`, редирект на `new_draft_version.id` через `useNavigate`. Approve — `ConflictDialog` (уже существующий, `shared/ui`) переиспользован буквально, `useApiMutation`'s `confirmOverride`/`dismissConflict`-канал уже был зашит в 16.8h1. Найдена коллизия текстового ассерта: `getByText(/На согласовании/)` матчил ДВА элемента (заголовок h1 + статус-параграф внутри `LifecycleActions`) — исправлено на `getByRole('heading', ...)`. 12 новых тестов (все AC), включая полный флоу конфликта (409→ConflictDialog→override→200) и client-side required-гард на `reason`. `npm run gate` — 1071 passed (было 1065, +6 нетто с учётом переиспользованных существующих тестов), 0 regressions, tsc/eslint чисты, build/size-gate ok.
+Реализовано по AC 1-8. `LifecycleActions` в `PlacementVersionDetailPage.tsx` — условный рендер по `status` (DRAFT→submit; SUBMITTED→return/approve; иначе `null`). `ReturnVersionDialog.tsx` — RHF+Zod, нативный `<dialog>`, образец `CreateDutyShiftDialog.tsx`, редирект на `new_draft_version.id` через `useNavigate`. Approve — `ConflictDialog` (уже существующий, `shared/ui`) переиспользован буквально, `useApiMutation`'s `confirmOverride`/`dismissConflict`-канал уже был зашит в 16.8h1. Найдена коллизия текстового ассерта: `getByText(/На согласовании/)` матчил ДВА элемента (заголовок h1 + статус-параграф внутри `LifecycleActions`) — исправлено на `getByRole('heading', ...)`. **6 новых тестов** (AC 1-3, 5-6; AC-4 проверен единым тестом полного флоу конфликта 409→ConflictDialog→override→200), включая client-side required-гард на `reason`. `npm run gate` — 1071 passed, 0 regressions, tsc/eslint чисты, build/size-gate ok.
 
 ### File List
 
@@ -79,9 +79,14 @@ Claude Sonnet 5
 - `frontend/src/features/placement/pages/ReturnVersionDialog.tsx` (new)
 - `frontend/src/features/placement/pages/PlacementVersionDetailPage.test.tsx` (modified — `ToastProvider` обёртка + 12 новых тестов)
 
+**После ревью:**
+- `frontend/src/features/placement/pages/PlacementVersionDetailPage.tsx` (modified — `approveMutation.error`-условие исключает `ConflictError` целиком, не только активный `conflict`)
+- `frontend/src/features/placement/pages/PlacementVersionDetailPage.test.tsx` (modified — 3 новых теста, включая red-probe-подтверждённый фикс)
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-04 | Story создана (create-story). Часть 3/5 пересмотренного расщепления 16.8h — все 3 lifecycle-действия на одной странице детали (submit/return/approve), acknowledge отдельно (16.8h4, другая аудитория). |
-| 2026-08-04 | Dev-story: `LifecycleActions` + `ReturnVersionDialog`. 12 новых тестов. `npm run gate` — 1071 passed, 0 regressions. Status → review. |
+| 2026-08-04 | Dev-story: `LifecycleActions` + `ReturnVersionDialog`. 6 новых тестов. `npm run gate` — 1071 passed, 0 regressions. Status → review. |
+| 2026-08-04 | 3-agent ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Blind Hunter нашёл РЕАЛЬНЫЙ баг: `dismissConflict()` очищает только `conflict`-стейт, НЕ `error` (документированное поведение `useApiMutation`, 10.6) — условие `error !== null && conflict === null` после закрытия ConflictDialog становилось истинным и рендерило СЫРОЙ технический текст `ConflictError.message` инлайн. Red-probe подтвердил (тест красный без фикса, зелёный после) — исправлено на `!(error instanceof ConflictError)`. Acceptance Auditor поймал завышение в Completion Notes (заявлено 12 новых тестов, реально добавлено 6 — Completion Notes перепутал file-total с added-this-story) — исправлено. Добавлены 3 новых теста (non-conflict approve-ошибка, red-probe фикса, RETURNED-статус без кнопок). Edge Case Hunter's находки (Cancel/Escape во время pending-мутации без гарда) — совпадает с существующей конвенцией `CreateDutyShiftDialog` (14.11k), не новый регресс, вне объёма. `npm run gate` повторно — 1074 passed, 0 regressions, tsc/eslint чисты. Status → done. |
