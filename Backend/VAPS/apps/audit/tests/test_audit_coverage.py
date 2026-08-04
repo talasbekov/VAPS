@@ -342,6 +342,14 @@ AUDIT_MATRIX = {
     # transition (not the idempotent replay) — behavioral pin —
     # test_assignment_version_workflow.py.
     "ops-assignment-version-approve": _Audited(),
+    # Story 17.7b: ASSIGNMENT_VERSION_AMENDED emits inside
+    # amend_assignment_version() itself (17.3) — behavioral pin —
+    # test_amend_replace_api.py.
+    "ops-assignment-version-amend": _Audited(),
+    # Story 17.7b: cascade_replace_departed() delegates its whole mutation
+    # (including the audit row) to amend_assignment_version() (17.5's
+    # Scope Decision) — same audit shape as amend.
+    "ops-assignment-version-replace-departed": _Audited(),
     # Story 16.8e: PLACEMENT_ASSIGNMENT_ACKNOWLEDGED emits inside
     # acknowledge_placement_assignment() itself (16.6b), only on the real
     # transition (not the idempotent replay) — behavioral pin —

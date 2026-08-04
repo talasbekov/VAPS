@@ -265,6 +265,14 @@ MATRIX = {
     # Story 16.8d: approve (SUBMITTED->APPROVED), thin wrapper over the
     # idempotent approve_assignment_version() (16.4).
     "ops-assignment-version-approve": _Gate("assignment.approve"),
+    # Story 17.7b: amend (post-approval operational change, 17.3), thin
+    # wrapper over amend_assignment_version().
+    "ops-assignment-version-amend": _Gate("assignment.amend"),
+    # Story 17.7b: replace-departed (cascading replacement, 17.5), thin
+    # wrapper over cascade_replace_departed() — same code as amend (17.5's
+    # Scope Decision: no dedicated RBAC code, delegates its whole mutation
+    # to amend_assignment_version()).
+    "ops-assignment-version-replace-departed": _Gate("assignment.amend"),
     # Story 16.8f: conflicts (GET, fresh recompute) — same read-access
     # class as list/retrieve, any of the lifecycle codes.
     "ops-assignment-version-conflicts": _AnyOfGate(

@@ -32,6 +32,7 @@ from apps.core.selectors import CoreEmployeeSelector
 from apps.operations.api.permissions import require_permission
 from apps.operations.events.api.serializers import (
     AllocateForceRequestSerializer,
+    AmendAssignmentVersionRequestSerializer,
     ApproveVersionSerializer,
     AssignmentVersionDetailSerializer,
     AssignmentVersionReturnResponseSerializer,
@@ -44,6 +45,7 @@ from apps.operations.events.api.serializers import (
     JournalEntryCreateSerializer,
     JournalEntrySerializer,
     PlacementAssignmentSerializer,
+    ReplaceDepartedRequestSerializer,
     ReturnVersionSerializer,
     SecurityEventCreateSerializer,
     SecurityEventSerializer,
@@ -62,8 +64,10 @@ from apps.operations.events.models import (
 from apps.operations.events.services import (
     acknowledge_placement_assignment,
     allocate_force_request,
+    amend_assignment_version,
     approve_assignment_version,
     approve_staffing_demand,
+    cascade_replace_departed,
     confirm_recon,
     create_journal_entry,
     detect_placement_conflicts,
@@ -740,6 +744,67 @@ class AssignmentVersionViewSet(viewsets.ViewSet):
             override_reason=form.validated_data.get("override_reason", ""),
         )
         return Response(AssignmentVersionDetailSerializer(version).data)
+
+    @extend_schema(
+        operation_id="assignment_version_amend",
+        request=AmendAssignmentVersionRequestSerializer,
+        responses={201: AssignmentVersionDetailSerializer},
+        description="Оперативное изменение Расстановки после утверждения "
+        "(17.3, FR-28) — требует assignment.amend, непустые reason/"
+        "sanction и полный новый assignments-список. Создаёт НОВУЮ версию "
+        "(201). 422 INVALID_LIFECYCLE_TRANSITION, если версия не текущая/"
+        "не APPROVED или событие не IN_PROGRESS; 400 VALIDATION_ERROR из "
+        "сервиса на некорректных строках assignments.",
+    )
+    @action(detail=True, methods=["post"], url_path="amend")
+    def amend(self, request, pk=None, *args, **kwargs):
+        require_permission(request, "assignment.amend")
+        form = AmendAssignmentVersionRequestSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        version = _get_assignment_version_or_404(pk)
+        new_version = amend_assignment_version(
+            version,
+            actor=request.actor_id,
+            reason=form.validated_data["reason"],
+            sanction=form.validated_data["sanction"],
+            assignments=form.validated_data["assignments"],
+        )
+        return Response(
+            AssignmentVersionDetailSerializer(new_version).data,
+            status=http_status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        operation_id="assignment_version_replace_departed",
+        request=ReplaceDepartedRequestSerializer,
+        responses={201: AssignmentVersionDetailSerializer},
+        description="Каскадная замена выбывшего (17.5, FR-31) — требует "
+        "assignment.amend. Ищет кандидата по штатной цепочке (Tier 1 — "
+        "подразделение выбывшего, Tier 2 — родительское), если не передан "
+        "manual_replacement_employee_id. Создаёт НОВУЮ версию (201). 409 "
+        "REPLACEMENT_NOT_FOUND, если кандидат не найден ни на одном "
+        "уровне — версия не создаётся, только эскалационный аудит-ряд.",
+    )
+    @action(detail=True, methods=["post"], url_path="replace-departed")
+    def replace_departed(self, request, pk=None, *args, **kwargs):
+        require_permission(request, "assignment.amend")
+        form = ReplaceDepartedRequestSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        version = _get_assignment_version_or_404(pk)
+        new_version = cascade_replace_departed(
+            version,
+            actor=request.actor_id,
+            departed_employee_id=form.validated_data["departed_employee_id"],
+            reason=form.validated_data["reason"],
+            sanction=form.validated_data["sanction"],
+            manual_replacement_employee_id=form.validated_data.get(
+                "manual_replacement_employee_id"
+            ),
+        )
+        return Response(
+            AssignmentVersionDetailSerializer(new_version).data,
+            status=http_status.HTTP_201_CREATED,
+        )
 
 
 def _get_placement_assignment_or_404(pk):

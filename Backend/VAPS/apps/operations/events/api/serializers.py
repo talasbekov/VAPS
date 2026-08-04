@@ -209,6 +209,42 @@ class ApproveVersionSerializer(serializers.Serializer):
     override_reason = serializers.CharField(required=False, allow_blank=True)
 
 
+class AmendAssignmentSpecSerializer(serializers.Serializer):
+    """Story 17.7b: one row of `amend_assignment_version()`'s `assignments`
+    list — mirrors the service's own dict-spec shape (17.4) exactly. Not a
+    ModelSerializer: `PlacementAssignment` rows don't exist yet at request
+    time, this is the client's PROPOSED full new composition."""
+
+    employee_id = serializers.UUIDField()
+    post = serializers.PrimaryKeyRelatedField(queryset=Post.objects.all())
+    is_unplanned = serializers.BooleanField(required=False, default=False)
+    source_division_id = serializers.UUIDField(required=False, allow_null=True)
+    source_duty_shift_id = serializers.IntegerField(required=False, allow_null=True)
+
+
+class AmendAssignmentVersionRequestSerializer(serializers.Serializer):
+    """Story 17.7b: request body for `POST .../amend/` — thin pass-through
+    to `amend_assignment_version()` (17.3); per-spec validation (post
+    object-match, is_unplanned/source pairing) stays in the service, not
+    duplicated here."""
+
+    reason = serializers.CharField()
+    sanction = serializers.CharField()
+    assignments = AmendAssignmentSpecSerializer(many=True)
+
+
+class ReplaceDepartedRequestSerializer(serializers.Serializer):
+    """Story 17.7b: request body for `POST .../replace-departed/` — thin
+    pass-through to `cascade_replace_departed()` (17.5)."""
+
+    departed_employee_id = serializers.UUIDField()
+    reason = serializers.CharField()
+    sanction = serializers.CharField()
+    manual_replacement_employee_id = serializers.UUIDField(
+        required=False, allow_null=True
+    )
+
+
 class AssignmentVersionReturnResponseSerializer(AssignmentVersionDetailSerializer):
     """Story 16.8c: `AssignmentVersionDetailSerializer` (the returned/old
     version) plus `new_draft_version` — the actual response shape returned

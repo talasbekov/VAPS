@@ -1414,6 +1414,41 @@ paths:
               schema:
                 $ref: '#/components/schemas/AssignmentVersionDetail'
           description: ''
+  /api/operations/assignment-versions/{id}/amend/:
+    post:
+      operationId: assignment_version_amend
+      description: Оперативное изменение Расстановки после утверждения (17.3, FR-28)
+        — требует assignment.amend, непустые reason/sanction и полный новый assignments-список.
+        Создаёт НОВУЮ версию (201). 422 INVALID_LIFECYCLE_TRANSITION, если версия
+        не текущая/не APPROVED или событие не IN_PROGRESS; 400 VALIDATION_ERROR из
+        сервиса на некорректных строках assignments.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AmendAssignmentVersionRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AmendAssignmentVersionRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AmendAssignmentVersionRequestRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentVersionDetail'
+          description: ''
   /api/operations/assignment-versions/{id}/approve/:
     post:
       operationId: assignment_version_approve
@@ -1472,6 +1507,41 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/PlacementAssignment'
+          description: ''
+  /api/operations/assignment-versions/{id}/replace-departed/:
+    post:
+      operationId: assignment_version_replace_departed
+      description: Каскадная замена выбывшего (17.5, FR-31) — требует assignment.amend.
+        Ищет кандидата по штатной цепочке (Tier 1 — подразделение выбывшего, Tier
+        2 — родительское), если не передан manual_replacement_employee_id. Создаёт
+        НОВУЮ версию (201). 409 REPLACEMENT_NOT_FOUND, если кандидат не найден ни
+        на одном уровне — версия не создаётся, только эскалационный аудит-ряд.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceDepartedRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReplaceDepartedRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReplaceDepartedRequestRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentVersionDetail'
           description: ''
   /api/operations/assignment-versions/{id}/return/:
     post:
@@ -2985,6 +3055,54 @@ paths:
           description: No response body
 components:
   schemas:
+    AmendAssignmentSpecRequest:
+      type: object
+      description: |-
+        Story 17.7b: one row of `amend_assignment_version()`'s `assignments`
+        list — mirrors the service's own dict-spec shape (17.4) exactly. Not a
+        ModelSerializer: `PlacementAssignment` rows don't exist yet at request
+        time, this is the client's PROPOSED full new composition.
+      properties:
+        employee_id:
+          type: string
+          format: uuid
+        post:
+          type: integer
+        is_unplanned:
+          type: boolean
+          default: false
+        source_division_id:
+          type: string
+          format: uuid
+          nullable: true
+        source_duty_shift_id:
+          type: integer
+          nullable: true
+      required:
+      - employee_id
+      - post
+    AmendAssignmentVersionRequestRequest:
+      type: object
+      description: |-
+        Story 17.7b: request body for `POST .../amend/` — thin pass-through
+        to `amend_assignment_version()` (17.3); per-spec validation (post
+        object-match, is_unplanned/source pairing) stays in the service, not
+        duplicated here.
+      properties:
+        reason:
+          type: string
+          minLength: 1
+        sanction:
+          type: string
+          minLength: 1
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AmendAssignmentSpecRequest'
+      required:
+      - assignments
+      - reason
+      - sanction
     ApproveVersionRequest:
       type: object
       description: |-
@@ -5646,6 +5764,29 @@ components:
       required:
       - code
       - name
+    ReplaceDepartedRequestRequest:
+      type: object
+      description: |-
+        Story 17.7b: request body for `POST .../replace-departed/` — thin
+        pass-through to `cascade_replace_departed()` (17.5).
+      properties:
+        departed_employee_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+        sanction:
+          type: string
+          minLength: 1
+        manual_replacement_employee_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - departed_employee_id
+      - reason
+      - sanction
     ResultEnum:
       enum:
       - MATCHES
