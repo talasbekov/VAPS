@@ -157,3 +157,8 @@ from organization_management.apps.operations.models_status import (  # noqa: F40
 from organization_management.apps.operations.models_audit import (  # noqa: F401,E402
     OpsAuditLog,
 )
+
+# Сдача дня — отдельным модулем по тому же правилу.
+from organization_management.apps.operations.models_submission import (  # noqa: E402
+    OpsDailySubmission,  # noqa: F401
+)
