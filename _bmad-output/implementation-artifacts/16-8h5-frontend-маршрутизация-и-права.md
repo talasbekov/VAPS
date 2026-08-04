@@ -4,7 +4,7 @@ baseline_commit: 9663e27
 
 # Story 16.8h5: Frontend — маршрутизация и права
 
-Status: review
+Status: done
 
 ## Story
 
@@ -73,9 +73,14 @@ Claude Sonnet 5
 - `frontend/src/app/changelog-routing.test.tsx` (modified — `toHaveLength` 12→13)
 - `frontend/src/app/placement-routing.qa.test.tsx` (new)
 
+**После ревью:**
+- `frontend/src/app/App.tsx` (modified — комментарий про single-permission-code ограничение прямо у `<Route>`, не только в `routes.ts`)
+- `frontend/src/app/placement-routing.qa.test.tsx` (modified — 1 новый тест, 404 через реальную композицию `AppRoutes`)
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-04 | Story создана (create-story). Часть 5/5 (финал) пересмотренного расщепления 16.8h. |
 | 2026-08-04 | Dev-story: маршруты + nav + `changelog-routing.test.tsx`-счётчик. 6 новых тестов. `npm run gate` — 1085 passed, 0 regressions. Status → review. |
+| 2026-08-04 | 3-agent ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Acceptance Auditor нашёл документационный разрыв: single-permission-code ограничение (`assignment.create` вместо любого из 4) было задокументировано только в `routes.ts`'s `NAV_SECTIONS`-записи, не рядом с самим `<Route>` в `App.tsx` (файл, который РЕАЛЬНО навязывает гейт) — добавлен комментарий. Edge Case Hunter нашёл пробел: 404 тестировался только изолированно (16.8h2), не через реальную композицию `AppRoutes` — добавлен тест; потребовал `{timeout: 10_000}` (Providers' `QueryClient` ретраит запросы по умолчанию, `queries.retry:false` не задан глобально — тот же прецедент, `duty-plans-list.qa.test.tsx:114`). Blind Hunter's находки — либо уже задокументированные компромиссы (single-code gate), либо косметика (иконка). `npm run gate` повторно — 1086 passed, 0 regressions, tsc/eslint чисты. Status → done. Story 16.8h (все 5 под-сторий) закрыта. |

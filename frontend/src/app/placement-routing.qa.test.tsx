@@ -118,6 +118,36 @@ describe('placement routing', () => {
     expect(await screen.findByText(/Версия 1/)).toBeInTheDocument()
   })
 
+  it('404 через реальную композицию AppRoutes — не только изолированный рендер страницы', async () => {
+    usePermissionsResponse({ permissions: ['assignment.create'] })
+    server.use(
+      http.get('*/api/operations/assignment-versions/999/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'ENTITY_NOT_FOUND',
+            message: 'Не найдено',
+            details: {},
+            request_id: null,
+            timestamp: new Date().toISOString(),
+          },
+          { status: 404 },
+        ),
+      ),
+      http.get('*/api/operations/assignment-versions/999/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+    )
+    renderApp(ROUTES.placementVersionDetailTo(999))
+
+    // Providers' QueryClient retries queries by default (no queries.retry:
+    // false override, unlike the isolated page-level test) — a 404 needs
+    // several retry/backoff cycles before settling into isError; same
+    // precedent as duty-plans-list.qa.test.tsx:114.
+    expect(
+      await screen.findByText('Версия Расстановки не найдена.', {}, { timeout: 10_000 }),
+    ).toBeInTheDocument()
+  }, 15_000)
+
   it('раздел «Расстановка» присутствует в навигации для держателя assignment.create', async () => {
     usePermissionsResponse({ permissions: ['assignment.create'] })
     server.use(

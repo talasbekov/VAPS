@@ -161,6 +161,15 @@ export function AppRoutes() {
             </RequirePermission>
           }
         />
+        {/*
+          Story 16.8h5 (Epic 16): backend's list/detail/conflicts accept
+          ANY of assignment.create/.submit/.return/.approve, but
+          RequirePermission carries one code — assignment.create (OMD)
+          chosen, same compromise as dutyPlans' duty.manage. A holder of
+          ONLY .submit/.return/.approve can call the API but is blocked
+          here (review, Acceptance Auditor: keep this note in sync with
+          the identical one in shared/routes.ts's NAV_SECTIONS entry).
+        */}
         <Route
           path={ROUTES.placementVersions}
           element={
