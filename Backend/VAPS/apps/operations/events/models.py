@@ -698,3 +698,36 @@ class JournalEntry(TimeStampedModel):
 
     def __str__(self):
         return f"{self.event_id} {self.entry_type} @ {self.created_at}"
+
+
+class SecurityEventClosureSummary(TimeStampedModel):
+    """Story 18.1 (FR-30): итог по одному направлению при закрытии ОМ.
+    Направление = `SecurityEventSectorPost.sector` (свободный текст, не
+    FK/enum — тот же тип, что там) — `close_security_event()` проверяет
+    покрытие ВСЕХ дистинкт-секторов на сервисном уровне, не через DB-FK
+    (секторы — CharField-строки, введённые вручную на 15.3a, нет
+    справочника для FK-ссылки на них).
+
+    `unique_together (event, sector)` — повторная запись по тому же
+    направлению это upsert (повторное закрытие того же сектора
+    переписывает итог), не дубликат-строка."""
+
+    event = models.ForeignKey(
+        SecurityEvent, on_delete=models.CASCADE, related_name="closure_summaries"
+    )
+    sector = models.CharField(max_length=255)
+    summary = models.TextField()
+
+    class Meta:
+        db_table = "ops_security_event_closure_summaries"
+        verbose_name = "Итог направления при закрытии"
+        verbose_name_plural = "Итоги направлений при закрытии"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["event", "sector"],
+                name="uq_security_event_closure_summary_event_sector",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.sector} ({self.event_id})"

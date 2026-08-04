@@ -264,6 +264,16 @@ actions:
     description: "Рекогносцировка подтверждена двойным контролем (BULLETIN->RECON), два РАЗНЫХ актора. Эмитится ТОЛЬКО на реальном переходе (второе подтверждение) — первое подтверждение не аудируется (промежуточное состояние)."
     provenance: derived-from-mutation
     source: "epics.md FR-22; Story 15.3c"
+  SECURITY_EVENT_STARTED:
+    entity_type: security_event
+    description: "Проведение начато (APPROVED->IN_PROGRESS). Эмитится ТОЛЬКО на реальном переходе — идемпотентный повторный вызов на уже-IN_PROGRESS не дублирует строку. Недостающее звено между Расстановкой (16.x) и журналом/оперативным изменением (Epic 17), которые гейтят IN_PROGRESS."
+    provenance: derived-from-mutation
+    source: "epics.md FR-28/FR-29; Story 18.1"
+  SECURITY_EVENT_CLOSED:
+    entity_type: security_event
+    description: "ОМ закрыто (IN_PROGRESS->CLOSED) — требует итог по каждому направлению (SecurityEventSectorPost.sector). НЕ идемпотентно (терминальный переход, повторный вызов на уже-CLOSED — 422). new_value несёт снимок всех итогов направлений."
+    provenance: derived-from-mutation
+    source: "epics.md FR-30; Story 18.1"
   OBJECT_PASSPORT_UPDATED:
     entity_type: object_passport
     description: "Паспорт объекта обновлён в контексте ОМ (только пока ОМ в статусе RECON, FR-22). entity_id — uuid.UUID(int=passport.pk). Реальная мутация с compliance-следом (не черновик, в отличие от 15.3b's чек-листа) — аудируется на каждом вызове."

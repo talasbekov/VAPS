@@ -40,6 +40,7 @@ from apps.operations.events.models import (
     PlacementAssignment,
     SecurityEvent,
     SecurityEventChecklistItem,
+    SecurityEventClosureSummary,
     SecurityEventSectorPost,
     SecurityEventStaffingDemand,
 )
@@ -1977,3 +1978,99 @@ def cascade_replace_departed(
         sanction=sanction,
         assignments=assignments,
     )
+
+
+def start_security_event(event, *, actor):
+    """Story 18.1 (research находка): APPROVED->IN_PROGRESS — недостающее
+    звено между 16.x's Расстановка (approve_assignment_version()) и Epic
+    17's журнал/оперативное изменение (оба гейтят
+    `event.status_code == IN_PROGRESS`, но ничто в кодовой базе не
+    выставляло его до этой стори). Буквальный образец
+    `approve_staffing_demand()`'s single-actor idempotent-on-target
+    паттерна."""
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    with transaction.atomic():
+        event = SecurityEvent.objects.select_for_update().get(pk=event.pk)
+        if event.status_code == SecurityEvent.StatusCode.IN_PROGRESS:
+            return event
+        if event.status_code != SecurityEvent.StatusCode.APPROVED:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Проведение можно начать только из статуса APPROVED.",
+            )
+        event.status_code = SecurityEvent.StatusCode.IN_PROGRESS
+        event.save(update_fields=["status_code", "updated_at"])
+        record(
+            actor=actor,
+            action="SECURITY_EVENT_STARTED",
+            entity_type="security_event",
+            entity_id=uuid.UUID(int=event.pk),
+            new_value={"event_id": event.pk, "status_code": event.status_code},
+        )
+    return event
+
+
+def close_security_event(event, *, actor, summaries):
+    """Story 18.1 (FR-30): IN_PROGRESS->CLOSED — требует итог по КАЖДОМУ
+    направлению (`SecurityEventSectorPost.sector`, дистинкт). `summaries`
+    — список dict'ов `{"sector", "summary"}`, ПОЛНОЕ покрытие, не diff
+    (тот же принцип, что `amend_assignment_version()`'s `assignments` —
+    upsert готового набора). НЕ идемпотентно на уже-CLOSED (буквальный
+    образец `issue_bulletin()`'s strict-переход — закрытие терминально,
+    не re-reachable через повторный вызов, в отличие от
+    `approve_staffing_demand()`'s idempotent-on-target)."""
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    with transaction.atomic():
+        event = SecurityEvent.objects.select_for_update().get(pk=event.pk)
+        if event.status_code != SecurityEvent.StatusCode.IN_PROGRESS:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Закрыть можно только событие в статусе IN_PROGRESS.",
+            )
+        required_sectors = set(
+            event.sector_posts.values_list("sector", flat=True).distinct()
+        )
+        given_sectors = set()
+        for spec in summaries:
+            sector = spec.get("sector")
+            if not (sector or "").strip():
+                raise DomainError(
+                    "VALIDATION_ERROR", 400, message="sector обязателен."
+                )
+            _require_text(spec.get("summary"), "summary")
+            given_sectors.add(sector)
+        missing = required_sectors - given_sectors
+        if missing:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                message="Итоги обязательны по каждому направлению.",
+                detail={"missing_sectors": sorted(missing)},
+            )
+        for spec in summaries:
+            SecurityEventClosureSummary.objects.update_or_create(
+                event=event,
+                sector=spec["sector"],
+                defaults={"summary": spec["summary"].strip()},
+            )
+        event.status_code = SecurityEvent.StatusCode.CLOSED
+        event.save(update_fields=["status_code", "updated_at"])
+        record(
+            actor=actor,
+            action="SECURITY_EVENT_CLOSED",
+            entity_type="security_event",
+            entity_id=uuid.UUID(int=event.pk),
+            new_value={
+                "event_id": event.pk,
+                "status_code": event.status_code,
+                "closure_summaries": [
+                    {"sector": s.sector, "summary": s.summary}
+                    for s in event.closure_summaries.all()
+                ],
+            },
+        )
+    return event
