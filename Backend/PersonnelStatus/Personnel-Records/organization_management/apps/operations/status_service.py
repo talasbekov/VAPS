@@ -44,15 +44,25 @@ def assert_employee_status_editable(employee_id):
     с большим приоритетом замаскировал бы живой DETACHED). Пути возврата из
     прикомандирования и увольнения этот гард звать НЕ должны — они законно
     закрывают ограничивающий статус.
+
+    Ограничение снимает РЕШЕНИЕ, а не календарь: нога с подтверждённым
+    возвратом больше не блокирует, хотя и действует до конца сегодняшнего дня
+    (возврат вступает в силу со следующего — см. secondment_service). Иначе
+    спор двух подразделений считался бы неоконченным до полуночи, и штатный
+    оператор не мог бы поставить вернувшемуся наряд на завтра.
     """
     today = Clock.today_local()
-    if OpsEmployeeStatus.objects.filter(
-        employee_id=employee_id,
-        status_type_code="DETACHED",
-        cancelled_at__isnull=True,
-        date_start__lte=today,
-        date_end__gt=today,
-    ).exists():
+    if (
+        OpsEmployeeStatus.objects.filter(
+            employee_id=employee_id,
+            status_type_code="DETACHED",
+            cancelled_at__isnull=True,
+            date_start__lte=today,
+            date_end__gt=today,
+        )
+        .exclude(secondment_out__return_confirmed_at__isnull=False)
+        .exists()
+    ):
         raise DomainError(
             "PERMISSION_DENIED",
             403,
