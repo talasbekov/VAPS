@@ -7,7 +7,10 @@ apps/operations/statuses/services/dismissal.py из Backend/VAPS).
 Вызов из старого пути увольнения — отдельное решение и отдельный срез; пока
 эта функция вызывается явно (командой, эндпоинтом или переносом данных).
 
-Аудит раздела здесь не зовётся, как и во всех срезах переезда.
+Журнал раздела ведётся по общему правилу покрытия (audit_service): событие на
+каждую закрытую строку плюс одно EMPLOYEE_DISMISSED со сводкой. Актор здесь
+как правило системный (метка сигнала), и построчные события — единственное,
+что потом объяснит, почему у сотрудника разом оборвались отпуск и наряд.
 
 Отличия от источника:
 - отменяются ВСЕ ещё не начавшиеся живые статусы, а не только ноги пары
@@ -20,6 +23,7 @@ apps/operations/statuses/services/dismissal.py из Backend/VAPS).
 """
 from django.db import transaction
 
+from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
@@ -74,6 +78,7 @@ def close_statuses_on_dismissal(employee_id, *, dismissal_date, actor):
     for status_row in OpsEmployeeStatus.objects.select_for_update().filter(
         employee_id=employee_id, cancelled_at__isnull=True
     ):
+        before = audit_service.status_snapshot(status_row)
         if status_row.date_start >= dismissal_date:
             # Усечь до D нельзя — интервал стал бы пустым; такой статус не
             # начался, и его отменяют.
@@ -89,18 +94,37 @@ def close_statuses_on_dismissal(employee_id, *, dismissal_date, actor):
                 ]
             )
             cancelled += 1
+            action = audit_service.STATUS_CANCELLED
         elif status_row.date_end > dismissal_date:
             status_row.date_end = dismissal_date
             # update_fields, а не голый save(): голый переписал бы source и
             # генерируемый period чужими значениями.
             status_row.save(update_fields=["date_end", "updated_at"])
             truncated += 1
-        # Строка, закончившаяся до D, — факт, который случился: не трогаем.
+            # STATUS_UPDATED, а не STATUS_COMPLETED: строка не закрыта фактом
+            # своего окончания, у неё обрезан хвост по чужой причине. Причина
+            # и лежит в reason — иначе усечение читалось бы как обычная правка
+            # оператора.
+            action = audit_service.STATUS_UPDATED
+        else:
+            # Строка, закончившаяся до D, — факт, который случился: не трогаем
+            # и события не пишем, писать не о чем.
+            continue
+        audit_service.record(
+            actor=actor,
+            action=action,
+            entity_type=audit_service.ENTITY_STATUS,
+            entity_id=status_row.pk,
+            old_value=before,
+            new_value=audit_service.status_snapshot(status_row),
+            reason=DISMISSAL_REASON,
+        )
 
     secondments_closed = 0
     for secondment in Secondment.objects.select_for_update().filter(
         employee_id=employee_id, return_confirmed_at__isnull=True
     ):
+        before = audit_service.secondment_snapshot(secondment)
         fields = ["return_confirmed_at", "return_confirmed_by", "updated_at"]
         if secondment.return_requested_at is None:
             # Запроса не было — его ставит система: подтверждение без запроса
@@ -112,9 +136,35 @@ def close_statuses_on_dismissal(employee_id, *, dismissal_date, actor):
         secondment.return_confirmed_by = actor
         secondment.save(update_fields=fields)
         secondments_closed += 1
+        # SECONDMENT_RETURNED, потому что событие описывает СТРОКУ пары, а она
+        # закрыта ровно тем же способом, что и при живом возврате. Отличие —
+        # в reason: «увольнение», а не запрос с подтверждением от людей.
+        audit_service.record(
+            actor=actor,
+            action=audit_service.SECONDMENT_RETURNED,
+            entity_type=audit_service.ENTITY_SECONDMENT,
+            entity_id=secondment.pk,
+            old_value=before,
+            new_value=audit_service.secondment_snapshot(secondment),
+            reason=DISMISSAL_REASON,
+        )
 
-    return {
+    summary = {
         "truncated": truncated,
         "cancelled": cancelled,
         "secondments_closed": secondments_closed,
     }
+    # Событие сотрудника — СВЕРХ построчных: по нему видно, что обрыв статусов
+    # был одной операцией, а не чередой отдельных решений. Пишется ВСЕГДА, в
+    # том числе с нулевой сводкой: «увольнение случилось, закрывать было
+    # нечего» — это тоже факт, и его отсутствие потом не отличить от
+    # неотработавшей врезки.
+    audit_service.record(
+        actor=actor,
+        action=audit_service.EMPLOYEE_DISMISSED,
+        entity_type=audit_service.ENTITY_EMPLOYEE,
+        entity_id=employee_id,
+        new_value={"dismissal_date": str(dismissal_date), **summary},
+        reason=DISMISSAL_REASON,
+    )
+    return summary

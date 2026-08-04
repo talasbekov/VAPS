@@ -23,8 +23,11 @@ COUNT() в цикле, повторять это нельзя. Поэтому cr
   через штатную единицу (StaffUnit.employee), потому что у старого Employee
   нет прямой ссылки на подразделение. Сотрудник БЕЗ штатной единицы области
   видимости не принадлежит и получает 403 — гейт закрыт по умолчанию.
-- Аудит мутаций (в источнике record_many + сводка STATUS_BULK_CREATED) здесь
-  НЕ пишется: у старого проекта свой apps.audit, склейка — отдельный срез.
+- Аудит: пишется record_many (одна вставка на всю пачку — иначе N записей
+  журнала вернули бы ту самую зависимость числа запросов от числа строк).
+  СВОДНОЙ строки, в отличие от источника, нет: класть в её entity_id нечего,
+  а пачку и без неё видно — N событий одного актора с ОДНИМ временем
+  (см. audit_service.ACTIONS).
 - Обход мягкого конфликта (override) в массовом пути отсутствует так же, как
   в источнике: мягкое пересечение отклоняет ВСЮ пачку 409-м, оператор
   разводит такие строки поштучно через create_status.
@@ -34,6 +37,7 @@ from collections import Counter
 from django.db import transaction
 
 from organization_management.apps.employees.models import Employee
+from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.conflict_matrix import detect_conflicts
 from organization_management.apps.operations.exceptions import DomainError
@@ -288,4 +292,18 @@ def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
     ]
     with transaction.atomic():
         created = OpsEmployeeStatus.objects.bulk_create(objects)
+        # Журнал — в ТОМ ЖЕ savepoint: пачка и рассказ о ней либо есть вместе,
+        # либо нет вовсе. Событие на КАЖДУЮ строку (а не одна сводка): лента
+        # статуса ищется по entity_id, и у созданного пачкой она обязана
+        # отвечать так же, как у созданного поштучно.
+        audit_service.record_many(
+            {
+                "actor": actor,
+                "action": audit_service.STATUS_CREATED,
+                "entity_type": audit_service.ENTITY_STATUS,
+                "entity_id": row.pk,
+                "new_value": audit_service.status_snapshot(row),
+            }
+            for row in created
+        )
     return created

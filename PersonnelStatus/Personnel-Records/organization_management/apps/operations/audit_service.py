@@ -17,6 +17,19 @@
 тестом покрытия. Опечатка в коде события иначе создаёт «новое» событие,
 которое никто никогда не найдёт фильтром, — а найти пропажу в журнале можно
 лишь тогда, когда уже поздно.
+
+ПРАВИЛО ПОКРЫТИЯ (срез врезки). Событие пишется на КАЖДУЮ записанную строку,
+а не на каждую «операцию»: мутация строки статуса даёт событие статуса,
+мутация пары прикомандирования — событие пары. Поэтому возврат из
+прикомандирования кладёт три строки (обе ноги и сама пара), а увольнение —
+по строке на каждый закрытый статус плюс одну на сотрудника.
+
+Соблазн писать «одну строку на операцию» отвергнут: тогда лента КОНКРЕТНОГО
+статуса (entity_type+entity_id — главный разрез журнала, под него заведён
+индекс) оказалась бы пуста у всего, что создано не поштучно — у ног пары, у
+всей утренней пачки, — и на вопрос «кто и когда тронул вот эту строку»
+журнал отвечал бы «никто». Событие операции при этом не теряется: пара и
+увольнение пишут СВОЮ строку сверх построчных.
 """
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models_audit import OpsAuditLog
@@ -30,19 +43,24 @@ STATUS_CREATED = "STATUS_CREATED"
 STATUS_UPDATED = "STATUS_UPDATED"
 STATUS_CANCELLED = "STATUS_CANCELLED"
 STATUS_COMPLETED = "STATUS_COMPLETED"
-STATUSES_BULK_CREATED = "STATUSES_BULK_CREATED"
 SECONDMENT_INITIATED = "SECONDMENT_INITIATED"
 SECONDMENT_RETURN_REQUESTED = "SECONDMENT_RETURN_REQUESTED"
 SECONDMENT_RETURNED = "SECONDMENT_RETURNED"
 EMPLOYEE_DISMISSED = "EMPLOYEE_DISMISSED"
 
+# СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
+# Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
+# своего идентификатора не имеет, а подсунуть туда чужой id значило бы солгать
+# о том, чья это лента. Сама пачка при этом из журнала не пропала: она пишется
+# N строками STATUS_CREATED с ОДНИМ актором и ОДНИМ временем (record_many
+# ставит момент однажды), и это ровно то, что сводка и утверждала бы. Событие,
+# которого никто не пишет, — обещание фильтра, возвращающего пустоту.
 ACTIONS = frozenset(
     {
         STATUS_CREATED,
         STATUS_UPDATED,
         STATUS_CANCELLED,
         STATUS_COMPLETED,
-        STATUSES_BULK_CREATED,
         SECONDMENT_INITIATED,
         SECONDMENT_RETURN_REQUESTED,
         SECONDMENT_RETURNED,
@@ -57,6 +75,42 @@ ENTITY_SECONDMENT = "secondment"
 ENTITY_EMPLOYEE = "employee"
 
 ENTITY_TYPES = frozenset({ENTITY_STATUS, ENTITY_SECONDMENT, ENTITY_EMPLOYEE})
+
+
+def _build(
+    *,
+    actor,
+    action,
+    entity_type,
+    entity_id,
+    created_at,
+    old_value=None,
+    new_value=None,
+    reason="",
+):
+    """Проверить событие и собрать (НЕ сохранённую) строку журнала.
+
+    Пустой актор, незнакомое действие или незнакомый тип сущности — ValueError
+    и никакой записи: это дефекты вызывающего кода, а не ситуация данных, и
+    молчаливо записанный мусор в журнале хуже его отсутствия. Проверка живёт
+    здесь, а не в record(), чтобы пачка не могла записаться в обход неё.
+    """
+    if not actor or not str(actor).strip():
+        raise ValueError("запись в журнал требует непустого актора")
+    if action not in ACTIONS:
+        raise ValueError(f"неизвестное событие журнала: {action!r}")
+    if entity_type not in ENTITY_TYPES:
+        raise ValueError(f"неизвестный тип сущности журнала: {entity_type!r}")
+    return OpsAuditLog(
+        actor_user_id=str(actor),
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        old_value=old_value,
+        new_value=new_value,
+        reason=reason,
+        created_at=created_at,
+    )
 
 
 def record(
@@ -74,19 +128,9 @@ def record(
     actor — идентичность, которую вызывающий УЖЕ держит (из контракта
     аутентификации или системная метка); читать её из запроса здесь нельзя,
     сервисы раздела о запросе не знают вовсе.
-
-    Пустой актор, незнакомое действие или незнакомый тип сущности — ValueError
-    и никакой записи: это дефекты вызывающего кода, а не ситуация данных, и
-    молчаливо записанный мусор в журнале хуже его отсутствия.
     """
-    if not actor or not str(actor).strip():
-        raise ValueError("запись в журнал требует непустого актора")
-    if action not in ACTIONS:
-        raise ValueError(f"неизвестное событие журнала: {action!r}")
-    if entity_type not in ENTITY_TYPES:
-        raise ValueError(f"неизвестный тип сущности журнала: {entity_type!r}")
-    return OpsAuditLog.objects.create(
-        actor_user_id=str(actor),
+    entry = _build(
+        actor=actor,
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
@@ -96,6 +140,28 @@ def record(
         # Время — через часы раздела, никогда не auto_now_add.
         created_at=Clock.now(),
     )
+    entry.save()
+    return entry
+
+
+def record_many(entries):
+    """Добавить строки журнала ОДНИМ запросом и вернуть их.
+
+    Существует ради путей с постоянным числом запросов (массовое обновление):
+    там record() в цикле дал бы N вставок и вернул бы ровно ту зависимость
+    числа запросов от числа строк, от которой умер донор. Проверка события та
+    же самая и на КАЖДУЮ строку — пачка не льгота, а способ доставки.
+
+    Время ставится ОДНАЖДЫ на всю пачку, а не построчно: это одна операция
+    одного актора, и одинаковый момент — то единственное, чем строки пачки
+    отличимы от N независимых записей (сводной строки у пачки нет, см. ACTIONS).
+    """
+    entries = list(entries)
+    if not entries:
+        return []
+    now = Clock.now()
+    rows = [_build(created_at=now, **entry) for entry in entries]
+    return OpsAuditLog.objects.bulk_create(rows)
 
 
 def status_snapshot(status):
