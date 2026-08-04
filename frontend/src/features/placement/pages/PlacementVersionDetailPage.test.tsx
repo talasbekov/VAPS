@@ -250,7 +250,7 @@ function version(overrides: Record<string, unknown>) {
     signature_hash: '',
     created_at: '2026-08-01T09:00:00Z',
     updated_at: '2026-08-01T09:00:00Z',
-    assignments: [],
+    assignments: [] as Record<string, unknown>[],
     ...overrides,
   }
 }
@@ -513,5 +513,144 @@ describe('LifecycleActions', () => {
       screen.queryByRole('button', { name: 'Вернуть на доработку' }),
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Утвердить' })).not.toBeInTheDocument()
+  })
+})
+
+describe('AcknowledgeCell', () => {
+  function approvedVersionWithAssignment(overrides: Record<string, unknown> = {}) {
+    return version({
+      status: 'APPROVED',
+      assignments: [
+        {
+          id: 1,
+          employee_id: EMPLOYEE_A,
+          post: 5,
+          conflict_severity: '',
+          conflict_codes: [],
+          acknowledged_at: null,
+          ack_escalated_at: null,
+          ...overrides,
+        },
+      ],
+    })
+  }
+
+  it('AC-1: unacknowledged row on an APPROVED version shows the button, success shows the timestamp', async () => {
+    // useAcknowledgePlacementAssignment invalidates (not setQueryData)
+    // detail(versionId) — the follow-up refetch must reflect the ack, so
+    // the GET handler is stateful here (mirrors placement/mocks/handlers.ts).
+    const current = approvedVersionWithAssignment()
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(current),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/placement-assignments/1/acknowledge/', () => {
+        current.assignments[0].acknowledged_at = '2026-08-04T12:00:00Z'
+        return HttpResponse.json(current.assignments[0])
+      }),
+    )
+    renderPage('/placement/7')
+    const button = await screen.findByRole('button', { name: 'Отметить ознакомление' })
+
+    await userEvent.click(button)
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(new Date('2026-08-04T12:00:00Z').toLocaleString('ru-RU')),
+      ).toBeInTheDocument(),
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Отметить ознакомление' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('AC-2: already-acknowledged row shows only the timestamp, no button', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(
+          approvedVersionWithAssignment({ acknowledged_at: '2026-08-01T10:00:00Z' }),
+        ),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+    )
+    renderPage('/placement/7')
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(new Date('2026-08-01T10:00:00Z').toLocaleString('ru-RU')),
+      ).toBeInTheDocument(),
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Отметить ознакомление' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('AC-3: 403 on a foreign assignment renders inline, button stays clickable', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(approvedVersionWithAssignment()),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/placement-assignments/1/acknowledge/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'PERMISSION_DENIED',
+            message: 'Это не ваше назначение.',
+            details: {},
+            request_id: null,
+            timestamp: new Date().toISOString(),
+          },
+          { status: 403 },
+        ),
+      ),
+    )
+    renderPage('/placement/7')
+    const button = await screen.findByRole('button', { name: 'Отметить ознакомление' })
+
+    await userEvent.click(button)
+
+    expect(await screen.findByText('Это не ваше назначение.')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Отметить ознакомление' }),
+    ).not.toBeDisabled()
+  })
+
+  it('AC-4: non-APPROVED version shows no button for unacknowledged assignments', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(
+          version({
+            status: 'SUBMITTED',
+            assignments: [
+              {
+                id: 1,
+                employee_id: EMPLOYEE_A,
+                post: 5,
+                conflict_severity: '',
+                conflict_codes: [],
+                acknowledged_at: null,
+                ack_escalated_at: null,
+              },
+            ],
+          }),
+        ),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+    )
+    renderPage('/placement/7')
+
+    await waitFor(() => expect(screen.getByText(EMPLOYEE_A)).toBeInTheDocument())
+    expect(
+      screen.queryByRole('button', { name: 'Отметить ознакомление' }),
+    ).not.toBeInTheDocument()
   })
 })

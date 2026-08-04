@@ -1,11 +1,14 @@
 // Story 16.8h2: деталь ОДНОЙ версии Расстановки + назначения + конфликты
 // (свежий пересчёт, отдельный запрос — 16.8f). Буквальный образец скелета —
 // duty-plans/pages/DutyPlanDetailPage.tsx (useParams/isLoading/isError-not
-// -found ветки). Acknowledge вне объёма этой стори (16.8h4).
+// -found ветки).
 // Story 16.8h3: submit/return/approve — условный рендер по `status`
 // (DRAFT→submit; SUBMITTED→return/approve), approve's 409
 // SOFT_CONFLICT_DETECTED через общий ConflictDialog (useApiMutation's
 // conflict-канал, 16.8h1).
+// Story 16.8h4: «отметить ознакомление» — per-row кнопка в
+// AssignmentsTable; identity-проверка (16.8e) полностью на бэке, фронт не
+// знает employee_id текущего пользователя.
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { Button } from '../../../shared/ui/Button'
@@ -14,6 +17,7 @@ import { ROUTES } from '../../../shared/routes'
 import { ApiError, ConflictError } from '../../../shared/api/errors'
 import { GENERIC_FAILURE_MESSAGE } from '../../../shared/api/useApiMutation'
 import {
+  useAcknowledgePlacementAssignment,
   useApproveAssignmentVersion,
   useAssignmentVersion,
   useAssignmentVersionConflicts,
@@ -231,15 +235,64 @@ function AssignmentsTable({
                 {conflictSeverityLabel(a.conflict_severity)}
               </td>
               <td className="px-3 py-2">
-                {a.acknowledged_at === null
-                  ? 'Нет'
-                  : new Date(a.acknowledged_at).toLocaleString('ru-RU')}
+                <AcknowledgeCell
+                  assignmentId={String(a.id)}
+                  versionId={String(version.id)}
+                  versionStatus={version.status}
+                  acknowledgedAt={a.acknowledged_at}
+                />
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </section>
+  )
+}
+
+// Story 16.8h4: identity-based (16.8e) — фронт НЕ знает employee_id текущего
+// пользователя, кнопка рендерится для КАЖДОГО ещё-не-отмеченного назначения
+// APPROVED-версии; чужое назначение просто вернёт 403 (обычная mutation.
+// error, тот же паттерн, что lifecycle-действия 16.8h3), кнопка остаётся
+// кликабельной.
+function AcknowledgeCell({
+  assignmentId,
+  versionId,
+  versionStatus,
+  acknowledgedAt,
+}: {
+  assignmentId: string
+  versionId: string
+  versionStatus: string
+  acknowledgedAt: string | null
+}) {
+  const mutation = useAcknowledgePlacementAssignment(assignmentId, versionId)
+
+  if (acknowledgedAt !== null) {
+    return <span>{new Date(acknowledgedAt).toLocaleString('ru-RU')}</span>
+  }
+  if (versionStatus !== 'APPROVED') {
+    return <span>Нет</span>
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={mutation.isPending}
+        onClick={() => mutation.mutate({})}
+      >
+        {mutation.isPending ? 'Отправка…' : 'Отметить ознакомление'}
+      </Button>
+      {mutation.error !== null && (
+        <p className="text-xs text-destructive" role="alert">
+          {mutation.error instanceof ApiError
+            ? mutation.error.message
+            : GENERIC_FAILURE_MESSAGE}
+        </p>
+      )}
+    </div>
   )
 }
 
