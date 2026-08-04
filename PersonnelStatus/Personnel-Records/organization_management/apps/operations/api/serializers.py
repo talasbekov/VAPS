@@ -16,7 +16,10 @@ from organization_management.apps.operations.models import (
     TemporaryDutyPermission,
     UserRole,
 )
-from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.models_status import (
+    OpsEmployeeStatus,
+    Secondment,
+)
 from organization_management.apps.operations.validators import DUTY_ROLE_CHOICES
 
 
@@ -147,6 +150,55 @@ class OpsEmployeeStatusSerializer(serializers.ModelSerializer):
 
     def get_state(self, obj) -> str:
         return str(obj.state)
+
+
+class SecondmentSerializer(serializers.ModelSerializer):
+    """Связь пары прикомандирования наружу.
+
+    Ноги отдаются идентификаторами: строки статусов читаются своим маршрутом,
+    и дублировать их здесь значило бы завести второй источник правды о них.
+    Факты возврата — это ВСЁ состояние рукопожатия: отдельного признака
+    «вернулся» нет ни в базе, ни в ответе, клиент выводит стадию из пары
+    (запрошен / подтверждён / ни того ни другого).
+    """
+
+    class Meta:
+        model = Secondment
+        fields = [
+            "id", "employee_id", "out_status", "in_status",
+            "from_division_id", "to_division_id", "document_basis",
+            "return_requested_at", "return_requested_by",
+            "return_confirmed_at", "return_confirmed_by",
+            "created_by", "created_at", "updated_at",
+        ]
+
+
+class SecondmentCreateSerializer(serializers.Serializer):
+    """Тело POST откомандирования.
+
+    Штатного подразделения в теле НЕТ: оно берётся из штатной единицы
+    сотрудника — присланному «откуда» здесь не верят, иначе оператор мог бы
+    назначить источник пары произвольно. actor тоже не входит: кто
+    откомандировал — факт из контракта аутентификации.
+    """
+
+    employee_id = serializers.IntegerField()
+    to_division_id = serializers.IntegerField()
+    date_start = serializers.DateField()
+    date_end = serializers.DateField()
+    document_basis = serializers.CharField(required=False, allow_blank=True)
+
+
+class SecondmentReturnConfirmSerializer(serializers.Serializer):
+    """Тело подтверждения возврата: причина нужна только НЕ НАЧАВШЕЙСЯ паре.
+
+    Такую пару подтверждение отменяет, и причина уходит в факты отмены. У
+    идущей пары причины нет — она закрывается датой, а не отменяется, поэтому
+    поле необязательное: требовать его всегда значило бы просить объяснение
+    там, где объяснять нечего.
+    """
+
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=1000)
 
 
 class StatusUpdateSerializer(serializers.Serializer):

@@ -34,6 +34,9 @@ from organization_management.apps.operations.api.serializers import (
     OpsEmployeeStatusSerializer,
     PermissionSerializer,
     RoleSerializer,
+    SecondmentCreateSerializer,
+    SecondmentReturnConfirmSerializer,
+    SecondmentSerializer,
     StatusCancelSerializer,
     StatusTypeSerializer,
     StatusUpdateSerializer,
@@ -52,7 +55,10 @@ from organization_management.apps.operations.bulk_status_service import (
 )
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
-from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.models_status import (
+    OpsEmployeeStatus,
+    Secondment,
+)
 from organization_management.apps.operations.selectors import (
     DivisionTreeSelector,
     StaffUnitSelector,
@@ -60,6 +66,11 @@ from organization_management.apps.operations.selectors import (
 from organization_management.apps.operations.services import (
     PermissionService,
     RoleAdminService,
+)
+from organization_management.apps.operations.secondment_service import (
+    confirm_return as confirm_return_service,
+    initiate_secondment,
+    request_return as request_return_service,
 )
 from organization_management.apps.operations.status_service import (
     cancel_status,
@@ -670,6 +681,201 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             allowed_division_ids=allowed,
         )
         return Response({"created": len(created)}, status=status.HTTP_201_CREATED)
+
+
+class SecondmentViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Прикомандирование: откомандировать и вернуть.
+
+    POST /api/operations/secondments/                       — откомандировать
+    POST /api/operations/secondments/{id}/request-return/    — запрос возврата
+    POST /api/operations/secondments/{id}/confirm-return/    — подтверждение
+
+    Тонкая вьюха поверх сервиса: сериализатор → область видимости → вызов.
+    Правила пары (атомарность, конфликты, порядок рукопожатия, закрытие ног)
+    живут в сервисе; его DomainError уходит наверх конвертом, вьюха его НЕ
+    ловит.
+
+    ОБЛАСТЬ ВИДИМОСТИ У ТРЁХ ДЕЙСТВИЙ РАЗНАЯ — это и есть смысл рукопожатия:
+    откомандировывает и запрашивает возврат ШТАТНОЕ подразделение (проверяем
+    сторону «откуда»), подтверждает возврат ПРИНИМАЮЩЕЕ (сторона «куда»).
+    Одна общая проверка сделала бы обе стороны одним лицом, и подтверждение
+    перестало бы что-либо подтверждать.
+
+    Чтение пар — отдельный срез, поэтому GET здесь не открыт.
+    """
+
+    permission_map = {
+        "create": _BULK_STATUS_PERMISSION,
+        "request_return": _BULK_STATUS_PERMISSION,
+        "confirm_return": _BULK_STATUS_PERMISSION,
+    }
+    http_method_names = ["post", "options"]
+
+    def _get_secondment_or_404(self, pk):
+        """Связь по pk из пути; отсутствующая или нечисловая — 404 конвертом.
+
+        Как и у статусов: int() ДО запроса, иначе мусорный идентификатор ушёл
+        бы ValueError → 500 вместо 404.
+        """
+        try:
+            secondment_id = int(pk)
+        except (TypeError, ValueError):
+            secondment_id = None
+        row = (
+            Secondment.objects.filter(pk=secondment_id).first()
+            if secondment_id is not None
+            else None
+        )
+        if row is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"secondment_id": str(pk)},
+                message="Прикомандирование не найдено.",
+            )
+        return row
+
+    def _assert_division_in_scope(self, request, division_id, *, field):
+        """Подразделение стороны обязано входить в область актора.
+
+        None = безскоуповый/wildcard грант → обе стороны. Отказ — DomainError
+        (конверт {error_code}), а не PermissionDenied DRF: право у оператора
+        ЕСТЬ, ему не хватает именно области — и без различения форм тест
+        одного отказа зеленел бы от другого.
+        """
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _BULK_STATUS_PERMISSION
+        )
+        if allowed is None:
+            return
+        if division_id not in allowed:
+            raise DomainError(
+                "PERMISSION_DENIED",
+                403,
+                detail={field: str(division_id)},
+                message="Подразделение вне области видимости оператора.",
+            )
+
+    @extend_schema(
+        request=SecondmentCreateSerializer,
+        responses={201: SecondmentSerializer},
+        description=(
+            "Откомандировать сотрудника: создаётся связанная пара "
+            "DETACHED+ATTACHED и связь между ними, одной транзакцией. "
+            "Штатное подразделение берётся из штатной единицы сотрудника, а "
+            "не из тела запроса. 403 — нет права status.manage, сотрудник вне "
+            "области оператора либо сотрудник уже откомандирован; 400 — форма "
+            "тела или принимающее равно штатному; 404 — нет сотрудника или "
+            "принимающего подразделения; 409 — мягкое пересечение (обхода у "
+            "этого пути нет); 422 — жёсткое пересечение, интервал, границы "
+            "найма или отсутствие штатной единицы."
+        ),
+    )
+    def create(self, request, *args, **kwargs):
+        form = SecondmentCreateSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+        # Сторона «откуда» — по штатной единице сотрудника: тот же общий
+        # селектор, которым область считают пачка и правка статусов.
+        # Сотрудник без слота не принадлежит ничьей области (fail-closed);
+        # безскоуповому актору его отклонит уже сервис — своим 422.
+        home_division_id = StaffUnitSelector.divisions_of(
+            [data["employee_id"]]
+        ).get(data["employee_id"])
+        self._assert_division_in_scope(
+            request, home_division_id, field="employee_id"
+        )
+        secondment = initiate_secondment(
+            data["employee_id"],
+            to_division_id=data["to_division_id"],
+            date_start=data["date_start"],
+            date_end=data["date_end"],
+            # Актор — из контракта аутентификации, НИКОГДА из тела запроса.
+            actor=resolve_actor_id(request),
+            document_basis=data.get("document_basis", ""),
+        )
+        return Response(
+            SecondmentSerializer(secondment).data, status=status.HTTP_201_CREATED
+        )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id связи прикомандирования.",
+            )
+        ],
+        request=None,
+        responses={200: SecondmentSerializer},
+        description=(
+            "Запрос возврата — первый такт рукопожатия, его делает ШТАТНОЕ "
+            "подразделение. 403 — нет права либо штатное подразделение пары "
+            "вне области оператора; 404 — связи нет; 422 — возврат уже "
+            "запрошен или подтверждён."
+        ),
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="request-return",
+        url_name="request-return",
+    )
+    def request_return(self, request, pk=None, *args, **kwargs):
+        secondment = self._get_secondment_or_404(pk)
+        # Запрашивает тот, КОМУ человека вернут, — штатное подразделение.
+        self._assert_division_in_scope(
+            request, secondment.from_division_id, field="from_division_id"
+        )
+        requested = request_return_service(
+            secondment, actor=resolve_actor_id(request)
+        )
+        return Response(SecondmentSerializer(requested).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id связи прикомандирования.",
+            )
+        ],
+        request=SecondmentReturnConfirmSerializer,
+        responses={200: SecondmentSerializer},
+        description=(
+            "Подтверждение возврата — второй такт, его делает ПРИНИМАЮЩЕЕ "
+            "подразделение; подтверждение закрывает обе ноги. Возврат "
+            "вступает в силу со следующего дня: сегодня сотрудник ещё "
+            "числится прикомандированным. Не начавшаяся пара отменяется, и "
+            "причина уходит в её факты отмены. 403 — нет права либо "
+            "принимающее подразделение пары вне области оператора; 404 — "
+            "связи нет; 422 — возврат не запрошен или уже подтверждён."
+        ),
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="confirm-return",
+        url_name="confirm-return",
+    )
+    def confirm_return(self, request, pk=None, *args, **kwargs):
+        form = SecondmentReturnConfirmSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        secondment = self._get_secondment_or_404(pk)
+        # Подтверждает та сторона, У КОТОРОЙ человек находится, —
+        # принимающая. Штатное подразделение здесь НЕ проверяется: иначе
+        # подтверждать мог бы тот же оператор, что и запрашивал.
+        self._assert_division_in_scope(
+            request, secondment.to_division_id, field="to_division_id"
+        )
+        confirmed = confirm_return_service(
+            secondment,
+            actor=resolve_actor_id(request),
+            reason=form.validated_data.get("reason", ""),
+        )
+        return Response(SecondmentSerializer(confirmed).data)
 
 
 class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
