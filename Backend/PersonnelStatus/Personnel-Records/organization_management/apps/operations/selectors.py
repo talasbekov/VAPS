@@ -101,23 +101,82 @@ class EmployeeStatusSelector:
     """Пакетное чтение статусов — единственный канал данных для агрегации."""
 
     @staticmethod
-    def overlapping_on(on_date, employee_ids=None):
-        """Живые интервальные факты, накрывающие дату, ОДИН запрос.
+    def _live_overlapping(on_date, employee_ids=None):
+        """Общий ПРЕДИКАТ живых фактов, накрывающих дату.
+
+        Один на всех читателей намеренно: у расхода и у снимка сдачи разные
+        проекции, но «какие строки действуют на дату» обязано быть одним
+        правилом. Два похожих набора условий разошлись бы на первом же
+        уточнении (например, на трактовке отменённых), и снимок перестал бы
+        объяснять расход.
 
         period__contains едет по полному GiST-индексу, построенному ровно под
-        такие выборки; отменённые строки для расхода не существуют
-        (cancelled_at — это «записи нет»).
+        такие выборки; отменённые строки не существуют (cancelled_at — это
+        «записи нет»).
         """
         queryset = OpsEmployeeStatus.objects.filter(
             cancelled_at__isnull=True, period__contains=on_date
         )
         if employee_ids is not None:
             queryset = queryset.filter(employee_id__in=employee_ids)
+        return queryset
+
+    @classmethod
+    def overlapping_on(cls, on_date, employee_ids=None):
+        """Проекция для расхода: кто и с каким типом, ОДИН запрос."""
         return list(
-            queryset.values(
+            cls._live_overlapping(on_date, employee_ids).values(
                 "employee_id", "status_type_code", "date_start", "date_end"
             )
         )
+
+    @classmethod
+    def snapshot_facts_on(cls, on_date, employee_ids=None):
+        """Проекция для снимка сдачи: те же строки плюс их удостоверение.
+
+        Снимок обязан нести id строки и её происхождение: по ним поправка
+        задним числом указывает на конкретный факт, а читатель отличает
+        занесённое оператором от материализованного разделом.
+        """
+        return list(
+            cls._live_overlapping(on_date, employee_ids).values(
+                "id",
+                "employee_id",
+                "status_type_code",
+                "date_start",
+                "date_end",
+                "source",
+            )
+        )
+
+
+class EmployeeSelector:
+    """Денормализация сотрудника для снимка сдачи.
+
+    Раздел не тащит в снимок объект Employee и не ссылается на него: сдача —
+    заявление НА МОМЕНТ, и позднее переименование или присвоение звания не
+    должны переписывать сданное. Поэтому здесь готовые строки, а не ссылки.
+    """
+
+    @staticmethod
+    def denorm_for(employee_ids):
+        """{employee_id: {"full_name": str, "rank": str}}, ОДИН запрос.
+
+        Звание берётся через связь справочника; его отсутствие — пустая
+        строка, а не None: снимок хранит значения, и «звания не указано»
+        читается одинаково с любым потребителем JSON.
+        """
+        rows = Employee.objects.filter(id__in=list(employee_ids)).values(
+            "id", "last_name", "first_name", "middle_name", "rank__name"
+        )
+        result = {}
+        for row in rows:
+            parts = [row["last_name"], row["first_name"], row["middle_name"]]
+            result[row["id"]] = {
+                "full_name": " ".join(part for part in parts if part).strip(),
+                "rank": row["rank__name"] or "",
+            }
+        return result
 
 
 class SecondmentSelector:
