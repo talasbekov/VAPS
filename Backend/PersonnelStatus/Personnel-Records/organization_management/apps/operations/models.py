@@ -148,5 +148,12 @@ class TemporaryDutyPermission(TimeStampedModel):
 # В конце файла: models_status импортирует TimeStampedModel отсюда.
 from organization_management.apps.operations.models_status import (  # noqa: F401,E402
     OpsEmployeeStatus,
+    Secondment,
     StatusOverride,
+)
+
+# Журнал раздела — тоже отдельным модулем; импорт нужен Django, чтобы модель
+# нашлась в приложении.
+from organization_management.apps.operations.models_audit import (  # noqa: F401,E402
+    OpsAuditLog,
 )
