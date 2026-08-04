@@ -16,6 +16,9 @@ from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     Secondment,
 )
+from organization_management.apps.operations.models_submission import (
+    OpsDailySubmission,
+)
 from organization_management.apps.staff_unit.models import StaffUnit
 
 
@@ -63,6 +66,13 @@ class DivisionTreeSelector:
         уронил бы их TypeError'ом.
         """
         return set(Division.objects.values_list("id", flat=True))
+
+    @staticmethod
+    def exists(division_id) -> bool:
+        """Есть ли такое подразделение. Нужен там, где отсутствие обязано
+        стать 404 ДО работы: снимок несуществующего подразделения собрался бы
+        пустым, и раздел записал бы «сдачу» призрака с пустым списком."""
+        return Division.objects.filter(pk=division_id).exists()
 
     @classmethod
     def subtree_ids(cls, division_id, *, children_map=None) -> set:
@@ -280,6 +290,45 @@ class StaffUnitSelector:
             for row in raw
         ]
         return slots, dismissed
+
+
+class DailySubmissionSelector:
+    """Чтение сдач дня — единственный канал для сервиса сдачи."""
+
+    @staticmethod
+    def exists_for(division_id, business_date):
+        """Есть ли У ЭТОГО дня ХОТЬ ОДНА версия сдачи.
+
+        Предпроверка первичной сдачи стоит на ЛЮБОЙ версии, а не только на
+        текущей (в источнике — на текущей). Первичная сдача пишет версию 1, и
+        день с историей поправок она заведомо не создаст: снятая с текущих
+        версия 1 никуда не девается, и вставка упёрлась бы в уникальность
+        номера версии — то есть в 500 вместо внятного отказа. Ограничение БД
+        остаётся подстраховкой гонки, а не способом узнавать об уже сданном
+        дне через исключение.
+        """
+        return OpsDailySubmission.objects.filter(
+            division_id=division_id, business_date=business_date
+        ).exists()
+
+    @staticmethod
+    def previous_for(division_id, business_date):
+        """Ближайшая ПРЕДЫДУЩАЯ текущая сдача (строго раньше даты) или None.
+
+        Именно ближайшая, а не «вчерашняя» буквально: между сдачами бывают
+        выходные и пропуски, и сравнение с несуществующим вчера объявляло бы
+        изменением всё подряд. Едет по индексу (division_id, business_date,
+        -version).
+        """
+        return (
+            OpsDailySubmission.objects.filter(
+                division_id=division_id,
+                business_date__lt=business_date,
+                is_current=True,
+            )
+            .order_by("-business_date", "-version")
+            .first()
+        )
 
 
 class OpsAuditLogSelector:
