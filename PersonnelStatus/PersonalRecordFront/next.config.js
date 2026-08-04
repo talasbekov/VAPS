@@ -83,6 +83,17 @@ const nextConfig = {
         source: "/api/feedback/:path*",
         destination: `${backendUrl}/api/feedback/:path*/`,
       },
+      // Раздел «Охранные мероприятия» в api-режиме
+      // (NEXT_PUBLIC_OPS_DATA_SOURCE=api): в мок-режиме эти же пути
+      // перехватывает host-MSW ДО сети, rewrite не мешает.
+      {
+        source: "/api/operations/:path*",
+        destination: `${backendUrl}/api/operations/:path*/`,
+      },
+      {
+        source: "/api/ops/:path*",
+        destination: `${backendUrl}/api/ops/:path*/`,
+      },
       {
         source: "/api/token",
         destination: `${backendUrl}/api/token/`,
