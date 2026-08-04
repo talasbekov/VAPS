@@ -112,81 +112,91 @@ function LifecycleActions({
   versionId: string
   status: string
 }) {
+  // Story 16.8i (e2e review): ReturnVersionDialog is rendered OUTSIDE the
+  // status-conditional sections below, not nested inside the SUBMITTED
+  // branch. Its own return-success onSuccess() flips the version's cached
+  // status to RETURNED (setQueryData), which flows straight back into this
+  // component's `status` prop on the SAME render — if the dialog lived
+  // inside `if (status === 'SUBMITTED')`, that branch would stop matching
+  // and unmount the dialog before ITS OWN "navigate to the new draft"
+  // effect got a chance to run on the just-arrived mutation.data. Caught
+  // by the real-browser e2e test (jsdom's test timing masked it — the
+  // isolated unit test never actually raced these two renders the same
+  // way). `open` still gates visibility; only the MOUNT lifetime moved.
   const [returnDialogOpen, setReturnDialogOpen] = useState(false)
   const submitMutation = useSubmitAssignmentVersion(versionId)
   const approveMutation = useApproveAssignmentVersion(versionId)
 
-  if (status === 'DRAFT') {
-    return (
-      <section className="mb-3.5 rounded-xl border bg-card p-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            Черновик готов — можно подать на согласование.
-          </p>
-          <Button
-            type="button"
-            disabled={submitMutation.isPending}
-            onClick={() => submitMutation.mutate({})}
-          >
-            {submitMutation.isPending ? 'Отправка…' : 'Подать на согласование'}
-          </Button>
-        </div>
-        {submitMutation.error !== null && (
-          <p className="mt-2 text-sm text-destructive" role="alert">
-            {submitMutation.error instanceof ApiError
-              ? submitMutation.error.message
-              : GENERIC_FAILURE_MESSAGE}
-          </p>
-        )}
-      </section>
-    )
-  }
-
-  if (status === 'SUBMITTED') {
-    return (
-      <section className="mb-3.5 rounded-xl border bg-card p-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">На согласовании.</p>
-          <div className="flex gap-2">
+  return (
+    <>
+      {status === 'DRAFT' && (
+        <section className="mb-3.5 rounded-xl border bg-card p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Черновик готов — можно подать на согласование.
+            </p>
             <Button
               type="button"
-              variant="outline"
-              onClick={() => setReturnDialogOpen(true)}
+              disabled={submitMutation.isPending}
+              onClick={() => submitMutation.mutate({})}
             >
-              Вернуть на доработку
-            </Button>
-            <Button
-              type="button"
-              disabled={approveMutation.isPending}
-              onClick={() => approveMutation.mutate({})}
-            >
-              {approveMutation.isPending ? 'Утверждение…' : 'Утвердить'}
+              {submitMutation.isPending ? 'Отправка…' : 'Подать на согласование'}
             </Button>
           </div>
-        </div>
-        {approveMutation.error !== null &&
-          !(approveMutation.error instanceof ConflictError) && (
+          {submitMutation.error !== null && (
             <p className="mt-2 text-sm text-destructive" role="alert">
-              {approveMutation.error instanceof ApiError
-                ? approveMutation.error.message
+              {submitMutation.error instanceof ApiError
+                ? submitMutation.error.message
                 : GENERIC_FAILURE_MESSAGE}
             </p>
           )}
-        <ConflictDialog
-          conflict={approveMutation.conflict}
-          onOverride={approveMutation.confirmOverride}
-          onCancel={approveMutation.dismissConflict}
-        />
-        <ReturnVersionDialog
-          versionId={versionId}
-          open={returnDialogOpen}
-          onClose={() => setReturnDialogOpen(false)}
-        />
-      </section>
-    )
-  }
+        </section>
+      )}
 
-  return null
+      {status === 'SUBMITTED' && (
+        <section className="mb-3.5 rounded-xl border bg-card p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">На согласовании.</p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReturnDialogOpen(true)}
+              >
+                Вернуть на доработку
+              </Button>
+              <Button
+                type="button"
+                disabled={approveMutation.isPending}
+                onClick={() => approveMutation.mutate({})}
+              >
+                {approveMutation.isPending ? 'Утверждение…' : 'Утвердить'}
+              </Button>
+            </div>
+          </div>
+          {approveMutation.error !== null &&
+            !(approveMutation.error instanceof ConflictError) && (
+              <p className="mt-2 text-sm text-destructive" role="alert">
+                {approveMutation.error instanceof ApiError
+                  ? approveMutation.error.message
+                  : GENERIC_FAILURE_MESSAGE}
+              </p>
+            )}
+          <ConflictDialog
+            conflict={approveMutation.conflict}
+            onOverride={approveMutation.confirmOverride}
+            onCancel={approveMutation.dismissConflict}
+          />
+        </section>
+      )}
+
+      <ReturnVersionDialog
+        versionId={versionId}
+        open={returnDialogOpen}
+        onClose={() => setReturnDialogOpen(false)}
+      />
+    </>
+  )
 }
 
 function NotFound({ message }: { message: string }) {

@@ -58,6 +58,9 @@ export default defineConfig({
         // сам по себе многостраничный (/duty-plans → /duty-plans/:id),
         // нужна реальная навигация через <Link>, не голый компонент.
         dutyPlan: fileURLToPath(new URL('./e2e-harness/duty-plan.html', import.meta.url)),
+        // 16.8i: полный интерактивный цикл Расстановки — тот же приём, что
+        // dutyPlan (настоящий AppRoutes, многостраничная навигация).
+        placement: fileURLToPath(new URL('./e2e-harness/placement.html', import.meta.url)),
       },
     },
   },
