@@ -189,6 +189,12 @@ codes:
     category: state
     description: "Багрепорт уже помечен разрешённым (resolved_at не пуст) — повторный resolve отклонён, чтобы второй разработчик случайно не переписал версию/формулировку первого."
     source: "epics.md Story 13.4a"
+  REPLACEMENT_NOT_FOUND:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Каскадная замена выбывшего (FR-31) не нашла кандидата ни в управлении, ни в департаменте — эскалация зафиксирована аудитом (ASSIGNMENT_REPLACEMENT_ESCALATED), новая версия не создаётся."
+    source: "epics.md FR-31; Story 17.5"
 
   # --- 422: нарушение бизнес-правила (hard) ---
   HARD_UNAVAILABLE_STATUS:

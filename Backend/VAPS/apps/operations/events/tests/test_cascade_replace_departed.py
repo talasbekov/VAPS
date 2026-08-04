@@ -3,13 +3,14 @@
 no-candidate."""
 
 import datetime
+import uuid
 
 import pytest
 
 from apps.audit.models import AuditLog
 from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
-from apps.core.models import Division, DivisionType, Employee, Organization
+from apps.core.models import Division, DivisionType, Employee, Organization, Position
 from apps.operations.events.models import (
     AssignmentVersion,
     PlacementAssignment,
@@ -112,6 +113,44 @@ def test_falls_back_to_parent_division_when_own_is_empty():
     assert row.source_division_id == parent.id
 
 
+def test_auto_search_picks_first_in_staffing_chain_order():
+    """review (Acceptance Auditor): AC-1's "следующий по штатной цепочке"
+    claim was code-correct but unproven — candidates[0] vs candidates[-1]
+    both passed every prior test (each had at most one candidate).
+    Mutation-proof: two candidates with distinct Position.level; the MORE
+    senior (lower level) one must be picked first."""
+    Position.objects.get_or_create(
+        code="SENIOR-POS", defaults={"name": "Старший", "level": 1}
+    )
+    Position.objects.get_or_create(
+        code="JUNIOR-POS", defaults={"name": "Младший", "level": 5}
+    )
+    division = make_division("DIV-ORDER")
+    departed = make_employee(division, "900101300020", position_code="SENIOR-POS")
+    junior_candidate = make_employee(
+        division, "900101300021", position_code="JUNIOR-POS"
+    )
+    senior_candidate = make_employee(
+        division, "900101300022", position_code="SENIOR-POS"
+    )
+    event = make_event("OBJ-CASC-ORDER")
+    post = make_post(event.object)
+    version = make_approved_version(event)
+    assign(version, departed.id, post)
+
+    new_version = cascade_replace_departed(
+        version,
+        actor="staff-1",
+        departed_employee_id=departed.id,
+        reason="x",
+        sanction="y",
+    )
+
+    row = new_version.assignments.get()
+    assert row.employee_id == senior_candidate.id
+    assert row.employee_id != junior_candidate.id
+
+
 def test_manual_replacement_skips_auto_search():
     division = make_division("DIV-3")
     departed = make_employee(division, "900101300005")
@@ -136,6 +175,97 @@ def test_manual_replacement_skips_auto_search():
     assert row.employee_id == manual_pick.id
     assert row.employee_id != auto_candidate.id
     assert row.source_division_id == other_division.id
+
+
+def test_manual_replacement_rejects_self_replacement():
+    """review (Edge Case Hunter): departed can't be their own replacement."""
+    division = make_division("DIV-3b")
+    departed = make_employee(division, "900101300030")
+    event = make_event("OBJ-CASC-3b")
+    post = make_post(event.object)
+    version = make_approved_version(event)
+    assign(version, departed.id, post)
+
+    with pytest.raises(DomainError):
+        cascade_replace_departed(
+            version,
+            actor="staff-1",
+            departed_employee_id=departed.id,
+            reason="x",
+            sanction="y",
+            manual_replacement_employee_id=departed.id,
+        )
+
+
+def test_manual_replacement_rejects_already_assigned_employee():
+    """review (Blind Hunter + Edge Case Hunter, независимо совпали): the
+    manual path never checked already_assigned — a caller could silently
+    double-book someone already holding another post in the version."""
+    division = make_division("DIV-3c")
+    departed = make_employee(division, "900101300031")
+    busy_employee = make_employee(division, "900101300032")
+    event = make_event("OBJ-CASC-3c")
+    post_departed = make_post(event.object, "POST-DEP")
+    post_busy = make_post(event.object, "POST-BUSY")
+    version = make_approved_version(event)
+    assign(version, departed.id, post_departed)
+    assign(version, busy_employee.id, post_busy)
+
+    with pytest.raises(DomainError):
+        cascade_replace_departed(
+            version,
+            actor="staff-1",
+            departed_employee_id=departed.id,
+            reason="x",
+            sanction="y",
+            manual_replacement_employee_id=busy_employee.id,
+        )
+
+
+def test_manual_replacement_rejects_reuse_across_multiple_posts():
+    """review (Blind Hunter + Edge Case Hunter, независимо совпали): one
+    manual replacement can't silently cover MULTIPLE posts held by the
+    departed employee in a single call."""
+    division = make_division("DIV-3d")
+    departed = make_employee(division, "900101300033")
+    manual_pick = make_employee(division, "900101300034")
+    event = make_event("OBJ-CASC-3d")
+    post_a = make_post(event.object, "POST-A")
+    post_b = make_post(event.object, "POST-B")
+    version = make_approved_version(event)
+    assign(version, departed.id, post_a)
+    assign(version, departed.id, post_b)
+
+    with pytest.raises(DomainError):
+        cascade_replace_departed(
+            version,
+            actor="staff-1",
+            departed_employee_id=departed.id,
+            reason="x",
+            sanction="y",
+            manual_replacement_employee_id=manual_pick.id,
+        )
+
+
+def test_manual_replacement_nonexistent_employee_raises_domain_error():
+    """review (Edge Case Hunter): CoreEmployeeSelector.get() must not leak
+    Employee.DoesNotExist past the service boundary."""
+    division = make_division("DIV-3e")
+    departed = make_employee(division, "900101300035")
+    event = make_event("OBJ-CASC-3e")
+    post = make_post(event.object)
+    version = make_approved_version(event)
+    assign(version, departed.id, post)
+
+    with pytest.raises(DomainError):
+        cascade_replace_departed(
+            version,
+            actor="staff-1",
+            departed_employee_id=departed.id,
+            reason="x",
+            sanction="y",
+            manual_replacement_employee_id=uuid.uuid4(),
+        )
 
 
 def test_escalates_when_no_candidate_anywhere():

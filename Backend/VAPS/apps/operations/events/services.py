@@ -22,6 +22,7 @@ import json
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import Q
 
@@ -1785,6 +1786,17 @@ def cascade_replace_departed(
     """
     if not (actor or "").strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    if (
+        manual_replacement_employee_id is not None
+        and manual_replacement_employee_id == departed_employee_id
+    ):
+        # review (Edge Case Hunter): выбывший «сам себе замена» — не
+        # ошибка Django, но бессмысленный no-op, отклоняем явно.
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            message="Замена не может совпадать с выбывшим сотрудником.",
+        )
     departed_posts = list(
         PlacementAssignment.objects.filter(
             version=version, employee_id=departed_employee_id
@@ -1802,16 +1814,53 @@ def cascade_replace_departed(
         )
     )
     already_assigned = {row.employee_id for row in other_rows}
+    if (
+        manual_replacement_employee_id is not None
+        and manual_replacement_employee_id in already_assigned
+    ):
+        # review (Blind Hunter + Edge Case Hunter, независимо совпали):
+        # ручной путь не проверял already_assigned вообще — двойное
+        # назначение молча проходило бы как SOFT-конфликт вместо отказа.
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            message="Замена уже назначена на другой пост в этой версии.",
+        )
+    try:
+        manual_replacement = (
+            CoreEmployeeSelector.get(manual_replacement_employee_id)
+            if manual_replacement_employee_id is not None
+            else None
+        )
+        departed_employee = CoreEmployeeSelector.get(departed_employee_id)
+    except ObjectDoesNotExist:
+        # review (Edge Case Hunter): CoreEmployeeSelector.get() пробрасывал
+        # сырой DoesNotExist вместо DomainError.
+        raise DomainError(
+            "VALIDATION_ERROR", 400, message="Сотрудник не найден."
+        ) from None
     on_date = Clock.today_local()
     replacements = {}
     for departed_post in departed_posts:
         if manual_replacement_employee_id is not None:
-            replacement = CoreEmployeeSelector.get(manual_replacement_employee_id)
+            if manual_replacement_employee_id in replacements.values():
+                # review (Blind Hunter + Edge Case Hunter, независимо
+                # совпали): один ручной кандидат не может закрыть НЕСКОЛЬКО
+                # постов выбывшего за один вызов — молчаливое двойное
+                # назначение.
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    400,
+                    message=(
+                        "Один ручной кандидат не может заменить несколько "
+                        "постов выбывшего за один вызов."
+                    ),
+                )
+            replacement = manual_replacement
         else:
             exclude_ids = (
                 already_assigned | {departed_employee_id} | set(replacements.values())
             )
-            departed_employee = CoreEmployeeSelector.get(departed_employee_id)
             candidates = find_replacement_candidates(
                 departed_employee.division_id, on_date, exclude_ids
             )
@@ -1831,7 +1880,7 @@ def cascade_replace_departed(
                     },
                 )
                 raise DomainError(
-                    "VALIDATION_ERROR",
+                    "REPLACEMENT_NOT_FOUND",
                     409,
                     message=(
                         "Замена не найдена ни в управлении, ни в департаменте "
@@ -1841,21 +1890,39 @@ def cascade_replace_departed(
             replacement = candidates[0]
         replacements[departed_post.pk] = replacement.id
 
+    replacement_employees = (
+        {manual_replacement.id: manual_replacement}
+        if manual_replacement_employee_id is not None
+        else {}
+    )
     assignments = []
     for row in other_rows:
-        assignments.append({"employee_id": row.employee_id, "post": row.post})
+        # review (Blind Hunter): провенанс существующих строк (допнаряд-
+        # поля, 17.4) сохраняется, не отбрасывается на каждый amendment.
+        assignments.append(
+            {
+                "employee_id": row.employee_id,
+                "post": row.post,
+                "is_unplanned": row.is_unplanned,
+                "source_division_id": row.source_division_id,
+                "source_duty_shift_id": row.source_duty_shift_id,
+            }
+        )
     for departed_post in departed_posts:
         replacement_id = replacements[departed_post.pk]
         # source_division_id — «откуда» кандидат (его СОБСТВЕННОЕ
         # подразделение), не подразделение выбывшего/события; одинаково
-        # для авто и ручного пути.
-        source_division_id = CoreEmployeeSelector.get(replacement_id).division_id
+        # для авто и ручного пути. Переиспользуем уже полученный объект
+        # там, где он есть (ручной путь) вместо повторного запроса.
+        replacement_employee = replacement_employees.get(
+            replacement_id
+        ) or CoreEmployeeSelector.get(replacement_id)
         assignments.append(
             {
                 "employee_id": replacement_id,
                 "post": departed_post.post,
                 "is_unplanned": True,
-                "source_division_id": source_division_id,
+                "source_division_id": replacement_employee.division_id,
             }
         )
 
