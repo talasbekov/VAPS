@@ -189,6 +189,61 @@ class OpsEmployeeStatus(TimeStampedModel):
         return f"{self.employee_id}:{self.status_type_code}"
 
 
+class Secondment(TimeStampedModel):
+    """Связь пары прикомандирования (порт Secondment из источника).
+
+    Откомандирование заводит штатное подразделение: сотрудник получает
+    DETACHED (остаётся «по списку» своего) И ATTACHED («+N» у принимающего).
+    Эта запись СВЯЗЫВАЕТ обе ноги, чтобы возврат закрывал их как одно целое,
+    и несёт принимающее подразделение: у строки статуса подразделения нет
+    вообще, поэтому «+N» у принимающего читается отсюда.
+
+    Отличия от источника: employee_id и оба подразделения — целые ссылки
+    старой структуры (в источнике UUID новой core). Ноги — FK PROTECT: нога
+    не исчезает из-под связи (как у StatusOverride). Проекция «+N» в расход
+    отложена, как и в источнике.
+    """
+
+    employee_id = models.IntegerField()
+    out_status = models.ForeignKey(
+        OpsEmployeeStatus, on_delete=models.PROTECT, related_name="secondment_out"
+    )
+    in_status = models.ForeignKey(
+        OpsEmployeeStatus, on_delete=models.PROTECT, related_name="secondment_in"
+    )
+    # Штатное подразделение на момент откомандирования: снимок, а не ссылка на
+    # текущее место сотрудника — перевод по штату не должен задним числом
+    # переписывать, ОТКУДА человека откомандировали.
+    from_division_id = models.IntegerField()
+    to_division_id = models.IntegerField()
+    document_basis = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "ops_status_secondments"
+        constraints = [
+            # Инвариант на уровне БД, а не только сервиса: откомандирование
+            # «в самого себя» бессмысленно, и второй писатель (импорт,
+            # будущая проекция) не должен уметь его записать.
+            models.CheckConstraint(
+                condition=~Q(from_division_id=F("to_division_id")),
+                name="chk_secondment_divisions_differ",
+            ),
+            models.CheckConstraint(
+                condition=~Q(out_status=F("in_status")),
+                name="chk_secondment_legs_differ",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["employee_id", "-created_at"],
+                name="idx_secondment_emp_created",
+            ),
+        ]
+
+    def __str__(self):
+        return f"secondment:{self.employee_id}:{self.to_division_id}"
+
+
 class StatusOverride(TimeStampedModel):
     """Запись обхода мягкого конфликта (порт Override из источника).
 
