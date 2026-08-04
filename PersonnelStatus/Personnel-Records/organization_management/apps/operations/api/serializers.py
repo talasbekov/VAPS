@@ -21,6 +21,9 @@ from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     Secondment,
 )
+from organization_management.apps.operations.models_submission import (
+    OpsDailySubmission,
+)
 from organization_management.apps.operations.validators import DUTY_ROLE_CHOICES
 
 
@@ -269,6 +272,44 @@ class StatusCancelSerializer(serializers.Serializer):
     """
 
     reason = serializers.CharField(allow_blank=False, max_length=1000)
+
+
+class DailySubmissionCreateSerializer(serializers.Serializer):
+    """Тело POST сдачи дня: ровно два параметра, которые вьюха передаёт в
+    сервис.
+
+    Бизнес-дата ОБЯЗАТЕЛЬНА и приходит явно: сдача «на завтра» — штатный
+    режим раздела, и молчаливая подстановка сегодняшней даты записала бы
+    заявление не тем днём. Окно допустимых дат проверяет сервис; здесь
+    только форма.
+
+    Идентичность в тело не входит, как и везде в разделе: submitted_by —
+    факт из контракта аутентификации, а не присланное клиентом имя.
+    """
+
+    division_id = serializers.IntegerField()
+    business_date = serializers.DateField()
+
+
+class OpsDailySubmissionSerializer(serializers.ModelSerializer):
+    """Строка сдачи наружу — БЕЗ снимка и без полей поправки.
+
+    Снимок весит десятки-сотни килобайт на подразделение и нужен читателю
+    расхода, у которого будет свой маршрут. Возвращать его в ответе на
+    запись значило бы отдавать клиенту содержимое, которое он не запрашивал,
+    умноженное на размер подразделения.
+
+    reason/sanction/triggered_by_status_id — атрибуты ПОПРАВКИ, у первичной
+    сдачи всегда пустые; их место в проекции поправки, а не здесь.
+    """
+
+    class Meta:
+        model = OpsDailySubmission
+        fields = [
+            "id", "division_id", "business_date", "version", "is_current",
+            "event", "submitted_by", "submitted_at", "late",
+        ]
+        read_only_fields = fields
 
 
 class OpsAuditLogSerializer(serializers.ModelSerializer):
