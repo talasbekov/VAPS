@@ -8,7 +8,10 @@ apps/operations/api/views.py из Backend/VAPS).
 - тела запросов проходят через сериализаторы (400 вместо KeyError→500 в
   источнике), идентичность в теле не принимается — только из аутентификации.
 """
+from django.utils.dateparse import parse_date
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
+    OpenApiParameter,
     extend_schema,
     extend_schema_serializer,
     inline_serializer,
@@ -44,14 +47,45 @@ from organization_management.apps.operations.models import (
 from organization_management.apps.operations.bulk_status_service import (
     bulk_create_statuses,
 )
+from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.selectors import DivisionTreeSelector
 from organization_management.apps.operations.services import (
     PermissionService,
     RoleAdminService,
 )
+from organization_management.apps.operations.strength_report import (
+    StrengthReportService,
+)
 
 # Право на запись статусов; им же резолвится область видимости пачки.
 _BULK_STATUS_PERMISSION = "status.manage"
+
+
+def _parse_int_param(request, name):
+    """Целочисленный query-параметр или None; мусор — 400, не 500.
+
+    Коэрция обязательна: pk старого дерева целочисленный, и строка из query
+    никогда не совпала бы с int-множеством subtree_ids — сравнение молча
+    давало бы пустой результат вместо ответа.
+    """
+    raw = request.query_params.get(name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValidationError({name: "Ожидается целое число."}) from None
+
+
+def _parse_date_param(request, name):
+    """Дата ISO из query или None; мусор — 400."""
+    raw = request.query_params.get(name)
+    if raw is None:
+        return None
+    parsed = parse_date(raw)
+    if parsed is None:
+        raise ValidationError({name: "Ожидается дата в формате ГГГГ-ММ-ДД."})
+    return parsed
 
 
 class DefaultPagination(LimitOffsetPagination):
@@ -232,14 +266,7 @@ class MyPermissionsViewSet(viewsets.ViewSet):
         actor_id = resolve_actor_id(request)
         if not actor_id:
             raise PermissionDenied("PERMISSION_DENIED")
-        division_id = request.query_params.get("division_id")
-        if division_id is not None:
-            # pk старого дерева подразделений целочисленный; строка из query
-            # без коэрции никогда не совпала бы с int-набором subtree_ids.
-            try:
-                division_id = int(division_id)
-            except ValueError:
-                raise ValidationError({"division_id": "Ожидается целое число."})
+        division_id = _parse_int_param(request, "division_id")
         perms = PermissionService.effective_permissions(
             actor_id, division_id=division_id
         )
@@ -304,3 +331,93 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             allowed_division_ids=allowed,
         )
         return Response({"created": len(created)}, status=status.HTTP_201_CREATED)
+
+
+class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/operations/strength-report/ — расход (строевая записка).
+
+    Чтение под status.view. Область видимости сужает выборку ВСЕГДА, даже
+    когда division_id не задан: безскоуповый оператор видит всё дерево,
+    скоупованный — только своё поддерево, и запрос чужого подразделения ему
+    отвечает 403, а не пустым отчётом (пустой отчёт неотличим от «там никого
+    нет» и прячет отказ).
+
+    business_date — явный параметр с умолчанием «сегодня» по Clock раздела:
+    сервис расхода часы не читает, иначе расход на вчера тихо посчитался бы
+    на сегодня.
+    """
+
+    permission_map = {"list": "status.view"}
+    http_method_names = ["get", "options"]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "business_date",
+                OpenApiTypes.DATE,
+                description="Бизнес-дата расхода; по умолчанию сегодня.",
+            ),
+            OpenApiParameter(
+                "division_id",
+                OpenApiTypes.INT,
+                description="Корень поддерева; по умолчанию вся область актора.",
+            ),
+        ],
+        responses=extend_schema_serializer(many=False)(
+            inline_serializer(
+                name="StrengthReportResponse",
+                fields={
+                    "business_date": serializers.DateField(),
+                    "columns": serializers.ListField(child=serializers.CharField()),
+                    "rows": serializers.ListField(child=serializers.DictField()),
+                    "totals": serializers.DictField(),
+                    "warnings": serializers.ListField(child=serializers.DictField()),
+                },
+            )
+        ),
+    )
+    def list(self, request, *args, **kwargs):
+        business_date = _parse_date_param(request, "business_date")
+        if business_date is None:
+            business_date = Clock.today_local()
+        division_id = _parse_int_param(request, "division_id")
+
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), "status.view"
+        )
+        if division_id is None:
+            scope = allowed  # None = глобальная видимость → всё дерево
+        else:
+            subtree = DivisionTreeSelector.subtree_ids(division_id)
+            scope = subtree if allowed is None else subtree & allowed
+            if not scope:
+                raise PermissionDenied("PERMISSION_DENIED")
+
+        report = StrengthReportService.compute(business_date, division_ids=scope)
+        columns = list(report.totals.columns)
+        return Response(
+            {
+                "business_date": report.business_date,
+                "columns": columns,
+                "rows": [
+                    {
+                        "division_id": row.division_id,
+                        "name": row.name,
+                        "staff_total": row.staff_total,
+                        "list_total": row.list_total,
+                        "vacancies": row.vacancies,
+                        "attached": row.attached,
+                        "columns": row.columns,
+                    }
+                    for row in report.rows
+                ],
+                "totals": {
+                    "staff_total": report.totals.staff_total,
+                    "list_total": report.totals.list_total,
+                    "vacancies": report.totals.vacancies,
+                    "attached": report.totals.attached,
+                    "columns": report.totals.columns,
+                },
+                "warnings": report.warnings,
+            }
+        )
