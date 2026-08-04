@@ -2574,10 +2574,10 @@ paths:
                   $ref: '#/components/schemas/JournalEntry'
           description: ''
     post:
-      operationId: security_event_journal_entries_list_2
-      description: Журнал штаба события (17.1/17.2) — все записи, хронологически.
-        Требует event.journal.view. Опц. ?entry_type=BRIEFING|DIRECTIVE|INCIDENT фильтрует
-        по типу.
+      operationId: security_event_journal_entries_create
+      description: Записать в журнал штаба (17.1/17.2) — требует event.journal.create
+        и event.status_code == IN_PROGRESS. entry_type=INCIDENT требует post; 400
+        VALIDATION_ERROR/422 INVALID_LIFECYCLE_TRANSITION из сервиса.
       parameters:
       - in: path
         name: id
@@ -2586,14 +2586,24 @@ paths:
         required: true
       tags:
       - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JournalEntryCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/JournalEntryCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/JournalEntryCreateRequest'
+        required: true
       responses:
-        '200':
+        '201':
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/JournalEntry'
+                $ref: '#/components/schemas/JournalEntry'
           description: ''
   /api/operations/security-events/{id}/passport/:
     put:
@@ -4681,6 +4691,36 @@ components:
       - participant_ids
       - photo_attachment_id
       - post
+      - text
+    JournalEntryCreateRequest:
+      type: object
+      description: |-
+        Story 17.7a: write-only request body for `POST .../journal-entries/`
+        — thin field-mapping over `create_journal_entry()` (17.1/17.2); the
+        service itself owns all business validation (entry_type/post/actor/
+        text guards, IN_PROGRESS lifecycle) — this serializer validates only
+        field PRESENCE/TYPE, same division of labor as `ReturnVersionSerializer`
+        (16.8c).
+      properties:
+        entry_type:
+          $ref: '#/components/schemas/EntryTypeEnum'
+        text:
+          type: string
+          minLength: 1
+        post:
+          type: integer
+          nullable: true
+        participant_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        photo_attachment_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - entry_type
       - text
     KindEnum:
       enum:

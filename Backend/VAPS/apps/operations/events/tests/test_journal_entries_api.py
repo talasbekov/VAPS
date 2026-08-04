@@ -2,6 +2,8 @@
 SecurityEventViewSet (create/list) + JournalEntryViewSet (detail).
 Thin wrapper over create_journal_entry() (17.1/17.2)."""
 
+import uuid
+
 import pytest
 from django.core.management import call_command
 from django.urls import reverse
@@ -110,6 +112,53 @@ def test_create_incident_with_post_succeeds(writer_client):
 
     assert resp.status_code == 201
     assert resp.data["post"] == post.pk
+
+
+def test_create_incident_with_participants_and_photo_round_trips(writer_client):
+    """review (Blind Hunter): participant_ids/photo_attachment_id were
+    accepted by the serializer but never asserted in a response."""
+    event = make_event("OBJ-JAPI-3c")
+    post = make_post(event.object)
+    participant = str(uuid.uuid4())
+    photo = str(uuid.uuid4())
+
+    resp = writer_client.post(
+        journal_url(event),
+        {
+            "entry_type": "INCIDENT",
+            "text": "x",
+            "post": post.pk,
+            "participant_ids": [participant],
+            "photo_attachment_id": photo,
+        },
+    )
+
+    assert resp.status_code == 201
+    assert resp.data["participant_ids"] == [participant]
+    assert resp.data["photo_attachment_id"] == photo
+
+
+def test_list_returns_entries_in_chronological_order(reader_client, writer_client):
+    """review (Blind Hunter): the endpoint claims chronological ordering
+    (JournalEntry.Meta.ordering) but no test pinned it directly."""
+    event = make_event("OBJ-JAPI-3d")
+    first = writer_client.post(
+        journal_url(event), {"entry_type": "BRIEFING", "text": "1"}
+    ).data
+    second = writer_client.post(
+        journal_url(event), {"entry_type": "DIRECTIVE", "text": "2"}
+    ).data
+    third = writer_client.post(
+        journal_url(event), {"entry_type": "BRIEFING", "text": "3"}
+    ).data
+
+    resp = reader_client.get(journal_url(event))
+
+    assert [row["id"] for row in resp.data] == [
+        first["id"],
+        second["id"],
+        third["id"],
+    ]
 
 
 def test_list_journal_entries(reader_client, writer_client):

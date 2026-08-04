@@ -4,7 +4,7 @@ baseline_commit: c7be721
 
 # Story 17.7a: API — журнал штаба
 
-Status: review
+Status: done
 
 ## Story
 
@@ -74,15 +74,17 @@ Claude Sonnet 5
 
 Реализовано по AC 1-8. `journal_entries`-action на `SecurityEventViewSet` (GET+POST, буквальный образец `direct_assignments`), `JournalEntryViewSet` (retrieve-only). Найдено при прогоне `make gate`: (1) `test_matrix_covers_every_registered_route` (RBAC-матрица) и `test_audit_matrix_covers_every_mutating_route` требовали строк для двух новых роутов — добавлены (`_MethodGate` для journal-entries, т.к. GET/POST гейтятся РАЗНЫМИ кодами — `event.journal.view`/`event.journal.create`; `_Gate("event.journal.view")` для detail); (2) permission-гейт стоял ПОСЛЕ `_get_event_or_404()` — анонимный/безправый actor получал 404 вместо 403 на несуществующем pk (RBAC-матрица ловит ЭТО как поведенческий тест, не только структурный) — порядок исправлен на permission-ДО-404, тот же порядок, что у остальных `@action`'ов этого ViewSet. `schema.yaml` перегенерирован (+123 строки — новые сериализаторы/эндпоинты). `make gate` — 4041 passed (было 4001 после закрытия 17.6's ревью), 0 regressions, ruff чист, drift-check чист.
 
+После ревью (3 агента): Acceptance Auditor — PASS на всех 8 AC, независимо перепроверил guard-порядок, RBAC/audit-матрицы, out-of-scope. Все три агента (Blind Hunter/Edge Case Hunter/Auditor) независимо совпали на ОДНОМ реальном дефекте: два `@extend_schema`-декоратора на ОДНОМ combined GET+POST `@action` — ПЕРВЫЙ декоратор был БЕЗ `methods=["GET"]` (только второй нёс `methods=["POST"]`), из-за чего drf-spectacular применил первый декоратор к ОБОИМ методам и авто-суффиксировал коллизию (`..._list_2`) — сгенерированная OpenAPI-схема POST-эндпоинта показывала ЧУЖОЙ ответ (200/массив вместо 201/объект), при корректном рантайм-поведении (тесты зелёные). Найдено сверкой с буквальным прецедентом (`direct_assignments`, 16.8) — тот ЯВНО несёт `methods=["GET"]` на первом декораторе, мой код этого не сделал. Закрыт добавлением `methods=["GET"]`. Также приняты 2 находки Blind Hunter: `participant_ids`/`photo_attachment_id` никогда не проверялись в ответе (закрыт тестом round-trip), хронологический порядок списка заявлен в description, но не закреплён тестом (закрыт тестом на 3 записи). Остальные находки (пагинация, валидация `?entry_type=`-мусора, лимит на `participant_ids`) отклонены — либо соответствуют существующей конвенции того же ViewSet (`direct_assignments` тоже без пагинации), либо преждевременная валидация без прецедента в кодовой базе. `make gate` — 4043 passed (было 4041), 0 regressions, ruff чист, drift-check чист.
+
 ### File List
 
 - `Backend/VAPS/apps/operations/events/api/serializers.py` (modified — `JournalEntrySerializer`, `JournalEntryCreateSerializer`)
-- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `SecurityEventViewSet.journal_entries`, `JournalEntryViewSet`)
+- `Backend/VAPS/apps/operations/events/api/views.py` (modified — `SecurityEventViewSet.journal_entries`, `JournalEntryViewSet`; после ревью — `methods=["GET"]` на первом `@extend_schema`)
 - `Backend/VAPS/apps/operations/api/urls.py` (modified — `journal-entries`-роутер)
-- `Backend/VAPS/apps/operations/events/tests/test_journal_entries_api.py` (new — 10 тестов)
+- `Backend/VAPS/apps/operations/events/tests/test_journal_entries_api.py` (new — 10 тестов dev + 2 после ревью)
 - `Backend/VAPS/apps/operations/tests/test_rbac_matrix.py` (modified — 2 новые строки матрицы)
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 1 новая строка матрицы)
-- `Backend/VAPS/schema.yaml` (regenerated)
+- `Backend/VAPS/schema.yaml` (regenerated дважды — dev + review-фикс operationId-коллизии)
 
 ## Change Log
 
@@ -90,3 +92,4 @@ Claude Sonnet 5
 |---|---|
 | 2026-08-04 | Story создана (create-story), часть декомпозиции 17.7 (research подтвердил: `AssignmentVersionViewSet`/router УЖЕ существуют реально, RBAC уже сеяна — 17.7 расширяет существующую инфраструктуру, не строит с нуля). |
 | 2026-08-04 | Dev-story: `journal_entries`-action + `JournalEntryViewSet` + сериализаторы + роутинг + 10 новых тестов. Побочный фикс: RBAC/audit-матрицы + guard-порядок (permission ДО 404). `make gate` — 4041 passed, 0 regressions. Status → review. |
+| 2026-08-04 | Review закрыт (3 агента, независимо совпали). Acceptance Auditor — PASS. Реальный дефект: `@extend_schema`-коллизия (POST наследовал GET-схему) — закрыт добавлением `methods=["GET"]` на первом декораторе (сверка с `direct_assignments`-прецедентом). 2 теста добавлены (participant_ids/photo round-trip, хронологический порядок). `make gate` — 4043 passed, 0 regressions. Status → done. |

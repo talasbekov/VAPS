@@ -437,7 +437,7 @@ class SecurityEventViewSet(viewsets.ViewSet):
 
     @extend_schema(
         operation_id="security_event_journal_entries_list",
-        request=None,
+        methods=["GET"],
         responses={200: JournalEntrySerializer(many=True)},
         description="Журнал штаба события (17.1/17.2) — все записи, "
         "хронологически. Требует event.journal.view. Опц. "
@@ -445,13 +445,13 @@ class SecurityEventViewSet(viewsets.ViewSet):
     )
     @extend_schema(
         operation_id="security_event_journal_entries_create",
+        methods=["POST"],
         request=JournalEntryCreateSerializer,
         responses={201: JournalEntrySerializer},
         description="Записать в журнал штаба (17.1/17.2) — требует "
         "event.journal.create и event.status_code == IN_PROGRESS. "
         "entry_type=INCIDENT требует post; 400 VALIDATION_ERROR/422 "
         "INVALID_LIFECYCLE_TRANSITION из сервиса.",
-        methods=["POST"],
     )
     @action(detail=True, methods=["get", "post"], url_path="journal-entries")
     def journal_entries(self, request, pk=None, *args, **kwargs):
