@@ -10,15 +10,17 @@ status_service.py из Backend/VAPS: create_status и cancel_status со все�
 правка метаданных/интервала (update_status).
 
 НЕ портировано в этом срезе (осознанно, отдельными кусками):
-complete_status_early/extend_status, догон материализации, увольнение,
-прикомандирование. Аудит мутаций (в источнике — record(...)) здесь НЕ
-вызывается: у старого проекта свой apps.audit, склейка — отдельный срез;
-пока факты пишутся без аудит-следа раздела.
+extend_status, догон материализации.
+
+Каждая мутация пишет событие в журнал РАЗДЕЛА (audit_service) — в той же
+транзакции, что и сама запись: откатился факт — откатилась и строка о нём.
+Старый apps.audit при этом не трогается, он о другом (см. models_audit).
 """
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 
 from organization_management.apps.employees.models import Employee
+from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.conflict_matrix import detect_conflicts
 from organization_management.apps.operations.exceptions import DomainError
@@ -280,6 +282,13 @@ def create_status(
     # чисто, IntegrityError уходит наверх. Запись обхода — в ТОМ ЖЕ
     # savepoint: статус и обход коммитятся или откатываются вместе, и обход
     # создаётся ТОЛЬКО когда мягкий конфликт реально обойдён.
+    #
+    # Событие журнала — тоже ЗДЕСЬ, а не после блока: у create_status своей
+    # внешней транзакции нет, и в автокоммите запись снаружи ушла бы отдельным
+    # оператором — упав, она оставила бы уже закоммиченный статус без строки о
+    # нём. ЧЕСТНО: тестом это не закреплено и закрепить нечем — под django_db
+    # весь тест идёт в одной транзакции, и вынос вызова за savepoint остаётся
+    # зелёным (проверено красной пробой). Держится доводом, не пробой.
     with transaction.atomic():
         status.save()
         if override and bypassed_conflicts:
@@ -291,6 +300,17 @@ def create_status(
                 conflicts=_conflict_details(bypassed_conflicts),
                 created_by=actor,
             )
+        audit_service.record(
+            actor=actor,
+            action=audit_service.STATUS_CREATED,
+            entity_type=audit_service.ENTITY_STATUS,
+            entity_id=status.pk,
+            new_value=audit_service.status_snapshot(status),
+            # Причина обхода — часть рассказа о создании: строка записана
+            # ПОВЕРХ предупреждения, и через год это единственный след того,
+            # почему пересечение сочли допустимым.
+            reason=override_reason if (override and bypassed_conflicts) else "",
+        )
     return status
 
 
@@ -389,6 +409,10 @@ def update_status(
             exclude_pk=locked.pk,
         )
 
+    # Снимок «до» снимается ДО первого setattr: после него locked уже несёт
+    # новые значения, и «до» с «после» стали бы одинаковыми.
+    before = audit_service.status_snapshot(locked)
+
     changed = []
     for field, value in (
         ("date_start", date_start),
@@ -407,6 +431,17 @@ def update_status(
         # переписал бы source и генерируемый period чужими значениями.
         with transaction.atomic():
             locked.save(update_fields=changed)
+            audit_service.record(
+                actor=actor,
+                action=audit_service.STATUS_UPDATED,
+                entity_type=audit_service.ENTITY_STATUS,
+                entity_id=locked.pk,
+                old_value=before,
+                new_value=audit_service.status_snapshot(locked),
+            )
+    # Правка, ничего не изменившая (PATCH без полей), события НЕ пишет:
+    # журнал рассказывает о случившемся, а «до» и «после» тут совпадают —
+    # такая строка засоряла бы ленту событием без содержания.
     return locked
 
 
@@ -465,10 +500,19 @@ def complete_status_early(status, *, actor, actual_end):
             },
             message="Дата завершения должна быть позже даты начала статуса.",
         )
+    before = audit_service.status_snapshot(locked)
     locked.date_end = actual_end
     # update_fields, а не голый save(): голый переписал бы source и
     # генерируемый period чужими значениями.
     locked.save(update_fields=["date_end", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.STATUS_COMPLETED,
+        entity_type=audit_service.ENTITY_STATUS,
+        entity_id=locked.pk,
+        old_value=before,
+        new_value=audit_service.status_snapshot(locked),
+    )
     return locked
 
 
@@ -499,6 +543,7 @@ def cancel_status(status, *, actor, reason):
             detail={"state": str(state)},
             message="Отменить можно только не начавшийся (PLANNED) статус.",
         )
+    before = audit_service.status_snapshot(locked)
     locked.cancelled_at = Clock.now()
     locked.cancelled_by = actor
     locked.cancelled_reason = reason
@@ -509,5 +554,14 @@ def cancel_status(status, *, actor, reason):
             "cancelled_reason",
             "updated_at",
         ]
+    )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.STATUS_CANCELLED,
+        entity_type=audit_service.ENTITY_STATUS,
+        entity_id=locked.pk,
+        old_value=before,
+        new_value=audit_service.status_snapshot(locked),
+        reason=reason,
     )
     return locked

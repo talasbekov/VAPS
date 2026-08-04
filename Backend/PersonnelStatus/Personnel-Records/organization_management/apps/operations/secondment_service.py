@@ -17,8 +17,13 @@ create_status — операция оператора со своим гардо
 выводится из статусов.
 
 НЕ портировано (отдельными кусками): проекция «+N» в расход — как и в
-источнике, где она отложена. Аудит раздела здесь не зовётся, как и во всех
-срезах переезда.
+источнике, где она отложена.
+
+Журнал раздела ведётся по общему правилу покрытия (audit_service): событие на
+каждую записанную СТРОКУ. Откомандирование пишет три (обе ноги и пару),
+возврат — тоже три (закрытие каждой ноги и саму пару). Одной строки «на
+операцию» мало: у ног пары тогда была бы пустая лента, хотя это обычные
+статусы, которые видно в расходе и в карточке сотрудника.
 
 Отличия от источника:
 - штатное подразделение берётся из ШТАТНОЙ ЕДИНИЦЫ (у старого Employee своего
@@ -32,6 +37,7 @@ from datetime import timedelta
 
 from django.db import transaction
 
+from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_status import (
@@ -159,7 +165,7 @@ def initiate_secondment(
         document_basis=document_basis,
         created_by=actor,
     )
-    return Secondment.objects.create(
+    secondment = Secondment.objects.create(
         employee_id=employee_id,
         out_status=out_status,
         in_status=in_status,
@@ -168,6 +174,24 @@ def initiate_secondment(
         document_basis=document_basis,
         created_by=actor,
     )
+    # Ноги пишутся как обычные созданные статусы: они и есть обычные статусы,
+    # просто созданные не оператором поштучно, а этой операцией.
+    for leg in (out_status, in_status):
+        audit_service.record(
+            actor=actor,
+            action=audit_service.STATUS_CREATED,
+            entity_type=audit_service.ENTITY_STATUS,
+            entity_id=leg.pk,
+            new_value=audit_service.status_snapshot(leg),
+        )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.SECONDMENT_INITIATED,
+        entity_type=audit_service.ENTITY_SECONDMENT,
+        entity_id=secondment.pk,
+        new_value=audit_service.secondment_snapshot(secondment),
+    )
+    return secondment
 
 
 def _lock_secondment(secondment):
@@ -208,10 +232,23 @@ def _end_leg_tomorrow(leg, *, actor, today):
     """
     _require_actor(actor)
     _, locked = _lock_for_edit(leg)
+    before = audit_service.status_snapshot(locked)
     locked.date_end = today + timedelta(days=1)
     # update_fields, а не голый save(): голый переписал бы source и
     # генерируемый period чужими значениями.
     locked.save(update_fields=["date_end", "updated_at"])
+    # STATUS_COMPLETED, а не STATUS_UPDATED: нога не «поправлена», а закрыта —
+    # это конец её действия. Пишется ЗДЕСЬ, у самой записи, чтобы у ноги,
+    # закрытой возвратом, лента была такой же непустой, как у ноги отменённой
+    # (её событие пишет cancel_status).
+    audit_service.record(
+        actor=actor,
+        action=audit_service.STATUS_COMPLETED,
+        entity_type=audit_service.ENTITY_STATUS,
+        entity_id=locked.pk,
+        old_value=before,
+        new_value=audit_service.status_snapshot(locked),
+    )
     return locked
 
 
@@ -236,10 +273,19 @@ def request_return(secondment, *, actor):
             detail={"secondment_id": locked.pk},
             message="Возврат уже запрошен или подтверждён.",
         )
+    before = audit_service.secondment_snapshot(locked)
     locked.return_requested_at = Clock.now()
     locked.return_requested_by = actor
     locked.save(
         update_fields=["return_requested_at", "return_requested_by", "updated_at"]
+    )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.SECONDMENT_RETURN_REQUESTED,
+        entity_type=audit_service.ENTITY_SECONDMENT,
+        entity_id=locked.pk,
+        old_value=before,
+        new_value=audit_service.secondment_snapshot(locked),
     )
     return locked
 
@@ -288,9 +334,22 @@ def confirm_return(secondment, *, actor, reason=""):
                 leg, actor=actor, reason=reason or "возврат из прикомандирования"
             )
         # Завершённая или отменённая нога уже закрыта — закрывать нечего.
+    before = audit_service.secondment_snapshot(locked)
     locked.return_confirmed_at = Clock.now()
     locked.return_confirmed_by = actor
     locked.save(
         update_fields=["return_confirmed_at", "return_confirmed_by", "updated_at"]
+    )
+    # События самих ног пишут закрывшие их вызовы выше (_end_leg_tomorrow и
+    # cancel_status) — здесь только событие ПАРЫ. Дублировать их тут значило
+    # бы записать закрытие ноги дважды разными словами.
+    audit_service.record(
+        actor=actor,
+        action=audit_service.SECONDMENT_RETURNED,
+        entity_type=audit_service.ENTITY_SECONDMENT,
+        entity_id=locked.pk,
+        old_value=before,
+        new_value=audit_service.secondment_snapshot(locked),
+        reason=reason,
     )
     return locked
