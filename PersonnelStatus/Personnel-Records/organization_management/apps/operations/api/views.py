@@ -216,7 +216,11 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
 class UserRoleViewSet(viewsets.ViewSet):
     pagination_class = DefaultPagination
 
-    @extend_schema(responses=UserRoleSerializer(many=True))
+    @extend_schema(
+        responses=paginated_response_schema(
+            "PaginatedUserRoleList", UserRoleSerializer(many=True)
+        )
+    )
     def list(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
         qs = UserRole.objects.all().order_by("user_id")
@@ -259,7 +263,11 @@ class UserRoleViewSet(viewsets.ViewSet):
 
 
 class TemporaryDutyViewSet(viewsets.ViewSet):
-    @extend_schema(responses=TemporaryDutySerializer(many=True))
+    @extend_schema(
+        responses=paginated_response_schema(
+            "PaginatedTemporaryDutyList", TemporaryDutySerializer(many=True)
+        )
+    )
     def list(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
         qs = TemporaryDutyPermission.objects.all().order_by("-starts_at")
