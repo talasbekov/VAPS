@@ -28,12 +28,14 @@ from organization_management.apps.operations.api.serializers import (
     GrantTemporaryDutyRequestSerializer,
     PermissionSerializer,
     RoleSerializer,
+    StatusTypeSerializer,
     TemporaryDutySerializer,
     UserRoleSerializer,
 )
 from organization_management.apps.operations.models import (
     Permission,
     Role,
+    StatusType,
     TemporaryDutyPermission,
     UserRole,
 )
@@ -177,6 +179,28 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
             return Response(status=status.HTTP_404_NOT_FOUND)
         RoleAdminService.expire_temporary_duty(pk)
         return Response({"expired": True}, status=status.HTTP_200_OK)
+
+
+class StatusTypeViewSet(viewsets.ReadOnlyModelViewSet):
+    """Справочник типов статусов — чтение под правом status.view.
+
+    Каталог, а не бизнес-данные: гейт мягче, чем admin.roles, потому что
+    словарь нужен каждому, кто вообще видит статусы. Правка каталога —
+    только сидом (канон пересинхронизируется из кода), поэтому запись здесь
+    не открыта.
+    """
+
+    serializer_class = StatusTypeSerializer
+    pagination_class = DefaultPagination
+    queryset = StatusType.objects.all()
+
+    def list(self, request, *args, **kwargs):
+        require_permission(request, "status.view")
+        return super().list(request, *args, **kwargs)
+
+    def retrieve(self, request, *args, **kwargs):
+        require_permission(request, "status.view")
+        return super().retrieve(request, *args, **kwargs)
 
 
 class MyPermissionsViewSet(viewsets.ViewSet):

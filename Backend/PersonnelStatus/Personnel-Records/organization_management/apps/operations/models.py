@@ -20,6 +20,13 @@ from django.db import models
 
 from organization_management.apps.operations.validators import DUTY_ROLE_CHOICES
 
+# Справочник типов статусов живёт отдельным модулем (провенанс порта виден в
+# его докстринге), но должен быть импортирован здесь: Django ищет модели
+# приложения через models.
+from organization_management.apps.operations.status_types import (  # noqa: F401,E402
+    StatusType,
+)
+
 
 class TimeStampedModel(models.Model):
     """База с целочисленным PK и таймстампами для таблиц раздела ОМ."""

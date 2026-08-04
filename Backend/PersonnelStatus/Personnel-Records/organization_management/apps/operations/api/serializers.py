@@ -12,6 +12,7 @@ from rest_framework import serializers
 from organization_management.apps.operations.models import (
     Permission,
     Role,
+    StatusType,
     TemporaryDutyPermission,
     UserRole,
 )
@@ -72,3 +73,18 @@ class GrantTemporaryDutyRequestSerializer(serializers.Serializer):
                 {"ends_at": "Окончание должно быть позже начала."}
             )
         return attrs
+
+
+class StatusTypeSerializer(serializers.ModelSerializer):
+    """Справочник типов статусов. legacy_code отдаётся наружу намеренно:
+    потребитель, читающий данные старой системы, должен уметь сопоставить
+    строку со словарём без второго источника правды."""
+
+    class Meta:
+        model = StatusType
+        fields = [
+            "code", "name", "legacy_code", "priority", "report_column_code",
+            "is_hard_block", "restricts_editing", "counts_in_list",
+            "counts_in_staff", "is_ku_owned", "max_duration_days", "color",
+            "is_active",
+        ]
