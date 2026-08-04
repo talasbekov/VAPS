@@ -88,3 +88,38 @@ class StatusTypeSerializer(serializers.ModelSerializer):
             "counts_in_staff", "is_ku_owned", "max_duration_days", "color",
             "is_active",
         ]
+
+
+# Предел одной пачки: массовое обновление одного подразделения — это десятки
+# строк; тысяча уже говорит об ошибке интеграции, а не о работе оператора.
+MAX_BULK_ROWS = 1000
+
+
+class BulkStatusCreateRowSerializer(serializers.Serializer):
+    """Одна строка-отклонение пачки.
+
+    Четыре обязательных ключа зеркалят _REQUIRED_ROW_KEYS сервиса: их
+    отсутствие ловится ДО сервиса и даёт 400 с указанием поля. employee_id —
+    целый pk старых employees (в источнике UUID).
+    """
+
+    employee_id = serializers.IntegerField()
+    status_type_code = serializers.CharField(max_length=50)
+    date_start = serializers.DateField()
+    date_end = serializers.DateField()
+    comment = serializers.CharField(required=False, allow_blank=True)
+    document_basis = serializers.CharField(required=False, allow_blank=True)
+    source_ref = serializers.CharField(required=False, allow_blank=True)
+
+
+class BulkStatusCreateSerializer(serializers.Serializer):
+    """Тело POST массового создания статусов.
+
+    Без division_id: область видимости берётся из RBAC актора, а не из тела
+    запроса — фронту здесь не доверяем.
+    """
+
+    business_date = serializers.DateField()
+    rows = BulkStatusCreateRowSerializer(
+        many=True, allow_empty=False, max_length=MAX_BULK_ROWS
+    )
