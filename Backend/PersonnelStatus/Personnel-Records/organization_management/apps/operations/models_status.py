@@ -189,6 +189,53 @@ class OpsEmployeeStatus(TimeStampedModel):
         return f"{self.employee_id}:{self.status_type_code}"
 
 
+class SecondmentState(models.TextChoices):
+    """Стадия рукопожатия возврата — выводится из фактов, не хранится."""
+
+    INITIATED = "INITIATED"  # откомандирован, возврат не запрашивали
+    RETURN_REQUESTED = "RETURN_REQUESTED"  # запрошен, ждёт подтверждения
+    RETURNED = "RETURNED"  # подтверждён, ноги закрыты
+
+
+def derive_secondment_state(return_requested_at, return_confirmed_at):
+    """Канон стадии — единственный источник правды и для @property, и для
+    аннотации queryset (как у выводимого состояния статуса).
+
+    Подтверждение проверяется первым: оно старше запроса по смыслу, и порядок
+    «запрос → подтверждение» держит база, а не этот вывод.
+    """
+    if return_confirmed_at is not None:
+        return SecondmentState.RETURNED
+    if return_requested_at is not None:
+        return SecondmentState.RETURN_REQUESTED
+    return SecondmentState.INITIATED
+
+
+class SecondmentQuerySet(models.QuerySet):
+    def with_state(self):
+        """Аннотация state_annotation (SQL Case/When), зеркалящая канон.
+
+        Ею же фильтруют по стадии: второй набор условий разошёлся бы с
+        выводом, и ответ на фильтр перестал бы совпадать с полем в строке.
+        Названа иначе, чем @property state: property — data descriptor и
+        затенил бы одноимённую аннотацию.
+        """
+        return self.annotate(
+            state_annotation=Case(
+                When(
+                    return_confirmed_at__isnull=False,
+                    then=Value(SecondmentState.RETURNED.value),
+                ),
+                When(
+                    return_requested_at__isnull=False,
+                    then=Value(SecondmentState.RETURN_REQUESTED.value),
+                ),
+                default=Value(SecondmentState.INITIATED.value),
+                output_field=models.CharField(),
+            )
+        )
+
+
 class Secondment(TimeStampedModel):
     """Связь пары прикомандирования (порт Secondment из источника).
 
@@ -225,6 +272,17 @@ class Secondment(TimeStampedModel):
     return_requested_by = models.CharField(max_length=255, null=True, blank=True)
     return_confirmed_at = models.DateTimeField(null=True, blank=True)
     return_confirmed_by = models.CharField(max_length=255, null=True, blank=True)
+
+    objects = SecondmentQuerySet.as_manager()
+
+    State = SecondmentState
+
+    @property
+    def state(self):
+        """Стадия рукопожатия (зеркало with_state)."""
+        return derive_secondment_state(
+            self.return_requested_at, self.return_confirmed_at
+        )
 
     class Meta:
         db_table = "ops_status_secondments"
