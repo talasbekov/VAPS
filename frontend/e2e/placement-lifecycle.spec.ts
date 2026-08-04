@@ -229,7 +229,7 @@ async function stubApi(page: Page) {
     },
   )
 
-  return { versions, nextAssignmentId }
+  return { versions }
 }
 
 test('полный цикл: список → деталь → подать → вернуть → новый драфт → подать → утвердить (с конфликтом) → отметить ознакомление', async ({

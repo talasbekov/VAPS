@@ -182,6 +182,13 @@ function LifecycleActions({
                   : GENERIC_FAILURE_MESSAGE}
               </p>
             )}
+          {/* Story 16.8i (review, Blind Hunter): still nested here, UNLIKE
+              ReturnVersionDialog — safe today because approve success has no
+              pending post-mutation effect for THIS dialog to lose (conflict
+              lives in useApiMutation, cleared before the override retry;
+              nothing here awaits mutation.data to fire a side effect). If
+              approve's onSuccess ever grows one, apply the same fix: hoist
+              this dialog outside the status conditional. */}
           <ConflictDialog
             conflict={approveMutation.conflict}
             onOverride={approveMutation.confirmOverride}
