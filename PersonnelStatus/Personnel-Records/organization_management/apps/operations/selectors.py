@@ -118,6 +118,22 @@ class StaffUnitSelector:
     """Знаменатель расхода — штатные слоты старой структуры."""
 
     @staticmethod
+    def divisions_of(employee_ids):
+        """{employee_id: division_id} по штатным единицам, ОДИН запрос.
+
+        Подразделение сотрудника в старой структуре живёт ТОЛЬКО в штатной
+        единице (у Employee своего division_id нет), поэтому здесь общий
+        источник области видимости и для пачки, и для одиночной правки:
+        сотрудник без слота отсутствует в ответе и не попадает ни в чью
+        область (fail-closed — решение принимает вызывающий).
+        """
+        return dict(
+            StaffUnit.objects.filter(employee_id__in=list(employee_ids)).values_list(
+                "employee_id", "division_id"
+            )
+        )
+
+    @staticmethod
     def slots_with_working_occupants(division_ids=None):
         """([{division_id, employee_id|None}], {id уволенных в слотах}).
 

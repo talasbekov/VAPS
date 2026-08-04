@@ -31,9 +31,11 @@ from organization_management.apps.operations.api.serializers import (
     AssignRoleRequestSerializer,
     BulkStatusCreateSerializer,
     GrantTemporaryDutyRequestSerializer,
+    OpsEmployeeStatusSerializer,
     PermissionSerializer,
     RoleSerializer,
     StatusTypeSerializer,
+    StatusUpdateSerializer,
     TemporaryDutySerializer,
     UserRoleSerializer,
 )
@@ -48,11 +50,17 @@ from organization_management.apps.operations.bulk_status_service import (
     bulk_create_statuses,
 )
 from organization_management.apps.operations.clock import Clock
-from organization_management.apps.operations.selectors import DivisionTreeSelector
+from organization_management.apps.operations.exceptions import DomainError
+from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.selectors import (
+    DivisionTreeSelector,
+    StaffUnitSelector,
+)
 from organization_management.apps.operations.services import (
     PermissionService,
     RoleAdminService,
 )
+from organization_management.apps.operations.status_service import update_status
 from organization_management.apps.operations.strength_report import (
     StrengthReportService,
 )
@@ -274,24 +282,112 @@ class MyPermissionsViewSet(viewsets.ViewSet):
 
 
 class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """POST /api/operations/statuses/bulk/ — массовое создание статусов.
+    """Статусы раздела ОМ: массовое создание и поштучная правка.
 
-    Тонкая вьюха поверх готового сервиса: сериализатор → резолв области
-    видимости из RBAC → вызов сервиса → 201 {created}. Ни бизнес-логики, ни
-    детекта конфликтов здесь нет — всё в bulk_status_service; DomainError
-    сервиса (400/403/404/409/422) уходит наверх и становится конвертом в
-    ops_exception_handler, вьюха его НЕ ловит.
+    POST /api/operations/statuses/bulk/  — пачка (срез 6)
+    PATCH /api/operations/statuses/{id}/ — правка интервала и метаданных
+
+    Тонкая вьюха поверх готовых сервисов: сериализатор → резолв области
+    видимости из RBAC → вызов сервиса. Ни бизнес-логики, ни детекта
+    конфликтов здесь нет; DomainError сервиса (400/403/404/409/422) уходит
+    наверх и становится конвертом в ops_exception_handler, вьюха его НЕ
+    ловит.
 
     Грубый гейт права — RequirePermissionMixin (status.manage); тонкую
-    построчную область энфорсит сервис по allowed_division_ids, которое вьюха
-    резолвит из RBAC актора: пришедшему из тела запроса подразделению здесь
-    не верят.
+    область видимости энфорсят: у пачки — сервис построчно, у правки —
+    _assert_status_in_scope ниже. Оба резолвят её из RBAC актора: подразделению
+    из тела запроса здесь не верят.
     """
 
-    permission_map = {"bulk": _BULK_STATUS_PERMISSION}
-    # Минимальная поверхность: только POST bulk. Чтение статусов — отдельный
-    # срез, поэтому GET здесь не открыт.
-    http_method_names = ["post", "options"]
+    permission_map = {
+        "bulk": _BULK_STATUS_PERMISSION,
+        "partial_update": _BULK_STATUS_PERMISSION,
+    }
+    # Поверхность: пачка и правка. Чтение статусов — отдельный срез, поэтому
+    # GET здесь не открыт; PUT не открыт намеренно (полная замена строки
+    # переписала бы неизменяемые поля — правка только частичная).
+    http_method_names = ["post", "patch", "options"]
+
+    def _assert_status_in_scope(self, request, status_row):
+        """Область видимости правимой строки — из RBAC актора.
+
+        Подразделение берётся по сотруднику строки через общий селектор (тот
+        же, которым область считает пачка). None = безскоуповый/wildcard грант
+        → всё дерево. Сотрудник без штатной единицы не принадлежит ничьей
+        области — 403 (fail-closed, как в пачке).
+
+        Отказ по области — DomainError → конверт {error_code}; отказ гейта
+        права — PermissionDenied DRF → {detail}. Формы РАЗНЫЕ намеренно: оба
+        403, и без различения тест одного зеленел бы от другого.
+        """
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _BULK_STATUS_PERMISSION
+        )
+        if allowed is None:
+            return
+        division_id = StaffUnitSelector.divisions_of([status_row.employee_id]).get(
+            status_row.employee_id
+        )
+        if division_id not in allowed:
+            raise DomainError(
+                "PERMISSION_DENIED",
+                403,
+                detail={"employee_id": str(status_row.employee_id)},
+                message="Сотрудник вне области видимости оператора.",
+            )
+
+    @extend_schema(
+        # Тип параметра пути объявлен явно: у ViewSet нет queryset, и без
+        # этого spectacular вывел бы "string" (и предупредил бы об этом).
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id строки статуса.",
+            )
+        ],
+        request=StatusUpdateSerializer,
+        responses={200: OpsEmployeeStatusSerializer},
+        description=(
+            "Правка статуса: интервал (date_start/date_end) и метаданные "
+            "(comment/document_basis). Смена типа, сотрудника и фактов "
+            "отмены запрещена — 400 с указанием поля; пустое тело — тоже "
+            "400. 403 — нет права status.manage либо сотрудник вне области "
+            "оператора; 404 — строки нет; 409 — мягкое пересечение (обхода "
+            "у правки нет); 422 — жёсткое пересечение, интервал, границы "
+            "найма, строка проекции или отменённая (терминальная) строка."
+        ),
+    )
+    def partial_update(self, request, pk=None, *args, **kwargs):
+        form = StatusUpdateSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        # pk из пути — произвольная строка роутера: int() до запроса, иначе
+        # мусорный идентификатор ушёл бы ValueError → 500 вместо 404.
+        try:
+            status_id = int(pk)
+        except (TypeError, ValueError):
+            status_id = None
+        status_row = (
+            OpsEmployeeStatus.objects.filter(pk=status_id).first()
+            if status_id is not None
+            else None
+        )
+        if status_row is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"status_id": str(pk)},
+                message="Статус не найден.",
+            )
+        self._assert_status_in_scope(request, status_row)
+        updated = update_status(
+            status_row,
+            # Актор — из контракта аутентификации, НИКОГДА из тела запроса.
+            actor=resolve_actor_id(request),
+            **form.validated_data,
+        )
+        return Response(OpsEmployeeStatusSerializer(updated).data)
 
     @extend_schema(
         request=BulkStatusCreateSerializer,

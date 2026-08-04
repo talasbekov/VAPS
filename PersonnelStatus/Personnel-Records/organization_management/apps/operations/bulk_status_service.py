@@ -39,12 +39,12 @@ from organization_management.apps.operations.conflict_matrix import detect_confl
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models import StatusType
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.selectors import StaffUnitSelector
 from organization_management.apps.operations.status_service import (
     _conflict_details,
     _require_actor,
     _validate_interval,
 )
-from organization_management.apps.staff_unit.models import StaffUnit
 
 # Ключи, которые обязана нести каждая строка payload. Ниже они читаются через
 # `[]`, поэтому отсутствие ключа дало бы KeyError → 500; проверка формы
@@ -70,12 +70,13 @@ def _lock_employees(employee_ids):
 
 
 def _divisions_of(employee_ids):
-    """{employee_id: division_id} по штатным единицам, ОДИН запрос."""
-    return dict(
-        StaffUnit.objects.filter(employee_id__in=list(employee_ids)).values_list(
-            "employee_id", "division_id"
-        )
-    )
+    """{employee_id: division_id} — ОДИН запрос через общий селектор.
+
+    Одиночная правка через API резолвит область тем же селектором: правило
+    «подразделение живёт в штатной единице, сотрудник без слота вне области»
+    не должно разъехаться между массовым и поштучным путём.
+    """
+    return StaffUnitSelector.divisions_of(employee_ids)
 
 
 def _overlaps(existing_rows, date_start, date_end):
