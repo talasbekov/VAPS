@@ -100,7 +100,13 @@ export default function DutiesPage() {
             <div>
               <h1 className="text-2xl font-bold">План дежурств</h1>
               <p className="text-muted-foreground">
-                Суточные дежурства и месячный план
+                Суточные дежурства и месячный план ·{" "}
+                <Link
+                  href="/security-ops/duties/combat"
+                  className="text-primary underline"
+                >
+                  Боевые группы на Трассе
+                </Link>
               </p>
             </div>
           </div>
