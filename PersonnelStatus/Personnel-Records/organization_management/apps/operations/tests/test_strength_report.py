@@ -157,14 +157,45 @@ class TestDeriveReport:
         assert (row.staff_total, row.list_total, row.vacancies) == (3, 1, 2)
         assert row.columns["IN_SERVICE"] == 1
 
-    def test_attached_is_outside_the_list(self):
+    def test_occupant_outside_staff_leaves_the_list(self):
+        # НАШ слот занят НАШИМ человеком, который сегодня не по нашему списку:
+        # он в знаменателе (Штат == Список + Вне списка + Вакансии), но ни в
+        # одну колонку списка не попадает. Это не «+N» — см. соседний тест.
         rows = [fact("ATTACHED", employee_id=2)]
         result = derive_report(self._slots(1, 2), rows, TODAY, catalog())
         row = result.rows[0]
-        assert row.attached == 1
+        assert row.off_list == 1
+        assert row.attached == 0
         assert row.list_total == 1
-        # Прикомандированный не попал ни в одну колонку списка.
+        assert row.staff_total == row.list_total + row.off_list + row.vacancies
         assert sum(row.columns.values()) == 1
+
+    def test_attached_is_added_on_top_of_the_staff(self):
+        # «+N» приходит проекцией пар, а не из слотов: он не занимает штат, не
+        # входит в список и не попадает в колонки.
+        result = derive_report(
+            self._slots(1, None), [], TODAY, catalog(), attached_by_division={1: 2}
+        )
+        row = result.rows[0]
+        assert row.attached == 2
+        assert (row.staff_total, row.list_total, row.vacancies) == (2, 1, 1)
+        assert row.staff_total == row.list_total + row.off_list + row.vacancies
+        assert sum(row.columns.values()) == row.list_total
+        assert result.totals.attached == 2
+
+    def test_division_with_only_attached_still_appears(self):
+        # Иначе приданные исчезли бы из расхода вовсе: у принимающего своих
+        # слотов под них нет по определению.
+        result = derive_report(
+            self._slots(1, division_id=1),
+            [],
+            TODAY,
+            catalog(),
+            attached_by_division={2: 3},
+        )
+        rows = {row.division_id: row for row in result.rows}
+        assert set(rows) == {1, 2}
+        assert (rows[2].staff_total, rows[2].list_total, rows[2].attached) == (0, 0, 3)
 
     def test_totals_sum_across_divisions(self):
         slots = self._slots(1, None, division_id=1) + self._slots(
@@ -448,3 +479,168 @@ class TestStrengthReportEndpoint:
     def test_post_is_not_served(self, seeded_catalog, division):
         api, _ = client_for("viewer-post", "VIEWER", ["status.view"])
         assert api.post(REPORT_URL, {}, format="json").status_code == 405
+
+
+# ── Проекция «+N» ────────────────────────────────────────────────────────
+
+def second(employee, host_division, start=TODAY, end=TODAY + timedelta(days=10)):
+    """Пара прикомандирования через сервис — так же, как её создаст оператор."""
+    from organization_management.apps.operations.secondment_service import (
+        initiate_secondment,
+    )
+
+    with clock.override(TODAY):
+        return initiate_secondment(
+            employee.id,
+            to_division_id=host_division.id,
+            date_start=start,
+            date_end=end,
+            actor="7",
+        )
+
+
+@pytest.fixture
+def secondment_catalog(seeded_catalog):
+    """Каталог расхода плюс тип DETACHED: пара пишет обе ноги, и без второго
+    типа сервис откомандирования не прошёл бы справочник."""
+    StatusType.objects.create(
+        code="DETACHED",
+        name="DETACHED",
+        priority=40,
+        report_column_code="DETACHED",
+        counts_in_staff=True,
+    )
+
+
+@pytest.mark.django_db
+class TestAttachedProjection:
+    def test_host_sees_plus_n_and_home_keeps_the_person(
+        self, secondment_catalog, division
+    ):
+        host = Division.objects.create(name="Управление 2")
+        make_employee(host)  # у принимающего есть свой штат
+        employee = make_employee(division)
+        second(employee, host)
+
+        result = StrengthReportService.compute(TODAY)
+        rows = {row.division_id: row for row in result.rows}
+        # Принимающий: «+N» сверх своего штата, знаменатель не тронут.
+        assert rows[host.id].attached == 1
+        assert (rows[host.id].staff_total, rows[host.id].list_total) == (1, 1)
+        # Штатное: человек остался ПО СПИСКУ, но в колонке «откомандирован».
+        assert rows[division.id].attached == 0
+        assert rows[division.id].list_total == 1
+        assert rows[division.id].columns["DETACHED"] == 1
+        assert result.totals.attached == 1
+
+    def test_attached_follows_the_leg_not_the_confirmation(
+        self, secondment_catalog, division
+    ):
+        # Счёт идёт по ЖИВОЙ ноге: подтверждённый возврат закрывает её
+        # завтрашним днём, поэтому сегодня человек ещё «+N», а завтра уже нет.
+        from organization_management.apps.operations.secondment_service import (
+            confirm_return,
+            request_return,
+        )
+
+        host = Division.objects.create(name="Управление 2")
+        employee = make_employee(division)
+        secondment = second(employee, host)
+        with clock.override(TODAY):
+            request_return(secondment, actor="7")
+            confirm_return(secondment, actor="8")
+
+        today_rows = {
+            row.division_id: row for row in StrengthReportService.compute(TODAY).rows
+        }
+        tomorrow_rows = {
+            row.division_id: row
+            for row in StrengthReportService.compute(TODAY + timedelta(days=1)).rows
+        }
+        assert today_rows[host.id].attached == 1
+        # Своих слотов у принимающего нет: без «+N» строки не будет вовсе.
+        assert host.id not in tomorrow_rows
+
+    def test_not_started_pair_is_not_counted_yet(self, secondment_catalog, division):
+        host = Division.objects.create(name="Управление 2")
+        employee = make_employee(division)
+        second(
+            employee,
+            host,
+            start=TODAY + timedelta(days=3),
+            end=TODAY + timedelta(days=5),
+        )
+        rows = {row.division_id: row for row in StrengthReportService.compute(TODAY).rows}
+        assert host.id not in rows
+        # Внутри интервала — считается: отсутствие выше это дата, а не поломка.
+        later = {
+            row.division_id: row
+            for row in StrengthReportService.compute(TODAY + timedelta(days=3)).rows
+        }
+        assert later[host.id].attached == 1
+
+    def test_cancelled_leg_is_not_counted(self, secondment_catalog, division):
+        host = Division.objects.create(name="Управление 2")
+        employee = make_employee(division)
+        secondment = second(employee, host)
+        before = {
+            row.division_id: row for row in StrengthReportService.compute(TODAY).rows
+        }
+        assert before[host.id].attached == 1
+
+        OpsEmployeeStatus.objects.filter(pk=secondment.in_status_id).update(
+            cancelled_at=clock.Clock.now()
+        )
+        after = {
+            row.division_id: row for row in StrengthReportService.compute(TODAY).rows
+        }
+        # Отменённая нога — «записи нет»: строки принимающего не остаётся.
+        assert host.id not in after
+
+    def test_scope_hides_foreign_attached(self, secondment_catalog, division):
+        # Расход ОДНОГО подразделения не показывает приданных соседа.
+        host = Division.objects.create(name="Управление 2")
+        employee = make_employee(division)
+        second(employee, host)
+        result = StrengthReportService.compute(TODAY, division_ids={division.id})
+        assert [row.division_id for row in result.rows] == [division.id]
+        assert result.totals.attached == 0
+        # Тому же принимающему его «+N» виден.
+        host_result = StrengthReportService.compute(TODAY, division_ids={host.id})
+        assert host_result.totals.attached == 1
+
+    def test_query_count_stays_constant_with_attached(
+        self, secondment_catalog, division
+    ):
+        host = Division.objects.create(name="Управление 2")
+        for _ in range(3):
+            second(make_employee(division), host)
+        with CaptureQueriesContext(connection) as few:
+            StrengthReportService.compute(TODAY)
+        for _ in range(20):
+            second(make_employee(division), host)
+        with CaptureQueriesContext(connection) as many:
+            StrengthReportService.compute(TODAY)
+        assert len(few) == len(many), (
+            f"N+1 на приданных: 3 пары — {len(few)} запросов, 23 — {len(many)}"
+        )
+        assert len(many) <= 7
+
+
+@pytest.mark.django_db
+class TestAttachedInEndpoint:
+    def test_response_carries_attached_and_off_list(
+        self, secondment_catalog, division
+    ):
+        api, _ = client_for("viewer-attached", "VIEWER", ["status.view"])
+        host = Division.objects.create(name="Управление 2")
+        make_employee(host)
+        second(make_employee(division), host)
+        with clock.override(TODAY):
+            response = api.get(REPORT_URL)
+        assert response.status_code == 200
+        rows = {row["division_id"]: row for row in response.data["rows"]}
+        assert rows[host.id]["attached"] == 1
+        assert rows[host.id]["off_list"] == 0
+        assert response.data["totals"]["attached"] == 1
+        assert response.data["totals"]["off_list"] == 0

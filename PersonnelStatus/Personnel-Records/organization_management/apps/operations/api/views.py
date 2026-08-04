@@ -1077,6 +1077,7 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                         "list_total": row.list_total,
                         "vacancies": row.vacancies,
                         "attached": row.attached,
+                        "off_list": row.off_list,
                         "columns": row.columns,
                     }
                     for row in report.rows
@@ -1086,6 +1087,7 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "list_total": report.totals.list_total,
                     "vacancies": report.totals.vacancies,
                     "attached": report.totals.attached,
+                    "off_list": report.totals.off_list,
                     "columns": report.totals.columns,
                 },
                 "warnings": report.warnings,

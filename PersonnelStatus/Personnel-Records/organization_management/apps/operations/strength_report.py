@@ -19,9 +19,13 @@ counts_in_staff) — расходиться нечему. Порядок кол�
 принадлежит подразделению и может быть занят сотрудником. Отсюда:
 
     Штат = число слотов
-    Список = слоты, занятые РАБОТАЮЩИМ сотрудником (минус прикомандированные)
+    Список = слоты, занятые РАБОТАЮЩИМ сотрудником (минус вне списка)
     Вакансии = слоты пустые ИЛИ занятые уволенным
-    Штат == Список + Прикомандированные + Вакансии  (по построению)
+    Штат == Список + Вне списка + Вакансии  (по построению)
+
+Прикомандированные («+N») в это равенство НЕ входят: это люди чужого штата,
+находящиеся у нас, и своих слотов они не занимают. Их даёт проекция пар
+прикомандирования по стороне «куда».
 
 Историчности у этого знаменателя нет: старая структура хранит текущее
 состояние слотов, а история перемещений (employee_transfers) — отдельный
@@ -124,7 +128,13 @@ class DivisionReportRow:
     list_total: int
     vacancies: int
     columns: dict
+    # «+N»: приданные ИЗВНЕ — люди из чужих штатов, находящиеся у нас. Сверх
+    # штата и списка, в знаменатель не входят.
     attached: int
+    # Занятый слот, чей победитель дня не считается в штате. Это НАШ слот и
+    # НАШ человек, просто сегодня он не по нашему списку, поэтому число
+    # участвует в знаменателе (см. инвариант в derive_report).
+    off_list: int
 
 
 @dataclass(frozen=True)
@@ -134,6 +144,7 @@ class ReportTotals:
     vacancies: int
     columns: dict
     attached: int
+    off_list: int
 
 
 @dataclass(frozen=True)
@@ -145,7 +156,12 @@ class StrengthReportResult:
 
 
 def derive_report(
-    slot_rows, status_rows, on_date, catalog, division_names=None
+    slot_rows,
+    status_rows,
+    on_date,
+    catalog,
+    division_names=None,
+    attached_by_division=None,
 ):
     """Свести расход по подразделениям.
 
@@ -153,13 +169,32 @@ def derive_report(
     {division_id, employee_id|None}; employee_id=None означает вакантный или
     занятый уволенным слот (вызывающий уже решил, кто «работающий»).
     ``status_rows``: живые интервальные факты со ссылкой employee_id.
+    ``attached_by_division``: {division_id: N} приданных ИЗВНЕ — «+N»
+    принимающего подразделения.
 
-    Сходимость держится ПО ПОСТРОЕНИЮ и проверяется утверждением: Σ колонок
-    равна списку, а штат равен списку плюс прикомандированные плюс вакансии.
-    Нарушение здесь — дефект этого кода, не данных, поэтому AssertionError,
-    а не запись в warnings.
+    ДВА РАЗНЫХ ЧИСЛА, которые легко спутать:
+
+        off_list — наш слот занят нашим человеком, который сегодня не по
+            нашему списку (победитель дня — тип вне штата). Он в знаменателе.
+        attached — «+N»: человек ЧУЖОГО штата находится у нас. Своего слота у
+            нас он не занимает, поэтому в знаменатель не входит вовсе.
+
+    Отсюда инвариант, который проверяется утверждением:
+
+        Штат == Список + Вне списка + Вакансии      (всё по слотам)
+        Σ колонок == Список
+        Прикомандированные — ДОБАВКА сверх этого равенства.
+
+    Прикомандированные в колонки не попадают: колонки — разрез СПИСКА, а «+N»
+    в списке не состоит. Нарушение равенств — дефект этого кода, не данных,
+    поэтому AssertionError, а не запись в warnings.
+
+    Подразделение, у которого есть только приданные (своих слотов нет),
+    строкой всё равно появляется: иначе «+N» было бы некуда положить и люди
+    исчезли бы из расхода вообще.
     """
     names = division_names or {}
+    attached_counts = dict(attached_by_division or {})
     columns_order = catalog.columns_in_order()
     rows_by_employee = {}
     for row in status_rows:
@@ -170,17 +205,21 @@ def derive_report(
         slots_by_division.setdefault(slot["division_id"], []).append(
             slot["employee_id"]
         )
+    for division_id in attached_counts:
+        slots_by_division.setdefault(division_id, [])
 
     report_rows, warnings = [], []
     totals_columns = {column: 0 for column in columns_order}
-    totals_staff = totals_list = totals_vacancies = totals_attached = 0
+    totals_staff = totals_list = totals_vacancies = 0
+    totals_attached = totals_off_list = 0
 
     for division_id in sorted(
         slots_by_division, key=lambda d: (names.get(d, ""), str(d))
     ):
         occupants = slots_by_division[division_id]
         columns = {column: 0 for column in columns_order}
-        attached = vacancies = 0
+        attached = attached_counts.get(division_id, 0)
+        off_list = vacancies = 0
         for employee_id in occupants:
             if employee_id is None:
                 vacancies += 1
@@ -189,7 +228,7 @@ def derive_report(
                 rows_by_employee.get(employee_id, ()), on_date, catalog
             )
             if not catalog.counts_in_staff.get(winner, True):
-                attached += 1
+                off_list += 1
                 continue
             column = catalog.column[winner]
             if column not in columns:
@@ -202,16 +241,16 @@ def derive_report(
             columns[column] += 1
 
         staff_total = len(occupants)
-        list_total = staff_total - vacancies - attached
+        list_total = staff_total - vacancies - off_list
         if sum(columns.values()) != list_total:
             raise AssertionError(
                 f"расход нарушил Σ колонок == Список для {division_id}: "
                 f"{sum(columns.values())} != {list_total}"
             )
-        if staff_total != list_total + attached + vacancies:
+        if staff_total != list_total + off_list + vacancies:
             raise AssertionError(
-                f"расход нарушил Штат == Список + Прикомандированные + "
-                f"Вакансии для {division_id}"
+                f"расход нарушил Штат == Список + Вне списка + Вакансии "
+                f"для {division_id}"
             )
 
         report_rows.append(
@@ -223,6 +262,7 @@ def derive_report(
                 vacancies=vacancies,
                 columns=columns,
                 attached=attached,
+                off_list=off_list,
             )
         )
         for column, count in columns.items():
@@ -231,13 +271,13 @@ def derive_report(
         totals_list += list_total
         totals_vacancies += vacancies
         totals_attached += attached
+        totals_off_list += off_list
 
     if sum(totals_columns.values()) != totals_list:
         raise AssertionError("расход нарушил Σ колонок == Список в итогах")
-    if totals_staff != totals_list + totals_attached + totals_vacancies:
+    if totals_staff != totals_list + totals_off_list + totals_vacancies:
         raise AssertionError(
-            "расход нарушил Штат == Список + Прикомандированные + Вакансии "
-            "в итогах"
+            "расход нарушил Штат == Список + Вне списка + Вакансии в итогах"
         )
 
     return StrengthReportResult(
@@ -249,6 +289,7 @@ def derive_report(
             vacancies=totals_vacancies,
             columns=totals_columns,
             attached=totals_attached,
+            off_list=totals_off_list,
         ),
         warnings=warnings,
     )
@@ -270,6 +311,7 @@ class StrengthReportService:
         from organization_management.apps.operations.selectors import (
             DivisionTreeSelector,
             EmployeeStatusSelector,
+            SecondmentSelector,
             StaffUnitSelector,
             StatusTypeSelector,
         )
@@ -284,11 +326,22 @@ class StrengthReportService:
         status_rows = EmployeeStatusSelector.overlapping_on(
             business_date, employee_ids=employee_ids
         )
+        # «+N» принимающих подразделений: сужается тем же множеством, что и
+        # слоты, — иначе расход одного подразделения показал бы приданных
+        # соседа.
+        attached = SecondmentSelector.attached_counts_on(
+            business_date, division_ids=division_ids
+        )
         names = DivisionTreeSelector.names_map(
-            {slot["division_id"] for slot in slot_rows}
+            {slot["division_id"] for slot in slot_rows} | set(attached)
         )
         result = derive_report(
-            slot_rows, status_rows, business_date, catalog, division_names=names
+            slot_rows,
+            status_rows,
+            business_date,
+            catalog,
+            division_names=names,
+            attached_by_division=attached,
         )
         if dismissed:
             # Слот, занятый уволенным, посчитан вакансией — арифметика сходится,

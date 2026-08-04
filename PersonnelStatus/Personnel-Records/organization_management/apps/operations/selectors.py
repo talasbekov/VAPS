@@ -6,10 +6,15 @@ MPTT): переезд «женит» новый RBAC со старым дере�
 вместо mptt-запросов намеренно — children_map() переносится один-в-один и
 переживёт будущую смену модели дерева.
 """
+from django.db.models import Count
+
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.models import StatusType, UserRole
-from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.models_status import (
+    OpsEmployeeStatus,
+    Secondment,
+)
 from organization_management.apps.staff_unit.models import StaffUnit
 
 
@@ -111,6 +116,35 @@ class EmployeeStatusSelector:
             queryset.values(
                 "employee_id", "status_type_code", "date_start", "date_end"
             )
+        )
+
+
+class SecondmentSelector:
+    """Пакетное чтение пар прикомандирования для агрегации."""
+
+    @staticmethod
+    def attached_counts_on(on_date, division_ids=None):
+        """{to_division_id: N} прикомандированных на дату, ОДИН запрос.
+
+        Считает ЖИВАЯ ЛИ НОГА ATTACHED на эту дату — не факты возврата: у
+        подтверждённого возврата нога закрыта датой, и «до какого дня человек
+        числится у принимающего» решает ровно её интервал. Читать вместо
+        этого return_confirmed_at значило бы завести второе правило о том же
+        и разойтись с ним на день возврата.
+
+        Отменённая нога не существует для расхода — тот же предикат, которым
+        её не видит выборка статусов.
+        """
+        queryset = Secondment.objects.filter(
+            in_status__cancelled_at__isnull=True,
+            in_status__period__contains=on_date,
+        )
+        if division_ids is not None:
+            queryset = queryset.filter(to_division_id__in=list(division_ids))
+        return dict(
+            queryset.values("to_division_id")
+            .annotate(count=Count("id"))
+            .values_list("to_division_id", "count")
         )
 
 
