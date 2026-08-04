@@ -400,6 +400,68 @@ def update_status(
     return locked
 
 
+# Ноги пары прикомандирования: их закрытие не должно упираться в гард
+# откомандированного (строка ограничивает — и заблокировала бы сама себя).
+_SECONDMENT_LEG_CODES = ("DETACHED", "ATTACHED")
+
+
+@transaction.atomic
+def complete_status_early(status, *, actor, actual_end):
+    """Закрыть ИДУЩИЙ (ACTIVE) статус фактической датой окончания.
+
+    Досрочно закрывается только ACTIVE: не начавшийся статус не случился —
+    его отменяют, завершённый уже закрыт. Факт не бывает в будущем
+    (actual_end ≤ сегодня), и интервал остаётся непустым: полуинтервал
+    [начало, окончание) не умеет закрывать статус днём его начала — такая
+    строка означала бы «не было вовсе», а это отмена, другая операция.
+
+    Возвращает перечитанную под блокировкой строку; переданный объект НЕ
+    мутируется — так же ведут себя update_status и cancel_status. ОТЛИЧИЕ ОТ
+    ИСТОЧНИКА: там гарды читаются с блокированной строки, а сохраняется
+    ПЕРЕДАННЫЙ объект — устаревшая копия переписала бы свежие факты.
+
+    Гард откомандированного (FR-16) не зовётся для самих ног пары
+    прикомандирования: закрытие ограничивающей строки заблокировало бы себя.
+    Для ПРОЧИХ типов гард действует — откомандированному чужие статусы не
+    закрывают, как и не правят.
+    """
+    _require_actor(actor)
+    _, locked = _lock_for_edit(status)
+    if locked.status_type_code not in _SECONDMENT_LEG_CODES:
+        assert_employee_status_editable(locked.employee_id)
+    today = Clock.today_local()
+    state = locked.state_on(today)
+    if state != OpsEmployeeStatus.LifecycleState.ACTIVE:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"state": str(state)},
+            message="Досрочно завершить можно только идущий (ACTIVE) статус.",
+        )
+    if actual_end > today:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"actual_end": str(actual_end), "today": str(today)},
+            message="Дата фактического завершения не может быть в будущем.",
+        )
+    if actual_end <= locked.date_start:
+        raise DomainError(
+            "INVALID_DATE_RANGE",
+            422,
+            detail={
+                "actual_end": str(actual_end),
+                "date_start": str(locked.date_start),
+            },
+            message="Дата завершения должна быть позже даты начала статуса.",
+        )
+    locked.date_end = actual_end
+    # update_fields, а не голый save(): голый переписал бы source и
+    # генерируемый period чужими значениями.
+    locked.save(update_fields=["date_end", "updated_at"])
+    return locked
+
+
 @transaction.atomic
 def cancel_status(status, *, actor, reason):
     """Отменить не начавшийся (PLANNED) статус — факты отмены append-once.
