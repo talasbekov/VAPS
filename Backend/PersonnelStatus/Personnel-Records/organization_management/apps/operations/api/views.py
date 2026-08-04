@@ -31,8 +31,10 @@ from organization_management.apps.operations.api.permissions import (
 from organization_management.apps.operations.api.serializers import (
     AssignRoleRequestSerializer,
     BulkStatusCreateSerializer,
+    DailySubmissionAmendSerializer,
     DailySubmissionCreateSerializer,
     GrantTemporaryDutyRequestSerializer,
+    OpsDailySubmissionAmendedSerializer,
     OpsDailySubmissionSerializer,
     OpsAuditLogSerializer,
     OpsEmployeeStatusSerializer,
@@ -59,6 +61,7 @@ from organization_management.apps.operations.bulk_status_service import (
 )
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.day_submission_service import (
+    amend_day,
     submit_day,
 )
 from organization_management.apps.operations.exceptions import DomainError
@@ -66,6 +69,9 @@ from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     Secondment,
     SecondmentState,
+)
+from organization_management.apps.operations.models_submission import (
+    OpsDailySubmission,
 )
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.selectors import (
@@ -104,6 +110,8 @@ _READ_STATUS_PERMISSION = "status.view"
 # и одним кодом их объединять значило бы выдать каждому отмечающему право
 # задним числом менять подписанное.
 _SUBMIT_DAY_PERMISSION = "daily_report.mark_update"
+# Право на поправку сданного — своё («корректировка суточного отчёта»).
+_AMEND_DAY_PERMISSION = "daily_report.correct"
 
 
 def _parse_int_param(request, name):
@@ -1310,7 +1318,8 @@ class AuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
 class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """Сдача дня подразделением.
 
-    POST /api/operations/daily-submissions/ — сдать день
+    POST /api/operations/daily-submissions/         — сдать день
+    POST /api/operations/daily-submissions/{id}/amend/ — поправить сданное
 
     Тонкая вьюха поверх сервиса: форма тела → область записи → вызов. Окно
     дат, повторная сдача, событие и отметка опоздания живут в
@@ -1319,13 +1328,19 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     Чтения здесь пока нет намеренно: список и деталь со снимком — отдельный
     срез со своей областью видимости, и открывать их заодно с записью
-    значило бы отдать снимок раньше, чем решено, кому он виден. Право на
-    запись — daily_report.mark_update («отметки в суточном отчёте»);
-    поправка сданного дня пойдёт под своим daily_report.correct, потому что
-    сдать день и переписать сданное — разные полномочия.
+    значило бы отдать снимок раньше, чем решено, кому он виден.
+
+    ПРАВА У ДВУХ ДЕЙСТВИЙ РАЗНЫЕ: сдача под daily_report.mark_update
+    («отметки в суточном отчёте»), поправка под daily_report.correct
+    («корректировка») — сдать день и переписать сданное разные полномочия,
+    и общий код выдал бы право задним числом менять подписанное каждому,
+    кому разрешили отмечать.
     """
 
-    permission_map = {"create": _SUBMIT_DAY_PERMISSION}
+    permission_map = {
+        "create": _SUBMIT_DAY_PERMISSION,
+        "amend": _AMEND_DAY_PERMISSION,
+    }
     # GET/PATCH/DELETE не открыты: сдача иммутабельна, а её единственная
     # законная «правка» — поправка отдельным действием со своей причиной.
     http_method_names = ["post", "options"]
@@ -1359,5 +1374,79 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
         return Response(
             OpsDailySubmissionSerializer(submission).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def _get_submission_or_404(self, pk):
+        """Строка сдачи по pk из пути; отсутствующая или нечисловая — 404.
+
+        int() ДО запроса, как у статусов и пар: мусорный идентификатор ушёл
+        бы ValueError → 500 вместо 404.
+        """
+        try:
+            submission_id = int(pk)
+        except (TypeError, ValueError):
+            submission_id = None
+        row = (
+            OpsDailySubmission.objects.filter(pk=submission_id).first()
+            if submission_id is not None
+            else None
+        )
+        if row is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"submission_id": str(pk)},
+                message="Сдача не найдена.",
+            )
+        return row
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id ЛЮБОЙ версии дня — поправляется цепочка.",
+            )
+        ],
+        request=DailySubmissionAmendSerializer,
+        responses={201: OpsDailySubmissionAmendedSerializer},
+        description=(
+            "Поправить сданный день: пишется НОВАЯ версия со свежим снимком, "
+            "прежняя сохраняется целиком. Причина и санкция обязательны. "
+            "403 — нет права daily_report.correct либо подразделение вне "
+            "области оператора; 404 — версии с таким id нет; 409 — гонка "
+            "поправок; 422 — день не сдан (поправлять нечего)."
+        ),
+    )
+    @action(detail=True, methods=["post"])
+    def amend(self, request, pk=None, *args, **kwargs):
+        form = DailySubmissionAmendSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        # {id} адресует ЦЕПОЧКУ, а не версию: голову сервис перерезолвит сам,
+        # поэтому ссылка на устаревшую версию поправляет тот же день. Иначе
+        # клиенту пришлось бы сначала выяснять текущий номер версии — а
+        # выяснять его пока негде, чтения сдач ещё нет.
+        submission = self._get_submission_or_404(pk)
+        # Область — по подразделению НАЙДЕННОЙ строки: подразделение в теле
+        # не принимается, иначе поправку можно было бы адресовать одному
+        # дню, а гейт пройти по другому.
+        _assert_division_in_scope(
+            request, submission.division_id, _AMEND_DAY_PERMISSION,
+            field="division_id",
+        )
+        amended = amend_day(
+            division_id=submission.division_id,
+            business_date=submission.business_date,
+            # Актор — из контракта аутентификации, НИКОГДА из тела запроса.
+            actor=resolve_actor_id(request),
+            reason=form.validated_data["reason"],
+            sanction=form.validated_data["sanction"],
+            # triggered_by_status_id остаётся None: происхождение поправки
+            # ставит система, а не клиент (см. сериализатор).
+        )
+        return Response(
+            OpsDailySubmissionAmendedSerializer(amended).data,
             status=status.HTTP_201_CREATED,
         )
