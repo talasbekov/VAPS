@@ -45,6 +45,18 @@ interface Version {
   assignments: Assignment[]
 }
 
+interface JournalEntry {
+  id: number
+  event: number
+  entry_type: 'BRIEFING' | 'DIRECTIVE' | 'INCIDENT'
+  text: string
+  post: number | null
+  participant_ids: string[]
+  photo_attachment_id: string | null
+  created_by: string | null
+  created_at: string
+}
+
 function paginated<T>(results: T[]) {
   return { count: results.length, next: null, previous: null, results }
 }
@@ -229,6 +241,80 @@ async function stubApi(page: Page) {
     },
   )
 
+  // Story 17.7e — журнал штаба (17.7a/17.7c).
+  const journalEntries: JournalEntry[] = []
+  let nextJournalEntryId = 1
+
+  await page.route(
+    /\/api\/operations\/security-events\/(\d+)\/journal-entries\/$/,
+    async (route) => {
+      const eventId = Number(
+        route.request().url().match(/security-events\/(\d+)\/journal-entries/)?.[1],
+      )
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          json: journalEntries.filter((e) => e.event === eventId),
+        })
+        return
+      }
+      const body = JSON.parse(route.request().postData() ?? '{}') as {
+        entry_type: 'BRIEFING' | 'DIRECTIVE'
+        text: string
+      }
+      const entry: JournalEntry = {
+        id: nextJournalEntryId++,
+        event: eventId,
+        entry_type: body.entry_type,
+        text: body.text,
+        post: null,
+        participant_ids: [],
+        photo_attachment_id: null,
+        created_by: 'placement-operator-e2e',
+        created_at: '2026-08-04T10:30:00Z',
+      }
+      journalEntries.push(entry)
+      await route.fulfill({ status: 201, json: entry })
+    },
+  )
+
+  // Story 17.7e — каскадная замена выбывшего (17.7b/17.7d).
+  await page.route(
+    /\/api\/operations\/assignment-versions\/(\d+)\/replace-departed\/$/,
+    async (route) => {
+      const id = Number(
+        route.request().url().match(/assignment-versions\/(\d+)\/replace-departed/)?.[1],
+      )
+      const version = versions.find((v) => v.id === id)!
+      const body = JSON.parse(route.request().postData() ?? '{}') as {
+        departed_employee_id?: string
+        reason?: string
+        sanction?: string
+      }
+      version.is_current = false
+      const replacement: Version = {
+        id: nextVersionId++,
+        event: version.event,
+        status: 'APPROVED',
+        version: version.version + 1,
+        is_current: true,
+        signature_hash: 'e2e-replacement-signature',
+        created_at: '2026-08-04T10:45:00Z',
+        updated_at: '2026-08-04T10:45:00Z',
+        assignments: version.assignments.map((a) =>
+          a.employee_id === body.departed_employee_id
+            ? {
+                ...a,
+                id: nextAssignmentId++,
+                employee_id: '99999999-9999-9999-9999-999999999999',
+              }
+            : { ...a, id: nextAssignmentId++ },
+        ),
+      }
+      versions.push(replacement)
+      await route.fulfill({ status: 201, json: replacement })
+    },
+  )
+
   return { versions }
 }
 
@@ -268,10 +354,22 @@ test('полный цикл: список → деталь → подать → 
   await page.getByRole('button', { name: 'Утвердить' }).click()
   await expect(page.getByRole('heading', { name: /Утверждена/ })).toBeVisible()
 
+  // 5.5. Story 17.7e (AC-1): написать запись в журнал штаба через
+  // РЕАЛЬНУЮ форму (17.7c) — jsdom-тесты уже покрывают все ветки/ошибки,
+  // здесь только happy-path в настоящем браузере.
+  await page.getByRole('combobox').selectOption('DIRECTIVE')
+  await page.getByPlaceholder('Текст записи').fill('Усилить контроль на посту №2')
+  await page.getByRole('button', { name: 'Добавить запись' }).click()
+  await expect(page.getByText('Усилить контроль на посту №2')).toBeVisible()
+
   // 6. Отметить ознакомление.
   await page.getByRole('button', { name: 'Отметить ознакомление' }).click()
   await expect(page.getByRole('button', { name: 'Отметить ознакомление' })).toHaveCount(0)
-  await expect(page.getByText(/2026/)).toBeVisible()
+  // review-note (пробел этой стори): журнал-запись (шаг 5.5) теперь ТОЖЕ
+  // несёт "2026" в своей метке времени — /2026/ на всей странице стал
+  // неоднозначным, скоуп на таблицу назначений сохраняет исходную
+  // проверку узкой.
+  await expect(page.getByRole('table').getByText(/2026/)).toBeVisible()
 })
 
 test('утверждение с реальным конфликтом требует override через ConflictDialog', async ({
@@ -294,5 +392,29 @@ test('утверждение с реальным конфликтом требу
     .fill('Разрешено вручную после проверки состава')
   await conflictDialog.getByRole('button', { name: /Подтвердить/ }).click()
   await expect(conflictDialog).not.toBeVisible()
+  await expect(page.getByRole('heading', { name: /Утверждена/ })).toBeVisible()
+})
+
+test('Story 17.7e (AC-2): «Снять и заменить» — реальный <dialog>, редирект на новую версию', async ({
+  page,
+}) => {
+  const { versions } = await stubApi(page)
+  // Начинаем сразу с APPROVED+текущей — та же экономия, что 16.8i's
+  // конфликт-сценарий (submit/approve через UI уже покрыты первым тестом).
+  versions[0].status = 'APPROVED'
+  await page.goto(HARNESS)
+
+  await page.getByRole('link', { name: 'Событие #5' }).click()
+  await expect(page.getByRole('heading', { name: /Утверждена/ })).toBeVisible()
+
+  await page.getByRole('button', { name: /Снять и заменить/ }).click()
+  const replaceDialog = page.getByRole('dialog')
+  await expect(replaceDialog).toBeVisible()
+  await replaceDialog.getByLabel('Причина').fill('Выбыл по болезни')
+  await replaceDialog.getByLabel('Санкция').fill('Приказ №12')
+  await replaceDialog.getByRole('button', { name: 'Заменить' }).click()
+
+  await expect(replaceDialog).not.toBeVisible()
+  await expect(page.getByRole('heading', { name: /Версия 2/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Утверждена/ })).toBeVisible()
 })
