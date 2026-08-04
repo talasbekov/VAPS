@@ -1,14 +1,29 @@
 // @vitest-environment jsdom
 // Story 16.8h2: detail page — isolated component render (not through
 // AppRoutes, routing wiring is 16.8h5's scope).
+// Story 16.8h3: page now renders lifecycle mutations (useApiMutation) —
+// ToastProvider required (образец useApiMutation.test.tsx).
 import '@testing-library/jest-dom/vitest'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { server } from '../../../shared/api/testing/server'
+import { ToastProvider } from '../../../shared/ui/toast'
 import { PlacementVersionDetailPage } from './PlacementVersionDetailPage'
+
+// jsdom не реализует <dialog> methods — прецедент ConflictDialog.test.tsx.
+if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
+  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+    this.open = true
+  }
+  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+    this.open = false
+    this.dispatchEvent(new Event('close'))
+  }
+}
 
 afterEach(cleanup)
 
@@ -16,11 +31,13 @@ function renderPage(initialPath: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[initialPath]}>
-        <Routes>
-          <Route path="/placement/:id" element={<PlacementVersionDetailPage />} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[initialPath]}>
+          <Routes>
+            <Route path="/placement/:id" element={<PlacementVersionDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }
@@ -221,5 +238,196 @@ describe('PlacementVersionDetailPage', () => {
     renderPage('/placement/7')
 
     await waitFor(() => expect(screen.getByText('Конфликтов нет.')).toBeInTheDocument())
+  })
+})
+
+function version(overrides: Record<string, unknown>) {
+  return {
+    id: 7,
+    event: 3,
+    version: 1,
+    is_current: true,
+    signature_hash: '',
+    created_at: '2026-08-01T09:00:00Z',
+    updated_at: '2026-08-01T09:00:00Z',
+    assignments: [],
+    ...overrides,
+  }
+}
+
+describe('LifecycleActions', () => {
+  it('AC-1: DRAFT shows submit, success updates status without reload', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(version({ status: 'DRAFT' })),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/assignment-versions/7/submit/', () =>
+        HttpResponse.json(version({ status: 'SUBMITTED' })),
+      ),
+    )
+    renderPage('/placement/7')
+    const submitButton = await screen.findByRole('button', {
+      name: 'Подать на согласование',
+    })
+
+    await userEvent.click(submitButton)
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /На согласовании/ }),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('AC-5: APPROVED shows no lifecycle action buttons', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(version({ status: 'APPROVED' })),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+    )
+    renderPage('/placement/7')
+
+    await waitFor(() => expect(screen.getByText(/Утверждена/)).toBeInTheDocument())
+    expect(
+      screen.queryByRole('button', { name: 'Подать на согласование' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Вернуть на доработку' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Утвердить' })).not.toBeInTheDocument()
+  })
+
+  it('AC-3: SUBMITTED approve success updates status', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(version({ status: 'SUBMITTED' })),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/assignment-versions/7/approve/', () =>
+        HttpResponse.json(version({ status: 'APPROVED', signature_hash: 'sig' })),
+      ),
+    )
+    renderPage('/placement/7')
+    const approveButton = await screen.findByRole('button', { name: 'Утвердить' })
+
+    await userEvent.click(approveButton)
+
+    await waitFor(() => expect(screen.getByText(/Утверждена/)).toBeInTheDocument())
+  })
+
+  it('AC-4: 409 SOFT_CONFLICT_DETECTED opens ConflictDialog, override retries with override:true', async () => {
+    let received: Record<string, unknown> | null = null
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(version({ status: 'SUBMITTED' })),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/assignment-versions/7/approve/', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>
+        received = body
+        if (body.override === true) {
+          return HttpResponse.json(version({ status: 'APPROVED' }))
+        }
+        return HttpResponse.json(
+          {
+            error_code: 'SOFT_CONFLICT_DETECTED',
+            message: 'Конфликт',
+            details: {},
+            request_id: null,
+            timestamp: new Date().toISOString(),
+          },
+          { status: 409 },
+        )
+      }),
+    )
+    renderPage('/placement/7')
+    const approveButton = await screen.findByRole('button', { name: 'Утвердить' })
+    await userEvent.click(approveButton)
+
+    const reasonInput = await screen.findByRole('textbox')
+    await userEvent.type(reasonInput, 'Разрешено вручную после проверки')
+    await userEvent.click(screen.getByRole('button', { name: /Подтвердить/ }))
+
+    await waitFor(() => expect(screen.getByText(/Утверждена/)).toBeInTheDocument())
+    expect(received).toMatchObject({ override: true })
+  })
+
+  it('AC-2: SUBMITTED return dialog requires reason, redirects to new_draft_version on success', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(version({ status: 'SUBMITTED' })),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.get('*/api/operations/assignment-versions/8/', () =>
+        HttpResponse.json(version({ id: 8, status: 'DRAFT', version: 2 })),
+      ),
+      http.get('*/api/operations/assignment-versions/8/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/assignment-versions/7/return/', async ({ request }) => {
+        const body = (await request.json()) as { reason?: string }
+        if (!body.reason?.trim()) {
+          return HttpResponse.json({ error_code: 'VALIDATION_ERROR' }, { status: 400 })
+        }
+        return HttpResponse.json({
+          ...version({ status: 'RETURNED' }),
+          new_draft_version: version({ id: 8, status: 'DRAFT', version: 2 }),
+        })
+      }),
+    )
+    renderPage('/placement/7')
+    const returnButton = await screen.findByRole('button', { name: 'Вернуть на доработку' })
+    await userEvent.click(returnButton)
+
+    // Client-side required guard — submit without typing anything.
+    await userEvent.click(screen.getByRole('button', { name: 'Вернуть' }))
+    expect(await screen.findByText('Укажите причину возврата.')).toBeInTheDocument()
+
+    await userEvent.type(screen.getByLabelText('Причина возврата'), 'Проверить состав')
+    await userEvent.click(screen.getByRole('button', { name: 'Вернуть' }))
+
+    await waitFor(() => expect(screen.getByText(/Версия 2/)).toBeInTheDocument())
+  })
+
+  it('AC-6: submit failure renders the error under the button', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(version({ status: 'DRAFT' })),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/assignment-versions/7/submit/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'INVALID_LIFECYCLE_TRANSITION',
+            message: 'Нельзя подать эту версию.',
+            details: {},
+            request_id: null,
+            timestamp: new Date().toISOString(),
+          },
+          { status: 422 },
+        ),
+      ),
+    )
+    renderPage('/placement/7')
+    const submitButton = await screen.findByRole('button', {
+      name: 'Подать на согласование',
+    })
+    await userEvent.click(submitButton)
+
+    expect(await screen.findByText('Нельзя подать эту версию.')).toBeInTheDocument()
   })
 })

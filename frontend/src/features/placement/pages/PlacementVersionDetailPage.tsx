@@ -1,16 +1,29 @@
 // Story 16.8h2: деталь ОДНОЙ версии Расстановки + назначения + конфликты
 // (свежий пересчёт, отдельный запрос — 16.8f). Буквальный образец скелета —
 // duty-plans/pages/DutyPlanDetailPage.tsx (useParams/isLoading/isError-not
-// -found ветки). Только чтение — действия (submit/return/approve/
-// acknowledge) вне объёма этой стори (16.8h3/h4).
+// -found ветки). Acknowledge вне объёма этой стори (16.8h4).
+// Story 16.8h3: submit/return/approve — условный рендер по `status`
+// (DRAFT→submit; SUBMITTED→return/approve), approve's 409
+// SOFT_CONFLICT_DETECTED через общий ConflictDialog (useApiMutation's
+// conflict-канал, 16.8h1).
+import { useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { Button } from '../../../shared/ui/Button'
+import { ConflictDialog } from '../../../shared/ui/ConflictDialog'
 import { ROUTES } from '../../../shared/routes'
 import { ApiError } from '../../../shared/api/errors'
-import { useAssignmentVersion, useAssignmentVersionConflicts } from '../api/queries'
+import { GENERIC_FAILURE_MESSAGE } from '../../../shared/api/useApiMutation'
+import {
+  useApproveAssignmentVersion,
+  useAssignmentVersion,
+  useAssignmentVersionConflicts,
+  useSubmitAssignmentVersion,
+} from '../api/queries'
 import type {
   AssignmentVersionConflictsResponse,
   AssignmentVersionDetailResponse,
 } from '../api/queries'
+import { ReturnVersionDialog } from './ReturnVersionDialog'
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: 'Черновик',
@@ -71,6 +84,8 @@ export function PlacementVersionDetailPage() {
         </span>
       </header>
 
+      <LifecycleActions versionId={versionId} status={version.status} />
+
       <AssignmentsTable version={version} />
       <ConflictsPanel
         isLoading={conflictsQuery.isLoading}
@@ -79,6 +94,79 @@ export function PlacementVersionDetailPage() {
       />
     </div>
   )
+}
+
+function LifecycleActions({ versionId, status }: { versionId: string; status: string }) {
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false)
+  const submitMutation = useSubmitAssignmentVersion(versionId)
+  const approveMutation = useApproveAssignmentVersion(versionId)
+
+  if (status === 'DRAFT') {
+    return (
+      <section className="mb-3.5 rounded-xl border bg-card p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Черновик готов — можно подать на согласование.
+          </p>
+          <Button
+            type="button"
+            disabled={submitMutation.isPending}
+            onClick={() => submitMutation.mutate({})}
+          >
+            {submitMutation.isPending ? 'Отправка…' : 'Подать на согласование'}
+          </Button>
+        </div>
+        {submitMutation.error !== null && (
+          <p className="mt-2 text-sm text-destructive" role="alert">
+            {submitMutation.error instanceof ApiError
+              ? submitMutation.error.message
+              : GENERIC_FAILURE_MESSAGE}
+          </p>
+        )}
+      </section>
+    )
+  }
+
+  if (status === 'SUBMITTED') {
+    return (
+      <section className="mb-3.5 rounded-xl border bg-card p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">На согласовании.</p>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => setReturnDialogOpen(true)}>
+              Вернуть на доработку
+            </Button>
+            <Button
+              type="button"
+              disabled={approveMutation.isPending}
+              onClick={() => approveMutation.mutate({})}
+            >
+              {approveMutation.isPending ? 'Утверждение…' : 'Утвердить'}
+            </Button>
+          </div>
+        </div>
+        {approveMutation.error !== null && approveMutation.conflict === null && (
+          <p className="mt-2 text-sm text-destructive" role="alert">
+            {approveMutation.error instanceof ApiError
+              ? approveMutation.error.message
+              : GENERIC_FAILURE_MESSAGE}
+          </p>
+        )}
+        <ConflictDialog
+          conflict={approveMutation.conflict}
+          onOverride={approveMutation.confirmOverride}
+          onCancel={approveMutation.dismissConflict}
+        />
+        <ReturnVersionDialog
+          versionId={versionId}
+          open={returnDialogOpen}
+          onClose={() => setReturnDialogOpen(false)}
+        />
+      </section>
+    )
+  }
+
+  return null
 }
 
 function NotFound({ message }: { message: string }) {
