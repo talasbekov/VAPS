@@ -293,7 +293,39 @@ class StaffUnitSelector:
 
 
 class DailySubmissionSelector:
-    """Чтение сдач дня — единственный канал для сервиса сдачи."""
+    """Чтение сдач дня — единственный канал для сервиса сдачи и её маршрутов."""
+
+    @staticmethod
+    def list(*, scope=None, division_id=None, business_date=None, history=False):
+        """Список сдач с ПОЛНЫМ порядком; снимок НЕ выбирается.
+
+        scope=None — область не сужает (безскоуповый или wildcard-грант),
+        иначе множество допустимых подразделений считает вьюха тем же общим
+        резолвером, что и списки статусов: двум спискам, отвечающим на вопрос
+        «что мне видно», расходиться незачем.
+
+        По умолчанию отдаются ТОЛЬКО текущие версии. История доступна флагом:
+        иначе спросивший «кто сдал за 4 августа» получил бы вперемешку
+        вытесненные заявления и не смог бы отличить их от действующих иначе
+        как вычитанием по номеру версии.
+
+        `defer("snapshot")` обязателен: снимок весит десятки-сотни килобайт на
+        строку, и страница в 50 строк вытащила бы мегабайты ради девяти полей.
+        Порядок: свежий день первым, внутри дня — свежая версия, id последним
+        разрывом ничьей (без него страничная выдача теряет и дублирует строки).
+        """
+        queryset = OpsDailySubmission.objects.all()
+        if scope is not None:
+            queryset = queryset.filter(division_id__in=scope)
+        if division_id is not None:
+            queryset = queryset.filter(division_id=division_id)
+        if business_date is not None:
+            queryset = queryset.filter(business_date=business_date)
+        if not history:
+            queryset = queryset.filter(is_current=True)
+        return queryset.defer("snapshot").order_by(
+            "-business_date", "division_id", "-version", "id"
+        )
 
     @staticmethod
     def exists_for(division_id, business_date):

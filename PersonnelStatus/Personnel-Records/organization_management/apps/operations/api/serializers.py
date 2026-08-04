@@ -352,6 +352,23 @@ class OpsDailySubmissionAmendedSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class OpsDailySubmissionDetailSerializer(serializers.ModelSerializer):
+    """Одна сдача целиком — ЕДИНСТВЕННЫЙ канал, отдающий снимок.
+
+    Снимок здесь не роскошь, а смысл маршрута: расход и светофор строятся из
+    сданного, а не из живых данных, и без него читатель вынужден был бы
+    пересобирать состав заново — то есть увидеть не то, под чем подписалось
+    подразделение. Ровно поэтому снимка нет ни в списке, ни в ответах на
+    запись: тяжёлое содержимое отдаётся только тому, кто попросил конкретную
+    версию.
+    """
+
+    class Meta:
+        model = OpsDailySubmission
+        fields = OpsDailySubmissionAmendedSerializer.Meta.fields + ["snapshot"]
+        read_only_fields = fields
+
+
 class OpsAuditLogSerializer(serializers.ModelSerializer):
     """Строка журнала раздела как её видит читатель.
 
