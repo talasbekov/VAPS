@@ -92,6 +92,18 @@ export const ROUTES = {
   /** Story 14.11k: деталь ОДНОГО плана дежурств + грид его смен. */
   dutyPlanDetail: '/duty-plans/:id',
   dutyPlanDetailTo: (id: string | number) => `/duty-plans/${encodeURIComponent(String(id))}`,
+  /**
+   * Story 16.8h2 (Epic 16): «Расстановка» — РЕАЛЬНЫЙ бэк
+   * (`/api/operations/assignment-versions/`). Отдельный от
+   * `SecurityEventDetailPage` экран — та страница целиком pending-contract
+   * (фиктивный event id), embedding невозможен без миграции вне объёма 16.8
+   * (пользовательское решение при create-story 16.8h2).
+   */
+  placementVersions: '/placement',
+  /** Story 16.8h2: деталь ОДНОЙ версии Расстановки + назначения + конфликты. */
+  placementVersionDetail: '/placement/:id',
+  placementVersionDetailTo: (id: string | number) =>
+    `/placement/${encodeURIComponent(String(id))}`,
 } as const
 
 export interface NavSection {
