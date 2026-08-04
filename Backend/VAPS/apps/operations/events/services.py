@@ -43,6 +43,7 @@ from apps.operations.events.models import (
     SecurityEventStaffingDemand,
 )
 from apps.operations.duties.services import _to_date_range
+from apps.operations.events.selectors import find_replacement_candidates
 from apps.operations.facilities.models import Post
 from apps.operations.rbac.models import UserRole
 from apps.operations.statuses.models import EmployeeStatus
@@ -1754,3 +1755,114 @@ def amend_assignment_version(version, *, actor, reason, sanction, assignments):
             },
         )
     return new_version
+
+
+def cascade_replace_departed(
+    version,
+    *,
+    actor,
+    departed_employee_id,
+    reason,
+    sanction,
+    manual_replacement_employee_id=None,
+):
+    """Story 17.5 (FR-31): каскадная замена выбывшего — автоматическое
+    предложение следующего по штатной цепочке внутри управления (Tier 1,
+    `find_replacement_candidates()` на собственном подразделении
+    выбывшего), при отсутствии — департамент (Tier 2, родительское
+    подразделение, ОДИН уровень вверх — PROVISIONAL, см. Story 17.5's
+    Scope Decision), при `manual_replacement_employee_id` — авто-поиск
+    пропускается целиком (ручной выбор приоритетнее).
+
+    При отсутствии кандидата на ВСЕХ уровнях — `DomainError` +
+    `ASSIGNMENT_REPLACEMENT_ESCALATED`-аудит, `amend_assignment_version()`
+    НЕ вызывается («система пассивна», тот же принцип, что
+    `SecurityEventDirectAssignment`, 15.9).
+
+    Строится НА `amend_assignment_version()` (17.3) — собирает полный
+    `assignments`-список (копия текущих строк, кроме постов выбывшего),
+    делегирует всю мутацию/аудит успешной замены туда.
+    """
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    departed_posts = list(
+        PlacementAssignment.objects.filter(
+            version=version, employee_id=departed_employee_id
+        )
+    )
+    if not departed_posts:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            message="Выбывший сотрудник не держит ни одного поста в этой версии.",
+        )
+    other_rows = list(
+        PlacementAssignment.objects.filter(version=version).exclude(
+            employee_id=departed_employee_id
+        )
+    )
+    already_assigned = {row.employee_id for row in other_rows}
+    on_date = Clock.today_local()
+    replacements = {}
+    for departed_post in departed_posts:
+        if manual_replacement_employee_id is not None:
+            replacement = CoreEmployeeSelector.get(manual_replacement_employee_id)
+        else:
+            exclude_ids = (
+                already_assigned | {departed_employee_id} | set(replacements.values())
+            )
+            departed_employee = CoreEmployeeSelector.get(departed_employee_id)
+            candidates = find_replacement_candidates(
+                departed_employee.division_id, on_date, exclude_ids
+            )
+            if not candidates and departed_employee.division.parent_id:
+                candidates = find_replacement_candidates(
+                    departed_employee.division.parent_id, on_date, exclude_ids
+                )
+            if not candidates:
+                record(
+                    actor=actor,
+                    action="ASSIGNMENT_REPLACEMENT_ESCALATED",
+                    entity_type="assignment_version",
+                    entity_id=uuid.UUID(int=version.pk),
+                    new_value={
+                        "departed_employee_id": str(departed_employee_id),
+                        "post_id": departed_post.post_id,
+                    },
+                )
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    409,
+                    message=(
+                        "Замена не найдена ни в управлении, ни в департаменте "
+                        "— эскалация зафиксирована в аудите."
+                    ),
+                )
+            replacement = candidates[0]
+        replacements[departed_post.pk] = replacement.id
+
+    assignments = []
+    for row in other_rows:
+        assignments.append({"employee_id": row.employee_id, "post": row.post})
+    for departed_post in departed_posts:
+        replacement_id = replacements[departed_post.pk]
+        # source_division_id — «откуда» кандидат (его СОБСТВЕННОЕ
+        # подразделение), не подразделение выбывшего/события; одинаково
+        # для авто и ручного пути.
+        source_division_id = CoreEmployeeSelector.get(replacement_id).division_id
+        assignments.append(
+            {
+                "employee_id": replacement_id,
+                "post": departed_post.post,
+                "is_unplanned": True,
+                "source_division_id": source_division_id,
+            }
+        )
+
+    return amend_assignment_version(
+        version,
+        actor=actor,
+        reason=reason,
+        sanction=sanction,
+        assignments=assignments,
+    )

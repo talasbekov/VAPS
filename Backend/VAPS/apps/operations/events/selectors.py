@@ -8,7 +8,10 @@ Mirrors ``StatusTypeSelector``/``EmployeeStatusSelector``
 queries, one bulk query per method.
 """
 
+from apps.core.selectors import CoreEmployeeSelector
 from apps.operations.events.models import JournalEntry
+from apps.operations.statuses.models import StatusType
+from apps.operations.statuses.selectors import EmployeeStatusSelector
 
 
 class JournalEntrySelector:
@@ -36,3 +39,34 @@ class JournalEntrySelector:
             entry_type=JournalEntry.EntryType.INCIDENT,
             participant_ids__contains=[str(employee_id)],
         )
+
+
+def find_replacement_candidates(division_id, on_date, exclude_employee_ids):
+    """Story 17.5 (FR-31): "следующий по штатной цепочке внутри
+    управления/департамента" — буквальное переиспользование
+    `CoreEmployeeSelector.active_in_division()`'s канонического
+    roster-порядка (FR-5, Story 2.6), не новый алгоритм. Первый элемент
+    возвращённого списка — "следующий по штатной цепочке".
+
+    Исключает: `exclude_employee_ids` (сам выбывший + уже занятые в
+    текущей версии) И сотрудников с hard-block статусом
+    (`StatusType.is_hard_block`) на `on_date`.
+    """
+    roster = CoreEmployeeSelector.active_in_division(division_id)
+    exclude = set(exclude_employee_ids)
+    candidates = [e for e in roster if e.id not in exclude]
+    if not candidates:
+        return []
+    hard_block_codes = set(
+        StatusType.objects.filter(is_hard_block=True).values_list("code", flat=True)
+    )
+    if not hard_block_codes:
+        return candidates
+    blocked_ids = {
+        row["employee_id"]
+        for row in EmployeeStatusSelector.overlapping_on(
+            on_date, employee_ids=[e.id for e in candidates]
+        )
+        if row["status_type_code"] in hard_block_codes
+    }
+    return [e for e in candidates if e.id not in blocked_ids]
