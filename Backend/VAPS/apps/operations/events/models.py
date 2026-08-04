@@ -565,23 +565,52 @@ class PlacementAssignment(TimeStampedModel):
 
 
 class JournalEntry(TimeStampedModel):
-    """Story 17.1 (FR-29): журнал штаба — инструктаж/указания в режиме
-    проведения ОМ (`SecurityEvent.status_code == IN_PROGRESS`). Только
-    `BRIEFING`/`DIRECTIVE` в этой стори; `INCIDENT` (фото/пост/участники) —
-    отдельная модель-расширение Story 17.2, не эта. Append-only (тот же
-    принцип, что `AuditLog`) — нет UPDATE/DELETE-пути, только `create()`
-    через сервис `create_journal_entry()`.
+    """Story 17.1 (FR-29): журнал штаба — инструктаж/указания/инциденты в
+    режиме проведения ОМ (`SecurityEvent.status_code == IN_PROGRESS`).
+    Append-only (тот же принцип, что `AuditLog`) — нет UPDATE/DELETE-пути,
+    только `create()` через сервис `create_journal_entry()`.
+
+    Story 17.2 расширила `EntryType` до `INCIDENT` + добавила `post`/
+    `participant_ids`/`photo_attachment_id` — РАСШИРЕНИЕ этой же таблицы
+    («история ОМ» уже и есть `JournalEntry»), не новая. У `BRIEFING`/
+    `DIRECTIVE` эти три поля остаются `null`/`[]`. `post` обязателен
+    ТОЛЬКО для `INCIDENT` (`ck_journal_entry_incident_requires_post`);
+    `participant_ids`/`photo_attachment_id` не обязательны даже для
+    `INCIDENT` (не каждый инцидент называет участников поимённо/имеет
+    снимок на момент подачи).
     """
 
     class EntryType(models.TextChoices):
         BRIEFING = "BRIEFING", "Инструктаж"
         DIRECTIVE = "DIRECTIVE", "Указание"
+        INCIDENT = "INCIDENT", "Инцидент"
 
     event = models.ForeignKey(
         SecurityEvent, on_delete=models.CASCADE, related_name="journal_entries"
     )
     entry_type = models.CharField(max_length=20, choices=EntryType.choices)
     text = models.TextField()
+    # Story 17.2 (FR-29, INCIDENT-only) — `post` обязателен только для
+    # INCIDENT (CheckConstraint ниже); PROTECT — тот же выбор, что
+    # PlacementAssignment.post (16.1), Пост не удаляется, пока на него
+    # ссылается история.
+    post = models.ForeignKey(
+        "ops_facilities.Post",
+        on_delete=models.PROTECT,
+        related_name="incident_journal_entries",
+        null=True,
+        blank=True,
+    )
+    # Буквальный образец `PlacementAssignment.conflict_codes` (16.3) — та
+    # же форма "список значений на одной строке"; НЕТ established
+    # M2M/child-table паттерна для "N сотрудников на одной записи" нигде в
+    # кодовой базе (research 17.2).
+    participant_ids = models.JSONField(default=list, blank=True)
+    # ARCH-003: плоская ссылка на `apps.documents.Attachment`, НЕ FK через
+    # границу приложений (буквальный образец существующих owner-полей).
+    # Референциальная целостность НЕ проверяется — тот же компромисс, что
+    # у всех остальных плоских attachment_id-полей.
+    photo_attachment_id = models.UUIDField(null=True, blank=True)
 
     class Meta:
         db_table = "ops_journal_entries"
@@ -592,8 +621,21 @@ class JournalEntry(TimeStampedModel):
             # entry_type без дефолта → .objects.create() без него запишет
             # "" — тот же урок, что ck_assignment_version_status_choices.
             models.CheckConstraint(
-                condition=models.Q(entry_type__in=["BRIEFING", "DIRECTIVE"]),
+                condition=models.Q(
+                    entry_type__in=["BRIEFING", "DIRECTIVE", "INCIDENT"]
+                ),
                 name="ck_journal_entry_type_choices",
+            ),
+            # Асимметричный CHECK (образец
+            # chk_daily_submission_amended_requires_reason_sanction) — post
+            # обязателен ТОЛЬКО когда entry_type=INCIDENT, у BRIEFING/
+            # DIRECTIVE post обязан оставаться null.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(entry_type="INCIDENT", post__isnull=False)
+                    | (~models.Q(entry_type="INCIDENT") & models.Q(post__isnull=True))
+                ),
+                name="ck_journal_entry_incident_requires_post",
             ),
         ]
 

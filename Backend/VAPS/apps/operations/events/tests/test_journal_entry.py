@@ -1,5 +1,6 @@
-"""Story 17.1 (FR-29) — журнал штаба: create_journal_entry() (BRIEFING/
-DIRECTIVE only, INCIDENT reserved for 17.2), gated by
+"""Story 17.1/17.2 (FR-29) — журнал штаба: create_journal_entry()
+(BRIEFING/DIRECTIVE — 17.1; INCIDENT + post/participant_ids/
+photo_attachment_id — 17.2), gated by
 SecurityEvent.status_code == IN_PROGRESS."""
 
 import uuid
@@ -13,6 +14,7 @@ from apps.core.exceptions import DomainError
 from apps.operations.events.models import JournalEntry, SecurityEvent
 from apps.operations.events.services import create_journal_entry
 from apps.operations.facilities.models import Object as FacilityObject
+from apps.operations.facilities.models import Post
 
 pytestmark = pytest.mark.django_db
 
@@ -20,6 +22,10 @@ pytestmark = pytest.mark.django_db
 def make_event(code, status_code=SecurityEvent.StatusCode.IN_PROGRESS):
     obj = FacilityObject.objects.create(code=code, name="Штаб", address="г. Кызылорда")
     return SecurityEvent.objects.create(object=obj, title="ОМ", status_code=status_code)
+
+
+def make_post(obj, code="POST-1"):
+    return Post.objects.create(object=obj, code=code, name="Пост")
 
 
 def test_create_briefing_entry_while_in_progress():
@@ -85,13 +91,78 @@ def test_entries_ordered_chronologically():
     assert ids == [first.pk, second.pk, third.pk]
 
 
-def test_incident_entry_type_rejected_not_yet_implemented():
+def test_create_incident_with_post_participants_and_photo():
     event = make_event("OBJ-JOURNAL-5")
+    post = make_post(event.object)
+    participant = uuid.uuid4()
+
+    entry = create_journal_entry(
+        event,
+        actor="staff-1",
+        entry_type=JournalEntry.EntryType.INCIDENT,
+        text="Нарушение пропускного режима",
+        post=post,
+        participant_ids=[participant],
+        photo_attachment_id=uuid.uuid4(),
+    )
+
+    assert entry.entry_type == "INCIDENT"
+    assert entry.post_id == post.pk
+    assert entry.participant_ids == [str(participant)]
+    assert entry.photo_attachment_id is not None
+
+
+def test_create_incident_without_participants_or_photo_is_valid():
+    """AC-3: neither participants nor photo are required for an Incident."""
+    event = make_event("OBJ-JOURNAL-5b")
+    post = make_post(event.object)
+
+    entry = create_journal_entry(
+        event,
+        actor="staff-1",
+        entry_type=JournalEntry.EntryType.INCIDENT,
+        text="Неисправность оборудования",
+        post=post,
+    )
+
+    assert entry.participant_ids == []
+    assert entry.photo_attachment_id is None
+
+
+def test_create_incident_without_post_is_rejected():
+    event = make_event("OBJ-JOURNAL-5c")
 
     with pytest.raises(DomainError):
-        create_journal_entry(event, actor="staff-1", entry_type="INCIDENT", text="x")
+        create_journal_entry(
+            event,
+            actor="staff-1",
+            entry_type=JournalEntry.EntryType.INCIDENT,
+            text="x",
+        )
 
     assert not JournalEntry.objects.filter(event=event).exists()
+
+
+def test_create_briefing_ignores_incident_only_params():
+    """post/participant_ids/photo_attachment_id passed to a BRIEFING are
+    silently dropped, not written — the CheckConstraint requires post IS
+    NULL for non-INCIDENT rows."""
+    event = make_event("OBJ-JOURNAL-5d")
+    post = make_post(event.object)
+
+    entry = create_journal_entry(
+        event,
+        actor="staff-1",
+        entry_type=JournalEntry.EntryType.BRIEFING,
+        text="x",
+        post=post,
+        participant_ids=[uuid.uuid4()],
+        photo_attachment_id=uuid.uuid4(),
+    )
+
+    assert entry.post_id is None
+    assert entry.participant_ids == []
+    assert entry.photo_attachment_id is None
 
 
 def test_create_writes_audit_row():
@@ -161,7 +232,36 @@ def test_db_constraint_rejects_entry_type_outside_choices():
 def test_db_constraint_covers_every_entry_type_choice(entry_type):
     """Drift-guard (16.6d's chk_notification_kind pattern): every declared
     EntryType choice must round-trip through .objects.create() without
-    hitting the DB CheckConstraint."""
+    hitting the DB CheckConstraint (INCIDENT additionally requires post —
+    ck_journal_entry_incident_requires_post)."""
     event = make_event("OBJ-JOURNAL-9")
+    post = (
+        make_post(event.object, code=f"POST-{entry_type}")
+        if entry_type == JournalEntry.EntryType.INCIDENT
+        else None
+    )
 
-    JournalEntry.objects.create(event=event, entry_type=entry_type, text="x")
+    JournalEntry.objects.create(event=event, entry_type=entry_type, text="x", post=post)
+
+
+def test_db_constraint_rejects_incident_without_post():
+    """AC-7: direct .objects.create() bypassing the service still hits the
+    DB CheckConstraint."""
+    event = make_event("OBJ-JOURNAL-12")
+
+    with pytest.raises(IntegrityError):
+        JournalEntry.objects.create(
+            event=event, entry_type="INCIDENT", text="x", post=None
+        )
+
+
+def test_db_constraint_rejects_non_incident_with_post():
+    """The asymmetric half of ck_journal_entry_incident_requires_post:
+    BRIEFING/DIRECTIVE must have post NULL, even bypassing the service."""
+    event = make_event("OBJ-JOURNAL-13")
+    post = make_post(event.object)
+
+    with pytest.raises(IntegrityError):
+        JournalEntry.objects.create(
+            event=event, entry_type="BRIEFING", text="x", post=post
+        )

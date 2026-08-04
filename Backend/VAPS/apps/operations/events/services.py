@@ -1470,16 +1470,26 @@ def send_ack_reminders():
     return pending
 
 
-def create_journal_entry(event, *, actor, entry_type, text):
-    """Story 17.1 (FR-29): журнал штаба — инструктаж/указания в режиме
-    проведения. Guard-порядок буквально повторяет `issue_bulletin()`:
-    actor -> lifecycle -> mutation -> audit, внутри одной транзакции.
+def create_journal_entry(
+    event,
+    *,
+    actor,
+    entry_type,
+    text,
+    post=None,
+    participant_ids=None,
+    photo_attachment_id=None,
+):
+    """Story 17.1/17.2 (FR-29): журнал штаба — инструктаж/указания/
+    инциденты в режиме проведения. Guard-порядок буквально повторяет
+    `issue_bulletin()`: actor -> lifecycle -> mutation -> audit, внутри
+    одной транзакции.
 
-    `entry_type` принимает только `JournalEntry.EntryType`-члены,
-    определённые в ЭТОЙ стори (`BRIEFING`/`DIRECTIVE`); `INCIDENT`
-    зарезервирован Story 17.2 и здесь отклоняется, а не тихо создаётся —
-    у Инцидента другая форма данных (пост/участники/фото), которых у
-    записи этой стори нет.
+    `post`/`participant_ids`/`photo_attachment_id` — Story 17.2, только
+    для `entry_type=INCIDENT`; `post` обязателен (AC-2), остальные два —
+    нет. Для `BRIEFING`/`DIRECTIVE` эти параметры игнорируются, даже если
+    переданы — не ошибка, просто не пишутся (тот же принцип, что
+    CheckConstraint требует `post IS NULL` для не-INCIDENT).
     """
     if not (actor or "").strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
@@ -1504,6 +1514,13 @@ def create_journal_entry(event, *, actor, entry_type, text):
         # неисправима постфактум (review, Blind Hunter + Edge Case Hunter —
         # оба независимо нашли этот пробел).
         raise DomainError("VALIDATION_ERROR", 400, message="text обязателен.")
+    is_incident = entry_type == JournalEntry.EntryType.INCIDENT
+    if is_incident and post is None:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            message="post обязателен для entry_type=INCIDENT.",
+        )
     with transaction.atomic():
         event = SecurityEvent.objects.select_for_update().get(pk=event.pk)
         if event.status_code != SecurityEvent.StatusCode.IN_PROGRESS:
@@ -1516,7 +1533,18 @@ def create_journal_entry(event, *, actor, entry_type, text):
                 ),
             )
         entry = JournalEntry.objects.create(
-            event=event, entry_type=entry_type, text=text, created_by=actor.strip()
+            event=event,
+            entry_type=entry_type,
+            text=text,
+            created_by=actor.strip(),
+            post=post if is_incident else None,
+            # JSONField не сериализует uuid.UUID напрямую — строкуем на
+            # запись; JournalEntrySelector.incidents_for_participant()
+            # строкует employee_id тем же способом при чтении.
+            participant_ids=(
+                [str(p) for p in (participant_ids or [])] if is_incident else []
+            ),
+            photo_attachment_id=photo_attachment_id if is_incident else None,
         )
         record(
             actor=actor,
