@@ -1,5 +1,11 @@
 """Сервис сдачи дня (порт apps/operations/submissions/services/
-day_submission_service.py из Backend/VAPS).
+day_submission_service.py и amendment_service.py из Backend/VAPS).
+
+Обе операции над сдачей живут в одном файле — как create/update/cancel/
+complete/extend живут в одном status_service: у поправки та же преамбула
+(актор, существование подразделения), тот же билдер снимка и тот же способ
+писать строку, и разводить их по файлам значило бы разложить одну сущность
+по двум владельцам (в источнике они разнесены).
 
 Первый писатель строк сдачи: окно допустимых дат → повторная сдача → снимок
 → событие diff'ом с предыдущей сдачей → отметка опоздания → создание версии 1.
@@ -8,8 +14,7 @@ savepoint вокруг гоночной вставки, актор — стро�
 через часы раздела, бизнес-дата — ЯВНЫЙ параметр (иначе сдача за вчера тихо
 считалась бы на сегодня).
 
-Прав не проверяет: гейт и область — забота API. Пересдача сюда тоже не входит
-— это поправка, отдельная операция со своими причиной и санкцией.
+Прав не проверяет: гейт и область — забота API.
 
 ОТЛИЧИЯ ОТ ИСТОЧНИКА:
 - контрольный час приходит ПАРАМЕТРОМ с дефолтом-константой: справочника
@@ -202,3 +207,125 @@ def submit_day(
     )
     return submission
 
+
+
+def _require_text(value, field):
+    """Непустой (после обрезки) обязательный атрибут поправки, иначе 400.
+
+    Сервис отбивает пустое РАНЬШЕ CHECK базы: ограничение остаётся
+    подстраховкой прямого create() мимо сервиса, а вызывающему нужен внятный
+    отказ с именем поля, а не IntegrityError.
+    """
+    if not value or not value.strip():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={field: "Обязательно для поправки."},
+            message=f"{field} обязателен для поправки.",
+        )
+
+
+@transaction.atomic
+def amend_day(
+    *,
+    division_id,
+    business_date,
+    actor,
+    reason,
+    sanction,
+    triggered_by_status_id=None,
+):
+    """Поправить сданный день: НОВАЯ версия (event=AMENDED) поверх прежней.
+
+    Сданное не переписывается, а ВЫТЕСНЯЕТСЯ: прежняя версия остаётся в
+    таблице целиком, у новой снимается флаг текущей у старой и собирается
+    СВЕЖИЙ снимок исправленного состояния — не копия прежнего. Иначе
+    поправка была бы правкой заявления задним числом, и подпись под ним
+    перестала бы что-либо значить.
+
+    Отличия от первичной сдачи: событие всегда AMENDED (diff'а не считаем —
+    поправка по определению утверждает изменение), окно дат НЕ применяется
+    (поправляют как раз прошлые дни), день обязан быть сдан, а late всегда
+    False: поздность — свойство акта сдачи в контрольный час, у пересдачи
+    его нет, и наследование отметки объявляло бы опоздавшим того, кто
+    исправляет вчерашнее.
+
+    Отказы: 400 (пустой актор, причина или санкция), 404 (нет
+    подразделения), 422 (день не сдан — поправлять нечего). Гонка версий
+    сюда не доезжает отказом: конкурентная поправка срывает уникальность и
+    уходит IntegrityError, который на HTTP-границе становится 409
+    DAY_ALREADY_SUBMITTED, а вызывающему-сервису достаётся сырым.
+    """
+    _require_actor(actor)
+    _require_text(reason, "reason")
+    _require_text(sanction, "sanction")
+    # Хранится ОБРЕЗАННОЕ: проверка смотрит на strip(), и записать в базу
+    # значение с обрамляющими пробелами значило бы проверять одно, а хранить
+    # другое (CHECK базы требует непробельный символ, а не непустоту).
+    reason, sanction = reason.strip(), sanction.strip()
+
+    if not DivisionTreeSelector.exists(division_id):
+        raise DomainError(
+            "ENTITY_NOT_FOUND",
+            404,
+            detail={"division_id": str(division_id)},
+            message="Подразделение не найдено.",
+        )
+
+    # Голова цепочки под блокировкой: две одновременные поправки обязаны
+    # выстроиться в очередь, иначе обе прочитают одну версию и запросят один
+    # номер. Ищется СТАРШАЯ версия, а не текущая, — см. селектор.
+    latest = DailySubmissionSelector.latest_for(division_id, business_date, lock=True)
+    if latest is None:
+        raise DomainError(
+            "NO_SUBMISSION_TO_AMEND",
+            422,
+            detail={
+                "division_id": str(division_id),
+                "business_date": business_date.isoformat(),
+            },
+            message="Нельзя поправить несданный день (нет ни одной версии).",
+        )
+
+    # Снимок «до» берётся ДО гашения флага: строка в памяти ещё несёт своё
+    # прежнее is_current, а update() ниже её не трогает. Без этого журнал
+    # рассказывал бы, что вытесненная версия и до поправки не была текущей.
+    before = audit_service.submission_snapshot(latest)
+
+    snapshot = build_division_snapshot(division_id, business_date)
+    version = latest.version + 1
+
+    # Гашение ДО вставки: частичная уникальность немедленная, и обратный
+    # порядок упёрся бы в две текущие версии в середине транзакции.
+    # Savepoint — как у первичной сдачи: проигравшая гонку поправка
+    # откатывается чисто, не отравляя транзакцию вызывающего.
+    with transaction.atomic():
+        OpsDailySubmission.objects.filter(
+            division_id=division_id, business_date=business_date, is_current=True
+        ).update(is_current=False)
+        submission = OpsDailySubmission.objects.create(
+            division_id=division_id,
+            business_date=business_date,
+            version=version,
+            is_current=True,
+            event=OpsDailySubmission.Event.AMENDED,
+            submitted_by=actor,
+            submitted_at=Clock.now(),
+            late=False,
+            snapshot=snapshot,
+            reason=reason,
+            sanction=sanction,
+            triggered_by_status_id=triggered_by_status_id,
+        )
+    # Событие — после savepoint'а, в объемлющей транзакции: гоночный дубль
+    # улетает исключением выше и до записи не доходит.
+    audit_service.record(
+        actor=actor,
+        action=audit_service.DAILY_SUBMISSION_AMENDED,
+        entity_type=audit_service.ENTITY_SUBMISSION,
+        entity_id=submission.pk,
+        old_value=before,
+        new_value=audit_service.submission_snapshot(submission),
+        reason=reason,
+    )
+    return submission

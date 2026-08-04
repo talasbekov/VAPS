@@ -21,6 +21,7 @@ from organization_management.apps.operations.bulk_status_service import (
     bulk_create_statuses,
 )
 from organization_management.apps.operations.day_submission_service import (
+    amend_day,
     submit_day,
 )
 from organization_management.apps.operations.dismissal import (
@@ -595,6 +596,13 @@ def test_every_declared_action_is_actually_written(types, home, host):
             employee.id, dismissal_date=TODAY, actor="system:dismissal"
         )
         submit_day(division_id=home.id, business_date=TODAY, actor=ACTOR)
+        amend_day(
+            division_id=home.id,
+            business_date=TODAY,
+            actor=ACTOR,
+            reason="ошибка в наряде",
+            sanction="замечание",
+        )
 
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS
