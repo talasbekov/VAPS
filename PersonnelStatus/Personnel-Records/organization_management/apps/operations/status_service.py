@@ -7,10 +7,9 @@ status_service.py из Backend/VAPS: create_status и cancel_status со все�
 предельная длительность типа, детект конфликтов через матрицу (жёсткий →
 422, мягкий → 409 с обходом), запись обхода только при реально обойдённом
 конфликте, отмена только не начавшегося статуса с append-once фактами,
-правка метаданных/интервала (update_status).
+правка метаданных/интервала (update_status), продление (extend_status).
 
-НЕ портировано в этом срезе (осознанно, отдельными кусками):
-extend_status, догон материализации.
+НЕ портировано (осознанно, отдельными кусками): догон материализации.
 
 Каждая мутация пишет событие в журнал РАЗДЕЛА (audit_service) — в той же
 транзакции, что и сама запись: откатился факт — откатилась и строка о нём.
@@ -371,7 +370,8 @@ def update_status(
     """Правка оператором своей строки: интервал и метаданные.
 
     Переходы жизненного цикла (отмена/досрочное закрытие/продление) сюда НЕ
-    входят: отмена — cancel_status, остальное — отдельный срез. Тип статуса и
+    входят: отмена — cancel_status, досрочное закрытие —
+    complete_status_early, продление — extend_status. Тип статуса и
     сотрудник не меняются — это другая строка, а не правка этой.
 
     Интервал перепроверяется ТОЛЬКО когда реально меняется дата: правка
@@ -513,6 +513,108 @@ def complete_status_early(status, *, actor, actual_end):
         old_value=before,
         new_value=audit_service.status_snapshot(locked),
     )
+    return locked
+
+
+@transaction.atomic
+def extend_status(status, *, actor, new_date_end, override=False, override_reason=""):
+    """Продлить статус строго более поздней датой конца.
+
+    Продление — ОТДЕЛЬНАЯ операция, а не частный случай правки: оно
+    монотонно (укорачивание — это досрочное завершение,
+    complete_status_early) и рассказывает в журнале свою историю
+    (STATUS_EXTENDED). Дата, не превышающая нынешнюю, — 422: «продление»,
+    которое ничего не продлевает, это либо укорачивание чужим путём, либо
+    ошибка вызывающего.
+
+    Продлевается любая НЕ отменённая строка, в том числе уже завершённая
+    (отпуск, который на деле длился дольше): полуинтервал просто съезжает
+    вправо, факты остаются своими. Отменённую отсекает раньше общий гард
+    _lock_for_edit — здешних проверок жизненного цикла на неё не нужно.
+
+    Новый интервал перепроверяется целиком (границы найма, предел
+    длительности типа) и заново прогоняется через детект конфликтов с
+    исключением себя. Мягкий (409) обходится override=True + непустой
+    причиной с записью StatusOverride в ТОМ ЖЕ savepoint, что и сама
+    правка; жёсткий (422) не обходится никогда.
+
+    ОТЛИЧИЯ ОТ ИСТОЧНИКА:
+    1. Гард отменённой строки снят — его владелец один, _lock_for_edit
+       (в источнике он продублирован здесь через state_on).
+    2. Добавлен гард откомандированного (в источнике его у extend нет):
+       продление — такая же операторская правка чужой строки, что и
+       update_status, и на откомандированного оно распространяется по
+       тому же доводу. Ноги пары продлевает не этот путь (возврат пишет
+       свою дату сам, см. secondment_service).
+    3. Порог сравнивается со СВЕЖЕЙ строкой под блокировкой, а не с
+       переданным объектом: устаревшая копия объявила бы продлением
+       откат уже записанного продления.
+    4. Отдельного события OVERRIDE_APPLIED нет — причина обхода едет
+       полем reason самого STATUS_EXTENDED, как и у create_status.
+    """
+    _require_actor(actor)
+    employee, locked = _lock_for_edit(status)
+    assert_employee_status_editable(locked.employee_id)
+    # Причина обхода проверяется ДО (более дорогого) детекта конфликтов —
+    # тот же порядок, что и у create_status.
+    if override and not (override_reason or "").strip():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"field": "override_reason"},
+            message="При override обязательна непустая причина.",
+        )
+    if new_date_end <= locked.date_end:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={
+                "new_date_end": str(new_date_end),
+                "date_end": str(locked.date_end),
+            },
+            message="Продление требует более поздней даты конца.",
+        )
+    status_type = _resolve_status_type(locked.status_type_code)
+    _validate_interval(
+        date_start=locked.date_start,
+        date_end=new_date_end,
+        employee=employee,
+        status_type=status_type,
+    )
+    bypassed_conflicts = _assert_no_conflict(
+        employee_id=locked.employee_id,
+        status_type_code=locked.status_type_code,
+        date_start=locked.date_start,
+        date_end=new_date_end,
+        exclude_pk=locked.pk,
+        override=override,
+    )
+
+    before = audit_service.status_snapshot(locked)
+    locked.date_end = new_date_end
+    # Savepoint вокруг гоночной записи: продление может упереться в
+    # excl_hard_status_overlap, и IntegrityError не должен отравлять
+    # транзакцию вызывающего. Обход и событие — в том же savepoint.
+    with transaction.atomic():
+        locked.save(update_fields=["date_end", "updated_at"])
+        if override and bypassed_conflicts:
+            StatusOverride.objects.create(
+                status=locked,
+                employee_id=locked.employee_id,
+                status_type_code=locked.status_type_code,
+                reason=override_reason,
+                conflicts=_conflict_details(bypassed_conflicts),
+                created_by=actor,
+            )
+        audit_service.record(
+            actor=actor,
+            action=audit_service.STATUS_EXTENDED,
+            entity_type=audit_service.ENTITY_STATUS,
+            entity_id=locked.pk,
+            old_value=before,
+            new_value=audit_service.status_snapshot(locked),
+            reason=override_reason if (override and bypassed_conflicts) else "",
+        )
     return locked
 
 
