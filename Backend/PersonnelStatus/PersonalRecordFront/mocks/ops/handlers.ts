@@ -14,6 +14,7 @@ import { analyticsHandlers } from "./analytics-handlers";
 import { reportsHandlers } from "./reports-handlers";
 import { feedbackHandlers } from "./feedback-handlers";
 import { dailyHandlers } from "./daily-handlers";
+import { combatHandlers } from "./combat-handlers";
 
 export function composeOpsHandlers() {
   return [
@@ -29,5 +30,6 @@ export function composeOpsHandlers() {
     ...reportsHandlers,
     ...feedbackHandlers,
     ...dailyHandlers,
+    ...combatHandlers,
   ];
 }

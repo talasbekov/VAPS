@@ -121,6 +121,7 @@ export function Sidebar() {
     { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
     { name: "План дежурств", href: "/security-ops/duties", icon: CalendarDays },
     { name: "Календарь смен", href: "/security-ops/calendar", icon: CalendarDays },
+    { name: "Боевые группы", href: "/security-ops/duties/combat", icon: Shield },
     { name: "Расход дня (ОМ)", href: "/security-ops/daily-expense", icon: CalendarDays },
     { name: "Оперативный рейтинг", href: "/security-ops/ratings", icon: Star },
     { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
