@@ -4,7 +4,7 @@ baseline_commit: 0599d95
 
 # Story 17.7c: Frontend — журнал штаба
 
-Status: review
+Status: done
 
 ## Story
 
@@ -77,11 +77,13 @@ Claude Sonnet 5
 
 Реализовано по AC 1-7. `useJournalEntries`/`useAddJournalEntry` — образец `queries.ts`'s существующих хуков (`paths[...]`-типизация из `schema.d.ts`, перегенерирован `npm run generate:api` после 17.7b's `schema.yaml`-обновления). `JournalPanel` — новый компонент, RBAC реактивно (403 из query/mutation error-канала → "Нет доступа"/скрытая форма, без client-side permission-check, тот же паттерн, что весь остальной `placement/`). zod-валидация текста (`bulletinSchema`-образец). MSW fixtures/handlers для dev:mock (list фильтрует по `event`, create пушит в фикстуру). Побочный фикс: 2 существующих теста в `PlacementVersionDetailPage.test.tsx` использовали неспецифичный `screen.findByRole('textbox')`, ожидая единственный textbox на странице (ConflictDialog's reason-поле) — после добавления `JournalPanel`'s собственной `<textarea>` запрос стал неоднозначным (2 совпадения) — исправлено на `within(dialog).getByRole('textbox')` (dialog найден через `getByRole('dialog')`, нативный `<dialog>` несёт implicit ARIA role). `npm run gate` (frontend) — 1112 passed (77 test files), tsc/eslint/lint-canon/schema-check/build/size-gate все зелёные (222.8 KB gzip, бюджет 300 KB).
 
+После ревью (3 агента): Blind Hunter, Edge Case Hunter и Acceptance Auditor независимо сошлись на ОДНОМ реальном дефекте — при 403 на создание форма пряталась НАВСЕГДА (`{!isCreateForbidden && <form>}`, `addMutation.error` очищается только явным `reset()` или новым `mutate()`) — противоречило собственному Dev Notes-канону стори («форма остаётся видимой для повторной попытки»). Закрыто кнопкой «Повторить» → `addMutation.reset()`; проверено новым тестом (403 → «Повторить» → форма возвращается). Также приняты находки: журнал без автора/времени записи — пробел для «журнала штаба» (Blind Hunter) — добавлено отображение `created_by`/`created_at`; AC-4's тест не различал 403-ветку от generic-error-ветки (Acceptance Auditor) — добавлен тест на non-403 (500) → generic alert; 422 `INVALID_LIFECYCLE_TRANSITION` не был протестирован на API-уровне (Acceptance Auditor) — добавлен тест; порядок списка не был закреплён тестом с 3+ элементами (Blind Hunter, тот же класс, что project-memory `feedback_order_assert_needs_three_items.md`) — добавлен; только BRIEFING-дефолт проходил тест сабмита, DIRECTIVE — никогда — добавлен round-trip тест. Отклонены: `onFormError`/DRF-field-level-details канал — нет established-прецедента в этой feature-папке; `conflict`/`confirmOverride` — `create_journal_entry()` никогда не бросает `ConflictError`, находка неприменима; `ENTRY_TYPE_LABEL['INCIDENT']` — защитная запись, не мёртвый код; aria-live на статус-текстах — нет established-конвенции в кодовой базе. `npm run gate` (frontend) — 1117 passed (было 1112), build/size-gate чисты (222.9 KB gzip).
+
 ### File List
 
 - `frontend/src/features/placement/api/queries.ts` (modified — `useJournalEntries`, `useAddJournalEntry`, `journalEntryKeys`)
 - `frontend/src/features/placement/pages/JournalPanel.tsx` (new)
-- `frontend/src/features/placement/pages/JournalPanel.test.tsx` (new — 6 тестов)
+- `frontend/src/features/placement/pages/JournalPanel.test.tsx` (new — 6 тестов dev + 5 после ревью)
 - `frontend/src/features/placement/pages/PlacementVersionDetailPage.tsx` (modified — подключение `JournalPanel`)
 - `frontend/src/features/placement/pages/PlacementVersionDetailPage.test.tsx` (modified — 2 теста: `textbox` → `within(dialog)`, побочный фикс от неоднозначного запроса)
 - `frontend/src/features/placement/mocks/fixtures.ts` (modified — `JOURNAL_ENTRIES`, `JournalEntryFixture`)
@@ -94,3 +96,4 @@ Claude Sonnet 5
 |---|---|
 | 2026-08-04 | Story создана (create-story). Research обнаружил: `features/security-events/` целиком mock (`backend-contract-pending`), точечная миграция журнала внутри неё сломала бы согласованность страницы — решение с Bratan: отдельная панель под `features/placement/` (уже реальная схема), не трогать mock-прототип. |
 | 2026-08-04 | Dev-story: `JournalPanel` + хуки + mocks + 6 тестов. Побочный фикс: 2 теста `PlacementVersionDetailPage.test.tsx` (неоднозначный `textbox`-запрос). `npm run gate` — 1112 passed. Status → review. |
+| 2026-08-04 | Review закрыт (3 агента, независимо совпали). Реальный дефект: 403-на-создание прятал форму навсегда, без пути к повтору — закрыт кнопкой «Повторить» + `reset()`. +5 тестов из находок (retry, branch-discrimination, 422-lifecycle, порядок 3+, DIRECTIVE round-trip) + отображение автора/времени записи. `npm run gate` — 1117 passed. Status → done. |

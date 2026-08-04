@@ -111,9 +111,23 @@ export function JournalPanel({ eventId }: { eventId: number }) {
         </form>
       )}
       {isCreateForbidden && (
-        <p className="mt-3 border-t pt-3 text-sm text-muted-foreground">
-          Нет права на добавление записей.
-        </p>
+        <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3">
+          <p className="text-sm text-muted-foreground">
+            Нет права на добавление записей.
+          </p>
+          {/* review (Blind Hunter + Edge Case Hunter + Acceptance Auditor,
+              независимо совпали): без reset() форма не появлялась бы
+              снова НИКОГДА за жизнь компонента — противоречило
+              собственному Dev Notes-канону стори ("форма остаётся
+              видимой для повторной попытки"). */}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => addMutation.reset()}
+          >
+            Повторить
+          </Button>
+        </div>
       )}
     </section>
   )
@@ -131,6 +145,12 @@ function JournalEntryList({ entries }: { entries: JournalEntriesListResponse }) 
             {ENTRY_TYPE_LABEL[entry.entry_type] ?? entry.entry_type}
           </p>
           <p>{entry.text}</p>
+          {/* review (Blind Hunter): штаба journal без автора/времени —
+              значимый пробел для журнала-аудита. */}
+          <p className="mt-1 text-xs text-muted-foreground">
+            {entry.created_by ?? '—'} ·{' '}
+            {new Date(entry.created_at).toLocaleString('ru-RU')}
+          </p>
         </li>
       ))}
     </ul>
