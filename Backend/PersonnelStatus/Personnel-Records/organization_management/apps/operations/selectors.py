@@ -134,6 +134,27 @@ class StaffUnitSelector:
         )
 
     @staticmethod
+    def employee_ids_in(division_ids):
+        """{employee_id} обитателей штатных единиц указанных подразделений,
+        ОДИН запрос.
+
+        Обратная сторона divisions_of: там спрашивают «в чьей области ЭТОТ
+        сотрудник», здесь — «кто вообще попадает в область» для списочного
+        чтения. Сотрудник без штатной единицы не принадлежит ничьей области и
+        в ответ скоупованному оператору не попадает: тот же fail-closed выбор,
+        что и у одиночной правки, где такая строка даёт 403.
+
+        Свободные слоты (employee_id IS NULL) отсеиваются в запросе: None в
+        множестве превратился бы в `employee_id IN (..., NULL)` — лишний
+        элемент фильтра, ничего не значащий для выборки статусов.
+        """
+        return set(
+            StaffUnit.objects.filter(
+                division_id__in=list(division_ids), employee_id__isnull=False
+            ).values_list("employee_id", flat=True)
+        )
+
+    @staticmethod
     def slots_with_working_occupants(division_ids=None):
         """([{division_id, employee_id|None}], {id уволенных в слотах}).
 

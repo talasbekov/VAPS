@@ -71,6 +71,9 @@ from organization_management.apps.operations.strength_report import (
 
 # Право на запись статусов; им же резолвится область видимости пачки.
 _BULK_STATUS_PERMISSION = "status.manage"
+# Право на чтение статусов — то же, что у расхода: кто видит агрегат, тот
+# видит и строки, из которых он сложился.
+_READ_STATUS_PERMISSION = "status.view"
 
 
 def _parse_int_param(request, name):
@@ -100,8 +103,73 @@ def _parse_date_param(request, name):
     return parsed
 
 
+def _parse_bool_param(request, name):
+    """Булев query-параметр или None; мусор — 400, а не молчаливое «нет».
+
+    Читается строго (true/false, 1/0): при мягком разборе include_cancelled=
+    "yes" означал бы False, и клиент получил бы неполный ответ, будучи
+    уверенным, что просил полный.
+    """
+    raw = request.query_params.get(name)
+    if raw is None:
+        return None
+    lowered = raw.strip().lower()
+    if lowered in ("true", "1"):
+        return True
+    if lowered in ("false", "0"):
+        return False
+    raise ValidationError({name: "Ожидается true или false."})
+
+
+def _resolve_division_scope(request, division_id, permission_code):
+    """Область видимости списочного запроса: None — всё дерево, иначе
+    множество id подразделений.
+
+    Область сужает выборку ВСЕГДА, даже когда division_id не задан:
+    безскоуповый оператор видит всё дерево, скоупованный — только своё
+    поддерево. Запрос ЧУЖОГО подразделения — 403, а не пустой ответ: пустой
+    ответ неотличим от «там никого нет» и прячет отказ.
+
+    Общий вход расхода и чтения статусов: двум спискам, отвечающим на один и
+    тот же вопрос «что мне видно», расходиться незачем.
+    """
+    allowed = PermissionService.visible_division_ids(
+        resolve_actor_id(request), permission_code
+    )
+    if division_id is None:
+        return allowed
+    subtree = DivisionTreeSelector.subtree_ids(division_id)
+    scope = subtree if allowed is None else subtree & allowed
+    if not scope:
+        raise PermissionDenied("PERMISSION_DENIED")
+    return scope
+
+
 class DefaultPagination(LimitOffsetPagination):
     default_limit = 50
+
+
+def paginated_response_schema(name, item_serializer):
+    """Схема СТРАНИЧНОГО ответа: {count, next, previous, results[]}.
+
+    Объявляется руками, потому что вьюхи раздела — plain ViewSet: spectacular
+    выводит обёртку страницы только у GenericAPIView и иначе описал бы ответ
+    голым массивом, которого клиент никогда не получит.
+
+    many=False на КЛАССЕ обязателен: для действия с именем list эвристика
+    иначе завернёт объект-страницу ещё и в массив.
+    """
+    return extend_schema_serializer(many=False)(
+        inline_serializer(
+            name=name,
+            fields={
+                "count": serializers.IntegerField(),
+                "next": serializers.CharField(allow_null=True),
+                "previous": serializers.CharField(allow_null=True),
+                "results": item_serializer,
+            },
+        )
+    )
 
 
 class RoleViewSet(viewsets.ReadOnlyModelViewSet):
@@ -286,11 +354,13 @@ class MyPermissionsViewSet(viewsets.ViewSet):
 
 
 class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """Статусы раздела ОМ: массовое создание и поштучная правка.
+    """Статусы раздела ОМ: чтение, массовое создание и поштучная правка.
 
-    POST /api/operations/statuses/bulk/        — пачка (срез 6)
+    GET   /api/operations/statuses/            — список (срез 11)
+    GET   /api/operations/statuses/{id}/       — одна строка (срез 11)
+    POST  /api/operations/statuses/bulk/       — пачка (срез 6)
     PATCH /api/operations/statuses/{id}/       — правка интервала и метаданных
-    POST /api/operations/statuses/{id}/cancel/ — отмена не начавшейся строки
+    POST  /api/operations/statuses/{id}/cancel/ — отмена не начавшейся строки
 
     Тонкая вьюха поверх готовых сервисов: сериализатор → резолв области
     видимости из RBAC → вызов сервиса. Ни бизнес-логики, ни детекта
@@ -298,21 +368,29 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
     наверх и становится конвертом в ops_exception_handler, вьюха его НЕ
     ловит.
 
-    Грубый гейт права — RequirePermissionMixin (status.manage); тонкую
-    область видимости энфорсят: у пачки — сервис построчно, у правки —
-    _assert_status_in_scope ниже. Оба резолвят её из RBAC актора: подразделению
-    из тела запроса здесь не верят.
+    Права РАЗНЫЕ у чтения и записи: списки и одиночное чтение — status.view
+    (тот же гейт, что у расхода), запись — status.manage. Читатель расхода
+    обязан уметь посмотреть строки, из которых расход сложился, но не править
+    их.
+
+    Грубый гейт права — RequirePermissionMixin; тонкую область видимости
+    энфорсят: у пачки — сервис построчно, у чтения списка — фильтр по
+    сотрудникам области, у одиночных маршрутов — _assert_status_in_scope ниже.
+    Все резолвят её из RBAC актора: подразделению из тела запроса здесь не
+    верят.
     """
 
     permission_map = {
+        "list": _READ_STATUS_PERMISSION,
+        "retrieve": _READ_STATUS_PERMISSION,
         "bulk": _BULK_STATUS_PERMISSION,
         "partial_update": _BULK_STATUS_PERMISSION,
         "cancel": _BULK_STATUS_PERMISSION,
     }
-    # Поверхность: пачка, правка, отмена. Чтение статусов — отдельный срез,
-    # поэтому GET здесь не открыт; PUT не открыт намеренно (полная замена
-    # строки переписала бы неизменяемые поля — правка только частичная).
-    http_method_names = ["post", "patch", "options"]
+    # Поверхность: чтение, пачка, правка, отмена. PUT не открыт намеренно
+    # (полная замена строки переписала бы неизменяемые поля — правка только
+    # частичная), DELETE — тоже: строки не удаляются, а отменяются.
+    http_method_names = ["get", "post", "patch", "options"]
 
     def _get_status_or_404(self, pk):
         """Строка по pk из пути; отсутствующая или нечисловая — 404 конвертом.
@@ -339,8 +417,15 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         return status_row
 
-    def _assert_status_in_scope(self, request, status_row):
-        """Область видимости правимой строки — из RBAC актора.
+    def _assert_status_in_scope(
+        self, request, status_row, permission_code=_BULK_STATUS_PERMISSION
+    ):
+        """Область видимости адресуемой строки — из RBAC актора.
+
+        Право, под которым считается область, передаёт вызывающий: чтение
+        спрашивает «что мне видно под status.view», правка — «что мне можно
+        менять под status.manage». Зашитое одно право означало бы, что
+        читатель без права записи не видит ни одной строки.
 
         Подразделение берётся по сотруднику строки через общий селектор (тот
         же, которым область считает пачка). None = безскоуповый/wildcard грант
@@ -352,7 +437,7 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         403, и без различения тест одного зеленел бы от другого.
         """
         allowed = PermissionService.visible_division_ids(
-            resolve_actor_id(request), _BULK_STATUS_PERMISSION
+            resolve_actor_id(request), permission_code
         )
         if allowed is None:
             return
@@ -366,6 +451,114 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 detail={"employee_id": str(status_row.employee_id)},
                 message="Сотрудник вне области видимости оператора.",
             )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "business_date",
+                OpenApiTypes.DATE,
+                description=(
+                    "Оставить строки, ЖИВЫЕ на эту дату (полуинтервал "
+                    "[date_start, date_end)); без параметра — весь журнал."
+                ),
+            ),
+            OpenApiParameter(
+                "division_id",
+                OpenApiTypes.INT,
+                description="Корень поддерева; по умолчанию вся область актора.",
+            ),
+            OpenApiParameter(
+                "employee_id", OpenApiTypes.INT, description="Один сотрудник."
+            ),
+            OpenApiParameter(
+                "status_type_code",
+                OpenApiTypes.STR,
+                description="Код типа статуса, точное совпадение.",
+            ),
+            OpenApiParameter(
+                "include_cancelled",
+                OpenApiTypes.BOOL,
+                description=(
+                    "Включить отменённые строки; по умолчанию false — "
+                    "отменённая строка это «записи нет»."
+                ),
+            ),
+        ],
+        responses=paginated_response_schema(
+            "PaginatedOpsEmployeeStatusList", OpsEmployeeStatusSerializer(many=True)
+        ),
+        description=(
+            "Список статусов раздела ОМ под правом status.view. Область "
+            "видимости сужает выборку всегда: скоупованный оператор видит "
+            "только сотрудников своего поддерева, запрос чужого подразделения "
+            "получает 403, а не пустой список. Отменённые строки по умолчанию "
+            "скрыты (include_cancelled=true — показать). Порядок ответа задаёт "
+            "сервер: свежие интервалы первыми. 400 — нечитаемый параметр."
+        ),
+    )
+    def list(self, request, *args, **kwargs):
+        business_date = _parse_date_param(request, "business_date")
+        division_id = _parse_int_param(request, "division_id")
+        employee_id = _parse_int_param(request, "employee_id")
+        include_cancelled = _parse_bool_param(request, "include_cancelled") is True
+        status_type_code = request.query_params.get("status_type_code")
+
+        queryset = OpsEmployeeStatus.objects.all()
+        if not include_cancelled:
+            # Отменённая строка для читателя — «записи нет»: тот же предикат,
+            # которым её не видит расход.
+            queryset = queryset.filter(cancelled_at__isnull=True)
+        if business_date is not None:
+            # period__contains едет по GiST-индексу и повторяет полуинтервал
+            # ровно так, как его понимает домен; date_start<=d<=date_end
+            # захватил бы день, в который статус уже кончился.
+            queryset = queryset.filter(period__contains=business_date)
+        if employee_id is not None:
+            queryset = queryset.filter(employee_id=employee_id)
+        if status_type_code:
+            queryset = queryset.filter(status_type_code=status_type_code)
+
+        scope = _resolve_division_scope(
+            request, division_id, _READ_STATUS_PERMISSION
+        )
+        if scope is not None:
+            queryset = queryset.filter(
+                employee_id__in=StaffUnitSelector.employee_ids_in(scope)
+            )
+        # Порядок пинится здесь: у модели своего ordering нет, а страничная
+        # выдача без полного порядка теряет и дублирует строки между
+        # страницами. id — последний разрыв ничьей, он уникален.
+        queryset = queryset.order_by("-date_start", "employee_id", "id")
+
+        paginator = DefaultPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        return paginator.get_paginated_response(
+            OpsEmployeeStatusSerializer(page, many=True).data
+        )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id строки статуса.",
+            )
+        ],
+        responses={200: OpsEmployeeStatusSerializer},
+        description=(
+            "Одна строка статуса под правом status.view. 403 — нет права либо "
+            "сотрудник вне области оператора; 404 — строки нет. Отменённая "
+            "строка по прямому адресу отдаётся: её скрывает только список, "
+            "где она была бы шумом."
+        ),
+    )
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        status_row = self._get_status_or_404(pk)
+        self._assert_status_in_scope(
+            request, status_row, permission_code=_READ_STATUS_PERMISSION
+        )
+        return Response(OpsEmployeeStatusSerializer(status_row).data)
 
     @extend_schema(
         # Тип параметра пути объявлен явно: у ViewSet нет queryset, и без
@@ -527,17 +720,9 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         if business_date is None:
             business_date = Clock.today_local()
         division_id = _parse_int_param(request, "division_id")
-
-        allowed = PermissionService.visible_division_ids(
-            resolve_actor_id(request), "status.view"
-        )
-        if division_id is None:
-            scope = allowed  # None = глобальная видимость → всё дерево
-        else:
-            subtree = DivisionTreeSelector.subtree_ids(division_id)
-            scope = subtree if allowed is None else subtree & allowed
-            if not scope:
-                raise PermissionDenied("PERMISSION_DENIED")
+        # None = глобальная видимость → всё дерево; чужое подразделение — 403
+        # (общий резолв со списком статусов).
+        scope = _resolve_division_scope(request, division_id, "status.view")
 
         report = StrengthReportService.compute(business_date, division_ids=scope)
         columns = list(report.totals.columns)
