@@ -166,6 +166,11 @@ class RoleAdminService:
         grant.save()
         return grant
 
+    @staticmethod
+    @transaction.atomic
+    def expire_temporary_duty(grant_id):
+        TemporaryDutyPermission.objects.filter(id=grant_id).update(is_active=False)
+
 
 class LegacyRoleSync:
     """Мост на переходный период: назначение ops-ролей по старым учёткам.
