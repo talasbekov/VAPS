@@ -4,7 +4,7 @@ baseline_commit: c090eda
 
 # Story 16.8h4: Frontend — отметить ознакомление
 
-Status: review
+Status: done
 
 ## Story
 
@@ -71,9 +71,14 @@ Claude Sonnet 5
 - `frontend/src/features/placement/pages/PlacementVersionDetailPage.tsx` (modified — `AcknowledgeCell`)
 - `frontend/src/features/placement/pages/PlacementVersionDetailPage.test.tsx` (modified — 4 новых теста)
 
+**После ревью:**
+- `frontend/src/features/placement/pages/PlacementVersionDetailPage.tsx` (modified — `versionStatus`-типизация сужена до реального union)
+- `frontend/src/features/placement/pages/PlacementVersionDetailPage.test.tsx` (modified — 1 новый тест на независимость строк)
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-04 | Story создана (create-story). Часть 4/5 пересмотренного расщепления 16.8h — кнопка в `AssignmentsTable`, без клиентской identity-проверки (бэк 16.8e уже решает). |
 | 2026-08-04 | Dev-story: `AcknowledgeCell`. 4 новых теста. `npm run gate` — 1078 passed, 0 regressions. Status → review. |
+| 2026-08-04 | 3-agent ревью (Blind Hunter, Edge Case Hunter, Acceptance Auditor). Acceptance Auditor: 0 расхождений, все AC неотвакуумны (включая AC-1's stateful-mock-подтверждённый рефетч, AC-3's `.not.toBeDisabled()`). Edge Case Hunter нашёл реальный пробел: ни один тест не доказывал независимость строк в МНОГОстрочной таблице (весь ack-успех инвалидирует ВСЮ версию, отдельные `useMutation`-инстансы по строкам не проверялись при 2+ строках) — добавлен тест на 2 строки (одна с HARD-конфликтом ack'ается, другая уже ack'нута — обе независимо корректны после рефетча). Заодно сужена типизация `versionStatus` (была голым `string`, теперь реальный union). Blind Hunter's находки — все спекулятивны/совпадают с уже существующей конвенцией во всём файле (double-click race, отсутствие aria-live, flash-of-stale-state — присущи invalidate-паттерну, осознанный выбор, не регресс). `make gate` повторно — 1079 passed, 0 regressions, tsc/eslint чисты. Status → done. |

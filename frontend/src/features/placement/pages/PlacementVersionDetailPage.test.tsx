@@ -653,4 +653,73 @@ describe('AcknowledgeCell', () => {
       screen.queryByRole('button', { name: 'Отметить ознакомление' }),
     ).not.toBeInTheDocument()
   })
+
+  it('review: two rows keep independent ack state — acknowledging one does not affect the other', async () => {
+    const current = version({
+      status: 'APPROVED',
+      assignments: [
+        {
+          id: 1,
+          employee_id: EMPLOYEE_A,
+          post: 5,
+          conflict_severity: 'HARD',
+          conflict_codes: ['REST_VIOLATION_CONFLICT'],
+          acknowledged_at: null,
+          ack_escalated_at: null,
+        },
+        {
+          id: 2,
+          employee_id: EMPLOYEE_B,
+          post: 6,
+          conflict_severity: '',
+          conflict_codes: [],
+          acknowledged_at: '2026-08-01T10:00:00Z',
+          ack_escalated_at: null,
+        },
+      ],
+    })
+    server.use(
+      http.get('*/api/operations/assignment-versions/7/', () =>
+        HttpResponse.json(current),
+      ),
+      http.get('*/api/operations/assignment-versions/7/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/placement-assignments/1/acknowledge/', () => {
+        ;(current.assignments[0] as Record<string, unknown>).acknowledged_at =
+          '2026-08-04T13:00:00Z'
+        return HttpResponse.json(current.assignments[0])
+      }),
+    )
+    renderPage('/placement/7')
+
+    // Row B (already acknowledged) never shows a button; row A does.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Отметить ознакомление' }),
+      ).toBeInTheDocument(),
+    )
+    expect(
+      screen.getByText(new Date('2026-08-01T10:00:00Z').toLocaleString('ru-RU')),
+    ).toBeInTheDocument()
+    expect(screen.getByText('HARD')).toBeInTheDocument()
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Отметить ознакомление' }),
+    )
+
+    // Row A flips to a timestamp; row B's own (untouched) timestamp survives
+    // the whole-table refetch unaffected.
+    await waitFor(() =>
+      expect(
+        screen.getByText(new Date('2026-08-04T13:00:00Z').toLocaleString('ru-RU')),
+      ).toBeInTheDocument(),
+    )
+    expect(
+      screen.getByText(new Date('2026-08-01T10:00:00Z').toLocaleString('ru-RU')),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Отметить ознакомление' }),
+    ).not.toBeInTheDocument()
+  })
 })

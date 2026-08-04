@@ -263,7 +263,7 @@ function AcknowledgeCell({
 }: {
   assignmentId: string
   versionId: string
-  versionStatus: string
+  versionStatus: AssignmentVersionDetailResponse['status']
   acknowledgedAt: string | null
 }) {
   const mutation = useAcknowledgePlacementAssignment(assignmentId, versionId)
