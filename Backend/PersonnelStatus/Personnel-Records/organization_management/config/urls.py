@@ -26,6 +26,8 @@ urlpatterns = [
 
     # API Endpoints:
     path("api/common/", include("organization_management.apps.common.api.urls")),
+    # Identity раздела «Охранные мероприятия» (api-режим нативного порта)
+    path("api/operations/", include("organization_management.apps.common.api.operations_urls")),
     path("api/staff_unit/", include("organization_management.apps.staff_unit.urls")),
     path("api/statuses/", include("organization_management.apps.statuses.api.urls")),
     # path("api/secondments/", include("organization_management.apps.secondments.api.urls")),
