@@ -532,7 +532,7 @@ def form_draft_placement(event, *, actor):
                 message="У события уже есть текущая версия Расстановки.",
             )
         version = AssignmentVersion.objects.create(
-            event=event, status=AssignmentVersion.Status.DRAFT
+            event=event, status=AssignmentVersion.Status.DRAFT, created_by=actor.strip()
         )
         posts_by_code = {
             post.code: post for post in Post.objects.filter(object=event.object)
@@ -913,7 +913,34 @@ def submit_assignment_version(version, *, actor):
             entity_id=uuid.UUID(int=version.pk),
             new_value={"event_id": version.event_id, "status": version.status},
         )
+        _notify_assignment_submitted(version)
     return version
+
+
+def _notify_assignment_submitted(version):
+    """Story 16.6d (FR-27): notify every `assignment.approve`/`"*"` holder
+    on `submit_assignment_version()`'s real DRAFT->SUBMITTED transition.
+    Literal reuse of `escalate_stale_force_requests()`'s (15.10) role×
+    permission resolution idiom — not a per-event selector, a role-wide
+    one, since "who can approve" isn't scoped to this event.
+    """
+    recipients = (
+        UserRole.objects.filter(
+            is_active=True,
+            role_code__role_permissions__permission_code_id__in=[
+                "assignment.approve",
+                "*",
+            ],
+        )
+        .values_list("user_id", flat=True)
+        .distinct()
+    )
+    business_date = Clock.today_local()
+    payload = {"event_id": version.event_id, "version_id": version.pk}
+    for recipient in recipients:
+        notify(
+            recipient, Notification.Kind.ASSIGNMENT_SUBMITTED, business_date, payload
+        )
 
 
 def return_assignment_version(version, *, actor, reason):
@@ -982,7 +1009,32 @@ def return_assignment_version(version, *, actor, reason):
                 "new_draft_version_id": new_version.pk,
             },
         )
+        _notify_assignment_returned(version)
     return version, new_version
+
+
+def _notify_assignment_returned(version):
+    """Story 16.6d (FR-27): notify the version's `created_by` (skipped if
+    blank — "no data = skip", same convention as `_notify_assignment_
+    approved()`, 16.6a) and the event's senior on
+    `return_assignment_version()`'s real (and only-ever) SUBMITTED->
+    RETURNED transition.
+    """
+    event = version.event
+    employee_ids = set()
+    if event.senior_employee_id:
+        employee_ids.add(event.senior_employee_id)
+    user_ids = CoreEmployeeSelector.user_ids_for(employee_ids) if employee_ids else {}
+    recipients = set(user_ids.values())
+    if version.created_by:
+        recipients.add(version.created_by)
+    if not recipients:
+        return
+
+    business_date = Clock.today_local()
+    payload = {"event_id": event.pk, "version_id": version.pk}
+    for recipient in recipients:
+        notify(recipient, Notification.Kind.ASSIGNMENT_RETURNED, business_date, payload)
 
 
 def project_placement_assignment(assignment, event):

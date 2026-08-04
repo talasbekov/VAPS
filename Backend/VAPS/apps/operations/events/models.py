@@ -414,6 +414,14 @@ class AssignmentVersion(TimeStampedModel):
     # approval, an honest stub rather than a fake integration. Blank
     # until approved.
     signature_hash = models.CharField(max_length=64, blank=True)
+    # Story 16.6d (FR-27): `created_by` is NOT declared here — it's already
+    # inherited from `TimeStampedModel` (apps/operations/models.py,
+    # ARCH-007/BR-ACCOUNT-002 flat actor-id) but had never been POPULATED
+    # by any service until this story (`form_draft_placement()` below). The
+    # new DRAFT `return_assignment_version()` (16.4) creates on a return is
+    # system-generated — "creator" is meaningless for it, stays blank
+    # ("no data = skip" at notify time, `_notify_assignment_returned()`'s
+    # own docstring).
 
     class Meta:
         db_table = "ops_assignment_versions"

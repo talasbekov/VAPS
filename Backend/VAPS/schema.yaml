@@ -4570,6 +4570,8 @@ components:
       - ASSIGNMENT_APPROVED
       - ACK_MISSING_ESCALATION
       - ACK_REQUIRED
+      - ASSIGNMENT_SUBMITTED
+      - ASSIGNMENT_RETURNED
       type: string
       description: |-
         * `SUBMISSION_LAGGING` - Отставание по сдаче
@@ -4581,6 +4583,8 @@ components:
         * `ASSIGNMENT_APPROVED` - Расстановка утверждена
         * `ACK_MISSING_ESCALATION` - Ознакомление не получено — эскалация
         * `ACK_REQUIRED` - Требуется ознакомление
+        * `ASSIGNMENT_SUBMITTED` - Расстановка подана
+        * `ASSIGNMENT_RETURNED` - Расстановка возвращена
     MyPermissionsResponse:
       type: object
       properties:

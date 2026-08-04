@@ -79,6 +79,21 @@ class Notification(TimeStampedModel):
         # reminder); no watermark field backs this kind, unlike
         # ACK_MISSING_ESCALATION's one-time ack_escalated_at fact.
         ACK_REQUIRED = "ACK_REQUIRED", "Требуется ознакомление"
+        # Story 16.6d, FR-27: fired once per (recipient, business_date) on
+        # AssignmentVersion's real DRAFT->SUBMITTED transition — recipient
+        # is every UserRole holder of assignment.approve (or "*" ADMIN
+        # wildcard), resolved via the same
+        # role_code__role_permissions__permission_code_id__in idiom
+        # escalate_stale_force_requests() (15.10) already establishes
+        # (docs/registries/ws-message-types.yaml::ASSIGNMENT_SUBMITTED).
+        ASSIGNMENT_SUBMITTED = "ASSIGNMENT_SUBMITTED", "Расстановка подана"
+        # Story 16.6d, FR-27: fired once per (recipient, business_date) on
+        # AssignmentVersion's SUBMITTED->RETURNED transition — recipients
+        # are version.created_by (skipped if blank) and event.senior_
+        # employee_id (via CoreEmployeeSelector.user_ids_for(), same as
+        # 16.6a/16.6c) (docs/registries/ws-message-types.yaml::
+        # ASSIGNMENT_RETURNED).
+        ASSIGNMENT_RETURNED = "ASSIGNMENT_RETURNED", "Расстановка возвращена"
 
     recipient = models.CharField(max_length=100)
     kind = models.CharField(max_length=50, choices=Kind.choices)
@@ -133,6 +148,8 @@ class Notification(TimeStampedModel):
                         "ASSIGNMENT_APPROVED",
                         "ACK_MISSING_ESCALATION",
                         "ACK_REQUIRED",
+                        "ASSIGNMENT_SUBMITTED",
+                        "ASSIGNMENT_RETURNED",
                     ]
                 ),
                 name="chk_notification_kind",
