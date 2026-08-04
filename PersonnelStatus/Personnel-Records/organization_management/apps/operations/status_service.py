@@ -6,14 +6,14 @@ status_service.py из Backend/VAPS: create_status и cancel_status со все�
 блокировка сотрудника, проверка типа по справочнику, границы найма,
 предельная длительность типа, детект конфликтов через матрицу (жёсткий →
 422, мягкий → 409 с обходом), запись обхода только при реально обойдённом
-конфликте, отмена только не начавшегося статуса с append-once фактами.
+конфликте, отмена только не начавшегося статуса с append-once фактами,
+правка метаданных/интервала (update_status).
 
 НЕ портировано в этом срезе (осознанно, отдельными кусками):
-update_status/complete_status_early/extend_status, bulk-создание, догон
-материализации, увольнение, прикомандирование, расчёт расхода. Аудит
-мутаций (в источнике — record(...)) здесь НЕ вызывается: у старого проекта
-свой apps.audit, склейка — отдельный срез; пока факты пишутся без
-аудит-следа раздела.
+complete_status_early/extend_status, догон материализации, увольнение,
+прикомандирование. Аудит мутаций (в источнике — record(...)) здесь НЕ
+вызывается: у старого проекта свой apps.audit, склейка — отдельный срез;
+пока факты пишутся без аудит-следа раздела.
 """
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
@@ -284,14 +284,131 @@ def create_status(
     return status
 
 
+def _lock_for_edit(status):
+    """Общая преамбула правки существующей строки: блокировка → перечитка →
+    гарды. Возвращает (сотрудник, СВЕЖАЯ строка под блокировкой).
+
+    Порядок захвата всюду один — сотрудник, затем строка статуса (так же
+    берёт блокировки create_status и пачка), поэтому взаимной блокировки
+    двух операторов не возникает. Блокировка СОТРУДНИКА сериализует правку с
+    созданием (иначе правка интервала и параллельная вставка проверяли бы
+    пересечения по разным снимкам); блокировка САМОЙ СТРОКИ плюс перечитка
+    держат append-once: второй писатель, пришедший со своим устаревшим
+    in-memory объектом (cancelled_at=None), после блокировки видит
+    канонические факты первого и получает отказ, а не переписывает их.
+
+    ЗДЕСЬ ЖЕ единственный владелец гарда «отменённая строка терминальна»:
+    отменённый статус не правится и не отменяется повторно. Вызывающим
+    остаётся их собственная часть жизненного цикла (cancel_status — что
+    отменить можно только не начавшийся).
+
+    ОТЛИЧИЕ ОТ ИСТОЧНИКА: там update_status идёт без перечитки и без гарда
+    отменённой строки (блокирует только сотрудника) — известная дыра
+    ретроспективы E3. При переезде она закрыта: путь правки и путь отмены
+    делят одну преамбулу.
+    """
+    employee = _lock_employee(status.employee_id)
+    try:
+        locked = OpsEmployeeStatus.objects.select_for_update().get(pk=status.pk)
+    except ObjectDoesNotExist:
+        raise DomainError(
+            "ENTITY_NOT_FOUND",
+            404,
+            detail={"status_id": status.pk},
+            message="Статус не найден.",
+        ) from None
+    locked.assert_user_editable()
+    if locked.cancelled_at is not None:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"state": str(OpsEmployeeStatus.LifecycleState.CANCELLED)},
+            message="Статус отменён — отменённая строка терминальна.",
+        )
+    return employee, locked
+
+
+@transaction.atomic
+def update_status(
+    status,
+    *,
+    actor,
+    date_start=None,
+    date_end=None,
+    comment=None,
+    document_basis=None,
+):
+    """Правка оператором своей строки: интервал и метаданные.
+
+    Переходы жизненного цикла (отмена/досрочное закрытие/продление) сюда НЕ
+    входят: отмена — cancel_status, остальное — отдельный срез. Тип статуса и
+    сотрудник не меняются — это другая строка, а не правка этой.
+
+    Интервал перепроверяется ТОЛЬКО когда реально меняется дата: правка
+    комментария не должна упираться в интервал, ставший «невалидным» уже
+    после создания (тип деактивировали, границы найма или предел
+    длительности ужесточили). Блокировка и гарды при этом отрабатывают на
+    любой правке.
+
+    Возвращает перечитанную под блокировкой строку — переданный объект НЕ
+    мутируется (он мог быть устаревшим; его состояние не источник правды).
+    Так же ведёт себя cancel_status.
+    """
+    _require_actor(actor)
+    employee, locked = _lock_for_edit(status)
+    # Гард откомандированного — по СОТРУДНИКУ строки, не по области актора.
+    assert_employee_status_editable(locked.employee_id)
+
+    if date_start is not None or date_end is not None:
+        new_start = locked.date_start if date_start is None else date_start
+        new_end = locked.date_end if date_end is None else date_end
+        status_type = _resolve_status_type(locked.status_type_code)
+        _validate_interval(
+            date_start=new_start,
+            date_end=new_end,
+            employee=employee,
+            status_type=status_type,
+        )
+        # Себя из периметра исключаем: строка всегда пересекается сама с
+        # собой, иначе любая правка дат конфликтовала бы со своим оригиналом.
+        _assert_no_conflict(
+            employee_id=locked.employee_id,
+            status_type_code=locked.status_type_code,
+            date_start=new_start,
+            date_end=new_end,
+            exclude_pk=locked.pk,
+        )
+
+    changed = []
+    for field, value in (
+        ("date_start", date_start),
+        ("date_end", date_end),
+        ("comment", comment),
+        ("document_basis", document_basis),
+    ):
+        if value is not None:
+            setattr(locked, field, value)
+            changed.append(field)
+    if changed:
+        changed.append("updated_at")
+        # Savepoint вокруг гоночной записи: правка дат может упереться в
+        # excl_hard_status_overlap, и IntegrityError не должен отравлять
+        # транзакцию вызывающего. update_fields, а не голый save(): голый
+        # переписал бы source и генерируемый period чужими значениями.
+        with transaction.atomic():
+            locked.save(update_fields=changed)
+    return locked
+
+
 @transaction.atomic
 def cancel_status(status, *, actor, reason):
     """Отменить не начавшийся (PLANNED) статус — факты отмены append-once.
 
     Отменяется только PLANNED: начавшийся или завершённый статус — факт,
-    который случился (его закрывают раньше срока, а не отменяют), а
-    отменённый терминален. cancelled_at/by/reason пишутся один раз и на
-    уровне сервиса не переписываются.
+    который случился (его закрывают раньше срока, а не отменяют). Отменённую
+    строку отсекает раньше общий гард в _lock_for_edit, поэтому здешняя
+    проверка владеет ровно ACTIVE/COMPLETED. cancelled_at/by/reason пишутся
+    один раз и на уровне сервиса не переписываются.
     """
     _require_actor(actor)
     if not (reason or "").strip():
@@ -301,7 +418,7 @@ def cancel_status(status, *, actor, reason):
             detail={"field": "reason"},
             message="При отмене статуса обязательна непустая причина.",
         )
-    locked = OpsEmployeeStatus.objects.select_for_update().get(pk=status.pk)
+    _, locked = _lock_for_edit(status)
     state = locked.state_on(Clock.today_local())
     if state != OpsEmployeeStatus.LifecycleState.PLANNED:
         raise DomainError(
