@@ -1589,8 +1589,8 @@ def _notify_replacement(old_version, new_version):
     (17.3 allows both a straight replacement and a plain vacancy; either
     way the removed employee is notified the same way) — plus
     `event.senior_employee_id`, if set (registry: "senior/affected
-    users"). Buквальный образец `_notify_assignment_approved()`'s (16.6a)
-    bridging идиома: `CoreEmployeeSelector.user_ids_for()` +
+    users"). Буквальный образец `_notify_assignment_approved()`'s (16.6a)
+    bridging-идиомы: `CoreEmployeeSelector.user_ids_for()` +
     `set(...values())`-дедуп, ОДИН `notify()` на уникального получателя,
     не на строку.
 

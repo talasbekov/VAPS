@@ -6,6 +6,7 @@ import uuid
 
 import pytest
 
+from apps.core.clock import Clock
 from apps.core.models import (
     Division,
     DivisionType,
@@ -89,8 +90,39 @@ def test_removed_employee_gets_notified():
         assignments=[{"employee_id": uuid.uuid4(), "post": post}],
     )
 
-    assert Notification.objects.filter(
+    notification = Notification.objects.get(
         recipient="user-removed-1", kind=Notification.Kind.REPLACEMENT_CREATED
+    )
+    # review (Blind Hunter): payload содержимое ранее не проверялось,
+    # только факт создания.
+    assert notification.payload["event_id"] == event.pk
+    new_version = AssignmentVersion.objects.get(event=event, is_current=True)
+    assert notification.payload["version_id"] == new_version.pk
+    assert notification.business_date == Clock.today_local()
+
+
+def test_employee_moved_to_a_different_post_is_not_notified():
+    """review (Edge Case Hunter): «снятый» — employee_id absent from the
+    new version entirely (this story's Scope Decision), NOT per-post —
+    an employee still present in the new version, just at a different
+    post, is NOT a removal and must not be notified."""
+    event = make_event("OBJ-NOTIFY-1b")
+    post_a = make_post(event.object, "POST-A")
+    post_b = make_post(event.object, "POST-B")
+    version = make_approved_version(event)
+    moved = make_bound_employee("user-moved-1b")
+    PlacementAssignment.objects.create(version=version, employee_id=moved, post=post_a)
+
+    amend_assignment_version(
+        version,
+        actor="staff-1",
+        reason="x",
+        sanction="y",
+        assignments=[{"employee_id": moved, "post": post_b}],
+    )
+
+    assert not Notification.objects.filter(
+        recipient="user-moved-1b", kind=Notification.Kind.REPLACEMENT_CREATED
     ).exists()
 
 
