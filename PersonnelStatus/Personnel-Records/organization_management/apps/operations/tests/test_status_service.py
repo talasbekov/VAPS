@@ -25,6 +25,7 @@ from organization_management.apps.operations.models_status import (
     StatusOverride,
 )
 from organization_management.apps.operations.status_service import (
+    complete_status_early,
     cancel_status,
     create_status,
     update_status,
@@ -741,3 +742,177 @@ class TestUpdateStatus:
                 cancel_status(status, actor=ACTOR, reason="ручная отмена")
         assert exc.value.code == "AUTO_STATUS_READONLY"
         assert OpsEmployeeStatus.objects.get(pk=status.pk).cancelled_at is None
+
+
+@pytest.mark.django_db
+class TestCompleteStatusEarly:
+    """Досрочное закрытие идущего статуса фактической датой."""
+
+    def _active(self, employee, code="DUTY", start=None):
+        return create_status(
+            employee_id=employee.id,
+            status_type_code=code,
+            date_start=TODAY - timedelta(days=2) if start is None else start,
+            date_end=TODAY + timedelta(days=5),
+            actor=ACTOR,
+        )
+
+    def test_active_is_closed_by_actual_end(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._active(employee)
+            closed = complete_status_early(status, actor=ACTOR, actual_end=TODAY)
+        # Полуинтервал [начало, сегодня): сегодня статус уже не действует.
+        assert closed.date_end == TODAY
+        assert closed.state_on(TODAY) == OpsEmployeeStatus.LifecycleState.COMPLETED
+        from_db = OpsEmployeeStatus.objects.get(pk=status.pk)
+        assert from_db.date_end == TODAY
+
+    def test_returns_reread_row_not_the_passed_object(self):
+        # Переданный объект мог быть устаревшим: сохраняется и возвращается
+        # строка, перечитанная под блокировкой.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._active(employee)
+            stale = OpsEmployeeStatus.objects.get(pk=status.pk)
+            OpsEmployeeStatus.objects.filter(pk=status.pk).update(
+                comment="правка соседа"
+            )
+            closed = complete_status_early(stale, actor=ACTOR, actual_end=TODAY)
+        # Чужая правка не затёрта закрытием.
+        assert closed.comment == "правка соседа"
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).comment == "правка соседа"
+
+    def test_planned_is_not_completed_early(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = create_status(
+                employee_id=employee.id,
+                status_type_code="DUTY",
+                date_start=TODAY + timedelta(days=3),
+                date_end=TODAY + timedelta(days=4),
+                actor=ACTOR,
+            )
+            with pytest.raises(DomainError) as exc:
+                complete_status_early(status, actor=ACTOR, actual_end=TODAY)
+        assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+        assert exc.value.http_status == 422
+        # Не начавшийся статус не случился — его отменяют, и интервал цел.
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == TODAY + timedelta(
+            days=4
+        )
+
+    def test_completed_is_not_completed_again(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = create_status(
+                employee_id=employee.id,
+                status_type_code="DUTY",
+                date_start=TODAY - timedelta(days=5),
+                date_end=TODAY - timedelta(days=1),
+                actor=ACTOR,
+            )
+            with pytest.raises(DomainError) as exc:
+                complete_status_early(status, actor=ACTOR, actual_end=TODAY)
+        assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+
+    def test_future_actual_end_is_rejected(self):
+        # Факт не бывает в будущем: «закрыт» завтрашним числом — это не факт,
+        # а план.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._active(employee)
+            with pytest.raises(DomainError) as exc:
+                complete_status_early(
+                    status, actor=ACTOR, actual_end=TODAY + timedelta(days=1)
+                )
+        assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+        assert OpsEmployeeStatus.objects.get(pk=status.pk).date_end == TODAY + timedelta(
+            days=5
+        )
+
+    def test_empty_interval_is_rejected(self):
+        # Закрытие днём начала оставило бы пустой полуинтервал — «не было
+        # вовсе», а это отмена, другая операция.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._active(employee, start=TODAY)
+            with pytest.raises(DomainError) as exc:
+                complete_status_early(status, actor=ACTOR, actual_end=TODAY)
+        assert exc.value.code == "INVALID_DATE_RANGE"
+        assert exc.value.http_status == 422
+
+    def test_cancelled_row_is_terminal(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._active(employee)
+            OpsEmployeeStatus.objects.filter(pk=status.pk).update(
+                cancelled_at=Clock.now()
+            )
+            with pytest.raises(DomainError) as exc:
+                complete_status_early(status, actor=ACTOR, actual_end=TODAY)
+        assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+
+    def test_projection_row_is_readonly(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._active(employee)
+            OpsEmployeeStatus.objects.filter(pk=status.pk).update(
+                source=OpsEmployeeStatus.Source.OM_AUTO
+            )
+            with pytest.raises(DomainError) as exc:
+                complete_status_early(status, actor=ACTOR, actual_end=TODAY)
+        assert exc.value.code == "AUTO_STATUS_READONLY"
+
+    def test_detached_employee_other_status_is_locked(self):
+        # Гард FR-16 действует: у откомандированного чужие статусы не
+        # закрывают, как и не правят.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            duty = self._active(employee)
+            OpsEmployeeStatus.objects.create(
+                employee_id=employee.id,
+                status_type_code="DETACHED",
+                date_start=TODAY - timedelta(days=1),
+                date_end=TODAY + timedelta(days=10),
+                source=OpsEmployeeStatus.Source.USER,
+                created_by=ACTOR,
+            )
+            with pytest.raises(DomainError) as exc:
+                complete_status_early(duty, actor=ACTOR, actual_end=TODAY)
+        assert exc.value.code == "PERMISSION_DENIED"
+
+    def test_secondment_leg_closes_itself(self):
+        # Обратная сторона: сама нога пары закрывается — иначе ограничение
+        # заблокировало бы собственное снятие, и возврат стал бы невозможен.
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            leg = OpsEmployeeStatus.objects.create(
+                employee_id=employee.id,
+                status_type_code="DETACHED",
+                date_start=TODAY - timedelta(days=1),
+                date_end=TODAY + timedelta(days=10),
+                source=OpsEmployeeStatus.Source.USER,
+                created_by=ACTOR,
+            )
+            closed = complete_status_early(leg, actor=ACTOR, actual_end=TODAY)
+        assert closed.date_end == TODAY
+
+    def test_empty_actor_is_rejected(self):
+        seed_types()
+        employee = make_employee()
+        with clock.override(TODAY):
+            status = self._active(employee)
+            with pytest.raises(DomainError) as exc:
+                complete_status_early(status, actor="  ", actual_end=TODAY)
+        assert exc.value.http_status == 400
