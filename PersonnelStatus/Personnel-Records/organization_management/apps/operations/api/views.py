@@ -8,6 +8,7 @@ apps/operations/api/views.py из Backend/VAPS).
 - тела запросов проходят через сериализаторы (400 вместо KeyError→500 в
   источнике), идентичность в теле не принимается — только из аутентификации.
 """
+from django.db.models import Q
 from django.utils.dateparse import parse_date
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
@@ -58,6 +59,7 @@ from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     Secondment,
+    SecondmentState,
 )
 from organization_management.apps.operations.selectors import (
     DivisionTreeSelector,
@@ -684,11 +686,13 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
 
 class SecondmentViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """Прикомандирование: откомандировать и вернуть.
+    """Прикомандирование: откомандировать, вернуть и прочитать.
 
-    POST /api/operations/secondments/                       — откомандировать
-    POST /api/operations/secondments/{id}/request-return/    — запрос возврата
-    POST /api/operations/secondments/{id}/confirm-return/    — подтверждение
+    GET   /api/operations/secondments/                       — список
+    GET   /api/operations/secondments/{id}/                  — одна пара
+    POST  /api/operations/secondments/                       — откомандировать
+    POST  /api/operations/secondments/{id}/request-return/    — запрос возврата
+    POST  /api/operations/secondments/{id}/confirm-return/    — подтверждение
 
     Тонкая вьюха поверх сервиса: сериализатор → область видимости → вызов.
     Правила пары (атомарность, конфликты, порядок рукопожатия, закрытие ног)
@@ -701,15 +705,36 @@ class SecondmentViewSet(RequirePermissionMixin, viewsets.ViewSet):
     Одна общая проверка сделала бы обе стороны одним лицом, и подтверждение
     перестало бы что-либо подтверждать.
 
-    Чтение пар — отдельный срез, поэтому GET здесь не открыт.
+    У ЧТЕНИЯ область ОБЕ стороны сразу: пара — общее дело двух подразделений,
+    и каждое из них должно видеть её целиком. Право чтения — status.view, как
+    у статусов и расхода: право записи чтения не открывает и наоборот.
     """
 
     permission_map = {
+        "list": _READ_STATUS_PERMISSION,
+        "retrieve": _READ_STATUS_PERMISSION,
         "create": _BULK_STATUS_PERMISSION,
         "request_return": _BULK_STATUS_PERMISSION,
         "confirm_return": _BULK_STATUS_PERMISSION,
     }
-    http_method_names = ["post", "options"]
+    # PUT/DELETE не открыты намеренно: пару не переписывают и не удаляют —
+    # её единственная законная «правка» это возврат отдельным действием.
+    http_method_names = ["get", "post", "options"]
+
+    def _visible_sides_filter(self, request):
+        """Условие видимости пары: своя ЛЮБАЯ из двух сторон.
+
+        None — безскоуповый/wildcard грант, условия нет вовсе. Пара видна и
+        штатному, и принимающему подразделению: у откомандирования два
+        участника, и показывать её лишь одной стороне значило бы прятать от
+        второй её собственных людей.
+        """
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _READ_STATUS_PERMISSION
+        )
+        if allowed is None:
+            return None
+        return Q(from_division_id__in=allowed) | Q(to_division_id__in=allowed)
 
     def _get_secondment_or_404(self, pk):
         """Связь по pk из пути; отсутствующая или нечисловая — 404 конвертом.
@@ -755,6 +780,106 @@ class SecondmentViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 detail={field: str(division_id)},
                 message="Подразделение вне области видимости оператора.",
             )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "employee_id", OpenApiTypes.INT, description="Один сотрудник."
+            ),
+            OpenApiParameter(
+                "division_id",
+                OpenApiTypes.INT,
+                description=(
+                    "Пары, где это подразделение — ЛЮБАЯ из двух сторон "
+                    "(поддерево, как и область видимости)."
+                ),
+            ),
+            OpenApiParameter(
+                "state",
+                OpenApiTypes.STR,
+                enum=[choice.value for choice in SecondmentState],
+                description="Стадия рукопожатия.",
+            ),
+        ],
+        responses=paginated_response_schema(
+            "PaginatedSecondmentList", SecondmentSerializer(many=True)
+        ),
+        description=(
+            "Список пар прикомандирования под правом status.view. Пара видна "
+            "ОБЕИМ сторонам — и штатному подразделению, и принимающему. "
+            "Запрос чужого подразделения — 403, а не пустой список. Порядок "
+            "задаёт сервер: свежие пары первыми. 400 — нечитаемый параметр."
+        ),
+    )
+    def list(self, request, *args, **kwargs):
+        employee_id = _parse_int_param(request, "employee_id")
+        division_id = _parse_int_param(request, "division_id")
+        state = request.query_params.get("state")
+        if state is not None and state not in SecondmentState.values:
+            raise ValidationError(
+                {"state": f"Ожидается одно из: {', '.join(SecondmentState.values)}."}
+            )
+
+        # Стадия фильтруется ТОЙ ЖЕ аннотацией, что отдаётся в ответе: второй
+        # набор условий разошёлся бы с полем state в строках.
+        queryset = Secondment.objects.with_state()
+        if employee_id is not None:
+            queryset = queryset.filter(employee_id=employee_id)
+        if state is not None:
+            queryset = queryset.filter(state_annotation=state)
+        if division_id is not None:
+            # Запрошенное подразделение проходит ту же проверку области, что
+            # и у расхода со списком статусов: чужое — отказ, не пустота.
+            subtree = _resolve_division_scope(
+                request, division_id, _READ_STATUS_PERMISSION
+            )
+            queryset = queryset.filter(
+                Q(from_division_id__in=subtree) | Q(to_division_id__in=subtree)
+            )
+        else:
+            sides = self._visible_sides_filter(request)
+            if sides is not None:
+                queryset = queryset.filter(sides)
+        # Порядок пинится здесь: у модели своего ordering нет, а страничная
+        # выдача без полного порядка теряет и дублирует строки между
+        # страницами. id — последний разрыв ничьей, он уникален.
+        queryset = queryset.order_by("-created_at", "id")
+
+        paginator = DefaultPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        return paginator.get_paginated_response(
+            SecondmentSerializer(page, many=True).data
+        )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id связи прикомандирования.",
+            )
+        ],
+        responses={200: SecondmentSerializer},
+        description=(
+            "Одна пара под правом status.view; видна обеим сторонам. 403 — "
+            "нет права либо ни одна сторона пары не входит в область "
+            "оператора; 404 — связи нет."
+        ),
+    )
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        secondment = self._get_secondment_or_404(pk)
+        sides = self._visible_sides_filter(request)
+        if sides is not None and not Secondment.objects.filter(
+            sides, pk=secondment.pk
+        ).exists():
+            raise DomainError(
+                "PERMISSION_DENIED",
+                403,
+                detail={"secondment_id": str(secondment.pk)},
+                message="Ни одна сторона пары не входит в область оператора.",
+            )
+        return Response(SecondmentSerializer(secondment).data)
 
     @extend_schema(
         request=SecondmentCreateSerializer,

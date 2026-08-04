@@ -157,20 +157,26 @@ class SecondmentSerializer(serializers.ModelSerializer):
 
     Ноги отдаются идентификаторами: строки статусов читаются своим маршрутом,
     и дублировать их здесь значило бы завести второй источник правды о них.
-    Факты возврата — это ВСЁ состояние рукопожатия: отдельного признака
-    «вернулся» нет ни в базе, ни в ответе, клиент выводит стадию из пары
-    (запрошен / подтверждён / ни того ни другого).
+    Стадия рукопожатия не хранится, а выводится из фактов сервером — клиенту
+    незачем повторять этот вывод у себя и расходиться с фильтром по стадии.
+    Сами факты (кто и когда) остаются в ответе: стадия отвечает «где мы»,
+    факты — «кто это решил».
     """
+
+    state = serializers.SerializerMethodField()
 
     class Meta:
         model = Secondment
         fields = [
-            "id", "employee_id", "out_status", "in_status",
+            "id", "employee_id", "state", "out_status", "in_status",
             "from_division_id", "to_division_id", "document_basis",
             "return_requested_at", "return_requested_by",
             "return_confirmed_at", "return_confirmed_by",
             "created_by", "created_at", "updated_at",
         ]
+
+    def get_state(self, obj) -> str:
+        return str(obj.state)
 
 
 class SecondmentCreateSerializer(serializers.Serializer):
