@@ -2017,10 +2017,17 @@ def close_security_event(event, *, actor, summaries):
     направлению (`SecurityEventSectorPost.sector`, дистинкт). `summaries`
     — список dict'ов `{"sector", "summary"}`, ПОЛНОЕ покрытие, не diff
     (тот же принцип, что `amend_assignment_version()`'s `assignments` —
-    upsert готового набора). НЕ идемпотентно на уже-CLOSED (буквальный
-    образец `issue_bulletin()`'s strict-переход — закрытие терминально,
-    не re-reachable через повторный вызов, в отличие от
-    `approve_staffing_demand()`'s idempotent-on-target)."""
+    upsert готового набора).
+
+    НЕ идемпотентно на уже-CLOSED — review-исправление (Acceptance
+    Auditor): исходная докстринг-формулировка ошибочно называла
+    `issue_bulletin()` прецедентом «строгого NOT-idempotent» перехода —
+    на самом деле `issue_bulletin()` (как и `approve_staffing_demand()`)
+    idempotent-on-target (`if event.status_code == BULLETIN: return
+    event`). Строгая не-идемпотентность здесь — НОВОЕ, осознанное решение
+    для ЭТОЙ стори (закрытие терминально: повторный вызов на уже-CLOSED —
+    реальный конфликт состояния, не replay-safe действие), а не
+    заимствованный прецедент."""
     if not (actor or "").strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
     with transaction.atomic():
@@ -2038,10 +2045,28 @@ def close_security_event(event, *, actor, summaries):
         for spec in summaries:
             sector = spec.get("sector")
             if not (sector or "").strip():
+                raise DomainError("VALIDATION_ERROR", 400, message="sector обязателен.")
+            summary = spec.get("summary")
+            if not summary or not summary.strip():
+                # review (Blind Hunter + Acceptance Auditor): _require_text()'s
+                # hardcoded message ("обязателен для amendment.") is copied
+                # from a different call site (amend_assignment_version) and
+                # is nonsensical here — inline check instead of reusing it.
                 raise DomainError(
-                    "VALIDATION_ERROR", 400, message="sector обязателен."
+                    "VALIDATION_ERROR", 400, message="summary обязателен."
                 )
-            _require_text(spec.get("summary"), "summary")
+            if sector in given_sectors:
+                # review (Blind Hunter + Edge Case Hunter, независимо
+                # совпали): дубликат сектора в одном payload молча
+                # перезаписывался бы update_or_create — отклоняем явно,
+                # тот же принцип, что дубликат-employee_id-гарды
+                # cascade_replace_departed() (17.5).
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    400,
+                    message="Направление указано в summaries более одного раза.",
+                    detail={"duplicate_sector": sector},
+                )
             given_sectors.add(sector)
         missing = required_sectors - given_sectors
         if missing:
@@ -2050,6 +2075,18 @@ def close_security_event(event, *, actor, summaries):
                 400,
                 message="Итоги обязательны по каждому направлению.",
                 detail={"missing_sectors": sorted(missing)},
+            )
+        unknown = given_sectors - required_sectors
+        if unknown:
+            # review (Blind Hunter + Edge Case Hunter, независимо совпали):
+            # sector, которого нет ни у одной sector_posts-строки события,
+            # молча упсертился бы как мусорная строка — Dev Notes этой
+            # стори явно обещали эту проверку, реализация её не несла.
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                message="Направление не относится к этому событию.",
+                detail={"unknown_sectors": sorted(unknown)},
             )
         for spec in summaries:
             SecurityEventClosureSummary.objects.update_or_create(

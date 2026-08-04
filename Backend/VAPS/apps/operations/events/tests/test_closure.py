@@ -24,9 +24,7 @@ def make_event(code, status_code=SecurityEvent.StatusCode.APPROVED):
 
 
 def make_sector_post(event, sector, code="POST-1"):
-    return SecurityEventSectorPost.objects.create(
-        event=event, sector=sector, post=code
-    )
+    return SecurityEventSectorPost.objects.create(event=event, sector=sector, post=code)
 
 
 # --- start_security_event() ---
@@ -61,6 +59,19 @@ def test_start_rejected_from_wrong_status():
     assert exc_info.value.http_status == 422
 
 
+def test_start_rejected_from_closed():
+    """review (Blind Hunter): only DRAFT was tested as a wrong starting
+    status — CLOSED (terminal) is a distinct, more consequential case."""
+    event = make_event("OBJ-START-4", status_code=SecurityEvent.StatusCode.CLOSED)
+
+    with pytest.raises(DomainError) as exc_info:
+        start_security_event(event, actor="staff-1")
+
+    assert exc_info.value.http_status == 422
+    event.refresh_from_db()
+    assert event.status_code == "CLOSED"
+
+
 # --- close_security_event() ---
 
 
@@ -80,7 +91,14 @@ def test_close_succeeds_with_all_sectors_covered():
 
     assert closed.status_code == "CLOSED"
     assert SecurityEventClosureSummary.objects.filter(event=event).count() == 2
-    assert AuditLog.objects.filter(action="SECURITY_EVENT_CLOSED").exists()
+    audit_row = AuditLog.objects.get(action="SECURITY_EVENT_CLOSED")
+    # review (Acceptance Auditor, мутационно найденный пробел): раньше
+    # проверялось только .exists() — пустой/устаревший снимок в new_value
+    # прошёл бы незамеченным.
+    assert audit_row.new_value["status_code"] == "CLOSED"
+    assert sorted(
+        row["sector"] for row in audit_row.new_value["closure_summaries"]
+    ) == ["Север", "Юг"]
 
 
 def test_close_rejected_when_sector_missing():
@@ -96,8 +114,57 @@ def test_close_rejected_when_sector_missing():
         )
 
     assert exc_info.value.http_status == 400
+    # review (Acceptance Auditor, мутационно найденный пробел): AC-3
+    # требует список недостающих секторов в details — раньше не
+    # проверялось вовсе.
+    assert exc_info.value.detail == {"missing_sectors": ["Юг"]}
     event.refresh_from_db()
     assert event.status_code == "IN_PROGRESS"
+
+
+def test_close_rejected_when_sector_unknown():
+    """review (Blind Hunter + Edge Case Hunter, независимо совпали):
+    сектор, которого нет ни у одной sector_posts-строки, молча упсертился
+    бы как мусорная запись."""
+    event = make_event("OBJ-CLOSE-8", status_code=SecurityEvent.StatusCode.IN_PROGRESS)
+    make_sector_post(event, "Север")
+
+    with pytest.raises(DomainError) as exc_info:
+        close_security_event(
+            event,
+            actor="staff-1",
+            summaries=[
+                {"sector": "Север", "summary": "x"},
+                {"sector": "Призрак", "summary": "y"},
+            ],
+        )
+
+    assert exc_info.value.http_status == 400
+    assert exc_info.value.detail == {"unknown_sectors": ["Призрак"]}
+    event.refresh_from_db()
+    assert event.status_code == "IN_PROGRESS"
+    assert not SecurityEventClosureSummary.objects.filter(event=event).exists()
+
+
+def test_close_rejected_when_sector_duplicated():
+    """review (Blind Hunter + Edge Case Hunter, независимо совпали):
+    дубликат сектора в одном payload молча перезаписывался бы
+    update_or_create без сигнала об ошибке ввода."""
+    event = make_event("OBJ-CLOSE-9", status_code=SecurityEvent.StatusCode.IN_PROGRESS)
+    make_sector_post(event, "Север")
+
+    with pytest.raises(DomainError) as exc_info:
+        close_security_event(
+            event,
+            actor="staff-1",
+            summaries=[
+                {"sector": "Север", "summary": "x"},
+                {"sector": "Север", "summary": "y"},
+            ],
+        )
+
+    assert exc_info.value.http_status == 400
+    assert exc_info.value.detail == {"duplicate_sector": "Север"}
 
 
 def test_close_rejected_when_summary_is_blank():
