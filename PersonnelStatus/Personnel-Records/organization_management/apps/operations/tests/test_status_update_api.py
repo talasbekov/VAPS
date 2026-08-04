@@ -300,11 +300,12 @@ def test_soft_overlap_409_envelope(types, division):
 
 # ── Поверхность метода ───────────────────────────────────────────────────
 
-@pytest.mark.parametrize("method", ["get", "put", "delete"])
+@pytest.mark.parametrize("method", ["put", "delete"])
 def test_other_methods_are_not_served(types, division, method):
     # Правка только частичная: PUT переписал бы неизменяемые поля, DELETE
-    # уничтожил бы факт (строки не удаляются, а отменяются), GET — отдельный
-    # срез чтения. 405, а не дезориентирующий 403.
+    # уничтожил бы факт (строки не удаляются, а отменяются). 405, а не
+    # дезориентирующий 403. GET на этом же адресе обслуживается срезом чтения
+    # и проверяется в test_status_list_api.py.
     api, _ = client_for(f"upd-method-{method}", "ADMIN", ["*"])
     employee = make_employee(division)
     status_row = make_status(employee)
