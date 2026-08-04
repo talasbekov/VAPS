@@ -1634,9 +1634,11 @@ def amend_assignment_version(version, *, actor, reason, sanction, assignments):
                 ),
             )
         for employee_id, post in assignments:
-            if post.object_id != event.object_id:
-                # review-прецедент 17.2 (Blind Hunter + Edge Case Hunter):
-                # пост обязан принадлежать тому же объекту, что событие.
+            if post is None or post.object_id != event.object_id:
+                # review (Edge Case Hunter): post=None must raise a domain
+                # error, not AttributeError. review-прецедент 17.2 (Blind
+                # Hunter + Edge Case Hunter): пост обязан принадлежать тому
+                # же объекту, что событие.
                 raise DomainError(
                     "VALIDATION_ERROR",
                     400,
@@ -1645,27 +1647,34 @@ def amend_assignment_version(version, *, actor, reason, sanction, assignments):
                     ),
                 )
 
-        version.is_current = False
-        version.save(update_fields=["is_current", "updated_at"])
+        # Flip-before-insert внутри ВЛОЖЕННОГО savepoint — буквальный образец
+        # `amend_day()`'s комментария (review, Edge Case Hunter): конкурентная
+        # гонка на unique_assignment_version_number/_current срывает
+        # IntegrityError ЗДЕСЬ, не отравляя объемлющую транзакцию вызывающего
+        # (DRF-хендлер маппит IntegrityError в 409 снаружи, тот же canon, что
+        # `amend_day()`'s CONSTRAINT_ERROR_MAP-комментарий).
+        with transaction.atomic():
+            version.is_current = False
+            version.save(update_fields=["is_current", "updated_at"])
 
-        new_version = AssignmentVersion.objects.create(
-            event=event,
-            status=AssignmentVersion.Status.APPROVED,
-            version=version.version + 1,
-            is_current=True,
-            is_amendment=True,
-            reason=reason,
-            sanction=sanction,
-            created_by=actor.strip(),
-        )
-        PlacementAssignment.objects.bulk_create(
-            [
-                PlacementAssignment(
-                    version=new_version, employee_id=employee_id, post=post
-                )
-                for employee_id, post in assignments
-            ]
-        )
+            new_version = AssignmentVersion.objects.create(
+                event=event,
+                status=AssignmentVersion.Status.APPROVED,
+                version=version.version + 1,
+                is_current=True,
+                is_amendment=True,
+                reason=reason,
+                sanction=sanction,
+                created_by=actor.strip(),
+            )
+            PlacementAssignment.objects.bulk_create(
+                [
+                    PlacementAssignment(
+                        version=new_version, employee_id=employee_id, post=post
+                    )
+                    for employee_id, post in assignments
+                ]
+            )
         detect_placement_conflicts(new_version)
 
         pairs = list(

@@ -154,6 +154,16 @@ def test_amend_does_not_block_on_conflicting_assignment():
 
     assert new_version.pk is not None
     assert new_version.assignments.count() == 2
+    # review (Acceptance Auditor): AC-5's second half — conflicts are
+    # RECORDED on the affected rows, not just non-blocking — was
+    # previously unasserted.
+    assert set(new_version.assignments.values_list("conflict_severity", flat=True)) == {
+        "SOFT"
+    }
+    assert all(
+        "DOUBLE_ASSIGNMENT_CONFLICT" in codes
+        for codes in new_version.assignments.values_list("conflict_codes", flat=True)
+    )
 
 
 def test_amend_rejects_post_from_a_different_object():
@@ -171,6 +181,24 @@ def test_amend_rejects_post_from_a_different_object():
             reason="x",
             sanction="y",
             assignments=[(uuid.uuid4(), foreign_post)],
+        )
+
+    assert AssignmentVersion.objects.filter(event=event).count() == 1
+
+
+def test_amend_rejects_none_post():
+    """review (Edge Case Hunter): post=None must raise DomainError, not
+    AttributeError."""
+    event = make_event("OBJ-AMEND-7b")
+    old = make_approved_version(event)
+
+    with pytest.raises(DomainError):
+        amend_assignment_version(
+            old,
+            actor="staff-1",
+            reason="x",
+            sanction="y",
+            assignments=[(uuid.uuid4(), None)],
         )
 
     assert AssignmentVersion.objects.filter(event=event).count() == 1
@@ -218,6 +246,23 @@ def test_db_constraint_rejects_amendment_without_reason_or_sanction():
             version=1,
             is_amendment=True,
             reason="",
+            sanction="",
+        )
+
+
+def test_db_constraint_rejects_amendment_with_only_one_field_filled():
+    """review (Blind Hunter): the asymmetric half of the True-branch —
+    is_amendment=True with only ONE of reason/sanction non-blank — wasn't
+    directly tested."""
+    event = make_event("OBJ-AMEND-10b")
+
+    with pytest.raises(IntegrityError):
+        AssignmentVersion.objects.create(
+            event=event,
+            status=AssignmentVersion.Status.APPROVED,
+            version=1,
+            is_amendment=True,
+            reason="x",
             sanction="",
         )
 
