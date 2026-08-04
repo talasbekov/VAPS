@@ -28,6 +28,7 @@ import type {
   AssignmentVersionDetailResponse,
 } from '../api/queries'
 import { JournalPanel } from './JournalPanel'
+import { ReplaceDepartedDialog } from './ReplaceDepartedDialog'
 import { ReturnVersionDialog } from './ReturnVersionDialog'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -243,6 +244,7 @@ function AssignmentsTable({
             <th className="px-3 py-2 font-semibold">Пост</th>
             <th className="px-3 py-2 font-semibold">Конфликт</th>
             <th className="px-3 py-2 font-semibold">Ознакомлен</th>
+            <th className="px-3 py-2 font-semibold">Действия</th>
           </tr>
         </thead>
         <tbody>
@@ -259,6 +261,14 @@ function AssignmentsTable({
                   versionId={String(version.id)}
                   versionStatus={version.status}
                   acknowledgedAt={a.acknowledged_at}
+                />
+              </td>
+              <td className="px-3 py-2">
+                <ReplaceDepartedCell
+                  versionId={String(version.id)}
+                  employeeId={a.employee_id}
+                  versionStatus={version.status}
+                  isCurrent={version.is_current}
                 />
               </td>
             </tr>
@@ -312,6 +322,42 @@ function AcknowledgeCell({
         </p>
       )}
     </div>
+  )
+}
+
+// Story 17.7d: «Снять и заменить» (17.5/17.7b) — видна только на текущей
+// APPROVED-версии (тот же lifecycle-гард, что amend_assignment_version()
+// возвращает 422 иначе — кнопка не должна провоцировать заведомо-
+// невалидный запрос).
+function ReplaceDepartedCell({
+  versionId,
+  employeeId,
+  versionStatus,
+  isCurrent,
+}: {
+  versionId: string
+  employeeId: string
+  versionStatus: AssignmentVersionDetailResponse['status']
+  isCurrent: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  if (versionStatus !== 'APPROVED' || !isCurrent) {
+    return null
+  }
+
+  return (
+    <>
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
+        Снять и заменить
+      </Button>
+      <ReplaceDepartedDialog
+        versionId={versionId}
+        departedEmployeeId={employeeId}
+        open={open}
+        onClose={() => setOpen(false)}
+      />
+    </>
   )
 }
 

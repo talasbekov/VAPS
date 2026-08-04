@@ -36,6 +36,10 @@ export type JournalEntryCreateRequest =
   paths['/api/operations/security-events/{id}/journal-entries/']['post']['requestBody']['content']['application/json']
 export type JournalEntryCreateResponse =
   paths['/api/operations/security-events/{id}/journal-entries/']['post']['responses']['201']['content']['application/json']
+export type ReplaceDepartedRequest =
+  paths['/api/operations/assignment-versions/{id}/replace-departed/']['post']['requestBody']['content']['application/json']
+export type ReplaceDepartedResponse =
+  paths['/api/operations/assignment-versions/{id}/replace-departed/']['post']['responses']['201']['content']['application/json']
 
 export const assignmentVersionKeys = {
   all: ['assignment-versions'] as const,
@@ -161,6 +165,21 @@ export function useAcknowledgePlacementAssignment(assignmentId: string, versionI
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: assignmentVersionKeys.detail(versionId) })
+    },
+  })
+}
+
+export function useReplaceDeparted(versionId: string) {
+  const queryClient = useQueryClient()
+  return useApiMutation<ReplaceDepartedResponse, ReplaceDepartedRequest>({
+    mutationFn: (body) =>
+      apiClient.post<ReplaceDepartedResponse>(
+        `/api/operations/assignment-versions/${versionId}/replace-departed/`,
+        body,
+      ),
+    onSuccess: (data) => {
+      queryClient.setQueryData(assignmentVersionKeys.detail(String(data.id)), data)
+      void queryClient.invalidateQueries({ queryKey: assignmentVersionKeys.lists() })
     },
   })
 }

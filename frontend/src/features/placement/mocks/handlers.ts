@@ -8,6 +8,7 @@ import type { AssignmentVersionFixture, JournalEntryFixture } from './fixtures'
 
 let nextVersionId = ASSIGNMENT_VERSIONS.length + 1
 let nextJournalEntryId = JOURNAL_ENTRIES.length + 1
+let nextReplacementId = 1
 
 function findVersion(id: number) {
   return ASSIGNMENT_VERSIONS.find((v) => v.id === id)
@@ -116,6 +117,56 @@ export const placementHandlers = [
       version.signature_hash = 'demo-hash'
       version.updated_at = new Date().toISOString()
       return HttpResponse.json(version)
+    },
+  ),
+  // Story 17.7d: демо-версия каскадной замены — детерминированный
+  // "demo-replacement-<uuid>" вместо реального штатного поиска (17.5's
+  // find_replacement_candidates() требует core-справочники, которых нет
+  // в dev:mock режиме).
+  http.post(
+    '*/api/operations/assignment-versions/:id/replace-departed/',
+    async ({ params, request }) => {
+      const version = findVersion(Number(params.id))
+      if (!version) return HttpResponse.json({ error_code: 'ENTITY_NOT_FOUND' }, { status: 404 })
+      const body = (await request.json()) as {
+        departed_employee_id?: string
+        reason?: string
+        sanction?: string
+      }
+      if (!body.reason?.trim() || !body.sanction?.trim()) {
+        return HttpResponse.json(
+          { error_code: 'VALIDATION_ERROR', details: {} },
+          { status: 400 },
+        )
+      }
+      const departedRow = version.assignments.find(
+        (a) => a.employee_id === body.departed_employee_id,
+      )
+      if (!departedRow) {
+        return HttpResponse.json({ error_code: 'REPLACEMENT_NOT_FOUND' }, { status: 409 })
+      }
+      const now = new Date().toISOString()
+      version.is_current = false
+      const replacement: AssignmentVersionFixture = {
+        ...version,
+        id: nextVersionId++,
+        version: version.version + 1,
+        is_current: true,
+        created_at: now,
+        updated_at: now,
+        assignments: version.assignments.map((a) =>
+          a.employee_id === body.departed_employee_id
+            ? {
+                ...a,
+                employee_id: `00000000-0000-0000-0000-${String(
+                  nextReplacementId++,
+                ).padStart(12, '0')}`,
+              }
+            : { ...a },
+        ),
+      }
+      ASSIGNMENT_VERSIONS.push(replacement)
+      return HttpResponse.json(replacement, { status: 201 })
     },
   ),
   http.post('*/api/operations/placement-assignments/:id/acknowledge/', ({ params }) => {
