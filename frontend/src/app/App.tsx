@@ -12,6 +12,7 @@ import { ChangelogPageContainer } from '../features/changelog/ChangelogPageConta
 import { DailyUpdatePage } from '../features/daily-grid/DailyUpdatePage'
 import { ExpenseReportPage } from '../features/expense/ExpenseReportPage'
 import { ExpensePrintPage } from '../features/print-forms/ExpensePrintPage'
+import { PlacementPrintPage } from '../features/print-forms/PlacementPrintPage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
 import { EmployeeDetailPage } from '../features/personnel/pages/EmployeeDetailPage'
 import { EmployeesListPage } from '../features/personnel/pages/EmployeesListPage'
@@ -86,6 +87,20 @@ export function AppRoutes() {
           <RequireAuth>
             <RequirePermission permission="daily_report.generate">
               <ExpensePrintPage />
+            </RequirePermission>
+          </RequireAuth>
+        }
+      />
+      {/* Story 16.7: упрощённая печатная форма Расстановки — тот же
+          сиблинг-роут-паттерн. assignment.create — тот же компромисс, что
+          /placement's RequirePermission (16.8h5, единственный код вместо
+          "любой из 4-х"). */}
+      <Route
+        path={ROUTES.printPlacement}
+        element={
+          <RequireAuth>
+            <RequirePermission permission="assignment.create">
+              <PlacementPrintPage />
             </RequirePermission>
           </RequireAuth>
         }

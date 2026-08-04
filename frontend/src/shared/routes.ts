@@ -61,6 +61,16 @@ export const ROUTES = {
   printExpenseTo: (divisionId: string, businessDate: string) =>
     `/print/expense?division_id=${encodeURIComponent(divisionId)}&business_date=${encodeURIComponent(businessDate)}`,
   /**
+   * Story 16.7 (Epic 16): упрощённая печатная форма Расстановки — тот же
+   * сиблинг-роут-паттерн, что `printExpense` (10.7). Нет backend-генератора
+   * документа для Placement (в отличие от расхода's `.docx`, 6.3) — клиентская
+   * HTML-таблица поверх уже существующего `GET assignment-versions/{id}/`
+   * (16.8a). В `NAV_SECTIONS` НЕ живёт — не раздел портала.
+   */
+  printPlacement: '/print/placement',
+  printPlacementTo: (versionId: string | number) =>
+    `/print/placement?version_id=${encodeURIComponent(String(versionId))}`,
+  /**
    * Smart Josparlau (мастер-промпт §11, Этап 2): «Командный центр» — ОТДЕЛЬНЫЙ
    * дашборд от `home` (тот занят существующим «Расход», E10, за `status.view`).
    * Оба дашборда сосуществуют — свой раздел, своё право, свой NAV_SECTIONS-пункт.

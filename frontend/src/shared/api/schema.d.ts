@@ -2561,9 +2561,11 @@ export interface components {
          *     * `ASSIGNMENT_APPROVED` - Расстановка утверждена
          *     * `ACK_MISSING_ESCALATION` - Ознакомление не получено — эскалация
          *     * `ACK_REQUIRED` - Требуется ознакомление
+         *     * `ASSIGNMENT_SUBMITTED` - Расстановка подана
+         *     * `ASSIGNMENT_RETURNED` - Расстановка возвращена
          * @enum {string}
          */
-        KindEnum: "SUBMISSION_LAGGING" | "SUBMISSION_THRESHOLD_ALERT" | "PILOT_PULSE_DIGEST" | "GROUP_FORCE_REQUEST_ESCALATED" | "TEMP_PERMISSION_ACTIVE" | "TEMP_PERMISSION_EXPIRED" | "ASSIGNMENT_APPROVED" | "ACK_MISSING_ESCALATION" | "ACK_REQUIRED";
+        KindEnum: "SUBMISSION_LAGGING" | "SUBMISSION_THRESHOLD_ALERT" | "PILOT_PULSE_DIGEST" | "GROUP_FORCE_REQUEST_ESCALATED" | "TEMP_PERMISSION_ACTIVE" | "TEMP_PERMISSION_EXPIRED" | "ASSIGNMENT_APPROVED" | "ACK_MISSING_ESCALATION" | "ACK_REQUIRED" | "ASSIGNMENT_SUBMITTED" | "ASSIGNMENT_RETURNED";
         MyPermissionsResponse: {
             permissions: string[];
         };
