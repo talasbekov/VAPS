@@ -37,6 +37,16 @@ class DivisionTreeSelector:
             children.setdefault(parent_id, []).append(did)
         return children
 
+    @staticmethod
+    def all_ids() -> set:
+        """Все подразделения дерева, ОДИН запрос.
+
+        Нужен там, где безскоуповый (глобальный) грант надо развернуть в
+        конкретное множество: сервисы раздела ждут множество id, а None
+        уронил бы их TypeError'ом.
+        """
+        return set(Division.objects.values_list("id", flat=True))
+
     @classmethod
     def subtree_ids(cls, division_id, *, children_map=None) -> set:
         # children_map позволяет решающему НЕСКОЛЬКО поддеревьев вызову

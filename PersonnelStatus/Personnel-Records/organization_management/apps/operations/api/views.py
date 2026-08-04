@@ -20,11 +20,13 @@ from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
 from organization_management.apps.operations.api.permissions import (
+    RequirePermissionMixin,
     require_permission,
     resolve_actor_id,
 )
 from organization_management.apps.operations.api.serializers import (
     AssignRoleRequestSerializer,
+    BulkStatusCreateSerializer,
     GrantTemporaryDutyRequestSerializer,
     PermissionSerializer,
     RoleSerializer,
@@ -39,10 +41,17 @@ from organization_management.apps.operations.models import (
     TemporaryDutyPermission,
     UserRole,
 )
+from organization_management.apps.operations.bulk_status_service import (
+    bulk_create_statuses,
+)
+from organization_management.apps.operations.selectors import DivisionTreeSelector
 from organization_management.apps.operations.services import (
     PermissionService,
     RoleAdminService,
 )
+
+# Право на запись статусов; им же резолвится область видимости пачки.
+_BULK_STATUS_PERMISSION = "status.manage"
 
 
 class DefaultPagination(LimitOffsetPagination):
@@ -235,3 +244,63 @@ class MyPermissionsViewSet(viewsets.ViewSet):
             actor_id, division_id=division_id
         )
         return Response({"permissions": sorted(perms)})
+
+
+class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """POST /api/operations/statuses/bulk/ — массовое создание статусов.
+
+    Тонкая вьюха поверх готового сервиса: сериализатор → резолв области
+    видимости из RBAC → вызов сервиса → 201 {created}. Ни бизнес-логики, ни
+    детекта конфликтов здесь нет — всё в bulk_status_service; DomainError
+    сервиса (400/403/404/409/422) уходит наверх и становится конвертом в
+    ops_exception_handler, вьюха его НЕ ловит.
+
+    Грубый гейт права — RequirePermissionMixin (status.manage); тонкую
+    построчную область энфорсит сервис по allowed_division_ids, которое вьюха
+    резолвит из RBAC актора: пришедшему из тела запроса подразделению здесь
+    не верят.
+    """
+
+    permission_map = {"bulk": _BULK_STATUS_PERMISSION}
+    # Минимальная поверхность: только POST bulk. Чтение статусов — отдельный
+    # срез, поэтому GET здесь не открыт.
+    http_method_names = ["post", "options"]
+
+    @extend_schema(
+        request=BulkStatusCreateSerializer,
+        responses={
+            201: inline_serializer(
+                name="BulkStatusCreateResponse",
+                fields={"created": serializers.IntegerField()},
+            )
+        },
+        description=(
+            "Массовое создание статусов-отклонений одним вызовом. "
+            "403 — нет права status.manage либо сотрудник вне области "
+            "оператора; 400 — структурная ошибка payload (пустой/дубль/"
+            "пропуск ключа/превышение предела строк); 409 — мягкое "
+            "пересечение (details.rows[]); 422 — жёсткое пересечение, "
+            "интервал или границы найма (details.rows[]). Успех — {created}."
+        ),
+    )
+    @action(detail=False, methods=["post"], url_path="bulk", url_name="bulk")
+    def bulk(self, request, *args, **kwargs):
+        form = BulkStatusCreateSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        # Область — МНОЖЕСТВО подразделений из RBAC актора (не одно: пачка
+        # может охватывать разные подразделения, сервис проверяет построчно).
+        # None = безскоуповый/wildcard грант → все подразделения: сервис ждёт
+        # множество, None уронил бы его TypeError'ом.
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _BULK_STATUS_PERMISSION
+        )
+        if allowed is None:
+            allowed = DivisionTreeSelector.all_ids()
+        created = bulk_create_statuses(
+            form.validated_data["rows"],
+            # Актор — из контракта аутентификации, НИКОГДА из тела запроса.
+            actor=resolve_actor_id(request),
+            business_date=form.validated_data["business_date"],
+            allowed_division_ids=allowed,
+        )
+        return Response({"created": len(created)}, status=status.HTTP_201_CREATED)
