@@ -58,7 +58,11 @@ def test_full_history_aggregates_all_sub_histories():
     assert len(history["journal_entries"]) == 1
     assert len(history["closure_summaries"]) == 1
     assert history["current_assignment_version"] == version
-    assert history["current_assignment_version"].assignments.count() == 1
+    # review (Blind Hunter): only a .count() was asserted before — doesn't
+    # rule out a wrong related_name/filter coincidentally matching count.
+    assignment_rows = list(history["current_assignment_version"].assignments.all())
+    assert len(assignment_rows) == 1
+    assert str(assignment_rows[0].employee_id) == "11111111-1111-1111-1111-111111111111"
 
 
 def test_full_history_returns_empty_lists_when_no_sub_history():
@@ -88,6 +92,28 @@ def test_full_history_rejected_when_not_closed():
         SecurityEventArchiveSelector.full_history(event)
 
     assert exc_info.value.http_status == 422
+
+
+def test_full_history_sector_posts_have_stable_order():
+    """review (Blind Hunter + Edge Case Hunter, независимо совпали): все
+    sub-histories, кроме journal_entries, полагались на недокументированный
+    DB-порядок — закрыто явным order_by("id")."""
+    event = make_event("OBJ-ARCH-7")
+    third = SecurityEventSectorPost.objects.create(
+        event=event, sector="Юг", post="POST-3"
+    )
+    first = SecurityEventSectorPost.objects.create(
+        event=event, sector="Север", post="POST-1"
+    )
+    second = SecurityEventSectorPost.objects.create(
+        event=event, sector="Восток", post="POST-2"
+    )
+
+    history = SecurityEventArchiveSelector.full_history(event)
+
+    assert [row.id for row in history["sector_posts"]] == sorted(
+        [third.id, first.id, second.id]
+    )
 
 
 def test_full_history_journal_entries_are_chronological():

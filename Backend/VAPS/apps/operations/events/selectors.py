@@ -78,7 +78,10 @@ class SecurityEventArchiveSelector:
     history — every sub-history already lives on `SecurityEvent`'s
     related models (18.1's `closure_summaries` included); this is a join,
     not a new table. Plain-dict return (not a DRF serializer — that's
-    18.6's API-layer concern, not guaranteed JSON-primitive here)."""
+    18.6's API-layer concern, not guaranteed JSON-primitive here). Six
+    separate queries (one per sub-history + the current-version lookup),
+    not "one bulk query" — an archive read isn't a hot path, N+1 concerns
+    are deferred to 18.6 if a list-view ever needs this at scale."""
 
     @staticmethod
     def full_history(event):
@@ -89,12 +92,16 @@ class SecurityEventArchiveSelector:
                 message="Архив доступен только для закрытого события.",
             )
         current_version = event.assignment_versions.filter(is_current=True).first()
+        # review (Blind Hunter + Edge Case Hunter, независимо совпали):
+        # только journal_entries несёт Meta.ordering — остальные четыре
+        # опирались на недокументированный DB-порядок. Явный order_by("id")
+        # — детерминированный, стабильный порядок без нового Meta.
         return {
             "event": event,
-            "checklist_items": list(event.checklist_items.all()),
-            "sector_posts": list(event.sector_posts.all()),
-            "staffing_demands": list(event.staffing_demands.all()),
+            "checklist_items": list(event.checklist_items.order_by("id")),
+            "sector_posts": list(event.sector_posts.order_by("id")),
+            "staffing_demands": list(event.staffing_demands.order_by("id")),
             "journal_entries": list(event.journal_entries.all()),
-            "closure_summaries": list(event.closure_summaries.all()),
+            "closure_summaries": list(event.closure_summaries.order_by("id")),
             "current_assignment_version": current_version,
         }
