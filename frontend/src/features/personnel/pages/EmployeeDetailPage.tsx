@@ -3,12 +3,20 @@
 // Оперативные Smart Josparlau поля (availability/nextAssignment/
 // workloadSummary/ratingSummary) — Not started в этом срезе: честная
 // секция "не подключено" вместо придуманных цифр (§35).
+import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { ROUTES } from '../../../shared/routes'
 import { useDivisions, useEmployee, usePositions, useRanks } from '../api/queries'
-import { EMPLOYMENT_STATUS_LABEL } from '../model/types'
+import { EMPLOYMENT_STATUS_LABEL, type Employee } from '../model/types'
 
-export function EmployeeDetailPage() {
+export function EmployeeDetailPage({
+  renderExtra,
+}: {
+  // Story 19.4d: cross-feature composition slot — ARCH-FE-013 forbids
+  // features importing each other directly (personnel ↛ status-calendar);
+  // `app/` (allowed to import from any feature) supplies this render prop.
+  renderExtra?: (employee: Employee) => ReactNode
+}) {
   const { id } = useParams<{ id: string }>()
   const employeeQuery = useEmployee(id ?? '')
   const divisionsQuery = useDivisions()
@@ -96,6 +104,8 @@ export function EmployeeDetailPage() {
           </p>
         </section>
       </div>
+
+      {renderExtra !== undefined && <div className="mt-3.5">{renderExtra(employee)}</div>}
     </div>
   )
 }

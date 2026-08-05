@@ -11,6 +11,7 @@ import { auditHandlers } from '../../features/audit/mocks/handlers'
 import { createDutiesHandlers } from '../../features/duties/mocks/handlers'
 import { dutyPlansHandlers } from '../../features/duty-plans/mocks/handlers'
 import { placementHandlers } from '../../features/placement/mocks/handlers'
+import { statusCalendarHandlers } from '../../features/status-calendar/mocks/handlers'
 import { getDemoClock, getPersistenceAdapter } from './demo-runtime'
 import { identityHandlers } from './identity-handlers'
 
@@ -26,5 +27,6 @@ export function composeHandlers(): HttpHandler[] {
     ...createDutiesHandlers(adapter, clock),
     ...dutyPlansHandlers,
     ...placementHandlers,
+    ...statusCalendarHandlers,
   ]
 }

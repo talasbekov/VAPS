@@ -15,6 +15,7 @@ import { ExpensePrintPage } from '../features/print-forms/ExpensePrintPage'
 import { PlacementPrintPage } from '../features/print-forms/PlacementPrintPage'
 import { PrintTestPage } from '../features/print-forms/PrintTestPage'
 import { EmployeeDetailPage } from '../features/personnel/pages/EmployeeDetailPage'
+import { StatusCalendarPanel } from '../features/status-calendar/pages/StatusCalendarPanel'
 import { EmployeesListPage } from '../features/personnel/pages/EmployeesListPage'
 import { ObjectPassportPage } from '../features/objects/pages/ObjectPassportPage'
 import { ObjectsListPage } from '../features/objects/pages/ObjectsListPage'
@@ -132,7 +133,11 @@ export function AppRoutes() {
           path={ROUTES.employeeDetail}
           element={
             <RequirePermission permission="status.view">
-              <EmployeeDetailPage />
+              <EmployeeDetailPage
+                renderExtra={(employee) => (
+                  <StatusCalendarPanel divisionId={employee.division} employeeId={employee.id} />
+                )}
+              />
             </RequirePermission>
           }
         />
