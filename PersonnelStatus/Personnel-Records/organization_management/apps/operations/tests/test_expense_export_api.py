@@ -8,6 +8,7 @@ import io
 from datetime import timedelta
 
 import pytest
+from docx import Document as DocxDocument
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
@@ -84,6 +85,27 @@ def test_xlsx_is_a_real_workbook(types, division):
     assert sheet.title == TODAY.isoformat()
 
 
+def test_docx_is_a_real_document(types, division):
+    """Печатная форма едет тем же маршрутом и тем же правом.
+
+    Проверяется ОТКРЫТЫЙ документ: .docx с верным MIME, но нечитаемым
+    содержимым браузер скачал бы молча, и дефект вскрылся бы у получателя.
+    """
+    employee = in_slot(division)
+    fact(employee, code="DUTY")
+    submit(division)
+
+    response = get(reader(), division.id, file_format="docx")
+
+    assert response.status_code == 200
+    assert response["Content-Type"].endswith("wordprocessingml.document")
+    (table,) = DocxDocument(io.BytesIO(response.content)).tables
+    assert table.rows[0].cells[1].text == "Управление"
+    assert response["Content-Disposition"] == (
+        f'attachment; filename="expense-{TODAY.isoformat()}.docx"'
+    )
+
+
 def test_the_file_is_sent_as_an_attachment_named_by_the_date(types, division):
     """Браузер обязан СОХРАНИТЬ файл.
 
@@ -118,7 +140,7 @@ def test_an_unknown_format_is_400(types, division):
     response = get(reader(), division.id, file_format="pdf")
 
     assert response.status_code == 400
-    assert response.data["details"]["allowed"] == ["csv", "xlsx"]
+    assert response.data["details"]["allowed"] == ["csv", "docx", "xlsx"]
 
 
 # ── Откуда числа ─────────────────────────────────────────────────────────

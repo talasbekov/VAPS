@@ -46,6 +46,10 @@ CELL_MAX_MEMBERS = 20
 FONT_NAME = "Times New Roman"
 TITLE_SIZE_PT = 16
 TABLE_SIZE_PT = 12
+# Состав печатается мельче числа — но только там, где формат разрешает два
+# размера в одной ячейке (.docx). У .xlsx шрифт один на ячейку, и размер
+# состава там просто не к чему применить.
+MEMBER_SIZE_PT = 8
 
 
 def column_label(column):

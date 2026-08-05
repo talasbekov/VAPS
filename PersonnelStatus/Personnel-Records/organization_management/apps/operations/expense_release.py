@@ -13,11 +13,13 @@ document_release_service из Backend/VAPS).
   сегодняшний»), а не новая вольность: другого источника штата у старой
   структуры нет, и притвориться, будто он есть, было бы хуже.
 
-Форматов два — .csv и .xlsx; .docx источника не портирован (его вёрстка
-опирается на донорские шрифты и рич-текст ячейки, которых здесь нет).
+Форматов три, и различает их ПОТРЕБИТЕЛЬ, а не вкус: .csv — числа для
+дальнейшего счёта, .xlsx — лист для работы, .docx — страница под подпись.
+Данные у всех трёх одни: разъехаться им негде, считает только билдер.
 """
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.expense_csv import generate_expense_csv
+from organization_management.apps.operations.expense_docx import generate_expense_docx
 from organization_management.apps.operations.expense_document import (
     build_expense_document,
     combine_documents,
@@ -44,6 +46,11 @@ FORMATS = {
         generate_expense_xlsx,
         "xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ),
+    "docx": (
+        generate_expense_docx,
+        "docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ),
 }
 
