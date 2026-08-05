@@ -9,6 +9,7 @@ apps/operations/api/views.py из Backend/VAPS).
   источнике), идентичность в теле не принимается — только из аутентификации.
 """
 from datetime import timedelta
+from urllib.parse import quote
 
 from django.db.models import Q
 from django.http import HttpResponse
@@ -110,6 +111,9 @@ from organization_management.apps.operations.status_service import (
 from organization_management.apps.operations.strength_report import (
     StrengthReportService,
     submitted_expense,
+)
+from organization_management.apps.operations.personal_export_service import (
+    export_submission,
 )
 from organization_management.apps.operations.expense_release import (
     build_submitted_expense_document,
@@ -1615,6 +1619,7 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "retrieve": _READ_STATUS_PERMISSION,
         "create": _SUBMIT_DAY_PERMISSION,
         "amend": _AMEND_DAY_PERMISSION,
+        "export": _READ_STATUS_PERMISSION,
     }
     # PUT/PATCH/DELETE не открыты: сдача иммутабельна, её единственная
     # законная «правка» — поправка отдельным действием со своей причиной.
@@ -1750,6 +1755,55 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpsDailySubmissionSerializer(submission).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id КОНКРЕТНОЙ версии сдачи — её и выгружаем.",
+            )
+        ],
+        responses={(200, "application/octet-stream"): OpenApiTypes.BINARY},
+        description=(
+            "Личная копия сданного дня файлом .xlsx под правом status.view: "
+            "паспорт версии и поимённая ведомость снимка. Выгружается "
+            "ЗАПРОШЕННАЯ версия, действующая или вытесненная. Факт выдачи "
+            "пишется в журнал. 403 — нет права либо подразделение вне "
+            "области; 404 — версии с таким id нет; 422 — снимок написан "
+            "неподдерживаемой версией схемы."
+        ),
+    )
+    @action(detail=True, methods=["get"])
+    def export(self, request, pk=None, *args, **kwargs):
+        submission = self._get_submission_or_404(pk)
+        # Область — по подразделению найденной строки, тем же правом, что и
+        # чтение версии: файл не открывает ничего сверх того, что уже видно
+        # на экране, — он лишь делает это предъявляемым.
+        _assert_division_in_scope(
+            request, submission.division_id, _READ_STATUS_PERMISSION,
+            field="division_id",
+        )
+        payload, filename = export_submission(
+            submission=submission,
+            # Актор — из аутентификации: в журнале должно стоять, КТО унёс
+            # копию, а не чьё имя прислали в запросе.
+            actor=resolve_actor_id(request),
+        )
+        response = HttpResponse(
+            payload,
+            content_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+        )
+        # filename* с UTF-8: имя файла кириллическое, и голый filename
+        # доехал бы до браузера искажённым.
+        response["Content-Disposition"] = (
+            "attachment; filename*=UTF-8''" + quote(filename)
+        )
+        return response
 
     @extend_schema(
         parameters=[
