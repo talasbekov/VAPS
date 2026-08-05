@@ -53,8 +53,10 @@ from organization_management.apps.operations.status_service import (
     complete_status_early,
     create_status,
     extend_status,
+    resolve_placeholder,
     update_status,
 )
+from organization_management.apps.operations.status_types import StatusType
 from organization_management.apps.operations.tests.test_status_service import (
     make_employee,
     seed_types,
@@ -587,6 +589,32 @@ def test_every_declared_action_is_actually_written(types, home, host):
         update_status(covering, actor=ACTOR, comment="уточнение")
         extend_status(covering, actor=ACTOR, new_date_end=TODAY + timedelta(days=7))
         complete_status_early(covering, actor=ACTOR, actual_end=TODAY)
+
+    # Заглушка и её разрешение — ОДНО событие на две строки, поэтому она
+    # заводится отдельно от прочих: чужая строка на тех же днях дала бы
+    # пересечение и увела бы тест в конфликт вместо покрытия.
+    StatusType.objects.create(
+        code="PENDING",
+        name="Уточняется",
+        priority=500,
+        report_column_code="PENDING",
+        is_placeholder=True,
+    )
+    unclear = make_status(
+        employee,
+        code="PENDING",
+        start=TODAY + timedelta(days=30),
+        end=TODAY + timedelta(days=32),
+    )
+    with clock.override(TODAY):
+        resolve_placeholder(
+            unclear,
+            resolved_type_code="DUTY",
+            date_start=TODAY + timedelta(days=30),
+            date_end=TODAY + timedelta(days=32),
+            actor=ACTOR,
+            reason="выяснено: был наряд",
+        )
 
     planned = make_status(
         employee,

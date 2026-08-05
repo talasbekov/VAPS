@@ -594,3 +594,45 @@ def test_closing_a_running_leg_amends_only_the_released_tail(
 
     assert amendments(division, started) == []
     assert len(amendments(division, TOMORROW + timedelta(days=1))) == 1
+
+
+# ── Разрешение заглушки ──────────────────────────────────────────────────
+
+
+def test_resolving_a_placeholder_amends_both_the_old_and_the_new_day(
+    seed_types, division, employee
+):
+    """Заглушка перестала накрывать свои дни, разрешение накрыло свои.
+
+    Совпадать интервалы не обязаны — выясниться может и другой период.
+    """
+    from organization_management.apps.operations.status_service import (
+        resolve_placeholder,
+    )
+    from organization_management.apps.operations.status_types import StatusType
+
+    StatusType.objects.create(
+        code="PENDING",
+        name="Уточняется",
+        priority=500,
+        report_column_code="PENDING",
+        is_placeholder=True,
+    )
+    day_after = TOMORROW + timedelta(days=1)
+    submit(division, TOMORROW)
+    submit(division, day_after)
+    placeholder = make_status(employee, TOMORROW, day_after, code="PENDING")
+
+    with clock.override(MORNING):
+        resolve_placeholder(
+            placeholder,
+            resolved_type_code="DUTY",
+            date_start=day_after,
+            date_end=day_after + timedelta(days=1),
+            actor=ACTOR,
+            reason=WHY,
+        )
+
+    (old_day,) = amendments(division, TOMORROW)
+    (new_day,) = amendments(division, day_after)
+    assert old_day.sanction == new_day.sanction == WHY
