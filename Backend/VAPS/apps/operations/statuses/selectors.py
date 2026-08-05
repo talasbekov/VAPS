@@ -1,3 +1,7 @@
+import calendar
+import datetime
+
+from django.contrib.postgres.fields.ranges import DateRange
 from django.db.models import Min
 
 from apps.operations.statuses.models import EmployeeStatus, StatusType
@@ -90,3 +94,35 @@ class EmployeeStatusSelector:
         """
         rows = cls.overlapping_on(on_date, employee_ids=[employee_id])
         return resolve_status(rows, on_date)
+
+    @classmethod
+    def month_calendar(cls, employee_id, year, month) -> dict:
+        """Story 19.4a (FR-37): дневной статус ОДНОГО сотрудника за ЦЕЛЫЙ
+        месяц, ОДИН bulk-запрос. Возвращает плотный `Dict[date, str]` —
+        КАЖДЫЙ день месяца, включая дни без факта (`resolve_status()`
+        уже отдаёт "IN_SERVICE", FR-9, для них).
+
+        Цикл по дням месяца ниже — ЧИСТЫЙ Python над уже загруженным
+        `rows` (никаких запросов внутри цикла); предупреждение
+        `status_on`'s docstring про "MUST NOT be called in a loop"
+        относится к методам, каждый из которых сам бьёт БД
+        (`status_on`/`overlapping_on`), не к чистой функции
+        `resolve_status`."""
+        if not 1 <= month <= 12:
+            raise ValueError(f"month must be 1-12, got {month!r}")
+        days_in_month = calendar.monthrange(year, month)[1]
+        month_start = datetime.date(year, month, 1)
+        month_end = datetime.date(year, month, days_in_month) + datetime.timedelta(
+            days=1
+        )
+
+        rows = list(
+            EmployeeStatus.objects.filter(
+                cancelled_at__isnull=True,
+                employee_id=employee_id,
+                period__overlap=DateRange(month_start, month_end, bounds="[)"),
+            ).values("employee_id", "status_type_code", "date_start", "date_end")
+        )
+
+        days = [month_start + datetime.timedelta(days=i) for i in range(days_in_month)]
+        return {day: resolve_status(rows, day) for day in days}
