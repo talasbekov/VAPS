@@ -240,6 +240,10 @@ MATRIX = {
         {"get": "event.journal.view", "post": "event.journal.create"}
     ),
     "ops-journal-entry-detail": _Gate("event.journal.view"),
+    # Story 18.6a: close ОМ (18.1) and read its full history (18.2), same
+    # gate as the rest of this ViewSet's event.manage actions.
+    "ops-security-event-close": _Gate("event.manage"),
+    "ops-security-event-archive": _Gate("event.manage"),
     "ops-assignment-version-list": _AnyOfGate(
         [
             "assignment.create",

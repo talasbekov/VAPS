@@ -47,6 +47,8 @@ from apps.operations.events.api.serializers import (
     PlacementAssignmentSerializer,
     ReplaceDepartedRequestSerializer,
     ReturnVersionSerializer,
+    SecurityEventArchiveSerializer,
+    SecurityEventCloseSerializer,
     SecurityEventCreateSerializer,
     SecurityEventSerializer,
     SectorPostSerializer,
@@ -61,6 +63,7 @@ from apps.operations.events.models import (
     SecurityEvent,
     SecurityEventDirectAssignment,
 )
+from apps.operations.events.selectors import SecurityEventArchiveSelector
 from apps.operations.events.services import (
     acknowledge_placement_assignment,
     allocate_force_request,
@@ -68,6 +71,7 @@ from apps.operations.events.services import (
     approve_assignment_version,
     approve_staffing_demand,
     cascade_replace_departed,
+    close_security_event,
     confirm_recon,
     create_journal_entry,
     detect_placement_conflicts,
@@ -481,6 +485,44 @@ class SecurityEventViewSet(viewsets.ViewSet):
         return Response(
             JournalEntrySerializer(entry).data, status=http_status.HTTP_201_CREATED
         )
+
+    @extend_schema(
+        operation_id="security_event_close",
+        request=SecurityEventCloseSerializer,
+        responses={200: SecurityEventSerializer},
+        description="Закрыть ОМ (IN_PROGRESS->CLOSED, FR-30) — требует "
+        "event.manage и итог по КАЖДОМУ направлению (полный набор, не "
+        "diff). НЕ идемпотентно: повторный вызов на уже-CLOSED — 422. "
+        "400 VALIDATION_ERROR на пропущенном/лишнем/дублирующемся "
+        "направлении (details.missing_sectors/unknown_sectors/"
+        "duplicate_sector).",
+    )
+    @action(detail=True, methods=["post"], url_path="close")
+    def close(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        form = SecurityEventCloseSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        event = close_security_event(
+            event,
+            actor=request.actor_id,
+            summaries=form.validated_data["summaries"],
+        )
+        return Response(SecurityEventSerializer(event).data)
+
+    @extend_schema(
+        operation_id="security_event_archive",
+        responses={200: SecurityEventArchiveSerializer},
+        description="Полная история закрытого ОМ (18.2) — требует "
+        "event.manage. Доступно только для CLOSED-события, 422 "
+        "INVALID_LIFECYCLE_TRANSITION иначе.",
+    )
+    @action(detail=True, methods=["get"], url_path="archive")
+    def archive(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        history = SecurityEventArchiveSelector.full_history(event)
+        return Response(SecurityEventArchiveSerializer(history).data)
 
 
 class JournalEntryViewSet(viewsets.ViewSet):

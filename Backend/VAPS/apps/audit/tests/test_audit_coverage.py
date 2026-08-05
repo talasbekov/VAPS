@@ -328,6 +328,10 @@ AUDIT_MATRIX = {
     # itself (17.1), only on POST (the GET half of this combined action
     # never mutates) — behavioral pin — test_journal_entry.py.
     "ops-security-event-journal-entries": _Audited(),
+    # Story 18.6a: SECURITY_EVENT_CLOSED emits inside close_security_event()
+    # itself (18.1) — behavioral pin — test_closure.py. Read-only
+    # ops-security-event-archive is not in this matrix (never mutates).
+    "ops-security-event-close": _Audited(),
     # Story 16.8b: ASSIGNMENT_VERSION_SUBMITTED emits inside
     # submit_assignment_version() itself (16.4), only on the real
     # transition (not the idempotent replay) — behavioral pin —

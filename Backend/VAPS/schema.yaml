@@ -2463,6 +2463,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/SecurityEvent'
           description: ''
+  /api/operations/security-events/{id}/archive/:
+    get:
+      operationId: security_event_archive
+      description: Полная история закрытого ОМ (18.2) — требует event.manage. Доступно
+        только для CLOSED-события, 422 INVALID_LIFECYCLE_TRANSITION иначе.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityEventArchive'
+          description: ''
   /api/operations/security-events/{id}/bulletin/:
     post:
       operationId: security_event_bulletin
@@ -2522,6 +2542,40 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ChecklistItem'
+          description: ''
+  /api/operations/security-events/{id}/close/:
+    post:
+      operationId: security_event_close
+      description: 'Закрыть ОМ (IN_PROGRESS->CLOSED, FR-30) — требует event.manage
+        и итог по КАЖДОМУ направлению (полный набор, не diff). НЕ идемпотентно: повторный
+        вызов на уже-CLOSED — 422. 400 VALIDATION_ERROR на пропущенном/лишнем/дублирующемся
+        направлении (details.missing_sectors/unknown_sectors/duplicate_sector).'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityEventCloseRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SecurityEventCloseRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SecurityEventCloseRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityEvent'
           description: ''
   /api/operations/security-events/{id}/direct-assignments/:
     get:
@@ -5934,6 +5988,98 @@ components:
       - status_code
       - title
       - updated_at
+    SecurityEventArchive:
+      type: object
+      description: |-
+        Story 18.6a: response shape for `SecurityEventArchiveSelector.full_history()`
+        (18.2) — a composite `Serializer` (not `ModelSerializer`, the selector
+        returns a plain dict spanning several models, not one row) wrapping
+        already-existing response serializers, same class of solution as
+        `AssignmentVersionReturnResponseSerializer` (16.8c).
+      properties:
+        event:
+          $ref: '#/components/schemas/SecurityEvent'
+        checklist_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChecklistItem'
+        sector_posts:
+          type: array
+          items:
+            $ref: '#/components/schemas/SectorPost'
+        staffing_demands:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffingDemand'
+        journal_entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/JournalEntry'
+        closure_summaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecurityEventClosureSummary'
+        current_assignment_version:
+          allOf:
+          - $ref: '#/components/schemas/AssignmentVersionDetail'
+          nullable: true
+      required:
+      - checklist_items
+      - closure_summaries
+      - current_assignment_version
+      - event
+      - journal_entries
+      - sector_posts
+      - staffing_demands
+    SecurityEventCloseRequest:
+      type: object
+      description: |-
+        Story 18.6a: write-only request body for `POST .../close/` — thin
+        pass-through to `close_security_event()` (18.1); the service itself
+        owns all business validation (sector coverage, duplicates, unknown
+        sectors, IN_PROGRESS lifecycle) — this serializer validates only field
+        PRESENCE/TYPE, same division of labor as `JournalEntryCreateSerializer`.
+      properties:
+        summaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecurityEventSectorSummaryItemRequest'
+      required:
+      - summaries
+    SecurityEventClosureSummary:
+      type: object
+      description: |-
+        Story 18.6a: response shape for итог направления (`SecurityEventClosureSummary`,
+        18.1) — read-only, all fields, same convention as `JournalEntrySerializer`
+        (persisted state, not recomputed on GET).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        event:
+          type: integer
+          readOnly: true
+        sector:
+          type: string
+          readOnly: true
+        summary:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - event
+      - id
+      - sector
+      - summary
+      - updated_at
     SecurityEventCreateRequest:
       type: object
       properties:
@@ -5950,6 +6096,22 @@ components:
       required:
       - object
       - title
+    SecurityEventSectorSummaryItemRequest:
+      type: object
+      description: |-
+        Story 18.6a: one element of `SecurityEventCloseSerializer.summaries`
+        — thin field-mapping, no business validation (that stays in
+        `close_security_event()`, 18.1).
+      properties:
+        sector:
+          type: string
+          minLength: 1
+        summary:
+          type: string
+          minLength: 1
+      required:
+      - sector
+      - summary
     SecurityEventStatusCodeEnum:
       enum:
       - DRAFT

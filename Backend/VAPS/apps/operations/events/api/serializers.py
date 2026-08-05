@@ -11,6 +11,7 @@ from apps.operations.events.models import (
     PlacementAssignment,
     SecurityEvent,
     SecurityEventChecklistItem,
+    SecurityEventClosureSummary,
     SecurityEventDirectAssignment,
     SecurityEventSectorPost,
     SecurityEventStaffingDemand,
@@ -297,3 +298,49 @@ class JournalEntryCreateSerializer(serializers.Serializer):
         child=serializers.UUIDField(), required=False
     )
     photo_attachment_id = serializers.UUIDField(required=False, allow_null=True)
+
+
+class SecurityEventClosureSummarySerializer(serializers.ModelSerializer):
+    """Story 18.6a: response shape for итог направления (`SecurityEventClosureSummary`,
+    18.1) — read-only, all fields, same convention as `JournalEntrySerializer`
+    (persisted state, not recomputed on GET)."""
+
+    class Meta:
+        model = SecurityEventClosureSummary
+        fields = ["id", "event", "sector", "summary", "created_at", "updated_at"]
+        read_only_fields = fields
+
+
+class SecurityEventSectorSummaryItemSerializer(serializers.Serializer):
+    """Story 18.6a: one element of `SecurityEventCloseSerializer.summaries`
+    — thin field-mapping, no business validation (that stays in
+    `close_security_event()`, 18.1)."""
+
+    sector = serializers.CharField()
+    summary = serializers.CharField()
+
+
+class SecurityEventCloseSerializer(serializers.Serializer):
+    """Story 18.6a: write-only request body for `POST .../close/` — thin
+    pass-through to `close_security_event()` (18.1); the service itself
+    owns all business validation (sector coverage, duplicates, unknown
+    sectors, IN_PROGRESS lifecycle) — this serializer validates only field
+    PRESENCE/TYPE, same division of labor as `JournalEntryCreateSerializer`."""
+
+    summaries = SecurityEventSectorSummaryItemSerializer(many=True)
+
+
+class SecurityEventArchiveSerializer(serializers.Serializer):
+    """Story 18.6a: response shape for `SecurityEventArchiveSelector.full_history()`
+    (18.2) — a composite `Serializer` (not `ModelSerializer`, the selector
+    returns a plain dict spanning several models, not one row) wrapping
+    already-existing response serializers, same class of solution as
+    `AssignmentVersionReturnResponseSerializer` (16.8c)."""
+
+    event = SecurityEventSerializer()
+    checklist_items = ChecklistItemSerializer(many=True)
+    sector_posts = SectorPostSerializer(many=True)
+    staffing_demands = StaffingDemandSerializer(many=True)
+    journal_entries = JournalEntrySerializer(many=True)
+    closure_summaries = SecurityEventClosureSummarySerializer(many=True)
+    current_assignment_version = AssignmentVersionDetailSerializer(allow_null=True)
