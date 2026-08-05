@@ -8,6 +8,8 @@ apps/operations/api/views.py из Backend/VAPS).
 - тела запросов проходят через сериализаторы (400 вместо KeyError→500 в
   источнике), идентичность в теле не принимается — только из аутентификации.
 """
+from datetime import timedelta
+
 from django.db.models import Q
 from django.utils.dateparse import parse_date, parse_datetime
 from drf_spectacular.types import OpenApiTypes
@@ -48,10 +50,15 @@ from organization_management.apps.operations.api.serializers import (
     StatusTypeSerializer,
     StatusUpdateSerializer,
     SubmittedExpenseFilterSerializer,
+    OpsTomorrowBlockOverrideSerializer,
     TemporaryDutySerializer,
     TrafficLightDivisionFilterSerializer,
+    TomorrowBlockOverrideCreateSerializer,
     TrafficLightTreeFilterSerializer,
     UserRoleSerializer,
+)
+from organization_management.apps.operations.block_override import (
+    override_tomorrow_block,
 )
 from organization_management.apps.operations.models import (
     Permission,
@@ -126,6 +133,14 @@ _READ_STATUS_PERMISSION = "status.view"
 _SUBMIT_DAY_PERMISSION = "daily_report.mark_update"
 # Право на поправку сданного — своё («корректировка суточного отчёта»).
 _AMEND_DAY_PERMISSION = "daily_report.correct"
+# Право на обход блокировки завтрашнего дня — тоже своё: обход снимает замок
+# со всего раздела на целый день, и вывести его из права отмечать значило бы
+# раздать полномочие руководителя каждому оператору.
+_OVERRIDE_BLOCK_PERMISSION = "daily_report.override_block"
+# Насколько далеко вперёд можно записать обход. Строка неотзывна, поэтому
+# опечатка в годе открыла бы день, о котором никто уже не вспомнит; неделя —
+# горизонт, на котором о завтрашнем расходе вообще договариваются.
+MAX_OVERRIDE_HORIZON_DAYS = 7
 
 
 def _parse_int_param(request, name):
@@ -1954,4 +1969,83 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "late": light.late,
                 "drift": light.drift,
             }
+        )
+
+
+class TomorrowBlockViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Законный обход блокировки расхода на завтра.
+
+    POST /api/operations/tomorrow-block/override/
+
+    Право своё — daily_report.override_block, и оно НЕ выводится из права
+    сдавать или поправлять: обход снимает замок со всего раздела на целый
+    день, и выдать его вместе с отметками в отчёте значило бы раздать
+    полномочие руководителя всем операторам.
+
+    Области у обхода нет намеренно: замок общий по разделу (закрывает любой
+    отстающий), поэтому и снимается он целиком, а не «в своём поддереве».
+    Сузить обход областью значило бы обещать избирательность, которой нет ни
+    в выводе блокировки, ни в отказе гейта.
+
+    ГОРИЗОНТ ВПЕРЁД ОГРАНИЧЕН: строка неотзывна, и опечатка в годе
+    («2027-08-06» вместо «2026-08-06») навсегда открыла бы день, о котором
+    никто уже не вспомнит. Верхняя граница — единственная защита от неё, и
+    стоит она здесь, а не в сервисе: сервису дату приносят и переносы данных,
+    которым горизонт ни к чему.
+    """
+
+    permission_map = {"override": _OVERRIDE_BLOCK_PERMISSION}
+    http_method_names = ["post", "options"]
+
+    @extend_schema(
+        request=TomorrowBlockOverrideCreateSerializer,
+        responses={201: OpsTomorrowBlockOverrideSerializer},
+        description=(
+            "Снять блокировку расхода на будущую дату под правом "
+            "daily_report.override_block: пишется строка ответственности "
+            "(кто, когда, почему) и событие журнала, после чего расход на эту "
+            "дату формируется, а отстающие остаются видны. Ответственный — из "
+            "аутентификации, не из тела. 400 — форма тела, дата не в будущем "
+            "или дальше допустимого горизонта; 403 — нет права; 409 — обход "
+            "на эту дату уже записан."
+        ),
+    )
+    @action(detail=False, methods=["post"])
+    def override(self, request, *args, **kwargs):
+        form = TomorrowBlockOverrideCreateSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        business_date = form.validated_data["business_date"]
+        today = Clock.today_local()
+        if business_date <= today:
+            # Обходить нечего: гейт прошлое и сегодня не закрывает, и такая
+            # заявка — не разрешение, а недоразумение, которое осталось бы в
+            # журнале как чьё-то решение.
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={"business_date": business_date.isoformat()},
+                message="Обойти можно только блокировку будущей даты.",
+            )
+        if business_date > today + timedelta(days=MAX_OVERRIDE_HORIZON_DAYS):
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={
+                    "business_date": business_date.isoformat(),
+                    "max_days_ahead": MAX_OVERRIDE_HORIZON_DAYS,
+                },
+                message=(
+                    f"Дата обхода дальше +{MAX_OVERRIDE_HORIZON_DAYS} дней — "
+                    "проверьте год."
+                ),
+            )
+        override = override_tomorrow_block(
+            business_date=business_date,
+            # Подпись — из контракта аутентификации, НИКОГДА из тела.
+            actor=resolve_actor_id(request),
+            reason=form.validated_data["reason"],
+        )
+        return Response(
+            OpsTomorrowBlockOverrideSerializer(override).data,
+            status=status.HTTP_201_CREATED,
         )
