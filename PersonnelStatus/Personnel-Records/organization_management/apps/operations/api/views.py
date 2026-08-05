@@ -113,6 +113,7 @@ from organization_management.apps.operations.strength_report import (
 )
 from organization_management.apps.operations.expense_release import (
     build_submitted_expense_document,
+    build_summary_expense_document,
     render_expense,
 )
 from organization_management.apps.operations.summary_service import (
@@ -2225,6 +2226,9 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "create": _GENERATE_REPORT_PERMISSION,
         "rebuild": _AMEND_DAY_PERMISSION,
         "freshness": _READ_STATUS_PERMISSION,
+        # Выгрузка — то же чтение, что и свежесть: файлом отдаётся ровно то,
+        # что уже открыто экрану.
+        "export": _READ_STATUS_PERMISSION,
     }
     http_method_names = ["get", "post", "options"]
 
@@ -2259,6 +2263,70 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpsDailySubmissionSerializer(summary).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "division_id",
+                OpenApiTypes.INT,
+                required=True,
+                description="Подразделение сводки — ОДНО и обязательно.",
+            ),
+            OpenApiParameter(
+                "business_date",
+                OpenApiTypes.DATE,
+                description="День; по умолчанию сегодняшний по часам раздела.",
+            ),
+            OpenApiParameter(
+                "file_format",
+                OpenApiTypes.STR,
+                description=(
+                    "csv (числа) или xlsx (числа и поимённый состав). Имя "
+                    "параметра НЕ `format`: его DRF резервирует под выбор "
+                    "рендерера ответа."
+                ),
+            ),
+        ],
+        responses={(200, "application/octet-stream"): OpenApiTypes.BINARY},
+        description=(
+            "Выгрузка СВОДНОГО расхода файлом под правом status.view: строка "
+            "на подразделение (свой уровень первым, затем дети) и ИТОГО "
+            "суммой. Строки детей берутся из ЗАПИНЕННЫХ сводкой версий, а не "
+            "из их текущих сдач. 400 — нечитаемый параметр, неизвестный "
+            "формат либо день сдан обычной сдачей, а не сводкой; 403 — нет "
+            "права либо подразделение вне области; 404 — подразделения нет "
+            "либо сводки за этот день нет."
+        ),
+    )
+    @action(detail=False, methods=["get"])
+    def export(self, request, *args, **kwargs):
+        division_id = _parse_int_param(request, "division_id")
+        if division_id is None:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                message="division_id обязателен: выгружается сводка одного узла.",
+            )
+        _assert_division_in_scope(
+            request, division_id, _READ_STATUS_PERMISSION, field="division_id"
+        )
+        if not DivisionTreeSelector.exists(division_id):
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"division_id": str(division_id)},
+                message="Подразделение не найдено.",
+            )
+        business_date = _parse_date_param(request, "business_date")
+        if business_date is None:
+            business_date = Clock.today_local()
+        data = build_summary_expense_document(division_id, business_date)
+        blob, filename, content_type = render_expense(
+            data, request.query_params.get("file_format", "csv")
+        )
+        response = HttpResponse(blob, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     @extend_schema(
         request=SummaryRebuildSerializer,
