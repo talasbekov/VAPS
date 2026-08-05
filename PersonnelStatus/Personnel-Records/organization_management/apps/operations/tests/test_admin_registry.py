@@ -26,6 +26,7 @@ from organization_management.apps.operations.models_status import (
 )
 from organization_management.apps.operations.models_submission import (
     OpsDailySubmission,
+    OpsDivisionNotifyRecipient,
     OpsSubmissionControlSettings,
     OpsTomorrowBlockOverride,
 )
@@ -41,6 +42,21 @@ def site_admin(model):
 
 def test_the_control_settings_are_editable_in_admin():
     assert site_admin(OpsSubmissionControlSettings) is not None
+
+
+def test_the_notify_recipients_are_editable_in_admin():
+    """Закрепление ответственного — настройка, а не решение с последствиями.
+
+    Сервиса у неё нет и быть не должно: смена дежурства не порождает ни
+    версии, ни записи в журнал — заводить её мимо Admin означало бы выкатку
+    на каждую перестановку.
+    """
+    model_admin = site_admin(OpsDivisionNotifyRecipient)
+
+    assert model_admin is not None
+    # Поиск по целочисленной колонке отвечал бы ProgrammingError (LIKE по
+    # числу), поэтому ищем только по получателю.
+    assert model_admin.search_fields == ("recipient",)
 
 
 @pytest.mark.parametrize(
