@@ -462,3 +462,28 @@ class OpsTomorrowBlockOverrideSerializer(serializers.ModelSerializer):
     class Meta:
         model = OpsTomorrowBlockOverride
         fields = ["id", "business_date", "overridden_by", "reason", "created_at"]
+
+
+class SummaryAssembleSerializer(serializers.Serializer):
+    """Тело сборки сводки: подразделение и день.
+
+    Те же два параметра, что у сдачи дня, и по той же причине: бизнес-дата
+    приходит явно, потому что сводку собирают и «на завтра», и молчаливая
+    подстановка сегодняшней записала бы её не тем днём.
+    """
+
+    division_id = serializers.IntegerField()
+    business_date = serializers.DateField()
+
+
+class SummaryRebuildSerializer(serializers.Serializer):
+    """Тело пересборки: к дню добавляются причина и санкция.
+
+    Пересборка — поправка сводки, и объясняется она так же, как поправка
+    сданного дня: без причины она неотличима от тихой подмены заявления.
+    """
+
+    division_id = serializers.IntegerField()
+    business_date = serializers.DateField()
+    reason = serializers.CharField(allow_blank=False, max_length=1000)
+    sanction = serializers.CharField(allow_blank=False, max_length=255)

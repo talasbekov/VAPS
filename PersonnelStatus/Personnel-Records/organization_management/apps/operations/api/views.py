@@ -50,6 +50,8 @@ from organization_management.apps.operations.api.serializers import (
     StatusTypeSerializer,
     StatusUpdateSerializer,
     SubmittedExpenseFilterSerializer,
+    SummaryAssembleSerializer,
+    SummaryRebuildSerializer,
     OpsTomorrowBlockOverrideSerializer,
     TemporaryDutySerializer,
     TrafficLightDivisionFilterSerializer,
@@ -108,6 +110,11 @@ from organization_management.apps.operations.strength_report import (
     StrengthReportService,
     submitted_expense,
 )
+from organization_management.apps.operations.summary_service import (
+    assemble_summary,
+    rebuild_summary,
+    summary_freshness,
+)
 from organization_management.apps.operations.tomorrow_gate import (
     assert_tomorrow_not_blocked,
     resolve_block,
@@ -134,6 +141,9 @@ _READ_STATUS_PERMISSION = "status.view"
 _SUBMIT_DAY_PERMISSION = "daily_report.mark_update"
 # Право на поправку сданного — своё («корректировка суточного отчёта»).
 _AMEND_DAY_PERMISSION = "daily_report.correct"
+# Право на СБОРКУ сводки — «генерация суточного отчёта»: консолидировать
+# эшелон и отмечать статусы в своём подразделении разные полномочия.
+_GENERATE_REPORT_PERMISSION = "daily_report.generate"
 # Право на обход блокировки завтрашнего дня — тоже своё: обход снимает замок
 # со всего раздела на целый день, и вывести его из права отмечать значило бы
 # раздать полномочие руководителя каждому оператору.
@@ -2105,4 +2115,180 @@ class TomorrowBlockViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             OpsTomorrowBlockOverrideSerializer(override).data,
             status=status.HTTP_201_CREATED,
+        )
+
+
+class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Сводка дня уровня выше.
+
+    POST /api/operations/daily-summaries/          — собрать
+    POST /api/operations/daily-summaries/rebuild/  — пересобрать «взамен»
+    GET  /api/operations/daily-summaries/freshness/ — свежесть
+
+    ПРАВА РАЗНЫЕ У ТРЁХ ДЕЙСТВИЙ. Сборка — daily_report.generate («генерация
+    суточного отчёта»): консолидировать эшелон и отмечать статусы в своём
+    подразделении разные полномочия. Пересборка — daily_report.correct: она
+    вытесняет уже подписанное, и общий код со сборкой выдал бы право
+    переписывать сводку каждому, кому разрешили её собрать. Чтение свежести —
+    status.view, как у всех чтений раздела: она выводится из сдач, которые
+    это право и открывает.
+
+    Сводка возвращается тем же сериализатором, что и сдача: это одна
+    сущность, и второе представление разошлось бы с первым.
+    """
+
+    permission_map = {
+        "create": _GENERATE_REPORT_PERMISSION,
+        "rebuild": _AMEND_DAY_PERMISSION,
+        "freshness": _READ_STATUS_PERMISSION,
+    }
+    http_method_names = ["get", "post", "options"]
+
+    @extend_schema(
+        request=SummaryAssembleSerializer,
+        responses={201: OpsDailySubmissionSerializer},
+        description=(
+            "Собрать сводку дня для подразделения с детьми под правом "
+            "daily_report.generate: снимок СВОЕГО уровня плюс пины "
+            "действующих сдач прямых детей. Актор — из аутентификации. "
+            "400 — форма тела либо подразделение-лист; 403 — нет права либо "
+            "подразделение вне области; 404 — подразделения нет; 409 — день "
+            "уже сдан (пересборка — отдельное действие); 422 — дата вне окна "
+            "либо не все подчинённые сдали (details.laggards)."
+        ),
+    )
+    def create(self, request, *args, **kwargs):
+        form = SummaryAssembleSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        # Область — ДО сервиса, как у сдачи: иначе чужак узнавал бы о
+        # существовании подразделения по разнице между 404 и 403.
+        _assert_division_in_scope(
+            request, division_id, _GENERATE_REPORT_PERMISSION, field="division_id"
+        )
+        summary = assemble_summary(
+            division_id=division_id,
+            business_date=form.validated_data["business_date"],
+            actor=resolve_actor_id(request),
+        )
+        return Response(
+            OpsDailySubmissionSerializer(summary).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        request=SummaryRebuildSerializer,
+        responses={201: OpsDailySubmissionAmendedSerializer},
+        description=(
+            "Пересобрать сводку «взамен» под правом daily_report.correct: "
+            "новая версия со свежими пинами, прежняя сохраняется целиком. "
+            "Причина и санкция обязательны. 400 — форма тела либо день сдан "
+            "обычной сдачей, а не сводкой; 403 — нет права либо подразделение "
+            "вне области; 404 — подразделения нет; 422 — день не сдан либо не "
+            "все подчинённые сдали."
+        ),
+    )
+    @action(detail=False, methods=["post"])
+    def rebuild(self, request, *args, **kwargs):
+        form = SummaryRebuildSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        _assert_division_in_scope(
+            request, division_id, _AMEND_DAY_PERMISSION, field="division_id"
+        )
+        summary = rebuild_summary(
+            division_id=division_id,
+            business_date=form.validated_data["business_date"],
+            actor=resolve_actor_id(request),
+            reason=form.validated_data["reason"],
+            sanction=form.validated_data["sanction"],
+        )
+        return Response(
+            OpsDailySubmissionAmendedSerializer(summary).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "division_id",
+                OpenApiTypes.INT,
+                required=True,
+                description="Подразделение сводки — ОДНО и обязательно.",
+            ),
+            OpenApiParameter(
+                "business_date",
+                OpenApiTypes.DATE,
+                description="День; по умолчанию сегодняшний по часам раздела.",
+            ),
+        ],
+        responses=extend_schema_serializer(many=False)(
+            inline_serializer(
+                name="SummaryFreshnessResponse",
+                fields={
+                    "division_id": serializers.IntegerField(),
+                    "business_date": serializers.DateField(),
+                    "status": serializers.CharField(),
+                    "superseded": serializers.ListField(child=serializers.DictField()),
+                    "missing": serializers.ListField(child=serializers.DictField()),
+                    "unpinned": serializers.ListField(child=serializers.IntegerField()),
+                },
+            )
+        ),
+        description=(
+            "Свежесть действующей сводки под правом status.view: FRESH или "
+            "STALE с тремя РАЗДЕЛЬНЫМИ осями расхождения — ребёнок поправил "
+            "день (superseded), у ребёнка не осталось действующей версии "
+            "(missing), появился обязанный ребёнок вне пинов (unpinned). "
+            "400 — параметр не задан или нечитаем; 403 — нет права либо "
+            "подразделение вне области; 404 — подразделения нет либо сводки "
+            "за этот день нет (обычная сдача сводкой не считается)."
+        ),
+    )
+    @action(detail=False, methods=["get"])
+    def freshness(self, request, *args, **kwargs):
+        division_id = _parse_int_param(request, "division_id")
+        if division_id is None:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                message="division_id обязателен: свежесть спрашивают у сводки.",
+            )
+        _assert_division_in_scope(
+            request, division_id, _READ_STATUS_PERMISSION, field="division_id"
+        )
+        business_date = _parse_date_param(request, "business_date")
+        if business_date is None:
+            business_date = Clock.today_local()
+        # Существование — ПОСЛЕ области, тем же порядком, что у точечного
+        # светофора: иначе 404 стал бы оракулом существования для чужака.
+        if not DivisionTreeSelector.exists(division_id):
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"division_id": str(division_id)},
+                message="Подразделение не найдено.",
+            )
+        state = summary_freshness(division_id, business_date)
+        if state is None:
+            # «Сводки нет» — это ОТСУТСТВИЕ ответа, а не FRESH: обычная сдача
+            # тоже даёт None, и назвать её свежей сводкой значило бы соврать.
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={
+                    "division_id": str(division_id),
+                    "business_date": business_date.isoformat(),
+                },
+                message="Сводки за этот день нет.",
+            )
+        return Response(
+            {
+                "division_id": division_id,
+                "business_date": business_date,
+                "status": state.status,
+                "superseded": state.superseded,
+                "missing": state.missing,
+                "unpinned": state.unpinned,
+            }
         )
