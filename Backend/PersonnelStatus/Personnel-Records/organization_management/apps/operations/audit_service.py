@@ -51,6 +51,10 @@ EMPLOYEE_DISMISSED = "EMPLOYEE_DISMISSED"
 DAILY_SUBMISSION_SUBMITTED = "DAILY_SUBMISSION_SUBMITTED"
 DAILY_SUBMISSION_AMENDED = "DAILY_SUBMISSION_AMENDED"
 TOMORROW_BLOCK_OVERRIDDEN = "TOMORROW_BLOCK_OVERRIDDEN"
+# Сводка — та же сущность сдачи, но СВОЁ событие: «собрал из версий детей» и
+# «сдал свой день» отвечают на разные вопросы, и один код на оба лишил бы
+# ленту возможности их различить.
+DAILY_SUMMARY_ASSEMBLED = "DAILY_SUMMARY_ASSEMBLED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -73,6 +77,7 @@ ACTIONS = frozenset(
         DAILY_SUBMISSION_SUBMITTED,
         DAILY_SUBMISSION_AMENDED,
         TOMORROW_BLOCK_OVERRIDDEN,
+        DAILY_SUMMARY_ASSEMBLED,
     }
 )
 
