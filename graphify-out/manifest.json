@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785931757.6257956,
-    "ast_hash": "4d893628204459c4087ae6fdc889a17c",
+    "mtime": 1785932570.1099322,
+    "ast_hash": "2fb2e7c9897aa5b6307519266706d50a",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -25020,8 +25020,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/load/selectors.py": {
-    "mtime": 1785931482.665604,
-    "ast_hash": "b63afe4376f19d5baac9d9d2269b2759",
+    "mtime": 1785932017.577684,
+    "ast_hash": "6f554bca3c7958079dd3fd5e2eef43ef",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/load/tests/__init__.py": {
@@ -25112,6 +25112,16 @@
   "_bmad-output/implementation-artifacts/19-1-\u0440\u0430\u0441\u0447\u0451\u0442-\u043d\u0430\u0433\u0440\u0443\u0437\u043a\u0438-\u043f\u043b\u0430\u043d-\u0444\u0430\u043a\u0442.md": {
     "mtime": 1785931748.7006276,
     "ast_hash": "0bc8f2827f5e275a4c3f5a1d1d9c87c1",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/load/tests/test_overload_detection.py": {
+    "mtime": 1785932390.2236726,
+    "ast_hash": "18b9300db9f2cfb42a9ea7ea3e1c77ca",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/19-2-\u043f\u0435\u0440\u0435\u0433\u0440\u0443\u0437\u043a\u0430.md": {
+    "mtime": 1785932566.3248837,
+    "ast_hash": "6182d422500408ec004364a871f245d5",
     "semantic_hash": ""
   }
 }
