@@ -13,6 +13,7 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.core.models import Division, DivisionType, Employee, Position, Rank
+from apps.operations.load.models import LoadCoefficient
 from apps.operations.rbac.models import Role
 from apps.operations.statuses.models import EmployeeStatus, StatusType
 from apps.operations.submissions.models import (
@@ -32,6 +33,7 @@ CATALOG_MODELS = {
     StatusType,
     SubmissionControlSettings,
     DivisionNotifyRecipient,
+    LoadCoefficient,
 }
 ALLOWED_IN_ADMIN = {Group} | CATALOG_MODELS
 
