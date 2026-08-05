@@ -437,3 +437,60 @@ def test_a_batch_leaves_alone_a_day_that_reported_other_people(
 
     assert len(amendments(division, TODAY)) == 1
     assert amendments(elsewhere, TODAY) == []
+
+
+# ── Увольнение: причина выводится из события ─────────────────────────────
+
+
+def dismiss(employee, dismissal_date=TODAY):
+    from organization_management.apps.operations.dismissal import (
+        close_statuses_on_dismissal,
+    )
+
+    with clock.override(MORNING):
+        return close_statuses_on_dismissal(
+            employee.id, dismissal_date=dismissal_date, actor="system:dismissal"
+        )
+
+
+def test_dismissal_amends_without_asking_anyone_for_a_reason(
+    seed_types, division, employee
+):
+    """Спрашивать причину у системного пути было бы некого.
+
+    Событие известно целиком — увольнение с датой, — и санкция выводится из
+    него; пропустить поправку значило бы оставить сданный день заявлять
+    человека, которого в нём уже нет.
+    """
+    submit(division, TOMORROW)
+    make_status(employee, TOMORROW, TOMORROW + timedelta(days=2))
+
+    dismiss(employee)
+
+    (amendment,) = amendments(division, TOMORROW)
+    assert amendment.sanction == f"Увольнение сотрудника {TODAY:%d.%m.%Y}."
+    assert amendment.triggered_by_status_id is None
+
+
+def test_dismissal_amends_only_the_severed_tail(seed_types, division, employee):
+    """Дни до даты увольнения статус нёс и несёт."""
+    past = TODAY - timedelta(days=2)
+    submit(division, past)
+    submit(division, TOMORROW)
+    make_status(employee, past, TOMORROW + timedelta(days=2))
+
+    dismiss(employee)
+
+    assert amendments(division, past) == []
+    assert len(amendments(division, TOMORROW)) == 1
+
+
+def test_a_dismissal_that_severs_nothing_submitted_amends_nothing(
+    seed_types, division, employee
+):
+    submit(division, TODAY)
+    make_status(employee, TOMORROW, TOMORROW + timedelta(days=2))
+
+    dismiss(employee)
+
+    assert amendments(division, TODAY) == []
