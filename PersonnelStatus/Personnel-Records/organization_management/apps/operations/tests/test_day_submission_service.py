@@ -12,14 +12,12 @@ from django.db import IntegrityError, transaction
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations import audit_service, clock
-from organization_management.apps.operations.day_submission_service import (
-    DEFAULT_CONTROL_HOUR,
-    submit_day,
-)
+from organization_management.apps.operations.day_submission_service import submit_day
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
 from organization_management.apps.operations.models_submission import (
+    DEFAULT_CONTROL_HOUR,
     OpsDailySubmission,
 )
 from organization_management.apps.operations.tests.test_status_service import (
