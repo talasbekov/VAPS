@@ -291,6 +291,11 @@ MATRIX = {
     # assigned employee via UserEmployeeBinding), NOT an RBAC permission
     # code (mirrors NotificationViewSet's any-auth+self-scope gate).
     "ops-placement-assignment-acknowledge": _AnyAuthenticated(),
+    # Story 18.6b: опрос/налёт/перегрузка — RBAC event.manage (NOT
+    # self-scope, unlike acknowledge on the same ViewSet).
+    "ops-placement-assignment-actual-time": _Gate("event.manage"),
+    "ops-placement-assignment-service-hours": _Gate("event.manage"),
+    "ops-placement-assignment-overload": _Gate("event.manage"),
     # daily-submissions — сдача дня (story 5.8a) + чтение истории (story 5.8c).
     # Гейт RequirePermissionMixin — ГРУБАЯ проверка кода (resolver division-
     # free); scope живёт в сервис-гарде/селекторе и матрицей не проверяется

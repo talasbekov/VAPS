@@ -9,12 +9,14 @@ from apps.operations.events.models import (
     GroupForceRequest,
     JournalEntry,
     PlacementAssignment,
+    PlacementAssignmentActual,
     SecurityEvent,
     SecurityEventChecklistItem,
     SecurityEventClosureSummary,
     SecurityEventDirectAssignment,
     SecurityEventSectorPost,
     SecurityEventStaffingDemand,
+    ServiceHours,
 )
 from apps.operations.facilities.models import Object as FacilityObject
 from apps.operations.facilities.models import Post
@@ -344,3 +346,54 @@ class SecurityEventArchiveSerializer(serializers.Serializer):
     journal_entries = JournalEntrySerializer(many=True)
     closure_summaries = SecurityEventClosureSummarySerializer(many=True)
     current_assignment_version = AssignmentVersionDetailSerializer(allow_null=True)
+
+
+class PlacementAssignmentActualSerializer(serializers.ModelSerializer):
+    """Story 18.6b: response shape for фактическое время назначения
+    (`PlacementAssignmentActual`, 18.3) — read-only, all fields, same
+    convention as `JournalEntrySerializer`."""
+
+    class Meta:
+        model = PlacementAssignmentActual
+        fields = [
+            "id",
+            "assignment",
+            "actual_start_at",
+            "actual_end_at",
+            "recorded_by",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class RecordActualTimeSerializer(serializers.Serializer):
+    """Story 18.6b: write-only request body for `POST .../actual-time/` —
+    thin pass-through to `record_assignment_actual_time()` (18.3); the
+    service itself owns all business validation (interval ordering,
+    is_current/CLOSED lifecycle) — this serializer validates only field
+    PRESENCE/TYPE, same division of labor as `JournalEntryCreateSerializer`."""
+
+    actual_start_at = serializers.DateTimeField()
+    actual_end_at = serializers.DateTimeField()
+
+
+class ServiceHoursSerializer(serializers.ModelSerializer):
+    """Story 18.6b: response shape for Налёт часов + отметка перегрузки
+    (`ServiceHours`, 18.4/18.5) — read-only, all fields. Same row/model
+    for both `service-hours` (day_hours/night_hours populated,
+    is_overloaded/overload_minutes at their defaults) and `overload`
+    (is_overloaded/overload_minutes populated) responses."""
+
+    class Meta:
+        model = ServiceHours
+        fields = [
+            "id",
+            "actual",
+            "day_hours",
+            "night_hours",
+            "computed_at",
+            "is_overloaded",
+            "overload_minutes",
+        ]
+        read_only_fields = fields

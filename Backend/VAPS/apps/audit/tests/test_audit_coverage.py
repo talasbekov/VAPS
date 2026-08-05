@@ -359,6 +359,12 @@ AUDIT_MATRIX = {
     # transition (not the idempotent replay) — behavioral pin —
     # test_placement_assignment_acknowledge_api.py.
     "ops-placement-assignment-acknowledge": _Audited(),
+    # Story 18.6b: ASSIGNMENT_ACTUAL_TIME_RECORDED (18.3), SERVICE_HOURS_
+    # COMPUTED (18.4), POST_OVERLOAD_FLAGGED (18.5) each emit inside their
+    # own service function, on every call (upsert, including recompute).
+    "ops-placement-assignment-actual-time": _Audited(),
+    "ops-placement-assignment-service-hours": _Audited(),
+    "ops-placement-assignment-overload": _Audited(),
     # Story 14.11f/14.12a: validate is POST but read-only (dry-run, no
     # writes) — nothing to audit, stays deferred with an updated reason (the
     # completeness gate is method-based, so the row itself can't be removed).

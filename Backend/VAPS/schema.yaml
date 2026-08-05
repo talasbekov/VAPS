@@ -2368,6 +2368,81 @@ paths:
               schema:
                 $ref: '#/components/schemas/PlacementAssignment'
           description: ''
+  /api/operations/placement-assignments/{id}/actual-time/:
+    post:
+      operationId: placement_assignment_actual_time
+      description: Записать фактическое время назначения — опрос по итогам (18.3,
+        FR-43). Требует event.manage. Доступно только после закрытия события (is_current
+        + CLOSED). Upsert — повторный вызов исправляет факт, не дублирует строку.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordActualTimeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RecordActualTimeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RecordActualTimeRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacementAssignmentActual'
+          description: ''
+  /api/operations/placement-assignments/{id}/overload/:
+    post:
+      operationId: placement_assignment_overload
+      description: Отметить перегрузку по факту — превышение предельного времени Поста
+        (18.5, FR-32). Требует event.manage. 404, если Налёт часов ещё не вычислен
+        (18.4). 422 INVALID_LIFECYCLE_TRANSITION из сервиса вне is_current/CLOSED.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHours'
+          description: ''
+  /api/operations/placement-assignments/{id}/service-hours/:
+    post:
+      operationId: placement_assignment_service_hours
+      description: Вычислить Налёт часов день/ночь (18.4, FR-32) из уже записанного
+        факта (18.3). Требует event.manage. 404, если actual-time ещё не записан.
+        422 INVALID_LIFECYCLE_TRANSITION из сервиса вне is_current/CLOSED.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHours'
+          description: ''
   /api/operations/roles/:
     get:
       operationId: operations_roles_list
@@ -5726,6 +5801,46 @@ components:
       - employee_id
       - id
       - post
+    PlacementAssignmentActual:
+      type: object
+      description: |-
+        Story 18.6b: response shape for фактическое время назначения
+        (`PlacementAssignmentActual`, 18.3) — read-only, all fields, same
+        convention as `JournalEntrySerializer`.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        assignment:
+          type: integer
+          readOnly: true
+        actual_start_at:
+          type: string
+          format: date-time
+          readOnly: true
+        actual_end_at:
+          type: string
+          format: date-time
+          readOnly: true
+        recorded_by:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - actual_end_at
+      - actual_start_at
+      - assignment
+      - created_at
+      - id
+      - recorded_by
+      - updated_at
     Position:
       type: object
       properties:
@@ -5818,6 +5933,24 @@ components:
       required:
       - code
       - name
+    RecordActualTimeRequest:
+      type: object
+      description: |-
+        Story 18.6b: write-only request body for `POST .../actual-time/` —
+        thin pass-through to `record_assignment_actual_time()` (18.3); the
+        service itself owns all business validation (interval ordering,
+        is_current/CLOSED lifecycle) — this serializer validates only field
+        PRESENCE/TYPE, same division of labor as `JournalEntryCreateSerializer`.
+      properties:
+        actual_start_at:
+          type: string
+          format: date-time
+        actual_end_at:
+          type: string
+          format: date-time
+      required:
+      - actual_end_at
+      - actual_start_at
     ReplaceDepartedRequestRequest:
       type: object
       description: |-
@@ -6136,6 +6269,51 @@ components:
         * `IN_PROGRESS` - Проведение
         * `CLOSED` - Закрыто
         * `CANCELLED` - Отменено
+    ServiceHours:
+      type: object
+      description: |-
+        Story 18.6b: response shape for Налёт часов + отметка перегрузки
+        (`ServiceHours`, 18.4/18.5) — read-only, all fields. Same row/model
+        for both `service-hours` (day_hours/night_hours populated,
+        is_overloaded/overload_minutes at their defaults) and `overload`
+        (is_overloaded/overload_minutes populated) responses.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        actual:
+          type: integer
+          readOnly: true
+        day_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          readOnly: true
+        night_hours:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          readOnly: true
+        computed_at:
+          type: string
+          format: date-time
+          readOnly: true
+        is_overloaded:
+          type: boolean
+          readOnly: true
+        overload_minutes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,5}(?:\.\d{0,2})?$
+          readOnly: true
+      required:
+      - actual
+      - computed_at
+      - day_hours
+      - id
+      - is_overloaded
+      - night_hours
+      - overload_minutes
     StaffingDemand:
       type: object
       properties:

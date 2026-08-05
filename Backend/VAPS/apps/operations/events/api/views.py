@@ -44,7 +44,9 @@ from apps.operations.events.api.serializers import (
     GroupSerializer,
     JournalEntryCreateSerializer,
     JournalEntrySerializer,
+    PlacementAssignmentActualSerializer,
     PlacementAssignmentSerializer,
+    RecordActualTimeSerializer,
     ReplaceDepartedRequestSerializer,
     ReturnVersionSerializer,
     SecurityEventArchiveSerializer,
@@ -52,6 +54,7 @@ from apps.operations.events.api.serializers import (
     SecurityEventCreateSerializer,
     SecurityEventSerializer,
     SectorPostSerializer,
+    ServiceHoursSerializer,
     StaffingDemandSerializer,
 )
 from apps.operations.events.models import (
@@ -60,8 +63,10 @@ from apps.operations.events.models import (
     GroupForceRequest,
     JournalEntry,
     PlacementAssignment,
+    PlacementAssignmentActual,
     SecurityEvent,
     SecurityEventDirectAssignment,
+    ServiceHours,
 )
 from apps.operations.events.selectors import SecurityEventArchiveSelector
 from apps.operations.events.services import (
@@ -72,12 +77,15 @@ from apps.operations.events.services import (
     approve_staffing_demand,
     cascade_replace_departed,
     close_security_event,
+    compute_service_hours,
     confirm_recon,
     create_journal_entry,
     detect_placement_conflicts,
+    flag_post_overload,
     form_draft_placement,
     generate_force_requests,
     issue_bulletin,
+    record_assignment_actual_time,
     replace_checklist_items,
     replace_sector_posts,
     replace_staffing_demand,
@@ -855,6 +863,24 @@ def _get_placement_assignment_or_404(pk):
     return get_object_or_404(PlacementAssignment, pk=pk)
 
 
+def _get_actual_or_404(assignment):
+    # Story 18.6b: явный 404, а не голый RelatedObjectDoesNotExist —
+    # тот же класс решения, что _get_event_or_404/_get_placement_
+    # assignment_or_404 (опрос ещё не записан, 18.3 не вызвана).
+    actual = PlacementAssignmentActual.objects.filter(assignment=assignment).first()
+    if actual is None:
+        raise Http404("Фактическое время назначения не записано.")
+    return actual
+
+
+def _get_service_hours_or_404(assignment):
+    actual = _get_actual_or_404(assignment)
+    hours = ServiceHours.objects.filter(actual=actual).first()
+    if hours is None:
+        raise Http404("Налёт часов ещё не вычислен.")
+    return hours
+
+
 class PlacementAssignmentViewSet(viewsets.ViewSet):
     """Story 16.8e: `POST /api/operations/placement-assignments/{id}/
     acknowledge` — separate resource from `AssignmentVersionViewSet`
@@ -902,3 +928,60 @@ class PlacementAssignmentViewSet(viewsets.ViewSet):
             assignment, actor=request.actor_id
         )
         return Response(PlacementAssignmentSerializer(assignment).data)
+
+    @extend_schema(
+        operation_id="placement_assignment_actual_time",
+        request=RecordActualTimeSerializer,
+        responses={200: PlacementAssignmentActualSerializer},
+        description="Записать фактическое время назначения — опрос по "
+        "итогам (18.3, FR-43). Требует event.manage. Доступно только "
+        "после закрытия события (is_current + CLOSED). Upsert — "
+        "повторный вызов исправляет факт, не дублирует строку.",
+    )
+    @action(detail=True, methods=["post"], url_path="actual-time")
+    def actual_time(self, request, pk=None, *args, **kwargs):
+        require_permission(request, "event.manage")
+        assignment = _get_placement_assignment_or_404(pk)
+        form = RecordActualTimeSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        actual = record_assignment_actual_time(
+            assignment,
+            actor=request.actor_id,
+            actual_start_at=form.validated_data["actual_start_at"],
+            actual_end_at=form.validated_data["actual_end_at"],
+        )
+        return Response(PlacementAssignmentActualSerializer(actual).data)
+
+    @extend_schema(
+        operation_id="placement_assignment_service_hours",
+        request=None,
+        responses={200: ServiceHoursSerializer},
+        description="Вычислить Налёт часов день/ночь (18.4, FR-32) из "
+        "уже записанного факта (18.3). Требует event.manage. 404, если "
+        "actual-time ещё не записан. 422 INVALID_LIFECYCLE_TRANSITION "
+        "из сервиса вне is_current/CLOSED.",
+    )
+    @action(detail=True, methods=["post"], url_path="service-hours")
+    def service_hours(self, request, pk=None, *args, **kwargs):
+        require_permission(request, "event.manage")
+        assignment = _get_placement_assignment_or_404(pk)
+        actual = _get_actual_or_404(assignment)
+        hours = compute_service_hours(actual, actor=request.actor_id)
+        return Response(ServiceHoursSerializer(hours).data)
+
+    @extend_schema(
+        operation_id="placement_assignment_overload",
+        request=None,
+        responses={200: ServiceHoursSerializer},
+        description="Отметить перегрузку по факту — превышение "
+        "предельного времени Поста (18.5, FR-32). Требует event.manage. "
+        "404, если Налёт часов ещё не вычислен (18.4). 422 "
+        "INVALID_LIFECYCLE_TRANSITION из сервиса вне is_current/CLOSED.",
+    )
+    @action(detail=True, methods=["post"], url_path="overload")
+    def overload(self, request, pk=None, *args, **kwargs):
+        require_permission(request, "event.manage")
+        assignment = _get_placement_assignment_or_404(pk)
+        hours = _get_service_hours_or_404(assignment)
+        hours = flag_post_overload(hours, actor=request.actor_id)
+        return Response(ServiceHoursSerializer(hours).data)
