@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785936778.1523914,
-    "ast_hash": "51722dad09e7dc3fcf1d1f5eedfd6a05",
+    "mtime": 1785938459.2101867,
+    "ast_hash": "03526dbc9d94c16199e9aa50b73b5b41",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -20795,8 +20795,8 @@
     "semantic_hash": ""
   },
   "frontend/src/app/App.tsx": {
-    "mtime": 1785824810.8039858,
-    "ast_hash": "53d0b65f7f80a563b5a3aa4f9b0edd32",
+    "mtime": 1785937341.046731,
+    "ast_hash": "5d494447fbabe67d9cecdd0b435d10ba",
     "semantic_hash": ""
   },
   "frontend/src/app/AppLayout.test.tsx": {
@@ -22135,8 +22135,8 @@
     "semantic_hash": ""
   },
   "frontend/src/app/mocks/compose-handlers.ts": {
-    "mtime": 1785770172.7041461,
-    "ast_hash": "ec1bd043483cf84803f73622f1cda22e",
+    "mtime": 1785937771.2137582,
+    "ast_hash": "203ff2e9af6fa11b06a3db20579a5436",
     "semantic_hash": ""
   },
   "frontend/src/app/mocks/compose-seed.ts": {
@@ -22300,8 +22300,8 @@
     "semantic_hash": ""
   },
   "frontend/src/features/personnel/pages/EmployeeDetailPage.tsx": {
-    "mtime": 1785224485.3828673,
-    "ast_hash": "0539c9695afb76d55573c13eef9f9648",
+    "mtime": 1785937305.1855567,
+    "ast_hash": "3c44ad3774ec4e9f2199a8c65bad99e4",
     "semantic_hash": ""
   },
   "frontend/src/features/personnel/pages/EmployeesListPage.tsx": {
@@ -25182,6 +25182,31 @@
   "_bmad-output/implementation-artifacts/19-4c-frontend-api-client.md": {
     "mtime": 1785936757.311004,
     "ast_hash": "0df17e4394d2a44a312b96191c4beef0",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/status-calendar/mocks/handlers.test.ts": {
+    "mtime": 1785938370.7825263,
+    "ast_hash": "4828eee2089e8055aa7f5c54ded0f1e3",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/status-calendar/mocks/handlers.ts": {
+    "mtime": 1785938087.8077002,
+    "ast_hash": "f1ab085d3342442d88f6f8666f977db6",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/status-calendar/pages/StatusCalendarPanel.test.tsx": {
+    "mtime": 1785938275.0356636,
+    "ast_hash": "3f734c47d1d6c7b1a9c17018b842b652",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/status-calendar/pages/StatusCalendarPanel.tsx": {
+    "mtime": 1785938235.1678617,
+    "ast_hash": "35efa02ddece07c20f0a41bc62e39f35",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/19-4d-frontend-\u043f\u0430\u043d\u0435\u043b\u044c-\u043a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u044f.md": {
+    "mtime": 1785938451.4150422,
+    "ast_hash": "54f63753b07244814fbb8d32680db9a0",
     "semantic_hash": ""
   }
 }
