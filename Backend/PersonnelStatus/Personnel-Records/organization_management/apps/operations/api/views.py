@@ -101,6 +101,9 @@ from organization_management.apps.operations.strength_report import (
     StrengthReportService,
     submitted_expense,
 )
+from organization_management.apps.operations.tomorrow_gate import (
+    assert_tomorrow_not_blocked,
+)
 from organization_management.apps.operations.traffic_light import (
     TrafficLightStatus,
     division_traffic_light,
@@ -1174,6 +1177,13 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # None = глобальная видимость → всё дерево; чужое подразделение — 403
         # (общий резолв со списком статусов).
         scope = _resolve_division_scope(request, division_id, "status.view")
+        # Порядок гардов: сперва область (403), потом бизнес-правило (422) —
+        # чужому подразделению нельзя даже сообщать, заблокирован ли день.
+        # Гейт только ЗДЕСЬ: сданный расход отвечает про день, который уже
+        # сдан, и блокировать чтение подписанного нечем и незачем.
+        assert_tomorrow_not_blocked(
+            business_date=business_date, today=Clock.today_local()
+        )
 
         report = StrengthReportService.compute(business_date, division_ids=scope)
         columns = list(report.totals.columns)
