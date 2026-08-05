@@ -49,6 +49,7 @@ from organization_management.apps.operations.api.serializers import (
     SecondmentReturnConfirmSerializer,
     SecondmentSerializer,
     StatusCancelSerializer,
+    StatusResolveSerializer,
     StatusTypeSerializer,
     StatusUpdateSerializer,
     SubmittedExpenseFilterSerializer,
@@ -106,6 +107,7 @@ from organization_management.apps.operations.secondment_service import (
 )
 from organization_management.apps.operations.status_service import (
     cancel_status,
+    resolve_placeholder,
     update_status,
 )
 from organization_management.apps.operations.strength_report import (
@@ -556,8 +558,13 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "bulk": _BULK_STATUS_PERMISSION,
         "partial_update": _BULK_STATUS_PERMISSION,
         "cancel": _BULK_STATUS_PERMISSION,
+        # Разрешение заглушки — та же операторская запись, что и правка: оно
+        # не переписывает чужой факт, а доводит до конца свою же неясность.
+        # Своего кода права не заводим — каталог закрытый мир.
+        "resolve": _BULK_STATUS_PERMISSION,
     }
-    # Поверхность: чтение, пачка, правка, отмена. PUT не открыт намеренно
+    # Поверхность: чтение, пачка, правка, отмена, разрешение заглушки. PUT
+    # не открыт намеренно
     # (полная замена строки переписала бы неизменяемые поля — правка только
     # частичная), DELETE — тоже: строки не удаляются, а отменяются.
     http_method_names = ["get", "post", "patch", "options"]
@@ -804,6 +811,45 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             reason=form.validated_data["reason"],
         )
         return Response(OpsEmployeeStatusSerializer(cancelled).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id разрешаемой строки-заглушки.",
+            )
+        ],
+        request=StatusResolveSerializer,
+        responses={200: OpsEmployeeStatusSerializer},
+        description=(
+            "Разрешение строки-ЗАГЛУШКИ («уточняется») реальным статусом: "
+            "заглушка закрывается, на её место кладётся новый статус, ответ — "
+            "СОЗДАННАЯ строка (заглушку читают по её прежнему адресу). "
+            "Причина (санкция) обязательна всегда. 400 — причина пуста либо "
+            "override без причины; 403 — нет права status.manage либо "
+            "сотрудник вне области; 404 — строки нет; 409 — мягкое "
+            "пересечение (обходится override); 422 — строка не заглушка, "
+            "разрешение снова в заглушку, строка уже закрыта, интервал или "
+            "жёсткое пересечение."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="resolve", url_name="resolve")
+    def resolve(self, request, pk=None, *args, **kwargs):
+        form = StatusResolveSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        status_row = self._get_status_or_404(pk)
+        self._assert_status_in_scope(request, status_row)
+        resolved = resolve_placeholder(
+            status_row,
+            # Актор — из контракта аутентификации, НИКОГДА из тела запроса.
+            actor=resolve_actor_id(request),
+            **form.validated_data,
+        )
+        # Отдаётся СОЗДАННАЯ строка: спросивший разрешение спрашивал, чем
+        # кончилась неясность, а не как выглядит закрытая заглушка.
+        return Response(OpsEmployeeStatusSerializer(resolved).data)
 
     @extend_schema(
         request=BulkStatusCreateSerializer,

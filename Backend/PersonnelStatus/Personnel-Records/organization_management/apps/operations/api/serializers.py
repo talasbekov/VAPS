@@ -121,6 +121,27 @@ class BulkStatusCreateRowSerializer(serializers.Serializer):
     source_ref = serializers.CharField(required=False, allow_blank=True)
 
 
+class StatusResolveSerializer(serializers.Serializer):
+    """Тело разрешения строки-заглушки: чем заменить, за какой период и на
+    каком основании.
+
+    Причина обязательна и непуста — здесь, на границе, как и у отмены; тот же
+    гард в сервисе остаётся контрактом для прочих вызывающих.
+
+    `employee_id` в теле нет: разрешение не переносит строку на другого
+    человека — это была бы другая операция, а не выяснение обстановки.
+    """
+
+    resolved_type_code = serializers.CharField(max_length=50)
+    date_start = serializers.DateField()
+    date_end = serializers.DateField()
+    reason = serializers.CharField(allow_blank=False, max_length=1000)
+    override = serializers.BooleanField(required=False, default=False)
+    override_reason = serializers.CharField(
+        required=False, allow_blank=True, max_length=1000
+    )
+
+
 class BulkStatusCreateSerializer(serializers.Serializer):
     """Тело POST массового создания статусов.
 
