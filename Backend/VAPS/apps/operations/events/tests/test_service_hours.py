@@ -100,6 +100,53 @@ def test_multi_day_interval():
     assert hours.night_hours == Decimal("16.00")
 
 
+def test_starts_exactly_at_night_boundary():
+    """review (Blind Hunter + Acceptance Auditor, независимо совпали):
+    Acceptance Auditor's мутационная проба на этой ГРАНИЦЕ воспроизвела
+    БЕСКОНЕЧНЫЙ ЦИКЛ в исходной версии — ни один прежний тест не бил
+    ровно в 22:00:00/06:00:00."""
+    event = make_event("OBJ-SH-8")
+    actual = make_actual(event, local(2026, 8, 4, 22, 0), local(2026, 8, 4, 23, 0))
+
+    hours = compute_service_hours(actual, actor="staff-1")
+
+    assert hours.night_hours == Decimal("1.00")
+    assert hours.day_hours == Decimal("0.00")
+
+
+def test_ends_exactly_at_day_boundary():
+    event = make_event("OBJ-SH-9")
+    actual = make_actual(event, local(2026, 8, 4, 5, 0), local(2026, 8, 4, 6, 0))
+
+    hours = compute_service_hours(actual, actor="staff-1")
+
+    assert hours.night_hours == Decimal("1.00")
+    assert hours.day_hours == Decimal("0.00")
+
+
+def test_starts_exactly_at_day_boundary():
+    event = make_event("OBJ-SH-10")
+    actual = make_actual(event, local(2026, 8, 4, 6, 0), local(2026, 8, 4, 7, 0))
+
+    hours = compute_service_hours(actual, actor="staff-1")
+
+    assert hours.day_hours == Decimal("1.00")
+    assert hours.night_hours == Decimal("0.00")
+
+
+def test_day_and_night_always_sum_to_exact_duration():
+    """review (Blind Hunter): раздельное округление day/night могло
+    разойтись с суммой длительности на сотые для дробных интервалов."""
+    event = make_event("OBJ-SH-11")
+    actual = make_actual(
+        event, local(2026, 8, 4, 21, 50), local(2026, 8, 5, 6, 5)
+    )  # 8h15m, крест обеих границ, дробные минуты
+
+    hours = compute_service_hours(actual, actor="staff-1")
+
+    assert hours.day_hours + hours.night_hours == Decimal("8.25")
+
+
 def test_upsert_recomputes_not_duplicates():
     event = make_event("OBJ-SH-5")
     actual = make_actual(event, local(2026, 8, 4, 9, 0), local(2026, 8, 4, 17, 0))

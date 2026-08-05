@@ -4,7 +4,7 @@ baseline_commit: 915a5f6
 
 # Story 18.4: ServiceHours — запись Налёта часов (день/ночь) из опроса
 
-Status: review
+Status: done
 
 ## Story
 
@@ -72,12 +72,14 @@ Claude Sonnet 5
 
 Реализовано по AC 1-7. `_split_day_night_hours()` — чистая функция, итеративное деление интервала по 06:00/22:00 местным границам (`ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)`), корректна для многодневных интервалов (протестировано на 48ч). `compute_service_hours()` — `select_for_update()` с ПЕРВОГО черновика (18.3's review-урок применён сразу, не после ревью), тот же двойной гейт (`is_current`+`CLOSED`), upsert. Все 4 боковых теста (день/ночь/обе-границы/многодневный) прошли с первого прогона — алгоритм проверен вручную перед написанием кода. `make gate` — 4111 passed (было 4104), 0 regressions.
 
+После ревью (3 агента): ВСЕ ТРИ независимо совпали на КРИТИЧЕСКОМ дефекте — Acceptance Auditor's мутационная проба (флип ОДНОГО сравнения в исходной day/night-границе) воспроизвела БЕСКОНЕЧНЫЙ ЦИКЛ внутри `select_for_update()`-лока (не просто неверный результат — реальный hang транзакции с удержанным локом). Корень — Blind Hunter's находка: `is_night` и `boundary` вычислялись ДВУМЯ раздельными наборами сравнений `current.hour`, десинк между ними структурно возможен. Закрыто ПОЛНЫМ рефакторингом: `_next_day_night_boundary()` — ЕДИНАЯ точка решения (is_night, boundary) одним набором сравнений, десинк больше невозможен структурно. Также закрыто: float-накопление секунд (Blind Hunter + Edge Case Hunter, независимо совпали) → Decimal с самого начала; раздельное округление day/night могло разойтись с суммой длительности на сотые (Blind Hunter, нарушало бы собственный AC-3) → `night_hours` теперь остаток от целого округлённого total, гарантирует точную сумму по построению; `end_at <= start_at` не проверялся (Blind Hunter) → явный `ValueError`; отсутствие `old_value` в audit при пересчёте, асимметрия с 18.3's сиблинг-функцией (Acceptance Auditor) → добавлено. Добавлены 4 теста: три на ТОЧНОЙ границе (22:00:00/06:00:00 — именно то, что вызвало бесконечный цикл) + тест на точную сумму дробного интервала. Отклонены: DST-fold-небезопасность `datetime.combine()` — `Asia/Qyzylorda` не наблюдает DST, теоретический риск без практического применения; unbounded-loop DoS на аномально длинных интервалах — нет established-конвенции на bound длительности нигде в кодовой базе (тот же класс дискуссии, что 18.3's dismissed far-future-sanity-bound); naive-datetime-доверие в `.astimezone()` — established-пробел, не специфичный для этой стори; повторный audit на no-op recompute — by design (registry явно обещает «на каждом вызове»); DB-level max_digits=6 overflow / negative-check-дублирование DB CHECK — established convention (сервисный слой доверяет DB-констрейнтам как backstop, не дублирует их проверку). `make gate` — 4115 passed (было 4111), 0 regressions.
+
 ### File List
 
 - `Backend/VAPS/apps/operations/events/models.py` (modified — `ServiceHours`)
 - `Backend/VAPS/apps/operations/events/migrations/0020_servicehours.py` (new)
 - `Backend/VAPS/apps/operations/events/services.py` (modified — `_split_day_night_hours()`, `compute_service_hours()`)
-- `Backend/VAPS/apps/operations/events/tests/test_service_hours.py` (new — 7 тестов)
+- `Backend/VAPS/apps/operations/events/tests/test_service_hours.py` (new — 7 тестов dev + 4 после ревью)
 - `docs/registries/audit-events.yaml` (modified — `SERVICE_HOURS_COMPUTED`)
 
 ## Change Log
@@ -86,3 +88,4 @@ Claude Sonnet 5
 |---|---|
 | 2026-08-04 | Story создана (create-story). PROVISIONAL: ночные часы 22:00–06:00 местного времени — стандартная трудовая норма, нет donor-справочника коэффициентов для проверки (тот принадлежит Epic 19). |
 | 2026-08-04 | Dev-story: `ServiceHours` + миграция + интервальная функция деления + `compute_service_hours()` + 7 тестов + audit-registry. `make gate` — 4111 passed, 0 regressions. Status → review. |
+| 2026-08-04 | Review закрыт (3 агента, все совпали на критическом дефекте). Acceptance Auditor's мутационная проба воспроизвела бесконечный цикл на day/night-границе — закрыто рефакторингом `_next_day_night_boundary()` (единая точка решения). Также: Decimal-накопление, точная сумма day+night, `end_at<=start_at`-гард, `old_value` в audit. 4 новых теста на точных границах. `make gate` — 4115 passed, 0 regressions. Status → done. |

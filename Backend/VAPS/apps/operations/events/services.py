@@ -2208,48 +2208,58 @@ _NIGHT_START_HOUR = 22  # PROVISIONAL (18.4) — 22:00 local, до Epic 19's с�
 _NIGHT_END_HOUR = 6  # PROVISIONAL (18.4) — 06:00 local.
 
 
+def _next_day_night_boundary(current, tz):
+    """Story 18.4 review-fix (Blind Hunter + Edge Case Hunter + Acceptance
+    Auditor, независимо совпали): исходная версия вычисляла `is_night` и
+    `boundary` ДВУМЯ раздельными сравнениями `current.hour` — мутационная
+    проба Acceptance Auditor на ОДНОЙ из них воспроизвела БЕСКОНЕЧНЫЙ ЦИКЛ
+    (не просто неверный результат) внутри `select_for_update()`-лока. Эта
+    функция — ЕДИНАЯ точка решения: возвращает `(is_night, boundary)` для
+    сегмента, начинающегося в `current`, одним набором сравнений — десинк
+    структурно невозможен."""
+    local_date = current.date()
+    day_start = datetime.datetime.combine(
+        local_date, datetime.time(_NIGHT_END_HOUR), tzinfo=tz
+    )
+    night_start = datetime.datetime.combine(
+        local_date, datetime.time(_NIGHT_START_HOUR), tzinfo=tz
+    )
+    if current < day_start:
+        return True, day_start
+    if current < night_start:
+        return False, night_start
+    return True, day_start + datetime.timedelta(days=1)
+
+
 def _split_day_night_hours(start_at, end_at):
     """Story 18.4 (FR-32): чистая функция — делит `[start_at, end_at)`
     (aware UTC) на дневные/ночные часы по МЕСТНОЙ границе 22:00–06:00
     (`settings.VAPS_LOCAL_TIMEZONE`). Итеративно режет по каждой
-    day/night-границе местного времени — корректно для интервалов,
-    пересекающих ПОЛНОЧЬ и МНОГО дней подряд. Возвращает
-    `(day_hours: Decimal, night_hours: Decimal)`.
+    day/night-границе местного времени (`_next_day_night_boundary()`) —
+    корректно для интервалов, пересекающих ПОЛНОЧЬ и МНОГО дней подряд.
+    Возвращает `(day_hours: Decimal, night_hours: Decimal)`, сумма ВСЕГДА
+    равна округлённой длительности интервала (review-fix: раздельное
+    округление day/night могло разойтись с суммой на сотые — здесь
+    `night_hours` — остаток от целого, не независимое округление).
     """
+    if end_at <= start_at:
+        raise ValueError("end_at должен быть позже start_at.")
     tz = ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)
     current = start_at.astimezone(tz)
     end_local = end_at.astimezone(tz)
-    day_seconds = 0.0
-    night_seconds = 0.0
+    day_seconds = Decimal(0)
+    total_seconds = Decimal(str((end_local - current).total_seconds()))
     while current < end_local:
-        local_date = current.date()
-        night_start = datetime.datetime.combine(
-            local_date, datetime.time(_NIGHT_START_HOUR), tzinfo=tz
-        )
-        night_end = datetime.datetime.combine(
-            local_date, datetime.time(_NIGHT_END_HOUR), tzinfo=tz
-        ) + datetime.timedelta(days=1 if current.hour >= _NIGHT_START_HOUR else 0)
-        day_start_of_today = datetime.datetime.combine(
-            local_date, datetime.time(_NIGHT_END_HOUR), tzinfo=tz
-        )
-        is_night = current.hour >= _NIGHT_START_HOUR or current.hour < _NIGHT_END_HOUR
-        if is_night:
-            boundary = (
-                night_end if current.hour >= _NIGHT_START_HOUR else day_start_of_today
-            )
-        else:
-            boundary = night_start
+        is_night, boundary = _next_day_night_boundary(current, tz)
         segment_end = min(boundary, end_local)
-        duration = (segment_end - current).total_seconds()
-        if is_night:
-            night_seconds += duration
-        else:
+        duration = Decimal(str((segment_end - current).total_seconds()))
+        if not is_night:
             day_seconds += duration
         current = segment_end
-    return (
-        Decimal(str(round(day_seconds / 3600, 2))),
-        Decimal(str(round(night_seconds / 3600, 2))),
-    )
+    total_hours = (total_seconds / 3600).quantize(Decimal("0.01"))
+    day_hours = (day_seconds / 3600).quantize(Decimal("0.01"))
+    night_hours = total_hours - day_hours
+    return day_hours, night_hours
 
 
 def compute_service_hours(actual, *, actor):
@@ -2282,6 +2292,18 @@ def compute_service_hours(actual, *, actor):
         day_hours, night_hours = _split_day_night_hours(
             actual.actual_start_at, actual.actual_end_at
         )
+        # review (Acceptance Auditor): 18.3's sibling function captures
+        # old_value on recompute — этот вызов раньше не делал этого,
+        # асимметрия без обоснования устранена ради того же audit-trail.
+        existing_hours = ServiceHours.objects.filter(actual=actual).first()
+        old_value = (
+            {
+                "day_hours": str(existing_hours.day_hours),
+                "night_hours": str(existing_hours.night_hours),
+            }
+            if existing_hours
+            else None
+        )
         hours, _ = ServiceHours.objects.update_or_create(
             actual=actual,
             defaults={
@@ -2295,6 +2317,7 @@ def compute_service_hours(actual, *, actor):
             action="SERVICE_HOURS_COMPUTED",
             entity_type="service_hours",
             entity_id=uuid.UUID(int=hours.pk),
+            old_value=old_value,
             new_value={
                 "actual_id": actual.pk,
                 "day_hours": str(hours.day_hours),
