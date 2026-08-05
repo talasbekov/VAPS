@@ -17705,13 +17705,13 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/deferred-work.md": {
-    "mtime": 1785918266.4378464,
-    "ast_hash": "e406889f8ef017ee3dfe5dbce3c05a0b",
+    "mtime": 1785919747.3113878,
+    "ast_hash": "2ea58b44ab092a6e2d7d57ba2302897d",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785918205.807248,
-    "ast_hash": "21fa4ceda1f168023df5a899e3197033",
+    "mtime": 1785919712.330626,
+    "ast_hash": "014d4729b6c6d559242cccd113cc8fec",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -19115,8 +19115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/tests/test_rbac_matrix.py": {
-    "mtime": 1785917249.8174443,
-    "ast_hash": "22d614f1504cbfd60bdaa75bf2e04add",
+    "mtime": 1785918718.9224653,
+    "ast_hash": "da3461e4d16cf2532b6349a99754ed34",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/2-10-admin-\u043f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u0430-django-auth-\u0432\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435.md": {
@@ -19245,8 +19245,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/audit/tests/test_audit_coverage.py": {
-    "mtime": 1785917254.9785588,
-    "ast_hash": "f586f6a551dabd350c2f09c35b35f0d1",
+    "mtime": 1785918733.7277148,
+    "ast_hash": "0b5947aa8dff89d5dfad83abcb68157d",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/audit/tests/test_audit_log_model.py": {
@@ -21115,8 +21115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/schema.yaml": {
-    "mtime": 1785917047.7589564,
-    "ast_hash": "1dbca547bc36792ab7c6d616634d810b",
+    "mtime": 1785918752.1099815,
+    "ast_hash": "eba489d5d910aff3bf18ecbba329c7dd",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/5-10-property-\u0438\u043c\u043c\u0443\u0442\u0430\u0431\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c-\u0441\u043d\u0430\u043f\u0448\u043e\u0442\u0430.md": {
@@ -23245,13 +23245,13 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/events/api/serializers.py": {
-    "mtime": 1785916785.4604955,
-    "ast_hash": "b7e5fbd0c50dcaf579086b454fe394e2",
+    "mtime": 1785918559.5857694,
+    "ast_hash": "8192882bc3e30e044d2ced66f84d3140",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/events/api/views.py": {
-    "mtime": 1785916851.606552,
-    "ast_hash": "0c9f6bc05899c6ee8d0b88fe56a9a850",
+    "mtime": 1785918618.7547727,
+    "ast_hash": "3e61e44407fa7c3b66b6e414e8b26b15",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/events/apps.py": {
@@ -25052,6 +25052,16 @@
   "_bmad-output/implementation-artifacts/18-6a-api-\u0437\u0430\u043a\u0440\u044b\u0442\u0438\u0435-\u0438-\u0430\u0440\u0445\u0438\u0432.md": {
     "mtime": 1785918205.8056269,
     "ast_hash": "4c94e76cadd155eb2d01655fd481a815",
+    "semantic_hash": ""
+  },
+  "Backend/VAPS/apps/operations/events/tests/test_opros_hours_overload_api.py": {
+    "mtime": 1785919712.328334,
+    "ast_hash": "e5953c1e2a99805c56f5a83e62dfdf7c",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/18-6b-api-\u043e\u043f\u0440\u043e\u0441-\u043d\u0430\u043b\u0451\u0442-\u043f\u0435\u0440\u0435\u0433\u0440\u0443\u0437\u043a\u0430.md": {
+    "mtime": 1785919712.3295274,
+    "ast_hash": "28d0afc8a9c4b8bcecf3807bf8a7e18b",
     "semantic_hash": ""
   }
 }
