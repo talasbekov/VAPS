@@ -48,6 +48,7 @@ from organization_management.apps.operations.api.serializers import (
     StatusTypeSerializer,
     StatusUpdateSerializer,
     TemporaryDutySerializer,
+    TrafficLightDivisionFilterSerializer,
     TrafficLightTreeFilterSerializer,
     UserRoleSerializer,
 )
@@ -100,6 +101,7 @@ from organization_management.apps.operations.strength_report import (
 )
 from organization_management.apps.operations.traffic_light import (
     TrafficLightStatus,
+    division_traffic_light,
     traffic_light_tree,
 )
 
@@ -1549,6 +1551,7 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """Свод светофора поддерева плоским списком.
 
     GET /api/operations/traffic-light/tree/?root_division_id=&business_date=
+    GET /api/operations/traffic-light/{division_id}/?business_date=
 
     Вьюха НЕ считает цвет: status/late приходят из свода как есть, а она
     добавляет ровно то, чего у свода нет, — имя и родителя из общего селектора
@@ -1559,13 +1562,23 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
     Право чтения — status.view, то же, что у расхода, статусов и сдач: цвет
     выводится из тех же сведений, и своего кода ему не нужно.
 
-    Поимённого расхождения здесь НЕТ: свод отвечает «куда смотреть», а
-    подробности живут у точечного светофора — он отдельным срезом со своим
-    адресом. Отдать drift в списке значило бы возить по дереву детали,
-    которые нужны на одном узле из сотни.
+РАЗДЕЛЕНИЕ ДВУХ ЧТЕНИЙ: свод отвечает «куда смотреть» и расхождения не
+    несёт; поимённое расхождение отдаёт точечное чтение узла. Возить drift по
+    всему дереву значило бы гонять детали, нужные на одном узле из сотни, а
+    прятать их совсем — оставить дежурного с жёлтым цветом и без ответа на
+    вопрос «кого проверять».
+
+    ТОЧЕЧНОЕ ЧТЕНИЕ — СВОЙ УРОВЕНЬ УЗЛА, без свода потомков: жёлтый в своде
+    приходит от какого-то одного узла, и подмена его сведённым цветом
+    показывала бы чужую беду под своим именем. Цвет узла из свода и цвет из
+    точечного чтения поэтому МОГУТ отличаться — это разные вопросы, и в
+    ответе они не смешиваются.
     """
 
-    permission_map = {"tree": _READ_STATUS_PERMISSION}
+    permission_map = {
+        "tree": _READ_STATUS_PERMISSION,
+        "retrieve": _READ_STATUS_PERMISSION,
+    }
     # Только чтение: цвет — вывод, а не запись; менять его можно лишь сдав
     # день или поправив статус, и у обоих есть свои маршруты.
     http_method_names = ["get", "options"]
@@ -1694,4 +1707,107 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # на границе суток «сегодня» у них разное.
         return Response(
             {"business_date": business_date.isoformat(), "nodes": nodes}
+        )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="Подразделение.",
+            ),
+            OpenApiParameter(
+                "business_date",
+                OpenApiTypes.DATE,
+                description="День. По умолчанию сегодняшний по часам раздела.",
+            ),
+        ],
+        responses={
+            200: extend_schema_serializer(many=False)(
+                inline_serializer(
+                    name="TrafficLightDivision",
+                    fields={
+                        "division_id": serializers.IntegerField(),
+                        "business_date": serializers.DateField(),
+                        "status": serializers.ChoiceField(
+                            choices=TrafficLightStatus.choices
+                        ),
+                        "late": serializers.BooleanField(),
+                        "drift": inline_serializer(
+                            name="TrafficLightDrift",
+                            allow_null=True,
+                            fields={
+                                "added": serializers.ListField(
+                                    child=serializers.IntegerField()
+                                ),
+                                "removed": serializers.ListField(
+                                    child=serializers.IntegerField()
+                                ),
+                                "changed": inline_serializer(
+                                    name="TrafficLightDriftChange",
+                                    many=True,
+                                    fields={
+                                        "employee_id": serializers.IntegerField(),
+                                        "from": serializers.CharField(),
+                                        "to": serializers.CharField(),
+                                    },
+                                ),
+                            },
+                        ),
+                    },
+                )
+            )
+        },
+        description=(
+            "Светофор ОДНОГО подразделения со своим уровнем и поимённым "
+            "расхождением: кто добавился, кто выбыл и у кого сменилось "
+            "состояние дня. drift непустой только у жёлтого. Цвет здесь — "
+            "собственный, БЕЗ свода потомков, и потому может отличаться от "
+            "цвета того же узла в дереве. 400 — нечитаемая дата; 403 — "
+            "подразделение вне области; 404 — подразделения нет; 422 — в "
+            "снимке код, которого нет в справочнике."
+        ),
+    )
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        form = TrafficLightDivisionFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        try:
+            division_id = int(pk)
+        except (TypeError, ValueError):
+            division_id = None
+        # Тот же порядок, что у дерева: область раньше существования.
+        if division_id is not None:
+            _assert_division_in_scope(
+                request, division_id, _READ_STATUS_PERMISSION, field="division_id"
+            )
+        if division_id is None or not DivisionTreeSelector.exists(division_id):
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"division_id": str(pk)},
+                message="Подразделение не найдено.",
+            )
+        business_date = form.validated_data.get("business_date") or Clock.today_local()
+        try:
+            light = division_traffic_light(division_id, business_date)
+        except ValueError as error:
+            # Снимок ссылается на код вне справочника. Это дефект ДАННЫХ, а не
+            # сервера: 500 сказал бы «у нас сломалось», а цвет UNKNOWN (как в
+            # своде) выдал бы поломку за состояние подразделения. Отказ честнее
+            # обоих — спросили про один узел, и ответ обязан быть внятным.
+            raise DomainError(
+                "UNRESOLVABLE_STATUS_TYPE",
+                422,
+                detail={"division_id": str(division_id)},
+                message="В снимке сдачи код статуса вне справочника.",
+            ) from error
+        return Response(
+            {
+                "division_id": division_id,
+                "business_date": business_date.isoformat(),
+                "status": light.status,
+                "late": light.late,
+                "drift": light.drift,
+            }
         )
