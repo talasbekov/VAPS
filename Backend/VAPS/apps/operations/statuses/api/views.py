@@ -26,11 +26,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.api.permissions import RequirePermissionMixin
+from apps.core.clock import Clock
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector, HistoricalEmployeeSelector
 from apps.operations.services import PermissionService
 from apps.operations.statuses.api.serializers import (
     BulkStatusCreateSerializer,
+    StatusMonthCalendarQuerySerializer,
     StatusOnDateQuerySerializer,
     StatusOnDateRowSerializer,
     StatusTypeListSerializer,
@@ -85,7 +87,11 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """POST .../bulk/ — массовое создание статусов; GET .../on-date/ —
     живые статусы подразделения на дату (10.1b, преднабор «вчера»)."""
 
-    permission_map = {"bulk": _BULK_PERMISSION, "on_date": _VIEW_PERMISSION}
+    permission_map = {
+        "bulk": _BULK_PERMISSION,
+        "on_date": _VIEW_PERMISSION,
+        "calendar": _VIEW_PERMISSION,
+    }
     http_method_names = ["get", "post", "options"]
 
     @extend_schema(
@@ -134,9 +140,7 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @extend_schema(
         parameters=[
-            OpenApiParameter(
-                "division_id", str, OpenApiParameter.QUERY, required=True
-            ),
+            OpenApiParameter("division_id", str, OpenApiParameter.QUERY, required=True),
             OpenApiParameter(
                 "business_date", str, OpenApiParameter.QUERY, required=True
             ),
@@ -170,6 +174,59 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         employee_ids = roster.get(division_id, [])
         rows = EmployeeStatusSelector.overlapping_on(business_date, employee_ids)
         return Response(StatusOnDateRowSerializer(rows, many=True).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("division_id", str, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter("employee_id", str, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter("year", int, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter("month", int, OpenApiParameter.QUERY, required=True),
+        ],
+        responses={
+            200: serializers.DictField(
+                child=serializers.CharField(),
+                help_text="{ISO-дата: status_type_code}, плотный по дням месяца.",
+            )
+        },
+        description=(
+            "Месячный календарь статусов ОДНОГО сотрудника (19.4a/FR-37) — "
+            "плоский объект {ISO-дата: status_type_code}, плотный (каждый "
+            "день месяца присутствует, по умолчанию IN_SERVICE). "
+            "403 нет status.view на division_id; 404 подразделение не "
+            "существует ИЛИ сотрудник не входит в его текущий ростер; "
+            "400 month вне 1-12."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="calendar", url_name="calendar")
+    def calendar(self, request, *args, **kwargs):
+        form = StatusMonthCalendarQuerySerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        employee_id = form.validated_data["employee_id"]
+        year = form.validated_data["year"]
+        month = form.validated_data["month"]
+
+        # Scope сначала, existence — потом (тот же порядок, что on_date).
+        _ensure_division_scope(request.actor_id, _VIEW_PERMISSION, division_id)
+        _ensure_division_exists(division_id)
+
+        # Членство сотрудника в division_id проверяется через ТЕКУЩИЙ ростер
+        # (Clock.today_local(), не wall-clock — ARCH-DATA-022), не через
+        # месяц запроса: division_id/employee_id — про орг-принадлежность
+        # СЕЙЧАС, запрошенный месяц может быть в прошлом/будущем.
+        roster = HistoricalEmployeeSelector.roster_on(
+            Clock.today_local(), division_ids=[division_id]
+        )
+        if employee_id not in roster.get(division_id, []):
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"employee_id": str(employee_id)},
+                message="Сотрудник не найден в этом подразделении.",
+            )
+
+        calendar_map = EmployeeStatusSelector.month_calendar(employee_id, year, month)
+        return Response({day.isoformat(): code for day, code in calendar_map.items()})
 
 
 class StatusTypeViewSet(RequirePermissionMixin, viewsets.ViewSet):

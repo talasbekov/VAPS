@@ -70,6 +70,18 @@ class StatusOnDateRowSerializer(serializers.Serializer):
     date_end = serializers.DateField()
 
 
+class StatusMonthCalendarQuerySerializer(serializers.Serializer):
+    """Story 19.4b — query-параметры GET /statuses/calendar/. `division_id`
+    обязателен для scope-чека (тот же паттерн, что on-date), несмотря на
+    то что `employee_id` уже однозначно определяет календарь — см. 19.4b's
+    Scope Decision (не изобретаем новый порядок scope/existence)."""
+
+    division_id = serializers.UUIDField()
+    employee_id = serializers.UUIDField()
+    year = serializers.IntegerField(min_value=2000, max_value=2100)
+    month = serializers.IntegerField(min_value=1, max_value=12)
+
+
 class StatusTypeListSerializer(serializers.Serializer):
     """Story 10.1b2 — справочник статус-типов для combobox грида (10.2).
     Прямо из ORM-инстансов ``StatusType`` (read-only, простой набор полей)."""
