@@ -332,3 +332,72 @@ def test_date_only_edit_keeps_metadata(types, division):
     assert status_row.comment == "исходный"
     assert status_row.document_basis == "Приказ №1"
     assert status_row.date_end == TODAY + timedelta(days=7)
+
+
+# ── Поправка сданного дня ────────────────────────────────────────────────
+
+
+def submitted_day(division, business_date):
+    from organization_management.apps.operations.day_submission_service import (
+        submit_day,
+    )
+
+    with clock.override(TODAY):
+        return submit_day(
+            division_id=division.id,
+            business_date=business_date,
+            actor="seed",
+            window_dates=[business_date],
+        )
+
+
+def test_moving_dates_onto_a_submitted_day_demands_the_reason(types, division):
+    """Клиенту нужен способ объяснить правку, а не только запрет на неё."""
+    api, _ = client_for("upd-amend-no-reason", "ADMIN", ["*"])
+    employee = make_employee(division)
+    status_row = make_status(employee)
+    target = TODAY + timedelta(days=4)
+    submitted_day(division, target)
+
+    response = patch(api, status_row.pk, {"date_start": target})
+
+    assert response.status_code == 422
+    assert response.data["error_code"] == "AMENDMENT_REASON_REQUIRED"
+
+
+def test_the_reason_travels_from_the_body_into_the_amendment(types, division):
+    from organization_management.apps.operations.models_submission import (
+        OpsDailySubmission,
+    )
+
+    api, _ = client_for("upd-amend-reason", "ADMIN", ["*"])
+    employee = make_employee(division)
+    status_row = make_status(employee)
+    target = TODAY + timedelta(days=4)
+    submitted_day(division, target)
+
+    response = patch(
+        api,
+        status_row.pk,
+        {"date_start": target, "amendment_reason": "Приказ №12."},
+    )
+
+    assert response.status_code == 200
+    amendment = OpsDailySubmission.objects.get(
+        business_date=target, event=OpsDailySubmission.Event.AMENDED
+    )
+    assert amendment.sanction == "Приказ №12."
+
+
+def test_a_body_of_nothing_but_a_reason_is_still_an_empty_edit(types, division):
+    """Объяснение — не правка.
+
+    Приняв его за изменение, маршрут ответил бы 200 на несделанную работу.
+    """
+    api, _ = client_for("upd-amend-only", "ADMIN", ["*"])
+    employee = make_employee(division)
+    status_row = make_status(employee)
+
+    response = patch(api, status_row.pk, {"amendment_reason": "Приказ №12."})
+
+    assert response.status_code == 400
