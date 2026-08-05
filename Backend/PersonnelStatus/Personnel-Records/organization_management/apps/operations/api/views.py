@@ -47,6 +47,7 @@ from organization_management.apps.operations.api.serializers import (
     StatusCancelSerializer,
     StatusTypeSerializer,
     StatusUpdateSerializer,
+    SubmittedExpenseFilterSerializer,
     TemporaryDutySerializer,
     TrafficLightDivisionFilterSerializer,
     TrafficLightTreeFilterSerializer,
@@ -98,6 +99,7 @@ from organization_management.apps.operations.status_service import (
 )
 from organization_management.apps.operations.strength_report import (
     StrengthReportService,
+    submitted_expense,
 )
 from organization_management.apps.operations.traffic_light import (
     TrafficLightStatus,
@@ -1108,7 +1110,10 @@ class SecondmentViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
 
 class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
-    """GET /api/operations/strength-report/ — расход (строевая записка).
+    """Расход (строевая записка) — живой и по сданному дню.
+
+    GET /api/operations/strength-report/           — ЖИВОЙ расход
+    GET /api/operations/strength-report/submitted/ — расход СДАННОГО дня
 
     Чтение под status.view. Область видимости сужает выборку ВСЕГДА, даже
     когда division_id не задан: безскоуповый оператор видит всё дерево,
@@ -1119,9 +1124,20 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
     business_date — явный параметр с умолчанием «сегодня» по Clock раздела:
     сервис расхода часы не читает, иначе расход на вчера тихо посчитался бы
     на сегодня.
+
+    ДВА МАРШРУТА, А НЕ ФЛАГ У ОДНОГО: живой расход отвечает «как обстоит
+    сейчас», сданный — «под чем подписались». Это разные вопросы с разными
+    ответами (в том числе разным НАБОРОМ полей: снимок не хранит штат,
+    вакансии и «+N»), и параметр `?submitted=true` заставил бы один контракт
+    описывать две несовпадающие формы — клиент не смог бы полагаться ни на
+    одну. Совпадать они обязаны только на нетронутом дне, и на этом стоит
+    светофор.
     """
 
-    permission_map = {"list": "status.view"}
+    permission_map = {
+        "list": _READ_STATUS_PERMISSION,
+        "submitted": _READ_STATUS_PERMISSION,
+    }
     http_method_names = ["get", "options"]
 
     @extend_schema(
@@ -1187,6 +1203,124 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     "columns": report.totals.columns,
                 },
                 "warnings": report.warnings,
+            }
+        )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "division_id",
+                OpenApiTypes.INT,
+                required=True,
+                description=(
+                    "Подразделение — ОДНО и обязательно: сдают поштучно, "
+                    "снимка поддерева не существует."
+                ),
+            ),
+            OpenApiParameter(
+                "business_date",
+                OpenApiTypes.DATE,
+                description="День; по умолчанию сегодняшний по часам раздела.",
+            ),
+        ],
+        responses={
+            200: extend_schema_serializer(many=False)(
+                inline_serializer(
+                    name="SubmittedExpenseResponse",
+                    fields={
+                        "division_id": serializers.IntegerField(),
+                        "business_date": serializers.DateField(),
+                        "version": serializers.IntegerField(),
+                        "submitted_at": serializers.DateTimeField(),
+                        "late": serializers.BooleanField(),
+                        "columns": serializers.ListField(
+                            child=serializers.CharField()
+                        ),
+                        "list_total": serializers.IntegerField(),
+                        "off_list": serializers.IntegerField(),
+                        "counts": serializers.DictField(
+                            child=serializers.IntegerField()
+                        ),
+                    },
+                )
+            )
+        },
+        description=(
+            "Расход по СДАННОМУ дню: числа воспроизводятся из снимка "
+            "действующей версии и не меняются от сегодняшних правок. Полей "
+            "меньше, чем у живого расхода: снимок не хранит штат, вакансии и "
+            "приданных, и подмешивать их живыми значило бы выдать "
+            "наполовину сегодняшние числа за сданные вчера. Паспорт версии "
+            "(version/submitted_at/late) едет вместе с числами. 400 — "
+            "подразделение не указано или параметр нечитаем; 403 — нет права "
+            "status.view либо подразделение вне области; 404 — подразделения "
+            "нет (ENTITY_NOT_FOUND) либо день не сдан (DAY_NOT_SUBMITTED); "
+            "422 — в снимке код статуса вне справочника."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="submitted")
+    def submitted(self, request, *args, **kwargs):
+        form = SubmittedExpenseFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        # Порядок гардов НЕСУЩИЙ и тот же, что у светофора: область раньше
+        # существования, иначе 404 стал бы для чужака оракулом существования
+        # подразделений.
+        _assert_division_in_scope(
+            request, division_id, _READ_STATUS_PERMISSION, field="division_id"
+        )
+        if not DivisionTreeSelector.exists(division_id):
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"division_id": str(division_id)},
+                message="Подразделение не найдено.",
+            )
+        business_date = form.validated_data.get("business_date") or Clock.today_local()
+        try:
+            expense = submitted_expense(division_id, business_date)
+        except ValueError as error:
+            # Снимок ссылается на код вне справочника — дефект ДАННЫХ, а не
+            # сервера (тот же перевод, что у точечного светофора): 500 сказал
+            # бы «у нас сломалось», а нули в колонках выдали бы поломку за
+            # пустой день.
+            raise DomainError(
+                "UNRESOLVABLE_STATUS_TYPE",
+                422,
+                detail={"division_id": str(division_id)},
+                message="В снимке сдачи код статуса вне справочника.",
+            ) from error
+        if expense is None:
+            # Отдельный код, а не общий ENTITY_NOT_FOUND: «дня не сдавали» и
+            # «нет такого подразделения» — разные новости, и под одним кодом
+            # клиент не отличил бы опечатку в id от несданного дня.
+            raise DomainError(
+                "DAY_NOT_SUBMITTED",
+                404,
+                detail={
+                    "division_id": str(division_id),
+                    "business_date": business_date.isoformat(),
+                },
+                message="День не сдан: расхода по нему не существует.",
+            )
+        return Response(
+            {
+                "division_id": expense.division_id,
+                # Дата эхом (как у светофора): сервер считает по часам
+                # раздела, экран — по браузеру.
+                "business_date": expense.business_date.isoformat(),
+                "version": expense.version,
+                "submitted_at": expense.submitted_at.isoformat(),
+                "late": expense.late,
+                # `columns` значит ПОРЯДОК колонок на обоих маршрутах расхода,
+                # числа лежат в `counts`. Отдать здесь словарь под тем же
+                # именем значило бы дать одному имени в одном разделе два
+                # смысла — клиенту пришлось бы разбирать тип поля, чтобы
+                # понять, что он получил.
+                "columns": list(expense.columns),
+                "list_total": expense.list_total,
+                "off_list": expense.off_list,
+                "counts": expense.columns,
             }
         )
 

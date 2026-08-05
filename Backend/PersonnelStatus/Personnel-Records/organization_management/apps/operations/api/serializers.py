@@ -386,6 +386,25 @@ class TrafficLightTreeFilterSerializer(serializers.Serializer):
     business_date = serializers.DateField(required=False)
 
 
+class SubmittedExpenseFilterSerializer(serializers.Serializer):
+    """Параметры расхода по СДАННОМУ дню: подразделение ОБЯЗАТЕЛЬНО.
+
+    Обязательность здесь — свойство предмета, а не придирка к форме: сдают
+    подразделения поштучно, и у поддерева одного снимка не существует. Свод
+    сданных расходов по дереву был бы суммой РАЗНЫХ заявлений, часть которых
+    вообще не сделана, и отличить в такой сумме «людей нет» от «не сдавали»
+    стало бы нечем. Поэтому умолчания «вся область актора», как у живого
+    расхода, тут нет.
+
+    Дата необязательна, по умолчанию сегодняшняя по часам раздела — тем же
+    доводом, что у светофора: у сервера и браузера «сегодня» на границе суток
+    разное.
+    """
+
+    division_id = serializers.IntegerField()
+    business_date = serializers.DateField(required=False)
+
+
 class TrafficLightDivisionFilterSerializer(serializers.Serializer):
     """Параметр точечного светофора: только день, и он необязателен.
 
