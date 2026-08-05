@@ -1,0 +1,210 @@
+"""Данные официального документа расхода (порт expense_document.py +
+контракт-датаклассов expense_docx из Backend/VAPS).
+
+ЧИСТЫЙ модуль: ни ORM, ни часов, ни файлов. На входе — снимок сданного дня и
+числа, которых в снимке нет (штат, вакансии, приданные), на выходе —
+`ExpenseDocumentData`, из которого рендереры (.csv/.xlsx/.docx — следующие
+срезы) делают файлы, ничего не считая. Разделение несущее: посчитанное один
+раз не разъедется по форматам, а рендерер, умеющий считать, рано или поздно
+посчитает иначе.
+
+СЧЁТЧИКИ БЕРУТСЯ У ТОГО ЖЕ ВЛАДЕЛЬЦА, что и у экрана, — expense_from_snapshot
+(расход по сданному дню). Отличие от источника, где документ пересчитывал
+числа своим derive_report: два пути счёта над одним снимком расходятся не
+сразу, а на редком случае, и обнаруживается это тогда, когда документ уже
+подписан. Документ здесь добавляет к числам ровно одно, чего у экрана нет, —
+ПОИМЁННЫЙ состав ячеек, и сверяет: количество членов обязано совпасть со
+счётчиком колонки.
+
+Чего документ НЕ выводит из снимка:
+- штат и вакансии — снимок их не хранит (он о людях и фактах, не о штате);
+- приданных («+N») — это ЧУЖИЕ люди, которых в нашем списке нет по
+  определению, поэтому у их ячейки есть число и не бывает членов.
+Всё это приходит аргументами от вызывающего: подмешать живые числа внутри
+значило бы выдать наполовину сегодняшний документ за сданный вчера.
+"""
+from dataclasses import dataclass, field
+from datetime import date
+
+from organization_management.apps.operations.strength_report import (
+    DERIVED_IN_SERVICE,
+    expense_from_snapshot,
+    resolve_status,
+)
+
+
+@dataclass(frozen=True)
+class ExpenseCellMember:
+    """Один человек в ячейке: как он подписан и по какой период.
+
+    Звание и ФИО — ИЗ СНИМКА, а не из справочника: сдача говорит о том, как
+    было на момент сдачи, и позднее присвоение звания не должно менять
+    подписанный документ.
+    """
+
+    rank: str
+    full_name: str
+    date_start: date
+    date_end: date
+
+
+@dataclass(frozen=True)
+class ExpenseCell:
+    """Ячейка колонки: число и (для колонок списка) поимённый состав."""
+
+    count: int
+    members: tuple = ()
+
+
+@dataclass(frozen=True)
+class ExpenseRow:
+    """Строка документа — одно подразделение."""
+
+    name: str
+    staff_total: int
+    list_total: int
+    vacancies: int
+    cells: dict
+    attached: ExpenseCell
+
+
+@dataclass(frozen=True)
+class ExpenseTotals:
+    """Строка ИТОГО. Отдельный тип, а не ещё одна ExpenseRow: у итога нет
+    ни имени подразделения, ни поимённого состава — сложить фамилии нельзя."""
+
+    staff_total: int
+    list_total: int
+    vacancies: int
+    columns: dict
+    attached: int
+
+
+@dataclass(frozen=True)
+class ExpenseDocumentData:
+    """Всё, что нужно рендереру. Ни одного числа он не считает сам."""
+
+    division_title: str
+    business_date: date
+    rows: list
+    totals: ExpenseTotals
+    columns: tuple = field(default=())
+
+
+def _parsed_facts(snapshot):
+    """Факты снимка по сотрудникам, с датами-объектами.
+
+    В снимке даты — ISO-строки полуинтервала [начало, конец); сравнивать их
+    как строки можно, но одна нестандартная запись сделала бы сравнение
+    молча неверным.
+    """
+    facts = {}
+    for row in snapshot.get("rows", []):
+        facts.setdefault(row["employee_id"], []).append(
+            {
+                "status_type_code": row["status_type_code"],
+                "date_start": date.fromisoformat(row["date_start"]),
+                "date_end": date.fromisoformat(row["date_end"]),
+            }
+        )
+    return facts
+
+
+def build_expense_document(
+    snapshot,
+    business_date,
+    *,
+    catalog,
+    division_title,
+    staff_total,
+    vacancies,
+    attached=0,
+):
+    """Снимок сданного дня → данные документа расхода.
+
+    Числа колонок и списка считает expense_from_snapshot — тот же счёт, что
+    видит экран. Здесь добавляется поимённый состав и СВЕРЯЕТСЯ с числами:
+    расхождение означает дефект группировки, и документ выходить не должен —
+    подписывают его, а не сообщение об ошибке.
+
+    Период члена — действующий на дату факт ПОБЕДИВШЕГО кода; при нескольких
+    таких берётся самый ранний, а равные начала разводит конец. Тай-брейк
+    нужен не для красоты: без него документ зависел бы от порядка строк в
+    снимке и дважды подряд выходил бы разным.
+
+    Не по списку (победитель вне штата) в колонки не попадает — ровно как в
+    живом расходе; поимённо такие люди в документе не показываются, потому
+    что колонки для них нет.
+    """
+    numbers = expense_from_snapshot(snapshot, business_date, catalog)
+    columns_order = catalog.columns_in_order()
+    facts_by_employee = _parsed_facts(snapshot)
+
+    members = {column: [] for column in columns_order}
+    for member in snapshot.get("roster", []):
+        employee_facts = facts_by_employee.get(member["employee_id"], ())
+        winner = resolve_status(employee_facts, business_date, catalog)
+        if not catalog.counts_in_staff.get(winner, True):
+            continue
+        column = catalog.column[winner]
+        if winner == DERIVED_IN_SERVICE:
+            # У «в строю» факта нет по определению — это отсутствие фактов, и
+            # взять период неоткуда. Число в ячейке при этом есть, поэтому
+            # именно она и не участвует в сверке ниже.
+            continue
+        acting = min(
+            (
+                fact
+                for fact in employee_facts
+                if fact["status_type_code"] == winner
+                and fact["date_start"] <= business_date < fact["date_end"]
+            ),
+            key=lambda fact: (fact["date_start"], fact["date_end"]),
+        )
+        members[column].append(
+            ExpenseCellMember(
+                rank=member.get("rank", ""),
+                full_name=member.get("full_name", ""),
+                date_start=acting["date_start"],
+                date_end=acting["date_end"],
+            )
+        )
+
+    in_service_column = catalog.column[DERIVED_IN_SERVICE]
+    for column in columns_order:
+        if column == in_service_column:
+            continue
+        if len(members[column]) != numbers["columns"][column]:
+            raise AssertionError(
+                f"документ расхода: состав колонки {column!r} разошёлся со "
+                f"счётчиком ({len(members[column])} против "
+                f"{numbers['columns'][column]})"
+            )
+
+    row = ExpenseRow(
+        name=division_title,
+        staff_total=staff_total,
+        list_total=numbers["list_total"],
+        vacancies=vacancies,
+        cells={
+            column: ExpenseCell(
+                count=numbers["columns"][column], members=tuple(members[column])
+            )
+            for column in columns_order
+        },
+        # Приданные — чужие люди: число есть, членов не бывает.
+        attached=ExpenseCell(count=attached),
+    )
+    return ExpenseDocumentData(
+        division_title=division_title,
+        business_date=business_date,
+        rows=[row],
+        totals=ExpenseTotals(
+            staff_total=staff_total,
+            list_total=numbers["list_total"],
+            vacancies=vacancies,
+            columns=dict(numbers["columns"]),
+            attached=attached,
+        ),
+        columns=columns_order,
+    )
