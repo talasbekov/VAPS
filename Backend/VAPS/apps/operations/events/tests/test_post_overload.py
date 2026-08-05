@@ -202,3 +202,22 @@ def test_limit_change_between_calls_reflected_on_recall():
     assert second.is_overloaded is True
     assert second.overload_minutes == Decimal("120.00")
 
+
+def test_rejected_when_actor_too_long():
+    """review (Edge Case Hunter): actor > AuditLog.actor_user_id's
+    max_length=100 must be rejected as 400 before the transaction, not
+    left to raise a raw DataError from the DB insert — same guard as
+    create_journal_entry() (17.1)."""
+    event = make_event("OBJ-OV-8")
+    actual = make_actual(
+        event,
+        local(2026, 8, 4, 9, 0),
+        local(2026, 8, 4, 17, 0),
+        max_service_minutes=480,
+    )
+    hours = compute_service_hours(actual, actor="staff-1")
+
+    with pytest.raises(DomainError) as exc_info:
+        flag_post_overload(hours, actor="s" * 101)
+
+    assert exc_info.value.http_status == 400

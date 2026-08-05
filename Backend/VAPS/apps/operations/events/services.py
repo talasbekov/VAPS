@@ -2337,6 +2337,13 @@ def flag_post_overload(service_hours, *, actor):
     больше лимита (`>`), не `>=`: факт ровно на лимите — не перегрузка."""
     if not (actor or "").strip():
         raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    # actor_user_id (AuditLog) — CharField(max_length=100); отклоняем ДО
+    # транзакции, а не даём БД оборвать запись DataError'ом (review, Edge
+    # Case Hunter — тот же гард, что create_journal_entry(), 17.1).
+    if len(actor.strip()) > 100:
+        raise DomainError(
+            "VALIDATION_ERROR", 400, message="actor длиннее 100 символов."
+        )
     with transaction.atomic():
         service_hours = (
             ServiceHours.objects.select_for_update()
