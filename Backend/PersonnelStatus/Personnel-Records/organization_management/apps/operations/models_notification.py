@@ -47,9 +47,11 @@ class OpsNotification(TimeStampedModel):
     recipient = models.CharField(max_length=100)
     kind = models.CharField(max_length=50, choices=Kind.choices)
     business_date = models.DateField()
-    # Плоские данные факта (например, идентификаторы отставших подразделений
-    # строками) — без ссылок в чужие таблицы: уведомление переживает удаление
-    # того, о чём сообщало.
+    # Плоские данные факта (например, идентификаторы отставших подразделений)
+    # — без ссылок в чужие таблицы: уведомление переживает удаление того, о
+    # чём сообщало. Идентификаторы кладутся КАК ЕСТЬ, целыми: JSON знает целые,
+    # и строка заставила бы каждого читателя разбирать её обратно (в источнике
+    # UUID пришлось стрингифицировать за неимением такого типа в JSON).
     payload = models.JSONField(default=dict)
     read_at = models.DateTimeField(null=True, blank=True)
 
