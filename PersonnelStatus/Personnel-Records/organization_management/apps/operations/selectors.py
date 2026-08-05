@@ -70,6 +70,22 @@ class DivisionTreeSelector:
         return set(Division.objects.values_list("id", flat=True))
 
     @staticmethod
+    def active_ids(division_ids) -> set:
+        """Какие из указанных id — ЖИВЫЕ подразделения, ОДИН запрос.
+
+        Отвечает на «кого из этого списка ещё можно спросить»: удалённого в
+        ответе нет вовсе, отключённого — тоже. Отдельного «удалён» и
+        «отключён» здесь нет намеренно: спросить нельзя ни с того, ни с
+        другого, и различать их значило бы обещать читателю разницу, которой
+        он не может воспользоваться.
+        """
+        return set(
+            Division.objects.filter(
+                id__in=list(division_ids), is_active=True
+            ).values_list("id", flat=True)
+        )
+
+    @staticmethod
     def exists(division_id) -> bool:
         """Есть ли такое подразделение. Нужен там, где отсутствие обязано
         стать 404 ДО работы: снимок несуществующего подразделения собрался бы
