@@ -29,6 +29,7 @@ from organization_management.apps.operations.models_submission import (
     OpsSubmissionControlSettings,
     OpsTomorrowBlockOverride,
 )
+from organization_management.apps.operations.models_watermark import OpsWatermark
 
 pytestmark = pytest.mark.django_db
 
@@ -51,6 +52,7 @@ def test_the_control_settings_are_editable_in_admin():
         OpsTomorrowBlockOverride,
         UserRole,
         TemporaryDutyPermission,
+        OpsWatermark,
     ],
 )
 def test_business_records_are_not_registered(model):
@@ -59,6 +61,12 @@ def test_business_records_are_not_registered(model):
     Сдача — новой версией, статус — с проверкой пересечений, обход — с
     причиной и записью в журнал, журнал — вообще только добавлением. Форма
     Admin не знает ни одного из этих правил и применила бы UPDATE.
+
+    Водяной знак не бизнес-запись, а учёт фоновой работы — и в Admin ему тем
+    более нечего делать: правка даты руками означает «пройти эти дни заново»
+    или «считать их пройденными», то есть повторную материализацию эффектов
+    либо молча потерянные дни. Такое делают командой с её проверками, а не
+    формой.
     """
     assert site_admin(model) is None, f"{model.__name__} мутируем мимо сервиса"
 
