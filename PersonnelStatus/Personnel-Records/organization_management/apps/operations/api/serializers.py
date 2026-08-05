@@ -23,6 +23,7 @@ from organization_management.apps.operations.models_status import (
 )
 from organization_management.apps.operations.models_submission import (
     OpsDailySubmission,
+    OpsTomorrowBlockOverride,
 )
 from organization_management.apps.operations.validators import DUTY_ROLE_CHOICES
 
@@ -438,3 +439,26 @@ class OpsAuditLogSerializer(serializers.ModelSerializer):
             "reason",
             "created_at",
         ]
+
+
+class TomorrowBlockOverrideCreateSerializer(serializers.Serializer):
+    """Тело POST обхода блокировки: дата и причина.
+
+    Причина ОБЯЗАТЕЛЬНА и непуста уже на форме — отказ по форме внятнее, чем
+    отказ по бизнес-правилу за то же самое. Сервис и БД её всё равно
+    проверяют: маршрут не единственный вход, а последнюю линию держит база.
+
+    Ответственный в тело не входит, как и везде в разделе: обход подписывает
+    тот, кто аутентифицирован, а не тот, кого назвали в JSON.
+    """
+
+    business_date = serializers.DateField()
+    reason = serializers.CharField(allow_blank=False, max_length=1000)
+
+
+class OpsTomorrowBlockOverrideSerializer(serializers.ModelSerializer):
+    """Записанный обход наружу: кто, когда, почему и на какую дату."""
+
+    class Meta:
+        model = OpsTomorrowBlockOverride
+        fields = ["id", "business_date", "overridden_by", "reason", "created_at"]
