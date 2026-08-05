@@ -22,6 +22,7 @@ from organization_management.apps.operations.models_status import (
 )
 from organization_management.apps.operations.models_submission import (
     OpsDailySubmission,
+    OpsDivisionNotifyRecipient,
     OpsSubmissionControlSettings,
     OpsTomorrowBlockOverride,
 )
@@ -565,6 +566,61 @@ class SubmissionControlSettingsSelector:
         и он же покраснеет у того, кто вздумает закешировать строку.
         """
         return cls.get().required_division_ids
+
+
+class NotifyRecipientSelector:
+    """Разрешение «подразделение → получатель» для уведомлений об отставании.
+
+    Правило одно и в одном месте: СВОЙ получатель подразделения побеждает
+    общего дежурного; нет ни того, ни другого — подразделения нет в ответе
+    вовсе. Отсутствие ключа, а не пустая строка в значении: «некому сообщать»
+    — это не получатель по имени «», и разбирать такое значение пришлось бы
+    каждому вызывающему заново.
+
+    Сужения по актору здесь нет — как и у настроек контроля: закрепление
+    ответственного одинаково для всех, кто вправе его читать, а правом
+    распоряжается маршрут.
+    """
+
+    @staticmethod
+    def resolve_many(division_ids) -> dict:
+        """`{подразделение: получатель}` для разрешимых — ПАЧКОЙ.
+
+        Один запрос по справочнику (`division_id__in`) плюс одно чтение
+        настроек, СКОЛЬКО БЫ подразделений ни пришло: запрос на каждое в цикле
+        превратил бы утренний прогон по отставшим в сотню обращений.
+
+        Вход материализуется первой же строкой: генератор ушёл бы в `__in`
+        целиком и до склейки не дожил бы — ответ вышел бы пустым, и это ровно
+        тот отказ, который выглядит как «отставших нет».
+
+        Получатель обрезается по краям: `.create()` и `bulk_create()` минуют
+        `clean()`, а CHECK отвергает лишь целиком пробельное, поэтому «  7  »
+        доезжает до базы. Ключ «одно на день» — по строке получателя, и
+        необрезанное значение развело бы одного человека на двух адресатов.
+
+        Отличия от источника: ключи не приводятся к строке — здесь id
+        подразделений ЦЕЛЫЕ, текстовой формы в обороте нет (в источнике UUID
+        приезжал и строкой из JSON, оттого и приведение).
+        """
+        division_ids = [did for did in division_ids if did is not None]
+        specific = {
+            row.division_id: row.recipient
+            for row in OpsDivisionNotifyRecipient.objects.filter(
+                division_id__in=division_ids
+            )
+        }
+        # `or ""` — на случай NULL из переноса данных: поле не nullable, но
+        # .strip() у None упал бы AttributeError вместо «дежурного нет».
+        duty = (
+            SubmissionControlSettingsSelector.get().default_notify_recipient or ""
+        ).strip()
+        resolved = {}
+        for division_id in division_ids:
+            recipient = specific.get(division_id) or duty
+            if recipient:
+                resolved[division_id] = recipient.strip()
+        return resolved
 
 
 class TomorrowBlockOverrideSelector:

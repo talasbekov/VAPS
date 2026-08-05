@@ -46,6 +46,7 @@ apps/operations/submissions/models/daily_submission.py).
 from datetime import time
 
 from django.contrib.postgres.fields import ArrayField
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from organization_management.apps.operations.models import TimeStampedModel
@@ -163,10 +164,6 @@ class OpsSubmissionControlSettings(TimeStampedModel):
     Отличия от источника:
     - `required_division_ids` — массив ЦЕЛЫХ (старое дерево int-pk), не UUID;
       FK нет, как и во всём разделе.
-    - поля `default_notify_recipient` НЕТ: линия уведомлений не портирована,
-      и заводить настройку без единого читателя (да ещё с ограничением,
-      которое сторожит непрочитанное значение) значило бы обещать поведение,
-      которого в разделе не существует. Придёт рассылка — придёт и поле.
     """
 
     # Ключ синглтона: не «идентификатор настроек», а замок на их количество.
@@ -182,6 +179,12 @@ class OpsSubmissionControlSettings(TimeStampedModel):
     required_division_ids = ArrayField(
         models.IntegerField(), default=list, blank=True
     )
+    # Общий «дежурный»: кому уходит уведомление об отставании подразделения,
+    # за которым не закреплён свой получатель. Плоский идентификатор актора,
+    # как и всюду в разделе. Пусто — законное состояние «дежурного нет»: такое
+    # подразделение просто не разрешается в получателя, и рассылка его
+    # пропускает, а не шлёт в пустоту.
+    default_notify_recipient = models.CharField(max_length=100, blank=True, default="")
 
     class Meta:
         db_table = "ops_submission_control_settings"
@@ -190,12 +193,82 @@ class OpsSubmissionControlSettings(TimeStampedModel):
                 condition=models.Q(singleton_key=1),
                 name="chk_ops_control_settings_singleton",
             ),
+            # «Дежурного нет» обязано означать ПУСТО, а не «   »: пробельная
+            # строка истинна, и разрешение по ней увело бы уведомления всех
+            # незакреплённых подразделений на несуществующего получателя —
+            # молча и с виду успешно. Пустая строка (дефолт) законна,
+            # отвергается только непустая целиком из пробелов.
+            models.CheckConstraint(
+                condition=~models.Q(default_notify_recipient__regex=r"^\s+$"),
+                name="chk_ops_control_settings_duty_not_blank",
+            ),
         ]
         verbose_name = "Настройки контроля сдачи"
         verbose_name_plural = "Настройки контроля сдачи"
 
     def __str__(self):
         return f"control_hour={self.control_hour}"
+
+
+class OpsDivisionNotifyRecipient(TimeStampedModel):
+    """Кому уходит уведомление об отставании ЭТОГО подразделения.
+
+    Уведомление раздела (предыдущий срез) адресуется строкой — и до сих пор
+    эту строку было неоткуда взять: модель знала КОМУ, но не знала, кто «кому»
+    для отставшего подразделения. Здесь закрывается ровно этот разрыв, и
+    закрывается СПРАВОЧНИКОМ: ответственный за сдачу — не свойство дерева
+    подразделений (у одного начальника может быть несколько управлений, и
+    смена дежурства не переставляет узлы), а настройка, которую заводят руками.
+
+    Уровень строки — подразделение, и получатель у него ОДИН (`unique`). Двое
+    ответственных означали бы два уведомления на один факт, а «одно на день»
+    держится по получателю — то есть обещание не рассылать дубликатов
+    выполнялось бы для каждого из них по отдельности и нарушалось бы для
+    факта. Нужен второй адресат — это подписка, другая таблица и другой срез.
+
+    Незакреплённое подразделение падает на общего дежурного из настроек
+    контроля сдачи; нет и его — подразделение не разрешается вовсе, и
+    рассылка его пропускает.
+
+    Непустоту получателя держит БД (regex по непробельному символу): `.create()`
+    и `bulk_create()` не зовут `full_clean`, и инвариант, живущий только в
+    коде, обходит любой перенос данных. `clean()` рядом — не дубль, а вежливость
+    формы: он ОБРЕЗАЕТ края (то же обрезание потом делает и разрешение) и
+    отвечает администратору внятной ошибкой вместо 500-й от базы.
+
+    Отличия от источника: `division_id` — целое (старое дерево int-pk), не UUID;
+    FK нет, как и во всём разделе.
+    """
+
+    # Плоская ссылка на подразделение старого дерева. Один получатель на
+    # подразделение — см. докстринг.
+    division_id = models.IntegerField(unique=True)
+    # Плоский идентификатор актора-получателя; непустой (см. CHECK ниже).
+    recipient = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = "ops_division_notify_recipients"
+        constraints = [
+            # ~Q(regex=r"^\s*$") отвергает и "", и «   »: закрепление за
+            # пустым получателем — это не «дежурного нет» (для этого просто не
+            # заводят строку), а строка, которая ОБЕЩАЕТ адресата и не даёт его.
+            models.CheckConstraint(
+                condition=~models.Q(recipient__regex=r"^\s*$"),
+                name="chk_ops_notify_recipient_not_blank",
+            ),
+        ]
+        verbose_name = "Получатель уведомлений подразделения"
+        verbose_name_plural = "Получатели уведомлений подразделений"
+
+    def clean(self):
+        super().clean()
+        stripped = (self.recipient or "").strip()
+        if not stripped:
+            raise ValidationError({"recipient": "Получатель не может быть пустым."})
+        self.recipient = stripped
+
+    def __str__(self):
+        return f"{self.division_id} → {self.recipient}"
 
 
 class OpsTomorrowBlockOverride(TimeStampedModel):

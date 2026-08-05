@@ -19,17 +19,27 @@ Backend/VAPS).
 строке, удаление закрыто всегда. База и так держит единственность
 (unique + CHECK singleton_key=1), но она отвечает 500-й, а гейты Admin — тем
 же «нельзя», только заранее и по-человечески.
+
+Закрепление получателей уведомлений, наоборот, открыто целиком: это чистая
+настройка «кто отвечает за сдачу этого управления» — её заводят, переносят и
+снимают по мере смены дежурства, и сервиса у неё нет. Правит её админ, а не
+выкатка, ровно по той же причине, по которой сюда попал контрольный час.
 """
 from django.contrib import admin
 
 from organization_management.apps.operations.models_submission import (
+    OpsDivisionNotifyRecipient,
     OpsSubmissionControlSettings,
 )
 
 
 @admin.register(OpsSubmissionControlSettings)
 class OpsSubmissionControlSettingsAdmin(admin.ModelAdmin):
-    list_display = ("control_hour", "required_division_ids")
+    list_display = (
+        "control_hour",
+        "required_division_ids",
+        "default_notify_recipient",
+    )
 
     def has_add_permission(self, request):
         # Строку сеет миграция; вторая невозможна на уровне БД.
@@ -43,3 +53,13 @@ class OpsSubmissionControlSettingsAdmin(admin.ModelAdmin):
         # то есть удаление означало бы «сбросить настройки», притворяясь
         # удалением.
         return False
+
+
+@admin.register(OpsDivisionNotifyRecipient)
+class OpsDivisionNotifyRecipientAdmin(admin.ModelAdmin):
+    list_display = ("division_id", "recipient")
+    # Поиск ТОЛЬКО по получателю: division_id — целочисленная колонка, а поиск
+    # Admin строит icontains, то есть LIKE, которого у Postgres для чисел нет —
+    # строка поиска по подразделению отвечала бы ProgrammingError. Нужно
+    # выбрать подразделение — это фильтр в адресе списка.
+    search_fields = ("recipient",)
