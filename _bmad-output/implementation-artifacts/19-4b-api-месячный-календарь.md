@@ -92,3 +92,4 @@ Claude Sonnet 5
 | 2026-08-05 | Story created (create-story workflow, 19.4b — API-слой над 19.4a), baseline `43958d2` |
 | 2026-08-05 | Implemented (dev-story), status → review |
 | 2026-08-05 | Code review (Blind Hunter + Edge Case Hunter + Acceptance Auditor): fixed misleading empty response schema, added 4 boundary/coverage tests; status → done |
+| 2026-08-05 | Retroactive fix (discovered during 19.4c's review): the `OpenApiResponse(response=serializers.DictField(...))` fix above didn't actually work — drf-spectacular still fell back to `additionalProperties: {}` because a bare `DictField` isn't a recognized response type in `_get_response_for_code()`. Replaced with a raw OpenAPI schema dict (`{"type": "object", "additionalProperties": {"type": "string"}}`), the documented bypass. See 19.4c for details. |
