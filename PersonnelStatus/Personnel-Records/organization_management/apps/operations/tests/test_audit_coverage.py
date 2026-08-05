@@ -32,11 +32,17 @@ from organization_management.apps.operations.dismissal import (
     close_statuses_on_dismissal,
 )
 from organization_management.apps.operations.models_audit import OpsAuditLog
+from organization_management.apps.operations.models_submission import (
+    OpsDailySubmission,
+)
 from organization_management.apps.operations.models_status import OpsEmployeeStatus
 from organization_management.apps.operations.secondment_service import (
     confirm_return,
     initiate_secondment,
     request_return,
+)
+from organization_management.apps.operations.personal_export_service import (
+    export_submission,
 )
 from organization_management.apps.operations.summary_service import (
     assemble_summary,
@@ -633,6 +639,14 @@ def test_every_declared_action_is_actually_written(types, home, host):
             actor=ACTOR,
             reason="ребёнок исправил наряд",
             sanction="замечание",
+        )
+        # Выдача личной копии — событие ЧТЕНИЯ в журнале мутаций, и это
+        # осознанное исключение: копию предъявляют в споре.
+        export_submission(
+            submission=OpsDailySubmission.objects.filter(
+                division_id=child.id
+            ).first(),
+            actor=ACTOR,
         )
 
     written = {entry.action for entry in events()}
