@@ -55,6 +55,9 @@ TOMORROW_BLOCK_OVERRIDDEN = "TOMORROW_BLOCK_OVERRIDDEN"
 # «сдал свой день» отвечают на разные вопросы, и один код на оба лишил бы
 # ленту возможности их различить.
 DAILY_SUMMARY_ASSEMBLED = "DAILY_SUMMARY_ASSEMBLED"
+# Пересборка «взамен» — своё событие, а не поправка сдачи: поправляют СВОЙ
+# день, пересобирают ЧУЖИЕ версии, и в ленте это разные истории.
+DAILY_SUMMARY_REBUILT = "DAILY_SUMMARY_REBUILT"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -78,6 +81,7 @@ ACTIONS = frozenset(
         DAILY_SUBMISSION_AMENDED,
         TOMORROW_BLOCK_OVERRIDDEN,
         DAILY_SUMMARY_ASSEMBLED,
+        DAILY_SUMMARY_REBUILT,
     }
 )
 

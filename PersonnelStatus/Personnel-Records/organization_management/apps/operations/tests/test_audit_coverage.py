@@ -38,7 +38,10 @@ from organization_management.apps.operations.secondment_service import (
     initiate_secondment,
     request_return,
 )
-from organization_management.apps.operations.summary_service import assemble_summary
+from organization_management.apps.operations.summary_service import (
+    assemble_summary,
+    rebuild_summary,
+)
 from organization_management.apps.operations.status_service import (
     cancel_status,
     complete_status_early,
@@ -621,6 +624,15 @@ def test_every_declared_action_is_actually_written(types, home, host):
         submit_day(division_id=child.id, business_date=TODAY, actor=ACTOR)
         assemble_summary(
             division_id=parent.id, business_date=TODAY, actor=ACTOR
+        )
+        # Пересборка «взамен» — своё событие: поправляют СВОЙ день,
+        # пересобирают ЧУЖИЕ версии.
+        rebuild_summary(
+            division_id=parent.id,
+            business_date=TODAY,
+            actor=ACTOR,
+            reason="ребёнок исправил наряд",
+            sanction="замечание",
         )
 
     written = {entry.action for entry in events()}

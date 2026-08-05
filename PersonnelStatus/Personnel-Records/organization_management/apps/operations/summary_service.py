@@ -42,6 +42,7 @@ from organization_management.apps.operations.day_submission_service import (
     _diff_key,
     _is_late,
     _require_actor,
+    _require_text,
 )
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_submission import (
@@ -341,3 +342,104 @@ def summary_freshness(division_id, business_date):
         missing=missing,
         unpinned=unpinned,
     )
+
+
+@transaction.atomic
+def rebuild_summary(*, division_id, business_date, actor, reason, sanction):
+    """Пересобрать сводку «взамен»: НОВАЯ версия поверх прежней.
+
+    Пересборка — это поправка сводки, и устроена она ровно так же: прежняя
+    версия остаётся целиком, новая несёт СВЕЖИЙ свой срез и СВЕЖИЕ пины.
+    Переписать пины в существующей строке было бы соблазнительно и неверно:
+    подпись под сводкой означала бы задним числом другие версии детей.
+
+    ПЕРЕСБОРКА — ВСЕГДА ЯВНОЕ ДЕЙСТВИЕ, и оно не спрашивает, протухла ли
+    сводка: свежесть выводится на чтении и к моменту записи уже могла
+    измениться, а отказ «она и так свежая» заставил бы вызывающего гадать,
+    пересобралось ли. Причина и санкция обязательны — как у всякой поправки.
+
+    Окно дат не применяется (пересобирают как раз прошедшее), late=False
+    (поздность — свойство акта сдачи в контрольный час, у пересборки его
+    нет), и голова цепочки берётся ПОД БЛОКИРОВКОЙ: две одновременные
+    пересборки обязаны выстроиться в очередь.
+
+    Отказы: 400 (пустой актор/причина/санкция; голова цепочки — не сводка),
+    404 (нет подразделения), 422 (день не сдан; дети не сдали).
+    """
+    _require_actor(actor)
+    _require_text(reason, "reason")
+    _require_text(sanction, "sanction")
+    reason, sanction = reason.strip(), sanction.strip()
+
+    if not DivisionTreeSelector.exists(division_id):
+        raise DomainError(
+            "ENTITY_NOT_FOUND",
+            404,
+            detail={"division_id": str(division_id)},
+            message="Подразделение не найдено.",
+        )
+
+    latest = DailySubmissionSelector.latest_for(division_id, business_date, lock=True)
+    if latest is None:
+        raise DomainError(
+            "NO_SUBMISSION_TO_AMEND",
+            422,
+            detail={
+                "division_id": str(division_id),
+                "business_date": business_date.isoformat(),
+            },
+            message="Нельзя пересобрать несданный день (нет ни одной версии).",
+        )
+    if "sources" not in latest.snapshot:
+        # Обычная сдача пересборкой в сводку не превращается: у неё нет и
+        # никогда не было заявления о версиях детей, и приписать его задним
+        # числом значило бы объявить, что подразделение всё это время
+        # отчитывалось за подчинённых.
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"division_id": str(division_id)},
+            message="Этот день сдан обычной сдачей, а не сводкой.",
+        )
+
+    # Снимок «до» — ДО гашения флага: строка в памяти ещё несёт своё прежнее
+    # is_current, иначе журнал рассказывал бы, что вытесненная версия и до
+    # пересборки текущей не была.
+    before = audit_service.submission_snapshot(latest)
+
+    children_map = DivisionTreeSelector.children_map()
+    required = _required_children(division_id, children_map=children_map)
+    sources = _build_sources(children_map.get(division_id, []), business_date)
+    _require_children_submitted(required, sources)
+
+    snapshot = build_division_snapshot(division_id, business_date)
+    snapshot["sources"] = sources
+
+    with transaction.atomic():
+        OpsDailySubmission.objects.filter(
+            division_id=division_id, business_date=business_date, is_current=True
+        ).update(is_current=False)
+        summary = OpsDailySubmission.objects.create(
+            division_id=division_id,
+            business_date=business_date,
+            version=latest.version + 1,
+            is_current=True,
+            event=OpsDailySubmission.Event.AMENDED,
+            submitted_by=actor,
+            submitted_at=Clock.now(),
+            late=False,
+            snapshot=snapshot,
+            reason=reason,
+            sanction=sanction,
+        )
+    audit_service.record(
+        actor=actor,
+        action=audit_service.DAILY_SUMMARY_REBUILT,
+        entity_type=audit_service.ENTITY_SUBMISSION,
+        entity_id=summary.pk,
+        old_value=before,
+        new_value=audit_service.submission_snapshot(summary)
+        | {"sources": _sources_compact(sources)},
+        reason=reason,
+    )
+    return summary
