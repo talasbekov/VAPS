@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-07-29 (12.1 → done)
+# last_updated: 2026-08-05 (19.1 → ready-for-dev)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -795,8 +795,8 @@ development_status:
   epic-18-retrospective: optional
 
   # Epic 19: Нагрузка и календари (этап 3 — каркас)
-  epic-19: backlog
-  19-1-расчёт-нагрузки-план-факт: backlog
+  epic-19: in-progress
+  19-1-расчёт-нагрузки-план-факт: done
   19-2-перегрузка: backlog
   19-3-справочник-коэффициентов-поправок: backlog
   19-4-календарь-сотрудник-месяц: backlog
