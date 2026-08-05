@@ -65,6 +65,7 @@ def submit(division, business_date):
                 TODAY - timedelta(days=1),
                 TODAY,
                 TOMORROW,
+                TOMORROW + timedelta(days=1),
             ],
         )
 
@@ -494,3 +495,102 @@ def test_a_dismissal_that_severs_nothing_submitted_amends_nothing(
     dismiss(employee)
 
     assert amendments(division, TODAY) == []
+
+
+# ── Прикомандирование: одна поправка на акт, а не на строку ──────────────
+
+
+def elsewhere_division():
+    return Division.objects.create(name="Управление 2")
+
+
+def initiate(employee, to_division, start=TOMORROW, end=None):
+    from organization_management.apps.operations.secondment_service import (
+        initiate_secondment,
+    )
+
+    with clock.override(MORNING):
+        return initiate_secondment(
+            employee.id,
+            to_division_id=to_division.id,
+            date_start=start,
+            date_end=end or (TOMORROW + timedelta(days=5)),
+            actor=ACTOR,
+        )
+
+
+def test_secondment_amends_the_day_once_for_the_whole_pair(
+    seed_types, division, employee
+):
+    """Пара — две строки, но акт один.
+
+    Поправка на каждую ногу дала бы дню версии 2 и 3 за одно решение.
+    """
+    submit(division, TOMORROW)
+
+    initiate(employee, elsewhere_division())
+
+    (amendment,) = amendments(division, TOMORROW)
+    assert amendment.version == 2
+    assert amendment.sanction.startswith("Откомандирование с 05.08.2026")
+
+
+def test_returning_a_planned_pair_amends_the_day_once(seed_types, division, employee):
+    """Возврат закрывает ОБЕ ноги — и обе идут через отмену.
+
+    Если бы поправку ставила каждая отмена, у дня появились бы v2 и v3.
+    """
+    from organization_management.apps.operations.secondment_service import (
+        confirm_return,
+        request_return,
+    )
+
+    pair = initiate(employee, elsewhere_division())
+    submit(division, TOMORROW)
+
+    with clock.override(MORNING):
+        request_return(pair, actor=ACTOR)
+        confirm_return(pair, actor=ACTOR, reason="Приказ о возврате.")
+
+    (amendment,) = amendments(division, TOMORROW)
+    assert amendment.sanction == "Приказ о возврате."
+
+
+def test_a_return_without_a_reason_explains_itself(seed_types, division, employee):
+    """Событие известно целиком — санкция выводится из него."""
+    from organization_management.apps.operations.secondment_service import (
+        confirm_return,
+        request_return,
+    )
+
+    pair = initiate(employee, elsewhere_division())
+    submit(division, TOMORROW)
+
+    with clock.override(MORNING):
+        request_return(pair, actor=ACTOR)
+        confirm_return(pair, actor=ACTOR)
+
+    (amendment,) = amendments(division, TOMORROW)
+    assert amendment.sanction == f"Возврат из прикомандирования с {TOMORROW:%d.%m.%Y}."
+
+
+def test_closing_a_running_leg_amends_only_the_released_tail(
+    seed_types, division, employee
+):
+    """Дни, которые нога уже отработала, возврат не меняет."""
+    from organization_management.apps.operations.secondment_service import (
+        confirm_return,
+        request_return,
+    )
+
+    started = TODAY - timedelta(days=1)
+    pair = initiate(employee, elsewhere_division(), start=started)
+    submit(division, started)
+    submit(division, TOMORROW + timedelta(days=1))
+
+    with clock.override(MORNING):
+        request_return(pair, actor=ACTOR)
+        confirm_return(pair, actor=ACTOR)
+
+    assert amendments(division, started) == []
+    assert len(amendments(division, TOMORROW + timedelta(days=1))) == 1
