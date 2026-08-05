@@ -4,7 +4,7 @@ baseline_commit: abce96f
 
 # Story 18.6a: API — закрытие и архив
 
-Status: review
+Status: done
 
 ## Story
 
@@ -95,9 +95,12 @@ Claude Sonnet 5
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — `ops-security-event-close` audited entry)
 - `Backend/VAPS/schema.yaml` (regenerated — additive, new `security_event_close`/`security_event_archive` operations)
 
+После ревью (3 агента: Blind Hunter/Edge Case Hunter/Acceptance Auditor): 0 реальных багов — оба самых опасных подозрения на DRF-грабли (`allow_null` на сериализации `None`, вложенный `ModelSerializer` внутри плоского `Serializer` без явного `source=`) лично прослежены Edge Case Hunter'ом по исходнику DRF и подтверждены non-issue; `test_archive_on_closed_event_returns_full_history` уже случайно это доказывает (`current_assignment_version: None` рендерится верно). Acceptance Auditor: 0 нарушений AC, только test-strength замечания (422 проверялись только по статус-коду, не по `error_code`; `details.missing_sectors` — реальная, не вакуумная проверка). 8 patch применены — все тестовые: DB-персистентность закрытия (`refresh_from_db`), 404 на `close`/`archive` по несуществующему pk, пустой `summaries` на событии С секторами (DRF's `allow_empty=True` не маскирует сервисный coverage-гейт), `duplicate_sector`/`unknown_sectors` detail-формы (ранее покрывался только `missing_sectors`), `error_code` буквально на обоих 422 (AC-3/AC-6), `sector_posts`/`checklist_items`/`staffing_demands` в архивном ответе (ранее 3 из 7 полей сериализатора не проверялись НИ ОДНИМ тестом). 3 defer в `deferred-work.md`: три разных формы 400-ответа на `summaries`-ошибки (DRF-форма vs сервисная форма — намеренное разделение обязанностей, зафиксировано для 18.6c); непустой `current_assignment_version` с реальной расстановкой не покрыт (требует полноценной постановки Placement, вне бюджета этой стори); `event.manage` — глобальное, не object-scoped право (пре-существующий паттерн всего ViewSet'а с 15.2a, не регрессия). `make gate` после патчей — 4155 passed (было 4150), 0 regressions.
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-05 | Story создана (create-story). 18.6 разбита на 18.6a-d (тот же прецедент, что 17.7a-e) — эта стори: API-обёртка над `close_security_event()` (18.1) и `SecurityEventArchiveSelector` (18.2), никакой новой бизнес-логики/permission-кодов/моделей. Status → ready-for-dev. |
 | 2026-08-05 | Dev-story: `close`/`archive` actions + 4 новых сериализатора + 7 API-тестов + rbac-matrix/audit-coverage closed-world guard записи + `make schema` (аддитивный диф). `make gate` — 4150 passed, 0 regressions. Status → review. |
+| 2026-08-05 | Review закрыт (3 агента). 0 багов, 8 патчей (все тестовые: DB-персистентность, 404, пустой summaries, duplicate/unknown-sector detail-формы, error_code на 422, полное покрытие архивного ответа). 3 defer в deferred-work.md. `make gate` — 4155 passed, 0 regressions. Status → done. |
