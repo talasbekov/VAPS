@@ -39,9 +39,19 @@ class Clock:
         return timezone.now()
 
     @classmethod
+    def local_now(cls) -> datetime:
+        """Тот же момент в локальной зоне раздела.
+
+        Нужен там, где сравнивается ВРЕМЯ СУТОК (контрольный час), а не дата:
+        `now()` отдаёт UTC, и сравнение его времени с местным дедлайном
+        расходилось бы ровно на смещение зоны.
+        """
+        return cls.now().astimezone(_local_tz())
+
+    @classmethod
     def today_local(cls) -> date:
         """Текущая бизнес-дата: календарный день в локальной зоне."""
-        return cls.now().astimezone(_local_tz()).date()
+        return cls.local_now().date()
 
 
 @contextmanager
