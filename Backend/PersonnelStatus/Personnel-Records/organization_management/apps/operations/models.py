@@ -167,3 +167,8 @@ from organization_management.apps.operations.models_submission import (  # noqa:
 from organization_management.apps.operations.models_watermark import (  # noqa: E402
     OpsWatermark,  # noqa: F401
 )
+
+# Уведомления раздела — тоже отдельным модулем.
+from organization_management.apps.operations.models_notification import (  # noqa: E402
+    OpsNotification,  # noqa: F401
+)
