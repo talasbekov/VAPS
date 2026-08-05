@@ -3052,9 +3052,9 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: {}
-                description: Unspecified response body
-          description: ''
+                additionalProperties:
+                  type: string
+          description: '{ISO-дата: status_type_code}, плотный по дням месяца.'
   /api/operations/statuses/on-date/:
     get:
       operationId: operations_statuses_on_date_list

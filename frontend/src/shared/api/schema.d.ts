@@ -1870,6 +1870,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/statuses/calendar/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Месячный календарь статусов ОДНОГО сотрудника (19.4a/FR-37) — плоский объект {ISO-дата: status_type_code}, плотный (каждый день месяца присутствует, по умолчанию IN_SERVICE). 403 нет status.view на division_id; 404 подразделение не существует ИЛИ сотрудник не входит в его текущий ростер; 400 month вне 1-12. */
+        get: operations["operations_statuses_calendar_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/statuses/on-date/": {
         parameters: {
             query?: never;
@@ -5985,6 +6002,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BulkStatusCreateResponse"];
+                };
+            };
+        };
+    };
+    operations_statuses_calendar_retrieve: {
+        parameters: {
+            query: {
+                division_id: string;
+                employee_id: string;
+                month: number;
+                year: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

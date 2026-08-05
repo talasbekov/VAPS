@@ -20,7 +20,12 @@ subdomain-графа, ARCH-ISO guard test_statuses_does_not_import_submissions);
 здесь как маленькая локальная функция, не общий импорт.
 """
 
-from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -183,9 +188,18 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpenApiParameter("month", int, OpenApiParameter.QUERY, required=True),
         ],
         responses={
-            200: serializers.DictField(
-                child=serializers.CharField(),
-                help_text="{ISO-дата: status_type_code}, плотный по дням месяца.",
+            # review (Blind Hunter/Edge Case Hunter/Acceptance Auditor, 19.4c):
+            # a bare DictField isn't a serializer/list/basic-type/type-hint per
+            # drf-spectacular's _get_response_for_code(), so it silently fell
+            # back to "Unspecified response body" (additionalProperties: {}) —
+            # a raw OpenAPI schema dict is the documented bypass for exactly
+            # this case (isinstance(serializer, dict) short-circuits resolution).
+            200: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                },
+                description="{ISO-дата: status_type_code}, плотный по дням месяца.",
             )
         },
         description=(
