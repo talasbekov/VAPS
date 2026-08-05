@@ -30,12 +30,15 @@
 завести владельца, который знает половину ответа. Часы не читаются: дни
 приходят интервалами правки.
 
-ГДЕ ШВА ПОКА НЕТ — и это не забывчивость, а очередь: массовое создание
-(bulk_status_service пишет одним bulk_create, и поправка на каждую строку
-вернула бы число запросов, растущее с размером пачки), ноги прикомандирования
-и закрытие статусов при увольнении (у них нет операторской причины — её
-пришлось бы выводить из приказа). Каждый из трёх — свой срез со своим
-решением; перечислены здесь, чтобы тишина не читалась покрытием.
+ОДНА ПОПРАВКА НА ДЕНЬ, а не на правку: массовое обновление, задевшее двадцать
+человек одного дня, вытесняет его сдачу ОДИН раз. Поштучный подсчёт породил бы
+версии 2, 3, 4… на один акт, и читатель истории дня увидел бы двадцать
+поправок там, где было одно обновление.
+
+ГДЕ ШВА ПОКА НЕТ — и это не забывчивость, а очередь: ноги прикомандирования и
+закрытие статусов при увольнении. У обоих нет операторской причины — её
+пришлось бы выводить из приказа, и каждый требует своего решения; перечислены
+здесь, чтобы тишина не читалась покрытием.
 
 ОТЛИЧИЕ ОТ ИСТОЧНИКА — прямой вызов вместо слота-инверсии. Там statuses и
 submissions разные приложения, стрелка между ними односторонняя, и обращение
@@ -49,10 +52,9 @@ from organization_management.apps.operations.day_submission_service import amend
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.selectors import DailySubmissionSelector
 
-# Причина автоматической поправки. Санкцией едет причина САМОЙ правки: она
-# объясняет, что и почему изменили, а эта строка — лишь как поправка
-# появилась. Поменять их местами значило бы записать в объяснение дня
-# служебный текст, одинаковый у всех поправок раздела.
+# Санкцией едет причина САМОЙ правки: она объясняет, что и почему изменили, а
+# строка ниже — лишь как поправка появилась. Поменять их местами значило бы
+# записать в объяснение дня служебный текст, одинаковый у всех поправок.
 AUTO_AMENDMENT_REASON = "Авто-поправка: ретро-правка статуса под сданным днём."
 
 
@@ -69,6 +71,28 @@ def affected_days(intervals):
             days.add(day)
             day += timedelta(days=1)
     return days
+
+
+def enforce_amendment_on_bulk_edit(
+    employee_ids, intervals, *, actor, reason, triggered_by_status_id=None
+):
+    """Поправить каждый сданный день, накрытый правкой сразу по многим людям.
+
+    Отличается от поштучного входа только тем, кем задан периметр людей;
+    правило «одна поправка на накрытый день» общее, и владелец обоих — этот
+    модуль. `triggered_by_status_id` у пачки обычно None: одной строки,
+    вызвавшей поправку, у неё нет, а pk первой был бы враньём — поле
+    допускает пустоту именно для таких случаев.
+    """
+    covered = DailySubmissionSelector.covering_many(
+        employee_ids, affected_days(intervals)
+    )
+    return _amend_covered(
+        covered,
+        actor=actor,
+        reason=reason,
+        triggered_by_status_id=triggered_by_status_id,
+    )
 
 
 def enforce_amendment_on_retro_edit(
@@ -90,6 +114,16 @@ def enforce_amendment_on_retro_edit(
     когда правка сданного не задела.
     """
     covered = DailySubmissionSelector.covering(employee_id, affected_days(intervals))
+    return _amend_covered(
+        covered,
+        actor=actor,
+        reason=reason,
+        triggered_by_status_id=triggered_by_status_id,
+    )
+
+
+def _amend_covered(covered, *, actor, reason, triggered_by_status_id):
+    """Общий хвост обоих входов: требование причины и сами поправки."""
     if not covered:
         return []
     if not (reason or "").strip():

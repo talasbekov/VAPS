@@ -841,6 +841,7 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             actor=resolve_actor_id(request),
             business_date=form.validated_data["business_date"],
             allowed_division_ids=allowed,
+            amendment_reason=form.validated_data.get("amendment_reason", ""),
         )
         return Response({"created": len(created)}, status=status.HTTP_201_CREATED)
 

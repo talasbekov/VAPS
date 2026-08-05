@@ -6,6 +6,10 @@ MPTT): переезд «женит» новый RBAC со старым дере�
 вместо mptt-запросов намеренно — children_map() переносится один-в-один и
 переживёт будущую смену модели дерева.
 """
+import operator
+from functools import reduce
+
+from django.db import models
 from django.db.models import Count
 
 from organization_management.apps.divisions.models import Division
@@ -459,6 +463,41 @@ class DailySubmissionSelector:
         if lock:
             queryset = queryset.select_for_update()
         return queryset.order_by("-version").first()
+
+    @staticmethod
+    def covering_many(employee_ids, business_dates):
+        """Действующие сдачи, заявлявшие ХОТЬ ОДНОГО из сотрудников в эти дни.
+
+        Пакетная форма `covering` для массового пути. Возвращается СДАЧА, а
+        не пара (сотрудник, сдача): у дня одна поправка независимо от того,
+        скольких его людей задела правка. Поштучное обнаружение выдало бы
+        по строке на каждого и породило бы версии 2, 3, 4… на один акт —
+        читатель истории дня увидел бы двадцать поправок там, где было одно
+        массовое обновление.
+
+        Условие принадлежности ТО ЖЕ, что у поштучного пути (containment по
+        снимку), просто перечисленное через ИЛИ: два способа спросить «был
+        ли человек в знаменателе» разошлись бы там же, где и всё остальное, —
+        на редком случае. Запрос один; день и флаг текущей сужают выборку
+        ДО проверки принадлежности, поэтому перечисление растёт вширь по
+        сотрудникам, а не вглубь по сданному.
+        """
+        employee_ids = list(employee_ids)
+        business_dates = list(business_dates)
+        if not employee_ids:
+            return []
+        membership = reduce(
+            operator.or_,
+            (
+                models.Q(snapshot__roster__contains=[{"employee_id": employee_id}])
+                for employee_id in employee_ids
+            ),
+        )
+        return list(
+            OpsDailySubmission.objects.filter(
+                membership, business_date__in=business_dates, is_current=True
+            ).order_by("business_date", "division_id")
+        )
 
     @staticmethod
     def covering(employee_id, business_dates):
