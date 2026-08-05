@@ -11,6 +11,7 @@ apps/operations/api/views.py из Backend/VAPS).
 from datetime import timedelta
 
 from django.db.models import Q
+from django.http import HttpResponse
 from django.utils.dateparse import parse_date, parse_datetime
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
@@ -109,6 +110,10 @@ from organization_management.apps.operations.status_service import (
 from organization_management.apps.operations.strength_report import (
     StrengthReportService,
     submitted_expense,
+)
+from organization_management.apps.operations.expense_release import (
+    build_submitted_expense_document,
+    render_expense,
 )
 from organization_management.apps.operations.summary_service import (
     assemble_summary,
@@ -1166,6 +1171,10 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_map = {
         "list": _READ_STATUS_PERMISSION,
         "submitted": _READ_STATUS_PERMISSION,
+        # Выгрузка открывает ровно то же, что экран сданного расхода, только
+        # файлом: заводить ей особое право значило бы защищать одни и те же
+        # сведения по-разному в зависимости от того, как их читают.
+        "export": _READ_STATUS_PERMISSION,
     }
     http_method_names = ["get", "options"]
 
@@ -1241,6 +1250,81 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "warnings": report.warnings,
             }
         )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "division_id",
+                OpenApiTypes.INT,
+                required=True,
+                description="Подразделение — ОДНО: выгружается сданный день.",
+            ),
+            OpenApiParameter(
+                "business_date",
+                OpenApiTypes.DATE,
+                description="День; по умолчанию сегодняшний по часам раздела.",
+            ),
+            OpenApiParameter(
+                "file_format",
+                OpenApiTypes.STR,
+                description=(
+                    "csv (числа) или xlsx (числа и поимённый состав). Имя "
+                    "параметра НЕ `format`: его DRF резервирует под выбор "
+                    "рендерера ответа."
+                ),
+            ),
+        ],
+        responses={(200, "application/octet-stream"): OpenApiTypes.BINARY},
+        description=(
+            "Выгрузка расхода СДАННОГО дня файлом под правом status.view. "
+            "Список, колонки и поимённый состав — из снимка сдачи; штат, "
+            "вакансии и приданные — живые (снимок их не хранит). 400 — "
+            "нечитаемый параметр или неизвестный формат; 403 — нет права либо "
+            "подразделение вне области; 404 — подразделения нет либо день не "
+            "сдан; 422 — в снимке код статуса вне справочника."
+        ),
+    )
+    @action(detail=False, methods=["get"])
+    def export(self, request, *args, **kwargs):
+        form = SubmittedExpenseFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        # Порядок гардов тот же, что у чтения сданного расхода: область
+        # раньше существования — иначе 404 стал бы оракулом существования.
+        _assert_division_in_scope(
+            request, division_id, _READ_STATUS_PERMISSION, field="division_id"
+        )
+        if not DivisionTreeSelector.exists(division_id):
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"division_id": str(division_id)},
+                message="Подразделение не найдено.",
+            )
+        business_date = form.validated_data.get("business_date") or Clock.today_local()
+        # НЕ `format`: это имя DRF занимает под согласование содержимого, и
+        # `?format=xlsx` уходит в выбор рендерера ответа, отвечая 404 ещё до
+        # вьюхи (обнаружено живой пробой, а не догадкой).
+        export_format = request.query_params.get("file_format", "csv")
+        try:
+            data = build_submitted_expense_document(division_id, business_date)
+        except ValueError as error:
+            # Снимок ссылается на код вне справочника — дефект ДАННЫХ, тот же
+            # перевод, что у чтения сданного расхода: файл с нулями выдал бы
+            # поломку за пустой день.
+            raise DomainError(
+                "UNRESOLVABLE_STATUS_TYPE",
+                422,
+                detail={"division_id": str(division_id)},
+                message="В снимке сдачи код статуса вне справочника.",
+            ) from error
+        blob, filename, content_type = render_expense(data, export_format)
+        response = HttpResponse(blob, content_type=content_type)
+        # attachment, а не inline: браузер обязан СОХРАНИТЬ файл, иначе .csv
+        # он покажет текстом, а .xlsx предложит скачать — поведение
+        # разъехалось бы по форматам.
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     @extend_schema(
         parameters=[
