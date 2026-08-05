@@ -8,6 +8,7 @@ from rest_framework.routers import DefaultRouter
 from organization_management.apps.operations.api.views import (
     AuditLogViewSet,
     DailySubmissionViewSet,
+    DailySummaryViewSet,
     MyPermissionsViewSet,
     PermissionViewSet,
     RoleViewSet,
@@ -34,6 +35,9 @@ router.register(
 router.register("temporary-duty", TemporaryDutyViewSet, basename="ops-temp-duty")
 router.register(
     "daily-submissions", DailySubmissionViewSet, basename="ops-daily-submission"
+)
+router.register(
+    "daily-summaries", DailySummaryViewSet, basename="ops-daily-summary"
 )
 router.register(
     "tomorrow-block", TomorrowBlockViewSet, basename="ops-tomorrow-block"
