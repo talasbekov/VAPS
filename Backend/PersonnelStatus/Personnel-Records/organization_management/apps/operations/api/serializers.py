@@ -386,6 +386,17 @@ class TrafficLightTreeFilterSerializer(serializers.Serializer):
     business_date = serializers.DateField(required=False)
 
 
+class TrafficLightDivisionFilterSerializer(serializers.Serializer):
+    """Параметр точечного светофора: только день, и он необязателен.
+
+    Подразделение приходит адресом, а не телом запроса: цвет спрашивают У
+    КОНКРЕТНОГО узла, и второй способ его назвать разошёлся бы с гардом
+    области.
+    """
+
+    business_date = serializers.DateField(required=False)
+
+
 class OpsAuditLogSerializer(serializers.ModelSerializer):
     """Строка журнала раздела как её видит читатель.
 

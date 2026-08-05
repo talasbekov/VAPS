@@ -172,6 +172,16 @@ SPECTACULAR_SETTINGS = {
             'operationsSorter': None,
             'tagsSorter': None,
         },
+    # Имя enum'а светофора закреплено явно: поле называется "status", как и у
+    # нескольких старых сериализаторов, и без этого spectacular разрешает
+    # коллизию машинным именем вида Status3a8Enum — оно меняется при любой
+    # правке соседей, и клиент, сгенерированный по схеме, ломается на ровном
+    # месте.
+    'ENUM_NAME_OVERRIDES': {
+        'TrafficLightStatusEnum':
+            'organization_management.apps.operations.traffic_light.'
+            'TrafficLightStatus',
+    },
 }
 
 # Celery Configuration
