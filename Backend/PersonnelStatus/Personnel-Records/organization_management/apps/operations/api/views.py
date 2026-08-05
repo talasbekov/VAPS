@@ -1273,9 +1273,9 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "file_format",
                 OpenApiTypes.STR,
                 description=(
-                    "csv (числа) или xlsx (числа и поимённый состав). Имя "
-                    "параметра НЕ `format`: его DRF резервирует под выбор "
-                    "рендерера ответа."
+                    "csv (числа), xlsx (числа и поимённый состав) или docx "
+                    "(печатная форма под подпись). Имя параметра НЕ `format`: "
+                    "его DRF резервирует под выбор рендерера ответа."
                 ),
             ),
         ],
@@ -2335,9 +2335,9 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "file_format",
                 OpenApiTypes.STR,
                 description=(
-                    "csv (числа) или xlsx (числа и поимённый состав). Имя "
-                    "параметра НЕ `format`: его DRF резервирует под выбор "
-                    "рендерера ответа."
+                    "csv (числа), xlsx (числа и поимённый состав) или docx "
+                    "(печатная форма под подпись). Имя параметра НЕ `format`: "
+                    "его DRF резервирует под выбор рендерера ответа."
                 ),
             ),
         ],

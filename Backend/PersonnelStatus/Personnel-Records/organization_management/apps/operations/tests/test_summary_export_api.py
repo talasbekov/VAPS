@@ -6,6 +6,7 @@
 import io
 
 import pytest
+from docx import Document as DocxDocument
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
@@ -104,6 +105,23 @@ def test_xlsx_is_a_real_workbook(types, tree):
     sheet = load_workbook(io.BytesIO(response.content)).active
     assert sheet.title == TODAY.isoformat()
     assert sheet.max_row == 6
+
+
+def test_docx_carries_every_division_row(types, tree):
+    """Многострочный документ печатной формой: строка на подразделение.
+
+    Многострочность — единственное, чем сводка отличается от личной
+    выгрузки, и проверять её надо в том формате, где строки и печатаются.
+    """
+    root, _, _ = tree
+    assembled(tree)
+
+    response = get(reader(), root.id, file_format="docx")
+
+    assert response.status_code == 200
+    (table,) = DocxDocument(io.BytesIO(response.content)).tables
+    assert len(table.rows) == 5  # шапка + три подразделения + ИТОГО
+    assert table.rows[-1].cells[1].text == "ИТОГО"
 
 
 def test_the_file_is_an_attachment(types, tree):
