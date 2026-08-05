@@ -10,6 +10,20 @@ let nextVersionId = ASSIGNMENT_VERSIONS.length + 1
 let nextJournalEntryId = JOURNAL_ENTRIES.length + 1
 let nextReplacementId = 1
 
+// Story 18.6c: опрос-состояние по assignment id — demo-хранилище (реальный
+// бэк не даёт read-эндпоинта, состояние живёт только в ответах мутаций).
+const OPROS_STATE = new Map<
+  number,
+  {
+    actual_start_at: string
+    actual_end_at: string
+    day_hours?: string
+    night_hours?: string
+    is_overloaded?: boolean
+    overload_minutes?: string
+  }
+>()
+
 function findVersion(id: number) {
   return ASSIGNMENT_VERSIONS.find((v) => v.id === id)
 }
@@ -216,4 +230,74 @@ export const placementHandlers = [
       return HttpResponse.json(entry, { status: 201 })
     },
   ),
+  // Story 18.6c
+  http.post(
+    '*/api/operations/placement-assignments/:id/actual-time/',
+    async ({ params, request }) => {
+      const assignmentId = Number(params.id)
+      const body = (await request.json()) as {
+        actual_start_at?: string
+        actual_end_at?: string
+      }
+      if (!body.actual_start_at || !body.actual_end_at) {
+        return HttpResponse.json(
+          { error_code: 'VALIDATION_ERROR', details: {} },
+          { status: 400 },
+        )
+      }
+      OPROS_STATE.set(assignmentId, {
+        actual_start_at: body.actual_start_at,
+        actual_end_at: body.actual_end_at,
+      })
+      return HttpResponse.json({
+        id: assignmentId,
+        assignment: assignmentId,
+        actual_start_at: body.actual_start_at,
+        actual_end_at: body.actual_end_at,
+        recorded_by: 'demo-user',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+    },
+  ),
+  http.post(
+    '*/api/operations/placement-assignments/:id/service-hours/',
+    ({ params }) => {
+      const assignmentId = Number(params.id)
+      const state = OPROS_STATE.get(assignmentId)
+      if (!state) {
+        return HttpResponse.json({ error_code: 'ENTITY_NOT_FOUND' }, { status: 404 })
+      }
+      // Demo — фиксированное 8ч/0ч, реальный день/ночь-сплит остаётся на бэке.
+      state.day_hours = '8.00'
+      state.night_hours = '0.00'
+      return HttpResponse.json({
+        id: assignmentId,
+        actual: assignmentId,
+        day_hours: state.day_hours,
+        night_hours: state.night_hours,
+        computed_at: new Date().toISOString(),
+        is_overloaded: false,
+        overload_minutes: '0.00',
+      })
+    },
+  ),
+  http.post('*/api/operations/placement-assignments/:id/overload/', ({ params }) => {
+    const assignmentId = Number(params.id)
+    const state = OPROS_STATE.get(assignmentId)
+    if (!state?.day_hours) {
+      return HttpResponse.json({ error_code: 'ENTITY_NOT_FOUND' }, { status: 404 })
+    }
+    state.is_overloaded = false
+    state.overload_minutes = '0.00'
+    return HttpResponse.json({
+      id: assignmentId,
+      actual: assignmentId,
+      day_hours: state.day_hours,
+      night_hours: state.night_hours,
+      computed_at: new Date().toISOString(),
+      is_overloaded: state.is_overloaded,
+      overload_minutes: state.overload_minutes,
+    })
+  }),
 ]

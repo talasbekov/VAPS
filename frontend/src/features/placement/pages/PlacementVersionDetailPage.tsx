@@ -10,8 +10,12 @@
 // AssignmentsTable; identity-проверка (16.8e) полностью на бэке, фронт не
 // знает employee_id текущего пользователя.
 import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { Link, useParams } from 'react-router'
 import { Button } from '../../../shared/ui/Button'
+import { Input } from '../../../shared/ui/Input'
 import { ConflictDialog } from '../../../shared/ui/ConflictDialog'
 import { ROUTES } from '../../../shared/routes'
 import { ApiError, ConflictError } from '../../../shared/api/errors'
@@ -21,12 +25,16 @@ import {
   useApproveAssignmentVersion,
   useAssignmentVersion,
   useAssignmentVersionConflicts,
+  useComputeServiceHours,
+  useFlagOverload,
+  useRecordActualTime,
   useSubmitAssignmentVersion,
 } from '../api/queries'
 import type {
   AssignmentVersionConflictsResponse,
   AssignmentVersionDetailResponse,
 } from '../api/queries'
+import { zonedDateTimeToIso } from '../lib/localDateTime'
 import { JournalPanel } from './JournalPanel'
 import { ReplaceDepartedDialog } from './ReplaceDepartedDialog'
 import { ReturnVersionDialog } from './ReturnVersionDialog'
@@ -245,6 +253,7 @@ function AssignmentsTable({
             <th className="px-3 py-2 font-semibold">Конфликт</th>
             <th className="px-3 py-2 font-semibold">Ознакомлен</th>
             <th className="px-3 py-2 font-semibold">Действия</th>
+            <th className="px-3 py-2 font-semibold">Опрос по итогам</th>
           </tr>
         </thead>
         <tbody>
@@ -270,6 +279,9 @@ function AssignmentsTable({
                   versionStatus={version.status}
                   isCurrent={version.is_current}
                 />
+              </td>
+              <td className="px-3 py-2">
+                <OprosCell assignmentId={String(a.id)} employeeId={a.employee_id} />
               </td>
             </tr>
           ))}
@@ -368,6 +380,150 @@ function ReplaceDepartedCell({
         onClose={() => setOpen(false)}
       />
     </>
+  )
+}
+
+// Story 18.6c: опрос по итогам (18.3-18.5, API 18.6b) — три ПОСЛЕДОВАТЕЛЬНЫХ
+// шага, буквально зеркалит бэковую развязку (сервисы намеренно не
+// авто-триггерят друг друга, 18.6b's Scope Decision). Прогресс живёт ТОЛЬКО
+// в локальном state этой ячейки — PlacementAssignmentSerializer не несёт
+// actual/hours/overload полей, читать их обратно после reload негде (нет
+// read-эндпоинта, вне бюджета этой стори). 403/422 — реактивно под каждой
+// кнопкой/формой, тот же паттерн, что JournalPanel/AcknowledgeCell.
+const actualTimeSchema = z.object({
+  actual_start_at: z.string().min(1, 'Укажите начало.'),
+  actual_end_at: z.string().min(1, 'Укажите окончание.'),
+})
+type ActualTimeValues = z.infer<typeof actualTimeSchema>
+
+function OprosCell({
+  assignmentId,
+  employeeId,
+}: {
+  assignmentId: string
+  employeeId: string
+}) {
+  const recordMutation = useRecordActualTime(assignmentId)
+  const hoursMutation = useComputeServiceHours(assignmentId)
+  const overloadMutation = useFlagOverload(assignmentId)
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<ActualTimeValues>({
+    resolver: zodResolver(actualTimeSchema),
+    defaultValues: { actual_start_at: '', actual_end_at: '' },
+  })
+
+  const onSubmit = (values: ActualTimeValues) => {
+    recordMutation.mutate({
+      actual_start_at: zonedDateTimeToIso(values.actual_start_at),
+      actual_end_at: zonedDateTimeToIso(values.actual_end_at),
+    })
+  }
+
+  if (recordMutation.data === undefined) {
+    return (
+      <form
+        onSubmit={(e) => {
+          void handleSubmit(onSubmit)(e)
+        }}
+        className="flex flex-col gap-1"
+      >
+        <Input
+          type="datetime-local"
+          aria-label={`Начало факта: ${employeeId}`}
+          {...register('actual_start_at')}
+        />
+        <Input
+          type="datetime-local"
+          aria-label={`Окончание факта: ${employeeId}`}
+          {...register('actual_end_at')}
+        />
+        {(errors.actual_start_at !== undefined ||
+          errors.actual_end_at !== undefined) && (
+          <p className="text-xs text-destructive">
+            {errors.actual_start_at?.message ?? errors.actual_end_at?.message}
+          </p>
+        )}
+        <Button type="submit" size="sm" disabled={recordMutation.isPending}>
+          {recordMutation.isPending ? 'Отправка…' : 'Записать факт'}
+        </Button>
+        {recordMutation.error !== null && (
+          <p className="text-xs text-destructive" role="alert">
+            {recordMutation.error instanceof ApiError
+              ? recordMutation.error.message
+              : GENERIC_FAILURE_MESSAGE}
+          </p>
+        )}
+      </form>
+    )
+  }
+
+  if (hoursMutation.data === undefined) {
+    return (
+      <div className="flex flex-col gap-1">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={hoursMutation.isPending}
+          onClick={() => {
+            hoursMutation.mutate({})
+          }}
+        >
+          {hoursMutation.isPending ? 'Вычисление…' : 'Вычислить налёт'}
+        </Button>
+        {hoursMutation.error !== null && (
+          <p className="text-xs text-destructive" role="alert">
+            {hoursMutation.error instanceof ApiError
+              ? hoursMutation.error.message
+              : GENERIC_FAILURE_MESSAGE}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  const currentHours = hoursMutation.data
+
+  if (overloadMutation.data === undefined) {
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="text-xs">
+          {currentHours.day_hours} ч. день / {currentHours.night_hours} ч. ночь
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={overloadMutation.isPending}
+          onClick={() => {
+            overloadMutation.mutate({})
+          }}
+        >
+          {overloadMutation.isPending ? 'Проверка…' : 'Проверить перегрузку'}
+        </Button>
+        {overloadMutation.error !== null && (
+          <p className="text-xs text-destructive" role="alert">
+            {overloadMutation.error instanceof ApiError
+              ? overloadMutation.error.message
+              : GENERIC_FAILURE_MESSAGE}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <p className="text-xs">
+      {currentHours.day_hours} ч. день / {currentHours.night_hours} ч. ночь
+      <br />
+      Перегрузка: {overloadMutation.data.is_overloaded ? 'да' : 'нет'}
+      {overloadMutation.data.is_overloaded &&
+        ` (+${overloadMutation.data.overload_minutes} мин)`}
+    </p>
   )
 }
 

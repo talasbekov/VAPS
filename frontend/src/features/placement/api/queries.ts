@@ -40,6 +40,14 @@ export type ReplaceDepartedRequest =
   paths['/api/operations/assignment-versions/{id}/replace-departed/']['post']['requestBody']['content']['application/json']
 export type ReplaceDepartedResponse =
   paths['/api/operations/assignment-versions/{id}/replace-departed/']['post']['responses']['201']['content']['application/json']
+export type RecordActualTimeRequest =
+  paths['/api/operations/placement-assignments/{id}/actual-time/']['post']['requestBody']['content']['application/json']
+export type RecordActualTimeResponse =
+  paths['/api/operations/placement-assignments/{id}/actual-time/']['post']['responses']['200']['content']['application/json']
+export type ComputeServiceHoursResponse =
+  paths['/api/operations/placement-assignments/{id}/service-hours/']['post']['responses']['200']['content']['application/json']
+export type FlagOverloadResponse =
+  paths['/api/operations/placement-assignments/{id}/overload/']['post']['responses']['200']['content']['application/json']
 
 export const assignmentVersionKeys = {
   all: ['assignment-versions'] as const,
@@ -206,5 +214,39 @@ export function useAddJournalEntry(eventId: number) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: journalEntryKeys.list(eventId) })
     },
+  })
+}
+
+// Story 18.6c: опрос-состояние (actual/hours/overload) не читается обратно
+// нигде в существующих запросах версии/назначений (PlacementAssignmentSerializer
+// не несёт этих полей) — эти три мутации не инвалидируют кэш, OprosCell
+// хранит прогресс в своём useState.
+export function useRecordActualTime(assignmentId: string) {
+  return useApiMutation<RecordActualTimeResponse, RecordActualTimeRequest>({
+    mutationFn: (body) =>
+      apiClient.post<RecordActualTimeResponse>(
+        `/api/operations/placement-assignments/${assignmentId}/actual-time/`,
+        body,
+      ),
+  })
+}
+
+export function useComputeServiceHours(assignmentId: string) {
+  return useApiMutation<ComputeServiceHoursResponse, Record<string, never>>({
+    mutationFn: () =>
+      apiClient.post<ComputeServiceHoursResponse>(
+        `/api/operations/placement-assignments/${assignmentId}/service-hours/`,
+        {},
+      ),
+  })
+}
+
+export function useFlagOverload(assignmentId: string) {
+  return useApiMutation<FlagOverloadResponse, Record<string, never>>({
+    mutationFn: () =>
+      apiClient.post<FlagOverloadResponse>(
+        `/api/operations/placement-assignments/${assignmentId}/overload/`,
+        {},
+      ),
   })
 }

@@ -724,3 +724,193 @@ describe('AcknowledgeCell', () => {
     ).not.toBeInTheDocument()
   })
 })
+
+// Story 18.6c: OprosCell — actual-time/service-hours/overload, три
+// последовательных шага в одной ячейке.
+function versionWithOneAssignment() {
+  return {
+    id: 9,
+    event: 4,
+    status: 'APPROVED',
+    version: 1,
+    is_current: true,
+    signature_hash: 'abc',
+    created_at: '2026-08-01T09:00:00Z',
+    updated_at: '2026-08-01T09:00:00Z',
+    assignments: [
+      {
+        id: 1,
+        employee_id: EMPLOYEE_A,
+        post: 5,
+        conflict_severity: '',
+        conflict_codes: [],
+        acknowledged_at: null,
+        ack_escalated_at: null,
+      },
+    ],
+  }
+}
+
+describe('PlacementVersionDetailPage — opros (18.6c)', () => {
+  it('walks all three opros steps and shows the final overload result', async () => {
+    let receivedActualBody: { actual_start_at?: string; actual_end_at?: string } = {}
+    server.use(
+      http.get('*/api/operations/assignment-versions/9/', () =>
+        HttpResponse.json(versionWithOneAssignment()),
+      ),
+      http.get('*/api/operations/assignment-versions/9/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post(
+        '*/api/operations/placement-assignments/1/actual-time/',
+        async ({ request }) => {
+          receivedActualBody = (await request.json()) as typeof receivedActualBody
+          return HttpResponse.json({
+            id: 1,
+            assignment: 1,
+            actual_start_at: receivedActualBody.actual_start_at,
+            actual_end_at: receivedActualBody.actual_end_at,
+            recorded_by: 'user-1',
+            created_at: '2026-08-04T18:00:00Z',
+            updated_at: '2026-08-04T18:00:00Z',
+          })
+        },
+      ),
+      http.post('*/api/operations/placement-assignments/1/service-hours/', () =>
+        HttpResponse.json({
+          id: 1,
+          actual: 1,
+          day_hours: '8.00',
+          night_hours: '0.00',
+          computed_at: '2026-08-04T18:01:00Z',
+          is_overloaded: false,
+          overload_minutes: '0.00',
+        }),
+      ),
+      http.post('*/api/operations/placement-assignments/1/overload/', () =>
+        HttpResponse.json({
+          id: 1,
+          actual: 1,
+          day_hours: '8.00',
+          night_hours: '0.00',
+          computed_at: '2026-08-04T18:01:00Z',
+          is_overloaded: true,
+          overload_minutes: '120.00',
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage('/placement/9')
+    await waitFor(() => expect(screen.getByText(/Версия 1/)).toBeInTheDocument())
+
+    const startInput = screen.getByLabelText(`Начало факта: ${EMPLOYEE_A}`)
+    const endInput = screen.getByLabelText(`Окончание факта: ${EMPLOYEE_A}`)
+    await user.click(startInput)
+    await user.paste('2026-08-04T09:00')
+    await user.click(endInput)
+    await user.paste('2026-08-04T17:00')
+    await user.click(screen.getByRole('button', { name: 'Записать факт' }))
+
+    // Review-relevant: assert offset-aware ISO, not the raw local string —
+    // proves zonedDateTimeToIso() ran, not a bare toISOString() call.
+    await waitFor(() =>
+      expect(receivedActualBody.actual_start_at).toBe('2026-08-04T04:00:00.000Z'),
+    )
+    expect(receivedActualBody.actual_end_at).toBe('2026-08-04T12:00:00.000Z')
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Вычислить налёт' }),
+    )
+    expect(await screen.findByText(/8.00 ч. день/)).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Проверить перегрузку' }),
+    )
+
+    expect(await screen.findByText(/Перегрузка: да/)).toBeInTheDocument()
+    expect(screen.getByText(/\+120.00 мин/)).toBeInTheDocument()
+  })
+
+  it('shows an error under the form on actual-time failure and keeps it usable for retry', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/9/', () =>
+        HttpResponse.json(versionWithOneAssignment()),
+      ),
+      http.get('*/api/operations/assignment-versions/9/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/placement-assignments/1/actual-time/', () =>
+        HttpResponse.json(
+          {
+            error_code: 'INVALID_LIFECYCLE_TRANSITION',
+            message: 'Факт можно записать только после закрытия события.',
+            details: {},
+            request_id: null,
+            timestamp: new Date().toISOString(),
+          },
+          { status: 422 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage('/placement/9')
+    await waitFor(() => expect(screen.getByText(/Версия 1/)).toBeInTheDocument())
+
+    const startInput = screen.getByLabelText(`Начало факта: ${EMPLOYEE_A}`)
+    const endInput = screen.getByLabelText(`Окончание факта: ${EMPLOYEE_A}`)
+    await user.click(startInput)
+    await user.paste('2026-08-04T09:00')
+    await user.click(endInput)
+    await user.paste('2026-08-04T17:00')
+    await user.click(screen.getByRole('button', { name: 'Записать факт' }))
+
+    expect(
+      await screen.findByText('Факт можно записать только после закрытия события.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Записать факт' })).toBeInTheDocument()
+  })
+
+  it('shows an error under the "Вычислить налёт" button on failure without losing step 1', async () => {
+    server.use(
+      http.get('*/api/operations/assignment-versions/9/', () =>
+        HttpResponse.json(versionWithOneAssignment()),
+      ),
+      http.get('*/api/operations/assignment-versions/9/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post('*/api/operations/placement-assignments/1/actual-time/', () =>
+        HttpResponse.json({
+          id: 1,
+          assignment: 1,
+          actual_start_at: '2026-08-04T04:00:00Z',
+          actual_end_at: '2026-08-04T12:00:00Z',
+          recorded_by: 'user-1',
+          created_at: '2026-08-04T18:00:00Z',
+          updated_at: '2026-08-04T18:00:00Z',
+        }),
+      ),
+      http.post('*/api/operations/placement-assignments/1/service-hours/', () =>
+        HttpResponse.json({ error_code: 'ENTITY_NOT_FOUND' }, { status: 404 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage('/placement/9')
+    await waitFor(() => expect(screen.getByText(/Версия 1/)).toBeInTheDocument())
+
+    const startInput = screen.getByLabelText(`Начало факта: ${EMPLOYEE_A}`)
+    const endInput = screen.getByLabelText(`Окончание факта: ${EMPLOYEE_A}`)
+    await user.click(startInput)
+    await user.paste('2026-08-04T09:00')
+    await user.click(endInput)
+    await user.paste('2026-08-04T17:00')
+    await user.click(screen.getByRole('button', { name: 'Записать факт' }))
+
+    const hoursButton = await screen.findByRole('button', {
+      name: 'Вычислить налёт',
+    })
+    await user.click(hoursButton)
+
+    await waitFor(() => expect(hoursButton).not.toBeDisabled())
+    expect(screen.getByRole('button', { name: 'Вычислить налёт' })).toBeInTheDocument()
+  })
+})

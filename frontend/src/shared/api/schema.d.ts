@@ -1512,6 +1512,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/placement-assignments/{id}/actual-time/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Записать фактическое время назначения — опрос по итогам (18.3, FR-43). Требует event.manage. Доступно только после закрытия события (is_current + CLOSED). Upsert — повторный вызов исправляет факт, не дублирует строку. */
+        post: operations["placement_assignment_actual_time"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/placement-assignments/{id}/overload/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Отметить перегрузку по факту — превышение предельного времени Поста (18.5, FR-32). Требует event.manage. 404, если Налёт часов ещё не вычислен (18.4). 422 INVALID_LIFECYCLE_TRANSITION из сервиса вне is_current/CLOSED. */
+        post: operations["placement_assignment_overload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/placement-assignments/{id}/service-hours/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Вычислить Налёт часов день/ночь (18.4, FR-32) из уже записанного факта (18.3). Требует event.manage. 404, если actual-time ещё не записан. 422 INVALID_LIFECYCLE_TRANSITION из сервиса вне is_current/CLOSED. */
+        post: operations["placement_assignment_service_hours"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/roles/": {
         parameters: {
             query?: never;
@@ -1562,6 +1613,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/security-events/{id}/archive/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Полная история закрытого ОМ (18.2) — требует event.manage. Доступно только для CLOSED-события, 422 INVALID_LIFECYCLE_TRANSITION иначе. */
+        get: operations["security_event_archive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/security-events/{id}/bulletin/": {
         parameters: {
             query?: never;
@@ -1590,6 +1658,23 @@ export interface paths {
         /** @description Заменить чек-лист рекогносцировки целиком (FR-22). Требует event.manage. Пустой массив допустим (сброс чек-листа). */
         put: operations["security_event_checklist_replace"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/security-events/{id}/close/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Закрыть ОМ (IN_PROGRESS->CLOSED, FR-30) — требует event.manage и итог по КАЖДОМУ направлению (полный набор, не diff). НЕ идемпотентно: повторный вызов на уже-CLOSED — 422. 400 VALIDATION_ERROR на пропущенном/лишнем/дублирующемся направлении (details.missing_sectors/unknown_sectors/duplicate_sector). */
+        post: operations["security_event_close"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3138,6 +3223,24 @@ export interface components {
             /** Format: date-time */
             readonly ack_escalated_at: string | null;
         };
+        /**
+         * @description Story 18.6b: response shape for фактическое время назначения
+         *     (`PlacementAssignmentActual`, 18.3) — read-only, all fields, same
+         *     convention as `JournalEntrySerializer`.
+         */
+        PlacementAssignmentActual: {
+            readonly id: number;
+            readonly assignment: number;
+            /** Format: date-time */
+            readonly actual_start_at: string;
+            /** Format: date-time */
+            readonly actual_end_at: string;
+            readonly recorded_by: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
         Position: {
             code: string;
             name: string;
@@ -3165,6 +3268,19 @@ export interface components {
             category?: string | null;
             rank_index?: number;
             is_active?: boolean;
+        };
+        /**
+         * @description Story 18.6b: write-only request body for `POST .../actual-time/` —
+         *     thin pass-through to `record_assignment_actual_time()` (18.3); the
+         *     service itself owns all business validation (interval ordering,
+         *     is_current/CLOSED lifecycle) — this serializer validates only field
+         *     PRESENCE/TYPE, same division of labor as `JournalEntryCreateSerializer`.
+         */
+        RecordActualTimeRequest: {
+            /** Format: date-time */
+            actual_start_at: string;
+            /** Format: date-time */
+            actual_end_at: string;
         };
         /**
          * @description Story 17.7b: request body for `POST .../replace-departed/` — thin
@@ -3234,11 +3350,61 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
+        /**
+         * @description Story 18.6a: response shape for `SecurityEventArchiveSelector.full_history()`
+         *     (18.2) — a composite `Serializer` (not `ModelSerializer`, the selector
+         *     returns a plain dict spanning several models, not one row) wrapping
+         *     already-existing response serializers, same class of solution as
+         *     `AssignmentVersionReturnResponseSerializer` (16.8c).
+         */
+        SecurityEventArchive: {
+            event: components["schemas"]["SecurityEvent"];
+            checklist_items: components["schemas"]["ChecklistItem"][];
+            sector_posts: components["schemas"]["SectorPost"][];
+            staffing_demands: components["schemas"]["StaffingDemand"][];
+            journal_entries: components["schemas"]["JournalEntry"][];
+            closure_summaries: components["schemas"]["SecurityEventClosureSummary"][];
+            current_assignment_version: components["schemas"]["AssignmentVersionDetail"] | null;
+        };
+        /**
+         * @description Story 18.6a: write-only request body for `POST .../close/` — thin
+         *     pass-through to `close_security_event()` (18.1); the service itself
+         *     owns all business validation (sector coverage, duplicates, unknown
+         *     sectors, IN_PROGRESS lifecycle) — this serializer validates only field
+         *     PRESENCE/TYPE, same division of labor as `JournalEntryCreateSerializer`.
+         */
+        SecurityEventCloseRequest: {
+            summaries: components["schemas"]["SecurityEventSectorSummaryItemRequest"][];
+        };
+        /**
+         * @description Story 18.6a: response shape for итог направления (`SecurityEventClosureSummary`,
+         *     18.1) — read-only, all fields, same convention as `JournalEntrySerializer`
+         *     (persisted state, not recomputed on GET).
+         */
+        SecurityEventClosureSummary: {
+            readonly id: number;
+            readonly event: number;
+            readonly sector: string;
+            readonly summary: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
         SecurityEventCreateRequest: {
             object: number;
             title: string;
             /** Format: uuid */
             senior_employee_id?: string | null;
+        };
+        /**
+         * @description Story 18.6a: one element of `SecurityEventCloseSerializer.summaries`
+         *     — thin field-mapping, no business validation (that stays in
+         *     `close_security_event()`, 18.1).
+         */
+        SecurityEventSectorSummaryItemRequest: {
+            sector: string;
+            summary: string;
         };
         /**
          * @description * `DRAFT` - Черновик
@@ -3254,6 +3420,26 @@ export interface components {
          * @enum {string}
          */
         SecurityEventStatusCodeEnum: "DRAFT" | "BULLETIN" | "RECON" | "DEMAND" | "BROKERAGE" | "PLACEMENT" | "APPROVED" | "IN_PROGRESS" | "CLOSED" | "CANCELLED";
+        /**
+         * @description Story 18.6b: response shape for Налёт часов + отметка перегрузки
+         *     (`ServiceHours`, 18.4/18.5) — read-only, all fields. Same row/model
+         *     for both `service-hours` (day_hours/night_hours populated,
+         *     is_overloaded/overload_minutes at their defaults) and `overload`
+         *     (is_overloaded/overload_minutes populated) responses.
+         */
+        ServiceHours: {
+            readonly id: number;
+            readonly actual: number;
+            /** Format: decimal */
+            readonly day_hours: string;
+            /** Format: decimal */
+            readonly night_hours: string;
+            /** Format: date-time */
+            readonly computed_at: string;
+            readonly is_overloaded: boolean;
+            /** Format: decimal */
+            readonly overload_minutes: string;
+        };
         StaffingDemand: {
             readonly id: number;
             sector: string;
@@ -5228,6 +5414,75 @@ export interface operations {
             };
         };
     };
+    placement_assignment_actual_time: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordActualTimeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RecordActualTimeRequest"];
+                "multipart/form-data": components["schemas"]["RecordActualTimeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementAssignmentActual"];
+                };
+            };
+        };
+    };
+    placement_assignment_overload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceHours"];
+                };
+            };
+        };
+    };
+    placement_assignment_service_hours: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceHours"];
+                };
+            };
+        };
+    };
     operations_roles_list: {
         parameters: {
             query?: {
@@ -5323,6 +5578,27 @@ export interface operations {
             };
         };
     };
+    security_event_archive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityEventArchive"];
+                };
+            };
+        };
+    };
     security_event_bulletin: {
         parameters: {
             query?: never;
@@ -5367,6 +5643,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChecklistItem"][];
+                };
+            };
+        };
+    };
+    security_event_close: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecurityEventCloseRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SecurityEventCloseRequest"];
+                "multipart/form-data": components["schemas"]["SecurityEventCloseRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityEvent"];
                 };
             };
         };
