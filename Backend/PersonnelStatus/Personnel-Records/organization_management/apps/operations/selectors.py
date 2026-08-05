@@ -358,6 +358,22 @@ class DailySubmissionSelector:
         ).first()
 
     @staticmethod
+    def current_for_many(division_ids, business_date):
+        """{подразделение: действующая сдача} ОДНИМ запросом.
+
+        Пакетная форма current_for для свода по дереву: поимённый вызов на
+        каждый узел вернул бы число запросов, растущее с размером дерева, —
+        ровно ту зависимость, от которой умер донор. Узлы без сдачи в ответе
+        просто отсутствуют.
+        """
+        rows = OpsDailySubmission.objects.filter(
+            division_id__in=list(division_ids),
+            business_date=business_date,
+            is_current=True,
+        )
+        return {row.division_id: row for row in rows}
+
+    @staticmethod
     def previous_for(division_id, business_date):
         """Ближайшая ПРЕДЫДУЩАЯ текущая сдача (строго раньше даты) или None.
 

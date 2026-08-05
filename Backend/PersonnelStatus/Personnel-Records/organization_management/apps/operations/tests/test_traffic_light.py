@@ -88,6 +88,13 @@ class TestRed:
         assert result.drift is None
         assert result.late is False
 
+    def test_a_division_with_nobody_is_neutral_not_red(self, types, division):
+        # Красный зовёт дежурного разбираться; звать его к подразделению без
+        # людей значило бы требовать сдать пустоту. Одно правило со сводом.
+        result = light(division)
+        assert result.status == TrafficLightStatus.NEUTRAL.value
+        assert result.drift is None
+
     def test_submission_of_another_day_does_not_colour_this_one(
         self, types, division
     ):
