@@ -37,6 +37,7 @@ counts_in_staff) — расходиться нечему. Порядок кол�
 лечится оно заведением слота, а не подпоркой в расходе.
 """
 from dataclasses import dataclass
+from datetime import date
 
 # Код выводимого «в строю»: он не факт, а отсутствие фактов. Обязан
 # присутствовать в справочнике — иначе колонку некуда положить.
@@ -350,3 +351,106 @@ class StrengthReportService:
                 {"reason": "dismissed_in_slot", "employee_ids": sorted(dismissed)}
             )
         return result
+
+
+# ── Расход по СДАННОМУ дню ───────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class SubmittedExpense:
+    """Расход, воспроизведённый ИЗ СНИМКА сданного дня.
+
+    Полей меньше, чем у живой строки расхода, и это не упрощение, а честность:
+    снимок хранит список и факты, но НЕ хранит штат, вакансии и приданных
+    («+N»). Подмешать их живыми значило бы выдать наполовину сегодняшние числа
+    за сданные вчера — а весь смысл сдачи в том, что она не меняется задним
+    числом. Штат и вакансии остаются у живого расхода, где они и живут.
+
+    version/submitted_at идут в ответе не для красоты: два читателя одного дня
+    обязаны понимать, ту ли самую версию они видят.
+    """
+
+    division_id: int
+    business_date: object
+    version: int
+    submitted_at: object
+    late: bool
+    list_total: int
+    off_list: int
+    columns: dict
+
+
+def expense_from_snapshot(snapshot, business_date, catalog):
+    """Список и колонки по снимку: {list_total, off_list, columns}.
+
+    Чистая функция над снимком — ни ORM, ни часов, как и весь остальной
+    модуль. Знаменатель — roster снимка целиком; победитель каждого
+    считается тем же resolve_status, что и у живого расхода, поэтому «сданные»
+    и «живые» числа одного дня сравнимы напрямую (на этом стоит светофор).
+
+    Инвариант Σ колонок == Список держится ПОСТРОЕНИЕМ — счётчик списка
+    растёт ровно там же, где счётчик колонки. Отдельной проверки суммы здесь
+    нет намеренно: её снятие не роняет ни одного теста (проверено красной
+    пробой), потому что нарушить её нечем, а второй владелец одного правила
+    живёт лишь до первого расхождения с настоящим. Остаётся один гард —
+    колонка типа вне порядка колонок, то есть противоречивый справочник.
+    """
+    columns_order = catalog.columns_in_order()
+    columns = {column: 0 for column in columns_order}
+    facts = {}
+    for row in snapshot.get("rows", []):
+        facts.setdefault(row["employee_id"], []).append(
+            {
+                "status_type_code": row["status_type_code"],
+                "date_start": date.fromisoformat(row["date_start"]),
+                "date_end": date.fromisoformat(row["date_end"]),
+            }
+        )
+
+    list_total = off_list = 0
+    for member in snapshot.get("roster", []):
+        employee_id = member["employee_id"]
+        winner = resolve_status(facts.get(employee_id, ()), business_date, catalog)
+        if not catalog.counts_in_staff.get(winner, True):
+            off_list += 1
+            continue
+        column = catalog.column[winner]
+        if column not in columns:
+            raise AssertionError(
+                f"колонка {column!r} типа {winner!r} вне порядка колонок"
+            )
+        columns[column] += 1
+        list_total += 1
+    return {"list_total": list_total, "off_list": off_list, "columns": columns}
+
+
+def submitted_expense(division_id, business_date):
+    """Расход подразделения ЗА СДАННЫЙ день или None, если день не сдан.
+
+    Читает ДЕЙСТВУЮЩУЮ версию: вытесненная поправкой больше не расход, а
+    история, и отдавать её значило бы показывать отменённое заявление.
+    None здесь не отказ, а ответ «дня нет» — решение, чем он становится на
+    HTTP (404 или пустая страница), принимает вьюха.
+
+    Числа берутся ТОЛЬКО из снимка. Живых данных функция не читает вовсе —
+    иначе «сданный вчера расход» менялся бы от каждой сегодняшней правки, и
+    подпись под ним ничего не значила бы.
+    """
+    from organization_management.apps.operations.selectors import (
+        DailySubmissionSelector,
+        StatusTypeSelector,
+    )
+
+    submission = DailySubmissionSelector.current_for(division_id, business_date)
+    if submission is None:
+        return None
+    catalog = StatusCatalog.from_rows(StatusTypeSelector.catalog_rows())
+    numbers = expense_from_snapshot(submission.snapshot, business_date, catalog)
+    return SubmittedExpense(
+        division_id=division_id,
+        business_date=business_date,
+        version=submission.version,
+        submitted_at=submission.submitted_at,
+        late=submission.late,
+        **numbers,
+    )

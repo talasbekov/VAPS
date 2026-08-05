@@ -51,8 +51,13 @@ def types():
     смены победителя.
     """
     seed_types()
+    # Своя колонка каждому типу: seed_types складывает их все в одну ("X"), и
+    # на таком справочнике «победитель занял свою колонку» не отличить от
+    # «победитель занял чужую».
     for code, priority in [("VACATION", 20), ("DUTY", 70), ("STUDY", 80)]:
-        StatusType.objects.filter(code=code).update(priority=priority)
+        StatusType.objects.filter(code=code).update(
+            priority=priority, report_column_code=code
+        )
     StatusType.objects.get_or_create(
         code=DERIVED_IN_SERVICE,
         defaults={
