@@ -20,6 +20,9 @@ from django.db import transaction
 
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations import audit_service
+from organization_management.apps.operations.amendment_enforcement import (
+    enforce_amendment_on_retro_edit,
+)
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.conflict_matrix import detect_conflicts
 from organization_management.apps.operations.exceptions import DomainError
@@ -232,12 +235,18 @@ def create_status(
     source_ref=None,
     override=False,
     override_reason="",
+    amendment_reason="",
 ):
     """Создать статус, принадлежащий оператору, со всеми валидациями.
 
     source жёстко USER: строки проекции пишет не этот путь. При override=True
     мягкий (409) конфликт обходится и записывается StatusOverride; override
     никогда не обходит жёсткий (422), а пустая причина — 400.
+
+    `amendment_reason` нужен ТОЛЬКО когда интервал накрывает сданный день:
+    новая строка задним числом меняет уже заявленный расход, и сданное
+    обязано быть вытеснено поправкой (см. amendment_enforcement). Без
+    причины такая правка — 422, обычная правка причины не требует.
     """
     _require_actor(actor)
     employee = _lock_employee(employee_id)
@@ -310,6 +319,16 @@ def create_status(
             # почему пересечение сочли допустимым.
             reason=override_reason if (override and bypassed_conflicts) else "",
         )
+        # В ТОМ ЖЕ savepoint, что и сама строка: поправка обязана лечь одним
+        # коммитом с правкой, иначе между ними существует момент, в котором
+        # сданный день уже не соответствует данным, а объяснения ещё нет.
+        enforce_amendment_on_retro_edit(
+            employee_id,
+            [(date_start, date_end)],
+            actor=actor,
+            reason=amendment_reason,
+            triggered_by_status_id=status.pk,
+        )
     return status
 
 
@@ -366,6 +385,7 @@ def update_status(
     date_end=None,
     comment=None,
     document_basis=None,
+    amendment_reason="",
 ):
     """Правка оператором своей строки: интервал и метаданные.
 
@@ -383,6 +403,12 @@ def update_status(
     Возвращает перечитанную под блокировкой строку — переданный объект НЕ
     мутируется (он мог быть устаревшим; его состояние не источник правды).
     Так же ведёт себя cancel_status.
+
+    Поправка сданного требуется только при СМЕНЕ ДАТ — тем же доводом, что и
+    перепроверка интервала: комментарий и основание расхода не меняют, и
+    вытеснять сданное заявление из-за них было бы поправкой ни о чём.
+    Затронуты ОБА интервала, старый и новый: правка снимает статус с одних
+    дней и ставит на другие, и заявление неверно у тех и у других.
     """
     _require_actor(actor)
     employee, locked = _lock_for_edit(status)
@@ -412,6 +438,7 @@ def update_status(
     # Снимок «до» снимается ДО первого setattr: после него locked уже несёт
     # новые значения, и «до» с «после» стали бы одинаковыми.
     before = audit_service.status_snapshot(locked)
+    old_interval = (locked.date_start, locked.date_end)
 
     changed = []
     for field, value in (
@@ -439,6 +466,15 @@ def update_status(
                 old_value=before,
                 new_value=audit_service.status_snapshot(locked),
             )
+            new_interval = (locked.date_start, locked.date_end)
+            if new_interval != old_interval:
+                enforce_amendment_on_retro_edit(
+                    locked.employee_id,
+                    [old_interval, new_interval],
+                    actor=actor,
+                    reason=amendment_reason,
+                    triggered_by_status_id=locked.pk,
+                )
     # Правка, ничего не изменившая (PATCH без полей), события НЕ пишет:
     # журнал рассказывает о случившемся, а «до» и «после» тут совпадают —
     # такая строка засоряла бы ленту событием без содержания.
@@ -451,7 +487,7 @@ _SECONDMENT_LEG_CODES = ("DETACHED", "ATTACHED")
 
 
 @transaction.atomic
-def complete_status_early(status, *, actor, actual_end):
+def complete_status_early(status, *, actor, actual_end, amendment_reason=""):
     """Закрыть ИДУЩИЙ (ACTIVE) статус фактической датой окончания.
 
     Досрочно закрывается только ACTIVE: не начавшийся статус не случился —
@@ -501,6 +537,9 @@ def complete_status_early(status, *, actor, actual_end):
             message="Дата завершения должна быть позже даты начала статуса.",
         )
     before = audit_service.status_snapshot(locked)
+    # Освобождаются дни [фактический конец, прежний конец) — только они и
+    # меняют расход; дни до фактического конца статус как нёс, так и несёт.
+    released = (actual_end, locked.date_end)
     locked.date_end = actual_end
     # update_fields, а не голый save(): голый переписал бы source и
     # генерируемый period чужими значениями.
@@ -513,11 +552,26 @@ def complete_status_early(status, *, actor, actual_end):
         old_value=before,
         new_value=audit_service.status_snapshot(locked),
     )
+    enforce_amendment_on_retro_edit(
+        locked.employee_id,
+        [released],
+        actor=actor,
+        reason=amendment_reason,
+        triggered_by_status_id=locked.pk,
+    )
     return locked
 
 
 @transaction.atomic
-def extend_status(status, *, actor, new_date_end, override=False, override_reason=""):
+def extend_status(
+    status,
+    *,
+    actor,
+    new_date_end,
+    override=False,
+    override_reason="",
+    amendment_reason="",
+):
     """Продлить статус строго более поздней датой конца.
 
     Продление — ОТДЕЛЬНАЯ операция, а не частный случай правки: оно
@@ -591,6 +645,9 @@ def extend_status(status, *, actor, new_date_end, override=False, override_reaso
     )
 
     before = audit_service.status_snapshot(locked)
+    # Добавляются дни [прежний конец, новый конец) — прежние дни статус нёс и
+    # раньше, и их заявление продлением не изменилось.
+    added = (locked.date_end, new_date_end)
     locked.date_end = new_date_end
     # Savepoint вокруг гоночной записи: продление может упереться в
     # excl_hard_status_overlap, и IntegrityError не должен отравлять
@@ -615,6 +672,13 @@ def extend_status(status, *, actor, new_date_end, override=False, override_reaso
             new_value=audit_service.status_snapshot(locked),
             reason=override_reason if (override and bypassed_conflicts) else "",
         )
+        enforce_amendment_on_retro_edit(
+            locked.employee_id,
+            [added],
+            actor=actor,
+            reason=amendment_reason,
+            triggered_by_status_id=locked.pk,
+        )
     return locked
 
 
@@ -627,6 +691,10 @@ def cancel_status(status, *, actor, reason):
     строку отсекает раньше общий гард в _lock_for_edit, поэтому здешняя
     проверка владеет ровно ACTIVE/COMPLETED. cancelled_at/by/reason пишутся
     один раз и на уровне сервиса не переписываются.
+
+    Отдельного `amendment_reason` здесь НЕТ: причина отмены обязательна и так,
+    и она же объясняет поправку сданного дня. Второе поле «причина» на одном
+    вызове означало бы, что у отмены бывают две разные правды.
     """
     _require_actor(actor)
     if not (reason or "").strip():
@@ -665,5 +733,15 @@ def cancel_status(status, *, actor, reason):
         old_value=before,
         new_value=audit_service.status_snapshot(locked),
         reason=reason,
+    )
+    # Отменённая строка перестаёт быть фактом на ВСЁМ своём интервале —
+    # отсюда и затронутые дни. Отменяется только не начавшийся статус, но
+    # «не начавшийся» не значит «не сданный»: день на завтра сдают штатно.
+    enforce_amendment_on_retro_edit(
+        locked.employee_id,
+        [(locked.date_start, locked.date_end)],
+        actor=actor,
+        reason=reason,
+        triggered_by_status_id=locked.pk,
     )
     return locked

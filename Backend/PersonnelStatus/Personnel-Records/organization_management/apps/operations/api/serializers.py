@@ -220,6 +220,10 @@ class StatusUpdateSerializer(serializers.Serializer):
     ошибка клиента, и отвечать на неё 200-м значило бы подтверждать
     несделанную работу.
 
+    `amendment_reason` — не правка, а ОБЪЯСНЕНИЕ правки: он требуется, только
+    если интервал задевает сданный день, и сам по себе изменением не
+    считается (тело из одной причины — то же пустое тело).
+
     Неизменяемые поля перечислены явно и при попытке их прислать дают 400 с
     указанием поля. Молчаливо игнорировать их (штатное поведение DRF для
     неизвестных ключей) нельзя: клиент, отправивший смену status_type_code,
@@ -244,6 +248,9 @@ class StatusUpdateSerializer(serializers.Serializer):
     document_basis = serializers.CharField(
         required=False, allow_blank=True, max_length=255
     )
+    amendment_reason = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
 
     def validate(self, attrs):
         raw = self.initial_data if isinstance(self.initial_data, dict) else {}
@@ -252,7 +259,7 @@ class StatusUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {name: "Поле неизменяемо." for name in forbidden}
             )
-        if not attrs:
+        if not {name: value for name, value in attrs.items() if name != "amendment_reason"}:
             raise serializers.ValidationError(
                 "Пустое тело правки: укажите хотя бы одно изменяемое поле."
             )
