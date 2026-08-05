@@ -315,6 +315,82 @@ async function stubApi(page: Page) {
     },
   )
 
+  // Story 18.6d — опрос по итогам (18.6c): actual-time/service-hours/overload,
+  // три последовательных шага. Стаб не гейтит is_current/CLOSED (е2e тестирует
+  // фронт-поведение, не бэк-инварианты — те уже покрыты make gate, тот же
+  // принцип, что 17.7e's journal-entries-стаб).
+  const opros = new Map<
+    number,
+    { actual_start_at: string; actual_end_at: string; day_hours?: string }
+  >()
+
+  await page.route(
+    /\/api\/operations\/placement-assignments\/(\d+)\/actual-time\/$/,
+    async (route) => {
+      const id = Number(
+        route.request().url().match(/placement-assignments\/(\d+)\/actual-time/)?.[1],
+      )
+      const body = JSON.parse(route.request().postData() ?? '{}') as {
+        actual_start_at: string
+        actual_end_at: string
+      }
+      opros.set(id, body)
+      await route.fulfill({
+        json: {
+          id,
+          assignment: id,
+          actual_start_at: body.actual_start_at,
+          actual_end_at: body.actual_end_at,
+          recorded_by: 'placement-operator-e2e',
+          created_at: '2026-08-04T11:00:00Z',
+          updated_at: '2026-08-04T11:00:00Z',
+        },
+      })
+    },
+  )
+
+  await page.route(
+    /\/api\/operations\/placement-assignments\/(\d+)\/service-hours\/$/,
+    async (route) => {
+      const id = Number(
+        route.request().url().match(/placement-assignments\/(\d+)\/service-hours/)?.[1],
+      )
+      const state = opros.get(id)!
+      state.day_hours = '8.00'
+      await route.fulfill({
+        json: {
+          id,
+          actual: id,
+          day_hours: '8.00',
+          night_hours: '0.00',
+          computed_at: '2026-08-04T11:01:00Z',
+          is_overloaded: false,
+          overload_minutes: '0.00',
+        },
+      })
+    },
+  )
+
+  await page.route(
+    /\/api\/operations\/placement-assignments\/(\d+)\/overload\/$/,
+    async (route) => {
+      const id = Number(
+        route.request().url().match(/placement-assignments\/(\d+)\/overload/)?.[1],
+      )
+      await route.fulfill({
+        json: {
+          id,
+          actual: id,
+          day_hours: '8.00',
+          night_hours: '0.00',
+          computed_at: '2026-08-04T11:01:00Z',
+          is_overloaded: false,
+          overload_minutes: '0.00',
+        },
+      })
+    },
+  )
+
   return { versions }
 }
 
@@ -370,6 +446,19 @@ test('полный цикл: список → деталь → подать → 
   // неоднозначным, скоуп на таблицу назначений сохраняет исходную
   // проверку узкой.
   await expect(page.getByRole('table').getByText(/2026/)).toBeVisible()
+
+  // 7. Story 18.6d — опрос по итогам (18.6c): три последовательных шага.
+  await page.getByLabel(/^Начало факта:/).fill('2026-08-04T09:00')
+  await page.getByLabel(/^Окончание факта:/).fill('2026-08-04T17:00')
+  await page.getByRole('button', { name: 'Записать факт' }).click()
+  await expect(page.getByRole('button', { name: 'Вычислить налёт' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Вычислить налёт' }).click()
+  await expect(page.getByText(/ч\. день/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Проверить перегрузку' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Проверить перегрузку' }).click()
+  await expect(page.getByText(/Перегрузка: /)).toBeVisible()
 })
 
 test('утверждение с реальным конфликтом требует override через ConflictDialog', async ({
