@@ -27,6 +27,8 @@ Scope (15.1): models + migration ONLY — без API/services/RBAC, буквал
 реальный FK, 14.1's Scope Decision) — НЕ эта стори, эта стори её не строит.
 """
 
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -775,7 +777,16 @@ class ServiceHours(TimeStampedModel):
     Epic 19): ночь = 22:00–06:00 местного времени
     (`settings.VAPS_LOCAL_TIMEZONE`), стандартная трудовая норма.
     Подтвердить с Bratan, если Epic 19's справочник определит другую
-    границу."""
+    границу.
+
+    `is_overloaded`/`overload_minutes` (Story 18.5, FR-32's «превышение
+    лимита Поста» half): per-instance сравнение `(day_hours+night_hours)*60`
+    с `Post.max_service_minutes` (14.2) через `actual.assignment.post`.
+    Отдельная явная функция (`flag_post_overload()`), НЕ вычисляется
+    автоматически внутри `compute_service_hours()` — тот же принцип
+    разделения, что 18.1/18.2 (закрытие ≠ архив). Агрегатный >3-дневный
+    перегрузка-детектор (FR-32's другая половина) — Story 19.2, не это
+    поле."""
 
     actual = models.OneToOneField(
         PlacementAssignmentActual,
@@ -785,6 +796,10 @@ class ServiceHours(TimeStampedModel):
     day_hours = models.DecimalField(max_digits=6, decimal_places=2)
     night_hours = models.DecimalField(max_digits=6, decimal_places=2)
     computed_at = models.DateTimeField()
+    is_overloaded = models.BooleanField(default=False)
+    overload_minutes = models.DecimalField(
+        max_digits=7, decimal_places=2, default=Decimal("0.00")
+    )
 
     class Meta:
         db_table = "ops_service_hours"
@@ -794,6 +809,10 @@ class ServiceHours(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(day_hours__gte=0) & models.Q(night_hours__gte=0),
                 name="ck_service_hours_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(overload_minutes__gte=0),
+                name="ck_service_hours_overload_minutes_non_negative",
             ),
         ]
 

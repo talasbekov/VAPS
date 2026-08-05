@@ -2325,3 +2325,65 @@ def compute_service_hours(actual, *, actor):
             },
         )
     return hours
+
+
+def flag_post_overload(service_hours, *, actor):
+    """Story 18.5 (FR-32's «превышение лимита Поста» half): сравнивает
+    `ServiceHours.day_hours+night_hours` (18.4) с `Post.max_service_minutes`
+    (14.2) через `service_hours.actual.assignment.post` — явный вызов, НЕ
+    авто-триггер из `compute_service_hours()` (тот же принцип разделения,
+    что 18.1/18.2's закрытие vs архив). Тот же двойной гейт, что 18.3/18.4
+    (`is_current` + `event.status_code == CLOSED`). Граница — строго
+    больше лимита (`>`), не `>=`: факт ровно на лимите — не перегрузка."""
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    with transaction.atomic():
+        service_hours = (
+            ServiceHours.objects.select_for_update()
+            .select_related(
+                "actual__assignment__post",
+                "actual__assignment__version",
+                "actual__assignment__version__event",
+            )
+            .get(pk=service_hours.pk)
+        )
+        version = service_hours.actual.assignment.version
+        if not version.is_current:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Перегрузку можно отметить только для актуальной версии.",
+            )
+        if version.event.status_code != SecurityEvent.StatusCode.CLOSED:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Перегрузку можно отметить только после закрытия события.",
+            )
+        post = service_hours.actual.assignment.post
+        total_minutes = (service_hours.day_hours + service_hours.night_hours) * 60
+        limit_minutes = Decimal(post.max_service_minutes)
+        is_overloaded = total_minutes > limit_minutes
+        overload_minutes = (
+            (total_minutes - limit_minutes) if is_overloaded else Decimal("0.00")
+        )
+        old_value = {
+            "is_overloaded": service_hours.is_overloaded,
+            "overload_minutes": str(service_hours.overload_minutes),
+        }
+        service_hours.is_overloaded = is_overloaded
+        service_hours.overload_minutes = overload_minutes
+        service_hours.save(update_fields=["is_overloaded", "overload_minutes"])
+        record(
+            actor=actor,
+            action="POST_OVERLOAD_FLAGGED",
+            entity_type="service_hours",
+            entity_id=uuid.UUID(int=service_hours.pk),
+            old_value=old_value,
+            new_value={
+                "is_overloaded": service_hours.is_overloaded,
+                "overload_minutes": str(service_hours.overload_minutes),
+                "post_max_service_minutes": post.max_service_minutes,
+            },
+        )
+    return service_hours
