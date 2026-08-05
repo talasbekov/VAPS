@@ -43,9 +43,17 @@ apps/operations/submissions/models/daily_submission.py).
   структуру (в источнике UUID); FK нет намеренно, как и во всём разделе.
 - submitted_by — строка (str(User.pk) или системная метка), как актор журнала.
 """
+from datetime import time
+
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
 from organization_management.apps.operations.models import TimeStampedModel
+
+# Контрольный час по умолчанию. Живёт здесь, рядом со справочником, который
+# его хранит: у настройки один дефолт, и второе его определение (например, в
+# сервисе сдачи) разошлось бы с этим при первой же правке.
+DEFAULT_CONTROL_HOUR = time(17, 0)
 
 
 class OpsDailySubmission(TimeStampedModel):
@@ -136,3 +144,55 @@ class OpsDailySubmission(TimeStampedModel):
 
     def __str__(self):
         return f"{self.division_id} {self.business_date} v{self.version}"
+
+
+class OpsSubmissionControlSettings(TimeStampedModel):
+    """Справочник контроля сдачи — ОДНА строка на весь раздел.
+
+    До этого среза контрольный час жил константой в сервисе сдачи, и
+    «перенести дедлайн на час» означало выкатку кода. Здесь он становится
+    настройкой: строка одна, правится админом справочников, и её правка
+    немедленно меняет отметку опоздания у новых сдач (сданное задним числом не
+    переписывается — `late` уже записан в строке сдачи).
+
+    СИНГЛТОН ДЕРЖИТ БАЗА, а не соглашение: `singleton_key` уникален И
+    прибит CHECK'ом к единице, поэтому строк физически не может стать две.
+    Одной уникальности мало — она разрешила бы «по строке на ключ», то есть
+    сколько угодно наборов настроек, и раздел молча читал бы первый попавшийся.
+
+    Отличия от источника:
+    - `required_division_ids` — массив ЦЕЛЫХ (старое дерево int-pk), не UUID;
+      FK нет, как и во всём разделе.
+    - поля `default_notify_recipient` НЕТ: линия уведомлений не портирована,
+      и заводить настройку без единого читателя (да ещё с ограничением,
+      которое сторожит непрочитанное значение) значило бы обещать поведение,
+      которого в разделе не существует. Придёт рассылка — придёт и поле.
+    """
+
+    # Ключ синглтона: не «идентификатор настроек», а замок на их количество.
+    singleton_key = models.PositiveSmallIntegerField(
+        default=1, unique=True, editable=False
+    )
+    # Порог по ЛОКАЛЬНОМУ времени раздела. Это настройка, а не показание
+    # часов: сервис сравнивает с ней момент сдачи (Clock), а не наоборот.
+    control_hour = models.TimeField(default=DEFAULT_CONTROL_HOUR)
+    # «Необходимые управления»: плоские id подразделений старого дерева.
+    # Пустой список — законное состояние «никто не обязан», а не «настройки
+    # не заполнены»: блокировка завтрашнего дня из пустого списка не выводится.
+    required_division_ids = ArrayField(
+        models.IntegerField(), default=list, blank=True
+    )
+
+    class Meta:
+        db_table = "ops_submission_control_settings"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(singleton_key=1),
+                name="chk_ops_control_settings_singleton",
+            ),
+        ]
+        verbose_name = "Настройки контроля сдачи"
+        verbose_name_plural = "Настройки контроля сдачи"
+
+    def __str__(self):
+        return f"control_hour={self.control_hour}"

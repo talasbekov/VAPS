@@ -28,7 +28,7 @@ savepoint вокруг гоночной вставки, актор — стро�
   сдачи читается тем же разрезом entity_type+entity_id, что и лента статуса.
   Подразделение при этом не теряется — оно в снимке события.
 """
-from datetime import time, timedelta
+from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -43,12 +43,9 @@ from organization_management.apps.operations.models_submission import (
 from organization_management.apps.operations.selectors import (
     DailySubmissionSelector,
     DivisionTreeSelector,
+    SubmissionControlSettingsSelector,
 )
 from organization_management.apps.operations.snapshot import build_division_snapshot
-
-# Контрольный час по умолчанию: до появления справочника настроек он живёт
-# здесь одной константой, а не литералом на месте сравнения.
-DEFAULT_CONTROL_HOUR = time(17, 0)
 
 
 def _require_actor(actor):
@@ -173,7 +170,15 @@ def submit_day(
     snapshot = build_division_snapshot(division_id, business_date)
     previous = DailySubmissionSelector.previous_for(division_id, business_date)
     event = _compute_event(snapshot, previous)
-    late = _is_late(DEFAULT_CONTROL_HOUR if control_hour is None else control_hour)
+    # Контрольный час — из СПРАВОЧНИКА, а не из константы кода: перенести
+    # дедлайн должен уметь администратор, а не выкатка. Параметр остаётся
+    # старшим (им пользуются тесты и будущий перенос данных), и когда он
+    # передан, справочник не читается вовсе — лишний запрос на каждой сдаче.
+    late = _is_late(
+        SubmissionControlSettingsSelector.control_hour()
+        if control_hour is None
+        else control_hour
+    )
 
     # Вложенный savepoint: параллельная сдача упрётся в частичное
     # ограничение текущей версии; savepoint откатывается чисто, и

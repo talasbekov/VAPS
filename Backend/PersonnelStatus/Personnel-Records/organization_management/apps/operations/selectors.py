@@ -18,6 +18,7 @@ from organization_management.apps.operations.models_status import (
 )
 from organization_management.apps.operations.models_submission import (
     OpsDailySubmission,
+    OpsSubmissionControlSettings,
 )
 from organization_management.apps.staff_unit.models import StaffUnit
 
@@ -412,6 +413,44 @@ class DailySubmissionSelector:
         if lock:
             queryset = queryset.select_for_update()
         return queryset.order_by("-version").first()
+
+
+class SubmissionControlSettingsSelector:
+    """Чтение справочника контроля сдачи — единственный канал.
+
+    Отступление от общей манеры селекторов раздела (никакого сужения по
+    актору): это одна глобальная строка настроек, и вопрос «что мне видно» к
+    ней не применим — контрольный час у всех один.
+
+    `get_or_create`, а не `get`: строку сеет миграция, поэтому обычно тут
+    чтение, но пропажа строки (перенос данных, ручная чистка) не должна
+    ронять сдачу дня 500-й — раздел самолечится дефолтом. Расхождения при
+    этом не возникает: дефолт один и живёт в модели.
+    """
+
+    @classmethod
+    def get(cls):
+        settings, _ = OpsSubmissionControlSettings.objects.get_or_create(
+            singleton_key=1
+        )
+        return settings
+
+    @classmethod
+    def control_hour(cls):
+        return cls.get().control_hour
+
+    @classmethod
+    def required_division_ids(cls):
+        """Список «необходимых управлений».
+
+        Копии здесь НЕТ намеренно: `get()` читает строку заново на каждый
+        вызов, поэтому список и так принадлежит одноразовому объекту —
+        обёртка `list(...)` не роняла ни одного теста (проверено красной
+        пробой) и была бы вторым владельцем правила о свежести. Владелец
+        один — запрос; сторожит его тест «правка видна следующему вызову»,
+        и он же покраснеет у того, кто вздумает закешировать строку.
+        """
+        return cls.get().required_division_ids
 
 
 class OpsAuditLogSelector:
