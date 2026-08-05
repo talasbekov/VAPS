@@ -752,3 +752,159 @@ def cancel_status(status, *, actor, reason, amend=True):
             triggered_by_status_id=locked.pk,
         )
     return locked
+
+
+@transaction.atomic
+def resolve_placeholder(
+    placeholder,
+    *,
+    resolved_type_code,
+    date_start,
+    date_end,
+    actor,
+    reason,
+    override=False,
+    override_reason="",
+):
+    """Разрешить строку-ЗАГЛУШКУ («уточняется») реальным статусом.
+
+    Заглушка означает не факт, а его отсутствие: обстановка на день была
+    неизвестна, и в расход человек попал колонкой «уточняется». Когда правда
+    выясняется, заглушку НЕ правят — её закрывают и на её место кладут
+    реальный статус. Правка превратила бы «мы не знали» в «мы знали и
+    ошиблись», и след того, что день был неясен, исчез бы.
+
+    Операция ЕДИНАЯ: закрытие и создание идут одной транзакцией и одним
+    событием журнала. Разложенная на «отменил» плюс «создал», она читалась бы
+    как два несвязанных решения оператора, а не как разрешение неясности.
+
+    ПРИЧИНА (санкция) ОБЯЗАТЕЛЬНА ВСЕГДА — в отличие от обычной правки, где
+    она требуется, только если задет сданный день. Разрешение заглушки по
+    определению утверждает правду задним числом, и утверждение без основания
+    здесь не бывает; она же уходит в cancelled_reason закрытой строки и
+    санкцией в поправку сданного.
+
+    ЗАГЛУШКУ ЗАДАЁТ СПРАВОЧНИК (is_placeholder), а не литерал в коде: в
+    источнике код «уточняется» прибит константой, здесь словарь типов заводит
+    администратор, и сервис, знающий одно имя наизусть, не признал бы
+    заведённую заглушку. Разрешение обязано давать РЕАЛЬНЫЙ статус: заглушка
+    вместо заглушки не разрешает ничего, только обнуляет след.
+
+    Интервал разрешения СВОЙ и не обязан совпадать с интервалом заглушки:
+    выяснилось может и то, что наряд был короче. Он проверяется целиком и
+    прогоняется через детект конфликтов с исключением самой заглушки — иначе
+    она конфликтовала бы с собственной заменой.
+
+    Отказы: 400 (пустой актор, причина или причина обхода), 404 (строки нет),
+    422 (не заглушка, разрешение в заглушку, отменённая строка, интервал,
+    жёсткое пересечение), 409 (мягкое пересечение без обхода).
+    """
+    _require_actor(actor)
+    if not (reason or "").strip():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"field": "reason"},
+            message="При разрешении заглушки обязательна непустая причина.",
+        )
+    # Причина обхода — до более дорогих проверок, тот же порядок, что всюду.
+    if override and not (override_reason or "").strip():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"field": "override_reason"},
+            message="При override обязательна непустая причина.",
+        )
+    employee, locked = _lock_for_edit(placeholder)
+    assert_employee_status_editable(locked.employee_id)
+    # Гарда «уже отменённая» здесь НЕТ: её единственный владелец —
+    # _lock_for_edit, и повторное разрешение упирается в него же.
+    if not _resolve_status_type(locked.status_type_code).is_placeholder:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"status_type_code": locked.status_type_code},
+            message="Ретро-заменой разрешается только строка-заглушка.",
+        )
+    resolved_type = _resolve_status_type(resolved_type_code)
+    if resolved_type.is_placeholder:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"resolved_type_code": resolved_type_code},
+            message="Разрешение должно давать реальный статус, а не заглушку.",
+        )
+    _validate_interval(
+        date_start=date_start,
+        date_end=date_end,
+        employee=employee,
+        status_type=resolved_type,
+    )
+    # Заглушку исключаем из периметра: без этого она пересекалась бы с
+    # собственной заменой и разрешение было бы невозможно в принципе.
+    bypassed_conflicts = _assert_no_conflict(
+        employee_id=locked.employee_id,
+        status_type_code=resolved_type_code,
+        date_start=date_start,
+        date_end=date_end,
+        exclude_pk=locked.pk,
+        override=override,
+    )
+
+    before = audit_service.status_snapshot(locked)
+    locked.cancelled_at = Clock.now()
+    locked.cancelled_by = actor
+    locked.cancelled_reason = reason
+    resolved = OpsEmployeeStatus(
+        employee_id=locked.employee_id,
+        status_type_code=resolved_type_code,
+        date_start=date_start,
+        date_end=date_end,
+        source=OpsEmployeeStatus.Source.USER,
+        created_by=actor,
+    )
+    # Savepoint вокруг гоночной записи: замена может упереться в
+    # excl_hard_status_overlap, и IntegrityError не должен отравлять
+    # транзакцию вызывающего. Закрытие, вставка, обход и событие — вместе:
+    # разрешение либо состоялось целиком, либо не состоялось.
+    with transaction.atomic():
+        locked.save(
+            update_fields=[
+                "cancelled_at",
+                "cancelled_by",
+                "cancelled_reason",
+                "updated_at",
+            ]
+        )
+        resolved.save()
+        if override and bypassed_conflicts:
+            StatusOverride.objects.create(
+                status=resolved,
+                employee_id=locked.employee_id,
+                status_type_code=resolved_type_code,
+                reason=override_reason,
+                conflicts=_conflict_details(bypassed_conflicts),
+                created_by=actor,
+            )
+        audit_service.record(
+            actor=actor,
+            action=audit_service.STATUS_CLARIFICATION_RESOLVED,
+            entity_type=audit_service.ENTITY_STATUS,
+            # Лента ведётся по ЗАГЛУШКЕ: именно её судьбу ищет тот, кто
+            # разбирает, чем кончилась неясность. У созданной строки своя
+            # история начинается этим же событием через old/new.
+            entity_id=locked.pk,
+            old_value=before,
+            new_value=audit_service.status_snapshot(resolved),
+            reason=reason,
+        )
+        # Затронуты ОБА интервала: заглушка перестала накрывать свои дни, а
+        # разрешение накрыло свои. Совпадать они не обязаны.
+        enforce_amendment_on_retro_edit(
+            locked.employee_id,
+            [(locked.date_start, locked.date_end), (date_start, date_end)],
+            actor=actor,
+            reason=reason,
+            triggered_by_status_id=resolved.pk,
+        )
+    return resolved
