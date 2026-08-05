@@ -805,6 +805,7 @@ development_status:
   # selector only; 19.4b (API) and 19.4c+ (frontend) created when their
   # turn comes.
   19-4-календарь-сотрудник-месяц: done
+  19-4b-api-месячный-календарь: done
   19-5-календарь-подразделение-дни: backlog
   19-6-налёт-часов-в-карточке: backlog
   19-7-нагрузочные-тесты-дедлайн-17-00: backlog
