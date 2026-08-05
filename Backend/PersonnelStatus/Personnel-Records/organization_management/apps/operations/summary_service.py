@@ -31,6 +31,8 @@ apps/operations/submissions/services/summary_service.py).
   entity_id сводки — подразделение, что расходится с его же событием сдачи;
   здесь ось журнала одна для обеих).
 """
+from dataclasses import dataclass
+
 from django.db import transaction
 
 from organization_management.apps.operations import audit_service
@@ -253,3 +255,89 @@ def assemble_summary(
         | {"sources": _sources_compact(sources)},
     )
     return summary
+
+
+FRESH = "FRESH"
+STALE = "STALE"
+
+
+@dataclass(frozen=True)
+class SummaryFreshness:
+    """Свежесть сводки — ВЫВОДИТСЯ, а не хранится.
+
+    Хранимый флаг пришлось бы кому-то гасить при каждой поправке любого
+    ребёнка: раздел писал бы в чужую строку по чужому поводу, а пропущенное
+    гашение оставляло бы сводку «свежей» навсегда. Здесь же протухание — это
+    просто РАСХОЖДЕНИЕ пинов с текущим состоянием, и увидит его любой
+    читатель, ничего не записав.
+
+    Три оси расхождения, и различать их обязательно — они требуют разного:
+    `superseded` — ребёнок поправил свой день (пересобрать), `missing` — у
+    запиненного ребёнка не осталось действующей версии (разбираться с
+    ребёнком), `unpinned` — появился обязанный ребёнок, которого при сборке
+    не было (он должен сдать). Свернув их в один флаг, раздел сказал бы
+    «пересоберите» там, где пересборка ничего не изменит.
+    """
+
+    status: str
+    superseded: list
+    missing: list
+    unpinned: list
+
+
+def summary_freshness(division_id, business_date):
+    """Свежесть действующей сводки; None — сводки нет.
+
+    None означает именно «сводки нет», а не «свежа»: действующей строки может
+    не быть вовсе, а может стоять ОБЫЧНАЯ сдача (без ключа `sources`) — про
+    неё вопрос свежести не имеет смысла, и ответить на него FRESH значило бы
+    объявить свежей сводку, которой не существует.
+
+    Чистое чтение: не пишет НИЧЕГО. Число запросов не зависит от количества
+    детей — состояние всех читается одним current_for_many.
+    """
+    current = DailySubmissionSelector.current_for(division_id, business_date)
+    if current is None or "sources" not in current.snapshot:
+        return None
+    pins = current.snapshot["sources"]
+
+    children_map = DivisionTreeSelector.children_map()
+    required = _required_children(division_id, children_map=children_map)
+    # Спрашиваются ТОЛЬКО запиненные: их состояние даёт обе оси расхождения
+    # с пинами. Появившийся обязанный ребёнок сюда не добавляется намеренно —
+    # он виден по третьей оси, которая сравнивает пины со СПИСКОМ обязанных,
+    # а не с их сдачами (источник расширял выборку нынешними детьми; проба со
+    # снятым расширением осталась зелёной — читателя у них не было).
+    live = DailySubmissionSelector.current_for_many(
+        {pin["division_id"] for pin in pins}, business_date
+    )
+
+    superseded, missing = [], []
+    # Пины уже упорядочены снимком — порядок расхождений стабилен без
+    # повторной сортировки.
+    for pin in pins:
+        row = live.get(pin["division_id"])
+        if row is None:
+            missing.append(
+                {
+                    "division_id": pin["division_id"],
+                    "pinned_version": pin["version"],
+                }
+            )
+        elif row.version != pin["version"]:
+            superseded.append(
+                {
+                    "division_id": pin["division_id"],
+                    "pinned_version": pin["version"],
+                    "current_version": row.version,
+                }
+            )
+    pinned_ids = {pin["division_id"] for pin in pins}
+    unpinned = sorted(child for child in required if child not in pinned_ids)
+
+    return SummaryFreshness(
+        status=STALE if (superseded or missing or unpinned) else FRESH,
+        superseded=superseded,
+        missing=missing,
+        unpinned=unpinned,
+    )
