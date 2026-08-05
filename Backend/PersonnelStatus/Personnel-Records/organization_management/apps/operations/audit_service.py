@@ -50,6 +50,7 @@ SECONDMENT_RETURNED = "SECONDMENT_RETURNED"
 EMPLOYEE_DISMISSED = "EMPLOYEE_DISMISSED"
 DAILY_SUBMISSION_SUBMITTED = "DAILY_SUBMISSION_SUBMITTED"
 DAILY_SUBMISSION_AMENDED = "DAILY_SUBMISSION_AMENDED"
+TOMORROW_BLOCK_OVERRIDDEN = "TOMORROW_BLOCK_OVERRIDDEN"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -71,6 +72,7 @@ ACTIONS = frozenset(
         EMPLOYEE_DISMISSED,
         DAILY_SUBMISSION_SUBMITTED,
         DAILY_SUBMISSION_AMENDED,
+        TOMORROW_BLOCK_OVERRIDDEN,
     }
 )
 
@@ -80,9 +82,19 @@ ENTITY_STATUS = "employee_status"
 ENTITY_SECONDMENT = "secondment"
 ENTITY_EMPLOYEE = "employee"
 ENTITY_SUBMISSION = "daily_submission"
+# Обход блокировки — СВОЯ сущность, а не событие сдачи: у него нет ни
+# подразделения, ни версии, и в ленте конкретной сдачи он рассказывал бы о
+# решении, принятом не про неё.
+ENTITY_TOMORROW_BLOCK_OVERRIDE = "tomorrow_block_override"
 
 ENTITY_TYPES = frozenset(
-    {ENTITY_STATUS, ENTITY_SECONDMENT, ENTITY_EMPLOYEE, ENTITY_SUBMISSION}
+    {
+        ENTITY_STATUS,
+        ENTITY_SECONDMENT,
+        ENTITY_EMPLOYEE,
+        ENTITY_SUBMISSION,
+        ENTITY_TOMORROW_BLOCK_OVERRIDE,
+    }
 )
 
 

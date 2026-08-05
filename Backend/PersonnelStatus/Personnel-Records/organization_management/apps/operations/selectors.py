@@ -19,6 +19,7 @@ from organization_management.apps.operations.models_status import (
 from organization_management.apps.operations.models_submission import (
     OpsDailySubmission,
     OpsSubmissionControlSettings,
+    OpsTomorrowBlockOverride,
 )
 from organization_management.apps.staff_unit.models import StaffUnit
 
@@ -451,6 +452,25 @@ class SubmissionControlSettingsSelector:
         и он же покраснеет у того, кто вздумает закешировать строку.
         """
         return cls.get().required_division_ids
+
+
+class TomorrowBlockOverrideSelector:
+    """Чтение законных обходов блокировки завтрашнего дня."""
+
+    @staticmethod
+    def active_for(business_date) -> bool:
+        """Есть ли обход на эту дату, ОДИН запрос.
+
+        Уровень — дата: обход снимает блокировку целиком, поэтому вопрос
+        двоичный и подразделение в него не входит. Строка возвращается не
+        сама, а фактом её наличия: вывод решает только «снят ли замок», а
+        «кто и почему» читают из журнала и из самой строки те, кто
+        разбирается — вывод же, получив объект, начал бы соблазнять брать из
+        него причину и стал бы вторым рассказчиком об ответственности.
+        """
+        return OpsTomorrowBlockOverride.objects.filter(
+            business_date=business_date
+        ).exists()
 
 
 class OpsAuditLogSelector:
