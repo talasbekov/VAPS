@@ -110,6 +110,7 @@ from organization_management.apps.operations.strength_report import (
 )
 from organization_management.apps.operations.tomorrow_gate import (
     assert_tomorrow_not_blocked,
+    resolve_block,
 )
 from organization_management.apps.operations.traffic_light import (
     TrafficLightStatus,
@@ -1994,8 +1995,64 @@ class TomorrowBlockViewSet(RequirePermissionMixin, viewsets.ViewSet):
     которым горизонт ни к чему.
     """
 
-    permission_map = {"override": _OVERRIDE_BLOCK_PERMISSION}
-    http_method_names = ["post", "options"]
+    permission_map = {
+        "list": _READ_STATUS_PERMISSION,
+        "override": _OVERRIDE_BLOCK_PERMISSION,
+    }
+    http_method_names = ["get", "post", "options"]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "business_date",
+                OpenApiTypes.DATE,
+                description="Проверяемый день; по умолчанию завтрашний.",
+            )
+        ],
+        responses=extend_schema_serializer(many=False)(
+            inline_serializer(
+                name="TomorrowBlockStateResponse",
+                fields={
+                    "business_date": serializers.DateField(),
+                    "blocked": serializers.BooleanField(),
+                    "overridden": serializers.BooleanField(),
+                    "laggards": serializers.ListField(child=serializers.DictField()),
+                },
+            )
+        ),
+        description=(
+            "Состояние блокировки расхода на дату под правом status.view: "
+            "закрыт ли день, снят ли замок законным обходом и КТО не сдал "
+            "(id и имя). Умолчание — завтра: именно его блокировка и "
+            "закрывает. За сегодня и прошедшее всегда blocked=false. "
+            "Отстающие перечисляются по всему разделу, а не по области "
+            "спросившего — это тот же список, которым объясняется отказ 422. "
+            "400 — нечитаемая дата."
+        ),
+    )
+    def list(self, request, *args, **kwargs):
+        business_date = _parse_date_param(request, "business_date")
+        today = Clock.today_local()
+        if business_date is None:
+            # Умолчание — ЗАВТРА, а не сегодня, как у расхода: спрашивают о
+            # блокировке, а она бывает только на будущем, и умолчание
+            # «сегодня» отвечало бы «не закрыто» вообще всегда.
+            business_date = today + timedelta(days=1)
+        state = resolve_block(business_date=business_date, today=today)
+        # Имена — из общего селектора дерева: голый id не назовёт дежурному,
+        # кого поторопить, а второй справочник имён разошёлся бы с первым.
+        names = DivisionTreeSelector.names_map(state.laggards)
+        return Response(
+            {
+                "business_date": state.business_date,
+                "blocked": state.blocked,
+                "overridden": state.overridden,
+                "laggards": [
+                    {"division_id": division_id, "name": names.get(division_id, "")}
+                    for division_id in state.laggards
+                ],
+            }
+        )
 
     @extend_schema(
         request=TomorrowBlockOverrideCreateSerializer,
