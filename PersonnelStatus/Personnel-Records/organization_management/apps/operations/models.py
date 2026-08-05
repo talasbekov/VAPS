@@ -162,3 +162,8 @@ from organization_management.apps.operations.models_audit import (  # noqa: F401
 from organization_management.apps.operations.models_submission import (  # noqa: E402
     OpsDailySubmission,  # noqa: F401
 )
+
+# Водяной знак материализации — тоже отдельным модулем.
+from organization_management.apps.operations.models_watermark import (  # noqa: E402
+    OpsWatermark,  # noqa: F401
+)
