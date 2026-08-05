@@ -799,7 +799,12 @@ development_status:
   19-1-расчёт-нагрузки-план-факт: done
   19-2-перегрузка: done
   19-3-справочник-коэффициентов-поправок: done
-  19-4-календарь-сотрудник-месяц: backlog
+  # 19.4 decomposed (create-story, 2026-08-05), same rationale as 16.8h/
+  # 17.7/18.6: backend selector, API, and frontend screen are separate
+  # stories per CLAUDE.md decomposition rules. 19.4a = backend bulk
+  # selector only; 19.4b (API) and 19.4c+ (frontend) created when their
+  # turn comes.
+  19-4-календарь-сотрудник-месяц: done
   19-5-календарь-подразделение-дни: backlog
   19-6-налёт-часов-в-карточке: backlog
   19-7-нагрузочные-тесты-дедлайн-17-00: backlog
