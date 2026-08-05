@@ -48,6 +48,7 @@ from organization_management.apps.operations.api.serializers import (
     StatusTypeSerializer,
     StatusUpdateSerializer,
     TemporaryDutySerializer,
+    TrafficLightTreeFilterSerializer,
     UserRoleSerializer,
 )
 from organization_management.apps.operations.models import (
@@ -96,6 +97,10 @@ from organization_management.apps.operations.status_service import (
 )
 from organization_management.apps.operations.strength_report import (
     StrengthReportService,
+)
+from organization_management.apps.operations.traffic_light import (
+    TrafficLightStatus,
+    traffic_light_tree,
 )
 
 # Право на запись статусов; им же резолвится область видимости пачки.
@@ -1537,4 +1542,156 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             OpsDailySubmissionAmendedSerializer(amended).data,
             status=status.HTTP_201_CREATED,
+        )
+
+
+class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Свод светофора поддерева плоским списком.
+
+    GET /api/operations/traffic-light/tree/?root_division_id=&business_date=
+
+    Вьюха НЕ считает цвет: status/late приходят из свода как есть, а она
+    добавляет ровно то, чего у свода нет, — имя и родителя из общего селектора
+    дерева плюс гарды, которых у сервиса нет: 403 на чужой корень и 404 на
+    несуществующий. Порядок гардов НЕСУЩИЙ: сначала область, потом
+    существование — обратный сделал бы 404 оракулом существования для чужака.
+
+    Право чтения — status.view, то же, что у расхода, статусов и сдач: цвет
+    выводится из тех же сведений, и своего кода ему не нужно.
+
+    Поимённого расхождения здесь НЕТ: свод отвечает «куда смотреть», а
+    подробности живут у точечного светофора — он отдельным срезом со своим
+    адресом. Отдать drift в списке значило бы возить по дереву детали,
+    которые нужны на одном узле из сотни.
+    """
+
+    permission_map = {"tree": _READ_STATUS_PERMISSION}
+    # Только чтение: цвет — вывод, а не запись; менять его можно лишь сдав
+    # день или поправив статус, и у обоих есть свои маршруты.
+    http_method_names = ["get", "options"]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "root_division_id",
+                OpenApiTypes.INT,
+                description=(
+                    "Корень поддерева. По умолчанию — корни области актора."
+                ),
+            ),
+            OpenApiParameter(
+                "business_date",
+                OpenApiTypes.DATE,
+                description="День. По умолчанию сегодняшний по часам раздела.",
+            ),
+        ],
+        responses={
+            200: extend_schema_serializer(many=False)(
+                inline_serializer(
+                    name="TrafficLightTree",
+                    fields={
+                        "business_date": serializers.DateField(),
+                        "nodes": inline_serializer(
+                            name="TrafficLightNode",
+                            many=True,
+                            fields={
+                                "division_id": serializers.IntegerField(),
+                                "name": serializers.CharField(),
+                                "parent_id": serializers.IntegerField(
+                                    allow_null=True
+                                ),
+                                "status": serializers.ChoiceField(
+                                    choices=TrafficLightStatus.choices
+                                ),
+                                "late": serializers.BooleanField(),
+                            },
+                        ),
+                    },
+                )
+            )
+        },
+        description=(
+            "Свод светофора поддерева под правом status.view: цвет каждого "
+            "узла — худший из своего и цветов потомков, late поднимается "
+            "снизу. Корень по умолчанию берётся из области актора, дата — "
+            "сегодняшняя по часам раздела и возвращается эхом. 400 — "
+            "нечитаемый параметр; 403 — чужой корень; 404 — корня нет."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="tree")
+    def tree(self, request, *args, **kwargs):
+        form = TrafficLightTreeFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        # Один скан дерева на весь ответ: им же резолвятся корни и родители.
+        children = DivisionTreeSelector.children_map()
+        parent_of = {
+            child: parent for parent, kids in children.items() for child in kids
+        }
+
+        root_division_id = form.validated_data.get("root_division_id")
+        if root_division_id is not None:
+            _assert_division_in_scope(
+                request, root_division_id, _READ_STATUS_PERMISSION,
+                field="root_division_id",
+            )
+            if not DivisionTreeSelector.exists(root_division_id):
+                raise DomainError(
+                    "ENTITY_NOT_FOUND",
+                    404,
+                    detail={"root_division_id": str(root_division_id)},
+                    message="Подразделение не найдено.",
+                )
+            roots = [root_division_id]
+        else:
+            # Корень опущен — выводим его из области. visible_division_ids
+            # отдаёт РАЗВЁРНУТОЕ поддерево, поэтому корнями считаются узлы,
+            # чей родитель в область не входит: так вложенные и
+            # пересекающиеся гранты не дублируют узлы в ответе.
+            # Ветвление строго на `is None`: None — глобальный грант, пустое
+            # множество — грантов нет, и спутать их значило бы отдать всё
+            # дерево тому, кому не видно ничего.
+            visible = PermissionService.visible_division_ids(
+                resolve_actor_id(request), _READ_STATUS_PERMISSION
+            )
+            if visible is None:
+                roots = children.get(None, [])
+            else:
+                roots = [
+                    division_id
+                    for division_id in visible
+                    if parent_of.get(division_id) not in visible
+                ]
+
+        business_date = form.validated_data.get("business_date") or Clock.today_local()
+        merged = {}
+        for root in roots:
+            merged.update(traffic_light_tree(root, business_date))
+
+        names = DivisionTreeSelector.names_map(merged.keys())
+        nodes = [
+            {
+                "division_id": division_id,
+                # Гонка удаления: имени нет — узел ОСТАЁТСЯ в ответе.
+                # Потерять красный хуже, чем потерять подпись.
+                "name": names.get(division_id, ""),
+                # null, если родителя в ответе нет (корень поддерева или
+                # родитель вне области): клиент не получает ссылку на узел,
+                # которого ему не выдали.
+                "parent_id": (
+                    parent_of.get(division_id)
+                    if parent_of.get(division_id) in merged
+                    else None
+                ),
+                "status": cascade.status,
+                "late": cascade.late,
+            }
+            for division_id, cascade in merged.items()
+        ]
+        # Полный порядок: имя, затем id — одноимённые узлы иначе менялись бы
+        # местами между запросами.
+        nodes.sort(key=lambda node: (node["name"], node["division_id"]))
+        # Дата эхом: сервер считает по часам раздела, экран — по браузеру, и
+        # на границе суток «сегодня» у них разное.
+        return Response(
+            {"business_date": business_date.isoformat(), "nodes": nodes}
         )

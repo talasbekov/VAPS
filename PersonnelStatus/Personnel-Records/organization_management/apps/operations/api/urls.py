@@ -16,6 +16,7 @@ from organization_management.apps.operations.api.views import (
     StatusViewSet,
     StrengthReportViewSet,
     TemporaryDutyViewSet,
+    TrafficLightViewSet,
     UserRoleViewSet,
 )
 
@@ -33,6 +34,7 @@ router.register("temporary-duty", TemporaryDutyViewSet, basename="ops-temp-duty"
 router.register(
     "daily-submissions", DailySubmissionViewSet, basename="ops-daily-submission"
 )
+router.register("traffic-light", TrafficLightViewSet, basename="ops-traffic-light")
 router.register("audit-logs", AuditLogViewSet, basename="ops-audit-log")
 router.register("my-permissions", MyPermissionsViewSet, basename="ops-my-permissions")
 

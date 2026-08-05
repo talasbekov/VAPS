@@ -369,6 +369,23 @@ class OpsDailySubmissionDetailSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class TrafficLightTreeFilterSerializer(serializers.Serializer):
+    """Параметры запроса светофора: оба НЕОБЯЗАТЕЛЬНЫ.
+
+    Корень по умолчанию выводится из области актора — экран руководителя не
+    обязан знать, какой у него корень. Дата по умолчанию сегодняшняя по часам
+    раздела: у сервера и у браузера «сегодня» на границе суток разное, и
+    молчаливо доверять клиентской дате нельзя.
+
+    Мусор отбивается здесь: нецелой корень и не-ISO дата дают 400 с именем
+    поля, а не сырой ValueError из глубины сервиса. Параметра глубины нет —
+    свод отдаёт поддерево целиком.
+    """
+
+    root_division_id = serializers.IntegerField(required=False)
+    business_date = serializers.DateField(required=False)
+
+
 class OpsAuditLogSerializer(serializers.ModelSerializer):
     """Строка журнала раздела как её видит читатель.
 
