@@ -38,6 +38,9 @@ from datetime import timedelta
 from django.db import transaction
 
 from organization_management.apps.operations import audit_service
+from organization_management.apps.operations.amendment_enforcement import (
+    enforce_amendment_on_retro_edit,
+)
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_status import (
@@ -61,6 +64,14 @@ from organization_management.apps.operations.status_service import (
 
 DETACHED_CODE = "DETACHED"
 ATTACHED_CODE = "ATTACHED"
+
+# Санкции поправки для системных путей пары. Причина здесь ВЫВОДИТСЯ из
+# события, а не спрашивается у оператора: откомандирование и возврат известны
+# целиком — человек, подразделения и даты, — в отличие от свободной правки,
+# где только правивший знает, что он изменил. Дата в тексте обязательна:
+# разбирающему историю ДНЯ без неё поправка неотличима от прошлогодней.
+SECONDMENT_SANCTION = "Откомандирование с {start:%d.%m.%Y} по {end:%d.%m.%Y}."
+RETURN_SANCTION = "Возврат из прикомандирования с {date:%d.%m.%Y}."
 
 
 @transaction.atomic
@@ -191,6 +202,15 @@ def initiate_secondment(
         entity_id=secondment.pk,
         new_value=audit_service.secondment_snapshot(secondment),
     )
+    # ОДНА поправка на пару, а не по одной на ногу: заявление дня изменил
+    # один акт. Обе ноги живут на одном интервале и у одного человека,
+    # поэтому периметр здесь один. Строки-виновника нет — их две.
+    enforce_amendment_on_retro_edit(
+        employee_id,
+        [(date_start, date_end)],
+        actor=actor,
+        reason=SECONDMENT_SANCTION.format(start=date_start, end=date_end),
+    )
     return secondment
 
 
@@ -229,10 +249,15 @@ def _end_leg_tomorrow(leg, *, actor, today):
     Блокировка, перечитка и гарды (строка проекции, отменённая терминальна)
     приходят из общей преамбулы правки. Идущая нога заканчивается позже
     сегодняшнего дня, поэтому запись здесь всегда СОКРАЩАЕТ интервал.
+
+    Возвращает (строка, освобождённый интервал). Поправку сданного ставит не
+    эта функция, а вызывающий: возврат закрывает ОБЕ ноги, и поправка на
+    каждую дала бы дню две версии за одно решение.
     """
     _require_actor(actor)
     _, locked = _lock_for_edit(leg)
     before = audit_service.status_snapshot(locked)
+    previous_end = locked.date_end
     locked.date_end = today + timedelta(days=1)
     # update_fields, а не голый save(): голый переписал бы source и
     # генерируемый period чужими значениями.
@@ -249,7 +274,7 @@ def _end_leg_tomorrow(leg, *, actor, today):
         old_value=before,
         new_value=audit_service.status_snapshot(locked),
     )
-    return locked
+    return locked, (locked.date_end, previous_end)
 
 
 @transaction.atomic
@@ -325,13 +350,24 @@ def confirm_return(secondment, *, actor, reason=""):
             message="Возврат уже подтверждён.",
         )
     today = Clock.today_local()
+    effective = today + timedelta(days=1)
+    # Дни, чьё заявление возврат изменил: у закрытой ноги — освобождённый
+    # хвост, у не начавшейся — весь её период. Собираются здесь, а не в
+    # закрывающих вызовах: поправку ставит ОПЕРАЦИЯ, и у одного возврата она
+    # одна, сколько бы ног он ни закрыл.
+    affected = []
     for leg in (locked.out_status, locked.in_status):
         state = leg.state_on(today)
         if state == OpsEmployeeStatus.LifecycleState.ACTIVE:
-            _end_leg_tomorrow(leg, actor=actor, today=today)
+            _, released = _end_leg_tomorrow(leg, actor=actor, today=today)
+            affected.append(released)
         elif state == OpsEmployeeStatus.LifecycleState.PLANNED:
+            affected.append((leg.date_start, leg.date_end))
             cancel_status(
-                leg, actor=actor, reason=reason or "возврат из прикомандирования"
+                leg,
+                actor=actor,
+                reason=reason or "возврат из прикомандирования",
+                amend=False,
             )
         # Завершённая или отменённая нога уже закрыта — закрывать нечего.
     before = audit_service.secondment_snapshot(locked)
@@ -351,5 +387,13 @@ def confirm_return(secondment, *, actor, reason=""):
         old_value=before,
         new_value=audit_service.secondment_snapshot(locked),
         reason=reason,
+    )
+    enforce_amendment_on_retro_edit(
+        locked.employee_id,
+        affected,
+        actor=actor,
+        # Причина возврата, если её дали, — она конкретнее вывода; иначе
+        # событие описывает себя само.
+        reason=reason.strip() or RETURN_SANCTION.format(date=effective),
     )
     return locked

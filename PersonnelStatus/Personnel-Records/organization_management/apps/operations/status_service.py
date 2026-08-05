@@ -683,7 +683,7 @@ def extend_status(
 
 
 @transaction.atomic
-def cancel_status(status, *, actor, reason):
+def cancel_status(status, *, actor, reason, amend=True):
     """Отменить не начавшийся (PLANNED) статус — факты отмены append-once.
 
     Отменяется только PLANNED: начавшийся или завершённый статус — факт,
@@ -695,6 +695,12 @@ def cancel_status(status, *, actor, reason):
     Отдельного `amendment_reason` здесь НЕТ: причина отмены обязательна и так,
     и она же объясняет поправку сданного дня. Второе поле «причина» на одном
     вызове означало бы, что у отмены бывают две разные правды.
+
+    `amend=False` отдаёт поправку ВЫЗЫВАЮЩЕМУ и нужен оркестраторам, которые
+    закрывают несколько строк одним актом (возврат из прикомандирования
+    закрывает обе ноги пары). Владелец поправки — ОПЕРАЦИЯ, а не строка: у
+    одного акта одна поправка, иначе день получил бы версии 2 и 3 за одно
+    решение, и читатель истории увидел бы два возврата вместо одного.
     """
     _require_actor(actor)
     if not (reason or "").strip():
@@ -737,11 +743,12 @@ def cancel_status(status, *, actor, reason):
     # Отменённая строка перестаёт быть фактом на ВСЁМ своём интервале —
     # отсюда и затронутые дни. Отменяется только не начавшийся статус, но
     # «не начавшийся» не значит «не сданный»: день на завтра сдают штатно.
-    enforce_amendment_on_retro_edit(
-        locked.employee_id,
-        [(locked.date_start, locked.date_end)],
-        actor=actor,
-        reason=reason,
-        triggered_by_status_id=locked.pk,
-    )
+    if amend:
+        enforce_amendment_on_retro_edit(
+            locked.employee_id,
+            [(locked.date_start, locked.date_end)],
+            actor=actor,
+            reason=reason,
+            triggered_by_status_id=locked.pk,
+        )
     return locked
