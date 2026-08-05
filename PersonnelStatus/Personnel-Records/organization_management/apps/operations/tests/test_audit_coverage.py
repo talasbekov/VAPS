@@ -38,6 +38,7 @@ from organization_management.apps.operations.secondment_service import (
     initiate_secondment,
     request_return,
 )
+from organization_management.apps.operations.summary_service import assemble_summary
 from organization_management.apps.operations.status_service import (
     cancel_status,
     complete_status_early,
@@ -612,6 +613,14 @@ def test_every_declared_action_is_actually_written(types, home, host):
             business_date=TODAY + timedelta(days=1),
             actor=ACTOR,
             reason="решение руководителя",
+        )
+        # Сводка — та же сущность сдачи, но своё событие: «собрал из версий
+        # детей» и «сдал свой день» отвечают на разные вопросы.
+        parent = Division.objects.create(name="Управление-сводка")
+        child = Division.objects.create(name="Отдел-сводка", parent=parent)
+        submit_day(division_id=child.id, business_date=TODAY, actor=ACTOR)
+        assemble_summary(
+            division_id=parent.id, business_date=TODAY, actor=ACTOR
         )
 
     written = {entry.action for entry in events()}

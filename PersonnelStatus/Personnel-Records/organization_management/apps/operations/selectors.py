@@ -277,6 +277,23 @@ class StaffUnitSelector:
         )
 
     @staticmethod
+    def occupied_division_ids(division_ids=None):
+        """{подразделения, где есть хоть один РАБОТАЮЩИЙ обитатель}, ОДИН запрос.
+
+        Отвечает на «есть ли тут кому сдавать». Уволенный обитатель слота не
+        считается — тем же правилом, что и в знаменателе расхода: иначе
+        расформированное подразделение с неубранными слотами вечно значилось
+        бы обязанным сдавать, и сводка уровня выше не собралась бы никогда.
+        """
+        queryset = StaffUnit.objects.filter(
+            employee_id__isnull=False,
+            employee__employment_status=Employee.EmploymentStatus.WORKING,
+        )
+        if division_ids is not None:
+            queryset = queryset.filter(division_id__in=list(division_ids))
+        return set(queryset.values_list("division_id", flat=True))
+
+    @staticmethod
     def slots_with_working_occupants(division_ids=None):
         """([{division_id, employee_id|None}], {id уволенных в слотах}).
 
