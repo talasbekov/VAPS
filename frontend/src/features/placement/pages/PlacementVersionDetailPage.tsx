@@ -441,10 +441,14 @@ function OprosCell({
           aria-label={`Окончание факта: ${employeeId}`}
           {...register('actual_end_at')}
         />
-        {(errors.actual_start_at !== undefined ||
-          errors.actual_end_at !== undefined) && (
-          <p className="text-xs text-destructive">
-            {errors.actual_start_at?.message ?? errors.actual_end_at?.message}
+        {errors.actual_start_at !== undefined && (
+          <p className="text-xs text-destructive" role="alert">
+            {errors.actual_start_at.message}
+          </p>
+        )}
+        {errors.actual_end_at !== undefined && (
+          <p className="text-xs text-destructive" role="alert">
+            {errors.actual_end_at.message}
           </p>
         )}
         <Button type="submit" size="sm" disabled={recordMutation.isPending}>
@@ -487,13 +491,16 @@ function OprosCell({
   }
 
   const currentHours = hoursMutation.data
+  const hoursLine = (
+    <>
+      {currentHours.day_hours} ч. день / {currentHours.night_hours} ч. ночь
+    </>
+  )
 
   if (overloadMutation.data === undefined) {
     return (
       <div className="flex flex-col gap-1">
-        <p className="text-xs">
-          {currentHours.day_hours} ч. день / {currentHours.night_hours} ч. ночь
-        </p>
+        <p className="text-xs">{hoursLine}</p>
         <Button
           type="button"
           size="sm"
@@ -518,7 +525,7 @@ function OprosCell({
 
   return (
     <p className="text-xs">
-      {currentHours.day_hours} ч. день / {currentHours.night_hours} ч. ночь
+      {hoursLine}
       <br />
       Перегрузка: {overloadMutation.data.is_overloaded ? 'да' : 'нет'}
       {overloadMutation.data.is_overloaded &&

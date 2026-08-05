@@ -913,4 +913,60 @@ describe('PlacementVersionDetailPage — opros (18.6c)', () => {
     await waitFor(() => expect(hoursButton).not.toBeDisabled())
     expect(screen.getByRole('button', { name: 'Вычислить налёт' })).toBeInTheDocument()
   })
+
+  it('review (Blind Hunter/Edge Case Hunter): two rows keep independent opros state, no assignmentId mixup', async () => {
+    const version = versionWithOneAssignment()
+    version.assignments.push({
+      id: 2,
+      employee_id: EMPLOYEE_B,
+      post: 6,
+      conflict_severity: '',
+      conflict_codes: [],
+      acknowledged_at: null,
+      ack_escalated_at: null,
+    })
+    server.use(
+      http.get('*/api/operations/assignment-versions/9/', () =>
+        HttpResponse.json(version),
+      ),
+      http.get('*/api/operations/assignment-versions/9/conflicts/', () =>
+        HttpResponse.json([]),
+      ),
+      http.post(
+        '*/api/operations/placement-assignments/1/actual-time/',
+        () =>
+          HttpResponse.json({
+            id: 1,
+            assignment: 1,
+            actual_start_at: '2026-08-04T04:00:00Z',
+            actual_end_at: '2026-08-04T12:00:00Z',
+            recorded_by: 'user-1',
+            created_at: '2026-08-04T18:00:00Z',
+            updated_at: '2026-08-04T18:00:00Z',
+          }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage('/placement/9')
+    await waitFor(() => expect(screen.getByText(/Версия 1/)).toBeInTheDocument())
+
+    // Advance row A (employee_id=1) to step 2; row B (employee_id=2) must
+    // stay on its own untouched step 1 form.
+    const startA = screen.getByLabelText(`Начало факта: ${EMPLOYEE_A}`)
+    const endA = screen.getByLabelText(`Окончание факта: ${EMPLOYEE_A}`)
+    await user.click(startA)
+    await user.paste('2026-08-04T09:00')
+    await user.click(endA)
+    await user.paste('2026-08-04T17:00')
+    const buttons = screen.getAllByRole('button', { name: 'Записать факт' })
+    await user.click(buttons[0])
+
+    await screen.findByRole('button', { name: 'Вычислить налёт' })
+    expect(
+      screen.getByLabelText(`Начало факта: ${EMPLOYEE_B}`),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Записать факт' }),
+    ).toBeInTheDocument()
+  })
 })

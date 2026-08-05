@@ -4,7 +4,7 @@ baseline_commit: 139adc2
 
 # Story 18.6c: Frontend — опрос-панель
 
-Status: review
+Status: done
 
 ## Story
 
@@ -105,9 +105,12 @@ Claude Sonnet 5
 - `frontend/src/features/placement/mocks/handlers.ts` (modified — MSW-заглушки для actual-time/service-hours/overload)
 - `.claude/launch.json` (modified — dev:mock порт 5173→5183, обход коллизии с чужим root-owned процессом; gitignored, не коммитится)
 
+После ревью (3 агента: Blind Hunter/Edge Case Hunter/Acceptance Auditor): 0 реальных багов, 0 нарушений AC (Acceptance Auditor лично сверил буквальный текст кнопок/сообщений с кодом — не пересказ). 3 patch применены: `role="alert"` на Zod-валидационной ошибке (была единственным error-сообщением в файле без него — несогласованность с `recordMutation.error`'s соседним параграфом); показ ОБОИХ полей-ошибок вместо `??`, который затирал вторую (независимо найдено Blind Hunter + Edge Case Hunter); устранён дублирующийся JSX-блок отображения часов (день/ночь строка была скопирована в двух ветках). 1 test-patch: независимость состояния двух `OprosCell` в одной таблице (та же проверка, что уже была у `AcknowledgeCell`, отсутствовала для опроса). 1 defer: полная потеря опрос-прогресса при reload без предупреждения оператору (by-design по Scope Decision, но операционный риск — кандидат для 18.6d/отдельной стори). Остальное — dismiss: 18.6b's naive-datetime-риск закрыт ИМЕННО этой стори (Edge Case Hunter лично проследил, что `""`-краш недостижим при текущем Zod-гейте); отсутствие `ConflictDialog` на трёх мутациях — спекулятивно, ни одна из трёх не эмитит 409 структурно; double-click race на `isPending` — тот же паттерн, что ВСЕ мутирующие кнопки в этом файле с самого начала. `make gate` (frontend) после патчей — 1129 passed (было 1128), билд/size-gate зелёные.
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-05 | Story создана (create-story). Пятая часть разбиения 18.6 — фронт-панель опроса, встроена ячейкой `OprosCell` в существующую `AssignmentsTable` (не новая страница), реактивная 403/422-обработка (прецедент 17.7c's JournalPanel), `zonedDateTimeToIso()` (скопирован из duty-plans, ARCH-FE-013 boundaries) закрывает 18.6b's deferred naive-datetime-риск на корню. Status → ready-for-dev. |
 | 2026-08-05 | Dev-story: `generate:api` + `localDateTime.ts` + 3 query-хука + `OprosCell` + MSW-заглушки + 3 теста + браузерная проверка (Preview, все 3 шага вручную, tz-конверсия подтверждена по телу POST). `.claude/launch.json` — dev:mock порт 5183 (обход чужого процесса на 5173). `npm run gate` — 1128 passed, билд/size-gate зелёные. Status → review. |
+| 2026-08-05 | Review закрыт (3 агента). 0 багов, 0 нарушений AC. 3 патча (role="alert" на валидации, обе field-ошибки вместо одной, дедупликация JSX часов) + 1 тест (независимость двух OprosCell). 1 defer в deferred-work.md (потеря прогресса при reload без предупреждения). `make gate` (frontend) — 1129 passed, 0 regressions. Status → done. |
