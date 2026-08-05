@@ -123,6 +123,36 @@ def compute_plan_load(employee_id, start_date, end_date):
     return {day: hours.quantize(Decimal("0.01")) for day, hours in totals.items()}
 
 
+def detect_overload_days(day_hours, *, threshold_hours=Decimal("8")):
+    """Story 19.2 (FR-32, агрегатная половина): дни, входящие в серию
+    ИЗ БОЛЕЕ ЧЕМ 3 подряд идущих календарных дней, каждый из которых
+    `>= threshold_hours`. Ровно 3 дня подряд — НЕ перегрузка («свыше
+    3», не «от 3»). Чистая функция над результатом `compute_plan_load()`/
+    `compute_fact_load()` (или любым другим `Dict[date, Decimal]`) — не
+    делает запросов к БД.
+
+    `day_hours` — sparse dict (19.1: только дни с ненулевой активностью,
+    отсутствующий ключ ≠ 0, а разрыв последовательности) — отсутствующий
+    день трактуется так же, как явный `< threshold_hours`: обрывает
+    накапливаемую серию."""
+    qualifying_days = sorted(
+        day for day, hours in day_hours.items() if hours >= threshold_hours
+    )
+
+    overloaded = []
+    run = []
+    for day in qualifying_days:
+        if run and day - run[-1] != datetime.timedelta(days=1):
+            if len(run) > 3:
+                overloaded.extend(run)
+            run = []
+        run.append(day)
+    if len(run) > 3:
+        overloaded.extend(run)
+
+    return overloaded
+
+
 def compute_fact_load(employee_id, start_date, end_date):
     """FR-32/FR-43 факт-половина: сумма часов из опроса
     (`PlacementAssignmentActual`, 18.3) по календарным дням, ТОЛЬКО для
