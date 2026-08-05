@@ -29,6 +29,7 @@ from organization_management.apps.operations.models_submission import (
     OpsSubmissionControlSettings,
     OpsTomorrowBlockOverride,
 )
+from organization_management.apps.operations.models_notification import OpsNotification
 from organization_management.apps.operations.models_watermark import OpsWatermark
 
 pytestmark = pytest.mark.django_db
@@ -53,6 +54,7 @@ def test_the_control_settings_are_editable_in_admin():
         UserRole,
         TemporaryDutyPermission,
         OpsWatermark,
+        OpsNotification,
     ],
 )
 def test_business_records_are_not_registered(model):
