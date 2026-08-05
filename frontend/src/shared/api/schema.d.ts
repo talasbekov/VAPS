@@ -6020,13 +6020,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description {ISO-дата: status_type_code}, плотный по дням месяца. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        [key: string]: string;
                     };
                 };
             };

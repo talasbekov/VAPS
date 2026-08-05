@@ -86,4 +86,25 @@ describe('useEmployeeStatusCalendar', () => {
     expect(result.current.fetchStatus).toBe('idle')
     expect(handler).not.toHaveBeenCalled()
   })
+
+  it('refetches when year/month change while divisionId/employeeId stay the same', async () => {
+    server.use(
+      http.get('*/api/operations/statuses/calendar/', ({ request }) => {
+        const url = new URL(request.url)
+        return HttpResponse.json({ month: url.searchParams.get('month') })
+      }),
+    )
+    const { Wrapper } = createWrapper()
+    const { result, rerender } = renderHook(
+      ({ month }: { month: number }) => useEmployeeStatusCalendar('d1', 'e1', 2026, month),
+      { wrapper: Wrapper, initialProps: { month: 8 } },
+    )
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual({ month: '8' })
+
+    rerender({ month: 9 })
+
+    await waitFor(() => expect(result.current.data).toEqual({ month: '9' }))
+  })
 })
