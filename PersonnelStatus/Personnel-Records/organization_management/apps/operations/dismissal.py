@@ -12,6 +12,14 @@ apps/operations/statuses/services/dismissal.py из Backend/VAPS).
 как правило системный (метка сигнала), и построчные события — единственное,
 что потом объяснит, почему у сотрудника разом оборвались отпуск и наряд.
 
+Сданные дни, которых коснулось закрытие, ВЫТЕСНЯЮТСЯ поправкой — тем же
+правилом, что и операторская правка (amendment_enforcement). Разница в том,
+откуда берётся объяснение: у оператора причину знает только он и её приходится
+спрашивать, а здесь событие известно целиком — увольнение с датой, — и санкция
+ВЫВОДИТСЯ из него. Спрашивать причину у системного пути было бы некого, а
+пропустить поправку значило бы оставить сданный день заявлять человека,
+которого в нём уже нет.
+
 Отличия от источника:
 - отменяются ВСЕ ещё не начавшиеся живые статусы, а не только ноги пары
   прикомандирования: одно правило вместо двух, и уволенный не уносит с собой
@@ -24,6 +32,9 @@ apps/operations/statuses/services/dismissal.py из Backend/VAPS).
 from django.db import transaction
 
 from organization_management.apps.operations import audit_service
+from organization_management.apps.operations.amendment_enforcement import (
+    enforce_amendment_on_retro_edit,
+)
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
@@ -37,6 +48,10 @@ from organization_management.apps.operations.status_service import (
 # Причина закрытия фактов: она попадает в cancelled_reason и должна читаться
 # человеком, разбирающим историю сотрудника через год.
 DISMISSAL_REASON = "увольнение сотрудника"
+# Санкция поправки: то же событие, но фразой, которую читает разбирающий
+# историю ДНЯ, а не историю сотрудника — ему нужна дата, иначе поправка не
+# отличима от такой же за прошлый месяц.
+DISMISSAL_SANCTION = "Увольнение сотрудника {date:%d.%m.%Y}."
 
 
 @transaction.atomic
@@ -71,6 +86,11 @@ def close_statuses_on_dismissal(employee_id, *, dismissal_date, actor):
     now = Clock.now()
 
     truncated = cancelled = 0
+    # Дни, чьё заявление закрытие изменило. У отменённой строки это весь её
+    # период, у усечённой — только отрезанный хвост [D, прежний конец):
+    # дни до даты увольнения статус нёс и несёт, и поправлять их значило бы
+    # вытеснять заявление, которое не менялось.
+    affected = []
     # ОДИН проход под ОДНОЙ блокировкой: живые строки сотрудника берутся
     # целиком, а что с каждой делать — решает её интервал. Два прохода двумя
     # выборками брали бы блокировку на ту же таблицу дважды, и проба «строки
@@ -94,8 +114,10 @@ def close_statuses_on_dismissal(employee_id, *, dismissal_date, actor):
                 ]
             )
             cancelled += 1
+            affected.append((status_row.date_start, status_row.date_end))
             action = audit_service.STATUS_CANCELLED
         elif status_row.date_end > dismissal_date:
+            affected.append((dismissal_date, status_row.date_end))
             status_row.date_end = dismissal_date
             # update_fields, а не голый save(): голый переписал бы source и
             # генерируемый period чужими значениями.
@@ -166,5 +188,14 @@ def close_statuses_on_dismissal(employee_id, *, dismissal_date, actor):
         entity_id=employee_id,
         new_value={"dismissal_date": str(dismissal_date), **summary},
         reason=DISMISSAL_REASON,
+    )
+    # После журнала и в той же транзакции: поправка ложится одним коммитом с
+    # закрытием. Своей строки-виновника у увольнения нет — оно оборвало
+    # сразу несколько, и pk любой из них был бы произвольным выбором.
+    enforce_amendment_on_retro_edit(
+        employee_id,
+        affected,
+        actor=actor,
+        reason=DISMISSAL_SANCTION.format(date=dismissal_date),
     )
     return summary
