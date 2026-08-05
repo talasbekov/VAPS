@@ -20,8 +20,12 @@ from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.expense_csv import generate_expense_csv
 from organization_management.apps.operations.expense_document import (
     build_expense_document,
+    combine_documents,
 )
 from organization_management.apps.operations.expense_xlsx import generate_expense_xlsx
+from organization_management.apps.operations.models_submission import (
+    OpsDailySubmission,
+)
 from organization_management.apps.operations.selectors import (
     DailySubmissionSelector,
     DivisionTreeSelector,
@@ -102,3 +106,81 @@ def render_expense(data, export_format):
         ) from error
     filename = f"expense-{data.business_date.isoformat()}.{extension}"
     return render(data), filename, content_type
+
+
+def build_summary_expense_document(division_id, business_date):
+    """Документ СВОДНОГО расхода: строка на подразделение плюс итог.
+
+    Собирается из ЗАПИНЕННЫХ версий детей, а не из их текущих сдач: сводка
+    заявила, из чего она сложена, и документ обязан показывать ровно это.
+    Возьми он текущие — протухшая сводка молча печаталась бы свежим
+    документом, и расхождение, ради обнаружения которого пины и заведены,
+    исчезло бы именно там, где его подписывают.
+
+    Первая строка — СВОЙ уровень родителя (у штаба тоже есть люди), дальше
+    дети по возрастанию id. Живые числа (штат/вакансии/приданные) читаются
+    одним расходом на все подразделения сразу.
+    """
+    summary = DailySubmissionSelector.current_for(division_id, business_date)
+    if summary is None:
+        raise DomainError(
+            "DAY_NOT_SUBMITTED",
+            404,
+            detail={
+                "division_id": str(division_id),
+                "business_date": business_date.isoformat(),
+            },
+            message="День не сдан: выгружать нечего.",
+        )
+    pins = summary.snapshot.get("sources")
+    if pins is None:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"division_id": str(division_id)},
+            message="Этот день сдан обычной сдачей, а не сводкой.",
+        )
+
+    pinned = {
+        row.pk: row
+        for row in OpsDailySubmission.objects.filter(
+            pk__in=[pin["submission_id"] for pin in pins]
+        )
+    }
+    catalog = StatusCatalog.from_rows(StatusTypeSelector.catalog_rows())
+    division_ids = [division_id, *(pin["division_id"] for pin in pins)]
+    report = StrengthReportService.compute(
+        business_date, division_ids=set(division_ids)
+    )
+    live = {row.division_id: row for row in report.rows}
+    names = DivisionTreeSelector.names_map(division_ids)
+
+    documents = []
+    for source_id, snapshot in [
+        (division_id, summary.snapshot),
+        *(
+            (pin["division_id"], pinned[pin["submission_id"]].snapshot)
+            for pin in pins
+            # Запиненной строки может не оказаться (чистка данных): её
+            # отсутствие — не повод печатать чужие числа под её именем.
+            if pin["submission_id"] in pinned
+        ),
+    ]:
+        row = live.get(source_id)
+        documents.append(
+            build_expense_document(
+                snapshot,
+                business_date,
+                catalog=catalog,
+                division_title=names.get(source_id, ""),
+                staff_total=row.staff_total if row else 0,
+                vacancies=row.vacancies if row else 0,
+                attached=row.attached if row else 0,
+            )
+        )
+    return combine_documents(
+        documents,
+        division_title=names.get(division_id, ""),
+        business_date=business_date,
+        columns=catalog.columns_in_order(),
+    )

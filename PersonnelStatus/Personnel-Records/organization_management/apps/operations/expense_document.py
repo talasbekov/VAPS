@@ -208,3 +208,39 @@ def build_expense_document(
         ),
         columns=columns_order,
     )
+
+
+def combine_documents(documents, *, division_title, business_date, columns):
+    """Несколько однострочных документов → один многострочный с общим итогом.
+
+    Так собирается документ СВОДКИ: строка на каждое подразделение плюс
+    «ИТОГО». Строки не строятся здесь заново — они приходят готовыми от
+    build_expense_document, у которого одна ответственность: превратить один
+    снимок в одну строку. Второй способ построить строку разошёлся бы с
+    первым ровно там, где расхождение труднее всего заметить, — в подписанном
+    документе, где ИТОГО не сходится со слагаемыми.
+
+    Итог — СУММА строк, а не отдельный пересчёт по объединённым данным:
+    сумма по определению сходится с тем, что напечатано выше, а независимый
+    пересчёт сошёлся бы только пока никто не ошибся.
+
+    `columns` задаётся явно (а не берётся у первого документа): пустой список
+    строк — законное состояние, и у него всё равно обязана быть шапка.
+    """
+    rows = [row for document in documents for row in document.rows]
+    return ExpenseDocumentData(
+        division_title=division_title,
+        business_date=business_date,
+        rows=rows,
+        totals=ExpenseTotals(
+            staff_total=sum(row.staff_total for row in rows),
+            list_total=sum(row.list_total for row in rows),
+            vacancies=sum(row.vacancies for row in rows),
+            columns={
+                column: sum(row.cells[column].count for row in rows)
+                for column in columns
+            },
+            attached=sum(row.attached.count for row in rows),
+        ),
+        columns=tuple(columns),
+    )
