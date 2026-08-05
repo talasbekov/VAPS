@@ -60,7 +60,12 @@ def submit(division, business_date):
             division_id=division.id,
             business_date=business_date,
             actor=ACTOR,
-            window_dates=[TODAY - timedelta(days=2), TODAY, TOMORROW],
+            window_dates=[
+                TODAY - timedelta(days=2),
+                TODAY - timedelta(days=1),
+                TODAY,
+                TOMORROW,
+            ],
         )
 
 
@@ -291,3 +296,144 @@ def test_cancelling_a_status_amends_with_its_own_reason(
     (amendment,) = amendments(division, TOMORROW)
     assert amendment.sanction == WHY
     assert amendment.triggered_by_status_id == status.pk
+
+
+# ── Массовая пачка ───────────────────────────────────────────────────────
+
+
+def bulk(rows, *divisions, amendment_reason=""):
+    from organization_management.apps.operations.bulk_status_service import (
+        bulk_create_statuses,
+    )
+
+    with clock.override(MORNING):
+        return bulk_create_statuses(
+            rows,
+            actor=ACTOR,
+            business_date=TODAY,
+            allowed_division_ids={division.id for division in divisions},
+            amendment_reason=amendment_reason,
+        )
+
+
+def bulk_row(employee, start=TODAY, end=TOMORROW):
+    return {
+        "employee_id": employee.id,
+        "status_type_code": "DUTY",
+        "date_start": start,
+        "date_end": end,
+    }
+
+
+def test_a_batch_amends_the_day_once_no_matter_how_many_people_it_touched(
+    seed_types, division, employee
+):
+    """Версии 2, 3, 4… на один акт сделали бы историю дня нечитаемой.
+
+    Читатель увидел бы столько поправок, сколько человек попало в пачку, — и
+    ни одна из них не была бы отдельным решением.
+    """
+    others = [in_slot(division) for _ in range(3)]
+    submit(division, TODAY)
+
+    bulk(
+        [bulk_row(person) for person in [employee, *others]],
+        division,
+        amendment_reason=WHY,
+    )
+
+    (amendment,) = amendments(division, TODAY)
+    assert amendment.version == 2
+    assert amendment.sanction == WHY
+    # Одной строки, вызвавшей поправку, у пачки нет — pk первой был бы враньём.
+    assert amendment.triggered_by_status_id is None
+
+
+def test_a_batch_over_a_submitted_day_demands_a_reason(seed_types, division, employee):
+    submit(division, TODAY)
+
+    with pytest.raises(DomainError) as exc:
+        bulk([bulk_row(employee)], division)
+
+    assert exc.value.code == "AMENDMENT_REASON_REQUIRED"
+    assert OpsEmployeeStatus.objects.count() == 0
+
+
+def test_a_batch_that_touches_nothing_submitted_needs_no_reason(
+    seed_types, division, employee
+):
+    submit(division, TODAY)
+
+    bulk(
+        [bulk_row(employee, start=TOMORROW, end=TOMORROW + timedelta(days=1))],
+        division,
+    )
+
+    assert amendments(division, TODAY) == []
+
+
+def test_the_batch_uses_its_rows_own_periods_not_their_span(
+    seed_types, division, employee
+):
+    """Общий габарит накрыл бы дни, которых не касалась ни одна строка.
+
+    Промежуточный день здесь СДАН и содержит тех же людей — единственное,
+    что его защищает, это периоды самих строк.
+    """
+    other = in_slot(division)
+    past = TODAY - timedelta(days=2)
+    gap = TODAY - timedelta(days=1)
+    for business_date in (past, gap, TODAY):
+        submit(division, business_date)
+
+    bulk(
+        [
+            bulk_row(employee, start=past, end=past + timedelta(days=1)),
+            bulk_row(other, start=TODAY, end=TOMORROW),
+        ],
+        division,
+        amendment_reason=WHY,
+    )
+
+    assert len(amendments(division, past)) == 1
+    assert len(amendments(division, TODAY)) == 1
+    assert amendments(division, gap) == []
+
+
+def test_a_batch_spanning_two_divisions_amends_both_their_days(
+    seed_types, division, employee
+):
+    """Периметр обнаружения — ВСЕ сотрудники пачки, а не первый из них.
+
+    Пачка охватывает два подразделения, и сдача второго обнаруживается
+    только через его собственного человека.
+    """
+    elsewhere = Division.objects.create(name="Управление 2")
+    stranger = in_slot(elsewhere)
+    submit(division, TODAY)
+    submit(elsewhere, TODAY)
+
+    bulk(
+        [bulk_row(employee), bulk_row(stranger)],
+        division,
+        elsewhere,
+        amendment_reason=WHY,
+    )
+
+    assert len(amendments(division, TODAY)) == 1
+    assert len(amendments(elsewhere, TODAY)) == 1
+
+
+def test_a_batch_leaves_alone_a_day_that_reported_other_people(
+    seed_types, division, employee
+):
+    """Сдача, в знаменателе которой никого из пачки нет, ею не тронута."""
+    elsewhere = Division.objects.create(name="Управление 2")
+    in_slot(elsewhere)
+    submit(division, TODAY)
+    submit(elsewhere, TODAY)
+
+    bulk([bulk_row(employee)], division, amendment_reason=WHY)
+
+    assert len(amendments(division, TODAY)) == 1
+    assert amendments(elsewhere, TODAY) == []

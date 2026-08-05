@@ -132,6 +132,12 @@ class BulkStatusCreateSerializer(serializers.Serializer):
     rows = BulkStatusCreateRowSerializer(
         many=True, allow_empty=False, max_length=MAX_BULK_ROWS
     )
+    # Объяснение поправки: требуется, только если интервалы пачки задевают
+    # сданные дни. Обязательным его делать нельзя — утренняя пачка обычно не
+    # задевает ничего сданного, и поле-заглушка научило бы писать «пачка».
+    amendment_reason = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
 
 
 class OpsEmployeeStatusSerializer(serializers.ModelSerializer):

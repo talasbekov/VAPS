@@ -38,6 +38,9 @@ from django.db import transaction
 
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations import audit_service
+from organization_management.apps.operations.amendment_enforcement import (
+    enforce_amendment_on_bulk_edit,
+)
 from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.conflict_matrix import detect_conflicts
 from organization_management.apps.operations.exceptions import DomainError
@@ -94,7 +97,9 @@ def _overlaps(existing_rows, date_start, date_end):
 
 
 @transaction.atomic
-def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
+def bulk_create_statuses(
+    rows, *, actor, business_date, allowed_division_ids, amendment_reason=""
+):
     """Создать статусы, принадлежащие оператору (source=USER), атомарно.
 
     ``rows``: список словарей ``{employee_id, status_type_code, date_start,
@@ -102,6 +107,11 @@ def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
     — область видимости оператора (резолвит вызывающий из RBAC; сервис лишь
     обеспечивает 403). Любая неудача поднимает один DomainError и НЕ пишет
     ничего; при успехе возвращаются созданные строки.
+
+    `amendment_reason` нужен, только если интервалы пачки задевают сданные
+    дни: они вытесняются поправками — ПО ОДНОЙ НА ДЕНЬ, сколько бы строк
+    пачки в этот день ни попало (см. amendment_enforcement). Без причины
+    такая пачка отклоняется целиком, как и любая другая её ошибка.
     """
     _require_actor(actor)
     # Защита от будущего вызывающего (незаполненное поле сериализатора):
@@ -305,5 +315,15 @@ def bulk_create_statuses(rows, *, actor, business_date, allowed_division_ids):
                 "new_value": audit_service.status_snapshot(row),
             }
             for row in created
+        )
+        # В том же savepoint, что и вставка: пачка и вытеснение сданного
+        # ложатся одним коммитом. Периметр — сотрудники пачки, интервалы —
+        # построчные: у строк пачки разные периоды, и общий габарит накрыл бы
+        # дни, которых не касалась ни одна из них.
+        enforce_amendment_on_bulk_edit(
+            {row["employee_id"] for row in rows},
+            [(row["date_start"], row["date_end"]) for row in rows],
+            actor=actor,
+            reason=amendment_reason,
         )
     return created
