@@ -196,3 +196,51 @@ class OpsSubmissionControlSettings(TimeStampedModel):
 
     def __str__(self):
         return f"control_hour={self.control_hour}"
+
+
+class OpsTomorrowBlockOverride(TimeStampedModel):
+    """Законный обход блокировки завтрашнего дня — одна строка на дату.
+
+    Блокировка (вывод предыдущего среза) закрывает завтрашний расход, пока
+    хоть одно «необходимое управление» не сдало день. Обход разрешает
+    сформировать расход всё равно — но не молча: строка НЕСЁТ ОТВЕТСТВЕННОГО
+    (`overridden_by`), время (`created_at`) и причину (`reason`). Обход без
+    следа был бы неотличим от выключенной блокировки.
+
+    ПОДАТНЫЙ УРОВЕНЬ — ДАТА, а не подразделение: блокировка общая (закрывает
+    любой отстающий), поэтому и снимается она целиком. Обход «на одно
+    управление» обещал бы избирательность, которой в выводе нет.
+
+    Непустоту причины и ответственного держит БД (regex по непробельному
+    символу), а не только гард сервиса: `.create()` не зовёт full_clean, и
+    инвариант, живущий лишь в коде, обходится любым переносом данных.
+
+    Отличия от источника:
+    - актор и ссылки плоские (как во всём разделе), FK нет;
+    - отзыва обхода нет ни там, ни здесь: строка неотзывна, и защита от
+      опечатки в далёкой дате — на слое маршрута (верхний горизонт).
+    """
+
+    business_date = models.DateField(unique=True)
+    reason = models.TextField()
+    overridden_by = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = "ops_tomorrow_block_overrides"
+        constraints = [
+            # ~Q(regex=r"^\s*$") отвергает и "", и «   »: обход, объяснённый
+            # пробелами, был бы объяснён ничем.
+            models.CheckConstraint(
+                condition=~models.Q(reason__regex=r"^\s*$"),
+                name="chk_ops_tomorrow_override_reason",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(overridden_by__regex=r"^\s*$"),
+                name="chk_ops_tomorrow_override_actor",
+            ),
+        ]
+        verbose_name = "Обход блокировки на завтра"
+        verbose_name_plural = "Обходы блокировки на завтра"
+
+    def __str__(self):
+        return f"обход {self.business_date} — {self.overridden_by}"

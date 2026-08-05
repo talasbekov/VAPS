@@ -17,6 +17,9 @@ from django.test.utils import CaptureQueriesContext
 
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations import audit_service, clock
+from organization_management.apps.operations.block_override import (
+    override_tomorrow_block,
+)
 from organization_management.apps.operations.bulk_status_service import (
     bulk_create_statuses,
 )
@@ -602,6 +605,13 @@ def test_every_declared_action_is_actually_written(types, home, host):
             actor=ACTOR,
             reason="ошибка в наряде",
             sanction="замечание",
+        )
+        # Обход блокировки — единственное событие раздела со своей сущностью:
+        # его ось — дата, а не подразделение и не строка статуса.
+        override_tomorrow_block(
+            business_date=TODAY + timedelta(days=1),
+            actor=ACTOR,
+            reason="решение руководителя",
         )
 
     written = {entry.action for entry in events()}

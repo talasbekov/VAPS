@@ -5,8 +5,10 @@ apps/operations/submissions/tomorrow_block.py, Story 5.6a).
 завтра?»: подразделение из списка «необходимых управлений» (справочник
 контроля сдачи, срез 37), у которого на эту дату НЕТ действующей сдачи, —
 отстающее; любое отстающее блокирует. Результат — доменный объект: отказ
-маршрута (HTTP-422 TOMORROW_BLOCKED) живёт на слое API, законный обход
-(TomorrowBlockOverride) — отдельным срезом, и здесь он ещё не спрашивается.
+маршрута (HTTP-422 TOMORROW_BLOCKED) живёт на слое API, а законный обход
+(строка ответственности на дату) спрашивается ЗДЕСЬ — иначе каждому читателю
+блокировки пришлось бы помнить о нём самому, и первый забывший закрыл бы
+завтрашний день вопреки принятому решению.
 
 Пакетность по построению: ОДИН current_for_many на весь список, а не
 current_for на каждое подразделение. Число запросов не зависит от размера
@@ -29,6 +31,7 @@ from datetime import date
 from organization_management.apps.operations.selectors import (
     DailySubmissionSelector,
     SubmissionControlSettingsSelector,
+    TomorrowBlockOverrideSelector,
 )
 
 
@@ -37,13 +40,20 @@ class TomorrowBlock:
     """Итог вывода: закрыт ли завтрашний день и кем именно.
 
     `laggards` — id «необходимых управлений» без действующей сдачи на дату, по
-    возрастанию. `blocked` — есть ли хоть одно такое. Список отдаётся и при
-    blocked=False (он тогда пуст) намеренно: у вызывающего один разбор ответа,
-    а не два.
+    возрастанию. `blocked` — есть ли хоть одно такое, ЕСЛИ замок не снят
+    законным обходом. Список отдаётся и при blocked=False намеренно: у
+    вызывающего один разбор ответа, а не два, — и при обходе отстающие
+    ОСТАЮТСЯ ВИДНЫ, иначе обход выглядел бы как «все сдали».
+
+    `overridden` — снят ли замок обходом. True только там, где было что
+    снимать: обход на дате без отстающих ничего не менял, и объявить её
+    «обойдённой» значило бы записать на чей-то счёт решение, которое ни на
+    что не повлияло.
     """
 
     blocked: bool
     laggards: list
+    overridden: bool = False
 
 
 def tomorrow_block(business_date: date) -> TomorrowBlock:
@@ -58,6 +68,10 @@ def tomorrow_block(business_date: date) -> TomorrowBlock:
     сдачу которого сняли поправкой, обязан снова стать отстающим, иначе
     вытесненная версия продолжала бы отпирать завтра.
 
+    Обход спрашивается ТОЛЬКО при отстающих: на дате без них он ничего не
+    снимает, а лишний запрос платился бы на каждом чтении блокировки — то
+    есть на каждом формировании расхода в норме, когда все сдали.
+
     Раннего выхода на пустом списке ЗДЕСЬ НЕТ намеренно: он был бы вторым
     владельцем правила «пустая настройка не стоит запроса». Первый — ORM,
     который на `division_id__in=[]` не ходит в базу вовсе; проба со снятым
@@ -66,4 +80,6 @@ def tomorrow_block(business_date: date) -> TomorrowBlock:
     required = SubmissionControlSettingsSelector.required_division_ids()
     submitted = DailySubmissionSelector.current_for_many(required, business_date)
     laggards = sorted(set(required) - set(submitted))
+    if laggards and TomorrowBlockOverrideSelector.active_for(business_date):
+        return TomorrowBlock(blocked=False, laggards=laggards, overridden=True)
     return TomorrowBlock(blocked=bool(laggards), laggards=laggards)
