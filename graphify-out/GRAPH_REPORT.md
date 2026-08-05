@@ -1,16 +1,16 @@
 # Graph Report - elegant-haslett-5a997d  (2026-08-05)
 
 ## Corpus Check
-- 1825 files · ~2,501,226 words
+- 1828 files · ~2,502,960 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 21123 nodes · 33087 edges · 1458 communities (1243 shown, 215 thin omitted)
+- 21145 nodes · 33115 edges · 1463 communities (1245 shown, 218 thin omitted)
 - Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 2594 edges (avg confidence: 0.76)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c4a547f7`
+- Built from commit: `0f119a4d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1079,6 +1079,9 @@
 - [[_COMMUNITY_Community 1335|Community 1335]]
 - [[_COMMUNITY_Community 1336|Community 1336]]
 - [[_COMMUNITY_Community 1337|Community 1337]]
+- [[_COMMUNITY_Community 1340|Community 1340]]
+- [[_COMMUNITY_Community 1341|Community 1341]]
+- [[_COMMUNITY_Community 1342|Community 1342]]
 - [[_COMMUNITY_Community 1343|Community 1343]]
 - [[_COMMUNITY_Community 1344|Community 1344]]
 - [[_COMMUNITY_Community 1345|Community 1345]]
@@ -1088,7 +1091,9 @@
 - [[_COMMUNITY_Community 1349|Community 1349]]
 - [[_COMMUNITY_Community 1350|Community 1350]]
 - [[_COMMUNITY_Community 1351|Community 1351]]
+- [[_COMMUNITY_Community 1353|Community 1353]]
 - [[_COMMUNITY_Community 1356|Community 1356]]
+- [[_COMMUNITY_Community 1357|Community 1357]]
 - [[_COMMUNITY_Community 1611|Community 1611]]
 - [[_COMMUNITY_Community 1705|Community 1705]]
 - [[_COMMUNITY_Community 1760|Community 1760]]
@@ -1168,15 +1173,15 @@
 10. `ZoneInfo` - 62 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `AlertTitle()` --calls--> `cn()`  [INFERRED]
-  Backend/PersonnelStatus/PersonalRecordFront/components/ui/alert.tsx → frontend/src/shared/lib/cn.ts
-- `DialogOverlay()` --calls--> `cn()`  [INFERRED]
-  Backend/PersonnelStatus/PersonalRecordFront/components/ui/dialog.tsx → frontend/src/shared/lib/cn.ts
 - `DropdownMenuCheckboxItem()` --calls--> `cn()`  [INFERRED]
   Backend/PersonnelStatus/PersonalRecordFront/components/ui/dropdown-menu.tsx → frontend/src/shared/lib/cn.ts
 - `DropdownMenuRadioItem()` --calls--> `cn()`  [INFERRED]
   Backend/PersonnelStatus/PersonalRecordFront/components/ui/dropdown-menu.tsx → frontend/src/shared/lib/cn.ts
 - `DropdownMenuShortcut()` --calls--> `cn()`  [INFERRED]
+  Backend/PersonnelStatus/PersonalRecordFront/components/ui/dropdown-menu.tsx → frontend/src/shared/lib/cn.ts
+- `DropdownMenuSubTrigger()` --calls--> `cn()`  [INFERRED]
+  Backend/PersonnelStatus/PersonalRecordFront/components/ui/dropdown-menu.tsx → frontend/src/shared/lib/cn.ts
+- `DropdownMenuSubContent()` --calls--> `cn()`  [INFERRED]
   Backend/PersonnelStatus/PersonalRecordFront/components/ui/dropdown-menu.tsx → frontend/src/shared/lib/cn.ts
 
 ## Import Cycles
@@ -1194,15 +1199,15 @@
 - **WDS session lifecycle: start -> handoff -> wrap** —  [INFERRED 0.85]
 - **WDS agent triad across phases** —  [EXTRACTED 1.00]
 
-## Communities (1458 total, 215 thin omitted)
+## Communities (1463 total, 218 thin omitted)
 
 ### Community 0 - "Employee Status Service Layer"
-Cohesion: 0.07
-Nodes (28): Сервисный слой для управления статусами сотрудников, Планирование будущего статуса сотрудника          Args:             employee_id:, Продление существующего статуса          Args:             status_id: ID статуса, Досрочное завершение статуса          Args:             status_id: ID статуса, Сервис для управления статусами сотрудников, Отмена запланированного статуса          Args:             status_id: ID статуса, Получение текущего активного статуса сотрудника          Args:             emplo, Получение истории статусов сотрудника          Args:             employee_id: ID (+20 more)
+Cohesion: 0.14
+Nodes (19): Планирование будущего статуса сотрудника          Args:             employee_id:, Продление существующего статуса          Args:             status_id: ID статуса, Досрочное завершение статуса          Args:             status_id: ID статуса, Сервис для управления статусами сотрудников, Отмена запланированного статуса          Args:             status_id: ID статуса, Получение текущего активного статуса сотрудника          Args:             emplo, Создание нового статуса сотрудника          Args:             employee_id: ID со, Применение запланированных статусов, дата начала которых наступила          Args (+11 more)
 
 ### Community 1 - "Vendored JS (minified bundle)"
 Cohesion: 0.07
-Nodes (15): $(), Ae(), B(), Be(), $e(), fe(), Ge(), ht() (+7 more)
+Nodes (29): $(), Ae(), B(), Be(), c(), $e(), ee(), F() (+21 more)
 
 ### Community 2 - "Vendored JS (minified bundle)"
 Cohesion: 0.07
@@ -1226,7 +1231,7 @@ Nodes (3): Design Loop (pattern), Gap Map (pattern), Freya (WDS UX Designer Agen
 
 ### Community 7 - "Divisions Model & Admin"
 Cohesion: 0.02
-Nodes (209): al, an(), ao(), as(), At, au(), bc(), bf (+201 more)
+Nodes (211): al, an(), ao(), as(), At, au(), bc(), Be() (+203 more)
 
 ### Community 8 - "Dictionaries API (Ranks/Positions)"
 Cohesion: 0.15
@@ -1234,7 +1239,7 @@ Nodes (23): approver_client(), _client(), creator_client(), detail_url(), draft_
 
 ### Community 9 - "jQuery (vendored)"
 Cohesion: 0.05
-Nodes (19): adoptValue(), ajaxConvert(), ajaxHandleResponses(), Animation(), camelCase(), computeStyleTests(), createFxNow(), createTween() (+11 more)
+Nodes (13): boxModelAdjustment(), computeStyleTests(), createButtonPseudo(), createInputPseudo(), curCSS(), dataAttr(), finalPropName(), getData() (+5 more)
 
 ### Community 10 - "RBAC & Docker Infrastructure"
 Cohesion: 0.20
@@ -1282,7 +1287,7 @@ Nodes (29): 0. Назначение документа, 10. Сквозные NFR
 
 ### Community 21 - "Division Serializers & ViewSet"
 Cohesion: 0.02
-Nodes (173): bd(), cl, dl(), ih(), ph(), th(), ul(), R() (+165 more)
+Nodes (175): bd(), cl, ih(), ph(), uh(), R(), w, Bc (+167 more)
 
 ### Community 22 - "Community 22"
 Cohesion: 0.11
@@ -1330,7 +1335,7 @@ Nodes (22): 1. Покрытие решений R1–R8, 2. Покрытие ре
 
 ### Community 33 - "Community 33"
 Cohesion: 0.04
-Nodes (51): AssignmentVersionApproveRequest, AssignmentVersionApproveResponse, AssignmentVersionConflictsResponse, AssignmentVersionDetailResponse, assignmentVersionKeys, AssignmentVersionReturnRequest, AssignmentVersionReturnResponse, AssignmentVersionsListResponse (+43 more)
+Nodes (61): AssignmentVersionApproveRequest, AssignmentVersionApproveResponse, AssignmentVersionConflictsResponse, AssignmentVersionDetailResponse, assignmentVersionKeys, AssignmentVersionReturnRequest, AssignmentVersionReturnResponse, AssignmentVersionSubmitResponse (+53 more)
 
 ### Community 34 - "Community 34"
 Cohesion: 0.15
@@ -1341,8 +1346,8 @@ Cohesion: 0.09
 Nodes (22): Epic 10: Экраны портала — оператор сдаёт день за минуты, Epic 11: Уведомления — центр + WebSocket, Epic 12: Деплой в контур и пилот, Epic 13: Цикл исправлений в закрытом контуре, Epic 14: Объекты и дежурства (этап 2), Epic 15: ОМ — Потребность и брокеридж (этап 2), Epic 16: ОМ — Расстановка (этап 2), Epic 17: ОМ — Проведение (этап 2) (+14 more)
 
 ### Community 36 - "Community 36"
-Cohesion: 0.24
-Nodes (10): addPopupIndex(), dismissAddRelatedObjectPopup(), dismissChangeRelatedObjectPopup(), dismissDeleteRelatedObjectPopup(), dismissRelatedLookupPopup(), removePopupIndex(), showAdminPopup(), showRelatedObjectLookupPopup() (+2 more)
+Cohesion: 0.13
+Nodes (21): addPopupIndex(), dismissAddRelatedObjectPopup(), dismissChangeRelatedObjectPopup(), dismissDeleteRelatedObjectPopup(), dismissRelatedLookupPopup(), removePopupIndex(), showAdminPopup(), showRelatedObjectLookupPopup() (+13 more)
 
 ### Community 37 - "Community 37"
 Cohesion: 0.06
@@ -1357,12 +1362,12 @@ Cohesion: 0.12
 Nodes (28): _client(), global_op(), _post(), Story 5.8a — API POST сдачи дня (POST /api/operations/daily-submissions/).  Prov, seed_operations roles + a root→child subtree and an unrelated division., DIVISION_OPERATOR (holds daily_report.mark_update) scoped to root., DIVISION_OPERATOR with a global (unscoped) role., scoped_op() (+20 more)
 
 ### Community 41 - "Community 41"
-Cohesion: 0.07
-Nodes (19): ABC, EmployeeApplicationService, EmployeeRepository, Employee, int, Employee, int, EmployeeStatus (+11 more)
+Cohesion: 0.08
+Nodes (10): EmployeeApplicationService, EmployeeApplicationServiceTest, EmployeeRepository, FullName, Photo, EmployeeApplicationServiceIntegrationTest, Тест успешного приема на работу, TestEmployeeApplicationService (+2 more)
 
 ### Community 42 - "Community 42"
-Cohesion: 0.18
-Nodes (17): StatusTable(), EmployeesPage(), useStaffUnitsByDirectorate(), StatusesPage(), EmployeeProfile(), EmployeeProfileProps, EmployeeTable(), formatDate() (+9 more)
+Cohesion: 0.07
+Nodes (38): ProbeScreen(), SwitchAndLogoutProbe(), SwitchProbe(), LoginPage(), useAuth(), DashboardLayout(), DashboardLayoutProps, PerformanceProfiler() (+30 more)
 
 ### Community 43 - "Community 43"
 Cohesion: 0.04
@@ -1374,23 +1379,23 @@ Nodes (19): H-1. Эскалация по бездействию (вверх по
 
 ### Community 45 - "Community 45"
 Cohesion: 0.03
-Nodes (76): FakeSocket, advanceCursor(), asNotification(), buildCatchUpQuery(), buildSocketUrl(), catchUp(), clearRetryTimer(), closeSocket() (+68 more)
+Nodes (75): FakeSocket, advanceCursor(), asNotification(), buildCatchUpQuery(), buildSocketUrl(), catchUp(), closeSocket(), configureNotificationsSocket() (+67 more)
 
 ### Community 46 - "Community 46"
 Cohesion: 0.18
 Nodes (5): # TODO: Implement this task, # TODO: Implement this task, # TODO: Implement this task, # TODO: Implement this task, # TODO: Implement this task
 
 ### Community 47 - "Community 47"
-Cohesion: 0.07
-Nodes (45): animateChildren(), animateTarget(), animateVariant(), animateVisualElement(), calcChildStagger(), cancel(), cancelTreeOptimisedTransformAnimations(), clear() (+37 more)
+Cohesion: 0.03
+Nodes (62): Alert(), AlertDescription(), AlertTitle(), Avatar2(), AvatarFallback2(), AvatarImage2(), Badge(), Button() (+54 more)
 
 ### Community 48 - "Community 48"
 Cohesion: 0.02
-Nodes (71): Ae, Bc, bn, br, Bt, cr, di, Dr (+63 more)
+Nodes (67): Ae, bn, br, Bt, cr, di, Dr, ec (+59 more)
 
 ### Community 49 - "Community 49"
-Cohesion: 0.08
-Nodes (9): APITestCase, AuditLogAPITest, NotificationAPITest, The list view returns only the authenticated user's notifications., Ensure that the list view only returns notifications for the authenticated user., A notification can be marked as read via the mark_read action., Ensure that a notification can be marked as read., Unauthenticated users receive 401 Unauthorized. (+1 more)
+Cohesion: 0.10
+Nodes (9): APITestCase, AuditMiddlewareTest, NotificationAPITest, The list view returns only the authenticated user's notifications., Ensure that the list view only returns notifications for the authenticated user., A notification can be marked as read via the mark_read action., Ensure that a notification can be marked as read., Unauthenticated users receive 401 Unauthorized. (+1 more)
 
 ### Community 50 - "Community 50"
 Cohesion: 0.10
@@ -1418,15 +1423,15 @@ Nodes (10): buildFragment(), buildParams(), cloneCopyEvent(), DOMEval(), domMani
 
 ### Community 56 - "Community 56"
 Cohesion: 0.01
-Nodes (142): Alert(), AlertDescription(), AlertTitle(), asRGBA(), Avatar2(), AvatarFallback2(), AvatarImage2(), axisEquals() (+134 more)
+Nodes (96): approximateRoot(), asRGBA(), axisEquals(), boxEquals(), calcAngularFreq(), checkVariantsDidChange(), composeContextScopes(), composeRefs() (+88 more)
 
 ### Community 57 - "Community 57"
 Cohesion: 0.13
 Nodes (14): 1. Decision-readiness — strong, 2. Substance over theater — strong, 3. Strategic coherence — strong, 4. Done-ness clarity — adequate, 5. Scope honesty — strong, 6. Downstream usability — adequate, 7. Shape fit — strong, Findings (+6 more)
 
 ### Community 58 - "Community 58"
-Cohesion: 0.07
-Nodes (21): AuditLogFilterSerializer, AuditLogSerializer, Validates query-string filters; a bad UUID/datetime → DRF ValidationError     →, AuditLogPagination, AuditLogViewSet, AuditMiddleware, AuditLogSelector, Story 4.5 — read-side selector for the audit log (FR-36).  The read path lives I (+13 more)
+Cohesion: 0.12
+Nodes (12): AuditLogFilterSerializer, AuditLogSerializer, Validates query-string filters; a bad UUID/datetime → DRF ValidationError     →, AuditLogViewSet, AuditMiddleware, Meta, Meta, Story 4.5 — audit read API serializers (output projection + filter form). (+4 more)
 
 ### Community 59 - "Community 59"
 Cohesion: 0.15
@@ -1453,8 +1458,8 @@ Cohesion: 0.14
 Nodes (14): Epic 5: Сдача дня — официальное заявление подразделения, Story 5.10: Property — иммутабельность снапшота, Story 5.11: Фрактальная сводка, Story 5.1: Вход оператора, Story 5.2: Модель DailySubmission, Story 5.3a: Срез-билдер (snapshot builder), Story 5.3b: Сервис сдачи дня, Story 5.4a: Сервис amendment — создание версии v2+ (+6 more)
 
 ### Community 65 - "Community 65"
-Cohesion: 0.10
-Nodes (36): useDivisionsTree(), useToast(), ReportsPage(), Alert(), AlertDescription(), AlertTitle(), alertVariants, Calendar() (+28 more)
+Cohesion: 0.11
+Nodes (39): useDivisionsTree(), useToast(), ReportsPage(), AddEmployeeDialogProps, Alert(), AlertDescription(), alertVariants, Calendar() (+31 more)
 
 ### Community 66 - "Community 66"
 Cohesion: 0.17
@@ -1465,8 +1470,8 @@ Cohesion: 0.08
 Nodes (25): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Definition of Done, Dev Agent Record, Dev Notes (+17 more)
 
 ### Community 68 - "Community 68"
-Cohesion: 0.09
-Nodes (50): AcknowledgePlacementResponse, AddJournalEntryRequest, AddJournalEntryResponse, ApproveDemandResponse, ApprovePlacementResponse, AssignPlacementRequest, AssignPlacementResponse, CloseSecurityEventRequest (+42 more)
+Cohesion: 0.08
+Nodes (54): AcknowledgePlacementResponse, AddJournalEntryRequest, AddJournalEntryResponse, ApproveDemandResponse, ApprovePlacementResponse, AssignPlacementRequest, AssignPlacementResponse, CloseSecurityEventRequest (+46 more)
 
 ### Community 69 - "Community 69"
 Cohesion: 0.08
@@ -1477,12 +1482,12 @@ Cohesion: 0.54
 Nodes (7): e(), i(), l(), n(), r(), s(), u()
 
 ### Community 71 - "Community 71"
-Cohesion: 0.08
-Nodes (21): RepositoryBusinessRuleError, RepositoryNotFoundError, RepositoryPermissionError, RepositoryNotFoundError, RepositoryPermissionError, RepositoryValidationError, DemoClock, extractOffset() (+13 more)
+Cohesion: 0.09
+Nodes (18): RepositoryBusinessRuleError, RepositoryNotFoundError, RepositoryPermissionError, DemoClock, extractOffset(), formatWithOffset(), createMemoryPersistence(), DemoScenario (+10 more)
 
 ### Community 72 - "Community 72"
-Cohesion: 0.04
-Nodes (96): bl(), _c, dh(), el, Hp(), Kp(), _l(), le() (+88 more)
+Cohesion: 0.03
+Nodes (95): _c, dh(), Ec(), eh(), el, Hp(), Kp(), _r (+87 more)
 
 ### Community 73 - "Community 73"
 Cohesion: 0.07
@@ -1502,7 +1507,7 @@ Nodes (11): Epic 6: Документ Расхода — артефакт, кот
 
 ### Community 77 - "Community 77"
 Cohesion: 0.06
-Nodes (26): _d(), Id(), $(), A(), ae, C, de, E (+18 more)
+Nodes (25): _d(), Id(), $(), A(), ae, C, E, ee (+17 more)
 
 ### Community 78 - "Community 78"
 Cohesion: 0.08
@@ -1514,11 +1519,11 @@ Nodes (6): DjangoModelFactory, DivisionFactory, EmployeeFactory, Meta, PositionF
 
 ### Community 80 - "Community 80"
 Cohesion: 0.04
-Nodes (51): useAssignmentVersions(), useObjectsList(), AppRoutes(), CommandCenterPage, DemoToolbar, ALL_CODES, GATE_MATRIX, SecurityEventDetailPage (+43 more)
+Nodes (60): AssignmentVersionsListResponse, useAssignmentVersions(), useObject(), useUpdatePassport(), AppRoutes(), CommandCenterPage, DemoToolbar, ALL_CODES (+52 more)
 
 ### Community 81 - "Community 81"
-Cohesion: 0.05
-Nodes (31): client, Employee, EmployeesPage, ErrorEnvelope, Body, client, ORIGINAL_BODY, TemporaryDutyProbe() (+23 more)
+Cohesion: 0.09
+Nodes (33): oc(), an(), cn(), de(), dn, _e(), En(), fn() (+25 more)
 
 ### Community 82 - "Community 82"
 Cohesion: 0.07
@@ -1565,8 +1570,8 @@ Cohesion: 0.06
 Nodes (24): Конфигурация приложения statuses, Регистрация сигналов при инициализации приложения, StatusesConfig, ChangeType, EmployeeStatus, Meta, Переопределенный метод сохранения, Досрочное завершение статуса (+16 more)
 
 ### Community 94 - "Community 94"
-Cohesion: 0.07
-Nodes (11): divisionsFixture, DivisionsResponse, EmployeesResponse, NAMES, origOffsetHeight, origOffsetWidth, TODAY_ISO, ToastContext (+3 more)
+Cohesion: 0.04
+Nodes (27): asRecord(), BulkFailureDescription, BulkFailureKind, BulkRowError, describeBulkFailure(), parseBulkRowErrors(), parseValidationDetails(), DivisionsResponse (+19 more)
 
 ### Community 95 - "Community 95"
 Cohesion: 0.17
@@ -1585,8 +1590,8 @@ Cohesion: 0.22
 Nodes (9): Epic 8: SPA Foundation — портал открывается, Story 8.1: Scaffold Vite react-ts с контурной донастройкой, Story 8.2: Канон-линтеры, Story 8.3: Кодоген типов из схемы, Story 8.4: apiClient и DomainError-парсинг, Story 8.5: useApiMutation и ConflictDialog, Story 8.6: Auth-подключение, Story 8.7: Роутер, routes.ts и layout (+1 more)
 
 ### Community 99 - "Community 99"
-Cohesion: 0.06
-Nodes (39): Avatar(), AvatarFallback(), AvatarImage(), Button(), buttonVariants, Card(), CardAction(), CardContent() (+31 more)
+Cohesion: 0.05
+Nodes (45): Avatar(), AvatarFallback(), AvatarImage(), Button(), buttonVariants, Card(), CardAction(), CardContent() (+37 more)
 
 ### Community 101 - "Community 101"
 Cohesion: 0.05
@@ -1602,15 +1607,15 @@ Nodes (8): API & Communication Patterns, Authentication & Security, Core Archite
 
 ### Community 104 - "Community 104"
 Cohesion: 0.06
-Nodes (93): find_replacement_candidates(), JournalEntrySelector, Story 17.2 (FR-29): read-only channel for "Инцидент попадает в историю ОМ, Паспо, Read-only incident lookups — the ONLY data channel for "Паспорт     Объекта"/"ка, All INCIDENT entries whose event belongs to the given Object,         chronologi, All INCIDENT entries naming this employee in participant_ids —         the "карт, Story 17.5 (FR-31): "следующий по штатной цепочке внутри     управления/департам, amend_assignment_version() (+85 more)
+Nodes (95): find_replacement_candidates(), JournalEntrySelector, Story 17.2 (FR-29): read-only channel for "Инцидент попадает в историю ОМ, Паспо, Read-only incident lookups — the ONLY data channel for "Паспорт     Объекта"/"ка, All INCIDENT entries whose event belongs to the given Object,         chronologi, All INCIDENT entries naming this employee in participant_ids —         the "карт, Story 17.5 (FR-31): "следующий по штатной цепочке внутри     управления/департам, amend_assignment_version() (+87 more)
 
 ### Community 105 - "Community 105"
 Cohesion: 0.07
 Nodes (32): PositionSerializer, Any, Employee, str, ChildStaffUnitBulkSerializer, DirectorateStaffUnitSerializer, DivisionBriefSerializer, EmployeeSerializer (+24 more)
 
 ### Community 106 - "Community 106"
-Cohesion: 0.06
-Nodes (44): override_tomorrow_block(), Story 5.6b — record a legal override of the next-day lock.  A руководитель legal, Record a date-level override; raise ``ValueError`` on bad input or a duplicate., _aware(), _count(), global_op(), _in_request(), make_employee() (+36 more)
+Cohesion: 0.11
+Nodes (22): override_tomorrow_block(), Story 5.6b — record a legal override of the next-day lock.  A руководитель legal, Record a date-level override; raise ``ValueError`` on bad input or a duplicate., test_override_blank_input_leaves_no_row(), test_override_emits_row_with_deterministic_entity_id(), test_override_entity_id_differs_across_dates(), test_override_non_date_business_date_leaves_no_row(), make_division() (+14 more)
 
 ### Community 107 - "Community 107"
 Cohesion: 0.29
@@ -1626,7 +1631,7 @@ Nodes (7): Epic 4: Аудит — каждое решение восстанов
 
 ### Community 110 - "Community 110"
 Cohesion: 0.05
-Nodes (42): ai, ao, bi, bo, ci, co, Do(), ds() (+34 more)
+Nodes (41): ai, ao, bi, bo, ci, co, Do(), ds() (+33 more)
 
 ### Community 112 - "Community 112"
 Cohesion: 0.83
@@ -1645,24 +1650,24 @@ Cohesion: 0.10
 Nodes (31): Focus, clamp(), columnKind(), conflict(), edit(), move(), navigate(), periodEdit() (+23 more)
 
 ### Community 121 - "Community 121"
-Cohesion: 0.13
-Nodes (25): ready(), clamp(), computeCoordsFromPlacement(), convertValueToCoords(), evaluate(), expandPaddingObject(), fn(), getAlignment() (+17 more)
+Cohesion: 0.12
+Nodes (26): ready(), clamp(), computeCoordsFromPlacement(), convertValueToCoords(), evaluate(), expandPaddingObject(), fn(), getAlignment() (+18 more)
 
 ### Community 124 - "Community 124"
 Cohesion: 0.03
-Nodes (74): ApiError, BusinessRuleError, OVERRIDABLE_CODES, parseErrorResponse(), readEnvelope(), ServerError, Registry, REGISTRY_PATH (+66 more)
+Nodes (58): ACTIVE, COLUMN_KINDS, DailyGrid(), OPTIONS, origOffsetHeight, origOffsetWidth, ROWS, activeCellAt() (+50 more)
 
 ### Community 126 - "Community 126"
 Cohesion: 0.19
 Nodes (8): Command, EntityReport, _is_ragged(), _parse_int(), Idempotent CSV import of core reference catalogs — positions and ranks (2.7, FR-, Yield (csv_line_number, row_dict). Raises CommandError on a structurally, Blank -> 0; integer string -> int; anything else -> None (invalid)., A CSV row whose field count differs from the header. Surplus values land     und
 
 ### Community 139 - "Community 139"
-Cohesion: 0.07
-Nodes (27): Be(), fl(), O(), b(), L, #m(), Re(), Rt() (+19 more)
+Cohesion: 0.06
+Nodes (36): bl(), _l(), le(), S(), P(), b(), L, #m() (+28 more)
 
 ### Community 140 - "Community 140"
-Cohesion: 0.06
-Nodes (42): yd(), be(), Me(), _0, A0, Ae(), av(), b0() (+34 more)
+Cohesion: 0.11
+Nodes (22): _aware(), _count(), global_op(), _in_request(), make_employee(), Story 5.9 — аудит сдач: every submissions mutation leaves a trace.  Mirror of te, A directly-built submission whose roster CONTAINS the employee — the     5.4b co, Run fn() inside the middleware so the request-context contextvar is set. (+14 more)
 
 ### Community 141 - "Community 141"
 Cohesion: 0.33
@@ -1729,8 +1734,8 @@ Cohesion: 0.08
 Nodes (23): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Defer (2), Dev Agent Record, Dev Notes (+15 more)
 
 ### Community 288 - "Community 288"
-Cohesion: 0.03
-Nodes (33): date, catchup_plan(), _local_tz(), override(), Temporal core (ARCH-DATA-022/023).  Clock is the single legitimate wall-clock re, Aware UTC datetime; honors an active override()., Current business date: calendar day at midnight Asia/Qyzylorda., Freeze Clock to `value` within the context (nestable, exception-safe).      Acce (+25 more)
+Cohesion: 0.04
+Nodes (22): date, catchup_plan(), _local_tz(), override(), Temporal core (ARCH-DATA-022/023).  Clock is the single legitimate wall-clock re, Aware UTC datetime; honors an active override()., Current business date: calendar day at midnight Asia/Qyzylorda., Freeze Clock to `value` within the context (nestable, exception-safe).      Acce (+14 more)
 
 ### Community 289 - "Community 289"
 Cohesion: 0.12
@@ -1753,20 +1758,20 @@ Cohesion: 0.07
 Nodes (40): NotificationFilterSerializer, NotificationMarkReadResponseSerializer, Validates the ``since`` query param; a bad datetime → DRF ValidationError     →, NotificationPagination, ViewSet для управления уведомлениями текущего пользователя.      Предоставляет д, Пометить уведомление как прочитанное.          Args:             request: HTTP з, NotificationViewSet, Возвращает список всех уведомлений для текущего пользователя. (+32 more)
 
 ### Community 298 - "Community 298"
-Cohesion: 0.07
-Nodes (49): _compute_event(), _default_window(), _diff_key(), _is_late(), Сервис сдачи дня (Story 5.3b): ``submit_day``.  Первый писатель рядов DailySubmi, Сдать день: атомарный срез + diff-event + late + создание DailySubmission v1., Окно по умолчанию: today + tomorrow («за день вперёд» основной + коррекция)., late = сдача после контрольного часа (local time-of-day > control_hour).      Де (+41 more)
+Cohesion: 0.09
+Nodes (39): _compute_event(), _default_window(), _diff_key(), _is_late(), Сервис сдачи дня (Story 5.3b): ``submit_day``.  Первый писатель рядов DailySubmi, Сдать день: атомарный срез + diff-event + late + создание DailySubmission v1., Окно по умолчанию: today + tomorrow («за день вперёд» основной + коррекция)., late = сдача после контрольного часа (local time-of-day > control_hour).      Де (+31 more)
 
 ### Community 299 - "Community 299"
-Cohesion: 0.14
-Nodes (42): check_lagging_submissions(), _emit_lagging(), LaggingCheckResult, LaggingNotifyError, Story 5.7b2 — catch-up detection of lagging submissions (FR-13, ARCH-DATA-022)., Notify the recipients of the divisions lagging on ``day``; return the count, A ``notify()`` emission failed mid-catch-up.      Raised so the day's ``transact, Outcome of one lagging-check pass (for the command / callers / tests). (+34 more)
+Cohesion: 0.07
+Nodes (57): Command, Story 5.7b2 — beat-ready entrypoint for the lagging-submission catch-up job.  Ru, notify(), Idempotently emit a notification inside the caller's transaction.      «Одно уве, RuntimeError, check_lagging_submissions(), _emit_lagging(), LaggingCheckResult (+49 more)
 
 ### Community 300 - "Community 300"
 Cohesion: 0.13
 Nodes (38): complete_status_early(), Close an ACTIVE status with a factual end date ``≤ today``.      Only ACTIVE row, _emp(), env(), Story 3.6 — lifecycle operations on a status (cancel / early-complete / extend)., Org/div + VACATION (hard), STUDY (soft, no limit), CONFERENCE (soft, 5d)., Create a status directly (bypasses create_status validations) so a test     can, _registry_block() (+30 more)
 
 ### Community 301 - "Community 301"
-Cohesion: 0.10
-Nodes (41): assert_employee_status_editable(), _assert_no_conflict(), cancel_status(), _conflict_details(), create_status(), extend_status(), _lock_employee(), _lock_for_edit() (+33 more)
+Cohesion: 0.11
+Nodes (38): assert_employee_status_editable(), _assert_no_conflict(), cancel_status(), _conflict_details(), create_status(), extend_status(), _lock_employee(), _lock_for_edit() (+30 more)
 
 ### Community 302 - "Community 302"
 Cohesion: 0.10
@@ -1790,7 +1795,7 @@ Nodes (6): import_slice(), Integration test for the strength_report command (Pos
 
 ### Community 328 - "Community 328"
 Cohesion: 0.10
-Nodes (33): authorizedFetch(), buildUrl(), fetchUnreadNotifications(), markAllRead(), markNotificationRead(), Notification, Employee, StatusTableProps (+25 more)
+Nodes (31): authorizedFetch(), buildUrl(), fetchUnreadNotifications(), markAllRead(), markNotificationRead(), Notification, Employee, StatusTableProps (+23 more)
 
 ### Community 329 - "Community 329"
 Cohesion: 0.22
@@ -1798,15 +1803,15 @@ Nodes (19): materialize_status_effects(), Run one idempotent, concurrency-safe c
 
 ### Community 330 - "Community 330"
 Cohesion: 0.03
-Nodes (115): So(), wc(), $(), A(), add(), addObserver(), bindMethods(), build() (+107 more)
+Nodes (114): $(), A(), add(), addObserver(), bindMethods(), build(), #C(), cancel() (+106 more)
 
 ### Community 331 - "Community 331"
-Cohesion: 0.12
-Nodes (6): EmployeeApplicationServiceTest, AuditLogModelTest, AuditLogMigrationTest, Story 1.1 verification: the AuditLog table exists and accepts rows.  Scope is in, Model-level tests for the single audit implementation, ``AuditLog``.  These exer, TestCase
+Cohesion: 0.13
+Nodes (6): StatusApplicationServiceTest, AuditLogModelTest, AuditLogMigrationTest, Story 1.1 verification: the AuditLog table exists and accepts rows.  Scope is in, Model-level tests for the single audit implementation, ``AuditLog``.  These exer, TestCase
 
 ### Community 333 - "Community 333"
 Cohesion: 0.03
-Nodes (76): DailySubmissionAmendSerializer, DailySubmissionCreateSerializer, DailySubmissionDetailSerializer, DailySubmissionFilterSerializer, DailySubmissionSerializer, ExpenseJournalFilterSerializer, ExpensePeriodFilterSerializer, ExpenseReportByDateFilterSerializer (+68 more)
+Nodes (102): ViewSet mixin: gate each action on an in-house RBAC permission code.      Subcla, Gate a core API action on an in-house RBAC permission code.      Mirror of ``app, RequirePermissionMixin, DailySubmissionAmendSerializer, DailySubmissionCreateSerializer, DailySubmissionDetailSerializer, DailySubmissionFilterSerializer, DailySubmissionSerializer (+94 more)
 
 ### Community 334 - "Community 334"
 Cohesion: 0.16
@@ -1857,8 +1862,8 @@ Cohesion: 0.20
 Nodes (9): ВОПРОС 1. Пробный запуск на сервере в закрытой сети (самый срочный — просьба ответить в ближайшие дни), ВОПРОС 2. Старая система учёта — используется ли она сейчас?, ВОПРОС 3. Ответственный за ежедневный учёт в пилотном подразделении, Заметка перед отправкой (для разработчика), Ответы заказчика (заполнить по получении), Письмо (черновик для отправки), Статус отправки, Что разблокирует каждый ответ (внутренняя сверка — не для письма) (+1 more)
 
 ### Community 361 - "Community 361"
-Cohesion: 0.10
-Nodes (22): Action, ActionType, actionTypes, addToRemoveQueue(), dispatch(), genId(), listeners, memoryState (+14 more)
+Cohesion: 0.09
+Nodes (28): approveSecondmentRequest(), fetchIncomingSecondmentRequests(), postAction(), rejectSecondmentRequest(), SecondmentRequest, Action, ActionType, actionTypes (+20 more)
 
 ### Community 363 - "Community 363"
 Cohesion: 0.06
@@ -1881,8 +1886,8 @@ Cohesion: 0.07
 Nodes (29): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Decision Register: формат, состав, локация, Definition of Done, Dev Agent Record (+21 more)
 
 ### Community 368 - "Community 368"
-Cohesion: 0.14
-Nodes (40): Derived-свежесть сводки (AC-3): чистое чтение, НИЧЕГО не пишет.      None — нет, summary_freshness(), _assemble(), _canon(), _day(), _family(), make_division(), make_employee() (+32 more)
+Cohesion: 0.07
+Nodes (68): JSON-safe лёгкий снимок версии сдачи для audit-строки (story 5.9, Д3).      ``en, _submission_audit_value(), assemble_summary(), _build_sources(), _coerce_division_id(), _compute_summary_event(), Сервис фрактальной сводки (Story 5.11): ``assemble_summary`` / ``summary_freshne, Required-подмножество прямых детей: непустой own-ростер ПОДДЕРЕВА на дату. (+60 more)
 
 ### Community 370 - "Community 370"
 Cohesion: 0.07
@@ -1918,7 +1923,7 @@ Nodes (27): Accessibility Floor (behavioral), Component Patterns (behavioral), C
 
 ### Community 379 - "Community 379"
 Cohesion: 0.08
-Nodes (18): DashboardPage(), absenceTypeConfig, cardVariants, containerVariants, StatsCards(), StatsCardsProps, useAbsenceStatistics(), departmentUnit (+10 more)
+Nodes (21): DashboardPage(), absenceTypeConfig, cardVariants, containerVariants, StatsCards(), StatsCardsProps, useAbsenceStatistics(), useStaffUnits() (+13 more)
 
 ### Community 380 - "Community 380"
 Cohesion: 0.07
@@ -1929,8 +1934,8 @@ Cohesion: 0.08
 Nodes (23): 1. RBAC / roles & permissions, 2. Data entities & relationships (IA / navigation depth), 3. Real-time behavior (from ws-message-types.yaml), 4. Error states (from error-codes.yaml), 5. Audit events (from audit-events.yaml), 6. PersonnelStatus epics / stories (features & screens in scope) — build order, 7. UX-affecting constraints from architecture, 8. Open questions / contradictions (+15 more)
 
 ### Community 382 - "Community 382"
-Cohesion: 0.24
-Nodes (14): _fixture(), _int(), _matrix_csv(), _matrix_docx(), _matrix_xlsx(), _member(), Тест эквивалентности чисел четырёх форматов расхода (Story 6.4, AC-1).  ОДНА фик, Нормализация ATTACHED: ``+N`` → N. (+6 more)
+Cohesion: 0.12
+Nodes (24): _member_line(), ``{rank} {full_name} — {ДД.ММ.ГГГГ}–{ДД.ММ.ГГГГ}``; пустой rank — без     ведуще, _column_widths(), generate_expense_pdf(), Story 6.4 — чистый рендерер .pdf расхода (нередактируемая форма, FR-17).  Канон, ``ExpenseDocumentData`` → байты официального .pdf (канон §8).      Ленивая загру, Текст статусной ячейки: count (ATTACHED — ``+N``) + строки членов с     усечение, Относительные ширины 17 колонок по естественной ширине КОНТЕНТА     (числа/имена (+16 more)
 
 ### Community 383 - "Community 383"
 Cohesion: 0.10
@@ -1938,7 +1943,7 @@ Nodes (20): dependencies, react, react-dom, @tanstack/react-virtual, description
 
 ### Community 384 - "Community 384"
 Cohesion: 0.04
-Nodes (39): AbstractBaseUser, Division, DivisionType, EmployeeDivisionHistory, EmployeeOperationalProfile, EmployeeStaffingAssignment, EmploymentStatus, Gender (+31 more)
+Nodes (34): AbstractBaseUser, BaseUserManager, Division, DivisionHistoricalSlot, DivisionType, Employee, EmployeeDivisionHistory, EmployeeOperationalProfile (+26 more)
 
 ### Community 385 - "Community 385"
 Cohesion: 0.10
@@ -2038,7 +2043,7 @@ Nodes (22): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes 
 
 ### Community 409 - "Community 409"
 Cohesion: 0.04
-Nodes (53): ApiErrorInit, AmendFailureDescription, AmendFailureKind, DayAmendBody, describeAmendFailure(), isAmendmentComplete(), DayAmendmentForm(), DayAmendmentFormProps (+45 more)
+Nodes (52): AmendFailureDescription, AmendFailureKind, DayAmendBody, describeAmendFailure(), isAmendmentComplete(), DayAmendmentForm(), DayAmendmentFormProps, asRecord() (+44 more)
 
 ### Community 410 - "Community 410"
 Cohesion: 0.08
@@ -2081,8 +2086,8 @@ Cohesion: 0.09
 Nodes (21): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Decision (1) → РАЗРЕШЕНО (Patch применён), Defer (2), Dev Agent Record (+13 more)
 
 ### Community 423 - "Community 423"
-Cohesion: 0.05
-Nodes (16): BaseCommand, Command, Command, Story 15.10 — beat-ready entrypoint for the FR-42 escalation catch-up job.  Runn, Command, Story 7.0 — минимальный экспорт-CLI: снимок результатов diff-джобы на носитель., Command, Command (+8 more)
+Cohesion: 0.06
+Nodes (12): BaseCommand, Command, Command, Command, Story 7.7 — AC-2: явный выключатель режима «без двойного ввода».  Операционный и, Command, Command, Story 11.6 — детерминированная фикстура контура «несдача → уведомление».  ТЕСТОВ (+4 more)
 
 ### Community 424 - "Community 424"
 Cohesion: 0.50
@@ -2121,8 +2126,8 @@ Cohesion: 0.06
 Nodes (35): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+27 more)
 
 ### Community 442 - "Community 442"
-Cohesion: 0.05
-Nodes (35): ViewSet mixin: gate each action on an in-house RBAC permission code.      Subcla, Gate a core API action on an in-house RBAC permission code.      Mirror of ``app, RequirePermissionMixin, _permissions_from_request(), StaffingSlotViewSet, StandardResultsSetPagination, StandardResultsSetPagination, require_permission() (+27 more)
+Cohesion: 0.18
+Nodes (6): derive_state(), Derived lifecycle state on a business date (mirrors with_state)., Derived state as of the current business date (Clock)., Canonical derived state — single source of truth for both the @property     and, Story 3.2 — derived `state` equivalence (AC-3, ARCH-DATA-022).  The ORM annotati, TestStateEquivalence
 
 ### Community 448 - "Community 448"
 Cohesion: 0.07
@@ -2158,11 +2163,11 @@ Nodes (13): StaffingSlotSerializer, VacancyViewSet, compute_free_slots(), dismis
 
 ### Community 465 - "Community 465"
 Cohesion: 0.04
-Nodes (68): Тест получения списка подразделений без аутентификации, Тест получения списка подразделений с аутентификацией, TestDivisionViewSetAPI, TestReportsAccess, forward(), Migration, _relabel(), reverse() (+60 more)
+Nodes (66): TestReportsAccess, forward(), Migration, _relabel(), reverse(), _client(), Story 13.4a — resolve + journal HTTP surface.  resolve: same holder as list/retr, _seed_report() (+58 more)
 
 ### Community 466 - "Community 466"
-Cohesion: 0.05
-Nodes (52): adjustToSystemTZ(), animateList(), animation(), applyGeneratorOptions(), attachTimeline(), calcGeneratorDuration(), calcGeneratorVelocity(), calcOffset() (+44 more)
+Cohesion: 0.04
+Nodes (72): animateList(), animation(), applyGeneratorOptions(), attachTimeline(), calcGeneratorDuration(), calcGeneratorVelocity(), canAnimate(), cancel() (+64 more)
 
 ### Community 467 - "Community 467"
 Cohesion: 0.09
@@ -2173,8 +2178,8 @@ Cohesion: 0.05
 Nodes (81): DutyPlanConflictSerializer, DutyPlanCreateSerializer, DutyPlanSerializer, DutyShiftCancelSerializer, DutyShiftCreateSerializer, DutyShiftReplanSerializer, DutyShiftSerializer, Story 14.11f: one entry per detected overlap — plain output-only     serializer (+73 more)
 
 ### Community 469 - "Community 469"
-Cohesion: 0.03
-Nodes (83): ConflictError, ValidationError, DutyPlanApproveResponse, DutyPlanConflictsResponse, DutyPlanCreateRequest, DutyPlanCreateResponse, dutyPlanKeys, DutyPlansListResponse (+75 more)
+Cohesion: 0.04
+Nodes (49): DutyPlanApproveResponse, DutyPlanConflictsResponse, DutyPlanCreateRequest, DutyPlanCreateResponse, dutyPlanKeys, DutyPlansListResponse, DutyPlanValidateResponse, DutyShiftCancelRequest (+41 more)
 
 ### Community 470 - "Community 470"
 Cohesion: 0.13
@@ -2226,7 +2231,7 @@ Nodes (40): Acceptance Criteria, Agent Model Used, Baseline-счётчики Д�
 
 ### Community 486 - "Community 486"
 Cohesion: 0.08
-Nodes (49): addDays(), addMonths(), addToRange(), addWeeks(), addYears(), calculateFocusTarget(), constructFrom(), differenceInCalendarDays() (+41 more)
+Nodes (51): addDays(), addMonths(), addToRange(), addWeeks(), addYears(), constructFrom(), differenceInCalendarDays(), differenceInCalendarMonths() (+43 more)
 
 ### Community 487 - "Community 487"
 Cohesion: 0.16
@@ -2349,8 +2354,8 @@ Cohesion: 0.09
 Nodes (21): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+13 more)
 
 ### Community 517 - "Community 517"
-Cohesion: 0.09
-Nodes (27): ListSecurityEventsResponse, UpdateReconRequest, RepositoryBusinessRuleError, RepositoryNotFoundError, RepositoryPermissionError, RepositoryValidationError, aggregateForceRequests(), buildSecurityEventsSeed() (+19 more)
+Cohesion: 0.10
+Nodes (23): UpdateReconRequest, RepositoryBusinessRuleError, RepositoryNotFoundError, RepositoryPermissionError, RepositoryValidationError, aggregateForceRequests(), buildSecurityEventsSeed(), RECON_CHECKLIST_TEMPLATE (+15 more)
 
 ### Community 518 - "Community 518"
 Cohesion: 0.11
@@ -2397,8 +2402,8 @@ Cohesion: 0.26
 Nodes (11): _emp(), Story 3.5 — Override-сущность: bypass soft-409 with a reason + record it.  Postg, A soft (STUDY) status that is ACTIVE on business date 2026-06-05., _seed_active_soft(), test_default_no_override_soft_still_409(), test_override_does_not_bypass_hard(), test_override_record_failure_rolls_back_status(), test_override_snapshot_records_the_conflicting_type_not_the_new() (+3 more)
 
 ### Community 529 - "Community 529"
-Cohesion: 0.18
-Nodes (23): _amend(), _current(), _direct_v1(), make_employee(), make_status(), Tests for amend_day — the amendment-flow service (Story 5.4a).  amend_day create, A directly-built current v1 (lets tests amend a PAST date submit_day forbids)., test_amend_blank_actor_raises_400() (+15 more)
+Cohesion: 0.15
+Nodes (27): _amend(), _current(), _direct_v1(), make_employee(), make_status(), Tests for amend_day — the amendment-flow service (Story 5.4a).  amend_day create, A directly-built current v1 (lets tests amend a PAST date submit_day forbids)., test_amend_blank_actor_raises_400() (+19 more)
 
 ### Community 530 - "Community 530"
 Cohesion: 0.07
@@ -2417,8 +2422,8 @@ Cohesion: 0.18
 Nodes (10): 1. Auth-сервер жив и в контуре, 2. Алгоритм и ключ подписи, 3. Claims и принципал, 4. Учётки операторов, Зачем, Маппинг на конфиг (`VAPS_JWT_*` env), Решение по итогам, Спайк 5.1 — Готовность внешнего Auth (контур) (+2 more)
 
 ### Community 534 - "Community 534"
-Cohesion: 0.09
-Nodes (26): calcRelativeAxisConstraints(), calcRelativeConstraints(), calcViewportAxisConstraints(), calcViewportConstraints(), convertBoundingBoxToBox(), convertBoxToBoundingBox(), createProjectionNode(), eachAxis() (+18 more)
+Cohesion: 0.14
+Nodes (17): useCreateSecurityEvent(), useSecurityEvent(), useSecurityEventsList(), PASSPORT_LABEL, ServiceAnalyticsPage(), STAGE_LABEL, stageBadgeVariants, SECURITY_EVENT_STAGES (+9 more)
 
 ### Community 535 - "Community 535"
 Cohesion: 0.18
@@ -2430,7 +2435,7 @@ Nodes (47): replaces, replaces, replaces, replaces, replaces, replaces, replaces
 
 ### Community 537 - "Community 537"
 Cohesion: 0.13
-Nodes (46): autoUpdate(), convertOffsetParentRelativeRectToViewportRelativeRect(), detectOverflow(), getBoundingClientRect(), getClientRectFromClippingAncestor(), getClippingElementAncestors(), getClippingRect(), getComputedStyle2() (+38 more)
+Nodes (45): autoUpdate(), convertOffsetParentRelativeRectToViewportRelativeRect(), detectOverflow(), getBoundingClientRect(), getClientRectFromClippingAncestor(), getClippingElementAncestors(), getClippingRect(), getComputedStyle2() (+37 more)
 
 ### Community 538 - "Community 538"
 Cohesion: 0.22
@@ -2469,8 +2474,8 @@ Cohesion: 0.17
 Nodes (11): Acceptance Criteria, Agent Model Used, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List, References (+3 more)
 
 ### Community 547 - "Community 547"
-Cohesion: 0.11
-Nodes (52): build_personal_export_xlsx(), _format_iso_date(), _pair_rows(), Story 10.8 — чистый билдер личной копии сданного дня («щит»).  ``build_personal_, Снапшот сдачи + атрибуты версии → байты .xlsx личной копии.      ``submitted_at_, ISO-строка → ``ДД.ММ.ГГГГ``; непарсящееся значение — дословно., [(запись roster | {}, строка rows | None)] в порядке снапшота.      Сотрудник бе, Значения одной строки ведомости в порядке ``TABLE_COLUMNS``. (+44 more)
+Cohesion: 0.10
+Nodes (54): build_personal_export_xlsx(), _format_iso_date(), _pair_rows(), Story 10.8 — чистый билдер личной копии сданного дня («щит»).  ``build_personal_, Снапшот сдачи + атрибуты версии → байты .xlsx личной копии.      ``submitted_at_, ISO-строка → ``ДД.ММ.ГГГГ``; непарсящееся значение — дословно., [(запись roster | {}, строка rows | None)] в порядке снапшота.      Сотрудник бе, Значения одной строки ведомости в порядке ``TABLE_COLUMNS``. (+46 more)
 
 ### Community 548 - "Community 548"
 Cohesion: 0.43
@@ -2545,12 +2550,12 @@ Cohesion: 0.33
 Nodes (5): VAPS Design System — конвенции, Где правда, Идиоматичный пример, Обёртка и настройка, Стилевой идиом: Tailwind-утилиты + семантические токены
 
 ### Community 596 - "Community 596"
-Cohesion: 0.06
-Nodes (41): useAcknowledgePlacement(), useApproveDemand(), useApprovePlacement(), useCloseSecurityEvent(), useCompleteAcknowledgement(), useCompleteForces(), useCompleteRecon(), usePersonnelRoster() (+33 more)
+Cohesion: 0.07
+Nodes (33): useAcknowledgePlacement(), useApproveDemand(), useApprovePlacement(), useAssignPlacement(), useCloseSecurityEvent(), useCompleteAcknowledgement(), useCompleteForces(), useCompletePlacement() (+25 more)
 
 ### Community 597 - "Community 597"
-Cohesion: 0.05
-Nodes (55): addValue(), addValueToWillChange(), analyseComplexValue(), animateSequence(), animateSingleValue(), animateSubject(), applyConstraints(), bindToMotionValue() (+47 more)
+Cohesion: 0.04
+Nodes (81): addValue(), addValueToWillChange(), animateChildren(), animateSequence(), animateSingleValue(), animateSubject(), animateTarget(), animateVariant() (+73 more)
 
 ### Community 598 - "Community 598"
 Cohesion: 0.36
@@ -2565,8 +2570,8 @@ Cohesion: 0.07
 Nodes (27): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+19 more)
 
 ### Community 601 - "Community 601"
-Cohesion: 0.07
-Nodes (38): App(), bootstrap(), dataSourceSchema, envSchema, faultProfileSchema, FrontendEnv, getFrontendEnv(), createIndexedDbPersistence() (+30 more)
+Cohesion: 0.10
+Nodes (31): App(), bootstrap(), getFrontendEnv(), createIndexedDbPersistence(), registerRbacDirectory(), startMockWorker(), composeHandlers(), composeSeed() (+23 more)
 
 ### Community 602 - "Community 602"
 Cohesion: 0.09
@@ -2585,8 +2590,8 @@ Cohesion: 0.10
 Nodes (26): get_attachment(), IssuedDocumentSelector, lock_sequence(), _not_found(), Селекторы app documents: read-канал Attachment (Story 6.1) и row-lock счётчика D, Attachment по id; мусорный/неизвестный id → 404, не 500., Read-канал выпусков документов (Story 6.5)., Действующий (ISSUED) выпуск для (тип, подразделение, день), или None.          К (+18 more)
 
 ### Community 608 - "Community 608"
-Cohesion: 0.12
-Nodes (21): _member_line(), ``{rank} {full_name} — {ДД.ММ.ГГГГ}–{ДД.ММ.ГГГГ}``; пустой rank — без     ведуще, _column_widths(), generate_expense_pdf(), Story 6.4 — чистый рендерер .pdf расхода (нередактируемая форма, FR-17).  Канон, ``ExpenseDocumentData`` → байты официального .pdf (канон §8).      Ленивая загру, Текст статусной ячейки: count (ATTACHED — ``+N``) + строки членов с     усечение, Относительные ширины 17 колонок по естественной ширине КОНТЕНТА     (числа/имена (+13 more)
+Cohesion: 0.24
+Nodes (11): _expected_matrix(), _int(), make_employee(), make_status(), _matrix_csv(), _matrix_docx(), _matrix_xlsx(), E2e четырёх форматов расхода от реального снапшота (Story 6.4, AC-1).  Снапшот Т (+3 more)
 
 ### Community 609 - "Community 609"
 Cohesion: 0.20
@@ -2893,8 +2898,8 @@ Cohesion: 0.18
 Nodes (7): AttachmentSerializer, AttachmentUploadSerializer, Read-only проекция Attachment — ответ upload (201) и retrieve-форм., AttachmentViewSet, Meta, Story 6.1 — сериализаторы вложений (форма upload + проекция ответа).  Форма uplo, Story 6.1 — API вложений: upload (POST) + download (GET, X-Accel).  Гейт — ``Req
 
 ### Community 705 - "Community 705"
-Cohesion: 0.14
-Nodes (15): AmendAssignmentVersionRequestSerializer, ApproveVersionSerializer, AssignmentVersionDetailSerializer, AssignmentVersionSerializer, PlacementAssignmentSerializer, Story 16.8a: read-only — persisted conflict/acknowledgement state,     not recom, Story 16.8d: optional request body for `POST .../approve` —     literal copy of, Story 17.7b: request body for `POST .../amend/` — thin pass-through     to `amen (+7 more)
+Cohesion: 0.15
+Nodes (10): ABC, Employee, int, Employee, int, EmployeeStatus, EmployeeRepository, StatusRepository (+2 more)
 
 ### Community 706 - "Community 706"
 Cohesion: 0.21
@@ -3086,7 +3091,7 @@ Nodes (9): expectedMatches, glob, success, success, label, success, retro, confi
 
 ### Community 753 - "Community 753"
 Cohesion: 0.22
-Nodes (9): expectedMatches, glob, success, success, label, success, retro, config (+1 more)
+Nodes (9): label, success, expectedMatches, glob, success, success, auto, config (+1 more)
 
 ### Community 754 - "Community 754"
 Cohesion: 0.13
@@ -3114,7 +3119,7 @@ Nodes (8): arrays, maps, model, provider, timeoutSeconds, runtime, merge, parser
 
 ### Community 760 - "Community 760"
 Cohesion: 0.25
-Nodes (7): label, success, snapshot, relativeDir, steps, auto, version
+Nodes (7): label, success, snapshot, relativeDir, steps, retro, version
 
 ### Community 761 - "Community 761"
 Cohesion: 0.25
@@ -3129,8 +3134,8 @@ Cohesion: 0.25
 Nodes (6): DIST, jsFiles, LOAD_CONTEXT, LOCAL_HOSTS, offenders, rows
 
 ### Community 764 - "Community 764"
-Cohesion: 0.07
-Nodes (33): addLeadingZeros(), d(), deepEqual(), format(), formatCaption(), formatDay(), formatMonthDropdown(), formatNumber() (+25 more)
+Cohesion: 0.05
+Nodes (45): addLeadingZeros(), adjustToSystemTZ(), analyseComplexValue(), calcOffset(), createTransformer(), d(), deepEqual(), format() (+37 more)
 
 ### Community 766 - "Community 766"
 Cohesion: 0.22
@@ -3197,12 +3202,12 @@ Cohesion: 0.13
 Nodes (14): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Deferred (см. `deferred-work.md`), Dev Agent Record, Dev Notes (+6 more)
 
 ### Community 783 - "Community 783"
-Cohesion: 0.14
+Cohesion: 0.15
 Nodes (6): getSlot(), ImageSlot, load(), save(), setSlot(), toDataUrl()
 
 ### Community 784 - "Community 784"
-Cohesion: 0.08
-Nodes (25): AmendAssignmentSpecSerializer, AssignmentVersionReturnResponseSerializer, ChecklistItemSerializer, DirectAssignmentSerializer, GenerateForceRequestsResponseSerializer, JournalEntryCreateSerializer, Story 15.7b: wraps the generated/updated rows plus any StaffingDemand     group-, Story 16.8c: write-only request body for `POST .../return` —     `return_assignm (+17 more)
+Cohesion: 0.05
+Nodes (50): AmendAssignmentSpecSerializer, AmendAssignmentVersionRequestSerializer, ApproveVersionSerializer, AssignmentVersionDetailSerializer, AssignmentVersionReturnResponseSerializer, AssignmentVersionSerializer, ChecklistItemSerializer, DirectAssignmentSerializer (+42 more)
 
 ### Community 785 - "Community 785"
 Cohesion: 0.13
@@ -3221,16 +3226,16 @@ Cohesion: 0.50
 Nodes (3): plugins, semi, singleQuote
 
 ### Community 797 - "Community 797"
-Cohesion: 0.18
-Nodes (21): api_op(), _assemble(), _canon(), _client(), _day(), _detail(), _family(), make_division() (+13 more)
+Cohesion: 0.11
+Nodes (30): amend_day(), Сервис amendment-flow (Story 5.4a): ``amend_day``.  Механизм пересдачи сданного, Непустой (после strip) обязательный атрибут amendment → иначе 400.      Сервис о, Создать следующую версию (AMENDED) сдачи дня.      Args:         division_id: UU, _require_actor(), _require_text(), test_amend_nonexistent_division_raises_404(), test_amend_emits_before_after_pair() (+22 more)
 
 ### Community 798 - "Community 798"
-Cohesion: 0.17
-Nodes (8): SeededRandom, StableIdGenerator, FeatureSeedBuilder, SeedContext, SeedScenario, FEATURE_SEED_BUILDERS, DEMO_SCENARIOS, DemoScenarioDefinition
+Cohesion: 0.16
+Nodes (7): SeededRandom, StableIdGenerator, FeatureSeedBuilder, SeedContext, SeedScenario, buildDutiesSeed(), DUTY_TYPES
 
 ### Community 799 - "Community 799"
 Cohesion: 0.05
-Nodes (57): ApiClient, ApiFailure, AuditLogsResponse, useAuditLogs(), MyPermissionsResponse, useMe(), usePermissions(), UsePermissionsResult (+49 more)
+Nodes (53): ApiFailure, MyPermissionsResponse, useMe(), usePermissions(), UsePermissionsResult, asRecord(), describeDownloadFailure(), describeExpensePeriodFailure() (+45 more)
 
 ### Community 806 - "Community 806"
 Cohesion: 0.29
@@ -3253,12 +3258,12 @@ Cohesion: 0.12
 Nodes (15): Command, Story 7.10/AC-1/AC-3 — cutover по рунбуку: exit criterion выполнен, официальный, Command, Story 7.10/AC-1 — откат cutover: донор снова источник ввода. Одна команда — меха, execute_cutover(), Story 7.10 — план cutover и отката: рунбук как код, не импровизация.  AC-1: cuto, AC-1/AC-3: по рунбуку — отказывает, если exit criterion не выполнен., AC-1: откат — ОДНА команда, не многошаговая импровизация. (+7 more)
 
 ### Community 837 - "Community 837"
-Cohesion: 0.10
-Nodes (23): createGetModifiers(), dateMatchModifiers(), DayPicker(), getDataAttributes(), getDates(), getDays(), getDisplayMonths(), getFocusableDate() (+15 more)
+Cohesion: 0.09
+Nodes (24): calculateFocusTarget(), createGetModifiers(), dateMatchModifiers(), DayPicker(), getDataAttributes(), getDates(), getDays(), getFocusableDate() (+16 more)
 
 ### Community 841 - "Community 841"
-Cohesion: 0.10
-Nodes (30): AcknowledgeDutyShiftResponse, ClockInDutyShiftResponse, ClockOutDutyShiftResponse, dutyShiftAcknowledgePath(), dutyShiftClockInPath(), dutyShiftClockOutPath(), ListDutyShiftsResponse, ListDutyTypesResponse (+22 more)
+Cohesion: 0.11
+Nodes (28): AcknowledgeDutyShiftResponse, ClockInDutyShiftResponse, ClockOutDutyShiftResponse, dutyShiftAcknowledgePath(), dutyShiftClockInPath(), dutyShiftClockOutPath(), ListDutyShiftsResponse, ListDutyTypesResponse (+20 more)
 
 ### Community 842 - "Community 842"
 Cohesion: 0.12
@@ -3273,8 +3278,8 @@ Cohesion: 0.13
 Nodes (14): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+6 more)
 
 ### Community 847 - "Community 847"
-Cohesion: 0.08
-Nodes (20): Command, Story 7.3 — самостоятельный импорт сотрудников с identity mapping и явной детекц, Command, Story 7.2 — самостоятельный импорт дерева подразделений, ставок и справочников (, Command, Import a 5-7 day slice of donor data into the walking skeleton (1.6).  Reads a d, Command, Story 7.4 — самостоятельный импорт статусов (интервальная модель + convergence-п (+12 more)
+Cohesion: 0.11
+Nodes (15): Command, Story 7.3 — самостоятельный импорт сотрудников с identity mapping и явной детекц, Command, Story 7.2 — самостоятельный импорт дерева подразделений, ставок и справочников (, Command, Import a 5-7 day slice of donor data into the walking skeleton (1.6).  Reads a d, EntityReport, import_divisions() (+7 more)
 
 ### Community 848 - "Community 848"
 Cohesion: 0.13
@@ -3285,16 +3290,16 @@ Cohesion: 0.12
 Nodes (27): derive(снапшот): {str(employee_id): winner_code}, only from the snapshot.      R, _snapshot_winners(), _apply_op(), _canon(), _day(), _make_division(), _make_employee(), _make_status() (+19 more)
 
 ### Community 850 - "Community 850"
-Cohesion: 0.14
-Nodes (13): notify(), Idempotently emit a notification inside the caller's transaction.      «Одно уве, RuntimeError, Story 12.6a — broker-execution smoke: a real worker subprocess, a real Redis bro, test_a_real_task_executes_via_a_real_worker_and_broker(), Tests for the notification primitive (Story 5.7a).  The Notification model (one-, test_notify_default_payload_is_empty_dict(), test_notify_distinct_keys_create_separate_rows() (+5 more)
+Cohesion: 0.35
+Nodes (16): flag_post_overload(), Story 18.5 (FR-32's «превышение лимита Поста» half): сравнивает     `ServiceHour, local(), make_actual(), make_event(), Story 18.5 (FR-32's «превышение лимита Поста» half) — flag_post_overload(): per-, AC-6: flag_post_overload() reads Post.max_service_minutes fresh on     each call, review (Edge Case Hunter): actor > AuditLog.actor_user_id's     max_length=100 m (+8 more)
 
 ### Community 851 - "Community 851"
 Cohesion: 0.18
 Nodes (10): File List, QA-слой Story 11.6 — E2E уведомления, Замечания для ревью (не блокирующие), Красная проба по новым тестам (гейт AI-1 ретро E9), Найденные пробелы и закрывшие их тесты, Покрытие AC, 🔴 Проба вскрыла вакуумный ассерт в ПЕРВОЙ редакции моего же теста, Прогоны (+2 more)
 
 ### Community 852 - "Community 852"
-Cohesion: 0.16
-Nodes (25): _notify_assignment_returned(), Story 16.6d (FR-27): notify the version's `created_by` (skipped if     blank — ", Story 16.4 (FR-26): `SUBMITTED`->`RETURNED` — NOT an in-place     mutation (`Ass, return_assignment_version(), grant_approve_permission(), make_draft_version(), make_employee(), make_event() (+17 more)
+Cohesion: 0.12
+Nodes (45): Story 16.4 (FR-26): `DRAFT`->`SUBMITTED`. Idempotent replay on     already-`SUBM, Story 16.4 (FR-26): `SUBMITTED`->`RETURNED` — NOT an in-place     mutation (`Ass, return_assignment_version(), submit_assignment_version(), make_conflicting_version(), make_draft_version(), make_event(), Story 16.4 (FR-26) — `submit_assignment_version()`/`return_assignment_version()` (+37 more)
 
 ### Community 853 - "Community 853"
 Cohesion: 0.12
@@ -3305,8 +3310,8 @@ Cohesion: 0.08
 Nodes (23): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+15 more)
 
 ### Community 855 - "Community 855"
-Cohesion: 0.09
-Nodes (24): assignRef(), createSidecarMedium(), exitAnimationComplete(), flushKeyframeResolvers(), forEach(), getAnnounceTextContent(), getBaseTarget(), getBaseTargetFromProps() (+16 more)
+Cohesion: 0.13
+Nodes (14): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+6 more)
 
 ### Community 856 - "Community 856"
 Cohesion: 0.13
@@ -3361,8 +3366,8 @@ Cohesion: 0.08
 Nodes (24): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+16 more)
 
 ### Community 869 - "Community 869"
-Cohesion: 0.08
-Nodes (33): ApiClientOptions, BlobResponse, createApiClient(), NetworkError, getRecentRequestIds(), recentRequestIds, resetRecentRequestIds(), client (+25 more)
+Cohesion: 0.06
+Nodes (40): ApiClient, ApiClientOptions, BlobResponse, createApiClient(), AuditLogsResponse, EmployeeStatusCalendarResponse, statusCalendarKeys, useAuditLogs() (+32 more)
 
 ### Community 870 - "Community 870"
 Cohesion: 0.09
@@ -3425,24 +3430,24 @@ Cohesion: 0.22
 Nodes (8): Next Steps, Test Automation Summary — Story 11.5 (Kill-switch WS), ⚠️ Для ревью, Красная проба по новым тестам (гейт AI-1 ретро E9), Найденные пробелы и закрывшие их тесты, Покрытие, Прогон, Что сделано
 
 ### Community 885 - "Community 885"
-Cohesion: 0.16
-Nodes (17): generate_expense_docx(), ``ExpenseDocumentData`` → байты официального .docx (канон §8).      Ленивая загр, Story 10.7a — read-only JSON-поверхность тела расхода поверх ``build_expense_doc, Снапшот действующей сдачи (division, date) → ``ExpenseDocumentData``.      БЕЗ l, ``ExpenseDocumentData`` → JSON-safe dict (dataclasses не сериализуются     напря, read_expense_document(), serialize_expense_document(), _build() (+9 more)
+Cohesion: 0.19
+Nodes (14): Story 10.7a — read-only JSON-поверхность тела расхода поверх ``build_expense_doc, Снапшот действующей сдачи (division, date) → ``ExpenseDocumentData``.      БЕЗ l, ``ExpenseDocumentData`` → JSON-safe dict (dataclasses не сериализуются     напря, read_expense_document(), serialize_expense_document(), _build(), _col(), make_employee() (+6 more)
 
 ### Community 886 - "Community 886"
 Cohesion: 0.17
 Nodes (11): Acceptance Criteria, Agent Model Used, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List, References (+3 more)
 
 ### Community 887 - "Community 887"
-Cohesion: 0.17
-Nodes (35): compute_service_hours(), flag_post_overload(), Story 18.4 (FR-32): Налёт часов день/ночь из `PlacementAssignmentActual`     (18, Story 18.5 (FR-32's «превышение лимита Поста» half): сравнивает     `ServiceHour, local(), make_actual(), make_event(), Story 18.5 (FR-32's «превышение лимита Поста» half) — flag_post_overload(): per- (+27 more)
+Cohesion: 0.33
+Nodes (19): compute_service_hours(), Story 18.4 (FR-32): Налёт часов день/ночь из `PlacementAssignmentActual`     (18, local(), make_actual(), make_event(), Story 18.4 (FR-32) — compute_service_hours(): Налёт часов день/ночь derived from, review (Blind Hunter + Acceptance Auditor, независимо совпали):     Acceptance A, review (Blind Hunter): раздельное округление day/night могло     разойтись с сум (+11 more)
 
 ### Community 888 - "Community 888"
 Cohesion: 0.10
 Nodes (19): 10. Файлы добора, 1. Гейт `npm run gate` (из `frontend/`), 2. E2E `npx playwright test` (в гейт НЕ входит — инцидент 10.6), 3. Красная проба (AC-13) — 10 мутаций, все КРАСНЫЕ, 4. Находка по ходу разработки, 5. Границы скоупа, 6. Найденные пробелы (все закрыты), 7. Числа до/после (+11 more)
 
 ### Community 889 - "Community 889"
-Cohesion: 0.13
-Nodes (17): Command, Story 7.9/AC-1 — фиксация подписи владельца расхода: «список подтверждён человек, latest_signature(), Story 7.9 — подпись сверки: append-only, actor required (audit trail)., record_signature(), Story 7.9/AC-1 — сквозной цикл: выгрузка → сверка (расхождение найдено) → исправ, run_import(), test_discrepancy_fixed_by_reimport_then_followup_reconciliation_is_clean() (+9 more)
+Cohesion: 0.18
+Nodes (15): latest_signature(), Story 7.9 — подпись сверки: append-only, actor required (audit trail)., record_signature(), Story 7.9/AC-1 — сквозной цикл: выгрузка → сверка (расхождение найдено) → исправ, run_import(), test_discrepancy_fixed_by_reimport_then_followup_reconciliation_is_clean(), Story 7.9/AC-1 — подпись сверки: append-only, actor required, audit trail., AC-1 follow-up: вторая сверка той же пары после исправлений —     НОВАЯ строка, (+7 more)
 
 ### Community 891 - "Community 891"
 Cohesion: 0.25
@@ -3509,8 +3514,8 @@ Cohesion: 0.17
 Nodes (11): FRONTEND_DECISIONS, NEXT ACTION, Архитектурные решения этой реализации (Duties, по запросу пользователя), Архитектурные решения этой реализации (Этап 1), Архитектурные решения этой реализации (Этап 3), Архитектурные решения этой реализации (Этап 4), Архитектурные решения этой реализации (Этап 5), Архитектурные решения этой реализации (Этап 6) (+3 more)
 
 ### Community 907 - "Community 907"
-Cohesion: 0.11
-Nodes (14): derive_report(), Aggregate per-division strength columns with convergence formulas.      ``employ, BR-001 winner code for one employee's live interval facts on a date.      A fact, resolve_status(), around(), fact(), headcount(), live() (+6 more)
+Cohesion: 0.10
+Nodes (17): derive_report(), Aggregate per-division strength columns with convergence formulas.      ``employ, BR-001 winner code for one employee's live interval facts on a date.      A fact, resolve_status(), test_pending_lands_in_own_column_convergence_holds(), test_pending_resolves_to_its_own_winner_not_in_service(), test_real_fact_beats_pending_clarification(), around() (+9 more)
 
 ### Community 908 - "Community 908"
 Cohesion: 0.13
@@ -3549,16 +3554,16 @@ Cohesion: 0.25
 Nodes (7): Генерация и скачивание отчета "Расход" по департаменту.         GET /api/reports, Генерация и скачивание отчета "Расход" по департаменту.         GET /api/reports, generate_personnel_expense_report(), Утилиты для генерации отчетов, Безопасно устанавливает значение ячейки, даже если это объединенная ячейка., Генерирует отчет "Расход" по департаменту в памяти.      Args:         departmen, safe_set_cell_value()
 
 ### Community 918 - "Community 918"
-Cohesion: 0.13
-Nodes (32): create_journal_entry(), Story 17.1/17.2 (FR-29): журнал штаба — инструктаж/указания/     инциденты в реж, make_event(), make_post(), Story 17.1/17.2 (FR-29) — журнал штаба: create_journal_entry() (BRIEFING/DIRECTI, AC-3: neither participants nor photo are required for an Incident., post/participant_ids/photo_attachment_id passed to a BRIEFING are     silently d, review (Blind Hunter): the BRIEFING variant above didn't cover     DIRECTIVE's i (+24 more)
+Cohesion: 0.11
+Nodes (38): create_journal_entry(), Story 17.1/17.2 (FR-29): журнал штаба — инструктаж/указания/     инциденты в реж, make_event(), make_post(), Story 17.1/17.2 (FR-29) — журнал штаба: create_journal_entry() (BRIEFING/DIRECTI, AC-3: neither participants nor photo are required for an Incident., post/participant_ids/photo_attachment_id passed to a BRIEFING are     silently d, review (Blind Hunter): the BRIEFING variant above didn't cover     DIRECTIVE's i (+30 more)
 
 ### Community 919 - "Community 919"
 Cohesion: 0.15
 Nodes (9): Story 7.4 — самостоятельный импорт статусов: интервальная модель + convergence-п, Ревью-фикс: интервал STUDY (2026-06-01..06-11, half-open) не         касается св, AC-1: "интервалы не пересекаются" — DB exclusion constraint         (excl_hard_s, Golden fixture: employee 2's DETACHED secondment (2026-06-03,         open-end), run_import(), TestDerivedMismatch, TestHappyPath, TestIdempotency (+1 more)
 
 ### Community 920 - "Community 920"
-Cohesion: 0.09
-Nodes (21): AllocateForceRequestSerializer, GroupForceRequestSerializer, PlacementAssignmentActualSerializer, Story 15.8: broker's allocation body — quantitative only, matches     the fronte, Story 18.6b: response shape for фактическое время назначения     (`PlacementAssi, Story 18.6b: write-only request body for `POST .../actual-time/` —     thin pass, Story 18.6b: response shape for Налёт часов + отметка перегрузки     (`ServiceHo, RecordActualTimeSerializer (+13 more)
+Cohesion: 0.06
+Nodes (29): AllocateForceRequestSerializer, GroupSerializer, PlacementAssignmentActualSerializer, PlacementAssignmentSerializer, Story 15.8: broker's allocation body — quantitative only, matches     the fronte, Story 16.8a: read-only — persisted conflict/acknowledgement state,     not recom, Story 18.6b: response shape for фактическое время назначения     (`PlacementAssi, Story 18.6b: write-only request body for `POST .../actual-time/` —     thin pass (+21 more)
 
 ### Community 921 - "Community 921"
 Cohesion: 0.13
@@ -3621,8 +3626,8 @@ Cohesion: 0.12
 Nodes (16): CascadeTrafficLight, _descendants(), _diff_winners(), DivisionTrafficLight, _live_winners(), Story 5.5a — светофор ОДНОГО подразделения (drift detection).  For one ``(divisi, Per-employee winner diff; None when snapshot and live agree., Rolled-up светофор of one division over its whole subtree (5.5b).      ``status` (+8 more)
 
 ### Community 937 - "Community 937"
-Cohesion: 0.14
-Nodes (18): ListObjectsResponse, objectDetailPath(), objectPassportPath(), UpdatePassportRequest, UpdatePassportResponse, mapRepositoryError(), notFoundEnvelope(), permissionDeniedEnvelope() (+10 more)
+Cohesion: 0.09
+Nodes (26): ErrorEnvelope, ListObjectsResponse, objectDetailPath(), objectPassportPath(), UpdatePassportRequest, UpdatePassportResponse, useObjectsList(), mapRepositoryError() (+18 more)
 
 ### Community 938 - "Community 938"
 Cohesion: 0.17
@@ -3638,7 +3643,7 @@ Nodes (5): Обновление стенда, Состав, Стенд в кон
 
 ### Community 941 - "Community 941"
 Cohesion: 0.04
-Nodes (59): add(), addChild(), addDependent(), addDomEvent(), addKeyframes(), addListeners(), addPointerEvent(), addScaleCorrector() (+51 more)
+Nodes (67): add(), addChild(), addDependent(), addDomEvent(), addListeners(), addPointerEvent(), addScaleCorrector(), addUniqueItem() (+59 more)
 
 ### Community 943 - "Community 943"
 Cohesion: 0.33
@@ -3665,8 +3670,8 @@ Cohesion: 0.15
 Nodes (7): b(), D(), e(), i(), S(), u(), y()
 
 ### Community 949 - "Community 949"
-Cohesion: 0.22
-Nodes (24): _notify_assignment_submitted(), Story 16.4 (FR-26): `DRAFT`->`SUBMITTED`. Idempotent replay on     already-`SUBM, Story 16.6d (FR-27): notify every `assignment.approve`/`"*"` holder     on `subm, submit_assignment_version(), make_conflicting_version(), make_draft_version(), make_event(), Story 16.4 (FR-26) — `submit_assignment_version()`/`return_assignment_version()` (+16 more)
+Cohesion: 0.15
+Nodes (13): generate_force_requests(), _next_day_night_boundary(), _notify_assignment_approved(), _notify_assignment_returned(), _notify_assignment_submitted(), Story 15.2b: `issue_bulletin()` — DRAFT->BULLETIN transition for `SecurityEvent`, Story 16.6d (FR-27): notify the version's `created_by` (skipped if     blank — ", Story 16.6a (FR-27): fire `Notification.Kind.ASSIGNMENT_APPROVED`     for every (+5 more)
 
 ### Community 950 - "Community 950"
 Cohesion: 0.07
@@ -3725,8 +3730,8 @@ Cohesion: 0.15
 Nodes (10): LoadCoefficient, Meta, Story 19.3 (FR-32/FR-39, OQ-6 нерешён): справочник коэффициентов поправок нагруз, Story 19.3 — LoadCoefficient: справочник коэффициентов поправок нагрузки (OQ-6,, review (Blind Hunter + Edge Case Hunter): CharField's blank=False     is a full_, Story 19.3's Scope Decision: применение коэффициента — будущая     стори. Ни `ev, test_blank_code_rejected(), test_multiplier_must_be_positive() (+2 more)
 
 ### Community 972 - "Community 972"
-Cohesion: 0.13
-Nodes (15): Command, Story 7.9/AC-1 — выгрузка «как в системе» для построчной сверки владельцем расхо, build_roster_export_rows(), Story 7.9 — выгрузка «как в системе» для построчной сверки владельцем.  Membersh, ``Division.code`` is unique only PER ORGANIZATION     (``unique_org_division_cod, Denormalized, deterministically ordered rows for one division on     ``business_, resolve_division_by_code(), RosterExportRow (+7 more)
+Cohesion: 0.10
+Nodes (17): Command, Story 7.9/AC-1 — выгрузка «как в системе» для построчной сверки владельцем расхо, Command, Story 7.9/AC-1 — фиксация подписи владельца расхода: «список подтверждён человек, build_roster_export_rows(), Story 7.9 — выгрузка «как в системе» для построчной сверки владельцем.  Membersh, ``Division.code`` is unique only PER ORGANIZATION     (``unique_org_division_cod, Denormalized, deterministically ordered rows for one division on     ``business_ (+9 more)
 
 ### Community 973 - "Community 973"
 Cohesion: 0.17
@@ -3741,8 +3746,8 @@ Cohesion: 0.14
 Nodes (12): count_staff_slots(), _parse_date(), Pure transformation of donor dumpdata rows into VAPS-shaped rows.  No ORM and no, Donor staff_unit dumpdata rows -> (division_pk -> slot count, skips).      EVERY, Donor employeestatus fields -> StatusRow in [start, end) or Skip.      Donor dat, Skip, StatusRow, transform_status() (+4 more)
 
 ### Community 977 - "Community 977"
-Cohesion: 0.05
-Nodes (43): Story 4.3 — the SINGLE audit write point.  architecture.md §Communication Patter, Append one ``AuditLog`` row and return it.      ``actor`` is the authenticated a, Append many ``AuditLog`` rows in ONE bulk INSERT (story 4.4).      A bulk mutati, record(), record_many(), AuditLog, add_pilot_division(), disable() (+35 more)
+Cohesion: 0.08
+Nodes (26): Story 4.3 — the SINGLE audit write point.  architecture.md §Communication Patter, Append one ``AuditLog`` row and return it.      ``actor`` is the authenticated a, Append many ``AuditLog`` rows in ONE bulk INSERT (story 4.4).      A bulk mutati, record(), record_many(), AuditLog, add_pilot_division(), disable() (+18 more)
 
 ### Community 978 - "Community 978"
 Cohesion: 0.13
@@ -3801,8 +3806,8 @@ Cohesion: 0.40
 Nodes (3): Meta, Singleton config for submission control (FR-13 / FR-18 / FR-39).      Provides t, SubmissionControlSettings
 
 ### Community 995 - "Community 995"
-Cohesion: 0.12
-Nodes (16): getFeedback(), sendFeedback(), DashboardLayout(), DashboardLayoutProps, PerformanceProfiler(), PerformanceProfilerProps, useStaffUnitStatistics(), FeedbackMessage (+8 more)
+Cohesion: 0.38
+Nodes (5): getFeedback(), sendFeedback(), FeedbackMessage, FeedbackResponse, FeedbackChat()
 
 ### Community 997 - "Community 997"
 Cohesion: 0.40
@@ -3825,8 +3830,8 @@ Cohesion: 0.08
 Nodes (28): Command, Story 15.11c — beat-ready entrypoint for the FR-34 temp-duty catch-up job.  Runn, PermissionService, process_temp_duty_transitions(), The INVERSE question to ``has_permission`` for list selectors         (architect, Write-side wrappers for RBAC administration., Stateless authorization resolution (spec §1254). All checks go through here., Story 15.11c (FR-34): catch-up for the two boundaries a     `TemporaryDutyPermis (+20 more)
 
 ### Community 1003 - "Community 1003"
-Cohesion: 0.19
-Nodes (4): SecurityEventSerializer, _get_event_or_404(), Story 15.2a: create/list security events (ОМ)., SecurityEventViewSet
+Cohesion: 0.14
+Nodes (15): addKeyframes(), componentWillUnmount(), eraseKeyframes(), findIndex(), getEasingForSegment(), getOutermostShadowParent(), getSnapshotBeforeUpdate(), promote() (+7 more)
 
 ### Community 1004 - "Community 1004"
 Cohesion: 0.26
@@ -3837,12 +3842,12 @@ Cohesion: 0.13
 Nodes (14): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+6 more)
 
 ### Community 1006 - "Community 1006"
-Cohesion: 0.12
-Nodes (26): JSON-safe лёгкий снимок версии сдачи для audit-строки (story 5.9, Д3).      ``en, _submission_audit_value(), assemble_summary(), _build_sources(), _coerce_division_id(), _compute_summary_event(), Сервис фрактальной сводки (Story 5.11): ``assemble_summary`` / ``summary_freshne, Required-подмножество прямых детей: непустой own-ростер ПОДДЕРЕВА на дату. (+18 more)
+Cohesion: 0.15
+Nodes (9): AuditLogPagination, AuditLogSelector, Story 4.5 — read-side selector for the audit log (FR-36).  The read path lives I, Filtered, deterministically-ordered reads over ``audit_logs``., Return audit rows matching the AND-combined filters (only the ones         suppl, Single audit row by pk (retrieve). The ``.get`` lives HERE, not in the         v, Story 4.5 — read-only audit journal API (FR-36).  ``GET /api/audit/logs/`` (list, limit/offset envelope {count, next, previous, results} — the project     canon ( (+1 more)
 
 ### Community 1007 - "Community 1007"
-Cohesion: 0.22
-Nodes (17): escalate_stale_force_requests(), Story 15.10 (FR-42): find `GroupForceRequest` rows stuck in     SENT/PARTIALLY_A, make_request(), Story 15.10 — `escalate_stale_force_requests()` behavioral tests (FR-42)., Review finding (Edge Case Hunter): a second same-day escalation batch     must n, ADMIN's `"*"` permission wildcard resolves as an escalation recipient     too (s, test_does_not_escalate_allocated_request(), test_does_not_escalate_fresh_request() (+9 more)
+Cohesion: 0.17
+Nodes (19): Command, Story 15.10 — beat-ready entrypoint for the FR-42 escalation catch-up job.  Runn, escalate_stale_force_requests(), Story 15.10 (FR-42): find `GroupForceRequest` rows stuck in     SENT/PARTIALLY_A, make_request(), Story 15.10 — `escalate_stale_force_requests()` behavioral tests (FR-42)., Review finding (Edge Case Hunter): a second same-day escalation batch     must n, ADMIN's `"*"` permission wildcard resolves as an escalation recipient     too (s (+11 more)
 
 ### Community 1008 - "Community 1008"
 Cohesion: 0.21
@@ -4397,8 +4402,8 @@ Cohesion: 0.42
 Nodes (8): activeClientIds, getResponse(), handleRequest(), IS_MOCKED_RESPONSE, resolveMainClient(), respondWithMock(), sendToClient(), serializeRequest()
 
 ### Community 1147 - "Community 1147"
-Cohesion: 0.24
-Nodes (17): _build(), _col(), _derive_from_snapshot(), make_employee(), make_status(), Тесты билдера данных .docx расхода (Story 6.3, AC-3/4) + sync-гвард Д3.  Данные, Независимое ожидание: тот же derive_report от тех же входов (AC-3)., test_attached_member_collected_and_out_of_list_total() (+9 more)
+Cohesion: 0.20
+Nodes (20): generate_expense_docx(), ``ExpenseDocumentData`` → байты официального .docx (канон §8).      Ленивая загр, _build(), _col(), _derive_from_snapshot(), make_employee(), make_status(), Тесты билдера данных .docx расхода (Story 6.3, AC-3/4) + sync-гвард Д3.  Данные (+12 more)
 
 ### Community 1148 - "Community 1148"
 Cohesion: 0.22
@@ -4437,8 +4442,8 @@ Cohesion: 0.29
 Nodes (6): 0. Данные переноса, 1. Версия — было / стало, 2. Секреты — канал доставки (обвести один), 3. Шаги переноса, 4. Если что-то пошло не так, CHECKLIST переноса — Story 12.5
 
 ### Community 1160 - "Community 1160"
-Cohesion: 0.29
-Nodes (7): amend_day(), Сервис amendment-flow (Story 5.4a): ``amend_day``.  Механизм пересдачи сданного, Создать следующую версию (AMENDED) сдачи дня.      Args:         division_id: UU, _require_actor(), test_amend_nonexistent_division_raises_404(), test_amend_emits_before_after_pair(), test_second_amend_old_value_carries_amendment_attrs()
+Cohesion: 0.15
+Nodes (13): adoptValue(), ajaxConvert(), ajaxHandleResponses(), Animation(), camelCase(), createFxNow(), createTween(), defaultPrefilter() (+5 more)
 
 ### Community 1161 - "Community 1161"
 Cohesion: 0.29
@@ -4449,12 +4454,12 @@ Cohesion: 0.38
 Nodes (5): _client(), event_manager_client(), make_object(), Story 15.2a — HTTP-smoke pin for security-event create audit emission.  Same pat, test_http_smoke_create_emits_audited_row()
 
 ### Community 1165 - "Community 1165"
-Cohesion: 0.29
-Nodes (7): convertOffsetToTimes(), createMixers(), defaultEasing(), defaultOffset(), fillOffset(), interpolate(), keyframes()
+Cohesion: 0.26
+Nodes (11): _client(), event_manager_client(), make_event(), make_object(), Story 15.2b — `POST /api/operations/security-events/{id}/bulletin` behavioral te, test_bulletin_emits_audited_row_only_on_real_transition(), test_bulletin_from_draft_succeeds(), test_bulletin_from_other_status_is_422_conflict() (+3 more)
 
 ### Community 1166 - "Community 1166"
-Cohesion: 0.28
-Nodes (16): approve_assignment_version(), _notify_assignment_approved(), Story 16.6a (FR-27): fire `Notification.Kind.ASSIGNMENT_APPROVED`     for every, Story 16.4 (FR-26): `SUBMITTED`->`APPROVED`, single approver     (literal reuse, make_draft_version(), make_employee(), make_event(), Story 16.6a (FR-27) — `ASSIGNMENT_APPROVED` notification to assigned employees + (+8 more)
+Cohesion: 0.16
+Nodes (27): approve_assignment_version(), project_placement_assignment(), Story 16.5: project one `PlacementAssignment` into an     `EmployeeStatus` row (, Story 16.4 (FR-26): `SUBMITTED`->`APPROVED`, single approver     (literal reuse, make_draft_version(), make_employee(), make_event(), Story 16.6a (FR-27) — `ASSIGNMENT_APPROVED` notification to assigned employees + (+19 more)
 
 ### Community 1167 - "Community 1167"
 Cohesion: 0.17
@@ -4493,7 +4498,7 @@ Cohesion: 0.27
 Nodes (13): _create(), test_adjacent_hard_intervals_pass(), test_cancelled_hard_excluded_from_constraint(), test_empty_interval_rejected_by_chk_status_dates(), test_hard_overlap_sequential_raises_named_constraint(), test_one_day_interval_is_valid(), test_period_is_half_open_and_created_by_inherited(), test_reversed_interval_fails_in_generated_period_not_chk() (+5 more)
 
 ### Community 1249 - "Community 1249"
-Cohesion: 0.24
+Cohesion: 0.27
 Nodes (9): _assert_snapshot_schema_supported(), event_label(), export_submission(), Story 10.8 — сервис личной копии сданного дня («щит»).  ORM-обвязка вокруг чисто, Русский лейбл события сдачи; неизвестный код — дословно., tz-aware время сдачи → строка в локальной зоне.      Строка, а не ``datetime``:, Отказ на неподдерживаемом снапшоте ДО генерации и ДО аудита.      Зеркало гварда, Сдача → (байты .xlsx, имя файла) + строка аудита о выгрузке. (+1 more)
 
 ### Community 1250 - "Community 1250"
@@ -4513,24 +4518,20 @@ Cohesion: 0.12
 Nodes (15): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+7 more)
 
 ### Community 1254 - "Community 1254"
-Cohesion: 0.25
-Nodes (14): c(), ee(), F(), I(), ne(), Pt(), Q(), re() (+6 more)
+Cohesion: 0.17
+Nodes (8): Attachment, DocumentSequence, IssuedDocument, Meta, Единая запись о файле в приватном хранилище (Story 6.1, AR-7).      Байты лежат, Выпуск официального документа: файл + sha256 + номер (Story 6.5).      Одна стро, Счётчик номеров документов по паре (doc_type, year) — Story 6.2, AR-7.      Inte, Status
 
 ### Community 1255 - "Community 1255"
 Cohesion: 0.13
 Nodes (14): Acceptance Criteria, Agent Model Used, Change Log, Completion Notes List, Debug Log References, Dev Agent Record, Dev Notes, File List (+6 more)
 
 ### Community 1256 - "Community 1256"
-Cohesion: 0.27
-Nodes (12): _client(), Story 13.4a — resolve + journal HTTP surface.  resolve: same holder as list/retr, _seed_report(), test_concurrent_resolve_exactly_one_wins_no_lost_update(), test_journal_excludes_unresolved_reports(), test_journal_projection_has_no_pii_fields(), test_journal_requires_authentication_only(), test_journal_visible_to_any_authenticated_user_no_role_needed() (+4 more)
+Cohesion: 0.23
+Nodes (10): make_employee(), Story 7.7 — режим «без двойного ввода»: submit_day гейт (AC-1).  Отдельный файл, Дефолт (нет строки переключателя) = выключено — существующее     поведение submi, AC-2: явный выключатель — disable() снимает блок для всех     подразделений (сим, Гейт режима срабатывает ДО проверки существования подразделения —     несуществу, test_blocked_before_existence_check_not_leaking_404(), test_mode_disabled_after_enable_unblocks(), test_mode_disabled_default_submit_unaffected() (+2 more)
 
 ### Community 1257 - "Community 1257"
 Cohesion: 0.14
 Nodes (7): DivisionViewSetTest, Division, DivisionType, Meta, MPTTMeta, Модель подразделения (поддерживает иерархию), Модель подразделения (поддерживает иерархию)
-
-### Community 1258 - "Community 1258"
-Cohesion: 0.33
-Nodes (6): approximateRoot(), calcAngularFreq(), findSpring(), getSpringOptions(), isSpringType(), spring()
 
 ### Community 1259 - "Community 1259"
 Cohesion: 0.22
@@ -4561,12 +4562,12 @@ Cohesion: 0.33
 Nodes (5): CatchUpResult, _materialize_day(), Story 3.12 — catch-up materialization engine (FR-41 core, ARCH-DATA-022).  Deriv, Outcome of one catch-up pass (for the command / callers / tests)., Run every registered effect materializer for one business date.
 
 ### Community 1269 - "Community 1269"
-Cohesion: 0.26
-Nodes (13): project_placement_assignment(), Story 16.5: project one `PlacementAssignment` into an     `EmployeeStatus` row (, make_draft_version(), make_event(), Story 16.5 — `project_placement_assignment()` / `EVENT_ASSIGNMENT` projection on, AC-5: EVENT_ASSIGNMENT is SOFT — not in HARD_BLOCK_CODES, so two     overlapping, Review finding (Blind Hunter, live-confirmed): the naive assertion     `status.d, test_approve_projects_event_assignment_status() (+5 more)
+Cohesion: 0.22
+Nodes (6): departmentUnit, leadershipUnit, renderEmployee(), sizeClasses, statusColors, OrgNode()
 
 ### Community 1270 - "Community 1270"
-Cohesion: 0.10
-Nodes (19): BulkStatusCreateRowSerializer, BulkStatusCreateSerializer, Одна строка-отклонение. 4 обязательных ключа зеркалят     ``_REQUIRED_ROW_KEYS``, Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC.      Story, Story 10.1b — query-параметры GET /statuses/on-date/. Оба обязательны:     без д, Плоская проекция живого статуса на дату — прямо из ``.values()``-словарей     ``, StatusMonthCalendarQuerySerializer, StatusOnDateQuerySerializer (+11 more)
+Cohesion: 0.17
+Nodes (10): BulkStatusCreateRowSerializer, BulkStatusCreateSerializer, Одна строка-отклонение. 4 обязательных ключа зеркалят     ``_REQUIRED_ROW_KEYS``, Тело POST-запроса bulk-создания. Без ``division_id`` — scope из RBAC.      Story, Story 10.1b — query-параметры GET /statuses/on-date/. Оба обязательны:     без д, Плоская проекция живого статуса на дату — прямо из ``.values()``-словарей     ``, StatusMonthCalendarQuerySerializer, StatusOnDateQuerySerializer (+2 more)
 
 ### Community 1271 - "Community 1271"
 Cohesion: 0.40
@@ -4589,16 +4590,16 @@ Cohesion: 0.08
 Nodes (35): Any, bool, str, IsRoleHRAdmin, Django REST Framework Permission Classes для RBAC, Разрешает только безопасные методы (GET, HEAD, OPTIONS)          Полезно для рол, Проверка что пользователь - кадровик (ROLE_5), ReadOnlyPermission (+27 more)
 
 ### Community 1276 - "Community 1276"
-Cohesion: 0.29
-Nodes (8): createEmployee(), usePositions(), useRanks(), CreateEmployeeFormData, CreateEmployeeRequest, CreateEmployeeResponse, AddEmployeeDialog(), AddEmployeeDialogProps
+Cohesion: 0.24
+Nodes (7): createEmployee(), usePositions(), useRanks(), CreateEmployeeFormData, CreateEmployeeRequest, CreateEmployeeResponse, AddEmployeeDialog()
 
 ### Community 1281 - "Community 1281"
 Cohesion: 0.27
 Nodes (7): ASSIGNMENT_VERSIONS, AssignmentVersionFixture, JOURNAL_ENTRIES, JournalEntryFixture, PlacementAssignmentFixture, OPROS_STATE, placementHandlers
 
 ### Community 1282 - "Community 1282"
-Cohesion: 0.22
-Nodes (8): describePrintFailure(), formatPrintDateTime(), PrintFailureDescription, PrintFailureKind, AssignmentVersionDetail, PlacementPrintBody(), PlacementPrintPage(), STATUS_LABEL
+Cohesion: 0.05
+Nodes (36): client, Employee, EmployeesPage, ApiError, ApiErrorInit, BusinessRuleError, ConflictError, NetworkError (+28 more)
 
 ### Community 1284 - "Community 1284"
 Cohesion: 0.13
@@ -4668,13 +4669,9 @@ Nodes (4): je(), lc(), Yc(), Le()
 Cohesion: 0.37
 Nodes (12): Story 18.3 (FR-43): «опрос по итогам» — фактическое время ОДНОГО     назначения,, record_assignment_actual_time(), make_assignment(), make_event(), Story 18.3 (FR-43) — record_assignment_actual_time(): опрос по итогам, одна факт, review (Acceptance Auditor): only the fully-reversed case was     tested — the a, test_records_actual_time_for_closed_event_current_version(), test_rejected_when_event_not_closed() (+4 more)
 
-### Community 1304 - "Community 1304"
-Cohesion: 0.38
-Nodes (9): checker(), clearAcross(), hide(), ready(), reset(), show(), showClear(), showQuestion() (+1 more)
-
 ### Community 1305 - "Community 1305"
-Cohesion: 0.24
-Nodes (7): useStaffUnits(), buildOrgStructure(), buildTree(), OrgBoard(), OrgStructure, statusColors, OrgChart()
+Cohesion: 0.25
+Nodes (3): EmployeeStatus, StatusRepositoryImpl, StatusApplicationServiceIntegrationTest
 
 ### Community 1306 - "Community 1306"
 Cohesion: 0.25
@@ -4685,8 +4682,8 @@ Cohesion: 0.31
 Nodes (10): make_event(), Story 18.2 (FR-30) — SecurityEventArchiveSelector.full_history(): a read-only jo, review (Blind Hunter + Edge Case Hunter, независимо совпали): все     sub-histor, test_full_history_aggregates_all_sub_histories(), test_full_history_current_version_excludes_non_current(), test_full_history_current_version_is_none_when_no_versions_exist(), test_full_history_journal_entries_are_chronological(), test_full_history_rejected_when_not_closed() (+2 more)
 
 ### Community 1308 - "Community 1308"
-Cohesion: 0.28
-Nodes (8): Notification, _local_isoformat(), mark_read(), _publish(), Story 5.7a — emit a notification (idempotent, in the caller's transaction).  ``n, Story 11.4a — record that *actor_id* has read *notification_id*.      Mirrors ``, *value* rendered exactly as the read-API renders it (5.7c parity, AC-9).      Th, Announce *notification* to its recipient's channel-layer group (11.2).      Runs
+Cohesion: 0.40
+Nodes (5): _local_isoformat(), _publish(), Story 5.7a — emit a notification (idempotent, in the caller's transaction).  ``n, *value* rendered exactly as the read-API renders it (5.7c parity, AC-9).      Th, Announce *notification* to its recipient's channel-layer group (11.2).      Runs
 
 ### Community 1309 - "Community 1309"
 Cohesion: 0.18
@@ -4705,16 +4702,16 @@ Cohesion: 0.22
 Nodes (8): Employee, EmployeeTransferHistory, EmploymentStatus, Gender, Meta, История кадровых перемещений сотрудника, iin_kz_validator(), Validates Kazakhstan IIN (Individual Identification Number).      TODO: This is
 
 ### Community 1313 - "Community 1313"
-Cohesion: 0.33
-Nodes (3): BaseUserManager, Employee, UserManager
+Cohesion: 0.43
+Nodes (5): DUTY_PLANS, DUTY_SHIFTS, DutyPlanFixture, DutyShiftFixture, dutyPlansHandlers
 
 ### Community 1314 - "Community 1314"
 Cohesion: 0.33
-Nodes (3): DivisionHistoricalSlot, test_negative_allocated_rejected(), test_valid_to_before_from_rejected()
+Nodes (3): Тест получения списка подразделений без аутентификации, Тест получения списка подразделений с аутентификацией, TestDivisionViewSetAPI
 
 ### Community 1315 - "Community 1315"
-Cohesion: 0.29
-Nodes (7): boxModelAdjustment(), createButtonPseudo(), createInputPseudo(), curCSS(), getWidthOrHeight(), manipulationTarget(), nodeName()
+Cohesion: 0.40
+Nodes (4): Получение истории статусов сотрудника          Args:             employee_id: ID, Получение запланированных статусов          Args:             employee_id: ID со, QuerySet, QuerySet
 
 ### Community 1316 - "Community 1316"
 Cohesion: 0.47
@@ -4725,32 +4722,44 @@ Cohesion: 0.25
 Nodes (4): PlacementAssignment, Охранное мероприятие (donor `ops_security_events`, DB-OPS-0xx —     точный номер, Story 16.1 (FR-25/26/27): построчное назначение сотрудника на пост     внутри од, SecurityEvent
 
 ### Community 1319 - "Community 1319"
-Cohesion: 0.38
-Nodes (6): import_employees(), _mask_iin(), Story 7.3 — идемпотентный импорт сотрудников с identity mapping и явной детекцие, PII-маска (паттерн 7.1/donor_profile.py): только последние 4 символа., rows: employees.employee dumpdata rows. staff_rows: staff_unit.staffunit     dum, _well_formed_rows()
+Cohesion: 0.14
+Nodes (11): Command, Story 7.4 — самостоятельный импорт статусов (интервальная модель + convergence-п, import_employees(), _mask_iin(), Story 7.3 — идемпотентный импорт сотрудников с identity mapping и явной детекцие, PII-маска (паттерн 7.1/donor_profile.py): только последние 4 символа., rows: employees.employee dumpdata rows. staff_rows: staff_unit.staffunit     dum, _well_formed_rows() (+3 more)
+
+### Community 1320 - "Community 1320"
+Cohesion: 0.33
+Nodes (4): dataSourceSchema, envSchema, faultProfileSchema, FrontendEnv
 
 ### Community 1321 - "Community 1321"
-Cohesion: 0.57
-Nodes (6): make_event(), make_post(), Story 17.2 (FR-29) — JournalEntrySelector: read-only "история ОМ по Объекту" / ", test_incidents_for_object_excludes_other_objects_and_non_incidents(), test_incidents_for_object_returns_all_events_of_that_object_chronologically(), test_incidents_for_participant_finds_named_participant_only()
+Cohesion: 0.53
+Nodes (5): Story 7.8/AC-1 — exit criterion: green_streak (reused from Story 6.9) + frozen-s, _seed_green_days(), test_below_streak_threshold_not_met_even_with_frozen_suite_green(), test_streak_and_frozen_suite_green_both_met(), test_streak_met_but_frozen_suite_not_green_not_met()
 
 ### Community 1323 - "Community 1323"
-Cohesion: 0.33
-Nodes (5): ObjectPassportSerializer, ObjectPassportUpdateSerializer, Partial-update body — every model field here has `blank=True`, so     DRF alread, Meta, Story 15.4 — ObjectPassport update API serializers.
+Cohesion: 0.20
+Nodes (8): ObjectPassportSerializer, ObjectPassportUpdateSerializer, Partial-update body — every model field here has `blank=True`, so     DRF alread, Meta, Story 15.4 — ObjectPassport update API serializers., Story 15.4: `update_passport_for_event()` — ObjectPassport update, gated to a Se, Partial-update the `ObjectPassport` for `event.object`, stamping     `last_verif, update_passport_for_event()
 
 ### Community 1324 - "Community 1324"
-Cohesion: 0.11
-Nodes (25): changePassword(), updateProfile(), approveSecondmentRequest(), fetchIncomingSecondmentRequests(), postAction(), rejectSecondmentRequest(), SecondmentRequest, BACKEND_URL (+17 more)
+Cohesion: 0.35
+Nodes (7): changePassword(), updateProfile(), BACKEND_URL, ChangePasswordRequest, ChangePasswordResponse, UpdateProfileRequest, UpdateProfileResponse
+
+### Community 1325 - "Community 1325"
+Cohesion: 0.40
+Nodes (6): getAll(), setAll(), speed(), startTime(), state(), time()
 
 ### Community 1326 - "Community 1326"
 Cohesion: 0.33
 Nodes (3): AUDIT_LOGS, auditHandlers, AuditLog
 
 ### Community 1328 - "Community 1328"
-Cohesion: 0.40
-Nodes (4): JournalEntrySerializer, Story 17.7a: response shape for журнал штаба (17.1/17.2) rows —     read-only, a, JournalEntryViewSet, Story 17.7a: `GET /api/operations/journal-entries/{id}` — detail     read for a
+Cohesion: 0.50
+Nodes (5): dl(), th(), ul(), En(), fn
 
 ### Community 1331 - "Community 1331"
 Cohesion: 0.67
 Nodes (3): ar(), Ft(), ur()
+
+### Community 1332 - "Community 1332"
+Cohesion: 0.40
+Nodes (3): StandardResultsSetPagination, StandardResultsSetPagination, PageNumberPagination
 
 ### Community 1333 - "Community 1333"
 Cohesion: 0.67
@@ -4760,9 +4769,13 @@ Nodes (3): fc(), gc(), mc()
 Cohesion: 0.67
 Nodes (3): ot(), Pt(), Ye
 
-### Community 1335 - "Community 1335"
+### Community 1340 - "Community 1340"
 Cohesion: 0.50
-Nodes (3): GroupSerializer, GroupViewSet, Story 15.6: `GET /api/operations/groups` — справочник Групп (FR-39).     Read-on
+Nodes (3): Meta, Override, Story 3.5 — first-class auditable record of a soft-conflict bypass.      Written
+
+### Community 1341 - "Community 1341"
+Cohesion: 0.50
+Nodes (3): Meta, Story 3.10 — first-class link for a secondment pair (FR-14).      Откомандирован, Secondment
 
 ### Community 1611 - "Community 1611"
 Cohesion: 0.12
@@ -4897,21 +4910,21 @@ Nodes (19): allowed_hosts_from_env(), build_auth_classes(), guard_secret_key_con
   Backend/PersonnelStatus/Personnel-Records/organization_management/apps/audit/middleware/audit_middleware.py · relation: references
 
 ## Knowledge Gaps
-- **7338 isolated node(s):** `projectId`, `shape`, `pkg`, `globalName`, `entry` (+7333 more)
+- **7351 isolated node(s):** `projectId`, `shape`, `pkg`, `globalName`, `entry` (+7346 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **215 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **218 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `AuditLog` and `AuditMiddleware`?**
   _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
-- **Why does `datetime` connect `Community 288` to `Employee Status Service Layer`, `Role Model & RBAC Engine`, `Community 527`, `Community 528`, `Community 529`, `Employee Status ViewSet`, `Community 22`, `Community 540`, `Community 542`, `Community 31`, `Community 547`, `Community 549`, `Community 39`, `Community 41`, `Community 560`, `Community 49`, `Community 562`, `Community 53`, `Community 60`, `Community 2627`, `Community 69`, `Community 1100`, `Community 594`, `Community 598`, `Community 599`, `Community 91`, `Community 93`, `Community 608`, `Community 101`, `Community 614`, `Community 104`, `Community 106`, `Community 1141`, `Community 1147`, `Community 1151`, `Community 641`, `Community 642`, `Community 1158`, `Community 1167`, `Community 143`, `Community 145`, `Community 2196`, `Community 151`, `Community 670`, `Community 680`, `Community 689`, `Community 692`, `Community 698`, `Community 701`, `Community 714`, `Community 1248`, `Community 751`, `Community 1264`, `Community 1265`, `Community 1267`, `Community 1269`, `Community 1283`, `Community 779`, `Community 1302`, `Community 1306`, `Community 1309`, `Community 797`, `Community 1314`, `Community 1316`, `Community 294`, `Community 1320`, `Community 297`, `Community 298`, `Community 299`, `Community 1322`, `Community 1325`, `Community 302`, `Community 303`, `Community 301`, `Community 304`, `Community 300`, `Community 1845`, `Community 834`, `Community 835`, `Community 836`, `Community 329`, `Community 333`, `Community 334`, `Community 847`, `Community 849`, `Community 850`, `Community 858`, `Community 859`, `Community 864`, `Community 865`, `Community 875`, `Community 880`, `Community 368`, `Community 883`, `Community 885`, `Community 887`, `Community 889`, `Community 892`, `Community 382`, `Community 384`, `Community 387`, `Community 388`, `Community 904`, `Community 907`, `Community 910`, `Community 912`, `Community 917`, `Community 922`, `Community 410`, `Community 929`, `Community 934`, `Community 423`, `Community 936`, `Community 427`, `Community 945`, `Community 947`, `Community 439`, `Community 442`, `Community 962`, `Community 966`, `Community 969`, `Community 972`, `Community 974`, `Community 463`, `Community 976`, `Community 977`, `Community 975`, `Community 2000`, `Community 468`, `Community 979`, `Community 470`, `Community 464`, `Community 984`, `Community 478`, `Community 479`, `Community 991`, `Community 994`, `Community 487`, `Community 488`, `Community 1001`, `Community 1002`, `Community 1004`, `Community 1007`, `Community 495`, `Community 1010`, `Community 1011`, `Community 499`, `Community 505`, `Community 1020`, `Community 1022`?**
-  _High betweenness centrality (0.096) - this node is a cross-community bridge._
-- **Why does `reverse()` connect `Community 465` to `Community 642`, `Community 1027`, `Community 1028`, `Community 1029`, `Community 388`, `Dictionaries API (Ranks/Positions)`, `Community 905`, `Community 524`, `Community 1164`, `Community 1037`, `Community 913`, `Community 914`, `Community 2196`, `Community 22`, `Community 797`, `Community 1310`, `Community 39`, `Community 297`, `Community 689`, `Community 947`, `Community 438`, `Community 697`, `Community 698`, `Community 700`, `Community 957`, `Community 962`, `Community 835`, `Community 69`, `Community 974`, `Community 336`, `Community 984`, `Community 858`, `Community 605`, `Community 609`, `Community 487`, `Community 488`, `Community 1256`, `Community 106`, `Community 1261`, `Community 1134`, `Community 1135`, `Community 1136`, `Community 495`, `Community 1010`, `Community 1011`, `Community 1140`, `Community 1141`, `Community 1019`, `Community 1148`, `Community 1023`?**
+- **Why does `datetime` connect `Community 288` to `Role Model & RBAC Engine`, `Community 527`, `Community 528`, `Community 529`, `Employee Status ViewSet`, `Community 22`, `Community 540`, `Community 542`, `Community 31`, `Community 547`, `Community 549`, `Community 39`, `Community 41`, `Community 560`, `Community 562`, `Community 53`, `Community 60`, `Community 2627`, `Community 69`, `Community 1100`, `Community 594`, `Community 598`, `Community 599`, `Community 91`, `Community 93`, `Community 608`, `Community 101`, `Community 614`, `Community 104`, `Community 106`, `Community 1141`, `Community 1147`, `Community 1151`, `Community 641`, `Community 642`, `Community 1158`, `Community 140`, `Community 1166`, `Community 1167`, `Community 143`, `Community 145`, `Community 2196`, `Community 151`, `Community 670`, `Community 680`, `Community 689`, `Community 692`, `Community 698`, `Community 701`, `Community 714`, `Community 1248`, `Community 1256`, `Community 1258`, `Community 751`, `Community 1264`, `Community 1265`, `Community 1267`, `Community 1283`, `Community 779`, `Community 1302`, `Community 1306`, `Community 1309`, `Community 797`, `Community 1316`, `Community 294`, `Community 1319`, `Community 1321`, `Community 298`, `Community 299`, `Community 297`, `Community 301`, `Community 302`, `Community 303`, `Community 1322`, `Community 304`, `Community 300`, `Community 1845`, `Community 1335`, `Community 1342`, `Community 834`, `Community 835`, `Community 836`, `Community 329`, `Community 1353`, `Community 1357`, `Community 333`, `Community 847`, `Community 334`, `Community 849`, `Community 850`, `Community 858`, `Community 859`, `Community 864`, `Community 865`, `Community 875`, `Community 880`, `Community 368`, `Community 883`, `Community 885`, `Community 887`, `Community 889`, `Community 892`, `Community 382`, `Community 384`, `Community 387`, `Community 388`, `Community 904`, `Community 907`, `Community 910`, `Community 912`, `Community 917`, `Community 922`, `Community 410`, `Community 929`, `Community 934`, `Community 423`, `Community 936`, `Community 427`, `Community 945`, `Community 947`, `Community 949`, `Community 439`, `Community 442`, `Community 962`, `Community 966`, `Community 969`, `Community 972`, `Community 974`, `Community 463`, `Community 976`, `Community 977`, `Community 975`, `Community 2000`, `Community 468`, `Community 979`, `Community 470`, `Community 464`, `Community 984`, `Community 478`, `Community 479`, `Community 991`, `Community 994`, `Community 487`, `Community 488`, `Community 1001`, `Community 1002`, `Community 1004`, `Community 1007`, `Community 495`, `Community 1010`, `Community 1011`, `Community 499`, `Community 505`, `Community 1020`, `Community 1022`?**
+  _High betweenness centrality (0.093) - this node is a cross-community bridge._
+- **Why does `reverse()` connect `Community 465` to `Community 642`, `Community 1027`, `Community 1028`, `Community 1029`, `Community 388`, `Dictionaries API (Ranks/Positions)`, `Community 905`, `Community 524`, `Community 1164`, `Community 1165`, `Community 1037`, `Community 140`, `Community 913`, `Community 914`, `Community 2196`, `Community 22`, `Community 797`, `Community 1310`, `Community 1314`, `Community 39`, `Community 297`, `Community 689`, `Community 947`, `Community 438`, `Community 697`, `Community 698`, `Community 700`, `Community 957`, `Community 962`, `Community 835`, `Community 69`, `Community 974`, `Community 336`, `Community 984`, `Community 858`, `Community 605`, `Community 609`, `Community 487`, `Community 488`, `Community 1261`, `Community 1134`, `Community 1135`, `Community 1136`, `Community 495`, `Community 1010`, `Community 1011`, `Community 1140`, `Community 1141`, `Community 1019`, `Community 1148`, `Community 1023`?**
   _High betweenness centrality (0.017) - this node is a cross-community bridge._
-- **Why does `DomainError` connect `Community 333` to `Community 1031`, `Community 1160`, `Community 1166`, `Community 1167`, `Community 918`, `Community 1302`, `Community 1308`, `Community 298`, `Community 300`, `Community 301`, `Community 302`, `Community 949`, `Community 442`, `Community 706`, `Community 463`, `Community 977`, `Community 849`, `Community 468`, `Community 852`, `Community 599`, `Community 986`, `Community 607`, `Community 1249`, `Community 101`, `Community 104`, `Community 746`, `Community 1006`, `Community 751`, `Community 1139`, `Community 885`, `Community 1270`, `Community 887`?**
-  _High betweenness centrality (0.013) - this node is a cross-community bridge._
+- **Why does `DomainError` connect `Community 333` to `Community 1031`, `Community 1166`, `Community 1167`, `Community 784`, `Community 918`, `Community 1302`, `Community 920`, `Community 797`, `Community 298`, `Community 1323`, `Community 300`, `Community 301`, `Community 302`, `Community 949`, `Community 706`, `Community 463`, `Community 849`, `Community 850`, `Community 468`, `Community 852`, `Community 599`, `Community 986`, `Community 607`, `Community 1249`, `Community 101`, `Community 104`, `Community 746`, `Community 751`, `Community 368`, `Community 1139`, `Community 885`, `Community 887`?**
+  _High betweenness centrality (0.012) - this node is a cross-community bridge._
 - **Are the 49 inferred relationships involving `datetime` (e.g. with `_submission()` and `_direct_v1()`) actually correct?**
   _`datetime` has 49 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 192 inferred relationships involving `reverse()` (e.g. with `.test_get_division_list_authenticated()` and `.test_get_division_list_unauthenticated()`) actually correct?**

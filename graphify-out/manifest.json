@@ -17710,8 +17710,8 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/sprint-status.yaml": {
-    "mtime": 1785935787.4131165,
-    "ast_hash": "049a37ad56f82f51f90e64594ec3ce92",
+    "mtime": 1785936778.1523914,
+    "ast_hash": "51722dad09e7dc3fcf1d1f5eedfd6a05",
     "semantic_hash": ""
   },
   "_bmad-output/planning-artifacts/architecture.md": {
@@ -20955,8 +20955,8 @@
     "semantic_hash": ""
   },
   "frontend/src/shared/api/schema.d.ts": {
-    "mtime": 1785927340.3685803,
-    "ast_hash": "29ea4b2bab54e6a775aa42e5e3f17acd",
+    "mtime": 1785936494.8251274,
+    "ast_hash": "2c6eb7a3caf9e9370ffc870bd136ba49",
     "semantic_hash": ""
   },
   "frontend/src/shared/api/testing/handlers.ts": {
@@ -21115,8 +21115,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/schema.yaml": {
-    "mtime": 1785935606.5844302,
-    "ast_hash": "8f943f55fabe2a4812e04c62583e9333",
+    "mtime": 1785936488.610384,
+    "ast_hash": "b7d4713360bcb6952bb7e4b17bcec9bb",
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/5-10-property-\u0438\u043c\u043c\u0443\u0442\u0430\u0431\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c-\u0441\u043d\u0430\u043f\u0448\u043e\u0442\u0430.md": {
@@ -21415,8 +21415,8 @@
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/api/views.py": {
-    "mtime": 1785935569.7152877,
-    "ast_hash": "e35696f39331bf9e461d14c2adb44530",
+    "mtime": 1785936481.2557602,
+    "ast_hash": "f64b4bca0ed50e1355a1347c5e1730f7",
     "semantic_hash": ""
   },
   "Backend/VAPS/apps/operations/statuses/tests/test_bulk_status_api.py": {
@@ -25165,8 +25165,23 @@
     "semantic_hash": ""
   },
   "_bmad-output/implementation-artifacts/19-4b-api-\u043c\u0435\u0441\u044f\u0447\u043d\u044b\u0439-\u043a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u044c.md": {
-    "mtime": 1785935782.2650259,
-    "ast_hash": "ddcc7812032cc6a788e809f9667c2b7b",
+    "mtime": 1785936770.8472598,
+    "ast_hash": "637e5eede48392c1399bbc01efe46a85",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/status-calendar/api/queries.test.tsx": {
+    "mtime": 1785936527.4103959,
+    "ast_hash": "9510c603b685edb62ae8f562ab7f61ea",
+    "semantic_hash": ""
+  },
+  "frontend/src/features/status-calendar/api/queries.ts": {
+    "mtime": 1785936088.0514054,
+    "ast_hash": "d724bc1515c0605c089be0acacd072c7",
+    "semantic_hash": ""
+  },
+  "_bmad-output/implementation-artifacts/19-4c-frontend-api-client.md": {
+    "mtime": 1785936757.311004,
+    "ast_hash": "0df17e4394d2a44a312b96191c4beef0",
     "semantic_hash": ""
   }
 }
