@@ -4,7 +4,7 @@ baseline_commit: 484d2a4
 
 # Story 18.6b: API — опрос, налёт часов, перегрузка
 
-Status: review
+Status: done
 
 ## Story
 
@@ -26,7 +26,7 @@ so that **фронтовый экран опроса (18.6c) сможет выз
 
 ## Acceptance Criteria
 
-1. **AC-1.** `POST .../actual-time/` с валидным интервалом на `IN_PROGRESS`-событии (сервисный гейт 18.3) → 200/201, `PlacementAssignmentActualSerializer`.
+1. **AC-1.** `POST .../actual-time/` с валидным интервалом на `CLOSED`-событии (сервисный гейт 18.3 — `is_current`+`CLOSED`, НЕ `IN_PROGRESS`; исправлено ревью, Acceptance Auditor — исходная формулировка была copy-paste-дрейфом от 18.6a's close-ориентированных AC, противоречила собственному `@extend_schema`-описанию той же стори) → 200, `PlacementAssignmentActualSerializer`.
 2. **AC-2.** `POST .../actual-time/` без права `event.manage` → 403.
 3. **AC-3.** `POST .../service-hours/` при существующем `actual_time` на `CLOSED`-событии (сервисный гейт 18.4) → 200, `ServiceHoursSerializer` (`day_hours`/`night_hours` заполнены).
 4. **AC-4.** `POST .../service-hours/` без предварительного `actual-time` (нет `PlacementAssignmentActual`) → 404.
@@ -95,9 +95,12 @@ Claude Sonnet 5
 - `Backend/VAPS/apps/audit/tests/test_audit_coverage.py` (modified — 3 audited entries)
 - `Backend/VAPS/schema.yaml` (regenerated — additive)
 
+После ревью (3 агента: Blind Hunter/Edge Case Hunter/Acceptance Auditor): 0 реальных багов в коде. 1 real находка — в самой СТОРИ: AC-1 буквально написана «на IN_PROGRESS-событии», что противоречит и реальному сервисному гейту (`is_current`+`CLOSED`), и собственному `@extend_schema`-описанию той же стори (copy-paste-дрейф от 18.6a's close-ориентированных AC) — исправлено в тексте AC-1, код и тесты УЖЕ следовали правильному гейту. 8 test-патчей: is_current-гейт для всех трёх actions (был полностью непокрыт — только CLOSED/не-CLOSED тестировался), interval-ordering 400 через API, API-уровневый upsert-раунд-трип (не только сервисный), различение двух РАЗНЫХ 404-кейсов у `overload` (переименован вводящий в заблуждение `test_overload_without_service_hours_is_404` → `test_overload_without_actual_time_is_404`, добавлен genuinely-missing `test_overload_without_service_hours_computed_is_404`), промежуточный статус-assert в `test_overload_success` (диагностическое качество — падение указывает на реальный шаг). 2 defer: naive-datetime молчаливая tz-коэрсия через `settings.TIME_ZONE` (не `VAPS_LOCAL_TIMEZONE`) — фронту нужно ВСЕГДА слать offset-aware ISO; `Http404` vs сервисный `error_code`-конверт — established convention, тот же класс, что уже зафиксирован для 18.6a. `make gate` после патчей — 4200 passed (было 4194), 0 regressions.
+
 ## Change Log
 
 | Дата | Изменение |
 |---|---|
 | 2026-08-05 | Story создана (create-story). Третья часть разбиения 18.6 (после 18.6a) — API-обёртка над `record_assignment_actual_time()`/`compute_service_hours()`/`flag_post_overload()` (18.3-18.5), три отдельных action'а (НЕ объединённая ручка — тот же принцип разделения, что сам сервисный слой), на существующем `PlacementAssignmentViewSet` с НОВЫМ RBAC-гейтом (`event.manage`) поверх его существующего self-scope `initial()`. Status → ready-for-dev. |
 | 2026-08-05 | Dev-story: три action'а + 3 сериализатора + 9 API-тестов + rbac-matrix/audit-coverage записи ДО первого прогона (18.6a's урок применён) + `make schema`. `make gate` — 4194 passed с первого раза, 0 regressions. Status → review. |
+| 2026-08-05 | Review закрыт (3 агента). 0 багов в коде, 1 spec-текст патч (AC-1 исправлена — CLOSED, не IN_PROGRESS), 8 test-патчей (is_current-гейт ×3, interval-ordering, upsert-раунд-трип, два различённых 404-кейса overload). 2 defer в deferred-work.md. `make gate` — 4200 passed, 0 regressions. Status → done. |

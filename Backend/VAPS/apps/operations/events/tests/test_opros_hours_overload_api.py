@@ -4,6 +4,7 @@ record_assignment_actual_time() (18.3), compute_service_hours() (18.4),
 flag_post_overload() (18.5)."""
 
 import datetime
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -16,6 +17,7 @@ from apps.operations.events.models import (
     PlacementAssignment,
     PlacementAssignmentActual,
     SecurityEvent,
+    ServiceHours,
 )
 from apps.operations.facilities.models import Object as FacilityObject
 from apps.operations.facilities.models import Post
@@ -144,6 +146,61 @@ def test_actual_time_rejected_when_event_not_closed(event_manager_client):
     assert resp.status_code == 422
 
 
+def test_actual_time_rejected_when_version_not_current(event_manager_client):
+    """review (Edge Case Hunter): the service's OTHER gate condition
+    (is_current), distinct from the CLOSED-event gate above, was
+    completely unexercised through the HTTP action."""
+    assignment = make_assignment("OBJ-OHO-3b", is_current=False)
+
+    resp = post_actual_time(
+        event_manager_client,
+        assignment,
+        local(2026, 8, 4, 9, 0),
+        local(2026, 8, 4, 17, 0),
+    )
+
+    assert resp.status_code == 422
+
+
+def test_actual_time_rejected_when_end_before_start(event_manager_client):
+    """review (Edge Case Hunter): the interval-ordering 400 path was
+    never exercised through the API layer."""
+    assignment = make_assignment("OBJ-OHO-3c")
+
+    resp = post_actual_time(
+        event_manager_client,
+        assignment,
+        local(2026, 8, 4, 17, 0),
+        local(2026, 8, 4, 9, 0),
+    )
+
+    assert resp.status_code == 400
+
+
+def test_actual_time_upsert_corrects_not_duplicates(event_manager_client):
+    """review (Edge Case Hunter/Blind Hunter): the API-level upsert round
+    trip (not just the underlying service) was never exercised."""
+    assignment = make_assignment("OBJ-OHO-3d")
+    post_actual_time(
+        event_manager_client,
+        assignment,
+        local(2026, 8, 4, 9, 0),
+        local(2026, 8, 4, 17, 0),
+    )
+
+    resp = post_actual_time(
+        event_manager_client,
+        assignment,
+        local(2026, 8, 4, 9, 0),
+        local(2026, 8, 4, 21, 0),
+    )
+
+    assert resp.status_code == 200
+    assert PlacementAssignmentActual.objects.filter(assignment=assignment).count() == 1
+    actual = PlacementAssignmentActual.objects.get(assignment=assignment)
+    assert actual.actual_end_at == local(2026, 8, 4, 21, 0)
+
+
 # --- service-hours ---
 
 
@@ -179,6 +236,24 @@ def test_service_hours_without_permission_is_403(no_permission_client):
     assert resp.status_code == 403
 
 
+def test_service_hours_rejected_when_version_not_current(event_manager_client):
+    """review (Edge Case Hunter): compute_service_hours()'s own is_current
+    gate, distinct from actual-time's, was unexercised. actual created
+    directly (not via the API) — recording actual-time itself requires
+    is_current=True, so this state can't be reached through the actions."""
+    assignment = make_assignment("OBJ-OHO-6b", is_current=False)
+    PlacementAssignmentActual.objects.create(
+        assignment=assignment,
+        actual_start_at=local(2026, 8, 4, 9, 0),
+        actual_end_at=local(2026, 8, 4, 17, 0),
+        recorded_by="staff-1",
+    )
+
+    resp = event_manager_client.post(service_hours_url(assignment))
+
+    assert resp.status_code == 422
+
+
 # --- overload ---
 
 
@@ -190,7 +265,11 @@ def test_overload_success(event_manager_client):
         local(2026, 8, 4, 9, 0),
         local(2026, 8, 4, 17, 0),
     )
-    event_manager_client.post(service_hours_url(assignment))
+    # review (Edge Case Hunter): asserting this intermediate response
+    # points a future failure at the right step instead of surfacing as
+    # a confusing 404 further down.
+    hours_resp = event_manager_client.post(service_hours_url(assignment))
+    assert hours_resp.status_code == 200
 
     resp = event_manager_client.post(overload_url(assignment))
 
@@ -199,8 +278,31 @@ def test_overload_success(event_manager_client):
     assert resp.data["overload_minutes"] == "120.00"
 
 
-def test_overload_without_service_hours_is_404(event_manager_client):
+def test_overload_without_actual_time_is_404(event_manager_client):
+    """review (Edge Case Hunter): renamed from
+    test_overload_without_service_hours_is_404 — this case never records
+    actual-time at all, so the 404 comes from the INNER
+    _get_actual_or_404 layer, not the "hours not computed" branch. See
+    test_overload_without_service_hours_computed_is_404 below for the
+    genuinely distinct case."""
     assignment = make_assignment("OBJ-OHO-8")
+
+    resp = event_manager_client.post(overload_url(assignment))
+
+    assert resp.status_code == 404
+
+
+def test_overload_without_service_hours_computed_is_404(event_manager_client):
+    """review (Edge Case Hunter): the genuinely distinct case — actual-time
+    IS recorded, service-hours was never computed — was untested; the
+    prior test only exercised the inner _get_actual_or_404 branch."""
+    assignment = make_assignment("OBJ-OHO-8b")
+    post_actual_time(
+        event_manager_client,
+        assignment,
+        local(2026, 8, 4, 9, 0),
+        local(2026, 8, 4, 17, 0),
+    )
 
     resp = event_manager_client.post(overload_url(assignment))
 
@@ -213,3 +315,26 @@ def test_overload_without_permission_is_403(no_permission_client):
     resp = no_permission_client.post(overload_url(assignment))
 
     assert resp.status_code == 403
+
+
+def test_overload_rejected_when_version_not_current(event_manager_client):
+    """review (Edge Case Hunter): flag_post_overload()'s own is_current
+    gate was unexercised. actual+hours created directly — reaching this
+    state through the actions requires is_current=True at record time."""
+    assignment = make_assignment("OBJ-OHO-9b", is_current=False)
+    actual = PlacementAssignmentActual.objects.create(
+        assignment=assignment,
+        actual_start_at=local(2026, 8, 4, 9, 0),
+        actual_end_at=local(2026, 8, 4, 17, 0),
+        recorded_by="staff-1",
+    )
+    ServiceHours.objects.create(
+        actual=actual,
+        day_hours=Decimal("8.00"),
+        night_hours=Decimal("0.00"),
+        computed_at=local(2026, 8, 4, 17, 0),
+    )
+
+    resp = event_manager_client.post(overload_url(assignment))
+
+    assert resp.status_code == 422
