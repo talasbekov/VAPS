@@ -279,6 +279,11 @@ actions:
     description: "Фактическое время назначения записано/исправлено (опрос по итогам, только для CLOSED-события и is_current версии). Эмитится на КАЖДОМ вызове (upsert, включая исправление) — реальная бизнес-данные, не черновик. entity_id — uuid.UUID(int=actual.pk)."
     provenance: derived-from-mutation
     source: "epics.md FR-43; Story 18.3"
+  SERVICE_HOURS_COMPUTED:
+    entity_type: service_hours
+    description: "Налёт часов день/ночь вычислен из PlacementAssignmentActual (18.3) — явный вызов, не авто-триггер. Эмитится на КАЖДОМ вызове (upsert, включая пересчёт после исправления факта). Ночь = 22:00-06:00 Asia/Qyzylorda (PROVISIONAL, до Epic 19's справочника коэффициентов)."
+    provenance: derived-from-mutation
+    source: "epics.md FR-32; Story 18.4"
   OBJECT_PASSPORT_UPDATED:
     entity_type: object_passport
     description: "Паспорт объекта обновлён в контексте ОМ (только пока ОМ в статусе RECON, FR-22). entity_id — uuid.UUID(int=passport.pk). Реальная мутация с compliance-следом (не черновик, в отличие от 15.3b's чек-листа) — аудируется на каждом вызове."

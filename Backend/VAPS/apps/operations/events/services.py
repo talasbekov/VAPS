@@ -20,6 +20,8 @@ import datetime
 import hashlib
 import json
 import uuid
+from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
@@ -44,6 +46,7 @@ from apps.operations.events.models import (
     SecurityEventClosureSummary,
     SecurityEventSectorPost,
     SecurityEventStaffingDemand,
+    ServiceHours,
 )
 from apps.operations.duties.services import _to_date_range
 from apps.operations.events.selectors import find_replacement_candidates
@@ -2199,3 +2202,103 @@ def record_assignment_actual_time(assignment, *, actor, actual_start_at, actual_
             },
         )
     return actual
+
+
+_NIGHT_START_HOUR = 22  # PROVISIONAL (18.4) — 22:00 local, до Epic 19's справочника.
+_NIGHT_END_HOUR = 6  # PROVISIONAL (18.4) — 06:00 local.
+
+
+def _split_day_night_hours(start_at, end_at):
+    """Story 18.4 (FR-32): чистая функция — делит `[start_at, end_at)`
+    (aware UTC) на дневные/ночные часы по МЕСТНОЙ границе 22:00–06:00
+    (`settings.VAPS_LOCAL_TIMEZONE`). Итеративно режет по каждой
+    day/night-границе местного времени — корректно для интервалов,
+    пересекающих ПОЛНОЧЬ и МНОГО дней подряд. Возвращает
+    `(day_hours: Decimal, night_hours: Decimal)`.
+    """
+    tz = ZoneInfo(settings.VAPS_LOCAL_TIMEZONE)
+    current = start_at.astimezone(tz)
+    end_local = end_at.astimezone(tz)
+    day_seconds = 0.0
+    night_seconds = 0.0
+    while current < end_local:
+        local_date = current.date()
+        night_start = datetime.datetime.combine(
+            local_date, datetime.time(_NIGHT_START_HOUR), tzinfo=tz
+        )
+        night_end = datetime.datetime.combine(
+            local_date, datetime.time(_NIGHT_END_HOUR), tzinfo=tz
+        ) + datetime.timedelta(days=1 if current.hour >= _NIGHT_START_HOUR else 0)
+        day_start_of_today = datetime.datetime.combine(
+            local_date, datetime.time(_NIGHT_END_HOUR), tzinfo=tz
+        )
+        is_night = current.hour >= _NIGHT_START_HOUR or current.hour < _NIGHT_END_HOUR
+        if is_night:
+            boundary = (
+                night_end if current.hour >= _NIGHT_START_HOUR else day_start_of_today
+            )
+        else:
+            boundary = night_start
+        segment_end = min(boundary, end_local)
+        duration = (segment_end - current).total_seconds()
+        if is_night:
+            night_seconds += duration
+        else:
+            day_seconds += duration
+        current = segment_end
+    return (
+        Decimal(str(round(day_seconds / 3600, 2))),
+        Decimal(str(round(night_seconds / 3600, 2))),
+    )
+
+
+def compute_service_hours(actual, *, actor):
+    """Story 18.4 (FR-32): Налёт часов день/ночь из `PlacementAssignmentActual`
+    (18.3) — явный вызов, НЕ авто-триггер из `record_assignment_actual_time()`
+    (та же развязка, что 18.1/18.2's закрытие vs архив). Тот же двойной
+    гейт, что 18.3 (`is_current` + `event.status_code == CLOSED`) —
+    ServiceHours без валидного факта бессмысленен."""
+    if not (actor or "").strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    with transaction.atomic():
+        actual = (
+            PlacementAssignmentActual.objects.select_for_update()
+            .select_related("assignment__version", "assignment__version__event")
+            .get(pk=actual.pk)
+        )
+        version = actual.assignment.version
+        if not version.is_current:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Налёт часов можно вычислить только для актуальной версии.",
+            )
+        if version.event.status_code != SecurityEvent.StatusCode.CLOSED:
+            raise DomainError(
+                "INVALID_LIFECYCLE_TRANSITION",
+                422,
+                message="Налёт часов можно вычислить только после закрытия события.",
+            )
+        day_hours, night_hours = _split_day_night_hours(
+            actual.actual_start_at, actual.actual_end_at
+        )
+        hours, _ = ServiceHours.objects.update_or_create(
+            actual=actual,
+            defaults={
+                "day_hours": day_hours,
+                "night_hours": night_hours,
+                "computed_at": Clock.now(),
+            },
+        )
+        record(
+            actor=actor,
+            action="SERVICE_HOURS_COMPUTED",
+            entity_type="service_hours",
+            entity_id=uuid.UUID(int=hours.pk),
+            new_value={
+                "actual_id": actual.pk,
+                "day_hours": str(hours.day_hours),
+                "night_hours": str(hours.night_hours),
+            },
+        )
+    return hours

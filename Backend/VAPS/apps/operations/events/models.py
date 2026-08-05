@@ -764,3 +764,38 @@ class PlacementAssignmentActual(TimeStampedModel):
 
     def __str__(self):
         return f"{self.assignment_id}: {self.actual_start_at} — {self.actual_end_at}"
+
+
+class ServiceHours(TimeStampedModel):
+    """Story 18.4 (FR-32): Налёт часов день/ночь, вычисленный из
+    `PlacementAssignmentActual` (18.3). `OneToOne` — тот же паттерн, что
+    18.3's собственный `OneToOne` на `PlacementAssignment`.
+
+    PROVISIONAL (нет donor-справочника коэффициентов — тот принадлежит
+    Epic 19): ночь = 22:00–06:00 местного времени
+    (`settings.VAPS_LOCAL_TIMEZONE`), стандартная трудовая норма.
+    Подтвердить с Bratan, если Epic 19's справочник определит другую
+    границу."""
+
+    actual = models.OneToOneField(
+        PlacementAssignmentActual,
+        on_delete=models.CASCADE,
+        related_name="service_hours",
+    )
+    day_hours = models.DecimalField(max_digits=6, decimal_places=2)
+    night_hours = models.DecimalField(max_digits=6, decimal_places=2)
+    computed_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "ops_service_hours"
+        verbose_name = "Налёт часов"
+        verbose_name_plural = "Налёт часов"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(day_hours__gte=0) & models.Q(night_hours__gte=0),
+                name="ck_service_hours_non_negative",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.actual_id}: day={self.day_hours} night={self.night_hours}"
