@@ -808,7 +808,11 @@ development_status:
   19-4b-api-месячный-календарь: done
   19-4c-frontend-api-client: done
   19-4d-frontend-панель-календаря: done
-  19-5-календарь-подразделение-дни: backlog
+  # 19.5 decomposed (create-story, 2026-08-05), same rationale as 19.4:
+  # backend selector, API, frontend are separate stories. This key tracks
+  # the backend selector slice (19.5a); API/frontend get their own keys
+  # when created.
+  19-5-календарь-подразделение-дни: done
   19-6-налёт-часов-в-карточке: backlog
   19-7-нагрузочные-тесты-дедлайн-17-00: backlog
   epic-19-retrospective: optional
