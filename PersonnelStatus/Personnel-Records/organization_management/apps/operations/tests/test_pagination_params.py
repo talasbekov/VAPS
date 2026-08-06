@@ -119,3 +119,88 @@ def test_schema_owns_limit_offset_on_every_list(schema, path, component):
     assert page["properties"]["results"]["type"] == "array"
 
     assert {"limit", "offset"} <= {p["name"] for p in get["parameters"]}
+
+
+# ── Потолок страницы ─────────────────────────────────────────────────────
+
+# Журнал взят намеренно: он append-only и растёт без предела, поэтому «отдай
+# всё» дорожает с каждым днём и сорвётся уже на живой эксплуатации, а не на
+# стенде. Проверять потолок на списке, который сам по себе короткий, значило бы
+# проверять его там, где он не нужен.
+JOURNAL_URL = "/api/operations/audit-logs/"
+CEILING = 1000
+
+
+def _fill_journal(rows):
+    from organization_management.apps.operations import audit_service
+
+    for index in range(rows):
+        audit_service.record(
+            actor="7",
+            action=audit_service.STATUS_CREATED,
+            entity_type=audit_service.ENTITY_STATUS,
+            entity_id=index,
+        )
+
+
+@pytest.mark.django_db
+def test_a_huge_limit_does_not_pull_the_whole_table():
+    """Несущий тест: размер страницы назначает СЕРВЕР, а не спросивший.
+
+    Строк заведомо больше потолка нет — ставить их тысячу ради одной проверки
+    дорого, — поэтому потолок демонстрируется на самом ответе: сколько бы ни
+    просили, отдаётся не больше `max_limit`, и `count` при этом честно говорит,
+    сколько строк всего.
+    """
+    from organization_management.apps.operations.api.views import DefaultPagination
+
+    api, _ = client_for("page-ceiling", "ADMIN", ["*"])
+    _fill_journal(3)
+
+    assert DefaultPagination.max_limit == CEILING
+
+    body = api.get(JOURNAL_URL, {"limit": 1000000}).json()
+    assert body["count"] == 3
+    assert len(body["results"]) <= CEILING
+
+
+@pytest.mark.django_db
+def test_the_ceiling_is_the_number_actually_served():
+    """Потолок должен РЕЗАТЬ, а не только стоять в атрибуте.
+
+    Строк здесь больше маленького потолка, подставленного на время пробы:
+    настоящую тысячу заводить дорого, а свойство «отдано ровно потолок, хотя
+    просили больше» от величины не зависит.
+    """
+    from organization_management.apps.operations.api import views
+
+    api, _ = client_for("page-ceiling2", "ADMIN", ["*"])
+    _fill_journal(7)
+
+    original = views.DefaultPagination.max_limit
+    # Подменять можно только НАСТОЯЩИЙ потолок: не будь его, тест поставил бы
+    # его сам и остался бы зелёным на разделе, где потолка нет вовсе.
+    assert original is not None
+    try:
+        views.DefaultPagination.max_limit = 3
+        body = api.get(JOURNAL_URL, {"limit": 1000000}).json()
+    finally:
+        views.DefaultPagination.max_limit = original
+
+    assert body["count"] == 7
+    assert len(body["results"]) == 3
+    # Листание при этом не сломано: клиенту есть куда идти дальше.
+    assert body["next"] is not None
+
+
+@pytest.mark.django_db
+def test_a_limit_under_the_ceiling_is_obeyed_as_asked():
+    """Иначе «отдано не больше потолка» выполнялось бы и жёсткой константой,
+    которая игнорирует запрошенное число вовсе."""
+    api, _ = client_for("page-ceiling3", "ADMIN", ["*"])
+    _fill_journal(5)
+
+    body = api.get(JOURNAL_URL, {"limit": 2}).json()
+
+    assert len(body["results"]) == 2
+    assert body["count"] == 5
