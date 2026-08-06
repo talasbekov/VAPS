@@ -2857,6 +2857,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/AssignmentVersionDetail'
           description: ''
+  /api/operations/security-events/{id}/readiness/:
+    get:
+      operationId: security_event_readiness
+      description: Готовность ОМ (20.1a) — 5 блокеров + % готовности. Требует event.manage.
+        Доступно на ЛЮБОЙ стадии цикла (без lifecycle-гейта, в отличие от archive).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityEventReadiness'
+          description: ''
   /api/operations/security-events/{id}/recon/confirm/:
     post:
       operationId: security_event_recon_confirm
@@ -6269,6 +6289,33 @@ components:
       required:
       - object
       - title
+    SecurityEventReadiness:
+      type: object
+      description: |-
+        Story 20.1b: response shape for `SecurityEventReadinessSelector.
+        readiness_for()` (20.1a) — composite `Serializer` (not `ModelSerializer`,
+        the selector returns a plain dict of derived booleans + a percentage,
+        not a model row), same class of solution as `SecurityEventArchiveSerializer`.
+      properties:
+        checklist_ready:
+          type: boolean
+        demand_ready:
+          type: boolean
+        placement_ready:
+          type: boolean
+        acknowledgement_ready:
+          type: boolean
+        conflicts_ready:
+          type: boolean
+        readiness_pct:
+          type: integer
+      required:
+      - acknowledgement_ready
+      - checklist_ready
+      - conflicts_ready
+      - demand_ready
+      - placement_ready
+      - readiness_pct
     SecurityEventSectorSummaryItemRequest:
       type: object
       description: |-

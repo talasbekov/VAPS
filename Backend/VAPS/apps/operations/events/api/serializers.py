@@ -348,6 +348,20 @@ class SecurityEventArchiveSerializer(serializers.Serializer):
     current_assignment_version = AssignmentVersionDetailSerializer(allow_null=True)
 
 
+class SecurityEventReadinessSerializer(serializers.Serializer):
+    """Story 20.1b: response shape for `SecurityEventReadinessSelector.
+    readiness_for()` (20.1a) — composite `Serializer` (not `ModelSerializer`,
+    the selector returns a plain dict of derived booleans + a percentage,
+    not a model row), same class of solution as `SecurityEventArchiveSerializer`."""
+
+    checklist_ready = serializers.BooleanField()
+    demand_ready = serializers.BooleanField()
+    placement_ready = serializers.BooleanField()
+    acknowledgement_ready = serializers.BooleanField()
+    conflicts_ready = serializers.BooleanField()
+    readiness_pct = serializers.IntegerField()
+
+
 class PlacementAssignmentActualSerializer(serializers.ModelSerializer):
     """Story 18.6b: response shape for фактическое время назначения
     (`PlacementAssignmentActual`, 18.3) — read-only, all fields, same

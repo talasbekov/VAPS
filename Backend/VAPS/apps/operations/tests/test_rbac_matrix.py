@@ -244,6 +244,9 @@ MATRIX = {
     # gate as the rest of this ViewSet's event.manage actions.
     "ops-security-event-close": _Gate("event.manage"),
     "ops-security-event-archive": _Gate("event.manage"),
+    # Story 20.1b: readiness (20.1a) — same event.manage gate, no lifecycle
+    # restriction (queryable at any stage, unlike archive's CLOSED-only).
+    "ops-security-event-readiness": _Gate("event.manage"),
     "ops-assignment-version-list": _AnyOfGate(
         [
             "assignment.create",

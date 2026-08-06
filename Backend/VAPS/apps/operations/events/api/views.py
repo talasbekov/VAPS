@@ -52,6 +52,7 @@ from apps.operations.events.api.serializers import (
     SecurityEventArchiveSerializer,
     SecurityEventCloseSerializer,
     SecurityEventCreateSerializer,
+    SecurityEventReadinessSerializer,
     SecurityEventSerializer,
     SectorPostSerializer,
     ServiceHoursSerializer,
@@ -68,7 +69,10 @@ from apps.operations.events.models import (
     SecurityEventDirectAssignment,
     ServiceHours,
 )
-from apps.operations.events.selectors import SecurityEventArchiveSelector
+from apps.operations.events.selectors import (
+    SecurityEventArchiveSelector,
+    SecurityEventReadinessSelector,
+)
 from apps.operations.events.services import (
     acknowledge_placement_assignment,
     allocate_force_request,
@@ -531,6 +535,20 @@ class SecurityEventViewSet(viewsets.ViewSet):
         event = _get_event_or_404(pk)
         history = SecurityEventArchiveSelector.full_history(event)
         return Response(SecurityEventArchiveSerializer(history).data)
+
+    @extend_schema(
+        operation_id="security_event_readiness",
+        responses={200: SecurityEventReadinessSerializer},
+        description="Готовность ОМ (20.1a) — 5 блокеров + % готовности. "
+        "Требует event.manage. Доступно на ЛЮБОЙ стадии цикла (без "
+        "lifecycle-гейта, в отличие от archive).",
+    )
+    @action(detail=True, methods=["get"], url_path="readiness")
+    def readiness(self, request, pk=None, *args, **kwargs):
+        require_permission(request, _PERMISSION)
+        event = _get_event_or_404(pk)
+        result = SecurityEventReadinessSelector.readiness_for(event)
+        return Response(SecurityEventReadinessSerializer(result).data)
 
 
 class JournalEntryViewSet(viewsets.ViewSet):
