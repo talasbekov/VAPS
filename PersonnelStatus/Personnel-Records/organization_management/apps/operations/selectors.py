@@ -213,14 +213,28 @@ class EmployeeSelector:
 
     @staticmethod
     def denorm_for(employee_ids):
-        """{employee_id: {"full_name": str, "rank": str}}, ОДИН запрос.
+        """{employee_id: {"full_name", "rank", "position_level"}}, ОДИН запрос.
 
         Звание берётся через связь справочника; его отсутствие — пустая
         строка, а не None: снимок хранит значения, и «звания не указано»
         читается одинаково с любым потребителем JSON.
+
+        УРОВЕНЬ ДОЛЖНОСТИ добавлен тем же запросом, а не вторым: он нужен
+        снимку, чтобы сданный день можно было упорядочить, не обращаясь к
+        живым данным. Отдельный запрос за уровнями вернул бы зависимость числа
+        запросов от числа людей — ровно ту, от которой раздел уходит везде.
+
+        Отсутствие уровня остаётся None, а не подменяется числом: «должность не
+        нашлась» и «уровень такой-то» — разные факты, и решать, куда поставить
+        первого, — дело канона порядка, а не этого селектора.
         """
         rows = Employee.objects.filter(id__in=list(employee_ids)).values(
-            "id", "last_name", "first_name", "middle_name", "rank__name"
+            "id",
+            "last_name",
+            "first_name",
+            "middle_name",
+            "rank__name",
+            "staff_unit__position__level",
         )
         result = {}
         for row in rows:
@@ -228,6 +242,7 @@ class EmployeeSelector:
             result[row["id"]] = {
                 "full_name": " ".join(part for part in parts if part).strip(),
                 "rank": row["rank__name"] or "",
+                "position_level": row["staff_unit__position__level"],
             }
         return result
 

@@ -88,10 +88,16 @@ class TestRoster:
             rank=rank,
         )
         row = build_division_snapshot(division.id, TODAY)["roster"][0]
+        # Сравнение ЦЕЛИКОМ, а не по знакомым ключам: снимок подписывают, и
+        # поле, приехавшее в него незаметно, никто бы не обсудил. Уровень
+        # должности здесь None — у сотрудника нет штатной должности в
+        # справочнике, и снимок честно хранит «не нашлось», а не подменяет
+        # числом (куда ставить такого — решает канон порядка).
         assert row == {
             "employee_id": employee.id,
             "full_name": "Иванов Иван Иванович",
             "rank": "капитан",
+            "position_level": None,
         }
 
     def test_missing_rank_is_an_empty_string(self, division):
