@@ -16,6 +16,9 @@ from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.models import StatusType, UserRole
 from organization_management.apps.operations.models_audit import OpsAuditLog
+from organization_management.apps.operations.models_document import (
+    OpsAttachment,
+)
 from organization_management.apps.operations.models_notification import (
     OpsNotification,
 )
@@ -748,3 +751,32 @@ class OpsNotificationSelector:
         if since is not None:
             queryset = queryset.filter(created_at__gt=since)
         return queryset.order_by("-created_at", "id")
+
+
+class OpsAttachmentSelector:
+    """Чтение вложений — как document_service единственный канал их записи.
+
+    У селектора одна обязанность сверх выборки: НЕ ПУСТИТЬ мусорный
+    идентификатор в запрос. Идентификатор приходит из адреса маршрута, то есть
+    строкой произвольного вида, и переданный в фильтр как есть он поднимает
+    ValueError уже внутри драйвера базы — то есть 500 там, где по существу
+    «такого нет». Мусорный и несуществующий здесь НЕОТЛИЧИМЫ намеренно: разница
+    в ответе рассказывала бы спрашивающему, какие идентификаторы бывают.
+
+    Отказ не поднимается: селекторы раздела возвращают строку или None, а в
+    отказ это переводит маршрут — он же владеет и кодом, и текстом.
+    """
+
+    @staticmethod
+    def get(attachment_id):
+        """Вложение по идентификатору из адреса; мусор и пропажа — одинаково None."""
+        # Через str(), а не int() напрямую, и это несущее: bool — подкласс
+        # int, и True, поданный в разбор целым, стал бы pk=1 — то есть выдал бы
+        # ЧУЖОЙ файл вместо «нет такого». str(True) даёт "True", и разбор его
+        # отвергает; отдельный гвард на bool был бы вторым владельцем одного
+        # правила, а проба на нём — вакуумной.
+        try:
+            canonical = int(str(attachment_id).strip())
+        except (TypeError, ValueError):
+            return None
+        return OpsAttachment.objects.filter(pk=canonical).first()
