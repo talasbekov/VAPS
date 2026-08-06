@@ -19,6 +19,7 @@ from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_document import (
     OpsAttachment,
     OpsDocumentSequence,
+    OpsIssuedDocument,
 )
 from organization_management.apps.operations.models_notification import (
     OpsNotification,
@@ -803,3 +804,37 @@ class OpsDocumentSequenceSelector:
         return OpsDocumentSequence.objects.select_for_update().get(
             doc_type=doc_type, year=year
         )
+
+
+class OpsIssuedDocumentSelector:
+    """Чтение выпусков документов.
+
+    Всё, что здесь есть, отвечает на один вопрос: КАКОЙ выпуск действует. Он
+    ровно один — это держит частичная уникальность (вид, подразделение, день)
+    по состоянию «выпущен», — и потому метод возвращает строку, а не выборку:
+    выборка заставляла бы каждого читателя решать, что делать со вторым
+    элементом, которого не бывает.
+    """
+
+    @staticmethod
+    def current(*, doc_type, division_id, business_date):
+        """Действующий выпуск дня, или None.
+
+        КОНТРАКТ ВЫЗОВА: сервис выпуска читает это ВНУТРИ своей транзакции, уже
+        держа замок головы сдачи. Своего `select_for_update` здесь нет намеренно
+        — выпуск и поправка сериализуются на ТОМ ЖЕ замке сдачи, и второй замок
+        поверх первого только добавил бы порядок блокировок, в котором можно
+        встать в клинч. Частичная уникальность остаётся ремнём на тот же
+        инвариант: проиграв гонку, вторая транзакция упрётся в неё, а не выпустит
+        второй действующий документ.
+
+        Заменённые сюда не попадают ВООБЩЕ. Фильтр по состоянию несущий: без
+        него метод вернул бы самый старый выпуск дня (порядка нет), то есть
+        документ, который уже отозван.
+        """
+        return OpsIssuedDocument.objects.filter(
+            doc_type=doc_type,
+            division_id=division_id,
+            business_date=business_date,
+            status=OpsIssuedDocument.Status.ISSUED,
+        ).first()
