@@ -40,6 +40,8 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from organization_management.apps.operations.clock import Clock
+from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_notification import (
     OpsNotification,
 )
@@ -218,3 +220,49 @@ def notify(recipient, kind, business_date, payload=None):
             business_date,
         )
         return None
+
+
+# ── Отметка прочитанным ──────────────────────────────────────────────────
+#
+# ДОСТРОЙКА, А НЕ ПОРТ. Поле read_at приехало вместе с моделью, но писателя у
+# него нет НИ ЗДЕСЬ, НИ В ИСТОЧНИКЕ: там отметка прочитанным была частью
+# истории про интерфейс центра уведомлений, и до сервера она не дошла. Лента
+# отдавала поле, которое навсегда оставалось пустым, — то есть обещала
+# состояние, которого не бывает.
+
+
+def mark_read(notification, *, actor, at=None):
+    """Отметить уведомление прочитанным. Возвращает строку.
+
+    МОМЕНТ ПЕРВОГО ПРОЧТЕНИЯ, А НЕ ПОСЛЕДНЕГО ОТКРЫТИЯ. Повторный вызов момент
+    НЕ двигает, и это не оптимизация: лента строится вокруг вопроса «что нового
+    с моего последнего захода», и подвижная отметка возвращала бы старое
+    уведомление в «свежие» каждый раз, когда человек его переоткрыл. Ровно
+    поэтому здесь read_at, а не булев признак: булев ответил бы «да/нет» и
+    вопроса о времени бы не поднял.
+
+    ЧУЖОЕ УВЕДОМЛЕНИЕ НЕ ОТМЕЧАЕТСЯ. Проверка стоит здесь, а не только в
+    маршруте: маршрут не единственный вход, а «прочитано» — это утверждение о
+    КОНКРЕТНОМ человеке. Отметив чужое, мы сказали бы за него, что он видел то,
+    чего не видел, и его собственная лента об этом факте замолчала бы.
+
+    Время берётся у часов раздела, а не auto_now: отметка обязана быть
+    воспроизводимой в тестах и согласованной с остальными моментами ленты.
+    """
+    if not actor or not str(actor).strip():
+        raise ValueError("mark_read требует получателя")
+    actor = str(actor).strip()
+    if notification.recipient != actor:
+        raise DomainError(
+            "PERMISSION_DENIED",
+            403,
+            detail={"notification_id": notification.pk},
+            message="Уведомление адресовано не вам.",
+        )
+    if notification.read_at is not None:
+        # Холостой повтор: ни записи, ни сдвига момента. Возврат — та же
+        # строка, чтобы вызывающему не приходилось различать два исхода.
+        return notification
+    notification.read_at = at or Clock.now()
+    notification.save(update_fields=["read_at", "updated_at"])
+    return notification
