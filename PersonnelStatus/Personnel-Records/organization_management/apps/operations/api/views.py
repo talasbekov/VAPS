@@ -304,30 +304,22 @@ def _assert_division_in_scope(request, division_id, permission_code, *, field):
 
 
 class DefaultPagination(LimitOffsetPagination):
-    default_limit = 50
+    """ЕДИНСТВЕННЫЙ владелец страничной обёртки списков раздела — и в схеме тоже.
 
+    Вьюхи раздела — plain ViewSet, и в рантайме этот атрибут они не читают:
+    list() создаёт DefaultPagination() сам. Объявлять его на классе всё равно
+    надо — из него spectacular выводит и компонент Paginated…List на ответе
+    `responses=XSerializer(many=True)`, и параметры limit/offset, которые вьюха
+    реально исполняет.
 
-def paginated_response_schema(name, item_serializer):
-    """Схема СТРАНИЧНОГО ответа: {count, next, previous, results[]}.
-
-    Объявляется руками, потому что вьюхи раздела — plain ViewSet: spectacular
-    выводит обёртку страницы только у GenericAPIView и иначе описал бы ответ
-    голым массивом, которого клиент никогда не получит.
-
-    many=False на КЛАССЕ обязателен: для действия с именем list эвристика
-    иначе завернёт объект-страницу ещё и в массив.
+    Раньше ту же обёртку рядом объявлял ещё и ручной inline_serializer. Проба
+    показала, что второй владелец ничего не добавлял: снятие ЛЮБОГО из двух
+    схему не меняло — то есть ни один из них не был удержан тестом. Оставлен
+    один; что снятие атрибута теперь краснит, держит
+    tests/test_pagination_params.py::test_schema_owns_limit_offset_on_every_list.
     """
-    return extend_schema_serializer(many=False)(
-        inline_serializer(
-            name=name,
-            fields={
-                "count": serializers.IntegerField(),
-                "next": serializers.CharField(allow_null=True),
-                "previous": serializers.CharField(allow_null=True),
-                "results": item_serializer,
-            },
-        )
-    )
+
+    default_limit = 50
 
 
 class RoleViewSet(viewsets.ReadOnlyModelViewSet):
@@ -361,11 +353,7 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
 class UserRoleViewSet(viewsets.ViewSet):
     pagination_class = DefaultPagination
 
-    @extend_schema(
-        responses=paginated_response_schema(
-            "PaginatedUserRoleList", UserRoleSerializer(many=True)
-        )
-    )
+    @extend_schema(responses=UserRoleSerializer(many=True))
     def list(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
         qs = UserRole.objects.all().order_by("user_id")
@@ -408,16 +396,9 @@ class UserRoleViewSet(viewsets.ViewSet):
 
 
 class TemporaryDutyViewSet(viewsets.ViewSet):
-    # В рантайме plain ViewSet этот атрибут не читает — list() создаёт
-    # DefaultPagination() сам. Он объявлен ради схемы: им spectacular
-    # документирует limit/offset, которые вьюха реально исполняет.
     pagination_class = DefaultPagination
 
-    @extend_schema(
-        responses=paginated_response_schema(
-            "PaginatedTemporaryDutyList", TemporaryDutySerializer(many=True)
-        )
-    )
+    @extend_schema(responses=TemporaryDutySerializer(many=True))
     def list(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
         qs = TemporaryDutyPermission.objects.all().order_by("-starts_at")
@@ -663,9 +644,7 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 ),
             ),
         ],
-        responses=paginated_response_schema(
-            "PaginatedOpsEmployeeStatusList", OpsEmployeeStatusSerializer(many=True)
-        ),
+        responses=OpsEmployeeStatusSerializer(many=True),
         description=(
             "Список статусов раздела ОМ под правом status.view. Область "
             "видимости сужает выборку всегда: скоупованный оператор видит "
@@ -998,9 +977,7 @@ class SecondmentViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 description="Стадия рукопожатия.",
             ),
         ],
-        responses=paginated_response_schema(
-            "PaginatedSecondmentList", SecondmentSerializer(many=True)
-        ),
+        responses=SecondmentSerializer(many=True),
         description=(
             "Список пар прикомандирования под правом status.view. Пара видна "
             "ОБЕИМ сторонам — и штатному подразделению, и принимающему. "
@@ -1568,9 +1545,7 @@ class AuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 description="Верхняя граница окна, ИСКЛЮЧИТЕЛЬНО (ISO 8601 с зоной).",
             ),
         ],
-        responses=paginated_response_schema(
-            "PaginatedOpsAuditLogList", OpsAuditLogSerializer(many=True)
-        ),
+        responses=OpsAuditLogSerializer(many=True),
         description=(
             "Лента журнала раздела под правом audit.view. Окно "
             "[created_from, created_to) полуоткрытое — соседние окна не "
@@ -1664,15 +1639,6 @@ class NotificationViewSet(viewsets.ViewSet):
     и окно журнала.
     """
 
-    # Ради схемы: документирует limit/offset (см. TemporaryDutyViewSet) — и,
-    # в отличие от соседних списков, ЕДИНОЛИЧНО описывает страничную обёртку
-    # ответа. paginated_response_schema() здесь не вызывается намеренно: проба
-    # показала, что при объявленном pagination_class spectacular выводит тот же
-    # компонент Paginated…List сам, и ручной вызов оказывается вторым
-    # владельцем одного и того же — снять можно любого из двух, схема не
-    # шелохнётся, то есть ни один из них не удержан тестом. У соседей эта пара
-    # стоит с самого начала; разбирать её — отдельная уборка, а заводить здесь
-    # третью копию незачем.
     pagination_class = DefaultPagination
 
     @extend_schema(
@@ -1794,9 +1760,7 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 ),
             ),
         ],
-        responses=paginated_response_schema(
-            "PaginatedOpsDailySubmissionList", OpsDailySubmissionSerializer(many=True)
-        ),
+        responses=OpsDailySubmissionSerializer(many=True),
         description=(
             "Список сдач под правом status.view — БЕЗ снимков (снимок отдаёт "
             "только чтение одной версии). По умолчанию видны действующие "

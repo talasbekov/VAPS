@@ -5,8 +5,8 @@
 исключительно ради схемы. Из-за этой развилки схема и поведение способны
 разойтись молча: атрибут можно снять, не сломав ни одного теста, и клиент
 из schema.yaml перестанет знать про листание, которое сервер по-прежнему
-исполняет. Тесты ниже закрепляют вторую половину контракта — что параметры
-действительно работают.
+исполняет. Тесты ниже закрепляют обе половины контракта: что параметры
+действительно работают — и что схема о них говорит.
 
 Список statuses уже покрыт test_status_list_api.test_pagination_envelope.
 """
@@ -68,3 +68,54 @@ def test_secondments_honour_limit_and_offset(types, home, host):  # noqa: F811
 
     nxt = get_secondments(api, limit=1, offset=1).data
     assert nxt["results"][0]["id"] != page["results"][0]["id"]
+
+
+# Каждый список раздела, у которого страничную обёртку и limit/offset выводит
+# pagination_class. Перечень намеренно ЛИТЕРАЛЬНЫЙ, а не собранный из схемы:
+# выведенный из неё список сам бы усох вместе с потерянным атрибутом и тест
+# остался бы зелёным — ровно та дыра, ради которой он и пишется.
+PAGINATED_LISTS = [
+    ("/api/operations/audit-logs/", "PaginatedOpsAuditLogList"),
+    ("/api/operations/daily-submissions/", "PaginatedOpsDailySubmissionList"),
+    ("/api/operations/notifications/", "PaginatedOpsNotificationList"),
+    ("/api/operations/permissions/", "PaginatedPermissionList"),
+    ("/api/operations/roles/", "PaginatedRoleList"),
+    ("/api/operations/secondments/", "PaginatedSecondmentList"),
+    ("/api/operations/status-types/", "PaginatedStatusTypeList"),
+    ("/api/operations/statuses/", "PaginatedOpsEmployeeStatusList"),
+    ("/api/operations/temporary-duty/", "PaginatedTemporaryDutyList"),
+    ("/api/operations/user-roles/", "PaginatedUserRoleList"),
+]
+
+
+@pytest.fixture(scope="module")
+def schema():
+    from drf_spectacular.generators import SchemaGenerator
+
+    return SchemaGenerator().get_schema(request=None, public=True)
+
+
+@pytest.mark.parametrize(("path", "component"), PAGINATED_LISTS)
+def test_schema_owns_limit_offset_on_every_list(schema, path, component):
+    """pagination_class — единственный владелец страницы, и он удержан.
+
+    Снятие атрибута у любого из списков краснит этот тест дважды: ответ
+    перестаёт ссылаться на компонент Paginated…List (spectacular описал бы
+    голый массив, которого клиент никогда не получит), а limit/offset
+    пропадают из parameters. До этого теста снятие проходило молча —
+    поведение держал соседний прогон по HTTP, схему не держал никто.
+
+    Ручной inline_serializer рядом с атрибутом был вторым владельцем той же
+    обёртки и потому снят: удержан тем же ассертом ровно один.
+    """
+    get = schema["paths"][path]["get"]
+
+    body = get["responses"]["200"]["content"]["application/json"]
+    assert body["schema"] == {"$ref": f"#/components/schemas/{component}"}
+
+    page = schema["components"]["schemas"][component]
+    assert page["type"] == "object"
+    assert set(page["properties"]) == {"count", "next", "previous", "results"}
+    assert page["properties"]["results"]["type"] == "array"
+
+    assert {"limit", "offset"} <= {p["name"] for p in get["parameters"]}
