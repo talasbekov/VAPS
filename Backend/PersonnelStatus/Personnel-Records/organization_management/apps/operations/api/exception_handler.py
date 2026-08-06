@@ -54,7 +54,11 @@ def _envelope(error_code, message, details, http_status, context, overridable=Fa
     payload = {
         "error_code": error_code,
         "message": message or error_code,
-        "details": details if details is not None else {},
+        # Нормализацию пустой нагрузки в {} владеет DomainError (его
+        # конструктор), и второго владельца здесь нет намеренно: сюда None не
+        # приходит ни одним путём, а дублирующая проверка была бы мёртвой —
+        # снять её было невозможно заметить тестом (проверено пробой).
+        "details": details,
         "request_id": _request_id(context),
         "timestamp": _timestamp(),
     }
