@@ -527,3 +527,111 @@ def test_a_get_on_read_all_is_a_method_error():
     api, me = reader()
 
     assert api.get(READ_ALL_URL).status_code == 405
+
+
+# ── Непрочитанные: фильтр и счётчик ──────────────────────────────────────
+
+UNREAD_URL = f"{URL}unread-count/"
+
+
+def test_the_unread_filter_hides_what_was_already_read():
+    api, me = reader()
+    read_one = send(me, day=DAY - timedelta(days=1))
+    unread_one = send(me, day=DAY)
+    with clock.override(T0):
+        api.post(read_url(read_one.pk))
+
+    assert ids_of(api.get(URL, {"unread": "true"})) == [unread_one.pk]
+
+
+def test_without_the_filter_the_feed_still_shows_everything():
+    """Соседняя проба: без неё «фильтр прячет» объяснялось бы тем, что строки
+    вообще не видно."""
+    api, me = reader()
+    read_one = send(me, day=DAY - timedelta(days=1))
+    unread_one = send(me, day=DAY)
+    with clock.override(T0):
+        api.post(read_url(read_one.pk))
+
+    assert sorted(ids_of(api.get(URL))) == sorted([read_one.pk, unread_one.pk])
+
+
+def test_unread_and_since_answer_different_questions():
+    """`since` — «что появилось после того, как я смотрел»; `unread` — «что я
+    ещё не открыл».
+
+    Строка, пришедшая ДО курсора и не открытая, попадает во второй ответ и не
+    попадает в первый. Это не противоречие, а два разных вопроса — и проба
+    показывает, что один фильтр не подменяет другой.
+    """
+    api, me = reader()
+    old_unread = send(me, day=DAY - timedelta(days=1), created_at=T0 - timedelta(days=1))
+
+    by_cursor = ids_of(api.get(URL, {"since": T0.isoformat()}))
+    by_state = ids_of(api.get(URL, {"unread": "true"}))
+
+    assert by_cursor == []
+    assert by_state == [old_unread.pk]
+
+
+def test_the_unread_counter_reports_the_whole_feed():
+    api, me = reader()
+    for offset in range(4):
+        send(me, day=DAY - timedelta(days=offset))
+
+    assert api.get(UNREAD_URL).data["unread"] == 4
+
+
+def test_the_counter_is_not_capped_by_the_page_size():
+    """Посчитанный по выдаче, значок показывал бы «сколько влезло на страницу»,
+    а не «сколько меня ждёт»."""
+    api, me = reader()
+    for offset in range(7):
+        send(me, day=DAY - timedelta(days=offset))
+
+    paged = api.get(URL, {"limit": 2})
+
+    assert len(paged.data["results"]) == 2
+    assert api.get(UNREAD_URL).data["unread"] == 7
+
+
+def test_the_counter_drops_as_notifications_are_read():
+    api, me = reader()
+    first = send(me, day=DAY)
+    send(me, day=DAY - timedelta(days=1))
+
+    with clock.override(T0):
+        api.post(read_url(first.pk))
+
+    assert api.get(UNREAD_URL).data["unread"] == 1
+
+
+def test_the_counter_ignores_the_polling_cursor():
+    """Вчерашнее неоткрытое ждёт сегодня ровно так же: опрос, начавшийся
+    сегодня, не делает его прочитанным."""
+    api, me = reader()
+    send(me, created_at=T0 - timedelta(days=3))
+
+    assert api.get(UNREAD_URL, {"since": T0.isoformat()}).data["unread"] == 1
+
+
+def test_the_counter_never_leaks_another_persons_feed():
+    api, me = reader()
+    send("someone-else")
+
+    assert api.get(UNREAD_URL).data["unread"] == 0
+
+
+def test_the_counter_is_refused_without_an_identity():
+    assert APIClient().get(UNREAD_URL).status_code == 403
+
+
+def test_reading_everything_zeroes_the_counter():
+    api, me = reader()
+    send(me, day=DAY)
+    send(me, day=DAY - timedelta(days=1))
+
+    with clock.override(T0):
+        api.post(READ_ALL_URL)
+
+    assert api.get(UNREAD_URL).data["unread"] == 0
