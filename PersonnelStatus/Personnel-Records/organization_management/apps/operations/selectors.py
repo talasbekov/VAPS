@@ -16,6 +16,9 @@ from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.models import StatusType, UserRole
 from organization_management.apps.operations.models_audit import OpsAuditLog
+from organization_management.apps.operations.models_notification import (
+    OpsNotification,
+)
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     Secondment,
@@ -695,3 +698,53 @@ class OpsAuditLogSelector:
         # ключа страничная выдача теряла бы и дублировала строки пачки между
         # страницами.
         return queryset.order_by("-created_at", "-id")
+
+
+class OpsNotificationSelector:
+    """Чтение уведомлений раздела: ЛИЧНАЯ лента.
+
+    Единственный канал чтения ops_notifications — как notify() единственный
+    канал записи.
+
+    Область видимости здесь противоположна журналу. Журнал плоский: держатель
+    audit.view видит его целиком. Лента — ЛИЧНАЯ: фильтр по получателю
+    накладывается БЕЗУСЛОВНО, и он же, а не код права, и есть разграничение
+    доступа. Иначе говоря, чужую строку отсюда достать нечем — не «не выдаётся
+    без права», а не существует запроса, который её вернёт.
+
+    Отличия от источника: свои модель и имена (ops_notifications), получатель
+    строкой.
+    """
+
+    @staticmethod
+    def list(actor, *, since=None):
+        """Свои уведомления `actor`, свежие сверху.
+
+        `since` — СТРОГАЯ нижняя граница по created_at (created_at > since):
+        это курсор опроса, и он отдаёт только то, что новее уже виденного.
+        Нестрогая возвращала бы последнюю строку предыдущего ответа при каждом
+        опросе — читающий экран показывал бы её как новую снова и снова.
+
+        Порядок — (-created_at, id): свежие сверху, id — ОБЯЗАТЕЛЬНЫЙ разрыв
+        ничьей, а не украшение. Равный created_at здесь обычное дело (догон
+        рассылает всех отставших дня одним проходом), и без второго ключа
+        страничная выдача теряла бы и дублировала строки между страницами.
+        Возрастающий id, а не убывающий как у журнала: ровно в этом порядке
+        лежит индекс ленты (recipient, -created_at, id), и разойтись с ним
+        значило бы заставить базу пересортировывать каждую страницу.
+
+        Пустой/не-строковый `actor` — ValueError, а не пустая выдача (зеркало
+        гварда notify()): это ошибка вызывающего, и молча вернуть «ничего»
+        значило бы выдать сбой несущего фильтра за законный пустой ответ.
+
+        Отличие от источника: получатель ОБРЕЗАЕТСЯ по краям — ровно как в
+        notify(). Там «7» и «7 » уже сведены в одного человека, и не обрезать
+        здесь значило бы, что писали одному, а читает другой: лента вернулась
+        бы пустой, и пустота эта неотличима от «уведомлений нет».
+        """
+        if not isinstance(actor, str) or not actor.strip():
+            raise ValueError("OpsNotificationSelector.list требует получателя")
+        queryset = OpsNotification.objects.filter(recipient=actor.strip())
+        if since is not None:
+            queryset = queryset.filter(created_at__gt=since)
+        return queryset.order_by("-created_at", "id")
