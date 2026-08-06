@@ -1785,6 +1785,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/security-events/{id}/readiness/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Готовность ОМ (20.1a) — 5 блокеров + % готовности. Требует event.manage. Доступно на ЛЮБОЙ стадии цикла (без lifecycle-гейта, в отличие от archive). */
+        get: operations["security_event_readiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/security-events/{id}/recon/confirm/": {
         parameters: {
             query?: never;
@@ -3413,6 +3430,20 @@ export interface components {
             title: string;
             /** Format: uuid */
             senior_employee_id?: string | null;
+        };
+        /**
+         * @description Story 20.1b: response shape for `SecurityEventReadinessSelector.
+         *     readiness_for()` (20.1a) — composite `Serializer` (not `ModelSerializer`,
+         *     the selector returns a plain dict of derived booleans + a percentage,
+         *     not a model row), same class of solution as `SecurityEventArchiveSerializer`.
+         */
+        SecurityEventReadiness: {
+            checklist_ready: boolean;
+            demand_ready: boolean;
+            placement_ready: boolean;
+            acknowledgement_ready: boolean;
+            conflicts_ready: boolean;
+            readiness_pct: number;
         };
         /**
          * @description Story 18.6a: one element of `SecurityEventCloseSerializer.summaries`
@@ -5873,6 +5904,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssignmentVersionDetail"];
+                };
+            };
+        };
+    };
+    security_event_readiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityEventReadiness"];
                 };
             };
         };

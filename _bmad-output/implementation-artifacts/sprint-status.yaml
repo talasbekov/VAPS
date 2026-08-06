@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-08-06 (20.1b → done)
+# last_updated: 2026-08-06 (20.1c → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -829,6 +829,7 @@ development_status:
   # dashboard screen (20.1c+) get their own keys when created.
   20-1a-готовность-ом-селектор: done
   20-1b-готовность-ом-api: done
+  20-1c-готовность-ом-фронтенд-api-клиент: done
   # 20.2 decomposed (create-story, 2026-08-06), same rationale as 20.1:
   # backend selector, API, frontend are separate stories. This key tracks
   # the thin-composition selector slice (20.2a); API (20.2b)/dashboard
