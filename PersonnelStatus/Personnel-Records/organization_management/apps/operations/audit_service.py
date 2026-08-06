@@ -66,6 +66,12 @@ DAILY_SUMMARY_REBUILT = "DAILY_SUMMARY_REBUILT"
 # исключение осознанное: копию берут, чтобы предъявлять её в споре, и «кто и
 # когда её получил» это и есть предмет разбирательства.
 SUBMISSION_EXPORTED = "SUBMISSION_EXPORTED"
+# Байты официального документа легли в приватное хранилище. Событие пишется на
+# ЗАПИСЬ ФАЙЛА, а не на выпуск документа: выпуск — отдельное решение с номером,
+# и приходит он своим срезом. Состояние «файл записан, выпуска нет» законно
+# (выпуск откатился после записи байт), и журнал обязан уметь его показать —
+# иначе на диске остаётся объект, о происхождении которого не сказано нигде.
+ATTACHMENT_UPLOADED = "ATTACHMENT_UPLOADED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -92,6 +98,7 @@ ACTIONS = frozenset(
         DAILY_SUMMARY_ASSEMBLED,
         DAILY_SUMMARY_REBUILT,
         SUBMISSION_EXPORTED,
+        ATTACHMENT_UPLOADED,
     }
 )
 
@@ -105,6 +112,10 @@ ENTITY_SUBMISSION = "daily_submission"
 # подразделения, ни версии, и в ленте конкретной сдачи он рассказывал бы о
 # решении, принятом не про неё.
 ENTITY_TOMORROW_BLOCK_OVERRIDE = "tomorrow_block_override"
+# Вложение — СВОЯ сущность, а не документ: строка о файле переживает и выпуск,
+# и его замену, а лента конкретного файла отвечает на вопрос «эти байты откуда
+# взялись и кто их забирал».
+ENTITY_ATTACHMENT = "attachment"
 
 ENTITY_TYPES = frozenset(
     {
@@ -113,6 +124,7 @@ ENTITY_TYPES = frozenset(
         ENTITY_EMPLOYEE,
         ENTITY_SUBMISSION,
         ENTITY_TOMORROW_BLOCK_OVERRIDE,
+        ENTITY_ATTACHMENT,
     }
 )
 

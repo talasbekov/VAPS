@@ -1,0 +1,150 @@
+"""Запись файла в приватное хранилище — единственный канал появления вложений
+(порт create_attachment из Backend/VAPS apps/documents/services.py).
+
+Задача среза не «сохранить файл», а НЕ ОСТАВИТЬ РАСХОЖДЕНИЯ между диском и
+базой ни на одном из путей отказа. Расхождение бывает двух видов, и они не
+равноценны:
+
+- строка есть, байтов нет — ЛОЖЬ. Документ числится выпущенным, скачивание
+  падает, и узнаёт об этом тот, кому он понадобился;
+- байты есть, строки нет — МУСОР. Файл лежит под неугадываемым именем, на него
+  никто не ссылается, места он занимает столько же, сколько занял бы.
+
+Отсюда весь порядок действий: сначала байты, потом строка. Первый вид
+расхождения исключён конструктивно, второй — сведён к окну между os.replace и
+коммитом внешней транзакции и прибирается обработчиком отказа. Полностью
+второй вид неустраним: процесс может быть убит между двумя операциями, а
+компенсирующая уборка сама была бы новым источником расхождения (она стирала
+бы файлы транзакций, которые ещё не закоммитились). Мусор — принятая цена.
+
+ХЭШ И РАЗМЕР СЧИТАЮТСЯ НА ЛЕТУ, за один проход записи: второй проход по уже
+записанному файлу читал бы ДРУГОЕ состояние диска, а не то, что мы записали, и
+сверка «байт-в-байт» проверяла бы сама себя.
+
+ЧТЕНИЕ ЧАНКАМИ, а не .read(): расход памяти не должен зависеть от размера
+загружаемого файла — иначе один большой документ роняет процесс целиком.
+"""
+import hashlib
+import os
+
+from django.db import transaction
+
+from organization_management.apps.operations import audit_service, document_storage
+from organization_management.apps.operations.exceptions import DomainError
+from organization_management.apps.operations.models_document import OpsAttachment
+
+_CHUNK_SIZE = 64 * 1024
+_MAX_NAME_LENGTH = 255  # = OpsAttachment.original_name.max_length
+
+
+def _invalid(detail):
+    return DomainError("VALIDATION_ERROR", 400, detail={"file": detail})
+
+
+def _clean_name(original_name):
+    """Привести имя файла к тому, что можно положить в строку и в заголовок.
+
+    Имя НЕ участвует в пути на диске (там storage_key), поэтому «..» здесь не
+    опасно — но разделители всё равно срезаются: браузеры некоторых платформ
+    присылают полный путь («C:\\Users\\...\\расход.docx»), и хранить его целиком
+    значило бы показывать получателю чужую файловую систему.
+
+    Оба разделителя, а не только os.sep: сервер живёт под одной платформой, а
+    файл приходит с любой.
+    """
+    name = (original_name or "").strip().replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not name:
+        raise _invalid("пустое имя файла")
+    if len(name) > _MAX_NAME_LENGTH:
+        raise _invalid(f"имя файла длиннее {_MAX_NAME_LENGTH} символов")
+    return name
+
+
+def _clean_content_type(content_type):
+    ctype = (content_type or "").strip()
+    if not ctype:
+        raise _invalid("пустой content-type")
+    return ctype
+
+
+def _iter_chunks(source):
+    """Чанки исходного файла: и Django-загрузка, и обычный файловый объект.
+
+    Сервис зовут и с HTTP-границы (UploadedFile умеет .chunks()), и изнутри —
+    выпуск документа подаёт сгенерированные байты. Требовать от вызывающего
+    оборачивать свои байты в UploadedFile значило бы тащить HTTP-тип в путь,
+    где никакого HTTP нет.
+    """
+    chunks = getattr(source, "chunks", None)
+    if callable(chunks):
+        return chunks(_CHUNK_SIZE)
+    return iter(lambda: source.read(_CHUNK_SIZE), b"")
+
+
+def create_attachment(*, source, original_name, content_type, actor):
+    """Записать байты и создать строку вложения. Возвращает вложение.
+
+    Вызывается ВНУТРИ транзакции вызывающего, когда та есть (выпуск документа):
+    строка вложения и строка выпуска обязаны появляться и исчезать вместе.
+    Своей транзакции для этого достаточно вложенной — Django не откроет вторую,
+    и откат внешней снимет и запись вложения, и его событие журнала.
+    """
+    if not actor or not str(actor).strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    name = _clean_name(original_name)
+    ctype = _clean_content_type(content_type)
+
+    # Объект собирается НЕсохранённым ради storage_key: имя файла на диске
+    # нужно до вставки строки (см. models_document).
+    attachment = OpsAttachment(
+        original_name=name, content_type=ctype, size=0, sha256="", created_by=actor
+    )
+    root = document_storage.storage_root()
+    os.makedirs(root, exist_ok=True)
+    final_path = document_storage.storage_path(attachment)
+    # Временное имя — в ТОМ ЖЕ каталоге: os.replace атомарен только внутри
+    # одной файловой системы, а системный /tmp запросто окажется другой.
+    tmp_path = root / f"{attachment.storage_key}.tmp"
+
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with open(tmp_path, "wb") as tmp:
+            for chunk in _iter_chunks(source):
+                digest.update(chunk)
+                size += len(chunk)
+                tmp.write(chunk)
+        if size == 0:
+            # Пустой файл отбивается ЗДЕСЬ, до появления финального имени:
+            # дайджест пустых байт совершенно законен, и дальше по пути такой
+            # файл был бы неотличим от целого.
+            raise _invalid("пустой файл")
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    # Финальное имя появляется ПЕРЕД строкой: между этими двумя действиями
+    # возможен только мусор, но не ложь (см. докстринг модуля).
+    os.replace(tmp_path, final_path)
+    try:
+        with transaction.atomic():
+            attachment.size = size
+            attachment.sha256 = digest.hexdigest()
+            attachment.save()
+            audit_service.record(
+                actor=actor,
+                action=audit_service.ATTACHMENT_UPLOADED,
+                entity_type=audit_service.ENTITY_ATTACHMENT,
+                entity_id=attachment.pk,
+                new_value={
+                    "storage_key": str(attachment.storage_key),
+                    "original_name": name,
+                    "content_type": ctype,
+                    "size": size,
+                    "sha256": attachment.sha256,
+                },
+            )
+    except Exception:
+        final_path.unlink(missing_ok=True)
+        raise
+    return attachment
