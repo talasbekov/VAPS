@@ -348,7 +348,10 @@ def test_the_export_is_written_to_the_log(types, division):
     assert "roster" not in entry.new_value
 
 
-@pytest.mark.parametrize("schema_version", [None, "1", 3, True])
+# 3 из этого списка ушла — она стала текущей раскладкой (справочник в снимке).
+# На её место взята 4: неподдерживаемой обязана оставаться какая-то БУДУЩАЯ
+# версия, иначе проверка «отказ до журнала» стала бы про одни только опечатки.
+@pytest.mark.parametrize("schema_version", [None, "1", 4, True])
 def test_an_unsupported_snapshot_schema_is_422_before_the_log(
     types, division, schema_version
 ):

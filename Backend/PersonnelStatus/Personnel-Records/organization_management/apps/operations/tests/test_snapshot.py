@@ -295,4 +295,10 @@ class TestDivisionId:
     def test_unknown_division_is_empty_but_well_formed(self, division):
         in_slot(division)
         snapshot = build_division_snapshot(division.id + 10_000, TODAY)
-        assert snapshot == {"schema_version": SCHEMA_VERSION, "roster": [], "rows": []}
+        assert snapshot["schema_version"] == SCHEMA_VERSION
+        assert (snapshot["roster"], snapshot["rows"]) == ([], [])
+        # Ключ справочника есть и у пустого подразделения: раскладка колонок —
+        # свойство дня, а не состава. Пуст он здесь потому, что в этой фикстуре
+        # нет ни одного типа статуса вовсе.
+        assert set(snapshot) == {"schema_version", "roster", "rows", "catalog"}
+        assert snapshot["catalog"] == []

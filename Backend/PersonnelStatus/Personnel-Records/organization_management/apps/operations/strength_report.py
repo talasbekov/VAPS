@@ -380,6 +380,39 @@ class SubmittedExpense:
     columns: dict
 
 
+def catalog_of(snapshot, live_catalog):
+    """Справочник, по которому читать ЭТОТ снимок.
+
+    Снимок схемы 3 несёт свой каталог — тот, по которому день считался в момент
+    сдачи, — и читать его надо им: справочник правят, и правка иначе переписала
+    бы уже подписанный день (перенос колонки увёл бы человека в другой столбец,
+    снятие counts_in_staff изменило бы знаменатель).
+
+    У снимков версий 1 и 2 каталога нет, и для них берётся живой — как и
+    раньше. Отказывать им нельзя: старые сданные дни обязаны читаться, а
+    другого справочника для них не существует. То, что такой день зависит от
+    сегодняшнего каталога, — свойство ТЕХ снимков, и притворяться, будто это не
+    так, значило бы врать о них молча.
+    """
+    rows = snapshot.get("catalog")
+    if not rows:
+        return live_catalog
+    try:
+        return StatusCatalog.from_rows(rows)
+    except ValueError:
+        # Замороженный каталог оказался НЕПРИГОДЕН — в нём нет колонки для
+        # выводимого «в строю». Такой день нельзя было показать и в момент
+        # сдачи: живой справочник тогда был тем же самым. Запасной путь ничего
+        # не портит и остаётся единственным шансом такой день прочитать —
+        # добавили недостающий тип, и он снова выводится.
+        #
+        # Правильнее было бы не давать сдавать день с непригодным справочником
+        # вовсе, то есть отказывать на СБОРКЕ снимка. Здесь этого нет
+        # намеренно: такой отказ меняет условие сдачи, а не чтение, и вводить
+        # его надо отдельно и осознанно.
+        return live_catalog
+
+
 def expense_from_snapshot(snapshot, business_date, catalog):
     """Список и колонки по снимку: {list_total, off_list, columns}.
 
@@ -444,7 +477,11 @@ def submitted_expense(division_id, business_date):
     submission = DailySubmissionSelector.current_for(division_id, business_date)
     if submission is None:
         return None
-    catalog = StatusCatalog.from_rows(StatusTypeSelector.catalog_rows())
+    # Каталог снимка, а не живой: докстринг выше обещает, что живых данных эта
+    # функция не читает вовсе, и до версии 3 справочник был единственным
+    # местом, где обещание не выполнялось.
+    live = StatusCatalog.from_rows(StatusTypeSelector.catalog_rows())
+    catalog = catalog_of(submission.snapshot, live)
     numbers = expense_from_snapshot(submission.snapshot, business_date, catalog)
     return SubmittedExpense(
         division_id=division_id,

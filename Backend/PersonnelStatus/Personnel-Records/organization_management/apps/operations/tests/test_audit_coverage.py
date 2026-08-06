@@ -588,6 +588,20 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # Закрытый словарь работает в обе стороны: событие, которого никто не
     # пишет, — обещание фильтра, возвращающего пустоту. Ровно поэтому в этом
     # срезе из ACTIONS снят STATUSES_BULK_CREATED (сводки у пачки нет).
+    #
+    # Выводимое «в строю» справочник seed_types не содержит, а расходу оно
+    # нужно как колонка. Заводится оно ДО СДАЧИ, а не перед выпуском, как
+    # раньше: со схемы снимка 3 справочник в снимок замерзает, и порядок
+    # «сдали, потом дополнили справочник» проверял бы уже запасной путь чтения,
+    # а не тот, которым день читается на самом деле.
+    StatusType.objects.get_or_create(
+        code="IN_SERVICE",
+        defaults={
+            "name": "В строю",
+            "priority": 999,
+            "report_column_code": "IN_SERVICE",
+        },
+    )
     employee = employee_in(home)
     covering = make_status(
         employee,
@@ -690,16 +704,6 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         # файле переживает и выпуск, и его замену. Выпуск дня пишет ОБЕ строки
         # (байты и номер) и потому покрывает оба события разом; отдельная
         # запись вложения оставлена рядом как путь без выпуска.
-        # Выводимое «в строю» справочник seed_types не содержит, а расходу оно
-        # нужно как колонка: без него выпуск падает на сборке документа.
-        StatusType.objects.get_or_create(
-            code="IN_SERVICE",
-            defaults={
-                "name": "В строю",
-                "priority": 999,
-                "report_column_code": "IN_SERVICE",
-            },
-        )
         with override_settings(OPS_PRIVATE_STORAGE_ROOT=str(tmp_path)):
             create_attachment(
                 source=io.BytesIO(b"docx"),
