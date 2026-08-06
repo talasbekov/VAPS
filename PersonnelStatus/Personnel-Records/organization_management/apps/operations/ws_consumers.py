@@ -23,6 +23,7 @@ import json
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.conf import settings
 
 from organization_management.apps.operations.ws_auth import resolve_actor_id
 from organization_management.apps.operations.ws_groups import group_name_for
@@ -31,6 +32,24 @@ from organization_management.apps.operations.ws_groups import group_name_for
 # «Принять и молчать» отвергнуто: клиент не отличил бы «не пустили» от «пока
 # ничего не произошло» и переподключался бы в пустоту вечно.
 CLOSE_UNAUTHENTICATED = 4403
+
+# Код выключенного сокета. Тот же приватный диапазон и та же условность, что у
+# 4403 выше: код зеркалит статус HTTP, здесь 503 — сокет выключен решением
+# администратора, а не сломан.
+#
+# ⚠️ ЭТОТ КОД УХОДИТ ПОСЛЕ accept(), в отличие от ветки 4403, и асимметрия
+# намеренная. По ASGI `websocket.close`, посланный ДО `websocket.accept`,
+# заставляет сервер ответить HTTP 403: рукопожатие не состоялось, и браузер
+# получает CloseEvent{code: 1006, wasClean: false} — приватный код до провода
+# не доезжает вовсе (его видят только питоновские тесты, читающие сообщения
+# ASGI напрямую). Клиент не отличил бы это от мёртвой сети и отступал бы
+# вечно, пока уведомления продолжают идти по REST. Тихий переход на опрос
+# недостижим без accept(): только после него соединение существует и кадр
+# закрытия честно несёт свой код.
+#
+# Ветка 4403 к этой форме НЕ приводится: принять сокет от неаутентифицированного
+# — это изменение поведения на уровне доступа, и делать его заодно нельзя.
+CLOSE_WS_DISABLED = 4503
 
 
 class OpsNotificationConsumer(AsyncWebsocketConsumer):
@@ -50,6 +69,18 @@ class OpsNotificationConsumer(AsyncWebsocketConsumer):
         if not actor:
             # Отказ ДО accept(): рукопожатие не состоялось вовсе.
             await self.close(code=CLOSE_UNAUTHENTICATED)
+            return
+        # ИДЕНТИЧНОСТЬ ПЕРВОЙ, ФЛАГ ВТОРЫМ, и никогда наоборот. Дешёвая
+        # проверка просится наверх, но там она принимала бы
+        # неаутентифицированных всякий раз, когда WS выключен, — то есть
+        # превращала бы выключатель в дыру в разграничении доступа.
+        # Читается через `settings.` в момент вызова, а не копируется в
+        # константу модуля: подмена настроек правит объект настроек, и копия,
+        # снятая при импорте, сделала бы все тесты выключенного состояния
+        # вакуумными.
+        if not settings.OPS_WS_ENABLED:
+            await self.accept()
+            await self.close(code=CLOSE_WS_DISABLED)
             return
         self.group = group_name_for(actor)
         await self.channel_layer.group_add(self.group, self.channel_name)
