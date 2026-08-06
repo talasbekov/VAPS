@@ -25,7 +25,8 @@
 уволенного и так считается вакансией). Закрытие идемпотентно, поэтому
 повторяется командой без последствий.
 """
-from django.db.models.signals import post_save, pre_save
+from django.db.models.deletion import ProtectedError
+from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
 from organization_management.apps.employees.models import Employee
@@ -33,6 +34,8 @@ from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.dismissal import (
     close_statuses_on_dismissal,
 )
+from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.status_types import StatusType
 
 # Актор системного закрытия. Живого пользователя в сигнале нет (request сюда
 # не доходит), поэтому метка НЕ ЧИСЛОВАЯ — её нельзя спутать с str(User.pk),
@@ -94,3 +97,37 @@ def close_operations_facts(sender, instance, **kwargs):
     close_statuses_on_dismissal(
         instance.pk, dismissal_date=dismissal_date, actor=SYSTEM_ACTOR
     )
+
+
+# ── Справочник типов: деактивация, а не удаление ─────────────────────────
+
+
+@receiver(pre_delete, sender=StatusType)
+def refuse_to_delete_a_used_status_type(sender, instance, **kwargs):
+    """Тип, на который ссылается хоть одна строка статуса, не удаляется.
+
+    Правило было записано в самой модели («Деактивация через is_active, не
+    удалением») и не держалось ничем, а справочник заведён в админке — то есть
+    удалить строку может обычным действием обычный администратор.
+
+    ЧТО ЛОМАЕТСЯ. Код типа лежит в строках статусов и в СНИМКАХ сданных дней
+    строкой, а не ссылкой: внешнего ключа здесь нет, и база удаление не
+    остановит. Расход, выведенный из снимка, разрешает каждый код по
+    справочнику и на незнакомом падает ValueError — то есть уже подписанный
+    день перестаёт печататься ВООБЩЕ. Не «показывает не то», а не открывается,
+    и починить это задним числом нечем, кроме как завести тип заново с теми же
+    свойствами, которых уже никто не помнит.
+
+    Деактивации это не мешает: `catalog_rows` намеренно отдаёт и неактивные
+    типы, чтобы старые дни оставались разрешимыми. Правильный способ убрать
+    тип из обихода — is_active=False, и он остаётся доступен.
+
+    Проверяются ВСЕ строки, включая отменённые: снимок мог захватить факт,
+    который отменили позже, и для него код обязан остаться разрешимым.
+    """
+    if OpsEmployeeStatus.objects.filter(status_type_code=instance.pk).exists():
+        raise ProtectedError(
+            f"тип статуса {instance.pk!r} используется строками статусов: "
+            "снимите его с обращения через is_active, а не удалением",
+            {instance},
+        )
