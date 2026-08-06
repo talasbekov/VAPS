@@ -172,3 +172,8 @@ from organization_management.apps.operations.models_watermark import (  # noqa: 
 from organization_management.apps.operations.models_notification import (  # noqa: E402
     OpsNotification,  # noqa: F401
 )
+
+# Вложения раздела — тоже отдельным модулем.
+from organization_management.apps.operations.models_document import (  # noqa: E402
+    OpsAttachment,  # noqa: F401
+)
