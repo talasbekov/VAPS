@@ -18,6 +18,7 @@ from organization_management.apps.operations import audit_service, clock
 from organization_management.apps.operations.document_release import (
     EXPENSE_DOC_TYPE,
     issue_expense_document,
+    reissue_expense_document,
 )
 from organization_management.apps.operations.day_submission_service import amend_day
 from organization_management.apps.operations.exceptions import DomainError
@@ -291,3 +292,163 @@ def test_the_submission_head_is_locked_before_anything_else_is_read(
         i for i, sql in enumerate(locked) if "ops_document_sequences" in sql
     )
     assert submissions < sequences
+
+
+# ── Замена «взамен исходящего №…» ────────────────────────────────────────
+
+
+def reissue(division, reason="исправлен наряд", business_date=TODAY, actor=ACTOR):
+    with clock.override(MORNING):
+        return reissue_expense_document(
+            division_id=division.id,
+            business_date=business_date,
+            actor=actor,
+            reason=reason,
+        )
+
+
+def test_a_replacement_gets_its_own_number_and_points_at_the_one_it_replaces(
+    storage, submitted
+):
+    first = issue(submitted)
+
+    second = reissue(submitted)
+
+    assert second.number == first.number + 1
+    assert second.supersedes_id == first.pk
+    assert second.status == OpsIssuedDocument.Status.ISSUED
+    assert second.reason == "исправлен наряд"
+
+
+def test_the_replaced_document_is_marked_withdrawn(storage, submitted):
+    first = issue(submitted)
+
+    reissue(submitted)
+
+    first.refresh_from_db()
+    assert first.status == OpsIssuedDocument.Status.SUPERSEDED
+
+
+def test_the_bytes_and_number_of_the_replaced_document_are_left_untouched(
+    storage, submitted
+):
+    """Прежний выпуск остаётся ровно тем, что было предъявлено.
+
+    Перепиши его байты — и спор о том, что подписывали, стал бы неразрешим:
+    документ на руках отличался бы от документа в системе.
+    """
+    first = issue(submitted)
+    first_key = first.attachment.storage_key
+    first_digest = first.attachment.sha256
+    first_number = first.number
+
+    second = reissue(submitted)
+
+    first.refresh_from_db()
+    assert first.number == first_number
+    assert first.attachment.storage_key == first_key
+    assert first.attachment.sha256 == first_digest
+    assert second.attachment_id != first.attachment_id
+    assert (storage / str(first_key)).exists()
+
+
+def test_the_day_now_has_exactly_one_current_document(storage, submitted):
+    issue(submitted)
+    second = reissue(submitted)
+
+    live = OpsIssuedDocument.objects.filter(
+        division_id=submitted.id,
+        business_date=TODAY,
+        status=OpsIssuedDocument.Status.ISSUED,
+    )
+    assert list(live) == [second]
+    assert OpsIssuedDocument.objects.filter(division_id=submitted.id).count() == 2
+
+
+def test_a_replacement_prints_the_submission_version_current_at_that_moment(
+    storage, submitted
+):
+    """Ради этого замена и существует: день поправили, документ обязан
+    показывать поправленное."""
+    first = issue(submitted)
+    with clock.override(MORNING):
+        amend_day(
+            division_id=submitted.id,
+            business_date=TODAY,
+            actor=ACTOR,
+            reason="ошибка в наряде",
+            sanction="замечание",
+        )
+
+    second = reissue(submitted)
+
+    assert first.submission_version == 1
+    assert second.submission_version == 2
+
+
+def test_a_replacement_can_itself_be_replaced(storage, submitted):
+    """Цепь длиннее двух: «взамен исх. №2, который взамен исх. №1»."""
+    first = issue(submitted)
+    second = reissue(submitted, reason="первая поправка")
+    third = reissue(submitted, reason="вторая поправка")
+
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert third.supersedes_id == second.pk
+    assert second.supersedes_id == first.pk
+    assert second.status == OpsIssuedDocument.Status.SUPERSEDED
+    assert third.status == OpsIssuedDocument.Status.ISSUED
+
+
+def test_the_withdrawal_is_recorded_against_the_document_that_was_withdrawn(
+    storage, submitted
+):
+    """Событие пишется на ЗАМЕНЯЕМЫЙ: тот, у кого на руках исходящий №1, ищет
+    его ленту — и обязан увидеть там «отозван»."""
+    first = issue(submitted)
+
+    reissue(submitted, reason="исправлен наряд")
+
+    entry = OpsAuditLog.objects.get(action=audit_service.DOCUMENT_SUPERSEDED)
+    assert entry.entity_id == first.pk
+    assert entry.entity_type == audit_service.ENTITY_ISSUED_DOCUMENT
+    assert entry.reason == "исправлен наряд"
+    assert entry.old_value["status"] == OpsIssuedDocument.Status.ISSUED
+    assert entry.new_value["status"] == OpsIssuedDocument.Status.SUPERSEDED
+
+
+def test_replacing_a_day_that_was_never_issued_is_refused(storage, submitted):
+    with pytest.raises(DomainError) as exc:
+        reissue(submitted)
+
+    assert exc.value.code == "DOCUMENT_NOT_ISSUED"
+    assert exc.value.http_status == 409
+
+
+def test_a_replacement_without_a_reason_is_refused_at_the_boundary(
+    storage, submitted
+):
+    """Причина проверяется ДО всякой работы: замена без причины неотличима от
+    подмены документа."""
+    issue(submitted)
+
+    with pytest.raises(DomainError) as exc:
+        reissue(submitted, reason="   ")
+
+    assert exc.value.code == "VALIDATION_ERROR"
+
+
+def test_a_refused_replacement_leaves_the_previous_document_in_force(
+    storage, submitted
+):
+    first = issue(submitted)
+
+    with pytest.raises(DomainError):
+        reissue(submitted, reason="")
+
+    first.refresh_from_db()
+    assert first.status == OpsIssuedDocument.Status.ISSUED
+    assert OpsIssuedDocument.objects.count() == 1
+    assert OpsDocumentSequence.objects.get(
+        doc_type=EXPENSE_DOC_TYPE, year=TODAY.year
+    ).last_number == 1

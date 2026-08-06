@@ -77,6 +77,11 @@ ATTACHMENT_UPLOADED = "ATTACHMENT_UPLOADED"
 # первое бывает без второго (выпуск откатился), а вот второго без первого не
 # бывает никогда.
 DOCUMENT_ISSUED = "DOCUMENT_ISSUED"
+# Прежний выпуск отозван новым «взамен исходящего №…». Событие пишется на
+# ЗАМЕНЯЕМЫЙ документ, а не на заменяющий: в ленте исходящего №5 обязано
+# стоять «отозван», иначе тот, кто держит на руках именно его, из журнала
+# этого не узнает — а он-то и предъявляет документ.
+DOCUMENT_SUPERSEDED = "DOCUMENT_SUPERSEDED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -105,6 +110,7 @@ ACTIONS = frozenset(
         SUBMISSION_EXPORTED,
         ATTACHMENT_UPLOADED,
         DOCUMENT_ISSUED,
+        DOCUMENT_SUPERSEDED,
     }
 )
 

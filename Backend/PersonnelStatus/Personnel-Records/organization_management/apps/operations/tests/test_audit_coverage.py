@@ -31,6 +31,7 @@ from organization_management.apps.operations.day_submission_service import (
 )
 from organization_management.apps.operations.document_release import (
     issue_expense_document,
+    reissue_expense_document,
 )
 from organization_management.apps.operations.document_service import (
     create_attachment,
@@ -707,6 +708,14 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
             )
             issue_expense_document(
                 division_id=home.id, business_date=TODAY, actor=ACTOR
+            )
+            # Отзыв прежнего выпуска пишется на ЗАМЕНЯЕМЫЙ документ: тот, у кого
+            # он на руках, ищет именно его ленту.
+            reissue_expense_document(
+                division_id=home.id,
+                business_date=TODAY,
+                actor=ACTOR,
+                reason="исправлен наряд",
             )
 
     written = {entry.action for entry in events()}
