@@ -2111,6 +2111,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/IssuedExpenseReport'
           description: ''
+  /api/operations/expense-reports/dashboard/:
+    get:
+      operationId: operations_expense_reports_dashboard_retrieve
+      description: Дашборд расхода (все управления) + отстающие за одну дату (20.2a/FR-38/UJ-2).
+        Org-wide — без division-scope. 400 отсутствует/невалидная/будущая дата; 422
+        дата до начала данных.
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+          format: date
+        required: true
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseDashboardResponse'
+          description: ''
   /api/operations/expense-reports/document/:
     get:
       operationId: operations_expense_reports_document_retrieve
@@ -4524,6 +4546,116 @@ components:
         * `CONFIRMED_NO_CHANGES` - Подтверждено без изменений
         * `CHANGED` - Изменено
         * `AMENDED` - Исправлено
+    ExpenseDashboardExpense:
+      type: object
+      properties:
+        business_date:
+          type: string
+          format: date
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseDashboardRow'
+        totals:
+          $ref: '#/components/schemas/ExpenseDashboardTotals'
+        violations:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        warnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+      required:
+      - business_date
+      - rows
+      - totals
+      - violations
+      - warnings
+    ExpenseDashboardLaggard:
+      type: object
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - division_id
+      - name
+    ExpenseDashboardResponse:
+      type: object
+      properties:
+        business_date:
+          type: string
+          format: date
+        expense:
+          $ref: '#/components/schemas/ExpenseDashboardExpense'
+        laggards:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseDashboardLaggard'
+        blocked:
+          type: boolean
+        overridden:
+          type: boolean
+      required:
+      - blocked
+      - business_date
+      - expense
+      - laggards
+      - overridden
+    ExpenseDashboardRow:
+      type: object
+      properties:
+        division_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        staff_total:
+          type: integer
+        list_total:
+          type: integer
+        vacancies:
+          type: integer
+        attached:
+          type: integer
+        columns:
+          type: object
+          additionalProperties:
+            type: integer
+      required:
+      - attached
+      - columns
+      - division_id
+      - list_total
+      - name
+      - staff_total
+      - vacancies
+    ExpenseDashboardTotals:
+      type: object
+      properties:
+        staff_total:
+          type: integer
+        list_total:
+          type: integer
+        vacancies:
+          type: integer
+        attached:
+          type: integer
+        columns:
+          type: object
+          additionalProperties:
+            type: integer
+      required:
+      - attached
+      - columns
+      - list_total
+      - staff_total
+      - vacancies
     ExpenseDocumentAttachedCell:
       type: object
       properties:

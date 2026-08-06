@@ -377,6 +377,11 @@ MATRIX = {
     # JSON-поверхность тела документа (story 10.7a), READ-ONLY, GET-only. Тот
     # же гейт-код, что list/period/journal — тот же расход-домен.
     "ops-expense-report-document": _MethodGate({"get": "daily_report.generate"}),
+    # дашборд расхода + отстающие, org-wide (story 20.2b, FR-38/UJ-2), GET-only.
+    # Тот же гейт-код, что list/period/journal/document; БЕЗ division-scope
+    # (нет division_id — тот же принцип, что override-tomorrow-block: org-wide
+    # чтение, не per-подразделение выпуск).
+    "ops-expense-report-dashboard": _MethodGate({"get": "daily_report.generate"}),
     # bugreports — story 13.1a. POST (create) — cost ~0, any authenticated
     # actor, NO permission code (буква стори). GET (list/retrieve) —
     # bugreports.view (DEVELOPER-only per seed) — visibility restricted,

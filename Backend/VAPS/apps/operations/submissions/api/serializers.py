@@ -115,6 +115,13 @@ class ExpenseReportByDateFilterSerializer(serializers.Serializer):
     business_date = serializers.DateField()
 
 
+class ExpenseDashboardFilterSerializer(serializers.Serializer):
+    """GET /dashboard/ query form (20.2b) — org-wide (no division_id): расход
+    по всем управлениям + отстающие за одну дату."""
+
+    business_date = serializers.DateField()
+
+
 class ExpensePeriodFilterSerializer(serializers.Serializer):
     """GET /period/ query form (6.10a) — division + inclusive date range for the
     read-only page-per-date расход (range/length validated in the service)."""

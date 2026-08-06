@@ -37,6 +37,7 @@ from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreDivisionTreeSelector
 from apps.documents.models import EXPENSE_DOC_TYPE
 from apps.documents.selectors import IssuedDocumentSelector
+from apps.operations.selectors import compute_expense_dashboard
 from apps.operations.services import PermissionService
 from apps.operations.submissions.api.serializers import (
     DailySubmissionAmendSerializer,
@@ -44,6 +45,7 @@ from apps.operations.submissions.api.serializers import (
     DailySubmissionDetailSerializer,
     DailySubmissionFilterSerializer,
     DailySubmissionSerializer,
+    ExpenseDashboardFilterSerializer,
     ExpenseJournalFilterSerializer,
     ExpensePeriodFilterSerializer,
     ExpenseReportByDateFilterSerializer,
@@ -339,9 +341,7 @@ class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):
                             "pinned_version": serializers.IntegerField(),
                         },
                     ),
-                    "unpinned": serializers.ListField(
-                        child=serializers.UUIDField()
-                    ),
+                    "unpinned": serializers.ListField(child=serializers.UUIDField()),
                 },
             )
         },
@@ -395,6 +395,7 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "override_block": _OVERRIDE_PERMISSION,
         "journal": _EXPENSE_PERMISSION,
         "document": _EXPENSE_PERMISSION,
+        "dashboard": _EXPENSE_PERMISSION,
     }
     # No "head": HEAD stays 405 everywhere (mirror of the 5.8a/b minimal
     # surface above — a deliberate project-wide canon, not an omission).
@@ -747,6 +748,135 @@ class ExpenseReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             division_id=division_id, business_date=business_date
         )
         return Response(serialize_expense_document(data))
+
+    @extend_schema(
+        parameters=[ExpenseDashboardFilterSerializer],
+        responses={
+            200: inline_serializer(
+                name="ExpenseDashboardResponse",
+                fields={
+                    "business_date": serializers.DateField(),
+                    "expense": inline_serializer(
+                        name="ExpenseDashboardExpense",
+                        fields={
+                            "business_date": serializers.DateField(),
+                            "rows": inline_serializer(
+                                name="ExpenseDashboardRow",
+                                many=True,
+                                fields={
+                                    "division_id": serializers.UUIDField(),
+                                    "name": serializers.CharField(),
+                                    "staff_total": serializers.IntegerField(),
+                                    "list_total": serializers.IntegerField(),
+                                    "vacancies": serializers.IntegerField(),
+                                    "attached": serializers.IntegerField(),
+                                    "columns": serializers.DictField(
+                                        child=serializers.IntegerField()
+                                    ),
+                                },
+                            ),
+                            "totals": inline_serializer(
+                                name="ExpenseDashboardTotals",
+                                fields={
+                                    "staff_total": serializers.IntegerField(),
+                                    "list_total": serializers.IntegerField(),
+                                    "vacancies": serializers.IntegerField(),
+                                    "attached": serializers.IntegerField(),
+                                    "columns": serializers.DictField(
+                                        child=serializers.IntegerField()
+                                    ),
+                                },
+                            ),
+                            "violations": serializers.ListField(
+                                child=serializers.DictField()
+                            ),
+                            "warnings": serializers.ListField(
+                                child=serializers.DictField()
+                            ),
+                        },
+                    ),
+                    "laggards": inline_serializer(
+                        name="ExpenseDashboardLaggard",
+                        many=True,
+                        fields={
+                            "division_id": serializers.UUIDField(),
+                            "name": serializers.CharField(),
+                        },
+                    ),
+                    "blocked": serializers.BooleanField(),
+                    "overridden": serializers.BooleanField(),
+                },
+            )
+        },
+        description="Дашборд расхода (все управления) + отстающие за одну "
+        "дату (20.2a/FR-38/UJ-2). Org-wide — без division-scope. "
+        "400 отсутствует/невалидная/будущая дата; 422 дата до начала данных.",
+    )
+    @action(detail=False, methods=["get"], url_path="dashboard")
+    def dashboard(self, request, *args, **kwargs):
+        form = ExpenseDashboardFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        business_date = form.validated_data["business_date"]
+        # Same date-bounds guards as every sibling read action on this
+        # viewset (period/document/tree) — without them an early date makes
+        # resolve_status default everyone to IN_SERVICE (fabricated report),
+        # and a future date projects today's roster onto a date that hasn't
+        # happened yet (review D2 2026-07-13, period's own precedent).
+        today = Clock.today_local()
+        if business_date > today:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={
+                    "business_date": business_date.isoformat(),
+                    "today": today.isoformat(),
+                },
+                message="Дашборд не может уходить в будущее.",
+            )
+        assert_report_date_has_data(business_date=business_date)
+        result = compute_expense_dashboard(business_date)
+        expense = result["expense"]
+        return Response(
+            {
+                "business_date": result["business_date"].isoformat(),
+                "expense": {
+                    "business_date": expense.business_date.isoformat(),
+                    "rows": [
+                        {
+                            "division_id": str(row.division_id),
+                            "name": row.name,
+                            "staff_total": row.staff_total,
+                            "list_total": row.list_total,
+                            "vacancies": row.vacancies,
+                            "attached": row.attached,
+                            "columns": dict(row.columns),
+                        }
+                        for row in expense.rows
+                    ],
+                    "totals": {
+                        "staff_total": expense.totals.staff_total,
+                        "list_total": expense.totals.list_total,
+                        "vacancies": expense.totals.vacancies,
+                        "attached": expense.totals.attached,
+                        "columns": dict(expense.totals.columns),
+                    },
+                    "violations": [
+                        {**v, "division_id": str(v["division_id"])}
+                        for v in expense.violations
+                    ],
+                    "warnings": [
+                        {**w, "division_id": str(w["division_id"])}
+                        for w in expense.warnings
+                    ],
+                },
+                "laggards": [
+                    {"division_id": str(item["division_id"]), "name": item["name"]}
+                    for item in result["laggards"]
+                ],
+                "blocked": result["blocked"],
+                "overridden": result["overridden"],
+            }
+        )
 
 
 class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
