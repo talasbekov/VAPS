@@ -1339,6 +1339,29 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @extend_schema(
         parameters=[
+            OpenApiParameter("date_from", OpenApiTypes.DATE),
+            OpenApiParameter("date_to", OpenApiTypes.DATE),
+            OpenApiParameter("division_id", OpenApiTypes.INT),
+        ],
+        responses={(200, "text/csv"): OpenApiTypes.BINARY},
+        description=(
+            "Тот же период файлом: одна таблица, СТРОКА НА ДАТУ. Формат один — "
+            ".csv: период смотрят, чтобы считать и строить графики, а не "
+            "подписывать. Отказы те же, что у экрана периода."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="period-export")
+    def period_export(self, request, *args, **kwargs):
+        pages = self._period_pages(request)
+        payload = generate_period_csv(pages)
+        response = HttpResponse(payload, content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = content_disposition_header(
+            True, f"expense-{pages[0]['business_date']}-{pages[-1]['business_date']}.csv"
+        )
+        return response
+
+    @extend_schema(
+        parameters=[
             OpenApiParameter(
                 "date_from",
                 OpenApiTypes.DATE,
@@ -1373,29 +1396,6 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "подразделение."
         ),
     )
-    @extend_schema(
-        parameters=[
-            OpenApiParameter("date_from", OpenApiTypes.DATE),
-            OpenApiParameter("date_to", OpenApiTypes.DATE),
-            OpenApiParameter("division_id", OpenApiTypes.INT),
-        ],
-        responses={(200, "text/csv"): OpenApiTypes.BINARY},
-        description=(
-            "Тот же период файлом: одна таблица, СТРОКА НА ДАТУ. Формат один — "
-            ".csv: период смотрят, чтобы считать и строить графики, а не "
-            "подписывать. Отказы те же, что у экрана периода."
-        ),
-    )
-    @action(detail=False, methods=["get"], url_path="period-export")
-    def period_export(self, request, *args, **kwargs):
-        pages = self._period_pages(request)
-        payload = generate_period_csv(pages)
-        response = HttpResponse(payload, content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = content_disposition_header(
-            True, f"expense-{pages[0]['business_date']}-{pages[-1]['business_date']}.csv"
-        )
-        return response
-
     @action(detail=False, methods=["get"])
     def period(self, request, *args, **kwargs):
         return Response({"pages": self._period_pages(request)})
