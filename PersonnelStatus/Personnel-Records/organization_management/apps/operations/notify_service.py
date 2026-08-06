@@ -17,15 +17,124 @@ apps/notifications/services.py).
 уведомление и ЕСТЬ вся операция (догон отставших), None надо превращать в
 ошибку самому — иначе водяной знак уедет за день, о котором не сообщили.
 
-Отличия от источника: WS-публикации нет — доставка отдельным срезом.
+ТРЕТЬЯ (этот срез): созданная строка ДОПОЛНИТЕЛЬНО объявляется в сокет, и
+разделение здесь и есть весь смысл. Запись остаётся синхронной и внутри
+транзакции вызывающего (см. ПЕРВОЕ, не тронуто), а `group_send` уезжает в
+`transaction.on_commit` — откатившаяся деловая операция не может подать знак о
+строке, которой не будет. Договор «побочный канал» распространяется на эту
+ветку дословно: недоступный канальный слой пишется в журнал и глотается и НИ
+ПРИ КАКИХ обстоятельствах не меняет то, что вернул notify(), — по этому
+возврату догон решает, откатывать ли ему целый день.
+
+Отличия от источника: выключателя доставки (VAPS_WS_ENABLED) пока нет — он
+отдельным срезом, и место ему первой строкой `_publish`.
 """
 import logging
+from functools import partial
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from django.db import transaction
+from django.utils import timezone
 
 from organization_management.apps.operations.models_notification import (
     OpsNotification,
 )
+from organization_management.apps.operations.ws_groups import (
+    NOTIFY_MESSAGE_TYPE,
+    group_name_for,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _local_isoformat(value):
+    """Момент — ровно в том виде, в каком его печатает лента чтения.
+
+    Это и есть то, что делает DateTimeField у DRF: перевести в
+    `timezone.get_current_timezone()` и позвать `.isoformat()`. Написано
+    через `astimezone`, а не через `timezone.localtime(value)` — операция та
+    же, но у `localtime` аргумент необязателен, и функция без аргумента читает
+    стенные часы. Здесь такого пути не должно быть даже теоретически.
+
+    Голый `.isoformat()` дал бы ДРУГУЮ строку для того же момента: created_at
+    хранится в UTC, а лента печатает в часовом поясе проекта. Разойдись они —
+    один и тот же ряд, пришедший сокетом и запросом, стал бы для клиента двумя
+    разными, а курсор `?since=` поехал бы на пять часов.
+    """
+    return value.astimezone(timezone.get_current_timezone()).isoformat()
+
+
+def _publish(notification):
+    """Объявить `notification` в группу его получателя.
+
+    Исполняется ТОЛЬКО как обработчик `transaction.on_commit`, никогда не
+    построчно — см. notify().
+
+    Свой `try/except` здесь не дублирует тот, что в notify(): обе ветки
+    исполнения нуждаются в нём по разным причинам.
+
+    * Внутри транзакции обработчик срабатывает ПОСЛЕ коммита, когда notify()
+      давно вернул управление, и его `except` уже не на стеке. Улетевшее
+      отсюда исключение всплыло бы у вызывающего ПОСЛЕ того, как деловое
+      изменение применено, — худший из возможных исходов.
+    * Вне транзакции (autocommit) `on_commit` зовёт обработчик НЕМЕДЛЕННО и
+      построчно, то есть внутри `try` самого notify(). Без местного гварда
+      мёртвый канальный слой проглотился бы ТАМ, notify() вернул бы None, а
+      догон читает None как «уведомление не легло» → откат дня и остановка
+      водяного знака. Сбой ЗНАКА остановил бы ДЕЛОВУЮ операцию.
+
+    Конверт несёт проекцию ленты чтения ЗНАЧЕНИЯМИ — ряд, пришедший сокетом,
+    ложится в тот же кэш, что и ряды `GET /api/operations/notifications/`.
+    `api.serializers` сюда намеренно НЕ импортируется: сервис не должен знать
+    про слой представления. Совпадение держит тест, а не импорт.
+    """
+    try:
+        # Здесь живут два разных поля `type` (см. ws_groups и ws_consumers):
+        # ВНЕШНЕЕ (ниже, у конверта канального слоя) — маршрутизация; ЭТО —
+        # код вида, который увидит клиент. Вложенный "payload" — тоже не
+        # опечатка: внешний словарь это конверт, внутренний — данные факта.
+        envelope = {
+            "type": notification.kind,
+            "payload": {
+                "id": notification.id,
+                "recipient": notification.recipient,
+                "kind": notification.kind,
+                # Каждое значение обязано быть примитивом JSON: channels_redis
+                # пакует конверт msgpack-ом (а тот не умеет date/datetime), и
+                # уже потребитель гонит по нему json.dumps. Голая дата рвётся
+                # в рантайме и только на настоящем слое.
+                "business_date": notification.business_date.isoformat(),
+                "payload": notification.payload,
+                # На только что созданной строке — None; приводится так же,
+                # как created_at, чтобы остаться примитивом, если однажды
+                # окажется заполненным.
+                "read_at": (
+                    _local_isoformat(notification.read_at)
+                    if notification.read_at
+                    else None
+                ),
+                "created_at": _local_isoformat(notification.created_at),
+            },
+        }
+        async_to_sync(get_channel_layer().group_send)(
+            # Адресуется ХРАНИМЫЙ получатель, а не аргумент вызова: notify()
+            # обрезает края, и группа обязана следовать за обрезанным. Иначе
+            # «  7  » уехал бы во вполне допустимую группу, которую никто не
+            # слушает, — без единой ошибки, просто в никуда.
+            group_name_for(notification.recipient),
+            {"type": NOTIFY_MESSAGE_TYPE, "message": envelope},
+        )
+    except Exception:
+        # По договору — лучшее усилие: истина это строка в базе, сокет лишь
+        # знак «обнови». Поля те же, что уже пишет notify(), без ПДн: payload
+        # называет отставшие подразделения и в журнал не едет.
+        logger.exception(
+            "WS-публикация не удалась: получатель=%r вид=%r дата=%r",
+            notification.recipient,
+            notification.kind,
+            notification.business_date,
+        )
 
 
 def notify(recipient, kind, business_date, payload=None):
@@ -42,6 +151,9 @@ def notify(recipient, kind, business_date, payload=None):
     Возвращает строку (созданную или найденную) либо None, если отправка не
     удалась. Пустой получатель — ValueError, а не None: это ошибка вызывающего,
     и глотать её вместе с инфраструктурными нельзя.
+
+    СОЗДАННАЯ строка вдобавок объявляется в группу получателя по коммиту;
+    холостой повтор — нет (см. комментарий у on_commit).
     """
     if not recipient or not recipient.strip():
         raise ValueError("notify требует получателя")
@@ -49,12 +161,34 @@ def notify(recipient, kind, business_date, payload=None):
     payload = payload or {}
 
     try:
-        notification, _created = OpsNotification.objects.get_or_create(
+        notification, created = OpsNotification.objects.get_or_create(
             recipient=recipient,
             kind=kind,
             business_date=business_date,
             defaults={"payload": payload},
         )
+        if created:
+            # Откладывается ТОЛЬКО знак, никогда не запись: синхронная запись
+            # и есть ПЕРВОЕ из докстринга модуля.
+            #
+            # А знак откладывать ОБЯЗАНО: посланный построчно, он объявил бы
+            # клиенту строку, которую откат следом уносит. Построчная отправка
+            # проходит все счастливые тесты и рвётся только на откате — в
+            # проде.
+            #
+            # `partial`, а не lambda: так в on_commit уезжает сам объект
+            # функции, и его видно тому, кто читает (и статическому разбору
+            # тоже); заодно снимается классическая ловушка позднего связывания.
+            #
+            # Условие `created` — потому что знак отслеживает ИЗМЕНЕНИЕ
+            # СОСТОЯНИЯ, а не вызов: догон по устройству переспрашивает уже
+            # пройденные дни (идемпотентность держится знаком), и «слать на
+            # каждый вызов» превратило бы один повтор в шквал дубликатов о
+            # строках, которые не менялись.
+            #
+            # Регистрация стоит ВНУТРИ try, чтобы сбой самой регистрации попал
+            # под тот же договор «побочный канал».
+            transaction.on_commit(partial(_publish, notification))
         return notification
     except Exception:
         # Точку сохранения от гонки двух одновременных вызовов get_or_create
