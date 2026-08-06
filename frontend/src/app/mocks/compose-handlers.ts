@@ -5,6 +5,7 @@
 // Feature handlers добавляются сюда по мере Этапа 2+ (сейчас реестр пуст).
 import type { HttpHandler } from 'msw'
 import { createSecurityEventsHandlers } from '../../features/security-events/mocks/handlers'
+import { readinessMockHandlers } from '../../features/security-events/mocks/readiness-handlers'
 import { personnelHandlers } from '../../features/personnel/mocks/handlers'
 import { createObjectsHandlers } from '../../features/objects/mocks/handlers'
 import { auditHandlers } from '../../features/audit/mocks/handlers'
@@ -21,6 +22,7 @@ export function composeHandlers(): HttpHandler[] {
   return [
     ...identityHandlers,
     ...createSecurityEventsHandlers(adapter, clock),
+    ...readinessMockHandlers,
     ...personnelHandlers,
     ...createObjectsHandlers(adapter, clock),
     ...auditHandlers,

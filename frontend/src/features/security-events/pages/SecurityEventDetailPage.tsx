@@ -42,6 +42,7 @@ import type {
   StaffingDemandRow,
 } from '../model/types'
 import { STAGE_LABEL, stageBadgeVariants } from '../lib/stageMeta'
+import { ReadinessPanel } from './ReadinessPanel'
 
 const bulletinSchema = z.object({
   briefDescription: z.string().trim().min(1, 'Обязательное поле'),
@@ -105,6 +106,10 @@ export function SecurityEventDetailPage() {
         </div>
         <StageTracker current={event.stage} />
       </section>
+
+      <div className="mb-4">
+        <ReadinessPanel eventId={event.id} />
+      </div>
 
       <StageContent event={event} />
     </div>
@@ -676,14 +681,13 @@ function DemandForm({ event }: { event: SecurityEvent }) {
         )}
       </div>
 
-      <div className="mb-3.5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
+      <div className="mb-3.5 grid grid-cols-2 gap-2.5 md:grid-cols-3">
         <StatBox label="Всего требуется" value={totalNeed} />
         <StatBox label="Постов" value={rows.length} />
         <StatBox
           label="Групп задействовано"
           value={new Set(rows.map((r) => r.group).filter(Boolean)).size}
         />
-        <StatBox label="Готовность" value={`${event.readinessPercent}%`} />
       </div>
 
       {rows.length === 0 ? (
