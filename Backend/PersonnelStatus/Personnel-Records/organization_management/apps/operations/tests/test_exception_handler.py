@@ -47,7 +47,11 @@ def test_overridable_is_visible_in_payload():
     exc = DomainError("STATUS_OVERLAP_WARNING", 409, overridable=True)
     assert ops_exception_handler(exc, {}).data["overridable"] is True
 
-    plain = ops_exception_handler(DomainError("X", 422), {})
+    # Необходим НЕобходимый отказ для сравнения, и код у него теперь настоящий:
+    # синтетический «X» перестал собираться — словарь кодов проверяется в
+    # конструкторе DomainError. Взят код, который по смыслу не обходится
+    # никогда (жёсткое пересечение), — на нём отсутствие признака значимо.
+    plain = ops_exception_handler(DomainError("OVERLAPPING_HARD_STATUS", 422), {})
     assert "overridable" not in plain.data
 
 
