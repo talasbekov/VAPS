@@ -18,6 +18,7 @@ from organization_management.apps.operations.models import StatusType, UserRole
 from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_document import (
     OpsAttachment,
+    OpsDocumentSequence,
 )
 from organization_management.apps.operations.models_notification import (
     OpsNotification,
@@ -780,3 +781,25 @@ class OpsAttachmentSelector:
         except (TypeError, ValueError):
             return None
         return OpsAttachment.objects.filter(pk=canonical).first()
+
+
+class OpsDocumentSequenceSelector:
+    """Чтение счётчика номеров — единственное место, где берётся его замок.
+
+    Замок построчный (`select_for_update`) и живёт до коммита ВЫЗЫВАЮЩЕГО: в
+    этом весь смысл нумерации через обычное целое, а не через последовательность
+    базы. Отпусти его раньше — и две транзакции прочитали бы одно значение и
+    обе записали бы +1, выдав один номер дважды.
+
+    Вне транзакции `select_for_update` поднимает TransactionManagementError, и
+    это намеренно не смягчается: замок, взятый в autocommit, отпускается тем же
+    оператором, то есть не защищает ничего — а «работает, но не защищает» хуже
+    внятного отказа.
+    """
+
+    @staticmethod
+    def lock(*, doc_type, year):
+        """Строка счётчика под построчным замком. Строка обязана существовать."""
+        return OpsDocumentSequence.objects.select_for_update().get(
+            doc_type=doc_type, year=year
+        )
