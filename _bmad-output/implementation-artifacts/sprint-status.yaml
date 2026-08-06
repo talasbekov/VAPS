@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-08-06 (19.6a → done)
+# last_updated: 2026-08-06 (19.7 → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -818,7 +818,7 @@ development_status:
   # the cumulative-hours selector slice (19.6a); API (19.6b)/frontend
   # card field (19.6c) get their own keys when created.
   19-6a-налёт-часов-кумулятив: done
-  19-7-нагрузочные-тесты-дедлайн-17-00: backlog
+  19-7-нагрузочные-тесты-дедлайн-17-00: done
   epic-19-retrospective: optional
 
   # Epic 20: Дашборды и экспорт (этап 3 — каркас)
