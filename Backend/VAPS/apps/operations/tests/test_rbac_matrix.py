@@ -423,6 +423,7 @@ MATRIX = {
     # core — загейчено RequirePermissionMixin (story 2.13 механизм A + 2.14
     # раскатка). GET=view, write(create/update/destroy/archive/...)=edit/manage.
     "vacancy-list": _Gate("personnel.view"),  # GET-only (2.13 пилот)
+    "staffing-table-list": _Gate("personnel.view"),  # GET-only (story 20.5b, FR-40)
     # personnel.* (Employee + StaffingSlot):
     "employee-list": _MethodGate({"get": "personnel.view", "post": "personnel.edit"}),
     "employee-detail": _MethodGate(

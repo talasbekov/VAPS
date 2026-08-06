@@ -1265,6 +1265,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/StaffingSlot'
           description: ''
+  /api/core/staffing-table/:
+    get:
+      operationId: core_staffing_table_retrieve
+      description: |-
+        Story 20.5b (FR-40) — HTTP surface over CoreStaffingSelector.
+        compute_staffing_table() (20.5a). Report-shaped, no single "object" —
+        same VacancyViewSet-style bare ViewSet + imperative require_permission,
+        not RequirePermissionMixin (that's for the CRUD viewsets above).
+      tags:
+      - core
+      responses:
+        '200':
+          description: No response body
   /api/core/vacancies/:
     get:
       operationId: core_vacancies_retrieve

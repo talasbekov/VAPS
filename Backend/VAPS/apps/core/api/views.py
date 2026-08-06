@@ -1,4 +1,5 @@
 import datetime as dt
+import uuid
 
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -8,16 +9,28 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
 from apps.core.api.permissions import (
-    RequirePermissionMixin, require_permission,
+    RequirePermissionMixin,
+    require_permission,
 )
 from apps.core.api.serializers import (
-    DivisionSerializer, EmployeeSerializer, PositionSerializer, RankSerializer,
-    StaffingAssignmentSerializer, StaffingSlotSerializer,
+    DivisionSerializer,
+    EmployeeSerializer,
+    PositionSerializer,
+    RankSerializer,
+    StaffingAssignmentSerializer,
+    StaffingSlotSerializer,
 )
 from apps.core.models import (
-    Division, Employee, EmployeeStaffingAssignment, Position, Rank, StaffingSlot,
+    Division,
+    Employee,
+    EmployeeStaffingAssignment,
+    Position,
+    Rank,
+    StaffingSlot,
 )
-from apps.core.selectors import CoreDivisionTreeSelector
+from apps.core.clock import Clock
+from apps.core.exceptions import DomainError
+from apps.core.selectors import CoreDivisionTreeSelector, CoreStaffingSelector
 from apps.core.services import compute_free_slots, mask_employee_data
 
 
@@ -56,6 +69,7 @@ class EmployeeViewSet(RequirePermissionMixin, viewsets.ModelViewSet):
             qs = qs.filter(position_code=position_code)
         if search := params.get("search"):
             from django.db.models import Q
+
             qs = qs.filter(
                 Q(full_name__icontains=search)
                 | Q(last_name__icontains=search)
@@ -200,12 +214,61 @@ class VacancyViewSet(viewsets.ViewSet):
         division_id = request.query_params.get("division_id")
         date_str = request.query_params.get("date")
         on_date = (
-            timezone.make_aware(
-                dt.datetime.combine(parse_date(date_str), dt.time.min)
-            )
+            timezone.make_aware(dt.datetime.combine(parse_date(date_str), dt.time.min))
             if date_str
             else timezone.now()
         )
         free = compute_free_slots(division_id, on_date=on_date)
         results = StaffingSlotSerializer(free, many=True).data
         return Response({"count": len(free), "results": results})
+
+
+class StaffingTableViewSet(viewsets.ViewSet):
+    """Story 20.5b (FR-40) — HTTP surface over CoreStaffingSelector.
+    compute_staffing_table() (20.5a). Report-shaped, no single "object" —
+    same VacancyViewSet-style bare ViewSet + imperative require_permission,
+    not RequirePermissionMixin (that's for the CRUD viewsets above)."""
+
+    def list(self, request, *args, **kwargs):
+        require_permission(request, "personnel.view")
+        division_id = request.query_params.get("division_id") or None
+        date_str = request.query_params.get("business_date")
+        if date_str:
+            business_date = parse_date(date_str)
+            if business_date is None:
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    400,
+                    detail={"business_date": date_str},
+                    message="Некорректная дата.",
+                )
+        else:
+            # Review (Blind Hunter + Edge Case Hunter): timezone.now().date()
+            # is a UTC calendar date — VAPS runs on a positive UTC offset
+            # (Asia/Qyzylorda), so early-morning local hours resolve to
+            # YESTERDAY in UTC. Clock.today_local() is the project's
+            # established fix for this exact class of bug (see
+            # apps.core.clock.Clock, already used by other date-versioned
+            # selectors this endpoint calls into).
+            business_date = Clock.today_local()
+        if division_id is not None:
+            try:
+                uuid.UUID(division_id)
+            except ValueError as exc:
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    400,
+                    detail={"division_id": division_id},
+                    message="Некорректный UUID подразделения.",
+                ) from exc
+        division_ids = [division_id] if division_id else None
+        rows = CoreStaffingSelector.compute_staffing_table(
+            business_date, division_ids=division_ids
+        )
+        return Response(
+            {
+                "business_date": business_date.isoformat(),
+                "count": len(rows),
+                "results": rows,
+            }
+        )

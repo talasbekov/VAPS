@@ -1,8 +1,13 @@
 from rest_framework.routers import DefaultRouter
 
 from apps.core.api.views import (
-    DivisionViewSet, EmployeeViewSet, PositionViewSet, RankViewSet,
-    StaffingSlotViewSet, VacancyViewSet,
+    DivisionViewSet,
+    EmployeeViewSet,
+    PositionViewSet,
+    RankViewSet,
+    StaffingSlotViewSet,
+    StaffingTableViewSet,
+    VacancyViewSet,
 )
 
 router = DefaultRouter()
@@ -12,5 +17,6 @@ router.register("positions", PositionViewSet, basename="position")
 router.register("ranks", RankViewSet, basename="rank")
 router.register("staffing-slots", StaffingSlotViewSet, basename="staffing-slot")
 router.register("vacancies", VacancyViewSet, basename="vacancy")
+router.register("staffing-table", StaffingTableViewSet, basename="staffing-table")
 
 urlpatterns = router.urls
