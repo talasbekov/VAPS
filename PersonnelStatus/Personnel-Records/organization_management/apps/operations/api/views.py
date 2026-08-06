@@ -394,7 +394,10 @@ class UserRoleViewSet(viewsets.ViewSet):
     @extend_schema(responses=UserRoleSerializer(many=True))
     def list(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
-        qs = UserRole.objects.all().order_by("user_id")
+        # id последним ключом — ОБЯЗАТЕЛЬНО, а не для красоты: у одного
+        # человека ролей много, порядок при равном user_id база не обещает, и
+        # страничная выдача теряла бы и дублировала строки между страницами.
+        qs = UserRole.objects.all().order_by("user_id", "id")
         if user_id := request.query_params.get("user_id"):
             qs = qs.filter(user_id=user_id)
         paginator = DefaultPagination()
@@ -439,7 +442,9 @@ class TemporaryDutyViewSet(viewsets.ViewSet):
     @extend_schema(responses=TemporaryDutySerializer(many=True))
     def list(self, request, *args, **kwargs):
         require_permission(request, "admin.roles")
-        qs = TemporaryDutyPermission.objects.all().order_by("-starts_at")
+        # Тот же разрыв ничьей: два наряда, начинающихся в один момент, —
+        # обычное дело (их заводят пачкой одним приказом).
+        qs = TemporaryDutyPermission.objects.all().order_by("-starts_at", "id")
         if user_id := request.query_params.get("user_id"):
             qs = qs.filter(user_id=user_id)
         paginator = DefaultPagination()
