@@ -1,0 +1,37 @@
+{
+  "attached": 0,
+  "business_date": "2026-08-04",
+  "catalog": [
+    {
+      "code": "IN_SERVICE",
+      "counts_in_staff": true,
+      "priority": 999,
+      "report_column_code": "IN_SERVICE"
+    },
+    {
+      "code": "DUTY",
+      "counts_in_staff": true,
+      "priority": 10,
+      "report_column_code": "ON_DUTY"
+    },
+    {
+      "code": "VACATION",
+      "counts_in_staff": true,
+      "priority": 30,
+      "report_column_code": "VACATION"
+    },
+    {
+      "code": "SICK",
+      "counts_in_staff": false,
+      "priority": 20,
+      "report_column_code": "SICK"
+    }
+  ],
+  "division_title": "Резерв",
+  "snapshot": {
+    "roster": [],
+    "rows": []
+  },
+  "staff_total": 0,
+  "vacancies": 0
+}

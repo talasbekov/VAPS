@@ -1,0 +1,33 @@
+{
+  "business_date": "2026-08-04",
+  "columns": [
+    "ON_DUTY",
+    "VACATION",
+    "IN_SERVICE"
+  ],
+  "rows": [
+    {
+      "attached": 0,
+      "cells": {
+        "IN_SERVICE": 0,
+        "ON_DUTY": 0,
+        "VACATION": 0
+      },
+      "list_total": 0,
+      "name": "Резерв",
+      "staff_total": 0,
+      "vacancies": 0
+    }
+  ],
+  "totals": {
+    "attached": 0,
+    "columns": {
+      "IN_SERVICE": 0,
+      "ON_DUTY": 0,
+      "VACATION": 0
+    },
+    "list_total": 0,
+    "staff_total": 0,
+    "vacancies": 0
+  }
+}
