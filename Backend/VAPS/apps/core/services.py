@@ -155,14 +155,20 @@ def _partial_mask(value: str) -> str:
     return "*" * (len(text) - 4) + text[-4:]
 
 
-def mask_employee_data(data: dict, *, user_permissions: set) -> dict:
+def mask_employee_data(data: dict, *, user_permissions: set, policies=None) -> dict:
     """Apply sensitive-field policies to a serialized employee dict.
 
     BR-PRIVACY-001/002: a field is revealed only if the caller holds the
     policy's permission_code; otherwise FULL_HIDE -> None, PARTIAL_MASK -> tail-masked.
+
+    Story 20.4a: optional `policies` — a caller masking MANY rows (e.g. a
+    bulk CSV export) passes an already-fetched queryset/list to avoid one
+    `SensitiveFieldPolicy` query per row (NFR-4). `None` (default) keeps
+    the original single-call behavior — this function fetches its own.
     """
     result = dict(data)
-    policies = SensitiveFieldPolicy.objects.filter(is_active=True)
+    if policies is None:
+        policies = SensitiveFieldPolicy.objects.filter(is_active=True)
     for policy in policies:
         if policy.field_code not in result or result[policy.field_code] is None:
             continue
