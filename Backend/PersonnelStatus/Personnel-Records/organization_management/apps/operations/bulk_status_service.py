@@ -51,6 +51,7 @@ from organization_management.apps.operations.status_service import (
     _conflict_details,
     _require_actor,
     _validate_interval,
+    assert_employee_is_employed,
 )
 
 # Ключи, которые обязана нести каждая строка payload. Ниже они читаются через
@@ -223,6 +224,11 @@ def bulk_create_statuses(
     row_errors = []
     for index, row in enumerate(rows):
         try:
+            # Уволенному статус не заводят — то же правило, что у одиночного
+            # создания, и владелец у него один (status_service). Проверка
+            # построчная: пачка может задеть и работающих, и уволенного, и
+            # отказывать должна ровно по нему.
+            assert_employee_is_employed(locked[row["employee_id"]])
             status_type = types.get(row["status_type_code"])
             if status_type is None:
                 raise DomainError(

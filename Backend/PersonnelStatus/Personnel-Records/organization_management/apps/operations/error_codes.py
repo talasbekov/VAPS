@@ -40,6 +40,10 @@ CODES = {
     "UNRESOLVABLE_STATUS_TYPE": frozenset({422}),
     "INVALID_DATE_RANGE": frozenset({422}),
     "DATE_OUTSIDE_EMPLOYMENT": frozenset({422}),
+    # Уволенному статус не заводят. Отдельный код, а не DATE_OUTSIDE_EMPLOYMENT:
+    # тот про ДАТЫ (интервал вышел за границы найма) и предполагает, что границы
+    # заполнены, — а уволить можно и не проставив дату увольнения.
+    "EMPLOYEE_NOT_EMPLOYED": frozenset({422}),
     "MAX_DURATION_EXCEEDED": frozenset({422}),
     "INVALID_LIFECYCLE_TRANSITION": frozenset({422}),
     "AUTO_STATUS_READONLY": frozenset({422}),
