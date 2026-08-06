@@ -330,7 +330,7 @@ def test_the_export_is_written_to_the_log(types, division):
     assert "roster" not in entry.new_value
 
 
-@pytest.mark.parametrize("schema_version", [None, "1", 2, True])
+@pytest.mark.parametrize("schema_version", [None, "1", 3, True])
 def test_an_unsupported_snapshot_schema_is_422_before_the_log(
     types, division, schema_version
 ):
@@ -338,6 +338,12 @@ def test_an_unsupported_snapshot_schema_is_422_before_the_log(
 
     Точный тип, а не isinstance: True прошёл бы как единица, и файл собрался
     бы по чужой раскладке, ничего об этом не сказав.
+
+    Версия 2 из этого списка УШЛА: снимок расширился уровнем должности, и
+    читатель её понимает. На её место взята 3 — заведомо будущая: пример
+    неподдерживаемой раскладки не должен становиться поддерживаемым, иначе
+    тест доказывал бы обратное тому, что заявляет (тот же урок, что с «pdf» в
+    примере неизвестного формата).
     """
     submission = submit(division)
     OpsDailySubmission.objects.filter(pk=submission.pk).update(

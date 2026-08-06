@@ -55,21 +55,35 @@ def _submitted_at_label(submitted_at):
     return submitted_at.astimezone(local_tz).strftime(SUBMITTED_AT_FORMAT)
 
 
+# Какие раскладки снимка этот читатель понимает. МНОЖЕСТВО, а не последняя
+# версия, и это то, ради чего версия вообще заведена: сдачи уже подписаны и
+# лежат в базе со СВОЕЙ раскладкой, а сравнение с одной лишь текущей версией
+# означало бы, что каждое расширение снимка отбирает у людей личную копию их
+# собственного подписанного дня.
+#
+# Версия 2 добавила к людям уровень должности — поле ДОБАВИЛА, ничего не сдвинув,
+# поэтому первая раскладка читается тем же кодом. Версия, которая что-то
+# переставит или переименует, из этого множества выпадет, и читателя придётся
+# учить ей осознанно — ровно тогда отказ и нужен.
+SUPPORTED_SCHEMA_VERSIONS = frozenset({1, SCHEMA_VERSION})
+
+
 def _assert_snapshot_schema_supported(snapshot):
     """Отказ на неподдерживаемом снимке ДО генерации и ДО журнала.
 
-    Сравнение с КОНСТАНТОЙ схемы и по точному типу: isinstance пропустил бы
-    True как единицу, и файл собрался бы по чужой раскладке, ничего об этом
-    не сказав.
+    Сравнение по точному типу: isinstance пропустил бы True как единицу, и файл
+    собрался бы по чужой раскладке, ничего об этом не сказав.
     """
     schema_version = snapshot.get("schema_version")
-    if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
+    if type(schema_version) is not int or schema_version not in (
+        SUPPORTED_SCHEMA_VERSIONS
+    ):
         raise DomainError(
             "SNAPSHOT_SCHEMA_UNSUPPORTED",
             422,
             detail={
                 "schema_version": repr(schema_version),
-                "supported": SCHEMA_VERSION,
+                "supported": sorted(SUPPORTED_SCHEMA_VERSIONS),
             },
             message="Снимок сдачи имеет неподдерживаемую версию схемы.",
         )
