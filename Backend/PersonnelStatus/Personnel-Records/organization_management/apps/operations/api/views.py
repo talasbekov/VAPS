@@ -43,6 +43,7 @@ from organization_management.apps.operations.api.serializers import (
     OpsDailySubmissionSerializer,
     OpsAuditLogSerializer,
     OpsEmployeeStatusSerializer,
+    OpsNotificationSerializer,
     PermissionSerializer,
     RoleSerializer,
     SecondmentCreateSerializer,
@@ -94,6 +95,7 @@ from organization_management.apps.operations.selectors import (
     DailySubmissionSelector,
     DivisionTreeSelector,
     OpsAuditLogSelector,
+    OpsNotificationSelector,
     StaffUnitSelector,
 )
 from organization_management.apps.operations.services import (
@@ -1631,6 +1633,80 @@ class AuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 message="Запись журнала не найдена.",
             )
         return Response(OpsAuditLogSerializer(entry).data)
+
+
+class NotificationViewSet(viewsets.ViewSet):
+    """Личная лента уведомлений раздела.
+
+    GET /api/operations/notifications/ — свои уведомления, свежие сверху
+
+    ГЕЙТ — АУТЕНТИФИКАЦИЯ, А НЕ КОД ПРАВА (как у my-permissions). Право
+    отвечало бы на вопрос «кому можно читать уведомления», а вопрос здесь
+    другой — ЧЬИ; и на него отвечает безусловный фильтр по получателю в
+    селекторе. Заведи мы код `notifications.view`, он раздавался бы всем без
+    исключения и создавал бы ложное впечатление, будто чью-то ленту можно
+    открыть, не имея его.
+
+    ТОЛЬКО СПИСОК И ТОЛЬКО GET. Держит это, как и у журнала, ОТСУТСТВИЕ
+    действий: нет retrieve/create/update/destroy — роутер их не маршрутизирует,
+    и пишущий глагол получает 405 раньше, чем гейт успел бы ответить сбивающим
+    с толку 403. Отметка прочтения появится отдельным действием, и это будет
+    видно в коде, а не спрятано за списком глаголов.
+
+    Это ВТОРЫЕ уведомления проекта и они о другом: старые несут готовый текст
+    и адресуют FK на пользователя, здесь лежит факт раздела с получателем-
+    строкой. Ни их маршруты, ни их экраны не тронуты.
+
+    Отличия от источника: маршрут живёт под /api/operations/ (в источнике —
+    отдельное приложение с собственным /api/notifications/); `since`
+    разбирается общим для раздела `_parse_datetime_param`, а он, в отличие от
+    DateTimeField сериализатора, отвергает НАИВНОЕ время — тем же доводом, что
+    и окно журнала.
+    """
+
+    # Ради схемы: документирует limit/offset (см. TemporaryDutyViewSet) — и,
+    # в отличие от соседних списков, ЕДИНОЛИЧНО описывает страничную обёртку
+    # ответа. paginated_response_schema() здесь не вызывается намеренно: проба
+    # показала, что при объявленном pagination_class spectacular выводит тот же
+    # компонент Paginated…List сам, и ручной вызов оказывается вторым
+    # владельцем одного и того же — снять можно любого из двух, схема не
+    # шелохнётся, то есть ни один из них не удержан тестом. У соседей эта пара
+    # стоит с самого начала; разбирать её — отдельная уборка, а заводить здесь
+    # третью копию незачем.
+    pagination_class = DefaultPagination
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "since",
+                OpenApiTypes.DATETIME,
+                description=(
+                    "Курсор опроса: строго новее указанного момента "
+                    "(ISO 8601 с зоной)."
+                ),
+            ),
+        ],
+        responses=OpsNotificationSerializer(many=True),
+        description=(
+            "Собственные уведомления вызывающего — чужие недостижимы: фильтр "
+            "по получателю накладывает селектор безусловно. `since` — СТРОГАЯ "
+            "нижняя граница: строка, на которой стоит курсор, второй раз не "
+            "придёт. Порядок задаёт сервер: свежие первыми, при равном времени "
+            "(догон рассылает день одним проходом) — по возрастанию id."
+        ),
+    )
+    def list(self, request, *args, **kwargs):
+        actor_id = resolve_actor_id(request)
+        if not actor_id:
+            raise PermissionDenied("PERMISSION_DENIED")
+        queryset = OpsNotificationSelector.list(
+            actor_id, since=_parse_datetime_param(request, "since")
+        )
+        paginator = DefaultPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        return paginator.get_paginated_response(
+            OpsNotificationSerializer(page, many=True).data
+        )
 
 
 class DailySubmissionViewSet(RequirePermissionMixin, viewsets.ViewSet):

@@ -10,6 +10,7 @@ from organization_management.apps.operations.api.views import (
     DailySubmissionViewSet,
     DailySummaryViewSet,
     MyPermissionsViewSet,
+    NotificationViewSet,
     PermissionViewSet,
     RoleViewSet,
     SecondmentViewSet,
@@ -44,6 +45,9 @@ router.register(
 )
 router.register("traffic-light", TrafficLightViewSet, basename="ops-traffic-light")
 router.register("audit-logs", AuditLogViewSet, basename="ops-audit-log")
+router.register(
+    "notifications", NotificationViewSet, basename="ops-notification"
+)
 router.register("my-permissions", MyPermissionsViewSet, basename="ops-my-permissions")
 
 urlpatterns = router.urls
