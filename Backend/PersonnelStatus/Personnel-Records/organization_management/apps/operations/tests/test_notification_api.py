@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from rest_framework.test import APIClient
 
+from organization_management.apps.operations import clock
 from organization_management.apps.operations.models_notification import OpsNotification
 from organization_management.apps.operations.notify_service import notify
 from organization_management.apps.operations.tests.test_bulk_status_api import (
@@ -277,3 +278,111 @@ def test_there_is_no_detail_route():
     mine = send(actor)
 
     assert api.get(f"{URL}{mine.id}/").status_code == 404
+
+
+# ── POST .../{id}/read/ — отметка прочитанным ────────────────────────────
+
+
+def read_url(notification_id):
+    return f"{URL}{notification_id}/read/"
+
+
+def test_marking_read_is_refused_without_an_identity():
+    api, me = reader()
+    row = send(me)
+
+    assert APIClient().post(read_url(row.pk)).status_code == 403
+
+
+def test_the_owner_marks_it_read_and_gets_the_moment_back():
+    api, me = reader()
+    row = send(me)
+
+    with clock.override(T0):
+        response = api.post(read_url(row.pk))
+
+    assert response.status_code == 200
+    assert response.data["read_at"] is not None
+    row.refresh_from_db()
+    assert row.read_at == T0
+
+
+def test_a_repeat_call_answers_the_same_way_instead_of_signalling_a_conflict():
+    """Действие идемпотентно, и отдельного кода на повтор нет: клиент, у
+    которого экран открыт дважды, не должен разбирать «уже прочитано» как
+    ошибку."""
+    api, me = reader()
+    row = send(me)
+
+    with clock.override(T0):
+        first = api.post(read_url(row.pk))
+    with clock.override(T0 + timedelta(hours=3)):
+        second = api.post(read_url(row.pk))
+
+    assert first.status_code == second.status_code == 200
+    assert first.data["read_at"] == second.data["read_at"]
+
+
+def test_a_foreign_notification_is_not_found_rather_than_forbidden():
+    """404, а не 403: ответ «нельзя» подтвердил бы, что такое уведомление есть,
+    и что оно адресовано кому-то другому.
+
+    Чужая строка при этом ЕДИНСТВЕННАЯ в таблице — иначе 404 объяснялся бы
+    пустой выборкой, а не областью видимости.
+    """
+    api, me = reader()
+    theirs = send("someone-else")
+
+    assert OpsNotification.objects.count() == 1
+    assert api.post(read_url(theirs.pk)).status_code == 404
+
+
+def test_a_foreign_notification_stays_unread():
+    api, me = reader()
+    theirs = send("someone-else")
+
+    api.post(read_url(theirs.pk))
+
+    theirs.refresh_from_db()
+    assert theirs.read_at is None
+
+
+@pytest.mark.parametrize("junk", ["abc", "999999", "1.5"])
+def test_junk_and_missing_ids_answer_the_same_way(junk):
+    api, me = reader()
+    send(me)
+
+    assert api.post(read_url(junk)).status_code == 404
+
+
+def test_the_moment_is_set_by_the_server_and_not_by_the_body():
+    """Момент, присланный клиентом, позволил бы датировать прочтение задним
+    числом — и «что нового с последнего захода» стало бы управляемым снаружи."""
+    api, me = reader()
+    row = send(me)
+    forged = (T0 - timedelta(days=30)).isoformat()
+
+    with clock.override(T0):
+        api.post(read_url(row.pk), {"read_at": forged}, format="json")
+
+    row.refresh_from_db()
+    assert row.read_at == T0
+
+
+def test_a_get_on_the_read_route_is_a_method_error():
+    api, me = reader()
+    row = send(me)
+
+    assert api.get(read_url(row.pk)).status_code == 405
+
+
+def test_marking_one_notification_leaves_the_rest_of_the_feed_unread():
+    api, me = reader()
+    first = send(me, day=DAY)
+    second = send(me, day=DAY - timedelta(days=1))
+
+    with clock.override(T0):
+        api.post(read_url(first.pk))
+
+    second.refresh_from_db()
+    assert second.read_at is None

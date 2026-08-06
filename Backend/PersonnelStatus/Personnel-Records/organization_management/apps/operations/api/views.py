@@ -93,6 +93,9 @@ from organization_management.apps.operations.document_storage import (
 from organization_management.apps.operations.document_service import (
     prepare_download,
 )
+from organization_management.apps.operations.notify_service import (
+    mark_read,
+)
 from organization_management.apps.operations.document_release import (
     issue_expense_document,
     reissue_expense_document,
@@ -1645,11 +1648,18 @@ class NotificationViewSet(viewsets.ViewSet):
     исключения и создавал бы ложное впечатление, будто чью-то ленту можно
     открыть, не имея его.
 
-    ТОЛЬКО СПИСОК И ТОЛЬКО GET. Держит это, как и у журнала, ОТСУТСТВИЕ
-    действий: нет retrieve/create/update/destroy — роутер их не маршрутизирует,
-    и пишущий глагол получает 405 раньше, чем гейт успел бы ответить сбивающим
-    с толку 403. Отметка прочтения появится отдельным действием, и это будет
-    видно в коде, а не спрятано за списком глаголов.
+    POST /api/operations/notifications/{id}/read/ — отметить прочитанным
+
+    ОБЩИХ ПИШУЩИХ ГЛАГОЛОВ НЕТ. Нет create/update/destroy — роутер их не
+    маршрутизирует, и такой глагол получает 405 раньше, чем гейт успел бы
+    ответить сбивающим с толку 403. Отметка прочтения — ИМЕНОВАННОЕ действие, и
+    это видно в коде, а не спрятано за списком глаголов: «прочитано» не правка
+    уведомления, а отдельный факт о читателе.
+
+    ОТМЕТКА ИДЁТ ПО СВОЕЙ ЖЕ ЛЕНТЕ. Строка ищется тем же селектором, что и
+    список, поэтому чужое уведомление здесь не «запрещено», а НЕ НАЙДЕНО: 404, и
+    он же на мусорный идентификатор. Ответить 403 значило бы подтвердить, что
+    такое уведомление есть, и кому оно адресовано.
 
     Это ВТОРЫЕ уведомления проекта и они о другом: старые несут готовый текст
     и адресуют FK на пользователя, здесь лежит факт раздела с получателем-
@@ -1663,6 +1673,7 @@ class NotificationViewSet(viewsets.ViewSet):
     """
 
     pagination_class = DefaultPagination
+    http_method_names = ["get", "post", "options"]
 
     @extend_schema(
         parameters=[
@@ -1695,6 +1706,37 @@ class NotificationViewSet(viewsets.ViewSet):
         page = paginator.paginate_queryset(queryset, request)
         return paginator.get_paginated_response(
             OpsNotificationSerializer(page, many=True).data
+        )
+
+    @extend_schema(
+        request=None,
+        responses=OpsNotificationSerializer,
+        description=(
+            "Отметить СВОЁ уведомление прочитанным. Пишется момент ПЕРВОГО "
+            "прочтения: повторный вызов его не двигает и отвечает той же "
+            "строкой (действие идемпотентно, отдельного кода на повтор нет). "
+            "Тела у запроса нет — момент ставит сервер, и присланный клиентом "
+            "он позволил бы датировать прочтение задним числом. 403 — нет "
+            "идентичности; 404 — уведомление чужое или его нет."
+        ),
+    )
+    @action(detail=True, methods=["post"])
+    def read(self, request, pk=None, *args, **kwargs):
+        actor_id = resolve_actor_id(request)
+        if not actor_id:
+            raise PermissionDenied("PERMISSION_DENIED")
+        notification = OpsNotificationSelector.get(actor_id, pk)
+        if notification is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"notification_id": str(pk)},
+                message="Уведомление не найдено.",
+            )
+        return Response(
+            OpsNotificationSerializer(
+                mark_read(notification, actor=actor_id)
+            ).data
         )
 
 

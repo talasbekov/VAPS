@@ -754,6 +754,25 @@ class OpsNotificationSelector:
             queryset = queryset.filter(created_at__gt=since)
         return queryset.order_by("-created_at", "id")
 
+    @staticmethod
+    def get(actor, notification_id):
+        """Своё уведомление по идентификатору, или None.
+
+        Идёт ЧЕРЕЗ list(), а не мимо: область видимости у ленты одна, и второй
+        путь к строке рано или поздно разошёлся бы с первым — а разойтись он мог
+        бы только в одну сторону, отдав чужое. Поэтому чужая строка здесь не
+        «не отдаётся», а недостижима: запроса, который её вернёт, не существует.
+
+        Разбор идентификатора ДО запроса — как у вложений: pk приходит из адреса
+        строкой произвольного вида, и ушедший в фильтр как есть он поднял бы
+        исключение из драйвера базы, то есть 500 вместо 404.
+        """
+        try:
+            canonical = int(str(notification_id).strip())
+        except (TypeError, ValueError):
+            return None
+        return OpsNotificationSelector.list(actor).filter(pk=canonical).first()
+
 
 class OpsAttachmentSelector:
     """Чтение вложений — как document_service единственный канал их записи.
