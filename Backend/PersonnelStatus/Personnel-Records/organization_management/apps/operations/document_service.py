@@ -31,7 +31,13 @@ from django.db import transaction
 
 from organization_management.apps.operations import audit_service, document_storage
 from organization_management.apps.operations.exceptions import DomainError
-from organization_management.apps.operations.models_document import OpsAttachment
+from organization_management.apps.operations.models_document import (
+    OpsAttachment,
+    OpsDocumentSequence,
+)
+from organization_management.apps.operations.selectors import (
+    OpsDocumentSequenceSelector,
+)
 
 _CHUNK_SIZE = 64 * 1024
 _MAX_NAME_LENGTH = 255  # = OpsAttachment.original_name.max_length
@@ -148,3 +154,66 @@ def create_attachment(*, source, original_name, content_type, actor):
         final_path.unlink(missing_ok=True)
         raise
     return attachment
+
+
+# ── Выдача исходящего номера ─────────────────────────────────────────────
+
+_DOC_TYPE_MAX_LENGTH = 50  # = OpsDocumentSequence.doc_type.max_length
+_YEAR_MIN, _YEAR_MAX = 2000, 2200  # зеркало chk_ops_document_sequence_year_range
+
+
+def allocate_number(*, doc_type, year):
+    """Выдать следующий исходящий номер для пары (вид, год).
+
+    КОНТРАКТ ВЫЗОВА, и он же — вся механика «откат без дырки»:
+
+    - зовётся ВНУТРИ транзакции того, кто выпускает документ; своей не
+      открывает. Построчный замок держится до коммита ВЫЗЫВАЮЩЕГО, поэтому
+      откат снимает и инкремент: следующий выпуск возьмёт тот же номер.
+      Собственная транзакция здесь всё сломала бы ровно наоборот — она
+      закоммитила бы инкремент отдельно от выпуска, и отказ после аллокации
+      съедал бы номер, то есть вернула бы поведение последовательности базы,
+      от которого мы и ушли;
+    - строка счётчика заводится через get_or_create ДО перечитки под замком.
+      Django оборачивает вставку в точку сохранения, и проигравшая гонку
+      транзакция откатывает ТОЛЬКО её, повторяя чтение — внешняя транзакция не
+      отравлена, наружу IntegrityError не летит;
+    - объект из get_or_create НЕ залочен, и перечитка обязательна. Пропусти её
+      — два потока прочтут одно значение, оба запишут +1, и один номер уйдёт в
+      два документа.
+
+    Год подаёт вызывающий: «какой год у документа» — его политика, а не
+    показание часов (документ за 31 декабря выпускают 1 января). Нарушение
+    контракта входов — ValueError: это дефект вызывающего кода, а не ситуация
+    данных, и HTTP-границы здесь нет.
+
+    Возвращается голое целое. Как номер печатается в документе — дело
+    печатающего; счётчик знает только «сколько выдано».
+    """
+    if not isinstance(doc_type, str):
+        raise ValueError("allocate_number: вид документа должен быть строкой")
+    cleaned = doc_type.strip()
+    if not cleaned:
+        raise ValueError("allocate_number: вид документа пуст")
+    if len(cleaned) > _DOC_TYPE_MAX_LENGTH:
+        raise ValueError(
+            f"allocate_number: вид документа длиннее {_DOC_TYPE_MAX_LENGTH} символов"
+        )
+    # Отдельного гварда на bool здесь нет намеренно: True и False — подклассы
+    # int, но приходят как 1 и 0, а обе величины лежат ВНЕ допустимого
+    # диапазона годов и отвергаются проверкой ниже. Второй владелец одного
+    # правила дал бы вакуумную пробу — его снятие ничего не краснит.
+    if not isinstance(year, int):
+        raise ValueError("allocate_number: год должен быть целым")
+    if not _YEAR_MIN <= year <= _YEAR_MAX:
+        raise ValueError(
+            f"allocate_number: год вне диапазона {_YEAR_MIN}..{_YEAR_MAX}"
+        )
+
+    OpsDocumentSequence.objects.get_or_create(
+        doc_type=cleaned, year=year, defaults={"last_number": 0}
+    )
+    row = OpsDocumentSequenceSelector.lock(doc_type=cleaned, year=year)
+    row.last_number += 1
+    row.save(update_fields=["last_number", "updated_at"])
+    return row.last_number
