@@ -17,6 +17,9 @@ from organization_management.apps.operations.models import (
     UserRole,
 )
 from organization_management.apps.operations.models_audit import OpsAuditLog
+from organization_management.apps.operations.models_notification import (
+    OpsNotification,
+)
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     Secondment,
@@ -473,6 +476,38 @@ class OpsAuditLogSerializer(serializers.ModelSerializer):
             "reason",
             "created_at",
         ]
+
+
+class OpsNotificationSerializer(serializers.ModelSerializer):
+    """Уведомление раздела как его видит получатель.
+
+    Плоская проекция ФАКТА: вид, деловая дата и данные. Слов здесь нет и не
+    будет — их складывает читающий экран (см. модель), и переписать
+    формулировку можно не трогая историю. payload отдаётся КАК ЕСТЬ: он уже
+    плоский и JSON-безопасный, а разложив его на поля, вьюха завела бы второе
+    представление факта, разъезжающееся с первым при первом же новом виде.
+
+    read_at отдаётся, хотя проставить его пока нечем: «прочитано» — это
+    МОМЕНТ, и лента без него не отличит новое от уже виденного. Отметка
+    прочтения — отдельный срез.
+    """
+
+    class Meta:
+        model = OpsNotification
+        fields = [
+            "id",
+            # Получатель — всегда сам читатель (лента личная), и всё же он в
+            # проекции: ответ обязан быть самодостаточным для того, кто читает
+            # его из журнала запросов или из выгрузки, где вопроса «чей это
+            # ответ» задать уже некому.
+            "recipient",
+            "kind",
+            "business_date",
+            "payload",
+            "read_at",
+            "created_at",
+        ]
+        read_only_fields = fields
 
 
 class TomorrowBlockOverrideCreateSerializer(serializers.Serializer):
