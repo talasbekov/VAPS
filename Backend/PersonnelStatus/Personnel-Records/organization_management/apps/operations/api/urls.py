@@ -9,6 +9,7 @@ from organization_management.apps.operations.api.views import (
     AuditLogViewSet,
     DailySubmissionViewSet,
     DailySummaryViewSet,
+    IssuedDocumentViewSet,
     MyPermissionsViewSet,
     NotificationViewSet,
     PermissionViewSet,
@@ -45,6 +46,9 @@ router.register(
 )
 router.register("traffic-light", TrafficLightViewSet, basename="ops-traffic-light")
 router.register("audit-logs", AuditLogViewSet, basename="ops-audit-log")
+router.register(
+    "documents", IssuedDocumentViewSet, basename="ops-document"
+)
 router.register(
     "notifications", NotificationViewSet, basename="ops-notification"
 )
