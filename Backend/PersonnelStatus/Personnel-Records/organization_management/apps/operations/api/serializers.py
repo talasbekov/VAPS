@@ -715,3 +715,41 @@ class StatusExtendSerializer(serializers.Serializer):
                 {"override_reason": "Обход конфликта требует причины."}
             )
         return attrs
+
+
+class StatusCreateSerializer(serializers.Serializer):
+    """Тело создания ОДНОГО статуса.
+
+    Существует ради того, чего массовый путь не умеет: ОБХОДА мягкого
+    пересечения. Пачка такой конфликт только сообщает — обхода у неё нет и не
+    предвидится (она валидирует все строки разом, и «обойти» пришлось бы
+    выборочно), и оператору некуда было идти: одиночного маршрута тоже не
+    существовало. Обход здесь тот же, что у правки, продления и разрешения
+    заглушки: флаг плюс непустая причина.
+
+    Сотрудник и тип приходят в теле и НЕизменяемы после создания: смена любого
+    из них — это другая строка (отменить и создать), а не правка.
+    """
+
+    employee_id = serializers.IntegerField()
+    status_type_code = serializers.CharField(max_length=50)
+    date_start = serializers.DateField()
+    date_end = serializers.DateField()
+    comment = serializers.CharField(required=False, allow_blank=True)
+    document_basis = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
+    override = serializers.BooleanField(required=False, default=False)
+    override_reason = serializers.CharField(
+        required=False, allow_blank=True, max_length=1000
+    )
+    amendment_reason = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
+
+    def validate(self, attrs):
+        if attrs.get("override") and not attrs.get("override_reason", "").strip():
+            raise serializers.ValidationError(
+                {"override_reason": "Обход конфликта требует причины."}
+            )
+        return attrs

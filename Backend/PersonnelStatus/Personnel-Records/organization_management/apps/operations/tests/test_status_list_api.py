@@ -343,13 +343,23 @@ def test_retrieve_garbage_id_404_envelope(types, division):
 
 # ── Поверхность метода ───────────────────────────────────────────────────
 
-def test_collection_post_is_not_served(types, division):
-    # Создание — только пачкой (/bulk/): POST на корень списка это промах
-    # поверхности (405), а не отказ в праве.
+def test_collection_post_is_served_and_validates_its_body(types, division):
+    """POST на корень списка теперь ОБСЛУЖИВАЕТСЯ — это создание одного статуса.
+
+    Раньше здесь стоял 405 с пояснением «создание — только пачкой». Это
+    противоречило самой пачке: её докстринг отправляет оператора разводить
+    мягкие пересечения «поштучно через create_status», а обхода у пачки нет и
+    маршрута к одиночному созданию не существовало — оператор упирался в тупик и
+    не мог записать статус вообще никак. Противоречие снято в пользу того, чтобы
+    работу можно было доделать (срез 123).
+
+    Пустое тело при этом — отказ ФОРМЫ (400), а не 405: маршрут есть, не хватает
+    полей.
+    """
     api, _ = client_for("lst-post", "ADMIN", ["*"])
     with clock.override(TODAY):
         response = api.post(URL, {}, format="json")
-    assert response.status_code == 405
+    assert response.status_code == 400
 
 
 def test_detail_delete_is_not_served(types, division):

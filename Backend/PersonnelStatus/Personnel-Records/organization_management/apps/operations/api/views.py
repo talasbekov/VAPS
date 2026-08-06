@@ -33,6 +33,7 @@ from organization_management.apps.operations.api.permissions import (
     resolve_actor_id,
 )
 from organization_management.apps.operations.api.serializers import (
+    StatusCreateSerializer,
     StatusCompleteSerializer,
     StatusExtendSerializer,
     NotificationReadAllSerializer,
@@ -139,6 +140,7 @@ from organization_management.apps.operations.secondment_service import (
     request_return as request_return_service,
 )
 from organization_management.apps.operations.status_service import (
+    create_status,
     complete_status_early,
     extend_status,
     cancel_status,
@@ -583,6 +585,7 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "retrieve": _READ_STATUS_PERMISSION,
         "bulk": _BULK_STATUS_PERMISSION,
         "partial_update": _BULK_STATUS_PERMISSION,
+        "create": _BULK_STATUS_PERMISSION,
         "cancel": _BULK_STATUS_PERMISSION,
         # Досрочное завершение и продление — такие же операторские правки
         # чужой строки, что отмена и PATCH: своего права им не заводится,
@@ -644,19 +647,31 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         права — PermissionDenied DRF → {detail}. Формы РАЗНЫЕ намеренно: оба
         403, и без различения тест одного зеленел бы от другого.
         """
+        self._assert_employee_in_scope(
+            request, status_row.employee_id, permission_code
+        )
+
+    def _assert_employee_in_scope(
+        self, request, employee_id, permission_code=_BULK_STATUS_PERMISSION
+    ):
+        """То же правило, но по СОТРУДНИКУ, а не по строке статуса.
+
+        Создание статуса адресует человека, а строки ещё нет; правка адресует
+        строку, но решает всё равно по её сотруднику. Владелец правила один —
+        иначе два места, считающие область, разойдутся ровно тогда, когда
+        правило поменяют в одном из них.
+        """
         allowed = PermissionService.visible_division_ids(
             resolve_actor_id(request), permission_code
         )
         if allowed is None:
             return
-        division_id = StaffUnitSelector.divisions_of([status_row.employee_id]).get(
-            status_row.employee_id
-        )
+        division_id = StaffUnitSelector.divisions_of([employee_id]).get(employee_id)
         if division_id not in allowed:
             raise DomainError(
                 "PERMISSION_DENIED",
                 403,
-                detail={"employee_id": str(status_row.employee_id)},
+                detail={"employee_id": str(employee_id)},
                 message="Сотрудник вне области видимости оператора.",
             )
 
@@ -840,6 +855,46 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             reason=form.validated_data["reason"],
         )
         return Response(OpsEmployeeStatusSerializer(cancelled).data)
+
+    @extend_schema(
+        request=StatusCreateSerializer,
+        responses={201: OpsEmployeeStatusSerializer},
+        description=(
+            "Создать ОДИН статус. Отдельно от массового пути ради того, чего тот "
+            "не умеет, — ОБХОДА мягкого пересечения: пачка о нём только "
+            "сообщает, и до этого маршрута оператору было некуда идти. "
+            "Обход — флаг плюс непустая причина, как у правки и продления. "
+            "400 — форма тела либо обход без причины; 403 — нет права "
+            "status.manage либо сотрудник вне области; 409 — мягкое "
+            "пересечение (обходится); 422 — жёсткое пересечение, интервал, "
+            "границы найма, предел длительности типа или задет сданный день "
+            "без причины."
+        ),
+    )
+    def create(self, request, *args, **kwargs):
+        form = StatusCreateSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        data = form.validated_data
+        # Область проверяется ПО СОТРУДНИКУ, как и у правки: чужого человека
+        # нельзя ни поправить, ни завести ему статус.
+        self._assert_employee_in_scope(request, data["employee_id"])
+        created = create_status(
+            employee_id=data["employee_id"],
+            status_type_code=data["status_type_code"],
+            date_start=data["date_start"],
+            date_end=data["date_end"],
+            # Автор — из контракта аутентификации, НИКОГДА из тела.
+            actor=resolve_actor_id(request),
+            comment=data.get("comment", ""),
+            document_basis=data.get("document_basis", ""),
+            override=data.get("override", False),
+            override_reason=data.get("override_reason", ""),
+            amendment_reason=data.get("amendment_reason", ""),
+        )
+        return Response(
+            OpsEmployeeStatusSerializer(created).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @extend_schema(
         parameters=[
