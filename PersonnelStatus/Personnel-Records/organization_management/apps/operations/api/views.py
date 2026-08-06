@@ -1687,6 +1687,11 @@ class NotificationViewSet(viewsets.ViewSet):
                     "(ISO 8601 с зоной)."
                 ),
             ),
+            OpenApiParameter(
+                "unread",
+                OpenApiTypes.BOOL,
+                description="true — только ещё не прочитанные.",
+            ),
         ],
         responses=OpsNotificationSerializer(many=True),
         description=(
@@ -1702,13 +1707,36 @@ class NotificationViewSet(viewsets.ViewSet):
         if not actor_id:
             raise PermissionDenied("PERMISSION_DENIED")
         queryset = OpsNotificationSelector.list(
-            actor_id, since=_parse_datetime_param(request, "since")
+            actor_id,
+            since=_parse_datetime_param(request, "since"),
+            unread=bool(_parse_bool_param(request, "unread")),
         )
         paginator = DefaultPagination()
         page = paginator.paginate_queryset(queryset, request)
         return paginator.get_paginated_response(
             OpsNotificationSerializer(page, many=True).data
         )
+
+    @extend_schema(
+        responses=extend_schema_serializer(many=False)(
+            inline_serializer(
+                name="NotificationUnreadCountResponse",
+                fields={"unread": serializers.IntegerField()},
+            )
+        ),
+        description=(
+            "Сколько своих уведомлений ещё не прочитано — по ВСЕЙ ленте, а не "
+            "по странице. Курсор `since` здесь не применяется: он про «что "
+            "нового с прошлого раза», а непрочитанное — состояние, и вчерашнее "
+            "неоткрытое ждёт сегодня ровно так же. 403 — нет идентичности."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="unread-count")
+    def unread_count(self, request, *args, **kwargs):
+        actor_id = resolve_actor_id(request)
+        if not actor_id:
+            raise PermissionDenied("PERMISSION_DENIED")
+        return Response({"unread": OpsNotificationSelector.unread_count(actor_id)})
 
     @extend_schema(
         request=NotificationReadAllSerializer,

@@ -722,7 +722,30 @@ class OpsNotificationSelector:
     """
 
     @staticmethod
-    def list(actor, *, since=None):
+    def unread_count(actor):
+        """Сколько своих уведомлений ещё не прочитано.
+
+        СЧЁТ ПО ВСЕЙ ЛЕНТЕ, а не по странице: значок «непрочитанных» отвечает на
+        вопрос «сколько меня ждёт», и посчитанный по выдаче он показывал бы «50»
+        при тысяче или «3» при тридцати — в зависимости от того, какую страницу
+        клиент попросил последней.
+
+        Курсор `since` сюда не передаётся, и это тоже решение: `since` — курсор
+        ОПРОСА («что нового с прошлого раза»), а непрочитанное — СОСТОЯНИЕ.
+        Уведомление, пришедшее вчера и не открытое, ждёт сегодня ровно так же,
+        и опрос, начавшийся сегодня, не делает его прочитанным.
+
+        Считает БАЗА (`count()`), а не питон: len(list(...)) вытащил бы всю
+        ленту в память ради одного числа.
+        """
+        if not isinstance(actor, str) or not actor.strip():
+            raise ValueError("OpsNotificationSelector.unread_count требует получателя")
+        return OpsNotification.objects.filter(
+            recipient=actor.strip(), read_at__isnull=True
+        ).count()
+
+    @staticmethod
+    def list(actor, *, since=None, unread=False):
         """Свои уведомления `actor`, свежие сверху.
 
         `since` — СТРОГАЯ нижняя граница по created_at (created_at > since):
@@ -738,6 +761,12 @@ class OpsNotificationSelector:
         лежит индекс ленты (recipient, -created_at, id), и разойтись с ним
         значило бы заставить базу пересортировывать каждую страницу.
 
+        `unread=True` оставляет только непрочитанные. Он НЕ заменяет `since` и
+        не пересекается с ним по смыслу: `since` спрашивает «что появилось
+        после того, как я смотрел», `unread` — «что я ещё не открыл». Строка,
+        пришедшая до курсора и не открытая, попадает во второй ответ и не
+        попадает в первый, и это не противоречие, а два разных вопроса.
+
         Пустой/не-строковый `actor` — ValueError, а не пустая выдача (зеркало
         гварда notify()): это ошибка вызывающего, и молча вернуть «ничего»
         значило бы выдать сбой несущего фильтра за законный пустой ответ.
@@ -752,6 +781,11 @@ class OpsNotificationSelector:
         queryset = OpsNotification.objects.filter(recipient=actor.strip())
         if since is not None:
             queryset = queryset.filter(created_at__gt=since)
+        if unread:
+            # Только непрочитанные. Флаг, а не отдельный метод: разрез тот же,
+            # порядок тот же, и второй метод разошёлся бы с этим на первой же
+            # правке сортировки.
+            queryset = queryset.filter(read_at__isnull=True)
         return queryset.order_by("-created_at", "id")
 
     @staticmethod
