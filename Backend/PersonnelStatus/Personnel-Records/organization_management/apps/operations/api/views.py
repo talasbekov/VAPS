@@ -33,6 +33,7 @@ from organization_management.apps.operations.api.permissions import (
     resolve_actor_id,
 )
 from organization_management.apps.operations.api.serializers import (
+    NotificationReadAllSerializer,
     DocumentReissueSerializer,
     DocumentReleaseSerializer,
     OpsIssuedDocumentSerializer,
@@ -94,6 +95,7 @@ from organization_management.apps.operations.document_service import (
     prepare_download,
 )
 from organization_management.apps.operations.notify_service import (
+    mark_all_read,
     mark_read,
 )
 from organization_management.apps.operations.document_release import (
@@ -1707,6 +1709,34 @@ class NotificationViewSet(viewsets.ViewSet):
         return paginator.get_paginated_response(
             OpsNotificationSerializer(page, many=True).data
         )
+
+    @extend_schema(
+        request=NotificationReadAllSerializer,
+        responses=extend_schema_serializer(many=False)(
+            inline_serializer(
+                name="NotificationReadAllResponse",
+                fields={"marked": serializers.IntegerField()},
+            )
+        ),
+        description=(
+            "Отметить прочитанными все свои непрочитанные и вернуть их число. "
+            "`until` — верхняя граница по времени появления, включительно: "
+            "клиент отмечает то, что ВИДЕЛ, а прилетевшее между открытием "
+            "ленты и нажатием иначе оказалось бы прочитанным, не будучи "
+            "показанным. Без `until` отмечается вся лента. Уже прочитанные не "
+            "трогаются — их моменты остаются прежними. 400 — нечитаемый "
+            "`until`; 403 — нет идентичности."
+        ),
+    )
+    @action(detail=False, methods=["post"], url_path="read-all")
+    def read_all(self, request, *args, **kwargs):
+        actor_id = resolve_actor_id(request)
+        if not actor_id:
+            raise PermissionDenied("PERMISSION_DENIED")
+        form = NotificationReadAllSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        marked = mark_all_read(actor_id, until=form.validated_data.get("until"))
+        return Response({"marked": marked})
 
     @extend_schema(
         request=None,
