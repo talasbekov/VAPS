@@ -2637,10 +2637,85 @@ class IssuedDocumentViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """
 
     permission_map = {
+        "list": _DOCUMENT_VIEW_PERMISSION,
+        "retrieve": _DOCUMENT_VIEW_PERMISSION,
         "release": _GENERATE_REPORT_PERMISSION,
         "reissue": _GENERATE_REPORT_PERMISSION,
     }
-    http_method_names = ["post", "options"]
+    http_method_names = ["get", "post", "options"]
+    pagination_class = DefaultPagination
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "division_id",
+                OpenApiTypes.INT,
+                description="Подразделение и его поддерево.",
+            ),
+            OpenApiParameter(
+                "date_from", OpenApiTypes.DATE, description="Начало периода."
+            ),
+            OpenApiParameter(
+                "date_to", OpenApiTypes.DATE, description="Конец периода."
+            ),
+            OpenApiParameter(
+                "history",
+                OpenApiTypes.BOOL,
+                description=(
+                    "true — вместе с отозванными; по умолчанию только "
+                    "действующие."
+                ),
+            ),
+        ],
+        responses=OpsIssuedDocumentSerializer(many=True),
+        description=(
+            "Реестр выпущенных документов под правом document.view. По "
+            "умолчанию видны только действующие, отозванные — по флагу. "
+            "Период включителен с обеих сторон. Запрос чужого подразделения — "
+            "403, а не пустой список. Порядок задаёт сервер: свежий день "
+            "первым, внутри дня старший номер. 400 — нечитаемый параметр."
+        ),
+    )
+    def list(self, request, *args, **kwargs):
+        division_id = _parse_int_param(request, "division_id")
+        # Область сужает выборку ВСЕГДА, даже без division_id — тот же общий
+        # резолвер, что у списков статусов и сдач.
+        scope = _resolve_division_scope(
+            request, division_id, _DOCUMENT_VIEW_PERMISSION
+        )
+        rows = OpsIssuedDocumentSelector.list(
+            scope=scope,
+            division_id=division_id,
+            date_from=_parse_date_param(request, "date_from"),
+            date_to=_parse_date_param(request, "date_to"),
+            history=bool(_parse_bool_param(request, "history")),
+        )
+        paginator = DefaultPagination()
+        page = paginator.paginate_queryset(rows, request)
+        return paginator.get_paginated_response(
+            OpsIssuedDocumentSerializer(page, many=True).data
+        )
+
+    @extend_schema(
+        responses=OpsIssuedDocumentSerializer,
+        description=(
+            "Один выпуск под правом document.view. Чужое подразделение — 403; "
+            "мусорный и несуществующий идентификатор — одинаково 404."
+        ),
+    )
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        issued = OpsIssuedDocumentSelector.get(pk)
+        if issued is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"document_id": str(pk)},
+                message="Выпуск не найден.",
+            )
+        _assert_division_in_scope(
+            request, issued.division_id, _DOCUMENT_VIEW_PERMISSION, field="id"
+        )
+        return Response(OpsIssuedDocumentSerializer(issued).data)
 
     @extend_schema(
         request=DocumentReleaseSerializer,

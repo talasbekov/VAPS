@@ -817,6 +817,66 @@ class OpsIssuedDocumentSelector:
     """
 
     @staticmethod
+    def list(
+        *,
+        scope=None,
+        division_id=None,
+        date_from=None,
+        date_to=None,
+        history=False,
+    ):
+        """Реестр выпусков с ПОЛНЫМ порядком.
+
+        scope=None область не сужает (безобластной грант или подстановочный) —
+        общий уговор списков раздела: двум ответам на вопрос «что мне видно»
+        расходиться незачем.
+
+        ПО УМОЛЧАНИЮ ТОЛЬКО ДЕЙСТВУЮЩИЕ. Реестр отвечает на вопрос «какие
+        документы сейчас в силе», и отозванные вперемешку с ними превратили бы
+        его в ленту, где на один день приходится три строки и не видно, какая из
+        них настоящая. История доступна флагом — она нужна, но по запросу.
+
+        Порядок: свежий день первым, внутри дня — старший номер, id последним
+        разрывом ничьей. Без последнего ключа страничная выдача теряет и
+        дублирует строки: номер уникален внутри (вид, год), а список идёт по
+        всем годам сразу.
+
+        Период задаётся включительно с обеих сторон: «с 1 по 31 августа» в
+        обиходе означает и первое, и тридцать первое, и полуоткрытый интервал
+        молча терял бы последний день месяца.
+        """
+        queryset = OpsIssuedDocument.objects.select_related("attachment", "supersedes")
+        if scope is not None:
+            queryset = queryset.filter(division_id__in=scope)
+        if division_id is not None:
+            queryset = queryset.filter(division_id=division_id)
+        if date_from is not None:
+            queryset = queryset.filter(business_date__gte=date_from)
+        if date_to is not None:
+            queryset = queryset.filter(business_date__lte=date_to)
+        if not history:
+            queryset = queryset.filter(status=OpsIssuedDocument.Status.ISSUED)
+        return queryset.order_by("-business_date", "-number", "id")
+
+    @staticmethod
+    def get(document_id):
+        """Выпуск по идентификатору из адреса; мусор и пропажа — одинаково None.
+
+        Разбор ДО запроса — по той же причине, что у вложений: идентификатор
+        приходит строкой произвольного вида, и ушедший в фильтр как есть он
+        поднимает исключение из драйвера базы, то есть 500 вместо 404.
+        """
+        try:
+            canonical = int(str(document_id).strip())
+        except (TypeError, ValueError):
+            return None
+        return (
+            OpsIssuedDocument.objects.select_related("attachment", "supersedes")
+            .filter(pk=canonical)
+            .first()
+        )
+
+    @staticmethod
     def for_attachment(attachment):
         """Выпуск, которому принадлежат эти байты, или None.
 
