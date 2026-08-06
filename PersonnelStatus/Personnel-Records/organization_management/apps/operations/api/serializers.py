@@ -7,6 +7,7 @@
 честный 400 с указанием поля. Идентичность (created_by/actor) в тело запроса
 не входит намеренно — она берётся из контракта аутентификации.
 """
+from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
 
 from organization_management.apps.operations.models import (
@@ -634,3 +635,39 @@ class OpsIssuedDocumentSerializer(serializers.ModelSerializer):
             "created_by",
             "created_at",
         ]
+
+
+class NotificationReadAllSerializer(serializers.Serializer):
+    """Тело массовой отметки: необязательная верхняя граница.
+
+    Граница НЕОБЯЗАТЕЛЬНА намеренно: «прочитать всё» — законное намерение, и
+    требовать от клиента момент значило бы заставлять его выдумывать «сейчас»,
+    то есть читать часы на своей стороне. Но когда граница подана, она несёт
+    смысл — «всё, что я ВИДЕЛ», — и потому это отдельное поле, а не умолчание
+    сервера.
+
+    ЗОНА ОБЯЗАТЕЛЬНА, тем же доводом, что и у курсора ленты: наивный
+    «2026-08-05T12:00» в поясе +05 сдвигает границу на пять часов, и человек,
+    отметивший «всё, что видел», прочитал бы вдобавок то, чего не видел.
+
+    Разбор идёт по СЫРОЙ строке, а не через DateTimeField: тот молча достраивает
+    наивный момент текущей зоной проекта — то есть делает ровно то, чего мы
+    здесь не хотим, и делает молча. Это тот же разбор, что у `since` в query,
+    и двум границам раздела расходиться в этом незачем.
+    """
+
+    until = serializers.CharField(required=False, allow_null=True)
+
+    def validate_until(self, value):
+        if value in (None, ""):
+            return None
+        parsed = parse_datetime(value)
+        if parsed is None:
+            raise serializers.ValidationError(
+                "Ожидается момент в формате ISO 8601 с указанием зоны."
+            )
+        if parsed.utcoffset() is None:
+            raise serializers.ValidationError(
+                "Укажите часовой пояс (например, +05:00 или Z)."
+            )
+        return parsed

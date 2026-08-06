@@ -386,3 +386,144 @@ def test_marking_one_notification_leaves_the_rest_of_the_feed_unread():
 
     second.refresh_from_db()
     assert second.read_at is None
+
+
+# ── POST .../read-all/ — массовая отметка ────────────────────────────────
+
+READ_ALL_URL = f"{URL}read-all/"
+
+
+def test_read_all_is_refused_without_an_identity():
+    assert APIClient().post(READ_ALL_URL).status_code == 403
+
+
+def test_read_all_marks_the_whole_feed_and_reports_how_many():
+    api, me = reader()
+    send(me, day=DAY)
+    send(me, day=DAY - timedelta(days=1))
+    send(me, day=DAY - timedelta(days=2))
+
+    with clock.override(T0):
+        response = api.post(READ_ALL_URL)
+
+    assert response.status_code == 200
+    assert response.data["marked"] == 3
+    assert OpsNotification.objects.filter(
+        recipient=me, read_at__isnull=True
+    ).count() == 0
+
+
+def test_read_all_never_touches_another_persons_feed():
+    api, me = reader()
+    send(me)
+    theirs = send("someone-else")
+
+    with clock.override(T0):
+        assert api.post(READ_ALL_URL).data["marked"] == 1
+
+    theirs.refresh_from_db()
+    assert theirs.read_at is None
+
+
+def test_already_read_notifications_keep_their_original_moment():
+    """Безусловное обновление сдвинуло бы вперёд всю историю прочтения.
+
+    Часы между двумя отметками РАЗНЫЕ — под одними и теми же «момент не
+    сдвинулся» выполнялось бы само собой.
+    """
+    api, me = reader()
+    old = send(me, day=DAY - timedelta(days=1))
+    with clock.override(T0):
+        api.post(read_url(old.pk))
+    fresh = send(me, day=DAY)
+
+    later = T0 + timedelta(hours=4)
+    with clock.override(later):
+        response = api.post(READ_ALL_URL)
+
+    old.refresh_from_db()
+    fresh.refresh_from_db()
+    assert response.data["marked"] == 1
+    assert old.read_at == T0
+    assert fresh.read_at == later
+
+
+def test_the_boundary_leaves_what_arrived_after_it_unread():
+    """Несущий тест: между открытием ленты и нажатием прилетает уведомление.
+
+    Без границы оно оказалось бы прочитанным, не будучи показанным, — то есть
+    человек не узнал бы о нём никогда.
+    """
+    api, me = reader()
+    seen = send(me, day=DAY - timedelta(days=1), created_at=T0 - timedelta(minutes=5))
+    arrived_later = send(me, day=DAY, created_at=T0 + timedelta(minutes=5))
+
+    with clock.override(T0 + timedelta(hours=1)):
+        response = api.post(
+            READ_ALL_URL, {"until": T0.isoformat()}, format="json"
+        )
+
+    seen.refresh_from_db()
+    arrived_later.refresh_from_db()
+    assert response.data["marked"] == 1
+    assert seen.read_at is not None
+    assert arrived_later.read_at is None
+
+
+def test_the_boundary_includes_the_moment_itself():
+    """Обе конца принадлежат виденному: строго-меньше оставляло бы непрочитанной
+    ровно ту строку, по которой клиент и взял границу."""
+    api, me = reader()
+    on_the_edge = send(me, created_at=T0)
+
+    with clock.override(T0 + timedelta(hours=1)):
+        response = api.post(READ_ALL_URL, {"until": T0.isoformat()}, format="json")
+
+    on_the_edge.refresh_from_db()
+    assert response.data["marked"] == 1
+    assert on_the_edge.read_at is not None
+
+
+def test_an_empty_feed_reports_zero_instead_of_failing():
+    api, me = reader()
+
+    with clock.override(T0):
+        response = api.post(READ_ALL_URL)
+
+    assert response.status_code == 200
+    assert response.data["marked"] == 0
+
+
+def test_a_naive_boundary_is_refused():
+    """Наивный момент нечем достроить: в разделе нет единственно верного
+    способа приписать ему зону."""
+    api, me = reader()
+    send(me)
+
+    response = api.post(
+        READ_ALL_URL, {"until": "2026-08-05T12:00:00"}, format="json"
+    )
+
+    assert response.status_code == 400
+
+
+def test_read_all_costs_one_write_regardless_of_the_feed_length(
+    django_assert_max_num_queries,
+):
+    """Поштучная отметка дала бы число запросов, растущее с длиной ленты.
+
+    Лента копится неограниченно — догон шлёт по строке на день.
+    """
+    api, me = reader()
+    for offset in range(12):
+        send(me, day=DAY - timedelta(days=offset))
+
+    with clock.override(T0):
+        with django_assert_max_num_queries(6):
+            assert api.post(READ_ALL_URL).data["marked"] == 12
+
+
+def test_a_get_on_read_all_is_a_method_error():
+    api, me = reader()
+
+    assert api.get(READ_ALL_URL).status_code == 405
