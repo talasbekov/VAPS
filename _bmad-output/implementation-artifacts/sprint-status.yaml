@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-08-06 (20.5b → done)
+# last_updated: 2026-08-06 (20.6b → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -867,4 +867,5 @@ development_status:
   # accessor slice (20.6a) — computation already existed as a side effect
   # of StrengthReportService.compute(), this story just names/tests it.
   20-6a-сводка-по-статусам-селектор: done
+  20-6b-сводка-по-статусам-api: done
   epic-20-retrospective: optional

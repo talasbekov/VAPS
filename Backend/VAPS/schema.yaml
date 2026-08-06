@@ -3181,6 +3181,32 @@ paths:
                 items:
                   $ref: '#/components/schemas/StatusOnDateRow'
           description: ''
+  /api/operations/statuses/summary/:
+    get:
+      operationId: operations_statuses_summary_retrieve
+      description: Сводка по статусам (20.6a/FR-40) — 11 отчётных колонок, org-wide
+        (без division_id) или по поддереву. 400 отсутствует/невалидная/будущая дата;
+        403 нет status.view / scope на division_id; 404 подразделение не существует;
+        422 дата до начала данных.
+      parameters:
+      - in: query
+        name: business_date
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: division_id
+        schema:
+          type: string
+      tags:
+      - operations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusSummaryResponse'
+          description: ''
   /api/operations/statuses/types/:
     get:
       operationId: operations_statuses_types_list
@@ -6781,6 +6807,36 @@ components:
       - date_start
       - employee_id
       - status_type_code
+    StatusSummaryResponse:
+      type: object
+      properties:
+        business_date:
+          type: string
+          format: date
+        division_id:
+          type: string
+          format: uuid
+          nullable: true
+        staff_total:
+          type: integer
+        list_total:
+          type: integer
+        vacancies:
+          type: integer
+        attached:
+          type: integer
+        columns:
+          type: object
+          additionalProperties:
+            type: integer
+      required:
+      - attached
+      - business_date
+      - columns
+      - division_id
+      - list_total
+      - staff_total
+      - vacancies
     StatusTypeList:
       type: object
       description: |-

@@ -363,6 +363,13 @@ MATRIX = {
     # scope (ensure_division_scope) энфорсит вьюха, матрицей не проверяется
     # (payloadless GET держателя = 400 сериализатора = ALLOW по канону).
     "ops-status-calendar": _MethodGate({"get": "status.view"}),
+    # GET сводка по статусам, org-wide/поддерево (story 20.6b, FR-40).
+    # Грубый гейт RequirePermissionMixin {"summary": status.view}; условный
+    # per-запрос scope (ensure_division_scope, ТОЛЬКО если division_id
+    # задан) энфорсит вьюха, матрицей не проверяется (payloadless GET
+    # держателя = 400 сериализатора = ALLOW по канону — business_date
+    # обязателен).
+    "ops-status-summary": _MethodGate({"get": "status.view"}),
     # GET справочника статус-типов (story 10.1b2, combobox грида 10.2) —
     # глобальный (не подразделение-скоуповый) грубый гейт status.view.
     "ops-status-type-list": _Gate("status.view"),

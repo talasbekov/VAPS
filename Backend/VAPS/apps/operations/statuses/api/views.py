@@ -40,11 +40,13 @@ from apps.operations.statuses.api.serializers import (
     StatusMonthCalendarQuerySerializer,
     StatusOnDateQuerySerializer,
     StatusOnDateRowSerializer,
+    StatusSummaryFilterSerializer,
     StatusTypeListSerializer,
 )
 from apps.operations.statuses.models import StatusType
 from apps.operations.statuses.selectors import EmployeeStatusSelector
 from apps.operations.statuses.services import bulk_create_statuses
+from apps.operations.statuses.services.strength_report import compute_status_summary
 
 _BULK_PERMISSION = "status.manage"
 _VIEW_PERMISSION = "status.view"
@@ -88,6 +90,40 @@ def _ensure_division_exists(division_id):
         )
 
 
+def _assert_status_summary_has_data(business_date):
+    """422 REPORT_NO_DATA_FOR_DATE if *business_date* predates any known
+    data (ARCH-003 module-local mirror of submissions' ``assert_report_
+    data_has_data``/``report_data_horizon`` — statuses must not import
+    submissions, architecture.md#L587).
+
+    Review (Edge Case Hunter, 20.6b): without this guard, an early date
+    made ``resolve_status`` default every employee to IN_SERVICE — a
+    fabricated report indistinguishable from a genuinely fully-in-service
+    org, same class of bug ``report_data_horizon`` was written to close
+    (submissions 6.10a review D1). Both underlying selectors
+    (``EmployeeStatusSelector.earliest_start()``/``HistoricalEmployeeSelector.
+    earliest_history_start()``) already live in domains ``statuses`` may
+    read (statuses/core), so the horizon itself is duplicated locally
+    without touching ``submissions``."""
+    candidates = [
+        d
+        for d in (
+            EmployeeStatusSelector.earliest_start(),
+            HistoricalEmployeeSelector.earliest_history_start(),
+        )
+        if d is not None
+    ]
+    horizon = min(candidates, default=None)
+    if horizon is not None and business_date >= horizon:
+        return
+    raise DomainError(
+        "REPORT_NO_DATA_FOR_DATE",
+        422,
+        detail={"business_date": business_date.isoformat()},
+        message="Нет данных за эту дату.",
+    )
+
+
 class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """POST .../bulk/ — массовое создание статусов; GET .../on-date/ —
     живые статусы подразделения на дату (10.1b, преднабор «вчера»)."""
@@ -96,6 +132,7 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "bulk": _BULK_PERMISSION,
         "on_date": _VIEW_PERMISSION,
         "calendar": _VIEW_PERMISSION,
+        "summary": _VIEW_PERMISSION,
     }
     http_method_names = ["get", "post", "options"]
 
@@ -179,6 +216,81 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         employee_ids = roster.get(division_id, [])
         rows = EmployeeStatusSelector.overlapping_on(business_date, employee_ids)
         return Response(StatusOnDateRowSerializer(rows, many=True).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "business_date", str, OpenApiParameter.QUERY, required=True
+            ),
+            OpenApiParameter(
+                "division_id", str, OpenApiParameter.QUERY, required=False
+            ),
+        ],
+        responses={
+            200: inline_serializer(
+                name="StatusSummaryResponse",
+                fields={
+                    "business_date": serializers.DateField(),
+                    "division_id": serializers.UUIDField(allow_null=True),
+                    "staff_total": serializers.IntegerField(),
+                    "list_total": serializers.IntegerField(),
+                    "vacancies": serializers.IntegerField(),
+                    "attached": serializers.IntegerField(),
+                    "columns": serializers.DictField(child=serializers.IntegerField()),
+                },
+            )
+        },
+        description=(
+            "Сводка по статусам (20.6a/FR-40) — 11 отчётных колонок, "
+            "org-wide (без division_id) или по поддереву. 400 отсутствует/"
+            "невалидная/будущая дата; 403 нет status.view / scope на "
+            "division_id; 404 подразделение не существует; 422 дата до "
+            "начала данных."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="summary", url_name="summary")
+    def summary(self, request, *args, **kwargs):
+        form = StatusSummaryFilterSerializer(data=request.query_params)
+        form.is_valid(raise_exception=True)
+        business_date = form.validated_data["business_date"]
+        division_id = form.validated_data.get("division_id")
+
+        today = Clock.today_local()
+        if business_date > today:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={
+                    "business_date": business_date.isoformat(),
+                    "today": today.isoformat(),
+                },
+                message="Сводка не может уходить в будущее.",
+            )
+
+        # Scope сначала, existence — потом, дата-горизонт — последним
+        # (порядок 6.10a/on_date: держатель без scope на фантомный ID
+        # получает 403, не 404/422-oracle). division_id опционален
+        # (org-wide без него) — scope/existence гейт ТОЛЬКО когда
+        # конкретное управление запрошено (org-wide вызов гейтится только
+        # грубым status.view, зеркало 20.2b/20.3b's org-wide действий
+        # без division-scope).
+        if division_id is not None:
+            _ensure_division_scope(request.actor_id, _VIEW_PERMISSION, division_id)
+            _ensure_division_exists(division_id)
+        _assert_status_summary_has_data(business_date)
+
+        totals = compute_status_summary(business_date, division_id=division_id)
+        return Response(
+            {
+                "business_date": business_date.isoformat(),
+                "division_id": str(division_id) if division_id else None,
+                "staff_total": totals.staff_total,
+                "list_total": totals.list_total,
+                "vacancies": totals.vacancies,
+                "attached": totals.attached,
+                "columns": dict(totals.columns),
+            }
+        )
 
     @extend_schema(
         parameters=[

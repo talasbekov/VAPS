@@ -60,6 +60,15 @@ class StatusOnDateQuerySerializer(serializers.Serializer):
     business_date = serializers.DateField()
 
 
+class StatusSummaryFilterSerializer(serializers.Serializer):
+    """Story 20.6b — query-параметры GET /statuses/summary/. `division_id`
+    опционален (отсутствие → org-wide агрегат, зеркалит
+    compute_status_summary()'s собственную сигнатуру)."""
+
+    business_date = serializers.DateField()
+    division_id = serializers.UUIDField(required=False)
+
+
 class StatusOnDateRowSerializer(serializers.Serializer):
     """Плоская проекция живого статуса на дату — прямо из ``.values()``-словарей
     ``EmployeeStatusSelector.overlapping_on`` (не ORM-объекты)."""
