@@ -20,6 +20,9 @@ from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_notification import (
     OpsNotification,
 )
+from organization_management.apps.operations.models_document import (
+    OpsIssuedDocument,
+)
 from organization_management.apps.operations.models_status import (
     OpsEmployeeStatus,
     Secondment,
@@ -556,3 +559,78 @@ class SummaryRebuildSerializer(serializers.Serializer):
     business_date = serializers.DateField()
     reason = serializers.CharField(allow_blank=False, max_length=1000)
     sanction = serializers.CharField(allow_blank=False, max_length=255)
+
+
+class DocumentReleaseSerializer(serializers.Serializer):
+    """Тело выпуска расхода: подразделение и день.
+
+    Причины здесь нет: первый выпуск дня ничего не отменяет и объяснять ему
+    нечего. У замены она обязательна — и потому у замены своя форма, а не
+    необязательное поле в этой. Необязательное поле означало бы, что замену
+    можно попросить молча.
+
+    Выпускающий в тело не входит, как и везде в разделе: документ подписывает
+    тот, кто аутентифицирован, а не тот, кого назвали в JSON.
+    """
+
+    division_id = serializers.IntegerField()
+    business_date = serializers.DateField()
+
+
+class DocumentReissueSerializer(DocumentReleaseSerializer):
+    """Тело замены документа: то же плюс ОБЯЗАТЕЛЬНАЯ причина.
+
+    Непустота проверяется уже на форме — отказ по форме внятнее, чем отказ по
+    бизнес-правилу за то же самое. Сервис и база её всё равно проверяют:
+    маршрут не единственный вход, а последнюю линию держит база.
+    """
+
+    reason = serializers.CharField(allow_blank=False, max_length=1000)
+
+
+class OpsIssuedDocumentSerializer(serializers.ModelSerializer):
+    """Выпуск наружу: номер, день, состояние и метаданные файла.
+
+    Ключ хранения (storage_key) НАРУЖУ НЕ ВЫХОДИТ. Он и есть имя файла во
+    внутренней локации веб-сервера, и отданный клиенту превратил бы приватное
+    хранилище в адресуемое: скачивание пошло бы мимо права, мимо сверки
+    дайджеста и мимо журнала. Наружу едет идентификатор ВЛОЖЕНИЯ — по нему
+    маршрут скачивания и найдёт байты, проверив всё перечисленное.
+    """
+
+    attachment_id = serializers.IntegerField(read_only=True)
+    original_name = serializers.CharField(
+        source="attachment.original_name", read_only=True
+    )
+    content_type = serializers.CharField(
+        source="attachment.content_type", read_only=True
+    )
+    size = serializers.IntegerField(source="attachment.size", read_only=True)
+    sha256 = serializers.CharField(source="attachment.sha256", read_only=True)
+    supersedes_number = serializers.IntegerField(
+        source="supersedes.number", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        model = OpsIssuedDocument
+        fields = [
+            "id",
+            "doc_type",
+            "number",
+            "year",
+            "business_date",
+            "division_id",
+            "submission_id",
+            "submission_version",
+            "status",
+            "reason",
+            "supersedes",
+            "supersedes_number",
+            "attachment_id",
+            "original_name",
+            "content_type",
+            "size",
+            "sha256",
+            "created_by",
+            "created_at",
+        ]

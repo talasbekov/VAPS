@@ -33,6 +33,9 @@ from organization_management.apps.operations.api.permissions import (
     resolve_actor_id,
 )
 from organization_management.apps.operations.api.serializers import (
+    DocumentReissueSerializer,
+    DocumentReleaseSerializer,
+    OpsIssuedDocumentSerializer,
     AssignRoleRequestSerializer,
     BulkStatusCreateSerializer,
     DailySubmissionAmendSerializer,
@@ -80,6 +83,10 @@ from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.day_submission_service import (
     amend_day,
     submit_day,
+)
+from organization_management.apps.operations.document_release import (
+    issue_expense_document,
+    reissue_expense_document,
 )
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_status import (
@@ -2587,4 +2594,93 @@ class DailySummaryViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "missing": state.missing,
                 "unpinned": state.unpinned,
             }
+        )
+
+
+class IssuedDocumentViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Официальные документы раздела: выпуск и замена.
+
+    POST /api/operations/documents/release/
+    POST /api/operations/documents/reissue/
+
+    ПРАВО ТО ЖЕ, ЧТО У ВЫГРУЗКИ (daily_report.generate), и это осознанно: и
+    выгрузка, и выпуск показывают одни и те же числа одному и тому же кругу
+    лиц. Разница между ними не в том, КОМУ видно, а в том, что выпуск оставляет
+    след — номер, байты и строку журнала. Заводить отдельное право значило бы
+    обещать разграничение, которого по существу нет: тот, кто может выгрузить
+    расход, уже видел всё, что попадёт в документ.
+
+    ОБЛАСТЬ ПРОВЕРЯЕТСЯ ЯВНО, как у списков раздела: чужое подразделение — 403,
+    а не 404 и не молчаливый выпуск. Общий резолвер областей тот же, что у
+    статусов и сдач: двум ответам на вопрос «что мне доступно» расходиться
+    незачем.
+
+    Замена — свой маршрут, а не флаг у выпуска: у неё обязательная причина, и
+    необязательное поле в общем теле означало бы, что замену можно попросить
+    молча.
+    """
+
+    permission_map = {
+        "release": _GENERATE_REPORT_PERMISSION,
+        "reissue": _GENERATE_REPORT_PERMISSION,
+    }
+    http_method_names = ["post", "options"]
+
+    @extend_schema(
+        request=DocumentReleaseSerializer,
+        responses={201: OpsIssuedDocumentSerializer},
+        description=(
+            "Выпустить расход подразделения за день под правом "
+            "daily_report.generate: собираются байты, берётся исходящий номер, "
+            "пишется строка выпуска и две строки журнала. Выпускающий — из "
+            "аутентификации, не из тела. 400 — форма тела; 403 — чужое "
+            "подразделение или нет права; 404 — день не сдан; 409 — день уже "
+            "выпущен (замена — отдельный маршрут)."
+        ),
+    )
+    @action(detail=False, methods=["post"])
+    def release(self, request, *args, **kwargs):
+        form = DocumentReleaseSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        _assert_division_in_scope(
+            request, division_id, _GENERATE_REPORT_PERMISSION, field="division_id"
+        )
+        issued = issue_expense_document(
+            division_id=division_id,
+            business_date=form.validated_data["business_date"],
+            # Подпись — из контракта аутентификации, НИКОГДА из тела.
+            actor=resolve_actor_id(request),
+        )
+        return Response(
+            OpsIssuedDocumentSerializer(issued).data, status=status.HTTP_201_CREATED
+        )
+
+    @extend_schema(
+        request=DocumentReissueSerializer,
+        responses={201: OpsIssuedDocumentSerializer},
+        description=(
+            "Заменить действующий документ дня новым «взамен исходящего №…» "
+            "под правом daily_report.generate. Прежний помечается отозванным, "
+            "его байты и номер не трогаются. Причина обязательна. 400 — форма "
+            "тела; 403 — чужое подразделение или нет права; 404 — день не "
+            "сдан; 409 — день не выпускался."
+        ),
+    )
+    @action(detail=False, methods=["post"])
+    def reissue(self, request, *args, **kwargs):
+        form = DocumentReissueSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        _assert_division_in_scope(
+            request, division_id, _GENERATE_REPORT_PERMISSION, field="division_id"
+        )
+        issued = reissue_expense_document(
+            division_id=division_id,
+            business_date=form.validated_data["business_date"],
+            actor=resolve_actor_id(request),
+            reason=form.validated_data["reason"],
+        )
+        return Response(
+            OpsIssuedDocumentSerializer(issued).data, status=status.HTTP_201_CREATED
         )
