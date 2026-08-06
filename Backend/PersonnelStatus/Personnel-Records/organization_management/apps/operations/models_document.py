@@ -150,3 +150,119 @@ class OpsDocumentSequence(models.Model):
 
     def __str__(self):
         return f"{self.doc_type}/{self.year}: {self.last_number}"
+
+
+class OpsIssuedDocument(TimeStampedModel):
+    """Выпуск официального документа: номер, день, зафиксированные байты.
+
+    Одна строка — один выпуск. Содержимое её неизменно: поправка сдачи не
+    правит выпуск, а порождает НОВЫЙ «взамен исходящего №…», прежний уходит в
+    «заменён», и его байты не трогаются вовсе. Иначе предъявленный вчера
+    документ задним числом менял бы содержание, и спор о том, что было
+    подписано, стал бы неразрешим.
+
+    ССЫЛКИ НАРУЖУ — ПЛОСКИЕ ЦЕЛЫЕ, как и во всём переехавшем: division_id и
+    submission_id указывают в старую структуру, но не внешними ключами. PROTECT
+    ломал бы каскады старой структуры, а CASCADE удалил бы ВЫПУЩЕННЫЙ документ
+    вслед за перестройкой подразделения — то есть стёр бы исходящий номер.
+
+    ВНУТРИ ПРИЛОЖЕНИЯ — НАСТОЯЩИЕ ВНЕШНИЕ КЛЮЧИ, оба с PROTECT: байты
+    выпущенного документа удалить нельзя, и цепь «взамен» рваться не должна —
+    иначе «взамен исходящего №5» указывало бы в пустоту.
+
+    Отличия от источника: имя таблицы под ops_, целые ключи и плоские ссылки.
+    """
+
+    class Status(models.TextChoices):
+        ISSUED = "ISSUED", "Выпущен"
+        SUPERSEDED = "SUPERSEDED", "Заменён"
+
+    doc_type = models.CharField(max_length=50)
+    number = models.PositiveIntegerField()
+    year = models.PositiveIntegerField()
+    business_date = models.DateField()
+    division_id = models.IntegerField()
+    # Что именно зафиксировал выпуск: строка сдачи И её версия. Без версии
+    # ссылка указывала бы на «сдачу вообще», а поправка меняет её содержание —
+    # и документ перестал бы говорить, ЧТО он напечатал.
+    submission_id = models.PositiveBigIntegerField()
+    submission_version = models.PositiveIntegerField()
+    attachment = models.ForeignKey(
+        OpsAttachment, on_delete=models.PROTECT, related_name="issued_documents"
+    )
+    supersedes = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="superseded_by",
+    )
+    # БЕЗ дефолта: состояние всегда пишется явно, а молчаливое "" ловит CHECK.
+    status = models.CharField(max_length=20, choices=Status.choices)
+    # Причина выпуска: пустая у первого, непустая у выпуска поправленной сдачи.
+    reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "ops_issued_documents"
+        verbose_name = "Выпуск документа"
+        verbose_name_plural = "Выпуски документов"
+        constraints = [
+            # Номер уникален внутри (вид, год) — это и есть обещание счётчика,
+            # закреплённое базой. Счётчик может ошибиться (чужая правка строки
+            # мимо замка), уникальность — нет.
+            models.UniqueConstraint(
+                fields=["doc_type", "year", "number"],
+                name="uq_ops_issued_document_number",
+            ),
+            # НЕ БОЛЕЕ ОДНОГО действующего выпуска на (вид, подразделение, день).
+            # Частичное — по состоянию: заменённых на один день сколько угодно,
+            # это история, а действующий ровно один. Без условия ограничение
+            # запретило бы вторую версию вовсе, то есть запретило бы поправку.
+            models.UniqueConstraint(
+                fields=["doc_type", "division_id", "business_date"],
+                condition=models.Q(status="ISSUED"),
+                name="uq_ops_issued_document_current",
+            ),
+            # Словарь состояний держит БАЗА: choices проверяются только формами,
+            # а строки пишет сервис через .create() — то есть мимо.
+            models.CheckConstraint(
+                condition=models.Q(status__in=["ISSUED", "SUPERSEDED"]),
+                name="chk_ops_issued_document_status",
+            ),
+            # Замена без причины — молчаливая подмена документа. Указал, ЧТО
+            # заменяешь, — обязан сказать, ПОЧЕМУ. `\S` (а не «не пусто»):
+            # строка из пробелов такой же немой ответ, как и пустая.
+            models.CheckConstraint(
+                condition=models.Q(supersedes__isnull=True)
+                | models.Q(reason__regex=r"\S"),
+                name="chk_ops_issued_document_supersede_reason",
+            ),
+            # Нулевой номер означал бы документ, которого не выдавали.
+            models.CheckConstraint(
+                condition=models.Q(number__gte=1),
+                name="chk_ops_issued_document_number_min",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(year__gte=2000) & models.Q(year__lte=2200),
+                name="chk_ops_issued_document_year_range",
+            ),
+            # Замена САМОГО СЕБЯ — цикл длины один: строка «взамен себя»
+            # проходит любую проверку ссылки и делает цепь выпусков
+            # неразрешимой. Циклы длиннее база не ловит — их не даёт порядок
+            # создания (заменяемый существует раньше заменяющего).
+            models.CheckConstraint(
+                condition=~models.Q(supersedes=models.F("id")),
+                name="chk_ops_issued_document_no_self_supersede",
+            ),
+        ]
+        indexes = [
+            # Разрез «что выпущено по этому подразделению за период» — основной
+            # для реестра выпусков.
+            models.Index(
+                fields=["division_id", "-business_date", "id"],
+                name="idx_ops_issued_doc_registry",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.doc_type} №{self.number}/{self.year} ({self.status})"

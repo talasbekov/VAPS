@@ -177,4 +177,5 @@ from organization_management.apps.operations.models_notification import (  # noq
 from organization_management.apps.operations.models_document import (  # noqa: E402
     OpsAttachment,  # noqa: F401
     OpsDocumentSequence,  # noqa: F401
+    OpsIssuedDocument,  # noqa: F401
 )
