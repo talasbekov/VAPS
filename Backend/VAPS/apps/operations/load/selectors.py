@@ -155,19 +155,31 @@ def detect_overload_days(day_hours, *, threshold_hours=Decimal("8")):
     return overloaded
 
 
-def compute_fact_load(employee_id, start_date, end_date):
-    """FR-32/FR-43 факт-половина: сумма часов из опроса
-    (`PlacementAssignmentActual`, 18.3) по календарным дням, ТОЛЬКО для
-    назначений текущей версии, чьё событие `CLOSED` — тот же двойной
-    гейт, что 18.3/18.4 (факт без утверждённого/закрытого события не
-    существует по построению этих моделей). Режет СЫРОЙ интервал факта,
-    не читает `ServiceHours` (18.4) — та хранит одну сумму на весь факт,
-    без разбивки по дням."""
-    totals = {}
+def compute_fact_load_bulk(employee_ids, start_date, end_date):
+    """Story 20.3a (FR-32, bulk-версия `compute_fact_load`, 19.1): ОДИН
+    запрос на ВСЕХ переданных сотрудников СРАЗУ (`employee_id__in=...`),
+    не N+1 вызовов `compute_fact_load()` в цикле — тот же приём, что
+    `division_month_calendar()` (19.5a) для `month_calendar()`. Группировка
+    построчного результата ПО `employee_id` — чистый Python, без доп.
+    запросов. Каждый переданный `employee_id` присутствует в результате
+    как ключ (тот же объект, что во входном списке), даже без единого
+    факта за период (пустой `{}`).
+
+    Группировка ключуется по `str(employee_id)` внутри, не по самому
+    объекту: `PlacementAssignment.employee_id` — плоский `UUIDField`
+    (ARCH-002/003), ORM возвращает `uuid.UUID`-инстансы через
+    `.select_related`, а вызывающий код может передать `employee_ids`
+    строками (тот же тип, что везде в тестовых фикстурах) — `str`/`UUID`
+    той же логической сущности не равны как dict-ключи Python."""
+    employee_ids = list(employee_ids)
+    if not employee_ids:
+        return {}
+
+    totals_by_employee = {str(employee_id): {} for employee_id in employee_ids}
 
     actuals = (
         PlacementAssignmentActual.objects.filter(
-            assignment__employee_id=employee_id,
+            assignment__employee_id__in=employee_ids,
             assignment__version__is_current=True,
             assignment__version__event__status_code=SecurityEvent.StatusCode.CLOSED,
         )
@@ -176,7 +188,7 @@ def compute_fact_load(employee_id, start_date, end_date):
     )
     for actual in actuals:
         _merge(
-            totals,
+            totals_by_employee[str(actual.assignment.employee_id)],
             _clip_to_range(
                 _split_hours_by_local_day(actual.actual_start_at, actual.actual_end_at),
                 start_date,
@@ -184,7 +196,41 @@ def compute_fact_load(employee_id, start_date, end_date):
             ),
         )
 
-    return {day: hours.quantize(Decimal("0.01")) for day, hours in totals.items()}
+    return {
+        employee_id: {
+            day: hours.quantize(Decimal("0.01"))
+            for day, hours in totals_by_employee[str(employee_id)].items()
+        }
+        for employee_id in employee_ids
+    }
+
+
+def compute_fact_load(employee_id, start_date, end_date):
+    """FR-32/FR-43 факт-половина: сумма часов из опроса
+    (`PlacementAssignmentActual`, 18.3) по календарным дням, ТОЛЬКО для
+    назначений текущей версии, чьё событие `CLOSED` — тот же двойной
+    гейт, что 18.3/18.4 (факт без утверждённого/закрытого события не
+    существует по построению этих моделей). Режет СЫРОЙ интервал факта,
+    не читает `ServiceHours` (18.4) — та хранит одну сумму на весь факт,
+    без разбивки по дням. Тонкая обёртка над `compute_fact_load_bulk()`
+    (20.3a) — не дублирует запрос-логику."""
+    return compute_fact_load_bulk([employee_id], start_date, end_date)[employee_id]
+
+
+def compute_overload_summary(
+    employee_ids, start_date, end_date, *, threshold_hours=Decimal("8")
+):
+    """Story 20.3a (FR-32): дни перегрузки (19.2's `detect_overload_days`)
+    ДЛЯ СПИСКА сотрудников, вычисленные из bulk-факта (`compute_fact_load_
+    bulk`, ОДИН запрос). `detect_overload_days()` — чистая функция, вызов
+    по-сотруднику в Python-цикле НЕ добавляет запросов к БД. Каждый
+    переданный `employee_id` присутствует в результате (пустой список,
+    если не перегружен)."""
+    fact_by_employee = compute_fact_load_bulk(employee_ids, start_date, end_date)
+    return {
+        employee_id: detect_overload_days(day_hours, threshold_hours=threshold_hours)
+        for employee_id, day_hours in fact_by_employee.items()
+    }
 
 
 def compute_cumulative_service_hours(employee_id):
