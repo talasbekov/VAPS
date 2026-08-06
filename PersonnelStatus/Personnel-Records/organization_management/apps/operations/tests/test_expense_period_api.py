@@ -204,3 +204,111 @@ def test_a_range_reaching_into_the_future_is_a_form_error(types, division):  # n
     api, _ = viewer()
 
     assert get(api, TODAY, TODAY + timedelta(days=1)).status_code == 400
+
+
+# ── Выгрузка периода ─────────────────────────────────────────────────────
+
+EXPORT_URL = "/api/operations/strength-report/period-export/"
+
+
+def export(api, date_from=TODAY, date_to=TODAY, at=MORNING, **params):
+    if date_from is not None:
+        params["date_from"] = date_from.isoformat()
+    if date_to is not None:
+        params["date_to"] = date_to.isoformat()
+    with clock.override(at):
+        return api.get(EXPORT_URL, params)
+
+
+def csv_rows(response):
+    text = response.content.decode("utf-8-sig")
+    return [line.split(";") for line in text.splitlines() if line]
+
+
+def test_the_export_is_gated_by_the_same_permission(types, division):  # noqa: F811
+    assert export(APIClient()).status_code == 403
+
+
+def test_the_export_returns_a_row_per_date(types, division):  # noqa: F811
+    """СТРОКА НА ДАТУ — та ось, которой у дневного документа нет.
+
+    Три дня, а не два: на двух «строка на дату» неотличимо от «две строки».
+    """
+    in_slot(division)
+    api, _ = viewer()
+
+    rows = csv_rows(export(api, TODAY - timedelta(days=2), TODAY))
+
+    # титул + шапка + три даты
+    assert len(rows) == 5
+    assert [row[0] for row in rows[2:]] == [
+        (TODAY - timedelta(days=2)).isoformat(),
+        (TODAY - timedelta(days=1)).isoformat(),
+        TODAY.isoformat(),
+    ]
+
+
+def test_the_export_carries_no_totals_row(types, division):  # noqa: F811
+    """Сложить расходы разных дней не во что: человек в отпуске три дня дал бы
+    «три отпуска». Строка «ИТОГО» выглядела бы осмысленной и была бы неверной."""
+    in_slot(division)
+    api, _ = viewer()
+
+    rows = csv_rows(export(api, TODAY - timedelta(days=1), TODAY))
+
+    assert all("ИТОГО" not in ";".join(row) for row in rows)
+
+
+def test_the_export_opens_in_excel_the_same_way_the_daily_one_does(types, division):  # noqa: F811
+    """Тот же диалект, что у дневного .csv: файлы открывает тот же человек в том
+    же Excel, и разойдись они кодировкой — вторая выгрузка открылась бы мусором.
+
+    BOM проверяется по СЫРЫМ байтам: декодированная строка его уже не содержит.
+    """
+    in_slot(division)
+    api, _ = viewer()
+
+    payload = export(api).content
+
+    assert payload.startswith(b"\xef\xbb\xbf")
+    assert b";" in payload
+
+
+def test_the_export_is_sent_as_a_file_named_by_the_period(types, division):  # noqa: F811
+    in_slot(division)
+    api, _ = viewer()
+
+    response = export(api, TODAY - timedelta(days=1), TODAY)
+
+    disposition = response["Content-Disposition"]
+    assert "attachment" in disposition
+    assert TODAY.isoformat() in disposition
+    assert (TODAY - timedelta(days=1)).isoformat() in disposition
+
+
+def test_the_export_and_the_screen_answer_with_the_same_days(types, division):  # noqa: F811
+    """Разъедься они границей периода — файл показал бы не то, что человек видел
+    на экране, и расхождение обнаружилось бы уже в отчёте."""
+    in_slot(division)
+    api, _ = viewer()
+
+    screen = [page["business_date"] for page in pages_of(get(api, TODAY - timedelta(days=2), TODAY))]
+    file_days = [row[0] for row in csv_rows(export(api, TODAY - timedelta(days=2), TODAY))[2:]]
+
+    assert screen == file_days
+
+
+def test_the_export_obeys_the_same_scope(types, division):  # noqa: F811
+    other = Division.objects.create(name="Чужое управление")
+    in_slot(other)
+    api, _ = viewer(scope=division.id)
+
+    assert export(api, division_id=other.id).status_code == 403
+
+
+def test_the_export_refuses_the_same_broken_ranges(types, division):  # noqa: F811
+    api, _ = viewer()
+
+    assert export(api, TODAY, TODAY - timedelta(days=1)).status_code == 400
+    assert export(api, TODAY, TODAY + timedelta(days=1)).status_code == 400
+    assert export(api, None, TODAY).status_code == 400

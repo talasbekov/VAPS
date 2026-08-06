@@ -101,6 +101,9 @@ from organization_management.apps.operations.notify_service import (
 from organization_management.apps.operations.expense_period import (
     derive_period,
 )
+from organization_management.apps.operations.expense_period_csv import (
+    generate_period_csv,
+)
 from organization_management.apps.operations.document_release import (
     issue_expense_document,
     reissue_expense_document,
@@ -1240,6 +1243,8 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
         # особое право защищало бы одни и те же сведения по-разному в
         # зависимости от того, сколько дней спросили разом.
         "period": _READ_STATUS_PERMISSION,
+        # Выгрузка периода открывает ровно то же, что и его экран.
+        "period_export": _READ_STATUS_PERMISSION,
         # Выгрузка открывает ровно то же, что экран сданного расхода, только
         # файлом: заводить ей особое право значило бы защищать одни и те же
         # сведения по-разному в зависимости от того, как их читают.
@@ -1283,8 +1288,40 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "подразделение."
         ),
     )
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("date_from", OpenApiTypes.DATE),
+            OpenApiParameter("date_to", OpenApiTypes.DATE),
+            OpenApiParameter("division_id", OpenApiTypes.INT),
+        ],
+        responses={(200, "text/csv"): OpenApiTypes.BINARY},
+        description=(
+            "Тот же период файлом: одна таблица, СТРОКА НА ДАТУ. Формат один — "
+            ".csv: период смотрят, чтобы считать и строить графики, а не "
+            "подписывать. Отказы те же, что у экрана периода."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="period-export")
+    def period_export(self, request, *args, **kwargs):
+        pages = self._period_pages(request)
+        payload = generate_period_csv(pages)
+        response = HttpResponse(payload, content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = content_disposition_header(
+            True, f"expense-{pages[0]['business_date']}-{pages[-1]['business_date']}.csv"
+        )
+        return response
+
     @action(detail=False, methods=["get"])
     def period(self, request, *args, **kwargs):
+        return Response({"pages": self._period_pages(request)})
+
+    def _period_pages(self, request):
+        """Разбор, область и страницы — общее тело экрана периода и его выгрузки.
+
+        Общее НЕ ради краткости: экран и файл обязаны отвечать одинаково. Разъедься
+        они хоть границей периода, хоть областью — выгрузка показала бы не то, что
+        человек видел на экране, и расхождение обнаружилось бы уже в отчёте.
+        """
         date_from = _parse_date_param(request, "date_from")
         date_to = _parse_date_param(request, "date_to")
         # Обе даты ОБЯЗАТЕЛЬНЫ, и умолчания им не заводится. У однодневного
@@ -1305,12 +1342,8 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         division_id = _parse_int_param(request, "division_id")
         scope = _resolve_division_scope(request, division_id, _READ_STATUS_PERMISSION)
-        return Response(
-            {
-                "pages": derive_period(
-                    date_from=date_from, date_to=date_to, division_ids=scope
-                )
-            }
+        return derive_period(
+            date_from=date_from, date_to=date_to, division_ids=scope
         )
 
     @extend_schema(
