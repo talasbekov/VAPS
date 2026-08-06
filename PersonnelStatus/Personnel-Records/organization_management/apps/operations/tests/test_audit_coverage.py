@@ -35,6 +35,7 @@ from organization_management.apps.operations.document_release import (
 )
 from organization_management.apps.operations.document_service import (
     create_attachment,
+    prepare_download,
 )
 from organization_management.apps.operations.dismissal import (
     DISMISSAL_REASON,
@@ -711,12 +712,15 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
             )
             # Отзыв прежнего выпуска пишется на ЗАМЕНЯЕМЫЙ документ: тот, у кого
             # он на руках, ищет именно его ленту.
-            reissue_expense_document(
+            reissued = reissue_expense_document(
                 division_id=home.id,
                 business_date=TODAY,
                 actor=ACTOR,
                 reason="исправлен наряд",
             )
+            # Выдача байт — второе событие ЧТЕНИЯ в журнале мутаций: документ
+            # берут, чтобы предъявлять, и «кто его получил» это предмет спора.
+            prepare_download(attachment=reissued.attachment, actor=ACTOR)
 
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

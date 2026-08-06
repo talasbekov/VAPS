@@ -274,3 +274,41 @@ def verify_integrity(attachment):
             actual,
         )
         raise DomainError("DOCUMENT_INTEGRITY_FAILED", 500, detail={})
+
+
+def prepare_download(*, attachment, actor):
+    """Сверить байты, записать выдачу в журнал и вернуть путь к файлу.
+
+    ПОРЯДОК ЖЁСТКИЙ: сверка → журнал → путь. Журнал фиксирует, что выдан
+    ПРАВИЛЬНЫЙ файл, а не что была попытка: строка «такой-то скачал документ»
+    рядом с молча выданными порчеными байтами — худший из возможных ответов,
+    потому что она подтверждает то, чего не было. Поэтому отказ сверки строки в
+    журнале не оставляет.
+
+    ЖУРНАЛ ЖИВЁТ В СЕРВИСЕ, а не в маршруте: маршрут не единственный вход, и
+    вынесенная туда запись пропала бы у всякого другого вызывающего. Маршрут
+    остаётся тонким — он только собирает ответ.
+
+    ОБЯЗАТЕЛЬНОСТЬ ЖУРНАЛА БУКВАЛЬНА: сбой записи роняет выдачу, и это верно —
+    нет журнала, значит нет выдачи. Смягчить это (записать «как получится»)
+    значило бы завести путь, на котором документ уходит бесследно.
+
+    Возвращается ПУТЬ, а не байты: как отдавать файл — решает маршрут (сам или
+    через веб-сервер), и сервису об этом знать незачем.
+    """
+    if not actor or not str(actor).strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    verify_integrity(attachment)
+    audit_service.record(
+        actor=actor,
+        action=audit_service.DOCUMENT_DOWNLOADED,
+        entity_type=audit_service.ENTITY_ATTACHMENT,
+        entity_id=attachment.pk,
+        new_value={
+            "original_name": attachment.original_name,
+            "content_type": attachment.content_type,
+            "size": attachment.size,
+            "sha256": attachment.sha256,
+        },
+    )
+    return document_storage.storage_path(attachment)
