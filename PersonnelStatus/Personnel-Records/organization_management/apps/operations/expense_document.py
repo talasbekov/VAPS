@@ -29,6 +29,7 @@ from datetime import date
 from organization_management.apps.operations.roster_order import order_roster
 from organization_management.apps.operations.strength_report import (
     DERIVED_IN_SERVICE,
+    catalog_of,
     expense_from_snapshot,
     resolve_status,
 )
@@ -137,6 +138,10 @@ def build_expense_document(
     живом расходе; поимённо такие люди в документе не показываются, потому
     что колонки для них нет.
     """
+    # Печатная форма читает снимок ЕГО справочником: документ подписывают, и
+    # правка каталога не смеет переставлять людей по колонкам задним числом.
+    # У снимков до версии 3 своего каталога нет — им остаётся переданный.
+    catalog = catalog_of(snapshot, catalog)
     numbers = expense_from_snapshot(snapshot, business_date, catalog)
     columns_order = catalog.columns_in_order()
     facts_by_employee = _parsed_facts(snapshot)
