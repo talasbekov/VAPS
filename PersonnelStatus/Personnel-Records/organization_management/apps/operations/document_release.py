@@ -111,6 +111,99 @@ def issue_expense_document(*, division_id, business_date, actor):
             message=f"День уже выпущен исходящим №{existing.number}.",
         )
 
+    return _build_and_record(
+        division_id=division_id,
+        business_date=business_date,
+        submission=submission,
+        actor=actor,
+    )
+
+
+@transaction.atomic
+def reissue_expense_document(*, division_id, business_date, actor, reason):
+    """Выпустить расход дня ВЗАМЕН действующего. Возвращает новый выпуск.
+
+    Отдельная точка входа, а не флаг у выпуска, и разделяет их не техника, а
+    смысл: у замены есть ПРИЧИНА, и обязательность причины проверяется на
+    границе, а не «если флаг взведён». Флаг допускал бы вызов «выпусти, а если
+    уже выпущено — замени», в котором замена происходит по недосмотру.
+
+    Байты и номер прежнего выпуска НЕ ТРОГАЮТСЯ: он остаётся ровно тем, что
+    было предъявлено, и лишь помечается отозванным. Тот, у кого на руках
+    исходящий №5, обязан по журналу узнать, что тот отозван, — иначе история
+    документа переписывается задним числом.
+    """
+    if not actor or not str(actor).strip():
+        raise DomainError("VALIDATION_ERROR", 400, message="actor обязателен.")
+    if not reason or not str(reason).strip():
+        raise DomainError(
+            "VALIDATION_ERROR", 400, message="Замена документа требует причины."
+        )
+
+    submission = DailySubmissionSelector.latest_for(
+        division_id, business_date, lock=True
+    )
+    if submission is None:
+        raise DomainError(
+            "DAY_NOT_SUBMITTED",
+            404,
+            detail={
+                "division_id": str(division_id),
+                "business_date": business_date.isoformat(),
+            },
+            message="День не сдан: заменять нечего.",
+        )
+
+    previous = OpsIssuedDocumentSelector.current(
+        doc_type=EXPENSE_DOC_TYPE,
+        division_id=division_id,
+        business_date=business_date,
+    )
+    if previous is None:
+        raise DomainError(
+            "DOCUMENT_NOT_ISSUED",
+            409,
+            detail={
+                "division_id": str(division_id),
+                "business_date": business_date.isoformat(),
+            },
+            message="День не выпускался: заменять нечего.",
+        )
+
+    # ОТЗЫВ ИДЁТ ПЕРВЫМ, и порядок здесь держит не договорённость, а база:
+    # частичная уникальность «не более одного действующего на день»
+    # проверяется НЕМЕДЛЕННО, и вставка нового выпуска до снятия прежнего
+    # упёрлась бы в неё. Перестановка не «менее аккуратна» — она не работает.
+    previous.status = OpsIssuedDocument.Status.SUPERSEDED
+    previous.save(update_fields=["status", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.DOCUMENT_SUPERSEDED,
+        entity_type=audit_service.ENTITY_ISSUED_DOCUMENT,
+        entity_id=previous.pk,
+        old_value={"status": OpsIssuedDocument.Status.ISSUED},
+        new_value={"status": OpsIssuedDocument.Status.SUPERSEDED},
+        reason=str(reason).strip(),
+    )
+    return _build_and_record(
+        division_id=division_id,
+        business_date=business_date,
+        submission=submission,
+        actor=actor,
+        supersedes=previous,
+        reason=str(reason).strip(),
+    )
+
+
+def _build_and_record(
+    *, division_id, business_date, submission, actor, supersedes=None, reason=""
+):
+    """Собрать документ, записать байты, взять номер, создать строку выпуска.
+
+    Общее тело первого выпуска и замены. Разделять их здесь было бы вредно:
+    разойдись они хоть в одном поле — и заменяющий документ перестал бы быть
+    тем же документом, что первый, отличаясь не только номером.
+    """
     data = build_submitted_expense_document(division_id, business_date)
     payload = generate_expense_docx(data)
 
@@ -133,6 +226,8 @@ def issue_expense_document(*, division_id, business_date, actor):
         submission_id=submission.pk,
         submission_version=submission.version,
         attachment=attachment,
+        supersedes=supersedes,
+        reason=reason,
         status=OpsIssuedDocument.Status.ISSUED,
         created_by=actor,
     )
@@ -151,7 +246,9 @@ def issue_expense_document(*, division_id, business_date, actor):
             "submission_version": submission.version,
             "attachment_id": attachment.pk,
             "sha256": attachment.sha256,
+            "supersedes_number": supersedes.number if supersedes else None,
         },
+        reason=reason,
     )
     return issued
 
