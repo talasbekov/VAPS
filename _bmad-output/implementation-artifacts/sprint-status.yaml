@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-08-06 (20.1c → done)
+# last_updated: 2026-08-06 (20.1d → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -830,6 +830,13 @@ development_status:
   20-1a-готовность-ом-селектор: done
   20-1b-готовность-ом-api: done
   20-1c-готовность-ом-фронтенд-api-клиент: done
+  # 20.1d: isolated readiness panel component (StatusCalendarPanel precedent,
+  # 19.4d). Wiring into the mock-first security-events pages is deferred to
+  # 20.1e — flagged, not created yet.
+  20-1d-готовность-ом-панель: done
+  # 20.1e (wiring: ReadinessPanel → real security-events pages, reconcile
+  # mock-first `/api/ops/` vs real `/api/operations/.../readiness/`) not yet
+  # created — next slice in this chain when picked up.
   # 20.2 decomposed (create-story, 2026-08-06), same rationale as 20.1:
   # backend selector, API, frontend are separate stories. This key tracks
   # the thin-composition selector slice (20.2a); API (20.2b)/dashboard
