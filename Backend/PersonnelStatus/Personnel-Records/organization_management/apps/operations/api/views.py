@@ -33,6 +33,8 @@ from organization_management.apps.operations.api.permissions import (
     resolve_actor_id,
 )
 from organization_management.apps.operations.api.serializers import (
+    StatusCompleteSerializer,
+    StatusExtendSerializer,
     NotificationReadAllSerializer,
     DocumentReissueSerializer,
     DocumentReleaseSerializer,
@@ -137,6 +139,8 @@ from organization_management.apps.operations.secondment_service import (
     request_return as request_return_service,
 )
 from organization_management.apps.operations.status_service import (
+    complete_status_early,
+    extend_status,
     cancel_status,
     resolve_placeholder,
     update_status,
@@ -575,6 +579,11 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "bulk": _BULK_STATUS_PERMISSION,
         "partial_update": _BULK_STATUS_PERMISSION,
         "cancel": _BULK_STATUS_PERMISSION,
+        # Досрочное завершение и продление — такие же операторские правки
+        # чужой строки, что отмена и PATCH: своего права им не заводится,
+        # иначе одно и то же полномочие раздавалось бы тремя разными кодами.
+        "complete": _BULK_STATUS_PERMISSION,
+        "extend": _BULK_STATUS_PERMISSION,
         # Разрешение заглушки — та же операторская запись, что и правка: оно
         # не переписывает чужой факт, а доводит до конца свою же неясность.
         # Своего кода права не заводим — каталог закрытый мир.
@@ -826,6 +835,82 @@ class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
             reason=form.validated_data["reason"],
         )
         return Response(OpsEmployeeStatusSerializer(cancelled).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id досрочно завершаемой строки.",
+            )
+        ],
+        request=StatusCompleteSerializer,
+        responses={200: OpsEmployeeStatusSerializer},
+        description=(
+            "Досрочно завершить ИДУЩИЙ статус фактической датой окончания "
+            "(«вернулся раньше»). Отдельная операция, а не правка конца: она "
+            "фиксирует факт и рассказывает в журнале свою историю. Дата "
+            "обязательна — умолчания «сегодня» нет, иначе молча записался бы "
+            "не тот день. 400 — форма тела; 403 — нет права status.manage либо "
+            "сотрудник вне области; 404 — строки нет; 422 — статус не идёт "
+            "(не начался или уже закрыт), дата в будущем, дата не позже "
+            "начала, либо правка задела сданный день без причины."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="complete", url_name="complete")
+    def complete(self, request, pk=None, *args, **kwargs):
+        form = StatusCompleteSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        status_row = self._get_status_or_404(pk)
+        self._assert_status_in_scope(request, status_row)
+        completed = complete_status_early(
+            status_row,
+            # Подпись — из контракта аутентификации, как и у отмены.
+            actor=resolve_actor_id(request),
+            actual_end=form.validated_data["actual_end"],
+            amendment_reason=form.validated_data.get("amendment_reason", ""),
+        )
+        return Response(OpsEmployeeStatusSerializer(completed).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "id",
+                OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description="id продлеваемой строки.",
+            )
+        ],
+        request=StatusExtendSerializer,
+        responses={200: OpsEmployeeStatusSerializer},
+        description=(
+            "Продлить статус строго более поздней датой конца. Отдельная "
+            "операция, а не правка: продление монотонно (укорачивание — это "
+            "досрочное завершение) и пишет в журнал своё событие. Продлить "
+            "можно и уже завершённую строку — отпуск, который на деле длился "
+            "дольше. 400 — форма тела либо обход без причины; 403 — нет права "
+            "status.manage либо сотрудник вне области; 404 — строки нет; "
+            "409 — мягкое пересечение (обходится override); 422 — дата не "
+            "позже нынешней, выход за границы найма, предел длительности типа, "
+            "жёсткое пересечение или задет сданный день без причины."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="extend", url_name="extend")
+    def extend(self, request, pk=None, *args, **kwargs):
+        form = StatusExtendSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        status_row = self._get_status_or_404(pk)
+        self._assert_status_in_scope(request, status_row)
+        extended = extend_status(
+            status_row,
+            actor=resolve_actor_id(request),
+            new_date_end=form.validated_data["new_date_end"],
+            override=form.validated_data.get("override", False),
+            override_reason=form.validated_data.get("override_reason", ""),
+            amendment_reason=form.validated_data.get("amendment_reason", ""),
+        )
+        return Response(OpsEmployeeStatusSerializer(extended).data)
 
     @extend_schema(
         parameters=[
