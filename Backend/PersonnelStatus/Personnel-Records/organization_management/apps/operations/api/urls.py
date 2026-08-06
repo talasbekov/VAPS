@@ -6,6 +6,7 @@
 from rest_framework.routers import DefaultRouter
 
 from organization_management.apps.operations.api.views import (
+    AttachmentViewSet,
     AuditLogViewSet,
     DailySubmissionViewSet,
     DailySummaryViewSet,
@@ -48,6 +49,9 @@ router.register("traffic-light", TrafficLightViewSet, basename="ops-traffic-ligh
 router.register("audit-logs", AuditLogViewSet, basename="ops-audit-log")
 router.register(
     "documents", IssuedDocumentViewSet, basename="ops-document"
+)
+router.register(
+    "attachments", AttachmentViewSet, basename="ops-attachment"
 )
 router.register(
     "notifications", NotificationViewSet, basename="ops-notification"
