@@ -18,12 +18,14 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.db.models import Sum
 
 from apps.operations.duties.models import DutyShift
 from apps.operations.events.models import (
     PlacementAssignment,
     PlacementAssignmentActual,
     SecurityEvent,
+    ServiceHours,
 )
 
 
@@ -183,3 +185,33 @@ def compute_fact_load(employee_id, start_date, end_date):
         )
 
     return {day: hours.quantize(Decimal("0.01")) for day, hours in totals.items()}
+
+
+def compute_cumulative_service_hours(employee_id):
+    """Story 19.6a (FR-32/FR-3): накопительный Налёт часов сотрудника —
+    ОДИН агрегатный запрос по уже вычисленным `ServiceHours` (18.4), не
+    построчная выборка + сложение в Python. Тот же двойной гейт, что
+    `compute_fact_load()`: `ServiceHours`, чьё назначение впоследствии
+    заменено (`is_current=False`) или чьё событие не `CLOSED`, не
+    учитывается — версия/статус могли смениться ПОСЛЕ вычисления
+    `ServiceHours`, гейт перепроверяется на чтение. Отсутствие данных →
+    нули, не `None`/исключение (карточка не различает «нет данных» и
+    «нулевой налёт»)."""
+    aggregate = ServiceHours.objects.filter(
+        actual__assignment__employee_id=employee_id,
+        actual__assignment__version__is_current=True,
+        actual__assignment__version__event__status_code=SecurityEvent.StatusCode.CLOSED,
+    ).aggregate(day=Sum("day_hours"), night=Sum("night_hours"))
+
+    # Не `.quantize()` как соседние `compute_plan_load`/`compute_fact_load`
+    # (эти режут по дням из СЫРЫХ интервалов, накапливая произвольную
+    # точность) — тут `Sum()` уже суммирует поля с фиксированным
+    # `decimal_places=2`, точность сохраняется без округления.
+    day_hours = aggregate["day"] or Decimal("0.00")
+    night_hours = aggregate["night"] or Decimal("0.00")
+
+    return {
+        "day_hours": day_hours,
+        "night_hours": night_hours,
+        "total_hours": day_hours + night_hours,
+    }

@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-08-05 (19.1 → ready-for-dev)
+# last_updated: 2026-08-06 (19.6a → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -813,7 +813,11 @@ development_status:
   # the backend selector slice (19.5a); API/frontend get their own keys
   # when created.
   19-5-календарь-подразделение-дни: done
-  19-6-налёт-часов-в-карточке: backlog
+  # 19.6 decomposed (create-story, 2026-08-06), same rationale as 19.4/19.5:
+  # backend selector, API, frontend are separate stories. This key tracks
+  # the cumulative-hours selector slice (19.6a); API (19.6b)/frontend
+  # card field (19.6c) get their own keys when created.
+  19-6a-налёт-часов-кумулятив: done
   19-7-нагрузочные-тесты-дедлайн-17-00: backlog
   epic-19-retrospective: optional
 
