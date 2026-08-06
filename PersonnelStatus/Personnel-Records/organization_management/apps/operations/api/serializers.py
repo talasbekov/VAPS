@@ -671,3 +671,47 @@ class NotificationReadAllSerializer(serializers.Serializer):
                 "Укажите часовой пояс (например, +05:00 или Z)."
             )
         return parsed
+
+
+class StatusCompleteSerializer(serializers.Serializer):
+    """Тело досрочного завершения: фактическая дата окончания.
+
+    Дата ОБЯЗАТЕЛЬНА и умолчания не имеет. Соблазн подставить «сегодня»
+    отвергнут: досрочное завершение фиксирует ФАКТ («вернулся третьего»), и
+    подставленное сегодня молча записало бы не тот день — а исправлять его
+    пришлось бы уже поправкой сдачи.
+
+    `amendment_reason` — не часть операции, а объяснение того, что она задела
+    сданный день; требуется только тогда и проверяется сервисом.
+    """
+
+    actual_end = serializers.DateField()
+    amendment_reason = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
+
+
+class StatusExtendSerializer(serializers.Serializer):
+    """Тело продления: новая дата конца плюс протокол обхода мягкого конфликта.
+
+    Обход здесь тот же, что у правки и разрешения заглушки, и намеренно тот же:
+    оператор, научившийся обходить пересечение в одном месте раздела, не должен
+    заново выяснять правила в другом. Причина обхода обязательна — обход без
+    объяснения неотличим от продавливания.
+    """
+
+    new_date_end = serializers.DateField()
+    override = serializers.BooleanField(required=False, default=False)
+    override_reason = serializers.CharField(
+        required=False, allow_blank=True, max_length=1000
+    )
+    amendment_reason = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
+
+    def validate(self, attrs):
+        if attrs.get("override") and not attrs.get("override_reason", "").strip():
+            raise serializers.ValidationError(
+                {"override_reason": "Обход конфликта требует причины."}
+            )
+        return attrs
