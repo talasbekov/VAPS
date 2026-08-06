@@ -3,7 +3,7 @@ from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
-from django.db.models import Min, Q
+from django.db.models import Count, Min, Q
 
 from apps.core.models import (
     Division,
@@ -11,8 +11,10 @@ from apps.core.models import (
     Employee,
     EmployeeDivisionHistory,
     EmployeeOperationalProfile,
+    EmployeeStaffingAssignment,
     Position,
     Rank,
+    StaffingSlot,
     UserEmployeeBinding,
 )
 from apps.core.sorting import (
@@ -350,6 +352,77 @@ class CoreStaffingSelector:
                 best_from[division_id] = valid_from
                 result[division_id] = slots
         return result
+
+    @staticmethod
+    def compute_staffing_table(business_date, division_ids=None) -> list:
+        """Story 20.5a (FR-40): штатное расписание — (division, position)
+        строки с `allocated`/`filled`/`vacant`. НИ ОДНА существующая
+        функция не даёт эту детализацию (`StrengthReportService`/
+        `allocated_slots_on` — только по управлению, без должности).
+        РОВНО ДВА bulk-запроса (`StaffingSlot` GROUP BY, `EmployeeStaffing
+        Assignment` GROUP BY) — не построчный цикл по слотам.
+
+        `vacant` может быть отрицательным (`filled > allocated`) при
+        рассинхроне данных (напр. активное назначение на слот, ставший
+        неактивным ПОСЛЕ назначения) — показывается как есть, не
+        скрывается и не гейтится исключением (честный симптом проблемы
+        данных)."""
+        t = local_midnight(business_date)
+
+        slots_qs = StaffingSlot.objects.filter(
+            is_active=True, valid_from__lte=t
+        ).filter(Q(valid_to__isnull=True) | Q(valid_to__gt=t))
+        if division_ids is not None:
+            slots_qs = slots_qs.filter(division_id__in=division_ids)
+        allocated_rows = slots_qs.values(
+            "division_id", "position_code", "position_code__name"
+        ).annotate(allocated=Count("id"))
+
+        # `filled` считается по активности САМОГО назначения (starts_at/
+        # ends_at), НЕ по текущей активности/валидности его слота — иначе
+        # рассинхрон (слот стал неактивным ПОСЛЕ назначения) молча стёр бы
+        # из отчёта реально занятую единицу вместо честного отрицательного
+        # `vacant` (AC-2).
+        assignments_qs = EmployeeStaffingAssignment.objects.filter(
+            starts_at__lte=t,
+        ).filter(Q(ends_at__isnull=True) | Q(ends_at__gt=t))
+        if division_ids is not None:
+            assignments_qs = assignments_qs.filter(
+                staffing_slot__division_id__in=division_ids
+            )
+        filled_rows = assignments_qs.values(
+            "staffing_slot__division_id", "staffing_slot__position_code"
+        ).annotate(filled=Count("id"))
+
+        table: dict = {}
+        for row in allocated_rows:
+            key = (row["division_id"], row["position_code"])
+            table[key] = {
+                "division_id": row["division_id"],
+                "position_code": row["position_code"],
+                "position_name": row["position_code__name"],
+                "allocated": row["allocated"],
+                "filled": 0,
+            }
+        for row in filled_rows:
+            key = (
+                row["staffing_slot__division_id"],
+                row["staffing_slot__position_code"],
+            )
+            if key not in table:
+                table[key] = {
+                    "division_id": key[0],
+                    "position_code": key[1],
+                    "position_name": None,
+                    "allocated": 0,
+                    "filled": 0,
+                }
+            table[key]["filled"] = row["filled"]
+
+        return [
+            {**entry, "vacant": entry["allocated"] - entry["filled"]}
+            for entry in table.values()
+        ]
 
 
 class CoreEmployeeLockSelector:
