@@ -1,0 +1,364 @@
+{
+  "attached": 7,
+  "business_date": "2026-08-04",
+  "catalog": [
+    {
+      "code": "IN_SERVICE",
+      "counts_in_staff": true,
+      "priority": 999,
+      "report_column_code": "IN_SERVICE"
+    },
+    {
+      "code": "DUTY",
+      "counts_in_staff": true,
+      "priority": 10,
+      "report_column_code": "ON_DUTY"
+    },
+    {
+      "code": "VACATION",
+      "counts_in_staff": true,
+      "priority": 30,
+      "report_column_code": "VACATION"
+    },
+    {
+      "code": "SICK",
+      "counts_in_staff": false,
+      "priority": 20,
+      "report_column_code": "SICK"
+    }
+  ],
+  "division_title": "Батальон охраны",
+  "snapshot": {
+    "roster": [
+      {
+        "employee_id": 1,
+        "full_name": "Фамилия01 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 2,
+        "full_name": "Фамилия02 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 3,
+        "full_name": "Фамилия03 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 4,
+        "full_name": "Фамилия04 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 5,
+        "full_name": "Фамилия05 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 6,
+        "full_name": "Фамилия06 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 7,
+        "full_name": "Фамилия07 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 8,
+        "full_name": "Фамилия08 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 9,
+        "full_name": "Фамилия09 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 10,
+        "full_name": "Фамилия10 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 11,
+        "full_name": "Фамилия11 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 12,
+        "full_name": "Фамилия12 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 13,
+        "full_name": "Фамилия13 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 14,
+        "full_name": "Фамилия14 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 15,
+        "full_name": "Фамилия15 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 16,
+        "full_name": "Фамилия16 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 17,
+        "full_name": "Фамилия17 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 18,
+        "full_name": "Фамилия18 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 19,
+        "full_name": "Фамилия19 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 20,
+        "full_name": "Фамилия20 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 21,
+        "full_name": "Фамилия21 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 22,
+        "full_name": "Фамилия22 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 23,
+        "full_name": "Фамилия23 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 24,
+        "full_name": "Фамилия24 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 25,
+        "full_name": "Фамилия25 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 26,
+        "full_name": "Фамилия26 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 27,
+        "full_name": "Фамилия27 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 28,
+        "full_name": "Фамилия28 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 29,
+        "full_name": "Фамилия29 Имя",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 30,
+        "full_name": "Фамилия30 Имя",
+        "rank": "капитан"
+      }
+    ],
+    "rows": [
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 1,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 2,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 3,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 4,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 5,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 6,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 7,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 8,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 9,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 10,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 11,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 12,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 13,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 14,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 15,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 16,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 17,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 18,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 19,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 20,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 21,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 22,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 23,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 24,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 25,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      }
+    ]
+  },
+  "staff_total": 40,
+  "vacancies": 5
+}
