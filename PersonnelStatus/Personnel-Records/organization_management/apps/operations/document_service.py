@@ -25,6 +25,7 @@
 загружаемого файла — иначе один большой документ роняет процесс целиком.
 """
 import hashlib
+import logging
 import os
 
 from django.db import transaction
@@ -38,6 +39,8 @@ from organization_management.apps.operations.models_document import (
 from organization_management.apps.operations.selectors import (
     OpsDocumentSequenceSelector,
 )
+
+logger = logging.getLogger(__name__)
 
 _CHUNK_SIZE = 64 * 1024
 _MAX_NAME_LENGTH = 255  # = OpsAttachment.original_name.max_length
@@ -217,3 +220,57 @@ def allocate_number(*, doc_type, year):
     row.last_number += 1
     row.save(update_fields=["last_number", "updated_at"])
     return row.last_number
+
+
+# ── Сверка байт перед выдачей ────────────────────────────────────────────
+
+
+def verify_integrity(attachment):
+    """Пересчитать дайджест файла и сверить с записанным. Молча — или отказ.
+
+    ЗАЧЕМ СЧИТАТЬ ЗАНОВО, если хэш уже записан при загрузке. Записанный хэш
+    отвечает на вопрос «что мы положили», а выдаём мы то, что ЛЕЖИТ СЕЙЧАС.
+    Между этими двумя моментами файл мог быть подменён, обрезан сбоем диска или
+    затёрт восстановлением из чужой копии — и ни одно из этих событий не
+    трогает строку в базе. Без пересчёта система уверенно выдавала бы порченый
+    документ под именем и номером целого, а получатель узнавал бы об этом,
+    открыв его.
+
+    Пересчёт — ЗЕРКАЛО записи: те же чанки, тот же алгоритм. Разойдись они —
+    сверка перестала бы что-либо значить, отказывая на исправных файлах.
+
+    ОТКАЗ БЕЗ ПОДРОБНОСТЕЙ и с пятисотым кодом. Пятисотый потому, что это сбой
+    СЕРВЕРА, а не ошибка спрашивающего: он попросил существующий документ и
+    имеет на него право. Без подробностей потому, что ожидаемый и фактический
+    дайджесты — это описание состояния приватного хранилища, и снаружи оно не
+    нужно никому, кроме того, кто его подменил. Всё, что нужно для разбора,
+    уходит в журнал процесса.
+
+    Пропажа файла — ТОТ ЖЕ отказ, а не «не найдено»: строка есть, значит
+    документ выпускался, и отсутствие байт это порча, а не отсутствие объекта.
+    Ответ «нет такого» списал бы серверный сбой на спрашивающего.
+    """
+    path = document_storage.storage_path(attachment)
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(_CHUNK_SIZE), b""):
+                digest.update(chunk)
+    except FileNotFoundError as error:
+        logger.error(
+            "Порча хранилища: байты вложения %s отсутствуют по пути %s",
+            attachment.pk,
+            path,
+        )
+        raise DomainError("DOCUMENT_INTEGRITY_FAILED", 500, detail={}) from error
+
+    actual = digest.hexdigest()
+    if actual != attachment.sha256:
+        logger.error(
+            "Порча хранилища: дайджест вложения %s не сошёлся "
+            "(ожидался %s, посчитан %s)",
+            attachment.pk,
+            attachment.sha256,
+            actual,
+        )
+        raise DomainError("DOCUMENT_INTEGRITY_FAILED", 500, detail={})
