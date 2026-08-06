@@ -10,9 +10,22 @@ queries, one bulk query per method.
 
 from apps.core.exceptions import DomainError
 from apps.core.selectors import CoreEmployeeSelector
-from apps.operations.events.models import JournalEntry, SecurityEvent
+from apps.operations.events.models import AssignmentVersion, JournalEntry, SecurityEvent
 from apps.operations.statuses.models import StatusType
 from apps.operations.statuses.selectors import EmployeeStatusSelector
+
+_DEMAND_NOT_READY_CODES = {
+    SecurityEvent.StatusCode.DRAFT,
+    SecurityEvent.StatusCode.BULLETIN,
+    SecurityEvent.StatusCode.RECON,
+    SecurityEvent.StatusCode.DEMAND,
+    # Review (Blind Hunter + Edge Case Hunter, независимо совпали): без
+    # этого CANCELLED прошло бы фильтр "не в блок-листе" и отчиталось бы
+    # demand_ready=True — отменённое событие никогда не "готово" ни по
+    # какому блокеру, PROVISIONAL (не запрошено ни AC, ни UC-DASH-001,
+    # которые не называют CANCELLED явно ни в одну сторону).
+    SecurityEvent.StatusCode.CANCELLED,
+}
 
 
 class JournalEntrySelector:
@@ -104,4 +117,58 @@ class SecurityEventArchiveSelector:
             "journal_entries": list(event.journal_entries.all()),
             "closure_summaries": list(event.closure_summaries.order_by("id")),
             "current_assignment_version": current_version,
+        }
+
+
+class SecurityEventReadinessSelector:
+    """Story 20.1a (FR-38/UC-DASH-001): 5 независимых булевых блокеров
+    готовности ОМ (чек-лист/потребность/расстановка/ознакомление/
+    конфликты) + равновзвешенный `readiness_pct` — агрегат для будущего
+    дашборда (20.1b/c), ничего не материализует."""
+
+    @staticmethod
+    def readiness_for(event):
+        checklist_done = list(event.checklist_items.values_list("done", flat=True))
+        checklist_ready = all(checklist_done)
+
+        demand_ready = event.status_code not in _DEMAND_NOT_READY_CODES
+
+        current_version = event.assignment_versions.filter(is_current=True).first()
+        placement_ready = (
+            current_version is not None
+            and current_version.status == AssignmentVersion.Status.APPROVED
+        )
+
+        if current_version is None:
+            acknowledgement_ready = True
+            conflicts_ready = True
+        else:
+            assignment_rows = list(
+                current_version.assignments.values_list(
+                    "acknowledged_at", "conflict_severity"
+                )
+            )
+            acknowledgement_ready = all(
+                acknowledged_at is not None for acknowledged_at, _ in assignment_rows
+            )
+            conflicts_ready = all(
+                severity == "" for _, severity in assignment_rows
+            )
+
+        blockers = [
+            checklist_ready,
+            demand_ready,
+            placement_ready,
+            acknowledgement_ready,
+            conflicts_ready,
+        ]
+        readiness_pct = round(100 * sum(blockers) / len(blockers))
+
+        return {
+            "checklist_ready": checklist_ready,
+            "demand_ready": demand_ready,
+            "placement_ready": placement_ready,
+            "acknowledgement_ready": acknowledgement_ready,
+            "conflicts_ready": conflicts_ready,
+            "readiness_pct": readiness_pct,
         }
