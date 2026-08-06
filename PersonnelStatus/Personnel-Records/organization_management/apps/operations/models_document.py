@@ -84,3 +84,69 @@ class OpsAttachment(TimeStampedModel):
 
     def __str__(self):
         return f"{self.original_name} ({self.storage_key})"
+
+
+class OpsDocumentSequence(models.Model):
+    """Счётчик номеров документов по паре (вид, год) — порт DocumentSequence.
+
+    Служебная строка: наружу не отдаётся, в Admin не регистрируется, событий
+    журнала не имеет. Её единственный читатель и писатель — выдача номера, и
+    номер выдаётся ТОЛЬКО внутри транзакции того, кто выпускает документ.
+
+    ПОЧЕМУ НЕ ПОСЛЕДОВАТЕЛЬНОСТЬ БАЗЫ (SEQUENCE, IDENTITY, AutoField). Она не
+    транзакционна: взятый nextval() при откате НЕ возвращается, и каждый
+    несостоявшийся выпуск съедал бы номер. Для внутреннего ключа это норма — на
+    то он и суррогатный, — но здесь номер уходит в исходящий документ и в
+    переписку. Пропуск в исходящих номерах означает утрату документа, и
+    объясняться придётся не тому, кто выбирал тип колонки. Обычное целое под
+    построчным замком откатывается вместе с транзакцией: следующий выпуск
+    возьмёт тот же номер, дырки не будет.
+
+    ГОД — ЧАСТЬ КЛЮЧА, а не поле строки: нумерация исходящих начинается заново
+    каждый год, и новый год это просто новая строка счётчика, стартующая с
+    нуля. Уникальность пары несущая — на неё опирается заведение новой строки в
+    гонке двух первых за год выпусков.
+
+    Отличия от источника: имя таблицы под ops_, целый первичный ключ. Ключ
+    строки счётчика — НЕ номер документа, его транзакционность безразлична.
+    """
+
+    doc_type = models.CharField(max_length=50)
+    year = models.PositiveIntegerField()
+    last_number = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ops_document_sequences"
+        verbose_name = "Счётчик номеров документов"
+        verbose_name_plural = "Счётчики номеров документов"
+        constraints = [
+            # Несущее ограничение, а не гигиена: заведение строки нового года
+            # идёт через get_or_create, и в гонке двух транзакций проигравшая
+            # сериализуется именно на этом уникальном индексе. Сними его — и
+            # год начнётся с ДВУХ параллельных счётчиков, каждый со своей
+            # единицей, то есть с двух документов под номером 1.
+            models.UniqueConstraint(
+                fields=["doc_type", "year"],
+                name="uq_ops_document_sequence_type_year",
+            ),
+            # Осознанный дубль встроенной проверки положительного поля: имя
+            # ограничения греппается и переживает смену типа колонки.
+            models.CheckConstraint(
+                condition=models.Q(last_number__gte=0),
+                name="chk_ops_document_sequence_last_number",
+            ),
+            # Диапазон против перепутанных аргументов: year=6 или year=20026
+            # завели бы отдельную вечную нумерацию, которую никто не ищет.
+            models.CheckConstraint(
+                condition=models.Q(year__gte=2000) & models.Q(year__lte=2200),
+                name="chk_ops_document_sequence_year_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(doc_type__regex=r"\S"),
+                name="chk_ops_document_sequence_doc_type",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.doc_type}/{self.year}: {self.last_number}"
