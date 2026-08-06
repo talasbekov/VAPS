@@ -98,6 +98,9 @@ from organization_management.apps.operations.notify_service import (
     mark_all_read,
     mark_read,
 )
+from organization_management.apps.operations.expense_period import (
+    derive_period,
+)
 from organization_management.apps.operations.document_release import (
     issue_expense_document,
     reissue_expense_document,
@@ -1233,12 +1236,82 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_map = {
         "list": _READ_STATUS_PERMISSION,
         "submitted": _READ_STATUS_PERMISSION,
+        # Период открывает то же, что живой расход, только за несколько дней:
+        # особое право защищало бы одни и те же сведения по-разному в
+        # зависимости от того, сколько дней спросили разом.
+        "period": _READ_STATUS_PERMISSION,
         # Выгрузка открывает ровно то же, что экран сданного расхода, только
         # файлом: заводить ей особое право значило бы защищать одни и те же
         # сведения по-разному в зависимости от того, как их читают.
         "export": _READ_STATUS_PERMISSION,
     }
     http_method_names = ["get", "options"]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "date_from",
+                OpenApiTypes.DATE,
+                description="Начало периода (включительно). Обязателен.",
+            ),
+            OpenApiParameter(
+                "date_to",
+                OpenApiTypes.DATE,
+                description="Конец периода (включительно). Обязателен.",
+            ),
+            OpenApiParameter(
+                "division_id",
+                OpenApiTypes.INT,
+                description="Корень поддерева; по умолчанию вся область актора.",
+            ),
+        ],
+        responses=extend_schema_serializer(many=False)(
+            inline_serializer(
+                name="StrengthReportPeriodResponse",
+                fields={
+                    "pages": serializers.ListField(child=serializers.DictField())
+                },
+            )
+        ),
+        description=(
+            "Расход за период под правом status.view: СТРАНИЦА НА КАЖДУЮ ДАТУ, "
+            "а не сумма — сложить два расхода не во что. Оба конца "
+            "включительны. Дни без сдачи показываются наравне с прочими: это "
+            "чтение, а не выпуск. Страничной обёртки нет — период сам ограничен "
+            "сверху. 400 — отсутствующая или нечитаемая дата, инверсия, период "
+            "длиннее допустимого или уходящий в будущее; 403 — чужое "
+            "подразделение."
+        ),
+    )
+    @action(detail=False, methods=["get"])
+    def period(self, request, *args, **kwargs):
+        date_from = _parse_date_param(request, "date_from")
+        date_to = _parse_date_param(request, "date_to")
+        # Обе даты ОБЯЗАТЕЛЬНЫ, и умолчания им не заводится. У однодневного
+        # расхода умолчание «сегодня» осмысленно, здесь же любое умолчание
+        # («последний месяц»?) было бы выдумкой маршрута, и спросивший получал
+        # бы не тот период, что имел в виду, не узнав об этом.
+        missing = [
+            name
+            for name, value in (("date_from", date_from), ("date_to", date_to))
+            if value is None
+        ]
+        if missing:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={name: "Обязательный параметр." for name in missing},
+                message="Период задаётся обеими датами.",
+            )
+        division_id = _parse_int_param(request, "division_id")
+        scope = _resolve_division_scope(request, division_id, _READ_STATUS_PERMISSION)
+        return Response(
+            {
+                "pages": derive_period(
+                    date_from=date_from, date_to=date_to, division_ids=scope
+                )
+            }
+        )
 
     @extend_schema(
         parameters=[
