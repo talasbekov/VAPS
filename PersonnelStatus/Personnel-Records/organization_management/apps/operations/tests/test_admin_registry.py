@@ -13,25 +13,14 @@ import pytest
 from django.contrib import admin
 from django.contrib.auth.models import User
 
-from organization_management.apps.operations.models import (
-    Role,
-    StatusType,
-    TemporaryDutyPermission,
-    UserRole,
-)
-from organization_management.apps.operations.models_audit import OpsAuditLog
-from organization_management.apps.operations.models_status import (
-    OpsEmployeeStatus,
-    Secondment,
-)
+# Поимённо импортируются только те модели, о которых у файла есть СВОЁ
+# утверждение (справочники в Admin и синглтон настроек). Запрещённые
+# перечисляет само приложение — см. FORBIDDEN_MODELS ниже.
+from organization_management.apps.operations.models import Role, StatusType
 from organization_management.apps.operations.models_submission import (
-    OpsDailySubmission,
     OpsDivisionNotifyRecipient,
     OpsSubmissionControlSettings,
-    OpsTomorrowBlockOverride,
 )
-from organization_management.apps.operations.models_notification import OpsNotification
-from organization_management.apps.operations.models_watermark import OpsWatermark
 
 pytestmark = pytest.mark.django_db
 
@@ -59,19 +48,53 @@ def test_the_notify_recipients_are_editable_in_admin():
     assert model_admin.search_fields == ("recipient",)
 
 
+# Что раздел ОСОЗНАННО отдаёт в Admin. Всё остальное — под запретом, и список
+# устроен именно так, а не наоборот: перечисляли бы мы запрещённое, новая модель
+# оказывалась бы разрешённой по умолчанию — то есть забыть было бы достаточно.
+#
+# Проверено на себе: до этого среза список был перечнем ЗАПРЕЩЁННЫХ, и три
+# модели, приехавшие с выпуском документа (вложение, счётчик номеров, выпуск),
+# в него никто не добавил. Зарегистрируй их кто-нибудь — гвард промолчал бы.
+ADMIN_ALLOWED = {
+    # Настройки контроля сдачи: перенести дедлайн должен уметь администратор,
+    # а не выкатка.
+    "OpsSubmissionControlSettings",
+    # Закрепление ответственного за уведомления: настройка, а не решение с
+    # последствиями — ни версии, ни записи в журнал она не порождает.
+    "OpsDivisionNotifyRecipient",
+}
+
+
+def _section_models():
+    from django.apps import apps
+
+    return sorted(
+        apps.get_app_config("operations").get_models(), key=lambda m: m.__name__
+    )
+
+
+FORBIDDEN_MODELS = [
+    model for model in _section_models() if model.__name__ not in ADMIN_ALLOWED
+]
+
+
+def test_the_section_has_models_to_check():
+    """Опора: пустой список моделей сделал бы проверку ниже вечнозелёной."""
+    assert len(FORBIDDEN_MODELS) >= 10
+
+
+def test_the_allowlist_names_only_models_that_exist():
+    """Опечатка в списке разрешённых молча РАСШИРИЛА бы запрет на настоящую
+    модель — она осталась бы под проверкой, а разрешение не сработало бы. Ещё
+    хуже обратное: переименовали модель, а имя в списке осталось, и новая
+    оказалась запрещена без объяснений."""
+    known = {model.__name__ for model in _section_models()}
+
+    assert ADMIN_ALLOWED <= known
+
+
 @pytest.mark.parametrize(
-    "model",
-    [
-        OpsDailySubmission,
-        OpsEmployeeStatus,
-        Secondment,
-        OpsAuditLog,
-        OpsTomorrowBlockOverride,
-        UserRole,
-        TemporaryDutyPermission,
-        OpsWatermark,
-        OpsNotification,
-    ],
+    "model", FORBIDDEN_MODELS, ids=[m.__name__ for m in FORBIDDEN_MODELS]
 )
 def test_business_records_are_not_registered(model):
     """Каждая из них пишется СЕРВИСОМ по своим правилам.
@@ -85,6 +108,10 @@ def test_business_records_are_not_registered(model):
     или «считать их пройденными», то есть повторную материализацию эффектов
     либо молча потерянные дни. Такое делают командой с её проверками, а не
     формой.
+
+    Список моделей берётся у ПРИЛОЖЕНИЯ, а не пишется руками: новая модель
+    попадает под запрет сама, и забыть её нельзя. Разрешения перечислены
+    отдельно и явно — их мало, и каждое объяснено.
     """
     assert site_admin(model) is None, f"{model.__name__} мутируем мимо сервиса"
 
