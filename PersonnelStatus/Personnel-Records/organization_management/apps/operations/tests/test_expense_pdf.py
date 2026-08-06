@@ -278,3 +278,28 @@ def test_the_totals_row_is_present(data):
     text = text_of(generate_expense_pdf(data))
 
     assert TOTALS_LABEL in text
+
+
+def test_a_cell_taller_than_the_page_does_not_break_the_build(catalog):
+    """Расход с людным нарядом обязан выпускаться.
+
+    Ячейка статуса несёт до двадцати имён с хвостом, и одна такая СТРОКА выше
+    листа A4. reportlab по умолчанию строку между страницами не разрывает и в
+    этом случае не «печатает как получится», а ПАДАЕТ — документ не собрался бы
+    вовсе.
+
+    Имена здесь нарочно ДЛИННЫЕ: короткие умещаются в строку, и на них дефект не
+    воспроизводится. Найден он был случайно — врезка канона порядка сменила
+    состав видимых двадцати на чуть более длинные имена, — и этот тест ставит
+    его на явную проверку.
+    """
+    long_name = "Константинопольский-Задунайский Викентий"
+    roster = [member(i, full_name=f"{long_name}{i:02d}") for i in range(30)]
+    rows = [fact(i, "DUTY") for i in range(30)]
+
+    payload = generate_expense_pdf(document(catalog, roster, rows))
+
+    from pypdf import PdfReader
+
+    assert payload.startswith(b"%PDF-")
+    assert len(PdfReader(io.BytesIO(payload)).pages) >= 2
