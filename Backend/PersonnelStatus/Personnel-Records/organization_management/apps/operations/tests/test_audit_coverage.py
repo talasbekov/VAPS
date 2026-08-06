@@ -9,10 +9,12 @@ audit_service: событие на каждую записанную СТРОК�
 запись живёт в транзакции мутации (откат уносит и её), а массовый путь
 остаётся с постоянным числом запросов.
 """
+import io
 from datetime import date, timedelta
 
 import pytest
 from django.db import connection, transaction
+from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
 from organization_management.apps.divisions.models import Division
@@ -26,6 +28,9 @@ from organization_management.apps.operations.bulk_status_service import (
 from organization_management.apps.operations.day_submission_service import (
     amend_day,
     submit_day,
+)
+from organization_management.apps.operations.document_service import (
+    create_attachment,
 )
 from organization_management.apps.operations.dismissal import (
     DISMISSAL_REASON,
@@ -574,7 +579,7 @@ def test_journal_row_is_written_synchronously_and_rolls_back(types):
     assert events() == []
 
 
-def test_every_declared_action_is_actually_written(types, home, host):
+def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     # Закрытый словарь работает в обе стороны: событие, которого никто не
     # пишет, — обещание фильтра, возвращающего пустоту. Ровно поэтому в этом
     # срезе из ACTIONS снят STATUSES_BULK_CREATED (сводки у пачки нет).
@@ -676,6 +681,15 @@ def test_every_declared_action_is_actually_written(types, home, host):
             ).first(),
             actor=ACTOR,
         )
+        # Запись байт официального документа — своя сущность журнала: строка о
+        # файле переживает и выпуск, и его замену.
+        with override_settings(OPS_PRIVATE_STORAGE_ROOT=str(tmp_path)):
+            create_attachment(
+                source=io.BytesIO(b"docx"),
+                original_name="расход.docx",
+                content_type="application/octet-stream",
+                actor=ACTOR,
+            )
 
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS
