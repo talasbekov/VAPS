@@ -18,6 +18,7 @@ django_content_type.name, колонке, которой в Django 5 нет.
 каталог он не заглядывает, и тест бы молча не исполнялся.
 """
 import hashlib
+import os
 
 from django.conf import settings
 from django.test import SimpleTestCase
@@ -28,11 +29,28 @@ class TestTestDatabaseIsolation(SimpleTestCase):
         name = settings.DATABASES["default"]["TEST"]["NAME"]
         assert name, "имя тестовой БД должно быть задано явно"
         # Ровно то имя, которое Django выводит по умолчанию и которое
-        # делили между собой чекауты.
+        # делили между собой чекауты. Держится в ЛЮБОМ режиме — и под
+        # PR_TEST_DB_NAME тоже: ручка разводит прогоны, а не возвращает
+        # общее имя.
         assert name != "test_personnel_records"
 
     def test_test_db_name_is_tied_to_this_checkout(self):
         name = settings.DATABASES["default"]["TEST"]["NAME"]
+
+        # PR_TEST_DB_NAME — штатный обход для ДВУХ ОДНОВРЕМЕННЫХ прогонов
+        # внутри одного чекаута: метка выводится из пути и у них совпадает,
+        # так что развести их может только явное имя (settings/test.py).
+        # Требовать метку и от него — требовать несовместимого: обход по
+        # инструкции краснил этот тест, и звали его как раз тогда, когда
+        # прогон и без того шёл в спорной обстановке.
+        override = os.environ.get("PR_TEST_DB_NAME")
+        if override:
+            # Не skip: ручка обязана исполняться. Промолчи тест здесь —
+            # settings, перестав её читать, вернули бы прогоны в общую базу,
+            # и ровно в этом режиме этого никто бы не заметил.
+            assert name == override, f"{name!r} не равно PR_TEST_DB_NAME"
+            return
+
         tag = hashlib.sha1(str(settings.BASE_DIR).encode()).hexdigest()[:8]
         # Метка выводится из пути чекаута: у соседнего каталога она другая,
         # значит базы не пересекутся. Стабильность между прогонами тоже
