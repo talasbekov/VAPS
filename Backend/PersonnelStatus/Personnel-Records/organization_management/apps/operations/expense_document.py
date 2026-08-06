@@ -26,6 +26,7 @@
 from dataclasses import dataclass, field
 from datetime import date
 
+from organization_management.apps.operations.roster_order import order_roster
 from organization_management.apps.operations.strength_report import (
     DERIVED_IN_SERVICE,
     expense_from_snapshot,
@@ -141,7 +142,15 @@ def build_expense_document(
     facts_by_employee = _parsed_facts(snapshot)
 
     members = {column: [] for column in columns_order}
-    for member in snapshot.get("roster", []):
+    # Состав перебирается в КАНОНИЧЕСКОМ порядке, и потому ячейки заполняются
+    # по нему сами: один проход задаёт порядок сразу всем колонкам, и разойтись
+    # им негде. Сортировать каждую ячейку отдельно значило бы завести столько
+    # мест, где порядок может съехать, сколько в справочнике колонок.
+    #
+    # До этого состав шёл в порядке employee_id — то есть в порядке появления
+    # строк в базе: старший по должности стоял между рядовыми потому, что его
+    # завели позже.
+    for member in order_roster(snapshot.get("roster", [])):
         employee_facts = facts_by_employee.get(member["employee_id"], ())
         winner = resolve_status(employee_facts, business_date, catalog)
         if not catalog.counts_in_staff.get(winner, True):
