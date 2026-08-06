@@ -1856,10 +1856,16 @@ class AuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     )
                 }
             )
+        actor = request.query_params.get("actor")
+        # `?actor=` доезжает сюда пустой строкой, а не отсутствием. Журнал
+        # пустого актора не пишет вовсе, поэтому совпасть такой фильтр не может
+        # ни с чем: 200 с нулём строк соврал бы «событий не было».
+        if actor is not None and not actor.strip():
+            raise ValidationError({"actor": "Ожидается непустое значение."})
         queryset = OpsAuditLogSelector.list(
             entity_type=entity_type,
             entity_id=entity_id,
-            actor_user_id=request.query_params.get("actor"),
+            actor_user_id=actor,
             action=_parse_choice_param(request, "action", audit_service.ACTIONS),
             created_from=_parse_datetime_param(request, "created_from"),
             created_to=_parse_datetime_param(request, "created_to"),

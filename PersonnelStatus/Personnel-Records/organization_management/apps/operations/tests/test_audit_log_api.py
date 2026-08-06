@@ -212,6 +212,32 @@ class TestFilters:
         assert response.status_code == 200
         assert ids_of(response) == [mine.pk]
 
+    def test_a_blank_actor_is_400_and_not_an_empty_page(self):
+        """`?actor=` доезжает пустой строкой, а не отсутствием.
+
+        Журнал пустого актора НЕ ПИШЕТ ВОВСЕ — audit_service отвергает такую
+        запись на входе, — значит совпасть этот фильтр не может ни с чем
+        никогда. 200 с нулём строк соврал бы «событий такого актора не было»
+        там, где вопрос вообще нельзя было задать.
+
+        Проверяется вместе с непустым запросом: без него отказ объяснялся бы
+        тем, что строк в журнале нет.
+        """
+        write(actor="7")
+        api = reader()
+        assert get(api).data["count"] == 1
+
+        assert get(api, actor="").status_code == 400
+        assert get(api, actor="   ").status_code == 400
+
+    def test_the_selector_refuses_a_blank_actor_too(self):
+        from organization_management.apps.operations.selectors import (
+            OpsAuditLogSelector,
+        )
+
+        with pytest.raises(ValueError):
+            OpsAuditLogSelector.list(actor_user_id="  ")
+
     def test_the_selector_refuses_it_too(self):
         """Правило принадлежит селектору: он объявлен ЕДИНСТВЕННЫМ каналом
         чтения журнала, и второй читатель обязан получить тот же запрет, не
