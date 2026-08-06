@@ -72,6 +72,11 @@ SUBMISSION_EXPORTED = "SUBMISSION_EXPORTED"
 # (выпуск откатился после записи байт), и журнал обязан уметь его показать —
 # иначе на диске остаётся объект, о происхождении которого не сказано нигде.
 ATTACHMENT_UPLOADED = "ATTACHMENT_UPLOADED"
+# Документ выпущен: у дня появился исходящий номер. Событие ОТДЕЛЬНО от
+# записи байт — записать файл и выпустить документ это разные решения, и
+# первое бывает без второго (выпуск откатился), а вот второго без первого не
+# бывает никогда.
+DOCUMENT_ISSUED = "DOCUMENT_ISSUED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -99,6 +104,7 @@ ACTIONS = frozenset(
         DAILY_SUMMARY_REBUILT,
         SUBMISSION_EXPORTED,
         ATTACHMENT_UPLOADED,
+        DOCUMENT_ISSUED,
     }
 )
 
@@ -116,6 +122,10 @@ ENTITY_TOMORROW_BLOCK_OVERRIDE = "tomorrow_block_override"
 # и его замену, а лента конкретного файла отвечает на вопрос «эти байты откуда
 # взялись и кто их забирал».
 ENTITY_ATTACHMENT = "attachment"
+# Выпуск — своя сущность, а не вложение: у ленты выпуска ось «исходящий
+# номер», и события замены документа рассказывают про номер, а не про байты
+# (байты заменённого выпуска не меняются вовсе).
+ENTITY_ISSUED_DOCUMENT = "issued_document"
 
 ENTITY_TYPES = frozenset(
     {
@@ -125,6 +135,7 @@ ENTITY_TYPES = frozenset(
         ENTITY_SUBMISSION,
         ENTITY_TOMORROW_BLOCK_OVERRIDE,
         ENTITY_ATTACHMENT,
+        ENTITY_ISSUED_DOCUMENT,
     }
 )
 

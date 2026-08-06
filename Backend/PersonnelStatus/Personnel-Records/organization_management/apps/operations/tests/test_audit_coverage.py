@@ -29,6 +29,9 @@ from organization_management.apps.operations.day_submission_service import (
     amend_day,
     submit_day,
 )
+from organization_management.apps.operations.document_release import (
+    issue_expense_document,
+)
 from organization_management.apps.operations.document_service import (
     create_attachment,
 )
@@ -682,13 +685,28 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
             actor=ACTOR,
         )
         # Запись байт официального документа — своя сущность журнала: строка о
-        # файле переживает и выпуск, и его замену.
+        # файле переживает и выпуск, и его замену. Выпуск дня пишет ОБЕ строки
+        # (байты и номер) и потому покрывает оба события разом; отдельная
+        # запись вложения оставлена рядом как путь без выпуска.
+        # Выводимое «в строю» справочник seed_types не содержит, а расходу оно
+        # нужно как колонка: без него выпуск падает на сборке документа.
+        StatusType.objects.get_or_create(
+            code="IN_SERVICE",
+            defaults={
+                "name": "В строю",
+                "priority": 999,
+                "report_column_code": "IN_SERVICE",
+            },
+        )
         with override_settings(OPS_PRIVATE_STORAGE_ROOT=str(tmp_path)):
             create_attachment(
                 source=io.BytesIO(b"docx"),
                 original_name="расход.docx",
                 content_type="application/octet-stream",
                 actor=ACTOR,
+            )
+            issue_expense_document(
+                division_id=home.id, business_date=TODAY, actor=ACTOR
             )
 
     written = {entry.action for entry in events()}
