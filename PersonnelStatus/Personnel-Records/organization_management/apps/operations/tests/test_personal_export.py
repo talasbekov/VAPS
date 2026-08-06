@@ -217,21 +217,39 @@ def test_the_footer_reports_the_roster_size():
     assert EMPTY_STATUS_LEGEND in texts
 
 
-def test_the_order_repeats_the_snapshot():
-    """Своей сортировки нет: две копии одной версии обязаны совпасть."""
-    sheet = workbook_of(
-        snapshot={
-            "schema_version": 1,
-            "roster": [
-                {"employee_id": 5, "full_name": "Пятый", "rank": ""},
-                {"employee_id": 1, "full_name": "Первый", "rank": ""},
-            ],
-            "rows": [],
-        }
-    )
+def test_two_copies_of_one_version_come_out_the_same():
+    """То, что этот тест охранял с самого начала: копию берут, чтобы предъявить
+    её в споре, и две выдачи одной версии обязаны совпасть.
 
-    _, body = table_of(sheet)
-    assert [row[2] for row in body] == ["Пятый", "Первый"]
+    Раньше это выражалось через порядок снимка («своей сортировки нет») и
+    проверялось буквально: пятый перед первым. Порядок с тех пор стал каноном
+    раздела — тем же, по которому печатается расход (см.
+    test_personal_export_order.py), — но требование к самой копии не изменилось,
+    и здесь проверяется именно оно: НЕЗАВИСИМОСТЬ ОТ ПОРЯДКА ВХОДА.
+
+    Вход переставлен намеренно: совпади он с выходом, тест не отличал бы
+    «порядок задан правилом» от «повезло».
+    """
+    people = [
+        {"employee_id": 5, "full_name": "Пятый", "rank": ""},
+        {"employee_id": 1, "full_name": "Первый", "rank": ""},
+    ]
+
+    straight = table_of(
+        workbook_of(snapshot={"schema_version": 1, "roster": people, "rows": []})
+    )[1]
+    swapped = table_of(
+        workbook_of(
+            snapshot={
+                "schema_version": 1,
+                "roster": list(reversed(people)),
+                "rows": [],
+            }
+        )
+    )[1]
+
+    assert [row[2] for row in straight] == [row[2] for row in swapped]
+    assert [row[2] for row in straight] == ["Первый", "Пятый"]
 
 
 # ── Сервис ───────────────────────────────────────────────────────────────
