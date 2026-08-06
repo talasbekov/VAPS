@@ -743,6 +743,12 @@ class OpsAuditLogSelector:
                 "лента объекта требует entity_type: один entity_id принадлежит "
                 "сразу нескольким сущностям журнала"
             )
+        # Пустого актора журнал НЕ ПИШЕТ (audit_service отвергает такую запись
+        # на входе), значит такой фильтр не может совпасть ни с чем никогда.
+        # Вернуть по нему пустую страницу значило бы ответить «таких событий не
+        # было» на вопрос, который вообще нельзя было задать.
+        if actor_user_id is not None and not str(actor_user_id).strip():
+            raise ValueError("фильтр по актору требует непустого значения")
         queryset = OpsAuditLog.objects.all()
         if entity_type is not None:
             queryset = queryset.filter(entity_type=entity_type)
