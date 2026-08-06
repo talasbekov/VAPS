@@ -296,3 +296,19 @@ class StrengthReportService:
         return derive_report(
             employees, status_rows, staff_map, business_date, division_names=names
         )
+
+
+def compute_status_summary(business_date, division_id=None):
+    """Story 20.6a (FR-40): «сводка по статусам» — именованный контракт
+    поверх УЖЕ существующего расчёта. `StrengthReportService.compute()`
+    попутно считает org-wide/поддерево-агрегат по 11 отчётным колонкам
+    (`ReportTotals`, derive_report()'s totals-цикл) — эта функция даёт
+    ему явное имя, не строит новую агрегацию. Возвращает ТОЛЬКО `.totals`
+    (не построчные `rows` по подразделениям — те принадлежат «штатному
+    расписанию», 20.5, другому отчёту).
+
+    Может выбросить `AssertionError` (не перехватывается) — `derive_report()`
+    перепроверяет convergence-инвариант («Σ columns == Список») на totals;
+    пробрасывается КАК ЕСТЬ, эта обёртка не глотает и не оборачивает
+    исключение (review, Edge Case Hunter)."""
+    return StrengthReportService.compute(business_date, division_id).totals

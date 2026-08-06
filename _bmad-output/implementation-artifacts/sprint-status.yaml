@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-08-06 (20.5a → done)
+# last_updated: 2026-08-06 (20.6a → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -847,5 +847,9 @@ development_status:
   # frontend/print form are separate stories. This key tracks the
   # division x position aggregate selector slice (20.5a).
   20-5a-штатное-расписание-селектор: done
-  20-6-отчёт-сводка-по-статусам: backlog
+  # 20.6 decomposed (create-story, 2026-08-06): backend selector, API,
+  # frontend/print form are separate stories. This key tracks the named
+  # accessor slice (20.6a) — computation already existed as a side effect
+  # of StrengthReportService.compute(), this story just names/tests it.
+  20-6a-сводка-по-статусам-селектор: done
   epic-20-retrospective: optional
