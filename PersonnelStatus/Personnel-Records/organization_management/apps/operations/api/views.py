@@ -84,6 +84,15 @@ from organization_management.apps.operations.day_submission_service import (
     amend_day,
     submit_day,
 )
+from django.conf import settings
+from django.http import FileResponse
+from django.utils.http import content_disposition_header
+from organization_management.apps.operations.document_storage import (
+    xaccel_redirect_path,
+)
+from organization_management.apps.operations.document_service import (
+    prepare_download,
+)
 from organization_management.apps.operations.document_release import (
     issue_expense_document,
     reissue_expense_document,
@@ -99,6 +108,8 @@ from organization_management.apps.operations.models_submission import (
 )
 from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.selectors import (
+    OpsAttachmentSelector,
+    OpsIssuedDocumentSelector,
     DailySubmissionSelector,
     DivisionTreeSelector,
     OpsAuditLogSelector,
@@ -165,6 +176,11 @@ _AMEND_DAY_PERMISSION = "daily_report.correct"
 # Право на СБОРКУ сводки — «генерация суточного отчёта»: консолидировать
 # эшелон и отмечать статусы в своём подразделении разные полномочия.
 _GENERATE_REPORT_PERMISSION = "daily_report.generate"
+
+# Право видеть байты документа. Отдельное от права выпускать: выпускает
+# ограниченный круг, а предъявленный документ читают шире — и обратное тоже
+# верно, читатель не обязан уметь выпускать.
+_DOCUMENT_VIEW_PERMISSION = "document.view"
 # Право на обход блокировки завтрашнего дня — тоже своё: обход снимает замок
 # со всего раздела на целый день, и вывести его из права отмечать значило бы
 # раздать полномочие руководителя каждому оператору.
@@ -2684,3 +2700,77 @@ class IssuedDocumentViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response(
             OpsIssuedDocumentSerializer(issued).data, status=status.HTTP_201_CREATED
         )
+
+
+class AttachmentViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Байты официальных документов.
+
+    GET /api/operations/attachments/{id}/download/
+
+    ОТДЕЛЬНЫЙ МАРШРУТ ОТ ВЫПУСКОВ, потому что и объект другой: выпуск — это
+    номер, день и решение, а здесь выдаются БАЙТЫ. У заменённого выпуска они
+    свои и по-прежнему предъявляются: отказать в них значило бы стереть историю
+    у того, кто держит документ на руках.
+
+    ОБЛАСТЬ РЕШАЕТ ВЛАДЕЛЕЦ. Само вложение не знает ни подразделения, ни дня —
+    оно знает только про файл, — поэтому право отдать его выводится из ВЫПУСКА,
+    которому байты принадлежат. Вложение без выпуска не адресуемо вовсе (404):
+    байты откатившегося выпуска на диске остаются, и открывать к ним доступ
+    снаружи было бы дырой ровно там, где мы согласились на мусор.
+
+    ТЕЛО ПИШЕТ ВЕБ-СЕРВЕР, когда так настроено (X-Accel-Redirect): Django
+    проверяет право, сверяет дайджест и кладёт заголовок, а файл льёт nginx.
+    Заголовки Content-* при этом одни и те же в обоих режимах — иначе
+    включение ускорителя незаметно меняло бы имя скачиваемого файла.
+    """
+
+    permission_map = {"download": _DOCUMENT_VIEW_PERMISSION}
+    http_method_names = ["get", "options"]
+
+    @extend_schema(
+        responses={(200, "application/octet-stream"): OpenApiTypes.BINARY},
+        description=(
+            "Скачать байты документа под правом document.view. Область — по "
+            "выпуску, которому принадлежат байты: чужое подразделение 403. "
+            "Перед выдачей дайджест сверяется байт-в-байт и пишется строка "
+            "журнала. 404 — нет такого вложения или оно не принадлежит ни "
+            "одному выпуску; 500 DOCUMENT_INTEGRITY_FAILED — порча хранилища. "
+            "При OPS_XACCEL_ENABLED=1 тело пустое, файл отдаёт nginx."
+        ),
+    )
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None, *args, **kwargs):
+        attachment = OpsAttachmentSelector.get(pk)
+        issued = (
+            OpsIssuedDocumentSelector.for_attachment(attachment)
+            if attachment is not None
+            else None
+        )
+        if issued is None:
+            # Мусорный id, несуществующее вложение и вложение без выпуска —
+            # ОДИН ответ: разница рассказывала бы, что лежит в хранилище.
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"attachment_id": str(pk)},
+                message="Документ не найден.",
+            )
+        _assert_division_in_scope(
+            request,
+            issued.division_id,
+            _DOCUMENT_VIEW_PERMISSION,
+            field="attachment_id",
+        )
+        # Сверка дайджеста и запись выдачи — в сервисе; вьюха только собирает
+        # ответ (порча даёт 500 ДО того, как ответ начнёт строиться).
+        path = prepare_download(attachment=attachment, actor=resolve_actor_id(request))
+        disposition = content_disposition_header(True, attachment.original_name)
+        if settings.OPS_XACCEL_ENABLED:
+            response = HttpResponse(content_type=attachment.content_type)
+            response["X-Accel-Redirect"] = xaccel_redirect_path(attachment)
+        else:
+            response = FileResponse(
+                open(path, "rb"), content_type=attachment.content_type
+            )
+        response["Content-Disposition"] = disposition
+        return response
