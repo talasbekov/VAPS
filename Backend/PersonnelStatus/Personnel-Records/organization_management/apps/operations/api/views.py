@@ -1803,7 +1803,11 @@ class AuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
             OpenApiParameter(
                 "entity_id",
                 OpenApiTypes.INT,
-                description="Идентификатор сущности; вместе с entity_type — её лента.",
+                description=(
+                    "Идентификатор сущности; ТОЛЬКО вместе с entity_type — "
+                    "нумерация у сущностей своя, и одно число без типа "
+                    "принадлежит сразу нескольким."
+                ),
             ),
             OpenApiParameter(
                 "actor", OpenApiTypes.STR, description="Актор события, точное совпадение."
@@ -1829,17 +1833,32 @@ class AuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "Лента журнала раздела под правом audit.view. Окно "
             "[created_from, created_to) полуоткрытое — соседние окна не "
             "покажут одну строку дважды. Неизвестный тип сущности или код "
-            "события — 400, а не пустая страница. Порядок задаёт сервер: "
+            "события — 400, а не пустая страница; entity_id без entity_type — "
+            "тоже 400: одно число принадлежит сразу нескольким сущностям, и "
+            "смешанная лента неотличима от настоящей. Порядок задаёт сервер: "
             "свежие первыми, при равном времени (пачка пишется одним "
             "моментом) — по убыванию id."
         ),
     )
     def list(self, request, *args, **kwargs):
+        entity_type = _parse_choice_param(
+            request, "entity_type", audit_service.ENTITY_TYPES
+        )
+        entity_id = _parse_int_param(request, "entity_id")
+        # Запрет принадлежит селектору (владельцу ленты); здесь он только
+        # переводится в отказ формы — спрошено неверно, а не «данных нет».
+        if entity_id is not None and entity_type is None:
+            raise ValidationError(
+                {
+                    "entity_type": (
+                        "Обязателен вместе с entity_id: один идентификатор "
+                        "принадлежит сразу нескольким сущностям журнала."
+                    )
+                }
+            )
         queryset = OpsAuditLogSelector.list(
-            entity_type=_parse_choice_param(
-                request, "entity_type", audit_service.ENTITY_TYPES
-            ),
-            entity_id=_parse_int_param(request, "entity_id"),
+            entity_type=entity_type,
+            entity_id=entity_id,
             actor_user_id=request.query_params.get("actor"),
             action=_parse_choice_param(request, "action", audit_service.ACTIONS),
             created_from=_parse_datetime_param(request, "created_from"),

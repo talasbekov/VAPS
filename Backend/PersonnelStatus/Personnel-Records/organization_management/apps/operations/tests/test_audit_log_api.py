@@ -184,6 +184,45 @@ class TestFilters:
         assert response.status_code == 400
         assert "entity_id" in response.data
 
+    def test_an_id_without_a_type_is_400_and_not_a_mixed_feed(self):
+        """Нумерация у семи сущностей журнала СВОЯ: статус №5 и вложение №5
+        существуют одновременно.
+
+        Отфильтруй журнал по одному числу — в «ленту объекта» слились бы
+        истории разных объектов, и отличить их в списке нечем: события
+        настоящие, время настоящее, актор настоящий. Такую ленту невозможно ни
+        опровергнуть, ни заметить, поэтому спрашивать так нельзя вовсе.
+        """
+        write(entity_type=audit_service.ENTITY_STATUS, entity_id=5)
+        write(entity_type=audit_service.ENTITY_ATTACHMENT, entity_id=5)
+
+        response = get(reader(), entity_id=5)
+
+        assert response.status_code == 400
+        assert "entity_type" in response.data
+
+    def test_a_type_without_an_id_is_still_allowed(self):
+        """Запрет односторонний: «все события вложений» — законный вопрос, и
+        закрой его заодно, отказ выше объяснялся бы чем угодно."""
+        mine = write(entity_type=audit_service.ENTITY_ATTACHMENT, entity_id=5)
+        write(entity_type=audit_service.ENTITY_STATUS, entity_id=5)
+
+        response = get(reader(), entity_type=audit_service.ENTITY_ATTACHMENT)
+
+        assert response.status_code == 200
+        assert ids_of(response) == [mine.pk]
+
+    def test_the_selector_refuses_it_too(self):
+        """Правило принадлежит селектору: он объявлен ЕДИНСТВЕННЫМ каналом
+        чтения журнала, и второй читатель обязан получить тот же запрет, не
+        переписывая его у себя."""
+        from organization_management.apps.operations.selectors import (
+            OpsAuditLogSelector,
+        )
+
+        with pytest.raises(ValueError):
+            OpsAuditLogSelector.list(entity_id=5)
+
 
 # ── Порядок и страницы ───────────────────────────────────────────────────
 
