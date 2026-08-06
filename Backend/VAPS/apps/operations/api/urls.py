@@ -8,6 +8,7 @@ from apps.operations.api.views import (
     UserRoleViewSet,
 )
 from apps.operations.duties.api.views import DutyPlanViewSet
+from apps.operations.load.api.views import OverloadViewSet
 from apps.operations.events.api.views import (
     AssignmentVersionViewSet,
     GroupForceRequestViewSet,
@@ -57,5 +58,6 @@ router.register(
 router.register("journal-entries", JournalEntryViewSet, basename="ops-journal-entry")
 router.register("statuses", StatusViewSet, basename="ops-status")
 router.register("statuses/types", StatusTypeViewSet, basename="ops-status-type")
+router.register("load", OverloadViewSet, basename="ops-load")
 
 urlpatterns = router.urls

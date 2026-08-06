@@ -382,6 +382,12 @@ MATRIX = {
     # (нет division_id — тот же принцип, что override-tomorrow-block: org-wide
     # чтение, не per-подразделение выпуск).
     "ops-expense-report-dashboard": _MethodGate({"get": "daily_report.generate"}),
+    # дни перегрузки по управлению (story 20.3b, FR-32), GET-only. Грубый гейт
+    # RequirePermissionMixin {"summary": status.view}; per-запрос scope
+    # (module-local _ensure_division_scope, ARCH-003-подобная копия из
+    # statuses/api/views.py) энфорсит вьюха, матрицей не проверяется —
+    # payloadless GET держателя = 400 сериализатора = ALLOW по канону.
+    "ops-load-summary": _MethodGate({"get": "status.view"}),
     # bugreports — story 13.1a. POST (create) — cost ~0, any authenticated
     # actor, NO permission code (буква стори). GET (list/retrieve) —
     # bugreports.view (DEVELOPER-only per seed) — visibility restricted,
