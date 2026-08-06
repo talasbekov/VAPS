@@ -13,13 +13,15 @@ document_release_service из Backend/VAPS).
   сегодняшний»), а не новая вольность: другого источника штата у старой
   структуры нет, и притвориться, будто он есть, было бы хуже.
 
-Форматов три, и различает их ПОТРЕБИТЕЛЬ, а не вкус: .csv — числа для
-дальнейшего счёта, .xlsx — лист для работы, .docx — страница под подпись.
-Данные у всех трёх одни: разъехаться им негде, считает только билдер.
+Форматов четыре, и различает их ПОТРЕБИТЕЛЬ, а не вкус: .csv — числа для
+дальнейшего счёта, .xlsx — лист для работы, .docx — страница под подпись,
+.pdf — то же, что .docx, но уже нередактируемое: его отправляют и подшивают.
+Данные у всех четырёх одни: разъехаться им негде, считает только билдер.
 """
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.expense_csv import generate_expense_csv
 from organization_management.apps.operations.expense_docx import generate_expense_docx
+from organization_management.apps.operations.expense_pdf import generate_expense_pdf
 from organization_management.apps.operations.expense_document import (
     build_expense_document,
     combine_documents,
@@ -52,6 +54,10 @@ FORMATS = {
         "docx",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ),
+    # .pdf — та же страница, что .docx, но уже нередактируемая: её отправляют и
+    # подшивают. Форматов стало четыре, и различает их по-прежнему ПОТРЕБИТЕЛЬ,
+    # а не вкус.
+    "pdf": (generate_expense_pdf, "pdf", "application/pdf"),
 }
 
 

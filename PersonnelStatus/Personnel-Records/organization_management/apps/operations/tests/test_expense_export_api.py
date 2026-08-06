@@ -9,6 +9,7 @@ from datetime import timedelta
 
 import pytest
 from docx import Document as DocxDocument
+from pypdf import PdfReader
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
@@ -134,13 +135,43 @@ def test_the_parameter_is_not_named_format(types, division):
     assert get(reader("ex-fmt"), division.id, file_format="xlsx").status_code == 200
 
 
-def test_an_unknown_format_is_400(types, division):
+def test_pdf_is_a_real_document(types, division):
+    """Нередактируемая форма едет тем же маршрутом и тем же правом.
+
+    Проверяется ОТКРЫТЫЙ документ, а не MIME: .pdf с верным заголовком и битым
+    содержимым браузер скачал бы молча, и дефект вскрылся бы у получателя.
+    """
+    employee = in_slot(division)
+    fact(employee, code="DUTY")
     submit(division)
 
     response = get(reader(), division.id, file_format="pdf")
 
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF-")
+    text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(response.content)).pages
+    )
+    assert "Управление" in text
+    assert response["Content-Disposition"] == (
+        f'attachment; filename="expense-{TODAY.isoformat()}.pdf"'
+    )
+
+
+def test_an_unknown_format_is_400(types, division):
+    """Пример НЕизвестного формата не должен становиться известным.
+
+    Раньше здесь стоял «pdf» — и с его появлением тест доказывал бы обратное
+    тому, что заявляет. Взят заведомо чужой формат.
+    """
+    submit(division)
+
+    response = get(reader(), division.id, file_format="rtf")
+
     assert response.status_code == 400
-    assert response.data["details"]["allowed"] == ["csv", "docx", "xlsx"]
+    assert response.data["details"]["allowed"] == ["csv", "docx", "pdf", "xlsx"]
 
 
 # ── Откуда числа ─────────────────────────────────────────────────────────

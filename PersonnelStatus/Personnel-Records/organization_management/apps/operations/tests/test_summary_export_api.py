@@ -7,6 +7,7 @@ import io
 
 import pytest
 from docx import Document as DocxDocument
+from pypdf import PdfReader
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
@@ -133,11 +134,38 @@ def test_the_file_is_an_attachment(types, tree):
     assert response["Content-Disposition"].startswith("attachment;")
 
 
-def test_an_unknown_format_is_400(types, tree):
+def test_pdf_carries_every_division_row(types, tree):
+    """Сводка умеет и нередактируемую форму — форматы у неё общие с личной
+    выгрузкой, и разойдись они, один и тот же документ печатался бы разными
+    наборами форм в зависимости от того, чей он.
+
+    Проверяется ОТКРЫТЫЙ документ: многострочность — единственное, чем сводка
+    отличается от личной выгрузки, и её надо видеть в тексте.
+    """
     root, _, _ = tree
     assembled(tree)
 
-    assert get(reader(), root.id, file_format="pdf").status_code == 400
+    response = get(reader(), root.id, file_format="pdf")
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"%PDF-")
+    text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(response.content)).pages
+    )
+    assert "ИТОГО" in text
+
+
+def test_an_unknown_format_is_400(types, tree):
+    """Пример НЕизвестного формата не должен становиться известным.
+
+    Раньше здесь стоял «pdf» — и с его появлением тест доказывал бы обратное
+    тому, что заявляет. Взят заведомо чужой формат.
+    """
+    root, _, _ = tree
+    assembled(tree)
+
+    assert get(reader(), root.id, file_format="rtf").status_code == 400
 
 
 # ── Гарды ────────────────────────────────────────────────────────────────
