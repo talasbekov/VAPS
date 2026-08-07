@@ -203,11 +203,15 @@ def test_the_numbers_come_from_the_snapshot_not_from_today(types, division):
     assert after == before
 
 
-def test_the_staff_denominator_is_live(types, division):
-    """Штата снимок не хранит вовсе.
+def test_the_staff_denominator_is_frozen_with_the_day(types, division):
+    """Знаменатель — из снимка, а не живой.
 
-    Другого источника у старой структуры нет, и притвориться, будто он есть,
-    было бы хуже: цифра «по штату» приходит живой, как и в экранном расходе.
+    Тест раньше закреплял обратное, и довод был верен на тот момент: «штата
+    снимок не хранит вовсе, другого источника у старой структуры нет». Со
+    схемы 6 источник есть, и появился он потому, что живой знаменатель ломал
+    АРИФМЕТИКУ САМОГО ДОКУМЕНТА — см. соседний тест.
+
+    Штат расширяется ПОСЛЕ сдачи: в подписанном дне новой единицы не было.
     """
     in_slot(division)
     submit(division)
@@ -216,8 +220,30 @@ def test_the_staff_denominator_is_live(types, division):
     rows = get(reader(), division.id).content.decode("utf-8-sig").split("\r\n")
     data_row = rows[2].split(";")
 
-    assert data_row[2] == "2"  # по штату — два слота, второй свободен
-    assert data_row[4] == "1"  # вакансия
+    assert data_row[2] == "1"  # по штату — один слот, как было при сдаче
+    assert data_row[4] == "0"  # вакансий не было
+
+
+def test_the_signed_document_adds_up_after_the_staff_shrinks(types, division):
+    """РАДИ ЧЕГО заморожен знаменатель.
+
+    Пока он был живым, удаление штатной единицы делало документ за вчера
+    внутренне противоречивым: штат оказывался МЕНЬШЕ, чем список плюс
+    вакансии. Читатель видит бумагу, у которой не бьётся арифметика, и
+    объяснить её нечем.
+
+    Проверяется само равенство, а не конкретные числа: оно и есть то, что
+    обязано выполняться на любом дне.
+    """
+    in_slot(division)
+    in_slot(division)
+    submit(division)
+    StaffUnit.objects.filter(division=division).exclude(employee=None).first().delete()
+
+    rows = get(reader(), division.id).content.decode("utf-8-sig").split("\r\n")
+    staff, listed, vacancies = (int(rows[2].split(";")[i]) for i in (2, 3, 4))
+
+    assert staff == listed + vacancies
 
 
 def test_the_title_names_the_division(types, division):

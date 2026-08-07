@@ -412,6 +412,24 @@ def catalog_of(snapshot, live_catalog):
     return StatusCatalog.from_rows(rows)
 
 
+def denominator_of(snapshot, live_staff_total, live_vacancies):
+    """Штат и вакансии, которыми подписывать ЭТОТ снимок: (штат, вакансии).
+
+    Четвёртый сосед `catalog_of` / `names_of` / `title_of`. Снимок схемы 6
+    несёт оба числа на момент сдачи, и печатать надо ими: пока они брались
+    живыми, подписанный документ переставал СХОДИТЬСЯ САМ С СОБОЙ — удали
+    кто-нибудь штатную единицу, и штат за вчера оказывался меньше, чем список
+    плюс вакансии.
+
+    Берутся ОБА или НИ ОДНОГО: смешать замороженный штат с живыми вакансиями
+    значило бы получить третье, не бывшее ни тогда, ни сейчас. Поэтому
+    признаком служит наличие `staff_total`, а не каждого числа по отдельности.
+    """
+    if "staff_total" not in snapshot:
+        return live_staff_total, live_vacancies
+    return snapshot["staff_total"], snapshot.get("vacancies", 0)
+
+
 def title_of(snapshot, live_title):
     """Название подразделения, которым подписывать ЭТОТ снимок.
 

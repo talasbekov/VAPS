@@ -136,8 +136,8 @@ def test_the_schema_version_was_raised(types, division):  # noqa: F811
     отличают одну раскладку от другой."""
     in_slot(division)
 
-    assert build_division_snapshot(division.id, TODAY)["schema_version"] == 5
-    assert SCHEMA_VERSION == 5
+    assert build_division_snapshot(division.id, TODAY)["schema_version"] == 6
+    assert SCHEMA_VERSION == 6
 
 
 def test_the_reader_still_understands_the_previous_layout():
