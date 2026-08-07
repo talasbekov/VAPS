@@ -23,7 +23,7 @@
 Всё это приходит аргументами от вызывающего: подмешать живые числа внутри
 значило бы выдать наполовину сегодняшний документ за сданный вчера.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from organization_management.apps.operations.roster_order import order_roster
@@ -240,8 +240,38 @@ def combine_documents(documents, *, division_title, business_date, columns):
 
     `columns` задаётся явно (а не берётся у первого документа): пустой список
     строк — законное состояние, и у него всё равно обязана быть шапка.
+
+    СТРОКИ МОГУТ ПРИЙТИ С РАЗНЫМИ НАБОРАМИ КОЛОНОК, и это не порча данных.
+    Со схемы снимка 3 каждый сданный день считается СВОИМ замороженным
+    справочником, а сводка склеивает дни разных подразделений: переименуй
+    администратор колонку между двумя сдачами — и один ребёнок принесёт строку
+    со старым именем колонки, другой с новым. Раньше на этом весь сводный
+    документ падал KeyError, то есть родитель не мог напечатать день ВООБЩЕ —
+    ровно та поломка, которую срез 134 закрывал у дневного документа.
+
+    Поэтому шапка — ОБЪЕДИНЕНИЕ: сперва переданный порядок, затем колонки,
+    встретившиеся в строках и в него не попавшие (в порядке первого появления,
+    чтобы документ не зависел от порядка словарей). А недостающие ячейки
+    достраиваются НУЛЯМИ — не «данных нет», а «в ту эпоху справочника такой
+    колонки не было», и ноль это и означает.
+
+    Слить старую колонку с новой было бы хуже падения: числа сошлись бы под
+    именем, которого один из дней не подписывал.
     """
     rows = [row for document in documents for row in document.rows]
+    order = list(columns)
+    seen = set(order)
+    for row in rows:
+        for column in row.cells:
+            if column not in seen:
+                seen.add(column)
+                order.append(column)
+
+    empty = ExpenseCell(count=0)
+    rows = [
+        replace(row, cells={column: row.cells.get(column, empty) for column in order})
+        for row in rows
+    ]
     return ExpenseDocumentData(
         division_title=division_title,
         business_date=business_date,
@@ -252,9 +282,9 @@ def combine_documents(documents, *, division_title, business_date, columns):
             vacancies=sum(row.vacancies for row in rows),
             columns={
                 column: sum(row.cells[column].count for row in rows)
-                for column in columns
+                for column in order
             },
             attached=sum(row.attached.count for row in rows),
         ),
-        columns=tuple(columns),
+        columns=tuple(order),
     )
