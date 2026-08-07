@@ -8,6 +8,7 @@ data->bytes», но с одним допустимым bulk-запросом в�
 import csv
 import io
 
+from apps.core.exports.csv_safety import sanitize_cell
 from apps.core.models import SensitiveFieldPolicy
 from apps.core.services import mask_employee_data
 
@@ -19,20 +20,6 @@ EMPLOYEE_CSV_COLUMNS = (
     "division_id",
     "employment_status",
 )
-
-# Review (Blind Hunter + Edge Case Hunter, независимо совпали, CWE-1236):
-# free-text поля (напр. full_name — собран из last_name/first_name/
-# middle_name, апп/core/models.py, без ограничения символов) могут начинаться
-# с `=`/`+`/`-`/`@` — Excel/LibreOffice трактует такую ячейку как формулу при
-# открытии CSV. Ведущий апостроф — стандартная OWASP-митигация (ячейка
-# читается как текст, не исполняется).
-_FORMULA_TRIGGER_CHARS = ("=", "+", "-", "@")
-
-
-def _sanitize_cell(value):
-    if isinstance(value, str) and value.startswith(_FORMULA_TRIGGER_CHARS):
-        return "'" + value
-    return value
 
 
 def build_employees_csv(rows, *, user_permissions) -> bytes:
@@ -58,7 +45,7 @@ def build_employees_csv(rows, *, user_permissions) -> bytes:
         )
         writer.writerow(
             {
-                column: _sanitize_cell(masked.get(column))
+                column: sanitize_cell(masked.get(column))
                 for column in EMPLOYEE_CSV_COLUMNS
             }
         )

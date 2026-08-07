@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-08-07 (20.6c → done)
+# last_updated: 2026-08-07 (20.4b → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -859,6 +859,7 @@ development_status:
   # This key tracks employees x CSV only (20.4a); history (20.4b)/audit
   # (20.4c)/xlsx (20.4d) get their own keys when created.
   20-4a-экспорт-сотрудников-csv: done
+  20-4b-экспорт-истории-csv: done
   # 20.5 decomposed (create-story, 2026-08-06): backend selector, API,
   # frontend/print form are separate stories. This key tracks the
   # division x position aggregate selector slice (20.5a).
