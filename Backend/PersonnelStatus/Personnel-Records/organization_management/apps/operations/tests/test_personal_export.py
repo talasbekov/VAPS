@@ -348,10 +348,10 @@ def test_the_export_is_written_to_the_log(types, division):
     assert "roster" not in entry.new_value
 
 
-# 3 из этого списка ушла — она стала текущей раскладкой (справочник в снимке).
-# На её место взята 4: неподдерживаемой обязана оставаться какая-то БУДУЩАЯ
-# версия, иначе проверка «отказ до журнала» стала бы про одни только опечатки.
-@pytest.mark.parametrize("schema_version", [None, "1", 4, True])
+# Неподдерживаемой обязана оставаться какая-то БУДУЩАЯ версия, иначе проверка
+# «отказ до журнала» стала бы про одни только опечатки. Число здесь сдвигается
+# при каждом повышении схемы: 3 ушла со срезом 135, 4 — с 141.
+@pytest.mark.parametrize("schema_version", [None, "1", 5, True])
 def test_an_unsupported_snapshot_schema_is_422_before_the_log(
     types, division, schema_version
 ):
@@ -392,3 +392,94 @@ def test_a_deleted_division_does_not_stop_the_export(types, division):
 
     sheet = load_workbook(io.BytesIO(payload)).active
     assert passport_of(sheet)["Подразделение"] == str(division_id)
+
+
+# ── Подпись статуса заморожена вместе с днём ─────────────────────────────
+
+# Копию берут, чтобы предъявить её в споре, и две выдачи ОДНОЙ версии обязаны
+# совпасть — это записано выше отдельным тестом. Подписи статусов до схемы 4
+# брались из СЕГОДНЯШНЕГО словаря, и переименование типа меняло уже выданный
+# файл: тот же день, та же версия, другая бумага.
+
+
+@pytest.fixture
+def submitted_day():
+    from organization_management.apps.operations.tests.test_traffic_light import (
+        types as _types,
+    )
+
+    division = Division.objects.create(name="Управление 1")
+    seed_types()
+    StatusType.objects.filter(code="DUTY").update(name="На дежурстве")
+    StatusType.objects.get_or_create(
+        code="IN_SERVICE",
+        defaults={
+            "name": "В строю",
+            "priority": 999,
+            "report_column_code": "IN_SERVICE",
+        },
+    )
+    del _types
+    fact(in_slot(division, last_name="Дежурный"), code="DUTY")
+    with clock.override(MORNING):
+        submit_day(division_id=division.id, business_date=TODAY, actor=ACTOR)
+    return OpsDailySubmission.objects.get(
+        division_id=division.id, business_date=TODAY
+    )
+
+
+def status_names_in(submission):
+    payload, _ = export_submission(submission=submission, actor=ACTOR)
+    _, body = table_of(load_workbook(io.BytesIO(payload)).active)
+    return [row[3] for row in body]
+
+
+def test_renaming_a_type_does_not_change_an_issued_copy(submitted_day):
+    """Несущий тест: тот же день, та же версия — та же бумага."""
+    before = status_names_in(submitted_day)
+    assert before == ["На дежурстве"]
+
+    StatusType.objects.filter(code="DUTY").update(name="Дежурство по части")
+
+    assert status_names_in(submitted_day) == before
+
+
+def test_the_live_dictionary_really_did_change(submitted_day):
+    """Иначе тест выше был бы зелёным и у копии, которая подписи не печатает
+    вовсе."""
+    StatusType.objects.filter(code="DUTY").update(name="Дежурство по части")
+
+    from organization_management.apps.operations.selectors import StatusTypeSelector
+
+    assert StatusTypeSelector.names_map()["DUTY"] == "Дежурство по части"
+
+
+def test_an_old_snapshot_without_frozen_names_uses_the_live_ones(submitted_day):
+    """Схемы 1–3 подписей не несут, и другого источника для них нет.
+
+    Отказ или голый код здесь потеряли бы читаемость всех дней, сданных до
+    этого среза.
+    """
+    submitted_day.snapshot = {
+        key: value
+        for key, value in submitted_day.snapshot.items()
+        if key != "catalog"
+    }
+    submitted_day.snapshot["schema_version"] = 2
+    submitted_day.save(update_fields=["snapshot"])
+
+    StatusType.objects.filter(code="DUTY").update(name="Дежурство по части")
+
+    assert status_names_in(submitted_day) == ["Дежурство по части"]
+
+
+def test_a_code_absent_from_the_frozen_catalog_falls_back_to_the_live_name():
+    """Живые подписи подмешиваются ПОД замороженные, а не заменяются ими:
+    печатать голый код там, где подпись существует, незачем."""
+    from organization_management.apps.operations.strength_report import names_of
+
+    snapshot = {"catalog": [{"code": "DUTY", "name": "На дежурстве"}]}
+
+    names = names_of(snapshot, {"DUTY": "Переименовано", "STUDY": "Учёба"})
+
+    assert names == {"DUTY": "На дежурстве", "STUDY": "Учёба"}
