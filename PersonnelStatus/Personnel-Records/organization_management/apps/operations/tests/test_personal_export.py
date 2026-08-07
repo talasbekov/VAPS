@@ -350,8 +350,8 @@ def test_the_export_is_written_to_the_log(types, division):
 
 # Неподдерживаемой обязана оставаться какая-то БУДУЩАЯ версия, иначе проверка
 # «отказ до журнала» стала бы про одни только опечатки. Число здесь сдвигается
-# при каждом повышении схемы: 3 ушла со срезом 135, 4 — с 141.
-@pytest.mark.parametrize("schema_version", [None, "1", 5, True])
+# при каждом повышении схемы: 3 ушла со срезом 135, 4 — с 141, 5 — с 142.
+@pytest.mark.parametrize("schema_version", [None, "1", 6, True])
 def test_an_unsupported_snapshot_schema_is_422_before_the_log(
     types, division, schema_version
 ):
@@ -383,8 +383,39 @@ def test_an_unsupported_snapshot_schema_is_422_before_the_log(
 
 
 def test_a_deleted_division_does_not_stop_the_export(types, division):
-    """Доказать сданное нужнее всего как раз про расформированное."""
+    """Доказать сданное нужнее всего как раз про расформированное.
+
+    Со схемы 5 такая копия ещё и НАЗЫВАЕТ подразделение: имя заморожено в
+    снимке в момент сдачи, и расформирование его не уносит. Раньше здесь
+    печатался голый id — копия выходила, но о ком она, читатель узнавал бы по
+    числу.
+    """
     submission = submit(division)
+    title = division.name
+    Division.objects.filter(pk=division.id).delete()
+
+    payload, _ = export_submission(submission=submission, actor=ACTOR)
+
+    sheet = load_workbook(io.BytesIO(payload)).active
+    assert passport_of(sheet)["Подразделение"] == title
+
+
+def test_a_deleted_division_of_an_old_snapshot_still_prints_its_id(
+    types, division  # noqa: F811
+):
+    """У снимков до схемы 5 имени нет, и подставить его неоткуда — тогда id.
+
+    Без этого теста запасной путь был бы мёртвым кодом: все новые снимки имя
+    несут, и ветка не исполнялась бы ни разу.
+    """
+    submission = submit(division)
+    submission.snapshot = {
+        key: value
+        for key, value in submission.snapshot.items()
+        if key != "division_title"
+    }
+    submission.snapshot["schema_version"] = 4
+    submission.save(update_fields=["snapshot"])
     division_id = division.id
     Division.objects.filter(pk=division_id).delete()
 
@@ -483,3 +514,31 @@ def test_a_code_absent_from_the_frozen_catalog_falls_back_to_the_live_name():
     names = names_of(snapshot, {"DUTY": "Переименовано", "STUDY": "Учёба"})
 
     assert names == {"DUTY": "На дежурстве", "STUDY": "Учёба"}
+
+
+def test_renaming_the_division_does_not_change_an_issued_copy(types, division):  # noqa: F811
+    """Та же заморозка подписи, что у ФИО, звания и названия статуса.
+
+    Паспорт — то, по чему читатель опознаёт, ЧТО он держит; сменись в нём имя
+    подразделения, и две копии одной версии перестали бы совпадать.
+    """
+    submission = submit(division)
+    payload, _ = export_submission(submission=submission, actor=ACTOR)
+    before = passport_of(load_workbook(io.BytesIO(payload)).active)["Подразделение"]
+
+    Division.objects.filter(pk=division.id).update(name="Управление имени Другого")
+
+    payload, _ = export_submission(submission=submission, actor=ACTOR)
+    after = passport_of(load_workbook(io.BytesIO(payload)).active)["Подразделение"]
+    assert after == before == division.name
+
+
+def test_the_live_name_really_did_change(types, division):  # noqa: F811
+    """Иначе тест выше был бы зелёным и у копии, которая имя не печатает."""
+    from organization_management.apps.operations.selectors import DivisionTreeSelector
+
+    Division.objects.filter(pk=division.id).update(name="Управление имени Другого")
+
+    assert DivisionTreeSelector.names_map([division.id])[division.id] == (
+        "Управление имени Другого"
+    )

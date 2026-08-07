@@ -312,5 +312,11 @@ class TestDivisionId:
         assert (snapshot["roster"], snapshot["rows"]) == ([], [])
         # Ключ справочника есть и у пустого подразделения: раскладка колонок —
         # свойство ДНЯ, а не состава, и без неё день нельзя было бы вывести.
-        assert set(snapshot) == {"schema_version", "roster", "rows", "catalog"}
+        assert set(snapshot) == {
+            "schema_version",
+            "roster",
+            "rows",
+            "catalog",
+            "division_title",
+        }
         assert snapshot["catalog"]
