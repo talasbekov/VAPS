@@ -7,10 +7,9 @@
 политик масок, значит нет и запроса)."""
 
 import csv
-import datetime
 import io
 
-from apps.core.exports.csv_safety import sanitize_cell
+from apps.core.exports.csv_safety import normalize_value, sanitize_cell
 
 HISTORY_CSV_COLUMNS = (
     "employee_id",
@@ -21,20 +20,6 @@ HISTORY_CSV_COLUMNS = (
     "ends_at",
     "source",
 )
-
-
-def _cell(value):
-    """Ревью 20.4b (Edge Case Hunter): `starts_at`/`ends_at` могут прийти
-    как сырой `datetime` (будущий вызывающий код может забыть
-    `.isoformat()`) — `str(datetime)` даёт пробел вместо `T` и
-    непостоянную ширину микросекунд. Явная ISO-нормализация здесь —
-    защита от этого класса дрейфа формата, не полагаемся на то, что
-    вызывающий код всегда предварительно строкует."""
-    if isinstance(value, datetime.date):  # datetime.datetime is a subclass
-        return value.isoformat()
-    if value is None:
-        return ""
-    return value
 
 
 def build_history_csv(rows) -> bytes:
@@ -49,7 +34,7 @@ def build_history_csv(rows) -> bytes:
     for row in rows:
         writer.writerow(
             {
-                column: sanitize_cell(_cell(row.get(column)))
+                column: sanitize_cell(normalize_value(row.get(column)))
                 for column in HISTORY_CSV_COLUMNS
             }
         )
