@@ -28,6 +28,10 @@ urlpatterns = [
     path("api/common/", include("organization_management.apps.common.api.urls")),
     # Раздел «Охранные мероприятия» — нативный переезд из Backend/VAPS
     path("api/operations/", include("organization_management.apps.operations.api.urls")),
+    # Ядро оргструктуры в контракте нового бэка. Модели НЕ переносятся: те же
+    # сущности уже живут в divisions/employees/dictionaries, core отдаёт над
+    # ними донорскую форму (см. apps/core/api/serializers.py).
+    path("api/core/", include("organization_management.apps.core.api.urls")),
     path("api/staff_unit/", include("organization_management.apps.staff_unit.urls")),
     path("api/statuses/", include("organization_management.apps.statuses.api.urls")),
     # path("api/secondments/", include("organization_management.apps.secondments.api.urls")),
