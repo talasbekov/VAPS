@@ -92,7 +92,7 @@ class TestRoster:
         assert snapshot["rows"] == []
 
     def test_denorm_carries_values_not_references(self, division):
-        rank = Rank.objects.create(name="капитан", level=5)
+        rank = Rank.objects.create(name="капитан", code="RANK-CPT", level=5)
         employee = in_slot(
             division,
             last_name="Иванов",
