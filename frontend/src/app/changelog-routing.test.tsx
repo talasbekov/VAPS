@@ -314,8 +314,19 @@ describe('доступ к журналу (AC-6)', () => {
     // 6 существующих + 2 Smart Josparlau (commandCenter, securityEvents, Этап 2)
     // + 1 (objects, Этап 5) + 1 (serviceAnalytics, Этап 7) + 1 (duties, Этап 7)
     // + 1 (dutyPlans, Epic 14 story 14.11j) + 1 (placementVersions, Epic 16
-    // story 16.8h5) — changelog среди них нет
-    expect(NAV_SECTIONS).toHaveLength(13)
+    // story 16.8h5) + 1 (staffingTable, Epic 20 story 20.5c) — changelog среди них нет
+    expect(NAV_SECTIONS).toHaveLength(14)
+    // Ревью 20.5c: длина одна не доказывает, что НОВАЯ запись несёт правильные
+    // route/label/permission — copy-paste в любом поле прошёл бы длину молча.
+    expect(
+      NAV_SECTIONS.find((section) => section.route === ROUTES.staffingTable),
+    ).toEqual(
+      expect.objectContaining({
+        route: ROUTES.staffingTable,
+        label: 'Штатное расписание',
+        permission: 'personnel.view',
+      }),
+    )
   })
 })
 

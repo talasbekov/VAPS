@@ -15,6 +15,7 @@ import {
   Radar,
   ScrollText,
   ShieldAlert,
+  Table2,
   UserCheck,
   Users,
 } from 'lucide-react'
@@ -25,6 +26,9 @@ export const ROUTES = {
   /** Дашборд «Расход» (E10). */
   home: '/',
   employees: '/employees',
+  /** Story 20.5c (Epic 20/FR-40): единственный роут без готового
+   * `personnel.view`-совместимого хозяина-экрана — новый раздел портала. */
+  staffingTable: '/staffing-table',
   dailyExpense: '/daily-expense',
   organization: '/organization',
   reports: '/reports',
@@ -159,6 +163,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: 'Управление персоналом',
     icon: Users,
     permission: 'status.view',
+  },
+  {
+    route: ROUTES.staffingTable,
+    label: 'Штатное расписание',
+    icon: Table2,
+    permission: 'personnel.view',
   },
   {
     route: ROUTES.objects,

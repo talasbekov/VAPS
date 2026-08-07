@@ -17,6 +17,7 @@ import { PrintTestPage } from '../features/print-forms/PrintTestPage'
 import { EmployeeDetailPage } from '../features/personnel/pages/EmployeeDetailPage'
 import { StatusCalendarPanel } from '../features/status-calendar/pages/StatusCalendarPanel'
 import { EmployeesListPage } from '../features/personnel/pages/EmployeesListPage'
+import { StaffingTablePage } from '../features/personnel/pages/StaffingTablePage'
 import { ObjectPassportPage } from '../features/objects/pages/ObjectPassportPage'
 import { ObjectsListPage } from '../features/objects/pages/ObjectsListPage'
 import { AuditLogPage } from '../features/audit/pages/AuditLogPage'
@@ -126,6 +127,14 @@ export function AppRoutes() {
           element={
             <RequirePermission permission="status.view">
               <EmployeesListPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={ROUTES.staffingTable}
+          element={
+            <RequirePermission permission="personnel.view">
+              <StaffingTablePage />
             </RequirePermission>
           }
         />
