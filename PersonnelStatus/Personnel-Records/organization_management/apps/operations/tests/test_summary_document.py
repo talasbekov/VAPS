@@ -206,3 +206,137 @@ def test_a_plain_submission_is_not_a_summary(types, tree):
         build_summary_expense_document(left.id, TODAY)
 
     assert exc.value.http_status == 400
+
+
+# ── Дети сданы при РАЗНЫХ справочниках ───────────────────────────────────
+
+# Со схемы снимка 3 каждый сданный день считается своим ЗАМОРОЖЕННЫМ
+# справочником, а сводка склеивает дни разных подразделений. Переименуй
+# администратор колонку между двумя сдачами — и один ребёнок принесёт строку со
+# старым именем колонки, другой с новым.
+#
+# До этого среза на таком дне падал ВЕСЬ сводный документ (KeyError по имени
+# колонки, которого нет в чужой строке): родитель не мог напечатать день вообще
+# — ровно та поломка, которую срез 134 закрывал у дневного документа, только
+# приехавшая с другой стороны.
+
+
+def submit_children_across_a_rename(left, right):
+    """Левый сдан ДО переименования колонки, правый — ПОСЛЕ."""
+    from organization_management.apps.operations.status_types import StatusType
+
+    fact(in_slot(left, last_name="Левый"), code="DUTY")
+    fact(in_slot(right, last_name="Правый"), code="DUTY")
+    submit(left)
+    StatusType.objects.filter(code="DUTY").update(report_column_code="НОВАЯ")
+    submit(right)
+
+
+def test_a_summary_across_a_column_rename_still_builds(types, tree):  # noqa: F811
+    """Несущий тест: документ обязан выйти, а не упасть."""
+    root, left, right = tree
+    in_slot(root)
+    submit_children_across_a_rename(left, right)
+    assemble(root)
+
+    data = build(root)
+
+    assert len(data.rows) == 3
+
+
+def test_both_column_eras_are_in_the_header(types, tree):  # noqa: F811
+    """Слить старую колонку с новой было бы хуже падения: числа сошлись бы под
+    именем, которого один из дней не подписывал."""
+    root, left, right = tree
+    in_slot(root)
+    submit_children_across_a_rename(left, right)
+    assemble(root)
+
+    data = build(root)
+
+    assert {"DUTY", "НОВАЯ"} <= set(data.columns)
+
+
+def test_each_child_keeps_its_own_column(types, tree):  # noqa: F811
+    """Человек, сданный под старым именем колонки, там и остаётся."""
+    root, left, right = tree
+    in_slot(root)
+    submit_children_across_a_rename(left, right)
+    assemble(root)
+
+    rows = {row.name: counts_of(row) for row in build(root).rows}
+
+    assert rows["Первый отдел"]["DUTY"] == 1
+    assert rows["Первый отдел"]["НОВАЯ"] == 0
+    assert rows["Второй отдел"]["НОВАЯ"] == 1
+    assert rows["Второй отдел"]["DUTY"] == 0
+
+
+def test_every_row_covers_every_column_of_the_header(types, tree):  # noqa: F811
+    """Рендереры (docx/xlsx/pdf) индексируют ячейку по колонке шапки НАПРЯМУЮ.
+
+    Строка без ячейки уронила бы каждый из трёх — и падение случилось бы уже
+    на выпуске файла, а не при сборке данных.
+    """
+    root, left, right = tree
+    in_slot(root)
+    submit_children_across_a_rename(left, right)
+    assemble(root)
+
+    data = build(root)
+
+    for row in data.rows:
+        assert set(row.cells) == set(data.columns)
+
+
+def test_the_totals_still_sum_the_rows_across_eras(types, tree):  # noqa: F811
+    """Итог обязан сойтись со слагаемыми и здесь — иначе подписанная сводка
+    расходится сама с собой."""
+    root, left, right = tree
+    in_slot(root)
+    submit_children_across_a_rename(left, right)
+    assemble(root)
+
+    data = build(root)
+
+    for column, total in data.totals.columns.items():
+        assert total == sum(row.cells[column].count for row in data.rows)
+    assert data.totals.columns["DUTY"] == 1
+    assert data.totals.columns["НОВАЯ"] == 1
+
+
+def test_the_live_order_stays_a_prefix_and_extras_follow(types, tree):  # noqa: F811
+    """Шапка сводки — это порядок СТОЛБЦОВ в подписанном документе.
+
+    Объединение не смеет перетасовать привычный порядок: колонки живого
+    справочника идут первыми и в своём порядке, а колонки ушедших эпох
+    дописываются В КОНЕЦ. Иначе документ за день с переименованием выглядел бы
+    перестроенным целиком, и сверять его с вчерашним пришлось бы по названиям,
+    а не по местам.
+    """
+    from organization_management.apps.operations.selectors import StatusTypeSelector
+    from organization_management.apps.operations.strength_report import StatusCatalog
+
+    root, left, right = tree
+    in_slot(root)
+    submit_children_across_a_rename(left, right)
+    assemble(root)
+
+    live = list(
+        StatusCatalog.from_rows(StatusTypeSelector.catalog_rows()).columns_in_order()
+    )
+    columns = list(build(root).columns)
+
+    assert columns[: len(live)] == live
+    assert columns[len(live) :] == ["DUTY"]
+
+
+def test_the_header_does_not_depend_on_dictionary_order(types, tree):  # noqa: F811
+    """Две сборки одного дня обязаны дать один документ — его сравнивают с
+    предыдущим глазами."""
+    root, left, right = tree
+    in_slot(root)
+    submit_children_across_a_rename(left, right)
+    assemble(root)
+
+    assert build(root).columns == build(root).columns
