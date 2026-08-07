@@ -280,3 +280,41 @@ class TestBrokenTree:
         in_slot(root)
         result = traffic_light_tree(root.id, TODAY)
         assert root.id in result
+
+
+# ── Свод читает подписанный день его же приоритетами ─────────────────────
+
+
+def test_a_catalog_edit_turns_the_tree_yellow_too(types, tree):  # noqa: F811
+    """Свод — ОТДЕЛЬНАЯ цепочка: он собирает состояния узлов пачкой, своим
+    проходом, а не зовёт поимённый светофор в цикле.
+
+    Поэтому «подписанный день читается своими приоритетами» проверяется и
+    здесь: инлайнь кто-нибудь разрешение победителей обратно в свод — поимённый
+    светофор остался бы зелёным по тестам, а дашборд, на который смотрит
+    дежурный, снова замолчал бы.
+    """
+    from organization_management.apps.operations.models import StatusType
+
+    root, first, _second, _deep = tree
+    employee = in_slot(first, last_name="Двойной")
+    fact(employee, code="DUTY")   # приоритет 70
+    fact(employee, code="STUDY")  # приоритет 80 → победитель DUTY
+    submit(first)
+
+    StatusType.objects.filter(code="STUDY").update(priority=1)
+
+    states = tree_light(root)
+    assert states[first.id].status == TrafficLightStatus.YELLOW.value
+
+
+def test_without_the_edit_that_node_is_green(types, tree):  # noqa: F811
+    """Иначе жёлтый выше объяснялся бы чем угодно — хоть двумя фактами сразу."""
+    root, first, _second, _deep = tree
+    employee = in_slot(first, last_name="Двойной")
+    fact(employee, code="DUTY")
+    fact(employee, code="STUDY")
+    submit(first)
+
+    states = tree_light(root)
+    assert states[first.id].status == TrafficLightStatus.GREEN.value
