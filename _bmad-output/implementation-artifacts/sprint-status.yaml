@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-08-07 (20.2c → done)
+# last_updated: 2026-08-07 (20.3c → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -853,6 +853,7 @@ development_status:
   # (20.3b)/dashboard screen (20.3c+) get their own keys when created.
   20-3a-нагрузка-перегрузка-bulk-селектор: done
   20-3b-нагрузка-перегрузка-api: done
+  20-3c-нагрузка-перегрузка-экран: done
   # 20.4 decomposed (create-story, 2026-08-06): 3 entities (employees/
   # history/audit) x 2 formats (csv/xlsx) is too large for one story.
   # This key tracks employees x CSV only (20.4a); history (20.4b)/audit

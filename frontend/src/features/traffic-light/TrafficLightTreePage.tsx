@@ -23,6 +23,7 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../../shared/api/client'
 import { Card, CardContent } from '../../shared/ui/Card'
 import { Label } from '../../shared/ui/Label'
+import { OverloadPanel } from './OverloadPanel'
 import { TrafficLightNodeRow } from './TrafficLightNode'
 import {
   buildTree,
@@ -246,6 +247,11 @@ export function TrafficLightTreePage() {
           ))}
         </ul>
       )}
+
+      {/* Story 20.3c: самодостаточная секция под деревом — свой
+          division/date-range picker, независимый query, дерево выше не
+          трогается. */}
+      <OverloadPanel />
     </div>
   )
 }
