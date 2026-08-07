@@ -9,7 +9,9 @@ from rest_framework import viewsets
 from organization_management.apps.core.api.serializers import (
     DivisionSerializer,
     EmployeeSerializer,
+    PositionSerializer,
 )
+from organization_management.apps.dictionaries.models import Position
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.api.permissions import (
@@ -67,3 +69,25 @@ class EmployeeViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
             .all()
             .order_by("last_name", "first_name", "id")
         )
+
+
+class PositionViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
+    """GET /api/core/positions/ — справочник должностей в донорском контракте.
+
+    Право то же, что у оргструктуры: должность — это форма штата, а не
+    персональные данные, и делить её со структурой подразделений логично.
+
+    Только чтение — по тому же доводу, что у DivisionViewSet: правка
+    справочника живёт на старой стороне со своими проверками.
+    """
+
+    serializer_class = PositionSerializer
+    permission_map = {
+        "list": _READ_ORGSTRUCTURE_PERMISSION,
+        "retrieve": _READ_ORGSTRUCTURE_PERMISSION,
+    }
+
+    def get_queryset(self):
+        # Порядок фиксируем явно (тот же, что в Meta модели): без него
+        # пагинация DRF предупреждает о нестабильной выборке.
+        return Position.objects.all().order_by("level", "name", "id")
