@@ -16,33 +16,62 @@ export function FeedbackChat() {
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Первая загрузка показывает лоадер, фоновые — нет. Ref, а не state: опрос
+  // живёт внутри одного эффекта и не должен его перезапускать.
+  const firstLoadRef = useRef(true);
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
 
-  const loadMessages = async () => {
-    try {
-      // Не показываем лоадер при фоновом обновлении, только при первой загрузке
-      if (messages.length === 0) setIsLoading(true);
-      const response = await getFeedback(1, 100);
-      // Сортируем сообщения по дате (старые сверху)
-      const sorted = response.results.sort(
-        (a, b) =>
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-      setMessages(sorted);
-    } catch (error) {
-      console.error("Failed to load feedback", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadMessages();
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    const stopPolling = () => {
+      if (interval !== undefined) {
+        clearInterval(interval);
+        interval = undefined;
+      }
+    };
+
+    const loadMessages = async () => {
+      try {
+        // Не показываем лоадер при фоновом обновлении, только при первой загрузке
+        if (firstLoadRef.current) setIsLoading(true);
+        const response = await getFeedback(1, 100);
+        if (cancelled) return;
+        // Сортируем сообщения по дате (старые сверху)
+        const sorted = response.results.sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        setMessages(sorted);
+        setLoadError(null);
+      } catch (error) {
+        if (cancelled) return;
+        // Раньше ошибка только писалась в консоль: опрос раз в 3 секунды
+        // продолжался бесконечно (на стенде — сплошная очередь 404 к
+        // /api/dictionaries/feedback/), а экран показывал «Пока нет сообщений»,
+        // то есть выдавал отсутствующий бэкенд за пустой список. Останавливаем
+        // опрос на первой же ошибке и показываем её.
+        stopPolling();
+        setLoadError(
+          error instanceof Error ? error.message : "Неизвестная ошибка"
+        );
+      } finally {
+        firstLoadRef.current = false;
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+
+    void loadMessages();
     // Опрашиваем сервер каждые 3 секунды для получения новых сообщений
-    const interval = setInterval(loadMessages, 3000);
-    return () => clearInterval(interval);
+    interval = setInterval(() => void loadMessages(), 3000);
+    return () => {
+      cancelled = true;
+      stopPolling();
+    };
   }, []);
 
   useEffect(() => {
@@ -122,8 +151,16 @@ export function FeedbackChat() {
             })
           )}
           {!isLoading && messages.length === 0 && (
-            <div className="text-center text-muted-foreground py-8">
-              Пока нет сообщений
+            <div className="text-center py-8">
+              {loadError ? (
+                // Не выдаём сбой за пустой список: при недоступном источнике
+                // «Пока нет сообщений» неотличимо от «сообщений правда нет».
+                <span className="text-destructive">
+                  Лента недоступна: {loadError}. Обновление остановлено.
+                </span>
+              ) : (
+                <span className="text-muted-foreground">Пока нет сообщений</span>
+              )}
             </div>
           )}
         </div>
