@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-08-06 (20.6b → done)
+# last_updated: 2026-08-07 (20.2c → done)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -846,6 +846,7 @@ development_status:
   # screen (20.2c+) get their own keys when created.
   20-2a-расход-отстающие-селектор: done
   20-2b-расход-отстающие-api: done
+  20-2c-расход-отстающие-экран: done
   # 20.3 decomposed (create-story, 2026-08-06), same rationale as 20.1/20.2:
   # backend selector, API, frontend are separate stories. This key tracks
   # the bulk fact-load + overload-summary selector slice (20.3a); API

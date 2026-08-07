@@ -45,6 +45,7 @@ import { Button } from '../../shared/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader } from '../../shared/ui/Card'
 import { Input } from '../../shared/ui/Input'
 import { Label } from '../../shared/ui/Label'
+import { ExpenseDashboardPanel } from './ExpenseDashboardPanel'
 import { ExpenseJournalPanel } from './ExpenseJournalPanel'
 import { ExpensePeriodPanel } from './ExpensePeriodPanel'
 import { TomorrowBlockOverrideForm } from './TomorrowBlockOverrideForm'
@@ -517,6 +518,14 @@ export function ExpenseReportPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      {/* Story 20.2c: org-wide дашборд — БЕЗ division-скоупа, рендерится
+          ДО выбора управления (руководителю не нужно сначала выбрать своё
+          управление, чтобы увидеть общую картину). БЕЗ key на businessDate —
+          `queryKey: ['expense-dashboard', businessDate]` внутри панели уже
+          рефетчит на смену даты; ремонтить компонент не нужно (даёт лишний
+          loading-флеш, ревью 20.2c). */}
+      {dateValid ? <ExpenseDashboardPanel businessDate={businessDate} /> : null}
 
       {divisionId === null ? (
         <Card>

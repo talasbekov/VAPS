@@ -489,3 +489,130 @@ export function describeExpensePeriodFailure(
   }
   return { kind: 'other', message: error.message }
 }
+
+/**
+ * Story 20.2c — org-wide дашборд (`GET .../expense-reports/dashboard/`,
+ * 20.2b). Тип — из схемы (`ExpenseDashboardResponse`, ARCH-FE-011).
+ * `laggards` ЗДЕСЬ — {division_id, name}[] от `compute_expense_dashboard`
+ * (20.2a) — НЕ путать с `parseLaggards`'s плоским `string[]` из 422
+ * `TOMORROW_BLOCKED`-ошибки (другой источник, другая форма, тот же файл).
+ */
+export type ExpenseDashboardRow = components['schemas']['ExpenseDashboardRow']
+export type ExpenseDashboardLaggard = components['schemas']['ExpenseDashboardLaggard']
+
+export interface ExpenseDashboard {
+  businessDate: string
+  rows: ExpenseDashboardRow[]
+  totals: {
+    staffTotal: number
+    listTotal: number
+    vacancies: number
+    attached: number
+  }
+  laggards: ExpenseDashboardLaggard[]
+  blocked: boolean
+  overridden: boolean
+}
+
+function parseDashboardRow(raw: unknown): ExpenseDashboardRow | null {
+  const row = asRecord(raw)
+  if (row === null) return null
+  if (typeof row.division_id !== 'string') return null
+  if (typeof row.name !== 'string') return null
+  if (typeof row.staff_total !== 'number') return null
+  if (typeof row.list_total !== 'number') return null
+  if (typeof row.vacancies !== 'number') return null
+  if (typeof row.attached !== 'number') return null
+  return {
+    division_id: row.division_id,
+    name: row.name,
+    staff_total: row.staff_total,
+    list_total: row.list_total,
+    vacancies: row.vacancies,
+    attached: row.attached,
+    columns: (asRecord(row.columns) ?? {}) as Record<string, number>,
+  }
+}
+
+function parseDashboardLaggard(raw: unknown): ExpenseDashboardLaggard | null {
+  const row = asRecord(raw)
+  if (row === null) return null
+  if (typeof row.division_id !== 'string') return null
+  if (typeof row.name !== 'string') return null
+  return { division_id: row.division_id, name: row.name }
+}
+
+/**
+ * Тотальный разбор — невалидный конверт даёт `null` (панель показывает
+ * честную ошибку загрузки, не пустой/фиктивный дашборд). Мусорная строка
+ * внутри `rows`/`laggards` отбрасывается построчно (тот же приём, что
+ * `parseExpenseJournal`), остальные строки не страдают.
+ */
+export function parseExpenseDashboard(raw: unknown): ExpenseDashboard | null {
+  const envelope = asRecord(raw)
+  if (envelope === null) return null
+  if (typeof envelope.business_date !== 'string') return null
+  if (typeof envelope.blocked !== 'boolean') return null
+  if (typeof envelope.overridden !== 'boolean') return null
+  const expense = asRecord(envelope.expense)
+  if (expense === null) return null
+  const totals = asRecord(expense.totals)
+  if (totals === null) return null
+  if (
+    typeof totals.staff_total !== 'number' ||
+    typeof totals.list_total !== 'number' ||
+    typeof totals.vacancies !== 'number' ||
+    typeof totals.attached !== 'number'
+  ) {
+    return null
+  }
+  if (!Array.isArray(expense.rows) || !Array.isArray(envelope.laggards)) {
+    return null
+  }
+  const rows: ExpenseDashboardRow[] = []
+  for (const item of expense.rows) {
+    const parsed = parseDashboardRow(item)
+    if (parsed !== null) rows.push(parsed)
+  }
+  const laggards: ExpenseDashboardLaggard[] = []
+  for (const item of envelope.laggards) {
+    const parsed = parseDashboardLaggard(item)
+    if (parsed !== null) laggards.push(parsed)
+  }
+  return {
+    businessDate: envelope.business_date,
+    rows,
+    totals: {
+      staffTotal: totals.staff_total,
+      listTotal: totals.list_total,
+      vacancies: totals.vacancies,
+      attached: totals.attached,
+    },
+    laggards,
+    blocked: envelope.blocked,
+    overridden: envelope.overridden,
+  }
+}
+
+export type ExpenseDashboardFailureKind = 'validation' | 'other' | 'silent'
+
+export interface ExpenseDashboardFailureDescription {
+  kind: ExpenseDashboardFailureKind
+  /** Текст для инлайна; для `silent` — пустой. */
+  message: string
+}
+
+/** Тот же класс, что `describeExpensePeriodFailure` — 400/422 несут точный
+ * серверный текст, 5xx/сеть/401 молчат (панель — обогащение, не первичный
+ * сигнал экрана). */
+export function describeExpenseDashboardFailure(
+  error: ApiFailure,
+): ExpenseDashboardFailureDescription {
+  if (error.kind === 'network') return { kind: 'silent', message: '' }
+  if (error.status >= 500) return { kind: 'silent', message: '' }
+  if (error.status === 401) return { kind: 'silent', message: '' }
+  if (error.status === 400 || error.status === 422) {
+    return { kind: 'validation', message: error.message }
+  }
+  return { kind: 'other', message: error.message }
+}

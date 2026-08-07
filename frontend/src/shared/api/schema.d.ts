@@ -809,6 +809,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/core/staffing-table/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Story 20.5b (FR-40) — HTTP surface over CoreStaffingSelector.
+         *     compute_staffing_table() (20.5a). Report-shaped, no single "object" —
+         *     same VacancyViewSet-style bare ViewSet + imperative require_permission,
+         *     not RequirePermissionMixin (that's for the CRUD viewsets above).
+         */
+        get: operations["core_staffing_table_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/core/vacancies/": {
         parameters: {
             query?: never;
@@ -1323,6 +1345,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operations/expense-reports/dashboard/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Дашборд расхода (все управления) + отстающие за одну дату (20.2a/FR-38/UJ-2). Org-wide — без division-scope. 400 отсутствует/невалидная/будущая дата; 422 дата до начала данных. */
+        get: operations["operations_expense_reports_dashboard_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations/expense-reports/document/": {
         parameters: {
             query?: never;
@@ -1439,6 +1478,23 @@ export interface paths {
          *     `retrieve`-only shape before it grew lifecycle `@action`s.
          */
         get: operations["operations_journal_entries_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/load/summary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Дни перегрузки (19.2) по каждому сотруднику управления за период (20.3a/FR-32). Будущий date_to НЕ блокируется — факт, не проекция, естественно пуст. 400 отсутствует/невалидная/инвертированная/слишком длинная (>62д) дата; 403 нет права/scope; 404 нет подразделения. */
+        get: operations["operations_load_summary_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1913,6 +1969,23 @@ export interface paths {
         };
         /** @description Живые статусы сотрудников подразделения на дату (10.1b, преднабор «вчера» грида 10.2). Сотрудник без статуса на дату в списке отсутствует (пусто = «В строю»). 403 нет status.view на division_id; 404 подразделение не существует (после scope). */
         get: operations["operations_statuses_on_date_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/statuses/summary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Сводка по статусам (20.6a/FR-40) — 11 отчётных колонок, org-wide (без division_id) или по поддереву. 400 отсутствует/невалидная/будущая дата; 403 нет status.view / scope на division_id; 404 подразделение не существует; 422 дата до начала данных. */
+        get: operations["operations_statuses_summary_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2593,6 +2666,52 @@ export interface components {
          * @enum {string}
          */
         EventEnum: "CONFIRMED_NO_CHANGES" | "CHANGED" | "AMENDED";
+        ExpenseDashboardExpense: {
+            /** Format: date */
+            business_date: string;
+            rows: components["schemas"]["ExpenseDashboardRow"][];
+            totals: components["schemas"]["ExpenseDashboardTotals"];
+            violations: {
+                [key: string]: unknown;
+            }[];
+            warnings: {
+                [key: string]: unknown;
+            }[];
+        };
+        ExpenseDashboardLaggard: {
+            /** Format: uuid */
+            division_id: string;
+            name: string;
+        };
+        ExpenseDashboardResponse: {
+            /** Format: date */
+            business_date: string;
+            expense: components["schemas"]["ExpenseDashboardExpense"];
+            laggards: components["schemas"]["ExpenseDashboardLaggard"][];
+            blocked: boolean;
+            overridden: boolean;
+        };
+        ExpenseDashboardRow: {
+            /** Format: uuid */
+            division_id: string;
+            name: string;
+            staff_total: number;
+            list_total: number;
+            vacancies: number;
+            attached: number;
+            columns: {
+                [key: string]: number;
+            };
+        };
+        ExpenseDashboardTotals: {
+            staff_total: number;
+            list_total: number;
+            vacancies: number;
+            attached: number;
+            columns: {
+                [key: string]: number;
+            };
+        };
         ExpenseDocumentAttachedCell: {
             count: number;
             members: components["schemas"]["ExpenseDocumentAttachedCellMember"][];
@@ -2931,6 +3050,22 @@ export interface components {
             crowd_places?: string;
             repair_works?: string;
             completeness_status?: components["schemas"]["CompletenessStatusEnum"];
+        };
+        OverloadSummaryEmployee: {
+            /** Format: uuid */
+            employee_id: string;
+            overload_days: string[];
+        };
+        OverloadSummaryResponse: {
+            /** Format: uuid */
+            division_id: string;
+            /** Format: date */
+            date_from: string;
+            /** Format: date */
+            date_to: string;
+            /** Format: decimal */
+            threshold_hours: string;
+            employees: components["schemas"]["OverloadSummaryEmployee"][];
         };
         PaginatedAssignmentVersionList: {
             /** @example 123 */
@@ -3555,6 +3690,19 @@ export interface components {
             date_start: string;
             /** Format: date */
             date_end: string;
+        };
+        StatusSummaryResponse: {
+            /** Format: date */
+            business_date: string;
+            /** Format: uuid */
+            division_id: string | null;
+            staff_total: number;
+            list_total: number;
+            vacancies: number;
+            attached: number;
+            columns: {
+                [key: string]: number;
+            };
         };
         /**
          * @description Story 10.1b2 — справочник статус-типов для combobox грида (10.2).
@@ -4490,6 +4638,24 @@ export interface operations {
             };
         };
     };
+    core_staffing_table_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     core_vacancies_retrieve: {
         parameters: {
             query?: never;
@@ -5219,6 +5385,27 @@ export interface operations {
             };
         };
     };
+    operations_expense_reports_dashboard_retrieve: {
+        parameters: {
+            query: {
+                business_date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseDashboardResponse"];
+                };
+            };
+        };
+    };
     operations_expense_reports_document_retrieve: {
         parameters: {
             query: {
@@ -5373,6 +5560,30 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    operations_load_summary_retrieve: {
+        parameters: {
+            query: {
+                date_from: string;
+                date_to: string;
+                division_id: string;
+                threshold_hours?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverloadSummaryResponse"];
+                };
             };
         };
     };
@@ -6103,6 +6314,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusOnDateRow"][];
+                };
+            };
+        };
+    };
+    operations_statuses_summary_retrieve: {
+        parameters: {
+            query: {
+                business_date: string;
+                division_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusSummaryResponse"];
                 };
             };
         };
