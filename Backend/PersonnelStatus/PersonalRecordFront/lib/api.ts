@@ -523,12 +523,63 @@ class ApiClient {
         return flattenTree(data as StaffUnitTreeResponse);
       }
 
-      // Если API все еще возвращает массив (обратная совместимость)
-      if (Array.isArray(data)) {
-        return data.map((unit: StaffUnit) => ({
-          ...unit,
-          parent_id: unit.parent_id ?? null,
-        }));
+      // Живой бэкенд (StaffUnitViewSet.list) отдаёт конверт DRF-пагинации
+      // {count, next, previous, results}. Раньше он не совпадал ни с веткой
+      // дерева, ни с веткой массива, метод молча возвращал [] — и экран
+      // /organization/ писал «Данные не загружены из API» при HTTP 200.
+      const rows: unknown[] | null = Array.isArray(data)
+        ? data
+        : data &&
+            typeof data === "object" &&
+            Array.isArray((data as { results?: unknown }).results)
+          ? ((data as { results: unknown[] }).results)
+          : null;
+
+      if (rows) {
+        // Строка списка описывает ОДНУ штатную единицу: должность и сотрудник
+        // лежат в корне (position/employee), а не в массиве employees, который
+        // ждут convertStaffUnitsResponseToOrgUnit и OrgNode. Приводим форму
+        // бэка к форме потребителя — контракт бэка источник правды.
+        return rows.map((row) => {
+          const unit = row as StaffUnit & {
+            position?: StaffUnitEmployee["position"] | null;
+            employee?: StaffUnitEmployee["employee"] | null;
+          };
+
+          let employees: StaffUnitEmployee[];
+          if (Array.isArray(unit.employees)) {
+            employees = unit.employees;
+          } else if (unit.position || unit.employee) {
+            employees = [
+              {
+                // position на строке может быть null (штатная единица без
+                // должности в справочнике). Пустой employees здесь означал бы
+                // «вакансия» и стирал реального сотрудника из строки, поэтому
+                // подставляем нейтральную должность — ту же формулировку, что
+                // используют остальные экраны для отсутствующей должности.
+                position: unit.position ?? {
+                  id: 0,
+                  name: "Должность не указана",
+                  level: Number.MAX_SAFE_INTEGER,
+                },
+                // Вакантная строка приходит с employee: null — оставляем
+                // как есть, конвертер подписывает её «Вакантная должность».
+                employee: unit.employee as StaffUnitEmployee["employee"],
+              },
+            ];
+          } else {
+            employees = [];
+          }
+
+          return {
+            id: unit.id,
+            division: unit.division,
+            index: unit.index,
+            parent_id: unit.parent_id ?? null,
+            vacancy: unit.vacancy ?? null,
+            employees,
+          };
+        });
       }
 
       return [];
