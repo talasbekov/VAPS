@@ -2,11 +2,15 @@
 
 // Layout сегмента /security-ops: поднимает host-MSW ДО рендера страниц
 // (иначе первые запросы TanStack Query уйдут в сеть до готовности перехвата),
-// монтирует Toaster для канала 5xx-тостов use-ops-mutation, запускает
-// транспорт уведомлений и колокольчик раздела.
+// запускает транспорт уведомлений и колокольчик раздела.
 // DashboardLayout страницы оборачивают сами — по конвенции остальных страниц.
+//
+// Toaster отсюда СНЯТ и поднят в корневой app/layout.tsx. Пока он стоял
+// только здесь, канал 5xx-тостов use-ops-mutation работал в этом разделе и
+// молчал на хостовых страницах: там `toast()` вызывался, а окна не было.
+// Оставить второй Toaster здесь нельзя — стор тостов модульный синглтон
+// (use-toast.ts), и каждый смонтированный Toaster показал бы своё окно.
 import { useEffect, useState, type ReactNode } from "react";
-import { Toaster } from "@/components/ui/toaster";
 import { OpsNotificationBell } from "@/features/ops-notifications/notification-bell";
 import { startOpsWs, stopOpsWs } from "@/lib/ops-ws";
 
@@ -52,7 +56,6 @@ export default function SecurityOpsLayout({
   return (
     <>
       {children}
-      <Toaster />
       <OpsNotificationBell />
     </>
   );
