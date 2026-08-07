@@ -53,6 +53,10 @@ def seed_types():
                 "priority": 999 if code == "IN_SERVICE" else 10,
                 "report_column_code": "IN_SERVICE" if code == "IN_SERVICE" else "X",
                 "is_hard_block": hard,
+                # Ограничение правки задаёт СПРАВОЧНИК, и прод помечает им
+                # «Откомандирован». Фикстура без флага описывала мир, в котором
+                # откомандированный правится свободно, — такого не бывает.
+                "restricts_editing": code == "DETACHED",
             },
         )
 

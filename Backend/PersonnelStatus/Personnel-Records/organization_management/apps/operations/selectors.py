@@ -124,6 +124,20 @@ class StatusTypeSelector:
     """Read-only доступ к справочнику типов статусов."""
 
     @staticmethod
+    def restricting_codes():
+        """Коды типов, при которых сотрудник закрыт для правки статусов.
+
+        Деактивированные включены по той же причине, что и в проекции
+        каталога: строка, написанная до деактивации типа, продолжает
+        действовать, и снимать с неё ограничение молча нельзя.
+        """
+        return list(
+            StatusType.objects.filter(restricts_editing=True).values_list(
+                "code", flat=True
+            )
+        )
+
+    @staticmethod
     def catalog_rows():
         """Проекция каталога для расхода, ОДИН запрос.
 
@@ -136,7 +150,6 @@ class StatusTypeSelector:
                 "code", "priority", "report_column_code", "counts_in_staff"
             )
         )
-
 
     @staticmethod
     def names_map():
