@@ -8,6 +8,7 @@ int-pk, division_type строкой). Наружу отдаём донорск�
 from rest_framework import serializers
 
 from organization_management.apps.divisions.models import Division
+from organization_management.apps.employees.models import Employee
 
 
 class DivisionSerializer(serializers.ModelSerializer):
@@ -49,3 +50,98 @@ class DivisionSerializer(serializers.ModelSerializer):
         # подменять его на None значило бы прятать кривое дерево от клиента,
         # а чинить форму дерева — не дело сериализатора.
         return obj.get_root().id
+
+
+class EmployeeSerializer(serializers.ModelSerializer):
+    """Донорский контракт кадровой карточки поверх старой Employee.
+
+    Три группы полей:
+
+    СОБИРАЮТСЯ. `full_name` — из трёх частей; `rank_code`/`rank_index` — из
+    справочника звания; `position_code` и `division` — ЧЕРЕЗ ШТАТНУЮ ЕДИНИЦУ:
+    в старой схеме должность и подразделение висят на StaffUnit, а не на
+    самой Employee.
+
+    ИСТОЧНИКА НЕТ — `external_id`, `phone`, `height_cm`, `is_attached_force`,
+    `data_source`. Отдаются null. Подставить сюда похожее поле было бы хуже
+    молчания: `phone` рядом с work_phone выглядел бы заполненным, но означал
+    бы не то, и клиент не отличил бы «нет данных» от «данные есть, но другие».
+
+    ОСТАЛЬНОЕ читается напрямую.
+    """
+
+    full_name = serializers.SerializerMethodField()
+    rank_code = serializers.SerializerMethodField()
+    rank_index = serializers.SerializerMethodField()
+    position_code = serializers.SerializerMethodField()
+    division = serializers.SerializerMethodField()
+    photo_file_path = serializers.SerializerMethodField()
+
+    # Полей нет в старой схеме — отдаём null, но держим в контракте: клиент
+    # SPA сгенерирован из схемы донора и ждёт именно этот набор ключей.
+    external_id = serializers.SerializerMethodField()
+    phone = serializers.SerializerMethodField()
+    height_cm = serializers.SerializerMethodField()
+    is_attached_force = serializers.SerializerMethodField()
+    data_source = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Employee
+        fields = [
+            "id", "external_id", "iin", "full_name", "last_name", "first_name",
+            "middle_name", "rank_code", "rank_index", "position_code",
+            "division", "phone", "gender", "height_cm", "is_active",
+            "is_attached_force", "data_source", "personnel_number",
+            "birth_date", "photo_file_path", "hire_date", "dismissal_date",
+            "work_phone", "work_email", "personal_phone", "personal_email",
+            "notes", "employment_status",
+        ]
+        read_only_fields = fields
+
+    def get_full_name(self, obj: Employee) -> str:
+        # filter() убирает пустое отчество: без него в имени остался бы
+        # двойной пробел или хвост.
+        return " ".join(
+            part for part in (obj.last_name, obj.first_name, obj.middle_name)
+            if part
+        )
+
+    def _staff_unit(self, obj: Employee):
+        # OneToOne с related_name='staff_unit'; у непринятого на должность
+        # сотрудника его нет, и это норма, а не ошибка данных.
+        return getattr(obj, "staff_unit", None)
+
+    def get_rank_code(self, obj: Employee):
+        return obj.rank.code if obj.rank_id else None
+
+    def get_rank_index(self, obj: Employee):
+        # У донора это порядковый индекс звания в иерархии; здесь ту же роль
+        # играет level («чем меньше число, тем выше звание»).
+        return obj.rank.level if obj.rank_id else None
+
+    def get_position_code(self, obj: Employee):
+        unit = self._staff_unit(obj)
+        return unit.position.code if unit and unit.position_id else None
+
+    def get_division(self, obj: Employee):
+        unit = self._staff_unit(obj)
+        return unit.division_id if unit else None
+
+    def get_photo_file_path(self, obj: Employee):
+        # Путь файла, а не URL: контракт донора хранит именно путь.
+        return obj.photo.name or None if obj.photo else None
+
+    def get_external_id(self, obj: Employee) -> None:
+        return None
+
+    def get_phone(self, obj: Employee) -> None:
+        return None
+
+    def get_height_cm(self, obj: Employee) -> None:
+        return None
+
+    def get_is_attached_force(self, obj: Employee) -> None:
+        return None
+
+    def get_data_source(self, obj: Employee) -> None:
+        return None
