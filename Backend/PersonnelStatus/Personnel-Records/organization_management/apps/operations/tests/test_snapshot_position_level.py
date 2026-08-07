@@ -50,7 +50,9 @@ def division():
 def at_level(division, level, **overrides):
     """Сотрудник на штатной должности заданного уровня."""
     employee = in_slot(division, **overrides)
-    position = Position.objects.create(name=f"Должность-{level}", level=level)
+    position = Position.objects.create(
+        name=f"Должность-{level}", code=f"POS-L{level}", level=level
+    )
     StaffUnit.objects.filter(employee=employee).update(position=position)
     return employee
 
@@ -98,7 +100,7 @@ def test_the_level_is_frozen_and_does_not_follow_a_later_transfer(types, divisio
     submission = submit(division)
     before = submission.snapshot["roster"][0]["position_level"]
 
-    other = Position.objects.create(name="Другая", level=90)
+    other = Position.objects.create(name="Другая", code="POS-OTHER", level=90)
     StaffUnit.objects.filter(employee=employee).update(position=other)
 
     submission.refresh_from_db()
