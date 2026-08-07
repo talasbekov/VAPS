@@ -38,6 +38,7 @@ from organization_management.apps.operations.selectors import (
 from organization_management.apps.operations.strength_report import (
     StatusCatalog,
     attached_of,
+    catalog_of,
     denominator_of,
     title_of,
     StrengthReportService,
@@ -216,5 +217,12 @@ def build_summary_expense_document(division_id, business_date):
         documents,
         division_title=title_of(summary.snapshot, names.get(division_id, "")),
         business_date=business_date,
-        columns=catalog.columns_in_order(),
+        # Порядок колонок — из справочника СВОДКИ, а не живого. Строки к этому
+        # моменту уже заморожены каждая своим каталогом, и живая шапка
+        # оставалась последней щелью: правка справочника переставляла столбцы
+        # в уже собранной сводке, не тронув ни одного числа под ними.
+        #
+        # Колонки ушедших эпох, встретившиеся у детей, допишет combine_documents
+        # (срез 139) — здесь задаётся только основа порядка.
+        columns=catalog_of(summary.snapshot, catalog).columns_in_order(),
     )
