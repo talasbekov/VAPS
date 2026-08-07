@@ -22,6 +22,7 @@ from organization_management.apps.operations.models_submission import (
 )
 from organization_management.apps.operations.strength_report import (
     DERIVED_IN_SERVICE,
+    submitted_expense,
 )
 from organization_management.apps.operations.traffic_light import (
     TrafficLightStatus,
@@ -301,3 +302,99 @@ class TestUnknownType:
         # для того и существует, чтобы расхождение было видно.
         with pytest.raises(ValueError):
             light(division)
+
+
+# ── Подписанный день читается СВОИМИ приоритетами ────────────────────────
+
+# Победителя дня выбирает ПРИОРИТЕТ, и до этого среза светофор пересчитывал
+# снимок сегодняшними приоритетами. На настоящем расхождении он от этого
+# МОЛЧАЛ: сдали «на дежурстве», администратор поднял учёбу выше дежурства, а
+# дежурство отменили — снимок с новыми приоритетами давал «учёба», живой день
+# давал «учёба», цвет выходил зелёный. Документ на руках говорил «дежурство».
+
+
+def two_facts(division):
+    """Человек с дежурством (70) и учёбой (80): победитель — дежурство."""
+    employee = in_slot(division, last_name="Двойной")
+    fact(employee, code="DUTY")
+    fact(employee, code="STUDY")
+    return employee
+
+
+def make_study_outrank_duty():
+    StatusType.objects.filter(code="STUDY").update(priority=1)
+
+
+def cancel_duty(employee):
+    with clock.override(MORNING):
+        OpsEmployeeStatus.objects.filter(
+            employee_id=employee.id, status_type_code="DUTY"
+        ).update(cancelled_at=clock.Clock.now(), cancelled_by=ACTOR)
+
+
+def test_a_reordered_catalog_does_not_silence_a_real_divergence(types, division):  # noqa: F811
+    """Несущий тест: подписано «дежурство», сегодня «учёба» — жёлтый.
+
+    Раньше здесь был зелёный.
+    """
+    employee = two_facts(division)
+    submit(division)
+
+    make_study_outrank_duty()
+    cancel_duty(employee)
+
+    light = division_traffic_light(division.id, TODAY)
+    assert light.status == TrafficLightStatus.YELLOW.value
+    assert light.drift == {
+        "added": [],
+        "removed": [],
+        "changed": [{"employee_id": employee.id, "from": "DUTY", "to": "STUDY"}],
+    }
+
+
+def test_the_divergence_names_what_was_signed_not_what_is_current(
+    types, division  # noqa: F811
+):
+    """«from» обязано совпасть с тем, что показывает сданный расход.
+
+    Иначе дежурный, перейдя со светофора на сданный день, увидел бы про одного
+    человека два разных статуса — и не понял бы, какому верить.
+    """
+    employee = two_facts(division)
+    submit(division)
+    signed = submitted_expense(division.id, TODAY).columns
+
+    make_study_outrank_duty()
+    cancel_duty(employee)
+
+    drift = division_traffic_light(division.id, TODAY).drift
+    assert drift["changed"][0]["from"] == "DUTY"
+    assert signed["DUTY"] == 1
+
+
+def test_a_catalog_edit_alone_is_reported_too(types, division):  # noqa: F811
+    """Правка одного справочника, без единой правки фактов, — тоже
+    расхождение: подписанный день называет человека дежурным, сегодняшний
+    экран — учащимся. Молчать об этом нельзя, хотя данные никто не трогал."""
+    employee = two_facts(division)
+    submit(division)
+
+    make_study_outrank_duty()
+
+    light = division_traffic_light(division.id, TODAY)
+    assert light.status == TrafficLightStatus.YELLOW.value
+    assert light.drift == {
+        "added": [],
+        "removed": [],
+        "changed": [{"employee_id": employee.id, "from": "DUTY", "to": "STUDY"}],
+    }
+
+
+def test_without_a_catalog_edit_nothing_changes(types, division):  # noqa: F811
+    """Иначе всё выше объяснялось бы тем, что светофор стал жёлтым всегда."""
+    two_facts(division)
+    submit(division)
+
+    assert division_traffic_light(division.id, TODAY).status == (
+        TrafficLightStatus.GREEN.value
+    )
