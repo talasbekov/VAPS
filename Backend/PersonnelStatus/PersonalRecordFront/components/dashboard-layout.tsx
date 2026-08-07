@@ -1,16 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/navigation/sidebar";
 import { Header } from "@/components/navigation/header";
 import { MobileMenu } from "@/components/navigation/mobile-menu";
 import { PerformanceProfiler } from "@/components/profiler";
+import { ApiGapNotice } from "@/components/api-gap-notice";
+import { findApiGap } from "@/lib/api-gaps";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
+  // Врезка сделана здесь, а не в каждой странице: DashboardLayout — общий
+  // корень контента для хостовых экранов, /security-ops/* и /ops. Один вызов
+  // покрывает все экраны из реестра, включая ветки loading/error внутри
+  // страниц, которые рендерят свой DashboardLayout повторно.
+  const pathname = usePathname();
+  const apiGap = findApiGap(pathname);
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(() => {
     if (typeof window !== "undefined") {
@@ -58,7 +68,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           />
 
           {/* Page content */}
-          <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4">{children}</main>
+          <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4">
+            {apiGap && <ApiGapNotice gap={apiGap} />}
+            {children}
+          </main>
         </div>
       </div>
     </PerformanceProfiler>
