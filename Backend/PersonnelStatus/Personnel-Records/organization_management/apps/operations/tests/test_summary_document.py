@@ -340,3 +340,39 @@ def test_the_header_does_not_depend_on_dictionary_order(types, tree):  # noqa: F
     assemble(root)
 
     assert build(root).columns == build(root).columns
+
+
+# ── Название подразделения заморожено вместе с днём ──────────────────────
+
+
+def test_a_renamed_child_keeps_its_name_in_an_assembled_summary(types, tree):  # noqa: F811
+    """Сводка склеивает ЧУЖИЕ дни, и переименование одного из подразделений не
+    смеет переписать строку в уже собранной сводке."""
+    root, first, second = tree
+    in_slot(root)
+    in_slot(first)
+    in_slot(second)
+    submit(first)
+    submit(second)
+    assemble(root)
+    before = [row.name for row in build(root).rows]
+
+    Division.objects.filter(pk=first.pk).update(name="Переименованный отдел")
+
+    assert [row.name for row in build(root).rows] == before
+    assert "Первый отдел" in before
+
+
+def test_the_summary_header_is_frozen_too(types, tree):  # noqa: F811
+    """Шапка сводки — имя РОДИТЕЛЯ, и оно из его же снимка."""
+    root, first, second = tree
+    in_slot(root)
+    in_slot(first)
+    in_slot(second)
+    submit(first)
+    submit(second)
+    assemble(root)
+
+    Division.objects.filter(pk=root.pk).update(name="Другое управление")
+
+    assert build(root).division_title == "Управление"
