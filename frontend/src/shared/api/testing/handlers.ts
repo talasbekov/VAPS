@@ -344,4 +344,33 @@ export const handlers = [
   ),
   // сетевой обрыв: HTTP-ответа нет вовсе
   http.get('*/api/core/divisions/', () => HttpResponse.error()),
+  // Story 20.6c: `StatusSummaryPanel` монтируется на `/organization` и
+  // запрашивает СРАЗУ, без division-гейта (образец 20.5b's org-wide дефолт)
+  // — незамоканный роут ронял бы ЛЮБОЙ тест `TrafficLightTreePage.test.tsx`
+  // через `onUnhandledRequest: 'error'` (ревью 20.6c, Edge Case Hunter),
+  // тот же урок, что дефолты traffic-light/tree выше. Нейтральный
+  // org-wide, все нули.
+  http.get('*/api/operations/statuses/summary/', () =>
+    HttpResponse.json({
+      business_date: '2026-01-01',
+      division_id: null,
+      staff_total: 0,
+      list_total: 0,
+      vacancies: 0,
+      attached: 0,
+      columns: {
+        SICK: 0,
+        VACATION: 0,
+        COMMAND: 0,
+        TRAINING: 0,
+        OTHER: 0,
+        DETACHED: 0,
+        AFTER_DUTY: 0,
+        BEFORE_DUTY: 0,
+        ON_DUTY: 0,
+        PENDING: 0,
+        IN_SERVICE: 0,
+      },
+    }),
+  ),
 ]

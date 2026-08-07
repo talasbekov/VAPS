@@ -24,6 +24,7 @@ import { apiClient } from '../../shared/api/client'
 import { Card, CardContent } from '../../shared/ui/Card'
 import { Label } from '../../shared/ui/Label'
 import { OverloadPanel } from './OverloadPanel'
+import { StatusSummaryPanel } from './StatusSummaryPanel'
 import { TrafficLightNodeRow } from './TrafficLightNode'
 import {
   buildTree,
@@ -252,6 +253,10 @@ export function TrafficLightTreePage() {
           division/date-range picker, независимый query, дерево выше не
           трогается. */}
       <OverloadPanel />
+
+      {/* Story 20.6c: третья самодостаточная секция, ПОСЛЕ «Перегрузка» —
+          свой division/date picker, независимый query. */}
+      <StatusSummaryPanel />
     </div>
   )
 }

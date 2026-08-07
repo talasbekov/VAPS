@@ -321,7 +321,12 @@ describe('AC-8 — загрузка / ошибка / пустота', () => {
     useTree([node({ division_id: SHTAB, name: 'Штаб' })])
     renderPage()
 
-    expect(screen.getByRole('status')).toHaveTextContent('Загрузка структуры подразделений…')
+    // Story 20.6c: `StatusSummaryPanel` теперь тоже показывает свой
+    // role="status" при монтировании (запрос без division_id уходит сразу) —
+    // getByRole('status') больше не уникален на странице, ищем по тексту.
+    expect(
+      screen.getByText('Загрузка структуры подразделений…'),
+    ).toBeInTheDocument()
     await screen.findByText('Штаб')
   })
 
@@ -414,6 +419,25 @@ describe('AC-8 — загрузка / ошибка / пустота', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
     // Дерево ЖИВО под баннером: data и isError сосуществуют, это не «или-или».
     expect(screen.getByText('Штаб бригады')).toBeInTheDocument()
+  })
+})
+
+describe('Story 20.3c/20.6c — порядок секций под деревом', () => {
+  it('«Перегрузка» рендерится ПЕРЕД «Сводка по статусам» (AC-1 20.6c)', async () => {
+    useTree([node({ division_id: SHTAB, name: 'Штаб' })])
+    renderPage()
+
+    await screen.findByText('Штаб')
+    const overloadHeading = await screen.findByRole('heading', { name: 'Перегрузка' })
+    const summaryHeading = await screen.findByRole('heading', { name: 'Сводка по статусам' })
+
+    // compareDocumentPosition: DOCUMENT_POSITION_FOLLOWING(4) на overloadHeading
+    // значит summaryHeading идёт ПОСЛЕ него в DOM — падает, если порядок
+    // секций когда-нибудь молча поменяют местами.
+    expect(
+      overloadHeading.compareDocumentPosition(summaryHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 })
 
