@@ -7,6 +7,7 @@ int-pk, division_type строкой). Наружу отдаём донорск�
 """
 from rest_framework import serializers
 
+from organization_management.apps.dictionaries.models import Position
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 
@@ -144,4 +145,35 @@ class EmployeeSerializer(serializers.ModelSerializer):
         return None
 
     def get_data_source(self, obj: Employee) -> None:
+        return None
+
+
+class PositionSerializer(serializers.ModelSerializer):
+    """Донорский контракт справочника должностей: code, name, level,
+    sort_order, is_active.
+
+    Читаются напрямую `code` (заведён срезом 154a), `name` и `level` —
+    последний совпадает и по смыслу: «чем меньше число, тем выше должность».
+
+    ИСТОЧНИКА НЕТ — `sort_order` и `is_active`. Отдаются null по тому же
+    доводу, что и null-поля EmployeeSerializer (срез 154b): подставить сюда
+    похожее поле было бы хуже молчания. `sort_order` ← `level` выглядел бы
+    заданным порядком, хотя порядка в старой схеме нет вовсе, а `is_active`
+    со значением True объявил бы действующей строку, у которой признака нет.
+    """
+
+    # Полей нет в старой схеме — отдаём null, но держим в контракте: клиент
+    # SPA сгенерирован из схемы донора и ждёт именно этот набор ключей.
+    sort_order = serializers.SerializerMethodField()
+    is_active = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Position
+        fields = ["code", "name", "level", "sort_order", "is_active"]
+        read_only_fields = fields
+
+    def get_sort_order(self, obj: Position) -> None:
+        return None
+
+    def get_is_active(self, obj: Position) -> None:
         return None
