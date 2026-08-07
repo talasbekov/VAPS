@@ -37,6 +37,7 @@ from organization_management.apps.operations.selectors import (
 )
 from organization_management.apps.operations.strength_report import (
     StatusCatalog,
+    attached_of,
     denominator_of,
     title_of,
     StrengthReportService,
@@ -110,7 +111,7 @@ def build_submitted_expense_document(division_id, business_date):
         # документа при первой же правке штата.
         staff_total=staff_total,
         vacancies=vacancies,
-        attached=live.attached if live else 0,
+        attached=attached_of(submission.snapshot, live.attached if live else 0),
     )
 
 
@@ -208,7 +209,7 @@ def build_summary_expense_document(division_id, business_date):
                 division_title=title_of(snapshot, names.get(source_id, "")),
                 staff_total=staff_total,
                 vacancies=vacancies,
-                attached=row.attached if row else 0,
+                attached=attached_of(snapshot, row.attached if row else 0),
             )
         )
     return combine_documents(

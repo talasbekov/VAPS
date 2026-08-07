@@ -21,6 +21,7 @@
 перечисляя поля руками, я закрепил бы ровно то, о чём уже знаю.
 """
 import json
+from datetime import timedelta
 from dataclasses import asdict
 
 import pytest
@@ -240,3 +241,122 @@ def test_the_live_world_really_did_change(signed):
     with clock.override(MORNING):
         after = StrengthReportService.compute(TODAY, division_ids={division.id})
     assert after.rows[0].staff_total != before.rows[0].staff_total
+
+
+def test_cancelling_an_attached_leg_does_not_shrink_the_plus_n(signed):
+    """«+N» приданных — последнее живое число подписанного дня (схема 7).
+
+    Арифметику документа оно не ломало: приданные стоят СВЕРХ равенства «Штат
+    == Список + Вне списка + Вакансии». Но дрейфовало так же тихо, как и всё
+    остальное.
+
+    ПРАВКА ВЫБРАНА НЕ ПЕРВАЯ ПОПАВШАЯСЯ. Сперва тут стояло подтверждение
+    возврата — и все три пробы остались зелёными: подтверждение вступает в силу
+    СО СЛЕДУЮЩЕГО дня, нога живёт до конца сегодняшнего, и живое «+N» за
+    сегодня не двигалось вовсе. Тест был вакуумным. Живое число меняет ровно
+    то, что смотрит селектор: отмена ноги ATTACHED.
+
+    Прикомандирование заводится ДО сдачи — иначе «+N» и в снимке был бы нулём,
+    и тест не отличал бы заморозку от совпадения.
+    """
+    from organization_management.apps.operations.models_status import Secondment
+    from organization_management.apps.operations.models_submission import (
+        OpsDailySubmission,
+    )
+    from organization_management.apps.operations.secondment_service import (
+        initiate_secondment,
+    )
+
+    division, *_ = signed
+    home = Division.objects.create(name="Штатное управление")
+    guest = in_slot(home, last_name="Приданный")
+    with clock.override(MORNING):
+        initiate_secondment(
+            guest.id,
+            to_division_id=division.id,
+            date_start=TODAY,
+            date_end=TODAY + timedelta(days=5),
+            actor=ACTOR,
+        )
+        # Сдача пересобирается: «+N» обязан попасть в снимок ненулевым.
+        OpsDailySubmission.objects.filter(
+            division_id=division.id, business_date=TODAY
+        ).delete()
+        submit_day(division_id=division.id, business_date=TODAY, actor=ACTOR)
+
+    document = build_submitted_expense_document(division.id, TODAY)
+    assert document.rows[0].attached.count == 1
+    before = printed(division)
+
+    pair = Secondment.objects.get(employee_id=guest.id)
+    with clock.override(MORNING):
+        OpsEmployeeStatus.objects.filter(pk=pair.in_status_id).update(
+            cancelled_at=clock.Clock.now(), cancelled_by=ACTOR
+        )
+
+    assert printed(division) == before
+
+
+def test_that_cancellation_really_moves_the_live_number(signed):
+    """Иначе тест выше был бы зелёным и у правки, которой «+N» не касается —
+    как это и вышло с подтверждением возврата в первом наборе."""
+    from organization_management.apps.operations.models_status import Secondment
+    from organization_management.apps.operations.secondment_service import (
+        initiate_secondment,
+    )
+    from organization_management.apps.operations.selectors import SecondmentSelector
+
+    division, *_ = signed
+    home = Division.objects.create(name="Штатное управление")
+    guest = in_slot(home, last_name="Приданный")
+    with clock.override(MORNING):
+        initiate_secondment(
+            guest.id,
+            to_division_id=division.id,
+            date_start=TODAY,
+            date_end=TODAY + timedelta(days=5),
+            actor=ACTOR,
+        )
+
+    live = SecondmentSelector.attached_counts_on(TODAY, division_ids=[division.id])
+    assert live.get(division.id) == 1
+
+    pair = Secondment.objects.get(employee_id=guest.id)
+    with clock.override(MORNING):
+        OpsEmployeeStatus.objects.filter(pk=pair.in_status_id).update(
+            cancelled_at=clock.Clock.now(), cancelled_by=ACTOR
+        )
+
+    after = SecondmentSelector.attached_counts_on(TODAY, division_ids=[division.id])
+    assert after.get(division.id, 0) == 0
+
+
+def test_a_frozen_zero_stays_zero_when_someone_is_attached_later(signed):
+    """Ноль приданных — законное и ЧАСТОЕ состояние, и он тоже заморожен.
+
+    Признаком «есть ли замороженное число» служит НАЛИЧИЕ ключа, а не его
+    истинность: проверяй код `or`, и ноль уходил бы на живое число — то есть
+    ровно у большинства дней заморозки бы и не было. Проба «признак —
+    истинность» краснит именно здесь.
+    """
+    from organization_management.apps.operations.secondment_service import (
+        initiate_secondment,
+    )
+
+    division, *_ = signed
+    document = build_submitted_expense_document(division.id, TODAY)
+    assert document.rows[0].attached.count == 0
+    before = printed(division)
+
+    home = Division.objects.create(name="Штатное управление")
+    guest = in_slot(home, last_name="Приданный")
+    with clock.override(MORNING):
+        initiate_secondment(
+            guest.id,
+            to_division_id=division.id,
+            date_start=TODAY,
+            date_end=TODAY + timedelta(days=5),
+            actor=ACTOR,
+        )
+
+    assert printed(division) == before
