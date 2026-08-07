@@ -131,10 +131,25 @@ def build_division_snapshot(division_id, business_date):
     from organization_management.apps.operations.selectors import (
         StatusTypeSelector,
     )
+    from organization_management.apps.operations.strength_report import (
+        StatusCatalog,
+    )
 
     catalog = sorted(
         StatusTypeSelector.catalog_rows(), key=lambda row: row["code"]
     )
+    # ПРИГОДНОСТЬ СПРАВОЧНИКА ПРОВЕРЯЕТСЯ ЗДЕСЬ, на сборке, а не на чтении.
+    #
+    # Пока справочник брался живым, неполный каталог чинился сам: дополнили
+    # словарь — и старые дни снова печатаются. Замороженный не чинится ничем:
+    # день, сданный без колонки для выводимого «в строю», остался бы
+    # невыводимым НАВСЕГДА, и узналось бы об этом при первой попытке напечатать
+    # документ, то есть уже после подписи.
+    #
+    # Поэтому отказ ставится там, где его ещё можно исправить: сдача не
+    # проходит, словарь дополняют, день сдают. StatusCatalog поднимает ValueError
+    # сам — здесь достаточно его позвать.
+    StatusCatalog.from_rows(catalog)
 
     return {
         "schema_version": SCHEMA_VERSION,

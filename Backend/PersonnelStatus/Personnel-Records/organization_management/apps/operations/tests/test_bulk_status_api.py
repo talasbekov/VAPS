@@ -54,14 +54,31 @@ def client_for(username, role_code=None, perms=(), scope_division_id=None):
 
 @pytest.fixture
 def types():
+    """Справочник + выводимое «в строю».
+
+    IN_SERVICE — не украшение фикстуры: со схемы снимка 3 билдер отказывается
+    собирать день, справочнику которого некуда положить тех, у кого статуса
+    нет. Прод заводит этот тип первым (seed_status_types), и фикстура без него
+    описывала мир, которого не бывает.
+    """
     for code, hard in [("DUTY", False), ("VACATION", True), ("STUDY", False)]:
-        StatusType.objects.create(
+        StatusType.objects.get_or_create(
             code=code,
-            name=code,
-            priority=10,
-            report_column_code="X",
-            is_hard_block=hard,
+            defaults={
+                "name": code,
+                "priority": 10,
+                "report_column_code": "X",
+                "is_hard_block": hard,
+            },
         )
+    StatusType.objects.get_or_create(
+        code="IN_SERVICE",
+        defaults={
+            "name": "В строю",
+            "priority": 999,
+            "report_column_code": "IN_SERVICE",
+        },
+    )
 
 
 @pytest.fixture
