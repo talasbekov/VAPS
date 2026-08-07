@@ -70,7 +70,7 @@ def _submitted_at_label(submitted_at):
 # {1, SCHEMA_VERSION} молча теряла бы среднюю версию при каждом повышении —
 # с переходом на 3 из поддержки выпала бы двойка, то есть все дни, сданные
 # между двумя срезами, перестали бы выгружаться.
-SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
+SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5})
 # ...но текущая версия обязана быть среди них, и это держится здесь, а не
 # памятью: повышение SCHEMA_VERSION без правки списка сорвалось бы на импорте
 # модуля, то есть на первом же прогоне, а не на выгрузке у пользователя.
@@ -106,11 +106,18 @@ def export_submission(*, submission, actor):
     snapshot = submission.snapshot
     _assert_snapshot_schema_supported(snapshot)
 
-    names = DivisionTreeSelector.names_map([submission.division_id])
+    # Название — ИЗ СНИМКА (схема 5), живое только запасное для старых версий:
+    # переименование подразделения не смеет менять паспорт уже выданной копии.
+    #
     # Подразделения может не быть в выборке (расформировано) — печатается его
     # id: копия обязана выйти и о расформированном, иначе доказать сданное
     # стало бы невозможно ровно там, где это нужнее всего.
-    division_title = names.get(submission.division_id) or str(submission.division_id)
+    names = DivisionTreeSelector.names_map([submission.division_id])
+    division_title = (
+        snapshot.get("division_title")
+        or names.get(submission.division_id)
+        or str(submission.division_id)
+    )
 
     payload = build_personal_export_xlsx(
         snapshot=snapshot,
