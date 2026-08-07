@@ -283,3 +283,65 @@ def test_a_soft_overlap_without_an_override_is_refused(types, employee):
     assert exc.value.http_status == 409
     placeholder.refresh_from_db()
     assert placeholder.cancelled_at is None
+
+
+# ── Заглушка ПРОДАКШЕН-справочника ───────────────────────────────────────
+
+# Всё выше работает на заглушке, заведённой ФИКСТУРОЙ руками (is_placeholder
+# ставится прямо в создании). Признак от этого выглядит настроенным — а сид,
+# которым справочник заводится в бою, его не ставил вовсе, и умолчание модели
+# (False) делало ретро-замену недостижимой.
+#
+# Отказ при этом выглядел осмысленно — «Ретро-заменой разрешается только
+# строка-заглушка», — поэтому спрашивающий решил бы, что взял не ту строку, а
+# не что возможности нет вообще. Тесты ниже гоняют операцию на СИДЕ, а не на
+# фикстуре: они и есть проверка, что фича живая там, где ею пользуются.
+
+
+@pytest.fixture
+def seeded_catalog():
+    from django.core.management import call_command
+
+    call_command("seed_status_types")
+
+
+def test_the_seed_marks_exactly_one_placeholder(seeded_catalog):
+    """Ровно одна: ни нуля (фича мертва), ни двух (разрешение заглушки в
+    заглушку запрещено, и вторая была бы неразрешимой строкой)."""
+    codes = set(
+        StatusType.objects.filter(is_placeholder=True).values_list("code", flat=True)
+    )
+
+    assert codes == {"PENDING_CLARIFICATION"}
+
+
+def test_a_seeded_placeholder_can_actually_be_resolved(seeded_catalog, employee):
+    """Несущий тест: та же операция, но справочник — продакшеновский."""
+    placeholder = make_status(employee, code="PENDING_CLARIFICATION")
+
+    resolved = resolve(placeholder)
+
+    placeholder.refresh_from_db()
+    assert placeholder.cancelled_at is not None
+    assert resolved.status_type_code == "DUTY"
+
+
+def test_a_seeded_real_type_is_still_refused(seeded_catalog, employee):
+    """Иначе тест выше проходил бы и на справочнике, где заглушкой помечено
+    всё подряд."""
+    real = make_status(employee, code="DUTY")
+
+    with pytest.raises(DomainError) as exc:
+        resolve(real, resolved_type_code="STUDY")
+
+    assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"
+
+
+def test_resolving_into_the_seeded_placeholder_is_refused(seeded_catalog, employee):
+    """Заглушка вместо заглушки не разрешает ничего, только обнуляет след."""
+    placeholder = make_status(employee, code="PENDING_CLARIFICATION")
+
+    with pytest.raises(DomainError) as exc:
+        resolve(placeholder, resolved_type_code="PENDING_CLARIFICATION")
+
+    assert exc.value.code == "INVALID_LIFECYCLE_TRANSITION"

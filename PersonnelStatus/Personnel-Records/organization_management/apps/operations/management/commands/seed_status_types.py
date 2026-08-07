@@ -36,6 +36,17 @@ HARD_BLOCK_CODES = {"SICK_LEAVE", "LEAVE_BY_REPORT", "VACATION", "COMMAND"}
 RESTRICTS_EDITING_CODES = {"DETACHED"}
 # Прикомандированные — единственный тип ВНЕ штатных итогов (в отчёте «+N»).
 NOT_COUNTED_IN_STAFF_CODES = {"ATTACHED"}
+# ЗАГЛУШКА — тип, означающий не факт, а его отсутствие («уточняется»). Такую
+# строку не правят, а РАЗРЕШАЮТ ретро-заменой на реальный статус
+# (status_service.resolve_placeholder), и признак этот сервис читает из
+# СПРАВОЧНИКА, а не знает наизусть.
+#
+# До этого среза сид заводил «Уточняется» БЕЗ признака, и умолчание модели
+# (False) делало ретро-замену недостижимой: единственная строка, которую она
+# умеет разрешать, заглушкой не считалась. Отказ при этом выглядел осмысленно —
+# «Ретро-заменой разрешается только строка-заглушка», — поэтому спрашивающий
+# решил бы, что взял не ту строку, а не что возможности нет вовсе.
+PLACEHOLDER_CODES = {"PENDING_CLARIFICATION"}
 # Каталог отсутствий принадлежит КУ; оперативные статусы — системные.
 KU_OWNED_CODES = {
     "SICK_LEAVE",
@@ -94,6 +105,7 @@ class Command(BaseCommand):
                 "counts_in_staff": code not in NOT_COUNTED_IN_STAFF_CODES,
                 "counts_in_list": True,
                 "is_ku_owned": code in KU_OWNED_CODES,
+                "is_placeholder": code in PLACEHOLDER_CODES,
                 "legacy_code": LEGACY_CODE_BY_CODE.get(code),
             }
             StatusType.objects.update_or_create(
