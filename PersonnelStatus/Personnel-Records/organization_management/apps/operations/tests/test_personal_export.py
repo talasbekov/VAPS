@@ -542,3 +542,27 @@ def test_the_live_name_really_did_change(types, division):  # noqa: F811
     assert DivisionTreeSelector.names_map([division.id])[division.id] == (
         "Управление имени Другого"
     )
+
+
+def test_the_printed_document_names_the_division_the_same_way(types, division):  # noqa: F811
+    """Два артефакта из ОДНОГО снимка обязаны назвать подразделение одинаково.
+
+    Копия читала замороженное имя, печатный документ — живое, и после
+    переименования пара расходилась. Название документа берётся ИЗ САМОГО
+    ДОКУМЕНТА, а не пересчитывается тем же правилом: иначе тест сверял бы
+    правило с собой (тот же приём, что в срезе 128).
+    """
+    from organization_management.apps.operations.expense_release import (
+        build_submitted_expense_document,
+    )
+
+    submission = submit(division)
+    Division.objects.filter(pk=division.id).update(name="Управление имени Другого")
+
+    payload, _ = export_submission(submission=submission, actor=ACTOR)
+    copy_title = passport_of(load_workbook(io.BytesIO(payload)).active)[
+        "Подразделение"
+    ]
+    document = build_submitted_expense_document(division.id, TODAY)
+
+    assert document.division_title == copy_title == division.name

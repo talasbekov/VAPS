@@ -37,6 +37,7 @@ from organization_management.apps.operations.selectors import (
 )
 from organization_management.apps.operations.strength_report import (
     StatusCatalog,
+    title_of,
     StrengthReportService,
 )
 
@@ -95,7 +96,10 @@ def build_submitted_expense_document(division_id, business_date):
         submission.snapshot,
         business_date,
         catalog=catalog,
-        division_title=names.get(division_id, ""),
+        # Название — из снимка (схема 5), живое запасное: иначе печатный
+        # документ и личная копия одного дня назвали бы подразделение
+        # по-разному после переименования.
+        division_title=title_of(submission.snapshot, names.get(division_id, "")),
         staff_total=live.staff_total if live else 0,
         vacancies=live.vacancies if live else 0,
         attached=live.attached if live else 0,
@@ -185,7 +189,10 @@ def build_summary_expense_document(division_id, business_date):
                 snapshot,
                 business_date,
                 catalog=catalog,
-                division_title=names.get(source_id, ""),
+                # У КАЖДОГО ребёнка своё замороженное имя: сводка склеивает
+                # чужие дни, и переименование одного из них не смеет
+                # переписать строку в уже собранной сводке.
+                division_title=title_of(snapshot, names.get(source_id, "")),
                 staff_total=row.staff_total if row else 0,
                 vacancies=row.vacancies if row else 0,
                 attached=row.attached if row else 0,
@@ -193,7 +200,7 @@ def build_summary_expense_document(division_id, business_date):
         )
     return combine_documents(
         documents,
-        division_title=names.get(division_id, ""),
+        division_title=title_of(summary.snapshot, names.get(division_id, "")),
         business_date=business_date,
         columns=catalog.columns_in_order(),
     )
