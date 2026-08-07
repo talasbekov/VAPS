@@ -55,11 +55,41 @@ def test_every_case_carries_all_three_files(case):
 def test_the_set_covers_the_shapes_that_break_documents():
     """Случаи подобраны, а не насыпаны: пустое подразделение и длинный состав —
     те формы, на которых печать ломается чаще всего (нулевой знаменатель и
-    усечение списка)."""
+    усечение списка).
+
+    Плюс ЗАМОРОЖЕННЫЙ снимок. Первые три случая несут снимок в форме схемы 1 —
+    справочник, шапка и знаменатель подаются отдельными входами, — то есть
+    эталон описывал только ЗАПАСНУЮ ветку чтения, а прод с версии 7 ходит по
+    замороженной. Форма документа на ней осталась бы неохраняемой вовсе.
+    """
     names = {case.name for case in CASES}
 
     assert any("empty" in name for name in names)
     assert any("long" in name for name in names)
+    assert any("frozen" in name for name in names)
+
+
+def test_the_frozen_case_really_ignores_the_live_inputs():
+    """Случай с замороженным снимком подан с НАМЕРЕННО ДРУГИМИ живыми входами.
+
+    Совпади они с замороженными — эталон не отличал бы «билдер взял снимок» от
+    «билдер взял вход», и вся его ценность для этой ветки была бы мнимой.
+    """
+    case = next(path for path in CASES if "frozen" in path.name)
+    payload = json.loads((case / golden.INPUT_FILE).read_text(encoding="utf-8"))
+    snapshot = payload["snapshot"]
+
+    assert payload["division_title"] != snapshot["division_title"]
+    assert payload["staff_total"] != snapshot["staff_total"]
+    assert payload["vacancies"] != snapshot["vacancies"]
+    assert payload["attached"] != snapshot["attached"]
+    live_columns = {row["report_column_code"] for row in payload["catalog"]}
+    frozen_columns = {row["report_column_code"] for row in snapshot["catalog"]}
+    assert live_columns.isdisjoint(frozen_columns)
+
+    stored = json.loads((case / golden.NUMBERS_FILE).read_text(encoding="utf-8"))
+    assert stored["rows"][0]["name"] == snapshot["division_title"]
+    assert stored["rows"][0]["staff_total"] == snapshot["staff_total"]
 
 
 # ── Сверка ───────────────────────────────────────────────────────────────
