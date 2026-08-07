@@ -37,6 +37,7 @@ from organization_management.apps.operations.selectors import (
 )
 from organization_management.apps.operations.strength_report import (
     StatusCatalog,
+    denominator_of,
     title_of,
     StrengthReportService,
 )
@@ -92,6 +93,11 @@ def build_submitted_expense_document(division_id, business_date):
         (row for row in report.rows if row.division_id == division_id), None
     )
     names = DivisionTreeSelector.names_map([division_id])
+    staff_total, vacancies = denominator_of(
+        submission.snapshot,
+        live.staff_total if live else 0,
+        live.vacancies if live else 0,
+    )
     return build_expense_document(
         submission.snapshot,
         business_date,
@@ -100,8 +106,10 @@ def build_submitted_expense_document(division_id, business_date):
         # документ и личная копия одного дня назвали бы подразделение
         # по-разному после переименования.
         division_title=title_of(submission.snapshot, names.get(division_id, "")),
-        staff_total=live.staff_total if live else 0,
-        vacancies=live.vacancies if live else 0,
+        # Знаменатель — из снимка (схема 6): живой ломал арифметику самого
+        # документа при первой же правке штата.
+        staff_total=staff_total,
+        vacancies=vacancies,
         attached=live.attached if live else 0,
     )
 
@@ -184,6 +192,11 @@ def build_summary_expense_document(division_id, business_date):
         ),
     ]:
         row = live.get(source_id)
+        staff_total, vacancies = denominator_of(
+            snapshot,
+            row.staff_total if row else 0,
+            row.vacancies if row else 0,
+        )
         documents.append(
             build_expense_document(
                 snapshot,
@@ -193,8 +206,8 @@ def build_summary_expense_document(division_id, business_date):
                 # чужие дни, и переименование одного из них не смеет
                 # переписать строку в уже собранной сводке.
                 division_title=title_of(snapshot, names.get(source_id, "")),
-                staff_total=row.staff_total if row else 0,
-                vacancies=row.vacancies if row else 0,
+                staff_total=staff_total,
+                vacancies=vacancies,
                 attached=row.attached if row else 0,
             )
         )
