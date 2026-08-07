@@ -1,0 +1,33 @@
+{
+  "business_date": "2026-08-04",
+  "columns": [
+    "ON_DUTY",
+    "VACATION",
+    "IN_SERVICE"
+  ],
+  "rows": [
+    {
+      "attached": 2,
+      "cells": {
+        "IN_SERVICE": 2,
+        "ON_DUTY": 1,
+        "VACATION": 1
+      },
+      "list_total": 4,
+      "name": "Управление кадров",
+      "staff_total": 12,
+      "vacancies": 4
+    }
+  ],
+  "totals": {
+    "attached": 2,
+    "columns": {
+      "IN_SERVICE": 2,
+      "ON_DUTY": 1,
+      "VACATION": 1
+    },
+    "list_total": 4,
+    "staff_total": 12,
+    "vacancies": 4
+  }
+}

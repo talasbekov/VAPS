@@ -37,9 +37,7 @@ from organization_management.apps.operations.selectors import (
 )
 from organization_management.apps.operations.strength_report import (
     StatusCatalog,
-    attached_of,
     catalog_of,
-    denominator_of,
     title_of,
     StrengthReportService,
 )
@@ -95,11 +93,6 @@ def build_submitted_expense_document(division_id, business_date):
         (row for row in report.rows if row.division_id == division_id), None
     )
     names = DivisionTreeSelector.names_map([division_id])
-    staff_total, vacancies = denominator_of(
-        submission.snapshot,
-        live.staff_total if live else 0,
-        live.vacancies if live else 0,
-    )
     return build_expense_document(
         submission.snapshot,
         business_date,
@@ -107,12 +100,12 @@ def build_submitted_expense_document(division_id, business_date):
         # Название — из снимка (схема 5), живое запасное: иначе печатный
         # документ и личная копия одного дня назвали бы подразделение
         # по-разному после переименования.
-        division_title=title_of(submission.snapshot, names.get(division_id, "")),
-        # Знаменатель — из снимка (схема 6): живой ломал арифметику самого
-        # документа при первой же правке штата.
-        staff_total=staff_total,
-        vacancies=vacancies,
-        attached=attached_of(submission.snapshot, live.attached if live else 0),
+        # Разрешение замороженных полей — внутри билдера; сюда подаётся
+        # ЖИВОЕ как запасное для снимков младших версий.
+        division_title=names.get(division_id, ""),
+        staff_total=live.staff_total if live else 0,
+        vacancies=live.vacancies if live else 0,
+        attached=live.attached if live else 0,
     )
 
 
@@ -194,23 +187,18 @@ def build_summary_expense_document(division_id, business_date):
         ),
     ]:
         row = live.get(source_id)
-        staff_total, vacancies = denominator_of(
-            snapshot,
-            row.staff_total if row else 0,
-            row.vacancies if row else 0,
-        )
         documents.append(
             build_expense_document(
                 snapshot,
                 business_date,
                 catalog=catalog,
-                # У КАЖДОГО ребёнка своё замороженное имя: сводка склеивает
-                # чужие дни, и переименование одного из них не смеет
-                # переписать строку в уже собранной сводке.
-                division_title=title_of(snapshot, names.get(source_id, "")),
-                staff_total=staff_total,
-                vacancies=vacancies,
-                attached=attached_of(snapshot, row.attached if row else 0),
+                # У КАЖДОГО ребёнка своё замороженное имя и свой знаменатель:
+                # сводка склеивает чужие дни. Разрешает их билдер; сюда едет
+                # живое как запасное.
+                division_title=names.get(source_id, ""),
+                staff_total=row.staff_total if row else 0,
+                vacancies=row.vacancies if row else 0,
+                attached=row.attached if row else 0,
             )
         )
     return combine_documents(

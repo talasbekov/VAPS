@@ -29,8 +29,11 @@ from datetime import date
 from organization_management.apps.operations.roster_order import order_roster
 from organization_management.apps.operations.strength_report import (
     DERIVED_IN_SERVICE,
+    attached_of,
     catalog_of,
+    denominator_of,
     expense_from_snapshot,
+    title_of,
     resolve_status,
 )
 
@@ -138,10 +141,20 @@ def build_expense_document(
     живом расходе; поимённо такие люди в документе не показываются, потому
     что колонки для них нет.
     """
-    # Печатная форма читает снимок ЕГО справочником: документ подписывают, и
-    # правка каталога не смеет переставлять людей по колонкам задним числом.
-    # У снимков до версии 3 своего каталога нет — им остаётся переданный.
+    # ВСЁ, ЧТО СНИМОК ЗАМОРОЗИЛ, БЕРЁТСЯ ИЗ НЕГО — здесь, а не у вызывающего.
+    #
+    # Раньше справочник разрешался тут, а шапка, знаменатель и «+N» приходили
+    # уже разрешёнными из expense_release. Асимметрия была ловушкой: всякий
+    # ДРУГОЙ вызывающий молча получал живые значения трёх полей из четырёх, и
+    # генератор эталона печатной формы оказался ровно таким — его случай
+    # печатал живое имя и живой знаменатель поверх замороженных.
+    #
+    # Переданные значения остаются ЗАПАСНЫМИ: у снимков младших версий
+    # соответствующих полей нет, и брать их неоткуда, кроме как у вызывающего.
     catalog = catalog_of(snapshot, catalog)
+    division_title = title_of(snapshot, division_title)
+    staff_total, vacancies = denominator_of(snapshot, staff_total, vacancies)
+    attached = attached_of(snapshot, attached)
     numbers = expense_from_snapshot(snapshot, business_date, catalog)
     columns_order = catalog.columns_in_order()
     facts_by_employee = _parsed_facts(snapshot)
