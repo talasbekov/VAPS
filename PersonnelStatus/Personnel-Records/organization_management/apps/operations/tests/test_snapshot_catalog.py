@@ -204,19 +204,38 @@ def test_catalog_of_prefers_the_frozen_one(types):  # noqa: F811
     assert chosen.column["DUTY"] == "ЗАМОРОЖЕНО"
 
 
-def test_an_unusable_frozen_catalog_falls_back_to_the_live_one(types):  # noqa: F811
+def test_an_unusable_frozen_catalog_is_not_quietly_replaced(types):  # noqa: F811
     """Каталог без колонки для выводимого «в строю» непригоден.
 
-    Такой день нельзя было показать и в момент сдачи — живой справочник тогда
-    был тем же самым, — поэтому запасной путь ничего не портит и остаётся
-    единственным шансом такой день прочитать.
+    Раньше такой снимок читался ЖИВЫМ справочником — запасным путём. Путь снят
+    вместе с появлением отказа на сборке: непригодный каталог в снимок больше
+    не попадает, потому что такой день не сдаётся, и ветка на несуществующее
+    состояние жила бы ровно до того дня, когда прикроет настоящую поломку.
+
+    Непригодный каталог в снимке отныне означает ПОРЧУ ДАННЫХ. Падать на ней
+    громко правильнее, чем посчитать день по чужому справочнику и выдать
+    числа, которых никто не подписывал.
     """
     unusable = [
         {"code": "DUTY", "priority": 10, "report_column_code": "DUTY",
          "counts_in_staff": True},
     ]
 
-    chosen = catalog_of({"catalog": unusable}, live_catalog())
+    with pytest.raises(ValueError, match="IN_SERVICE"):
+        catalog_of({"catalog": unusable}, live_catalog())
 
-    assert chosen.column["DUTY"] == "DUTY"
-    assert "IN_SERVICE" in chosen.priority
+
+def test_a_day_with_an_unusable_catalog_is_not_submitted_at_all(division):
+    """Отказ стоит там, где его ещё можно исправить.
+
+    Замороженный каталог не чинится задним числом: день, сданный без колонки
+    для «в строю», остался бы невыводимым НАВСЕГДА, и узналось бы об этом при
+    первой попытке напечатать документ — то есть уже после подписи. Здесь
+    справочник не заведён вовсе, и сдача не проходит.
+    """
+    from organization_management.apps.operations.snapshot import (
+        build_division_snapshot,
+    )
+
+    with pytest.raises(ValueError, match="IN_SERVICE"):
+        build_division_snapshot(division.id, TODAY)

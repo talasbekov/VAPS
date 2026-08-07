@@ -34,6 +34,19 @@ TODAY = date(2026, 8, 4)
 ACTOR = "7"
 
 
+@pytest.fixture(autouse=True)
+def catalog():
+    """Справочник нужен КАЖДОМУ тесту файла, хотя ни один его не проверяет.
+
+    Со схемы снимка 3 билдер отказывается собирать день, справочник которого
+    непригоден: замороженный каталог не чинится задним числом, и день без
+    колонки для выводимого «в строю» остался бы невыводимым навсегда. Мир без
+    единого типа статуса — не «минимальная фикстура», а состояние, в котором
+    прод не бывает: seed_status_types заводит их до всего остального.
+    """
+    seed_types()
+
+
 @pytest.fixture
 def division():
     return Division.objects.create(name="Управление 1")
@@ -298,7 +311,6 @@ class TestDivisionId:
         assert snapshot["schema_version"] == SCHEMA_VERSION
         assert (snapshot["roster"], snapshot["rows"]) == ([], [])
         # Ключ справочника есть и у пустого подразделения: раскладка колонок —
-        # свойство дня, а не состава. Пуст он здесь потому, что в этой фикстуре
-        # нет ни одного типа статуса вовсе.
+        # свойство ДНЯ, а не состава, и без неё день нельзя было бы вывести.
         assert set(snapshot) == {"schema_version", "roster", "rows", "catalog"}
-        assert snapshot["catalog"] == []
+        assert snapshot["catalog"]

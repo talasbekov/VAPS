@@ -38,6 +38,7 @@ ACTOR = "7"
 
 def seed_types():
     for code, hard in [
+        ("IN_SERVICE", False),
         ("VACATION", True),
         ("SICK_LEAVE", True),
         ("DUTY", False),
@@ -49,8 +50,8 @@ def seed_types():
             code=code,
             defaults={
                 "name": code,
-                "priority": 10,
-                "report_column_code": "X",
+                "priority": 999 if code == "IN_SERVICE" else 10,
+                "report_column_code": "IN_SERVICE" if code == "IN_SERVICE" else "X",
                 "is_hard_block": hard,
             },
         )
