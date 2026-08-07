@@ -225,6 +225,65 @@ export interface Division {
   children: Division[];
 }
 
+// Расход (строевая записка): форма ответа /api/operations/strength-report/.
+// `columns` — коды статусов, порядок задаёт СЕРВЕР, поэтому шапку таблицы
+// строим по этому массиву, а не по ключам объекта `row.columns`: порядок
+// ключей объекта в JS не гарантирован и разъехался бы с сервером.
+export interface StrengthReportRow {
+  division_id: number;
+  name: string;
+  staff_total: number;
+  list_total: number;
+  vacancies: number;
+  attached: number;
+  off_list: number;
+  columns: Record<string, number>;
+}
+
+export interface StrengthReport {
+  business_date: string;
+  columns: string[];
+  rows: StrengthReportRow[];
+}
+
+// Ошибка раздела ОМ: бэк отвечает конвертом {error_code, message, details}.
+// Держим `code` отдельно от текста, чтобы UI мог разводить случаи по коду
+// (например DAY_NOT_SUBMITTED — это не поломка, а «выгружать нечего»), а не
+// сравнением строк сообщения, которое переписывают без предупреждения.
+export class OpsApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(status: number, code: string | null, message: string) {
+    super(message);
+    this.name = "OpsApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+// Разбирает неуспешный ответ в OpsApiError. Тело читаем как текст и лишь
+// потом пробуем как JSON: у выгрузки тип ответа файловый, и на ошибке там
+// может прийти не-JSON — `response.json()` тогда бросил бы SyntaxError,
+// подменив настоящую причину отказа.
+async function toDomainError(response: Response): Promise<OpsApiError> {
+  const raw = await response.text();
+  let code: string | null = null;
+  let message = "";
+  try {
+    const body = JSON.parse(raw);
+    code = body?.error_code ?? null;
+    message = body?.message || body?.detail || "";
+  } catch {
+    message = raw;
+  }
+  return new OpsApiError(
+    response.status,
+    code,
+    message || `HTTP ${response.status}`
+  );
+}
+
 // Хелпер для получения токена из NextAuth сессии
 // Используется в API клиенте для автоматической авторизации запросов
 async function getAccessToken(): Promise<string | null> {
@@ -1199,6 +1258,84 @@ class ApiClient {
       console.error("API request failed:", error);
       throw error;
     }
+  }
+
+  // Расход (строевая записка) — ЖИВОЙ контракт раздела ОМ.
+  //
+  // Соседний `downloadExpenseReport` выше бьёт в донорскую ручку
+  // `/api/reports/reports/expense/<department_id>/`, которая на бэке хоть и
+  // объявлена, но нерабочая: она строится из шаблона `расход.xlsx`, а его нет
+  // в репозитории (и он не в .gitignore — просто никогда не коммитился).
+  // Живой пробой она отвечает 500 «No such file or directory». Поэтому расход
+  // читается отсюда.
+  //
+  // `division_id` НЕ обязателен: бэк сужает выборку по области видимости
+  // всегда, поэтому «свой департамент» определяет он, а не клиент. Клиенту
+  // незачем угадывать, какой из предков его подразделения — департамент.
+  async getStrengthReport(params: {
+    businessDate?: string;
+    divisionId?: number;
+  } = {}): Promise<StrengthReport> {
+    const query = new URLSearchParams();
+    if (params.businessDate) query.append("business_date", params.businessDate);
+    if (params.divisionId !== undefined) {
+      query.append("division_id", String(params.divisionId));
+    }
+    const queryString = query.toString();
+    const endpoint = `/api/operations/strength-report/${
+      queryString ? `?${queryString}` : ""
+    }`;
+
+    const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
+    const token = await getAccessToken();
+
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      accept: "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { headers, cache: "no-store" });
+    if (!response.ok) {
+      throw await toDomainError(response);
+    }
+    return response.json();
+  }
+
+  // Выгрузка расхода СДАННОГО дня файлом.
+  //
+  // Здесь `divisionId` обязателен — в отличие от чтения выше: бэк требует его
+  // явно и на пустой параметр отвечает 400 (проверено живой пробой).
+  //
+  // Параметр формата зовётся `file_format`, а НЕ `format`: имя `format` DRF
+  // резервирует под выбор рендерера ответа, и `?format=xlsx` ушло бы в
+  // согласование содержимого, отвечая 404 ещё до вьюхи.
+  async downloadStrengthReportExport(params: {
+    divisionId: number;
+    businessDate?: string;
+    fileFormat?: "csv" | "xlsx" | "docx";
+  }): Promise<Blob> {
+    const query = new URLSearchParams();
+    query.append("division_id", String(params.divisionId));
+    if (params.businessDate) query.append("business_date", params.businessDate);
+    query.append("file_format", params.fileFormat ?? "xlsx");
+
+    const endpoint = `/api/operations/strength-report/export/?${query.toString()}`;
+    const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
+    const token = await getAccessToken();
+
+    const headers: HeadersInit = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { headers, cache: "no-store" });
+    if (!response.ok) {
+      throw await toDomainError(response);
+    }
+    return response.blob();
   }
 
   // Метод для получения уведомлений
