@@ -55,10 +55,14 @@ LOGGING = {
     },
 
     'loggers': {
+        # propagate=False: у логгера свои обработчики, и те же самые стоят на
+        # root — при propagate=True каждая строка (включая КАЖДЫЙ SQL на
+        # DEBUG) писалась дважды и в консоль, и в файл. На стенде это давало
+        # 238 КБ лога на несколько запросов.
         'django': {
             'handlers': ['console', 'file'],
             'level': 'DEBUG',
-            'propagate': True,
+            'propagate': False,
         },
         'django.request': {
             'handlers': ['console', 'file'],

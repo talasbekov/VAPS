@@ -265,13 +265,19 @@ LOGGING = {
         'console': {'class': 'logging.StreamHandler'},
     },
     'loggers': {
+        # propagate=False у каждого логгера со СВОИМИ обработчиками: иначе
+        # запись уходит и в них, и в root, у которого обработчик тот же, —
+        # каждая строка печатается ДВАЖДЫ. У 'django.request' ниже это уже
+        # было учтено, у остальных нет.
         'django': {
             'handlers': ['console'],
             'level': 'INFO',
+            'propagate': False,
         },
         'django.server': {
             'handlers': ['console'],
             'level': 'INFO',
+            'propagate': False,
         },
         'django.request': {
             'handlers': ['console'],
