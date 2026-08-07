@@ -320,5 +320,6 @@ class TestDivisionId:
             "division_title",
             "staff_total",
             "vacancies",
+            "attached",
         }
         assert snapshot["catalog"]

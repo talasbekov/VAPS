@@ -430,6 +430,22 @@ def denominator_of(snapshot, live_staff_total, live_vacancies):
     return snapshot["staff_total"], snapshot.get("vacancies", 0)
 
 
+def attached_of(snapshot, live_attached):
+    """«+N» приданных, которым подписывать ЭТОТ снимок.
+
+    Пятый и последний сосед `catalog_of` / `names_of` / `title_of` /
+    `denominator_of`. Арифметику документа «+N» не ломает — он добавка сверх
+    равенства, — но дрейфует так же тихо: подтвердили возврат, и число за
+    вчера уменьшилось в уже подписанной бумаге.
+
+    Признаком служит наличие ключа, а не его истинность: ноль приданных —
+    законное и частое состояние, и `or` увёл бы его на живое число.
+    """
+    if "attached" not in snapshot:
+        return live_attached
+    return snapshot["attached"]
+
+
 def title_of(snapshot, live_title):
     """Название подразделения, которым подписывать ЭТОТ снимок.
 
