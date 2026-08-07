@@ -10,8 +10,9 @@ from organization_management.apps.core.api.serializers import (
     DivisionSerializer,
     EmployeeSerializer,
     PositionSerializer,
+    RankSerializer,
 )
-from organization_management.apps.dictionaries.models import Position
+from organization_management.apps.dictionaries.models import Position, Rank
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.api.permissions import (
@@ -91,3 +92,22 @@ class PositionViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
         # Порядок фиксируем явно (тот же, что в Meta модели): без него
         # пагинация DRF предупреждает о нестабильной выборке.
         return Position.objects.all().order_by("level", "name", "id")
+
+
+class RankViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
+    """GET /api/core/ranks/ — справочник званий в донорском контракте.
+
+    Право и режим те же, что у PositionViewSet: звание — справочник формы
+    штата, правка живёт на старой стороне.
+    """
+
+    serializer_class = RankSerializer
+    permission_map = {
+        "list": _READ_ORGSTRUCTURE_PERMISSION,
+        "retrieve": _READ_ORGSTRUCTURE_PERMISSION,
+    }
+
+    def get_queryset(self):
+        # Порядок фиксируем явно (тот же, что в Meta модели): без него
+        # пагинация DRF предупреждает о нестабильной выборке.
+        return Rank.objects.all().order_by("level", "name", "id")

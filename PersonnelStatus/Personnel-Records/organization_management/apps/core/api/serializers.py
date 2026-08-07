@@ -7,7 +7,7 @@ int-pk, division_type строкой). Наружу отдаём донорск�
 """
 from rest_framework import serializers
 
-from organization_management.apps.dictionaries.models import Position
+from organization_management.apps.dictionaries.models import Position, Rank
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 
@@ -176,4 +176,41 @@ class PositionSerializer(serializers.ModelSerializer):
         return None
 
     def get_is_active(self, obj: Position) -> None:
+        return None
+
+
+class RankSerializer(serializers.ModelSerializer):
+    """Донорский контракт справочника званий: code, name, category,
+    rank_index, is_active.
+
+    `code` (заведён срезом 154a) и `name` читаются напрямую.
+
+    `rank_index` ← `level` — единственное поле контракта, у которого источник
+    не одноимённый. У донора это порядковый индекс звания в иерархии, здесь
+    ту же роль играет level («чем меньше число, тем выше звание»). Ровно так
+    уже сделано в EmployeeSerializer.get_rank_index (срез 154b), и разойтись
+    этим двум местам нельзя: индекс сотрудника перестал бы сравниваться с
+    индексом справочника. `level` наружу под своим именем НЕ выходит — в
+    контракте донора такого ключа нет.
+
+    ИСТОЧНИКА НЕТ — `category` и `is_active`. Отдаются null: подставить сюда
+    похожее поле было бы хуже молчания (см. довод у PositionSerializer).
+    """
+
+    rank_index = serializers.IntegerField(source="level", read_only=True)
+
+    # Полей нет в старой схеме — отдаём null, но держим в контракте: клиент
+    # SPA сгенерирован из схемы донора и ждёт именно этот набор ключей.
+    category = serializers.SerializerMethodField()
+    is_active = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Rank
+        fields = ["code", "name", "category", "rank_index", "is_active"]
+        read_only_fields = fields
+
+    def get_category(self, obj: Rank) -> None:
+        return None
+
+    def get_is_active(self, obj: Rank) -> None:
         return None
