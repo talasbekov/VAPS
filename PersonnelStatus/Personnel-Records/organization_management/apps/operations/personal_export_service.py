@@ -30,6 +30,7 @@ from organization_management.apps.operations.selectors import (
     StatusTypeSelector,
 )
 from organization_management.apps.operations.snapshot import SCHEMA_VERSION
+from organization_management.apps.operations.strength_report import names_of
 
 # Подписи события сдачи. Незнакомый код печатается сам: словарь событий
 # вырастет раньше этого места, и файл обязан это пережить.
@@ -69,7 +70,7 @@ def _submitted_at_label(submitted_at):
 # {1, SCHEMA_VERSION} молча теряла бы среднюю версию при каждом повышении —
 # с переходом на 3 из поддержки выпала бы двойка, то есть все дни, сданные
 # между двумя срезами, перестали бы выгружаться.
-SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3})
+SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
 # ...но текущая версия обязана быть среди них, и это держится здесь, а не
 # памятью: повышение SCHEMA_VERSION без правки списка сорвалось бы на импорте
 # модуля, то есть на первом же прогоне, а не на выгрузке у пользователя.
@@ -121,7 +122,9 @@ def export_submission(*, submission, actor):
         submitted_by=submission.submitted_by,
         submitted_at_label=_submitted_at_label(submission.submitted_at),
         late=submission.late,
-        status_names=StatusTypeSelector.names_map(),
+        # Подписи — из снимка, живые только запасные: переименование типа не
+        # смеет менять уже выданную копию (см. names_of).
+        status_names=names_of(snapshot, StatusTypeSelector.names_map()),
     )
     filename = (
         f"сдача_{submission.business_date.isoformat()}_v{submission.version}.xlsx"

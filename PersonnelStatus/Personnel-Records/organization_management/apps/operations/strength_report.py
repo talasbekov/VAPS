@@ -412,6 +412,27 @@ def catalog_of(snapshot, live_catalog):
     return StatusCatalog.from_rows(rows)
 
 
+def names_of(snapshot, live_names):
+    """Подписи статусов, которыми читать ЭТОТ снимок: {код: имя}.
+
+    Сосед `catalog_of`: то же правило, но про подписи. Снимок схемы 4 несёт
+    имя в каждой строке своего каталога, и печатать надо ИМ — иначе
+    переименование типа меняет уже выданную копию сданного дня, а её берут,
+    чтобы предъявить в споре.
+
+    Живые подписи остаются ЗАПАСНЫМИ и подмешиваются под замороженные: у
+    снимков версий 1–3 имён нет вовсе, а у снимка версии 4 может не оказаться
+    кода, заведённого позже, — печатать голый код там, где подпись существует,
+    незачем.
+    """
+    frozen = {
+        row["code"]: row["name"]
+        for row in snapshot.get("catalog") or ()
+        if row.get("name")
+    }
+    return {**live_names, **frozen}
+
+
 def expense_from_snapshot(snapshot, business_date, catalog):
     """Список и колонки по снимку: {list_total, off_list, columns}.
 
