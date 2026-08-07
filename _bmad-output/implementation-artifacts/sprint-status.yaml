@@ -1,5 +1,5 @@
 # generated: 2026-06-11
-# last_updated: 2026-08-07 (20.4d → done)
+# last_updated: 2026-08-07 (epic-20 → done, ретроспектива закрыта)
 # project: VAPS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -822,7 +822,7 @@ development_status:
   epic-19-retrospective: optional
 
   # Epic 20: Дашборды и экспорт (этап 3 — каркас)
-  epic-20: in-progress
+  epic-20: done
   # 20.1 decomposed (create-story, 2026-08-06), same rationale as 19.4/19.5/
   # 19.6: backend selector, API, frontend are separate stories. This key
   # tracks the readiness-aggregate selector slice (20.1a); API (20.1b)/
@@ -875,4 +875,4 @@ development_status:
   20-6a-сводка-по-статусам-селектор: done
   20-6b-сводка-по-статусам-api: done
   20-6c-сводка-по-статусам-экран: done
-  epic-20-retrospective: optional
+  epic-20-retrospective: done
