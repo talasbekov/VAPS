@@ -23,7 +23,10 @@ from organization_management.apps.operations.bulk_status_service import (
 )
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models import StatusType
-from organization_management.apps.operations.models_status import OpsEmployeeStatus
+from organization_management.apps.operations.models_status import (
+    OpsEmployeeStatus,
+    Secondment,
+)
 from organization_management.apps.staff_unit.models import StaffUnit
 
 pytestmark = pytest.mark.django_db
@@ -48,6 +51,9 @@ def types():
             report_column_code="X",
             is_hard_block=hard,
             max_duration_days=max_days,
+            # DETACHED — ограничивающий тип (как в реальном справочнике); гвард
+            # читает флаг restricts_editing, а не литерал кода.
+            restricts_editing=(code == "DETACHED"),
         )
 
 
@@ -235,6 +241,62 @@ def test_finished_detachment_does_not_block(types, division):
     assert len(created) == 1
 
 
+def test_second_restricting_type_also_blocks(types, division):
+    """Гвард читает справочник, а не литерал: админ пометил ещё один тип
+    restricts_editing=True — пачка обязана исполнить его так же, как одиночный
+    путь. Раньше bulk знал только литерал DETACHED и такой тип пропускал."""
+    StatusType.objects.create(
+        code="ARREST", name="Арест", priority=10, report_column_code="X",
+        is_hard_block=False, restricts_editing=True,
+    )
+    ok, arrested = make_employee(division), make_employee(division)
+    live_status(arrested, code="ARREST", start=TODAY - timedelta(days=1))
+    with pytest.raises(DomainError) as exc:
+        bulk([row(ok), row(arrested)], division)
+    assert exc.value.http_status == 403
+    assert exc.value.detail["employee_ids"] == [str(arrested.id)]
+    # Fail-fast: чужая валидная строка тоже не записана.
+    assert OpsEmployeeStatus.objects.filter(status_type_code="DUTY").count() == 0
+
+
+def test_confirmed_return_does_not_block_bulk(types, division):
+    """Нога с подтверждённым возвратом больше не блокирует правку: ограничение
+    снимает РЕШЕНИЕ, а не календарь. Одиночный путь это исполнял; пачка (литерал
+    без исключения возврата) — нет. Живой DETACHED остаётся, но возврат по нему
+    подтверждён, поэтому массовое обновление проходит."""
+    employee = make_employee(division)
+    out_leg = live_status(
+        employee, code="DETACHED",
+        start=TODAY - timedelta(days=3), end=TODAY + timedelta(days=1),
+    )
+    in_leg = live_status(
+        employee, code="ATTACHED",
+        start=TODAY - timedelta(days=3), end=TODAY + timedelta(days=1),
+    )
+    # Возврат — рукопожатие из двух фактов: сначала запрос, затем подтверждение
+    # позже (CHECK «confirm after request»). Гварду важен лишь факт
+    # подтверждения (не время), но данные должны быть валидны.
+    requested = clock.Clock.now()
+    Secondment.objects.create(
+        employee_id=employee.id,
+        out_status=out_leg,
+        in_status=in_leg,
+        from_division_id=division.id,
+        to_division_id=division.id + 1,  # ≠ from (CHECK «не в самого себя»)
+        return_requested_at=requested,
+        return_requested_by="asker",
+        return_confirmed_at=requested + timedelta(minutes=1),
+        return_confirmed_by="returner",
+    )
+    # Новая строка после ноги — без пересечения, чтобы 403 гварда (а не 409/422
+    # конфликта) был единственным возможным исходом до фикса.
+    created = bulk(
+        [row(employee, start=TODAY + timedelta(days=3), end=TODAY + timedelta(days=5))],
+        division,
+    )
+    assert len(created) == 1
+
+
 # ── Построчные бизнес-ошибки (агрегация) ─────────────────────────────────
 
 def test_soft_overlap_409_nothing_written(types, division):
@@ -354,6 +416,8 @@ def test_query_count_is_constant(types, division):
         f"N+1: 5 строк — {len(ctx_few)} запросов, 50 строк — {len(ctx_many)}"
     )
     # И сама константа мала — страховка от «постоянного, но огромного».
-    # Одиннадцатый запрос — поиск сданных дней, накрытых пачкой (шов
-    # поправки): он тоже один на всю пачку, а не на строку.
-    assert len(ctx_many) <= 11
+    # 11-й — поиск сданных дней, накрытых пачкой (шов поправки); 12-й и 13-й —
+    # единый гвард откомандированного (restricted_employee_ids: справочник
+    # ограничивающих типов + один запрос по всем сотрудникам пачки). Все три —
+    # по одному на всю пачку, а не на строку.
+    assert len(ctx_many) <= 13

@@ -41,7 +41,6 @@ from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.amendment_enforcement import (
     enforce_amendment_on_bulk_edit,
 )
-from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.conflict_matrix import detect_conflicts
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models import StatusType
@@ -52,6 +51,7 @@ from organization_management.apps.operations.status_service import (
     _require_actor,
     _validate_interval,
     assert_employee_is_employed,
+    restricted_employee_ids,
 )
 
 # Ключи, которые обязана нести каждая строка payload. Ниже они читаются через
@@ -198,24 +198,18 @@ def bulk_create_statuses(
     for row in existing:
         existing_by_employee.setdefault(row["employee_id"], []).append(row)
 
-    # Гард откомандированного (живой DETACHED → сотрудник закрыт для правки).
-    # Считается в памяти из уже вытащенных живых статусов — без лишнего
-    # запроса; одиночный путь делает то же самое отдельным exists().
-    today = Clock.today_local()
-    detached = sorted(
-        {
-            str(eid)
-            for eid, st_rows in existing_by_employee.items()
-            for r in st_rows
-            if r["status_type_code"] == "DETACHED"
-            and r["date_start"] <= today < r["date_end"]
-        }
-    )
-    if detached:
+    # Гард откомандированного — ЕДИНЫЙ предикат с одиночным путём
+    # (status_service.restricted_employee_ids): живой ограничивающий статус из
+    # справочника (restricts_editing), за вычетом ноги с подтверждённым
+    # возвратом. Раньше здесь стоял литерал "DETACHED" без исключения возврата —
+    # пачка обходила гвард, который одиночный путь исполнял: пометь админ второй
+    # тип ограничивающим, и bulk писал бы статусы «закрытому» (High-находка).
+    restricted = restricted_employee_ids(employee_ids)
+    if restricted:
         raise DomainError(
             "PERMISSION_DENIED",
             403,
-            detail={"employee_ids": detached},
+            detail={"employee_ids": sorted(str(e) for e in restricted)},
             message="Сотрудник откомандирован — массовое обновление запрещено.",
         )
 
