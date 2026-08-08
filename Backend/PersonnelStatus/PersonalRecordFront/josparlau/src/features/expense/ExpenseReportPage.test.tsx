@@ -626,3 +626,21 @@ describe('Смена контекста: состояние не пережив�
     )
   })
 })
+
+describe('вход в печатную форму: та же вкладка (credential в sessionStorage)', () => {
+  it('ссылка «Печатная форма» БЕЗ target="_blank"', async () => {
+    // Паттерн SecurityEventDetailPage.tsx (§9.15): credential живёт в
+    // sessionStorage, а Chromium ≥88 трактует безымянный target="_blank" как
+    // implicit noopener — новая вкладка НЕ auxiliary, sessionStorage в неё не
+    // клонируется, и /print/expense за RequireAuth рендерит экран входа вместо
+    // печатной формы. Ассерт закрепляет same-tab: вернувшийся target="_blank"
+    // покрасит тест (образец — e2e-mock/placement-print.spec.ts:54).
+    const user = userEvent.setup()
+    server.use(http.get('*/api/core/divisions/', () => divisionsResponse()))
+    renderPage()
+    await selectDivision(user)
+
+    const link = await screen.findByRole('link', { name: 'Печатная форма' })
+    expect(link).not.toHaveAttribute('target')
+  })
+})
