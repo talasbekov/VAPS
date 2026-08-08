@@ -10,6 +10,7 @@ from rest_framework import serializers
 from organization_management.apps.dictionaries.models import Position, Rank
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
+from organization_management.apps.staff_unit.models import StaffUnit
 
 
 class DivisionSerializer(serializers.ModelSerializer):
@@ -213,4 +214,75 @@ class RankSerializer(serializers.ModelSerializer):
         return None
 
     def get_is_active(self, obj: Rank) -> None:
+        return None
+
+
+class StaffingSlotSerializer(serializers.ModelSerializer):
+    """Донорский контракт штатного слота: id, division, position_code,
+    slot_number, parent_slot, is_active, valid_from, valid_to.
+
+    `id`, `division` и `parent_slot` читаются напрямую: иерархия слотов у
+    донора и в старой модели — одна и та же вещь, только у донора это
+    self-FK, а здесь MPTT-ребро `parent`.
+
+    `position_code` — код из справочника должностей. У донора это FK с
+    db_column position_code, здесь FK на dictionaries.Position; наружу обе
+    стороны отдают код строкой, поэтому расхождение остаётся внутри.
+    Должность на слоте необязательна (null=True) — тогда отдаём null.
+
+    `slot_number` ← `index`. Источник не одноимённый, но это ПЕРЕВОД, а не
+    подмена соседним полем: verbose_name у `index` — «Номер слота», то есть
+    ровно то, что донор зовёт slot_number. Прецеденты той же формы —
+    `type_code` ← `division_type` (срез 153) и `rank_index` ← `level`
+    (срезы 154b/156). Наружу уходит строка: в контракте донора slot_number
+    строковый, и отдать число значило бы разойтись со схемой, из которой
+    сгенерирован клиент.
+
+    ИСТОЧНИКА НЕТ — `is_active`, `valid_from`, `valid_to`. Отдаются null по
+    тому же доводу, что и null-поля EmployeeSerializer (срез 154b). Временных
+    границ у StaffUnit нет вовсе: подставить в `valid_from` дату заведения
+    строки значило бы выдать её за дату ввода слота в штат, а `is_active`
+    со значением True объявил бы действующим слот, у которого признака нет.
+    """
+
+    position_code = serializers.SerializerMethodField()
+    parent_slot = serializers.PrimaryKeyRelatedField(
+        source="parent", read_only=True
+    )
+    slot_number = serializers.SerializerMethodField()
+
+    # Полей нет в старой схеме — отдаём null, но держим в контракте: клиент
+    # SPA сгенерирован из схемы донора и ждёт именно этот набор ключей.
+    is_active = serializers.SerializerMethodField()
+    valid_from = serializers.SerializerMethodField()
+    valid_to = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StaffUnit
+        fields = [
+            "id",
+            "division",
+            "position_code",
+            "slot_number",
+            "parent_slot",
+            "is_active",
+            "valid_from",
+            "valid_to",
+        ]
+        read_only_fields = fields
+
+    def get_position_code(self, obj: StaffUnit):
+        return obj.position.code if obj.position_id else None
+
+    def get_slot_number(self, obj: StaffUnit):
+        # str(), а не число: контракт донора держит slot_number строкой.
+        return None if obj.index is None else str(obj.index)
+
+    def get_is_active(self, obj: StaffUnit) -> None:
+        return None
+
+    def get_valid_from(self, obj: StaffUnit) -> None:
+        return None
+
+    def get_valid_to(self, obj: StaffUnit) -> None:
         return None

@@ -11,6 +11,7 @@ from organization_management.apps.core.api.serializers import (
     EmployeeSerializer,
     PositionSerializer,
     RankSerializer,
+    StaffingSlotSerializer,
 )
 from organization_management.apps.dictionaries.models import Position, Rank
 from organization_management.apps.divisions.models import Division
@@ -18,6 +19,7 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.operations.api.permissions import (
     RequirePermissionMixin,
 )
+from organization_management.apps.staff_unit.models import StaffUnit
 
 # Оргструктура открывается тем же правом, что и в доноре.
 _READ_ORGSTRUCTURE_PERMISSION = "orgstructure.view"
@@ -111,3 +113,34 @@ class RankViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
         # Порядок фиксируем явно (тот же, что в Meta модели): без него
         # пагинация DRF предупреждает о нестабильной выборке.
         return Rank.objects.all().order_by("level", "name", "id")
+
+
+class StaffingSlotViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
+    """GET /api/core/staffing-slots/ — штатные слоты в донорском контракте.
+
+    Право то же, что у positions и ranks: штатный слот — это форма штата, а
+    не персональные данные. Сотрудник, занимающий слот, в контракте донора не
+    участвует вовсе (у него связь идёт отдельной сущностью назначения),
+    поэтому кадровое право здесь не при чём.
+
+    Только чтение — по тому же доводу, что у DivisionViewSet: правка штатного
+    расписания живёт на старой стороне (/api/staff_unit/) со своими
+    проверками, и две пишущие поверхности над одной таблицей разошлись бы в
+    инвариантах.
+    """
+
+    serializer_class = StaffingSlotSerializer
+    permission_map = {
+        "list": _READ_ORGSTRUCTURE_PERMISSION,
+        "retrieve": _READ_ORGSTRUCTURE_PERMISSION,
+    }
+
+    def get_queryset(self):
+        # select_related по должности: без него каждая строка добавляла бы
+        # запрос за кодом должности (N+1). Порядок фиксируем явно — без него
+        # пагинация DRF предупреждает о нестабильной выборке.
+        return (
+            StaffUnit.objects.select_related("position")
+            .all()
+            .order_by("division_id", "index", "id")
+        )
