@@ -28,6 +28,7 @@ from apps.operations.statuses.conflict_matrix import ConflictReport
 from apps.operations.statuses.models import EmployeeStatus, StatusType
 from apps.operations.statuses.services import status_service
 from apps.operations.statuses.services.status_service import (
+    cancel_status,
     create_status,
     update_status,
 )
@@ -392,6 +393,45 @@ def test_update_metadata_only_skips_interval_revalidation(env):
     update_status(s, actor="op", comment="заметка")  # must not raise
     s.refresh_from_db()
     assert s.comment == "заметка"
+
+
+def test_update_cancelled_status_rejected(env):
+    emp = _emp(env)
+    s = create_status(
+        employee_id=emp.id, status_type_code="STUDY",
+        date_start=date(2026, 6, 1), date_end=date(2026, 6, 10), actor="op",
+    )
+    with clock.override(date(2026, 5, 1)):  # PLANNED → cancellable
+        cancel_status(s, actor="op", reason="ошибка")
+    with pytest.raises(DomainError) as ei:
+        update_status(s, actor="op", date_end=date(2026, 6, 20))
+    assert ei.value.http_status == 422
+    assert ei.value.code == "INVALID_LIFECYCLE_TRANSITION"
+    s.refresh_from_db()
+    assert s.date_end == date(2026, 6, 10)  # cancelled interval untouched
+
+
+def test_update_stale_object_after_concurrent_cancel_rejected(env):
+    # Race repro (ретро E3): оператор A отменяет; правка оператора B входит со
+    # STALE in-memory строкой (cancelled_at=None). Лок на employee их
+    # сериализует, но только refresh_from_db ПОД локом даёт гварду B увидеть
+    # закоммиченную отмену — без него B молча переписывает даты отменённого
+    # интервала.
+    emp = _emp(env)
+    s = create_status(
+        employee_id=emp.id, status_type_code="STUDY",
+        date_start=date(2026, 6, 1), date_end=date(2026, 6, 10), actor="op",
+    )
+    stale = EmployeeStatus.objects.get(pk=s.pk)  # снимок B до отмены
+    with clock.override(date(2026, 5, 1)):
+        cancel_status(s, actor="op-a", reason="ошибка")
+    assert stale.cancelled_at is None  # действительно устаревший объект
+    with pytest.raises(DomainError) as ei:
+        update_status(stale, actor="op-b", date_end=date(2026, 6, 20))
+    assert ei.value.code == "INVALID_LIFECYCLE_TRANSITION"
+    s.refresh_from_db()
+    assert s.date_end == date(2026, 6, 10)
+    assert s.cancelled_at is not None  # cancel-факты не затёрты
 
 
 # -- AC-5 backstop via REAL DRF dispatch (deferred-work.md L165-166) ----------
