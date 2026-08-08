@@ -179,3 +179,8 @@ from organization_management.apps.operations.models_document import (  # noqa: E
     OpsDocumentSequence,  # noqa: F401
     OpsIssuedDocument,  # noqa: F401
 )
+
+# Охраняемые объекты — тоже отдельным модулем.
+from organization_management.apps.operations.models_object import (  # noqa: E402
+    OpsSecurityObject,  # noqa: F401
+)

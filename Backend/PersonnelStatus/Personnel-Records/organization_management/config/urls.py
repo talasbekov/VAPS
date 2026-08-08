@@ -39,6 +39,12 @@ urlpatterns = [
         "api/documents/",
         include("organization_management.apps.documents.api.urls"),
     ),
+    # Собственные ресурсы раздела «Охранные мероприятия». В отличие от core и
+    # documents это НЕ перенос контракта поверх старых таблиц: под /api/ops/
+    # заводятся сущности, которых в целевом бэке не было (охраняемый объект и
+    # далее по плану docs/ops-backend-plan.md). Модели живут в apps/operations
+    # рядом с остальными ОМ, здесь — только адреса.
+    path("api/ops/", include("organization_management.apps.ops.api.urls")),
     path("api/staff_unit/", include("organization_management.apps.staff_unit.urls")),
     path("api/statuses/", include("organization_management.apps.statuses.api.urls")),
     # path("api/secondments/", include("organization_management.apps.secondments.api.urls")),
