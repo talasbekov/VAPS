@@ -144,3 +144,49 @@ class StaffingSlotViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet)
             .all()
             .order_by("division_id", "index", "id")
         )
+
+
+class VacancyViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
+    """GET /api/core/vacancies/ — свободные штатные слоты.
+
+    ЭТОТ АДРЕС ОТДАЁТ НЕ ЗАПИСИ «ВАКАНСИЯ», А СЛОТЫ. У донора VacancyViewSet
+    зовёт compute_free_slots и сериализует результат тем же
+    StaffingSlotSerializer, что и /staffing-slots/; правило —
+    BR-CORE-STAFF-002: «вакансия = слот без действующего назначения на дату».
+    Поэтому и здесь строка та же, и сериализатор тот же: два адреса обязаны
+    описывать один слот одинаково, иначе клиент, сверяющий вакансию со
+    штатным расписанием, получил бы два разных описания одной строки.
+
+    СТАРАЯ staff_unit.Vacancy В ОТБОРЕ НЕ УЧАСТВУЕТ. Она описывает объявление
+    о наборе (требования, обязанности, статус), а не занятость слота, и её
+    может не быть у настоящей незанятой единицы. Отбор идёт по отсутствию
+    сотрудника — прямой аналог «нет действующего назначения»; сузь его по
+    наличию объявления, и незанятый штат оказался бы спрятан от клиента.
+
+    ДАТУ СТАРАЯ СХЕМА НЕ ПОДДЕРЖИВАЕТ: у StaffUnit нет временных границ
+    (`valid_from`/`valid_to` контракта отдаются null, см. срез 157), а
+    занятость хранится одним полем «сейчас», без интервалов. Донорский
+    параметр `date` поэтому не заведён: принять его и ответить теми же
+    строками значило бы выдать сегодняшний штат за штат на любую дату.
+
+    Право и режим — как у StaffingSlotViewSet: та же выборка, тот же штат.
+    """
+
+    serializer_class = StaffingSlotSerializer
+    permission_map = {
+        "list": _READ_ORGSTRUCTURE_PERMISSION,
+        "retrieve": _READ_ORGSTRUCTURE_PERMISSION,
+    }
+
+    def get_queryset(self):
+        queryset = (
+            StaffUnit.objects.select_related("position")
+            .filter(employee__isnull=True)
+            .order_by("division_id", "index", "id")
+        )
+        # Параметр донора. Без него выборка НЕ сужается: свободный слот
+        # чужого подразделения — тоже вакансия, и прятать его молча нельзя.
+        division_id = self.request.query_params.get("division_id")
+        if division_id:
+            queryset = queryset.filter(division_id=division_id)
+        return queryset

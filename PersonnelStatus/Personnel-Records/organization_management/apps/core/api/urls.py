@@ -7,6 +7,7 @@ from organization_management.apps.core.api.views import (
     PositionViewSet,
     RankViewSet,
     StaffingSlotViewSet,
+    VacancyViewSet,
 )
 
 router = DefaultRouter()
@@ -17,5 +18,6 @@ router.register("ranks", RankViewSet, basename="core-ranks")
 router.register(
     "staffing-slots", StaffingSlotViewSet, basename="core-staffing-slots"
 )
+router.register("vacancies", VacancyViewSet, basename="core-vacancies")
 
 urlpatterns = router.urls
