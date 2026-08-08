@@ -4,6 +4,7 @@
 второй механизм прав ради нового префикса значило бы защищать одни и те же
 сведения по-разному в зависимости от того, каким адресом их спросили.
 """
+from django.db.models import Q
 from rest_framework import viewsets
 from rest_framework.exceptions import ValidationError
 
@@ -73,7 +74,8 @@ class EmployeeViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
             .all()
             .order_by("last_name", "first_name", "id")
         )
-        return self._filter_by_division(qs)
+        qs = self._filter_by_division(qs)
+        return self._filter_by_reference_and_search(qs)
 
     def _filter_by_division(self, qs):
         # Экран «Расход дня» шлёт ?division_id=<id> и ждёт состав ИМЕННО этого
@@ -90,6 +92,30 @@ class EmployeeViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
         except (TypeError, ValueError):
             raise ValidationError({"division_id": "должен быть целым числом"})
         return qs.filter(staff_unit__division_id=division_id)
+
+    def _filter_by_reference_and_search(self, qs):
+        # Прочие донорские фильтры кадрового списка. Каждый — точное совпадение
+        # (search — подстрока), все комбинируются с division_id и между собой
+        # по И, как в EmployeeViewSet донора. Источники у старой схемы разные:
+        # статус лежит на самой Employee, звание — на FK-справочнике, должность —
+        # через штатную единицу.
+        params = self.request.query_params
+        if status_code := params.get("status"):
+            qs = qs.filter(employment_status=status_code)
+        if rank_code := params.get("rank_code"):
+            qs = qs.filter(rank__code=rank_code)
+        if position_code := params.get("position_code"):
+            qs = qs.filter(staff_unit__position__code=position_code)
+        if search := params.get("search"):
+            # `full_name` у старой схемы нет — это сборка сериализатора; ищем по
+            # частям имени и табельному (донор ищет по своим эквивалентам).
+            qs = qs.filter(
+                Q(last_name__icontains=search)
+                | Q(first_name__icontains=search)
+                | Q(middle_name__icontains=search)
+                | Q(personnel_number__icontains=search)
+            )
+        return qs
 
 
 class PositionViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):

@@ -320,3 +320,106 @@ def test_non_integer_division_id_is_rejected():
     resp = api.get(URL, {"division_id": "не-число"})
 
     assert resp.status_code == 400
+
+
+# ── Прочие донорские фильтры (status / rank_code / position_code / search) ─
+
+
+def test_filter_by_status():
+    """`status` ложится на employment_status самой Employee."""
+    Employee.objects.create(
+        personnel_number="772001", last_name="Работающий", first_name="И",
+        employment_status="working",
+    )
+    Employee.objects.create(
+        personnel_number="772002", last_name="Уволенный", first_name="И",
+        employment_status="fired",
+    )
+    api, _ = reader()
+
+    resp = api.get(URL, {"status": "fired"})
+
+    assert {r["personnel_number"] for r in rows(resp)} == {"772002"}
+
+
+def test_filter_by_rank_code():
+    """`rank_code` — через FK-справочник звания (rank__code)."""
+    r1 = Rank.objects.create(name="капитан", code="RANK-CPT", level=5)
+    r2 = Rank.objects.create(name="майор", code="RANK-MAJ", level=6)
+    Employee.objects.create(
+        personnel_number="771001", last_name="Капитанов", first_name="И", rank=r1,
+    )
+    Employee.objects.create(
+        personnel_number="771002", last_name="Майоров", first_name="И", rank=r2,
+    )
+    api, _ = reader()
+
+    resp = api.get(URL, {"rank_code": "RANK-CPT"})
+
+    assert {r["personnel_number"] for r in rows(resp)} == {"771001"}
+
+
+def test_filter_by_position_code():
+    """`position_code` — через штатную единицу (staff_unit__position__code)."""
+    _staffed_in("773001", "PA")  # должность POS-PA
+    _staffed_in("773002", "PB")  # должность POS-PB
+    api, _ = reader()
+
+    resp = api.get(URL, {"position_code": "POS-PA"})
+
+    assert {r["personnel_number"] for r in rows(resp)} == {"773001"}
+
+
+def test_search_matches_last_name():
+    """`search` — подстрока по частям имени; full_name у старой схемы нет."""
+    Employee.objects.create(
+        personnel_number="774001", last_name="Абдрахманов", first_name="И",
+    )
+    Employee.objects.create(
+        personnel_number="774002", last_name="Сидоров", first_name="И",
+    )
+    api, _ = reader()
+
+    resp = api.get(URL, {"search": "драхман"})
+
+    assert {r["personnel_number"] for r in rows(resp)} == {"774001"}
+
+
+def test_search_matches_personnel_number():
+    Employee.objects.create(
+        personnel_number="774555", last_name="Икс", first_name="И",
+    )
+    Employee.objects.create(
+        personnel_number="770000", last_name="Игрек", first_name="И",
+    )
+    api, _ = reader()
+
+    resp = api.get(URL, {"search": "4555"})
+
+    assert {r["personnel_number"] for r in rows(resp)} == {"774555"}
+
+
+def test_filters_combine_with_and():
+    """Фильтры складываются по И: два сотрудника в ОДНОМ подразделении, но
+    rank_code сужает до одного — доказывает, что division (через штатную
+    единицу) и rank (через справочник) применяются вместе, а не по отдельности.
+    """
+    r1 = Rank.objects.create(name="капитан", code="RANK-AND", level=5)
+    division = Division.objects.create(
+        name="Отдел-AND", code="DIV-AND",
+        division_type=Division.DivisionType.DIVISION,
+    )
+    position = Position.objects.create(name="Инсп", code="POS-AND", level=3)
+    e1 = Employee.objects.create(
+        personnel_number="775001", last_name="Один", first_name="И", rank=r1,
+    )
+    e2 = Employee.objects.create(
+        personnel_number="775002", last_name="Два", first_name="И",  # без звания
+    )
+    StaffUnit.objects.create(division=division, position=position, employee=e1, index=1)
+    StaffUnit.objects.create(division=division, position=position, employee=e2, index=2)
+    api, _ = reader()
+
+    resp = api.get(URL, {"division_id": division.id, "rank_code": "RANK-AND"})
+
+    assert {r["personnel_number"] for r in rows(resp)} == {"775001"}
