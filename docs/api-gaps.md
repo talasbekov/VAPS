@@ -37,7 +37,7 @@
 | Экран | Недостающие пути | Что показывает заглушка |
 | --- | --- | --- |
 | `/feedback/` (хост) | `/api/dictionaries/feedback/` | «Не подключено — Обратная связь…» + «Бэкенд отдаёт 404: в `/api/dictionaries/` есть только positions, ranks и status_types». В самой ленте вместо «Пока нет сообщений» — «Лента недоступна: HTTP error! status: 404. Обновление остановлено» |
-| `/ops/*` (встроенная SPA) | `/api/ops/*`, `/api/core/staffing-slots/`, `/api/operations/expense-reports/`, `/api/documents/attachments/` | «Не подключено — Встроенная SPA раздела ОМ…» + «SPA работает на собственном MSW-воркере» |
+| `/ops/*` (встроенная SPA) | `/api/ops/*`, `/api/operations/expense-reports/` (`/api/core/staffing-slots/` и `/api/documents/attachments/` переехали срезами 157 и 159 — сама SPA по-прежнему сидит на MSW) | «Не подключено — Встроенная SPA раздела ОМ…» + «SPA работает на собственном MSW-воркере» |
 | `/security-ops/command-center/` | `/api/ops/security-events/`, `/api/ops/personnel/` | «Не подключено — Командный центр…» |
 | `/security-ops/events/`, `/security-ops/events/[id]/` | `/api/ops/security-events/`, `/api/ops/personnel/` | «Не подключено — Реестр ОМ…» |
 | `/security-ops/objects/`, `/security-ops/objects/[id]/`, `…/passports/[versionId]/` | `/api/ops/objects/` | «Не подключено — Объекты и паспорта…» |
@@ -98,20 +98,22 @@
 ## Кандидаты на следующие срезы переезда
 
 Эти пути **есть в доноре** `Backend/VAPS/schema.yaml`, но ещё не переехали в
-целевой бэк. Это не «заглушка навсегда», а очередь переезда.
+целевой бэк. Это не «заглушка навсегда», а очередь переезда. Вычеркнутые
+строки переехали — срезы 157–159; во всех трёх перенесён КОНТРАКТ, а не
+модель, и все три только для чтения.
 
 | Путь донора | Состояние в целевом бэке |
 | --- | --- |
-| `/api/core/staffing-slots/` | нет |
-| `/api/core/staffing-slots/{id}/` | нет |
-| `/api/core/staffing-slots/{id}/assign-employee/` | нет |
-| `/api/core/staffing-slots/{id}/release/` | нет |
-| `/api/core/vacancies/` | нет |
+| ~~`/api/core/staffing-slots/`~~ | **переехал, срез 157** — поверх `staff_unit.StaffUnit`, только чтение |
+| ~~`/api/core/staffing-slots/{id}/`~~ | **переехал, срез 157** (тот же ReadOnly-роутер) |
+| `/api/core/staffing-slots/{id}/assign-employee/` | нет — экшен пишущий, правка штата живёт на старой стороне |
+| `/api/core/staffing-slots/{id}/release/` | нет — экшен пишущий, там же |
+| ~~`/api/core/vacancies/`~~ | **переехал, срез 158** — свободные слоты (без сотрудника), строка та же, что у staffing-slots; параметр `division_id` есть, `date` не заведён (у старой схемы нет временных границ) |
 | `/api/core/employees/{id}/archive/` | нет |
 | `/api/core/employees/{id}/restore/` | нет |
 | `/api/core/divisions/{id}/leaf-descendants/` | нет |
-| `/api/documents/attachments/` | нет (у цели есть только `/api/operations/documents/`) |
-| `/api/documents/attachments/{id}/download/` | нет (у цели — `/api/operations/attachments/{id}/download/`, другой префикс) |
+| ~~`/api/documents/attachments/`~~ | **переехал, срез 159** — списочный GET поверх `operations.OpsAttachment`, область по выпуску-владельцу. ВНИМАНИЕ: у донора по этому адресу только POST (загрузка); переехал ряд полей его проекции Attachment, сам список заведён заново. Загрузка НЕ переехала |
+| `/api/documents/attachments/{id}/download/` | нет (у цели — `/api/operations/attachments/{id}/download/`, другой префикс; `id` в списке среза 159 — именно тот, что принимает этот маршрут) |
 | `/api/operations/expense-reports/` | переименовано у цели в `/api/operations/strength-report/` — сверить контракт перед переездом |
 | `/api/operations/expense-reports/period/` | переименовано у цели в `/api/operations/strength-report/period/` |
 | `/api/operations/expense-reports/override-tomorrow-block/` | у цели `/api/operations/tomorrow-block/override/` — другой путь, тот же смысл |
