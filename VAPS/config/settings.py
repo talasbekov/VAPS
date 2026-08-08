@@ -16,8 +16,30 @@ if _SENTRY_DSN:
         environment=os.environ.get("VAPS_ENV", "development"),
     )
 
-SECRET_KEY = os.environ.get("VAPS_SECRET_KEY", "dev-insecure-key")
-DEBUG = os.environ.get("VAPS_DEBUG", "1") == "1"
+# Fail-closed дефолты (ревью 2026-08-08): DEBUG включается ЯВНО (VAPS_DEBUG=1) —
+# на DEBUG завязана вся auth-цепочка (JWT-обязателен / dev-заголовок X-User-Id),
+# и прод, забывший переменную, обязан подняться закрытым, а не открытым.
+def debug_from_env(env):
+    return env.get("VAPS_DEBUG", "0") == "1"
+
+
+# Зеркало jwt_config_from_env: прод без настоящего ключа не стартует — иначе
+# сессии admin/CSRF молча подписывались бы публичным (закоммиченным) dev-ключом.
+def secret_key_from_env(env, debug):
+    key = env.get("VAPS_SECRET_KEY")
+    if key:
+        return key
+    if not debug:
+        raise ImproperlyConfigured(
+            "VAPS_SECRET_KEY is required in production (DEBUG=False): the "
+            "committed dev fallback would sign admin sessions/CSRF. "
+            "For dev/tests set VAPS_DEBUG=1."
+        )
+    return "dev-insecure-key"
+
+
+DEBUG = debug_from_env(os.environ)
+SECRET_KEY = secret_key_from_env(os.environ, DEBUG)
 ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
