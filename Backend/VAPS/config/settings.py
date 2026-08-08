@@ -1,18 +1,25 @@
 import os
 from pathlib import Path
 
-import sentry_sdk
-from sentry_sdk.integrations.django import DjangoIntegration
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Sentry is OPTIONAL — its SDK is imported lazily only when a DSN is configured,
+# so the app boots (and tests run) without sentry-sdk installed.
 _SENTRY_DSN = os.environ.get("VAPS_SENTRY_DSN")
 if _SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+
     sentry_sdk.init(
         dsn=_SENTRY_DSN,
         integrations=[DjangoIntegration()],
-        send_default_pii=True,
+        # SECURITY (review H1): this is a personnel-records system — request
+        # bodies (ИИН, phones), the identifying header and cookies MUST NOT be
+        # shipped to Sentry. Keep PII off; add a before_send scrubber if richer
+        # diagnostics are ever needed.
+        send_default_pii=False,
         environment=os.environ.get("VAPS_ENV", "development"),
     )
 

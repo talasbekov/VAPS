@@ -45,8 +45,6 @@ export const authOptions: NextAuthOptions = {
             NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
             resolved: backendUrl,
           });
-          console.log("Credentials:", { username: credentials.username });
-
           const response = await fetch(url, {
             method: "POST",
             headers: {
@@ -90,7 +88,8 @@ export const authOptions: NextAuthOptions = {
           }
 
           const data = await response.json();
-          console.log("Auth response received:", JSON.stringify(data, null, 2));
+          // SECURITY: never log the raw auth response — it carries the access &
+          // refresh JWTs. (The redacted `user` object is logged below.)
 
           if (data.access) {
             // Сохраняем информацию о пользователе из ответа бэкенда
@@ -172,5 +171,8 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
-  secret: process.env.NEXTAUTH_SECRET || "your-secret-key-change-in-production",
+  // SECURITY: no fallback secret — a predictable literal would let anyone forge
+  // a valid session JWT. NextAuth fails loudly if NEXTAUTH_SECRET is unset in
+  // production, which is the desired behaviour.
+  secret: process.env.NEXTAUTH_SECRET,
 };

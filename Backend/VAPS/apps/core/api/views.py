@@ -26,8 +26,14 @@ class DefaultPagination(PageNumberPagination):
 
 
 def _permissions_from_request(request) -> set:
-    raw = request.headers.get("X-User-Permissions", "")
-    return {p.strip() for p in raw.split(",") if p.strip()}
+    # SECURITY (review C1): the sensitive-field reveal must be driven by the
+    # SERVER-resolved RBAC set — ``request.effective_permissions``, populated by
+    # ``EffectivePermissionsResolver`` from the caller's granted roles — never by
+    # a client-supplied header. ``X-User-Permissions`` was spoofable: any actor
+    # holding ``personnel.view`` could add it and unmask ИИН. ADMIN's ``*``
+    # wildcard reveals (see ``mask_employee_data``); a granular
+    # ``employee.sensitive.view`` grant reveals too once mapped in RBAC.
+    return getattr(request, "effective_permissions", set())
 
 
 class EmployeeViewSet(RequirePermissionMixin, viewsets.ModelViewSet):

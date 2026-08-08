@@ -29,11 +29,26 @@ def employee(division):
 
 
 def test_list_masks_iin_by_default(client, employee, grant):
-    grant(client)  # gate: personnel.view (story 2.14); masking is X-User-Permissions
+    # VIEWER holds personnel.view (passes the gate) but neither "*" nor the
+    # granular employee.sensitive.view → ИИН stays masked. (Masking is now
+    # server-resolved RBAC, not the X-User-Permissions header — review C1.)
+    grant(client, role="VIEWER")
     resp = client.get("/api/core/employees/")
     assert resp.status_code == 200
     row = resp.json()["results"][0]
     assert row["iin"] != "900101300700"
+
+
+def test_sensitive_header_is_ignored(client, employee, grant):
+    # C1 regression: a spoofed X-User-Permissions header must NOT unmask ИИН for
+    # a caller whose server-resolved RBAC set lacks the sensitive grant.
+    grant(client, role="VIEWER")
+    resp = client.get(
+        f"/api/core/employees/{employee.id}/",
+        HTTP_X_USER_PERMISSIONS="employee.sensitive.view",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["iin"] != "900101300700"
 
 
 def test_list_filter_by_division(client, employee, division, grant):
@@ -50,11 +65,10 @@ def test_search_by_last_name(client, employee, grant):
 
 
 def test_detail_with_permission_reveals_iin(client, employee, grant):
+    # ADMIN holds the "*" wildcard → sensitive fields are revealed server-side,
+    # with no client header involved (review C1).
     grant(client)
-    resp = client.get(
-        f"/api/core/employees/{employee.id}/",
-        HTTP_X_USER_PERMISSIONS="employee.sensitive.view",
-    )
+    resp = client.get(f"/api/core/employees/{employee.id}/")
     assert resp.json()["iin"] == "900101300700"
 
 

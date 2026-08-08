@@ -12,7 +12,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-^18w8^kyktt4q14w%c4tci%w(8po97jj2pd&3(#hv(dyn3hznv"
+# Dev-only fallback; production.py hard-fails if this default reaches prod.
+SECRET_KEY = os.getenv(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-^18w8^kyktt4q14w%c4tci%w(8po97jj2pd&3(#hv(dyn3hznv",
+)
 
 # Django behavior settings
 APPEND_SLASH = False  # Allow URLs without trailing slash for API compatibility

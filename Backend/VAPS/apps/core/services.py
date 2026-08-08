@@ -166,7 +166,9 @@ def mask_employee_data(data: dict, *, user_permissions: set) -> dict:
     for policy in policies:
         if policy.field_code not in result or result[policy.field_code] is None:
             continue
-        has_permission = policy.permission_code in user_permissions
+        has_permission = (
+            "*" in user_permissions or policy.permission_code in user_permissions
+        )
         if has_permission or policy.mask_strategy == "ALLOW":
             continue
         if policy.mask_strategy == "FULL_HIDE":

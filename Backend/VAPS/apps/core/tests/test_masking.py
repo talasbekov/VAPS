@@ -36,6 +36,17 @@ def test_iin_visible_with_permission():
     assert masked["iin"] == "900101300123"
 
 
+def test_wildcard_reveals_all():
+    # ADMIN's "*" bypasses masking without holding the granular code (review C1).
+    SensitiveFieldPolicy.objects.create(
+        field_code="iin",
+        permission_code="employee.sensitive.view",
+        mask_strategy="PARTIAL_MASK",
+    )
+    masked = mask_employee_data({"iin": "900101300123"}, user_permissions={"*"})
+    assert masked["iin"] == "900101300123"
+
+
 def test_full_hide_strategy():
     SensitiveFieldPolicy.objects.create(
         field_code="notes",
