@@ -5,6 +5,7 @@
 сведения по-разному в зависимости от того, каким адресом их спросили.
 """
 from rest_framework import viewsets
+from rest_framework.exceptions import ValidationError
 
 from organization_management.apps.core.api.serializers import (
     DivisionSerializer,
@@ -65,13 +66,30 @@ class EmployeeViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         # select_related по званию и штатной единице: без него каждая строка
         # добавляла бы запросы за должностью и подразделением (N+1).
-        return (
+        qs = (
             Employee.objects.select_related(
                 "rank", "staff_unit", "staff_unit__position"
             )
             .all()
             .order_by("last_name", "first_name", "id")
         )
+        return self._filter_by_division(qs)
+
+    def _filter_by_division(self, qs):
+        # Экран «Расход дня» шлёт ?division_id=<id> и ждёт состав ИМЕННО этого
+        # подразделения; без фильтра сюда попадал весь личный состав, и утреннее
+        # массовое обновление адресовало не тех. Подразделение висит на штатной
+        # единице (см. EmployeeSerializer.get_division) — значит и фильтр идёт
+        # через неё: INNER JOIN отсекает непривязанных (у них подразделения нет
+        # вовсе). Точное совпадение, как у донора Backend/VAPS.
+        raw = self.request.query_params.get("division_id")
+        if not raw:
+            return qs
+        try:
+            division_id = int(raw)
+        except (TypeError, ValueError):
+            raise ValidationError({"division_id": "должен быть целым числом"})
+        return qs.filter(staff_unit__division_id=division_id)
 
 
 class PositionViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSet):

@@ -238,3 +238,85 @@ def test_list_does_not_grow_queries_per_employee():
         f"число запросов выросло с {few} до {many} — выборка ходит "
         "за связанными таблицами построчно"
     )
+
+
+# ── Фильтр по подразделению ──────────────────────────────────────────────
+
+
+def _staffed_in(number, suffix):
+    """Сотрудник НА штатной единице конкретного подразделения."""
+    division = Division.objects.create(
+        name=f"Отдел-{suffix}", code=f"DIV-{suffix}",
+        division_type=Division.DivisionType.DIVISION,
+    )
+    position = Position.objects.create(
+        name="Инспектор", code=f"POS-{suffix}", level=3
+    )
+    employee = Employee.objects.create(
+        personnel_number=number, last_name=f"Сотр{suffix}", first_name="Имя",
+    )
+    StaffUnit.objects.create(
+        division=division, position=position, employee=employee, index=1,
+    )
+    return employee, division
+
+
+def test_filter_by_division_returns_only_that_division():
+    """Ключевой кейс среза: экран «Расход дня» шлёт ?division_id=<id> и ждёт
+    состав ИМЕННО этого подразделения. Без фильтра сюда попадал весь личный
+    состав организации, и утреннее массовое обновление адресовало не тех."""
+    _emp_a, div_a = _staffed_in("770001", "A")
+    _staffed_in("770002", "B")  # другой отдел — не должен попасть
+    api, _ = reader()
+
+    resp = api.get(URL, {"division_id": div_a.id})
+
+    assert resp.status_code == 200
+    assert {r["personnel_number"] for r in rows(resp)} == {"770001"}
+
+
+def test_filter_by_division_excludes_the_unstaffed(unstaffed):
+    """У сотрудника без штатной единицы подразделения нет вовсе — под фильтр
+    по подразделению он попадать не должен (иначе «состав» раздулся бы
+    непривязанными людьми)."""
+    _emp, div = _staffed_in("770003", "C")
+    api, _ = reader()
+
+    resp = api.get(URL, {"division_id": div.id})
+
+    numbers = {r["personnel_number"] for r in rows(resp)}
+    assert numbers == {"770003"}
+    assert "777002" not in numbers  # unstaffed
+
+
+def test_absent_filter_returns_everyone():
+    """Без параметра фильтр не применяется — страховка от «фильтра-пустышки»,
+    который молча резал бы выборку и на отсутствующем параметре."""
+    _staffed_in("770004", "D")
+    _staffed_in("770005", "E")
+    api, _ = reader()
+
+    resp = api.get(URL)
+
+    numbers = {r["personnel_number"] for r in rows(resp)}
+    assert {"770004", "770005"} <= numbers
+
+
+def test_unknown_division_returns_empty_not_error():
+    _staffed_in("770006", "F")
+    api, _ = reader()
+
+    resp = api.get(URL, {"division_id": 999_000_111})
+
+    assert resp.status_code == 200
+    assert rows(resp) == []
+
+
+def test_non_integer_division_id_is_rejected():
+    """Мусор в параметре — чистый 400, а не 500 от падения в SQL."""
+    _staffed_in("770007", "G")
+    api, _ = reader()
+
+    resp = api.get(URL, {"division_id": "не-число"})
+
+    assert resp.status_code == 400
