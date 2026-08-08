@@ -363,8 +363,19 @@ def update_status(
     """
     _require_actor(actor)
     employee = _lock_employee(status.employee_id)
+    # Re-read под локом (зеркало _lock_for_edit): без этого конкурентная отмена
+    # коммитится первой, а правка идёт по устаревшей in-memory строке
+    # (cancelled_at=None) и переписывает даты уже отменённого интервала.
+    status.refresh_from_db()
     assert_employee_status_editable(status.employee_id)  # FR-16 (3.11)
     status.assert_user_editable()  # AC-8 — guard before mutation
+    if status.cancelled_at is not None:
+        raise DomainError(
+            "INVALID_LIFECYCLE_TRANSITION",
+            422,
+            detail={"cancelled_at": str(status.cancelled_at)},
+            message="Отменённый статус нельзя редактировать.",
+        )
 
     # Re-validate the interval ONLY when a date actually changes. A metadata
     # edit (comment/document_basis) must not be blocked by a pre-existing
