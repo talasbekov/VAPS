@@ -32,6 +32,13 @@ urlpatterns = [
     # сущности уже живут в divisions/employees/dictionaries, core отдаёт над
     # ними донорскую форму (см. apps/core/api/serializers.py).
     path("api/core/", include("organization_management.apps.core.api.urls")),
+    # Вложения в контракте нового бэка — над теми же строками, что отдаёт
+    # байты /api/operations/attachments/{id}/download/ (см.
+    # apps/documents/api/views.py про область по владельцу байт).
+    path(
+        "api/documents/",
+        include("organization_management.apps.documents.api.urls"),
+    ),
     path("api/staff_unit/", include("organization_management.apps.staff_unit.urls")),
     path("api/statuses/", include("organization_management.apps.statuses.api.urls")),
     # path("api/secondments/", include("organization_management.apps.secondments.api.urls")),
