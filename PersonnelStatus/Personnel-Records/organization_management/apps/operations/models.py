@@ -184,3 +184,8 @@ from organization_management.apps.operations.models_document import (  # noqa: E
 from organization_management.apps.operations.models_object import (  # noqa: E402
     OpsSecurityObject,  # noqa: F401
 )
+
+# Охранные мероприятия — агрегат раздела ОМ.
+from organization_management.apps.operations.models_event import (  # noqa: E402
+    OpsSecurityEvent,  # noqa: F401
+)

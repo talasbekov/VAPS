@@ -28,6 +28,11 @@ from organization_management.apps.operations.api.exception_handler import (
 from organization_management.apps.operations.error_codes import CODES
 
 PACKAGE_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# Словарь кодов — один на раздел ОМ, а его raise-сайты живут в ДВУХ пакетах:
+# operations (ядро) и ops (адресное пространство /api/ops/* — объекты,
+# паспорта, мероприятия). Скан обязан видеть оба, иначе код, поднимаемый
+# только в ops, значился бы «обещанием, которое не исполнится».
+SCAN_ROOTS = [PACKAGE_ROOT, PACKAGE_ROOT.parent / "ops"]
 
 
 def _raised_codes():
@@ -39,7 +44,8 @@ def _raised_codes():
     там, где написано непривычно.
     """
     codes = {}
-    for path in PACKAGE_ROOT.rglob("*.py"):
+    paths = [p for root in SCAN_ROOTS for p in root.rglob("*.py")]
+    for path in paths:
         if "tests" in path.parts:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -53,7 +59,7 @@ def _raised_codes():
             first = node.args[0]
             if isinstance(first, ast.Constant) and isinstance(first.value, str):
                 codes.setdefault(first.value, []).append(
-                    f"{path.relative_to(PACKAGE_ROOT)}:{first.lineno}"
+                    f"{path}:{first.lineno}"
                 )
     return codes
 

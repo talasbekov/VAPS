@@ -34,6 +34,25 @@ CODES = {
     # невозможна (у сотрудника нет штатной единицы). См. докстринг модуля.
     "VALIDATION_ERROR": frozenset({400, 422}),
     "ENTITY_NOT_FOUND": frozenset({404}),
+    # ── Охранные мероприятия (жизненный цикл ОМ, порт мок-контракта) ─────
+    # Общий отказ «не та стадия» — 422: нагрузка верна, состояние не то.
+    "INVALID_STAGE_TRANSITION": frozenset({422}),
+    "BULLETIN_INCOMPLETE": frozenset({422}),
+    # Свой код у кнопки импорта: та же стадийная беда, но своя подсказка.
+    "RECON_STAGE_REQUIRED": frozenset({422}),
+    "NO_PASSPORT_VERSION": frozenset({422}),
+    "PASSPORT_VERSION_NOT_FOUND": frozenset({422}),
+    "NOTHING_TO_IMPORT": frozenset({422}),
+    "RECON_CHECKLIST_INCOMPLETE": frozenset({422}),
+    "RECON_SECTOR_POSTS_EMPTY": frozenset({422}),
+    "DEMAND_ROWS_EMPTY": frozenset({422}),
+    "FORCE_ALLOCATION_INCOMPLETE": frozenset({422}),
+    "DOUBLE_ASSIGNMENT": frozenset({422}),
+    "PLACEMENT_INCOMPLETE": frozenset({422}),
+    "ACKNOWLEDGEMENT_INCOMPLETE": frozenset({422}),
+    "CLOSURE_DIRECTIONS_INCOMPLETE": frozenset({422}),
+    # Мягкий конфликт расстановки обходится причиной — 409 и overridable.
+    "SOFT_CONFLICT_DETECTED": frozenset({409}),
     "PERMISSION_DENIED": frozenset({403}),
     # ── Статусы ──────────────────────────────────────────────────────────
     "INVALID_STATUS_TYPE": frozenset({422}),
