@@ -13,7 +13,7 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
-import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
+import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
 
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
@@ -92,12 +92,8 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
   // по режиму домена service-reports (все три экрана — один домен).
   // Справочники, настройки и аудит: бэк ГОТОВ (срез D1) — записи собираются
   // в findApiGap по режимам доменов dictionaries/settings/audit.
-
-  "/security-ops/feedback": {
-    subject: "Обратная связь раздела ОМ",
-    paths: ["/api/ops/feedback-requests/"],
-    note: MOCK_NOTE,
-  },
+  // Обратная связь: бэк ГОТОВ (срез J) — запись собирается в findApiGap по
+  // режиму домена feedback (реестр и карточка — один домен).
 };
 
 // Экраны внутри раздела, которым бэк не нужен вовсе: журнал изменений порта
@@ -173,12 +169,22 @@ const SIMPLE_MOCK_BY_CONFIG: Record<string, ApiGap> = {
       "раздела); экран на MSW по конфигурации. Живой режим: " +
       "NEXT_PUBLIC_OPS_LIVE_DOMAINS=audit.",
   },
+  "/security-ops/feedback": {
+    subject: "Обратная связь раздела ОМ",
+    paths: [],
+    note:
+      "Бэкенд обратной связи готов (/api/ops/feedback-requests/ — реестр со " +
+      "сводкой и страницами, создание/отправка черновика, карточка с лентой, " +
+      "комментарии, разбор и закрытие с ответом автору); экран на MSW по " +
+      "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=feedback.",
+  },
 };
 
 const SIMPLE_LIVE_CHECK: Record<string, () => boolean> = {
   "/security-ops/dictionaries": isOpsDictionariesLive,
   "/security-ops/settings": isOpsSettingsLive,
   "/security-ops/audit": isOpsAuditLive,
+  "/security-ops/feedback": isOpsFeedbackLive,
 };
 
 const ANALYTICS_MOCK_BY_CONFIG: ApiGap = {

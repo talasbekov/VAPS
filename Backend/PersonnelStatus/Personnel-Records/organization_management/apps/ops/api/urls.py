@@ -30,6 +30,7 @@ from organization_management.apps.ops.api.views import (
     OperationalRatingDynamicsViewSet,
     OperationalRatingEmployeeViewSet,
     OperationalRatingsViewSet,
+    OpsFeedbackRequestsViewSet,
     OpsPersonnelViewSet,
     RatingAnalyticsViewSet,
     RatingAuditViewSet,
@@ -161,6 +162,12 @@ router.register(
 router.register(
     "service-report-artifacts", ServiceReportArtifactsViewSet,
     basename="ops-report-artifacts",
+)
+
+# Обратная связь (§28).
+router.register(
+    "feedback-requests", OpsFeedbackRequestsViewSet,
+    basename="ops-feedback-requests",
 )
 
 urlpatterns = router.urls

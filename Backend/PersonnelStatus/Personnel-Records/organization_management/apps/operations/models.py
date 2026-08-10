@@ -244,3 +244,11 @@ from organization_management.apps.operations.models_report import (  # noqa: E40
     OpsServiceReportJob,  # noqa: F401
     OpsServiceReportType,  # noqa: F401
 )
+
+# Обратная связь (§28).
+from organization_management.apps.operations.models_feedback import (  # noqa: E402
+    OpsFeedbackComment,  # noqa: F401
+    OpsFeedbackEvent,  # noqa: F401
+    OpsFeedbackRegistry,  # noqa: F401
+    OpsFeedbackRequest,  # noqa: F401
+)
