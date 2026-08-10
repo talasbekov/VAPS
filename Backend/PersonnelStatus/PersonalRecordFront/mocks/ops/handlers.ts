@@ -2,7 +2,7 @@
 // сюда добавляются handler-наборы (objects, security-events, duties, …).
 // Пути пишутся с завершающим слэшом — в next.config.js включён
 // trailingSlash: true, паттерны без слэша промахиваются мимо перехвата.
-import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
+import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDailyLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
 import { identityHandlers } from "./identity";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
@@ -47,7 +47,8 @@ export function composeOpsHandlers() {
     ...(isOpsServiceReportsLive() ? [] : reportsHandlers),
     // Обратная связь живьём — тот же пер-доменный переключатель (срез J).
     ...(isOpsFeedbackLive() ? [] : feedbackHandlers),
-    ...dailyHandlers,
+    // «Расход дня» живьём — адаптеры над /api/operations/ (без своего бэка).
+    ...(isOpsDailyLive() ? [] : dailyHandlers),
     ...(isOpsCombatLive() ? [] : combatHandlers),
   ];
 }

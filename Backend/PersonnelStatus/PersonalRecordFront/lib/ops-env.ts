@@ -62,3 +62,7 @@ export function isOpsServiceReportsLive(): boolean {
 export function isOpsFeedbackLive(): boolean {
   return !isOpsMockMode() || opsLiveDomains().has("feedback");
 }
+
+export function isOpsDailyLive(): boolean {
+  return !isOpsMockMode() || opsLiveDomains().has("daily");
+}

@@ -30,6 +30,10 @@ from organization_management.apps.ops.api.views import (
     OperationalRatingDynamicsViewSet,
     OperationalRatingEmployeeViewSet,
     OperationalRatingsViewSet,
+    OpsDailyBulkViewSet,
+    OpsDailyDivisionsViewSet,
+    OpsDailyEmployeesViewSet,
+    OpsDailySubmissionsViewSet,
     OpsFeedbackRequestsViewSet,
     OpsPersonnelViewSet,
     RatingAnalyticsViewSet,
@@ -162,6 +166,25 @@ router.register(
 router.register(
     "service-report-artifacts", ServiceReportArtifactsViewSet,
     basename="ops-report-artifacts",
+)
+
+# «Расход дня» раздела ОМ — адаптеры над живым /api/operations/ (своего
+# бэка нет намеренно: группа L плана — «не строить, дубликат»).
+router.register(
+    "daily/divisions", OpsDailyDivisionsViewSet,
+    basename="ops-daily-divisions",
+)
+router.register(
+    "daily/employees", OpsDailyEmployeesViewSet,
+    basename="ops-daily-employees",
+)
+router.register(
+    "daily/statuses-bulk", OpsDailyBulkViewSet,
+    basename="ops-daily-bulk",
+)
+router.register(
+    "daily/daily-submissions", OpsDailySubmissionsViewSet,
+    basename="ops-daily-submissions",
 )
 
 # Обратная связь (§28).
