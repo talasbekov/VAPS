@@ -247,7 +247,7 @@ export default function FeedbackPage() {
                     </span>
                     <Link
                       className="text-sm font-semibold text-primary underline"
-                      href={`/security-ops/feedback/${request.feedbackId}`}
+                      href={`${pathname.replace(/\/+$/, "")}/${request.feedbackId}`}
                     >
                       {request.subject}
                     </Link>

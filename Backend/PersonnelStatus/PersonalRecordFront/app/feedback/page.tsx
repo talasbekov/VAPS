@@ -1,9 +1,7 @@
 // Обратная связь переписана целиком: легаси-чат (FeedbackChat, вечный опрос
-// несуществующего /api/dictionaries/feedback/) удалён, раздел живёт на новом
-// модуле §28 (/security-ops/feedback → /api/ops/feedback-requests/, срез J).
-// Старый адрес остаётся редиректом: на него ведут закладки и старые ссылки.
-import { redirect } from "next/navigation";
-
-export default function FeedbackPage() {
-  redirect("/security-ops/feedback");
-}
+// несуществующего /api/dictionaries/feedback/) удалён. Раздел живёт на новом
+// модуле §28 поверх живого /api/ops/feedback-requests/ (срез J) и рендерится
+// ЗДЕСЬ, на своём старом адресе, — реализация одна, у страницы два входа
+// (второй — /security-ops/feedback в разделе ОМ). Ссылки внутри модуля
+// строятся от текущего пути, поэтому пользователь остаётся в /feedback.
+export { default } from "@/app/security-ops/feedback/page";
