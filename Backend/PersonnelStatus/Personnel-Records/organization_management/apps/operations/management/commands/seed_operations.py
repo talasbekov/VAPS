@@ -61,6 +61,11 @@ PERMISSIONS = [
     ("analytics.drilldown", "Раскрытие показателя аналитики до строк"),
     ("analytics.personal_detail", "Персональная детализация аналитики"),
     ("analytics.operations", "Просмотр аналитики мероприятий"),
+    # §22.26/§20.32: запуск отчёта, sensitive export и параметры чужого
+    # запуска — три разных действия с разными владельцами.
+    ("report.generate", "Запуск служебных отчётов"),
+    ("report.export_sensitive", "Выгрузка отчёта со скрытыми полями"),
+    ("report.view_foreign_parameters", "Просмотр параметров чужого отчёта"),
     ("dictionary.view", "Просмотр справочников раздела ОМ"),
     ("dictionary.manage", "Управление справочниками раздела ОМ"),
     ("settings.view", "Просмотр настроек раздела ОМ"),
@@ -362,6 +367,7 @@ class Command(BaseCommand):
 
         self._seed_ratings(options.get("rating_evaluator"))
         self._seed_analytics()
+        self._seed_reports()
 
         for spec in options["assign"]:
             parts = spec.split(":")
@@ -794,3 +800,25 @@ class Command(BaseCommand):
                 },
             )
         self.stdout.write(self.style.SUCCESS("Seeded service analytics"))
+
+    def _seed_reports(self):
+        """Каталог служебных отчётов (§22.19) — порт мок-фикстуры: один тип,
+        под которым есть РЕАЛЬНЫЕ данные (смены дежурств). Предел периода к
+        типу приезжает из политики REPORT_LIMITS, а не хранится здесь."""
+        from organization_management.apps.operations.models_report import (
+            OpsServiceReportType,
+        )
+
+        OpsServiceReportType.objects.update_or_create(
+            report_type_code="PERSONNEL_EXPENSE",
+            defaults={
+                "safe_title": "Расход личного состава",
+                "description": (
+                    "Смены дежурств за период: дата, сотрудник, объект, "
+                    "пост из снимка паспорта, состояние."
+                ),
+                "formats": ["CSV"],
+                "position": 1,
+            },
+        )
+        self.stdout.write(self.style.SUCCESS("Seeded service report types"))

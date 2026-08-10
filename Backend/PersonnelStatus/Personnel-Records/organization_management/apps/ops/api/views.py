@@ -21,6 +21,7 @@ from organization_management.apps.ops.api.serializers import (
 from organization_management.apps.ops import passport as passport_service
 from organization_management.apps.ops import analytics as analytics_service
 from organization_management.apps.ops import ratings as ratings_service
+from organization_management.apps.ops import reports as reports_service
 from organization_management.apps.operations.api.permissions import (
     effective_permissions,
     resolve_actor_id,
@@ -1402,4 +1403,106 @@ class OperationsAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "directionId": params.get("direction_id"),
                 "postId": params.get("post_id"),
             })
+        )
+
+
+# ── Служебные отчёты (§22.18-22.28) ─────────────────────────────────────────
+
+
+class ServiceReportTypesViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/service-report-types/ — каталог типов с пределами из
+    «Настроек» и политикой маскирования (§22.19/§22.24)."""
+
+    permission_map = {"list": reports_service.GENERATE_PERMISSION}
+
+    def list(self, request):
+        return Response(
+            reports_service.list_report_types(effective_permissions(request))
+        )
+
+
+class ServiceReportJobsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/service-report-jobs/ — реестр работ, создание, карточка,
+    повтор и новая редакция (§22.21/§22.25/§22.27).
+
+    Все действия под правом запуска отчётов; sensitive-право и право на
+    параметры чужого запуска проверяет сервис по-записно.
+    """
+
+    permission_map = {
+        "list": reports_service.GENERATE_PERMISSION,
+        "retrieve": reports_service.GENERATE_PERMISSION,
+        "create": reports_service.GENERATE_PERMISSION,
+        "retry": reports_service.GENERATE_PERMISSION,
+        "new_revision": reports_service.GENERATE_PERMISSION,
+    }
+
+    def list(self, request):
+        params = request.query_params
+        return Response(
+            reports_service.list_report_jobs(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                {
+                    "state": params.get("state") or None,
+                    "mine": params.get("mine") == "true",
+                },
+            )
+        )
+
+    def retrieve(self, request, pk=None):
+        return Response(
+            reports_service.get_report_job(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+            )
+        )
+
+    def create(self, request):
+        return Response(
+            reports_service.create_report_job(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                request.data,
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="retry")
+    def retry(self, request, pk=None):
+        return Response(
+            reports_service.rerun_report_job(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+                "RETRY",
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="new-revision")
+    def new_revision(self, request, pk=None):
+        return Response(
+            reports_service.rerun_report_job(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+                "NEW_REVISION",
+            )
+        )
+
+
+class ServiceReportArtifactsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """POST /api/ops/service-report-artifacts/{id}/download/ — выдача файла
+    (§22.23): отдельная операция с повторной проверкой прав и срока."""
+
+    permission_map = {"download": reports_service.GENERATE_PERMISSION}
+
+    @action(detail=True, methods=["post"], url_path="download")
+    def download(self, request, pk=None):
+        return Response(
+            reports_service.download_artifact(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+            )
         )
