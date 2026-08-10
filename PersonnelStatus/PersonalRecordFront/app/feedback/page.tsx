@@ -1,15 +1,9 @@
-import { FeedbackChat } from "@/features/feedback-chat";
-import { DashboardLayout } from "@/components/dashboard-layout";
+// Обратная связь переписана целиком: легаси-чат (FeedbackChat, вечный опрос
+// несуществующего /api/dictionaries/feedback/) удалён, раздел живёт на новом
+// модуле §28 (/security-ops/feedback → /api/ops/feedback-requests/, срез J).
+// Старый адрес остаётся редиректом: на него ведут закладки и старые ссылки.
+import { redirect } from "next/navigation";
 
 export default function FeedbackPage() {
-  return (
-    <DashboardLayout>
-      <div className="container py-10 h-[calc(100vh-4rem)] flex flex-col">
-        <h1 className="text-3xl font-bold mb-6">Обратная связь</h1>
-        <div className="flex-1 min-h-0">
-          <FeedbackChat />
-        </div>
-      </div>
-    </DashboardLayout>
-  );
+  redirect("/security-ops/feedback");
 }
