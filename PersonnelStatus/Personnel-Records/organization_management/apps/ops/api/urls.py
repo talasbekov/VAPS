@@ -15,7 +15,18 @@ from organization_management.apps.ops.api.views import (
     DutyPlanObjectsViewSet,
     DutyShiftViewSet,
     DutyTypeViewSet,
+    EvaluationRegistryViewSet,
+    EvaluationWorkItemViewSet,
+    EvaluationWorkspaceViewSet,
+    OperationalRatingDynamicsViewSet,
+    OperationalRatingEmployeeViewSet,
+    OperationalRatingsViewSet,
     OpsPersonnelViewSet,
+    RatingAnalyticsViewSet,
+    RatingAuditViewSet,
+    RatingExportArtifactsViewSet,
+    RatingExportsViewSet,
+    RatingNotificationsViewSet,
     SecurityEventViewSet,
     SecurityObjectViewSet,
 )
@@ -57,5 +68,50 @@ router.register(
     "dictionaries", OpsDictionariesViewSet, basename="ops-dictionaries"
 )
 router.register("audit-logs", OpsAuditLogViewSet, basename="ops-audit-logs")
+# Оперативный рейтинг (§19, §22.16): динамика, карточка и реестр — СВОИ
+# коллекции, а не хвосты под путём сводки: путь строки перехватил бы соседей
+# (инцидент Этапа 39 клиента).
+router.register(
+    "operational-ratings", OperationalRatingsViewSet,
+    basename="ops-operational-ratings",
+)
+router.register(
+    "operational-rating-dynamics", OperationalRatingDynamicsViewSet,
+    basename="ops-rating-dynamics",
+)
+router.register(
+    "operational-rating-employee", OperationalRatingEmployeeViewSet,
+    basename="ops-rating-employee",
+)
+router.register(
+    "rating-analytics", RatingAnalyticsViewSet,
+    basename="ops-rating-analytics",
+)
+router.register(
+    "evaluation-workspace", EvaluationWorkspaceViewSet,
+    basename="ops-evaluation-workspace",
+)
+router.register(
+    "evaluation-work-items", EvaluationWorkItemViewSet,
+    basename="ops-evaluation-work-items",
+)
+router.register(
+    "evaluation-registry", EvaluationRegistryViewSet,
+    basename="ops-evaluation-registry",
+)
+router.register(
+    "rating-audit", RatingAuditViewSet, basename="ops-rating-audit"
+)
+router.register(
+    "rating-notifications", RatingNotificationsViewSet,
+    basename="ops-rating-notifications",
+)
+router.register(
+    "rating-exports", RatingExportsViewSet, basename="ops-rating-exports"
+)
+router.register(
+    "rating-export-artifacts", RatingExportArtifactsViewSet,
+    basename="ops-rating-export-artifacts",
+)
 
 urlpatterns = router.urls

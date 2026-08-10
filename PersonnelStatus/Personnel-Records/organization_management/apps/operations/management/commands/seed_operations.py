@@ -45,6 +45,17 @@ PERMISSIONS = [
     # и не планирующие, а утверждает не тот, кто планирует.
     ("duty.view", "Просмотр плана дежурств"),
     ("duty.approve_plan", "Утверждение плана дежурств"),
+    # Оперативный рейтинг: §19.22 перечисляет права ПОРОЗНЬ — просмотр
+    # агрегата, выставление, исправление, цепочка исправлений, журнал и
+    # выгрузка охраняют разные операции с разными владельцами.
+    ("rating.view_aggregate", "Просмотр агрегированного рейтинга"),
+    ("rating.evaluate", "Выставление оценки"),
+    ("rating.correct", "Исправление собственной оценки"),
+    ("rating.view_correction_chain", "Просмотр цепочки исправлений"),
+    ("rating.view_audit", "Просмотр журнала оценивания"),
+    ("rating.export", "Выгрузка агрегированной сводки рейтинга"),
+    # Отчёт §22.16 охраняет право РАЗДЕЛА АНАЛИТИКИ, не право сводки.
+    ("analytics.view", "Просмотр аналитики раздела ОМ"),
     ("dictionary.view", "Просмотр справочников раздела ОМ"),
     ("dictionary.manage", "Управление справочниками раздела ОМ"),
     ("settings.view", "Просмотр настроек раздела ОМ"),
@@ -119,6 +130,17 @@ class Command(BaseCommand):
             default=[],
             metavar="user:ROLE[:division_id]",
             help="Назначить роль пользователю (можно несколько раз).",
+        )
+        parser.add_argument(
+            "--rating-evaluator",
+            default=None,
+            metavar="actor_id",
+            help=(
+                "Привязать задания оценивания основного демо-оценщика к "
+                "реальному actor_id (str(User.pk)): без этого очередь "
+                "рабочего пространства на живом стенде пуста — сид несёт "
+                "литеральные идентификаторы мок-контракта."
+            ),
         )
 
     def handle(self, *args, **options):
@@ -333,6 +355,8 @@ class Command(BaseCommand):
             self.style.SUCCESS("Seeded ops settings and dictionaries")
         )
 
+        self._seed_ratings(options.get("rating_evaluator"))
+
         for spec in options["assign"]:
             parts = spec.split(":")
             if len(parts) not in (2, 3):
@@ -352,3 +376,319 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(f"Assigned {role_code} -> {username} (scope={scope})")
             )
+
+    def _seed_ratings(self, rating_evaluator):
+        """Демо-данные оперативного рейтинга — порт мок-фикстур клиента
+        (features/ratings/mocks/fixtures.ts) ДОСЛОВНО: числа намеренно не
+        круглые (среднее 8,0 совпало бы со «стандартной восьмёркой» и скрыло
+        бы подмену расчёта константой), у employee-1 есть вытесненная
+        исправлением оценка, у employee-4 оценок нет вовсе."""
+        import datetime as dt
+
+        from organization_management.apps.operations.models_rating import (
+            OpsEvaluationCorrection,
+            OpsEvaluationEvent,
+            OpsEvaluationWorkItem,
+            OpsEventEvaluation,
+            OpsRatedParticipant,
+            OpsRatingAuditEntry,
+            OpsRatingDynamicsPoint,
+            OpsRatingFeatureFlags,
+            OpsRatingGroup,
+            OpsRatingNotification,
+        )
+
+        iso = dt.datetime.fromisoformat
+        planner = rating_evaluator or "demo-event-planner"
+
+        for code, label in [
+            ("division-1", "Первое управление"),
+            ("division-2", "Второе управление"),
+            ("division-3", "Третье управление"),
+        ]:
+            OpsRatingGroup.objects.update_or_create(
+                group_code=code, defaults={"safe_label": label},
+            )
+
+        participants = [
+            ("employee-1", "Ерланов Д.", "division-1"),
+            ("employee-2", "Абишев Н.", "division-1"),
+            ("employee-3", "Сейтказы М.", "division-2"),
+            ("employee-4", "Нурланов Е.", "division-2"),
+            ("employee-5", "Тлеуов А.", "division-1"),
+            ("employee-6", "Жумабек С.", "division-1"),
+            # Третье управление — ровно два участника с агрегатом: меньше
+            # порога безопасной агрегации, на нём держится SUPPRESSED.
+            ("employee-7", "Оспанов Р.", "division-3"),
+            ("employee-8", "Кайрат Б.", "division-3"),
+        ]
+        for code, label, group in participants:
+            OpsRatedParticipant.objects.update_or_create(
+                participant_code=code,
+                defaults={"safe_label": label, "group_code": group},
+            )
+
+        for (code, run, number, title, obj, starts, ends) in [
+            ("event-1", "run-1", "ОМ-2026-014", "Международный форум",
+             "Конгресс-холл", "2026-07-18T07:40:00+05:00",
+             "2026-07-18T19:20:00+05:00"),
+            ("event-2", "run-2", "ОМ-2026-015", "Рабочая поездка",
+             "Аэропорт", "2026-07-20T05:10:00+05:00",
+             "2026-07-20T12:05:00+05:00"),
+        ]:
+            OpsEvaluationEvent.objects.update_or_create(
+                event_code=code,
+                defaults={
+                    "event_run_code": run, "number": number, "title": title,
+                    "object_label": obj, "actual_starts_at": iso(starts),
+                    "actual_ends_at": iso(ends), "state_label": "Завершено",
+                    "security_event_id": None,
+                },
+            )
+
+        def evaluation(code, participant, score, evaluated_at, **extra):
+            defaults = {
+                "event_code": "event-1",
+                "participant_code": participant,
+                "evaluator_user_id": planner,
+                "score": score,
+                "comment": (
+                    "Задержка на инструктаже, разобрано со старшим"
+                    if score < 8 else None
+                ),
+                "evaluation_direction": "SENIOR_TO_EMPLOYEE",
+                "method": "MANUAL",
+                "basis_code": (
+                    "TIMELY_ARRIVAL" if score < 8 else "EXECUTION_OF_DUTIES"
+                ),
+                "basis_note": None,
+                "evaluated_at": dt.date.fromisoformat(evaluated_at),
+                "superseded_by_code": None,
+            }
+            defaults.update(extra)
+            OpsEventEvaluation.objects.update_or_create(
+                evaluation_code=code, defaults=defaults,
+            )
+
+        evaluation("evaluation-1", "employee-1", 9, "2026-07-02")
+        evaluation("evaluation-2", "employee-1", 8, "2026-07-08")
+        evaluation("evaluation-3", "employee-1", 7, "2026-07-11")
+        # Исправленная оценка и её замена (§19.18): исходная не
+        # переписывается, а помечается ссылкой.
+        evaluation(
+            "evaluation-4", "employee-1", 3, "2026-07-14",
+            superseded_by_code="evaluation-5",
+            comment="Оценка выставлена по ошибке не тому участнику",
+        )
+        evaluation("evaluation-5", "employee-1", 9, "2026-07-15")
+        evaluation("evaluation-6", "employee-1", 10, "2026-07-17")
+        evaluation("evaluation-7", "employee-2", 6, "2026-07-05")
+        evaluation("evaluation-8", "employee-2", 8, "2026-07-09")
+        evaluation("evaluation-9", "employee-2", 7, "2026-07-13")
+        evaluation("evaluation-10", "employee-2", 9, "2026-07-18")
+        # Оценка ДРУГОГО оценщика: без неё «в отправленных только свои»
+        # проверялось бы на пустом множестве.
+        evaluation(
+            "evaluation-11", "employee-3", 8, "2026-07-06",
+            evaluator_user_id="demo-recon-officer",
+        )
+        evaluation("evaluation-12", "employee-3", 9, "2026-07-16")
+        # За пределами периода расчёта; она же — СИСТЕМНАЯ восьмёрка (§19.8):
+        # оценщика нет, задания она не порождает.
+        evaluation(
+            "evaluation-13", "employee-4", 8, "2025-11-04",
+            evaluator_user_id=None, method="SYSTEM_DEFAULT", basis_code=None,
+        )
+        evaluation("evaluation-14", "employee-5", 9, "2026-07-03")
+        evaluation("evaluation-15", "employee-5", 10, "2026-07-07")
+        evaluation("evaluation-16", "employee-5", 9, "2026-07-12")
+        evaluation("evaluation-17", "employee-5", 9, "2026-07-16")
+        evaluation("evaluation-18", "employee-6", 7, "2026-07-04")
+        evaluation("evaluation-19", "employee-6", 6, "2026-07-08")
+        evaluation("evaluation-20", "employee-6", 7, "2026-07-12")
+        evaluation("evaluation-21", "employee-6", 7, "2026-07-17")
+        evaluation("evaluation-22", "employee-7", 8, "2026-07-02")
+        evaluation("evaluation-23", "employee-7", 8, "2026-07-09")
+        evaluation("evaluation-24", "employee-7", 8, "2026-07-14")
+        evaluation("evaluation-25", "employee-7", 8, "2026-07-18")
+        evaluation("evaluation-26", "employee-8", 9, "2026-07-05")
+        evaluation("evaluation-27", "employee-8", 10, "2026-07-10")
+        evaluation("evaluation-28", "employee-8", 9, "2026-07-15")
+        evaluation("evaluation-29", "employee-8", 8, "2026-07-19")
+
+        events = {
+            row.event_code: row for row in OpsEvaluationEvent.objects.all()
+        }
+        people = {
+            row.participant_code: row
+            for row in OpsRatedParticipant.objects.all()
+        }
+        groups = {
+            row.group_code: row for row in OpsRatingGroup.objects.all()
+        }
+
+        def work_item(code, event_code, evaluator, target, post, **extra):
+            event = events[event_code]
+            person = people[target]
+            defaults = {
+                "event_code": event_code,
+                "event_run_code": event.event_run_code,
+                "assignment_code": f"assignment-{code}",
+                "evaluator_user_id": evaluator,
+                "target_participant_code": target,
+                "target_group_code": None,
+                "target_safe_label": person.safe_label,
+                "target_safe_unit_label": groups[person.group_code].safe_label,
+                "post_label": post,
+                "actual_starts_at": event.actual_starts_at,
+                "actual_ends_at": event.actual_ends_at,
+                "participated": True,
+                "evaluation_direction": "SENIOR_TO_EMPLOYEE",
+                # Начальное значение даёт СЕРВЕР (§19.8).
+                "initial_score": 8,
+                "status": "PENDING",
+                "revision": 1,
+                "submitted_evaluation_code": None,
+                "submitted_at": None,
+            }
+            defaults.update(extra)
+            OpsEvaluationWorkItem.objects.update_or_create(
+                work_item_code=code, defaults=defaults,
+            )
+
+        work_item("work-item-1", "event-1", planner, "employee-1",
+                  "Пост 1 — главный вход")
+        # Участник заявлен, но не присутствовал: факт участия показывается
+        # отдельно, оценку задание не принимает.
+        work_item("work-item-2", "event-1", planner, "employee-2",
+                  "Пост 2 — зона делегаций", participated=False)
+        work_item("work-item-3", "event-1", planner, "employee-5",
+                  "Старший смены",
+                  evaluation_direction="EMPLOYEE_TO_SENIOR")
+        work_item("work-item-4", "event-1", planner, "employee-6",
+                  "Пост 3 — периметр", status="SUBMITTED", revision=2,
+                  submitted_evaluation_code="evaluation-21",
+                  submitted_at=iso("2026-07-18T20:05:00+05:00"))
+        # Задание с УЖЕ исправленной оценкой: его запись — evaluation-5,
+        # замещающая evaluation-4 (см. correction-1).
+        work_item("work-item-9", "event-1", planner, "employee-1",
+                  "Пост 1 — главный вход (повторная смена)",
+                  status="SUBMITTED", revision=3,
+                  submitted_evaluation_code="evaluation-5",
+                  submitted_at=iso("2026-07-15T09:20:00+05:00"))
+        work_item("work-item-5", "event-2", planner, "employee-7",
+                  "Пост 1 — накопитель")
+        # Чужие задания: не попадают в очередь другого человека, но обязаны
+        # попадать в сводку мероприятия — она считает работу ВСЕХ.
+        work_item("work-item-6", "event-1", "demo-recon-officer",
+                  "employee-8", "Пост 4 — стоянка")
+        work_item("work-item-8", "event-1", "demo-admin", "employee-4",
+                  "Пост 6 — пресс-центр")
+        work_item("work-item-7", "event-1", "demo-recon-officer",
+                  "employee-3", "Пост 5 — служебный вход",
+                  status="SUBMITTED", revision=2,
+                  submitted_evaluation_code="evaluation-11",
+                  submitted_at=iso("2026-07-18T20:40:00+05:00"))
+
+        OpsEvaluationCorrection.objects.update_or_create(
+            correction_code="correction-1",
+            defaults={
+                "original_evaluation_code": "evaluation-4",
+                "replacement_evaluation_code": "evaluation-5",
+                "reason": "Оценка выставлена по ошибке не тому участнику",
+                "corrected_by": planner,
+                "corrected_at": iso("2026-07-15T09:20:00+05:00"),
+                "revision": 1,
+            },
+        )
+
+        # Точки динамики: ЗАПИСАННЫЕ агрегаты закрытых периодов под ПРОШЛЫМИ
+        # редакциями методики — текущая редакция раздела настроек ни одного
+        # периода ещё не закрывала (§19.20). NULL — агрегата нет, не ноль.
+        POLICY_V1 = "OPERATIONAL-RATING-2026.01.1"
+        POLICY_V2 = "OPERATIONAL-RATING-2026.05.1"
+        closed_periods = [
+            ("2026-03", "2026-03-01", "2026-03-31", POLICY_V1),
+            ("2026-04", "2026-04-01", "2026-04-30", POLICY_V1),
+            ("2026-05", "2026-05-01", "2026-05-31", POLICY_V2),
+            ("2026-06", "2026-06-01", "2026-06-30", POLICY_V2),
+        ]
+        dynamics = {
+            "employee-1": [(8.1, 6), (7.9, 5), (None, 2), (8.6, 7)],
+            "employee-2": [(7.2, 4), (7.6, 5), (7.4, 4), (7.9, 6)],
+            "employee-3": [(None, 1), (8.3, 4), (8.0, 5), (None, 3)],
+            "employee-4": [(None, 0), (None, 0), (None, 0), (None, 0)],
+        }
+        for participant_code, values in dynamics.items():
+            for (period, starts, ends, policy), (rating, count) in zip(
+                closed_periods, values
+            ):
+                OpsRatingDynamicsPoint.objects.update_or_create(
+                    participant_code=participant_code, period=period,
+                    defaults={
+                        "period_starts_at": dt.date.fromisoformat(starts),
+                        "period_ends_at": dt.date.fromisoformat(ends),
+                        "aggregate_rating": rating,
+                        "evaluations_count": count,
+                        "policy_version": policy,
+                        "data_state": (
+                            "INSUFFICIENT_DATA" if rating is None else "READY"
+                        ),
+                        # Точка фиксируется на следующие сутки после закрытия
+                        # периода: закрытый период считается один раз.
+                        "recorded_at": iso(f"{ends}T23:59:00+05:00"),
+                    },
+                )
+
+        # Сеяные события журнала (§19.27): ровно то, что в сиде УЖЕ
+        # произошло, — иначе «в записи нет значений» проверялось бы на
+        # отсутствующих данных.
+        for (code, occurred, actor, event, evaluation_code, correction,
+             assignment, revision, request_id) in [
+            ("rating-audit-seed-1", "2026-07-18T20:05:00+05:00", planner,
+             "EVALUATION_SUBMITTED", "evaluation-21", None,
+             "assignment-work-item-4", 2, "seed-request-1"),
+            ("rating-audit-seed-2", "2026-07-15T09:20:00+05:00", planner,
+             "EVALUATION_CORRECTED", "evaluation-5", "correction-1",
+             "assignment-work-item-9", 3, "seed-request-2"),
+        ]:
+            OpsRatingAuditEntry.objects.update_or_create(
+                entry_code=code,
+                defaults={
+                    "occurred_at": iso(occurred),
+                    "actor_user_id": actor,
+                    "event_code": event,
+                    "outcome": "SUCCESS",
+                    "reason_code": None,
+                    "security_event_code": "event-1",
+                    "event_run_code": "run-1",
+                    "assignment_code": assignment,
+                    "evaluation_code": evaluation_code,
+                    "correction_code": correction,
+                    "request_id": request_id,
+                    "revision": revision,
+                },
+            )
+
+        # Сеяные уведомления (§19.28) — адресованы тем, у кого есть
+        # незакрытые задания.
+        for code, recipient in [
+            ("rating-notification-seed-1", planner),
+            ("rating-notification-seed-2", "demo-recon-officer"),
+        ]:
+            OpsRatingNotification.objects.update_or_create(
+                notification_code=code,
+                defaults={
+                    "notified_at": iso("2026-07-18T19:30:00+05:00"),
+                    "recipient_user_id": recipient,
+                    "code": "EVALUATION_AVAILABLE",
+                    "deep_link": "/ratings/workspace?event=event-1",
+                    "security_event_code": "event-1",
+                },
+            )
+
+        OpsRatingFeatureFlags.objects.update_or_create(
+            singleton_key=1,
+            defaults={"operational_ratings": True, "rating_conflicts": True},
+        )
+        self.stdout.write(self.style.SUCCESS("Seeded operational ratings"))

@@ -46,3 +46,7 @@ export function isOpsSettingsLive(): boolean {
 export function isOpsAuditLive(): boolean {
   return !isOpsMockMode() || opsLiveDomains().has("audit");
 }
+
+export function isOpsRatingsLive(): boolean {
+  return !isOpsMockMode() || opsLiveDomains().has("ratings");
+}
