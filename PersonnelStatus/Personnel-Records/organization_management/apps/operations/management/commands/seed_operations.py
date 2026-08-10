@@ -56,6 +56,11 @@ PERMISSIONS = [
     ("rating.export", "Выгрузка агрегированной сводки рейтинга"),
     # Отчёт §22.16 охраняет право РАЗДЕЛА АНАЛИТИКИ, не право сводки.
     ("analytics.view", "Просмотр аналитики раздела ОМ"),
+    # §22.26 перечисляет их отдельными пунктами: дашборд показывает
+    # агрегаты, выборка — людей и смены, аналитика ОМ — другой раздел.
+    ("analytics.drilldown", "Раскрытие показателя аналитики до строк"),
+    ("analytics.personal_detail", "Персональная детализация аналитики"),
+    ("analytics.operations", "Просмотр аналитики мероприятий"),
     ("dictionary.view", "Просмотр справочников раздела ОМ"),
     ("dictionary.manage", "Управление справочниками раздела ОМ"),
     ("settings.view", "Просмотр настроек раздела ОМ"),
@@ -356,6 +361,7 @@ class Command(BaseCommand):
         )
 
         self._seed_ratings(options.get("rating_evaluator"))
+        self._seed_analytics()
 
         for spec in options["assign"]:
             parts = spec.split(":")
@@ -692,3 +698,99 @@ class Command(BaseCommand):
             defaults={"operational_ratings": True, "rating_conflicts": True},
         )
         self.stdout.write(self.style.SUCCESS("Seeded operational ratings"))
+
+    def _seed_analytics(self):
+        """Реестры аналитики службы (§22) — порт мок-фикстур клиента.
+
+        Пороги НАМЕРЕННО не круглые (18/34 процента, 53 часа): совпадение с
+        «привычным» числом скрыло бы захардкоженный порог, если бы он где-то
+        остался. Администрируемые числа детекторов живут в «Настройках»
+        (ATTENTION_POLICY) и накладываются поверх этих значений по умолчанию.
+        """
+        from organization_management.apps.operations.models_analytics import (
+            OpsAnalyticsMetricDefinition,
+            OpsAnalyticsPeriodPreset,
+            OpsAttentionDetector,
+        )
+
+        metrics = [
+            # (code, label, warning, critical, position); справочные
+            # показатели — без порогов: выдуманный порог сделал бы обычную
+            # работу службы «предупреждением».
+            ("DUTY_ACTIVE", "На дежурстве", None, None, 1),
+            ("DUTY_PLANNED", "Запланировано смен", None, None, 2),
+            ("REST_AFTER_DUTY", "Отдых после дежурства", None, None, 3),
+            ("UNFINISHED_PAST_DUTIES", "Незакрытые прошедшие дежурства",
+             1, 4, 4),
+            ("CONFLICT_HARD", "Жёсткие конфликты", 1, 3, 5),
+            ("CONFLICT_SOFT", "Мягкие конфликты", 2, 6, 6),
+            ("UNCONFIRMED_PARTICIPATION", "Неподтверждённое участие",
+             1, 5, 7),
+        ]
+        for code, label, warning, critical, position in metrics:
+            OpsAnalyticsMetricDefinition.objects.update_or_create(
+                metric_code=code,
+                defaults={
+                    "safe_label": label, "unit": "COUNT",
+                    "warning_from": warning, "critical_from": critical,
+                    "drilldown_available": True, "position": position,
+                },
+            )
+
+        presets = [
+            ("TODAY", "Сегодня", 0, 1, 1),
+            ("PREV_BUSINESS_DAY", "Предыдущий рабочий день", -1, 1, 2),
+            ("CURRENT_WEEK", "Текущая неделя", 0, 7, 3),
+            ("CURRENT_MONTH", "Текущий месяц", 0, 30, 4),
+        ]
+        for code, label, offset, length, position in presets:
+            OpsAnalyticsPeriodPreset.objects.update_or_create(
+                preset_code=code,
+                defaults={
+                    "safe_label": label, "offset_days": offset,
+                    "length_days": length, "position": position,
+                },
+            )
+
+        detectors = [
+            ("ACKNOWLEDGEMENT_MISSING", "ACKNOWLEDGEMENT_MISSING",
+             "VERIFICATION_REQUIRED",
+             "Записей с ближайшим заступлением без отметки об ознакомлении: "
+             "{count}. Срок упреждения — {parameter} дн.",
+             3, 1, 4, "/security-ops/duties", "duty.view", 1),
+            ("CONFLICT_SHARE", "CONFLICT_SHARE", "THRESHOLD_EXCEEDED",
+             "Доля записей периода с конфликтом планирования — {value}% при "
+             "серверном пороге. Записей с конфликтом: {count}.",
+             0, 18, 34, "/security-ops/duties", "duty.view", 2),
+            ("UNFINISHED_OVERDUE", "UNFINISHED_OVERDUE",
+             "UNFINISHED_PROCESSES",
+             "Записей, не переведённых в завершённое состояние дольше "
+             "допуска ({parameter} дн.): {count}.",
+             2, 1, 5, "/security-ops/duties", "duty.view", 3),
+            ("UNCONFIRMED_OVERDUE", "UNCONFIRMED_OVERDUE",
+             "DATA_UNCONFIRMED",
+             "Записей без подтверждённых отметок фактического времени "
+             "дольше допуска ({parameter} дн.): {count}.",
+             2, 1, 4, "/security-ops/duties", "duty.view", 4),
+            # Утверждение об ИСТОЧНИКЕ: перехода нет намеренно — вести
+            # человека в раздел данных, которые не обновлялись, значит
+            # предложить искать там причину, которой в разделе не видно.
+            ("SOURCE_AGE", "SOURCE_AGE", "SOURCE_NOT_UPDATED",
+             "Последнее изменение источника — {value} ч назад при допуске "
+             "{parameter} ч.",
+             53, 53, None, None, None, 5),
+        ]
+        for (code, measure, title, template, parameter, warning, critical,
+             route, permission, position) in detectors:
+            OpsAttentionDetector.objects.update_or_create(
+                category_code=code,
+                defaults={
+                    "measure": measure, "title_code": title,
+                    "safe_description_template": template,
+                    "parameter": parameter, "warning_from": warning,
+                    "critical_from": critical, "base_severity": "INFO",
+                    "target_route": route, "target_permission": permission,
+                    "position": position,
+                },
+            )
+        self.stdout.write(self.style.SUCCESS("Seeded service analytics"))

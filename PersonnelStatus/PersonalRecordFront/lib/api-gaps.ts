@@ -13,7 +13,7 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
-import { isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsSettingsLive } from "@/lib/ops-env";
+import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsSettingsLive } from "@/lib/ops-env";
 
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
@@ -86,22 +86,8 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
   },
   // Оперативный рейтинг: бэк ГОТОВ (срез G) — запись собирается в findApiGap
   // по режиму домена ratings (все семь экранов — один домен).
-  "/security-ops/analytics": {
-    subject: "Аналитика службы",
-    paths: [
-      "/api/ops/service-analytics/",
-      "/api/ops/service-analytics-presets/",
-      "/api/ops/service-analytics-attention/",
-      "/api/ops/service-analytics-drilldown/",
-      "/api/ops/load-analytics/",
-    ],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/analytics/operations": {
-    subject: "Аналитика мероприятий",
-    paths: ["/api/ops/operations-analytics/"],
-    note: MOCK_NOTE,
-  },
+  // Аналитика службы и мероприятий: бэк ГОТОВ (срез H) — запись собирается
+  // в findApiGap по режиму домена analytics (оба экрана — один домен).
   "/security-ops/service-reports": {
     subject: "Служебные отчёты",
     paths: [
@@ -202,6 +188,16 @@ const SIMPLE_LIVE_CHECK: Record<string, () => boolean> = {
   "/security-ops/audit": isOpsAuditLive,
 };
 
+const ANALYTICS_MOCK_BY_CONFIG: ApiGap = {
+  subject: "Аналитика службы и мероприятий",
+  paths: [],
+  note:
+    "Бэкенд аналитики готов (/api/ops/service-analytics|-presets|-drilldown|" +
+    "-attention, load-analytics, operations-analytics — снимки, выборки, " +
+    "внимание, нагрузка, уровни и воронка по журналу переходов); экраны на " +
+    "MSW по конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=analytics.",
+};
+
 const RATINGS_MOCK_BY_CONFIG: ApiGap = {
   subject: "Оперативный рейтинг",
   paths: [],
@@ -243,6 +239,12 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       normalized.startsWith("/security-ops/ratings/")
     ) {
       return isOpsRatingsLive() ? null : RATINGS_MOCK_BY_CONFIG;
+    }
+    if (
+      normalized === "/security-ops/analytics" ||
+      normalized.startsWith("/security-ops/analytics/")
+    ) {
+      return isOpsAnalyticsLive() ? null : ANALYTICS_MOCK_BY_CONFIG;
     }
     if (
       normalized === "/security-ops/duties/combat" ||

@@ -16,6 +16,12 @@ from organization_management.apps.ops.api.views import (
     DutyShiftViewSet,
     DutyTypeViewSet,
     EvaluationRegistryViewSet,
+    LoadAnalyticsViewSet,
+    OperationsAnalyticsViewSet,
+    ServiceAnalyticsAttentionViewSet,
+    ServiceAnalyticsDrilldownViewSet,
+    ServiceAnalyticsPresetsViewSet,
+    ServiceAnalyticsViewSet,
     EvaluationWorkItemViewSet,
     EvaluationWorkspaceViewSet,
     OperationalRatingDynamicsViewSet,
@@ -112,6 +118,32 @@ router.register(
 router.register(
     "rating-export-artifacts", RatingExportArtifactsViewSet,
     basename="ops-rating-export-artifacts",
+)
+
+# Аналитика службы и мероприятий (§22): все пути — сиблинги, не вложения:
+# вложенный путь перехватил бы соседей (инцидент Этапа 39 клиента).
+router.register(
+    "service-analytics", ServiceAnalyticsViewSet,
+    basename="ops-service-analytics",
+)
+router.register(
+    "service-analytics-presets", ServiceAnalyticsPresetsViewSet,
+    basename="ops-analytics-presets",
+)
+router.register(
+    "service-analytics-drilldown", ServiceAnalyticsDrilldownViewSet,
+    basename="ops-analytics-drilldown",
+)
+router.register(
+    "service-analytics-attention", ServiceAnalyticsAttentionViewSet,
+    basename="ops-analytics-attention",
+)
+router.register(
+    "load-analytics", LoadAnalyticsViewSet, basename="ops-load-analytics"
+)
+router.register(
+    "operations-analytics", OperationsAnalyticsViewSet,
+    basename="ops-operations-analytics",
 )
 
 urlpatterns = router.urls
