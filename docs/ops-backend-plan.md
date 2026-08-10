@@ -8,7 +8,7 @@
 
 Ветка: `claude/smart-josparlau-e55`. Источники истины для контракта:
 
-* `PersonalRecordFront/josparlau/src/features/*/api/pending-contracts.ts` —
+* (истор.; копия josparlau/ демонтирована 10.08.2026 — контракт теперь в `frontend/src` и `PersonalRecordFront/entities/*) `PersonalRecordFront/josparlau/src/features/*/api/pending-contracts.ts` —
   объявленные пути и TypeScript-формы запросов/ответов;
 * `PersonalRecordFront/josparlau/src/features/*/model/types.ts` и `lib/*.ts` —
   доменные типы и ВЫЧИСЛИМЫЕ правила (там, где фронт их знает);

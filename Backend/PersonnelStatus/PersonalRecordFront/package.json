@@ -7,9 +7,7 @@
     "dev": "next dev --turbo",
     "dev:webpack": "next dev",
     "lint": "next lint",
-    "start": "next start",
-    "sync:josparlau": "node tools/sync-josparlau.mjs",
-    "check:josparlau": "node tools/sync-josparlau.mjs --check"
+    "start": "next start"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.19",

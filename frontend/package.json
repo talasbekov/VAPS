@@ -23,8 +23,7 @@
     "test:e2e:live": "playwright test --config playwright.live.config.ts",
     "test:e2e:mock": "playwright test --config playwright.mock.config.ts",
     "gate": "node scripts/deps-gate.mjs && node scripts/schema-check.mjs && tsc -b && eslint . && node scripts/lint-canon.test.mjs && node scripts/schema-check.test.mjs && node scripts/build-constants.test.mjs && vitest run && vite build && node scripts/size-gate.mjs",
-    "generate:api": "openapi-typescript ../Backend/VAPS/schema.yaml -o src/shared/api/schema.d.ts",
-    "test:e2e:host": "playwright test --config playwright.host.config.ts"
+    "generate:api": "openapi-typescript ../Backend/VAPS/schema.yaml -o src/shared/api/schema.d.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
