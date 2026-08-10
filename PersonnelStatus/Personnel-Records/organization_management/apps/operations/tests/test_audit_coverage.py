@@ -884,5 +884,38 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     )
     duty_service.cancel_shift(shift.pk, reason="приказ отменён", actor=ACTOR)
 
+    # Настройки и справочники: правка правила и админ-операции значений.
+    from organization_management.apps.operations.models_settings import (
+        OpsPolicySetting,
+    )
+    from organization_management.apps.ops import dictionaries as dict_service
+    from organization_management.apps.ops import settings_service
+
+    OpsPolicySetting.objects.get_or_create(
+        setting_code="passport.due_soon_percent",
+        defaults={
+            "section_code": "PASSPORT_FRESHNESS", "kind": "NUMBER",
+            "value_type": "PERCENT", "safe_label": "Порог «скоро проверка»",
+            "description": "", "value": 25, "min_value": 5, "max_value": 50,
+            "options": None, "editable": True, "locked_reason": None,
+        },
+    )
+    settings_service.update_setting(
+        "passport.due_soon_percent", value=30,
+        reason="покрытие журнала", actor=ACTOR,
+    )
+    dict_entry = dict_service.create_entry(
+        "RETURN_REASONS", code="COVERAGE", label="Покрытие журнала",
+        description="", group_code=None, actor=ACTOR,
+    )
+    dict_service.set_entry_active(
+        dict_entry.pk, is_active=False, actor=ACTOR
+    )
+    tracked = dict_service.create_entry(
+        "POST_REQUIREMENT_GROUPS", code="COVERAGE_GROUP",
+        label="Группа покрытия", description="", group_code=None, actor=ACTOR,
+    )
+    dict_service.delete_entry(tracked.pk, actor=ACTOR)
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

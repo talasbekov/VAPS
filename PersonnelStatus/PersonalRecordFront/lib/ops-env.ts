@@ -34,3 +34,15 @@ export function isOpsDutiesLive(): boolean {
 export function isOpsCombatLive(): boolean {
   return !isOpsMockMode() || opsLiveDomains().has("combat");
 }
+
+export function isOpsDictionariesLive(): boolean {
+  return !isOpsMockMode() || opsLiveDomains().has("dictionaries");
+}
+
+export function isOpsSettingsLive(): boolean {
+  return !isOpsMockMode() || opsLiveDomains().has("settings");
+}
+
+export function isOpsAuditLive(): boolean {
+  return !isOpsMockMode() || opsLiveDomains().has("audit");
+}
