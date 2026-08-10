@@ -213,12 +213,14 @@ AUDIT_MATRIX = {
     # core personnel.* (Employee + StaffingSlot):
     "employee-list": _DeferredAudit(_CORE),
     "employee-detail": _DeferredAudit(_CORE),
-    "employee-archive": _DeferredAudit(_CORE),
-    "employee-restore": _DeferredAudit(_CORE),
+    # 10.08: archive/restore/assign/release аудируются (фикс гонок ревью
+    # 08.08) — эмиссия закреплена test_core_write_hardening через маршрут.
+    "employee-archive": _Audited(),
+    "employee-restore": _Audited(),
     "staffing-slot-list": _DeferredAudit(_CORE),
     "staffing-slot-detail": _DeferredAudit(_CORE),
-    "staffing-slot-assign-employee": _DeferredAudit(_CORE),
-    "staffing-slot-release": _DeferredAudit(_CORE),
+    "staffing-slot-assign-employee": _Audited(),
+    "staffing-slot-release": _Audited(),
     # core orgstructure.* (Division + Position + Rank):
     "division-list": _DeferredAudit(_CORE),
     "division-detail": _DeferredAudit(_CORE),
