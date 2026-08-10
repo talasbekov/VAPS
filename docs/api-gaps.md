@@ -40,7 +40,7 @@
 | `/ops/*` (встроенная SPA) | `/api/ops/*`, `/api/operations/expense-reports/` (`/api/core/staffing-slots/` и `/api/documents/attachments/` переехали срезами 157 и 159 — сама SPA по-прежнему сидит на MSW) | «Не подключено — Встроенная SPA раздела ОМ…» + «SPA работает на собственном MSW-воркере» |
 | `/security-ops/command-center/` | `/api/ops/security-events/`, `/api/ops/personnel/` | «Не подключено — Командный центр…» |
 | `/security-ops/events/`, `/security-ops/events/[id]/` | `/api/ops/security-events/`, `/api/ops/personnel/` | «Не подключено — Реестр ОМ…» |
-| `/security-ops/objects/`, `/security-ops/objects/[id]/`, `…/passports/[versionId]/` | `/api/ops/objects/` | «Не подключено — Объекты и паспорта…» |
+| `/security-ops/objects/`, `/security-ops/objects/[id]/`, `…/passports/[versionId]/` | `/api/ops/objects/{id}/passport/`, `/api/ops/objects/{id}/passport/versions/`, `/api/ops/object-freshness-policy/` (базовый список `/api/ops/objects/` переехал срезом A1 — экран его пока не читает, KPI/свежесть/секторы/версии считает MSW) | «Не подключено — Объекты и паспорта…» |
 | `/security-ops/duties/`, `/security-ops/duties/[id]/` | `/api/ops/duty-shifts/`, `/api/ops/duty-types/`, `/api/ops/duty-monthly-plan/`, `/api/ops/duty-plan-objects/`, `/api/ops/duty-candidates/` | «Не подключено — План дежурств…» |
 | `/security-ops/duties/combat/` | `/api/ops/combat-duty-shifts/`, `/api/ops/combat-duty-types/`, `/api/ops/combat-routes/`, `/api/ops/combat-roster-candidates/` | «Не подключено — Боевые группы…» |
 | `/security-ops/calendar/` | `/api/ops/duty-shifts/`, `/api/ops/combat-duty-shifts/` | «Не подключено — Календарь смен…» |
