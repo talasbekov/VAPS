@@ -13,7 +13,7 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
-import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
+import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDailyLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
 
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
@@ -66,16 +66,9 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
   // «Календарь смен»: оба источника (duty-shifts срез C1, combat-duty-shifts
   // срез C2) живые — запись собирается в findApiGap по режимам обоих доменов.
 
-  "/security-ops/daily-expense": {
-    subject: "Расход дня (ОМ)",
-    paths: [
-      "/api/ops/daily/divisions/",
-      "/api/ops/daily/employees/",
-      "/api/ops/daily/daily-submissions/",
-      "/api/ops/daily/statuses-bulk/",
-    ],
-    note: `${MOCK_NOTE} Живой расход по строевой записке — на хостовом экране «Отчёты».`,
-  },
+  // «Расход дня (ОМ)»: бэк ГОТОВ адаптерами над живым /api/operations/
+  // (статусы, сдача, поправка — те же сервисы, свой только адрес и форма
+  // контракта). Запись собирается в findApiGap по режиму домена daily.
   // Оперативный рейтинг: бэк ГОТОВ (срез G) — запись собирается в findApiGap
   // по режиму домена ratings (все семь экранов — один домен).
   // Аналитика службы и мероприятий: бэк ГОТОВ (срез H) — запись собирается
@@ -172,6 +165,14 @@ const SIMPLE_MOCK_BY_CONFIG: Record<string, ApiGap> = {
       "комментарии, разбор и закрытие с ответом автору); экран на MSW по " +
       "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=feedback.",
   },
+  "/security-ops/daily-expense": {
+    subject: "Расход дня (ОМ)",
+    paths: [],
+    note:
+      "Бэкенд расхода дня готов (/api/ops/daily/* — адаптеры над живыми " +
+      "статусами, сдачей дня и поправкой /api/operations/); экран на MSW по " +
+      "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=daily.",
+  },
   "/security-ops/feedback": {
     subject: "Обратная связь раздела ОМ",
     paths: [],
@@ -188,6 +189,7 @@ const SIMPLE_LIVE_CHECK: Record<string, () => boolean> = {
   "/security-ops/settings": isOpsSettingsLive,
   "/security-ops/audit": isOpsAuditLive,
   "/security-ops/feedback": isOpsFeedbackLive,
+  "/security-ops/daily-expense": isOpsDailyLive,
   "/feedback": isOpsFeedbackLive,
 };
 

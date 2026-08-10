@@ -1508,6 +1508,210 @@ class ServiceReportArtifactsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         )
 
 
+# ── «Расход дня» раздела ОМ — адаптеры над живым /api/operations/ ──────────
+
+from organization_management.apps.ops import daily as daily_service
+
+# Гарды области и разбор параметров — ИМПОРТОМ из вьюх operations, не копией:
+# у правила «что видно актору» один владелец, и дублирующий гард здесь молча
+# разошёлся бы с ним (класс «дублирующие гарды» из ревью).
+from organization_management.apps.operations.api.views import (
+    _assert_division_in_scope,
+    _parse_date_param,
+    _parse_int_param,
+    _resolve_division_scope,
+)
+from organization_management.apps.operations.api.serializers import (
+    BulkStatusCreateSerializer,
+    DailySubmissionAmendSerializer,
+    DailySubmissionCreateSerializer,
+)
+
+_DAILY_READ_PERMISSION = "status.view"
+_DAILY_BULK_PERMISSION = "status.manage"
+_DAILY_SUBMIT_PERMISSION = "daily_report.mark_update"
+_DAILY_AMEND_PERMISSION = "daily_report.correct"
+
+
+class OpsDailyDivisionsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/daily/divisions/ — подразделения области актора в форме
+    контракта клиента (строковые id)."""
+
+    permission_map = {"list": _DAILY_READ_PERMISSION}
+
+    def list(self, request):
+        return Response(
+            {
+                "results": daily_service.visible_division_rows(
+                    resolve_actor_id(request), _DAILY_READ_PERMISSION
+                )
+            }
+        )
+
+
+class OpsDailyEmployeesViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/daily/employees/?division_id= — состав подразделения для
+    грида. Чужое подразделение — 403 (общий резолвер области), а не пустой
+    список, неотличимый от «там никого нет»."""
+
+    permission_map = {"list": _DAILY_READ_PERMISSION}
+
+    def list(self, request):
+        division_id = _parse_int_param(request, "division_id")
+        if division_id is None:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail={"division_id": ["Укажите подразделение."]},
+                message="Проверьте параметры запроса.",
+            )
+        _resolve_division_scope(request, division_id, _DAILY_READ_PERMISSION)
+        results = daily_service.employee_rows([division_id])
+        return Response(
+            {
+                "count": len(results),
+                "next": None,
+                "previous": None,
+                "results": results,
+            }
+        )
+
+
+class OpsDailyBulkViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """POST /api/ops/daily/statuses-bulk/ — делегат bulk_create_statuses:
+    та же атомарность и тот же построчный details.rows, что у
+    /api/operations/statuses/bulk/."""
+
+    permission_map = {"create": _DAILY_BULK_PERMISSION}
+
+    def create(self, request):
+        from rest_framework import status as http_status
+
+        from organization_management.apps.operations.bulk_status_service import (
+            bulk_create_statuses,
+        )
+        from organization_management.apps.operations.selectors import (
+            DivisionTreeSelector,
+        )
+        from organization_management.apps.operations.services import (
+            PermissionService,
+        )
+
+        form = BulkStatusCreateSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        allowed = PermissionService.visible_division_ids(
+            resolve_actor_id(request), _DAILY_BULK_PERMISSION
+        )
+        if allowed is None:
+            allowed = DivisionTreeSelector.all_ids()
+        created = bulk_create_statuses(
+            form.validated_data["rows"],
+            actor=resolve_actor_id(request),
+            business_date=form.validated_data["business_date"],
+            allowed_division_ids=allowed,
+            amendment_reason=form.validated_data.get("amendment_reason", ""),
+        )
+        return Response(
+            {"created": len(created)}, status=http_status.HTTP_201_CREATED
+        )
+
+
+class OpsDailySubmissionsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/daily/daily-submissions/ — сдача дня в форме контракта
+    клиента: список несёт ВСЕ версии дня (историю решает экран), создание и
+    поправка делегируются day_submission_service."""
+
+    permission_map = {
+        "list": _DAILY_READ_PERMISSION,
+        "create": _DAILY_SUBMIT_PERMISSION,
+        "amend": _DAILY_AMEND_PERMISSION,
+    }
+
+    def list(self, request):
+        division_id = _parse_int_param(request, "division_id")
+        scope = _resolve_division_scope(
+            request, division_id, _DAILY_READ_PERMISSION
+        )
+        results = daily_service.list_submissions(
+            scope=scope,
+            division_id=division_id,
+            business_date=_parse_date_param(request, "business_date"),
+        )
+        return Response(
+            {
+                "count": len(results),
+                "next": None,
+                "previous": None,
+                "results": results,
+            }
+        )
+
+    def create(self, request):
+        from rest_framework import status as http_status
+
+        from organization_management.apps.operations.day_submission_service import (
+            submit_day,
+        )
+
+        form = DailySubmissionCreateSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        division_id = form.validated_data["division_id"]
+        _assert_division_in_scope(
+            request, division_id, _DAILY_SUBMIT_PERMISSION,
+            field="division_id",
+        )
+        submission = submit_day(
+            division_id=division_id,
+            business_date=form.validated_data["business_date"],
+            actor=resolve_actor_id(request),
+        )
+        return Response(
+            daily_service.serialize_submission(submission),
+            status=http_status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="amend")
+    def amend(self, request, pk=None):
+        from rest_framework import status as http_status
+
+        from organization_management.apps.operations.day_submission_service import (
+            amend_day,
+        )
+        from organization_management.apps.operations.models_submission import (
+            OpsDailySubmission,
+        )
+
+        form = DailySubmissionAmendSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        submission = (
+            OpsDailySubmission.objects.filter(pk=pk).first()
+            if str(pk).isdigit()
+            else None
+        )
+        if submission is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                detail={"submission_id": str(pk)},
+                message="Сдача не найдена.",
+            )
+        _assert_division_in_scope(
+            request, submission.division_id, _DAILY_AMEND_PERMISSION,
+            field="division_id",
+        )
+        amended = amend_day(
+            division_id=submission.division_id,
+            business_date=submission.business_date,
+            actor=resolve_actor_id(request),
+            reason=form.validated_data["reason"],
+            sanction=form.validated_data["sanction"],
+        )
+        return Response(
+            daily_service.serialize_submission(amended),
+            status=http_status.HTTP_201_CREATED,
+        )
+
+
 # ── Обратная связь (§28) ────────────────────────────────────────────────────
 
 from organization_management.apps.ops import feedback as feedback_service
