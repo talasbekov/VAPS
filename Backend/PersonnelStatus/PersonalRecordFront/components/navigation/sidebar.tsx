@@ -244,7 +244,7 @@ export function Sidebar() {
           <Tooltip>
             <TooltipTrigger asChild>
               <motion.a
-                href="/feedback"
+                href="/security-ops/feedback"
                 className="sidebar-feedback w-full flex items-center px-6 py-4 text-base font-semibold rounded-xl transition-colors text-sidebar-foreground hover:bg-sidebar-accent"
                 whileHover={{ x: 4 }}
                 whileTap={{ scale: 0.98 }}

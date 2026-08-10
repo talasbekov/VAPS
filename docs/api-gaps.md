@@ -36,7 +36,7 @@
 
 | Экран | Недостающие пути | Что показывает заглушка |
 | --- | --- | --- |
-| `/feedback/` (хост) | `/api/dictionaries/feedback/` | «Не подключено — Обратная связь…» + «Бэкенд отдаёт 404: в `/api/dictionaries/` есть только positions, ranks и status_types». В самой ленте вместо «Пока нет сообщений» — «Лента недоступна: HTTP error! status: 404. Обновление остановлено» |
+| ~~`/feedback/` (хост)~~ | **переписан целиком (срез J)**: легаси-чат (`FeedbackChat`, опрос несуществующего `/api/dictionaries/feedback/`) удалён; адрес редиректит на `/security-ops/feedback/` — новый модуль §28 поверх живого `/api/ops/feedback-requests/`. Кнопка «Обратная связь» в сайдбаре ведёт туда же | врезки нет: раздел живой |
 | `/ops/*` (встроенная SPA) | `/api/ops/*`, `/api/operations/expense-reports/` (`/api/core/staffing-slots/` и `/api/documents/attachments/` переехали срезами 157 и 159 — сама SPA по-прежнему сидит на MSW) | «Не подключено — Встроенная SPA раздела ОМ…» + «SPA работает на собственном MSW-воркере» |
 | ~~`/security-ops/command-center/`, `/security-ops/events/`, `…/events/[id]/`~~ | **закрыт срезом B1**: `/api/ops/security-events/` (реестр с фильтрами, карточка, создание с привязкой версии паспорта, все девять стадий жизненного цикла) + `/api/ops/personnel/` (кадровый снимок из живых Employee). Экраны проведены `NEXT_PUBLIC_OPS_LIVE_DOMAINS=security-events` | врезки нет (live) / «Демоданные — Охранные мероприятия» (mock) |
 | ~~`/security-ops/objects/`, `/security-ops/objects/[id]/`~~ | **закрыт срезом A2**: конверт списка (kpi/freshness/политика), `PATCH …/passport/`, `POST …/passport/versions/` — всё живое. Экран проведён пер-доменным переключателем `NEXT_PUBLIC_OPS_LIVE_DOMAINS=objects`; в mock-режиме врезка честно говорит «бэк готов, экран на MSW по конфигурации» | врезки нет (live) / «Демоданные — Объекты и паспорта» (mock) |
@@ -85,7 +85,7 @@
                                           /api/ops/settings/
 ```
 
-Плюс вне семейства `/api/ops/`: `/api/dictionaries/feedback/` (экран `/feedback/`).
+Вне семейства `/api/ops/` недостающих путей не осталось: `/api/dictionaries/feedback/` умер вместе с легаси-чатом `/feedback/` (срез J).
 
 ## Кандидаты на следующие срезы переезда
 

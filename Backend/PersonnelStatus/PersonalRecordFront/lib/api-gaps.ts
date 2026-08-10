@@ -30,11 +30,8 @@ const MOCK_NOTE =
 // Ключ — префикс маршрута. Совпадение ищется от самого длинного к самому
 // короткому, поэтому вложенные экраны могут уточнять родительскую запись.
 const GAPS: Readonly<Record<string, ApiGap>> = {
-  "/feedback": {
-    subject: "Обратная связь",
-    paths: ["/api/dictionaries/feedback/"],
-    note: "Бэкенд отдаёт 404: в /api/dictionaries/ есть только positions, ranks и status_types.",
-  },
+  // «/feedback» (легаси-чат поверх несуществующего /api/dictionaries/feedback/)
+  // переписан целиком: адрес редиректит на /security-ops/feedback (срез J).
   "/ops": {
     subject: "Встроенная SPA раздела ОМ",
     paths: [
