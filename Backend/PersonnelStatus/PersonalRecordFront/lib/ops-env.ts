@@ -22,3 +22,7 @@ export function opsLiveDomains(): ReadonlySet<string> {
 export function isOpsObjectsLive(): boolean {
   return !isOpsMockMode() || opsLiveDomains().has("objects");
 }
+
+export function isOpsSecurityEventsLive(): boolean {
+  return !isOpsMockMode() || opsLiveDomains().has("security-events");
+}

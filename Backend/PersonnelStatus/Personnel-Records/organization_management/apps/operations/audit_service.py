@@ -92,6 +92,11 @@ DOCUMENT_DOWNLOADED = "DOCUMENT_DOWNLOADED"
 # правку черновика: черновик — рабочая тетрадь, версия — утверждённый документ,
 # и предмет разбирательства («каким был паспорт и кто его утвердил») — она.
 PASSPORT_VERSION_PUBLISHED = "PASSPORT_VERSION_PUBLISHED"
+# Охранное мероприятие: заведение и закрытие — решения с внешним следом
+# (номер ОМ в бумаге). Промежуточные стадии событий не пишут: их след — сам
+# агрегат (журнал штаба, назначения), а не журнал мутаций раздела.
+SECURITY_EVENT_CREATED = "SECURITY_EVENT_CREATED"
+SECURITY_EVENT_CLOSED = "SECURITY_EVENT_CLOSED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -123,6 +128,8 @@ ACTIONS = frozenset(
         DOCUMENT_SUPERSEDED,
         DOCUMENT_DOWNLOADED,
         PASSPORT_VERSION_PUBLISHED,
+        SECURITY_EVENT_CREATED,
+        SECURITY_EVENT_CLOSED,
     }
 )
 
@@ -147,6 +154,8 @@ ENTITY_ISSUED_DOCUMENT = "issued_document"
 # Охраняемый объект: лента отвечает «что происходило с этим объектом и его
 # паспортом»; ключ — целочисленный pk строки реестра.
 ENTITY_SECURITY_OBJECT = "security_object"
+# Охранное мероприятие — своя лента: у него ось «код ОМ», а не объект.
+ENTITY_SECURITY_EVENT = "security_event"
 
 ENTITY_TYPES = frozenset(
     {
@@ -158,6 +167,7 @@ ENTITY_TYPES = frozenset(
         ENTITY_ATTACHMENT,
         ENTITY_ISSUED_DOCUMENT,
         ENTITY_SECURITY_OBJECT,
+        ENTITY_SECURITY_EVENT,
     }
 )
 

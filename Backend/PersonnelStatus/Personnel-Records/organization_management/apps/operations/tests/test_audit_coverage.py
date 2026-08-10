@@ -764,5 +764,87 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         actor=ACTOR,
     )
 
+    # Охранное мероприятие: журнал пишут заведение и закрытие (стадии между
+    # ними следа в журнале мутаций не оставляют — их след живёт в агрегате).
+    from organization_management.apps.ops import security_events as event_service
+
+    om = event_service.create_event(
+        title="Покрытие журнала",
+        object_id=str(secured.pk),
+        business_date=TODAY.isoformat(),
+        actor=ACTOR,
+    )
+    event_service.update_bulletin(
+        om.pk, brief_description="покрытие", initial_tasks="покрытие"
+    )
+    event_service.complete_bulletin(om.pk)
+    event_service.update_recon(
+        om.pk,
+        checklist=[
+            {**item, "done": True} for item in om.recon_checklist
+        ],
+        sector_posts=[
+            {
+                "id": "row-1",
+                "sector": "Периметр",
+                "post": "Пост 1",
+                "task": "",
+                "need": 1,
+                "requirements": "",
+                "result": None,
+                "comment": "",
+                "sourceSectorId": None,
+                "sourcePostId": None,
+                "minRating": None,
+            }
+        ],
+    )
+    event_service.complete_recon(om.pk)
+    event_service.approve_demand(
+        om.pk,
+        rows=[
+            {
+                "id": "demand-1",
+                "sector": "Периметр",
+                "task": "Охрана",
+                "shift": "день",
+                "need": 1,
+                "group": "ГР-1",
+                "requirements": "",
+                "comment": "",
+            }
+        ],
+    )
+    om.refresh_from_db()
+    event_service.update_force_allocation(
+        om.pk,
+        om.force_requests[0]["id"],
+        allocated_count=1,
+        comment="",
+    )
+    event_service.complete_forces(om.pk)
+    roster_employee = employee_in(home)
+    event_service.assign_placement(
+        om.pk,
+        post_id="row-1",
+        employee_id=str(roster_employee.pk),
+        override=None,
+        override_reason=None,
+    )
+    event_service.complete_placement(om.pk)
+    event_service.approve_placement(om.pk)
+    om.refresh_from_db()
+    event_service.acknowledge_assignment(
+        om.pk, om.placement_assignments[0]["id"]
+    )
+    event_service.complete_acknowledgement(om.pk)
+    event_service.close_event(
+        om.pk,
+        direction_summaries=[
+            {"direction": "Периметр", "summary": "Без происшествий."}
+        ],
+        actor=ACTOR,
+    )
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

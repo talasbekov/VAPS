@@ -13,7 +13,7 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
-import { isOpsObjectsLive } from "@/lib/ops-env";
+import { isOpsObjectsLive, isOpsSecurityEventsLive } from "@/lib/ops-env";
 
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
@@ -52,16 +52,10 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
     paths: ["/api/ops/*"],
     note: MOCK_NOTE,
   },
-  "/security-ops/command-center": {
-    subject: "Командный центр",
-    paths: ["/api/ops/security-events/", "/api/ops/personnel/"],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/events": {
-    subject: "Реестр ОМ",
-    paths: ["/api/ops/security-events/", "/api/ops/personnel/"],
-    note: MOCK_NOTE,
-  },
+  // Командный центр и Реестр ОМ: бэк ГОТОВ (срез B1 — реестр, карточка,
+  // жизненный цикл всех девяти стадий, кадровый снимок). Записи собираются в
+  // findApiGap — как у объектов, они зависят от режима.
+
   // «Объекты и паспорта»: бэк ГОТОВ целиком (срез A2 — конверт списка с
   // kpi/freshness/политикой, PATCH черновика, POST публикации версии).
   // В live-режиме (NEXT_PUBLIC_OPS_LIVE_DOMAINS=objects) врезки нет вовсе;
@@ -210,6 +204,18 @@ const OBJECTS_MOCK_BY_CONFIG: ApiGap = {
     "NEXT_PUBLIC_OPS_LIVE_DOMAINS=objects.",
 };
 
+const SECURITY_EVENTS_MOCK_BY_CONFIG: ApiGap = {
+  subject: "Охранные мероприятия",
+  paths: [],
+  note:
+    "Бэкенд ОМ готов (/api/ops/security-events/ — реестр, карточка и все " +
+    "девять стадий; /api/ops/personnel/ — кадровый снимок); экран работает " +
+    "на MSW по конфигурации. Живой режим: " +
+    "NEXT_PUBLIC_OPS_LIVE_DOMAINS=security-events.",
+};
+
+const SECURITY_EVENT_ROUTES = ["/security-ops/command-center", "/security-ops/events"];
+
 export function findApiGap(pathname: string | null | undefined): ApiGap | null {
   if (!pathname) return null;
   {
@@ -219,6 +225,13 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       normalized.startsWith("/security-ops/objects/")
     ) {
       return isOpsObjectsLive() ? null : OBJECTS_MOCK_BY_CONFIG;
+    }
+    if (
+      SECURITY_EVENT_ROUTES.some(
+        (route) => normalized === route || normalized.startsWith(`${route}/`)
+      )
+    ) {
+      return isOpsSecurityEventsLive() ? null : SECURITY_EVENTS_MOCK_BY_CONFIG;
     }
   }
   // Хост отдаёт пути с завершающим слэшем; нормализуем, чтобы «/ops/» и «/ops»

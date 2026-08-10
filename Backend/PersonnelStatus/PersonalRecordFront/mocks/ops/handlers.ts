@@ -2,7 +2,7 @@
 // сюда добавляются handler-наборы (objects, security-events, duties, …).
 // Пути пишутся с завершающим слэшом — в next.config.js включён
 // trailingSlash: true, паттерны без слэша промахиваются мимо перехвата.
-import { isOpsObjectsLive } from "@/lib/ops-env";
+import { isOpsObjectsLive, isOpsSecurityEventsLive } from "@/lib/ops-env";
 import { identityHandlers } from "./identity";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
@@ -25,7 +25,10 @@ export function composeOpsHandlers() {
     // Стор объектов при этом остаётся: соседние мок-слайсы (ОМ, дежурства)
     // по-прежнему читают его фикстуры через readObjectsStore().
     ...(isOpsObjectsLive() ? [] : objectsHandlers),
-    ...securityEventsHandlers,
+    // ОМ и кадровый снимок подключены тем же пер-доменным переключателем
+    // (срез B1). Стор мока остаётся: dictionaries/analytics/ratings читают
+    // его фикстуры через readSecurityEventsStore().
+    ...(isOpsSecurityEventsLive() ? [] : securityEventsHandlers),
     ...dutiesHandlers,
     ...auditHandlers,
     ...settingsHandlers,

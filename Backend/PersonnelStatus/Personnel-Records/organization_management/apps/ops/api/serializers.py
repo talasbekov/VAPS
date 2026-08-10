@@ -74,3 +74,48 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
             "updatedAt",
         ]
         read_only_fields = fields
+
+
+def serialize_security_event(event):
+    """ОМ в форме контракта клиента (SecurityEvent, camelCase).
+
+    Словарь руками, а не ModelSerializer: половина полей — JSONB уже В ФОРМЕ
+    контракта (их не во что «переводить»), а вторая половина — переименования
+    snake→camel; декларативный сериализатор здесь свёлся бы к тому же списку,
+    только разнесённому по двум местам.
+    """
+    return {
+        "id": str(event.pk),
+        "code": event.code,
+        "title": event.title,
+        "objectId": (
+            str(event.security_object_id)
+            if event.security_object_id is not None
+            else None
+        ),
+        "objectName": event.object_name,
+        "passportBinding": event.passport_binding,
+        "businessDate": event.business_date.isoformat(),
+        "stage": event.stage,
+        "readinessPercent": event.readiness_percent,
+        "forceNeed": event.force_need,
+        "conflictsCount": event.conflicts_count,
+        "ownerName": event.owner_name,
+        "briefDescription": event.brief_description,
+        "initialTasks": event.initial_tasks,
+        "reconChecklist": event.recon_checklist,
+        "reconSectorPosts": event.recon_sector_posts,
+        "demandRows": event.demand_rows,
+        "demandApproved": event.demand_approved,
+        "forceRequests": event.force_requests,
+        "placementAssignments": event.placement_assignments,
+        "approvalStatus": event.approval_status,
+        "approvalComment": event.approval_comment,
+        "journalEntries": event.journal_entries,
+        "closureDirectionSummaries": event.closure_direction_summaries,
+        "closedAt": (
+            event.closed_at.isoformat() if event.closed_at is not None else None
+        ),
+        "createdAt": event.created_at.isoformat(),
+        "updatedAt": event.updated_at.isoformat(),
+    }
