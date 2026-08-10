@@ -34,17 +34,10 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
   // переписан целиком: адрес рендерит новый модуль §28 (та же страница, что
   // /security-ops/feedback — срез J); запись собирается в findApiGap по
   // режиму домена feedback.
-  "/ops": {
-    subject: "Встроенная SPA раздела ОМ",
-    paths: [
-      "/api/ops/*",
-      "/api/operations/expense-reports/",
-    ],
-    note:
-      "SPA работает на собственном MSW-воркере. /api/core/staffing-slots/ и " +
-      "/api/documents/attachments/ на бэке уже есть — SPA их пока не читает; " +
-      "из перечисленного не резолвятся только /api/ops/* и expense-reports.",
-  },
+  // «/ops» (встроенная SPA Smart Josparlau на собственном MSW-воркере)
+  // выведена из навигации: она дублировала переписанные нативные страницы
+  // /security-ops/*; адреса /ops/* редиректят на них
+  // (app/ops/[[...slug]]/page.tsx) — экрана, требующего пометки, больше нет.
 
   "/security-ops": {
     subject: "Раздел «Охранные мероприятия»",
