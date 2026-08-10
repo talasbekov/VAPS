@@ -37,11 +37,12 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
     subject: "Встроенная SPA раздела ОМ",
     paths: [
       "/api/ops/*",
-      "/api/core/staffing-slots/",
       "/api/operations/expense-reports/",
-      "/api/documents/attachments/",
     ],
-    note: "SPA работает на собственном MSW-воркере: перечисленные маршруты не резолвятся ни целевым бэком, ни донором.",
+    note:
+      "SPA работает на собственном MSW-воркере. /api/core/staffing-slots/ и " +
+      "/api/documents/attachments/ на бэке уже есть — SPA их пока не читает; " +
+      "из перечисленного не резолвятся только /api/ops/* и expense-reports.",
   },
 
   "/security-ops": {
@@ -61,8 +62,18 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
   },
   "/security-ops/objects": {
     subject: "Объекты и паспорта",
-    paths: ["/api/ops/objects/"],
-    note: MOCK_NOTE,
+    // Базовый список /api/ops/objects/ на бэке ЕСТЬ (срез A1), но экран его пока
+    // не читает: KPI, свежесть паспорта, секторы и версии паспорта — своих ручек
+    // на бэке нет, всё это по-прежнему считает MSW. Поэтому врезка остаётся, но
+    // называет ровно то, чего не хватает, а не отрицает уже готовый список.
+    paths: [
+      "/api/ops/objects/{id}/passport/",
+      "/api/ops/objects/{id}/passport/versions/",
+      "/api/ops/object-freshness-policy/",
+    ],
+    note:
+      "Базовый список объектов на бэке есть; KPI, свежесть паспорта и версии — " +
+      "ещё нет, экран целиком наполняет MSW.",
   },
   "/security-ops/duties": {
     subject: "План дежурств",
