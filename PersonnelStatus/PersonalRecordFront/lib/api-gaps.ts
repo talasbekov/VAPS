@@ -13,7 +13,7 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
-import { isOpsObjectsLive, isOpsSecurityEventsLive } from "@/lib/ops-env";
+import { isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive } from "@/lib/ops-env";
 
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
@@ -64,17 +64,10 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
   // не «на бэке нет», а «экран на моке по конфигурации». Запись собирается в
   // findApiGap, потому что зависит от режима, а GAPS — статичный словарь.
 
-  "/security-ops/duties": {
-    subject: "План дежурств",
-    paths: [
-      "/api/ops/duty-shifts/",
-      "/api/ops/duty-types/",
-      "/api/ops/duty-monthly-plan/",
-      "/api/ops/duty-plan-objects/",
-      "/api/ops/duty-candidates/",
-    ],
-    note: MOCK_NOTE,
-  },
+  // «План дежурств»: бэк ГОТОВ (срез C1 — виды+политика, месячный план с
+  // конфликтами и action policy, смены с циклом исполнения, объекты и
+  // кандидаты формы). Запись строится в findApiGap — зависит от режима.
+
   "/security-ops/duties/combat": {
     subject: "Боевые группы",
     paths: [
@@ -87,8 +80,11 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
   },
   "/security-ops/calendar": {
     subject: "Календарь смен",
-    paths: ["/api/ops/duty-shifts/", "/api/ops/combat-duty-shifts/"],
-    note: MOCK_NOTE,
+    // duty-shifts переехали срезом C1; на моке остаются только боевые группы.
+    paths: ["/api/ops/combat-duty-shifts/"],
+    note:
+      "Индивидуальные смены календарь читает с живого бэка (в live-режиме); " +
+      "боевые группы — ещё MSW.",
   },
   "/security-ops/daily-expense": {
     subject: "Расход дня (ОМ)",
@@ -216,6 +212,15 @@ const SECURITY_EVENTS_MOCK_BY_CONFIG: ApiGap = {
 
 const SECURITY_EVENT_ROUTES = ["/security-ops/command-center", "/security-ops/events"];
 
+const DUTIES_MOCK_BY_CONFIG: ApiGap = {
+  subject: "План дежурств",
+  paths: [],
+  note:
+    "Бэкенд плана дежурств готов (/api/ops/duty-types|shifts|monthly-plan|" +
+    "plan-objects|candidates/); экран работает на MSW по конфигурации. " +
+    "Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=duties.",
+};
+
 export function findApiGap(pathname: string | null | undefined): ApiGap | null {
   if (!pathname) return null;
   {
@@ -232,6 +237,13 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       )
     ) {
       return isOpsSecurityEventsLive() ? null : SECURITY_EVENTS_MOCK_BY_CONFIG;
+    }
+    if (
+      (normalized === "/security-ops/duties" ||
+        normalized.startsWith("/security-ops/duties/")) &&
+      normalized !== "/security-ops/duties/combat"
+    ) {
+      return isOpsDutiesLive() ? null : DUTIES_MOCK_BY_CONFIG;
     }
   }
   // Хост отдаёт пути с завершающим слэшем; нормализуем, чтобы «/ops/» и «/ops»

@@ -97,6 +97,11 @@ PASSPORT_VERSION_PUBLISHED = "PASSPORT_VERSION_PUBLISHED"
 # агрегат (журнал штаба, назначения), а не журнал мутаций раздела.
 SECURITY_EVENT_CREATED = "SECURITY_EVENT_CREATED"
 SECURITY_EVENT_CLOSED = "SECURITY_EVENT_CLOSED"
+# Смена дежурства: заведение и отмена — решения с обоснованием (обход отдыха,
+# причина отмены); ознакомление/заступление/завершение следа в журнале
+# мутаций не оставляют — их след живёт на самой смене (штампы времени).
+DUTY_SHIFT_CREATED = "DUTY_SHIFT_CREATED"
+DUTY_SHIFT_CANCELLED = "DUTY_SHIFT_CANCELLED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -130,6 +135,8 @@ ACTIONS = frozenset(
         PASSPORT_VERSION_PUBLISHED,
         SECURITY_EVENT_CREATED,
         SECURITY_EVENT_CLOSED,
+        DUTY_SHIFT_CREATED,
+        DUTY_SHIFT_CANCELLED,
     }
 )
 
@@ -156,6 +163,7 @@ ENTITY_ISSUED_DOCUMENT = "issued_document"
 ENTITY_SECURITY_OBJECT = "security_object"
 # Охранное мероприятие — своя лента: у него ось «код ОМ», а не объект.
 ENTITY_SECURITY_EVENT = "security_event"
+ENTITY_DUTY_SHIFT = "duty_shift"
 
 ENTITY_TYPES = frozenset(
     {
@@ -168,6 +176,7 @@ ENTITY_TYPES = frozenset(
         ENTITY_ISSUED_DOCUMENT,
         ENTITY_SECURITY_OBJECT,
         ENTITY_SECURITY_EVENT,
+        ENTITY_DUTY_SHIFT,
     }
 )
 
