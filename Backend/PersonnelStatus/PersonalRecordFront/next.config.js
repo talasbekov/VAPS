@@ -28,57 +28,71 @@ const nextConfig = {
 
     return [
       // Проксируем все /api/* запросы на бэкенд, КРОМЕ /api/auth/* (NextAuth роуты)
+      // FIX: rewrites срезали завершающий слэш (`:path*` не несёт пустой
+      // сегмент) — Django с APPEND_SLASH=False отвечал 404 на каждый прокси-
+      // запрос. Слэш возвращён в destination (все пути API — Django-стиля).
       {
         source: "/api/staff_unit/:path*",
-        destination: `${backendUrl}/api/staff_unit/:path*`,
+        destination: `${backendUrl}/api/staff_unit/:path*/`,
       },
       {
         source: "/api/dictionaries/:path*",
-        destination: `${backendUrl}/api/dictionaries/:path*`,
+        destination: `${backendUrl}/api/dictionaries/:path*/`,
       },
       {
         source: "/api/statuses/:path*",
-        destination: `${backendUrl}/api/statuses/:path*`,
+        destination: `${backendUrl}/api/statuses/:path*/`,
       },
       {
         source: "/api/employees/:path*",
-        destination: `${backendUrl}/api/employees/:path*`,
+        destination: `${backendUrl}/api/employees/:path*/`,
       },
       {
         source: "/api/departments/:path*",
-        destination: `${backendUrl}/api/departments/:path*`,
+        destination: `${backendUrl}/api/departments/:path*/`,
       },
       {
         source: "/api/divisions/:path*",
-        destination: `${backendUrl}/api/divisions/:path*`,
+        destination: `${backendUrl}/api/divisions/:path*/`,
       },
       {
         source: "/api/secondments/:path*",
-        destination: `${backendUrl}/api/secondments/:path*`,
+        destination: `${backendUrl}/api/secondments/:path*/`,
       },
       {
         source: "/api/org-chart/:path*",
-        destination: `${backendUrl}/api/org-chart/:path*`,
+        destination: `${backendUrl}/api/org-chart/:path*/`,
       },
       {
         source: "/api/user/:path*",
-        destination: `${backendUrl}/api/user/:path*`,
+        destination: `${backendUrl}/api/user/:path*/`,
       },
       {
         source: "/api/notifications/:path*",
-        destination: `${backendUrl}/api/notifications/:path*`,
+        destination: `${backendUrl}/api/notifications/:path*/`,
       },
       {
         source: "/api/dashboard/:path*",
-        destination: `${backendUrl}/api/dashboard/:path*`,
+        destination: `${backendUrl}/api/dashboard/:path*/`,
       },
       {
         source: "/api/reports/:path*",
-        destination: `${backendUrl}/api/reports/:path*`,
+        destination: `${backendUrl}/api/reports/:path*/`,
       },
       {
         source: "/api/feedback/:path*",
-        destination: `${backendUrl}/api/feedback/:path*`,
+        destination: `${backendUrl}/api/feedback/:path*/`,
+      },
+      // Раздел «Охранные мероприятия» в api-режиме
+      // (NEXT_PUBLIC_OPS_DATA_SOURCE=api): в мок-режиме эти же пути
+      // перехватывает host-MSW ДО сети, rewrite не мешает.
+      {
+        source: "/api/operations/:path*",
+        destination: `${backendUrl}/api/operations/:path*/`,
+      },
+      {
+        source: "/api/ops/:path*",
+        destination: `${backendUrl}/api/ops/:path*/`,
       },
       {
         source: "/api/token",
@@ -90,7 +104,7 @@ const nextConfig = {
       },
       {
         source: "/api/token/:path*",
-        destination: `${backendUrl}/api/token/:path*`,
+        destination: `${backendUrl}/api/token/:path*/`,
       },
     ];
   },

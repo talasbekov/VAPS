@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Inter, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { Providers } from "@/components/providers"
+import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -31,6 +32,15 @@ export default function RootLayout({
     <html lang="ru" className={`${inter.variable} ${jetbrainsMono.variable} antialiased`} suppressHydrationWarning>
       <body>
         <Providers>{children}</Providers>
+        {/* Toaster монтируется в КОРНЕ, а не в каркасе страницы: раньше он
+            стоял только в app/security-ops/layout.tsx, поэтому на хостовых
+            страницах `toast()` отрабатывал вхолостую — вызов был, окна не
+            появлялось. На /reports/ это прятало причину отказа выгрузки
+            («День не сдан»), и нажатие кнопки выглядело как «ничего не
+            произошло». Стор тостов — модульный синглтон (use-toast.ts:
+            memoryState + listeners), поэтому одного Toaster на всё дерево
+            достаточно, а второй давал бы дубли окон. */}
+        <Toaster />
       </body>
     </html>
   )

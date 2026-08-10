@@ -1,0 +1,226 @@
+// Реестр экранов, под которыми НЕТ бэкенда.
+//
+// Раздел «Охранные мероприятия» (/security-ops/*) и встроенная SPA (/ops)
+// написаны под другой бэкенд и живут на MSW-моках: браузерный воркер отвечает
+// 200 на каждый /api/ops/*, поэтому экран выглядит рабочим. Ни один из этих
+// путей не резолвится ни целевым бэком (organization_management, резолвер
+// Django), ни донором (Backend/VAPS/schema.yaml).
+//
+// Пустой список или нули на месте отсутствующего бэка — хуже ошибки: дыру
+// найдут в проде. Поэтому каждый такой экран несёт видимую пометку с именем
+// недостающего пути (см. components/api-gap-notice.tsx, врезка в
+// components/dashboard-layout.tsx).
+//
+// Сводка целиком: docs/api-gaps.md в корне worktree.
+
+export interface ApiGap {
+  /** Что на экране не обеспечено бэком. */
+  readonly subject: string;
+  /** Пути, которых нет ни в целевом бэке, ни в доноре. */
+  readonly paths: readonly string[];
+  /** Уточнение: чем экран наполнен вместо живых данных. */
+  readonly note?: string;
+}
+
+const MOCK_NOTE =
+  "Всё, что показано ниже, отдаёт браузерный мок-слой MSW, а не сервер.";
+
+// Ключ — префикс маршрута. Совпадение ищется от самого длинного к самому
+// короткому, поэтому вложенные экраны могут уточнять родительскую запись.
+const GAPS: Readonly<Record<string, ApiGap>> = {
+  "/feedback": {
+    subject: "Обратная связь",
+    paths: ["/api/dictionaries/feedback/"],
+    note: "Бэкенд отдаёт 404: в /api/dictionaries/ есть только positions, ranks и status_types.",
+  },
+  "/ops": {
+    subject: "Встроенная SPA раздела ОМ",
+    paths: [
+      "/api/ops/*",
+      "/api/core/staffing-slots/",
+      "/api/operations/expense-reports/",
+      "/api/documents/attachments/",
+    ],
+    note: "SPA работает на собственном MSW-воркере: перечисленные маршруты не резолвятся ни целевым бэком, ни донором.",
+  },
+
+  "/security-ops": {
+    subject: "Раздел «Охранные мероприятия»",
+    paths: ["/api/ops/*"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/command-center": {
+    subject: "Командный центр",
+    paths: ["/api/ops/security-events/", "/api/ops/personnel/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/events": {
+    subject: "Реестр ОМ",
+    paths: ["/api/ops/security-events/", "/api/ops/personnel/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/objects": {
+    subject: "Объекты и паспорта",
+    paths: ["/api/ops/objects/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/duties": {
+    subject: "План дежурств",
+    paths: [
+      "/api/ops/duty-shifts/",
+      "/api/ops/duty-types/",
+      "/api/ops/duty-monthly-plan/",
+      "/api/ops/duty-plan-objects/",
+      "/api/ops/duty-candidates/",
+    ],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/duties/combat": {
+    subject: "Боевые группы",
+    paths: [
+      "/api/ops/combat-duty-shifts/",
+      "/api/ops/combat-duty-types/",
+      "/api/ops/combat-routes/",
+      "/api/ops/combat-roster-candidates/",
+    ],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/calendar": {
+    subject: "Календарь смен",
+    paths: ["/api/ops/duty-shifts/", "/api/ops/combat-duty-shifts/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/daily-expense": {
+    subject: "Расход дня (ОМ)",
+    paths: [
+      "/api/ops/daily/divisions/",
+      "/api/ops/daily/employees/",
+      "/api/ops/daily/daily-submissions/",
+      "/api/ops/daily/statuses-bulk/",
+    ],
+    note: `${MOCK_NOTE} Живой расход по строевой записке — на хостовом экране «Отчёты».`,
+  },
+  "/security-ops/ratings": {
+    subject: "Оперативный рейтинг",
+    paths: [
+      "/api/ops/operational-ratings/",
+      "/api/ops/operational-rating-dynamics/",
+      "/api/ops/rating-notifications/",
+    ],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/ratings/workspace": {
+    subject: "Рабочее место оценщика",
+    paths: ["/api/ops/evaluation-workspace/", "/api/ops/evaluation-work-items/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/ratings/evaluations": {
+    subject: "Реестр оценок",
+    paths: ["/api/ops/evaluation-registry/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/ratings/employees": {
+    subject: "Карточка рейтинга сотрудника",
+    paths: ["/api/ops/operational-rating-employee/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/ratings/analytics": {
+    subject: "Аналитика рейтинга",
+    paths: ["/api/ops/rating-analytics/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/ratings/audit": {
+    subject: "Аудит рейтинга",
+    paths: ["/api/ops/rating-audit/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/ratings/export": {
+    subject: "Выгрузки рейтинга",
+    paths: ["/api/ops/rating-exports/", "/api/ops/rating-export-artifacts/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/analytics": {
+    subject: "Аналитика службы",
+    paths: [
+      "/api/ops/service-analytics/",
+      "/api/ops/service-analytics-presets/",
+      "/api/ops/service-analytics-attention/",
+      "/api/ops/service-analytics-drilldown/",
+      "/api/ops/load-analytics/",
+    ],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/analytics/operations": {
+    subject: "Аналитика мероприятий",
+    paths: ["/api/ops/operations-analytics/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/service-reports": {
+    subject: "Служебные отчёты",
+    paths: [
+      "/api/ops/service-report-types/",
+      "/api/ops/service-report-jobs/",
+      "/api/ops/service-report-artifacts/",
+    ],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/dictionaries": {
+    subject: "Справочники раздела ОМ",
+    paths: ["/api/ops/dictionaries/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/settings": {
+    subject: "Настройки раздела ОМ",
+    paths: ["/api/ops/settings/", "/api/ops/setting-changes/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/audit": {
+    subject: "Журнал действий ОМ",
+    paths: ["/api/ops/audit-logs/"],
+    note: MOCK_NOTE,
+  },
+  "/security-ops/feedback": {
+    subject: "Обратная связь раздела ОМ",
+    paths: ["/api/ops/feedback-requests/"],
+    note: MOCK_NOTE,
+  },
+};
+
+// Экраны внутри раздела, которым бэк не нужен вовсе: журнал изменений порта
+// собран из статического текста. Пометка «не подключён» здесь была бы враньём
+// в другую сторону, поэтому маршрут исключён из общего правила /security-ops.
+const NO_BACKEND_NEEDED: readonly string[] = ["/security-ops/changelog"];
+
+/**
+ * Возвращает запись реестра для маршрута — самое длинное совпадение по
+ * префиксу. Для маршрутов без пробела возвращает null, и врезка не рисуется.
+ */
+export function findApiGap(pathname: string | null | undefined): ApiGap | null {
+  if (!pathname) return null;
+  // Хост отдаёт пути с завершающим слэшем; нормализуем, чтобы «/ops/» и «/ops»
+  // попадали в одну запись, а «/opsomething» — не попадало.
+  const normalized =
+    pathname.length > 1 && pathname.endsWith("/")
+      ? pathname.slice(0, -1)
+      : pathname;
+
+  const excluded = NO_BACKEND_NEEDED.some(
+    (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`)
+  );
+  if (excluded) return null;
+
+  let best: ApiGap | null = null;
+  let bestLength = -1;
+  for (const [prefix, gap] of Object.entries(GAPS)) {
+    const isMatch =
+      normalized === prefix || normalized.startsWith(`${prefix}/`);
+    if (isMatch && prefix.length > bestLength) {
+      best = gap;
+      bestLength = prefix.length;
+    }
+  }
+  return best;
+}
+
+/** Полный реестр — для сводки и тестов. */
+export const API_GAPS = GAPS;

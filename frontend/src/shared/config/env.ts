@@ -13,6 +13,12 @@ const envSchema = z.object({
   VITE_DEMO_SCENARIO: z.string().default('normal'),
   VITE_DEMO_PERSONA: z.string().default('event_planner'),
   VITE_DEMO_FAULT_PROFILE: faultProfileSchema.default('none'),
+  /** Host-встраивание (Этап M4): SPA живёт внутри чужого каркаса (сайдбар и
+   * шапка host-приложения PersonalRecordFront) — свой chrome не рендерится. */
+  VITE_EMBEDDED_CHROME: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   VITE_ENABLE_DEMO_TOOLS: z
     .string()
     .default('false')
@@ -26,6 +32,7 @@ export type FrontendEnv = {
   demoPersona: string
   demoFaultProfile: z.infer<typeof faultProfileSchema>
   demoToolsEnabled: boolean
+  embeddedChrome: boolean
 }
 
 let cached: FrontendEnv | null = null
@@ -51,6 +58,7 @@ export function getFrontendEnv(): FrontendEnv {
     demoPersona: v.VITE_DEMO_PERSONA,
     demoFaultProfile: v.VITE_DEMO_FAULT_PROFILE,
     demoToolsEnabled: v.VITE_ENABLE_DEMO_TOOLS,
+    embeddedChrome: v.VITE_EMBEDDED_CHROME,
   }
   return cached
 }

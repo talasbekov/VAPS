@@ -1,0 +1,120 @@
+{
+  "attached": 102,
+  "business_date": "2026-08-04",
+  "catalog": [
+    {
+      "code": "IN_SERVICE",
+      "counts_in_staff": true,
+      "priority": 999,
+      "report_column_code": "ЖИВАЯ_КОЛОНКА"
+    },
+    {
+      "code": "DUTY",
+      "counts_in_staff": true,
+      "priority": 10,
+      "report_column_code": "ЖИВАЯ_КОЛОНКА"
+    },
+    {
+      "code": "VACATION",
+      "counts_in_staff": true,
+      "priority": 30,
+      "report_column_code": "ЖИВАЯ_КОЛОНКА"
+    },
+    {
+      "code": "SICK",
+      "counts_in_staff": false,
+      "priority": 20,
+      "report_column_code": "ЖИВАЯ_КОЛОНКА"
+    }
+  ],
+  "division_title": "ЖИВОЕ ИМЯ (не должно попасть в документ)",
+  "snapshot": {
+    "attached": 2,
+    "catalog": [
+      {
+        "code": "IN_SERVICE",
+        "counts_in_staff": true,
+        "name": "Имя IN_SERVICE",
+        "priority": 999,
+        "report_column_code": "IN_SERVICE"
+      },
+      {
+        "code": "DUTY",
+        "counts_in_staff": true,
+        "name": "Имя DUTY",
+        "priority": 10,
+        "report_column_code": "ON_DUTY"
+      },
+      {
+        "code": "VACATION",
+        "counts_in_staff": true,
+        "name": "Имя VACATION",
+        "priority": 30,
+        "report_column_code": "VACATION"
+      },
+      {
+        "code": "SICK",
+        "counts_in_staff": false,
+        "name": "Имя SICK",
+        "priority": 20,
+        "report_column_code": "SICK"
+      }
+    ],
+    "division_title": "Управление кадров",
+    "roster": [
+      {
+        "employee_id": 1,
+        "full_name": "Иванов Иван",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 2,
+        "full_name": "Петров Пётр",
+        "rank": ""
+      },
+      {
+        "employee_id": 3,
+        "full_name": "Сидоров Сидор",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 4,
+        "full_name": "Кузнецов Кузьма",
+        "rank": "капитан"
+      },
+      {
+        "employee_id": 5,
+        "full_name": "Абдиров Абай",
+        "rank": "лейтенант"
+      }
+    ],
+    "rows": [
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 1,
+        "source": "USER",
+        "status_type_code": "DUTY"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 2,
+        "source": "USER",
+        "status_type_code": "VACATION"
+      },
+      {
+        "date_end": "2026-08-10",
+        "date_start": "2026-08-04",
+        "employee_id": 3,
+        "source": "USER",
+        "status_type_code": "SICK"
+      }
+    ],
+    "schema_version": 7,
+    "staff_total": 12,
+    "vacancies": 4
+  },
+  "staff_total": 112,
+  "vacancies": 104
+}

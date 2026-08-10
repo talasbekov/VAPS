@@ -5,6 +5,10 @@ from django.utils.translation import gettext_lazy as _
 class Position(models.Model):
     """Справочник должностей согласно ТЗ"""
     name = models.CharField(max_length=255, verbose_name=_("Название должности"))
+    # Код справочника: им контракт нового бэка идентифицирует должность
+    # (`position_code`). Отдавать вместо кода `name` нельзя — клиент считал бы
+    # строку стабильным ключом, а она меняется при переименовании.
+    code = models.CharField(max_length=100, unique=True, verbose_name=_("Код"))
     level = models.SmallIntegerField(
         verbose_name=_("Уровень"),
         help_text=_("Чем меньше число, тем выше должность")
@@ -18,6 +22,14 @@ class Position(models.Model):
         verbose_name_plural = _("Должности")
         indexes = [
             models.Index(fields=["level"]),
+        ]
+        constraints = [
+            # CHECK на уровне БД, а не только blank=False: создание через ORM
+            # без валидации пропустило бы пустую строку, и она заняла бы
+            # единственное свободное место под «» во всём справочнике.
+            models.CheckConstraint(
+                check=~models.Q(code=""), name="ck_position_code_not_blank"
+            ),
         ]
 
     def __str__(self):
@@ -146,6 +158,9 @@ class SystemSetting(models.Model):
 class Rank(models.Model):
     """Справочник: Звание согласно ТЗ"""
     name = models.CharField(max_length=50, unique=True, verbose_name=_("Звание"))
+    # Код справочника: им контракт нового бэка идентифицирует звание
+    # (`rank_code`). См. довод у Position.code.
+    code = models.CharField(max_length=100, unique=True, verbose_name=_("Код"))
     level = models.SmallIntegerField(
         verbose_name=_("Уровень"),
         help_text=_("Чем меньше число, тем выше звание")
@@ -159,6 +174,11 @@ class Rank(models.Model):
         verbose_name_plural = _("Звания")
         indexes = [
             models.Index(fields=["level"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=~models.Q(code=""), name="ck_rank_code_not_blank"
+            ),
         ]
 
     def __str__(self):

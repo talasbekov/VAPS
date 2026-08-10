@@ -26,6 +26,25 @@ urlpatterns = [
 
     # API Endpoints:
     path("api/common/", include("organization_management.apps.common.api.urls")),
+    # Раздел «Охранные мероприятия» — нативный переезд из Backend/VAPS
+    path("api/operations/", include("organization_management.apps.operations.api.urls")),
+    # Ядро оргструктуры в контракте нового бэка. Модели НЕ переносятся: те же
+    # сущности уже живут в divisions/employees/dictionaries, core отдаёт над
+    # ними донорскую форму (см. apps/core/api/serializers.py).
+    path("api/core/", include("organization_management.apps.core.api.urls")),
+    # Вложения в контракте нового бэка — над теми же строками, что отдаёт
+    # байты /api/operations/attachments/{id}/download/ (см.
+    # apps/documents/api/views.py про область по владельцу байт).
+    path(
+        "api/documents/",
+        include("organization_management.apps.documents.api.urls"),
+    ),
+    # Собственные ресурсы раздела «Охранные мероприятия». В отличие от core и
+    # documents это НЕ перенос контракта поверх старых таблиц: под /api/ops/
+    # заводятся сущности, которых в целевом бэке не было (охраняемый объект и
+    # далее по плану docs/ops-backend-plan.md). Модели живут в apps/operations
+    # рядом с остальными ОМ, здесь — только адреса.
+    path("api/ops/", include("organization_management.apps.ops.api.urls")),
     path("api/staff_unit/", include("organization_management.apps.staff_unit.urls")),
     path("api/statuses/", include("organization_management.apps.statuses.api.urls")),
     # path("api/secondments/", include("organization_management.apps.secondments.api.urls")),

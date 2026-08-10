@@ -1,0 +1,33 @@
+{
+  "business_date": "2026-08-04",
+  "columns": [
+    "ON_DUTY",
+    "VACATION",
+    "IN_SERVICE"
+  ],
+  "rows": [
+    {
+      "attached": 7,
+      "cells": {
+        "IN_SERVICE": 5,
+        "ON_DUTY": 25,
+        "VACATION": 0
+      },
+      "list_total": 30,
+      "name": "Батальон охраны",
+      "staff_total": 40,
+      "vacancies": 5
+    }
+  ],
+  "totals": {
+    "attached": 7,
+    "columns": {
+      "IN_SERVICE": 5,
+      "ON_DUTY": 25,
+      "VACATION": 0
+    },
+    "list_total": 30,
+    "staff_total": 40,
+    "vacancies": 5
+  }
+}

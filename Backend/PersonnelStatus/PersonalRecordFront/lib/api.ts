@@ -225,6 +225,65 @@ export interface Division {
   children: Division[];
 }
 
+// Расход (строевая записка): форма ответа /api/operations/strength-report/.
+// `columns` — коды статусов, порядок задаёт СЕРВЕР, поэтому шапку таблицы
+// строим по этому массиву, а не по ключам объекта `row.columns`: порядок
+// ключей объекта в JS не гарантирован и разъехался бы с сервером.
+export interface StrengthReportRow {
+  division_id: number;
+  name: string;
+  staff_total: number;
+  list_total: number;
+  vacancies: number;
+  attached: number;
+  off_list: number;
+  columns: Record<string, number>;
+}
+
+export interface StrengthReport {
+  business_date: string;
+  columns: string[];
+  rows: StrengthReportRow[];
+}
+
+// Ошибка раздела ОМ: бэк отвечает конвертом {error_code, message, details}.
+// Держим `code` отдельно от текста, чтобы UI мог разводить случаи по коду
+// (например DAY_NOT_SUBMITTED — это не поломка, а «выгружать нечего»), а не
+// сравнением строк сообщения, которое переписывают без предупреждения.
+export class OpsApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(status: number, code: string | null, message: string) {
+    super(message);
+    this.name = "OpsApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+// Разбирает неуспешный ответ в OpsApiError. Тело читаем как текст и лишь
+// потом пробуем как JSON: у выгрузки тип ответа файловый, и на ошибке там
+// может прийти не-JSON — `response.json()` тогда бросил бы SyntaxError,
+// подменив настоящую причину отказа.
+async function toDomainError(response: Response): Promise<OpsApiError> {
+  const raw = await response.text();
+  let code: string | null = null;
+  let message = "";
+  try {
+    const body = JSON.parse(raw);
+    code = body?.error_code ?? null;
+    message = body?.message || body?.detail || "";
+  } catch {
+    message = raw;
+  }
+  return new OpsApiError(
+    response.status,
+    code,
+    message || `HTTP ${response.status}`
+  );
+}
+
 // Хелпер для получения токена из NextAuth сессии
 // Используется в API клиенте для автоматической авторизации запросов
 async function getAccessToken(): Promise<string | null> {
@@ -464,12 +523,63 @@ class ApiClient {
         return flattenTree(data as StaffUnitTreeResponse);
       }
 
-      // Если API все еще возвращает массив (обратная совместимость)
-      if (Array.isArray(data)) {
-        return data.map((unit: StaffUnit) => ({
-          ...unit,
-          parent_id: unit.parent_id ?? null,
-        }));
+      // Живой бэкенд (StaffUnitViewSet.list) отдаёт конверт DRF-пагинации
+      // {count, next, previous, results}. Раньше он не совпадал ни с веткой
+      // дерева, ни с веткой массива, метод молча возвращал [] — и экран
+      // /organization/ писал «Данные не загружены из API» при HTTP 200.
+      const rows: unknown[] | null = Array.isArray(data)
+        ? data
+        : data &&
+            typeof data === "object" &&
+            Array.isArray((data as { results?: unknown }).results)
+          ? ((data as { results: unknown[] }).results)
+          : null;
+
+      if (rows) {
+        // Строка списка описывает ОДНУ штатную единицу: должность и сотрудник
+        // лежат в корне (position/employee), а не в массиве employees, который
+        // ждут convertStaffUnitsResponseToOrgUnit и OrgNode. Приводим форму
+        // бэка к форме потребителя — контракт бэка источник правды.
+        return rows.map((row) => {
+          const unit = row as StaffUnit & {
+            position?: StaffUnitEmployee["position"] | null;
+            employee?: StaffUnitEmployee["employee"] | null;
+          };
+
+          let employees: StaffUnitEmployee[];
+          if (Array.isArray(unit.employees)) {
+            employees = unit.employees;
+          } else if (unit.position || unit.employee) {
+            employees = [
+              {
+                // position на строке может быть null (штатная единица без
+                // должности в справочнике). Пустой employees здесь означал бы
+                // «вакансия» и стирал реального сотрудника из строки, поэтому
+                // подставляем нейтральную должность — ту же формулировку, что
+                // используют остальные экраны для отсутствующей должности.
+                position: unit.position ?? {
+                  id: 0,
+                  name: "Должность не указана",
+                  level: Number.MAX_SAFE_INTEGER,
+                },
+                // Вакантная строка приходит с employee: null — оставляем
+                // как есть, конвертер подписывает её «Вакантная должность».
+                employee: unit.employee as StaffUnitEmployee["employee"],
+              },
+            ];
+          } else {
+            employees = [];
+          }
+
+          return {
+            id: unit.id,
+            division: unit.division,
+            index: unit.index,
+            parent_id: unit.parent_id ?? null,
+            vacancy: unit.vacancy ?? null,
+            employees,
+          };
+        });
       }
 
       return [];
@@ -1199,6 +1309,84 @@ class ApiClient {
       console.error("API request failed:", error);
       throw error;
     }
+  }
+
+  // Расход (строевая записка) — ЖИВОЙ контракт раздела ОМ.
+  //
+  // Соседний `downloadExpenseReport` выше бьёт в донорскую ручку
+  // `/api/reports/reports/expense/<department_id>/`, которая на бэке хоть и
+  // объявлена, но нерабочая: она строится из шаблона `расход.xlsx`, а его нет
+  // в репозитории (и он не в .gitignore — просто никогда не коммитился).
+  // Живой пробой она отвечает 500 «No such file or directory». Поэтому расход
+  // читается отсюда.
+  //
+  // `division_id` НЕ обязателен: бэк сужает выборку по области видимости
+  // всегда, поэтому «свой департамент» определяет он, а не клиент. Клиенту
+  // незачем угадывать, какой из предков его подразделения — департамент.
+  async getStrengthReport(params: {
+    businessDate?: string;
+    divisionId?: number;
+  } = {}): Promise<StrengthReport> {
+    const query = new URLSearchParams();
+    if (params.businessDate) query.append("business_date", params.businessDate);
+    if (params.divisionId !== undefined) {
+      query.append("division_id", String(params.divisionId));
+    }
+    const queryString = query.toString();
+    const endpoint = `/api/operations/strength-report/${
+      queryString ? `?${queryString}` : ""
+    }`;
+
+    const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
+    const token = await getAccessToken();
+
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      accept: "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { headers, cache: "no-store" });
+    if (!response.ok) {
+      throw await toDomainError(response);
+    }
+    return response.json();
+  }
+
+  // Выгрузка расхода СДАННОГО дня файлом.
+  //
+  // Здесь `divisionId` обязателен — в отличие от чтения выше: бэк требует его
+  // явно и на пустой параметр отвечает 400 (проверено живой пробой).
+  //
+  // Параметр формата зовётся `file_format`, а НЕ `format`: имя `format` DRF
+  // резервирует под выбор рендерера ответа, и `?format=xlsx` ушло бы в
+  // согласование содержимого, отвечая 404 ещё до вьюхи.
+  async downloadStrengthReportExport(params: {
+    divisionId: number;
+    businessDate?: string;
+    fileFormat?: "csv" | "xlsx" | "docx";
+  }): Promise<Blob> {
+    const query = new URLSearchParams();
+    query.append("division_id", String(params.divisionId));
+    if (params.businessDate) query.append("business_date", params.businessDate);
+    query.append("file_format", params.fileFormat ?? "xlsx");
+
+    const endpoint = `/api/operations/strength-report/export/?${query.toString()}`;
+    const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
+    const token = await getAccessToken();
+
+    const headers: HeadersInit = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { headers, cache: "no-store" });
+    if (!response.ok) {
+      throw await toDomainError(response);
+    }
+    return response.blob();
   }
 
   // Метод для получения уведомлений

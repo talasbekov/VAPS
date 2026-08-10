@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'organization_management.apps.audit',
     'organization_management.apps.dictionaries',
     'organization_management.apps.staff_unit',
+    'organization_management.apps.operations',
 ]
 
 MIDDLEWARE = [
@@ -121,6 +122,32 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+# Приватное хранилище раздела ОМ: байты официальных документов.
+#
+# КАТАЛОГ УМЫШЛЕННО ВНЕ MEDIA_ROOT, и это несущее решение, а не раскладка.
+# Всё, что лежит под MEDIA_ROOT, раздаётся веб-сервером по угадываемому адресу
+# — то есть мимо прав, мимо сверки целостности и мимо журнала скачиваний.
+# Документ расхода содержит поимённый состав подразделения; «лежит там же, где
+# аватарки» означало бы, что он доступен всякому, кто знает адрес.
+OPS_PRIVATE_STORAGE_ROOT = os.environ.get(
+    'OPS_PRIVATE_STORAGE_ROOT', os.path.join(BASE_DIR, 'private_storage')
+)
+
+# Внутренняя локация nginx, через которую отдаются байты (X-Accel-Redirect).
+# Django в этом режиме тела не пишет: он проверяет право, сверяет дайджест и
+# кладёт заголовок, а файл льёт nginx. Локация обязана быть `internal` —
+# снаружи по этому адресу не должно открываться НИЧЕГО.
+OPS_XACCEL_LOCATION = os.environ.get('OPS_XACCEL_LOCATION', '/ops-private')
+
+# Дефолт «выключено» — обратный дефолту выключателя WS, и по симметричной
+# причине. Там рабочее состояние «включено», и выключение гасит инфраструктуру.
+# Здесь включённый флаг на стенде, где internal-локация не настроена, отдал бы
+# 200 с ПУСТЫМ телом и заголовком, который некому исполнить: скачанный файл
+# оказался бы молча битым, и узнали бы об этом не мы, а тот, кто открыл
+# документ. Выключенный флаг лишь заставляет Django отдать файл самому —
+# медленнее, но верно. Включает его тот, кто настроил nginx.
+OPS_XACCEL_ENABLED = os.environ.get('OPS_XACCEL_ENABLED', '0') == '1'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -139,6 +166,13 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 50,
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+
+    # Обработчик раздела ОМ: доменные ошибки и известные нарушения
+    # ограничений отдаются конвертом, ВСЁ остальное уходит штатному
+    # обработчику DRF без изменений формы (старые экраны не затронуты).
+    'EXCEPTION_HANDLER':
+        'organization_management.apps.operations.api.exception_handler'
+        '.ops_exception_handler',
 }
 
 
@@ -164,6 +198,16 @@ SPECTACULAR_SETTINGS = {
             'operationsSorter': None,
             'tagsSorter': None,
         },
+    # Имя enum'а светофора закреплено явно: поле называется "status", как и у
+    # нескольких старых сериализаторов, и без этого spectacular разрешает
+    # коллизию машинным именем вида Status3a8Enum — оно меняется при любой
+    # правке соседей, и клиент, сгенерированный по схеме, ломается на ровном
+    # месте.
+    'ENUM_NAME_OVERRIDES': {
+        'TrafficLightStatusEnum':
+            'organization_management.apps.operations.traffic_light.'
+            'TrafficLightStatus',
+    },
 }
 
 # Celery Configuration
@@ -185,6 +229,24 @@ CHANNEL_LAYERS = {
     },
 }
 
+# Выключатель WS раздела ОМ. OPS_WS_ENABLED=0 гасит рисковую инфраструктуру
+# (Channels + Redis) целиком: потребитель перестаёт принимать соединения,
+# notify() перестаёт трогать канальный слой. Уведомления при этом продолжают
+# писаться в базу и читаться по REST — истина это строка в базе, сокет лишь
+# знак, и лента чтения остаётся запасным путём.
+#
+# Выключение — это смена переменной окружения и перезапуск, а не редеплой:
+# время до восстановления у выключателя обязано быть меньше времени доставки
+# релиза, иначе он бесполезен ровно тогда, когда нужен.
+#
+# Дефолт «1» по двум причинам сразу: рабочее состояние — «включено», и
+# выключение обязано быть явным решением администратора; а прогон тестов эту
+# переменную не экспортирует, поэтому дефолт здесь — единственное, что задаёт
+# состояние всей WS-сюиты. Сравнение с «1» несущее: без него в настройке
+# осталась бы СТРОКА, а строка «0» истинна — выключатель молча перестал бы
+# что-либо выключать.
+OPS_WS_ENABLED = os.environ.get('OPS_WS_ENABLED', '1') == '1'
+
 # Cache
 CACHES = {
     'default': {
@@ -203,13 +265,19 @@ LOGGING = {
         'console': {'class': 'logging.StreamHandler'},
     },
     'loggers': {
+        # propagate=False у каждого логгера со СВОИМИ обработчиками: иначе
+        # запись уходит и в них, и в root, у которого обработчик тот же, —
+        # каждая строка печатается ДВАЖДЫ. У 'django.request' ниже это уже
+        # было учтено, у остальных нет.
         'django': {
             'handlers': ['console'],
             'level': 'INFO',
+            'propagate': False,
         },
         'django.server': {
             'handlers': ['console'],
             'level': 'INFO',
+            'propagate': False,
         },
         'django.request': {
             'handlers': ['console'],
