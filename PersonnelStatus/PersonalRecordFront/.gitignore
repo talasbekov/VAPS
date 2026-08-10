@@ -32,4 +32,3 @@ next-env.d.ts
 !lib/
 !shared/lib/
 !features/**/lib/
-!josparlau/**/lib/
