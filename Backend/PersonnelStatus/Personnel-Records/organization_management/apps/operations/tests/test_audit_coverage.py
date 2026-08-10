@@ -846,5 +846,43 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         actor=ACTOR,
     )
 
+    # Смены дежурств: журнал пишут заведение и отмена (исполнение — штампы
+    # на самой смене).
+    from organization_management.apps.operations.models_duty import (
+        OpsDutyConflictPolicy,
+        OpsDutyType,
+    )
+    from organization_management.apps.ops import duties as duty_service
+
+    OpsDutyType.objects.get_or_create(
+        duty_type_code="DAY_OWN",
+        defaults={
+            "safe_label": "Дежурство по управлению",
+            "target_type": "OWN_OBJECT",
+            "default_duration_minutes": 1440,
+            "requires_senior": False,
+            "rest_after_minutes": 0,
+            "requires_current_passport": False,
+        },
+    )
+    OpsDutyConflictPolicy.objects.get_or_create(
+        singleton_key=1,
+        defaults={"version": "cp-v1", "rest_after_duty_mode": "SOFT_OVERRIDE"},
+    )
+    duty_employee = employee_in(home)
+    shift = duty_service.create_shift(
+        business_date=(TODAY + timedelta(days=40)).isoformat(),
+        duty_type_code="DAY_OWN",
+        object_id=str(secured.pk),
+        sector_id=None,
+        post_id=None,
+        employee_id=str(duty_employee.pk),
+        note=None,
+        override=None,
+        override_reason=None,
+        actor=ACTOR,
+    )
+    duty_service.cancel_shift(shift.pk, reason="приказ отменён", actor=ACTOR)
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

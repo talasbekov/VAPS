@@ -41,6 +41,10 @@ PERMISSIONS = [
     # object.view: командный центр смотрят и те, кто мероприятия не ведёт.
     ("event.view", "Просмотр охранных мероприятий"),
     ("duty.manage", "Управление дежурствами"),
+    # Чтение плана и утверждение — свои права (мерка event.view): план смотрят
+    # и не планирующие, а утверждает не тот, кто планирует.
+    ("duty.view", "Просмотр плана дежурств"),
+    ("duty.approve_plan", "Утверждение плана дежурств"),
     ("audit.view", "Просмотр аудита"),
     # core API gating — раскладка PROVISIONAL (открытый вопрос Bratan);
     # тесты проверяют механизм, не политику.
@@ -124,6 +128,38 @@ class Command(BaseCommand):
                     role_code_id=role_code, permission_code_id=perm_code
                 )
         self.stdout.write(self.style.SUCCESS("Seeded operations RBAC"))
+
+        # Справочник видов дежурств и политика конфликтов (порт мок-реестра):
+        # данные «с сервера», не хардкод страницы. update_or_create — сид
+        # идемпотентен и чинит дрейф, но не плодит дублей.
+        from organization_management.apps.operations.models_duty import (
+            OpsDutyConflictPolicy,
+            OpsDutyType,
+        )
+
+        duty_types = [
+            ("DAY_OBJECT", "Суточное дежурство на объекте", "PROTECTED_OBJECT",
+             1440, True, 1440, True),
+            ("DAY_OWN", "Дежурство по управлению", "OWN_OBJECT",
+             1440, False, 720, False),
+        ]
+        for (code, label, target, duration, senior, rest, passport) in duty_types:
+            OpsDutyType.objects.update_or_create(
+                duty_type_code=code,
+                defaults={
+                    "safe_label": label,
+                    "target_type": target,
+                    "default_duration_minutes": duration,
+                    "requires_senior": senior,
+                    "rest_after_minutes": rest,
+                    "requires_current_passport": passport,
+                },
+            )
+        OpsDutyConflictPolicy.objects.get_or_create(
+            singleton_key=1,
+            defaults={"version": "cp-v1", "rest_after_duty_mode": "SOFT_OVERRIDE"},
+        )
+        self.stdout.write(self.style.SUCCESS("Seeded duty types and policy"))
 
         for spec in options["assign"]:
             parts = spec.split(":")

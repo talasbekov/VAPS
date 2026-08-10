@@ -26,3 +26,7 @@ export function isOpsObjectsLive(): boolean {
 export function isOpsSecurityEventsLive(): boolean {
   return !isOpsMockMode() || opsLiveDomains().has("security-events");
 }
+
+export function isOpsDutiesLive(): boolean {
+  return !isOpsMockMode() || opsLiveDomains().has("duties");
+}

@@ -53,6 +53,17 @@ CODES = {
     "CLOSURE_DIRECTIONS_INCOMPLETE": frozenset({422}),
     # Мягкий конфликт расстановки обходится причиной — 409 и overridable.
     "SOFT_CONFLICT_DETECTED": frozenset({409}),
+    # ── План дежурств ────────────────────────────────────────────────────
+    "PLAN_ALREADY_EXISTS": frozenset({422}),
+    "PLAN_NOT_FOUND": frozenset({422}),
+    "PLAN_NOT_APPROVABLE": frozenset({422}),
+    "PLAN_APPROVED_LOCKED": frozenset({422}),
+    "PASSPORT_REQUIRED": frozenset({422}),
+    # Пересечение дня — жёсткое всегда; отдых в HARD_BLOCK-режиме — тоже 422.
+    "DUTY_OVERLAP": frozenset({422}),
+    "REST_AFTER_DUTY": frozenset({422}),
+    # Отдых в SOFT_OVERRIDE-режиме обходится причиной — 409 и overridable.
+    "DUTY_CONFLICT_DETECTED": frozenset({409}),
     "PERMISSION_DENIED": frozenset({403}),
     # ── Статусы ──────────────────────────────────────────────────────────
     "INVALID_STATUS_TYPE": frozenset({422}),

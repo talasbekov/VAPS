@@ -20,6 +20,7 @@ from organization_management.apps.ops.api.serializers import (
 )
 from organization_management.apps.ops import passport as passport_service
 from organization_management.apps.operations.api.permissions import (
+    effective_permissions,
     resolve_actor_id,
 )
 from organization_management.apps.operations.clock import Clock
@@ -469,3 +470,212 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 }
             )
         return Response({"results": results})
+
+
+# ── План дежурств ───────────────────────────────────────────────────────────
+
+from organization_management.apps.ops import duties as duty_service
+
+_READ_DUTY_PERMISSION = "duty.view"
+_MANAGE_DUTY_PERMISSION = "duty.manage"
+_APPROVE_DUTY_PERMISSION = "duty.approve_plan"
+
+
+def _duty_rights(request):
+    perms = effective_permissions(request)
+    return {
+        "canManage": "*" in perms or _MANAGE_DUTY_PERMISSION in perms,
+        "canApprove": "*" in perms or _APPROVE_DUTY_PERMISSION in perms,
+    }
+
+
+class DutyTypeViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/duty-types/ — реестр видов + действующая политика."""
+
+    permission_map = {"list": _READ_DUTY_PERMISSION}
+
+    def list(self, request):
+        from organization_management.apps.operations.models_duty import (
+            OpsDutyType,
+        )
+
+        return Response(
+            {
+                "results": [
+                    duty_service.serialize_duty_type(t)
+                    for t in OpsDutyType.objects.all()
+                ],
+                "conflictPolicy": duty_service.read_conflict_policy(),
+            }
+        )
+
+
+class DutyMonthlyPlanViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/duty-monthly-plan/ — месячный план одним ответом + lifecycle.
+
+    Права шапки — настоящие: список действий строится по RBAC актора, и
+    причина недоступной кнопки называет недостающее право.
+    """
+
+    permission_map = {
+        "list": _READ_DUTY_PERMISSION,
+        "draft": _MANAGE_DUTY_PERMISSION,
+        "check": _MANAGE_DUTY_PERMISSION,
+        "approve": _APPROVE_DUTY_PERMISSION,
+        "reopen": _APPROVE_DUTY_PERMISSION,
+    }
+
+    def list(self, request):
+        month = (
+            request.query_params.get("month")
+            or Clock.today_local().isoformat()[:7]
+        )
+        return Response(
+            duty_service.monthly_plan_response(month, _duty_rights(request))
+        )
+
+    @action(detail=False, methods=["post"], url_path="draft")
+    def draft(self, request):
+        record = duty_service.create_draft((request.data or {}).get("month"))
+        return Response(duty_service.serialize_plan(record), status=201)
+
+    @action(detail=False, methods=["post"], url_path="check")
+    def check(self, request):
+        record = duty_service.check_plan((request.data or {}).get("month"))
+        return Response(duty_service.serialize_plan(record))
+
+    @action(detail=False, methods=["post"], url_path="approve")
+    def approve(self, request):
+        record = duty_service.approve_plan(
+            (request.data or {}).get("month"),
+            actor=resolve_actor_id(request),
+        )
+        return Response(duty_service.serialize_plan(record))
+
+    @action(detail=False, methods=["post"], url_path="reopen")
+    def reopen(self, request):
+        record = duty_service.reopen_plan((request.data or {}).get("month"))
+        return Response(duty_service.serialize_plan(record))
+
+
+class DutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/duty-shifts/ — смены и линейный цикл исполнения."""
+
+    permission_map = {
+        "list": _READ_DUTY_PERMISSION,
+        "retrieve": _READ_DUTY_PERMISSION,
+        "create": _MANAGE_DUTY_PERMISSION,
+        "cancel": _MANAGE_DUTY_PERMISSION,
+        # Отметки исполнения — не планирование: ими живёт дежурная смена.
+        "acknowledge": _MANAGE_DUTY_PERMISSION,
+        "clock_in": _MANAGE_DUTY_PERMISSION,
+        "clock_out": _MANAGE_DUTY_PERMISSION,
+    }
+
+    def list(self, request):
+        from organization_management.apps.operations.models_duty import (
+            OpsDutyShift,
+        )
+
+        shifts = list(OpsDutyShift.objects.all())
+        return Response(
+            {
+                "results": [duty_service.serialize_shift(s) for s in shifts],
+                "passportStatuses": [
+                    duty_service.passport_status_of(s) for s in shifts
+                ],
+            }
+        )
+
+    def retrieve(self, request, pk=None):
+        return Response(duty_service.shift_detail(pk))
+
+    def create(self, request):
+        data = request.data or {}
+        shift = duty_service.create_shift(
+            business_date=data.get("businessDate"),
+            duty_type_code=data.get("dutyTypeCode"),
+            object_id=data.get("objectId"),
+            sector_id=data.get("sectorId"),
+            post_id=data.get("postId"),
+            employee_id=data.get("employeeId"),
+            note=data.get("note"),
+            override=data.get("override"),
+            override_reason=data.get("override_reason"),
+            actor=resolve_actor_id(request),
+        )
+        return Response(duty_service.serialize_shift(shift), status=201)
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        shift = duty_service.cancel_shift(
+            pk,
+            reason=(request.data or {}).get("reason"),
+            actor=resolve_actor_id(request),
+        )
+        return Response(duty_service.serialize_shift(shift))
+
+    @action(detail=True, methods=["post"], url_path="acknowledge")
+    def acknowledge(self, request, pk=None):
+        return Response(
+            duty_service.serialize_shift(duty_service.acknowledge_shift(pk))
+        )
+
+    @action(detail=True, methods=["post"], url_path="clock-in")
+    def clock_in(self, request, pk=None):
+        return Response(
+            duty_service.serialize_shift(duty_service.clock_in_shift(pk))
+        )
+
+    @action(detail=True, methods=["post"], url_path="clock-out")
+    def clock_out(self, request, pk=None):
+        return Response(
+            duty_service.serialize_shift(duty_service.clock_out_shift(pk))
+        )
+
+
+class DutyPlanObjectsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/duty-plan-objects/?date= — объекты формы создания,
+    уже разрешённые на дату (посты — из действующей версии паспорта)."""
+
+    permission_map = {"list": _MANAGE_DUTY_PERMISSION}
+
+    def list(self, request):
+        date = _parse_business_date(request.query_params.get("date"))
+        return Response(
+            {
+                "businessDate": date.isoformat(),
+                "results": duty_service.plan_objects(date),
+            }
+        )
+
+
+class DutyCandidatesViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/duty-candidates/?date= — кандидаты с признаком занятости."""
+
+    permission_map = {"list": _MANAGE_DUTY_PERMISSION}
+
+    def list(self, request):
+        date = _parse_business_date(request.query_params.get("date"))
+        return Response(
+            {
+                "businessDate": date.isoformat(),
+                "results": duty_service.duty_candidates(date),
+            }
+        )
+
+
+def _parse_business_date(raw):
+    import datetime as _dt
+
+    if not raw:
+        return Clock.today_local()
+    try:
+        return _dt.date.fromisoformat(raw)
+    except ValueError:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            400,
+            detail={"date": ["Укажите дату в формате ГГГГ-ММ-ДД."]},
+            message="Проверьте параметры запроса.",
+        )
