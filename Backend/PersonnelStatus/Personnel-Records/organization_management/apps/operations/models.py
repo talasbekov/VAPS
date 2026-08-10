@@ -212,3 +212,20 @@ from organization_management.apps.operations.models_settings import (  # noqa: E
     OpsPolicySetting,  # noqa: F401
     OpsSettingChangeEvent,  # noqa: F401
 )
+
+# Оперативный рейтинг (§19, §22.16-22.17).
+from organization_management.apps.operations.models_rating import (  # noqa: E402
+    OpsEvaluationCorrection,  # noqa: F401
+    OpsEvaluationEvent,  # noqa: F401
+    OpsEvaluationWorkItem,  # noqa: F401
+    OpsEventEvaluation,  # noqa: F401
+    OpsRatedParticipant,  # noqa: F401
+    OpsRatingAuditEntry,  # noqa: F401
+    OpsRatingDynamicsPoint,  # noqa: F401
+    OpsRatingExportArtifact,  # noqa: F401
+    OpsRatingExportJob,  # noqa: F401
+    OpsRatingFeatureFlags,  # noqa: F401
+    OpsRatingGroup,  # noqa: F401
+    OpsRatingIdempotencyRecord,  # noqa: F401
+    OpsRatingNotification,  # noqa: F401
+)

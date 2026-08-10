@@ -2,7 +2,7 @@
 // сюда добавляются handler-наборы (objects, security-events, duties, …).
 // Пути пишутся с завершающим слэшом — в next.config.js включён
 // trailingSlash: true, паттерны без слэша промахиваются мимо перехвата.
-import { isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive, isOpsSettingsLive } from "@/lib/ops-env";
+import { isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsSettingsLive } from "@/lib/ops-env";
 import { identityHandlers } from "./identity";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
@@ -38,7 +38,9 @@ export function composeOpsHandlers() {
     // для ещё не переведённых слайсов.
     ...(isOpsSettingsLive() ? [] : settingsHandlers),
     ...(isOpsDictionariesLive() ? [] : dictionariesHandlers),
-    ...ratingsHandlers,
+    // Рейтинг живьём — тот же пер-доменный переключатель (срез G): в live
+    // его handlers не регистрируются, запросы уходят bypass-ом в сеть.
+    ...(isOpsRatingsLive() ? [] : ratingsHandlers),
     ...analyticsHandlers,
     ...reportsHandlers,
     ...feedbackHandlers,

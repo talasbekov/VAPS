@@ -13,7 +13,7 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
-import { isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive, isOpsSettingsLive } from "@/lib/ops-env";
+import { isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsSettingsLive } from "@/lib/ops-env";
 
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
@@ -84,45 +84,8 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
     ],
     note: `${MOCK_NOTE} Живой расход по строевой записке — на хостовом экране «Отчёты».`,
   },
-  "/security-ops/ratings": {
-    subject: "Оперативный рейтинг",
-    paths: [
-      "/api/ops/operational-ratings/",
-      "/api/ops/operational-rating-dynamics/",
-      "/api/ops/rating-notifications/",
-    ],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/ratings/workspace": {
-    subject: "Рабочее место оценщика",
-    paths: ["/api/ops/evaluation-workspace/", "/api/ops/evaluation-work-items/"],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/ratings/evaluations": {
-    subject: "Реестр оценок",
-    paths: ["/api/ops/evaluation-registry/"],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/ratings/employees": {
-    subject: "Карточка рейтинга сотрудника",
-    paths: ["/api/ops/operational-rating-employee/"],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/ratings/analytics": {
-    subject: "Аналитика рейтинга",
-    paths: ["/api/ops/rating-analytics/"],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/ratings/audit": {
-    subject: "Аудит рейтинга",
-    paths: ["/api/ops/rating-audit/"],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/ratings/export": {
-    subject: "Выгрузки рейтинга",
-    paths: ["/api/ops/rating-exports/", "/api/ops/rating-export-artifacts/"],
-    note: MOCK_NOTE,
-  },
+  // Оперативный рейтинг: бэк ГОТОВ (срез G) — запись собирается в findApiGap
+  // по режиму домена ratings (все семь экранов — один домен).
   "/security-ops/analytics": {
     subject: "Аналитика службы",
     paths: [
@@ -239,6 +202,16 @@ const SIMPLE_LIVE_CHECK: Record<string, () => boolean> = {
   "/security-ops/audit": isOpsAuditLive,
 };
 
+const RATINGS_MOCK_BY_CONFIG: ApiGap = {
+  subject: "Оперативный рейтинг",
+  paths: [],
+  note:
+    "Бэкенд рейтинга готов (/api/ops/operational-ratings|-dynamics|-employee, " +
+    "evaluation-workspace|-work-items|-registry, rating-analytics|-audit|" +
+    "-notifications|-exports|-export-artifacts); экраны на MSW по " +
+    "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=ratings.",
+};
+
 const DUTIES_MOCK_BY_CONFIG: ApiGap = {
   subject: "План дежурств",
   paths: [],
@@ -264,6 +237,12 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       )
     ) {
       return isOpsSecurityEventsLive() ? null : SECURITY_EVENTS_MOCK_BY_CONFIG;
+    }
+    if (
+      normalized === "/security-ops/ratings" ||
+      normalized.startsWith("/security-ops/ratings/")
+    ) {
+      return isOpsRatingsLive() ? null : RATINGS_MOCK_BY_CONFIG;
     }
     if (
       normalized === "/security-ops/duties/combat" ||

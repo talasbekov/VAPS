@@ -44,13 +44,7 @@
 | ~~`/security-ops/duties/combat/`~~ | **закрыт срезом C2**: реестры видов и Трасс, кандидаты из живых кадров, смены с процессом §24.1 целиком (потребность → подача → рассмотрение → ознакомление → заступление → сдача смены → факт; замена до заступления; DOUBLE_ASSIGNMENT на дату). Проведён `NEXT_PUBLIC_OPS_LIVE_DOMAINS=combat` | врезки нет (live) / «Демоданные — Боевые группы» (mock) |
 | ~~`/security-ops/calendar/`~~ | **закрыт срезами C1+C2**: оба источника (duty-shifts и combat-duty-shifts) живые | врезки нет (live: duties,combat) / «Демоданные — Календарь смен» (mock) |
 | `/security-ops/daily-expense/` | `/api/ops/daily/divisions/`, `/api/ops/daily/employees/`, `/api/ops/daily/daily-submissions/`, `/api/ops/daily/statuses-bulk/` | «Не подключено — Расход дня (ОМ)…» + указание, что живой расход есть на хостовом экране «Отчёты» |
-| `/security-ops/ratings/` | `/api/ops/operational-ratings/`, `/api/ops/operational-rating-dynamics/`, `/api/ops/rating-notifications/` | «Не подключено — Оперативный рейтинг…» |
-| `/security-ops/ratings/workspace/` | `/api/ops/evaluation-workspace/`, `/api/ops/evaluation-work-items/` | «Не подключено — Рабочее место оценщика…» |
-| `/security-ops/ratings/evaluations/` | `/api/ops/evaluation-registry/` | «Не подключено — Реестр оценок…» |
-| `/security-ops/ratings/employees/[employeeId]/` | `/api/ops/operational-rating-employee/` | «Не подключено — Карточка рейтинга сотрудника…» |
-| `/security-ops/ratings/analytics/` | `/api/ops/rating-analytics/` | «Не подключено — Аналитика рейтинга…» |
-| `/security-ops/ratings/audit/` | `/api/ops/rating-audit/` | «Не подключено — Аудит рейтинга…» |
-| `/security-ops/ratings/export/` | `/api/ops/rating-exports/`, `/api/ops/rating-export-artifacts/` | «Не подключено — Выгрузки рейтинга…» |
+| ~~`/security-ops/ratings/*` (все семь экранов)~~ | **закрыт срезом G**: сводка/динамика/карточка (агрегат считает сервер, вытесненные исключены), рабочее пространство с отправкой и исправлением (идемпотентность, конфликт редакций 409, замок закрытого ОМ), реестр без закрытых полей, аналитика §22.16 с подавлением малых групп, свой журнал §19.27, уведомления, экспорт CSV с журналом выдачи. Проведён `NEXT_PUBLIC_OPS_LIVE_DOMAINS=ratings` | врезки нет (live: ratings) / «Демоданные — Оперативный рейтинг» (mock) |
 | `/security-ops/analytics/` | `/api/ops/service-analytics/`, `/api/ops/service-analytics-presets/`, `/api/ops/service-analytics-attention/`, `/api/ops/service-analytics-drilldown/`, `/api/ops/load-analytics/` | «Не подключено — Аналитика службы…» |
 | `/security-ops/analytics/operations/` | `/api/ops/operations-analytics/` | «Не подключено — Аналитика мероприятий…» |
 | `/security-ops/service-reports/`, `…/history/`, `…/[reportJobId]/` | `/api/ops/service-report-types/`, `/api/ops/service-report-jobs/`, `/api/ops/service-report-artifacts/` | «Не подключено — Служебные отчёты…» |

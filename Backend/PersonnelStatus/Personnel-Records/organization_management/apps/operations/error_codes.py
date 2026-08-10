@@ -82,6 +82,31 @@ CODES = {
     "CONFIRMER_REQUIRED": frozenset({422}),
     "MISSING_HANDOVER": frozenset({422}),
     "ALREADY_IN_ROSTER": frozenset({422}),
+    # ── Оперативный рейтинг (§19; отказы формы — 422, конфликты — 409) ───
+    "RATING_DISABLED": frozenset({422}),
+    "EVALUATION_ARCHIVE_LOCKED": frozenset({422}),
+    "EVALUATION_ALREADY_SUBMITTED": frozenset({422}),
+    "PARTICIPATION_NOT_CONFIRMED": frozenset({422}),
+    "GROUP_EVALUATION_UNSUPPORTED": frozenset({422}),
+    "EVALUATION_NOT_SUBMITTED": frozenset({422}),
+    # §19.25: конфликт редакции — 409 и СВОЙ код, НЕ overridable: конфликт
+    # версии оценки не ведётся через диалог обхода назначений.
+    "EVALUATION_REVISION_MISMATCH": frozenset({409}),
+    "EVALUATION_ALREADY_CORRECTED": frozenset({409}),
+    # Правила формы оценки (§19.9): экран ставит сообщение рядом с полем по
+    # КОДУ, а не разбирая текст.
+    "SCORE_NOT_INTEGER": frozenset({422}),
+    "SCORE_OUT_OF_SCALE": frozenset({422}),
+    "BASIS_REQUIRED": frozenset({422}),
+    "BASIS_UNKNOWN": frozenset({422}),
+    "BASIS_NOTE_REQUIRED": frozenset({422}),
+    "COMMENT_REQUIRED": frozenset({422}),
+    "CORRECTION_REASON_REQUIRED": frozenset({422}),
+    # Экспорт (§19.29).
+    "SENSITIVE_EXPORT_UNAVAILABLE": frozenset({422}),
+    "EXPORT_FORMAT_UNAVAILABLE": frozenset({422}),
+    "EXPORT_NOT_CANCELLABLE": frozenset({422}),
+    "EXPORT_NOT_READY": frozenset({422}),
     # ── Настройки и справочники раздела ОМ ───────────────────────────────
     "SETTING_LOCKED": frozenset({422}),
     # Удаление требует ДОКАЗАННОГО отсутствия связей: у неотслеживаемых

@@ -19,6 +19,7 @@ from organization_management.apps.ops.api.serializers import (
     SecurityObjectSerializer,
 )
 from organization_management.apps.ops import passport as passport_service
+from organization_management.apps.ops import ratings as ratings_service
 from organization_management.apps.operations.api.permissions import (
     effective_permissions,
     resolve_actor_id,
@@ -1081,4 +1082,218 @@ class OpsAuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     for row in rows
                 ]
             }
+        )
+
+
+# ── Оперативный рейтинг (§19, §22.16-22.17) ─────────────────────────────────
+
+
+class OperationalRatingsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/operational-ratings/ — сводка агрегатов (§19.19)."""
+
+    permission_map = {"list": ratings_service.VIEW_AGGREGATE_PERMISSION}
+
+    def list(self, request):
+        return Response(ratings_service.list_operational_ratings())
+
+
+class OperationalRatingDynamicsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/operational-rating-dynamics/?employee= — ряд точек
+    (§19.20). Право то же, что у сводки: динамика — это агрегаты."""
+
+    permission_map = {"list": ratings_service.VIEW_AGGREGATE_PERMISSION}
+
+    def list(self, request):
+        return Response(
+            ratings_service.rating_dynamics(
+                request.query_params.get("employee")
+            )
+        )
+
+
+class OperationalRatingEmployeeViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/operational-rating-employee/?employee= — карточка при
+    праве только на агрегат (§19.17): без единого закрытого поля."""
+
+    permission_map = {"list": ratings_service.VIEW_AGGREGATE_PERMISSION}
+
+    def list(self, request):
+        return Response(
+            ratings_service.rating_employee_detail(
+                request.query_params.get("employee")
+            )
+        )
+
+
+class RatingAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/rating-analytics/ — отчёт §22.16. Право РАЗДЕЛА
+    АНАЛИТИКИ, а не право сводки: доступ к отчёту решает аналитика."""
+
+    permission_map = {"list": ratings_service.VIEW_ANALYTICS_PERMISSION}
+
+    def list(self, request):
+        return Response(ratings_service.rating_analytics())
+
+
+class EvaluationWorkspaceViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/evaluation-workspace/?event= — очередь оценщика
+    (§19.14). Очередь отбирается по актору на сервере."""
+
+    permission_map = {"list": ratings_service.EVALUATE_PERMISSION}
+
+    def list(self, request):
+        return Response(
+            ratings_service.evaluation_workspace(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                request.query_params.get("event"),
+            )
+        )
+
+
+class EvaluationWorkItemViewSet(viewsets.ViewSet):
+    """Строка задания: /api/ops/evaluation-work-items/{id}/submit|correct|
+    detail/.
+
+    БЕЗ RequirePermissionMixin осознанно: §19.27 требует фиксировать в
+    журнале оценивания и ЗАПРЕЩЁННЫЕ попытки (отказ по праву, чужая запись),
+    а гейт миксина отвечал бы раньше, чем сервис успел бы записать отказ.
+    Право проверяет сервис — первым действием, до любых данных.
+    """
+
+    @action(detail=True, methods=["post"], url_path="submit")
+    def submit(self, request, pk=None):
+        return Response(
+            ratings_service.submit_evaluation(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+                request.data,
+            ),
+            status=201,
+        )
+
+    @action(detail=True, methods=["post"], url_path="correct")
+    def correct(self, request, pk=None):
+        return Response(
+            ratings_service.correct_evaluation(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+                request.data,
+            ),
+            status=201,
+        )
+
+    @action(detail=True, methods=["get"], url_path="detail")
+    def detail_view(self, request, pk=None):
+        return Response(
+            ratings_service.submitted_evaluation_detail(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+            )
+        )
+
+
+class EvaluationRegistryViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/evaluation-registry/ — реестр итоговых оценок
+    (§19.15-19.16): строки без закрытых величин, отбор и страница на
+    сервере."""
+
+    permission_map = {"list": ratings_service.VIEW_AGGREGATE_PERMISSION}
+
+    def list(self, request):
+        params = request.query_params
+        try:
+            page = int(params.get("page", "1"))
+        except (TypeError, ValueError):
+            page = 1
+        return Response(
+            ratings_service.evaluation_registry({
+                "from": params.get("from"),
+                "to": params.get("to"),
+                "event": params.get("event"),
+                "unit": params.get("unit"),
+                "employee": params.get("employee"),
+                "direction": params.get("direction"),
+                "method": params.get("method"),
+                "correctedOnly": params.get("corrected") == "true",
+                "search": params.get("search") or "",
+                "page": page,
+            })
+        )
+
+
+class RatingAuditViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/rating-audit/?page= — журнал оценивания (§19.27).
+    Право СВОЁ: контроль над действиями людей — не то же, что участие."""
+
+    permission_map = {"list": ratings_service.VIEW_AUDIT_PERMISSION}
+
+    def list(self, request):
+        try:
+            page = int(request.query_params.get("page", "1"))
+        except (TypeError, ValueError):
+            page = 1
+        return Response(ratings_service.rating_audit(page))
+
+
+class RatingNotificationsViewSet(viewsets.ViewSet):
+    """GET /api/ops/rating-notifications/ — только СВОИ (§19.28). Права
+    нет намеренно: отбор по адресату — и есть право прочитать."""
+
+    def list(self, request):
+        return Response(
+            ratings_service.rating_notifications(resolve_actor_id(request))
+        )
+
+
+class RatingExportsViewSet(viewsets.ViewSet):
+    """/api/ops/rating-exports/ (GET+POST) и {id}/cancel/ (§19.29).
+
+    Без миксина по той же причине, что у заданий: отказ по праву на заказ
+    выгрузки — событие журнала оценивания, и писать его должен сервис.
+    """
+
+    def list(self, request):
+        return Response(
+            ratings_service.list_rating_exports(
+                resolve_actor_id(request), effective_permissions(request)
+            )
+        )
+
+    def create(self, request):
+        return Response(
+            ratings_service.create_rating_export(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                request.data,
+            ),
+            status=201,
+        )
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        return Response(
+            ratings_service.cancel_rating_export(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+            )
+        )
+
+
+class RatingExportArtifactsViewSet(viewsets.ViewSet):
+    """POST /api/ops/rating-export-artifacts/{id}/download/ — выдача файла
+    (§19.29): отдельная операция, повторно проверяющая право и состояние."""
+
+    @action(detail=True, methods=["post"], url_path="download")
+    def download(self, request, pk=None):
+        return Response(
+            ratings_service.download_rating_export(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+            )
         )
