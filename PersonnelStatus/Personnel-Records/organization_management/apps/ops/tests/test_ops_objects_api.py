@@ -37,6 +37,9 @@ URL = "/api/ops/objects/"
 
 CONTRACT_FIELDS = {
     "id",
+    # Срез A2: паспорт — черновик и снимки публикаций едут в строке объекта.
+    "sectors",
+    "passportVersions",
     "name",
     "code",
     "type",
@@ -61,6 +64,24 @@ def make_object(code, name, **overrides):
     }
     fields.update(overrides)
     return OpsSecurityObject.objects.create(**fields)
+
+
+@pytest.fixture(autouse=True)
+def freshness_policy(db):
+    """Срез A2: списочный ответ считает свежесть по ХРАНИМОЙ политике и без
+    неё отказывает (422) — фикстура даёт тестам реестра мир, в котором
+    политика настроена, как это делает сид прода."""
+    from organization_management.apps.operations.models_object import (
+        OpsPassportFreshnessPolicy,
+    )
+    OpsPassportFreshnessPolicy.objects.get_or_create(
+        singleton_key=1,
+        defaults={
+            "version": "fp-v1",
+            "verification_interval_days": 120,
+            "due_soon_percent": 25,
+        },
+    )
 
 
 @pytest.fixture
@@ -182,7 +203,7 @@ def test_states_do_not_swap_columns(registry):
     row = by_code(api.get(URL), "OBJ-D")
     assert row["objectState"] == "ARCHIVED"
     assert row["passportState"] == "RED"
-    assert row["id"] == archived.id
+    assert row["id"] == str(archived.id)  # контракт клиента: id — строка
 
 
 def test_type_carries_the_object_type(registry):

@@ -88,6 +88,10 @@ DOCUMENT_SUPERSEDED = "DOCUMENT_SUPERSEDED"
 # статистика посещений. Пишется на ВЛОЖЕНИЕ, а не на выпуск: выдаются байты, и
 # у отозванного выпуска они по-прежнему свои.
 DOCUMENT_DOWNLOADED = "DOCUMENT_DOWNLOADED"
+# Опубликована версия паспорта объекта. Событие пишется на ПУБЛИКАЦИЮ, а не на
+# правку черновика: черновик — рабочая тетрадь, версия — утверждённый документ,
+# и предмет разбирательства («каким был паспорт и кто его утвердил») — она.
+PASSPORT_VERSION_PUBLISHED = "PASSPORT_VERSION_PUBLISHED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -118,6 +122,7 @@ ACTIONS = frozenset(
         DOCUMENT_ISSUED,
         DOCUMENT_SUPERSEDED,
         DOCUMENT_DOWNLOADED,
+        PASSPORT_VERSION_PUBLISHED,
     }
 )
 
@@ -139,6 +144,9 @@ ENTITY_ATTACHMENT = "attachment"
 # номер», и события замены документа рассказывают про номер, а не про байты
 # (байты заменённого выпуска не меняются вовсе).
 ENTITY_ISSUED_DOCUMENT = "issued_document"
+# Охраняемый объект: лента отвечает «что происходило с этим объектом и его
+# паспортом»; ключ — целочисленный pk строки реестра.
+ENTITY_SECURITY_OBJECT = "security_object"
 
 ENTITY_TYPES = frozenset(
     {
@@ -149,6 +157,7 @@ ENTITY_TYPES = frozenset(
         ENTITY_TOMORROW_BLOCK_OVERRIDE,
         ENTITY_ATTACHMENT,
         ENTITY_ISSUED_DOCUMENT,
+        ENTITY_SECURITY_OBJECT,
     }
 )
 

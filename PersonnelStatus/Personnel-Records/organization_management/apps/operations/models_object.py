@@ -106,3 +106,157 @@ class OpsSecurityObject(TimeStampedModel):
 
     def __str__(self):
         return f"{self.code} — {self.name}"
+
+
+class OpsObjectSector(TimeStampedModel):
+    """Сектор действующей редакции паспорта (черновик).
+
+    Секторы и посты — РЕЛЯЦИОННЫЕ строки, а не JSON: их правит форма паспорта
+    построчно, и у каждой строки своя валидация. JSON здесь появляется только
+    в снимке опубликованной версии (OpsPassportVersion.sectors_snapshot) — по
+    той же причине, по какой снимок сданного дня лежит JSONB: опубликованное
+    неизменяемо и живёт вне досягаемости правок черновика.
+    """
+
+    security_object = models.ForeignKey(
+        OpsSecurityObject, on_delete=models.CASCADE, related_name="sectors"
+    )
+    name = models.CharField(max_length=255)
+    # Порядок задаёт оператор перестановкой строк формы; ключ — тай-брейкер
+    # против нестабильной выборки (мерка Meta.ordering реестра объектов).
+    position = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = "ops_object_sectors"
+        verbose_name = "Сектор паспорта объекта"
+        verbose_name_plural = "Секторы паспорта объекта"
+        ordering = ["position", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(name__regex=r"\S"),
+                name="chk_ops_object_sector_name",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.security_object_id}#{self.position} {self.name}"
+
+
+class OpsSecurityPost(TimeStampedModel):
+    """Пост постоянного дежурства на секторе черновика паспорта."""
+
+    sector = models.ForeignKey(
+        OpsObjectSector, on_delete=models.CASCADE, related_name="posts"
+    )
+    name = models.CharField(max_length=255)
+    task = models.CharField(max_length=1000, blank=True)
+    requirements = models.CharField(max_length=1000, blank=True)
+    position = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = "ops_security_posts"
+        verbose_name = "Пост паспорта объекта"
+        verbose_name_plural = "Посты паспорта объекта"
+        ordering = ["position", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(name__regex=r"\S"),
+                name="chk_ops_security_post_name",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.sector_id}#{self.position} {self.name}"
+
+
+class OpsPassportVersion(TimeStampedModel):
+    """Опубликованная версия паспорта — неизменяема после публикации.
+
+    ``sectors_snapshot`` — глубокая копия секторов черновика НА МОМЕНТ
+    публикации в форме контракта клиента (camelCase, как в снимке сданного
+    дня): дальнейшая правка черновика версию не трогает. На одну дату
+    ``effective_from`` — не более одной версии (уникальность держит база, а не
+    проверка в сервисе: у гонки двух публикаций сервис-проверка зелёная у
+    обеих).
+    """
+
+    security_object = models.ForeignKey(
+        OpsSecurityObject,
+        on_delete=models.CASCADE,
+        related_name="passport_versions",
+    )
+    version_number = models.PositiveIntegerField()
+    effective_from = models.DateField()
+    published_at = models.DateTimeField()
+    # Идентичность из контракта запроса (resolve_actor_id), как actor журнала.
+    published_by = models.CharField(max_length=255)
+    note = models.CharField(max_length=1000, blank=True)
+    sectors_snapshot = models.JSONField()
+
+    class Meta:
+        db_table = "ops_passport_versions"
+        verbose_name = "Версия паспорта объекта"
+        verbose_name_plural = "Версии паспорта объекта"
+        ordering = ["version_number", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["security_object", "version_number"],
+                name="uniq_ops_passport_version_number",
+            ),
+            models.UniqueConstraint(
+                fields=["security_object", "effective_from"],
+                name="uniq_ops_passport_version_effective_from",
+            ),
+            # Числовой пол держит база: version_number == 0 из забытого
+            # инкремента прошёл бы PositiveIntegerField (он запрещает лишь
+            # отрицательные).
+            models.CheckConstraint(
+                condition=models.Q(version_number__gte=1),
+                name="chk_ops_passport_version_number_floor",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.security_object_id} v{self.version_number}"
+
+
+class OpsPassportFreshnessPolicy(TimeStampedModel):
+    """Действующая политика актуальности паспорта (§21.7).
+
+    Хранимая строка-синглтон, а не константа в коде: каждый посчитанный
+    результат несёт версию политики, по которой посчитан, и правка интервала
+    обязана менять версию. Дефолты сида повторяют настройки раздела:
+    интервал 120 дней, порог «скоро» 25% интервала.
+    """
+
+    singleton_key = models.PositiveSmallIntegerField(default=1, unique=True)
+    version = models.CharField(max_length=50)
+    verification_interval_days = models.PositiveIntegerField()
+    due_soon_percent = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = "ops_passport_freshness_policy"
+        verbose_name = "Политика актуальности паспорта"
+        verbose_name_plural = "Политика актуальности паспорта"
+        constraints = [
+            # Пол и потолок держит база (мерка version_number выше): нулевой
+            # интервал делал бы каждый паспорт просроченным в день публикации,
+            # а порог за пределами доли — не доля.
+            models.CheckConstraint(
+                condition=models.Q(verification_interval_days__gte=1),
+                name="chk_ops_freshness_interval_floor",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    due_soon_percent__gte=0, due_soon_percent__lte=100
+                ),
+                name="chk_ops_freshness_percent_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__regex=r"\S"),
+                name="chk_ops_freshness_policy_version",
+            ),
+        ]
+
+    def __str__(self):
+        return f"policy {self.version}"

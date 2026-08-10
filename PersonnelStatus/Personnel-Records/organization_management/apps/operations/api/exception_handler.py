@@ -37,6 +37,10 @@ CONSTRAINT_ERROR_MAP = {
     # ошибки ничего полезного о том, на какой именно уникальности он встал.
     "unique_ops_submission_current": ("DAY_ALREADY_SUBMITTED", 409, False),
     "unique_ops_submission_version": ("DAY_ALREADY_SUBMITTED", 409, False),
+    # Две публикации паспорта на одну дату, разошедшиеся с предпроверкой:
+    # проигравший гонку получает тот же отказ, что и при обычном дубле даты.
+    "uniq_ops_passport_version_effective_from": ("VALIDATION_ERROR", 400, False),
+    "uniq_ops_passport_version_number": ("VALIDATION_ERROR", 400, False),
 }
 
 
