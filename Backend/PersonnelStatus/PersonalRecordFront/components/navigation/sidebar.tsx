@@ -87,34 +87,13 @@ export function Sidebar() {
       ? navigation
       : navigation.filter((item) => hasPermission(item.resource, item.action));
 
-  // Раздел «Охранные мероприятия» (Smart Josparlau, Этап M4) — ДОБАВКА:
-  // ссылки ведут в перенесённый SPA на /ops/*, права внутри проверяет он сам
-  // (demo-persona). Донорские дубли (персонал, расход, отчёты) не дублируются —
-  // их живые версии выше, в основной навигации.
-  const opsNavigation = [
-    { name: "Командный центр", href: "/ops/command-center", icon: LineChart },
-    { name: "Реестр ОМ", href: "/ops/security-events", icon: ClipboardList },
-    { name: "Объекты и паспорта", href: "/ops/objects", icon: Landmark },
-    { name: "План дежурств", href: "/ops/duties", icon: CalendarDays },
-    { name: "Календарь смен", href: "/ops/calendar", icon: CalendarDays },
-    { name: "Аналитика службы", href: "/ops/analytics", icon: BarChart3 },
-    { name: "Аналитика мероприятий", href: "/ops/analytics/operations", icon: BarChart3 },
-    { name: "Оценивание участников", href: "/ops/ratings/workspace", icon: Star },
-    { name: "Итоговые оценки", href: "/ops/ratings/evaluations", icon: Star },
-    { name: "Оперативный рейтинг", href: "/ops/ratings", icon: Star },
-    { name: "Журнал оценивания", href: "/ops/ratings/audit", icon: ScrollText },
-    { name: "Выгрузка рейтинга", href: "/ops/ratings/export", icon: FileText },
-    { name: "Аналитика рейтинга", href: "/ops/ratings/analytics", icon: BarChart3 },
-    { name: "Отчёты службы", href: "/ops/service-reports", icon: FileText },
-    { name: "Аудит", href: "/ops/audit", icon: ScrollText },
-    { name: "Справочники", href: "/ops/dictionaries", icon: ClipboardList },
-    { name: "Настройки ОМ", href: "/ops/settings", icon: Settings },
-  ];
+  // Группа /ops/* (встроенная SPA Smart Josparlau) удалена: она дублировала
+  // переписанные нативные страницы /security-ops/*; старые адреса /ops/*
+  // редиректят на них (app/ops/[[...slug]]/page.tsx).
 
-  // Раздел «Охранные мероприятия (натив)» — ДОБАВКА нативного порта Smart
-  // Josparlau: страницы в стеке хоста (app/security-ops/*), в отличие от
-  // /ops/* (смонтированная SPA). Права проверяют сами страницы
-  // (hooks/use-ops-permissions), фильтрации здесь нет — как у opsNavigation.
+  // Раздел «Охранные мероприятия» — нативный порт Smart Josparlau: страницы
+  // в стеке хоста (app/security-ops/*). Права проверяют сами страницы
+  // (hooks/use-ops-permissions), фильтрации здесь нет.
   const nativeOpsNavigation = [
     { name: "Командный центр", href: "/security-ops/command-center", icon: LineChart },
     { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList },
@@ -183,10 +162,10 @@ export function Sidebar() {
           ))}
         </ul>
 
-        {/* Охранные мероприятия (натив) — добавка нативного порта. */}
+        {/* Охранные мероприятия — нативный порт Smart Josparlau. */}
         <div className="mt-6">
           <div className="px-6 pb-2 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
-            Охранные мероприятия (натив)
+            Охранные мероприятия
           </div>
           <ul className="space-y-1">
             {nativeOpsNavigation.map((item) => (
@@ -210,32 +189,6 @@ export function Sidebar() {
           </ul>
         </div>
 
-        {/* Охранные мероприятия (Smart Josparlau, Этап M4) — добавка. */}
-        <div className="mt-6">
-          <div className="px-6 pb-2 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
-            Охранные мероприятия
-          </div>
-          <ul className="space-y-1">
-            {opsNavigation.map((item) => (
-              <li key={item.href} className="sidebar-nav-item">
-                <motion.a
-                  href={item.href}
-                  className="flex items-center px-6 py-3 text-sm font-semibold rounded-xl transition-colors text-sidebar-foreground hover:bg-sidebar-accent"
-                  whileHover={{ x: 4 }}
-                  whileTap={{ scale: 0.98 }}
-                  transition={{
-                    type: "spring" as const,
-                    stiffness: 400,
-                    damping: 25,
-                  }}
-                >
-                  <item.icon className="mr-4 h-5 w-5" />
-                  <span>{item.name}</span>
-                </motion.a>
-              </li>
-            ))}
-          </ul>
-        </div>
       </nav>
 
       {/* Обратная связь */}
