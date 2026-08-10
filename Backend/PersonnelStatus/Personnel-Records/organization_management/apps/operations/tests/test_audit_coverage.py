@@ -726,5 +726,43 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
             # берут, чтобы предъявлять, и «кто его получил» это предмет спора.
             prepare_download(attachment=reissued.attachment, actor=ACTOR)
 
+    # Публикация версии паспорта — событие раздела объектов (срез A2):
+    # пишется на УТВЕРЖДЕНИЕ документа, а не на правку черновика.
+    from organization_management.apps.operations.models_object import (
+        OpsObjectSector,
+        OpsPassportFreshnessPolicy,
+        OpsSecurityObject,
+        OpsSecurityPost,
+    )
+    from organization_management.apps.ops.passport import publish_version
+
+    OpsPassportFreshnessPolicy.objects.get_or_create(
+        singleton_key=1,
+        defaults={
+            "version": "fp-v1",
+            "verification_interval_days": 120,
+            "due_soon_percent": 25,
+        },
+    )
+    secured = OpsSecurityObject.objects.create(
+        name="Резиденция",
+        code="OBJ-AUDIT",
+        object_type="Госучреждение",
+        region="г. Астана",
+        address="пр. Мәңгілік Ел, 8",
+        object_state=OpsSecurityObject.ObjectState.ACTIVE,
+        passport_state=OpsSecurityObject.PassportState.GREEN,
+    )
+    sector = OpsObjectSector.objects.create(
+        security_object=secured, name="Сектор 1", position=1
+    )
+    OpsSecurityPost.objects.create(sector=sector, name="Пост 1", position=1)
+    publish_version(
+        secured,
+        effective_from=TODAY.isoformat(),
+        note="покрытие журнала",
+        actor=ACTOR,
+    )
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

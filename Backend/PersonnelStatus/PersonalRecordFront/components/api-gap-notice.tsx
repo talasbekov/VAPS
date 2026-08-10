@@ -12,6 +12,9 @@ import type { ApiGap } from "@/lib/api-gaps";
 
 export function ApiGapNotice({ gap }: { gap: ApiGap }) {
   const [first, ...rest] = gap.paths;
+  // Запись без путей — «бэк готов, экран на моке по конфигурации» (объекты):
+  // говорить «на бэке нет …» тут не о чем, врезка несёт только пояснение.
+  const hasMissingPaths = first !== undefined;
 
   return (
     <div
@@ -22,12 +25,18 @@ export function ApiGapNotice({ gap }: { gap: ApiGap }) {
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
         <div className="min-w-0 space-y-2">
-          <p className="text-sm font-semibold">
-            Не подключено — {gap.subject}: на бэке нет{" "}
-            <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[0.8em] dark:bg-amber-900/60">
-              {first}
-            </code>
-          </p>
+          {hasMissingPaths ? (
+            <p className="text-sm font-semibold">
+              Не подключено — {gap.subject}: на бэке нет{" "}
+              <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[0.8em] dark:bg-amber-900/60">
+                {first}
+              </code>
+            </p>
+          ) : (
+            <p className="text-sm font-semibold">
+              Демоданные — {gap.subject}
+            </p>
+          )}
 
           {rest.length > 0 && (
             <div className="text-sm">

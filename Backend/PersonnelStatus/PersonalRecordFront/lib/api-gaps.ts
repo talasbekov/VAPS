@@ -13,6 +13,8 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
+import { isOpsObjectsLive } from "@/lib/ops-env";
+
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
   readonly subject: string;
@@ -60,21 +62,14 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
     paths: ["/api/ops/security-events/", "/api/ops/personnel/"],
     note: MOCK_NOTE,
   },
-  "/security-ops/objects": {
-    subject: "Объекты и паспорта",
-    // Базовый список /api/ops/objects/ на бэке ЕСТЬ (срез A1), но экран его пока
-    // не читает: KPI, свежесть паспорта, секторы и версии паспорта — своих ручек
-    // на бэке нет, всё это по-прежнему считает MSW. Поэтому врезка остаётся, но
-    // называет ровно то, чего не хватает, а не отрицает уже готовый список.
-    paths: [
-      "/api/ops/objects/{id}/passport/",
-      "/api/ops/objects/{id}/passport/versions/",
-      "/api/ops/object-freshness-policy/",
-    ],
-    note:
-      "Базовый список объектов на бэке есть; KPI, свежесть паспорта и версии — " +
-      "ещё нет, экран целиком наполняет MSW.",
-  },
+  // «Объекты и паспорта»: бэк ГОТОВ целиком (срез A2 — конверт списка с
+  // kpi/freshness/политикой, PATCH черновика, POST публикации версии).
+  // В live-режиме (NEXT_PUBLIC_OPS_LIVE_DOMAINS=objects) врезки нет вовсе;
+  // в mock-режиме врезка обязана остаться — экран показывает данные MSW, и
+  // молчать об этом значило бы выдать демо за прод, — но говорит правду:
+  // не «на бэке нет», а «экран на моке по конфигурации». Запись собирается в
+  // findApiGap, потому что зависит от режима, а GAPS — статичный словарь.
+
   "/security-ops/duties": {
     subject: "План дежурств",
     paths: [
@@ -206,8 +201,26 @@ const NO_BACKEND_NEEDED: readonly string[] = ["/security-ops/changelog"];
  * Возвращает запись реестра для маршрута — самое длинное совпадение по
  * префиксу. Для маршрутов без пробела возвращает null, и врезка не рисуется.
  */
+const OBJECTS_MOCK_BY_CONFIG: ApiGap = {
+  subject: "Объекты и паспорта",
+  paths: [],
+  note:
+    "Бэкенд объектов и паспортов готов (/api/ops/objects/ + паспорт и версии); " +
+    "экран работает на MSW по конфигурации. Живой режим: " +
+    "NEXT_PUBLIC_OPS_LIVE_DOMAINS=objects.",
+};
+
 export function findApiGap(pathname: string | null | undefined): ApiGap | null {
   if (!pathname) return null;
+  {
+    const normalized = pathname.replace(/\/+$/, "") || "/";
+    if (
+      normalized === "/security-ops/objects" ||
+      normalized.startsWith("/security-ops/objects/")
+    ) {
+      return isOpsObjectsLive() ? null : OBJECTS_MOCK_BY_CONFIG;
+    }
+  }
   // Хост отдаёт пути с завершающим слэшем; нормализуем, чтобы «/ops/» и «/ops»
   // попадали в одну запись, а «/opsomething» — не попадало.
   const normalized =
