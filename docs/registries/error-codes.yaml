@@ -123,6 +123,24 @@ codes:
     category: state
     description: "Не хватает обязательных INITIAL-отметок подразделений для формирования FINAL-отчёта."
     source: "VAPS_7.8.2 BR-DAILY-MARK-001"
+  EMPLOYEE_ALREADY_ARCHIVED:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Карточка сотрудника уже в архиве — повторный archive это конфликт состояния (второй вызывающий узнаёт, что состояние изменил не он), а не молчаливый no-op."
+    source: "ревью 2026-08-08 (гонки легаси-эндпоинтов core); фикс 10.08 — лок строки + state-гвард"
+  EMPLOYEE_NOT_ARCHIVED:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "Restore сотрудника, который не в архиве, — признак гонки или ошибки клиента; молчаливое «ок» скрыло бы её."
+    source: "ревью 2026-08-08 (гонки легаси-эндпоинтов core); фикс 10.08"
+  STAFFING_SLOT_OCCUPIED:
+    http_status: 409
+    overridable: false
+    category: state
+    description: "На штатном слоте уже есть действующее (ends_at IS NULL) назначение — сначала release. Без гварда два конкурирующих assign создавали два открытых назначения на один слот."
+    source: "ревью 2026-08-08 (гонки легаси-эндпоинтов core); фикс 10.08 — select_for_update слота + гвард занятости"
   DAY_ALREADY_SUBMITTED:
     http_status: 409
     overridable: false

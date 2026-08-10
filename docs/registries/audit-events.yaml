@@ -182,6 +182,28 @@ actions:
     provenance: derived-from-mutation
     source: "Story 4.7 (named-дефер 4.4 №6=B); operations dismissal.dismiss_employee (FR-36, AR-9)"
 
+  # --- фикс гонок легаси-эндпоинтов core (ревью 2026-08-08, 10.08) ---
+  EMPLOYEE_ARCHIVED:
+    entity_type: employee
+    description: "Карточка сотрудника отправлена в архив тонким core-экшеном archive (лок строки + state-гвард; оркестратор увольнения пишет своё EMPLOYEE_DISMISSED)."
+    provenance: derived-from-mutation
+    source: "ревью 2026-08-08; core EmployeeViewSet.archive"
+  EMPLOYEE_RESTORED:
+    entity_type: employee
+    description: "Карточка сотрудника восстановлена из архива (только из ARCHIVED)."
+    provenance: derived-from-mutation
+    source: "ревью 2026-08-08; core EmployeeViewSet.restore"
+  STAFFING_ASSIGNMENT_CREATED:
+    entity_type: staffing_slot
+    description: "Сотрудник назначен на штатный слот (слот был свободен — гвард занятости под локом слота)."
+    provenance: derived-from-mutation
+    source: "ревью 2026-08-08; core StaffingSlotViewSet.assign_employee"
+  STAFFING_ASSIGNMENT_RELEASED:
+    entity_type: staffing_slot
+    description: "Действующие назначения слота закрыты (release); пустой release не аудируется — аудит рассказывает о случившемся."
+    provenance: derived-from-mutation
+    source: "ревью 2026-08-08; core StaffingSlotViewSet.release"
+
 # Контролируемый словарь ops_employee_status_history.action_code — каноничен и аудируем
 #   (мутации статусов — самая аудит-нагруженная область). Это НЕ audit_logs.action, но тот же UPPER_SNAKE.
 status_history_action_codes:
