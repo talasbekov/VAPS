@@ -30,3 +30,7 @@ export function isOpsSecurityEventsLive(): boolean {
 export function isOpsDutiesLive(): boolean {
   return !isOpsMockMode() || opsLiveDomains().has("duties");
 }
+
+export function isOpsCombatLive(): boolean {
+  return !isOpsMockMode() || opsLiveDomains().has("combat");
+}

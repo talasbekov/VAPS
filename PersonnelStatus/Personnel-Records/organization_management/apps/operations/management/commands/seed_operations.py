@@ -161,6 +161,32 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS("Seeded duty types and policy"))
 
+        # Боевые группы: виды (§24.3) и реестр Трасс (§24.9) — порт мок-фикстур.
+        from organization_management.apps.operations.models_combat import (
+            OpsCombatDutyType,
+            OpsCombatRoute,
+        )
+
+        for code, label, multi in [
+            ("COMBAT_GROUP_SINGLE_ROUTE",
+             "Дежурство боевой группы на одной Трассе", False),
+            ("COMBAT_GROUP_MULTI_ROUTE",
+             "Дежурство боевой группы на нескольких Трассах", True),
+        ]:
+            OpsCombatDutyType.objects.update_or_create(
+                duty_type_code=code,
+                defaults={"safe_label": label, "supports_multiple_routes": multi},
+            )
+        for code, label in [
+            ("route-1", "Трасса №1 (Аэропорт — Резиденция)"),
+            ("route-2", "Трасса №2 (Резиденция — Дворец Независимости)"),
+            ("route-3", "Трасса №3 (Вокзал — Гостиница)"),
+        ]:
+            OpsCombatRoute.objects.update_or_create(
+                route_code=code, defaults={"safe_label": label}
+            )
+        self.stdout.write(self.style.SUCCESS("Seeded combat registries"))
+
         for spec in options["assign"]:
             parts = spec.split(":")
             if len(parts) not in (2, 3):

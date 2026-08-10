@@ -13,7 +13,7 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
-import { isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive } from "@/lib/ops-env";
+import { isOpsCombatLive, isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive } from "@/lib/ops-env";
 
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
@@ -68,24 +68,12 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
   // конфликтами и action policy, смены с циклом исполнения, объекты и
   // кандидаты формы). Запись строится в findApiGap — зависит от режима.
 
-  "/security-ops/duties/combat": {
-    subject: "Боевые группы",
-    paths: [
-      "/api/ops/combat-duty-shifts/",
-      "/api/ops/combat-duty-types/",
-      "/api/ops/combat-routes/",
-      "/api/ops/combat-roster-candidates/",
-    ],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/calendar": {
-    subject: "Календарь смен",
-    // duty-shifts переехали срезом C1; на моке остаются только боевые группы.
-    paths: ["/api/ops/combat-duty-shifts/"],
-    note:
-      "Индивидуальные смены календарь читает с живого бэка (в live-режиме); " +
-      "боевые группы — ещё MSW.",
-  },
+  // «Боевые группы»: бэк ГОТОВ (срез C2 — реестры видов/Трасс, кандидаты из
+  // живых кадров, смены с процессом §24.1 целиком). Запись — в findApiGap.
+
+  // «Календарь смен»: оба источника (duty-shifts срез C1, combat-duty-shifts
+  // срез C2) живые — запись собирается в findApiGap по режимам обоих доменов.
+
   "/security-ops/daily-expense": {
     subject: "Расход дня (ОМ)",
     paths: [
@@ -212,6 +200,24 @@ const SECURITY_EVENTS_MOCK_BY_CONFIG: ApiGap = {
 
 const SECURITY_EVENT_ROUTES = ["/security-ops/command-center", "/security-ops/events"];
 
+const COMBAT_MOCK_BY_CONFIG: ApiGap = {
+  subject: "Боевые группы",
+  paths: [],
+  note:
+    "Бэкенд боевых групп готов (/api/ops/combat-duty-types|routes|" +
+    "roster-candidates|duty-shifts/); экран работает на MSW по конфигурации. " +
+    "Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=combat.",
+};
+
+const CALENDAR_MOCK_BY_CONFIG: ApiGap = {
+  subject: "Календарь смен",
+  paths: [],
+  note:
+    "Бэкенд обоих источников календаря готов (duty-shifts и " +
+    "combat-duty-shifts); экран работает на MSW по конфигурации. Живой " +
+    "режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=duties,combat.",
+};
+
 const DUTIES_MOCK_BY_CONFIG: ApiGap = {
   subject: "План дежурств",
   paths: [],
@@ -239,11 +245,24 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       return isOpsSecurityEventsLive() ? null : SECURITY_EVENTS_MOCK_BY_CONFIG;
     }
     if (
-      (normalized === "/security-ops/duties" ||
-        normalized.startsWith("/security-ops/duties/")) &&
-      normalized !== "/security-ops/duties/combat"
+      normalized === "/security-ops/duties/combat" ||
+      normalized.startsWith("/security-ops/duties/combat/")
+    ) {
+      return isOpsCombatLive() ? null : COMBAT_MOCK_BY_CONFIG;
+    }
+    if (
+      normalized === "/security-ops/duties" ||
+      normalized.startsWith("/security-ops/duties/")
     ) {
       return isOpsDutiesLive() ? null : DUTIES_MOCK_BY_CONFIG;
+    }
+    if (
+      normalized === "/security-ops/calendar" ||
+      normalized.startsWith("/security-ops/calendar/")
+    ) {
+      return isOpsDutiesLive() && isOpsCombatLive()
+        ? null
+        : CALENDAR_MOCK_BY_CONFIG;
     }
   }
   // Хост отдаёт пути с завершающим слэшем; нормализуем, чтобы «/ops/» и «/ops»

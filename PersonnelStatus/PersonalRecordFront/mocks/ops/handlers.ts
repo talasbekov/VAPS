@@ -2,7 +2,7 @@
 // сюда добавляются handler-наборы (objects, security-events, duties, …).
 // Пути пишутся с завершающим слэшом — в next.config.js включён
 // trailingSlash: true, паттерны без слэша промахиваются мимо перехвата.
-import { isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive } from "@/lib/ops-env";
+import { isOpsCombatLive, isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive } from "@/lib/ops-env";
 import { identityHandlers } from "./identity";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
@@ -40,6 +40,6 @@ export function composeOpsHandlers() {
     ...reportsHandlers,
     ...feedbackHandlers,
     ...dailyHandlers,
-    ...combatHandlers,
+    ...(isOpsCombatLive() ? [] : combatHandlers),
   ];
 }

@@ -679,3 +679,224 @@ def _parse_business_date(raw):
             detail={"date": ["Укажите дату в формате ГГГГ-ММ-ДД."]},
             message="Проверьте параметры запроса.",
         )
+
+
+# ── Боевые группы на Трассе ────────────────────────────────────────────────
+
+from organization_management.apps.ops import combat as combat_service
+
+
+class CombatDutyTypeViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    permission_map = {"list": _READ_DUTY_PERMISSION}
+
+    def list(self, request):
+        from organization_management.apps.operations.models_combat import (
+            OpsCombatDutyType,
+        )
+
+        return Response(
+            {
+                "results": [
+                    {
+                        "dutyTypeCode": t.duty_type_code,
+                        "safeLabel": t.safe_label,
+                        "supportsMultipleRoutes": t.supports_multiple_routes,
+                    }
+                    for t in OpsCombatDutyType.objects.all()
+                ]
+            }
+        )
+
+
+class CombatRouteViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    permission_map = {"list": _READ_DUTY_PERMISSION}
+
+    def list(self, request):
+        from organization_management.apps.operations.models_combat import (
+            OpsCombatRoute,
+        )
+
+        return Response(
+            {
+                "results": [
+                    {"routeId": r.route_code, "safeLabel": r.safe_label}
+                    for r in OpsCombatRoute.objects.all()
+                ]
+            }
+        )
+
+
+class CombatRosterCandidatesViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """Кандидаты в состав — из живых кадровых записей (просмотр — часть
+    подачи §24.6, потому право управления, не чтения)."""
+
+    permission_map = {"list": _MANAGE_DUTY_PERMISSION}
+
+    def list(self, request):
+        from organization_management.apps.employees.models import Employee
+        from organization_management.apps.ops.security_events import (
+            personnel_display_name,
+        )
+
+        results = []
+        for employee in (
+            Employee.objects.filter(is_active=True)
+            .select_related("staff_unit__division")
+            .order_by("last_name", "first_name", "id")
+        ):
+            try:
+                staff_unit = employee.staff_unit
+            except Employee.staff_unit.RelatedObjectDoesNotExist:
+                staff_unit = None
+            results.append(
+                {
+                    "employeeName": personnel_display_name(employee),
+                    "unitName": (
+                        staff_unit.division.name
+                        if staff_unit is not None and staff_unit.division
+                        else ""
+                    ),
+                }
+            )
+        return Response({"results": results})
+
+
+class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/combat-duty-shifts/ — смены боевых групп, процесс §24.1."""
+
+    permission_map = {
+        "list": _READ_DUTY_PERMISSION,
+        "create": _MANAGE_DUTY_PERMISSION,
+        "submit": _MANAGE_DUTY_PERMISSION,
+        "review": _MANAGE_DUTY_PERMISSION,
+        "acknowledge": _MANAGE_DUTY_PERMISSION,
+        "check_in": _MANAGE_DUTY_PERMISSION,
+        "handover": _MANAGE_DUTY_PERMISSION,
+        "complete": _MANAGE_DUTY_PERMISSION,
+        "replace": _MANAGE_DUTY_PERMISSION,
+    }
+
+    def _response(self, shift, status=200):
+        return Response(
+            combat_service.serialize_combat_shift(shift), status=status
+        )
+
+    def list(self, request):
+        from organization_management.apps.operations.models_combat import (
+            OpsCombatDutyShift,
+        )
+
+        return Response(
+            {
+                "results": [
+                    combat_service.serialize_combat_shift(s)
+                    for s in OpsCombatDutyShift.objects.all()
+                ]
+            }
+        )
+
+    def create(self, request):
+        data = request.data or {}
+        shift = combat_service.create_shift(
+            business_date=data.get("businessDate"),
+            duty_type_code=data.get("dutyTypeCode"),
+            route_ids=data.get("routeIds"),
+            coverage_mode=data.get("coverageMode"),
+            required_employees=data.get("requiredEmployees"),
+        )
+        return self._response(shift, status=201)
+
+    def _actor_unit(self, request):
+        """Подразделение подающего — из живой кадровой записи актора."""
+        from organization_management.apps.employees.models import Employee
+
+        user = getattr(request, "user", None)
+        employee = (
+            Employee.objects.filter(user=user)
+            .select_related("staff_unit__division")
+            .first()
+            if user is not None and user.is_authenticated
+            else None
+        )
+        if employee is None:
+            return ""
+        try:
+            staff_unit = employee.staff_unit
+        except Employee.staff_unit.RelatedObjectDoesNotExist:
+            return ""
+        return (
+            staff_unit.division.name
+            if staff_unit is not None and staff_unit.division
+            else ""
+        )
+
+    @action(detail=True, methods=["post"], url_path="submit")
+    def submit(self, request, pk=None):
+        data = request.data or {}
+        return self._response(
+            combat_service.submit_roster(
+                pk,
+                group_leader=data.get("groupLeaderEmployeeName"),
+                members=data.get("memberEmployeeNames"),
+                reserve=data.get("reserveEmployeeNames"),
+                submitted_by_unit=self._actor_unit(request),
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="review")
+    def review(self, request, pk=None):
+        data = request.data or {}
+        return self._response(
+            combat_service.review_roster(
+                pk,
+                decision=data.get("decision"),
+                return_reason=data.get("returnReason"),
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="acknowledge")
+    def acknowledge(self, request, pk=None):
+        data = request.data or {}
+        return self._response(
+            combat_service.acknowledge(
+                pk, employee_name=data.get("employeeName")
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="check-in")
+    def check_in(self, request, pk=None):
+        return self._response(combat_service.check_in(pk))
+
+    @action(detail=True, methods=["post"], url_path="handover")
+    def handover(self, request, pk=None):
+        data = request.data or {}
+        return self._response(
+            combat_service.submit_handover(
+                pk,
+                unresolved_incidents=data.get("unresolvedIncidents"),
+                remarks=data.get("remarks"),
+                confirmed_by=data.get("confirmedByEmployeeName"),
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="complete")
+    def complete(self, request, pk=None):
+        data = request.data or {}
+        return self._response(
+            combat_service.complete(
+                pk, actual_member_names=data.get("actualMemberNames")
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="replace")
+    def replace(self, request, pk=None):
+        data = request.data or {}
+        return self._response(
+            combat_service.replace_member(
+                pk,
+                outgoing=data.get("outgoingEmployeeName"),
+                incoming=data.get("incomingEmployeeName"),
+                reason_code=data.get("reasonCode"),
+                safe_comment=data.get("safeComment"),
+            )
+        )

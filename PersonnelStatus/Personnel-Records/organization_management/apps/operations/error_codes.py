@@ -64,6 +64,24 @@ CODES = {
     "REST_AFTER_DUTY": frozenset({422}),
     # Отдых в SOFT_OVERRIDE-режиме обходится причиной — 409 и overridable.
     "DUTY_CONFLICT_DETECTED": frozenset({409}),
+    # ── Боевые группы (§24, мок-контракт отдаёт все отказы 422-ми) ───────
+    "INVALID_BUSINESS_DATE": frozenset({422}),
+    "EMPTY_ROUTE_SET": frozenset({422}),
+    "INVALID_REQUIREMENT": frozenset({422}),
+    "UNKNOWN_DUTY_TYPE": frozenset({422}),
+    "TOO_MANY_ROUTES": frozenset({422}),
+    "UNKNOWN_ROUTE": frozenset({422}),
+    "EMPTY_GROUP": frozenset({422}),
+    "ALREADY_SUBMITTED": frozenset({422}),
+    "REASON_REQUIRED": frozenset({422}),
+    # СВОЙ код, не INVALID_STAGE_TRANSITION: контракт клиента различает их
+    # буквально (STATE у боевых групп, STAGE у ОМ/статусов).
+    "INVALID_STATE_TRANSITION": frozenset({422}),
+    "NOT_IN_ROSTER": frozenset({422}),
+    "ALREADY_ACKNOWLEDGED": frozenset({422}),
+    "CONFIRMER_REQUIRED": frozenset({422}),
+    "MISSING_HANDOVER": frozenset({422}),
+    "ALREADY_IN_ROSTER": frozenset({422}),
     "PERMISSION_DENIED": frozenset({403}),
     # ── Статусы ──────────────────────────────────────────────────────────
     "INVALID_STATUS_TYPE": frozenset({422}),
