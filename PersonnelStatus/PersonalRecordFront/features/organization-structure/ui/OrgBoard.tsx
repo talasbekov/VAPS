@@ -721,9 +721,11 @@ export default function OrgBoard() {
                                 <img
                                   src={
                                     employeeData.employee
-                                      ? `${MEDIA_URL}${
-                                          employeeData.employee.photo || ""
-                                        }`
+                                      ? employeeData.employee.photo_url
+                                        ? employeeData.employee.photo_url
+                                        : employeeData.employee.photo
+                                        ? `${MEDIA_URL}${employeeData.employee.photo}`
+                                        : "/placeholder.svg"
                                       : "/placeholder.svg"
                                   }
                                   alt={`${
