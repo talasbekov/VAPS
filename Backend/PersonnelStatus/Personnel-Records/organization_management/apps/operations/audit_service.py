@@ -102,6 +102,12 @@ SECURITY_EVENT_CLOSED = "SECURITY_EVENT_CLOSED"
 # мутаций не оставляют — их след живёт на самой смене (штампы времени).
 DUTY_SHIFT_CREATED = "DUTY_SHIFT_CREATED"
 DUTY_SHIFT_CANCELLED = "DUTY_SHIFT_CANCELLED"
+# Настройки: принятая правка правила — решение с причиной и версией политики.
+SETTINGS_UPDATED = "SETTINGS_UPDATED"
+# Справочники: заведение/(де)активация/удаление значения — админ-решения.
+DICTIONARY_ENTRY_CREATED = "DICTIONARY_ENTRY_CREATED"
+DICTIONARY_ENTRY_SET_ACTIVE = "DICTIONARY_ENTRY_SET_ACTIVE"
+DICTIONARY_ENTRY_DELETED = "DICTIONARY_ENTRY_DELETED"
 
 # СНЯТО в срезе врезки: STATUSES_BULK_CREATED (сводка массового обновления).
 # Класть в entity_id (NOT NULL, целое) у сводки нечего — «пачка» не сущность и
@@ -137,6 +143,10 @@ ACTIONS = frozenset(
         SECURITY_EVENT_CLOSED,
         DUTY_SHIFT_CREATED,
         DUTY_SHIFT_CANCELLED,
+        SETTINGS_UPDATED,
+        DICTIONARY_ENTRY_CREATED,
+        DICTIONARY_ENTRY_SET_ACTIVE,
+        DICTIONARY_ENTRY_DELETED,
     }
 )
 
@@ -164,6 +174,8 @@ ENTITY_SECURITY_OBJECT = "security_object"
 # Охранное мероприятие — своя лента: у него ось «код ОМ», а не объект.
 ENTITY_SECURITY_EVENT = "security_event"
 ENTITY_DUTY_SHIFT = "duty_shift"
+ENTITY_POLICY_SETTING = "policy_setting"
+ENTITY_DICTIONARY_ENTRY = "dictionary_entry"
 
 ENTITY_TYPES = frozenset(
     {
@@ -177,6 +189,8 @@ ENTITY_TYPES = frozenset(
         ENTITY_SECURITY_OBJECT,
         ENTITY_SECURITY_EVENT,
         ENTITY_DUTY_SHIFT,
+        ENTITY_POLICY_SETTING,
+        ENTITY_DICTIONARY_ENTRY,
     }
 )
 

@@ -3,6 +3,10 @@ from rest_framework.routers import DefaultRouter
 
 from organization_management.apps.ops.api.views import (
     CombatDutyShiftViewSet,
+    OpsAuditLogViewSet,
+    OpsDictionariesViewSet,
+    OpsSettingChangesViewSet,
+    OpsSettingsViewSet,
     CombatDutyTypeViewSet,
     CombatRosterCandidatesViewSet,
     CombatRouteViewSet,
@@ -45,5 +49,13 @@ router.register(
 router.register(
     "combat-duty-shifts", CombatDutyShiftViewSet, basename="ops-combat-shifts"
 )
+router.register("settings", OpsSettingsViewSet, basename="ops-settings")
+router.register(
+    "setting-changes", OpsSettingChangesViewSet, basename="ops-setting-changes"
+)
+router.register(
+    "dictionaries", OpsDictionariesViewSet, basename="ops-dictionaries"
+)
+router.register("audit-logs", OpsAuditLogViewSet, basename="ops-audit-logs")
 
 urlpatterns = router.urls

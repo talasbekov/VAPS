@@ -54,9 +54,9 @@
 | `/security-ops/analytics/` | `/api/ops/service-analytics/`, `/api/ops/service-analytics-presets/`, `/api/ops/service-analytics-attention/`, `/api/ops/service-analytics-drilldown/`, `/api/ops/load-analytics/` | «Не подключено — Аналитика службы…» |
 | `/security-ops/analytics/operations/` | `/api/ops/operations-analytics/` | «Не подключено — Аналитика мероприятий…» |
 | `/security-ops/service-reports/`, `…/history/`, `…/[reportJobId]/` | `/api/ops/service-report-types/`, `/api/ops/service-report-jobs/`, `/api/ops/service-report-artifacts/` | «Не подключено — Служебные отчёты…» |
-| `/security-ops/dictionaries/`, `/security-ops/dictionaries/[code]/` | `/api/ops/dictionaries/` | «Не подключено — Справочники раздела ОМ…» |
-| `/security-ops/settings/` | `/api/ops/settings/`, `/api/ops/setting-changes/` | «Не подключено — Настройки раздела ОМ…» |
-| `/security-ops/audit/` | `/api/ops/audit-logs/` | «Не подключено — Журнал действий ОМ…» |
+| ~~`/security-ops/dictionaries/`, `…/[code]/`~~ | **закрыт срезом D1**: реестры с честными связями (TRACKED поимённо по живым журналам ОМ и groupCode; NOT_TRACKED — с причиной), заведение/деактивация/удаление с доказательством отсутствия связей | врезки нет (live: dictionaries) |
+| ~~`/security-ops/settings/`~~ | **закрыт срезом D1**: настройки — владелец политик, правка пишется НАСКВОЗЬ в синглтоны свежести/конфликтов с версией раздела; журнал изменений с готовыми подписями; право правки решает сервер по-записно | врезки нет (live: settings) |
+| ~~`/security-ops/audit/`~~ | **закрыт срезом D1**: read-only поверх ЖИВОГО журнала раздела (те же строки, что пишут срезы A2-C2) | врезки нет (live: audit) |
 | `/security-ops/feedback/`, `/security-ops/feedback/[feedbackId]/` | `/api/ops/feedback-requests/` | «Не подключено — Обратная связь раздела ОМ…» |
 | `/security-ops/changelog/` | — | пометки нет намеренно: журнал изменений порта собран из статического текста, бэкенд ему не нужен |
 

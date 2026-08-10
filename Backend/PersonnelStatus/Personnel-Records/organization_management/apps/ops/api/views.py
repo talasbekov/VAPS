@@ -900,3 +900,185 @@ class CombatDutyShiftViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 safe_comment=data.get("safeComment"),
             )
         )
+
+
+# ── Настройки, справочники и аудит раздела ОМ ──────────────────────────────
+
+from organization_management.apps.ops import dictionaries as dict_service
+from organization_management.apps.ops import settings_service
+
+
+class OpsSettingsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/settings/ — настройки-политики; право правки решает сервер
+    по-записно (замок правила vs нехватка права — разные причины)."""
+
+    permission_map = {
+        "list": "settings.view",
+        "partial_update": "settings.manage",
+    }
+    lookup_value_regex = r"[^/]+"
+
+    def _can_manage(self, request):
+        perms = effective_permissions(request)
+        return "*" in perms or "settings.manage" in perms
+
+    def list(self, request):
+        from organization_management.apps.operations.models_settings import (
+            OpsPolicySetting,
+        )
+
+        can_manage = self._can_manage(request)
+        return Response(
+            {
+                "results": [
+                    settings_service.serialize_setting(
+                        s, can_manage=can_manage
+                    )
+                    for s in OpsPolicySetting.objects.all()
+                ],
+                "sectionVersions": settings_service.section_versions(),
+            }
+        )
+
+    def partial_update(self, request, pk=None):
+        data = request.data or {}
+        setting, _, event = settings_service.update_setting(
+            pk,
+            value=data.get("value"),
+            reason=data.get("reason"),
+            actor=resolve_actor_id(request),
+        )
+        return Response(
+            {
+                "setting": settings_service.serialize_setting(
+                    setting, can_manage=True
+                ),
+                "sectionVersions": settings_service.section_versions(),
+                "event": settings_service.serialize_event(event),
+            }
+        )
+
+
+class OpsSettingChangesViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/setting-changes/ — журнал изменений настроек (готовые
+    подписи значений, версия политики после изменения)."""
+
+    permission_map = {"list": "settings.view"}
+
+    def list(self, request):
+        from organization_management.apps.operations.models_settings import (
+            OpsSettingChangeEvent,
+        )
+
+        return Response(
+            {
+                "results": [
+                    settings_service.serialize_event(e)
+                    for e in OpsSettingChangeEvent.objects.all()[:200]
+                ]
+            }
+        )
+
+
+class OpsDictionariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/dictionaries/ — generic-реестр значений справочников."""
+
+    permission_map = {
+        "list": "dictionary.view",
+        "entries": "dictionary.view",
+        "create_entry": "dictionary.manage",
+        "set_active": "dictionary.manage",
+        "delete_entry": "dictionary.manage",
+    }
+
+    def list(self, request):
+        return Response({"results": dict_service.definitions_with_counts()})
+
+    @action(
+        detail=False,
+        methods=["get", "post"],
+        url_path=r"(?P<code>[A-Z_]+)/entries",
+    )
+    def entries(self, request, code=None):
+        if request.method == "GET":
+            return Response({"results": dict_service.list_entries(code)})
+        # POST — заведение значения: гейт правки строже гейта чтения, и его
+        # держит карта прав через отдельное имя действия ниже.
+        return self.create_entry(request, code=code)
+
+    def create_entry(self, request, code=None):
+        # RequirePermissionMixin гейтит по self.action="entries" (см. выше),
+        # поэтому право правки проверяется здесь явно.
+        perms = effective_permissions(request)
+        if "*" not in perms and "dictionary.manage" not in perms:
+            raise DomainError(
+                "PERMISSION_DENIED", 403,
+                message="Нужно право управления справочниками.",
+            )
+        data = request.data or {}
+        entry = dict_service.create_entry(
+            code,
+            code=data.get("code"),
+            label=data.get("label"),
+            description=data.get("description"),
+            group_code=data.get("groupCode"),
+            actor=resolve_actor_id(request),
+        )
+        return Response(dict_service.serialize_entry(entry), status=201)
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path=r"entries/(?P<entry_id>[^/]+)/set-active",
+    )
+    def set_active(self, request, entry_id=None):
+        entry = dict_service.set_entry_active(
+            entry_id,
+            is_active=(request.data or {}).get("isActive"),
+            actor=resolve_actor_id(request),
+        )
+        return Response(dict_service.serialize_entry(entry))
+
+    @action(
+        detail=False,
+        methods=["delete"],
+        url_path=r"entries/(?P<entry_id>[^/]+)",
+    )
+    def delete_entry(self, request, entry_id=None):
+        dict_service.delete_entry(
+            entry_id, actor=resolve_actor_id(request)
+        )
+        return Response(status=204)
+
+
+class OpsAuditLogViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/audit-logs/ — read-only журнал действий раздела в форме
+    контракта клиента; свежие сверху, последние 200 (экран — лента, полная
+    выборка живёт в /api/operations/audit-logs/ с пагинацией)."""
+
+    permission_map = {"list": "audit.view"}
+
+    def list(self, request):
+        from organization_management.apps.operations.models_audit import (
+            OpsAuditLog,
+        )
+
+        rows = OpsAuditLog.objects.order_by("-created_at", "-id")[:200]
+        return Response(
+            {
+                "results": [
+                    {
+                        "id": str(row.pk),
+                        "actorUserId": row.actor_user_id,
+                        "action": row.action,
+                        "entityType": row.entity_type,
+                        "entityId": str(row.entity_id),
+                        "oldValue": row.old_value,
+                        "newValue": row.new_value,
+                        "reason": row.reason,
+                        "createdAt": row.created_at.isoformat(),
+                    }
+                    for row in rows
+                ]
+            }
+        )

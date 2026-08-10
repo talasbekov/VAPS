@@ -82,6 +82,13 @@ CODES = {
     "CONFIRMER_REQUIRED": frozenset({422}),
     "MISSING_HANDOVER": frozenset({422}),
     "ALREADY_IN_ROSTER": frozenset({422}),
+    # ── Настройки и справочники раздела ОМ ───────────────────────────────
+    "SETTING_LOCKED": frozenset({422}),
+    # Удаление требует ДОКАЗАННОГО отсутствия связей: у неотслеживаемых
+    # справочников оно запрещено (используйте деактивацию).
+    "DICTIONARY_USAGE_UNKNOWN": frozenset({422}),
+    # Значение используется — конфликт данных, обходу не подлежит.
+    "DICTIONARY_ENTRY_IN_USE": frozenset({409}),
     "PERMISSION_DENIED": frozenset({403}),
     # ── Статусы ──────────────────────────────────────────────────────────
     "INVALID_STATUS_TYPE": frozenset({422}),

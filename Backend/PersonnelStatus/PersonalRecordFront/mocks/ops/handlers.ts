@@ -2,7 +2,7 @@
 // сюда добавляются handler-наборы (objects, security-events, duties, …).
 // Пути пишутся с завершающим слэшом — в next.config.js включён
 // trailingSlash: true, паттерны без слэша промахиваются мимо перехвата.
-import { isOpsCombatLive, isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive } from "@/lib/ops-env";
+import { isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive, isOpsSettingsLive } from "@/lib/ops-env";
 import { identityHandlers } from "./identity";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
@@ -32,9 +32,12 @@ export function composeOpsHandlers() {
     // План дежурств — тот же пер-доменный переключатель (срез C1). Боевые
     // группы (combatHandlers) остаются на моке — их бэка ещё нет.
     ...(isOpsDutiesLive() ? [] : dutiesHandlers),
-    ...auditHandlers,
-    ...settingsHandlers,
-    ...dictionariesHandlers,
+    ...(isOpsAuditLive() ? [] : auditHandlers),
+    // Настройки живьём — владелец политик (сквозная запись в синглтоны);
+    // мок-стор остаётся источником readConflictPolicy/readFreshnessPolicy
+    // для ещё не переведённых слайсов.
+    ...(isOpsSettingsLive() ? [] : settingsHandlers),
+    ...(isOpsDictionariesLive() ? [] : dictionariesHandlers),
     ...ratingsHandlers,
     ...analyticsHandlers,
     ...reportsHandlers,

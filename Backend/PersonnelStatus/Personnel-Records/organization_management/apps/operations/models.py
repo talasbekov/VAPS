@@ -204,3 +204,11 @@ from organization_management.apps.operations.models_combat import (  # noqa: E40
     OpsCombatDutyType,  # noqa: F401
     OpsCombatRoute,  # noqa: F401
 )
+
+# Настройки раздела ОМ и generic-справочники.
+from organization_management.apps.operations.models_settings import (  # noqa: E402
+    OpsDictionaryEntry,  # noqa: F401
+    OpsPolicySectionVersion,  # noqa: F401
+    OpsPolicySetting,  # noqa: F401
+    OpsSettingChangeEvent,  # noqa: F401
+)

@@ -13,7 +13,7 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
-import { isOpsCombatLive, isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive } from "@/lib/ops-env";
+import { isOpsAuditLive, isOpsCombatLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsObjectsLive, isOpsSecurityEventsLive, isOpsSettingsLive } from "@/lib/ops-env";
 
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
@@ -148,21 +148,9 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
     ],
     note: MOCK_NOTE,
   },
-  "/security-ops/dictionaries": {
-    subject: "Справочники раздела ОМ",
-    paths: ["/api/ops/dictionaries/"],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/settings": {
-    subject: "Настройки раздела ОМ",
-    paths: ["/api/ops/settings/", "/api/ops/setting-changes/"],
-    note: MOCK_NOTE,
-  },
-  "/security-ops/audit": {
-    subject: "Журнал действий ОМ",
-    paths: ["/api/ops/audit-logs/"],
-    note: MOCK_NOTE,
-  },
+  // Справочники, настройки и аудит: бэк ГОТОВ (срез D1) — записи собираются
+  // в findApiGap по режимам доменов dictionaries/settings/audit.
+
   "/security-ops/feedback": {
     subject: "Обратная связь раздела ОМ",
     paths: ["/api/ops/feedback-requests/"],
@@ -218,6 +206,39 @@ const CALENDAR_MOCK_BY_CONFIG: ApiGap = {
     "режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=duties,combat.",
 };
 
+const SIMPLE_MOCK_BY_CONFIG: Record<string, ApiGap> = {
+  "/security-ops/dictionaries": {
+    subject: "Справочники раздела ОМ",
+    paths: [],
+    note:
+      "Бэкенд справочников готов (/api/ops/dictionaries/ — реестры, связи, " +
+      "заведение/деактивация/удаление); экран на MSW по конфигурации. Живой " +
+      "режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=dictionaries.",
+  },
+  "/security-ops/settings": {
+    subject: "Настройки раздела ОМ",
+    paths: [],
+    note:
+      "Бэкенд настроек готов (/api/ops/settings/ + журнал изменений; правка " +
+      "пишется насквозь в политики свежести/конфликтов); экран на MSW по " +
+      "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=settings.",
+  },
+  "/security-ops/audit": {
+    subject: "Журнал действий ОМ",
+    paths: [],
+    note:
+      "Бэкенд журнала готов (/api/ops/audit-logs/ поверх живого журнала " +
+      "раздела); экран на MSW по конфигурации. Живой режим: " +
+      "NEXT_PUBLIC_OPS_LIVE_DOMAINS=audit.",
+  },
+};
+
+const SIMPLE_LIVE_CHECK: Record<string, () => boolean> = {
+  "/security-ops/dictionaries": isOpsDictionariesLive,
+  "/security-ops/settings": isOpsSettingsLive,
+  "/security-ops/audit": isOpsAuditLive,
+};
+
 const DUTIES_MOCK_BY_CONFIG: ApiGap = {
   subject: "План дежурств",
   paths: [],
@@ -263,6 +284,11 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       return isOpsDutiesLive() && isOpsCombatLive()
         ? null
         : CALENDAR_MOCK_BY_CONFIG;
+    }
+    for (const [route, isLive] of Object.entries(SIMPLE_LIVE_CHECK)) {
+      if (normalized === route || normalized.startsWith(`${route}/`)) {
+        return isLive() ? null : SIMPLE_MOCK_BY_CONFIG[route];
+      }
     }
   }
   // Хост отдаёт пути с завершающим слэшем; нормализуем, чтобы «/ops/» и «/ops»

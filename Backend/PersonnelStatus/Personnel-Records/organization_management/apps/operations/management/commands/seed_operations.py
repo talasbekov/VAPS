@@ -45,6 +45,10 @@ PERMISSIONS = [
     # и не планирующие, а утверждает не тот, кто планирует.
     ("duty.view", "Просмотр плана дежурств"),
     ("duty.approve_plan", "Утверждение плана дежурств"),
+    ("dictionary.view", "Просмотр справочников раздела ОМ"),
+    ("dictionary.manage", "Управление справочниками раздела ОМ"),
+    ("settings.view", "Просмотр настроек раздела ОМ"),
+    ("settings.manage", "Управление настройками раздела ОМ"),
     ("audit.view", "Просмотр аудита"),
     # core API gating — раскладка PROVISIONAL (открытый вопрос Bratan);
     # тесты проверяют механизм, не политику.
@@ -186,6 +190,148 @@ class Command(BaseCommand):
                 route_code=code, defaults={"safe_label": label}
             )
         self.stdout.write(self.style.SUCCESS("Seeded combat registries"))
+
+        # Настройки-политики и их версии (порт мок-реестра; владелец политик
+        # теперь настройки — синглтоны политик обновляются сквозной записью).
+        from organization_management.apps.operations.models_settings import (
+            OpsDictionaryEntry,
+            OpsPolicySectionVersion,
+            OpsPolicySetting,
+        )
+
+        MODE_OPTIONS = [
+            {"value": "SOFT_OVERRIDE", "safeLabel": "Обход с обоснованием",
+             "description": "Назначение возможно: планирующий подтверждает "
+             "конфликт причиной, она сохраняется на смене."},
+            {"value": "HARD_BLOCK", "safeLabel": "Жёсткая блокировка",
+             "description": "Назначение в период отдыха отвергается без "
+             "возможности обхода."},
+        ]
+        SETTINGS = [
+            ("conflict.rest_after_duty.mode", "CONFLICT_RULES", "CHOICE",
+             "MODE", "Отдых после дежурства",
+             "Как планирование реагирует на назначение в период обязательного отдыха.",
+             "SOFT_OVERRIDE", None, None, MODE_OPTIONS, True, None),
+            ("conflict.duty_overlap.mode", "CONFLICT_RULES", "CHOICE",
+             "MODE", "Пересечение дежурств",
+             "Два дежурства одного сотрудника в один день.",
+             "HARD_BLOCK", None, None,
+             [{"value": "HARD_BLOCK", "safeLabel": "Жёсткая блокировка",
+               "description": "Пересечение отвергается всегда."}],
+             False,
+             "Жёсткий запрет пересечения нельзя ослабить никому — правило "
+             "показано для полноты списка."),
+            ("passport.verification_interval_days", "PASSPORT_FRESHNESS",
+             "NUMBER", "DAYS", "Интервал проверки паспорта",
+             "Через сколько дней после публикации версии паспорт требует проверки.",
+             120, 30, 365, None, True, None),
+            ("passport.due_soon_percent", "PASSPORT_FRESHNESS", "NUMBER",
+             "PERCENT", "Порог «скоро проверка»",
+             "Доля интервала до срока, с которой паспорт помечается «скоро проверка».",
+             25, 5, 50, None, True, None),
+            ("RATING.PERIOD.PARAMETER", "RATING_POLICY", "NUMBER", "DAYS",
+             "Период расчёта рейтинга",
+             "Сколько суток назад от бизнес-даты входит в расчёт агрегата.",
+             90, 7, 365, None, True, None),
+            ("RATING.MIN_EVALUATIONS.PARAMETER", "RATING_POLICY", "NUMBER",
+             "COUNT", "Минимум оценок для агрегата",
+             "Меньше этого числа учтённых оценок — «Недостаточно данных».",
+             4, 1, 20, None, True, None),
+            ("RATING.SUPPRESSION_MIN_GROUP.PARAMETER", "RATING_POLICY",
+             "NUMBER", "COUNT", "Порог безопасной агрегации",
+             "Минимальный размер группы для публикации агрегата.",
+             3, 2, 10, None, True, None),
+            ("LIMITS.ANALYTICS_CUSTOM_PERIOD.PARAMETER", "ANALYTICS_LIMITS",
+             "NUMBER", "DAYS", "Предел произвольного периода аналитики",
+             "Максимальная длина произвольного периода выборки.",
+             92, 7, 366, None, True, None),
+            ("LOAD.PERIOD.PARAMETER", "LOAD_POLICY", "NUMBER", "DAYS",
+             "Окно расчёта нагрузки", "Окно расчёта нагрузки.",
+             30, 7, 92, None, True, None),
+            ("LOAD.WARNING_MINUTES.PARAMETER", "LOAD_POLICY", "NUMBER",
+             "MINUTES", "Порог предупреждения нагрузки",
+             "Суммарные минуты за окно, с которых нагрузка — предупреждение.",
+             2880, 480, 20160, None, True, None),
+            ("LOAD.OVERLOAD_MINUTES.PARAMETER", "LOAD_POLICY", "NUMBER",
+             "MINUTES", "Порог перегрузки",
+             "Суммарные минуты за окно, с которых нагрузка — перегрузка.",
+             5760, 960, 40320, None, True, None),
+            ("ATTENTION.CONFLICT_SHARE.WARNING_FROM", "ATTENTION_POLICY",
+             "NUMBER", "PERCENT", "Доля конфликтных смен: предупреждение",
+             "Порог доли конфликтных смен для предупреждения.",
+             18, 1, 100, None, True, None),
+            ("ATTENTION.CONFLICT_SHARE.CRITICAL_FROM", "ATTENTION_POLICY",
+             "NUMBER", "PERCENT", "Доля конфликтных смен: критично",
+             "Порог доли конфликтных смен для критичного состояния.",
+             34, 1, 100, None, True, None),
+            ("ATTENTION.ACKNOWLEDGEMENT_MISSING.PARAMETER",
+             "ATTENTION_POLICY", "NUMBER", "DAYS",
+             "Срок упреждения ознакомления",
+             "За сколько дней до смены отсутствие ознакомления — наблюдение.",
+             3, 1, 14, None, True, None),
+            ("LIMITS.REPORT_PERIOD.PERSONNEL_EXPENSE", "REPORT_LIMITS",
+             "NUMBER", "DAYS", "Предел периода «Расход личного состава»",
+             "Максимальный период одной выгрузки.",
+             92, 7, 366, None, True, None),
+            ("LIMITS.REPORT_RETENTION.PARAMETER", "REPORT_LIMITS", "NUMBER",
+             "DAYS", "Срок хранения артефактов отчётов",
+             "Сколько дней хранится готовый артефакт.",
+             14, 1, 366, None, True, None),
+        ]
+        # имя choice_options, не options: options — словарь аргументов handle,
+        # затенение оставило бы в нём None последней строки (инцидент D1).
+        for (code, section, kind, vtype, label, desc, value, mn, mx,
+             choice_options, editable, locked) in SETTINGS:
+            OpsPolicySetting.objects.update_or_create(
+                setting_code=code,
+                defaults={
+                    "section_code": section, "kind": kind,
+                    "value_type": vtype, "safe_label": label,
+                    "description": desc, "value": value,
+                    "min_value": mn, "max_value": mx,
+                    "options": choice_options,
+                    "editable": editable, "locked_reason": locked,
+                },
+            )
+        # Версии секций выровнены с уже посеянными синглтонами политик
+        # (fp-v1/cp-v1) — версия посчитанного результата и версия раздела
+        # обязаны совпадать с первого дня.
+        for section, version in [
+            ("CONFLICT_RULES", "cp-v1"),
+            ("PASSPORT_FRESHNESS", "fp-v1"),
+            ("RATING_POLICY", "OPERATIONAL-RATING-2026.07.1"),
+            ("ANALYTICS_LIMITS", "analytics-limits-v1"),
+            ("LOAD_POLICY", "load-policy-v1"),
+            ("ATTENTION_POLICY", "attention-policy-v1"),
+            ("REPORT_LIMITS", "report-limits-v1"),
+        ]:
+            OpsPolicySectionVersion.objects.get_or_create(
+                section_code=section, defaults={"version": version}
+            )
+        DICTIONARY_ENTRIES = [
+            ("JOURNAL_ENTRY_TYPES", "INSTRUCTION", "Инструктаж", None),
+            ("JOURNAL_ENTRY_TYPES", "ORDER", "Распоряжение", None),
+            ("JOURNAL_ENTRY_TYPES", "INCIDENT", "Инцидент", None),
+            ("JOURNAL_ENTRY_TYPES", "REPLACEMENT", "Замена", None),
+            ("RETURN_REASONS", "UNDERSTAFFED", "Посты недоукомплектованы", None),
+            ("RETURN_REASONS", "WRONG_REQUIREMENTS", "Не выдержаны требования", None),
+            ("POST_REQUIREMENT_GROUPS", "ACCESS", "Допуски", None),
+            ("POST_REQUIREMENT_GROUPS", "PHYSICAL", "Физические требования", None),
+            ("POST_REQUIREMENTS", "ACCESS_A", "Допуск «Объект A»", "ACCESS"),
+            ("POST_REQUIREMENTS", "HEIGHT_175", "Рост от 175 см", "PHYSICAL"),
+            ("SEASONAL_CORRECTIONS", "WINTER", "Зимняя поправка", None),
+        ]
+        for dictionary, code, label, group in DICTIONARY_ENTRIES:
+            OpsDictionaryEntry.objects.update_or_create(
+                dictionary_code=dictionary, code=code,
+                defaults={
+                    "label": label, "description": "", "is_active": True,
+                    "group_code": group,
+                },
+            )
+        self.stdout.write(
+            self.style.SUCCESS("Seeded ops settings and dictionaries")
+        )
 
         for spec in options["assign"]:
             parts = spec.split(":")
