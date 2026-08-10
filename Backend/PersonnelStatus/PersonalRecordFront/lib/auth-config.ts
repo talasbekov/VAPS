@@ -172,5 +172,20 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
-  secret: process.env.NEXTAUTH_SECRET || "your-secret-key-change-in-production",
+  // Fail-closed, как у бэкенда (прод без VAPS_SECRET_KEY не стартует):
+  // известный фолбэк в проде позволял бы подписывать чужие сессии всем, кто
+  // прочитал репозиторий. В dev секрет разрешён дефолтом — он подписывает
+  // только локальные сессии разработчика.
+  secret: resolveNextAuthSecret(),
 };
+
+function resolveNextAuthSecret(): string {
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXTAUTH_SECRET не задан: прод без секрета подписи сессий не стартует."
+    );
+  }
+  return "dev-local-secret";
+}
