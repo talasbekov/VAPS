@@ -276,14 +276,20 @@ function ExpenseReportPanel({
         )}
 
         {/* Вход в печатную форму (10.7): контрольная печать не зависит от
-            выпуска .docx, поэтому ссылка видна и до выпуска. Новая вкладка —
-            экран расхода не теряет выбранный контекст. ⚠️ Только <Link> с
-            фабрикой ROUTES: голый href это literal-путь и eslint error
-            (ARCH-FE-012). */}
+            выпуска .docx, поэтому ссылка видна и до выпуска. ⚠️ Только <Link>
+            с фабрикой ROUTES: голый href это literal-путь и eslint error
+            (ARCH-FE-012).
+
+            ⚠️ БЕЗ `target="_blank"` — паттерн `SecurityEventDetailPage.tsx`
+            (печатная форма расстановки, §9.15): credential живёт в
+            `sessionStorage`, а Chromium ≥88 трактует безымянный
+            `target="_blank"` как implicit `noopener` — новая вкладка не
+            auxiliary, sessionStorage в неё НЕ клонируется, и `/print/expense`
+            за `RequireAuth` открывается на экране входа. Возврат к экрану
+            расхода — кнопкой браузера. */}
         <div>
           <Link
             to={ROUTES.printExpenseTo(divisionId, businessDate)}
-            target="_blank"
             className="text-sm underline"
           >
             {PRINT_FORM_LINK_LABEL}

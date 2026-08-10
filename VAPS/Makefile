@@ -17,6 +17,7 @@ schema:
 		echo "  run: python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'"; \
 		exit 1; \
 	}
+	VAPS_DEBUG=1 \
 	VAPS_DB=postgres \
 	VAPS_DB_NAME=vaps \
 	VAPS_DB_USER=vaps \
@@ -51,6 +52,7 @@ parallel-run-diff:
 		echo "  run: python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'"; \
 		exit 1; \
 	}
+	VAPS_DEBUG=1 \
 	VAPS_DB=postgres \
 	VAPS_DB_NAME=vaps \
 	VAPS_DB_USER=vaps \
@@ -67,6 +69,7 @@ test-full:
 		exit 1; \
 	}
 	@start=$$(date +%s); \
+	VAPS_DEBUG=1 \
 	VAPS_DB=postgres \
 	VAPS_DB_NAME=vaps \
 	VAPS_DB_USER=vaps \
@@ -92,6 +95,7 @@ gate:
 		exit 1; \
 	}
 	@start=$$(date +%s); \
+	VAPS_DEBUG=1 \
 	VAPS_DB=postgres \
 	VAPS_DB_NAME=vaps \
 	VAPS_DB_USER=vaps \

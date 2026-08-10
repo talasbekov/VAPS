@@ -119,8 +119,9 @@ export function SecurityEventDetailPage() {
           {/* Вход в печатную форму расстановки (§9.15). Показывается ТОЛЬКО
               когда есть что печатать: ссылка на пустой документ — мёртвый жест.
 
-              ⚠️ БЕЗ `target="_blank"` — СОЗНАТЕЛЬНОЕ отступление от прецедента
-              `ExpenseReportPage.tsx:285-288`, и вот почему: credential живёт в
+              ⚠️ БЕЗ `target="_blank"` — паттерн, теперь общий с
+              `ExpenseReportPage.tsx` (печатная форма расхода портирована на
+              него же), и вот почему: credential живёт в
               `sessionStorage`, а Chromium ≥88 трактует безымянный
               `target="_blank"` как implicit `noopener` — новая вкладка не
               auxiliary, sessionStorage в неё НЕ клонируется, и печатная форма

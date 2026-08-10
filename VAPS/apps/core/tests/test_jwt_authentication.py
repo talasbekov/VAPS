@@ -23,7 +23,12 @@ from rest_framework.request import Request
 from rest_framework.test import APIRequestFactory
 
 from apps.core.auth.authentication import JWTAuthentication, XUserIdAuthentication
-from config.settings import build_auth_classes, jwt_config_from_env
+from config.settings import (
+    build_auth_classes,
+    debug_from_env,
+    jwt_config_from_env,
+    secret_key_from_env,
+)
 
 # ≥64 bytes so HS256/HS512 stay above PyJWT's RFC-7518 minimum (no warnings)
 _SECRET = "test-secret-story-5-1-jwt-auth-" + "0" * 40
@@ -318,3 +323,28 @@ def test_jwt_config_valid_prod():
     )
     assert cfg["audience"] == "vaps"
     assert cfg["algorithms"] == ["RS256"]
+
+
+# --- fail-closed config defaults (review 2026-08-08): DEBUG/SECRET_KEY ---
+
+
+def test_debug_default_is_off():
+    assert debug_from_env({}) is False
+
+
+def test_debug_opt_in():
+    assert debug_from_env({"VAPS_DEBUG": "1"}) is True
+    assert debug_from_env({"VAPS_DEBUG": "0"}) is False
+
+
+def test_secret_key_prod_without_env_fails_closed():
+    with pytest.raises(ImproperlyConfigured):
+        secret_key_from_env({}, debug=False)
+
+
+def test_secret_key_dev_falls_back_to_dev_key():
+    assert secret_key_from_env({}, debug=True) == "dev-insecure-key"
+
+
+def test_secret_key_env_wins_in_prod():
+    assert secret_key_from_env({"VAPS_SECRET_KEY": "k"}, debug=False) == "k"
