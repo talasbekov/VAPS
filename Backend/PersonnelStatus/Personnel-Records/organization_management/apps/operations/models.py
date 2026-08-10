@@ -197,3 +197,10 @@ from organization_management.apps.operations.models_duty import (  # noqa: E402
     OpsDutyShift,  # noqa: F401
     OpsDutyType,  # noqa: F401
 )
+
+# Боевые группы на Трассе — свои реестры и смена-агрегат.
+from organization_management.apps.operations.models_combat import (  # noqa: E402
+    OpsCombatDutyShift,  # noqa: F401
+    OpsCombatDutyType,  # noqa: F401
+    OpsCombatRoute,  # noqa: F401
+)
