@@ -34,7 +34,7 @@
 //   4) ВРЕЗКА ССЫЛКИ «ПЕЧАТНАЯ ФОРМА» на `/reports` (Task 6, Решение 6 спеки:
 //      «роут без входа — мёртвый продукт»). Грепом по всему `src/` и `e2e/`:
 //      ссылку не ассертит НИ ОДИН тест — ни её наличие, ни href, ни
-//      `target="_blank"`. Единственное упоминание в тестах — комментарий в
+//      способ открытия. Единственное упоминание в тестах — комментарий в
 //      `ExpenseReportPage.test.tsx:80` о добавленном ради неё `MemoryRouter`.
 //      Вход в фичу мог бы вести куда угодно или не рендериться вовсе.
 //
@@ -113,9 +113,10 @@ function envelope(errorCode: string, message: string) {
 }
 
 /**
- * Перехват сети НА УРОВНЕ КОНТЕКСТА, а не страницы: ссылка «Печатная форма»
- * открывается в НОВОЙ ВКЛАДКЕ (`target="_blank"`), и `page.route` на неё не
- * распространился бы — попап ушёл бы в реальную сеть и упал.
+ * Перехват сети НА УРОВНЕ КОНТЕКСТА — исторически из-за `target="_blank"`
+ * (попап вне `page.route`); ссылка с тех пор переведена на same-tab
+ * (sessionStorage не клонируется в новую вкладку — implicit noopener,
+ * Chromium ≥88), но контекстный перехват остаётся корректным и для неё.
  *
  * Право — РОВНО `daily_report.generate`, тот же код, что в `_EXPENSE_PERMISSION`
  * бэка (views.py:74): `RequirePermission` проезжает боевым путём, а не потому,
@@ -195,8 +196,10 @@ async function stubBackend(
 
   // Сид credential ДО скриптов страницы (Ловушка 6 стори 8.8): `credential.ts`
   // гидратируется на import модуля — `page.evaluate` после load опоздал бы, и
-  // `RequireAuth` уже средиректил бы на /login. На КОНТЕКСТ, а не на страницу:
-  // попап печатной формы обязан приехать с тем же credential.
+  // `RequireAuth` уже средиректил бы на /login. ⚠️ Именно этот context-level
+  // сид когда-то МАСКИРОВАЛ дефект `target="_blank"`: в реальном браузере
+  // sessionStorage в новую вкладку не клонируется, а initScript сеял его и в
+  // попап. Ссылка теперь same-tab — см. ассерт в тесте (т).
   await context.addInitScript(() => {
     sessionStorage.setItem(
       'vaps.credential',
@@ -497,14 +500,18 @@ test.describe('вход с /reports', () => {
     expect(href).toBe(
       `/print/expense?division_id=${DIVISION_ID}&business_date=${LOCAL_TODAY}`,
     )
-    // Новая вкладка: экран расхода не теряет выбранный контекст
-    await expect(link).toHaveAttribute('target', '_blank')
+    // Переход В ТОЙ ЖЕ вкладке — не вкус, а условие работоспособности
+    // (паттерн placement-print.spec.ts:54): credential живёт в sessionStorage,
+    // и новая вкладка (implicit noopener в Chromium ≥88) открылась бы на
+    // экране входа — context-level addInitScript этого стаба МАСКИРОВАЛ дефект,
+    // сея credential и в попап. Ассерт закрепляет same-tab: вернувшийся
+    // `target="_blank"` покрасит тест.
+    await expect(link).not.toHaveAttribute('target', '_blank')
 
     // И главное — по ссылке РЕАЛЬНО открывается работающая печатная форма,
     // а не 404 и не пустой лист. Ровно это не проверял ни один тест.
-    const popupPromise = context.waitForEvent('page')
     await link.click()
-    const printPage = await popupPromise
+    const printPage = page
     await printPage.waitForLoadState()
 
     await expect(printPage.locator('.print-root table')).toBeVisible()
