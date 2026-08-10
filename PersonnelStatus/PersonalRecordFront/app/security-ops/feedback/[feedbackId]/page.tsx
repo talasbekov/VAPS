@@ -6,7 +6,7 @@
 // статусы уйти — приходит с сервера.
 import { useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { MessageSquareText } from "lucide-react";
 import {
@@ -62,6 +62,13 @@ function actionOf(
 export default function FeedbackDetailPage() {
   const params = useParams<{ feedbackId: string }>();
   const feedbackId = params.feedbackId ?? "";
+  // Модуль живёт по ДВУМ адресам (/feedback и /security-ops/feedback — одна
+  // страница, см. app/feedback/): реестр и соседние карточки адресуются от
+  // текущего пути, а не от жёсткого префикса раздела.
+  const pathname = usePathname();
+  const registryPath =
+    pathname.replace(/\/+$/, "").split("/").slice(0, -1).join("/") ||
+    "/security-ops/feedback";
   const detailQuery = useFeedbackDetail(feedbackId);
   const addComment = useAddFeedbackComment();
   const triage = useTriageFeedback();
@@ -80,7 +87,7 @@ export default function FeedbackDetailPage() {
           <p className="text-sm text-destructive">{detailQuery.error.message}</p>
           <Link
             className="text-sm font-semibold text-primary underline"
-            href="/security-ops/feedback"
+            href={registryPath}
           >
             ← К реестру обращений
           </Link>
@@ -130,7 +137,7 @@ export default function FeedbackDetailPage() {
           <div>
             <Link
               className="text-sm font-semibold text-primary underline"
-              href="/security-ops/feedback"
+              href={registryPath}
             >
               ← К реестру обращений
             </Link>
@@ -197,7 +204,7 @@ export default function FeedbackDetailPage() {
               ) : (
                 <Link
                   className="font-semibold text-primary underline"
-                  href={`/security-ops/feedback/${data.duplicateOf.feedbackId}`}
+                  href={`${registryPath}/${data.duplicateOf.feedbackId}`}
                 >
                   {data.duplicateOf.subject}
                 </Link>

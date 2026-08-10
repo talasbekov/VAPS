@@ -31,7 +31,9 @@ const MOCK_NOTE =
 // короткому, поэтому вложенные экраны могут уточнять родительскую запись.
 const GAPS: Readonly<Record<string, ApiGap>> = {
   // «/feedback» (легаси-чат поверх несуществующего /api/dictionaries/feedback/)
-  // переписан целиком: адрес редиректит на /security-ops/feedback (срез J).
+  // переписан целиком: адрес рендерит новый модуль §28 (та же страница, что
+  // /security-ops/feedback — срез J); запись собирается в findApiGap по
+  // режиму домена feedback.
   "/ops": {
     subject: "Встроенная SPA раздела ОМ",
     paths: [
@@ -166,6 +168,17 @@ const SIMPLE_MOCK_BY_CONFIG: Record<string, ApiGap> = {
       "раздела); экран на MSW по конфигурации. Живой режим: " +
       "NEXT_PUBLIC_OPS_LIVE_DOMAINS=audit.",
   },
+  // Один модуль — два адреса (/feedback и /security-ops/feedback): врезка
+  // обязана вести себя одинаково на обоих.
+  "/feedback": {
+    subject: "Обратная связь раздела ОМ",
+    paths: [],
+    note:
+      "Бэкенд обратной связи готов (/api/ops/feedback-requests/ — реестр со " +
+      "сводкой и страницами, создание/отправка черновика, карточка с лентой, " +
+      "комментарии, разбор и закрытие с ответом автору); экран на MSW по " +
+      "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=feedback.",
+  },
   "/security-ops/feedback": {
     subject: "Обратная связь раздела ОМ",
     paths: [],
@@ -182,6 +195,7 @@ const SIMPLE_LIVE_CHECK: Record<string, () => boolean> = {
   "/security-ops/settings": isOpsSettingsLive,
   "/security-ops/audit": isOpsAuditLive,
   "/security-ops/feedback": isOpsFeedbackLive,
+  "/feedback": isOpsFeedbackLive,
 };
 
 const ANALYTICS_MOCK_BY_CONFIG: ApiGap = {
