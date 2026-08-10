@@ -188,6 +188,7 @@ from organization_management.apps.operations.models_object import (  # noqa: E40
 # Охранные мероприятия — агрегат раздела ОМ.
 from organization_management.apps.operations.models_event import (  # noqa: E402
     OpsSecurityEvent,  # noqa: F401
+    OpsSecurityEventTransition,  # noqa: F401
 )
 
 # План дежурств — виды, смены, месячный план, политика конфликтов.
@@ -228,4 +229,11 @@ from organization_management.apps.operations.models_rating import (  # noqa: E40
     OpsRatingGroup,  # noqa: F401
     OpsRatingIdempotencyRecord,  # noqa: F401
     OpsRatingNotification,  # noqa: F401
+)
+
+# Реестры аналитики службы (§22).
+from organization_management.apps.operations.models_analytics import (  # noqa: E402
+    OpsAnalyticsMetricDefinition,  # noqa: F401
+    OpsAnalyticsPeriodPreset,  # noqa: F401
+    OpsAttentionDetector,  # noqa: F401
 )

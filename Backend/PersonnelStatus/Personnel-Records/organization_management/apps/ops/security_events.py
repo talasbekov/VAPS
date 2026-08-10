@@ -20,6 +20,7 @@ from organization_management.apps.operations.clock import Clock
 from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
+    OpsSecurityEventTransition,
 )
 from organization_management.apps.operations.models_object import (
     OpsPassportVersion,
@@ -185,6 +186,7 @@ def create_event(*, title, object_id, business_date, actor):
         closure_direction_summaries=[],
         closed_at=None,
     )
+    record_transition(event, None, "BULLETIN")
     audit_service.record(
         actor=actor,
         action=audit_service.SECURITY_EVENT_CREATED,
@@ -234,10 +236,36 @@ def complete_bulletin(event_id):
     return _advance(event, "RECON")
 
 
+_STAGE_ORDER = [
+    "BULLETIN", "RECON", "DEMAND", "FORCES", "PLACEMENT", "APPROVAL",
+    "ACKNOWLEDGEMENT", "CONDUCT", "CLOSED",
+]
+
+
+def record_transition(event, from_stage, to_stage):
+    """Журнал переходов (§22.14) — append-only, в ТОЙ ЖЕ транзакции, что и
+    смена стадии: отдельная запись пережила бы неудавшийся коммит и сообщила
+    бы о переходе, которого не произошло. Возврат (движение назад по порядку
+    стадий) помечается своим видом — воронка не должна считать его прогрессом."""
+    kind = "FORWARD"
+    if from_stage in _STAGE_ORDER and to_stage in _STAGE_ORDER:
+        if _STAGE_ORDER.index(to_stage) < _STAGE_ORDER.index(from_stage):
+            kind = "RETURN"
+    OpsSecurityEventTransition.objects.create(
+        event=event,
+        from_stage=from_stage,
+        to_stage=to_stage,
+        kind=kind,
+        occurred_at=Clock.now(),
+    )
+
+
 def _advance(event, stage):
+    old_stage = event.stage
     event.stage = stage
     event.readiness_percent = STAGE_READINESS[stage]
     event.save(update_fields=["stage", "readiness_percent", "updated_at"])
+    record_transition(event, old_stage, stage)
     return event
 
 
@@ -417,6 +445,7 @@ def approve_demand(event_id, *, rows):
         for index, (group, requested) in enumerate(by_group.items())
     ]
     event.force_need = sum(int(row["need"]) for row in cleaned)
+    _forces_from_stage = event.stage
     event.stage = "FORCES"
     event.readiness_percent = STAGE_READINESS["FORCES"]
     event.save(
@@ -430,6 +459,7 @@ def approve_demand(event_id, *, rows):
             "updated_at",
         ]
     )
+    record_transition(event, _forces_from_stage, "FORCES")
     return event
 
 
@@ -614,6 +644,7 @@ def approve_placement(event_id):
             "updated_at",
         ]
     )
+    record_transition(event, "APPROVAL", "ACKNOWLEDGEMENT")
     return event
 
 
@@ -641,6 +672,7 @@ def return_placement(event_id, *, comment):
             "updated_at",
         ]
     )
+    record_transition(event, "APPROVAL", "PLACEMENT")
     return event
 
 
@@ -812,6 +844,7 @@ def close_event(event_id, *, direction_summaries, actor):
             "updated_at",
         ]
     )
+    record_transition(event, old_stage, "CLOSED")
     audit_service.record(
         actor=actor,
         action=audit_service.SECURITY_EVENT_CLOSED,

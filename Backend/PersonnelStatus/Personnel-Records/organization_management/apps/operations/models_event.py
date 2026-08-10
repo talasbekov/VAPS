@@ -126,3 +126,43 @@ class OpsSecurityEvent(TimeStampedModel):
 
     def __str__(self):
         return f"{self.code} — {self.title}"
+
+
+class OpsSecurityEventTransition(TimeStampedModel):
+    """Журнал переходов стадий ОМ — append-only (§22.14).
+
+    Воронка аналитики строится ТОЛЬКО по этим событиям, а не по текущему
+    массиву карточек: карточка знает лишь «где ОМ сейчас», журнал — «как оно
+    туда шло». `from_stage` NULL — заведение мероприятия (вход в BULLETIN).
+    `kind` RETURN — движение назад (возврат с согласования): различие нужно
+    воронке, чтобы возвраты не выглядели прогрессом.
+    """
+
+    event = models.ForeignKey(
+        OpsSecurityEvent,
+        on_delete=models.CASCADE,
+        related_name="transitions",
+    )
+    from_stage = models.CharField(max_length=20, null=True)
+    to_stage = models.CharField(max_length=20)
+    kind = models.CharField(max_length=10)
+    occurred_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "ops_security_event_transitions"
+        verbose_name = "Переход стадии ОМ"
+        verbose_name_plural = "Переходы стадий ОМ"
+        ordering = ["occurred_at", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(to_stage__in=_STAGES),
+                name="chk_ops_event_transition_to_stage",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kind__in=("FORWARD", "RETURN")),
+                name="chk_ops_event_transition_kind",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.event_id}: {self.from_stage} → {self.to_stage}"

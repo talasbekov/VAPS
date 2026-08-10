@@ -50,3 +50,7 @@ export function isOpsAuditLive(): boolean {
 export function isOpsRatingsLive(): boolean {
   return !isOpsMockMode() || opsLiveDomains().has("ratings");
 }
+
+export function isOpsAnalyticsLive(): boolean {
+  return !isOpsMockMode() || opsLiveDomains().has("analytics");
+}

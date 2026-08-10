@@ -107,6 +107,18 @@ CODES = {
     "EXPORT_FORMAT_UNAVAILABLE": frozenset({422}),
     "EXPORT_NOT_CANCELLABLE": frozenset({422}),
     "EXPORT_NOT_READY": frozenset({422}),
+    # ── Аналитика службы и мероприятий (§22; отказы — 422) ───────────────
+    "UNKNOWN_PERIOD_PRESET": frozenset({422}),
+    "INVALID_PERIOD": frozenset({422}),
+    # Предел произвольного периода не задан политикой — период по датам не
+    # принимается вовсе (снять предел из-за отсутствия владельца нельзя).
+    "PERIOD_LIMIT_UNAVAILABLE": frozenset({422}),
+    "PERIOD_TOO_LONG": frozenset({422}),
+    # §22.12: строки drill-down обязаны принадлежать ТОМУ ЖЕ снимку, что и
+    # показатель, — расхождение это отказ, а не молчаливая подмена выборки.
+    "SNAPSHOT_OUTDATED": frozenset({422}),
+    "UNKNOWN_METRIC": frozenset({422}),
+    "UNKNOWN_LEVEL_TARGET": frozenset({422}),
     # ── Настройки и справочники раздела ОМ ───────────────────────────────
     "SETTING_LOCKED": frozenset({422}),
     # Удаление требует ДОКАЗАННОГО отсутствия связей: у неотслеживаемых

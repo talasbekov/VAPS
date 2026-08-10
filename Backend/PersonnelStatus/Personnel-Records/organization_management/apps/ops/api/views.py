@@ -19,6 +19,7 @@ from organization_management.apps.ops.api.serializers import (
     SecurityObjectSerializer,
 )
 from organization_management.apps.ops import passport as passport_service
+from organization_management.apps.ops import analytics as analytics_service
 from organization_management.apps.ops import ratings as ratings_service
 from organization_management.apps.operations.api.permissions import (
     effective_permissions,
@@ -1296,4 +1297,109 @@ class RatingExportArtifactsViewSet(viewsets.ViewSet):
                 effective_permissions(request),
                 str(pk),
             )
+        )
+
+
+# ── Аналитика службы и мероприятий (§22) ────────────────────────────────────
+
+
+class ServiceAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/service-analytics/ — снимок показателей §22.4/§22.7."""
+
+    permission_map = {"list": analytics_service.VIEW_PERMISSION}
+
+    def list(self, request):
+        params = request.query_params
+        return Response(
+            analytics_service.service_analytics(
+                effective_permissions(request),
+                {
+                    # Пустая строка и отсутствующий параметр — одно и то же:
+                    # ?preset= появляется при сбросе фильтра.
+                    "presetCode": params.get("preset") or None,
+                    "from": params.get("from") or "",
+                    "to": params.get("to") or "",
+                },
+            )
+        )
+
+
+class ServiceAnalyticsPresetsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/service-analytics-presets/ — пресеты §22.5 и предел
+    произвольного периода из «Настроек»."""
+
+    permission_map = {"list": analytics_service.VIEW_PERMISSION}
+
+    def list(self, request):
+        return Response(analytics_service.list_presets())
+
+
+class ServiceAnalyticsDrilldownViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/service-analytics-drilldown/ — выборка §22.12. Право
+    drill-down проверяет сервис ВТОРЫМ: переход со своего же дашборда доступа
+    не подтверждает."""
+
+    permission_map = {"list": analytics_service.VIEW_PERMISSION}
+
+    def list(self, request):
+        params = request.query_params
+        return Response(
+            analytics_service.drilldown(
+                effective_permissions(request),
+                {
+                    "snapshotId": params.get("snapshot_id") or "",
+                    "metricCode": params.get("metric_code") or "",
+                    "presetCode": params.get("preset") or None,
+                    "from": params.get("from") or "",
+                    "to": params.get("to") or "",
+                    "cursor": params.get("cursor") or None,
+                },
+            )
+        )
+
+
+class ServiceAnalyticsAttentionViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/service-analytics-attention/ — блок §22.11: свои
+    детекторы, политика из «Настроек», свой policyVersion."""
+
+    permission_map = {"list": analytics_service.VIEW_PERMISSION}
+
+    def list(self, request):
+        params = request.query_params
+        return Response(
+            analytics_service.attention({
+                "presetCode": params.get("preset") or None,
+                "from": params.get("from") or "",
+                "to": params.get("to") or "",
+            })
+        )
+
+
+class LoadAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/load-analytics/ — нагрузка §22.9: план и факт разными
+    полями, состояние красится только по плану, пороги из LOAD_POLICY."""
+
+    permission_map = {"list": analytics_service.VIEW_PERMISSION}
+
+    def list(self, request):
+        return Response(analytics_service.load_analytics())
+
+
+class OperationsAnalyticsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """GET /api/ops/operations-analytics/ — уровни §22.15 и воронка §22.14.
+    Право СВОЁ: §22.26 перечисляет аналитику службы и аналитику ОМ разными
+    пунктами."""
+
+    permission_map = {"list": analytics_service.OPS_VIEW_PERMISSION}
+
+    def list(self, request):
+        params = request.query_params
+        return Response(
+            analytics_service.operations_analytics({
+                "level": params.get("level") or "ALL",
+                "objectId": params.get("object_id"),
+                "eventId": params.get("event_id"),
+                "directionId": params.get("direction_id"),
+                "postId": params.get("post_id"),
+            })
         )
