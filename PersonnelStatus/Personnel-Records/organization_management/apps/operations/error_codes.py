@@ -119,6 +119,15 @@ CODES = {
     "SNAPSHOT_OUTDATED": frozenset({422}),
     "UNKNOWN_METRIC": frozenset({422}),
     "UNKNOWN_LEVEL_TARGET": frozenset({422}),
+    # ── Служебные отчёты (§22.18-22.28; отказы — 422) ────────────────────
+    "IDEMPOTENCY_KEY_REQUIRED": frozenset({422}),
+    "UNKNOWN_REPORT_TYPE": frozenset({422}),
+    "UNSUPPORTED_FORMAT": frozenset({422}),
+    # Срок хранения не задан политикой — файл без срока жил бы вечно.
+    "RETENTION_UNAVAILABLE": frozenset({422}),
+    "NO_BASE_REVISION": frozenset({422}),
+    "JOB_NOT_FINISHED": frozenset({422}),
+    "ARTIFACT_EXPIRED": frozenset({422}),
     # ── Настройки и справочники раздела ОМ ───────────────────────────────
     "SETTING_LOCKED": frozenset({422}),
     # Удаление требует ДОКАЗАННОГО отсутствия связей: у неотслеживаемых

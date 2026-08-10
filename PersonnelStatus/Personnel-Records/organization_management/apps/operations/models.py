@@ -237,3 +237,10 @@ from organization_management.apps.operations.models_analytics import (  # noqa: 
     OpsAnalyticsPeriodPreset,  # noqa: F401
     OpsAttentionDetector,  # noqa: F401
 )
+
+# Служебные отчёты (§22.18-22.28).
+from organization_management.apps.operations.models_report import (  # noqa: E402
+    OpsServiceReportArtifact,  # noqa: F401
+    OpsServiceReportJob,  # noqa: F401
+    OpsServiceReportType,  # noqa: F401
+)

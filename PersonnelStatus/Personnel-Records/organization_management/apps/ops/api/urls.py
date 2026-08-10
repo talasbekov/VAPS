@@ -22,6 +22,9 @@ from organization_management.apps.ops.api.views import (
     ServiceAnalyticsDrilldownViewSet,
     ServiceAnalyticsPresetsViewSet,
     ServiceAnalyticsViewSet,
+    ServiceReportArtifactsViewSet,
+    ServiceReportJobsViewSet,
+    ServiceReportTypesViewSet,
     EvaluationWorkItemViewSet,
     EvaluationWorkspaceViewSet,
     OperationalRatingDynamicsViewSet,
@@ -144,6 +147,20 @@ router.register(
 router.register(
     "operations-analytics", OperationsAnalyticsViewSet,
     basename="ops-operations-analytics",
+)
+
+# Служебные отчёты (§22.18-22.28).
+router.register(
+    "service-report-types", ServiceReportTypesViewSet,
+    basename="ops-report-types",
+)
+router.register(
+    "service-report-jobs", ServiceReportJobsViewSet,
+    basename="ops-report-jobs",
+)
+router.register(
+    "service-report-artifacts", ServiceReportArtifactsViewSet,
+    basename="ops-report-artifacts",
 )
 
 urlpatterns = router.urls
