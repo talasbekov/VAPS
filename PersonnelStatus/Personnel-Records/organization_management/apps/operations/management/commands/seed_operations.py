@@ -66,6 +66,16 @@ PERMISSIONS = [
     ("report.generate", "Запуск служебных отчётов"),
     ("report.export_sensitive", "Выгрузка отчёта со скрытыми полями"),
     ("report.view_foreign_parameters", "Просмотр параметров чужого отчёта"),
+    # Обратная связь (§28): права ПОРОЗНЬ — право пожаловаться, право читать
+    # чужие обращения, содержание чужого конфиденциального, разбор и
+    # внутренние заметки охраняют разные операции с разными владельцами.
+    ("feedback.view", "Просмотр обращений обратной связи"),
+    ("feedback.create", "Создание обращения обратной связи"),
+    ("feedback.view_all", "Просмотр чужих обращений обратной связи"),
+    ("feedback.view_confidential",
+     "Просмотр содержания конфиденциальных обращений"),
+    ("feedback.triage", "Разбор обращений обратной связи"),
+    ("feedback.internal_note", "Внутренние заметки по обращениям"),
     ("dictionary.view", "Просмотр справочников раздела ОМ"),
     ("dictionary.manage", "Управление справочниками раздела ОМ"),
     ("settings.view", "Просмотр настроек раздела ОМ"),
@@ -140,6 +150,17 @@ class Command(BaseCommand):
             default=[],
             metavar="user:ROLE[:division_id]",
             help="Назначить роль пользователю (можно несколько раз).",
+        )
+        parser.add_argument(
+            "--feedback-author",
+            default=None,
+            metavar="actor_id",
+            help=(
+                "Завести на живом стенде черновик обращения от указанного "
+                "actor_id (str(User.pk)): сеяные обращения несут "
+                "идентификаторы demo-персон мок-контракта, и без своего "
+                "черновика путь «отправить черновик» вживую недостижим."
+            ),
         )
         parser.add_argument(
             "--rating-evaluator",
@@ -368,6 +389,7 @@ class Command(BaseCommand):
         self._seed_ratings(options.get("rating_evaluator"))
         self._seed_analytics()
         self._seed_reports()
+        self._seed_feedback(options.get("feedback_author"))
 
         for spec in options["assign"]:
             parts = spec.split(":")
@@ -822,3 +844,408 @@ class Command(BaseCommand):
             },
         )
         self.stdout.write(self.style.SUCCESS("Seeded service report types"))
+
+    def _seed_feedback(self, feedback_author):
+        """Обратная связь (§28) — порт мок-фикстуры хоста: справочник целиком
+        (подписи, порядок, КАРТА ПЕРЕХОДОВ — в данных) и девять обращений —
+        три страницы по четыре, последняя неполная. Среди них чужой ЧЕРНОВИК
+        (не виден никому, кроме автора), чужое КОНФИДЕНЦИАЛЬНОЕ, обращение с
+        согласием на техническую информацию и признанный дубликат со ссылкой
+        на оригинал. Авторы — demo-персоны мок-контракта: живой учётки у них
+        нет, «своё» обращение на стенде заводится через --feedback-author."""
+        import datetime as _dt
+
+        from organization_management.apps.operations.clock import Clock
+        from organization_management.apps.operations.models_feedback import (
+            OpsFeedbackComment,
+            OpsFeedbackEvent,
+            OpsFeedbackRegistry,
+            OpsFeedbackRequest,
+        )
+
+        OpsFeedbackRegistry.objects.update_or_create(
+            singleton_key=1,
+            defaults={
+                "version": "feedback-registry-2026.07.2",
+                "types": [
+                    {"code": "BUG", "label": "Ошибка"},
+                    {"code": "WRONG_DATA", "label": "Неверные данные"},
+                    {"code": "UX", "label": "UX"},
+                    {"code": "IDEA", "label": "Идея"},
+                    {"code": "ACCESS", "label": "Доступ"},
+                    {"code": "HELP", "label": "Помощь"},
+                ],
+                "priorities": [
+                    {"code": "LOW", "label": "Низкий"},
+                    {"code": "NORMAL", "label": "Обычный"},
+                    {"code": "HIGH", "label": "Высокий"},
+                    {"code": "CRITICAL", "label": "Критический"},
+                ],
+                "statuses": [
+                    {"code": "DRAFT", "label": "Черновик"},
+                    {"code": "NEW", "label": "Новое"},
+                    {"code": "IN_REVIEW", "label": "На рассмотрении"},
+                    {"code": "NEED_INFO", "label": "Нужна информация"},
+                    {"code": "ACCEPTED", "label": "Принято в работу"},
+                    {"code": "PLANNED", "label": "Запланировано"},
+                    {"code": "FIXED", "label": "Исправлено"},
+                    {"code": "RELEASED", "label": "Реализовано"},
+                    {"code": "REJECTED", "label": "Отклонено"},
+                    {"code": "CLOSED", "label": "Закрыто"},
+                    {"code": "DUPLICATE", "label": "Дубликат"},
+                ],
+                # Модули — разделы, которые в нативном порте РЕАЛЬНО есть.
+                "modules": [
+                    {"moduleCode": "SECURITY_EVENTS", "label": "Реестр ОМ"},
+                    {"moduleCode": "DUTIES", "label": "План дежурств"},
+                    {"moduleCode": "OBJECTS", "label": "Объекты и паспорта"},
+                    {"moduleCode": "RATINGS", "label": "Оперативный рейтинг"},
+                    {"moduleCode": "ANALYTICS", "label": "Аналитика службы"},
+                    {"moduleCode": "REPORTS", "label": "Отчёты службы"},
+                    {"moduleCode": "OTHER", "label": "Другое"},
+                ],
+                # Из терминальных статусов переходов нет — это и есть замок.
+                "status_transitions": [
+                    {"from": "DRAFT", "to": ["NEW"]},
+                    {"from": "NEW",
+                     "to": ["IN_REVIEW", "NEED_INFO", "REJECTED", "DUPLICATE"]},
+                    {"from": "IN_REVIEW",
+                     "to": ["NEED_INFO", "ACCEPTED", "REJECTED", "DUPLICATE"]},
+                    {"from": "NEED_INFO", "to": ["IN_REVIEW", "REJECTED"]},
+                    {"from": "ACCEPTED", "to": ["PLANNED", "REJECTED"]},
+                    {"from": "PLANNED", "to": ["FIXED", "REJECTED"]},
+                    {"from": "FIXED", "to": ["RELEASED"]},
+                    {"from": "RELEASED", "to": ["CLOSED"]},
+                    {"from": "REJECTED", "to": []},
+                    {"from": "CLOSED", "to": []},
+                    {"from": "DUPLICATE", "to": []},
+                ],
+                "terminal_statuses": ["CLOSED", "REJECTED", "DUPLICATE"],
+            },
+        )
+
+        planner = ("demo-event-planner", "Организатор ОМ")
+        analyst = ("demo-analyst", "Аналитик")
+        objects_admin = ("demo-objects-admin", "Ведение объектов")
+        now = Clock.now()
+
+        def ago(minutes):
+            return now - _dt.timedelta(minutes=minutes)
+
+        if not OpsFeedbackRequest.objects.exists():
+            def request(minutes, author, **fields):
+                row = OpsFeedbackRequest.objects.create(
+                    author_user_id=author[0],
+                    author_label=author[1],
+                    **fields,
+                )
+                # created_at — auto_now_add: отсчёт назад ставится update-ом,
+                # иначе весь сид лёг бы «одной минутой».
+                OpsFeedbackRequest.objects.filter(pk=row.pk).update(
+                    created_at=ago(minutes), updated_at=ago(minutes)
+                )
+                row.refresh_from_db()
+                return row
+
+            common = {
+                "expected_result": None,
+                "reproduction_steps": None,
+                "attachments": [],
+                "contact": None,
+                "confidential": False,
+                "related_route": None,
+                "technical_info": None,
+                "working_priority_code": None,
+                "assignee_user_id": None,
+                "assignee_label": None,
+                "duplicate_of": None,
+                "submitted_at": None,
+            }
+            fb_1001 = request(
+                600, planner, **{
+                    **common,
+                    "subject": (
+                        "Не открывается карточка мероприятия по прямой ссылке"
+                    ),
+                    "description": (
+                        "При переходе по ссылке из уведомления карточка "
+                        "мероприятия показывает пустой экран, приходится "
+                        "открывать реестр и искать мероприятие заново."
+                    ),
+                    "type_code": "BUG",
+                    "priority_code": "HIGH",
+                    "status_code": "IN_REVIEW",
+                    "module_code": "SECURITY_EVENTS",
+                    "expected_result": "Карточка открывается сразу по ссылке.",
+                    "reproduction_steps": (
+                        "1. Открыть уведомление. 2. Нажать ссылку. "
+                        "3. Увидеть пустой экран."
+                    ),
+                    "attachments": [{
+                        "fileName": "ekran.png",
+                        "sizeBytes": 184320,
+                        "mimeType": "image/png",
+                    }],
+                    "contact": "вн. 12-45",
+                    "related_route": "/security-ops/events",
+                    "technical_info": {
+                        "appRevision": "port-2.5.0",
+                        "viewport": "1440×900",
+                        "platform": "desktop",
+                        "capturedAt": ago(600).isoformat(),
+                    },
+                    # Разобранное: рабочий приоритет НИЖЕ заявленного —
+                    # совпадение скрыло бы, что это разные поля.
+                    "working_priority_code": "NORMAL",
+                    "assignee_user_id": objects_admin[0],
+                    "assignee_label": objects_admin[1],
+                    "submitted_at": ago(600),
+                },
+            )
+            request(
+                540, objects_admin, **{
+                    **common,
+                    "subject": "В плане дежурств путается подпись состояния",
+                    "description": (
+                        "Две соседние колонки подписаны похоже, из-за этого "
+                        "приходится сверяться с легендой на каждой строке."
+                    ),
+                    "type_code": "UX",
+                    "priority_code": "NORMAL",
+                    "status_code": "ACCEPTED",
+                    "module_code": "DUTIES",
+                    "expected_result": (
+                        "Подписи колонок различаются с первого взгляда."
+                    ),
+                    "related_route": "/security-ops/duties",
+                    "submitted_at": ago(540),
+                },
+            )
+            request(
+                480, objects_admin, **{
+                    **common,
+                    "subject": "Обращение по доступу",
+                    "description": (
+                        "Прошу разобраться с доступом: список подразделений "
+                        "отображается не тому сотруднику, что нарушает "
+                        "разграничение."
+                    ),
+                    "type_code": "ACCESS",
+                    "priority_code": "CRITICAL",
+                    "status_code": "NEW",
+                    "module_code": "OTHER",
+                    "expected_result": (
+                        "Доступ ограничен своим подразделением."
+                    ),
+                    "reproduction_steps": (
+                        "Открыть список подразделений под учётной записью "
+                        "без права."
+                    ),
+                    "attachments": [{
+                        "fileName": "vypiska.pdf",
+                        "sizeBytes": 51200,
+                        "mimeType": "application/pdf",
+                    }],
+                    "contact": "личный приём",
+                    "confidential": True,
+                    "related_route": "/organization",
+                    "submitted_at": ago(480),
+                },
+            )
+            # Чужой ЧЕРНОВИК: не виден никому, кроме автора, — даже
+            # обладателю права видеть все обращения (отправки не было).
+            request(
+                420, analyst, **{
+                    **common,
+                    "subject": "Черновик обращения аналитика",
+                    "description": (
+                        "Не дописано: нужно приложить пример выгрузки."
+                    ),
+                    "type_code": "IDEA",
+                    "priority_code": "LOW",
+                    "status_code": "DRAFT",
+                    "module_code": "ANALYTICS",
+                    "related_route": "/security-ops/analytics",
+                },
+            )
+            request(
+                360, analyst, **{
+                    **common,
+                    "subject": "Добавить фильтр по объекту в аналитику",
+                    "description": (
+                        "Сейчас приходится выгружать отчёт целиком, чтобы "
+                        "посмотреть один объект."
+                    ),
+                    "type_code": "IDEA",
+                    "priority_code": "NORMAL",
+                    "status_code": "PLANNED",
+                    "module_code": "ANALYTICS",
+                    "expected_result": (
+                        "Фильтр по объекту на экране аналитики."
+                    ),
+                    "related_route": "/security-ops/analytics",
+                    "submitted_at": ago(360),
+                },
+            )
+            request(
+                300, planner, **{
+                    **common,
+                    "subject": "Неверный пост в снимке паспорта",
+                    "description": (
+                        "В снимке паспорта объекта пост назван старым "
+                        "именем, хотя версия уже новая."
+                    ),
+                    "type_code": "WRONG_DATA",
+                    "priority_code": "HIGH",
+                    "status_code": "FIXED",
+                    "module_code": "OBJECTS",
+                    "expected_result": (
+                        "Снимок содержит имя поста действующей версии."
+                    ),
+                    "reproduction_steps": (
+                        "Открыть дежурство, привязанное к версии 1."
+                    ),
+                    "contact": "вн. 12-45",
+                    "related_route": "/security-ops/objects",
+                    "submitted_at": ago(300),
+                },
+            )
+            request(
+                240, objects_admin, **{
+                    **common,
+                    "subject": "Как отменить смену без удаления",
+                    "description": (
+                        "Не нашёл, где отменить смену так, чтобы она "
+                        "осталась в плане."
+                    ),
+                    "type_code": "HELP",
+                    "priority_code": "LOW",
+                    "status_code": "CLOSED",
+                    "module_code": "DUTIES",
+                    "related_route": "/security-ops/duties",
+                    "submitted_at": ago(240),
+                },
+            )
+            request(
+                180, objects_admin, **{
+                    **common,
+                    "subject": "Повтор обращения про карточку мероприятия",
+                    "description": (
+                        "То же, что уже сообщали: карточка не открывается "
+                        "по прямой ссылке."
+                    ),
+                    "type_code": "BUG",
+                    "priority_code": "NORMAL",
+                    "status_code": "DUPLICATE",
+                    "module_code": "SECURITY_EVENTS",
+                    "related_route": "/security-ops/events",
+                    # Признанный дубликат обязан указывать НА ЧТО.
+                    "duplicate_of": fb_1001,
+                    "submitted_at": ago(180),
+                },
+            )
+            request(
+                120, planner, **{
+                    **common,
+                    "subject": "Просьба вернуть сортировку по дате",
+                    "description": (
+                        "После обновления список стал сортироваться иначе, "
+                        "привычный порядок пропал."
+                    ),
+                    "type_code": "UX",
+                    "priority_code": "NORMAL",
+                    "status_code": "REJECTED",
+                    "module_code": "OTHER",
+                    "submitted_at": ago(120),
+                },
+            )
+
+            for minutes, kind, text in [
+                (560, "PUBLIC_REPLY",
+                 "Приняли в работу, воспроизвели на тестовом контуре. "
+                 "Сообщим, когда исправим."),
+                # Внутренняя заметка обязательна как демонстрация: без неё
+                # нечего прятать от автора, и проверка была бы пустой.
+                (555, "INTERNAL_NOTE",
+                 "Причина — регрессия маршрутизации в конфигурации "
+                 "редиректов."),
+            ]:
+                row = OpsFeedbackComment.objects.create(
+                    request=fb_1001,
+                    kind=kind,
+                    body=text,
+                    author_user_id=objects_admin[0],
+                    author_label=objects_admin[1],
+                )
+                OpsFeedbackComment.objects.filter(pk=row.pk).update(
+                    created_at=ago(minutes), updated_at=ago(minutes)
+                )
+
+            for minutes, kind, actor, field, old, new in [
+                (600, "CREATED", planner, None, None, None),
+                (600, "SUBMITTED", planner, None, None, None),
+                (570, "ASSIGNED", objects_admin,
+                 "assignee", None, objects_admin[0]),
+                (565, "STATUS_CHANGED", objects_admin,
+                 "statusCode", "NEW", "IN_REVIEW"),
+                (560, "PUBLIC_REPLY_ADDED", objects_admin, None, None, None),
+                (555, "INTERNAL_NOTE_ADDED", objects_admin, None, None, None),
+            ]:
+                OpsFeedbackEvent.objects.create(
+                    request=fb_1001,
+                    kind=kind,
+                    actor_user_id=actor[0],
+                    actor_label=actor[1],
+                    at=ago(minutes),
+                    field_code=field,
+                    old_value=old,
+                    new_value=new,
+                )
+            self.stdout.write(self.style.SUCCESS("Seeded feedback requests"))
+
+        if feedback_author:
+            author_user = User.objects.filter(pk=feedback_author).first()
+            label = author_user.username if author_user else feedback_author
+            own_draft, created = OpsFeedbackRequest.objects.get_or_create(
+                author_user_id=str(feedback_author),
+                subject="Черновик обращения со стенда",
+                defaults={
+                    "description": (
+                        "Черновик для живой проверки пути «отправить "
+                        "черновик»: допишите и отправьте."
+                    ),
+                    "type_code": "HELP",
+                    "priority_code": "LOW",
+                    "status_code": "DRAFT",
+                    "module_code": "OTHER",
+                    "expected_result": None,
+                    "reproduction_steps": None,
+                    "attachments": [],
+                    "contact": None,
+                    "confidential": False,
+                    "related_route": None,
+                    "technical_info": None,
+                    "working_priority_code": None,
+                    "assignee_user_id": None,
+                    "assignee_label": None,
+                    "duplicate_of": None,
+                    "author_label": label,
+                    "submitted_at": None,
+                },
+            )
+            if created:
+                OpsFeedbackEvent.objects.create(
+                    request=own_draft,
+                    kind="CREATED",
+                    actor_user_id=str(feedback_author),
+                    actor_label=label,
+                    at=now,
+                    field_code=None,
+                    old_value=None,
+                    new_value=None,
+                )
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Seeded own feedback draft for actor {feedback_author}"
+                )
+            )

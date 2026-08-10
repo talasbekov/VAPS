@@ -1506,3 +1506,109 @@ class ServiceReportArtifactsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 str(pk),
             )
         )
+
+
+# ── Обратная связь (§28) ────────────────────────────────────────────────────
+
+from organization_management.apps.ops import feedback as feedback_service
+
+
+class OpsFeedbackRequestsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/feedback-requests/ — реестр, создание, карточка, отправка
+    черновика, комментарии, разбор и закрытие обращения.
+
+    Гейт миксина держит право ДЕЙСТВИЯ (чтение/создание/разбор); видимость
+    конкретного обращения, конфиденциальность содержания и вид комментария
+    проверяет сервис по-записно — невидимое обращение отвечает «не найдено»,
+    а не «нет прав», чтобы отказ не подтверждал существование записи.
+    """
+
+    permission_map = {
+        "list": feedback_service.VIEW_PERMISSION,
+        "retrieve": feedback_service.VIEW_PERMISSION,
+        "create": feedback_service.CREATE_PERMISSION,
+        "submit": feedback_service.CREATE_PERMISSION,
+        "comments": feedback_service.VIEW_PERMISSION,
+        "triage": feedback_service.TRIAGE_PERMISSION,
+        "close": feedback_service.TRIAGE_PERMISSION,
+    }
+
+    def list(self, request):
+        params = request.query_params
+        try:
+            page = int(params.get("page", "1"))
+        except (TypeError, ValueError):
+            page = 1
+        return Response(
+            feedback_service.list_feedback(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                {
+                    "search": params.get("search") or "",
+                    "type": params.get("type") or None,
+                    "status": params.get("status") or None,
+                    "module": params.get("module") or None,
+                    "page": page,
+                    "mine": params.get("mine") == "true",
+                },
+            )
+        )
+
+    def retrieve(self, request, pk=None):
+        return Response(
+            feedback_service.get_feedback(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+            )
+        )
+
+    def create(self, request):
+        return Response(
+            feedback_service.create_feedback(
+                resolve_actor_id(request), request.data
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="submit")
+    def submit(self, request, pk=None):
+        return Response(
+            feedback_service.submit_feedback(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="comments")
+    def comments(self, request, pk=None):
+        return Response(
+            feedback_service.add_comment(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+                request.data,
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="triage")
+    def triage(self, request, pk=None):
+        return Response(
+            feedback_service.triage_feedback(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+                request.data,
+            )
+        )
+
+    @action(detail=True, methods=["post"], url_path="close")
+    def close(self, request, pk=None):
+        return Response(
+            feedback_service.close_feedback(
+                resolve_actor_id(request),
+                effective_permissions(request),
+                str(pk),
+                request.data,
+            )
+        )

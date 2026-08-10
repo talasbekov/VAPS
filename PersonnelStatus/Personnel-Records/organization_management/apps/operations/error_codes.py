@@ -162,6 +162,16 @@ CODES = {
     "SUMMARY_CHILDREN_NOT_SUBMITTED": frozenset({422}),
     "TOMORROW_BLOCKED": frozenset({422}),
     "TOMORROW_BLOCK_ALREADY_OVERRIDDEN": frozenset({409}),
+    # ── Обратная связь (§28) ─────────────────────────────────────────────
+    # Повторная отправка не-черновика: нагрузка верна, состояние не то.
+    "FEEDBACK_ALREADY_SUBMITTED": frozenset({422}),
+    # Один код на оба замка (терминальный статус И черновик) — так в
+    # мок-контракте хоста: клиент различает исходы сообщением, не кодом.
+    "FEEDBACK_CLOSED": frozenset({422}),
+    "FEEDBACK_TRANSITION_NOT_ALLOWED": frozenset({422}),
+    # Терминальный статус через разбор: закрытие — отдельная операция с
+    # обязательным публичным ответом автору.
+    "FEEDBACK_USE_CLOSE": frozenset({422}),
     # ── Документы ────────────────────────────────────────────────────────
     "DOCUMENT_ALREADY_ISSUED": frozenset({409}),
     "DOCUMENT_NOT_ISSUED": frozenset({409}),
