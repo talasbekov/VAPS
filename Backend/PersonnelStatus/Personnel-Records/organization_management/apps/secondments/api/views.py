@@ -12,6 +12,11 @@ from organization_management.apps.statuses.models import EmployeeStatus
 class SecondmentRequestViewSet(viewsets.ModelViewSet):
     """
     ViewSet для управления запросами на прикомандирование.
+
+    Донорская версия резолвила область через кастомного пользователя
+    (user.role/user.division), которого в этом бэке нет — здесь область
+    считается цепочкой User → Employee → StaffUnit → Division, как в
+    statuses; суперпользователь видит всё.
     """
     queryset = SecondmentRequest.objects.all()
     serializer_class = SecondmentRequestSerializer
@@ -22,18 +27,23 @@ class SecondmentRequestViewSet(viewsets.ModelViewSet):
             node = node.parent
         return node
 
+    def _user_division(self, user):
+        employee = getattr(user, "employee", None)
+        staff_unit = getattr(employee, "staff_unit", None) if employee else None
+        return getattr(staff_unit, "division", None) if staff_unit else None
+
     def get_queryset(self):
         user = self.request.user
         qs = super().get_queryset()
         if not user.is_authenticated:
             return qs.none()
-        # Системные администраторы видят все
-        if getattr(user, "role", None) == user.RoleType.SYSTEM_ADMIN:  # type: ignore[attr-defined]
+        if user.is_superuser:
             return qs
-        if not user.division_id:
+        division = self._user_division(user)
+        if division is None:
             return qs.none()
         # Для остальных — запросы, где источник/приемник в зоне видимости департамента пользователя
-        dept_root = self._get_department_root(user.division)
+        dept_root = self._get_department_root(division)
         allowed = dept_root.get_descendants(include_self=True)
         allowed_ids = allowed.values_list("id", flat=True)
         return qs.filter(Q(from_division_id__in=allowed_ids) | Q(to_division_id__in=allowed_ids))
@@ -48,21 +58,29 @@ class SecondmentRequestViewSet(viewsets.ModelViewSet):
             self.permission_classes = [permissions.IsAuthenticated]
         return super().get_permissions()
 
+    def _receiving_side_forbidden(self, request, instance):
+        """Принимающая сторона: to_division должен быть в области актора."""
+        if request.user.is_superuser:
+            return None
+        division = self._user_division(request.user)
+        if division is None:
+            return Response({'detail': 'Пользователь не привязан к сотруднику.'}, status=403)
+        allowed = division.get_descendants(include_self=True)
+        if instance.to_division_id not in allowed.values_list('id', flat=True):
+            return Response({'detail': 'Решение вне вашего подразделения запрещено.'}, status=403)
+        return None
+
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
         """
         Одобрение запроса на прикомандирование.
         """
         instance = self.get_object()
+        forbidden = self._receiving_side_forbidden(request, instance)
+        if forbidden is not None:
+            return forbidden
         instance.status = SecondmentRequest.ApprovalStatus.APPROVED
         instance.approved_by = request.user
-        # Проверка прав адресной стороны (принимающая сторона)
-        role = getattr(request.user, 'role', None)
-        if role == request.user.RoleType.DIRECTORATE_HEAD:
-            # руководитель управления приемника должен быть в зоне to_division
-            allowed = request.user.division.get_descendants(include_self=True)
-            if instance.to_division_id not in allowed.values_list('id', flat=True):
-                return Response({'detail': 'Одобрение вне вашего управления запрещено.'}, status=403)
         instance.save()
 
         # Создание статусов прикомандирования/откомандирования
@@ -94,14 +112,11 @@ class SecondmentRequestViewSet(viewsets.ModelViewSet):
         Отклонение запроса на прикомандирование.
         """
         instance = self.get_object()
+        forbidden = self._receiving_side_forbidden(request, instance)
+        if forbidden is not None:
+            return forbidden
         instance.status = SecondmentRequest.ApprovalStatus.REJECTED
         instance.rejection_reason = request.data.get('reason', '')
-        # Проверка аналогична approve
-        role = getattr(request.user, 'role', None)
-        if role == request.user.RoleType.DIRECTORATE_HEAD:
-            allowed = request.user.division.get_descendants(include_self=True)
-            if instance.to_division_id not in allowed.values_list('id', flat=True):
-                return Response({'detail': 'Отклонение вне вашего управления запрещено.'}, status=403)
         instance.save()
         # ... (логика уведомления)
         return Response(self.get_serializer(instance).data)
@@ -139,7 +154,15 @@ class SecondmentRequestViewSet(viewsets.ModelViewSet):
         Список входящих запросов для текущего пользователя.
         """
         user = request.user
-        queryset = self.get_queryset().filter(to_division__in=user.division.get_descendants(include_self=True))
+        queryset = self.get_queryset()
+        if not user.is_superuser:
+            division = self._user_division(user)
+            if division is None:
+                queryset = queryset.none()
+            else:
+                queryset = queryset.filter(
+                    to_division__in=division.get_descendants(include_self=True)
+                )
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 

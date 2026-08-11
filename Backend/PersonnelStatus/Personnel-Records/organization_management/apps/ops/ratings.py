@@ -1407,7 +1407,7 @@ def submit_evaluation(actor, perms, work_item_code, body):
             _notification_row(
                 recipient=actor or "",
                 code="EVALUATION_SUBMITTED",
-                deep_link=f"/ratings/workspace?event={item.event_code}",
+                deep_link=f"/security-ops/ratings/workspace?event={item.event_code}",
                 security_event_code=item.event_code,
             )
             _audit_entry_row(
@@ -1708,7 +1708,7 @@ def correct_evaluation(actor, perms, work_item_code, body):
             _notification_row(
                 recipient=original.evaluator_user_id or actor or "",
                 code="EVALUATION_CORRECTED",
-                deep_link=f"/ratings/workspace?event={item.event_code}",
+                deep_link=f"/security-ops/ratings/workspace?event={item.event_code}",
                 security_event_code=item.event_code,
             )
             _audit_entry_row(

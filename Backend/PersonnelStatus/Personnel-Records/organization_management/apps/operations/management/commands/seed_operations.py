@@ -716,7 +716,7 @@ class Command(BaseCommand):
                     "notified_at": iso("2026-07-18T19:30:00+05:00"),
                     "recipient_user_id": recipient,
                     "code": "EVALUATION_AVAILABLE",
-                    "deep_link": "/ratings/workspace?event=event-1",
+                    "deep_link": "/security-ops/ratings/workspace?event=event-1",
                     "security_event_code": "event-1",
                 },
             )
