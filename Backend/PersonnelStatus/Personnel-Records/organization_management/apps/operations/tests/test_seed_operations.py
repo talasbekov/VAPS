@@ -181,6 +181,24 @@ def test_the_viewer_holds_nothing_that_writes(seeded):
     assert granted("VIEWER") & writes == set()
 
 
+def test_the_ops_reader_holds_two_registers_and_not_the_third(seeded):
+    """Единственная сеяная персона, на которой видно, что гейты раздела ОМ
+    работают.
+
+    У ADMIN «*» проходит любую проверку, у остальных ролей не проходит ни
+    одна — обе крайности одинаково зелены и при сломанном RBAC (так и было,
+    пока права рисовал мок с wildcard, см. docs/api-gaps.md §9-12). Отличает
+    рабочий гейт от отсутствующего только частичная раскладка: объекты и план
+    дежурств есть, реестр ОМ — нет.
+
+    Пустой `holders("event.view")` держит вторую половину утверждения: право
+    на реестр ОМ не досталось никому напрямую, поэтому «закрыто» на этой
+    персоне — не совпадение раскладки.
+    """
+    assert granted("OPS_READER") == {"object.view", "duty.view"}
+    assert holders("event.view") == set()
+
+
 def test_every_permission_the_section_requires_is_seeded(seeded):
     """Право, которое код ТРЕБУЕТ, но сид не заводит, не может держать никто:
     гейт закрылся бы навсегда, а выглядело бы это как «нет доступа»."""
