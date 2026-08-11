@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { StatusOverview } from "@/widgets/status-overview";
@@ -23,6 +23,14 @@ export default function DashboardPage() {
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(
     null
   );
+
+  // Часы «последнее обновление» рендерятся ТОЛЬКО после маунта: new Date()
+  // прямо в JSX давал hydration mismatch — сервер и клиент попадали на
+  // разные секунды.
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+  }, []);
 
   const {
     data: absenceStats,
@@ -82,7 +90,7 @@ export default function DashboardPage() {
             <p className="text-gray-600 mt-1">Обзор состояния организации</p>
           </div>
           <Badge variant="outline" className="text-sm">
-            Последнее обновление: {new Date().toLocaleString("ru-RU")}
+            Последнее обновление: {now ? now.toLocaleString("ru-RU") : "…"}
           </Badge>
         </div>
 
@@ -221,14 +229,14 @@ export default function DashboardPage() {
               Системные уведомления:
             </span>
             <Badge variant="outline" className="bg-blue-50 text-blue-700">
-              Синхронизация: {new Date().toLocaleTimeString("ru-RU")}
+              Синхронизация: {now ? now.toLocaleTimeString("ru-RU") : "…"}
             </Badge>
             <Badge variant="outline" className="bg-green-50 text-green-700">
               Система работает стабильно
             </Badge>
           </div>
           <div className="text-sm text-gray-500">
-            Последняя проверка: {new Date().toLocaleTimeString("ru-RU")}
+            Последняя проверка: {now ? now.toLocaleTimeString("ru-RU") : "…"}
           </div>
         </div>
 
