@@ -97,7 +97,7 @@ export default function CommandCenterPage() {
     [events]
   );
 
-  if (!permissionsLoading && !hasPermission("ops.security_event.view")) {
+  if (!permissionsLoading && !hasPermission("event.view")) {
     return (
       <DashboardLayout>
         <Card>

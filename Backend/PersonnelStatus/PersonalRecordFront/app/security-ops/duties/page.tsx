@@ -79,7 +79,7 @@ export default function DutiesPage() {
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
-  if (!permissionsLoading && !hasPermission("ops.duty.view")) {
+  if (!permissionsLoading && !hasPermission("duty.view")) {
     return (
       <DashboardLayout>
         <Card>

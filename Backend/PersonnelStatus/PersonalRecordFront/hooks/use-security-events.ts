@@ -21,13 +21,20 @@ function listQueryString(params: ListSecurityEventsParams): string {
   return qs.toString();
 }
 
-export function useSecurityEvents(params: ListSecurityEventsParams) {
+// options.enabled — для экранов, где реестр показывается ПО ПРАВУ
+// (`event.view`): без права запрос не уходит вовсе, иначе календарь на каждом
+// рендере получает с бэка 403.
+export function useSecurityEvents(
+  params: ListSecurityEventsParams,
+  options: { enabled?: boolean } = {}
+) {
   return useQuery<ListSecurityEventsResponse, OpsApiFailure>({
     queryKey: ["ops-security-events", params],
     queryFn: () =>
       opsApiClient.get<ListSecurityEventsResponse>(
         `${SECURITY_EVENTS_PATH}?${listQueryString(params)}`
       ),
+    enabled: options.enabled ?? true,
   });
 }
 

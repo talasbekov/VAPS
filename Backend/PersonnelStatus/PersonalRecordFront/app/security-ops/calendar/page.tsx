@@ -15,16 +15,19 @@ import { ShiftCalendar } from "@/widgets/shift-calendar";
 
 export default function ShiftCalendarPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
-  const canSeeDuties = hasPermission("ops.duty.view");
-  const canSeeEvents = hasPermission("ops.security_event.view");
+  const canSeeDuties = hasPermission("duty.view");
+  const canSeeEvents = hasPermission("event.view");
 
   const shiftsQuery = useDutyShiftsAll({ enabled: canSeeDuties });
-  const eventsQuery = useSecurityEvents({
-    search: "",
-    stage: "ALL",
-    page: 1,
-    pageSize: 100,
-  });
+  const eventsQuery = useSecurityEvents(
+    {
+      search: "",
+      stage: "ALL",
+      page: 1,
+      pageSize: 100,
+    },
+    { enabled: canSeeEvents }
+  );
 
   const isLoading =
     permissionsLoading ||
@@ -71,8 +74,8 @@ export default function ShiftCalendarPage() {
         {(!canSeeDuties || !canSeeEvents) && (
           <p className="text-xs text-muted-foreground">
             {!canSeeDuties
-              ? "Дежурства скрыты — нет права ops.duty.view. Показаны только мероприятия."
-              : "Мероприятия скрыты — нет права ops.security_event.view. Показаны только дежурства."}
+              ? "Дежурства скрыты — нет права duty.view. Показаны только мероприятия."
+              : "Мероприятия скрыты — нет права event.view. Показаны только дежурства."}
           </p>
         )}
 
