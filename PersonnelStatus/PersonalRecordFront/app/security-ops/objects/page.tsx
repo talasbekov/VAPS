@@ -116,7 +116,7 @@ export default function SecurityObjectsPage() {
     applyParams(params);
   }
 
-  if (!permissionsLoading && !hasPermission("ops.object.view")) {
+  if (!permissionsLoading && !hasPermission("object.view")) {
     return (
       <DashboardLayout>
         <Card>

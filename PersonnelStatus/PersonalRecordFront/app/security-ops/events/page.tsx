@@ -65,7 +65,7 @@ export default function SecurityEventsPage() {
     router.replace(qs === "" ? pathname : `${pathname}?${qs}`, { scroll: false });
   }
 
-  if (!permissionsLoading && !hasPermission("ops.security_event.view")) {
+  if (!permissionsLoading && !hasPermission("event.view")) {
     return (
       <DashboardLayout>
         <Card>

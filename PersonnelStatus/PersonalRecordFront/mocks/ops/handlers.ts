@@ -3,7 +3,6 @@
 // Пути пишутся с завершающим слэшом — в next.config.js включён
 // trailingSlash: true, паттерны без слэша промахиваются мимо перехвата.
 import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDailyLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
-import { identityHandlers } from "./identity";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
 import { dutiesHandlers } from "./duties-handlers";
@@ -19,7 +18,9 @@ import { combatHandlers } from "./combat-handlers";
 
 export function composeOpsHandlers() {
   return [
-    ...identityHandlers,
+    // Права раздела (`/api/operations/my-permissions/`) мок больше НЕ рисует:
+    // ручка живёт на бэке, а wildcard-персона мока маскировала RBAC —
+    // на любой учётке раздел выглядел администраторским.
     // Объекты подключены к живому бэку пер-доменно (срез A2): в live-режиме
     // их handlers НЕ регистрируются, запросы уходят bypass-ом в сеть.
     // Стор объектов при этом остаётся: соседние мок-слайсы (ОМ, дежурства)

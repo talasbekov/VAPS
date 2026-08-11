@@ -6,13 +6,12 @@
 // Ключ ['ops-me'] намеренно не пересекается с чужими ключами кэша хоста.
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/lib/auth";
 import { opsApiClient } from "@/lib/ops-api";
-import { isOpsMockMode } from "@/lib/ops-env";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 
-// Рукописный тип: OpenAPI-схемы бэкенда ОМ в хосте нет (эндпоинт пока
-// существует только в мок-слое — см. отчёт «чего не хватает на бэкенде»)
+// Рукописный тип: OpenAPI-схемы бэкенда ОМ в хосте нет. Ручка живая
+// (operations/api/urls.py, MyPermissionsViewSet), мок-обработчика больше нет:
+// коды приходят с бэка как есть — `object.view`, `duty.view`, `event.view`.
 export interface OpsMyPermissionsResponse {
   permissions: string[];
 }
@@ -26,17 +25,18 @@ export interface UseOpsPermissionsResult {
 }
 
 export function useOpsPermissions(): UseOpsPermissionsResult {
-  const { user } = useAuth();
-
   const query = useQuery<OpsMyPermissionsResponse, OpsApiFailure>({
     queryKey: ["ops-me"],
     queryFn: () =>
       opsApiClient.get<OpsMyPermissionsResponse>(
         "/api/operations/my-permissions/"
       ),
-    // в мок-режиме identity задаёт сам мок (host-логина может не быть);
-    // в api-режиме без пользователя запрос не уходит вовсе
-    enabled: isOpsMockMode() || user !== null,
+    // Запрос уходит ВСЕГДА, в том числе без host-логина: /security-ops/* не
+    // закрыт middleware (matcher его не перечисляет), а выключенный запрос
+    // навсегда оставил бы isLoading=true — гейты страниц (`!isLoading &&
+    // !hasPermission`) не сработали бы и раздел открылся бы анониму.
+    // Без токена бэк отвечает 403 → error → прав нет → гейт закрыт.
+    enabled: true,
   });
 
   const permissions = useMemo<ReadonlySet<string> | undefined>(
