@@ -1432,6 +1432,7 @@ class ServiceReportJobsViewSet(RequirePermissionMixin, viewsets.ViewSet):
     permission_map = {
         "list": reports_service.GENERATE_PERMISSION,
         "retrieve": reports_service.GENERATE_PERMISSION,
+        "detail_card": reports_service.GENERATE_PERMISSION,
         "create": reports_service.GENERATE_PERMISSION,
         "retry": reports_service.GENERATE_PERMISSION,
         "new_revision": reports_service.GENERATE_PERMISSION,
@@ -1458,6 +1459,13 @@ class ServiceReportJobsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 str(pk),
             )
         )
+
+    # Контракт мока (REPORT_JOB_DETAIL_PATH_PATTERN) зовёт карточку по
+    # /{id}/detail/ — фронт бьёт именно сюда, retrieve без суффикса он не
+    # использует.
+    @action(detail=True, methods=["get"], url_path="detail")
+    def detail_card(self, request, pk=None):
+        return self.retrieve(request, pk=pk)
 
     def create(self, request):
         return Response(
