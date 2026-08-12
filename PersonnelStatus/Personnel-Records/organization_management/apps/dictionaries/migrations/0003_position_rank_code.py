@@ -62,14 +62,14 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="position",
             constraint=models.CheckConstraint(
-                check=models.Q(("code", ""), _negated=True),
+                condition=models.Q(("code", ""), _negated=True),
                 name="ck_position_code_not_blank",
             ),
         ),
         migrations.AddConstraint(
             model_name="rank",
             constraint=models.CheckConstraint(
-                check=models.Q(("code", ""), _negated=True),
+                condition=models.Q(("code", ""), _negated=True),
                 name="ck_rank_code_not_blank",
             ),
         ),

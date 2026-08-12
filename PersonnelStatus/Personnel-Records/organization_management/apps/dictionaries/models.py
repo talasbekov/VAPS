@@ -28,7 +28,7 @@ class Position(models.Model):
             # без валидации пропустило бы пустую строку, и она заняла бы
             # единственное свободное место под «» во всём справочнике.
             models.CheckConstraint(
-                check=~models.Q(code=""), name="ck_position_code_not_blank"
+                condition=~models.Q(code=""), name="ck_position_code_not_blank"
             ),
         ]
 
@@ -177,7 +177,7 @@ class Rank(models.Model):
         ]
         constraints = [
             models.CheckConstraint(
-                check=~models.Q(code=""), name="ck_rank_code_not_blank"
+                condition=~models.Q(code=""), name="ck_rank_code_not_blank"
             ),
         ]
 
