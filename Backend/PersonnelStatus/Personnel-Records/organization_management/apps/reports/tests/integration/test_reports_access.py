@@ -130,3 +130,35 @@ class TestReportsAccess:
         api_client.force_authenticate(user=test_data['u_norole'])
         response = api_client.get(reverse('report-list'))
         assert len(response.data['results']) == 0
+
+    def test_the_list_is_ordered_by_the_model(self, api_client, test_data):
+        """Порядок пагинируемого списка задаёт модель.
+
+        Пин литеральный: поведенческая проба тут вакуумна — на нескольких
+        записях планировщик и без ordering обычно отдаёт их в порядке
+        вставки, а страницы разъезжаются уже на объёме. Второй ключ `-id`
+        проверяется отдельно: `created_at` — auto_now_add, и записи одной
+        транзакции делят его до микросекунды, так что без tie-breaker
+        порядок между ними не определён ничем.
+        """
+        assert Report._meta.ordering == ['-created_at', '-id']
+
+        test_user = test_data['u_admin']
+        first = Report.objects.create(job_id="ord_1", created_by=test_user)
+        second = Report.objects.create(job_id="ord_2", created_by=test_user)
+        # `created_at` выставляется auto_now_add и у двух подряд созданных
+        # записей различается на микросекунды — совпадение штампа, ради
+        # которого и нужен `-id`, здесь воспроизводится явно (update() не
+        # трогает auto_now_add).
+        Report.objects.filter(pk__in=[first.pk, second.pk]).update(
+            created_at=first.created_at
+        )
+        assert first.pk < second.pk
+
+        api_client.force_authenticate(user=test_user)
+        response = api_client.get(reverse('report-list'))
+
+        assert [row['job_id'] for row in response.data['results']] == [
+            "ord_2",
+            "ord_1",
+        ]
