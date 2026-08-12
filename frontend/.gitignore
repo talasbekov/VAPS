@@ -39,3 +39,6 @@ playwright-report/
 *.njsproj
 *.sln
 *.sw?
+
+# смоук-обход (e2e/smoke-buttons.spec.ts) — сырые находки прогона
+smoke-results/
