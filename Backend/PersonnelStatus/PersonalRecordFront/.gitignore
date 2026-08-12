@@ -32,3 +32,10 @@ next-env.d.ts
 !lib/
 !shared/lib/
 !features/**/lib/
+
+# Сырые находки смоук-обхода (e2e/smoke-buttons.spec.ts): снимок КОНКРЕТНОГО
+# стенда с его id и данными — в истории ему делать нечего. Коммитится
+# собранный отчёт (docs/), а не сырьё.
+/smoke-results/
+/test-results/
+/playwright-report/
