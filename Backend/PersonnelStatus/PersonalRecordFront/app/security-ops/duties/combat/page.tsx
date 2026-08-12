@@ -7,8 +7,15 @@ import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Shield } from "lucide-react";
 import { CombatDutyGroupsSection } from "@/features/ops-combat/combat-groups-section";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 export default function CombatDutyGroupsPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  if (!permissionsLoading && !hasPermission("duty.view")) {
+    return <OpsAccessDenied what="боевых групп на Трассе" />;
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-4">

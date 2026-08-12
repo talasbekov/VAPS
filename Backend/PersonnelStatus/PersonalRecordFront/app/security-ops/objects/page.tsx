@@ -32,6 +32,7 @@ import type {
   PassportFreshness,
   SecurityObject,
 } from "@/entities/security-object";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
 
 /** Значение фильтра в URL → предикат по объекту и его актуальности. У каждого
  * выводимого KPI ровно один фильтр — иначе клик обещал бы больше, чем делает. */
@@ -118,13 +119,7 @@ export default function SecurityObjectsPage() {
 
   if (!permissionsLoading && !hasPermission("object.view")) {
     return (
-      <DashboardLayout>
-        <Card>
-          <CardContent className="p-9 text-center text-sm text-muted-foreground">
-            Недостаточно прав для просмотра реестра объектов.
-          </CardContent>
-        </Card>
-      </DashboardLayout>
+      <OpsAccessDenied what="реестра объектов" />
     );
   }
 

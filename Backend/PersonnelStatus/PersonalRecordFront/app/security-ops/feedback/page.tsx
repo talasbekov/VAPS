@@ -21,6 +21,8 @@ import type {
   FeedbackStatusCode,
   FeedbackTypeCode,
 } from "@/entities/ops-feedback";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 function formatMoment(iso: string): string {
   const at = new Date(iso);
@@ -36,6 +38,7 @@ function formatSize(bytes: number): string {
 const ALL = "ALL";
 
 export default function FeedbackPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const pathname = usePathname();
   const [search, setSearch] = useState("");
   const [typeCode, setTypeCode] = useState<string>(ALL);
@@ -82,6 +85,10 @@ export default function FeedbackPage() {
   function changeFilter(apply: () => void): void {
     apply();
     setPage(1);
+  }
+
+  if (!permissionsLoading && !hasPermission("feedback.view")) {
+    return <OpsAccessDenied what="обращений" />;
   }
 
   return (

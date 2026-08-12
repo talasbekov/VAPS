@@ -15,6 +15,8 @@ import type {
   OpsLevel,
   OpsRow,
 } from "@/entities/service-analytics";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const LEVELS: readonly OpsLevel[] = ["ALL", "OBJECT", "EVENT", "DIRECTION", "POST"];
 
@@ -82,6 +84,7 @@ function FunnelSection({ funnel }: { funnel: FunnelView }) {
 }
 
 export default function OperationsAnalyticsPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   // §22.6: уровень детализации живёт в URL и переживает перезагрузку.
   const router = useRouter();
   const pathname = usePathname();
@@ -123,6 +126,10 @@ export default function OperationsAnalyticsPage() {
     if (param !== null && id !== null) next.set(param, id);
     const queryString = next.toString();
     router.replace(queryString === "" ? pathname : `${pathname}?${queryString}`);
+  }
+
+  if (!permissionsLoading && !hasPermission("analytics.operations")) {
+    return <OpsAccessDenied what="аналитики ОМ" />;
   }
 
   return (

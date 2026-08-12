@@ -10,6 +10,8 @@ import { ScrollText } from "lucide-react";
 import { useRatingAudit } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import type { RatingAuditEntry } from "@/entities/operational-rating";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const EVENT_LABEL: Record<RatingAuditEntry["eventCode"], string> = {
   EVALUATION_SUBMITTED: "Оценка отправлена",
@@ -31,9 +33,14 @@ function dateTime(value: string): string {
 }
 
 export default function RatingAuditPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const [page, setPage] = useState(1);
   const query = useRatingAudit(page);
   const data = query.data;
+
+  if (!permissionsLoading && !hasPermission("rating.view_audit")) {
+    return <OpsAccessDenied what="журнала оценивания" />;
+  }
 
   return (
     <DashboardLayout>

@@ -14,9 +14,16 @@ import {
 } from "@/components/ui/table";
 import { BookMarked } from "lucide-react";
 import { useDictionaries } from "@/hooks/use-dictionaries";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 export default function DictionariesPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const query = useDictionaries();
+
+  if (!permissionsLoading && !hasPermission("dictionary.view")) {
+    return <OpsAccessDenied what="справочников" />;
+  }
 
   return (
     <DashboardLayout>

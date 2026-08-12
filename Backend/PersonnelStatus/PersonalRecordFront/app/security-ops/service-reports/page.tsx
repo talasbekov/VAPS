@@ -25,6 +25,8 @@ import type {
   ReportArtifactSummary,
   ReportJobState,
 } from "@/entities/service-report";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const JOB_STATE_CLASS: Record<ReportJobState, string> = {
   PENDING:
@@ -38,6 +40,7 @@ const JOB_STATE_CLASS: Record<ReportJobState, string> = {
 };
 
 export default function ServiceReportsPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const typesQuery = useReportTypes();
   const jobsQuery = useReportJobs();
   const createJob = useCreateReportJob();
@@ -70,6 +73,10 @@ export default function ServiceReportsPage() {
       idempotencyKey: `${reportType.reportTypeCode}:${from}:${to}:${sensitive ? "S" : "N"}:${attempt}`,
     });
     setAttempt((value) => value + 1);
+  }
+
+  if (!permissionsLoading && !hasPermission("report.generate")) {
+    return <OpsAccessDenied what="служебных отчётов" />;
   }
 
   return (

@@ -10,6 +10,8 @@ import { BarChart3 } from "lucide-react";
 import { useRatingAnalytics } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import type { RatingGroupAggregate } from "@/entities/operational-rating";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 /** Формулировка §22.17 — дословно. */
 const SUPPRESSED_LABEL = "Недостаточно данных для безопасного отображения";
@@ -29,9 +31,14 @@ function groupValue(group: RatingGroupAggregate): string {
 }
 
 export default function RatingAnalyticsPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const query = useRatingAnalytics();
   const data = query.data;
   const figures = data?.figures ?? null;
+
+  if (!permissionsLoading && !hasPermission("analytics.view")) {
+    return <OpsAccessDenied what="аналитики рейтинга" />;
+  }
 
   return (
     <DashboardLayout>

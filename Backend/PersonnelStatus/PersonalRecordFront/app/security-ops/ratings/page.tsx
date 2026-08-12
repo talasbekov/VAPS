@@ -11,6 +11,8 @@ import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import { RatingDynamicsSection } from "@/features/ops-ratings/rating-dynamics-section";
 import { DATA_STATE_LABEL } from "@/entities/operational-rating";
 import type { OperationalRatingSummary } from "@/entities/operational-rating";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 /** Печать канонического значения: округляет сервер, здесь только запятая —
  * toFixed был бы округлением на клиенте. */
@@ -26,8 +28,13 @@ function periodLabel(summary: OperationalRatingSummary): string {
 }
 
 export default function OperationalRatingsPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const query = useOperationalRatings();
   const data = query.data;
+
+  if (!permissionsLoading && !hasPermission("rating.view_aggregate")) {
+    return <OpsAccessDenied what="рейтингов" />;
+  }
 
   return (
     <DashboardLayout>

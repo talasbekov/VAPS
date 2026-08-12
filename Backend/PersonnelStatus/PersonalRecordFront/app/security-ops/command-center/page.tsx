@@ -27,6 +27,7 @@ import {
   STAGE_PROGRESS_CLASS,
 } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
 
 export default function CommandCenterPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -99,13 +100,7 @@ export default function CommandCenterPage() {
 
   if (!permissionsLoading && !hasPermission("event.view")) {
     return (
-      <DashboardLayout>
-        <Card>
-          <CardContent className="p-9 text-center text-sm text-muted-foreground">
-            Недостаточно прав для просмотра командного центра.
-          </CardContent>
-        </Card>
-      </DashboardLayout>
+      <OpsAccessDenied what="командного центра" />
     );
   }
 

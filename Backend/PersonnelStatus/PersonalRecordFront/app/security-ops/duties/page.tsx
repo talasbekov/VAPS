@@ -36,6 +36,7 @@ import type {
   DutyPlanAction,
   MonthlyDutyPlanResponse,
 } from "@/entities/duty-shift";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
 
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
@@ -81,13 +82,7 @@ export default function DutiesPage() {
 
   if (!permissionsLoading && !hasPermission("duty.view")) {
     return (
-      <DashboardLayout>
-        <Card>
-          <CardContent className="p-9 text-center text-sm text-muted-foreground">
-            Недостаточно прав для просмотра плана дежурств.
-          </CardContent>
-        </Card>
-      </DashboardLayout>
+      <OpsAccessDenied what="плана дежурств" />
     );
   }
 

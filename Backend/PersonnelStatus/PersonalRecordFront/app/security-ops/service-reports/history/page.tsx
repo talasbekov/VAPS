@@ -25,6 +25,8 @@ import type {
   ReportJobAction,
   ReportJobState,
 } from "@/entities/service-report";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 /** Порядок фильтра состояний — порядок жизни работы, а не алфавит. */
 const STATE_FILTERS: readonly ReportJobState[] = [
@@ -39,6 +41,7 @@ function isState(value: string | null): value is ReportJobState {
 }
 
 export default function ReportHistoryPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   // Фильтры — в URL: ссылка на отфильтрованную историю переживает
   // перезагрузку и пересылается другому человеку.
   const router = useRouter();
@@ -87,6 +90,10 @@ export default function ReportHistoryPage() {
   }
 
   const data = jobsQuery.data;
+
+  if (!permissionsLoading && !hasPermission("report.generate")) {
+    return <OpsAccessDenied what="истории отчётов" />;
+  }
 
   return (
     <DashboardLayout>
