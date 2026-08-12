@@ -17,6 +17,8 @@ import {
   safeEvaluatorContext,
 } from "@/entities/operational-rating";
 import type { RegistryFilters } from "@/entities/operational-rating";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const DIRECTION_OPTIONS = [
   { value: "SENIOR_TO_EMPLOYEE", label: "Старший → сотрудник" },
@@ -51,6 +53,7 @@ function aggregateLabel(value: number | null): string {
 }
 
 export default function EvaluationRegistryPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -67,6 +70,10 @@ export default function EvaluationRegistryPage() {
     if (key !== "page") next.delete("page");
     const queryString = next.toString();
     router.replace(queryString === "" ? pathname : `${pathname}?${queryString}`);
+  }
+
+  if (!permissionsLoading && !hasPermission("rating.view_aggregate")) {
+    return <OpsAccessDenied what="реестра итоговых оценок" />;
   }
 
   return (

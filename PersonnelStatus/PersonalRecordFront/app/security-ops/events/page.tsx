@@ -32,6 +32,7 @@ import type {
   SecurityEvent,
   SecurityEventStage,
 } from "@/entities/security-event";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
 
 const PAGE_SIZE = 20;
 
@@ -67,13 +68,7 @@ export default function SecurityEventsPage() {
 
   if (!permissionsLoading && !hasPermission("event.view")) {
     return (
-      <DashboardLayout>
-        <Card>
-          <CardContent className="p-9 text-center text-sm text-muted-foreground">
-            Недостаточно прав для просмотра реестра ОМ.
-          </CardContent>
-        </Card>
-      </DashboardLayout>
+      <OpsAccessDenied what="реестра ОМ" />
     );
   }
 

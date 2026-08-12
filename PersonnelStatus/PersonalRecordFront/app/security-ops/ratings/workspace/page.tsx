@@ -33,6 +33,8 @@ import type {
   SubmissionViolation,
   SubmittedEvaluationView,
 } from "@/entities/operational-rating";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 type TabKey = "pending" | "submitted" | "progress";
 
@@ -269,6 +271,7 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
 }
 
 export default function EvaluationWorkspacePage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -285,6 +288,10 @@ export default function EvaluationWorkspacePage() {
       ? ["pending", "submitted", "progress"]
       : ["pending", "submitted"];
   const activeTab = tabs.includes(tab) ? tab : "pending";
+
+  if (!permissionsLoading && !hasPermission("rating.evaluate")) {
+    return <OpsAccessDenied what="рабочего места оценивания" />;
+  }
 
   return (
     <DashboardLayout>

@@ -22,6 +22,8 @@ import type {
   MetricState,
   MetricValue,
 } from "@/entities/service-analytics";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 /** §22.3: карта идёт от СОСТОЯНИЯ — ни одна ветка не смотрит на value. */
 const STATE_CLASS: Record<MetricState, string> = {
@@ -65,6 +67,7 @@ function formatMoment(iso: string): string {
 }
 
 export default function ServiceAnalyticsPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   // §22.6 «Фильтры синхронизируй с URL»: период — единственный фильтр среза.
   const router = useRouter();
   const pathname = usePathname();
@@ -146,6 +149,10 @@ export default function ServiceAnalyticsPage() {
   }
 
   const filtersActive = urlPreset !== null;
+
+  if (!permissionsLoading && !hasPermission("analytics.view")) {
+    return <OpsAccessDenied what="сервисной аналитики" />;
+  }
 
   return (
     <DashboardLayout>

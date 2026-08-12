@@ -38,6 +38,8 @@ import type {
   RowChange,
   YesterdayPlacement,
 } from "@/entities/daily-grid";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const GRID_SUBMIT_LABEL = "Сохранить правки";
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -58,6 +60,7 @@ type PendingChange =
   | { kind: "division"; value: string | null };
 
 export default function DailyExpensePage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const [divisionId, setDivisionId] = useState<string | null>(null);
   const [businessDate, setBusinessDate] = useState<string>(todayLocalIso);
   // Базовая линия дня: применённые строки вливаются сюда по факту 201.
@@ -267,6 +270,10 @@ export default function DailyExpensePage() {
     () => buildPrefilledRows(employees, yesterday),
     [employees, yesterday]
   );
+
+  if (!permissionsLoading && !hasPermission("status.view")) {
+    return <OpsAccessDenied what="расхода дня" />;
+  }
 
   return (
     <DashboardLayout>

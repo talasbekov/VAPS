@@ -31,13 +31,20 @@ import type {
   PolicySetting,
   SettingSectionCode,
 } from "@/entities/policy-setting";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 export default function OpsSettingsPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const query = useOpsSettings();
   const changeLog = useSettingChangeLog();
   const [editing, setEditing] = useState<PolicySetting | null>(null);
 
   const sections: SettingSectionCode[] = ["CONFLICT_RULES", "PASSPORT_FRESHNESS"];
+
+  if (!permissionsLoading && !hasPermission("settings.view")) {
+    return <OpsAccessDenied what="настроек политик" />;
+  }
 
   return (
     <DashboardLayout>

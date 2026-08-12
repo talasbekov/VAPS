@@ -19,6 +19,8 @@ import type {
   RatingExportJob,
   RatingExportScope,
 } from "@/entities/operational-rating";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const STATE_LABEL: Record<RatingExportJob["state"], string> = {
   QUEUED: "В очереди",
@@ -50,6 +52,7 @@ function dateTime(value: string): string {
 }
 
 export default function RatingExportPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const query = useRatingExports();
   const data = query.data;
   // Ключ живёт ОДИН заказ и переживает его повторные отправки (§19.26).
@@ -63,6 +66,10 @@ export default function RatingExportPage() {
   const artifactsByJob = new Map(
     (data?.artifacts ?? []).map((artifact) => [artifact.exportJobId, artifact])
   );
+
+  if (!permissionsLoading && !hasPermission("rating.export")) {
+    return <OpsAccessDenied what="выгрузок рейтинга" />;
+  }
 
   return (
     <DashboardLayout>

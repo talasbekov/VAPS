@@ -45,6 +45,7 @@ import type {
   SubmitCombatDutyHandoverRequest,
   SubmitCombatGroupRequest,
 } from "@/entities/combat-duty";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const QUERY_ROOT = "ops-combat";
 
@@ -825,6 +826,7 @@ function CreateRequirementSection({
 // ── Секция целиком ───────────────────────────────────────────────────────
 
 export function CombatDutyGroupsSection() {
+  const { hasPermission } = useOpsPermissions();
   const dutyTypesQuery = useQuery<ListCombatDutyTypesResponse, OpsApiFailure>({
     queryKey: [QUERY_ROOT, "duty-types"],
     queryFn: () =>
@@ -834,6 +836,14 @@ export function CombatDutyGroupsSection() {
     queryKey: [QUERY_ROOT, "routes"],
     queryFn: () => opsApiClient.get<ListDutyRoutesResponse>(COMBAT_ROUTES_PATH),
   });
+  // Кандидаты в состав — единственная ручка секции под `duty.manage`, а не
+  // `duty.view` (бэк: «просмотр — часть подачи §24.6, потому право управления»).
+  // Без этого условия читатель с `duty.view` получал 403 на кандидатах,
+  // `firstError` съедал ВСЮ секцию, и вместо смен, которые он смотреть вправе,
+  // показывалась общая ошибка загрузки. Не запрашиваем то, на что нет права:
+  // отказ не наступает, остальная секция работает, а органы управления
+  // остаются без кандидатов — действовать он всё равно не может.
+  const canManageRoster = hasPermission("duty.manage");
   const candidatesQuery = useQuery<
     ListCombatRosterCandidatesResponse,
     OpsApiFailure
@@ -843,6 +853,7 @@ export function CombatDutyGroupsSection() {
       opsApiClient.get<ListCombatRosterCandidatesResponse>(
         COMBAT_ROSTER_CANDIDATES_PATH
       ),
+    enabled: canManageRoster,
   });
   const shiftsQuery = useQuery<ListCombatDutyShiftsResponse, OpsApiFailure>({
     queryKey: [QUERY_ROOT, "shifts"],

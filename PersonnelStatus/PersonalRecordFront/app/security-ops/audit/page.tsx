@@ -16,8 +16,11 @@ import {
 } from "@/components/ui/table";
 import { ScrollText } from "lucide-react";
 import { useOpsAuditLogs } from "@/hooks/use-ops-audit";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 export default function OpsAuditPage() {
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const [search, setSearch] = useState("");
   const query = useOpsAuditLogs();
 
@@ -31,6 +34,10 @@ export default function OpsAuditPage() {
         .includes(q)
     );
   }, [query.data, search]);
+
+  if (!permissionsLoading && !hasPermission("audit.view")) {
+    return <OpsAccessDenied what="журнала аудита" />;
+  }
 
   return (
     <DashboardLayout>
