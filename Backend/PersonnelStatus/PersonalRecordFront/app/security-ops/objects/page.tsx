@@ -634,7 +634,7 @@ function ObjectsRegistry({
     );
   }
   return view === "cards" ? (
-    <ObjectsCards objects={objects} freshnessById={freshnessById} />
+    <ObjectsCards objects={objects} />
   ) : (
     <ObjectsTable objects={objects} freshnessById={freshnessById} />
   );
@@ -750,20 +750,14 @@ function ObjectsTable({
   );
 }
 
-/** Карточный вид прототипа: та же строка реестра, разложенная на плитку.
- * Колонки таблицы сохранены целиком — тип, адрес, состояние паспорта и срок
- * проверки, — плюс расчёт секторов и постов, который в таблицу не помещался. */
-function ObjectsCards({
-  objects,
-  freshnessById,
-}: {
-  objects: SecurityObject[];
-  freshnessById: Map<string, PassportFreshness>;
-}) {
+/** Карточный вид прототипа: опознавательная плитка объекта — обложка, код,
+ * название, тип с адресом и два состояния бейджами. Счётчики секторов и
+ * постов и срок проверки живут в табличном виде: карточка отвечает на
+ * «который из объектов это», таблица — на «что с ним по цифрам». */
+function ObjectsCards({ objects }: { objects: SecurityObject[] }) {
   return (
     <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       {objects.map((object) => {
-        const posts = countPosts(object);
         const CoverIcon = coverIcon(object.type);
         return (
           <li key={object.id}>
@@ -793,28 +787,13 @@ function ObjectsCards({
                   </span>
                 </Link>
 
-                <div className="flex flex-wrap items-center gap-2">
+                {/* прижимаем бейджи к низу: карточки в ряду разной высоты */}
+                <div className="mt-auto flex flex-wrap items-center gap-2">
                   <PassportStateBadge state={object.passportState} />
                   <Badge className={OBJECT_STATE_CLASS[object.objectState]}>
                     {OBJECT_STATE_LABEL[object.objectState]}
                   </Badge>
                 </div>
-
-                {/* прижимаем подвал к низу: карточки в ряду разной высоты */}
-                <dl className="mt-auto grid grid-cols-2 gap-2 border-t pt-3 text-xs">
-                  <div className="flex flex-col gap-0.5">
-                    <dt className="text-muted-foreground">Секторы и посты</dt>
-                    <dd className="font-semibold tabular-nums">
-                      {object.sectors.length} / {posts}
-                    </dd>
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <dt className="text-muted-foreground">Срок проверки</dt>
-                    <dd>
-                      <FreshnessCell freshness={freshnessById.get(object.id)} />
-                    </dd>
-                  </div>
-                </dl>
               </CardContent>
             </Card>
           </li>
