@@ -44,6 +44,7 @@ def make_object(code="OBJ-1", name="Резиденция", with_passport=False):
         address="пр. Мәңгілік Ел, 8",
         object_state=OpsSecurityObject.ObjectState.ACTIVE,
         passport_state=OpsSecurityObject.PassportState.GREEN,
+        ownership=OpsSecurityObject.Ownership.GUARDED,
     )
     if with_passport:
         sector = OpsObjectSector.objects.create(

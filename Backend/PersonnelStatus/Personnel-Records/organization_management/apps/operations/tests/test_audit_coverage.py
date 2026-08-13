@@ -752,6 +752,7 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         address="пр. Мәңгілік Ел, 8",
         object_state=OpsSecurityObject.ObjectState.ACTIVE,
         passport_state=OpsSecurityObject.PassportState.GREEN,
+        ownership=OpsSecurityObject.Ownership.GUARDED,
     )
     sector = OpsObjectSector.objects.create(
         security_object=secured, name="Сектор 1", position=1

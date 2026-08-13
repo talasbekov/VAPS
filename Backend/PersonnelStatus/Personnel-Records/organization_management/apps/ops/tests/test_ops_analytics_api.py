@@ -394,6 +394,7 @@ def ops_world(registries):
         region="г. Астана", address="пр. Мәңгілік Ел, 8",
         object_state=OpsSecurityObject.ObjectState.ACTIVE,
         passport_state=OpsSecurityObject.PassportState.GREEN,
+        ownership=OpsSecurityObject.Ownership.GUARDED,
     )
     event = event_service.create_event(
         title="Международный форум", object_id=str(obj.pk),
