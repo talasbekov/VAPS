@@ -18,7 +18,10 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: path.join(__dirname, 'e2e'),
-  testMatch: 'smoke-buttons.spec.ts',
+  // Обход и точечные пробы по живому стенду перечислены явно: `**/*.spec.ts`
+  // затянул бы сюда любую будущую спеку, которой живой стенд не нужен, и она
+  // падала бы у всех, кто его не поднял.
+  testMatch: ['smoke-buttons.spec.ts', 'objects-tabs.spec.ts'],
   // Один воркер: обход кликает по живому стенду и меняет его состояние —
   // параллельные персоны видели бы правки друг друга.
   workers: 1,

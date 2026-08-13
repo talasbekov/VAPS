@@ -6,10 +6,14 @@
 // нет вовсе — ни ячейкой, ни прочерком: ответственный (связи объекта с
 // сотрудником нет), процент заполнения паспорта (обязательного состава
 // разделов не задано), замечания (журнала нет — бэк сам объявляет их в
-// unavailableKpi), ближайшее ОМ (обратной выборки по объекту реестр не
-// отдаёт) и принадлежность объекта (признака нет, поэтому нет и вкладок
-// «Собственные / Охраняемые / Объекты ОМ»). Пустая колонка читалась бы как
-// «данных нет у объекта», а не как «признака нет в системе».
+// unavailableKpi) и ближайшее ОМ (обратной выборки по объекту реестр не
+// отдаёт). Пустая колонка читалась бы как «данных нет у объекта», а не как
+// «признака нет в системе».
+//
+// Вкладки реестра стоят на РЕАЛЬНЫХ полях: принадлежность (`ownership`)
+// хранится, «объект ОМ» (`hasSecurityEvents`) считает сервер аннотацией по
+// мероприятиям. Третья вкладка первые две НЕ исключает — на собственном
+// объекте тоже проводят ОМ, поэтому сумма счётчиков больше реестра.
 //
 // Два правила донора соблюдены структурно:
 //   • KPI приходят из ответа, посчитанные по ВСЕМУ реестру — фильтр и поиск
@@ -142,6 +146,33 @@ const KPI_TILES = [
  * пустое значение пункта, а в URL умолчание просто не пишется. */
 const ANY = "all";
 
+/**
+ * Вкладки реестра. ТРЕТЬЯ НЕ ИСКЛЮЧАЕТ ПЕРВЫЕ ДВЕ: принадлежность у объекта
+ * хранимая (OWN/GUARDED), а «объект ОМ» — производный признак наличия
+ * мероприятий, и собственный объект с ОМ честно виден на обеих вкладках.
+ * Поэтому счётчики вкладок в сумме больше реестра — так и должно быть.
+ */
+const OBJECT_TABS = {
+  own: {
+    label: "Собственные объекты",
+    match: (o: SecurityObject) => o.ownership === "OWN",
+  },
+  guarded: {
+    label: "Охраняемые объекты",
+    match: (o: SecurityObject) => o.ownership === "GUARDED",
+  },
+  om: {
+    label: "Объекты ОМ",
+    match: (o: SecurityObject) => o.ownership === "OM",
+  },
+} as const;
+
+type ObjectTab = keyof typeof OBJECT_TABS;
+
+/** Умолчание — весь реестр: вкладка, выбранная за пользователя, спрятала бы
+ * от него часть строк ещё до того, как он что-то сделал. В URL не пишется. */
+const ALL_TABS = "all";
+
 const OBJECT_STATE_LABEL: Record<ObjectState, string> = {
   ACTIVE: "Действующий",
   ARCHIVED: "В архиве",
@@ -244,6 +275,9 @@ export default function SecurityObjectsPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   const search = searchParams.get("search") ?? "";
+  const rawTab = searchParams.get("tab") ?? "";
+  const tab: ObjectTab | typeof ALL_TABS =
+    rawTab in OBJECT_TABS ? (rawTab as ObjectTab) : ALL_TABS;
   const status = searchParams.get("status") ?? ANY;
   const passport = searchParams.get("passport") ?? ANY;
   const region = searchParams.get("region") ?? ANY;
@@ -272,9 +306,22 @@ export default function SecurityObjectsPage() {
     [query.data]
   );
 
+  // Счётчики вкладок — по ВСЕМУ реестру, как KPI: покажи их по отфильтрованным
+  // строкам, и вкладка «Собственные · 0» означала бы «собственных нет», хотя
+  // на деле их спрятал поиск.
+  const tabCounts = useMemo(() => {
+    const all = query.data?.results ?? [];
+    return {
+      own: all.filter(OBJECT_TABS.own.match).length,
+      guarded: all.filter(OBJECT_TABS.guarded.match).length,
+      om: all.filter(OBJECT_TABS.om.match).length,
+    };
+  }, [query.data]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (query.data?.results ?? []).filter((o) => {
+      if (tab !== ALL_TABS && !OBJECT_TABS[tab].match(o)) return false;
       if (status !== ANY && o.objectState !== status) return false;
       if (passport !== ANY && o.passportState !== passport) return false;
       if (region !== ANY && o.region !== region) return false;
@@ -292,6 +339,7 @@ export default function SecurityObjectsPage() {
   }, [
     query.data,
     search,
+    tab,
     status,
     passport,
     region,
@@ -354,6 +402,30 @@ export default function SecurityObjectsPage() {
             </p>
           </div>
         </header>
+
+        {query.data !== undefined && (
+          <div
+            role="group"
+            aria-label="Раздел реестра"
+            className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-lg bg-muted p-1"
+          >
+            <TabButton
+              label="Все объекты"
+              count={query.data.kpi.total}
+              active={tab === ALL_TABS}
+              onClick={() => setParam("tab", ALL_TABS, ALL_TABS)}
+            />
+            {(Object.keys(OBJECT_TABS) as ObjectTab[]).map((key) => (
+              <TabButton
+                key={key}
+                label={OBJECT_TABS[key].label}
+                count={tabCounts[key]}
+                active={tab === key}
+                onClick={() => setParam("tab", key, ALL_TABS)}
+              />
+            ))}
+          </div>
+        )}
 
         {query.data !== undefined && (
           <section aria-label="Показатели реестра">
@@ -485,7 +557,11 @@ export default function SecurityObjectsPage() {
               {query.data !== undefined && (
                 <span className="font-normal text-muted-foreground">
                   {" "}
-                  · {filtered.length} из {query.data.kpi.total}
+                  {/* знаменатель — размер ВКЛАДКИ, а не всего реестра: на
+                      вкладке «Объекты ОМ» счёт «из всего реестра» обещал бы
+                      строки, которых на ней быть не может */}
+                  · {filtered.length} из{" "}
+                  {tab === ALL_TABS ? query.data.kpi.total : tabCounts[tab]}
                 </span>
               )}
             </h2>
@@ -506,6 +582,34 @@ export default function SecurityObjectsPage() {
         </div>
       </div>
     </DashboardLayout>
+  );
+}
+
+function TabButton({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+        active
+          ? "bg-background shadow-sm"
+          : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {label}
+      <span className="tabular-nums text-xs text-muted-foreground">{count}</span>
+    </button>
   );
 }
 
