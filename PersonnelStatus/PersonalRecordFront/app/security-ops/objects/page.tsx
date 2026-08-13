@@ -155,16 +155,19 @@ const FRESHNESS_CLASS: Record<PassportFreshnessState, string> = {
   NO_PUBLISHED_VERSION: "text-muted-foreground",
 };
 
-/** Режим показа реестра. Как в прототипе — два: построчный и карточный.
+/** Режим показа реестра. Как в прототипе — два: карточный и построчный.
  * Живёт в URL рядом с поиском и фильтрами, поэтому переживает перезагрузку
- * и уезжает вместе со ссылкой. Умолчание — таблица: она несёт больше
- * колонок на экран. */
+ * и уезжает вместе со ссылкой. Порядок ключей задаёт порядок кнопок. */
 const VIEW_MODES = {
-  table: { label: "Таблица", icon: Rows3 },
   cards: { label: "Карточки", icon: LayoutGrid },
+  table: { label: "Таблица", icon: Rows3 },
 } as const;
 
 type ViewMode = keyof typeof VIEW_MODES;
+
+/** Умолчание раздела. В URL не пишется — ссылка на нетронутый реестр
+ * остаётся чистой, а `?view=table` появляется только при явном выборе. */
+const DEFAULT_VIEW: ViewMode = "cards";
 
 /**
  * Обложка карточки объекта. ФОТОГРАФИЙ У ОБЪЕКТА НЕТ: ни модель
@@ -240,7 +243,8 @@ export default function SecurityObjectsPage() {
   // «Проверка просрочена» и «Паспорт не публиковался».
   const freshnessFilter = searchParams.get("freshness") ?? ANY;
   const rawView = searchParams.get("view") ?? "";
-  const view: ViewMode = rawView in VIEW_MODES ? (rawView as ViewMode) : "table";
+  const view: ViewMode =
+    rawView in VIEW_MODES ? (rawView as ViewMode) : DEFAULT_VIEW;
 
   const query = useSecurityObjects();
 
@@ -463,7 +467,7 @@ export default function SecurityObjectsPage() {
                     size="sm"
                     variant={view === mode ? "default" : "ghost"}
                     aria-pressed={view === mode}
-                    onClick={() => setParam("view", mode, "table")}
+                    onClick={() => setParam("view", mode, DEFAULT_VIEW)}
                   >
                     <Icon className="mr-2 h-4 w-4" aria-hidden="true" />
                     {VIEW_MODES[mode].label}
