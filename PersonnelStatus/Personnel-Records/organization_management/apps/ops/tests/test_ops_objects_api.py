@@ -24,6 +24,9 @@ from django.db import IntegrityError, connection, transaction
 from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
+from organization_management.apps.operations.models_event import (
+    OpsSecurityEvent,
+)
 from organization_management.apps.operations.models_object import (
     OpsSecurityObject,
 )
@@ -47,6 +50,9 @@ CONTRACT_FIELDS = {
     "address",
     "objectState",
     "passportState",
+    # Принадлежность хранится, признак ОМ считается от security_events.
+    "ownership",
+    "hasSecurityEvents",
     "createdAt",
     "updatedAt",
 }
@@ -60,10 +66,44 @@ def make_object(code, name, **overrides):
         "region": "г. Астана",
         "address": "пр. Мәңгілік Ел, 8",
         "object_state": OpsSecurityObject.ObjectState.ACTIVE,
+        "ownership": OpsSecurityObject.Ownership.GUARDED,
         "passport_state": OpsSecurityObject.PassportState.GREEN,
     }
     fields.update(overrides)
     return OpsSecurityObject.objects.create(**fields)
+
+
+def make_event(security_object, code="EV-1"):
+    """Мероприятие на объекте — минимальная строка под признак «объект ОМ».
+
+    Заводится через модель, а не через event_service: срез проверяет, что
+    реестр объектов читает СВЯЗЬ, и лишний слой создания добавил бы к пробе
+    чужие правила заведения ОМ.
+    """
+    return OpsSecurityEvent.objects.create(
+        code=code,
+        title="Официальный визит",
+        security_object=security_object,
+        object_name=security_object.name,
+        business_date="2026-08-13",
+        stage=OpsSecurityEvent.Stage.BULLETIN,
+        readiness_percent=0,
+        force_need=0,
+        conflicts_count=0,
+        owner_name="Тест",
+        brief_description="",
+        initial_tasks="",
+        recon_checklist=[],
+        recon_sector_posts=[],
+        demand_rows=[],
+        demand_approved=False,
+        force_requests=[],
+        placement_assignments=[],
+        approval_status=OpsSecurityEvent.ApprovalStatus.PENDING,
+        approval_comment="",
+        journal_entries=[],
+        closure_direction_summaries=[],
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -336,3 +376,77 @@ def test_every_declared_state_is_accepted_by_the_database():
             )
 
     assert OpsSecurityObject.objects.count() == 6
+
+
+def test_unknown_ownership_is_refused_by_the_database():
+    with pytest.raises(IntegrityError), transaction.atomic():
+        make_object("OBJ-BAD-4", "Кривая принадлежность", ownership="ЧУЖОЕ")
+
+
+def test_every_declared_ownership_is_accepted_by_the_database():
+    """Вторая сторона ограничения принадлежности — как у состояний выше."""
+    for ownership in OpsSecurityObject.Ownership.values:
+        make_object(
+            f"OBJ-OWN-{ownership}",
+            f"Принадлежность {ownership}",
+            ownership=ownership,
+        )
+
+    assert OpsSecurityObject.objects.count() == 2
+
+
+def test_ownership_travels_to_the_client():
+    """Принадлежность ХРАНИМАЯ: что положили, то и уехало в строку реестра."""
+    make_object(
+        "OBJ-OWN-1", "Служебное здание",
+        ownership=OpsSecurityObject.Ownership.OWN,
+    )
+    make_object(
+        "OBJ-OWN-2", "Резиденция",
+        ownership=OpsSecurityObject.Ownership.GUARDED,
+    )
+    api, _ = reader()
+
+    got = {row["code"]: row["ownership"] for row in rows(api.get(URL))}
+
+    assert got == {"OBJ-OWN-1": "OWN", "OBJ-OWN-2": "GUARDED"}
+
+
+def test_om_membership_follows_the_events_not_a_stored_flag():
+    """Признак «объект ОМ» ПРОИЗВОДНЫЙ, и это его единственное доказательство.
+
+    Оба объекта заведены с ОДНОЙ И ТОЙ ЖЕ принадлежностью — читай вкладка ОМ
+    хранимое поле, они были бы неразличимы. Различает их только заведённое
+    мероприятие.
+    """
+    with_event = make_object(
+        "OBJ-OM-1", "Объект с мероприятием",
+        ownership=OpsSecurityObject.Ownership.OWN,
+    )
+    make_object(
+        "OBJ-OM-2", "Объект без мероприятия",
+        ownership=OpsSecurityObject.Ownership.OWN,
+    )
+    make_event(with_event)
+    api, _ = reader()
+
+    got = {row["code"]: row["hasSecurityEvents"] for row in rows(api.get(URL))}
+
+    assert got == {"OBJ-OM-1": True, "OBJ-OM-2": False}
+
+
+def test_om_membership_follows_a_deleted_object_link():
+    """Мероприятие отвязано (SET_NULL при удалении объекта) — признак гаснет.
+
+    Хранимый флаг здесь бы и протух: строка осталась бы «объектом ОМ» без
+    единого мероприятия за ней.
+    """
+    obj = make_object("OBJ-OM-3", "Бывший объект ОМ")
+    event = make_event(obj)
+    api, _ = reader()
+    assert by_code(api.get(URL), "OBJ-OM-3")["hasSecurityEvents"] is True
+
+    event.security_object = None
+    event.save(update_fields=["security_object"])
+
+    assert by_code(api.get(URL), "OBJ-OM-3")["hasSecurityEvents"] is False

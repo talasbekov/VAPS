@@ -5,12 +5,16 @@ documents: заводить второй механизм прав ради но
 защищать одни и те же сведения по-разному в зависимости от того, каким адресом
 их спросили.
 """
+from django.db.models import Exists, OuterRef
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from organization_management.apps.operations.api.permissions import (
     RequirePermissionMixin,
+)
+from organization_management.apps.operations.models_event import (
+    OpsSecurityEvent,
 )
 from organization_management.apps.operations.models_object import (
     OpsSecurityObject,
@@ -71,6 +75,14 @@ class SecurityObjectViewSet(RequirePermissionMixin, viewsets.ReadOnlyModelViewSe
         # и порядок оказался бы не проверен ни там, ни тут.
         return OpsSecurityObject.objects.prefetch_related(
             "sectors__posts", "passport_versions"
+        ).annotate(
+            # Вкладка «Объекты ОМ» реестра. Exists подзапросом, а не
+            # Count с distinct: нужен факт, а не число, и подзапрос
+            # останавливается на первой найденной строке. Хранимого флага под
+            # этот признак нет намеренно — см. OpsSecurityObject.ownership.
+            has_security_events=Exists(
+                OpsSecurityEvent.objects.filter(security_object=OuterRef("pk"))
+            )
         )
 
     def list(self, request, *args, **kwargs):

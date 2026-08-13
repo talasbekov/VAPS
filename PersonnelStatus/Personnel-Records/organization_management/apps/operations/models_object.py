@@ -34,6 +34,7 @@ from organization_management.apps.operations.models import TimeStampedModel
 # что и choices — иначе форма и база разошлись бы в том, что считать значением.
 _OBJECT_STATES = ("ACTIVE", "ARCHIVED")
 _PASSPORT_STATES = ("RED", "YELLOW", "GREEN")
+_OWNERSHIPS = ("OWN", "GUARDED")
 
 
 class OpsSecurityObject(TimeStampedModel):
@@ -54,6 +55,10 @@ class OpsSecurityObject(TimeStampedModel):
         YELLOW = "YELLOW", "Требует доработки"
         GREEN = "GREEN", "Оформлен"
 
+    class Ownership(models.TextChoices):
+        OWN = "OWN", "Собственный"
+        GUARDED = "GUARDED", "Охраняемый"
+
     name = models.CharField(max_length=255)
     # Код уникален и несущий: по нему идёт порядок реестра и по нему объект
     # опознают в бумаге. Автогенерации, как у divisions.Division, здесь нет
@@ -69,6 +74,15 @@ class OpsSecurityObject(TimeStampedModel):
     # забытое поле в утверждение об объекте. Пусть заводящий скажет прямо.
     object_state = models.CharField(max_length=20, choices=ObjectState.choices)
     passport_state = models.CharField(max_length=10, choices=PassportState.choices)
+    # ПРИНАДЛЕЖНОСТЬ — ДВА ЗНАЧЕНИЯ, А НЕ ТРИ. Реестр раздела показан тремя
+    # вкладками (собственные, охраняемые, объекты ОМ), но «объект ОМ» — не
+    # свойство объекта, а факт наличия у него мероприятий. Третьим кодом он
+    # стал бы хранимым флагом производного признака и протух бы молча ровно
+    # в тот день, когда должен был измениться: объект остался бы «объектом
+    # ОМ» после закрытия мероприятия, а собственный объект с новым ОМ на
+    # вкладку не попал бы. Третья вкладка считается от `security_events`, и
+    # она НЕ исключает первые две — на собственном объекте тоже проводят ОМ.
+    ownership = models.CharField(max_length=10, choices=Ownership.choices)
 
     class Meta:
         db_table = "ops_security_objects"
@@ -90,6 +104,10 @@ class OpsSecurityObject(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(passport_state__in=_PASSPORT_STATES),
                 name="chk_ops_security_object_passport_state",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ownership__in=_OWNERSHIPS),
+                name="chk_ops_security_object_ownership",
             ),
             # `\S` отвергает и "", и строку из одних пробелов. Пустой код —
             # не код: по нему идёт порядок реестра и опознание объекта, а

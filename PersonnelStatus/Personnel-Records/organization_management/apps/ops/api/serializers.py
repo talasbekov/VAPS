@@ -33,10 +33,23 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
     type = serializers.CharField(source="object_type", read_only=True)
     objectState = serializers.CharField(source="object_state", read_only=True)
     passportState = serializers.CharField(source="passport_state", read_only=True)
+    hasSecurityEvents = serializers.SerializerMethodField()
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
     sectors = serializers.SerializerMethodField()
     passportVersions = serializers.SerializerMethodField()
+
+    def get_hasSecurityEvents(self, obj):
+        """Вкладка «Объекты ОМ» реестра — ПРОИЗВОДНЫЙ признак, не хранимый.
+
+        Читается из аннотации набора, а не через obj.security_events.exists():
+        второе дало бы запрос на строку. Запасной путь оставлен для одиночного
+        retrieve, где аннотации нет.
+        """
+        annotated = getattr(obj, "has_security_events", None)
+        if annotated is not None:
+            return annotated
+        return obj.security_events.exists()
 
     def get_sectors(self, obj):
         # Та же форма, что у снимка версии, — черновик и снимок читает один
@@ -68,6 +81,8 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
             "address",
             "objectState",
             "passportState",
+            "ownership",
+            "hasSecurityEvents",
             "sectors",
             "passportVersions",
             "createdAt",

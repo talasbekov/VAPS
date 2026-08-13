@@ -46,6 +46,7 @@ def make_object(code, name, passport_state="RED", **overrides):
         "region": "г. Астана",
         "address": "пр. Мәңгілік Ел, 8",
         "object_state": OpsSecurityObject.ObjectState.ACTIVE,
+        "ownership": OpsSecurityObject.Ownership.GUARDED,
         "passport_state": passport_state,
     }
     fields.update(overrides)
