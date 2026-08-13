@@ -14,9 +14,13 @@
 // Два правила донора соблюдены структурно:
 //   • KPI приходят из ответа, посчитанные по ВСЕМУ реестру — фильтр и поиск
 //     на числа не влияют;
-//   • срок и состояние актуальности приходят готовыми (freshness), версия
-//     политики показана рядом — фиксированного frontend-периода нет, дни
-//     до срока страница не считает.
+//   • срок и состояние актуальности приходят готовыми (freshness) — дни до
+//     срока страница не считает, фиксированного frontend-периода нет.
+//     Версию политики, по которой они посчитаны, экран БОЛЬШЕ НЕ ПЕЧАТАЕТ:
+//     `freshnessPolicy` в ответе есть и остаётся единственным источником
+//     интервала, но пользователю он не показан — если снова понадобится
+//     объяснить, откуда взялась дата, брать значения оттуда, а не вводить
+//     своё число дней.
 // Все фильтры и поиск живут в URL — состояние экрана переживает перезагрузку
 // и делится ссылкой.
 import { useMemo } from "react";
@@ -352,7 +356,7 @@ export default function SecurityObjectsPage() {
         </header>
 
         {query.data !== undefined && (
-          <section aria-label="Показатели реестра" className="space-y-2">
+          <section aria-label="Показатели реестра">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
               {KPI_TILES.map((tile) => {
                 const value = query.data.kpi[tile.kpi];
@@ -406,14 +410,6 @@ export default function SecurityObjectsPage() {
                 );
               })}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Показатели посчитаны сервером по всему реестру, а не по
-              отрисованной таблице. Срок проверки — по политике{" "}
-              {query.data.freshnessPolicy.version}:{" "}
-              {query.data.freshnessPolicy.verificationIntervalDays} дней с даты
-              публикации, предупреждение — за{" "}
-              {query.data.freshnessPolicy.dueSoonPercent}% интервала до срока.
-            </p>
           </section>
         )}
 
