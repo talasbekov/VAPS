@@ -163,7 +163,7 @@ const OBJECT_TABS = {
   },
   om: {
     label: "Объекты ОМ",
-    match: (o: SecurityObject) => o.ownership === "OM",
+    match: (o: SecurityObject) => o.hasSecurityEvents,
   },
 } as const;
 
