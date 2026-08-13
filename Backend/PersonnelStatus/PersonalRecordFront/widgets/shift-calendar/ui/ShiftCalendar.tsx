@@ -44,7 +44,9 @@ export function ShiftCalendar({ shifts, events }: ShiftCalendarProps) {
         borderColor: color.text,
         textColor: color.text,
         extendedProps: {
-          href: `/security-ops/duties/${shift.id}`,
+          // Ссылки нет: карточку смены удалили вместе с «Планом дежурств»
+          // (13.08.2026). Пустой href оставляет смену видимой в календаре и
+          // не ведёт в 404 — клик просто ничего не делает.
           hint: `Дежурство · ${DUTY_STATE_LABEL[shift.stateCode]}`,
         },
       };

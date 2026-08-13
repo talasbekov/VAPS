@@ -87,6 +87,7 @@ export default function EmployeesPage() {
 
           result.push({
             id: emp.id.toString(),
+            staffUnitId: unit.id.toString(),
             number: globalIndex++,
             name: `${emp.last_name} ${emp.first_name}`,
             position: empData.position?.name || "Должность не указана",
@@ -112,6 +113,7 @@ export default function EmployeesPage() {
 
         result.push({
           id: employee.id.toString(),
+          staffUnitId: unit.id.toString(),
           number: globalIndex++,
           name: `${employee.last_name} ${employee.first_name}`,
           position: (unit as any).position?.name || "Должность не указана",

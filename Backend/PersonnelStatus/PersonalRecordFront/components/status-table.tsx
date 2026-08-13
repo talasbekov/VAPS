@@ -574,7 +574,23 @@ export function StatusTable({
                     {employee.department}
                   </TableCell>
                   <TableCell className="text-sm">{employee.position}</TableCell>
-                  <TableCell>{getStatusBadge(employee.status)}</TableCell>
+                  {/* Статус — точка входа в модалку «Статусы сотрудника».
+                      Кнопка, а не onClick на ячейке: строка кликабельна и с
+                      клавиатуры, и роль элемента не приходится угадывать. */}
+                  <TableCell>
+                    {employee.name === "ВАКАНТ" ? (
+                      getStatusBadge(employee.status)
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleEditStatus(employee)}
+                        title="Открыть статусы сотрудника"
+                        className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 hover:opacity-80"
+                      >
+                        {getStatusBadge(employee.status)}
+                      </button>
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm">
                     {employee.lastUpdate === "Не обновлено"
                       ? employee.lastUpdate
@@ -686,6 +702,8 @@ export function StatusTable({
         employeeId={selectedEmployeeForEdit?.id || null}
         employeeName={selectedEmployeeForEdit?.name}
         currentStatus={selectedEmployeeForEdit?.status}
+        employeePosition={selectedEmployeeForEdit?.position}
+        employeeDepartment={selectedEmployeeForEdit?.department}
         onSuccess={handleEditSuccess}
       />
 

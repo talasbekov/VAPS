@@ -35,6 +35,8 @@ import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   getEmployeeStatusColor,
 } from "@/lib/status";
+import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatusDialog";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Employee } from "../model/types";
 
 interface EmployeeTableProps {
@@ -47,7 +49,9 @@ export function EmployeeTable({
   onSelectEmployee,
 }: EmployeeTableProps) {
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+  const [statusDialogFor, setStatusDialogFor] = useState<Employee | null>(null);
   const { hasPermission } = useAuth();
+  const queryClient = useQueryClient();
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -153,7 +157,23 @@ export function EmployeeTable({
                   <TableCell className="text-sm">
                     {employee.department}
                   </TableCell>
-                  <TableCell>{getStatusBadge(employee.status)}</TableCell>
+                  {/* Клик по статусу открывает «Статусы сотрудника».
+                      Без штатной единицы ключ модалки не собрать — такая
+                      строка остаётся некликабельной, а не ведёт в ошибку. */}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {employee.staffUnitId ? (
+                      <button
+                        type="button"
+                        onClick={() => setStatusDialogFor(employee)}
+                        title="Открыть статусы сотрудника"
+                        className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 hover:opacity-80"
+                      >
+                        {getStatusBadge(employee.status)}
+                      </button>
+                    ) : (
+                      getStatusBadge(employee.status)
+                    )}
+                  </TableCell>
                   <TableCell>
                     <div className="space-y-1">
                       <div className="flex items-center text-sm">
@@ -215,6 +235,28 @@ export function EmployeeTable({
           </div>
         )}
       </CardContent>
+
+      <EditStatusDialog
+        open={statusDialogFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setStatusDialogFor(null);
+        }}
+        employeeId={
+          statusDialogFor
+            ? `${statusDialogFor.staffUnitId}-${statusDialogFor.id}`
+            : null
+        }
+        employeeName={statusDialogFor?.name}
+        currentStatus={statusDialogFor?.status}
+        employeePosition={statusDialogFor?.position}
+        employeeDepartment={statusDialogFor?.department}
+        onSuccess={() => {
+          setStatusDialogFor(null);
+          void queryClient.invalidateQueries({
+            queryKey: ["staff-units-by-directorate"],
+          });
+        }}
+      />
     </Card>
   );
 }

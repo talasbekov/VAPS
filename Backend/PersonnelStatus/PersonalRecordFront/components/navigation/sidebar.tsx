@@ -98,7 +98,9 @@ export function Sidebar() {
     { name: "Командный центр", href: "/security-ops/command-center", icon: LineChart },
     { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList },
     { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
-    { name: "План дежурств", href: "/security-ops/duties", icon: CalendarDays },
+    // «План дежурств» (/security-ops/duties) удалён 13.08.2026 вместе со
+    // страницей и адресом. «Боевые группы» (/security-ops/duties/combat) —
+    // отдельный раздел на том же префиксе, он сохранён.
     { name: "Календарь смен", href: "/security-ops/calendar", icon: CalendarDays },
     { name: "Боевые группы", href: "/security-ops/duties/combat", icon: Shield },
     { name: "Расход дня (ОМ)", href: "/security-ops/daily-expense", icon: CalendarDays },
@@ -172,7 +174,7 @@ export function Sidebar() {
               <li key={item.href} className="sidebar-nav-item">
                 <motion.a
                   href={item.href}
-                  className="flex items-center px-6 py-3 text-sm font-semibold rounded-xl transition-colors text-sidebar-foreground hover:bg-sidebar-accent"
+                  className="flex items-center px-6 py-4 text-base font-semibold rounded-xl transition-colors text-sidebar-foreground hover:bg-sidebar-accent"
                   whileHover={{ x: 4 }}
                   whileTap={{ scale: 0.98 }}
                   transition={{
@@ -181,7 +183,13 @@ export function Sidebar() {
                     damping: 25,
                   }}
                 >
-                  <item.icon className="mr-4 h-5 w-5" />
+                  <motion.div
+                    whileHover={{ scale: 1.15, rotate: 8 }}
+                    transition={{ type: "spring" as const, stiffness: 400 }}
+                    className="mr-4"
+                  >
+                    <item.icon className="h-6 w-6" />
+                  </motion.div>
                   <span>{item.name}</span>
                 </motion.a>
               </li>

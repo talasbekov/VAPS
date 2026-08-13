@@ -14,11 +14,18 @@ import { redirect } from "next/navigation";
 // Первый сегмент SPA-маршрута → база в старом фронте. Хвост маршрута
 // сохраняется там, где нативный раздел повторяет структуру SPA (карточки,
 // подстраницы рейтинга/отчётов/аналитики).
-const SECTION_BASE: Record<string, { base: string; keepTail: boolean }> = {
+const SECTION_BASE: Record<
+  string,
+  { base: string; keepTail: boolean; emptyTail?: string }
+> = {
   "command-center": { base: "/security-ops/command-center", keepTail: false },
   "security-events": { base: "/security-ops/events", keepTail: true },
   objects: { base: "/security-ops/objects", keepTail: true },
-  duties: { base: "/security-ops/duties", keepTail: true },
+  // «План дежурств» удалён (13.08.2026), но /security-ops/duties/combat —
+  // живой раздел «Боевые группы», и хвост ведёт туда. Голый /ops/duties
+  // отправляется в календарь смен: страницы плана больше нет, а ближайший
+  // экран про дежурства — он.
+  duties: { base: "/security-ops/duties", keepTail: true, emptyTail: "/security-ops/calendar" },
   calendar: { base: "/security-ops/calendar", keepTail: false },
   analytics: { base: "/security-ops/analytics", keepTail: true },
   ratings: { base: "/security-ops/ratings", keepTail: true },
@@ -48,6 +55,9 @@ export default async function OpsRedirect({
   if (section === undefined) {
     // Корень SPA и неизвестные пути (print/*) — в командный центр раздела.
     redirect("/security-ops/command-center");
+  }
+  if (tail.length === 0 && section.emptyTail !== undefined) {
+    redirect(section.emptyTail);
   }
   const suffix =
     section.keepTail && tail.length > 0 ? `/${tail.join("/")}` : "";

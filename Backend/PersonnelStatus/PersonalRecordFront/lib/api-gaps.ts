@@ -224,14 +224,9 @@ const RATINGS_MOCK_BY_CONFIG: ApiGap = {
     "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=ratings.",
 };
 
-const DUTIES_MOCK_BY_CONFIG: ApiGap = {
-  subject: "План дежурств",
-  paths: [],
-  note:
-    "Бэкенд плана дежурств готов (/api/ops/duty-types|shifts|monthly-plan|" +
-    "plan-objects|candidates/); экран работает на MSW по конфигурации. " +
-    "Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=duties.",
-};
+// Пометки «Плана дежурств» здесь больше нет: раздел удалён 13.08.2026. Домен
+// duties остался живым понятием — на нём стоит календарь смен, см.
+// CALENDAR_MOCK_BY_CONFIG ниже.
 
 export function findApiGap(pathname: string | null | undefined): ApiGap | null {
   if (!pathname) return null;
@@ -273,12 +268,6 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       normalized.startsWith("/security-ops/duties/combat/")
     ) {
       return isOpsCombatLive() ? null : COMBAT_MOCK_BY_CONFIG;
-    }
-    if (
-      normalized === "/security-ops/duties" ||
-      normalized.startsWith("/security-ops/duties/")
-    ) {
-      return isOpsDutiesLive() ? null : DUTIES_MOCK_BY_CONFIG;
     }
     if (
       normalized === "/security-ops/calendar" ||
