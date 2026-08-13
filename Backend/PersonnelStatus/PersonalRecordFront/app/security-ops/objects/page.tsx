@@ -146,13 +146,6 @@ const OBJECT_STATE_CLASS: Record<ObjectState, string> = {
 
 const PASSPORT_STATES: PassportState[] = ["GREEN", "YELLOW", "RED"];
 
-const FRESHNESS_STATES: PassportFreshnessState[] = [
-  "FRESH",
-  "DUE_SOON",
-  "OVERDUE",
-  "NO_PUBLISHED_VERSION",
-];
-
 /** Цвет строки актуальности идёт от состояния ОТВЕТА, а не от даты: дни до
  * срока экран не считает — их посчитала политика на сервере. */
 const FRESHNESS_CLASS: Record<PassportFreshnessState, string> = {
@@ -243,7 +236,8 @@ export default function SecurityObjectsPage() {
   const status = searchParams.get("status") ?? ANY;
   const passport = searchParams.get("passport") ?? ANY;
   const region = searchParams.get("region") ?? ANY;
-  const type = searchParams.get("type") ?? ANY;
+  // Своего списка у актуализации нет — параметр ставят плитки KPI
+  // «Проверка просрочена» и «Паспорт не публиковался».
   const freshnessFilter = searchParams.get("freshness") ?? ANY;
   const rawView = searchParams.get("view") ?? "";
   const view: ViewMode = rawView in VIEW_MODES ? (rawView as ViewMode) : "table";
@@ -256,18 +250,11 @@ export default function SecurityObjectsPage() {
     return map;
   }, [query.data]);
 
-  // Значения выпадающих списков — из самого реестра: справочника регионов и
-  // типов раздел не отдаёт, а зашитый список расходился бы с данными.
+  // Значения списка регионов — из самого реестра: справочника регионов раздел
+  // не отдаёт, а зашитый список расходился бы с данными.
   const regions = useMemo(
     () =>
       [...new Set((query.data?.results ?? []).map((o) => o.region))]
-        .filter((value) => value !== "")
-        .sort((a, b) => a.localeCompare(b, "ru")),
-    [query.data]
-  );
-  const types = useMemo(
-    () =>
-      [...new Set((query.data?.results ?? []).map((o) => o.type))]
         .filter((value) => value !== "")
         .sort((a, b) => a.localeCompare(b, "ru")),
     [query.data]
@@ -279,7 +266,6 @@ export default function SecurityObjectsPage() {
       if (status !== ANY && o.objectState !== status) return false;
       if (passport !== ANY && o.passportState !== passport) return false;
       if (region !== ANY && o.region !== region) return false;
-      if (type !== ANY && o.type !== type) return false;
       if (
         freshnessFilter !== ANY &&
         freshnessById.get(o.id)?.state !== freshnessFilter
@@ -297,7 +283,6 @@ export default function SecurityObjectsPage() {
     status,
     passport,
     region,
-    type,
     freshnessFilter,
     freshnessById,
   ]);
@@ -306,7 +291,6 @@ export default function SecurityObjectsPage() {
     (status !== ANY ? 1 : 0) +
     (passport !== ANY ? 1 : 0) +
     (region !== ANY ? 1 : 0) +
-    (type !== ANY ? 1 : 0) +
     (freshnessFilter !== ANY ? 1 : 0) +
     (search.trim() !== "" ? 1 : 0);
 
@@ -331,14 +315,7 @@ export default function SecurityObjectsPage() {
 
   function resetFilters(): void {
     const params = new URLSearchParams(searchParams);
-    for (const name of [
-      "search",
-      "status",
-      "passport",
-      "region",
-      "type",
-      "freshness",
-    ]) {
+    for (const name of ["search", "status", "passport", "region", "freshness"]) {
       params.delete(name);
     }
     applyParams(params);
@@ -470,21 +447,6 @@ export default function SecurityObjectsPage() {
               value={region}
               onChange={(value) => setParam("region", value, ANY)}
               options={regions.map((value) => ({ value, label: value }))}
-            />
-            <FilterSelect
-              label="Тип"
-              value={type}
-              onChange={(value) => setParam("type", value, ANY)}
-              options={types.map((value) => ({ value, label: value }))}
-            />
-            <FilterSelect
-              label="Актуализация"
-              value={freshnessFilter}
-              onChange={(value) => setParam("freshness", value, ANY)}
-              options={FRESHNESS_STATES.map((key) => ({
-                value: key,
-                label: FRESHNESS_LABEL[key],
-              }))}
             />
 
             <div
