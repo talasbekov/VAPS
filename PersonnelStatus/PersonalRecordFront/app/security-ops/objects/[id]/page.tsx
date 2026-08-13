@@ -7,6 +7,7 @@ import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { useSecurityObject } from "@/hooks/use-security-objects";
 import { PassportForm, PassportVersionsPanel } from "@/features/object-passport";
+import { DutyForcesSection } from "@/features/object-duty-forces";
 
 export default function SecurityObjectPage() {
   const params = useParams<{ id: string }>();
@@ -58,6 +59,8 @@ export default function SecurityObjectPage() {
           </p>
         </CardContent>
       </Card>
+
+      <DutyForcesSection objectId={object.id} />
 
       {/* key по updatedAt: успешное сохранение/публикация пересоздаёт форму
           от свежего серверного состояния */}

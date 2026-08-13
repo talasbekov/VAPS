@@ -1,8 +1,9 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
+import { useRanks } from "@/hooks/use-ranks";
 import {
   Dialog,
   DialogContent,
@@ -34,9 +35,26 @@ import { ru } from "date-fns/locale";
 import { apiClient } from "@/lib/api";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
-  SELECTABLE_STATUS_ITEMS,
+  EMPLOYEE_STATUS_ITEMS,
+  EMPLOYEE_STATUS_LABELS,
   getEmployeeStatusLabel,
 } from "@/lib/status";
+import {
+  removeDutyAssignment,
+  upsertDutyAssignment,
+} from "@/entities/duty-assignment";
+import { useDutyAssignment } from "@/hooks/use-duty-assignments";
+import {
+  DutyAssignmentFields,
+  EMPTY_DUTY_DRAFT,
+  validateDutyDraft,
+  type DutyDraft,
+} from "./DutyAssignmentFields";
+
+/** «В строю» — бессрочный статус по умолчанию, дат у него нет. */
+const IN_SERVICE_LABEL = EMPLOYEE_STATUS_LABELS.in_service;
+/** «На дежурстве» — единственный статус, который дополняется нарядом. */
+const ON_DUTY_LABEL = EMPLOYEE_STATUS_LABELS.on_duty;
 
 interface EditStatusDialogProps {
   open: boolean;
@@ -46,6 +64,10 @@ interface EditStatusDialogProps {
   currentStatus?: string;
   onSuccess?: () => void;
   initialStartDate?: Date; // Начальная дата для планирования
+  /** Снимок кадровых данных для наряда: карточка объекта показывает,
+   * кем человек заступал, и в кадровый API за этим не ходит. */
+  employeePosition?: string;
+  employeeDepartment?: string;
 }
 
 export function EditStatusDialog({
@@ -56,17 +78,26 @@ export function EditStatusDialog({
   currentStatus,
   onSuccess,
   initialStartDate,
+  employeePosition,
+  employeeDepartment,
 }: EditStatusDialogProps) {
   const [status, setStatus] = useState("");
   const [startDate, setStartDate] = useState<Date>();
   const [endDate, setEndDate] = useState<Date>();
   const [comment, setComment] = useState("");
+  const [duty, setDuty] = useState<DutyDraft>(EMPTY_DUTY_DRAFT);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Используем React Query для загрузки данных
   const { data } = useStaffUnitsByDirectorate();
   const staffUnits = data?.staff_units || [];
+
+  const { data: ranks } = useRanks();
+  const existingDuty = useDutyAssignment(employeeId);
+
+  const isInService = status === IN_SERVICE_LABEL;
+  const isOnDuty = status === ON_DUTY_LABEL;
 
   // Находим текущий статус сотрудника при открытии диалога
   useEffect(() => {
@@ -120,6 +151,29 @@ export function EditStatusDialog({
     }
   }, [open, employeeId, staffUnits, initialStartDate]);
 
+  // Действующий наряд подставляется в форму при открытии: модалка правит
+  // статус, а не заводит его заново — потерять при повторном входе объект и
+  // пост значило бы показать пустую форму там, где наряд есть.
+  useEffect(() => {
+    if (!open) return;
+    setDuty(
+      existingDuty
+        ? {
+            dutyKind: existingDuty.dutyKind,
+            objectId: existingDuty.objectId,
+            objectName: existingDuty.objectName,
+            postId: existingDuty.postId ?? "",
+            postName: existingDuty.postName ?? "",
+            groupId: existingDuty.groupId ?? "",
+            groupName: existingDuty.groupName ?? "",
+          }
+        : EMPTY_DUTY_DRAFT
+    );
+    // existingDuty намеренно вне зависимостей: подстановка нужна на открытии,
+    // дальше форму ведёт пользователь.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, employeeId]);
+
   // Сброс формы при закрытии
   useEffect(() => {
     if (!open) {
@@ -127,15 +181,31 @@ export function EditStatusDialog({
       setStartDate(undefined);
       setEndDate(undefined);
       setComment("");
+      setDuty(EMPTY_DUTY_DRAFT);
       setValidationErrors([]);
     }
   }, [open]);
 
-  const statusTypes = SELECTABLE_STATUS_ITEMS.map((item) => ({
+  // Перечень статусов берётся целиком — включая прикомандирование: модалка
+  // показывает статусы сотрудника, а не подмножество, удобное форме.
+  const statusTypes = EMPLOYEE_STATUS_ITEMS.map((item) => ({
     value: item.label,
     label: item.label,
     color: item.color,
   }));
+
+  /** Кадровый снимок для наряда: звание из справочника, должность и
+   * подразделение — от вызывающей таблицы, с запасным поиском по штатке. */
+  const employeeSnapshot = useMemo(() => {
+    const emp = findEmployeeInStaffUnits(staffUnits, employeeId);
+    const rankName =
+      ranks?.find((rank) => rank.id === emp?.employee?.rank)?.name ?? "";
+    return {
+      rankName,
+      positionName: employeePosition || emp?.positionName || "",
+      departmentName: employeeDepartment || emp?.divisionName || "",
+    };
+  }, [staffUnits, employeeId, ranks, employeePosition, employeeDepartment]);
 
   const validateForm = () => {
     const errors: string[] = [];
@@ -144,15 +214,19 @@ export function EditStatusDialog({
       errors.push("Выберите статус");
     }
 
+    // «В строю» бессрочен — дат у него нет. У любого другого статуса период
+    // обязателен целиком: статус без конца не отличим от забытого.
+    if (status && !isInService) {
+      if (!startDate) errors.push("Укажите дату начала");
+      if (!endDate) errors.push("Укажите дату окончания");
+    }
+
     if (startDate && endDate && startDate > endDate) {
       errors.push("Дата начала не может быть позже даты окончания");
     }
 
-    if (
-      ["Отпуск", "Больничный", "Командировка"].includes(status) &&
-      !startDate
-    ) {
-      errors.push("Для данного статуса обязательно указать дату начала");
+    if (isOnDuty) {
+      errors.push(...validateDutyDraft(duty));
     }
 
     setValidationErrors(errors);
@@ -212,14 +286,45 @@ export function EditStatusDialog({
       })();
 
       // Формируем запрос - используем правильный эндпоинт для создания статуса
+      // У «В строю» дат в форме нет, но start_date на бэкенде обязателен:
+      // бессрочный статус начинается сегодня и не кончается.
+      const startDateValue = isInService
+        ? formatDate(new Date())
+        : formatDate(startDate!);
+
       await apiClient.createEmployeeStatus({
         employee: employeeIdNum,
         status_type: apiStatusType,
-        start_date: startDate ? formatDate(startDate) : undefined,
-        end_date: endDate ? formatDate(endDate) : undefined,
+        start_date: startDateValue,
+        end_date: isInService || !endDate ? undefined : formatDate(endDate),
         comment: comment || undefined,
         related_division: relatedDivision,
       });
+
+      // Наряд — расшифровка статуса, поэтому пишется тем же действием.
+      // ЛЮБОЙ статус, кроме «На дежурстве», наряд снимает: иначе сотрудник
+      // остался бы в «Дежурных силах» объекта после ухода в отпуск.
+      if (isOnDuty) {
+        upsertDutyAssignment({
+          employeeKey: employeeId,
+          employeeName: employeeName || "",
+          rankName: employeeSnapshot.rankName,
+          positionName: employeeSnapshot.positionName,
+          departmentName: employeeSnapshot.departmentName,
+          dutyKind: duty.dutyKind as "POST" | "GROUP",
+          objectId: duty.objectId,
+          objectName: duty.objectName,
+          postId: duty.dutyKind === "POST" ? duty.postId : null,
+          postName: duty.dutyKind === "POST" ? duty.postName : null,
+          groupId: duty.dutyKind === "GROUP" ? duty.groupId : null,
+          groupName: duty.dutyKind === "GROUP" ? duty.groupName : null,
+          startDate: startDateValue,
+          endDate: formatDate(endDate!),
+          assignedAt: new Date().toISOString(),
+        });
+      } else {
+        removeDutyAssignment(employeeId);
+      }
 
       // Закрываем диалог
       onOpenChange(false);
@@ -246,7 +351,7 @@ export function EditStatusDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[800px] w-full">
         <DialogHeader>
-          <DialogTitle>{"Запланировать статус сотрудника"}</DialogTitle>
+          <DialogTitle>Статусы сотрудника</DialogTitle>
           <DialogDescription>
             {employeeName
               ? `Сотрудник: ${employeeName}${
@@ -349,10 +454,20 @@ export function EditStatusDialog({
             </Select>
           </div>
 
-          {/* Date Range */}
+          {/* Наряд: только у «На дежурстве» */}
+          {isOnDuty && (
+            <DutyAssignmentFields value={duty} onChange={setDuty} />
+          )}
+
+          {/* Период. У «В строю» дат нет — он бессрочный и стоит по умолчанию. */}
+          {isInService ? (
+            <p className="text-sm text-gray-500">
+              «{IN_SERVICE_LABEL}» — бессрочный статус, даты не указываются.
+            </p>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Дата начала</Label>
+              <Label>Дата начала *</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -377,7 +492,7 @@ export function EditStatusDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Дата окончания</Label>
+              <Label>Дата окончания *</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -401,6 +516,7 @@ export function EditStatusDialog({
               </Popover>
             </div>
           </div>
+          )}
 
           {/* Comment */}
           <div className="space-y-2">
@@ -455,4 +571,47 @@ export function EditStatusDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Поиск сотрудника в штатке по ключу строки таблицы (`unitId-employeeId`).
+ * Форматов ответа два (unit.employee и unit.employees[]) — модалка уже
+ * разбирает оба выше, здесь та же логика для кадрового снимка наряда.
+ */
+function findEmployeeInStaffUnits(
+  staffUnits: any[],
+  employeeKey: string | null
+): { employee: any; positionName: string; divisionName: string } | null {
+  if (!employeeKey) return null;
+  const [unitIdStr, employeeIdStr] = employeeKey.split("-");
+  const unitId = parseInt(unitIdStr, 10);
+  const employeeId =
+    employeeIdStr && !employeeIdStr.startsWith("vacant")
+      ? parseInt(employeeIdStr, 10)
+      : null;
+  if (!employeeId) return null;
+
+  const unit = staffUnits.find((item) => item.id === unitId);
+  if (!unit) return null;
+
+  if (unit.employee && unit.employee.id === employeeId) {
+    return {
+      employee: unit.employee,
+      positionName: unit.position?.name || "",
+      divisionName: unit.division?.name || "",
+    };
+  }
+  if (Array.isArray(unit.employees)) {
+    const entry = unit.employees.find(
+      (item: any) => item.employee?.id === employeeId
+    );
+    if (entry) {
+      return {
+        employee: entry.employee,
+        positionName: entry.position?.name || "",
+        divisionName: unit.division?.name || "",
+      };
+    }
+  }
+  return null;
 }

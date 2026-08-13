@@ -125,9 +125,9 @@ const ROUTES: readonly RouteSpec[] = [
     template: '/security-ops/objects/{objectId}/passports/{passportVersionId}',
     needs: ['objectId', 'passportVersionId'],
   },
-  { template: '/security-ops/duties' },
+  // «План дежурств» и карточка смены удалены 13.08.2026 — обходить нечего;
+  // «Боевые группы» живут на том же префиксе и остаются в обходе.
   { template: '/security-ops/duties/combat' },
-  { template: '/security-ops/duties/{dutyShiftId}', needs: ['dutyShiftId'] },
   { template: '/security-ops/daily-expense' },
   { template: '/security-ops/calendar' },
   { template: '/security-ops/analytics' },
@@ -668,7 +668,6 @@ async function resolveIds(token: string): Promise<Record<string, string>> {
     const detail = await get(`/api/ops/objects/${ids.objectId}/`)
     put('passportVersionId', detail?.passportVersions?.[0]?.id)
   }
-  put('dutyShiftId', (await get('/api/ops/duty-shifts/'))?.results?.[0]?.id)
   put('ratingEmployeeId', (await get('/api/ops/evaluation-registry/'))?.results?.[0]?.employeeId)
   put('reportJobId', (await get('/api/ops/service-report-jobs/'))?.results?.[0]?.reportJobId)
   put('dictionaryCode', (await get('/api/ops/dictionaries/'))?.results?.[0]?.code)

@@ -36,6 +36,7 @@ import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import type { CheckedState } from "@radix-ui/react-checkbox";
 import { apiClient } from "@/lib/api";
+import { removeDutyAssignment } from "@/entities/duty-assignment";
 import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
@@ -181,6 +182,15 @@ export function MassStatusUpdate({
       await apiClient.updateStaffUnitsByDirectorate({
         employee_statuses: employeeStatuses,
       });
+
+      // Наряды выбранных снимаются в ЛЮБОМ случае: массовая форма не
+      // спрашивает объект и пост, поэтому даже массовое «На дежурстве» не
+      // может подтвердить прежний наряд — он говорил про другой период и
+      // другое место. Оставить его значило бы держать человека в «Дежурных
+      // силах» объекта на основании статуса, который туда не ставили.
+      selectedEmployees.forEach((selectedId) =>
+        removeDutyAssignment(selectedId)
+      );
 
       // Reset form
       setStatus("");

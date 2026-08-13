@@ -14,4 +14,7 @@ export interface Employee {
   address: string;
   manager: string;
   photo?: string;
+  /** Штатная единица. Нужна модалке статусов: она адресует сотрудника ключом
+   * `${staffUnitId}-${id}`, и без неё строка таблицы туда не доедет. */
+  staffUnitId?: string;
 }
