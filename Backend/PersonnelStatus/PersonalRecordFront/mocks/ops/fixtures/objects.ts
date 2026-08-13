@@ -127,6 +127,8 @@ export function buildObjectsFixtures(
       address: "пр. Мангилик Ел, 55",
       objectState: "ACTIVE",
       passportState: "GREEN",
+      ownership: "GUARDED",
+      hasSecurityEvents: true,
       sectors: palaceSectors,
       passportVersions: [
         {
@@ -151,6 +153,8 @@ export function buildObjectsFixtures(
       address: "пр. Мангилик Ел, 8",
       objectState: "ACTIVE",
       passportState: "YELLOW",
+      ownership: "GUARDED",
+      hasSecurityEvents: true,
       sectors: buildSectors([
         {
           name: "Сектор A",
@@ -176,6 +180,8 @@ export function buildObjectsFixtures(
       address: "ул. Туран, 32",
       objectState: "ACTIVE",
       passportState: "RED",
+      ownership: "OWN",
+      hasSecurityEvents: false,
       sectors: [],
       passportVersions: [],
       createdAt: now,
@@ -190,6 +196,8 @@ export function buildObjectsFixtures(
       address: "ул. Мангилик Ел, 1",
       objectState: "ACTIVE",
       passportState: "GREEN",
+      ownership: "OWN",
+      hasSecurityEvents: true,
       sectors: dueSoonSectors,
       passportVersions: [
         {
@@ -215,6 +223,8 @@ export function buildObjectsFixtures(
       address: "ул. Кунаева, 4",
       objectState: "ACTIVE",
       passportState: "YELLOW",
+      ownership: "GUARDED",
+      hasSecurityEvents: false,
       sectors: overdueSectors,
       passportVersions: [
         {
