@@ -184,7 +184,14 @@ def generate_personnel_expense_report(department_id):
     # На учебе руководства
     head_training_statuses = EmployeeStatus.objects.filter(
         employee__staff_unit__division_id=department.id,
-        status_type__in=[EmployeeStatus.StatusType.TRAINING, EmployeeStatus.StatusType.COMPETITION],
+        # Конференция идёт в ту же колонку расхода, что учёба и соревнования
+        # (канонический каталог ОМ: report_column_code=TRAINING). Без неё
+        # человек на конференции не попал бы НИКУДА — расход потерял бы строку.
+        status_type__in=[
+            EmployeeStatus.StatusType.TRAINING,
+            EmployeeStatus.StatusType.COMPETITION,
+            EmployeeStatus.StatusType.CONFERENCE,
+        ],
         state=EmployeeStatus.StatusState.ACTIVE
     ).select_related('employee')
 
@@ -368,7 +375,14 @@ def generate_personnel_expense_report(department_id):
         # На учебе/соревнованиях
         training_statuses = EmployeeStatus.objects.filter(
             employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type__in=[EmployeeStatus.StatusType.TRAINING, EmployeeStatus.StatusType.COMPETITION],
+            # Конференция идёт в ту же колонку расхода, что учёба и соревнования
+        # (канонический каталог ОМ: report_column_code=TRAINING). Без неё
+        # человек на конференции не попал бы НИКУДА — расход потерял бы строку.
+        status_type__in=[
+            EmployeeStatus.StatusType.TRAINING,
+            EmployeeStatus.StatusType.COMPETITION,
+            EmployeeStatus.StatusType.CONFERENCE,
+        ],
             state=EmployeeStatus.StatusState.ACTIVE
         ).select_related('employee')
 

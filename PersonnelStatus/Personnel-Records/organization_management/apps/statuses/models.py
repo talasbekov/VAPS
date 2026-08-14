@@ -16,6 +16,12 @@ class EmployeeStatus(models.Model):
         BUSINESS_TRIP   =   'business_trip',    'Командировка'
         TRAINING        =   'training',         'Учёба'
         COMPETITION     =   'competition',      'На соревнованиях'
+        # Конференция — СВОЙ тип, а не «учёба» и не «иное отсутствие»:
+        # канонический каталог ОМ (operations.StatusType, сид
+        # seed_status_types) держит CONFERENCE отдельной строкой с
+        # приоритетом 36, и без пары здесь мост LEGACY_CODE_BY_CODE не мог
+        # бы перенести её в старую систему.
+        CONFERENCE      =   'conference',       'Конференция'
         OTHER_ABSENCE   =   'other_absence',    'Отсутствие по иным причинам'
         ON_DUTY         =   'on_duty',          'На дежурстве'
         AFTER_DUTY      =   'after_duty',       'После дежурства'

@@ -12,6 +12,7 @@ import {
   Plane,
   GraduationCap,
   Trophy,
+  Presentation,
   AlertCircle,
   Shield,
   Clock,
@@ -29,6 +30,7 @@ interface StatsCardsProps {
       business_trip: number;
       training: number;
       competition: number;
+      conference: number;
       other_absence: number;
       on_duty: number;
       after_duty: number;
@@ -75,6 +77,14 @@ const absenceTypeConfig = {
     icon: Trophy,
     color: "text-pink-600",
     bgColor: "text-pink-600",
+  },
+  // Без записи здесь карточка молча пропадает (ниже `if (!config) return null`),
+  // хотя бэкенд считает конференцию наравне с остальными типами.
+  conference: {
+    label: "На конференции",
+    icon: Presentation,
+    color: "text-violet-600",
+    bgColor: "text-violet-600",
   },
   other_absence: {
     label: "Иные причины",

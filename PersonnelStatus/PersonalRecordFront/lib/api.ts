@@ -23,6 +23,7 @@ export interface Employee {
     | "business_trip"
     | "training"
     | "competition"
+    | "conference"
     | "other_absence"
     | "on_duty"
     | "after_duty"
@@ -80,6 +81,7 @@ export interface StaffUnitEmployee {
         | "business_trip"
         | "training"
         | "competition"
+        | "conference"
         | "other_absence"
         | "on_duty"
         | "after_duty"
@@ -124,6 +126,7 @@ export interface StaffUnitTreeResponse {
           | "business_trip"
           | "training"
           | "competition"
+          | "conference"
           | "other_absence"
           | "on_duty"
           | "after_duty"
@@ -671,6 +674,7 @@ class ApiClient {
         | "business_trip"
         | "training"
         | "competition"
+        | "conference"
         | "other_absence"
         | "on_duty"
         | "after_duty"
@@ -792,6 +796,7 @@ class ApiClient {
       | "business_trip"
       | "training"
       | "competition"
+      | "conference"
       | "other_absence"
       | "on_duty"
       | "after_duty"
@@ -1029,6 +1034,7 @@ class ApiClient {
       business_trip: number;
       training: number;
       competition: number;
+      conference: number;
       other_absence: number;
       on_duty: number;
       after_duty: number;

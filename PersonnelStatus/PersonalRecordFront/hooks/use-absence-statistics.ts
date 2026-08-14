@@ -17,6 +17,7 @@ export function useAbsenceStatistics() {
       business_trip: number
       training: number
       competition: number
+      conference: number
       other_absence: number
       on_duty: number
       after_duty: number

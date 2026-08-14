@@ -59,6 +59,7 @@ interface EmployeeStatusDto {
     | "business_trip"
     | "training"
     | "competition"
+    | "conference"
     | "other_absence"
     | "on_duty"
     | "after_duty"

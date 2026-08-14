@@ -125,13 +125,15 @@ class StaffUnitSerializer(serializers.ModelSerializer):
 class EmployeeStatusBulkSerializer(serializers.Serializer):
     """Сериализатор для bulk update статуса сотрудника"""
     employee_id = serializers.IntegerField(required=True)
+    # Наборы берутся из модели, а не переписываются здесь: переписанный список
+    # уже разошёлся с ней — в нём не было 'leave_by_report', и массовое
+    # обновление молча не умело ставить отпуск по рапорту.
     status_type = serializers.ChoiceField(
-        choices=['in_service', 'vacation', 'sick_leave', 'business_trip', 'training',
-                 'competition', 'other_absence', 'on_duty', 'after_duty', 'seconded_from', 'seconded_to'],
+        choices=EmployeeStatus.StatusType.choices,
         required=False
     )
     state = serializers.ChoiceField(
-        choices=['planned', 'active', 'completed', 'cancelled'],
+        choices=EmployeeStatus.StatusState.choices,
         required=False
     )
     start_date = serializers.DateField(required=False)

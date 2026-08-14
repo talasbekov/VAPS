@@ -61,7 +61,7 @@ KU_OWNED_CODES = {
     "ATTACHED",
 }
 
-# Мост «старый код → канонический» (добавка переезда). Покрывает ВСЕ 12
+# Мост «старый код → канонический» (добавка переезда). Покрывает ВСЕ 13
 # значений EmployeeStatus.StatusType старой системы; тест
 # test_legacy_bridge_covers_old_choices краснеет, если в старом словаре
 # появится значение без канонической пары.
@@ -77,6 +77,7 @@ LEGACY_CODE_BY_CODE = {
     "COMMAND": "business_trip",
     "STUDY": "training",
     "COMPETITION": "competition",
+    "CONFERENCE": "conference",
     "OTHER_ABSENCE": "other_absence",
     "DUTY": "on_duty",
     "REST_AFTER_DUTY": "after_duty",
