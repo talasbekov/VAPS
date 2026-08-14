@@ -135,13 +135,27 @@ class DataAggregator:
     def _effective_status_by_employee(
         self, statuses: Iterable[EmployeeStatus]
     ) -> Dict[int, str]:
-        """Один статус на сотрудника — самый значимый из действующих."""
-        best: Dict[int, str] = {}
-        for employee_id, status_type in statuses:
+        """Один статус на сотрудника — самый значимый из действующих.
+
+        ДЕЙСТВУЮЩИЙ статус старше завершённого, и только потом сравнивается
+        значимость типа. Это разводит день досрочного завершения: у человека,
+        вернувшегося сегодня, завершённый статус закрыт сегодняшним числом и
+        в окно даты попадает, но в расходе он уже в строю, а не там, откуда
+        его отозвали.
+
+        Завершённые не отбрасываются вовсе: отчёт за прошедшую дату опирается
+        именно на них.
+        """
+        best: Dict[int, Tuple[int, int, str]] = {}
+        for employee_id, status_type, state in statuses:
+            rank = (
+                0 if state == EmployeeStatus.StatusState.ACTIVE else 1,
+                _priority(status_type),
+            )
             current = best.get(employee_id)
-            if current is None or _priority(status_type) < _priority(current):
-                best[employee_id] = status_type
-        return best
+            if current is None or rank < current[:2]:
+                best[employee_id] = (*rank, status_type)
+        return {employee_id: value[2] for employee_id, value in best.items()}
 
     def collect_data(self, report) -> Dict[str, Any]:
         if report.division_id:
@@ -166,7 +180,7 @@ class DataAggregator:
                     employee_id__in=list(division_by_employee.keys())
                 ),
                 ref_date,
-            ).values_list("employee_id", "status_type")
+            ).values_list("employee_id", "status_type", "state")
         )
 
         # Пустые счётчики на КАЖДОЕ подразделение области: подразделение без
@@ -191,16 +205,32 @@ class DataAggregator:
         # не сужается: человек приходит из чужого подразделения, и фильтр по
         # штату отчёта обнулял бы эту колонку всегда, когда отдающая сторона
         # вне выборки.
-        incoming_rows = self._active_on_date(
-            EmployeeStatus.objects.filter(
-                status_type=_ST.SECONDED_TO,
-                related_division_id__in=division_ids,
-                employee__employment_status=Employee.EmploymentStatus.WORKING,
-            ),
-            ref_date,
-        ).values_list("related_division_id", "employee_id")
+        incoming_rows = list(
+            self._active_on_date(
+                EmployeeStatus.objects.filter(
+                    status_type=_ST.SECONDED_TO,
+                    related_division_id__in=division_ids,
+                    employee__employment_status=Employee.EmploymentStatus.WORKING,
+                ),
+                ref_date,
+            ).values_list("related_division_id", "employee_id")
+        )
+        # Строка откомандирования в окно даты попадает и в день возврата: её
+        # закрывают сегодняшним числом. Поэтому «пришёл» считается не по самой
+        # строке, а по ДЕЙСТВУЮЩЕМУ статусу человека — иначе вернувшийся ещё
+        # сутки числился бы у принимающей стороны.
+        incoming_effective = self._effective_status_by_employee(
+            self._active_on_date(
+                EmployeeStatus.objects.filter(
+                    employee_id__in={employee_id for _did, employee_id in incoming_rows}
+                ),
+                ref_date,
+            ).values_list("employee_id", "status_type", "state")
+        )
         seconded_in_map: Dict[int, set] = {}
         for did, employee_id in incoming_rows:
+            if incoming_effective.get(employee_id) != _ST.SECONDED_TO:
+                continue
             seconded_in_map.setdefault(did, set()).add(employee_id)
 
         # order_by() обязателен: StaffUnit — MPTT-модель с сортировкой по

@@ -161,15 +161,47 @@ def test_return_ends_the_secondment_and_restores_in_service(api, scene):
     assert secondment.actual_end_date == scene["today"]
     assert secondment.state == EmployeeStatus.StatusState.COMPLETED
 
-    restored = EmployeeStatus.objects.filter(
+    # «В строю» с ДНЯ возврата: со смещением на день у вернувшегося не было
+    # активного статуса вовсе, и таблица показывала «Не обновлено».
+    restored = EmployeeStatus.objects.get(
         employee=scene["employee"],
         status_type=_ST.IN_SERVICE,
-        start_date=scene["today"] + timedelta(days=1),
+        state=EmployeeStatus.StatusState.ACTIVE,
     )
-    assert restored.exists()
+    assert restored.start_date == scene["today"]
 
     scene["request"].refresh_from_db()
     assert scene["request"].status == SecondmentRequest.ApprovalStatus.CANCELLED
+
+
+@pytest.mark.django_db
+def test_returned_employee_is_in_service_in_the_same_day_report(api, scene):
+    from organization_management.apps.reports.infrastructure.data_aggregator import (
+        DataAggregator,
+    )
+
+    _approve(api, scene["request"].id)
+    api.post(
+        reverse("secondmentrequest-return-employee", args=[scene["request"].id]),
+        {},
+        format="json",
+    )
+
+    class FakeReport:
+        division = None
+        division_id = None
+        date_from = None
+        date_to = scene["today"]
+
+    data = DataAggregator().collect_data(FakeReport())
+    home_row = next(r for r in data["rows"] if r["division_id"] == scene["home"].id)
+    host_row = next(r for r in data["rows"] if r["division_id"] == scene["host"].id)
+
+    # Завершённое откомандирование закрыто СЕГОДНЯШНИМ числом и в окно даты
+    # попадает — в расход человек обязан попасть по действующему статусу.
+    assert home_row["in_service"] == 1
+    assert home_row["seconded_out"] == 0
+    assert host_row["seconded_in"] == 0
 
 
 @pytest.mark.django_db
