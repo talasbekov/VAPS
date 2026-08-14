@@ -5,6 +5,8 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 
+from organization_management.apps.reports.infrastructure import report_table
+
 
 class PDFGenerator:
     """
@@ -23,26 +25,9 @@ class PDFGenerator:
         story.append(Paragraph(f"Дата: {data.get('date')}", styles["Normal"]))
         story.append(Spacer(1, 12))
 
-        table_data = [[
-            "Подразделение", "Штатная", "В строю", "Отпуск", "Больничный",
-            "Командировка", "Учёба", "Прикомандировано", "Откомандировано",
-            "Прочие отсутствия", "Итого налич.", "% налич."
-        ]]
+        table_data = [report_table.headers(data)]
         for row in data.get("rows", []):
-            table_data.append([
-                str(row["division_name"]),
-                str(row["staff_unit"]),
-                str(row["in_service"]),
-                str(row["vacation"]),
-                str(row["sick_leave"]),
-                str(row["business_trip"]),
-                str(row["training"]),
-                str(row["seconded_in"]),
-                str(row["seconded_out"]),
-                str(row["other_absence"]),
-                str(row["present_total"]),
-                str(row["presence_pct"]),
-            ])
+            table_data.append([str(value) for value in report_table.cells(data, row)])
 
         table = Table(table_data, repeatRows=1)
         table.setStyle(TableStyle([
