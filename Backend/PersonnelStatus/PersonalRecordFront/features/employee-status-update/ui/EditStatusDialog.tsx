@@ -404,6 +404,10 @@ export function EditStatusDialog({
                         bg: "#fce7f3",
                         text: "#9d174d",
                       },
+                      "bg-violet-100 text-violet-800": {
+                        bg: "#ede9fe",
+                        text: "#5b21b6",
+                      },
                       "bg-orange-100 text-orange-800": {
                         bg: "#ffedd5",
                         text: "#9a3412",

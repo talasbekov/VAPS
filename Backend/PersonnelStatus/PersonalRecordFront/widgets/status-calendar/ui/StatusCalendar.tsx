@@ -32,6 +32,7 @@ const STATUS_CONFIG: Record<
   },
   training: { label: "Учёба", color: "#a855f7", bgColor: "#f3e8ff" },
   competition: { label: "Соревнования", color: "#ec4899", bgColor: "#fce7f3" },
+  conference: { label: "Конференция", color: "#7c3aed", bgColor: "#ede9fe" },
   other_absence: {
     label: "Иное отсутствие",
     color: "#6b7280",

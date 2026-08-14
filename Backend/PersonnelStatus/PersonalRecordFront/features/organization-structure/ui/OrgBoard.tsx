@@ -18,6 +18,7 @@ const statusColors = {
   business_trip: "bg-blue-500",
   training: "bg-purple-500",
   competition: "bg-pink-500",
+  conference: "bg-violet-500",
   other_absence: "bg-gray-500",
   on_duty: "bg-indigo-500",
   after_duty: "bg-cyan-500",
