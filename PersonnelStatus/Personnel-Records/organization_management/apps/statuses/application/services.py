@@ -72,6 +72,18 @@ class StatusApplicationService:
         # и то же для всех типов: активный статус у сотрудника один.
         today = timezone.now().date()
 
+        # ПЕРВЫМ ДЕЛОМ — снять запланированное «В строю», перекрытое новым
+        # статусом. Порядок не косметический: закрытие активного статуса ниже
+        # пересохраняет его, а save() гоняет full_clean, и та же проверка
+        # пересечений валит УЖЕ СУЩЕСТВУЮЩУЮ строку о запланированную. Отказ
+        # при этом выглядел так, будто мешает новый статус.
+        self._cancel_superseded_planned_in_service(
+            employee_id=employee_id,
+            start_date=start_date,
+            end_date=end_date,
+            user=user,
+        )
+
         if start_date <= today:  # Только для статусов, которые уже начались
             # lte, а не lt: статус, заведённый СЕГОДНЯ, тоже нужно убрать с
             # дороги. С `lt` он оставался активным, и clean валил новый статус
@@ -135,6 +147,60 @@ class StatusApplicationService:
         )
 
         return status
+
+    def _cancel_superseded_planned_in_service(
+        self,
+        employee_id: int,
+        start_date: date,
+        end_date: Optional[date],
+        user=None
+    ) -> None:
+        """Снять запланированное «В строю», перекрытое новым статусом.
+
+        «В строю» — фоновое состояние, а не обещание: оно ничего не утверждает
+        и уступает любому реальному статусу. Но правило «один активный статус»
+        не делало для него исключения, и запланированная строка блокировала
+        сотруднику ВСЁ начиная со дня своего начала. Строку такого вида —
+        «В строю» без даты конца, со следующего дня — заводит сама автоматика
+        после досрочного завершения: один возврат из прикомандирования
+        закрывал человеку любые статусы на будущее.
+
+        Отменяется, а не сдвигается: когда новый статус кончится,
+        complete_expired_statuses заведёт «В строю» заново, с нужной даты.
+
+        РЕАЛЬНЫЕ запланированные статусы (отпуск, командировка) здесь не
+        трогаются: они — обещание, данное человеку, и молча затирать их хуже
+        отказа. Такое пересечение по-прежнему отклоняется, и отказ называет
+        мешающий статус с его периодом.
+        """
+        # Открытый период нового статуса перекрывает всё будущее.
+        #
+        # Условия на конец «В строю» здесь нет и оно не нужно: у этого типа
+        # даты конца не бывает (clean её запрещает), он всегда открыт вправо.
+        # Значит перекрытие определяется одним началом — второе условие было
+        # бы недостижимой веткой, а не защитой.
+        new_end = end_date or date.max
+        superseded = EmployeeStatus.objects.filter(
+            employee_id=employee_id,
+            state=EmployeeStatus.StatusState.PLANNED,
+            status_type=EmployeeStatus.StatusType.IN_SERVICE,
+            start_date__lte=new_end,
+        )
+
+        for planned in superseded:
+            planned.state = EmployeeStatus.StatusState.CANCELLED
+            planned.early_termination_reason = (
+                "Автоматически отменён: период перекрыт новым статусом"
+            )
+            planned._skip_history_log = True
+            planned.save()
+
+            StatusChangeHistory.objects.create(
+                status=planned,
+                change_type=StatusChangeHistory.ChangeType.CANCELLED,
+                changed_by=user,
+                comment="Автоматически отменён: период перекрыт новым статусом"
+            )
 
     @transaction.atomic
     def plan_status(
