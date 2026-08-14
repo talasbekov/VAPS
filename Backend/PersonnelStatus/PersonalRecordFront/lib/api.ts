@@ -725,7 +725,15 @@ class ApiClient {
       end_date?: string;
       comment?: string;
     }>;
-  }): Promise<StaffUnit[]> {
+    // Ручка отвечает сводкой, а НЕ списком штатных единиц: объявленный тип
+    // StaffUnit[] был неправдой, и потребитель не мог прочитать ни счётчик
+    // применённых, ни причины отказов — молча считал вызов успешным.
+  }): Promise<{
+    success: boolean;
+    updated: { staff_units: number; employees: number; statuses: number };
+    division: { id: number; name: string };
+    errors?: unknown[];
+  }> {
     const endpoint = `/api/staff_unit/staff-units/directorate/`;
 
     const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;

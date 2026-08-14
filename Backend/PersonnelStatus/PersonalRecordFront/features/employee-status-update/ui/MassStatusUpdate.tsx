@@ -40,6 +40,7 @@ import { removeDutyAssignment } from "@/entities/duty-assignment";
 import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
+  EMPLOYEE_STATUS_LABELS,
   SELECTABLE_STATUS_ITEMS,
 } from "@/lib/status";
 
@@ -71,6 +72,9 @@ export function MassStatusUpdate({
     color: item.color,
   }));
 
+  /** «В строю» — бессрочный статус по умолчанию, дат не требует. */
+  const isInService = status === EMPLOYEE_STATUS_LABELS.in_service;
+
   const validateForm = () => {
     const errors: string[] = [];
 
@@ -86,11 +90,14 @@ export function MassStatusUpdate({
       errors.push("Дата начала не может быть позже даты окончания");
     }
 
-    if (
-      ["Отпуск", "Больничный", "Командировка"].includes(status) &&
-      !startDate
-    ) {
-      errors.push("Для данного статуса обязательно указать дату начала");
+    // Правило то же, что в одиночной модалке: «В строю» бессрочен и дат не
+    // требует, у остальных период обязателен целиком. Прежний список был
+    // перечислением трёх статусов из тринадцати — для «Учёбы» или «На
+    // дежурстве» форма пропускала пустые даты, а статус без даты начала
+    // невозможен, и обновление отклонялось уже на сервере.
+    if (status && !isInService) {
+      if (!startDate) errors.push("Укажите дату начала");
+      if (!endDate) errors.push("Укажите дату окончания");
     }
 
     setValidationErrors(errors);
@@ -164,30 +171,64 @@ export function MassStatusUpdate({
         return;
       }
 
-      // Форматируем даты в формат YYYY-MM-DD
-      const formatDate = (date: Date) => {
-        return date.toISOString().split("T")[0];
-      };
+      // Формат YYYY-MM-DD по МЕСТНОЙ дате. toISOString() отдаёт UTC и в
+      // минусовых зонах уводит дату на сутки назад — вечерняя правка легла бы
+      // вчерашним числом.
+      const formatDate = (date: Date) => format(date, "yyyy-MM-dd");
+
+      // У «В строю» дат в форме нет, но start_date на бэкенде обязателен:
+      // бессрочный статус начинается сегодня и не кончается.
+      const startDateValue = isInService
+        ? formatDate(new Date())
+        : formatDate(startDate!);
 
       // Формируем массив статусов для отправки
       const employeeStatuses = employeesWithIds.map(({ employeeId }) => ({
         employee: employeeId,
         status_type: apiStatusType,
-        start_date: startDate ? formatDate(startDate) : undefined,
-        end_date: endDate ? formatDate(endDate) : undefined,
+        start_date: startDateValue,
+        end_date: isInService || !endDate ? undefined : formatDate(endDate),
         comment: comment || undefined,
       }));
 
       // Отправляем запрос на обновление
-      await apiClient.updateStaffUnitsByDirectorate({
+      const response = await apiClient.updateStaffUnitsByDirectorate({
         employee_statuses: employeeStatuses,
       });
 
-      // Наряды выбранных снимаются в ЛЮБОМ случае: массовая форма не
-      // спрашивает объект и пост, поэтому даже массовое «На дежурстве» не
-      // может подтвердить прежний наряд — он говорил про другой период и
-      // другое место. Оставить его значило бы держать человека в «Дежурных
-      // силах» объекта на основании статуса, который туда не ставили.
+      // Ручка отвечает 200 и на частичный, и на ПОЛНЫЙ отказ: причины лежат
+      // в теле (success/errors). Раньше ответ не читался вовсе — форма
+      // рапортовала об успехе там, где не обновился никто, и снимала наряды
+      // на основании этого рапорта.
+      const applied = Number(response?.updated?.statuses ?? 0);
+      // Сервер кладёт причины парами {поле: текст}. Показываем текст: JSON со
+      // скобками и кавычками читателю ничего не объясняет.
+      const failures: string[] = Array.isArray(response?.errors)
+        ? response.errors.map((item: unknown) => {
+            if (typeof item === "string") return item;
+            if (item && typeof item === "object") {
+              const values = Object.values(item as Record<string, unknown>);
+              if (values.length > 0) return values.map(String).join(" ");
+            }
+            return JSON.stringify(item);
+          })
+        : [];
+
+      if (applied === 0) {
+        setValidationErrors(
+          failures.length > 0
+            ? failures
+            : ["Не удалось обновить ни одного сотрудника."]
+        );
+        return;
+      }
+
+      // Наряды снимаются ТОЛЬКО когда статус действительно записан: массовая
+      // форма не спрашивает объект и пост, поэтому даже массовое «На
+      // дежурстве» не может подтвердить прежний наряд — он говорил про другой
+      // период и другое место. Но снимать наряд под несостоявшееся обновление
+      // значит развести данные: человек остаётся на дежурстве, а из «Дежурных
+      // сил» объекта пропадает.
       selectedEmployees.forEach((selectedId) =>
         removeDutyAssignment(selectedId)
       );
@@ -197,7 +238,7 @@ export function MassStatusUpdate({
       setStartDate(undefined);
       setEndDate(undefined);
       setComment("");
-      setValidationErrors([]);
+      setValidationErrors(failures);
 
       // Вызываем callback для обновления данных
       if (onSuccess) {
@@ -206,7 +247,9 @@ export function MassStatusUpdate({
 
       // Show success message (в реальном приложении лучше использовать toast)
       alert(
-        `Статус успешно обновлен для ${employeesWithIds.length} сотрудников`
+        failures.length > 0
+          ? `Статус обновлён для ${applied} из ${employeesWithIds.length} сотрудников; часть не обновлена.`
+          : `Статус успешно обновлен для ${applied} сотрудников`
       );
     } catch (error) {
       console.error("Error updating statuses:", error);
