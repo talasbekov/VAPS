@@ -15,6 +15,17 @@ from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus
 
 
+def _home_division_name(employee) -> str:
+    """Родное подразделение сотрудника — через штатную единицу.
+
+    Своего поля подразделения у employees.Employee нет; для прикомандированного
+    это и есть подразделение, ОТКУДА он пришёл.
+    """
+    staff_unit = getattr(employee, 'staff_unit', None)
+    division = getattr(staff_unit, 'division', None) if staff_unit else None
+    return division.name if division else '?'
+
+
 def safe_set_cell_value(ws, row, col, value):
     """
     Безопасно устанавливает значение ячейки, даже если это объединенная ячейка.
@@ -202,10 +213,15 @@ def generate_personnel_expense_report(department_id):
         period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
         head_training_list.append(f"{emp.last_name} {emp.first_name} ({period})")
 
-    # Прикомандирован руководства
+    # Прикомандирован руководства.
+    # Считается по ПРИНИМАЮЩЕЙ стороне: related_division у «Откомандирован в»
+    # это подразделение, КУДА человек пришёл. Прежний фильтр брал строки
+    # «Прикомандирован из» по родному подразделению сотрудника, то есть считал
+    # его прикомандированным к самому себе — и тот же человек попадал сразу в
+    # две колонки, «прикомандирован» и «откомандирован».
     head_seconded_from_statuses = EmployeeStatus.objects.filter(
-        employee__staff_unit__division_id=department.id,
-        status_type=EmployeeStatus.StatusType.SECONDED_FROM,
+        related_division_id=department.id,
+        status_type=EmployeeStatus.StatusType.SECONDED_TO,
         state=EmployeeStatus.StatusState.ACTIVE
     ).select_related('employee')
 
@@ -214,8 +230,9 @@ def generate_personnel_expense_report(department_id):
     for status in head_seconded_from_statuses:
         emp = status.employee
         period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-        from_div = status.related_division.name if status.related_division else "?"
-        head_seconded_from_list.append(f"{emp.last_name} {emp.first_name} ({period}, из {from_div})")
+        head_seconded_from_list.append(
+            f"{emp.last_name} {emp.first_name} ({period}, из {_home_division_name(emp)})"
+        )
 
     # Откомандирован руководства
     head_seconded_to_statuses = EmployeeStatus.objects.filter(
@@ -394,10 +411,11 @@ def generate_personnel_expense_report(department_id):
             training_list.append(f"{emp.last_name} {emp.first_name} ({period})")
         total_training += training_count
 
-        # Прикомандирован
+        # Прикомандирован — принимающая сторона, по related_division строк
+        # «Откомандирован в» (см. пояснение у руководства выше).
         seconded_from_statuses = EmployeeStatus.objects.filter(
-            employee__staff_unit__division_id__in=directorate_division_ids,
-            status_type=EmployeeStatus.StatusType.SECONDED_FROM,
+            related_division_id__in=directorate_division_ids,
+            status_type=EmployeeStatus.StatusType.SECONDED_TO,
             state=EmployeeStatus.StatusState.ACTIVE
         ).select_related('employee')
 
@@ -406,8 +424,9 @@ def generate_personnel_expense_report(department_id):
         for status in seconded_from_statuses:
             emp = status.employee
             period = f"{status.start_date.strftime('%d.%m.%Y') if status.start_date else ''} - {status.end_date.strftime('%d.%m.%Y') if status.end_date else ''}"
-            from_div = status.related_division.name if status.related_division else "?"
-            seconded_from_list.append(f"{emp.last_name} {emp.first_name} ({period}, из {from_div})")
+            seconded_from_list.append(
+                f"{emp.last_name} {emp.first_name} ({period}, из {_home_division_name(emp)})"
+            )
         total_seconded_from += seconded_from_count
 
         # Откомандирован

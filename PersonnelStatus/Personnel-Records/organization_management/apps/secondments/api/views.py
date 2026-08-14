@@ -1,13 +1,19 @@
 from rest_framework import viewsets, permissions
+from rest_framework import status as status_codes
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .serializers import SecondmentRequestSerializer
 from organization_management.apps.secondments.models import SecondmentRequest
 
 from organization_management.apps.divisions.models import Division
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from organization_management.apps.statuses.models import EmployeeStatus
+from organization_management.apps.statuses.application.services import (
+    StatusApplicationService,
+)
 
 class SecondmentRequestViewSet(viewsets.ModelViewSet):
     """
@@ -71,39 +77,69 @@ class SecondmentRequestViewSet(viewsets.ModelViewSet):
         return None
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def approve(self, request, pk=None):
         """
         Одобрение запроса на прикомандирование.
+
+        Заводится ОДИН статус — «Откомандирован в» на самого сотрудника, с
+        related_division = принимающее подразделение. Принимающая сторона
+        считается по этому же полю (reports.DataAggregator, reports/utils.py),
+        отдельная зеркальная запись ей не нужна.
+
+        Раньше заводились ДВЕ строки на один период — «Откомандирован в» и
+        «Прикомандирован из», — а EmployeeStatus.clean пересечения запрещает:
+        вторая падала ValidationError, и одобрение возвращало 500, оставив
+        запрос помеченным одобренным и один осиротевший статус. Зеркальная
+        запись к тому же дублировала человека в отчётах: он попадал и в
+        «откомандирован», и в «прикомандирован» своего же подразделения.
         """
         instance = self.get_object()
         forbidden = self._receiving_side_forbidden(request, instance)
         if forbidden is not None:
             return forbidden
+        if instance.status == SecondmentRequest.ApprovalStatus.APPROVED:
+            # Повторное одобрение завело бы второй статус на тот же период.
+            return Response(
+                {'detail': 'Запрос уже одобрен.'},
+                status=status_codes.HTTP_409_CONFLICT,
+            )
+        if instance.employee_id is None or instance.to_division_id is None:
+            return Response(
+                {'detail': 'В запросе не указан сотрудник или принимающее подразделение.'},
+                status=status_codes.HTTP_400_BAD_REQUEST,
+            )
+
         instance.status = SecondmentRequest.ApprovalStatus.APPROVED
         instance.approved_by = request.user
+        instance.approved_at = timezone.now()
         instance.save()
 
-        # Создание статусов прикомандирования/откомандирования
-        # Откомандирован в (для собственного подразделения)
-        EmployeeStatus.objects.create(
-            employee_id=instance.employee_id,
-            status_type=EmployeeStatus.StatusType.SECONDED_TO,
-            start_date=instance.start_date,
-            end_date=instance.end_date,
-            related_division_id=instance.to_division_id,
-            created_by=request.user,
-            comment=f"Откомандирован в подразделение {instance.to_division_id}",
+        to_division_name = (
+            instance.to_division.name if instance.to_division else instance.to_division_id
         )
-        # Прикомандирован (для принимающего подразделения)
-        EmployeeStatus.objects.create(
-            employee_id=instance.employee_id,
-            status_type=EmployeeStatus.StatusType.SECONDED_FROM,
-            start_date=instance.start_date,
-            end_date=instance.end_date,
-            related_division_id=instance.from_division_id,
-            created_by=request.user,
-            comment=f"Прикомандирован из подразделения {instance.from_division_id}",
-        )
+        try:
+            # Через сервис, а не EmployeeStatus.objects.create: он закрывает
+            # текущий статус сотрудника (иначе пересечение с «В строю») и
+            # пишет запись в историю изменений.
+            StatusApplicationService().create_status(
+                employee_id=instance.employee_id,
+                status_type=EmployeeStatus.StatusType.SECONDED_TO,
+                start_date=instance.start_date,
+                end_date=instance.end_date,
+                comment=f"Откомандирован в подразделение {to_division_name}",
+                related_division_id=instance.to_division_id,
+                user=request.user,
+            )
+        except DjangoValidationError as error:
+            # Отказ статуса откатывает и одобрение: запрос, помеченный
+            # одобренным без статуса, врал бы обеим сторонам.
+            transaction.set_rollback(True)
+            return Response(
+                {'detail': 'Не удалось оформить откомандирование.',
+                 'errors': getattr(error, 'message_dict', None) or error.messages},
+                status=status_codes.HTTP_400_BAD_REQUEST,
+            )
         return Response(self.get_serializer(instance).data)
 
     @action(detail=True, methods=['post'])
@@ -122,28 +158,52 @@ class SecondmentRequestViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(instance).data)
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def return_employee(self, request, pk=None):
         """
         Возврат сотрудника из прикомандирования.
+
+        Искали статус с `end_date__isnull=True`, а одобрение всегда проставляет
+        конец периода из запроса — под условие не попадал НИ ОДИН статус, и
+        возврат молча не возвращал никого: сотрудник оставался откомандирован
+        до планового конца.
+
+        Досрочное завершение идёт через сервис: он ставит фактическую дату
+        конца, причину и заводит следом «В строю» — вернувшийся человек должен
+        появиться в строю, а не остаться без статуса.
         """
         instance = self.get_object()
-        # Закрыть текущий статус прикомандирования
+        forbidden = self._receiving_side_forbidden(request, instance)
+        if forbidden is not None:
+            return forbidden
+
+        today = timezone.now().date()
         open_status = EmployeeStatus.objects.filter(
             employee_id=instance.employee_id,
             status_type=EmployeeStatus.StatusType.SECONDED_TO,
-            end_date__isnull=True,
+            state=EmployeeStatus.StatusState.ACTIVE,
         ).order_by('-start_date').first()
-        if open_status:
-            open_status.end_date = timezone.now().date()
-            open_status.save(update_fields=['end_date'])
-        open_in_status = EmployeeStatus.objects.filter(
-            employee_id=instance.employee_id,
-            status_type=EmployeeStatus.StatusType.SECONDED_FROM,
-            end_date__isnull=True,
-        ).order_by('-start_date').first()
-        if open_in_status:
-            open_in_status.end_date = timezone.now().date()
-            open_in_status.save(update_fields=['end_date'])
+        if open_status is None:
+            return Response(
+                {'detail': 'Действующего откомандирования у сотрудника нет.'},
+                status=status_codes.HTTP_409_CONFLICT,
+            )
+
+        try:
+            StatusApplicationService().terminate_status_early(
+                status_id=open_status.id,
+                termination_date=today,
+                reason=request.data.get('reason') or 'Возврат из прикомандирования',
+                user=request.user,
+            )
+        except DjangoValidationError as error:
+            transaction.set_rollback(True)
+            return Response(
+                {'detail': 'Не удалось вернуть сотрудника.',
+                 'errors': getattr(error, 'message_dict', None) or error.messages},
+                status=status_codes.HTTP_400_BAD_REQUEST,
+            )
+
         instance.status = SecondmentRequest.ApprovalStatus.CANCELLED
         instance.save(update_fields=['status'])
         return Response({'status': 'сотрудник возвращен'})

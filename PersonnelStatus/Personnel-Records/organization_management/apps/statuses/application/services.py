@@ -60,34 +60,55 @@ class StatusApplicationService:
             except Division.DoesNotExist:
                 raise ValidationError(f"Подразделение с ID {related_division_id} не найдено.")
 
-        # Автоматически завершаем текущий активный статус, если новый статус не прикомандирование
-        # и текущий статус тоже не прикомандирование
+        # Автоматически завершаем текущий активный статус.
         # ВАЖНО: Завершаем только если новый статус уже начался (не запланированный в будущем)
+        #
+        # Прикомандирование раньше было исключено с обеих сторон: и новый
+        # статус-прикомандирование не закрывал текущий, и текущее
+        # прикомандирование не закрывалось новым статусом. Это противоречило
+        # EmployeeStatus.clean, который пересечения запрещает: откомандировать
+        # человека «в строю» было нельзя — save() падал на пересечении, — и
+        # вернуть откомандированному обычный статус тоже. Правило теперь одно
+        # и то же для всех типов: активный статус у сотрудника один.
         today = timezone.now().date()
 
-        if (status_type not in [EmployeeStatus.StatusType.SECONDED_FROM, EmployeeStatus.StatusType.SECONDED_TO]
-            and start_date <= today):  # Только для статусов, которые уже начались
+        if start_date <= today:  # Только для статусов, которые уже начались
+            # lte, а не lt: статус, заведённый СЕГОДНЯ, тоже нужно убрать с
+            # дороги. С `lt` он оставался активным, и clean валил новый статус
+            # пересечением — вторая замена статуса за день была невозможна.
             current_statuses = EmployeeStatus.objects.filter(
                 employee_id=employee_id,
                 state=EmployeeStatus.StatusState.ACTIVE,
-                start_date__lt=start_date
-            ).exclude(
-                status_type__in=[EmployeeStatus.StatusType.SECONDED_FROM, EmployeeStatus.StatusType.SECONDED_TO]
+                start_date__lte=start_date
             )
 
             for current_status in current_statuses:
-                # Завершаем текущий статус датой, предшествующей новому статусу
-                current_status.actual_end_date = start_date - timedelta(days=1)
-                current_status.state = EmployeeStatus.StatusState.COMPLETED
-                current_status.early_termination_reason = f"Автоматически завершен при установке нового статуса '{status_type}'"
+                if current_status.start_date < start_date:
+                    # Завершаем текущий статус датой, предшествующей новому
+                    current_status.actual_end_date = start_date - timedelta(days=1)
+                    current_status.state = EmployeeStatus.StatusState.COMPLETED
+                    change_type = StatusChangeHistory.ChangeType.TERMINATED
+                    comment = "Автоматически завершен при создании нового статуса"
+                else:
+                    # Начат в тот же день — завершить его «вчера» нельзя
+                    # (actual_end_date раньше start_date модель запрещает), а
+                    # оставить активным нельзя тем более. Такой статус не
+                    # продержался ни одного дня — он отменён, а не завершён.
+                    current_status.state = EmployeeStatus.StatusState.CANCELLED
+                    change_type = StatusChangeHistory.ChangeType.CANCELLED
+                    comment = "Автоматически отменён: заменён другим статусом в тот же день"
+                current_status.early_termination_reason = (
+                    f"Автоматически завершен при установке нового статуса '{status_type}'"
+                )
+                current_status._skip_history_log = True
                 current_status.save()
 
                 # Создаем запись в истории
                 StatusChangeHistory.objects.create(
                     status=current_status,
-                    change_type=StatusChangeHistory.ChangeType.TERMINATED,
+                    change_type=change_type,
                     changed_by=user,
-                    comment=f"Автоматически завершен при создании нового статуса"
+                    comment=comment
                 )
 
         status = EmployeeStatus(

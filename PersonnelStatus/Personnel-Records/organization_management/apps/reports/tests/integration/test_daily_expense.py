@@ -208,3 +208,48 @@ class TestDailyExpenseIntegration:
                 assert row[7] == 1  # total sick
 
         assert found_total, "Строка ИТОГО не найдена"
+
+    def test_secondment_lands_on_the_receiving_side(self, structure_setup):
+        """«Прикомандирован» считается там, КУДА человек пришёл.
+
+        Колонка бралась по строкам «Прикомандирован из» и родному
+        подразделению сотрудника — то есть человек числился прикомандированным
+        к самому себе и попадал сразу в две колонки, «прикомандирован» и
+        «откомандирован».
+        """
+        from organization_management.apps.reports.utils import (
+            generate_personnel_expense_report,
+        )
+        from organization_management.apps.statuses.application.services import (
+            StatusApplicationService,
+        )
+
+        department = structure_setup['department']
+        directorate1 = structure_setup['directorate1']
+        # Иванов состоит в департаменте (строка «Руководство»), уходит в
+        # Управление 1 — принимающая сторона.
+        ivanov = Employee.objects.get(personnel_number="001")
+        author = User.objects.get(username='status_creator')
+        today = timezone.now().date()
+        StatusApplicationService().create_status(
+            employee_id=ivanov.id,
+            status_type=EmployeeStatus.StatusType.SECONDED_TO,
+            start_date=today,
+            end_date=today + timedelta(days=3),
+            related_division_id=directorate1.id,
+            user=author,
+        )
+
+        file_buffer, _filename = generate_personnel_expense_report(department.id)
+        wb = load_workbook(io.BytesIO(file_buffer.read()))
+        ws = wb.active
+
+        directorate_row = None
+        for row in ws.iter_rows(values_only=True):
+            if row[0] == "Управление 1":
+                directorate_row = row
+        assert directorate_row is not None, "Управление 1 не найдено в отчете"
+
+        # Колонка 12 — «Прикомандирован», колонка 13 — «Откомандирован».
+        assert directorate_row[11] == 1
+        assert directorate_row[12] == 0
