@@ -228,6 +228,18 @@ const RATINGS_MOCK_BY_CONFIG: ApiGap = {
 // duties остался живым понятием — на нём стоит календарь смен, см.
 // CALENDAR_MOCK_BY_CONFIG ниже.
 
+// Реестр ГВО: сам список мероприятий берётся из живого реестра ОМ, а вот
+// сводные данные хранить негде — ручек нет ни в целевом бэке, ни в доноре.
+// Ручные правки живут в мок-слое и не переживут другую машину или вкладку.
+const GVO_NO_BACKEND: ApiGap = {
+  subject: "Сводные данные ГВО",
+  paths: ["/api/ops/gvo-summaries/"],
+  note:
+    "Список мероприятий приходит из реестра ОМ (живой бэк), а правки сводок " +
+    "сохраняет браузерный мок-слой MSW: серверного хранилища у сводных " +
+    "данных ГВО пока нет.",
+};
+
 export function findApiGap(pathname: string | null | undefined): ApiGap | null {
   if (!pathname) return null;
   {
@@ -276,6 +288,15 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       return isOpsDutiesLive() && isOpsCombatLive()
         ? null
         : CALENDAR_MOCK_BY_CONFIG;
+    }
+    if (
+      normalized === "/security-ops/gvo" ||
+      normalized.startsWith("/security-ops/gvo/")
+    ) {
+      // Единственный экран раздела БЕЗ пер-доменного переключателя: бэкенда
+      // сводных данных ГВО нет вовсе, поэтому «живого режима» у него не
+      // бывает и врезка обязана стоять всегда.
+      return GVO_NO_BACKEND;
     }
     for (const [route, isLive] of Object.entries(SIMPLE_LIVE_CHECK)) {
       if (normalized === route || normalized.startsWith(`${route}/`)) {

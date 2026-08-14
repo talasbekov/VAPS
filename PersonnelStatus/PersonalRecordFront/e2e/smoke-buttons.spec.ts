@@ -119,6 +119,10 @@ const ROUTES: readonly RouteSpec[] = [
   { template: '/security-ops/command-center' },
   { template: '/security-ops/events' },
   { template: '/security-ops/events/{eventId}', needs: ['eventId'] },
+  // Реестр ГВО — та же сущность, что и ОМ: карточка сводки открывается по id
+  // мероприятия, поэтому резолвер тот же `eventId`.
+  { template: '/security-ops/gvo' },
+  { template: '/security-ops/gvo/{eventId}', needs: ['eventId'] },
   { template: '/security-ops/objects' },
   { template: '/security-ops/objects/{objectId}', needs: ['objectId'] },
   {

@@ -15,6 +15,7 @@ import { reportsHandlers } from "./reports-handlers";
 import { feedbackHandlers } from "./feedback-handlers";
 import { dailyHandlers } from "./daily-handlers";
 import { combatHandlers } from "./combat-handlers";
+import { gvoHandlers } from "./gvo-handlers";
 
 export function composeOpsHandlers() {
   return [
@@ -51,5 +52,9 @@ export function composeOpsHandlers() {
     // «Расход дня» живьём — адаптеры над /api/operations/ (без своего бэка).
     ...(isOpsDailyLive() ? [] : dailyHandlers),
     ...(isOpsCombatLive() ? [] : combatHandlers),
+    // «Реестр ГВО» — без пер-доменного переключателя: своего бэкенда у раздела
+    // нет вовсе, поэтому live-режим ему нечего означать. Патчи правок живут в
+    // моке всегда (запись об этом — в lib/api-gaps.ts).
+    ...gvoHandlers,
   ];
 }

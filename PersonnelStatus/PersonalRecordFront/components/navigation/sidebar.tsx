@@ -97,6 +97,9 @@ export function Sidebar() {
   const nativeOpsNavigation = [
     { name: "Командный центр", href: "/security-ops/command-center", icon: LineChart },
     { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList },
+    // Реестр ГВО идёт сразу за реестром ОМ: его записи — проекция тех же
+    // мероприятий, и появляются они вместе с бюллетенем.
+    { name: "Реестр ГВО", href: "/security-ops/gvo", icon: Users },
     { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
     // «План дежурств» (/security-ops/duties) удалён 13.08.2026 вместе со
     // страницей и адресом. «Боевые группы» (/security-ops/duties/combat) —
