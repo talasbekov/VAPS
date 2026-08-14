@@ -1,4 +1,7 @@
+from datetime import date
+
 from django.db.models.query import Prefetch
+from django.utils.dateparse import parse_date
 from rest_framework import viewsets, permissions, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -26,6 +29,15 @@ from organization_management.apps.common.rbac import get_user_scope_queryset, ch
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus
+
+
+def _as_date(value):
+    """Дата из JSON-строки. None — значения нет или оно не разбирается."""
+    if value is None or value == '':
+        return None
+    if isinstance(value, date):
+        return value
+    return parse_date(str(value))
 
 
 class PositionViewSet(viewsets.ModelViewSet):
@@ -943,18 +955,48 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                             partial=True,
                             context={'request': request}
                         )
+                        if serializer.is_valid():
+                            serializer.save(created_by=user)
+                            updated_items['statuses'] += 1
+                        else:
+                            errors.append({'status': f'Employee {employee_id}: {serializer.errors}'})
                     else:
-                        # Создание нового статуса
-                        serializer = EmployeeStatusSerializer(
-                            data=status_data,
-                            context={'request': request}
+                        # Создание нового статуса — ЧЕРЕЗ СЕРВИС, а не через
+                        # сериализатор. Сериализатор кладёт строку РЯДОМ с
+                        # действующим статусом, а модель пересечения запрещает:
+                        # массовое обновление падало на каждом сотруднике, у
+                        # которого статус уже был (то есть почти на каждом), и
+                        # молча не делало ничего. Сервис сначала закрывает
+                        # предыдущий статус — ровно как одиночная смена.
+                        #
+                        # Проверять данные сериализатором здесь тоже нельзя: он
+                        # прогонит ту же проверку пересечений ДО закрытия
+                        # предыдущего статуса и забракует корректный запрос.
+                        # Валидируют модель и сервис, как на одиночном пути.
+                        from organization_management.apps.statuses.application.services import (
+                            StatusApplicationService,
                         )
+                        # Даты приходят строками из JSON, а сервис и модель
+                        # сравнивают их с датами.
+                        start_date = _as_date(status_data.get('start_date'))
+                        if start_date is None:
+                            errors.append(
+                                {'status': f'Employee {employee_id}: дата начала обязательна '
+                                           f'и должна быть в формате ГГГГ-ММ-ДД'}
+                            )
+                            continue
 
-                    if serializer.is_valid():
-                        serializer.save(created_by=user)
+                        StatusApplicationService().create_status(
+                            employee_id=employee.id,
+                            status_type=status_data.get('status_type'),
+                            start_date=start_date,
+                            end_date=_as_date(status_data.get('end_date')),
+                            comment=status_data.get('comment') or '',
+                            location=status_data.get('location') or '',
+                            related_division_id=status_data.get('related_division'),
+                            user=user,
+                        )
                         updated_items['statuses'] += 1
-                    else:
-                        errors.append({'status': f'Employee {employee_id}: {serializer.errors}'})
 
                 except Employee.DoesNotExist:
                     errors.append({'status': f'Сотрудник {employee_id} не найден или нет доступа'})
