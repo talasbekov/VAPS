@@ -112,7 +112,20 @@ def test_active_and_planned_in_service_together(
         start_date=today,
         created_by=author,
     )
-    _plan(employee, author, _ST.IN_SERVICE, today + timedelta(days=1), None)
+    # Через save() такую пару теперь не завести (два «В строю» конфликтуют) —
+    # она осталась в данных от прежней автоматики, которая заводила «В строю»
+    # со следующего дня. Сборка минует валидацию намеренно.
+    EmployeeStatus.objects.bulk_create(
+        [
+            EmployeeStatus(
+                employee=employee,
+                status_type=_ST.IN_SERVICE,
+                start_date=today + timedelta(days=1),
+                state=_STATE.PLANNED,
+                created_by=author,
+            )
+        ]
+    )
 
     status = StatusApplicationService().create_status(
         employee_id=employee.id,
@@ -175,6 +188,65 @@ def test_planned_vacation_still_blocks(employee, author, today):
     message = str(excinfo.value)
     assert "Отпуск" in message
     assert str(today + timedelta(days=3)) in message
+
+
+@pytest.mark.django_db
+def test_planned_vacation_does_not_block_a_status_before_it(
+    employee, author, today
+):
+    """Случай со стенда: командировка 14–15 при отпуске 16–23.
+
+    Периоды не пересекаются, но отказ был. Ронял его не новый статус, а
+    закрытие ДЕЙСТВУЮЩЕГО «В строю»: оно открыто вправо, поэтому пересекалось
+    с плановым отпуском, а исключение для «В строю» работало только когда оно
+    на стороне другого статуса. В сообщении при этом фигурировал отпуск.
+    """
+    EmployeeStatus.objects.create(
+        employee=employee,
+        status_type=_ST.IN_SERVICE,
+        start_date=today,
+        created_by=author,
+    )
+    _plan(
+        employee,
+        author,
+        _ST.VACATION,
+        today + timedelta(days=2),
+        today + timedelta(days=9),
+    )
+
+    status = StatusApplicationService().create_status(
+        employee_id=employee.id,
+        status_type=_ST.BUSINESS_TRIP,
+        start_date=today,
+        end_date=today + timedelta(days=1),
+        user=author,
+    )
+    assert status.state == _STATE.ACTIVE
+    # Отпуск не тронут: он начинается после командировки.
+    assert (
+        EmployeeStatus.objects.get(employee=employee, status_type=_ST.VACATION).state
+        == _STATE.PLANNED
+    )
+
+
+@pytest.mark.django_db
+def test_two_in_service_statuses_still_conflict(employee, author, today):
+    # Фоновых состояний не бывает два — симметричное исключение не должно
+    # разрешать «В строю» поверх «В строю».
+    EmployeeStatus.objects.create(
+        employee=employee,
+        status_type=_ST.IN_SERVICE,
+        start_date=today,
+        created_by=author,
+    )
+    with pytest.raises(ValidationError):
+        EmployeeStatus.objects.create(
+            employee=employee,
+            status_type=_ST.IN_SERVICE,
+            start_date=today + timedelta(days=1),
+            created_by=author,
+        )
 
 
 @pytest.mark.django_db

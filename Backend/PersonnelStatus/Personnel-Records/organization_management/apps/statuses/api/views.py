@@ -118,7 +118,17 @@ class EmployeeStatusViewSet(viewsets.ModelViewSet):
             output_serializer = EmployeeStatusSerializer(status_obj, context={'request': request})
             return Response(output_serializer.data, status=status.HTTP_201_CREATED)
         except ValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            # str(ValidationError) отдаёт repr питоновского словаря
+            # ("{'start_date': ['...']}"), и он доезжал до пользователя как
+            # есть. Причина отказа — текст для человека, а не дамп.
+            messages = (
+                sum(e.message_dict.values(), [])
+                if hasattr(e, 'message_dict') else list(e.messages)
+            )
+            return Response(
+                {'error': ' '.join(messages), 'errors': messages},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
     def update(self, request, *args, **kwargs):
         """

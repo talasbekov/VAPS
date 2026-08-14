@@ -302,6 +302,47 @@ async function getAccessToken(): Promise<string | null> {
   }
 }
 
+/**
+ * Достать человекочитаемую причину отказа из тела ответа.
+ *
+ * Бэкенд статусов отдаёт `{"error": "...", "errors": [...]}`. Старые ответы
+ * (и часть ручек) кладут в `error` repr питоновского словаря
+ * `{'start_date': ['Период пересекается...']}` — из него вынимаются строки в
+ * кавычках: показать пользователю дамп хуже, чем не показать ничего.
+ *
+ * Вернёт null, если разобрать не удалось — тогда зовущий покажет своё
+ * сообщение, а не пустоту.
+ */
+export function extractApiErrorMessage(body: string): string | null {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (typeof payload !== "object" || payload === null) return null;
+
+  const record = payload as Record<string, unknown>;
+  if (Array.isArray(record.errors) && record.errors.length > 0) {
+    return record.errors.map(String).join(" ");
+  }
+
+  const raw = record.error ?? record.detail;
+  if (typeof raw !== "string") return null;
+
+  // repr словаря: вытаскиваем сами сообщения, без имён полей и скобок.
+  if (raw.trimStart().startsWith("{")) {
+    const quoted = raw.match(/'((?:[^'\\]|\\.)*)'/g);
+    if (!quoted) return null;
+    const messages = quoted
+      .map((part) => part.slice(1, -1).replace(/\\'/g, "'"))
+      // Ключи словаря — имена полей без пробелов; причина всегда фраза.
+      .filter((part) => part.includes(" "));
+    return messages.length > 0 ? messages.join(" ") : null;
+  }
+  return raw;
+}
+
 // Класс для работы с API
 class ApiClient {
   private baseUrl: string;
@@ -834,8 +875,12 @@ class ApiClient {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`API request failed: ${response.status}`, errorText);
+        // Пользователю показывается причина отказа, а не тело ответа: «нельзя,
+        // период пересекается с отпуском» и «HTTP 400 {"error": "..."}» —
+        // разные сообщения, и второе ничего не объясняет.
         throw new Error(
-          `HTTP error! status: ${response.status} - ${errorText}`
+          extractApiErrorMessage(errorText) ||
+            `HTTP error! status: ${response.status} - ${errorText}`
         );
       }
 

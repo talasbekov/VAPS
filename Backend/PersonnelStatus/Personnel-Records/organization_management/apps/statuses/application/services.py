@@ -187,19 +187,26 @@ class StatusApplicationService:
             start_date__lte=new_end,
         )
 
-        for planned in superseded:
-            planned.state = EmployeeStatus.StatusState.CANCELLED
-            planned.early_termination_reason = (
-                "Автоматически отменён: период перекрыт новым статусом"
-            )
-            planned._skip_history_log = True
-            planned.save()
+        reason = "Автоматически отменён: период перекрыт новым статусом"
+        superseded_ids = list(superseded.values_list("id", flat=True))
+        if not superseded_ids:
+            return
 
+        # update(), а не save(): save() гонит full_clean, а он сверяет строку с
+        # СОСЕДЯМИ. Для строки, которую мы как раз убираем из активных, это
+        # бессмысленно и вдобавок неисполнимо на старых данных: пара «В строю»
+        # (действующее + запланированное следом), оставшаяся от прежней
+        # автоматики, валит пересохранение любой своей половины о вторую.
+        EmployeeStatus.objects.filter(id__in=superseded_ids).update(
+            state=EmployeeStatus.StatusState.CANCELLED,
+            early_termination_reason=reason,
+        )
+        for planned in EmployeeStatus.objects.filter(id__in=superseded_ids):
             StatusChangeHistory.objects.create(
                 status=planned,
                 change_type=StatusChangeHistory.ChangeType.CANCELLED,
                 changed_by=user,
-                comment="Автоматически отменён: период перекрыт новым статусом"
+                comment=reason,
             )
 
     @transaction.atomic
