@@ -1,6 +1,7 @@
 """
 Сервисный слой для управления статусами сотрудников
 """
+import logging
 from datetime import date, timedelta
 from typing import Optional, List, Dict, Any
 from django.db import transaction
@@ -15,6 +16,8 @@ from organization_management.apps.statuses.models import (
 )
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.divisions.models import Division
+
+logger = logging.getLogger(__name__)
 
 
 class StatusApplicationService:
@@ -85,43 +88,12 @@ class StatusApplicationService:
         )
 
         if start_date <= today:  # Только для статусов, которые уже начались
-            # lte, а не lt: статус, заведённый СЕГОДНЯ, тоже нужно убрать с
-            # дороги. С `lt` он оставался активным, и clean валил новый статус
-            # пересечением — вторая замена статуса за день была невозможна.
-            current_statuses = EmployeeStatus.objects.filter(
+            self._close_active_statuses(
                 employee_id=employee_id,
-                state=EmployeeStatus.StatusState.ACTIVE,
-                start_date__lte=start_date
+                start_date=start_date,
+                new_status_type=status_type,
+                user=user,
             )
-
-            for current_status in current_statuses:
-                if current_status.start_date < start_date:
-                    # Завершаем текущий статус датой, предшествующей новому
-                    current_status.actual_end_date = start_date - timedelta(days=1)
-                    current_status.state = EmployeeStatus.StatusState.COMPLETED
-                    change_type = StatusChangeHistory.ChangeType.TERMINATED
-                    comment = "Автоматически завершен при создании нового статуса"
-                else:
-                    # Начат в тот же день — завершить его «вчера» нельзя
-                    # (actual_end_date раньше start_date модель запрещает), а
-                    # оставить активным нельзя тем более. Такой статус не
-                    # продержался ни одного дня — он отменён, а не завершён.
-                    current_status.state = EmployeeStatus.StatusState.CANCELLED
-                    change_type = StatusChangeHistory.ChangeType.CANCELLED
-                    comment = "Автоматически отменён: заменён другим статусом в тот же день"
-                current_status.early_termination_reason = (
-                    f"Автоматически завершен при установке нового статуса '{status_type}'"
-                )
-                current_status._skip_history_log = True
-                current_status.save()
-
-                # Создаем запись в истории
-                StatusChangeHistory.objects.create(
-                    status=current_status,
-                    change_type=change_type,
-                    changed_by=user,
-                    comment=comment
-                )
 
         status = EmployeeStatus(
             employee=employee,
@@ -147,6 +119,61 @@ class StatusApplicationService:
         )
 
         return status
+
+    def _close_active_statuses(
+        self,
+        employee_id: int,
+        start_date: date,
+        new_status_type: str,
+        user=None
+    ) -> None:
+        """Убрать действующие статусы сотрудника, уступающие место новому.
+
+        Общий шаг для ДВУХ путей: ручной смены статуса (create_status) и
+        автоматической активации запланированного (apply_planned_statuses).
+        Второй раньше этого шага не делал, и после активации у человека
+        оставалось два активных статуса разом.
+
+        Сам активируемый статус под выборку не подпадает: на этот момент он
+        ещё PLANNED, а берутся только ACTIVE. Отдельного исключения по id тут
+        нет намеренно — это был бы второй владелец одного правила.
+        """
+        # lte, а не lt: статус, заведённый СЕГОДНЯ, тоже нужно убрать с
+        # дороги. С `lt` он оставался активным, и clean валил новый статус
+        # пересечением — вторая замена статуса за день была невозможна.
+        current_statuses = EmployeeStatus.objects.filter(
+            employee_id=employee_id,
+            state=EmployeeStatus.StatusState.ACTIVE,
+            start_date__lte=start_date
+        )
+
+        for current_status in current_statuses:
+            if current_status.start_date < start_date:
+                # Завершаем текущий статус датой, предшествующей новому
+                current_status.actual_end_date = start_date - timedelta(days=1)
+                current_status.state = EmployeeStatus.StatusState.COMPLETED
+                change_type = StatusChangeHistory.ChangeType.TERMINATED
+                comment = "Автоматически завершен при создании нового статуса"
+            else:
+                # Начат в тот же день — завершить его «вчера» нельзя
+                # (actual_end_date раньше start_date модель запрещает), а
+                # оставить активным нельзя тем более. Такой статус не
+                # продержался ни одного дня — он отменён, а не завершён.
+                current_status.state = EmployeeStatus.StatusState.CANCELLED
+                change_type = StatusChangeHistory.ChangeType.CANCELLED
+                comment = "Автоматически отменён: заменён другим статусом в тот же день"
+            current_status.early_termination_reason = (
+                f"Автоматически завершен при установке нового статуса '{new_status_type}'"
+            )
+            current_status._skip_history_log = True
+            current_status.save()
+
+            StatusChangeHistory.objects.create(
+                status=current_status,
+                change_type=change_type,
+                changed_by=user,
+                comment=comment
+            )
 
     def _cancel_superseded_planned_in_service(
         self,
@@ -450,10 +477,19 @@ class StatusApplicationService:
 
         return queryset.select_related('employee', 'related_division').order_by('start_date')
 
-    @transaction.atomic
     def apply_planned_statuses(self, target_date: Optional[date] = None) -> List[EmployeeStatus]:
         """
         Применение запланированных статусов, дата начала которых наступила
+
+        Активация — та же смена статуса, что и ручная: прежний действующий
+        статус закрывается. Раньше этого шага не было, и наутро после
+        запланированного отпуска у человека оказывалось ДВА активных статуса —
+        отпуск и оставшееся «В строю». Правило «один активный статус» держалось
+        только на ручном пути.
+
+        Уже истёкшие плановые строки (конец периода раньше даты применения) не
+        активируются: включать статус, чтобы тут же его завершить, значит
+        оставить в истории активность, которой не было.
 
         Args:
             target_date: Дата для применения (по умолчанию - сегодня)
@@ -467,23 +503,58 @@ class StatusApplicationService:
         planned_statuses = EmployeeStatus.objects.filter(
             state=EmployeeStatus.StatusState.PLANNED,
             start_date__lte=target_date
-        )
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=target_date)
+        ).order_by('start_date', 'id')
 
         applied_statuses = []
         for status in planned_statuses:
-            status.state = EmployeeStatus.StatusState.ACTIVE
-            status.auto_applied = True
-            status.save()
-            applied_statuses.append(status)
+            # Каждая строка — своя точка сохранения: задача ежедневная и
+            # массовая, и один сотрудник с противоречивыми данными не должен
+            # оставлять без статусов всех остальных.
+            try:
+                with transaction.atomic():
+                    self._close_active_statuses(
+                        employee_id=status.employee_id,
+                        start_date=status.start_date,
+                        new_status_type=status.status_type,
+                    )
 
-            # Создаем запись в истории
-            StatusChangeHistory.objects.create(
-                status=status,
-                change_type=StatusChangeHistory.ChangeType.MODIFIED,
-                old_value='planned',
-                new_value='active',
-                comment='Статус применен автоматически'
-            )
+                    status.state = EmployeeStatus.StatusState.ACTIVE
+                    status.auto_applied = True
+                    # История пишется ниже вручную — без этого сигнал
+                    # log_status_change добавил бы вторую запись о том же.
+                    status._skip_history_log = True
+                    status.save()
+
+                    # EmployeeStatus.save() выводит состояние из ФАКТИЧЕСКОЙ
+                    # даты, а не из target_date: для будущей даты он вернёт
+                    # статус в «запланирован». Прежний статус к этому моменту
+                    # уже закрыт, и человек остался бы вообще без действующего
+                    # статуса, а метод отчитался бы об успехе. Сверяемся с тем,
+                    # что легло в базу, и откатываем шаг целиком.
+                    status.refresh_from_db()
+                    if status.state != EmployeeStatus.StatusState.ACTIVE:
+                        raise ValidationError(
+                            f"Статус не активировался на {target_date}: "
+                            f"состояние выводится из текущей даты."
+                        )
+
+                    StatusChangeHistory.objects.create(
+                        status=status,
+                        change_type=StatusChangeHistory.ChangeType.MODIFIED,
+                        old_value='planned',
+                        new_value='active',
+                        comment='Статус применен автоматически'
+                    )
+            except ValidationError as error:
+                logger.warning(
+                    "Запланированный статус %s (сотрудник %s) не применён: %s",
+                    status.pk, status.employee_id, error,
+                )
+                continue
+
+            applied_statuses.append(status)
 
         return applied_statuses
 
