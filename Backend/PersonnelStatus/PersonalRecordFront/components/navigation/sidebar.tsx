@@ -18,6 +18,7 @@ import {
   LineChart,
   ScrollText,
   Star,
+  UserRound,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -100,6 +101,7 @@ export function Sidebar() {
     // Реестр ГВО идёт сразу за реестром ОМ: его записи — проекция тех же
     // мероприятий, и появляются они вместе с бюллетенем.
     { name: "Реестр ГВО", href: "/security-ops/gvo", icon: Users },
+    { name: "Охраняемые лица", href: "/security-ops/persons", icon: UserRound },
     { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
     // «План дежурств» (/security-ops/duties) удалён 13.08.2026 вместе со
     // страницей и адресом. «Боевые группы» (/security-ops/duties/combat) —

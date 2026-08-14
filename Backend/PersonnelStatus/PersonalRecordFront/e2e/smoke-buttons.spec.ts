@@ -123,6 +123,7 @@ const ROUTES: readonly RouteSpec[] = [
   // мероприятия, поэтому резолвер тот же `eventId`.
   { template: '/security-ops/gvo' },
   { template: '/security-ops/gvo/{eventId}', needs: ['eventId'] },
+  { template: '/security-ops/persons' },
   { template: '/security-ops/objects' },
   { template: '/security-ops/objects/{objectId}', needs: ['objectId'] },
   {

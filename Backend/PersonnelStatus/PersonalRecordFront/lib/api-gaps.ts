@@ -240,6 +240,18 @@ const GVO_NO_BACKEND: ApiGap = {
     "данных ГВО пока нет.",
 };
 
+// Каталог охраняемых лиц: справочника нет ни в целевом бэке, ни в доноре —
+// профили отдаёт мок-слой. Связь «лицо → мероприятия» при этом настоящая: она
+// восстанавливается по сводкам ГВО поверх живого реестра ОМ.
+const PROTECTED_PERSONS_NO_BACKEND: ApiGap = {
+  subject: "Каталог охраняемых лиц",
+  paths: ["/api/ops/protected-persons/"],
+  note:
+    "Профили лиц отдаёт браузерный мок-слой MSW: справочника охраняемых лиц " +
+    "на бэке нет. Мероприятия и объекты в карточке — живые, они собираются " +
+    "из реестра ОМ и сводок ГВО.",
+};
+
 export function findApiGap(pathname: string | null | undefined): ApiGap | null {
   if (!pathname) return null;
   {
@@ -297,6 +309,12 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       // сводных данных ГВО нет вовсе, поэтому «живого режима» у него не
       // бывает и врезка обязана стоять всегда.
       return GVO_NO_BACKEND;
+    }
+    if (
+      normalized === "/security-ops/persons" ||
+      normalized.startsWith("/security-ops/persons/")
+    ) {
+      return PROTECTED_PERSONS_NO_BACKEND;
     }
     for (const [route, isLive] of Object.entries(SIMPLE_LIVE_CHECK)) {
       if (normalized === route || normalized.startsWith(`${route}/`)) {
