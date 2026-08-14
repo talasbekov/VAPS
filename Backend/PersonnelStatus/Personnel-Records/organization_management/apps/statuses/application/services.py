@@ -236,12 +236,22 @@ class StatusApplicationService:
 
         status.terminate_early(termination_date, reason, user)
 
-        # Автоматически создаем статус "В строю" после завершения
+        # Автоматически создаем статус "В строю" после завершения.
+        #
+        # С ДНЯ завершения, а не со следующего: досрочное завершение означает,
+        # что человек вернулся сегодня, и до конца дня он в строю. Со
+        # смещением на день у него не оставалось активного статуса вовсе —
+        # таблица показывала «Не обновлено» ровно в день выхода.
+        #
+        # Пересечения с завершаемым статусом не возникает: он уже COMPLETED, а
+        # clean сверяется только с ACTIVE и PLANNED. В расходе за этот день
+        # обе строки попадают в окно даты, и там их разводит предпочтение
+        # действующего статуса (reports DataAggregator).
         if status.status_type != EmployeeStatus.StatusType.IN_SERVICE:
             self.create_status(
                 employee_id=status.employee_id,
                 status_type=EmployeeStatus.StatusType.IN_SERVICE,
-                start_date=termination_date + timedelta(days=1),
+                start_date=termination_date,
                 user=user
             )
 
