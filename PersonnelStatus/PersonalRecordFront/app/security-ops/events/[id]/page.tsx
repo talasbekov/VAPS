@@ -95,7 +95,10 @@ export default function SecurityEventPage() {
         </CardContent>
       </Card>
 
-      <ActiveStage key={`${event.stage}-${event.updatedAt}`} event={event} />
+      {/* Ключ — ЭТАП, а не версия данных: смена этапа это новая форма, а
+          обновление карточки (своя же мутация в соседней панели, инвалидация,
+          чужая правка) не должно пересобирать форму и терять набранное. */}
+      <ActiveStage key={event.stage} event={event} />
     </DashboardLayout>
   );
 }
