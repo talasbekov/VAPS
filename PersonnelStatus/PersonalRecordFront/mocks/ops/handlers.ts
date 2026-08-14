@@ -16,6 +16,7 @@ import { feedbackHandlers } from "./feedback-handlers";
 import { dailyHandlers } from "./daily-handlers";
 import { combatHandlers } from "./combat-handlers";
 import { gvoHandlers } from "./gvo-handlers";
+import { protectedPersonsHandlers } from "./protected-persons-handlers";
 
 export function composeOpsHandlers() {
   return [
@@ -56,5 +57,8 @@ export function composeOpsHandlers() {
     // нет вовсе, поэтому live-режим ему нечего означать. Патчи правок живут в
     // моке всегда (запись об этом — в lib/api-gaps.ts).
     ...gvoHandlers,
+    // Каталог охраняемых лиц — по той же причине без переключателя: справочник
+    // существует только в мок-слое.
+    ...protectedPersonsHandlers,
   ];
 }
