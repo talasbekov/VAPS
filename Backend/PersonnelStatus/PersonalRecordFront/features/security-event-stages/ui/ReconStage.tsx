@@ -39,7 +39,17 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
   const update = useUpdateRecon(event.id, {
     onFormError: (details) => setFieldErrors(details),
   });
-  const importPosts = useImportReconPosts(event.id);
+  // Импорт добавляет строки на СЕРВЕРЕ, поэтому его ответ переносится в форму
+  // явно: карточка ОМ больше не пересобирается на каждом обновлении данных, и
+  // без этого импортированные посты не появились бы. Несохранённые ручные
+  // строки при этом остаются — их сервер ещё не видел.
+  const importPosts = useImportReconPosts(event.id, {
+    onEvent: (fresh) =>
+      setRows((prev) => [
+        ...fresh.reconSectorPosts,
+        ...prev.filter((row) => row.id.startsWith("recon-local-")),
+      ]),
+  });
   const complete = useCompleteRecon(event.id);
 
   const dirty =

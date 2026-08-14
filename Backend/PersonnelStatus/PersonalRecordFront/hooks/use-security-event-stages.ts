@@ -46,6 +46,9 @@ import type {
 
 interface StageMutationOptions {
   onFormError?: (details: Record<string, unknown>) => void;
+  /** Ответ мутации — форме этапа. Нужен там, где сервер меняет данные, которые
+   * форма держит у себя (импорт постов), а пересборки формы больше нет. */
+  onEvent?: (event: SecurityEvent) => void;
 }
 
 function useEventMutation<TVariables extends Record<string, unknown>>(
@@ -59,6 +62,7 @@ function useEventMutation<TVariables extends Record<string, unknown>>(
     onSuccess: (data) => {
       queryClient.setQueryData(["ops-security-events", "detail", id], data);
       void queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      options?.onEvent?.(data);
     },
     onFormError: options?.onFormError,
   });
@@ -97,9 +101,14 @@ export function useUpdateRecon(id: string, options?: StageMutationOptions) {
   );
 }
 
-export function useImportReconPosts(id: string) {
-  return useEventMutation<Record<string, never>>(id, () =>
-    opsApiClient.post<SecurityEvent>(securityEventReconImportPath(id))
+export function useImportReconPosts(
+  id: string,
+  options?: StageMutationOptions
+) {
+  return useEventMutation<Record<string, never>>(
+    id,
+    () => opsApiClient.post<SecurityEvent>(securityEventReconImportPath(id)),
+    options
   );
 }
 
