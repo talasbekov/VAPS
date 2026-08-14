@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
 import { useRanks } from "@/hooks/use-ranks";
 import {
@@ -99,9 +99,18 @@ export function EditStatusDialog({
   const isInService = status === IN_SERVICE_LABEL;
   const isOnDuty = status === ON_DUTY_LABEL;
 
-  // Находим текущий статус сотрудника при открытии диалога
+  // Находим текущий статус сотрудника при открытии диалога.
+  // Подстановка с сервера — ОДИН раз на открытие: дальше форму ведёт
+  // пользователь. Данные штатки в зависимостях нужны потому, что диалог
+  // открывается раньше их загрузки, но повторный прогон засева на фоновом
+  // рефетче (invalidateQueries после чужого действия, кнопка «Обновить»)
+  // затирал бы уже введённые статус и даты.
+  const seededForRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (open && employeeId && staffUnits.length > 0) {
+      if (seededForRef.current === employeeId) return;
+
       // Парсим ID - формат: unitId-employeeId или unitId-vacant-index
       const [unitIdStr, employeeIdStr] = employeeId.split("-");
       const unitId = parseInt(unitIdStr, 10);
@@ -114,6 +123,10 @@ export function EditStatusDialog({
 
       const staffUnit = staffUnits.find((unit) => unit.id === unitId);
       if (!staffUnit) return;
+
+      // Штатка с этим сотрудником пришла — форма засеяна, второй раз
+      // сервер её не перезапишет.
+      seededForRef.current = employeeId;
 
       // Проверяем оба формата: новый (unit.employee) и старый (unit.employees)
       const unitEmployee = (staffUnit as any).employee;
@@ -177,6 +190,7 @@ export function EditStatusDialog({
   // Сброс формы при закрытии
   useEffect(() => {
     if (!open) {
+      seededForRef.current = null;
       setStatus("");
       setStartDate(undefined);
       setEndDate(undefined);

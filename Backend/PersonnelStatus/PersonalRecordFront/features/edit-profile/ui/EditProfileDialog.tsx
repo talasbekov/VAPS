@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -41,15 +41,24 @@ export function EditProfileDialog({
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Обновляем данные профиля при изменении user
+  // Подставляем данные профиля при открытии — и только один раз на открытие.
+  // Объект user пересоздаётся на каждом обновлении сессии NextAuth (в том
+  // числе фоновом, по возвращении фокуса на вкладку), поэтому засев по
+  // изменению user затирал бы уже введённые имя и почту.
+  const seededRef = useRef(false);
+
   useEffect(() => {
-    if (user) {
-      const nameParts = user.name?.split(" ") || [];
-      setFirstName(nameParts[0] || "");
-      setLastName(nameParts.slice(1).join(" ") || "");
-      setEmail(user.email || "");
+    if (!open) {
+      seededRef.current = false;
+      return;
     }
-  }, [user]);
+    if (seededRef.current || !user) return;
+    seededRef.current = true;
+    const nameParts = user.name?.split(" ") || [];
+    setFirstName(nameParts[0] || "");
+    setLastName(nameParts.slice(1).join(" ") || "");
+    setEmail(user.email || "");
+  }, [open, user]);
 
   const handleSaveProfile = async () => {
     setError(null);
