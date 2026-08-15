@@ -21,7 +21,7 @@ export default defineConfig({
   // Обход и точечные пробы по живому стенду перечислены явно: `**/*.spec.ts`
   // затянул бы сюда любую будущую спеку, которой живой стенд не нужен, и она
   // падала бы у всех, кто его не поднял.
-  testMatch: ['smoke-buttons.spec.ts', 'objects-tabs.spec.ts', 'gvo-sections.spec.ts', 'protected-persons.spec.ts', 'legal-documents.spec.ts'],
+  testMatch: ['smoke-buttons.spec.ts', 'objects-tabs.spec.ts', 'gvo-sections.spec.ts', 'protected-persons.spec.ts', 'legal-documents.spec.ts', 'placement-stage.spec.ts'],
   // Один воркер: обход кликает по живому стенду и меняет его состояние —
   // параллельные персоны видели бы правки друг друга.
   workers: 1,

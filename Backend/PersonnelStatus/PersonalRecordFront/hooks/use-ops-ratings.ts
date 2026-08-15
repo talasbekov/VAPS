@@ -46,11 +46,15 @@ import type {
   SubmittedEvaluationDetailResponse,
 } from "@/entities/operational-rating";
 
-export function useOperationalRatings() {
+// options.enabled — для экранов, где агрегат показывается ПО ПРАВУ
+// (`rating.view_aggregate`): без права запрос не уходит вовсе, иначе
+// расстановка на каждом рендере получает с бэка 403.
+export function useOperationalRatings(options: { enabled?: boolean } = {}) {
   return useQuery<ListOperationalRatingsResponse, OpsApiFailure>({
     queryKey: ["ops-ratings", "operational"],
     queryFn: () =>
       opsApiClient.get<ListOperationalRatingsResponse>(OPERATIONAL_RATINGS_PATH),
+    enabled: options.enabled ?? true,
   });
 }
 
