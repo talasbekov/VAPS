@@ -4,6 +4,7 @@
 // замена выбывшего (атомарно: снять + назначить + запись в журнал) и
 // закрытие с обязательными итогами ВСЕХ направлений.
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import {
   useReplaceAssignment,
 } from "@/hooks/use-security-event-stages";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import type {
   JournalEntryType,
   SecurityEvent,
@@ -189,6 +191,27 @@ function ReplacementPanel({ event }: { event: SecurityEvent }) {
   );
 }
 
+/**
+ * Сводка «план / факт» из ЖИВЫХ данных карточки. Человеко-часов здесь нет,
+ * хотя в прототипе они есть: учёта часов у домена ОМ не существует вовсе, и
+ * посчитать их из назначений нельзя — вышла бы выдумка на месте отчётной
+ * цифры.
+ */
+export function closureFacts(event: SecurityEvent): {
+  assigned: number;
+  need: number;
+  replacements: number;
+  incidents: number;
+} {
+  return {
+    assigned: event.placementAssignments.length,
+    need: event.reconSectorPosts.reduce((sum, post) => sum + post.need, 0),
+    replacements: event.journalEntries.filter((e) => e.type === "REPLACEMENT")
+      .length,
+    incidents: event.journalEntries.filter((e) => e.type === "INCIDENT").length,
+  };
+}
+
 function ClosurePanel({ event }: { event: SecurityEvent }) {
   // направления = секторы расчёта; итог обязателен по каждому
   const directions = [...new Set(event.reconSectorPosts.map((p) => p.sector))];
@@ -199,29 +222,102 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
   const close = useCloseSecurityEvent(event.id, {
     onFormError: (details) => setFieldErrors(details),
   });
+  const { hasPermission } = useOpsPermissions();
+
+  const facts = closureFacts(event);
+  const ready = directions.filter(
+    (direction) => (summaries[direction] ?? "").trim() !== ""
+  );
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Закрытие мероприятия</CardTitle>
+        <CardTitle>Закрытие и итоги</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Итоги обязательны по каждому направлению — частичное закрытие
-          невозможно.
-        </p>
-        {directions.map((direction) => (
-          <div key={direction} className="space-y-1">
-            <Label htmlFor={`closure-${direction}`}>{direction} *</Label>
-            <Textarea
-              id={`closure-${direction}`}
-              value={summaries[direction] ?? ""}
-              onChange={(e) =>
-                setSummaries((prev) => ({ ...prev, [direction]: e.target.value }))
+        <div className="flex flex-wrap gap-4 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+          <Fact value={`${facts.assigned} / ${facts.need}`} label="назначено / потребность" />
+          <Fact value={String(facts.replacements)} label="замен" />
+          <Fact
+            value={String(facts.incidents)}
+            label="инцидентов"
+            alarming={facts.incidents > 0}
+          />
+        </div>
+
+        {/* Готовность к закрытию — из прототипа: до этого о нехватке итогов
+            узнавали только по 422 после нажатия. Кнопка при этом НЕ
+            блокируется: владелец правила один — сервер, и клиентский гард
+            рядом с ним лишь маскировал бы его отказ. */}
+        <div className="rounded-md border">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+            <div>
+              <p className="text-sm font-semibold">Готовность к закрытию</p>
+              <p className="text-xs text-muted-foreground">
+                Итоги обязательны по каждому направлению — частичное закрытие
+                невозможно.
+              </p>
+            </div>
+            <span
+              className={
+                ready.length === directions.length && directions.length > 0
+                  ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
+                  : "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
               }
-            />
+            >
+              {ready.length} из {directions.length} готовы
+            </span>
           </div>
-        ))}
+          {directions.length === 0 ? (
+            <p className="px-3 py-3 text-xs text-muted-foreground">
+              Направлений нет — расчёт постов пуст.
+            </p>
+          ) : (
+            <div className="space-y-3 p-3">
+              {directions.map((direction) => {
+                const filled = (summaries[direction] ?? "").trim() !== "";
+                return (
+                  <div key={direction} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor={`closure-${direction}`}>{direction} *</Label>
+                      <span
+                        className={
+                          filled
+                            ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[10.5px] font-semibold text-green-800"
+                            : "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-semibold text-amber-800"
+                        }
+                      >
+                        {filled ? "Готово" : "Ожидается"}
+                      </span>
+                    </div>
+                    <Textarea
+                      id={`closure-${direction}`}
+                      value={summaries[direction] ?? ""}
+                      onChange={(e) =>
+                        setSummaries((prev) => ({
+                          ...prev,
+                          [direction]: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Оценка участников — живой отдельный экран (§19), а не копия его
+            таблицы здесь: две точки ввода оценок расходились бы. */}
+        {hasPermission("rating.evaluate") && (
+          <Link
+            href="/security-ops/ratings/workspace"
+            className="inline-block text-xs font-semibold text-primary"
+          >
+            Оценка участников ОМ →
+          </Link>
+        )}
+
         <FieldErrors errors={fieldErrors} />
         <StageError error={close.error} />
         <div className="flex justify-end">
@@ -243,5 +339,24 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function Fact({
+  value,
+  label,
+  alarming = false,
+}: {
+  value: string;
+  label: string;
+  alarming?: boolean;
+}) {
+  return (
+    <span className="flex items-baseline gap-1">
+      <b className={`text-sm tabular-nums ${alarming ? "text-amber-700" : ""}`}>
+        {value}
+      </b>
+      <span className="text-muted-foreground">{label}</span>
+    </span>
   );
 }

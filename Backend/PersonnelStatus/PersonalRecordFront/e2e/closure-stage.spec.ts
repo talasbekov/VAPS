@@ -1,0 +1,159 @@
+/**
+ * «Закрытие и итоги» карточки ОМ на ЖИВОМ стенде.
+ *
+ * Проба отвечает на два вопроса: готовность к закрытию считается по РЕАЛЬНО
+ * заполненным итогам направлений, и владелец правила «итоги всех направлений
+ * обязательны» — сервер, а не экран. Второе проверяется прямо: с неполными
+ * итогами нажимаем «Закрыть», и отказ должен прийти от бэка (экран кнопку не
+ * блокирует намеренно — два гарда маскировали бы серверный).
+ *
+ * Мероприятия берутся с живого стенда, зашитых id нет. Нужны два: одно на
+ * стадии «Проведение» (панель закрытия) и одно закрытое (снимок итогов). Нет
+ * такого — проба СКИПАЕТСЯ, молча не зеленеет. Подготовить «Проведение» можно
+ * через API: создать → bulletin/complete → recon/import-from-passport →
+ * чек-лист → recon/complete → demand/approve → forces → placement/assign на
+ * каждый пост → placement/complete → approval/approve → acknowledge каждого →
+ * acknowledgement/complete.
+ *
+ * Само закрытие проба НЕ выполняет: оно необратимо и сделало бы фикстуру
+ * одноразовой. Успешный путь закрытия покрыт снимком уже закрытого дела.
+ */
+import { expect, test, type Page } from '@playwright/test'
+
+const LIVE = process.env.SMOKE_LIVE === '1'
+const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
+const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
+
+interface EventRow {
+  id: string
+  code: string
+  stage: string
+  reconSectorPosts: { sector: string; need: number }[]
+  placementAssignments: unknown[]
+  journalEntries: { type: string }[]
+  closureDirectionSummaries: { direction: string; summary: string }[]
+}
+
+async function apiToken(): Promise<string> {
+  const res = await fetch(`${API}/api/token/`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+  })
+  const body = (await res.json()) as { access?: string }
+  if (body.access === undefined) throw new Error('нет токена стенда')
+  return body.access
+}
+
+async function events(token: string): Promise<EventRow[]> {
+  const res = await fetch(`${API}/api/ops/security-events/?page_size=50`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return ((await res.json()) as { results: EventRow[] }).results
+}
+
+async function signIn(page: Page): Promise<void> {
+  const api = page.context().request
+  const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as {
+    csrfToken: string
+  }
+  await api.post(`${APP}/api/auth/callback/credentials/`, {
+    form: { csrfToken: csrf.csrfToken, username: 'admin', password: 'admin123', json: 'true' },
+  })
+}
+
+test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и итоги (скип: нет SMOKE_LIVE=1)', () => {
+  test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+
+  test('готовность считается по итогам, отказ приходит от сервера', async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(String(e)))
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text())
+    })
+
+    const token = await apiToken()
+    const conduct = (await events(token)).find((e) => e.stage === 'CONDUCT')
+    test.skip(conduct === undefined, 'на стенде нет ОМ на стадии «Проведение»')
+    const target = conduct!
+    const directions = [...new Set(target.reconSectorPosts.map((p) => p.sector))]
+    expect(directions.length, 'фикстуре нужно ≥2 направления').toBeGreaterThan(1)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+    const panel = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Закрытие и итоги' }),
+    })
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+
+    // Сводка — из живых данных карточки, а не из воздуха
+    const need = target.reconSectorPosts.reduce((sum, p) => sum + p.need, 0)
+    await expect(panel).toContainText(
+      `${target.placementAssignments.length} / ${need}`,
+    )
+    const incidents = target.journalEntries.filter((e) => e.type === 'INCIDENT').length
+    await expect(panel.getByText('инцидентов')).toBeVisible()
+    expect(await panel.innerText()).toContain(String(incidents))
+
+    // Готовность стартует с нуля и растёт от РЕАЛЬНО введённого итога
+    await expect(panel).toContainText(`0 из ${directions.length} готовы`)
+    await expect(panel.getByText('Ожидается').first()).toBeVisible()
+    await panel
+      .getByLabel(`${directions[0]} *`)
+      .fill('Итог направления: замечаний нет.')
+    await expect(panel).toContainText(`1 из ${directions.length} готовы`)
+    await expect(panel.getByText('Готово').first()).toBeVisible()
+
+    // Владелец правила — сервер: кнопка активна, отказ приходит с бэка.
+    // Ассертим ИМЕННО тот канал, который срабатывает: пустой итог ловит
+    // валидация поля (400 «Обязательное поле.») ДО проверки полноты
+    // направлений (422 CLOSURE_DIRECTIONS_INCOMPLETE) — вторая с этого экрана
+    // недостижима, потому что клиент всегда шлёт все направления.
+    // Название направления в ассерт не берём: подпись «КПП *» на панели есть
+    // и без ошибки, такой ассерт был бы вакуумным.
+    const refusal = panel.getByText('Проверьте заполнение формы.')
+    await expect(refusal).toBeHidden()
+    const closeButton = panel.getByRole('button', { name: 'Закрыть мероприятие' })
+    await expect(closeButton).toBeEnabled()
+    await closeButton.click()
+    await expect(refusal).toBeVisible({ timeout: 15_000 })
+    await expect(panel).toContainText('directionSummaries.1.summary')
+
+    // Отказ не сдвинул стадию
+    const after = (await events(token)).find((e) => e.id === target.id)
+    expect(after?.stage).toBe('CONDUCT')
+
+    // 400 в консоли — ЭТОТ отказ и есть предмет пробы, он ожидаем;
+    // CLIENT_FETCH_ERROR — обрыв навигации NextAuth, не дефект экрана.
+    expect(
+      errors.filter(
+        (e) => !e.includes('CLIENT_FETCH_ERROR') && !e.includes('400 (Bad Request)'),
+      ),
+    ).toEqual([])
+  })
+
+  test('закрытое дело показывает сводку и итоги направлений', async ({ page }) => {
+    const token = await apiToken()
+    const closed = (await events(token)).find(
+      (e) => e.stage === 'CLOSED' && e.closureDirectionSummaries.length > 0,
+    )
+    test.skip(closed === undefined, 'на стенде нет закрытого ОМ с итогами')
+    const target = closed!
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+    const card = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Итоги направлений' }),
+    })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+
+    const need = target.reconSectorPosts.reduce((sum, p) => sum + p.need, 0)
+    await expect(card).toContainText(
+      `${target.placementAssignments.length} / ${need}`,
+    )
+    for (const item of target.closureDirectionSummaries) {
+      await expect(card).toContainText(item.direction)
+      await expect(card).toContainText(item.summary)
+    }
+  })
+})
