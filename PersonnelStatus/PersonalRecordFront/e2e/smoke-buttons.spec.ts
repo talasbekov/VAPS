@@ -57,6 +57,21 @@ const INTERACTIVE =
 const SETTLE_MS = Number(process.env.SMOKE_SETTLE ?? 1200)
 /** Потолок элементов на страницу. Отсечённое ПЕЧАТАЕТСЯ в отчёт (не молча). */
 const MAX_ELEMENTS = Number(process.env.SMOKE_MAX_ELEMENTS ?? 60)
+/**
+ * Потолок ВРЕМЕНИ на страницу. Счётчика элементов мало: цена элемента не
+ * постоянна — клик, открывший модалку, тянет за собой ещё до восьми кликов
+ * внутри неё, а неклика́бельный стоит перезагрузки страницы и второй попытки.
+ * Когда `/employees` и `/statuses` доросли до четырёх десятков элементов с
+ * модалками, обход перестал укладываться в лимит теста и падал по таймауту —
+ * а падение по таймауту не оставляет ОТЧЁТА ВОВСЕ, хотя обход к тому моменту
+ * уже нашёл всё, что успел. Бюджет обрывает обход штатно и печатает, что
+ * осталось непройденным: усечение — находка, а не отказ.
+ */
+const PAGE_BUDGET_MS = Number(process.env.SMOKE_PAGE_BUDGET ?? 170_000)
+/** Лимит теста считается ОТ бюджета: разъехавшись, они вернут тот же таймаут.
+ *  Запас — на загрузку страницы и на элемент, начатый до истечения бюджета
+ *  (худший: 5 с клик + перезагрузка + 5 с вторая попытка + отстой). */
+const TEST_TIMEOUT_MS = PAGE_BUDGET_MS + 70_000
 
 /**
  * Модалка/шторка. `[aria-modal]` — не украшение: у SPA форма «Создать ОМ» не
@@ -65,6 +80,27 @@ const MAX_ELEMENTS = Number(process.env.SMOKE_MAX_ELEMENTS ?? 60)
  * незакрытый оверлей. Ложное обвинение кнопок; здесь тот же Radix.
  */
 const MODAL = '[role="dialog"], [aria-modal="true"]'
+
+/**
+ * ВСПЛЫВАЮЩИЙ СЛОЙ поверх страницы или модалки: раскрытый Select (`listbox`),
+ * меню строки (`menu`), календарь в поповере (обёртка Radix). Ровно та же
+ * ловушка, что описана выше для модалки, но этажом ниже — и она стоила обходу
+ * половины покрытия: первый же клик по «Выберите статус» раскрывал список, а
+ * дальше КАЖДЫЙ элемент модалки отчитывался «не кликается», потому что его
+ * перекрывал незакрытый список. Двадцать ложных обвинений на `/employees`, по
+ * пять секунд ожидания каждое.
+ *
+ * Escape закрывает верхний слой, НЕ трогая модалку под ним, — но нажимать его
+ * вслепую нельзя: без раскрытого слоя он закроет саму модалку, и обход пойдёт
+ * её переоткрывать.
+ */
+const POPUP = '[data-radix-popper-content-wrapper], [role="listbox"], [role="menu"]'
+
+async function dismissPopup(page: Page): Promise<void> {
+  if ((await page.locator(POPUP).count()) === 0) return
+  await page.keyboard.press('Escape').catch(() => undefined)
+  await page.waitForTimeout(150)
+}
 
 // ─────────────────────────── персоны ───────────────────────────
 // Учётки стенда (сид RBAC + ручные пользователи). Пароли стендовые,
@@ -427,6 +463,12 @@ interface SweepCtx {
   url: string
   label: string
   findings: Finding[]
+  /** Момент, после которого обход этой страницы обрывается штатно. */
+  deadline: number
+}
+
+function outOfBudget(ctx: SweepCtx): boolean {
+  return Date.now() > ctx.deadline
 }
 
 /**
@@ -530,6 +572,9 @@ async function sweepDialog(ctx: SweepCtx, reopen: () => Promise<void>): Promise<
     (d) => !DESTRUCTIVE.test(d.name) && !DOWNLOAD.test(d.name),
   )
   for (let i = 0; i < Math.min(inner.length, 8); i += 1) {
+    // Бюджет страницы общий: модалка — самая дорогая её часть, и обрывать
+    // обход только на внешнем цикле значило бы проскочить лимит теста внутри.
+    if (outOfBudget(ctx)) break
     if ((await ctx.page.locator(DIALOG).count()) === 0) {
       await reopen()
       if ((await ctx.page.locator(DIALOG).count()) === 0) return
@@ -539,6 +584,9 @@ async function sweepDialog(ctx: SweepCtx, reopen: () => Promise<void>): Promise<
     if (match === undefined) continue
     const row = await clickAndJudge(ctx, DIALOG, match, `модалка → ${match.name}`, false)
     if (row !== null) ctx.findings.push(row)
+    // Раскрытый список/календарь снимаем ДО следующего элемента: иначе он
+    // перекроет весь остаток модалки (см. POPUP).
+    await dismissPopup(ctx.page)
   }
   await ctx.page.keyboard.press('Escape').catch(() => undefined)
 }
@@ -613,14 +661,40 @@ async function sweepPage(ctx: SweepCtx, chromeless: boolean): Promise<void> {
     })
   }
 
-  for (let i = 0; i < Math.min(safe.length, MAX_ELEMENTS); i += 1) {
+  const ceiling = Math.min(safe.length, MAX_ELEMENTS)
+  for (let i = 0; i < ceiling; i += 1) {
+    if (outOfBudget(ctx)) {
+      ctx.findings.push({
+        page: ctx.label,
+        element: '(бюджет времени)',
+        action: '—',
+        api: '—',
+        status: '—',
+        verdict: '⚠️ обход усечён',
+        details:
+          `бюджет ${Math.round(PAGE_BUDGET_MS / 1000)} с исчерпан, ` +
+          `пройдено ${i} из ${ceiling} — остальные НЕ проверены`,
+      })
+      break
+    }
     const d = safe[i]
     // Перед каждым кликом — исходная страница (требование обхода: после
     // навигации возвращаемся). Элемент ищется по КЛЮЧУ, не по индексу:
     // асинхронная догрузка сдвигает DOM между заходами.
     if (currentPath(ctx.page) !== norm(ctx.url)) await open(ctx.page, ctx.url)
-    const fresh = await collect(ctx.page, container)
-    const match = fresh.find((f) => f.key === d.key)
+    let fresh = await collect(ctx.page, container)
+    let match = fresh.find((f) => f.key === d.key)
+    if (match === undefined) {
+      // Второй заход С ЧИСТОГО ЛИСТА — тот же довод, что и для «не кликается»:
+      // элемент чаще всего унесён ПРЕДЫДУЩИМ кликом обхода, а не пропал сам.
+      // На `/employees` переключатель «Карточки» прячет таблицу целиком, и
+      // тридцать одна строка отчиталась «элемент исчез», хотя все они на месте
+      // в исходном виде страницы. После перезагрузки такой заход дешёвый:
+      // вид сбрасывается, и остальные элементы находятся сразу.
+      await open(ctx.page, ctx.url)
+      fresh = await collect(ctx.page, container)
+      match = fresh.find((f) => f.key === d.key)
+    }
     if (match === undefined) {
       ctx.findings.push({
         page: ctx.label,
@@ -629,7 +703,7 @@ async function sweepPage(ctx: SweepCtx, chromeless: boolean): Promise<void> {
         api: '—',
         status: '—',
         verdict: '⚠️ элемент исчез',
-        details: 'до клика не дожил — динамическая перерисовка',
+        details: 'до клика не дожил — и после перезагрузки страницы тоже',
       })
       continue
     }
@@ -648,6 +722,9 @@ async function sweepPage(ctx: SweepCtx, chromeless: boolean): Promise<void> {
         await ctx.page.waitForTimeout(SETTLE_MS)
       })
     }
+    // Меню строки или раскрытый список, оставшийся от клика, перекрыл бы
+    // следующие элементы страницы — и они отчитались бы «не кликается».
+    await dismissPopup(ctx.page)
   }
 }
 
@@ -779,7 +856,7 @@ test.describe('смоук-обход портала', () => {
 
       for (const route of ROUTES) {
         test(`${persona.key} ${route.template}`, async ({ page }) => {
-          test.setTimeout(240_000)
+          test.setTimeout(TEST_TIMEOUT_MS)
           const unresolved = (route.needs ?? []).filter((k) => ids[k] === undefined)
           if (unresolved.length > 0) {
             dump(persona, route.template, [
@@ -800,7 +877,14 @@ test.describe('смоук-обход портала', () => {
           )
           const rec = new Recorder()
           rec.attach(page)
-          const ctx: SweepCtx = { page, rec, url, label: route.template, findings: [] }
+          const ctx: SweepCtx = {
+            page,
+            rec,
+            url,
+            label: route.template,
+            findings: [],
+            deadline: Date.now() + PAGE_BUDGET_MS,
+          }
           await sweepPage(ctx, route.chromeless === true)
           dump(persona, route.template, ctx.findings)
         })
@@ -812,7 +896,7 @@ test.describe('смоук-обход портала', () => {
       // экран входа, каркаса на нём нет.
       for (const chrome of ['aside', 'header'] as const) {
         test(`${persona.key} каркас: ${chrome}`, async ({ page }) => {
-          test.setTimeout(240_000)
+          test.setTimeout(TEST_TIMEOUT_MS)
           const rec = new Recorder()
           rec.attach(page)
           const HOME = '/dashboard'
@@ -822,6 +906,7 @@ test.describe('смоук-обход портала', () => {
             url: HOME,
             label: `(каркас ${chrome})`,
             findings: [],
+            deadline: Date.now() + PAGE_BUDGET_MS,
           }
           await open(page, HOME)
           if ((await page.locator(chrome).count()) === 0) {
