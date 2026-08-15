@@ -17,6 +17,7 @@ import { dailyHandlers } from "./daily-handlers";
 import { combatHandlers } from "./combat-handlers";
 import { gvoHandlers } from "./gvo-handlers";
 import { protectedPersonsHandlers } from "./protected-persons-handlers";
+import { legalDocumentsHandlers } from "./legal-documents-handlers";
 
 export function composeOpsHandlers() {
   return [
@@ -60,5 +61,7 @@ export function composeOpsHandlers() {
     // Каталог охраняемых лиц — по той же причине без переключателя: справочник
     // существует только в мок-слое.
     ...protectedPersonsHandlers,
+    // Нормативная база — тот же случай: справочник существует только в моке.
+    ...legalDocumentsHandlers,
   ];
 }

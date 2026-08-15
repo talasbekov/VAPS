@@ -124,6 +124,7 @@ const ROUTES: readonly RouteSpec[] = [
   { template: '/security-ops/gvo' },
   { template: '/security-ops/gvo/{eventId}', needs: ['eventId'] },
   { template: '/security-ops/persons' },
+  { template: '/security-ops/laws' },
   { template: '/security-ops/objects' },
   { template: '/security-ops/objects/{objectId}', needs: ['objectId'] },
   {
