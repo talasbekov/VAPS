@@ -218,11 +218,16 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
     // строит сервер (§19.15), и дела без единой оценки в нём нет — контрол
     // остался бы пустым даже при работающем фильтре. Уходящий запрос — то
     // место, где фильтр либо есть, либо его нет.
+    //
+    // Переходим ПОЛНОЙ навигацией, а не кликом: карточка архива уже спросила
+    // реестр с теми же фильтрами, и по клику React Query отдал бы ответ из
+    // кэша — запрос бы не ушёл, и ожидание его повисло бы на ровном месте.
+    const href = await link.getAttribute('href')
     const [registryRequest] = await Promise.all([
       page.waitForRequest((request) => request.url().includes('/api/ops/evaluation-registry'), {
         timeout: 15_000,
       }),
-      link.click(),
+      page.goto(`${APP}${href}`),
     ])
     expect(decodeURIComponent(registryRequest.url())).toContain(`event=${target.code}`)
     await expect(page).toHaveURL(/\/security-ops\/ratings\/evaluations/)
