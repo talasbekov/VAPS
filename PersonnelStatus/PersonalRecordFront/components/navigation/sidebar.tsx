@@ -17,6 +17,7 @@ import {
   Landmark,
   LineChart,
   ScrollText,
+  Scale,
   Star,
   UserRound,
 } from "lucide-react";
@@ -102,6 +103,7 @@ export function Sidebar() {
     // мероприятий, и появляются они вместе с бюллетенем.
     { name: "Реестр ГВО", href: "/security-ops/gvo", icon: Users },
     { name: "Охраняемые лица", href: "/security-ops/persons", icon: UserRound },
+    { name: "Законы об ОМ", href: "/security-ops/laws", icon: Scale },
     { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
     // «План дежурств» (/security-ops/duties) удалён 13.08.2026 вместе со
     // страницей и адресом. «Боевые группы» (/security-ops/duties/combat) —
