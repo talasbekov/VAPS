@@ -28,9 +28,13 @@ interface EventRow {
   id: string
   code: string
   stage: string
+  businessDate: string
+  objectName: string
+  passportBinding: { versionNumber: number } | null
   reconSectorPosts: { sector: string; need: number }[]
+  demandRows: { sector: string }[]
   placementAssignments: unknown[]
-  journalEntries: { type: string }[]
+  journalEntries: { type: string; title: string }[]
   closureDirectionSummaries: { direction: string; summary: string }[]
 }
 
@@ -132,7 +136,7 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
     ).toEqual([])
   })
 
-  test('закрытое дело показывает сводку и итоги направлений', async ({ page }) => {
+  test('архив дела собирает разделы закрытого ОМ', async ({ page }) => {
     const token = await apiToken()
     const closed = (await events(token)).find(
       (e) => e.stage === 'CLOSED' && e.closureDirectionSummaries.length > 0,
@@ -155,5 +159,72 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
       await expect(card).toContainText(item.direction)
       await expect(card).toContainText(item.summary)
     }
+
+    // Разделы архива — по экрану прототипа «Архив дела». Каждый ассертит
+    // ЖИВОЕ значение дела, а не наличие заголовка: заголовок отрисуется и на
+    // пустых данных.
+    const bulletin = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', {
+        hasText: 'Карточка, бюллетень, программа',
+      }),
+    })
+    await expect(bulletin).toContainText(target.businessDate)
+    await expect(bulletin).toContainText(target.objectName)
+    if (target.passportBinding !== null) {
+      await expect(
+        bulletin.getByRole('link', {
+          name: `версия ${target.passportBinding.versionNumber}`,
+        }),
+      ).toBeVisible()
+    }
+
+    const demand = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Расчёты и заявки' }),
+    })
+    if (target.demandRows.length === 0) {
+      await expect(demand).toContainText('Потребность не заводилась')
+    } else {
+      await expect(demand).toContainText(target.demandRows[0].sector)
+    }
+
+    const replacements = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Изменения и замены' }),
+    })
+    const replacementEntries = target.journalEntries.filter(
+      (e) => e.type === 'REPLACEMENT',
+    )
+    if (replacementEntries.length === 0) {
+      await expect(replacements).toContainText('Замен по ходу мероприятия не было')
+    } else {
+      await expect(replacements).toContainText(replacementEntries[0].title)
+    }
+
+    // Ссылка на реестр оценок несёт фильтр по ЭТОМУ делу, и реестр его читает
+    const evaluations = page.locator('[data-slot="card"]', {
+      has: page.locator('[data-slot="card-title"]', { hasText: 'Оценки участников' }),
+    })
+    const link = evaluations.getByRole('link', {
+      name: 'Итоговые оценки участников ОМ →',
+    })
+    // trailingSlash: true в next.config.js — Next нормализует адрес, поэтому
+    // сверяем по образцу, а не по литералу без слэша.
+    await expect(link).toHaveAttribute(
+      'href',
+      new RegExp(
+        `/security-ops/ratings/evaluations/?\\?event=${encodeURIComponent(target.code)}$`,
+      ),
+    )
+    // Ассертим ЗАПРОС, а не значение <select>: список мероприятий в фильтре
+    // строит сервер (§19.15), и дела без единой оценки в нём нет — контрол
+    // остался бы пустым даже при работающем фильтре. Уходящий запрос — то
+    // место, где фильтр либо есть, либо его нет.
+    const [registryRequest] = await Promise.all([
+      page.waitForRequest((request) => request.url().includes('/api/ops/evaluation-registry'), {
+        timeout: 15_000,
+      }),
+      link.click(),
+    ])
+    expect(decodeURIComponent(registryRequest.url())).toContain(`event=${target.code}`)
+    await expect(page).toHaveURL(/\/security-ops\/ratings\/evaluations/)
   })
 })
