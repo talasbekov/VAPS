@@ -179,7 +179,11 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
     // ЖИВОЕ значение дела, а не наличие заголовка: заголовок отрисуется и на
     // пустых данных.
     // Шапка архива из прототипа
-    await expect(page.getByText(`🔒 Архив · ${target.code}`)).toBeVisible()
+    // Замок теперь иконка (lucide Lock), а не эмодзи в тексте: ассерт пинит
+    // сам заголовок архива, а не способ нарисовать замок.
+    await expect(
+      page.getByRole('heading', { name: `Архив · ${target.code}` }),
+    ).toBeVisible()
     await expect(page.getByText('read-only')).toBeVisible()
 
     const bulletin = page.locator('[data-slot="card"]', {
