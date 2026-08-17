@@ -1,10 +1,17 @@
 "use client";
 
-// Командный центр ОМ: KPI по всему реестру мероприятий и лента готовности
-// ближайших. KPI считаются только из реальных данных реестра — показатели
-// прототипа, которым нет источника (численность личного состава, карта
-// готовности подразделений), не рисуются: придумывать цифры запрещено.
-import { useMemo, useState } from "react";
+// Командный центр ОМ по экрану прототипа Smart Josparlau: четыре показателя
+// шапки, лента готовности ближайших мероприятий и отметка свежести данных.
+//
+// Численность личного состава читается из ЖИВОГО расхода (строевой записки),
+// а не считается здесь: расход — владелец этих чисел, и второй счёт разошёлся
+// бы с экраном «Расход и светофор».
+//
+// Из прототипа НЕ перенесено: «карта готовности подразделений» (сдача дня по
+// подразделениям — это светофор, у него свой экран и своё дерево) и график
+// нагрузки за 14 дней (нагрузку считает аналитика §22.9 по своей методике из
+// «Настроек»; вторая, нарисованная здесь, противоречила бы ей).
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
@@ -12,11 +19,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Activity,
   AlertTriangle,
-  CheckCircle2,
-  Gauge,
   LineChart,
+  ShieldCheck,
+  Users,
+  UserMinus,
 } from "lucide-react";
 import { useSecurityEvents } from "@/hooks/use-security-events";
+import { useStrengthReport } from "@/hooks/use-strength-report";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { CreateSecurityEventDialog } from "@/features/create-security-event";
 import { OpsKpiCards } from "@/widgets/ops-kpi-cards";
@@ -28,6 +37,10 @@ import {
 } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+
+/** Код колонки «в строю» в расходе. Проверен по ответу живого бэка
+ * (`/api/operations/strength-report/`) — тот же код, что у сетки дня. */
+const IN_SERVICE_COLUMN = "IN_SERVICE";
 
 export default function CommandCenterPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -43,53 +56,132 @@ export default function CommandCenterPage() {
     owner: "",
     pageSize: 100,
   });
+  const canReadStrength = hasPermission("status.view");
+  const strength = useStrengthReport(!permissionsLoading && canReadStrength);
 
   const events = useMemo(() => query.data?.results ?? [], [query.data]);
+
+  /** Средняя готовность активных ОМ — подпись к ленте, а не пятая плитка:
+   * в ряду прототипа их четыре, а готовность и так стоит у каждой строки. */
+  const avgReadiness = useMemo(() => {
+    const active = events.filter((e) => e.stage !== "CLOSED");
+    if (active.length === 0) return null;
+    return Math.round(
+      active.reduce((sum, e) => sum + e.readinessPercent, 0) / active.length
+    );
+  }, [events]);
+
+  /** Численность из расхода. null — расход не прочитан (подпись объясняет
+   * причину: незагруженные права это ещё не отказ). */
+  const personnel = useMemo(() => {
+    const report = strength.data;
+    if (report === undefined) return null;
+    const staff = report.rows.reduce((sum, row) => sum + row.staff_total, 0);
+    const list = report.rows.reduce((sum, row) => sum + row.list_total, 0);
+    // Колонки задаёт сервер: нет колонки «в строю» — показываем прочерк, а не
+    // ноль. Ноль здесь читался бы как «в строю никого».
+    const inService = report.columns.includes(IN_SERVICE_COLUMN)
+      ? report.rows.reduce(
+          (sum, row) => sum + (row.columns[IN_SERVICE_COLUMN] ?? 0),
+          0
+        )
+      : null;
+    return { staff, list, inService };
+  }, [strength.data]);
+
+  const strengthGap =
+    permissionsLoading || strength.isLoading
+      ? "загрузка расхода…"
+      : !canReadStrength
+        ? "нужно право «Статусы: просмотр»"
+        : strength.isError || personnel === null
+          ? "расход недоступен"
+          : null;
 
   const kpi = useMemo<OpsKpiItem[]>(() => {
     const active = events.filter((e) => e.stage !== "CLOSED");
     const attention = active.filter((e) => e.conflictsCount > 0);
-    const closed = events.filter((e) => e.stage === "CLOSED");
-    const avgReadiness =
-      active.length === 0
-        ? null
-        : Math.round(
-            active.reduce((sum, e) => sum + e.readinessPercent, 0) /
-              active.length
-          );
+    // Дефицит — незакрытая часть запросов сил по НЕЗАВЕРШЁННЫМ ОМ. Перевыдача
+    // (выделили больше запрошенного) дефицит не гасит: отрицательные слагаемые
+    // прятали бы нехватку в соседнем мероприятии.
+    let deficit = 0;
+    let deficitEvents = 0;
+    for (const event of active) {
+      const gap = event.forceRequests.reduce(
+        (sum, request) =>
+          sum + Math.max(0, request.requestedCount - request.allocatedCount),
+        0
+      );
+      if (gap > 0) {
+        deficit += gap;
+        deficitEvents += 1;
+      }
+    }
     return [
+      {
+        key: "personnel",
+        label: "Личный состав",
+        value: strengthGap === null ? String(personnel!.staff) : "—",
+        hint: strengthGap ?? `${personnel!.list} по списку`,
+        icon: Users,
+        iconClass: "text-primary",
+      },
+      {
+        key: "in-service",
+        label: "В строю",
+        value:
+          strengthGap !== null || personnel!.inService === null
+            ? "—"
+            : String(personnel!.inService),
+        hint:
+          strengthGap ??
+          (personnel!.inService === null
+            ? "в расходе нет колонки «в строю»"
+            : personnel!.list === 0
+              ? "списочной численности нет"
+              : `${sharePercent(personnel!.inService, personnel!.list)} списочного`),
+        icon: ShieldCheck,
+        iconClass: "text-green-600",
+      },
       {
         key: "active",
         label: "Активные ОМ",
         value: String(active.length),
+        hint:
+          attention.length === 0
+            ? "конфликтов нет"
+            : `${attention.length} требуют внимания`,
         icon: Activity,
-        iconClass: "text-primary",
+        iconClass: attention.length > 0 ? "text-red-600" : "text-primary",
       },
       {
-        key: "attention",
-        label: "Требуют внимания",
-        value: String(attention.length),
-        hint: "есть конфликты",
-        icon: AlertTriangle,
-        iconClass: attention.length > 0 ? "text-red-600" : "text-muted-foreground",
-      },
-      {
-        key: "readiness",
-        label: "Средняя готовность",
-        value: avgReadiness === null ? "—" : `${avgReadiness}%`,
-        hint: "по активным ОМ",
-        icon: Gauge,
-        iconClass: "text-amber-600",
-      },
-      {
-        key: "closed",
-        label: "Закрыто",
-        value: String(closed.length),
-        icon: CheckCircle2,
-        iconClass: "text-green-600",
+        key: "deficit",
+        label: "Дефицит по ОМ",
+        value: String(deficit),
+        hint:
+          deficitEvents === 0
+            ? "запросы сил закрыты"
+            : `по ${deficitEvents} ${deficitEvents === 1 ? "мероприятию" : "мероприятиям"}`,
+        icon: deficit > 0 ? UserMinus : AlertTriangle,
+        iconClass: deficit > 0 ? "text-amber-600" : "text-muted-foreground",
       },
     ];
-  }, [events]);
+  }, [events, personnel, strengthGap]);
+
+  // Отметка свежести рисуется ТОЛЬКО после монтирования: время последнего
+  // ответа на сервере и в браузере разное, и печать его прямо в разметке
+  // давала бы hydration mismatch (тот же дефект чинили на /dashboard).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const updatedAt = Math.max(query.dataUpdatedAt, strength.dataUpdatedAt);
+  const freshness =
+    mounted && updatedAt > 0
+      ? `данные на ${new Date(updatedAt).toLocaleTimeString("ru-RU", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`
+      : null;
+  const refreshing = query.isFetching || strength.isFetching;
 
   // ближайшие — активные, отсортированные по дате проведения
   const upcoming = useMemo(
@@ -120,7 +212,20 @@ export default function CommandCenterPage() {
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {freshness !== null && (
+              <span className="text-xs text-muted-foreground">{freshness}</span>
+            )}
+            <Button
+              variant="outline"
+              disabled={refreshing}
+              onClick={() => {
+                void query.refetch();
+                void strength.refetch();
+              }}
+            >
+              {refreshing ? "Обновление…" : "Обновить"}
+            </Button>
             <Link href="/security-ops/events">
               <Button variant="outline">Все мероприятия</Button>
             </Link>
@@ -133,6 +238,11 @@ export default function CommandCenterPage() {
         <Card>
           <CardHeader>
             <CardTitle>Ближайшие мероприятия</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {avgReadiness === null
+                ? "активных мероприятий нет"
+                : `средняя готовность активных — ${avgReadiness}%`}
+            </p>
           </CardHeader>
           <CardContent>
             {query.isLoading && (
@@ -161,6 +271,11 @@ export default function CommandCenterPage() {
       </div>
     </DashboardLayout>
   );
+}
+
+/** Доля в процентах с одним знаком и запятой: «84,7%». */
+function sharePercent(part: number, whole: number): string {
+  return `${((part / whole) * 100).toFixed(1).replace(".", ",")}%`;
 }
 
 function ReadinessRow({ event }: { event: SecurityEvent }) {
