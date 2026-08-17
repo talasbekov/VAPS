@@ -115,6 +115,22 @@ export interface PlacementAssignment {
 
 export type ApprovalStatus = "PENDING" | "APPROVED" | "RETURNED";
 
+/**
+ * Строка маршрута согласования из прототипа: кто согласует, в каком порядке и
+ * с каким решением. Порядок — позиция в списке; отдельного поля под номер нет,
+ * иначе появились бы два источника правды.
+ */
+export interface Approver {
+  id: string;
+  name: string;
+  unit: string;
+  position: string;
+  status: ApprovalStatus;
+  /** null — решение ещё не принято. */
+  decidedAt: string | null;
+  comment: string;
+}
+
 /** Внешний кадровый read-only снимок — только для подбора кандидатов. */
 export interface PersonnelSummarySnapshot {
   id: string;
@@ -168,6 +184,7 @@ export interface SecurityEvent {
   placementAssignments: PlacementAssignment[];
   approvalStatus: ApprovalStatus;
   approvalComment: string;
+  approvalRoute: Approver[];
   journalEntries: JournalEntry[];
   closureDirectionSummaries: ClosureDirectionSummary[];
   closedAt: string | null;
@@ -334,6 +351,30 @@ export function securityEventPlacementUnassignPath(
 export function securityEventPlacementCompletePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/placement/complete/`;
 }
+export function securityEventApprovalRoutePath(id: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/route/`;
+}
+export function securityEventApproverPath(id: string, approverId: string): string {
+  return `${SECURITY_EVENTS_PATH}${id}/approval/route/${encodeURIComponent(approverId)}/`;
+}
+export function securityEventApproverDecidePath(
+  id: string,
+  approverId: string
+): string {
+  return `${securityEventApproverPath(id, approverId)}decide/`;
+}
+
+export interface AddApproverRequest extends Record<string, unknown> {
+  name: string;
+  unit: string;
+  position: string;
+}
+
+export interface DecideApproverRequest extends Record<string, unknown> {
+  decision: "APPROVED" | "RETURNED";
+  comment: string;
+}
+
 export function securityEventApprovalApprovePath(id: string): string {
   return `${SECURITY_EVENTS_PATH}${id}/approval/approve/`;
 }

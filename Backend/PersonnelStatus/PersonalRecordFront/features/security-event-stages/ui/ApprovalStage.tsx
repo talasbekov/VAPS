@@ -26,10 +26,14 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  useAddApprover,
   useApprovePlacement,
+  useDecideApprover,
+  useRemoveApprover,
   useReturnPlacement,
 } from "@/hooks/use-security-event-stages";
 import type { SecurityEvent } from "@/entities/security-event";
@@ -96,6 +100,8 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
           />
           <Kpi value={event.updatedAt} label="обновлено" />
         </div>
+
+        <ApprovalRoute event={event} />
 
         <section>
           <p className="mb-1.5 text-xs font-semibold text-muted-foreground">
@@ -201,5 +207,212 @@ function Kpi({
       </b>
       <span className="text-muted-foreground">{label}</span>
     </span>
+  );
+}
+
+const APPROVER_STATUS_LABEL: Record<string, string> = {
+  PENDING: "Ожидает решения",
+  APPROVED: "Согласовано",
+  RETURNED: "Возвращено",
+};
+
+/**
+ * Маршрут согласования из прототипа: кто согласует, в каком порядке и с каким
+ * решением. Порядок — позиция в списке, номер строки её и показывает.
+ */
+function ApprovalRoute({ event }: { event: SecurityEvent }) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [unit, setUnit] = useState("");
+  const [position, setPosition] = useState("");
+  const [returnFor, setReturnFor] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+
+  const add = useAddApprover(event.id, {
+    onEvent: () => {
+      setAdding(false);
+      setName("");
+      setUnit("");
+      setPosition("");
+    },
+  });
+  const remove = useRemoveApprover(event.id);
+  // Детали 400 показываем полем: без onFormError пользователь видел бы только
+  // общее «Проверьте заполнение формы», а причина отказа («укажите причину
+  // возврата») оставалась бы в ответе сервера.
+  const [decideErrors, setDecideErrors] = useState<Record<string, unknown> | null>(
+    null
+  );
+  const decide = useDecideApprover(event.id, {
+    onFormError: (details) => setDecideErrors(details),
+    onEvent: () => {
+      setReturnFor(null);
+      setReason("");
+      setDecideErrors(null);
+    },
+  });
+
+  return (
+    <section className="rounded-md border">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+        <p className="text-xs font-semibold">Маршрут согласования</p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setAdding((prev) => !prev)}
+        >
+          + Добавить согласующего
+        </Button>
+      </div>
+
+      {adding && (
+        <div className="flex flex-wrap gap-2 border-b p-2">
+          <Input
+            className="h-8 w-48 text-xs"
+            placeholder="ФИО"
+            aria-label="ФИО согласующего"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Input
+            className="h-8 w-44 text-xs"
+            placeholder="Подразделение"
+            aria-label="Подразделение согласующего"
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+          />
+          <Input
+            className="h-8 w-40 text-xs"
+            placeholder="Должность"
+            aria-label="Должность согласующего"
+            value={position}
+            onChange={(e) => setPosition(e.target.value)}
+          />
+          <Button
+            type="button"
+            size="sm"
+            disabled={add.isPending}
+            onClick={() => add.mutate({ name, unit, position })}
+          >
+            Добавить
+          </Button>
+        </div>
+      )}
+
+      {event.approvalRoute.length === 0 ? (
+        <p className="px-3 py-3 text-xs text-muted-foreground">
+          Маршрут пуст — согласующие не назначены.
+        </p>
+      ) : (
+        <ul className="divide-y">
+          {event.approvalRoute.map((approver, index) => (
+            <li key={approver.id} className="space-y-1 p-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-5 text-xs text-muted-foreground tabular-nums">
+                  {index + 1}
+                </span>
+                <span className="font-semibold">{approver.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {approver.unit}
+                  {approver.position === "" ? "" : ` · ${approver.position}`}
+                </span>
+                <span
+                  className={
+                    approver.status === "APPROVED"
+                      ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
+                      : approver.status === "RETURNED"
+                        ? "inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800"
+                        : "inline-flex rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold"
+                  }
+                >
+                  {APPROVER_STATUS_LABEL[approver.status]}
+                </span>
+                {approver.decidedAt !== null && (
+                  <span className="text-xs text-muted-foreground">
+                    {approver.decidedAt}
+                  </span>
+                )}
+                {approver.status === "PENDING" && (
+                  <span className="ml-auto flex gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={decide.isPending}
+                      onClick={() =>
+                        decide.mutate({
+                          approverId: approver.id,
+                          decision: "APPROVED",
+                          comment: "",
+                        })
+                      }
+                    >
+                      Согласовать
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setReturnFor((prev) =>
+                          prev === approver.id ? null : approver.id
+                        )
+                      }
+                    >
+                      Вернуть
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-label={`Снять согласующего ${approver.name}`}
+                      disabled={remove.isPending}
+                      onClick={() => remove.mutate({ approverId: approver.id })}
+                    >
+                      ✕
+                    </Button>
+                  </span>
+                )}
+              </div>
+              {approver.comment !== "" && (
+                <p className="pl-7 text-xs text-muted-foreground">
+                  {approver.comment}
+                </p>
+              )}
+              {returnFor === approver.id && (
+                <div className="flex flex-wrap gap-2 pl-7">
+                  <Input
+                    className="h-8 w-72 text-xs"
+                    placeholder="Укажите, что необходимо исправить"
+                    aria-label={`Причина возврата: ${approver.name}`}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={decide.isPending}
+                    onClick={() =>
+                      decide.mutate({
+                        approverId: approver.id,
+                        decision: "RETURNED",
+                        comment: reason,
+                      })
+                    }
+                  >
+                    Подтвердить возврат
+                  </Button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <FieldErrors errors={decideErrors} />
+      <StageError error={add.error} />
+      <StageError error={remove.error} />
+      <StageError error={decide.error} />
+    </section>
   );
 }

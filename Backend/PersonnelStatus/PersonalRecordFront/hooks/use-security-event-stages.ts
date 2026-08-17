@@ -15,6 +15,9 @@ import {
   securityEventAcknowledgePath,
   securityEventAcknowledgementCompletePath,
   securityEventApprovalApprovePath,
+  securityEventApprovalRoutePath,
+  securityEventApproverPath,
+  securityEventApproverDecidePath,
   securityEventApprovalReturnPath,
   securityEventBulletinCompletePath,
   securityEventBulletinPath,
@@ -38,6 +41,8 @@ import type {
   ListPersonnelResponse,
   PersonnelSummarySnapshot,
   ReplaceAssignmentRequest,
+  AddApproverRequest,
+  DecideApproverRequest,
   ReturnPlacementRequest,
   SecurityEvent,
   UpdateBulletinRequest,
@@ -239,4 +244,35 @@ export function usePersonnelMe(options: { enabled?: boolean } = {}) {
     enabled: options.enabled ?? true,
     retry: false,
   });
+}
+
+/** Маршрут согласования: добавление, снятие и решение по строке. */
+export function useAddApprover(id: string, options?: StageMutationOptions) {
+  return useEventMutation<AddApproverRequest>(
+    id,
+    (body) =>
+      opsApiClient.post<SecurityEvent>(securityEventApprovalRoutePath(id), body),
+    options
+  );
+}
+
+export function useRemoveApprover(id: string, options?: StageMutationOptions) {
+  return useEventMutation<{ approverId: string } & Record<string, unknown>>(
+    id,
+    ({ approverId }) =>
+      opsApiClient.del<SecurityEvent>(securityEventApproverPath(id, approverId)),
+    options
+  );
+}
+
+export function useDecideApprover(id: string, options?: StageMutationOptions) {
+  return useEventMutation<{ approverId: string } & DecideApproverRequest>(
+    id,
+    ({ approverId, ...body }) =>
+      opsApiClient.post<SecurityEvent>(
+        securityEventApproverDecidePath(id, approverId),
+        body
+      ),
+    options
+  );
 }

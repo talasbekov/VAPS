@@ -113,6 +113,7 @@ function emptyEvent(
     placementAssignments: [],
     approvalStatus: "PENDING",
     approvalComment: "",
+    approvalRoute: [],
     journalEntries: [],
     closureDirectionSummaries: [],
     closedAt: null,
