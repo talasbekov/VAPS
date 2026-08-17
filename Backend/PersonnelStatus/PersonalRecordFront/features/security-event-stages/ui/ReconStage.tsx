@@ -98,8 +98,39 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         sourceSectorId: null,
         sourcePostId: null,
         minRating: null,
+        postType: "",
+        weapon: "",
+        uniform: "",
+        parentPostId: "",
       },
     ]);
+  }
+
+  /** Подпост из прототипа: строка, привязанная к посту-родителю. */
+  function addSubRow(parent: ReconSectorPost): void {
+    setRows((prev) => {
+      const index = prev.findIndex((row) => row.id === parent.id);
+      const sub: ReconSectorPost = {
+        id: nextLocalId(),
+        sector: parent.sector,
+        post: `${parent.post} / Подпост`,
+        task: "",
+        need: 1,
+        requirements: parent.requirements,
+        result: null,
+        comment: "",
+        sourceSectorId: null,
+        sourcePostId: null,
+        minRating: parent.minRating,
+        postType: parent.postType ?? "",
+        weapon: parent.weapon ?? "",
+        uniform: parent.uniform ?? "",
+        parentPostId: parent.id,
+      };
+      // Подпост встаёт СРАЗУ за родителем: расчёт читают сверху вниз, и
+      // строка в конце таблицы потеряла бы связь с постом.
+      return [...prev.slice(0, index + 1), sub, ...prev.slice(index + 1)];
+    });
   }
 
   return (
@@ -187,7 +218,12 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               {rows.map((row) => (
                 <div
                   key={row.id}
-                  className="grid grid-cols-2 gap-2 border-b pb-2 last:border-0 md:grid-cols-[1fr_1fr_1.4fr_70px_1.2fr_90px_150px_1.2fr_auto]"
+                  style={
+                    (row.parentPostId ?? "") !== ""
+                      ? { paddingLeft: 16 }
+                      : undefined
+                  }
+                  className="grid grid-cols-2 gap-2 border-b pb-2 last:border-0 md:grid-cols-[1fr_1fr_1.4fr_70px_1.1fr_80px_1fr_1fr_1fr_1.2fr_auto_auto]"
                 >
                   <Input
                     className="h-8 text-xs"
@@ -242,33 +278,45 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                       })
                     }
                   />
-                  {/* Результат осмотра поста и замечание по нему: ради этого
-                      на пост и выходят. Поля уже были в контракте — экран их
-                      просто не показывал. */}
-                  <select
-                    aria-label={`Результат проверки поста: ${row.post || "новый"}`}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                    value={row.result ?? ""}
-                    onChange={(e) =>
-                      patchRow(row.id, {
-                        result:
-                          e.target.value === ""
-                            ? null
-                            : (e.target.value as "MATCHES" | "NEEDS_CHANGES"),
-                      })
-                    }
-                  >
-                    <option value="">— не проверено —</option>
-                    <option value="MATCHES">Соответствует</option>
-                    <option value="NEEDS_CHANGES">Требует изменений</option>
-                  </select>
+                  {/* Колонки таблицы прототипа: тип поста, вооружение, форма
+                      одежды, примечание. */}
                   <Input
                     className="h-8 text-xs"
-                    placeholder="Замечание по посту"
-                    aria-label={`Комментарий к посту: ${row.post || "новый"}`}
+                    placeholder="Тип"
+                    aria-label={`Тип поста: ${row.post || "новый"}`}
+                    value={row.postType ?? ""}
+                    onChange={(e) => patchRow(row.id, { postType: e.target.value })}
+                  />
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="Вооружение"
+                    aria-label={`Вооружение: ${row.post || "новый"}`}
+                    value={row.weapon ?? ""}
+                    onChange={(e) => patchRow(row.id, { weapon: e.target.value })}
+                  />
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="Форма одежды"
+                    aria-label={`Форма одежды: ${row.post || "новый"}`}
+                    value={row.uniform ?? ""}
+                    onChange={(e) => patchRow(row.id, { uniform: e.target.value })}
+                  />
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="Примечание"
+                    aria-label={`Примечание к посту: ${row.post || "новый"}`}
                     value={row.comment}
                     onChange={(e) => patchRow(row.id, { comment: e.target.value })}
                   />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Добавить подпост: ${row.post || "новый"}`}
+                    onClick={() => addSubRow(row)}
+                  >
+                    + Подпост
+                  </Button>
                   <Button
                     type="button"
                     variant="outline"
