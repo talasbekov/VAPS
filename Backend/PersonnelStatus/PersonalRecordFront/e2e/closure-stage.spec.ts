@@ -50,11 +50,25 @@ async function apiToken(): Promise<string> {
   return body.access
 }
 
-async function events(token: string): Promise<EventRow[]> {
-  const res = await fetch(`${API}/api/ops/security-events/?page_size=50`, {
+/** Стадию фильтрует СЕРВЕР: реестр стенда растёт от прогона к прогону, и
+ * поиск фикстуры по первой странице однажды перестаёт её находить — проба
+ * тогда молча уходит в skip и больше ничего не сторожит. */
+async function events(token: string, stage = ''): Promise<EventRow[]> {
+  const query = `page_size=50${stage === '' ? '' : `&stage=${stage}`}`
+  const res = await fetch(`${API}/api/ops/security-events/?${query}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   return ((await res.json()) as { results: EventRow[] }).results
+}
+
+/** Одно мероприятие по id: проверять состояние после операции выборкой из
+ * реестра нельзя — на растущем стенде строка уезжает со первой страницы, и
+ * «стадия не сдвинулась» превращается в `undefined`. */
+async function eventDetail(token: string, id: string): Promise<EventRow> {
+  const res = await fetch(`${API}/api/ops/security-events/${id}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return (await res.json()) as EventRow
 }
 
 async function signIn(page: Page): Promise<void> {
@@ -78,7 +92,7 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
     })
 
     const token = await apiToken()
-    const conduct = (await events(token)).find((e) => e.stage === 'CONDUCT')
+    const conduct = (await events(token, 'CONDUCT'))[0]
     test.skip(conduct === undefined, 'на стенде нет ОМ на стадии «Проведение»')
     const target = conduct!
     const directions = [...new Set(target.reconSectorPosts.map((p) => p.sector))]
@@ -125,8 +139,8 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
     await expect(panel).toContainText('directionSummaries.1.summary')
 
     // Отказ не сдвинул стадию
-    const after = (await events(token)).find((e) => e.id === target.id)
-    expect(after?.stage).toBe('CONDUCT')
+    const after = await eventDetail(token, target.id)
+    expect(after.stage).toBe('CONDUCT')
 
     // 400 в консоли — ЭТОТ отказ и есть предмет пробы, он ожидаем;
     // CLIENT_FETCH_ERROR — обрыв навигации NextAuth, не дефект экрана.
@@ -139,8 +153,8 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
 
   test('архив дела собирает разделы закрытого ОМ', async ({ page }) => {
     const token = await apiToken()
-    const closed = (await events(token)).find(
-      (e) => e.stage === 'CLOSED' && e.closureDirectionSummaries.length > 0,
+    const closed = (await events(token, 'CLOSED')).find(
+      (e) => e.closureDirectionSummaries.length > 0,
     )
     test.skip(closed === undefined, 'на стенде нет закрытого ОМ с итогами')
     const target = closed!

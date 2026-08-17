@@ -55,10 +55,14 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
 
     // Берём ОМ на стадии расстановки; расчёт постов заводим сами, чтобы проба
     // не зависела от того, что осталось в БД от прошлых прогонов.
+    // Стадию фильтрует СЕРВЕР: на растущем реестре стенда фикстура уходит со
+    // первой страницы, и проба молча превращается в skip.
     const list = (await (
-      await request.get(`${API}/api/ops/security-events/?page_size=50`, { headers: auth })
+      await request.get(`${API}/api/ops/security-events/?page_size=50&stage=PLACEMENT`, {
+        headers: auth,
+      })
     ).json()) as { results: { id: string; code: string; stage: string }[] }
-    const target = list.results.find((e) => e.stage === 'PLACEMENT')
+    const target = list.results[0]
     test.skip(target === undefined, 'на стенде нет ОМ на стадии расстановки')
     const eventId = target!.id
 
