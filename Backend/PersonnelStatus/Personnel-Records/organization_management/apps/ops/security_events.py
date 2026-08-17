@@ -179,7 +179,9 @@ def create_event(*, title, object_id, business_date, business_date_end=None, act
         readiness_percent=STAGE_READINESS["BULLETIN"],
         force_need=0,
         conflicts_count=0,
-        owner_name=actor,
+        # Подпись, а не id учётки: поле уходит на экран карточки и в значения
+        # фильтра реестра. Идентификатор остаётся аудиту — ему нужен именно он.
+        owner_name=actor_display_name(actor),
         brief_description="",
         initial_tasks="",
         recon_checklist=[
@@ -547,6 +549,32 @@ def _find_personnel(employee_id):
 def personnel_display_name(employee):
     initial = f" {employee.first_name[0]}." if employee.first_name else ""
     return f"{employee.last_name}{initial}"
+
+
+def actor_display_name(actor):
+    """Подпись актора для ЭКРАНА: ФИО из живой кадровой записи, иначе username
+    учётки, иначе сам идентификатор.
+
+    `resolve_actor_id` отдаёт id учётной записи — он и должен уходить в аудит,
+    но не в поля, которые читает человек: в реестре ОМ такой id оказывался и
+    в «Ответственном», и в значениях фильтра по ответственному. Привязки
+    `Employee.user` у части учёток нет (сид её не заполняет), поэтому
+    username — не запасной вариант «на всякий случай», а штатный исход.
+    """
+    if actor is None:
+        return ""
+    from django.contrib.auth.models import User
+
+    from organization_management.apps.employees.models import Employee
+
+    actor = str(actor)
+    user = User.objects.filter(pk=actor).first() if actor.isdigit() else None
+    if user is None:
+        return actor
+    employee = Employee.objects.filter(user=user).first()
+    if employee is not None:
+        return personnel_display_name(employee)
+    return user.username
 
 
 @transaction.atomic
