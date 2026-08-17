@@ -69,6 +69,10 @@ class OpsSecurityEvent(TimeStampedModel):
     object_name = models.CharField(max_length=255)
     passport_binding = models.JSONField(null=True)
     business_date = models.DateField()
+    # Дата окончания: мероприятие длится днями, и «Продолжительность» с
+    # «Убытием» без неё невыводимы. null — заведённые раньше однодневные ОМ:
+    # проставлять им business_date задним числом значило бы выдумать факт.
+    business_date_end = models.DateField(null=True, blank=True)
     stage = models.CharField(max_length=20, choices=Stage.choices)
     readiness_percent = models.PositiveIntegerField()
     force_need = models.PositiveIntegerField()

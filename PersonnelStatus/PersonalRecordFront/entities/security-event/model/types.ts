@@ -166,6 +166,8 @@ export interface SecurityEvent {
   /** Версия паспорта на дату ОМ; null обрабатывается явно. */
   passportBinding: PassportBinding | null;
   businessDate: string;
+  /** Дата окончания; null — однодневное ОМ либо заведённое до появления поля. */
+  businessDateEnd: string | null;
   stage: SecurityEventStage;
   /** Готовность текущей стадии, 0–100 (демонстрационная метрика). */
   readinessPercent: number;
@@ -226,6 +228,8 @@ export interface ListSecurityEventsResponse {
 
 export interface CreateSecurityEventRequest extends Record<string, unknown> {
   title: string;
+  /** Пусто — однодневное мероприятие. */
+  businessDateEnd?: string;
   /** ОМ заводится НА ОБЪЕКТ реестра — иначе версию паспорта не к чему привязать. */
   objectId: string;
   businessDate: string;
