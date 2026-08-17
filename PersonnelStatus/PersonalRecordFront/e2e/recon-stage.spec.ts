@@ -26,7 +26,10 @@ interface EventRow {
   reconSectorPosts: {
     id: string
     post: string
-    result: string | null
+    postType?: string
+    weapon?: string
+    uniform?: string
+    parentPostId?: string
     comment: string
   }[]
 }
@@ -102,14 +105,14 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       stage.getByRole('link', { name: 'История ОМ по объекту →' }),
     ).toHaveAttribute('href', new RegExp(encodeURIComponent(target.objectName)))
 
-    // Осмотр поста: выставляем результат и замечание, сохраняем — и сверяем
-    // с тем, что вернул БЭК, а не с полем на экране.
+    // Колонки таблицы прототипа: тип, вооружение, форма одежды, примечание.
+    // Заполняем и сверяем с тем, что вернул БЭК, а не с полем на экране.
     const post = target.reconSectorPosts[0]
     const note = `Проба осмотра ${Date.now()}`
-    await stage
-      .getByLabel(`Результат проверки поста: ${post.post}`)
-      .selectOption('NEEDS_CHANGES')
-    await stage.getByLabel(`Комментарий к посту: ${post.post}`).fill(note)
+    await stage.getByLabel(`Тип поста: ${post.post}`).fill('Стационарный')
+    await stage.getByLabel(`Вооружение: ${post.post}`).fill('АКС-74У')
+    await stage.getByLabel(`Форма одежды: ${post.post}`).fill('Повседневная')
+    await stage.getByLabel(`Примечание к посту: ${post.post}`).fill(note)
     await stage.getByRole('button', { name: 'Сохранить рекогносцировку' }).click()
 
     await expect
@@ -117,11 +120,28 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
         async () => {
           const fresh = (await events(token)).find((e) => e.id === target.id)
           const row = fresh?.reconSectorPosts.find((r) => r.id === post.id)
-          return `${row?.result}|${row?.comment}`
+          return [row?.postType, row?.weapon, row?.uniform, row?.comment].join('|')
         },
         { timeout: 15_000 },
       )
-      .toBe(`NEEDS_CHANGES|${note}`)
+      .toBe(`Стационарный|АКС-74У|Повседневная|${note}`)
+
+    // Подпост из прототипа: строка встаёт за родителем и доезжает до сервера
+    const before = target.reconSectorPosts.length
+    await stage.getByLabel(`Добавить подпост: ${post.post}`).click()
+    await stage.getByRole('button', { name: 'Сохранить рекогносцировку' }).click()
+    await expect
+      .poll(
+        async () => {
+          const fresh = (await events(token)).find((e) => e.id === target.id)
+          const subs = fresh?.reconSectorPosts.filter(
+            (r) => (r.parentPostId ?? '') !== '',
+          )
+          return { total: fresh?.reconSectorPosts.length, subs: subs?.length }
+        },
+        { timeout: 15_000 },
+      )
+      .toEqual({ total: before + 1, subs: 1 })
   })
 })
 
