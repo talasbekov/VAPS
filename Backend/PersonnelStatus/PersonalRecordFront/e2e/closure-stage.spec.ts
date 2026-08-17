@@ -27,6 +27,7 @@ const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 interface EventRow {
   id: string
   code: string
+  title: string
   stage: string
   businessDate: string
   objectName: string
@@ -163,6 +164,10 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
     // Разделы архива — по экрану прототипа «Архив дела». Каждый ассертит
     // ЖИВОЕ значение дела, а не наличие заголовка: заголовок отрисуется и на
     // пустых данных.
+    // Шапка архива из прототипа
+    await expect(page.getByText(`🔒 Архив · ${target.code}`)).toBeVisible()
+    await expect(page.getByText('read-only')).toBeVisible()
+
     const bulletin = page.locator('[data-slot="card"]', {
       has: page.locator('[data-slot="card-title"]', {
         hasText: 'Карточка, бюллетень, программа',
