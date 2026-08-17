@@ -33,6 +33,7 @@ interface EventRow {
   stage: string
   objectId: string | null
   objectName: string
+  ownerName: string
   businessDate: string
   businessDateEnd: string | null
   briefDescription: string
@@ -70,6 +71,11 @@ async function signIn(page: Page): Promise<void> {
     form: { csrfToken: csrf.csrfToken, username: 'admin', password: 'admin123', json: 'true' },
   })
 }
+
+// Service worker MSW блокируется на весь файл: раздел ОМ живой, мок-домены
+// бюллетеню не нужны, а `page.route` запросы воркера не видит — без этого
+// задержать ответ о правах в пробе ниже невозможно.
+test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
@@ -137,6 +143,9 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     await expect(facts).toContainText('Дата окончания: 03.09.2026, четверг')
     await expect(facts).toContainText('Продолжительность: 3 дня')
     await expect(facts).toContainText('Текущий статус: Бюллетень')
+    // Ответственный — подпись человека, а не id учётки, которым он вошёл
+    expect(target.ownerName, 'в ответе сервера id вместо подписи').not.toMatch(/^\d+$/)
+    await expect(facts).toContainText(`Ответственный за ОМ: ${target.ownerName}`)
 
     // Чего система не хранит — названо, а не нарисовано пустыми ячейками
     await expect(facts).toContainText('мероприятие не хранит')
@@ -147,31 +156,55 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     )
   })
 
+  // Задержать ответ о правах удаётся только при ДВУХ условиях сразу, и оба
+  // выяснились красной пробой — без них проба зеленела не от задержки, а от
+  // медленного первого рендера (окно загрузки прав ~0.5 с) и разваливалась на
+  // прогретом dev-сервере:
+  //
+  // * `serviceWorkers: 'block'` — фронт держит service worker MSW, и запросы
+  //   идут через него; `page.route` запросы воркера не видит. Мок-домены
+  //   бюллетеню не нужны: он ходит в живой `/api/ops/*`;
+  // * матчер-ПРЕДИКАТ вместо строки-глоба: `'**/api/operations/
+  //   my-permissions/**'` этот адрес НЕ ловит — у Playwright `/**` требует
+  //   ещё одного сегмента, а путь кончается слэшем.
+  //
+  // Счётчик перехватов ниже больше не даёт пробе соврать про задержку.
   test('незагруженные права — не отказ: адрес ждёт, а не обвиняет', async ({ page }) => {
     const token = await apiToken()
     const target = await factsEvent(token)
     const object = await objectCard(token, target.objectId!)
 
     await signIn(page)
-    // Права приходят медленно — ровно то состояние, в котором hasPermission
-    // ещё отвечает false, хотя право у администратора есть
-    await page.route('**/api/operations/my-permissions/**', async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 4_000))
-      await route.continue()
-    })
+    let permissionsAsked = 0
+    await page.route(
+      (url) => url.pathname.includes('/api/operations/my-permissions/'),
+      async (route) => {
+        permissionsAsked += 1
+        await new Promise((resolve) => setTimeout(resolve, 4_000))
+        await route.continue()
+      }
+    )
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
     const facts = page.locator('section').filter({
       has: page.getByRole('heading', { name: 'Сведения об ОМ' }),
     })
-    await expect(facts).toContainText('Место / адрес: загрузка карточки объекта…', {
-      timeout: 15_000,
-    })
+    await expect(facts).toContainText(
+      'Место / адрес: загрузка карточки объекта…',
+      { timeout: 15_000 }
+    )
+    await expect(facts).not.toContainText('нужно право')
+
+    // Полторы секунды спустя ответа о правах всё ещё нет: окно держит
+    // задержка, а не медленный первый рендер (он укладывался в полсекунды)
+    await page.waitForTimeout(1_500)
+    await expect(facts).toContainText('Место / адрес: загрузка карточки объекта…')
     await expect(facts).not.toContainText('нужно право')
 
     // Дождались прав — адрес появился, отказа не было ни на одном кадре
     await expect(facts).toContainText(`Место / адрес: ${object.address}`, {
       timeout: 15_000,
     })
+    expect(permissionsAsked, 'запрос прав прошёл мимо перехвата').toBeGreaterThan(0)
   })
 })
 
