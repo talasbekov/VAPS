@@ -90,7 +90,7 @@ export default function SecurityEventsPage() {
       <div className="space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-center gap-3">
-            <ClipboardList className="h-8 w-8 text-primary" />
+            <ClipboardList className="h-8 w-8 text-primary-ink" />
             <div>
               <h1 className="text-2xl font-bold">Реестр ОМ</h1>
               <p className="text-muted-foreground">
@@ -210,7 +210,7 @@ function ResultsTable({
   if (isError) {
     return (
       <Card>
-        <CardContent className="p-9 text-center text-sm text-destructive">
+        <CardContent className="p-9 text-center text-sm text-destructive-ink">
           Не удалось загрузить реестр ОМ. Попробуйте обновить страницу.
         </CardContent>
       </Card>

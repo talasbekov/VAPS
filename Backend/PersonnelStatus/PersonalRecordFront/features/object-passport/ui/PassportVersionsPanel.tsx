@@ -49,7 +49,7 @@ export function PassportVersionsPanel({
                 <li key={version.id} className="rounded-md border p-2.5 text-xs">
                   <Link
                     href={`/security-ops/objects/${objectId}/passports/${version.id}`}
-                    className="font-semibold text-primary"
+                    className="font-semibold text-primary-ink"
                   >
                     Версия {version.versionNumber}
                   </Link>{" "}
@@ -97,7 +97,7 @@ export function PassportVersionsPanel({
           </p>
         )}
         {mutation.error !== null && (
-          <p className="mt-2 text-sm text-destructive" role="alert">
+          <p className="mt-2 text-sm text-destructive-ink" role="alert">
             Не удалось опубликовать версию: на эту дату версия уже есть либо
             паспорт пуст.
           </p>

@@ -1,23 +1,29 @@
-/* FullCalendar стилизация */
+/* FullCalendar стилизация.
+   Цвета — токенами темы: файл был набран светлыми hex-литералами, и в тёмной
+   теме заголовок недели («пн…вс») давал контраст 1.05 — надписи не было
+   видно вовсе. */
 .status-calendar {
-  --fc-border-color: #e5e7eb;
-  --fc-button-bg-color: #f3f4f6;
-  --fc-button-border-color: #e5e7eb;
-  --fc-button-text-color: #374151;
-  --fc-button-hover-bg-color: #e5e7eb;
-  --fc-button-hover-border-color: #d1d5db;
-  --fc-button-active-bg-color: #3b82f6;
-  --fc-button-active-border-color: #3b82f6;
-  --fc-today-bg-color: #eff6ff;
+  --fc-border-color: hsl(var(--border));
+  --fc-button-bg-color: hsl(var(--muted));
+  --fc-button-border-color: hsl(var(--border));
+  --fc-button-text-color: hsl(var(--foreground));
+  --fc-button-hover-bg-color: hsl(var(--accent));
+  --fc-button-hover-border-color: hsl(var(--border));
+  --fc-button-active-bg-color: hsl(var(--primary));
+  --fc-button-active-border-color: hsl(var(--primary));
+  --fc-today-bg-color: hsl(var(--accent));
   --fc-event-border-color: transparent;
   --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: hsl(var(--muted));
+  --fc-neutral-text-color: hsl(var(--muted-foreground));
+  color: hsl(var(--foreground));
 }
 
 /* Заголовок календаря */
 .status-calendar .fc-toolbar-title {
   font-size: 1.25rem !important;
   font-weight: 600;
-  color: #111827;
+  color: hsl(var(--foreground));
 }
 
 /* Кнопки навигации */
@@ -33,9 +39,9 @@
 }
 
 .status-calendar .fc-button-active {
-  background-color: #3b82f6 !important;
-  border-color: #3b82f6 !important;
-  color: white !important;
+  background-color: hsl(var(--primary)) !important;
+  border-color: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
 }
 
 .status-calendar .fc-prev-button,
@@ -49,18 +55,18 @@
 }
 
 .status-calendar .fc-daygrid-day:hover {
-  background-color: #f9fafb;
+  background-color: hsl(var(--muted));
 }
 
 .status-calendar .fc-daygrid-day-number {
   padding: 0.5rem;
   font-weight: 500;
-  color: #374151;
+  color: hsl(var(--foreground));
 }
 
 .status-calendar .fc-day-today .fc-daygrid-day-number {
-  background-color: #3b82f6;
-  color: white;
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   border-radius: 50%;
   width: 2rem;
   height: 2rem;
@@ -95,25 +101,25 @@
 .status-calendar .fc-daygrid-more-link {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #3b82f6;
+  color: hsl(var(--primary-ink));
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
   transition: background-color 0.2s ease;
 }
 
 .status-calendar .fc-daygrid-more-link:hover {
-  background-color: #eff6ff;
+  background-color: hsl(var(--accent));
 }
 
 /* Названия дней недели */
 .status-calendar .fc-col-header-cell {
   padding: 0.75rem 0;
-  background-color: #f9fafb;
+  background-color: hsl(var(--muted));
 }
 
 .status-calendar .fc-col-header-cell-cushion {
   font-weight: 600;
-  color: #6b7280;
+  color: hsl(var(--muted-foreground));
   text-transform: uppercase;
   font-size: 0.75rem;
   letter-spacing: 0.05em;
@@ -121,6 +127,8 @@
 
 /* Popover при клике на "ещё" */
 .status-calendar .fc-popover {
+  background-color: hsl(var(--card));
+  color: hsl(var(--card-foreground));
   border-radius: 0.75rem;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   border: none;
@@ -128,7 +136,7 @@
 }
 
 .status-calendar .fc-popover-header {
-  background-color: #f9fafb;
+  background-color: hsl(var(--muted));
   padding: 0.75rem 1rem;
   font-weight: 600;
 }
@@ -144,7 +152,7 @@
 
 .status-calendar .fc-timegrid-slot-label {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: hsl(var(--muted-foreground));
 }
 
 /* Анимация появления */
@@ -166,7 +174,7 @@
 /* Скролл */
 .status-calendar .fc-scroller {
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db transparent;
+  scrollbar-color: hsl(var(--border)) transparent;
 }
 
 .status-calendar .fc-scroller::-webkit-scrollbar {
@@ -179,7 +187,7 @@
 }
 
 .status-calendar .fc-scroller::-webkit-scrollbar-thumb {
-  background-color: #d1d5db;
+  background-color: hsl(var(--border));
   border-radius: 3px;
 }
 

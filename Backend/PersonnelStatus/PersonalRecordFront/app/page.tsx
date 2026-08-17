@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import React, { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,129 +15,101 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Building2, Users, Shield, AlertCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { ParticleField } from "@/components/login/particle-field";
+
+/**
+ * Куда вернуть после входа. Берём только ВНУТРЕННИЙ путь: `callbackUrl` живёт
+ * в адресной строке, и абсолютный адрес оттуда увёл бы человека на чужой сайт
+ * сразу после успешного логина.
+ */
+function safeCallbackUrl(raw: string | null): string {
+  if (raw === null || raw === "") return "/dashboard";
+  // Middleware NextAuth кладёт сюда АБСОЛЮТНЫЙ адрес
+  // (`http://localhost:3106/employees/`), а не путь: наивная проверка
+  // «начинается со слэша» отбрасывала его целиком, и возврат не работал.
+  try {
+    const target = new URL(raw, window.location.origin);
+    if (target.origin !== window.location.origin) return "/dashboard";
+    // Обратно на форму входа не возвращаем — получился бы круг.
+    if (target.pathname === "/") return "/dashboard";
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return "/dashboard";
+  }
+}
 
 export default function LoginPage() {
+  // useSearchParams требует границы Suspense: без неё пререндер страницы
+  // падает на сборке («should be wrapped in a suspense boundary»).
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <LoginScreen />
+    </Suspense>
+  );
+}
+
+function LoginScreen() {
   const [credentials, setCredentials] = useState({
     username: "",
     password: "",
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
-  const [isPointerVisible, setIsPointerVisible] = useState(false);
-  const [particles, setParticles] = useState<
-    Array<{
-      id: number;
-      x: number;
-      y: number;
-      targetX: number;
-      targetY: number;
-      size: number;
-      opacity: number;
-      color: string;
-    }>
-  >([]);
-  const { login } = useAuth();
+  const { login, user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  // Параллакс-эффект для декоративных элементов
-  const [parallaxOffset, setParallaxOffset] = useState({ x: 0, y: 0 });
-
-  // Генерируем начальные частицы
+  // Вошедшему форма входа не нужна: он попадал на неё по прямой ссылке на «/»
+  // и видел приглашение залогиниться поверх уже живой сессии.
   useEffect(() => {
-    const initialParticles = Array.from({ length: 80 }, (_, i) => ({
-      id: i,
-      x: Math.random() * window.innerWidth,
-      y: Math.random() * window.innerHeight,
-      targetX: Math.random() * window.innerWidth,
-      targetY: Math.random() * window.innerHeight,
-      size: Math.random() * 4 + 0.5,
-      opacity: Math.random() * 0.6 + 0.2,
-      color: [
-        "rgba(59, 130, 246, ",
-        "rgba(99, 102, 241, ",
-        "rgba(139, 92, 246, ",
-        "rgba(96, 165, 250, ",
-        "rgba(147, 197, 253, ",
-      ][Math.floor(Math.random() * 5)],
-    }));
-    setParticles(initialParticles);
+    if (user !== null && user !== undefined) {
+      router.replace(safeCallbackUrl(searchParams.get("callbackUrl")));
+    }
+  }, [user, router, searchParams]);
+
+  // Курсор и параллакс едут через CSS-переменные на контейнере, а не через
+  // состояние: 120 setState в секунду перерисовывали и форму входа тоже.
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const pointer = useRef({ x: 0, y: 0, px: 0, py: 0, visible: false });
+  const frame = useRef(0);
+
+  const applyPointer = useCallback(() => {
+    frame.current = 0;
+    const stage = stageRef.current;
+    if (stage === null) return;
+    const { x, y, px, py, visible } = pointer.current;
+    stage.style.setProperty("--cursor-x", `${x}px`);
+    stage.style.setProperty("--cursor-y", `${y}px`);
+    stage.style.setProperty("--parallax-x", String(px));
+    stage.style.setProperty("--parallax-y", String(py));
+    stage.style.setProperty("--pointer-visible", visible ? "1" : "0");
   }, []);
 
-  // Анимация частиц
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setParticles((prev) =>
-        prev.map((particle) => {
-          // Плавное движение к целевой позиции
-          const dx = particle.targetX - particle.x;
-          const dy = particle.targetY - particle.y;
-          const newX = particle.x + dx * 0.05;
-          const newY = particle.y + dy * 0.05;
+  const schedule = useCallback(() => {
+    // Один кадр — одна запись стилей: браузер сам склеивает поток событий.
+    if (frame.current !== 0) return;
+    frame.current = requestAnimationFrame(applyPointer);
+  }, [applyPointer]);
 
-          // Если достигли цели, выбираем новую
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          let newTargetX = particle.targetX;
-          let newTargetY = particle.targetY;
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
-          if (distance < 5) {
-            newTargetX = Math.random() * window.innerWidth;
-            newTargetY = Math.random() * window.innerHeight;
-          }
-
-          return {
-            ...particle,
-            x: newX,
-            y: newY,
-            targetX: newTargetX,
-            targetY: newTargetY,
-          };
-        })
-      );
-    }, 50);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    setCursorPos({ x, y });
-    setIsPointerVisible(true);
-
-    // Параллакс-эффект
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-    const parallaxX = (x - centerX) / 30;
-    const parallaxY = (y - centerY) / 30;
-    setParallaxOffset({ x: parallaxX, y: parallaxY });
-
-    // Магнитный эффект — частицы притягиваются к курсору
-    setParticles((prev) =>
-      prev.map((particle) => {
-        const dx = x - particle.x;
-        const dy = y - particle.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        // Если частица близко к курсору, притягиваем её
-        if (distance < 200) {
-          const force = (200 - distance) / 200;
-          return {
-            ...particle,
-            targetX: particle.x + dx * force * 0.3,
-            targetY: particle.y + dy * force * 0.3,
-          };
-        }
-
-        return particle;
-      })
-    );
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    pointer.current = {
+      x,
+      y,
+      px: (x - rect.width / 2) / 30,
+      py: (y - rect.height / 2) / 30,
+      visible: true,
+    };
+    schedule();
   };
 
   const handleMouseLeave = () => {
-    setIsPointerVisible(false);
-    setParallaxOffset({ x: 0, y: 0 });
+    pointer.current = { ...pointer.current, px: 0, py: 0, visible: false };
+    schedule();
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -149,7 +121,9 @@ export default function LoginPage() {
       const success = await login(credentials.username, credentials.password);
 
       if (success) {
-        router.push("/dashboard");
+        // Middleware передаёт адрес, с которого человека развернули; без этого
+        // после входа он всегда попадал на «Обзор» и искал свою страницу заново.
+        router.push(safeCallbackUrl(searchParams.get("callbackUrl")));
       } else {
         setError("Неверное имя пользователя или пароль");
       }
@@ -179,52 +153,24 @@ export default function LoginPage() {
 
   return (
     <div
+      ref={stageRef}
       className="relative min-h-screen overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-4"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Магнитные частицы */}
-      {particles.map((particle) => {
-        const distanceToCursor = Math.sqrt(
-          Math.pow(cursorPos.x - particle.x, 2) +
-            Math.pow(cursorPos.y - particle.y, 2)
-        );
-        const isNearCursor = distanceToCursor < 200 && isPointerVisible;
-        const glowIntensity = isNearCursor ? 1 - distanceToCursor / 200 : 0;
-
-        return (
-          <div
-            key={particle.id}
-            className="pointer-events-none absolute rounded-full transition-all duration-300"
-            style={{
-              left: particle.x,
-              top: particle.y,
-              width: particle.size + (isNearCursor ? glowIntensity * 4 : 0),
-              height: particle.size + (isNearCursor ? glowIntensity * 4 : 0),
-              opacity:
-                particle.opacity + (isNearCursor ? glowIntensity * 0.5 : 0),
-              background: `${particle.color}${particle.opacity})`,
-              boxShadow: isNearCursor
-                ? `0 0 ${20 * glowIntensity}px ${
-                    particle.color
-                  }${glowIntensity})`
-                : "none",
-              transform: "translate(-50%, -50%)",
-            }}
-          />
-        );
-      })}
+      {/* Магнитные частицы — на canvas, вне React (components/login/particle-field). */}
+      <ParticleField />
 
       {/* Мягкое свечение вокруг курсора */}
       <div
         className="pointer-events-none absolute rounded-full transition-opacity duration-500"
         style={{
-          left: cursorPos.x,
-          top: cursorPos.y,
+          left: "var(--cursor-x, 50%)",
+          top: "var(--cursor-y, 50%)",
           width: 400,
           height: 400,
           transform: "translate(-50%, -50%)",
-          opacity: isPointerVisible ? 0.3 : 0,
+          opacity: "calc(var(--pointer-visible, 0) * 0.3)",
           background:
             "radial-gradient(circle, rgba(99, 102, 241, 0.2), rgba(59, 130, 246, 0.1) 40%, transparent 70%)",
           filter: "blur(40px)",
@@ -235,12 +181,12 @@ export default function LoginPage() {
       <div
         className="pointer-events-none absolute rounded-full transition-opacity duration-300"
         style={{
-          left: cursorPos.x,
-          top: cursorPos.y,
+          left: "var(--cursor-x, 50%)",
+          top: "var(--cursor-y, 50%)",
           width: 200,
           height: 200,
           transform: "translate(-50%, -50%)",
-          opacity: isPointerVisible ? 0.4 : 0,
+          opacity: "calc(var(--pointer-visible, 0) * 0.4)",
           background:
             "radial-gradient(circle, rgba(59, 130, 246, 0.3), rgba(99, 102, 241, 0.2) 40%, transparent 70%)",
           filter: "blur(25px)",
@@ -253,9 +199,8 @@ export default function LoginPage() {
         style={{
           width: 400,
           height: 400,
-          transform: `translate(${parallaxOffset.x * 2}px, ${
-            parallaxOffset.y * 2
-          }px) rotate(${parallaxOffset.x / 2}deg)`,
+          transform:
+            "translate(calc(var(--parallax-x, 0) * 2px), calc(var(--parallax-y, 0) * 2px)) rotate(calc(var(--parallax-x, 0) * 0.5deg))",
           background:
             "radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.12), rgba(99, 102, 241, 0.08) 40%, transparent 70%)",
           filter: "blur(70px)",
@@ -267,9 +212,8 @@ export default function LoginPage() {
         style={{
           width: 450,
           height: 450,
-          transform: `translate(${-parallaxOffset.x * 1.5}px, ${
-            -parallaxOffset.y * 1.5
-          }px) rotate(${-parallaxOffset.y / 2}deg)`,
+          transform:
+            "translate(calc(var(--parallax-x, 0) * -1.5px), calc(var(--parallax-y, 0) * -1.5px)) rotate(calc(var(--parallax-y, 0) * -0.5deg))",
           background:
             "radial-gradient(circle at 70% 70%, rgba(59, 130, 246, 0.12), rgba(96, 165, 250, 0.08) 40%, transparent 70%)",
           filter: "blur(70px)",
@@ -281,9 +225,7 @@ export default function LoginPage() {
         <div
           className="text-center mb-8 transition-transform duration-500 ease-out animate-fade-in-up"
           style={{
-            transform: `translate(${parallaxOffset.x * 0.5}px, ${
-              parallaxOffset.y * 0.5
-            }px)`,
+            transform: "translate(calc(var(--parallax-x, 0) * 0.5px), calc(var(--parallax-y, 0) * 0.5px))",
             animationDelay: "0.1s",
             opacity: 0,
           }}
@@ -292,9 +234,7 @@ export default function LoginPage() {
             <div
               className="relative bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 p-4 rounded-3xl shadow-2xl transition-all duration-500 hover:scale-110 hover:shadow-blue-500/50 hover:rotate-6 group cursor-pointer"
               style={{
-                transform: `translate(${parallaxOffset.x * 0.8}px, ${
-                  parallaxOffset.y * 0.8
-                }px)`,
+                transform: "translate(calc(var(--parallax-x, 0) * 0.8px), calc(var(--parallax-y, 0) * 0.8px))",
                 boxShadow:
                   "0 20px 60px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3)",
               }}
@@ -319,9 +259,7 @@ export default function LoginPage() {
         <Card
           className="shadow-2xl border border-white/20 backdrop-blur-2xl transition-all duration-500 ease-out hover:shadow-[0_40px_80px_rgba(59,130,246,0.4)] hover:scale-[1.02] hover:-translate-y-1.5 hover:border-blue-500/50 animate-fade-in-up overflow-hidden relative group ring-0 hover:ring-4 hover:ring-blue-500/10"
           style={{
-            transform: `translate(${parallaxOffset.x * 0.3}px, ${
-              parallaxOffset.y * 0.3
-            }px)`,
+            transform: "translate(calc(var(--parallax-x, 0) * 0.3px), calc(var(--parallax-y, 0) * 0.3px))",
             animationDelay: "0.3s",
             opacity: 0,
             background:
@@ -359,6 +297,9 @@ export default function LoginPage() {
                 <Input
                   id="username"
                   type="text"
+                  // Без autoComplete менеджеры паролей не предлагают учётку —
+                  // оператор набирал её вручную при каждом входе.
+                  autoComplete="username"
                   placeholder="Введите имя пользователя"
                   value={credentials.username}
                   onChange={(e) =>
@@ -381,6 +322,7 @@ export default function LoginPage() {
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="current-password"
                   placeholder="Введите пароль"
                   value={credentials.password}
                   onChange={(e) =>
@@ -423,9 +365,7 @@ export default function LoginPage() {
         <div
           className="mt-8 grid grid-cols-2 gap-4 text-center transition-transform duration-500 ease-out animate-fade-in-up"
           style={{
-            transform: `translate(${parallaxOffset.x * 0.2}px, ${
-              parallaxOffset.y * 0.2
-            }px)`,
+            transform: "translate(calc(var(--parallax-x, 0) * 0.2px), calc(var(--parallax-y, 0) * 0.2px))",
             animationDelay: "0.5s",
             opacity: 0,
           }}
@@ -433,9 +373,7 @@ export default function LoginPage() {
           <div
             className="group relative bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-lg border border-white/60 transition-all duration-500 hover:bg-white hover:shadow-2xl hover:shadow-blue-500/30 hover:scale-105 hover:-translate-y-2 hover:border-blue-400/50 cursor-pointer overflow-hidden"
             style={{
-              transform: `translate(${parallaxOffset.x * -0.3}px, ${
-                parallaxOffset.y * -0.3
-              }px)`,
+              transform: "translate(calc(var(--parallax-x, 0) * -0.3px), calc(var(--parallax-y, 0) * -0.3px))",
               boxShadow:
                 "0 10px 30px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.6)",
             }}
@@ -459,9 +397,7 @@ export default function LoginPage() {
           <div
             className="group relative bg-white/90 backdrop-blur-md rounded-2xl p-5 shadow-lg border border-white/60 transition-all duration-500 hover:bg-white hover:shadow-2xl hover:shadow-green-500/30 hover:scale-105 hover:-translate-y-2 hover:border-green-400/50 cursor-pointer overflow-hidden"
             style={{
-              transform: `translate(${parallaxOffset.x * -0.4}px, ${
-                parallaxOffset.y * -0.4
-              }px)`,
+              transform: "translate(calc(var(--parallax-x, 0) * -0.4px), calc(var(--parallax-y, 0) * -0.4px))",
               boxShadow:
                 "0 10px 30px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.6)",
             }}

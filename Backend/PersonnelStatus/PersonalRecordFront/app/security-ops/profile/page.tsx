@@ -115,9 +115,9 @@ export default function MyProfilePage() {
     <DashboardLayout>
       <div className="space-y-4">
         <header className="flex items-center gap-3">
-          <UserRound className="h-8 w-8 text-primary" />
+          <UserRound className="h-8 w-8 text-primary-ink" />
           <div>
-            <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary">
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary-ink">
               Личный кабинет
             </p>
             <h1 className="text-2xl font-bold">Мой профиль</h1>
@@ -329,7 +329,7 @@ function HeroCard({
   return (
     <Card>
       <CardContent className="flex flex-wrap items-start gap-5 p-5">
-        <span className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-primary/10 text-xl font-bold text-primary">
+        <span className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-primary/10 text-xl font-bold text-primary-ink">
           {initials}
         </span>
         <div className="min-w-[16rem] flex-1">
@@ -344,7 +344,7 @@ function HeroCard({
                 действующих статусов нет
               </span>
             ) : (
-              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary-ink">
                 {STATUS_LABEL[active.status_type_code] ?? active.status_type_code}
               </span>
             )}

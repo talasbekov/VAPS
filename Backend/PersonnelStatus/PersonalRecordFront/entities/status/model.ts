@@ -20,22 +20,118 @@ export const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatusType, string> = {
   seconded_to: "Откомандирован в",
 };
 
-// Цвета бейджей для каждого статуса (единый набор для всего фронта)
-export const EMPLOYEE_STATUS_COLORS: Record<EmployeeStatusType, string> = {
-  in_service: "bg-green-100 text-green-800",
-  vacation: "bg-yellow-100 text-yellow-800",
-  leave_by_report: "bg-amber-100 text-amber-800",
-  sick_leave: "bg-red-100 text-red-800",
-  business_trip: "bg-purple-100 text-purple-800",
-  training: "bg-indigo-100 text-indigo-800",
-  competition: "bg-pink-100 text-pink-800",
-  conference: "bg-violet-100 text-violet-800",
-  other_absence: "bg-orange-100 text-orange-800",
-  on_duty: "bg-blue-100 text-blue-800",
-  after_duty: "bg-cyan-100 text-cyan-800",
-  seconded_from: "bg-teal-100 text-teal-800",
-  seconded_to: "bg-gray-100 text-gray-800",
+/**
+ * Полная палитра статуса: один оттенок в трёх видах записи.
+ *
+ * Зачем. До этого «статус → цвет» жил в пяти местах и расходился: командировка
+ * была фиолетовой в таблице и синей в оргструктуре, отпуск — жёлтым в бейдже и
+ * синим в календаре, а две копии таблицы «класс → hex» по 28 литералов лежали в
+ * двух диалогах. Один статус выглядел по-разному на трёх экранах.
+ *
+ * Три вида нужны потому, что три разных потребителя: Tailwind-классы для
+ * бейджей, класс-точка для оргструктуры и hex для FullCalendar и inline-стилей
+ * (там классы Tailwind не применить). Оттенок при этом ОДИН.
+ */
+export interface StatusPaint {
+  /** Бейдж: заливка + текст (совпадает с EMPLOYEE_STATUS_COLORS). */
+  badge: string;
+  /** Точка-индикатор: сплошная заливка того же оттенка. */
+  dot: string;
+  /** Тот же оттенок в hex — для FullCalendar и style={{}}. */
+  hex: { bg: string; text: string; accent: string };
+}
+
+export const EMPLOYEE_STATUS_PAINT: Record<EmployeeStatusType, StatusPaint> = {
+  in_service: {
+    badge: "bg-green-100 text-green-800",
+    dot: "bg-green-500",
+    hex: { bg: "#dcfce7", text: "#166534", accent: "#22c55e" },
+  },
+  vacation: {
+    badge: "bg-yellow-100 text-yellow-800",
+    dot: "bg-yellow-500",
+    hex: { bg: "#fef9c3", text: "#713f12", accent: "#eab308" },
+  },
+  leave_by_report: {
+    badge: "bg-amber-100 text-amber-800",
+    dot: "bg-amber-500",
+    hex: { bg: "#fef3c7", text: "#92400e", accent: "#f59e0b" },
+  },
+  sick_leave: {
+    badge: "bg-red-100 text-red-800",
+    dot: "bg-red-500",
+    hex: { bg: "#fee2e2", text: "#991b1b", accent: "#ef4444" },
+  },
+  business_trip: {
+    badge: "bg-purple-100 text-purple-800",
+    dot: "bg-purple-500",
+    hex: { bg: "#f3e8ff", text: "#6b21a8", accent: "#a855f7" },
+  },
+  training: {
+    badge: "bg-indigo-100 text-indigo-800",
+    dot: "bg-indigo-500",
+    hex: { bg: "#e0e7ff", text: "#3730a3", accent: "#6366f1" },
+  },
+  competition: {
+    badge: "bg-pink-100 text-pink-800",
+    dot: "bg-pink-500",
+    hex: { bg: "#fce7f3", text: "#9d174d", accent: "#ec4899" },
+  },
+  conference: {
+    badge: "bg-violet-100 text-violet-800",
+    dot: "bg-violet-500",
+    hex: { bg: "#ede9fe", text: "#5b21b6", accent: "#8b5cf6" },
+  },
+  other_absence: {
+    badge: "bg-orange-100 text-orange-800",
+    dot: "bg-orange-500",
+    hex: { bg: "#ffedd5", text: "#9a3412", accent: "#f97316" },
+  },
+  on_duty: {
+    badge: "bg-blue-100 text-blue-800",
+    dot: "bg-blue-500",
+    hex: { bg: "#dbeafe", text: "#1e40af", accent: "#3b82f6" },
+  },
+  after_duty: {
+    badge: "bg-cyan-100 text-cyan-800",
+    dot: "bg-cyan-500",
+    hex: { bg: "#cffafe", text: "#164e63", accent: "#06b6d4" },
+  },
+  seconded_from: {
+    badge: "bg-teal-100 text-teal-800",
+    dot: "bg-teal-500",
+    hex: { bg: "#ccfbf1", text: "#115e59", accent: "#14b8a6" },
+  },
+  seconded_to: {
+    badge: "bg-gray-100 text-gray-800",
+    dot: "bg-gray-500",
+    hex: { bg: "#f3f4f6", text: "#1f2937", accent: "#6b7280" },
+  },
 };
+
+/** Нейтральная краска для неизвестного кода — тоже одна на весь фронт. */
+export const UNKNOWN_STATUS_PAINT: StatusPaint = {
+  badge: "bg-gray-100 text-gray-800",
+  dot: "bg-gray-400",
+  hex: { bg: "#f3f4f6", text: "#1f2937", accent: "#9ca3af" },
+};
+
+export const getEmployeeStatusPaint = (
+  statusType: EmployeeStatusType | string | null | undefined
+): StatusPaint =>
+  (statusType != null &&
+    EMPLOYEE_STATUS_PAINT[statusType as EmployeeStatusType]) ||
+  UNKNOWN_STATUS_PAINT;
+
+// Цвета бейджей — ПРОИЗВОДНАЯ от палитры ниже, а не вторая её копия: иначе
+// таблицы расходятся молча (так и вышло — пять источников на 13 статусов).
+export const EMPLOYEE_STATUS_COLORS: Record<EmployeeStatusType, string> =
+  Object.fromEntries(
+    (Object.keys(EMPLOYEE_STATUS_PAINT) as EmployeeStatusType[]).map((code) => [
+      code,
+      EMPLOYEE_STATUS_PAINT[code].badge,
+    ])
+  ) as Record<EmployeeStatusType, string>;
 
 // Хелпер: получить название статуса по коду
 export const getEmployeeStatusLabel = (

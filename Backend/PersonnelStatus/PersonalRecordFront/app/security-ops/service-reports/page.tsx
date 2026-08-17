@@ -84,7 +84,7 @@ export default function ServiceReportsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <FileText className="h-8 w-8 text-primary" />
+          <FileText className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Отчёты службы</h1>
             <p className="text-muted-foreground">
@@ -194,7 +194,7 @@ export default function ServiceReportsPage() {
               </p>
             )}
             {createJob.error !== null && (
-              <p className="mt-2 text-xs text-destructive">
+              <p className="mt-2 text-xs text-destructive-ink">
                 {createJob.error.message}
               </p>
             )}
@@ -296,7 +296,7 @@ export default function ServiceReportsPage() {
             </ul>
           )}
           {download.error !== null && (
-            <p className="mt-2 text-xs text-destructive">
+            <p className="mt-2 text-xs text-destructive-ink">
               {download.error.message}
             </p>
           )}

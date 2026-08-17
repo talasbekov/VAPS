@@ -37,7 +37,7 @@ export function ChangelogView({
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <GitBranch className="h-8 w-8 text-primary" />
+          <GitBranch className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">{HEADING}</h1>
             <p className="text-muted-foreground">

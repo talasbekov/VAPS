@@ -50,7 +50,7 @@ export default function OpsSettingsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <SettingsIcon className="h-8 w-8 text-primary" />
+          <SettingsIcon className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Настройки ОМ</h1>
             <p className="text-muted-foreground">
@@ -64,7 +64,7 @@ export default function OpsSettingsPage() {
           <p className="text-sm text-muted-foreground">Загрузка настроек…</p>
         )}
         {query.isError && (
-          <p className="text-sm text-destructive">Не удалось загрузить настройки.</p>
+          <p className="text-sm text-destructive-ink">Не удалось загрузить настройки.</p>
         )}
 
         {query.data !== undefined &&
@@ -97,7 +97,7 @@ export default function OpsSettingsPage() {
                           </p>
                         )}
                       </div>
-                      <Badge className="bg-primary/10 text-primary hover:bg-primary/10">
+                      <Badge className="bg-primary/10 text-primary-ink hover:bg-primary/10">
                         {formatSettingValue(setting, setting.value)}
                       </Badge>
                       <Button
@@ -238,7 +238,7 @@ function EditSettingDialog({
             />
           </div>
           {fieldErrors !== null && Object.keys(fieldErrors).length > 0 && (
-            <ul className="list-disc pl-5 text-xs text-destructive" role="alert">
+            <ul className="list-disc pl-5 text-xs text-destructive-ink" role="alert">
               {Object.entries(fieldErrors).map(([field, v]) => (
                 <li key={field}>
                   {field}: {Array.isArray(v) ? String(v[0]) : String(v)}
@@ -247,7 +247,7 @@ function EditSettingDialog({
             </ul>
           )}
           {update.error !== null && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm text-destructive-ink" role="alert">
               {update.error.message}
             </p>
           )}

@@ -43,7 +43,7 @@ export default function OpsAuditPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <ScrollText className="h-8 w-8 text-primary" />
+          <ScrollText className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Аудит</h1>
             <p className="text-muted-foreground">
@@ -68,7 +68,7 @@ export default function OpsAuditPage() {
         )}
         {query.isError && (
           <Card>
-            <CardContent className="p-9 text-center text-sm text-destructive">
+            <CardContent className="p-9 text-center text-sm text-destructive-ink">
               Не удалось загрузить журнал аудита.
             </CardContent>
           </Card>

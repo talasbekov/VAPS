@@ -46,7 +46,7 @@ export default function RatingAuditPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <ScrollText className="h-8 w-8 text-primary" />
+          <ScrollText className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Журнал оценивания</h1>
             <p className="text-muted-foreground">
@@ -62,7 +62,7 @@ export default function RatingAuditPage() {
           <p className="text-sm text-muted-foreground">Загрузка журнала…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive">{query.error.message}</p>
+          <p className="text-sm text-destructive-ink">{query.error.message}</p>
         )}
 
         {data !== undefined && (

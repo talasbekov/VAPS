@@ -90,7 +90,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
             <Label htmlFor="om-title">Название</Label>
             <Input id="om-title" {...register("title")} />
             {errors.title && (
-              <p className="text-xs text-destructive">{errors.title.message}</p>
+              <p className="text-xs text-destructive-ink">{errors.title.message}</p>
             )}
           </div>
           <div className="space-y-1">
@@ -120,26 +120,26 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
               ))}
             </select>
             {objectsQuery.isError && (
-              <p className="text-xs text-destructive" role="alert">
+              <p className="text-xs text-destructive-ink" role="alert">
                 Реестр объектов недоступен — мероприятие нельзя привязать к
                 объекту.
               </p>
             )}
             {errors.objectId && (
-              <p className="text-xs text-destructive">{errors.objectId.message}</p>
+              <p className="text-xs text-destructive-ink">{errors.objectId.message}</p>
             )}
           </div>
           <div className="space-y-1">
             <Label htmlFor="om-date">Дата проведения</Label>
             <Input id="om-date" type="date" {...register("businessDate")} />
             {errors.businessDate && (
-              <p className="text-xs text-destructive">
+              <p className="text-xs text-destructive-ink">
                 {errors.businessDate.message}
               </p>
             )}
           </div>
           {mutation.error !== null && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm text-destructive-ink" role="alert">
               Не удалось создать мероприятие. Проверьте поля и попробуйте снова.
             </p>
           )}

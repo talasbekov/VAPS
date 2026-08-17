@@ -317,7 +317,7 @@ function ClosurePanel({ event }: { event: SecurityEvent }) {
         {hasPermission("rating.evaluate") && (
           <Link
             href="/security-ops/ratings/workspace"
-            className="inline-block text-xs font-semibold text-primary"
+            className="inline-block text-xs font-semibold text-primary-ink"
           >
             Оценка участников ОМ →
           </Link>

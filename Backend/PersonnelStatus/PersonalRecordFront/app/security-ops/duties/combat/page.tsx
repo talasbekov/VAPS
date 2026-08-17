@@ -20,7 +20,7 @@ export default function CombatDutyGroupsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <Shield className="h-8 w-8 text-primary" />
+          <Shield className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Боевые группы на Трассе</h1>
             <p className="text-muted-foreground">
@@ -30,7 +30,7 @@ export default function CombatDutyGroupsPage() {
           </div>
         </div>
         <p className="text-sm">
-          <Link href="/security-ops/duties" className="text-primary underline">
+          <Link href="/security-ops/duties" className="text-primary-ink underline">
             ← План дежурств
           </Link>
         </p>

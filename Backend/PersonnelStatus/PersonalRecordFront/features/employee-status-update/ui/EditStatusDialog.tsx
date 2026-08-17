@@ -38,6 +38,7 @@ import {
   EMPLOYEE_STATUS_ITEMS,
   EMPLOYEE_STATUS_LABELS,
   getEmployeeStatusLabel,
+  getEmployeeStatusPaint,
 } from "@/lib/status";
 import {
   removeDutyAssignment,
@@ -387,67 +388,11 @@ export function EditStatusDialog({
               </SelectTrigger>
               <SelectContent>
                 {statusTypes.map((statusType) => {
-                  // Маппинг цветов для применения стилей (RGB значения из Tailwind)
-                  const colorMap: Record<string, { bg: string; text: string }> =
-                    {
-                      "bg-green-100 text-green-800": {
-                        bg: "#dcfce7",
-                        text: "#166534",
-                      },
-                      "bg-yellow-100 text-yellow-800": {
-                        bg: "#fef9c3",
-                        text: "#713f12",
-                      },
-                      "bg-amber-100 text-amber-800": {
-                        bg: "#fef3c7",
-                        text: "#92400e",
-                      },
-                      "bg-red-100 text-red-800": {
-                        bg: "#fee2e2",
-                        text: "#991b1b",
-                      },
-                      "bg-purple-100 text-purple-800": {
-                        bg: "#f3e8ff",
-                        text: "#6b21a8",
-                      },
-                      "bg-indigo-100 text-indigo-800": {
-                        bg: "#e0e7ff",
-                        text: "#3730a3",
-                      },
-                      "bg-pink-100 text-pink-800": {
-                        bg: "#fce7f3",
-                        text: "#9d174d",
-                      },
-                      "bg-violet-100 text-violet-800": {
-                        bg: "#ede9fe",
-                        text: "#5b21b6",
-                      },
-                      "bg-orange-100 text-orange-800": {
-                        bg: "#ffedd5",
-                        text: "#9a3412",
-                      },
-                      "bg-blue-100 text-blue-800": {
-                        bg: "#dbeafe",
-                        text: "#1e40af",
-                      },
-                      "bg-cyan-100 text-cyan-800": {
-                        bg: "#cffafe",
-                        text: "#164e63",
-                      },
-                      "bg-teal-100 text-teal-800": {
-                        bg: "#ccfbf1",
-                        text: "#115e59",
-                      },
-                      "bg-slate-100 text-slate-800": {
-                        bg: "#f1f5f9",
-                        text: "#1e293b",
-                      },
-                    };
-
-                  const colors = colorMap[statusType.color] || {
-                    bg: "#f3f4f6",
-                    text: "#1f2937",
-                  };
+                  // Цвет пункта — из общей палитры по КОДУ статуса. Здесь лежала копия
+                  // таблицы «класс Tailwind → hex» на 28 литералов (вторая такая же —
+                  // в соседнем диалоге): inline-стиль Radix-пункта классами не
+                  // задать, но и знать про классы ему незачем.
+                  const colors = getEmployeeStatusPaint(statusType.value).hex;
 
                   return (
                     <SelectItem

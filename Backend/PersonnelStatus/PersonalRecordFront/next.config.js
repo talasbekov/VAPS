@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  // Каталог сборки — переопределяемый. `next build` в том же каталоге, где
+  // работает `next dev`, перетирает общий `.next`: живой стенд начинает
+  // отдавать 500 и HTML вместо JSON, а идущий по нему e2e-обход падает с
+  // «Unexpected token '<'». Проверочная сборка запускается так:
+  //   NEXT_DIST_DIR=.next-build npx next build
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   eslint: {
     ignoreDuringBuilds: true,
   },

@@ -65,7 +65,7 @@ export default function ShiftCalendarPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <CalendarDays className="h-8 w-8 text-primary" />
+          <CalendarDays className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Календарь смен</h1>
             <p className="text-muted-foreground">
@@ -86,7 +86,7 @@ export default function ShiftCalendarPage() {
           <p className="text-sm text-muted-foreground">Загрузка календаря…</p>
         )}
         {isError && (
-          <p className="text-sm text-destructive">
+          <p className="text-sm text-destructive-ink">
             Не удалось загрузить календарь.
           </p>
         )}

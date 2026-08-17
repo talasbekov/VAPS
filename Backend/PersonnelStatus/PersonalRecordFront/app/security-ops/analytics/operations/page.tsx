@@ -157,7 +157,7 @@ export default function OperationsAnalyticsPage() {
       <div className="space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Layers className="h-8 w-8 text-primary" />
+            <Layers className="h-8 w-8 text-primary-ink" />
             <div>
               <h1 className="text-2xl font-bold">Аналитика мероприятий</h1>
               <p className="text-muted-foreground">
@@ -243,7 +243,7 @@ export default function OperationsAnalyticsPage() {
         )}
 
         {query.error !== null && (
-          <p className="text-sm text-destructive">{query.error.message}</p>
+          <p className="text-sm text-destructive-ink">{query.error.message}</p>
         )}
         {query.isLoading && (
           <p className="text-sm text-muted-foreground">Загрузка аналитики…</p>
@@ -325,7 +325,7 @@ function HeadlineKpi({ data }: { data: OperationsAnalyticsData }) {
         value: numberOrDash(events),
         hint: `в разрезе — ${formatNumber(data.rows.length)} ${pluralRows(data.level, data.rows.length)}`,
         icon: ListChecks,
-        iconClass: "text-primary",
+        iconClass: "text-primary-ink",
       },
       {
         key: "preparation",
@@ -336,7 +336,7 @@ function HeadlineKpi({ data }: { data: OperationsAnalyticsData }) {
             ? "в реестре состояний нет терминальных этапов"
             : "этапы до проведения",
         icon: Activity,
-        iconClass: "text-primary",
+        iconClass: "text-primary-ink",
       },
       {
         key: "conduct",
@@ -367,7 +367,7 @@ function HeadlineKpi({ data }: { data: OperationsAnalyticsData }) {
             ? "запросов сил нет"
             : `выделено ${formatNumber(allocated ?? 0)} из ${formatNumber(requested)}`,
         icon: UserCheck,
-        iconClass: "text-primary",
+        iconClass: "text-primary-ink",
       },
       {
         key: "acknowledged",
@@ -492,7 +492,7 @@ function StructureSection({ data }: { data: OperationsAnalyticsData }) {
         </div>
         {data.unknownLifecycleCodes.length > 0 && (
           // §22.13: код вне реестра назван, а не разложен по корзинам.
-          <p className="mt-2 text-xs text-destructive">
+          <p className="mt-2 text-xs text-destructive-ink">
             Состояния вне Lifecycle Registry (не разложены по корзинам):{" "}
             {data.unknownLifecycleCodes.join(", ")}
           </p>

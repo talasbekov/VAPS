@@ -75,7 +75,7 @@ export default function RatingExportPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <FileDown className="h-8 w-8 text-primary" />
+          <FileDown className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Выгрузка рейтинга</h1>
             <p className="text-muted-foreground">
@@ -92,7 +92,7 @@ export default function RatingExportPage() {
           <p className="text-sm text-muted-foreground">Загрузка выгрузок…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive">{query.error.message}</p>
+          <p className="text-sm text-destructive-ink">{query.error.message}</p>
         )}
 
         {data !== undefined && (
@@ -100,7 +100,7 @@ export default function RatingExportPage() {
             <section className="rounded-xl border bg-card p-4">
               <h2 className="mb-2 text-sm font-semibold">Заказать выгрузку</h2>
               {!data.capabilities.operationalRatings && (
-                <p className="mb-2 text-xs text-destructive">
+                <p className="mb-2 text-xs text-destructive-ink">
                   Оперативный рейтинг выключен: сводки, из которой собирается
                   файл, не существует.
                 </p>
@@ -130,7 +130,7 @@ export default function RatingExportPage() {
                 </button>
               </div>
               {create.error !== null && (
-                <p className="mt-2 text-sm text-destructive">
+                <p className="mt-2 text-sm text-destructive-ink">
                   {create.error.message}
                 </p>
               )}
@@ -228,12 +228,12 @@ export default function RatingExportPage() {
             </section>
 
             {download.error !== null && (
-              <p className="text-sm text-destructive">
+              <p className="text-sm text-destructive-ink">
                 {download.error.message}
               </p>
             )}
             {cancel.error !== null && (
-              <p className="text-sm text-destructive">{cancel.error.message}</p>
+              <p className="text-sm text-destructive-ink">{cancel.error.message}</p>
             )}
 
             <section className="rounded-xl border bg-card p-4">

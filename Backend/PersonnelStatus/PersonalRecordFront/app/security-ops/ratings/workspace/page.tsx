@@ -162,7 +162,7 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
         ))}
       </select>
       {errorFor("score") !== null && (
-        <p className="mb-2 text-xs text-destructive">{errorFor("score")}</p>
+        <p className="mb-2 text-xs text-destructive-ink">{errorFor("score")}</p>
       )}
 
       <label
@@ -185,7 +185,7 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
         ))}
       </select>
       {errorFor("basisCode") !== null && (
-        <p className="mb-2 text-xs text-destructive">{errorFor("basisCode")}</p>
+        <p className="mb-2 text-xs text-destructive-ink">{errorFor("basisCode")}</p>
       )}
 
       {selectedBasis?.requiresNote === true && (
@@ -203,7 +203,7 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
             onChange={(event) => setBasisNote(event.target.value)}
           />
           {errorFor("basisNote") !== null && (
-            <p className="mb-2 text-xs text-destructive">
+            <p className="mb-2 text-xs text-destructive-ink">
               {errorFor("basisNote")}
             </p>
           )}
@@ -225,7 +225,7 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
         onChange={(event) => setComment(event.target.value)}
       />
       {errorFor("comment") !== null && (
-        <p className="mb-2 text-xs text-destructive">{errorFor("comment")}</p>
+        <p className="mb-2 text-xs text-destructive-ink">{errorFor("comment")}</p>
       )}
 
       {/* Конфликт редакции и неизвестный исход — СВОЯ панель рядом с формой
@@ -245,7 +245,7 @@ function EvaluationForm({ item, bases, onClose }: FormProps) {
       {mutation.error !== null &&
         serverField === null &&
         mutation.error.kind !== "network" && (
-          <p className="mb-2 text-xs text-destructive">
+          <p className="mb-2 text-xs text-destructive-ink">
             {mutation.error.message}
           </p>
         )}
@@ -297,7 +297,7 @@ export default function EvaluationWorkspacePage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <ClipboardCheck className="h-8 w-8 text-primary" />
+          <ClipboardCheck className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Оценивание участников</h1>
             <p className="text-muted-foreground">
@@ -313,7 +313,7 @@ export default function EvaluationWorkspacePage() {
           <p className="text-sm text-muted-foreground">Загрузка заданий…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive">{query.error.message}</p>
+          <p className="text-sm text-destructive-ink">{query.error.message}</p>
         )}
 
         {data !== undefined && (

@@ -88,7 +88,7 @@ export default function EvaluationRegistryPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <ListChecks className="h-8 w-8 text-primary" />
+          <ListChecks className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Итоговые оценки участников</h1>
             <p className="text-muted-foreground">
@@ -104,7 +104,7 @@ export default function EvaluationRegistryPage() {
           <p className="text-sm text-muted-foreground">Загрузка реестра…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive">{query.error.message}</p>
+          <p className="text-sm text-destructive-ink">{query.error.message}</p>
         )}
 
         {data !== undefined && (

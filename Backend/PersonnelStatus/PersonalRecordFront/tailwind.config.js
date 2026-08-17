@@ -46,6 +46,10 @@ module.exports = {
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
+          // `ink` — тот же смысл, но цвет, пригодный ДЛЯ ТЕКСТА. Насыщенный
+          // `--primary` даёт 3.46:1 на тёмном фоне и 1.69 на чипе
+          // `bg-primary/10`: как заливка он хорош, как буквы — нечитаем.
+          ink: "hsl(var(--primary-ink))",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -54,6 +58,10 @@ module.exports = {
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
+          // То же и для ошибок: `--destructive` не проходит 4.5:1 ни в одной
+          // теме (3.76 на белом, 3.52 на тёмном), а им набраны все тексты
+          // ошибок форм.
+          ink: "hsl(var(--destructive-ink))",
         },
         muted: {
           DEFAULT: "hsl(var(--muted))",

@@ -52,7 +52,12 @@ import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatu
 import { PlannedStatusesDialog } from "@/features/employee-status-update/ui/PlannedStatusesDialog";
 import { SecondEmployeeDialog } from "@/features/employee-status-update/ui/SecondEmployeeDialog";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { Employee as EmployeeType } from "@/entities/employee/model/types";
 import { LoadFailure } from "@/components/load-failure";
 
@@ -748,6 +753,17 @@ export function StatusTable({
       {/* Диалог просмотра профиля */}
       <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          {/* Заголовок обязателен: без него Radix ругается в консоли, а
+              скринридер объявляет диалог без имени. Визуально он не нужен —
+              карточка профиля печатает имя сама. */}
+          <DialogHeader className="sr-only">
+            <DialogTitle>
+              Профиль сотрудника
+              {selectedEmployeeForProfile
+                ? `: ${selectedEmployeeForProfile.name}`
+                : ""}
+            </DialogTitle>
+          </DialogHeader>
           {selectedEmployeeForProfile && (
             <EmployeeProfile
               employee={selectedEmployeeForProfile}

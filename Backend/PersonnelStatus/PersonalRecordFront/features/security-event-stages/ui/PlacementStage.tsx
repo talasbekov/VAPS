@@ -519,7 +519,7 @@ function PlacementBoard({ event }: { event: SecurityEvent }) {
                   {event.passportBinding !== null && (
                     <Link
                       href={`/security-ops/objects/${event.passportBinding.objectId}/passports/${event.passportBinding.versionId}`}
-                      className="text-xs font-semibold text-primary"
+                      className="text-xs font-semibold text-primary-ink"
                     >
                       Паспорт поста →
                     </Link>

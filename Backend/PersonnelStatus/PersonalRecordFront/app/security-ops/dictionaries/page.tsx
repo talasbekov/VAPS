@@ -29,7 +29,7 @@ export default function DictionariesPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <BookMarked className="h-8 w-8 text-primary" />
+          <BookMarked className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Справочники</h1>
             <p className="text-muted-foreground">
@@ -47,7 +47,7 @@ export default function DictionariesPage() {
         )}
         {query.isError && (
           <Card>
-            <CardContent className="p-9 text-center text-sm text-destructive">
+            <CardContent className="p-9 text-center text-sm text-destructive-ink">
               Не удалось загрузить справочники.
             </CardContent>
           </Card>
@@ -94,7 +94,7 @@ export default function DictionariesPage() {
                     <TableCell className="text-center">
                       <Link
                         href={`/security-ops/dictionaries/${definition.code}`}
-                        className="text-primary"
+                        className="text-primary-ink"
                       >
                         ›
                       </Link>
