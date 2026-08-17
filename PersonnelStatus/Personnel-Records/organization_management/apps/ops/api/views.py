@@ -192,6 +192,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "placement_unassign": _MANAGE_EVENT_PERMISSION,
         "placement_complete": _MANAGE_EVENT_PERMISSION,
         "approval_approve": _MANAGE_EVENT_PERMISSION,
+        # Маршрут согласования правит тот же, кто ведёт мероприятие: action без
+        # записи в карте провалился бы в автоопределение и остался без права.
+        "approval_route_add": _MANAGE_EVENT_PERMISSION,
+        "approval_route_remove": _MANAGE_EVENT_PERMISSION,
+        "approval_route_decide": _MANAGE_EVENT_PERMISSION,
         "approval_return": _MANAGE_EVENT_PERMISSION,
         "acknowledge": _MANAGE_EVENT_PERMISSION,
         "acknowledgement_complete": _MANAGE_EVENT_PERMISSION,
@@ -398,6 +403,42 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
     @action(detail=True, methods=["post"], url_path="placement/complete")
     def placement_complete(self, request, pk=None):
         return self._event_response(event_service.complete_placement(pk))
+
+    @action(detail=True, methods=["post"], url_path="approval/route")
+    def approval_route_add(self, request, pk=None):
+        data = request.data or {}
+        return self._event_response(
+            event_service.add_approver(
+                pk,
+                name=data.get("name"),
+                unit=data.get("unit"),
+                position=data.get("position"),
+            )
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"approval/route/(?P<approver_id>(?!decide/)[^/]+)",
+    )
+    def approval_route_remove(self, request, pk=None, approver_id=None):
+        return self._event_response(event_service.remove_approver(pk, approver_id))
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"approval/route/(?P<approver_id>[^/]+)/decide",
+    )
+    def approval_route_decide(self, request, pk=None, approver_id=None):
+        data = request.data or {}
+        return self._event_response(
+            event_service.decide_approver(
+                pk,
+                approver_id=approver_id,
+                decision=data.get("decision"),
+                comment=data.get("comment"),
+            )
+        )
 
     @action(detail=True, methods=["post"], url_path="approval/approve")
     def approval_approve(self, request, pk=None):

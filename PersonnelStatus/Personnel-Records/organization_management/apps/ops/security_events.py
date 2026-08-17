@@ -622,6 +622,83 @@ def complete_placement(event_id):
 # ── Согласование ────────────────────────────────────────────────────────────
 
 
+def _next_approver_number(route):
+    numbers = []
+    for item in route:
+        raw = str(item.get("id", "")).rsplit("-", 1)[-1]
+        if raw.isdigit():
+            numbers.append(int(raw))
+    return (max(numbers) + 1) if numbers else 1
+
+
+@transaction.atomic
+def add_approver(event_id, *, name, unit, position):
+    """Добавляет согласующего в конец маршрута.
+
+    Порядок — позиция в списке: у согласования он значим (кто первый), и
+    отдельного поля под номер не нужно, иначе появятся два источника правды.
+    """
+    event = lock_event(event_id)
+    clean_name = str(name or "").strip()
+    if clean_name == "":
+        raise _validation({"name": ["Обязательное поле."]})
+    route = list(event.approval_route or [])
+    route.append(
+        {
+            # Идентификатор едет в URL, поэтому без времени и двоеточий:
+            # следующий номер за максимальным, а не длина списка — удаление
+            # середины иначе дало бы повтор.
+            "id": f"approver-{_next_approver_number(route)}",
+            "name": clean_name,
+            "unit": str(unit or "").strip(),
+            "position": str(position or "").strip(),
+            "status": "PENDING",
+            "decidedAt": None,
+            "comment": "",
+        }
+    )
+    event.approval_route = route
+    event.save(update_fields=["approval_route", "updated_at"])
+    return event
+
+
+@transaction.atomic
+def remove_approver(event_id, approver_id):
+    event = lock_event(event_id)
+    route = [a for a in (event.approval_route or []) if a.get("id") != approver_id]
+    if len(route) == len(event.approval_route or []):
+        raise _not_found("Согласующий не найден.", approver_id)
+    event.approval_route = route
+    event.save(update_fields=["approval_route", "updated_at"])
+    return event
+
+
+@transaction.atomic
+def decide_approver(event_id, *, approver_id, decision, comment):
+    """Решение одного согласующего. Возврат требует причины — как и возврат
+    расстановки: «вернул без объяснения» неисполнимо для исполнителя."""
+    event = lock_event(event_id)
+    if decision not in ("APPROVED", "RETURNED"):
+        raise _validation({"decision": ["Допустимо APPROVED или RETURNED."]})
+    clean_comment = str(comment or "").strip()
+    if decision == "RETURNED" and clean_comment == "":
+        raise _validation({"comment": ["Укажите причину возврата."]})
+    route = list(event.approval_route or [])
+    found = False
+    for item in route:
+        if item.get("id") == approver_id:
+            item["status"] = decision
+            item["decidedAt"] = _now_iso()
+            item["comment"] = clean_comment
+            found = True
+            break
+    if not found:
+        raise _not_found("Согласующий не найден.", approver_id)
+    event.approval_route = route
+    event.save(update_fields=["approval_route", "updated_at"])
+    return event
+
+
 @transaction.atomic
 def approve_placement(event_id):
     event = lock_event(event_id)

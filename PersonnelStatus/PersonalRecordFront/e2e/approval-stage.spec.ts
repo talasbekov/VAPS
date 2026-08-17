@@ -33,6 +33,7 @@ interface EventRow {
     postId: string
     ratingOverrideReason: string | null
   }[]
+  approvalRoute: { id: string; name: string; status: string; comment: string }[]
 }
 
 async function apiToken(): Promise<string> {
@@ -110,6 +111,43 @@ test.describe(LIVE ? 'согласование' : 'согласование (с�
     await expect(card).toContainText(override.employeeName)
     await expect(card).toContainText(`Обоснование: ${override.ratingOverrideReason}`)
     await expect(card).toContainText(`${post.sector} · ${post.post}`)
+
+    // Маршрут согласования из прототипа: добавляем согласующего, решаем по
+    // нему и сверяем с тем, что вернул БЭК, а не с экраном.
+    const route = card.locator('section', { hasText: 'Маршрут согласования' }).first()
+    await route.getByRole('button', { name: '+ Добавить согласующего' }).click()
+    const who = `Проба ${Date.now()}`
+    await route.getByLabel('ФИО согласующего').fill(who)
+    await route.getByLabel('Подразделение согласующего').fill('Управление ОМ')
+    await route.getByLabel('Должность согласующего').fill('полковник')
+    await route.getByRole('button', { name: 'Добавить', exact: true }).click()
+    await expect(route).toContainText(who, { timeout: 15_000 })
+    await expect(route).toContainText('Ожидает решения')
+
+    const added = await expect
+      .poll(async () => {
+        const fresh = (await events(token)).find((e) => e.id === target.id)
+        return fresh?.approvalRoute.find((a) => a.name === who)?.id ?? null
+      }, { timeout: 15_000 })
+      .not.toBeNull()
+    void added
+
+    // Возврат требует причины — отказ приходит от сервера
+    const row = route.locator('li', { hasText: who })
+    await row.getByRole('button', { name: 'Вернуть' }).click()
+    await row.getByRole('button', { name: 'Подтвердить возврат' }).click()
+    await expect(card).toContainText('Укажите причину возврата', { timeout: 15_000 })
+
+    // С причиной решение фиксируется, и его видит бэк
+    await row.getByLabel(`Причина возврата: ${who}`).fill('Уточнить расчёт постов')
+    await row.getByRole('button', { name: 'Подтвердить возврат' }).click()
+    await expect
+      .poll(async () => {
+        const fresh = (await events(token)).find((e) => e.id === target.id)
+        const mine = fresh?.approvalRoute.find((a) => a.name === who)
+        return `${mine?.status}|${mine?.comment}`
+      }, { timeout: 15_000 })
+      .toBe('RETURNED|Уточнить расчёт постов')
 
     // Пустую причину возврата отбивает сервер; стадия не двигается
     await card.getByRole('button', { name: 'Вернуть на доработку' }).click()

@@ -86,6 +86,12 @@ class OpsSecurityEvent(TimeStampedModel):
         max_length=20, choices=ApprovalStatus.choices
     )
     approval_comment = models.TextField(blank=True)
+    # Маршрут согласования из прототипа: список согласующих по порядку со
+    # своим решением у каждого. Отдельной таблицей не заводится сознательно —
+    # маршрут живёт и меняется ВМЕСТЕ с мероприятием, отдельной жизни у строки
+    # согласующего нет, а остальные списки карточки (посты, потребность,
+    # журнал) хранятся тем же способом.
+    approval_route = models.JSONField(default=list, blank=True)
     journal_entries = models.JSONField()
     closure_direction_summaries = models.JSONField()
     closed_at = models.DateTimeField(null=True)
