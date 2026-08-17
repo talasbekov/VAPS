@@ -169,7 +169,7 @@ export default function OrgChart() {
     return (
       <div
         key={employee.id}
-        className="flex items-center gap-2 p-2 bg-white/80 backdrop-blur-sm rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 hover:scale-105 hover:bg-white group"
+        className="flex items-center gap-2 p-2 bg-card/80 backdrop-blur-sm rounded-lg border border-border shadow-sm hover:shadow-md transition-all duration-300 hover:scale-105 hover:bg-card group"
       >
         <div className="relative">
           <img
@@ -184,10 +184,10 @@ export default function OrgChart() {
           />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-gray-900 truncate group-hover:text-blue-600 transition-colors duration-200">
+          <div className="text-sm font-medium text-foreground truncate group-hover:text-blue-600 transition-colors duration-200">
             {employee.name}
           </div>
-          <div className="text-xs text-gray-500 truncate group-hover:text-blue-500 transition-colors duration-200">
+          <div className="text-xs text-muted-foreground truncate group-hover:text-blue-500 transition-colors duration-200">
             {employee.position}
           </div>
         </div>
@@ -247,23 +247,23 @@ export default function OrgChart() {
       {loading && (
         <div className="flex flex-col items-center justify-center h-64 gap-4">
           <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-          <p className="text-sm text-gray-500">Загрузка данных...</p>
+          <p className="text-sm text-muted-foreground">Загрузка данных...</p>
         </div>
       )}
 
       {(!loading || error) && (
-        <div className="bg-white p-8 rounded-2xl min-h-[800px] overflow-auto border border-gray-200 shadow-lg relative">
+        <div className="bg-card p-8 rounded-2xl min-h-[800px] overflow-auto border border-border shadow-lg relative">
           <div className="flex justify-center">
             <div className="w-full max-w-6xl">
               {orgData ? (
                 renderOrgUnit(orgData)
               ) : (
                 <div className="flex flex-col items-center justify-center h-64 gap-4">
-                  <AlertCircle className="w-12 h-12 text-gray-400" />
-                  <p className="text-lg text-gray-500">
+                  <AlertCircle className="w-12 h-12 text-muted-foreground" />
+                  <p className="text-lg text-muted-foreground">
                     Нет данных для отображения
                   </p>
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-muted-foreground">
                     Данные не загружены из API
                   </p>
                 </div>
@@ -275,14 +275,14 @@ export default function OrgChart() {
       {/* Красивое модальное окно */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent
-          className="!max-w-2xl sm:!max-w-2xl max-h-[90vh] overflow-hidden p-0 bg-white"
+          className="!max-w-2xl sm:!max-w-2xl max-h-[90vh] overflow-hidden p-0 bg-card"
           showCloseButton={false}
         >
           {selectedUnit && (
             <>
               {/* Компактный заголовок */}
               <div
-                className={`${selectedUnit.color} p-4 relative overflow-hidden border-b border-gray-200/50`}
+                className={`${selectedUnit.color} p-4 relative overflow-hidden border-b border-border/50`}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-black/3 to-transparent"></div>
                 <div className="relative z-10 flex items-center gap-3">
@@ -302,10 +302,10 @@ export default function OrgChart() {
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <DialogTitle className="text-lg font-bold text-gray-900 truncate">
+                    <DialogTitle className="text-lg font-bold text-foreground truncate">
                       {selectedUnit.name}
                     </DialogTitle>
-                    <DialogDescription className="text-xs text-gray-600 mt-0.5">
+                    <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                       {selectedUnit.type === "leadership" &&
                         "Высшее руководство"}
                       {selectedUnit.type === "department" && "Департамент"}
@@ -337,10 +337,10 @@ export default function OrgChart() {
                           />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-base text-gray-900 truncate mb-0.5">
+                          <div className="font-semibold text-base text-foreground truncate mb-0.5">
                             {selectedUnit.head.name}
                           </div>
-                          <div className="text-xs text-gray-600 truncate mb-2">
+                          <div className="text-xs text-muted-foreground truncate mb-2">
                             {selectedUnit.head.position}
                           </div>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -371,7 +371,7 @@ export default function OrgChart() {
                           </div>
                           {(selectedUnit.head.statusStartDate ||
                             selectedUnit.head.statusEndDate) && (
-                            <div className="text-[10px] text-gray-500 mt-1.5">
+                            <div className="text-[10px] text-muted-foreground mt-1.5">
                               {selectedUnit.head.statusStartDate && (
                                 <span>
                                   {new Date(
@@ -404,11 +404,11 @@ export default function OrgChart() {
 
                   {/* Сотрудники - компактная сетка */}
                   {selectedUnit.employees.length > 0 && (
-                    <div className="bg-white rounded-lg border border-gray-200/50 p-3.5">
-                      <h3 className="font-semibold text-sm text-gray-800 mb-3 flex items-center gap-2">
+                    <div className="bg-card rounded-lg border border-border/50 p-3.5">
+                      <h3 className="font-semibold text-sm text-foreground mb-3 flex items-center gap-2">
                         <Users className="w-4 h-4 text-green-600" />
                         Сотрудники
-                        <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                        <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                           {selectedUnit.employees.length}
                         </span>
                       </h3>
@@ -416,7 +416,7 @@ export default function OrgChart() {
                         {selectedUnit.employees.map((emp) => (
                           <div
                             key={emp.id}
-                            className="flex items-center gap-2.5 p-2.5 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-all border border-gray-200/50 hover:border-gray-300 hover:shadow-sm group"
+                            className="flex items-center gap-2.5 p-2.5 bg-muted/50 rounded-lg hover:bg-muted/50 transition-all border border-border/50 hover:border-border hover:shadow-sm group"
                           >
                             <div className="relative flex-shrink-0">
                               <img
@@ -432,14 +432,14 @@ export default function OrgChart() {
                               />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="text-xs font-semibold text-gray-900 truncate">
+                              <div className="text-xs font-semibold text-foreground truncate">
                                 {emp.name}
                               </div>
-                              <div className="text-[10px] text-gray-600 truncate">
+                              <div className="text-[10px] text-muted-foreground truncate">
                                 {emp.position}
                               </div>
                               {emp.statusState && (
-                                <div className="text-[10px] text-gray-500 mt-0.5">
+                                <div className="text-[10px] text-muted-foreground mt-0.5">
                                   {statusStateLabels[emp.statusState]}
                                 </div>
                               )}
@@ -453,11 +453,11 @@ export default function OrgChart() {
                   {/* Подразделения - компактный список */}
                   {selectedUnit.children &&
                     selectedUnit.children.length > 0 && (
-                      <div className="bg-white rounded-lg border border-gray-200/50 p-3.5">
-                        <h3 className="font-semibold text-sm text-gray-800 mb-3 flex items-center gap-2">
+                      <div className="bg-card rounded-lg border border-border/50 p-3.5">
+                        <h3 className="font-semibold text-sm text-foreground mb-3 flex items-center gap-2">
                           <Building className="w-4 h-4 text-purple-600" />
                           Подразделения
-                          <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                             {selectedUnit.children.length}
                           </span>
                         </h3>
@@ -465,7 +465,7 @@ export default function OrgChart() {
                           {selectedUnit.children.map((child) => (
                             <div
                               key={child.id}
-                              className="flex items-center gap-3 p-3 bg-gradient-to-r from-gray-50/50 to-gray-100/50 rounded-lg cursor-pointer hover:from-blue-50/50 hover:to-indigo-50/50 transition-all border border-gray-200/50 hover:border-blue-300/50 hover:shadow-sm group"
+                              className="flex items-center gap-3 p-3 bg-gradient-to-r from-gray-50/50 to-gray-100/50 rounded-lg cursor-pointer hover:from-blue-50/50 hover:to-indigo-50/50 transition-all border border-border/50 hover:border-blue-300/50 hover:shadow-sm group"
                               onClick={() => {
                                 setSelectedUnit(child);
                               }}
@@ -483,22 +483,22 @@ export default function OrgChart() {
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-sm text-gray-900 truncate mb-0.5">
+                                <div className="font-semibold text-sm text-foreground truncate mb-0.5">
                                   {child.name}
                                 </div>
                                 {child.head && (
-                                  <div className="text-xs text-gray-600 truncate mb-1">
+                                  <div className="text-xs text-muted-foreground truncate mb-1">
                                     {child.head.name}
                                   </div>
                                 )}
-                                <div className="text-[10px] text-gray-500">
+                                <div className="text-[10px] text-muted-foreground">
                                   {child.employees.length} сотрудников
                                   {child.children &&
                                     child.children.length > 0 &&
                                     ` • ${child.children.length} подразделений`}
                                 </div>
                               </div>
-                              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors flex-shrink-0" />
+                              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-blue-600 transition-colors flex-shrink-0" />
                             </div>
                           ))}
                         </div>
@@ -508,7 +508,7 @@ export default function OrgChart() {
               </div>
 
               {/* Компактные кнопки действий */}
-              <div className="border-t border-gray-200 bg-gray-50/50 p-3.5">
+              <div className="border-t border-border bg-muted/50 p-3.5">
                 <div className="flex gap-2">
                   <Button
                     onClick={() => {
@@ -524,7 +524,7 @@ export default function OrgChart() {
                   <Button
                     variant="outline"
                     onClick={() => setIsModalOpen(false)}
-                    className="border-gray-300 hover:bg-gray-100 hover:border-gray-400 text-sm h-9 px-4"
+                    className="border-border hover:bg-muted hover:border-border text-sm h-9 px-4"
                   >
                     Закрыть
                   </Button>

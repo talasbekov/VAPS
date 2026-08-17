@@ -8,6 +8,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +41,13 @@ export default function DictionaryDetailPage() {
   const remove = useDeleteDictionaryEntry();
 
   const mutationError = create.error ?? setActive.error ?? remove.error;
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+
+  // Тот же код, что у списка справочников: карточка достижима по прямой
+  // ссылке в обход списка, и без гварда она открывалась любому.
+  if (!permissionsLoading && !hasPermission("dictionary.view")) {
+    return <OpsAccessDenied what="справочника" />;
+  }
 
   return (
     <DashboardLayout>

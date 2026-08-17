@@ -7,7 +7,9 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { Card, CardContent } from "@/components/ui/card";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityObject } from "@/hooks/use-security-objects";
 
 const VERSION_NOT_FOUND_TEXT =
@@ -21,6 +23,12 @@ export default function PassportVersionPage() {
   const id = params?.id ?? "";
   const versionId = params?.versionId ?? "";
   const query = useSecurityObject(id);
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+
+  // Deep link на версию паспорта минует реестр объектов с его гвардом.
+  if (!permissionsLoading && !hasPermission("object.view")) {
+    return <OpsAccessDenied what="версии паспорта объекта" />;
+  }
 
   if (query.isLoading) {
     return (

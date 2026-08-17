@@ -21,7 +21,10 @@ export function MobileMenu({ isOpen, onClose, children }: MobileMenuProps) {
       />
 
       {/* Mobile Sidebar */}
-      <div className="fixed inset-y-0 left-0 z-50 w-80 bg-white shadow-lg transform lg:hidden">
+      {/* Фон именно сайдбара, а не карточки: внутрь кладётся <Sidebar>, чей
+          текст набран text-sidebar-foreground — на bg-card в тёмной теме
+          получалось светлое по светлому. */}
+      <div className="fixed inset-y-0 left-0 z-50 w-80 bg-sidebar shadow-lg transform lg:hidden">
         <div className="flex items-center justify-between h-16 px-4 bg-blue-600">
           <span className="text-white font-bold text-lg">Проект Расход</span>
           <Button

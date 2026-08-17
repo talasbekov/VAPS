@@ -17,8 +17,10 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   useSecurityObject,
   useSecurityObjects,
@@ -107,6 +109,7 @@ export default function SecurityObjectPage() {
     [registry.data, id]
   );
   const unavailableKpi: UnavailableMetric[] = registry.data?.unavailableKpi ?? [];
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   function pickTab(next: TabCode): void {
     const params = new URLSearchParams(searchParams);
@@ -116,6 +119,12 @@ export default function SecurityObjectPage() {
     else params.set("tab", next);
     const queryString = params.toString();
     router.replace(queryString === "" ? pathname : `${pathname}?${queryString}`);
+  }
+
+  // Тот же код, что у реестра объектов: паспорт открывается прямой ссылкой в
+  // обход реестра, и без гварда отказ по правам выглядел как «объект не найден».
+  if (!permissionsLoading && !hasPermission("object.view")) {
+    return <OpsAccessDenied what="паспорта объекта" />;
   }
 
   if (query.isLoading) {

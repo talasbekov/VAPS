@@ -86,8 +86,8 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Обзор</h1>
-            <p className="text-gray-600 mt-1">Обзор состояния организации</p>
+            <h1 className="text-3xl font-bold text-foreground">Обзор</h1>
+            <p className="text-muted-foreground mt-1">Обзор состояния организации</p>
           </div>
           <Badge variant="outline" className="text-sm">
             Последнее обновление: {now ? now.toLocaleString("ru-RU") : "…"}
@@ -152,7 +152,7 @@ export default function DashboardPage() {
                 {recentActivities.map((activity) => (
                   <div
                     key={activity.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    className="flex items-center justify-between p-3 bg-muted rounded-lg"
                   >
                     <div className="flex items-center gap-3">
                       <div
@@ -168,12 +168,12 @@ export default function DashboardPage() {
                       />
                       <div>
                         <p className="font-medium text-sm">{activity.action}</p>
-                        <p className="text-xs text-gray-600">
+                        <p className="text-xs text-muted-foreground">
                           {activity.employee}
                         </p>
                       </div>
                     </div>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-muted-foreground">
                       {activity.time}
                     </span>
                   </div>
@@ -204,12 +204,12 @@ export default function DashboardPage() {
                         <span className="text-sm font-bold">
                           {metric.value}%
                         </span>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-muted-foreground">
                           цель: {metric.target}%
                         </span>
                       </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="w-full bg-muted rounded-full h-2">
                       <div
                         className={`h-2 rounded-full ${metric.color}`}
                         style={{ width: `${metric.value}%` }}
@@ -223,9 +223,9 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions Bar */}
-        <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200 shadow-sm mb-3">
+        <div className="flex items-center justify-between bg-card p-3 rounded-lg border border-border shadow-sm mb-3">
           <div className="flex items-center space-x-4">
-            <span className="text-sm font-medium text-gray-700">
+            <span className="text-sm font-medium text-foreground">
               Системные уведомления:
             </span>
             <Badge variant="outline" className="bg-blue-50 text-blue-700">
@@ -235,7 +235,7 @@ export default function DashboardPage() {
               Система работает стабильно
             </Badge>
           </div>
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-muted-foreground">
             Последняя проверка: {now ? now.toLocaleTimeString("ru-RU") : "…"}
           </div>
         </div>

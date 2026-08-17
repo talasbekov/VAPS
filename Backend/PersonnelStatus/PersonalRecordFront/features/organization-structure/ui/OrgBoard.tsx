@@ -452,7 +452,7 @@ export default function OrgBoard() {
       </div>
 
       {orgStructure.managements.length === 0 && staffUnits.length > 0 ? (
-        <div className="flex flex-col items-center justify-center min-h-[200px] text-gray-500">
+        <div className="flex flex-col items-center justify-center min-h-[200px] text-muted-foreground">
           <p className="mb-2">
             Данные загружены, но структура не может быть построена.
           </p>
@@ -468,7 +468,7 @@ export default function OrgBoard() {
               <tr>
                 <th
                   colSpan={totalCols}
-                  className="border-2 text-white !text-lg border-black bg-zinc-700 px-4 py-2"
+                  className="border-2 border-border bg-primary px-4 py-2 !text-lg text-primary-foreground"
                 >
                   <b>
                     {(() => {
@@ -551,8 +551,8 @@ export default function OrgBoard() {
                     <th
                       key={management.unit.id}
                       colSpan={divisionsCount}
-                      className={`border-2 border-black bg-zinc-300 px-4 py-2 ${
-                        status === highlightedStatus ? "!bg-red-400" : ""
+                      className={`border-2 border-border bg-muted px-4 py-2 text-foreground ${
+                        status === highlightedStatus ? "!bg-red-400 !text-black" : ""
                       }`}
                     >
                       {management.unit.division.name}
@@ -595,7 +595,7 @@ export default function OrgBoard() {
                     divisions.map((division) => (
                       <th
                         key={division.unit.id}
-                        className="border border-gray-800 px-4 py-2"
+                        className="border border-border px-4 py-2"
                       >
                         {division.unit.division.name}
                       </th>
@@ -603,7 +603,7 @@ export default function OrgBoard() {
                   ) : (
                     <th
                       key={management.unit.id}
-                      className="border border-gray-800 px-4 py-2"
+                      className="border border-border px-4 py-2"
                     >
                       Нет отделов
                     </th>
@@ -631,7 +631,7 @@ export default function OrgBoard() {
                       return (
                         <td
                           key={`${management.unit.id}-${rowIndex}`}
-                          className={`border border-gray-800 px-4 py-3 bg-white shadow-md rounded-md transition-all duration-300 ${
+                          className={`border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
                             isHighlighted ? "!bg-red-400" : ""
                           }`}
                         >
@@ -713,7 +713,7 @@ export default function OrgBoard() {
                         return (
                           <td
                             key={`${management.unit.id}-${division.unit.id}-${rowIndex}`}
-                            className={`border border-gray-800 px-4 py-3 bg-white shadow-md rounded-md transition-all duration-300 ${
+                            className={`border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
                               isHighlighted ? "!bg-red-400" : ""
                             }`}
                           >

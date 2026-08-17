@@ -6,7 +6,9 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { Card, CardContent } from "@/components/ui/card";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvent } from "@/hooks/use-security-events";
 import { EventStepper } from "@/widgets/security-event-stepper";
 import {
@@ -29,6 +31,14 @@ export default function SecurityEventPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
   const query = useSecurityEvent(id);
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+
+  // Гвард прав ВЫШЕ ветки ошибки запроса: без него deep link в обход реестра
+  // отдавал 403 в query, и отказ по правам печатался как «Мероприятие не
+  // найдено или недоступно» — то есть как отсутствие объекта.
+  if (!permissionsLoading && !hasPermission("event.view")) {
+    return <OpsAccessDenied what="карточки мероприятия" />;
+  }
 
   if (query.isLoading) {
     return (

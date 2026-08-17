@@ -276,7 +276,7 @@ export function PlannedStatusesDialog({
         </DialogHeader>
 
         {loading && (
-          <div className="flex items-center justify-center py-8 text-gray-500">
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
             <Clock className="h-5 w-5 mr-2 animate-spin" />
             Загрузка данных о статусах...
           </div>
@@ -293,12 +293,12 @@ export function PlannedStatusesDialog({
           <div className="max-h-[60vh] pr-4 overflow-y-auto space-y-6">
             {/* Текущий статус */}
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-green-600" />
                 Текущий статус
               </h3>
               {statuses.current ? (
-                <div className="rounded-lg border bg-gray-50 p-4 flex flex-col gap-2 relative group">
+                <div className="rounded-lg border bg-muted p-4 flex flex-col gap-2 relative group">
                   {editingStatusId === statuses.current.id && editForm ? (
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -442,7 +442,7 @@ export function PlannedStatusesDialog({
                           <Edit className="h-4 w-4" />
                         </Button>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-700">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-foreground">
                         <div>
                           <div className="font-medium">Дата начала</div>
                           <div>{formatDate(statuses.current.start_date)}</div>
@@ -461,7 +461,7 @@ export function PlannedStatusesDialog({
                         </div>
                       </div>
                       {statuses.current.comment && (
-                        <div className="text-sm text-gray-600">
+                        <div className="text-sm text-muted-foreground">
                           <span className="font-medium">Комментарий: </span>
                           {statuses.current.comment}
                         </div>
@@ -470,7 +470,7 @@ export function PlannedStatusesDialog({
                   )}
                 </div>
               ) : (
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-muted-foreground">
                   Текущий активный статус отсутствует.
                 </div>
               )}
@@ -478,7 +478,7 @@ export function PlannedStatusesDialog({
 
             {/* Запланированные статусы */}
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-blue-600" />
                 Запланированные статусы
               </h3>
@@ -487,7 +487,7 @@ export function PlannedStatusesDialog({
                   {statuses.planned.map((status) => (
                     <div
                       key={status.id}
-                      className="rounded-lg border p-4 flex flex-col gap-2 bg-white relative group"
+                      className="rounded-lg border p-4 flex flex-col gap-2 bg-card relative group"
                     >
                       {editingStatusId === status.id && editForm ? (
                         <div className="space-y-4">
@@ -647,7 +647,7 @@ export function PlannedStatusesDialog({
                               </Button>
                             )}
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-700">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-foreground">
                             <div>
                               <div className="font-medium">Дата начала</div>
                               <div>{formatDate(status.start_date)}</div>
@@ -664,7 +664,7 @@ export function PlannedStatusesDialog({
                             </div>
                           </div>
                           {status.comment && (
-                            <div className="text-sm text-gray-600">
+                            <div className="text-sm text-muted-foreground">
                               <span className="font-medium">Комментарий: </span>
                               {status.comment}
                             </div>
@@ -675,7 +675,7 @@ export function PlannedStatusesDialog({
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-muted-foreground">
                   Для сотрудника нет запланированных статусов.
                 </div>
               )}

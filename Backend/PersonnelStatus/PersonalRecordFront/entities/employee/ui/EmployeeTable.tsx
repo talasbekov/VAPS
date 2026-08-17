@@ -91,7 +91,7 @@ export function EmployeeTable({
           <CardTitle>Список сотрудников</CardTitle>
           {selectedEmployees.length > 0 && (
             <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-muted-foreground">
                 Выбрано: {selectedEmployees.length}
               </span>
               <PermissionGate resource="employees" action="update">
@@ -132,7 +132,7 @@ export function EmployeeTable({
               {employees.map((employee) => (
                 <TableRow
                   key={employee.id}
-                  className="cursor-pointer hover:bg-gray-50"
+                  className="cursor-pointer hover:bg-muted"
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -148,7 +148,7 @@ export function EmployeeTable({
                   <TableCell onClick={() => onSelectEmployee(employee)}>
                     <div>
                       <div className="font-medium">{employee.name}</div>
-                      <div className="text-sm text-gray-500">
+                      <div className="text-sm text-muted-foreground">
                         {employee.manager}
                       </div>
                     </div>
@@ -177,18 +177,18 @@ export function EmployeeTable({
                   <TableCell>
                     <div className="space-y-1">
                       <div className="flex items-center text-sm">
-                        <Phone className="h-3 w-3 mr-1 text-gray-400" />
+                        <Phone className="h-3 w-3 mr-1 text-muted-foreground" />
                         {employee.phone}
                       </div>
                       <div className="flex items-center text-sm">
-                        <Mail className="h-3 w-3 mr-1 text-gray-400" />
+                        <Mail className="h-3 w-3 mr-1 text-muted-foreground" />
                         {employee.email}
                       </div>
                     </div>
                   </TableCell>
                   <TableCell className="text-sm">
                     <div className="flex items-center">
-                      <Calendar className="h-3 w-3 mr-1 text-gray-400" />
+                      <Calendar className="h-3 w-3 mr-1 text-muted-foreground" />
                       {formatDate(employee.hireDate)}
                     </div>
                   </TableCell>
@@ -230,7 +230,7 @@ export function EmployeeTable({
         </div>
 
         {employees.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-muted-foreground">
             <p>Сотрудники не найдены</p>
           </div>
         )}
