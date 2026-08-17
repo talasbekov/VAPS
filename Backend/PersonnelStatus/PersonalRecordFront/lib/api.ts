@@ -243,6 +243,92 @@ export interface StrengthReportRow {
   columns: Record<string, number>;
 }
 
+/**
+ * Кадровая карточка в контракте ядра (`/api/core/employees/`). Часть полей
+ * сервер отдаёт null по построению — источника у них нет, и подставлять
+ * похожее поле хуже молчания (см. докстринг сериализатора на бэке).
+ */
+export interface CoreEmployee {
+  id: number;
+  external_id: string | null;
+  iin: string | null;
+  full_name: string;
+  last_name: string;
+  first_name: string;
+  middle_name: string;
+  rank_code: string | null;
+  rank_index: number | null;
+  position_code: string | null;
+  division: number | null;
+  phone: string | null;
+  gender: string | null;
+  height_cm: number | null;
+  is_active: boolean;
+  is_attached_force: boolean | null;
+  data_source: string | null;
+  personnel_number: string | null;
+  birth_date: string | null;
+  photo_file_path: string | null;
+  hire_date: string | null;
+  dismissal_date: string | null;
+  work_phone: string | null;
+  work_email: string | null;
+  personal_phone: string | null;
+  personal_email: string | null;
+  notes: string | null;
+  employment_status: string | null;
+}
+
+/**
+ * Ответ «кто я». `employee: null` — ШТАТНЫЙ исход: связь учётки с кадровой
+ * записью заполняется вручную, и у части учёток её нет. Причина приходит
+ * словами сервера, экран её не сочиняет.
+ */
+export interface MyEmployeeResponse {
+  employee: CoreEmployee | null;
+  unlinked_reason: string | null;
+}
+
+/** Справочники ядра: у них есть КОД, которым карточка ссылается на запись. */
+export interface CoreRank {
+  code: string;
+  name: string;
+  rank_index: number | null;
+}
+
+export interface CorePosition {
+  code: string;
+  name: string;
+  level: number | null;
+}
+
+export interface CoreDivision {
+  id: number;
+  name: string;
+  code: string | null;
+  parent: number | null;
+}
+
+/**
+ * Строка статуса раздела ОМ (`/api/operations/statuses/`). ЭТОТ адрес, а не
+ * легаси `/api/statuses/statuses/`: у второго фильтр по сотруднику молча не
+ * применяется — он отдаёт статусы ВСЕХ, и «мой профиль» показал бы чужую
+ * службу как свою (см. docs/api-gaps.md).
+ */
+export interface OpsEmployeeStatusRow {
+  id: number;
+  employee_id: number;
+  status_type_code: string;
+  date_start: string;
+  date_end: string;
+  state: "PLANNED" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+  source: string;
+  comment: string;
+  document_basis: string;
+  cancelled_at: string | null;
+  cancelled_reason: string;
+}
+
 export interface StrengthReportTotals {
   staff_total: number;
   list_total: number;
@@ -1480,6 +1566,47 @@ class ApiClient {
       throw await toDomainError(response);
     }
     return response.json();
+  }
+
+  // Статусы ОДНОГО сотрудника. Фильтр серверный (`employee_id`) и проверен
+  // живой пробой: у легаси-адреса тот же по смыслу параметр игнорируется.
+  async getOpsStatusesFor(employeeId: number): Promise<OpsEmployeeStatusRow[]> {
+    const page = await this.getDomainJson<{ results: OpsEmployeeStatusRow[] }>(
+      `/api/operations/statuses/?employee_id=${employeeId}&page_size=200`
+    );
+    return page.results;
+  }
+
+  // «Кто я» — кадровая запись самого вызывающего. Самообслуживание: права
+  // раздела ручка не спрашивает, связь `User → Employee` резолвит сервер.
+  async getMyEmployee(): Promise<MyEmployeeResponse> {
+    return this.getDomainJson<MyEmployeeResponse>(
+      "/api/operations/my-employee/"
+    );
+  }
+
+  // Справочники ядра. Именно ядра, а не `/api/dictionaries/`: карточка
+  // ссылается на звание и должность КОДОМ (`RANK-1`, `POS-4`), а у должностей
+  // в справочнике кода нет вовсе — сопоставить было бы нечем.
+  async getCoreRanks(): Promise<CoreRank[]> {
+    const page = await this.getDomainJson<{ results: CoreRank[] }>(
+      "/api/core/ranks/?page_size=200"
+    );
+    return page.results;
+  }
+
+  async getCorePositions(): Promise<CorePosition[]> {
+    const page = await this.getDomainJson<{ results: CorePosition[] }>(
+      "/api/core/positions/?page_size=200"
+    );
+    return page.results;
+  }
+
+  async getCoreDivisions(): Promise<CoreDivision[]> {
+    const page = await this.getDomainJson<{ results: CoreDivision[] }>(
+      "/api/core/divisions/?page_size=200"
+    );
+    return page.results;
   }
 
   // Расход за ПЕРИОД: страница на дату. Отдельный маршрут, а не цикл запросов

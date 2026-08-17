@@ -109,6 +109,17 @@ const SECURITY_EVENTS_MOCK_BY_CONFIG: ApiGap = {
     "NEXT_PUBLIC_OPS_LIVE_DOMAINS=security-events.",
 };
 
+const PROFILE_MOCK_BY_CONFIG: ApiGap = {
+  subject: "Мой профиль",
+  paths: [],
+  note:
+    "Кадровая запись, статусы и справочники приходят с живого бэка " +
+    "(/api/operations/my-employee|statuses/, /api/core/*) — они моком не " +
+    "закрываются вовсе. На MSW по конфигурации остаются только назначения в " +
+    "ОМ и смены дежурств. Живой режим: " +
+    "NEXT_PUBLIC_OPS_LIVE_DOMAINS=security-events,duties.",
+};
+
 const SECURITY_EVENT_ROUTES = ["/security-ops/command-center", "/security-ops/events"];
 
 const COMBAT_MOCK_BY_CONFIG: ApiGap = {
@@ -272,6 +283,19 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       normalized.startsWith("/security-ops/objects/")
     ) {
       return isOpsObjectsLive() ? null : OBJECTS_MOCK_BY_CONFIG;
+    }
+    if (
+      normalized === "/security-ops/profile" ||
+      normalized.startsWith("/security-ops/profile/")
+    ) {
+      // Профиль НЕ подпадает под общее правило раздела: «на бэке нет
+      // /api/ops/*» здесь было бы неправдой — своё «кто я», статусы и
+      // справочники он читает у живых ручек вне /api/ops. Врезка зависит
+      // только от режима двух доменов, из которых он берёт назначения и
+      // смены.
+      return isOpsSecurityEventsLive() && isOpsDutiesLive()
+        ? null
+        : PROFILE_MOCK_BY_CONFIG;
     }
     if (
       SECURITY_EVENT_ROUTES.some(

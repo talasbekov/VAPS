@@ -152,6 +152,9 @@ const ROUTES: readonly RouteSpec[] = [
   { template: '/settings' },
   { template: '/feedback' },
   { template: '/feedback/{feedbackId}', needs: ['feedbackId'] },
+  // «Мой профиль» открывается любому вошедшему: кадровой записи у персоны
+  // может не быть, и тогда экран показывает причину — это не отказ.
+  { template: '/security-ops/profile' },
   { template: '/security-ops/command-center' },
   { template: '/security-ops/events' },
   { template: '/security-ops/events/{eventId}', needs: ['eventId'] },
