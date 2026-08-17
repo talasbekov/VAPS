@@ -4,7 +4,17 @@
 // Импорт из привязанной версии паспорта ДОБАВЛЯЕТ строки (ручные не
 // затираются), повторный импорт дубли не плодит. «Требует изменений» в
 // чек-листе обязывает к комментарию.
+//
+// Из прототипа Smart Josparlau (экран «Рекогносцировка объекта») добавлены:
+// сведения об объекте из паспорта, «результат проверки» и комментарий по
+// КАЖДОМУ посту (поля result/comment у поста были в контракте и сохранялись
+// сервером, но экран их не показывал — рекогносцировка сводилась к описи
+// постов без итога осмотра) и вход в историю ОМ по объекту.
+//
+// Чего из прототипа НЕТ: фотографии к пунктам чек-листа — вложений у пункта
+// не хранит ни бэк, ни контракт, приложить файл некуда.
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -14,6 +24,8 @@ import {
   useImportReconPosts,
   useUpdateRecon,
 } from "@/hooks/use-security-event-stages";
+import { useSecurityObject } from "@/hooks/use-security-objects";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import type {
   ReconChecklistItem,
   ReconSectorPost,
@@ -96,6 +108,8 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         <CardTitle>Рекогносцировка</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
+        <ObjectFacts event={event} />
+
         <section>
           <h3 className="mb-2 text-sm font-semibold">Чек-лист объекта</h3>
           <div className="flex flex-col gap-2">
@@ -173,7 +187,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
               {rows.map((row) => (
                 <div
                   key={row.id}
-                  className="grid grid-cols-2 gap-2 border-b pb-2 last:border-0 md:grid-cols-[1fr_1fr_1.4fr_70px_1.2fr_90px_auto]"
+                  className="grid grid-cols-2 gap-2 border-b pb-2 last:border-0 md:grid-cols-[1fr_1fr_1.4fr_70px_1.2fr_90px_150px_1.2fr_auto]"
                 >
                   <Input
                     className="h-8 text-xs"
@@ -228,6 +242,33 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                       })
                     }
                   />
+                  {/* Результат осмотра поста и замечание по нему: ради этого
+                      на пост и выходят. Поля уже были в контракте — экран их
+                      просто не показывал. */}
+                  <select
+                    aria-label={`Результат проверки поста: ${row.post || "новый"}`}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                    value={row.result ?? ""}
+                    onChange={(e) =>
+                      patchRow(row.id, {
+                        result:
+                          e.target.value === ""
+                            ? null
+                            : (e.target.value as "MATCHES" | "NEEDS_CHANGES"),
+                      })
+                    }
+                  >
+                    <option value="">— не проверено —</option>
+                    <option value="MATCHES">Соответствует</option>
+                    <option value="NEEDS_CHANGES">Требует изменений</option>
+                  </select>
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="Замечание по посту"
+                    aria-label={`Комментарий к посту: ${row.post || "новый"}`}
+                    value={row.comment}
+                    onChange={(e) => patchRow(row.id, { comment: e.target.value })}
+                  />
                   <Button
                     type="button"
                     variant="outline"
@@ -273,5 +314,85 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Сведения об объекте из реестра и привязанной версии паспорта. Read-only:
+ * рекогносцировка правит расчёт, паспорт — нет.
+ *
+ * Запрос уходит только с правом `object.view`: без него реестр объектов
+ * отвечает 403, и блок просто не рисуется — этап от этого не ломается.
+ */
+function ObjectFacts({ event }: { event: SecurityEvent }) {
+  const { hasPermission } = useOpsPermissions();
+  const objectId = event.objectId;
+  const canView = hasPermission("object.view") && objectId !== null;
+  const query = useSecurityObject(canView ? objectId : "");
+
+  if (!canView) return null;
+
+  const object = query.data;
+  const binding = event.passportBinding;
+  const boundVersion =
+    binding === null || object === undefined
+      ? undefined
+      : object.passportVersions.find((version) => version.id === binding.versionId);
+  const postsInVersion =
+    boundVersion === undefined
+      ? null
+      : boundVersion.sectors.reduce((sum, sector) => sum + sector.posts.length, 0);
+
+  return (
+    <section className="rounded-md border bg-muted/30 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Сведения об объекте</h3>
+        {/* Реестр ОМ ищет и по объекту (плейсхолдер поиска называет его явно),
+            поэтому «история по объекту» — это тот же реестр с запросом. */}
+        <Link
+          href={`/security-ops/events?search=${encodeURIComponent(event.objectName)}`}
+          className="text-xs font-semibold text-primary"
+        >
+          История ОМ по объекту →
+        </Link>
+      </div>
+      {query.isLoading ? (
+        <p className="text-xs text-muted-foreground">Загрузка карточки объекта…</p>
+      ) : query.isError || object === undefined ? (
+        <p className="text-xs text-muted-foreground">
+          Карточка объекта недоступна — сведения ниже не показаны.
+        </p>
+      ) : (
+        <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
+          <Fact label="Объект" value={`${object.code} · ${object.name}`} />
+          <Fact label="Тип" value={object.type} />
+          <Fact label="Регион" value={object.region} />
+          <Fact label="Адрес" value={object.address} />
+          {binding === null ? (
+            <Fact label="Паспорт" value="версия не привязана" />
+          ) : (
+            <Fact
+              label="Версия паспорта"
+              value={`№ ${binding.versionNumber} (действует с ${binding.effectiveFrom})`}
+            />
+          )}
+          {postsInVersion !== null && boundVersion !== undefined && (
+            <Fact
+              label="В версии паспорта"
+              value={`секторов ${boundVersion.sectors.length}, постов ${postsInVersion}`}
+            />
+          )}
+        </dl>
+      )}
+    </section>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="inline font-semibold text-muted-foreground">{label}: </dt>
+      <dd className="inline">{value}</dd>
+    </div>
   );
 }
