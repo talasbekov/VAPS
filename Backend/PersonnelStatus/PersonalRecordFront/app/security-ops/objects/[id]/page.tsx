@@ -13,7 +13,7 @@
 // Экран НИЧЕГО не считает сам. Состояние паспорта, срок проверки, политику
 // свежести и снимки версий присылает сервер; страница только раскладывает их
 // по вкладкам и печатает его же словами.
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -103,6 +103,8 @@ export default function SecurityObjectPage() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
   const tab: TabCode = isTab(tabParam) ? tabParam : DEFAULT_TAB;
+  // Счётчик собственных сохранений паспорта: см. комментарий у key ниже.
+  const [formGeneration, setFormGeneration] = useState(0);
 
   const freshness: PassportFreshness | undefined = useMemo(
     () => registry.data?.freshness.find((item) => item.objectId === id),
@@ -200,13 +202,16 @@ export default function SecurityObjectPage() {
           несохранённый черновик живёт в её собственном состоянии, и
           размонтирование стирало бы набранное молча — человек вернулся бы на
           вкладку и увидел прежние посты, ничего об этом не узнав.
-          key по updatedAt: успешное сохранение/публикация пересоздаёт форму
-          от свежего серверного состояния */}
+          Ключ монтирования — счётчик СВОИХ сохранений, а не updatedAt: по
+          updatedAt форму пересобирал любой фоновый рефетч, принёсший чужую
+          правку, — вместе с несохранённым черновиком. Ключ это идентичность,
+          а не версия данных. */}
       <div hidden={tab !== "posts"}>
         <PassportForm
-          key={object.updatedAt}
+          key={`posts-${formGeneration}`}
           objectId={object.id}
           sectors={object.sectors}
+          onSaved={() => setFormGeneration((value) => value + 1)}
         />
       </div>
 

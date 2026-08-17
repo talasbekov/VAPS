@@ -1,5 +1,7 @@
 "use client";
 
+import { Lock } from "lucide-react";
+
 // Архив дела — read-only разбор закрытого ОМ: сводка, итоги направлений,
 // бюллетень, расчёты и заявки, расстановка снимком, замены, журнал штаба и
 // сводка оценивания. Собран по экрану прототипа «Архив дела»: будущий старший
@@ -40,7 +42,10 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
           <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
             После закрытия
           </p>
-          <h2 className="text-lg font-bold">🔒 Архив · {event.code}</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            <Lock className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Архив · {event.code}
+          </h2>
           <p className="text-xs text-muted-foreground">
             {event.title} · {event.businessDate} · {event.objectName}
           </p>

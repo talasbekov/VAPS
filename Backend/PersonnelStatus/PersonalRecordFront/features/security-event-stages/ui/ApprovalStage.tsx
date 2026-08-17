@@ -1,5 +1,7 @@
 "use client";
 
+import { X } from "lucide-react";
+
 // Этап 6 «Согласование»: утверждение расстановки (сразу открывает
 // «Ознакомление») либо возврат на доработку с обязательной причиной.
 //
@@ -370,7 +372,7 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
                       disabled={remove.isPending}
                       onClick={() => remove.mutate({ approverId: approver.id })}
                     >
-                      ✕
+                      <X className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </span>
                 )}

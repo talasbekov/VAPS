@@ -22,6 +22,7 @@ import type {
   FeedbackTypeCode,
 } from "@/entities/ops-feedback";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 
@@ -116,7 +117,11 @@ export default function FeedbackPage() {
         </div>
 
         {listQuery.isError && (
-          <p className="text-sm text-destructive-ink">Не удалось загрузить обращения.</p>
+          <LoadFailure
+            what="обращения"
+            onRetry={() => void listQuery.refetch()}
+            isRetrying={listQuery.isFetching}
+          />
         )}
 
         {data !== undefined && registry !== undefined && (

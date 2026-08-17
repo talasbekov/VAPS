@@ -24,6 +24,9 @@ export function useDictionaries() {
     queryKey: ["ops-dictionaries"],
     queryFn: () =>
       opsApiClient.get<ListDictionaryDefinitionsResponse>(DICTIONARIES_PATH),
+    // Справочник меняется реже, чем открывают экраны: минутный staleTime
+    // заставлял перезапрашивать его на каждом переходе.
+    staleTime: 10 * 60_000,
   });
 }
 

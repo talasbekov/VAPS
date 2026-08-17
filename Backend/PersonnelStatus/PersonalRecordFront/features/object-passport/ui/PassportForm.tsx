@@ -1,5 +1,7 @@
 "use client";
 
+import { X } from "lucide-react";
+
 // Форма действующей редакции паспорта: секторы и постоянные посты.
 // Черновик правится локально и сохраняется целиком (PATCH sectors);
 // «Сохранить» активна только при изменениях.
@@ -19,10 +21,16 @@ function nextLocalId(): string {
 interface PassportFormProps {
   objectId: string;
   sectors: ObjectSector[];
+  /** Своё сохранение прошло — родитель может пересобрать форму. */
+  onSaved?: () => void;
 }
 
-export function PassportForm({ objectId, sectors: initial }: PassportFormProps) {
-  const mutation = useUpdatePassport(objectId);
+export function PassportForm({
+  objectId,
+  sectors: initial,
+  onSaved,
+}: PassportFormProps) {
+  const mutation = useUpdatePassport(objectId, onSaved);
   const [sectors, setSectors] = useState<ObjectSector[]>(initial);
 
   const dirty = JSON.stringify(sectors) !== JSON.stringify(initial);
@@ -150,7 +158,7 @@ export function PassportForm({ objectId, sectors: initial }: PassportFormProps) 
                       aria-label="Удалить пост"
                       onClick={() => removePost(sector.id, post.id)}
                     >
-                      ✕
+                      <X className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </div>
                 ))}

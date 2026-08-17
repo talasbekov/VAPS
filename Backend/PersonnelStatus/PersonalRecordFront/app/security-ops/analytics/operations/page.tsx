@@ -43,6 +43,7 @@ import type {
   OperationsAnalyticsData,
 } from "@/entities/service-analytics";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { OpsKpiCards } from "@/widgets/ops-kpi-cards";
 import type { OpsKpiItem } from "@/widgets/ops-kpi-cards";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -243,7 +244,14 @@ export default function OperationsAnalyticsPage() {
         )}
 
         {query.error !== null && (
-          <p className="text-sm text-destructive-ink">{query.error.message}</p>
+          /* Сырое серверное сообщение человеку не адресовано: у мутаций
+             5xx уже обезличивается (use-ops-mutation), у запросов такой
+             развилки не было. Плюс повтор — раньше это был тупик. */
+          <LoadFailure
+            what="аналитику по подразделениям"
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
         )}
         {query.isLoading && (
           <p className="text-sm text-muted-foreground">Загрузка аналитики…</p>

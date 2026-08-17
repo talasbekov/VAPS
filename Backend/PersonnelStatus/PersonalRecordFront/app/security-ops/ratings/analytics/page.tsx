@@ -11,6 +11,7 @@ import { useRatingAnalytics } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import type { RatingGroupAggregate } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 /** Формулировка §22.17 — дословно. */
@@ -60,7 +61,11 @@ export default function RatingAnalyticsPage() {
           <p className="text-sm text-muted-foreground">Загрузка отчёта…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive-ink">{query.error.message}</p>
+          <LoadFailure
+            what="аналитику рейтинга"
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
         )}
 
         {data !== undefined && data.unpublishedReason !== null && (

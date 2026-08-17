@@ -32,6 +32,7 @@ import type {
   SettingSectionCode,
 } from "@/entities/policy-setting";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 export default function OpsSettingsPage() {
@@ -64,7 +65,11 @@ export default function OpsSettingsPage() {
           <p className="text-sm text-muted-foreground">Загрузка настроек…</p>
         )}
         {query.isError && (
-          <p className="text-sm text-destructive-ink">Не удалось загрузить настройки.</p>
+          <LoadFailure
+            what="настройки"
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
         )}
 
         {query.data !== undefined &&

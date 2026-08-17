@@ -1,5 +1,7 @@
 "use client";
 
+import { X } from "lucide-react";
+
 // Этап 2 «Рекогносцировка»: чек-лист объекта и event-specific расчёт постов.
 // Импорт из привязанной версии паспорта ДОБАВЛЯЕТ строки (ручные не
 // затираются), повторный импорт дубли не плодит. «Требует изменений» в
@@ -327,7 +329,7 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
                       setRows((prev) => prev.filter((r) => r.id !== row.id))
                     }
                   >
-                    ✕
+                    <X className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
               ))}

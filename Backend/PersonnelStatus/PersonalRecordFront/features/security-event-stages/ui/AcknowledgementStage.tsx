@@ -1,5 +1,7 @@
 "use client";
 
+import { Check } from "lucide-react";
+
 // Этап 7 «Ознакомление»: каждый назначенный подтверждает прочтение; этап
 // завершается только когда подтвердили все (правило бэка, не экрана).
 //
@@ -251,7 +253,8 @@ function MyAssignment({
           disabled={pending}
           onClick={() => onAcknowledge(mine.id)}
         >
-          ✓ Ознакомлен
+          <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
+          Ознакомлен
         </Button>
       )}
     </div>
