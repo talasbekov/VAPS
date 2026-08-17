@@ -85,7 +85,7 @@ export default function DashboardPage() {
     <DashboardLayout>
       <div className="space-y-4 pt-0">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Обзор</h1>
             <p className="text-muted-foreground mt-1">Обзор состояния организации</p>
@@ -226,8 +226,9 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions Bar */}
-        <div className="flex items-center justify-between bg-card p-3 rounded-lg border border-border shadow-sm mb-3">
-          <div className="flex items-center space-x-4">
+        {/* flex-wrap: строка уведомлений не переносилась и тянула страницу на 210 px вбок при 375. */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-foreground">
               Системные уведомления:
             </span>

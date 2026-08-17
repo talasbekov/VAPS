@@ -71,34 +71,37 @@ export function ChangelogView({
               <p className="text-sm text-muted-foreground">{EMPTY_HINT}</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th scope="col" className="py-2 pr-4 font-medium">
-                    Версия
-                  </th>
-                  <th scope="col" className="py-2 pr-4 font-medium">
-                    Дата
-                  </th>
-                  <th scope="col" className="py-2 font-medium">
-                    Что исправлено
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((fix) => (
-                  <tr key={fix.id} className="border-b last:border-b-0">
-                    <td className="py-2 pr-4 align-top font-mono">
-                      {fix.version}
-                    </td>
-                    <td className="whitespace-nowrap py-2 pr-4 align-top">
-                      {formatJournalDate(fix.releasedAt)}
-                    </td>
-                    <td className="py-2 align-top">{fix.summary}</td>
+            // Обёртка со скроллом: узкий экран иначе тянет всю страницу вбок.
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[40rem] text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th scope="col" className="py-2 pr-4 font-medium">
+                      Версия
+                    </th>
+                    <th scope="col" className="py-2 pr-4 font-medium">
+                      Дата
+                    </th>
+                    <th scope="col" className="py-2 font-medium">
+                      Что исправлено
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {rows.map((fix) => (
+                    <tr key={fix.id} className="border-b last:border-b-0">
+                      <td className="py-2 pr-4 align-top font-mono">
+                        {fix.version}
+                      </td>
+                      <td className="whitespace-nowrap py-2 pr-4 align-top">
+                        {formatJournalDate(fix.releasedAt)}
+                      </td>
+                      <td className="py-2 align-top">{fix.summary}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
 

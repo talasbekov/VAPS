@@ -209,8 +209,8 @@ export default function OrgChart() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Button onClick={expandAll} variant="outline" size="sm">
             Развернуть все
           </Button>
@@ -227,8 +227,8 @@ export default function OrgChart() {
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-2 text-sm text-blue-600">
-          <Sparkles className="w-4 h-4 text-blue-500" />
+        <div className="flex min-w-0 items-center gap-2 text-sm text-primary-ink">
+          <Sparkles className="w-4 h-4 shrink-0 text-primary-ink" aria-hidden="true" />
           {focusedUnitId === orgData?.id
             ? "Кликните на подразделение для фокуса"
             : `Фокус: ${orgData?.name || "Структура организации"}`}
