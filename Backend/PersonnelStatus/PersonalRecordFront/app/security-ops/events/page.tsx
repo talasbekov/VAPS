@@ -45,6 +45,13 @@ export default function SecurityEventsPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Текущий отбор едет с человеком в карточку: возврат «← Назад» без него
+  // приводил на голый корень реестра, и подобранный фильтр приходилось
+  // набирать заново.
+  const backSuffix = (() => {
+    const query = searchParams.toString();
+    return query === "" ? "" : `?back=${encodeURIComponent(query)}`;
+  })();
   const [dialogOpen, setDialogOpen] = useState(false);
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
@@ -172,6 +179,7 @@ export default function SecurityEventsPage() {
         </div>
 
         <ResultsTable
+          backSuffix={backSuffix}
           isLoading={query.isLoading}
           isError={query.isError}
           events={query.data?.results ?? []}
@@ -188,11 +196,14 @@ export default function SecurityEventsPage() {
 }
 
 function ResultsTable({
+  backSuffix,
   isLoading,
   isError,
   events,
   isEmpty,
 }: {
+  /** Текущий отбор реестра — уезжает в карточку, чтобы вернуться на него. */
+  backSuffix: string;
   isLoading: boolean;
   isError: boolean;
   events: SecurityEvent[];
@@ -246,7 +257,7 @@ function ResultsTable({
           {events.map((event) => (
             <TableRow key={event.id}>
               <TableCell>
-                <Link href={`/security-ops/events/${event.id}`} className="block">
+                <Link href={`/security-ops/events/${event.id}${backSuffix}`} className="block">
                   <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800">
                     {event.code}
                   </span>
@@ -293,7 +304,7 @@ function ResultsTable({
               </TableCell>
               <TableCell>{event.ownerName}</TableCell>
               <TableCell className="text-center text-muted-foreground">
-                <Link href={`/security-ops/events/${event.id}`}>›</Link>
+                <Link href={`/security-ops/events/${event.id}${backSuffix}`}>›</Link>
               </TableCell>
             </TableRow>
           ))}
