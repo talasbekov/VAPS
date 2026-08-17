@@ -145,11 +145,21 @@ export function OpsNotificationBell() {
           aria-hidden
         />
         {freshCount > 0 && (
-          <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+          <span
+            className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground"
+            aria-hidden="true"
+          >
             {freshCount}
           </span>
         )}
       </button>
+      {/* Счётчик менялся молча: цифра на иконке не объявляется. Живой регион
+          вне кнопки — иначе каждое изменение перечитывало бы её целиком. */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {freshCount > 0
+          ? `Новых уведомлений: ${freshCount}`
+          : "Новых уведомлений нет"}
+      </span>
     </div>
   );
 }

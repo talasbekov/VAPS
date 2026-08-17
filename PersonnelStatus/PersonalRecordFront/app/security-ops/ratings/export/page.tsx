@@ -20,6 +20,7 @@ import type {
   RatingExportScope,
 } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const STATE_LABEL: Record<RatingExportJob["state"], string> = {
@@ -92,7 +93,11 @@ export default function RatingExportPage() {
           <p className="text-sm text-muted-foreground">Загрузка выгрузок…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive-ink">{query.error.message}</p>
+          <LoadFailure
+            what="выгрузки рейтинга"
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
         )}
 
         {data !== undefined && (

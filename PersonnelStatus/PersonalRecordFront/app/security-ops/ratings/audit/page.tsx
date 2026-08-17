@@ -11,6 +11,7 @@ import { useRatingAudit } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import type { RatingAuditEntry } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const EVENT_LABEL: Record<RatingAuditEntry["eventCode"], string> = {
@@ -62,7 +63,14 @@ export default function RatingAuditPage() {
           <p className="text-sm text-muted-foreground">Загрузка журнала…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive-ink">{query.error.message}</p>
+          /* Сырое серверное сообщение человеку не адресовано: у мутаций
+             5xx уже обезличивается (use-ops-mutation), у запросов такой
+             развилки не было. Плюс повтор — раньше это был тупик. */
+          <LoadFailure
+            what="журнал рейтинга"
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
         )}
 
         {data !== undefined && (

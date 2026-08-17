@@ -34,6 +34,7 @@ import type {
   SubmittedEvaluationView,
 } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 type TabKey = "pending" | "submitted" | "progress";
@@ -313,7 +314,11 @@ export default function EvaluationWorkspacePage() {
           <p className="text-sm text-muted-foreground">Загрузка заданий…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive-ink">{query.error.message}</p>
+          <LoadFailure
+            what="рабочее место оценщика"
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
         )}
 
         {data !== undefined && (

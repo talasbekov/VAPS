@@ -18,6 +18,7 @@ import {
 } from "@/entities/operational-rating";
 import type { RegistryFilters } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 
@@ -104,7 +105,11 @@ export default function EvaluationRegistryPage() {
           <p className="text-sm text-muted-foreground">Загрузка реестра…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive-ink">{query.error.message}</p>
+          <LoadFailure
+            what="реестр оценок"
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
         )}
 
         {data !== undefined && (

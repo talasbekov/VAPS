@@ -8,5 +8,8 @@ export function useRanks() {
       const data = await apiClient.getRanks();
       return data.results;
     },
+    // Справочник меняется реже, чем открывают экраны: минутный staleTime
+    // заставлял перезапрашивать пачки по 200 строк на каждый переход.
+    staleTime: 10 * 60_000,
   });
 }

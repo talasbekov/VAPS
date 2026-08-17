@@ -49,6 +49,9 @@ export function useReportJobs(filters: ListReportJobsFilters = {}) {
   return useQuery<ListReportJobsResponse, OpsApiFailure>({
     queryKey: ["ops-reports", "jobs", filters.state ?? "ALL", filters.mine === true],
     queryFn: () => opsApiClient.get<ListReportJobsResponse>(jobsPath(filters)),
+    // Опрос не идёт на скрытой вкладке: ~85 запросов в минуту ожидания
+    // уходили в фон, где результат всё равно никто не видит.
+    refetchIntervalInBackground: false,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data === undefined) return false;
@@ -67,6 +70,9 @@ export function useReportJob(reportJobId: string) {
     queryKey: ["ops-reports", "job", reportJobId],
     queryFn: () =>
       opsApiClient.get<ReportJobDetailResponse>(reportJobDetailPath(reportJobId)),
+    // Опрос не идёт на скрытой вкладке: ~85 запросов в минуту ожидания
+    // уходили в фон, где результат всё равно никто не видит.
+    refetchIntervalInBackground: false,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data === undefined) return false;

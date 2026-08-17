@@ -217,6 +217,9 @@ export function useRatingExports() {
     queryKey: ["ops-ratings", "exports"],
     queryFn: () =>
       opsApiClient.get<ListRatingExportsResponse>(RATING_EXPORTS_PATH),
+    // Опрос не идёт на скрытой вкладке: ~85 запросов в минуту ожидания
+    // уходили в фон, где результат всё равно никто не видит.
+    refetchIntervalInBackground: false,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data === undefined) return false;

@@ -12,6 +12,7 @@ import { RatingDynamicsSection } from "@/features/ops-ratings/rating-dynamics-se
 import { DATA_STATE_LABEL } from "@/entities/operational-rating";
 import type { OperationalRatingSummary } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 /** Печать канонического значения: округляет сервер, здесь только запятая —
@@ -57,7 +58,14 @@ export default function OperationalRatingsPage() {
           <p className="text-sm text-muted-foreground">Загрузка рейтинга…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive-ink">{query.error.message}</p>
+          /* Сырое серверное сообщение человеку не адресовано: у мутаций
+             5xx уже обезличивается (use-ops-mutation), у запросов такой
+             развилки не было. Плюс повтор — раньше это был тупик. */
+          <LoadFailure
+            what="оперативный рейтинг"
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
         )}
 
         {data !== undefined && (

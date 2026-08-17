@@ -17,6 +17,7 @@ import {
 import { ScrollText } from "lucide-react";
 import { useOpsAuditLogs } from "@/hooks/use-ops-audit";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 export default function OpsAuditPage() {
@@ -68,8 +69,13 @@ export default function OpsAuditPage() {
         )}
         {query.isError && (
           <Card>
-            <CardContent className="p-9 text-center text-sm text-destructive-ink">
-              Не удалось загрузить журнал аудита.
+            <CardContent className="p-4">
+              <LoadFailure
+                what="журнал аудита"
+                onRetry={() => void query.refetch()}
+                isRetrying={query.isFetching}
+                className="items-center text-center"
+              />
             </CardContent>
           </Card>
         )}

@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { UserRound } from "lucide-react";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useRatingEmployeeDetail } from "@/hooks/use-ops-ratings";
@@ -54,7 +55,11 @@ export default function RatingEmployeeDetailPage() {
           <p className="text-sm text-muted-foreground">Загрузка карточки…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive-ink">{query.error.message}</p>
+          <LoadFailure
+            what="карточку участника"
+            onRetry={() => void query.refetch()}
+            isRetrying={query.isFetching}
+          />
         )}
 
         {data !== undefined && (

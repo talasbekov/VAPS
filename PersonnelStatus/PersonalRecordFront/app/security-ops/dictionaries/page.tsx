@@ -15,6 +15,7 @@ import {
 import { BookMarked } from "lucide-react";
 import { useDictionaries } from "@/hooks/use-dictionaries";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 export default function DictionariesPage() {
@@ -47,8 +48,13 @@ export default function DictionariesPage() {
         )}
         {query.isError && (
           <Card>
-            <CardContent className="p-9 text-center text-sm text-destructive-ink">
-              Не удалось загрузить справочники.
+            <CardContent className="p-4">
+              <LoadFailure
+                what="справочники"
+                onRetry={() => void query.refetch()}
+                isRetrying={query.isFetching}
+                className="items-center text-center"
+              />
             </CardContent>
           </Card>
         )}

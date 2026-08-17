@@ -14,7 +14,7 @@ import {
   type UpdatePassportRequest,
 } from "@/entities/security-object";
 
-export function useUpdatePassport(id: string) {
+export function useUpdatePassport(id: string, onSaved?: () => void) {
   const queryClient = useQueryClient();
   return useOpsMutation<SecurityObject, UpdatePassportRequest>({
     mutationFn: (body) =>
@@ -22,6 +22,9 @@ export function useUpdatePassport(id: string) {
     onSuccess: (data) => {
       queryClient.setQueryData(["ops-objects", id], data);
       void queryClient.invalidateQueries({ queryKey: ["ops-objects"] });
+      // Сигнал «сохранил Я»: по нему форму можно пересобрать от свежего
+      // серверного состояния, не трогая её на чужих обновлениях.
+      onSaved?.();
     },
   });
 }
