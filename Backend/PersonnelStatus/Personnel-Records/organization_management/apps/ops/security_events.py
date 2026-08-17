@@ -117,7 +117,7 @@ def bind_passport_version(security_object, version, bound_at):
 
 
 @transaction.atomic
-def create_event(*, title, object_id, business_date, actor):
+def create_event(*, title, object_id, business_date, business_date_end=None, actor):
     field_errors = {}
     title = str(title or "").strip()
     if title == "":
@@ -130,6 +130,22 @@ def create_event(*, title, object_id, business_date, actor):
     except ValueError:
         parsed_date = None
         field_errors["businessDate"] = ["Укажите дату в формате ГГГГ-ММ-ДД."]
+    parsed_end = None
+    raw_end = str(business_date_end or "").strip()
+    if raw_end != "":
+        try:
+            parsed_end = dt.date.fromisoformat(raw_end)
+        except ValueError:
+            field_errors["businessDateEnd"] = [
+                "Укажите дату в формате ГГГГ-ММ-ДД."
+            ]
+        else:
+            # Окончание раньше начала — не «пустое поле», а неверный факт:
+            # из такой пары нельзя посчитать ни продолжительность, ни убытие.
+            if parsed_date is not None and parsed_end < parsed_date:
+                field_errors["businessDateEnd"] = [
+                    "Дата окончания раньше даты начала."
+                ]
     security_object = None
     if not field_errors:
         security_object = (
@@ -158,6 +174,7 @@ def create_event(*, title, object_id, business_date, actor):
         object_name=security_object.name,
         passport_binding=binding,
         business_date=parsed_date,
+        business_date_end=parsed_end,
         stage="BULLETIN",
         readiness_percent=STAGE_READINESS["BULLETIN"],
         force_need=0,

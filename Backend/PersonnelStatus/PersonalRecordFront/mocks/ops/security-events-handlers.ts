@@ -92,6 +92,7 @@ function emptyEvent(
     objectName,
     passportBinding: null,
     businessDate: date,
+    businessDateEnd: null,
     stage: "BULLETIN",
     readinessPercent: 0,
     forceNeed: 0,

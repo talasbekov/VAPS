@@ -131,6 +131,9 @@ def serialize_security_event(event):
         "closedAt": (
             event.closed_at.isoformat() if event.closed_at is not None else None
         ),
+        "businessDateEnd": (
+            str(event.business_date_end) if event.business_date_end else None
+        ),
         "approvalRoute": event.approval_route or [],
         "createdAt": event.created_at.isoformat(),
         "updatedAt": event.updated_at.isoformat(),
