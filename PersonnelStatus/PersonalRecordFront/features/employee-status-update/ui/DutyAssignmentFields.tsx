@@ -109,7 +109,7 @@ export function DutyAssignmentFields({
               })
             }
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Тип дежурства">
               <SelectValue placeholder="Выберите тип дежурства" />
             </SelectTrigger>
             <SelectContent>
@@ -139,7 +139,7 @@ export function DutyAssignmentFields({
             }
             disabled={isLoading || isError || objects.length === 0}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Объект наряда">
               <SelectValue
                 placeholder={
                   isLoading
@@ -175,7 +175,7 @@ export function DutyAssignmentFields({
             }
             disabled={dependentDisabled || posts.length === 0}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Пост наряда">
               <SelectValue
                 placeholder={
                   dependentDisabled
@@ -212,7 +212,7 @@ export function DutyAssignmentFields({
             }
             disabled={dependentDisabled}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Группа наряда">
               <SelectValue
                 placeholder={
                   dependentDisabled

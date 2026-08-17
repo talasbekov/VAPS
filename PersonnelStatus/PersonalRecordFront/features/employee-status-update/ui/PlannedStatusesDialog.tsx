@@ -310,7 +310,7 @@ export function PlannedStatusesDialog({
                               setEditForm({ ...editForm, status_type: value })
                             }
                           >
-                            <SelectTrigger>
+                            <SelectTrigger aria-label="Статус">
                               <SelectValue placeholder="Выберите статус" />
                             </SelectTrigger>
                             <SelectContent>
@@ -507,7 +507,7 @@ export function PlannedStatusesDialog({
                                   })
                                 }
                               >
-                                <SelectTrigger>
+                                <SelectTrigger aria-label="Статус">
                                   <SelectValue placeholder="Выберите статус" />
                                 </SelectTrigger>
                                 <SelectContent>

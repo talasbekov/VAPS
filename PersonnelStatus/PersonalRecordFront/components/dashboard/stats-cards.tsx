@@ -238,7 +238,10 @@ export function StatsCards({
     <div className="space-y-3 mb-3">
       {/* Карточки по типам отсутствий */}
       <motion.div
-        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3"
+        // На 375 px две колонки давали ~90 px под русскую подпись — видно было
+        // 8-10 символов («Командиро», «На соревнован»). До sm карточка занимает
+        // всю ширину, дальше сетка прежняя.
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6"
         variants={containerVariants}
         initial="hidden"
         animate="visible"
@@ -296,7 +299,10 @@ export function StatsCards({
             <motion.div key={type} variants={cardVariants}>
               <Card className="flex flex-col h-full hover:shadow-lg transition-shadow duration-300">
                 <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 px-4 pt-4 flex-shrink-0 min-h-[3.5rem]">
-                  <CardTitle className="text-lg font-medium leading-tight pr-2 flex-1 line-clamp-2">
+                  <CardTitle
+                    className="line-clamp-2 flex-1 pr-2 text-base font-medium leading-tight"
+                    title={config.label}
+                  >
                     {config.label}
                   </CardTitle>
                   <motion.div

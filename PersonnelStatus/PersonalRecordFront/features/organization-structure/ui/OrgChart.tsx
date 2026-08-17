@@ -168,11 +168,19 @@ export default function OrgChart() {
             alt={employee.name}
             className={`${sizeClasses[size]} rounded-full object-cover ring-2 ring-white shadow-sm group-hover:ring-blue-200 transition-all duration-300`}
           />
+          {/* Цвет — единственный носитель смысла у точки: дублируем словом
+              для скринридера, иначе статус читается только глазами. */}
           <div
             className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${
               statusColors[employee.status] || statusColors.in_service
             } shadow-sm`}
+            aria-hidden="true"
           />
+          <span className="sr-only">
+            {EMPLOYEE_STATUS_LABELS[
+              employee.status as keyof typeof EMPLOYEE_STATUS_LABELS
+            ] ?? "Статус не указан"}
+          </span>
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-foreground truncate group-hover:text-blue-600 transition-colors duration-200">
@@ -420,7 +428,13 @@ export default function OrgChart() {
                                   statusColors[emp.status] ||
                                   statusColors.in_service
                                 }`}
+                                aria-hidden="true"
                               />
+                              <span className="sr-only">
+                                {EMPLOYEE_STATUS_LABELS[
+                                  emp.status as keyof typeof EMPLOYEE_STATUS_LABELS
+                                ] ?? "Статус не указан"}
+                              </span>
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="text-xs font-semibold text-foreground truncate">

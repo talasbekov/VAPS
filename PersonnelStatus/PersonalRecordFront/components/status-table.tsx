@@ -499,7 +499,7 @@ export function StatusTable({
           </div>
 
           <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-            <SelectTrigger className="w-full sm:w-64">
+            <SelectTrigger className="w-full sm:w-64" aria-label="Фильтр по отделу">
               <SelectValue placeholder="Все отделы" />
             </SelectTrigger>
             <SelectContent>
@@ -513,7 +513,7 @@ export function StatusTable({
           </Select>
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-48">
+            <SelectTrigger className="w-full sm:w-48" aria-label="Фильтр по статусу">
               <SelectValue placeholder="Все статусы" />
             </SelectTrigger>
             <SelectContent>
