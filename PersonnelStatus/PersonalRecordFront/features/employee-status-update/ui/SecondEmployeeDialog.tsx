@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  FieldError,
+  fieldProps,
+  focusFirstInvalid,
+} from "@/shared/lib/field-errors";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -66,6 +71,7 @@ export function SecondEmployeeDialog({
   const [targetDivisionId, setTargetDivisionId] = useState<string>("");
   const [comment, setComment] = useState("");
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
 
@@ -143,30 +149,60 @@ export function SecondEmployeeDialog({
     }
   }, [open]);
 
+  /** Порядок полей на экране — по нему ведём фокус к первой ошибке. */
+  const FIELD_ORDER = [
+    "start-date",
+    "end-date",
+    "division",
+    "comment",
+  ] as const;
+
+  /**
+   * Имена полей API → поля формы. Без этой таблицы 400-ответ печатался
+   * как есть — человек читал «date_from: ...» и не понимал, что чинить.
+   */
+  const API_FIELD_MAP: Record<string, string> = {
+    start_date: "start-date",
+    date_from: "start-date",
+    end_date: "end-date",
+    date_to: "end-date",
+    to_division: "division",
+    target_division: "division",
+    reason: "comment",
+  };
+
   const validateForm = (): boolean => {
     const errors: string[] = [];
+    const byField: Record<string, string> = {};
 
     if (!startDate) {
       errors.push("Необходимо указать дату начала откомандирования");
+      byField["start-date"] = "Укажите дату начала.";
     }
 
     if (!endDate) {
       errors.push("Необходимо указать дату окончания откомандирования");
+      byField["end-date"] = "Укажите дату окончания.";
     }
 
     if (startDate && endDate && startDate > endDate) {
       errors.push("Дата начала не может быть позже даты окончания");
+      byField["end-date"] = "Дата окончания раньше даты начала.";
     }
 
     if (!targetDivisionId) {
       errors.push("Необходимо выбрать подразделение для откомандирования");
+      byField.division = "Выберите подразделение.";
     }
 
     if (!comment || comment.trim() === "") {
       errors.push("Необходимо указать причину откомандирования");
+      byField.comment = "Укажите причину откомандирования.";
     }
 
     setValidationErrors(errors);
+    setFieldErrors(byField);
+    if (errors.length > 0) focusFirstInvalid(FIELD_ORDER, byField);
     return errors.length === 0;
   };
 
@@ -258,17 +294,30 @@ export function SecondEmployeeDialog({
             errorMessage = nonFieldErrors;
             errors.push(nonFieldErrors);
           } else {
-            // Обрабатываем ошибки валидации полей
+            // Ошибки валидации полей: то, что удалось сопоставить с полем
+            // формы, уезжает ПОД это поле; остальное — в общую сводку.
+            const fromApi: Record<string, string> = {};
             Object.keys(errorData).forEach((key) => {
-              const fieldErrors = errorData[key];
-              if (Array.isArray(fieldErrors)) {
-                errors.push(`${key}: ${fieldErrors.join(", ")}`);
-              } else if (typeof fieldErrors === "string") {
-                errors.push(`${key}: ${fieldErrors}`);
+              const raw = errorData[key];
+              const text = Array.isArray(raw)
+                ? raw.join(", ")
+                : typeof raw === "string"
+                  ? raw
+                  : JSON.stringify(raw);
+              const field = API_FIELD_MAP[key];
+              if (field !== undefined) {
+                fromApi[field] = text;
               } else {
-                errors.push(`${key}: ${JSON.stringify(fieldErrors)}`);
+                errors.push(`${key}: ${text}`);
               }
             });
+            if (Object.keys(fromApi).length > 0) {
+              setFieldErrors(fromApi);
+              focusFirstInvalid(FIELD_ORDER, fromApi);
+              if (errors.length === 0) {
+                errorMessage = "Проверьте отмеченные поля.";
+              }
+            }
 
             if (errors.length > 0) {
               errorMessage = errors.join("; ");
@@ -340,6 +389,7 @@ export function SecondEmployeeDialog({
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
+                    {...fieldProps("start-date", fieldErrors["start-date"])}
                     variant="outline"
                     className={cn(
                       "w-full justify-start text-left font-normal",
@@ -364,6 +414,7 @@ export function SecondEmployeeDialog({
                   />
                 </PopoverContent>
               </Popover>
+              <FieldError id="start-date" error={fieldErrors["start-date"]} />
             </div>
 
             {/* Дата окончания откомандирования */}
@@ -374,6 +425,7 @@ export function SecondEmployeeDialog({
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
+                    {...fieldProps("end-date", fieldErrors["end-date"])}
                     variant="outline"
                     className={cn(
                       "w-full justify-start text-left font-normal",
@@ -399,6 +451,7 @@ export function SecondEmployeeDialog({
                   />
                 </PopoverContent>
               </Popover>
+              <FieldError id="end-date" error={fieldErrors["end-date"]} />
             </div>
 
             {/* Выбор подразделения */}
@@ -411,7 +464,7 @@ export function SecondEmployeeDialog({
                 onValueChange={setTargetDivisionId}
                 disabled={loadingDivisions}
               >
-                <SelectTrigger>
+                <SelectTrigger {...fieldProps("division", fieldErrors.division)}>
                   <SelectValue placeholder="Выберите подразделение" />
                 </SelectTrigger>
                 <SelectContent className="max-h-[400px] overflow-y-auto">
@@ -440,18 +493,20 @@ export function SecondEmployeeDialog({
                   )}
                 </SelectContent>
               </Select>
+              <FieldError id="division" error={fieldErrors.division} />
             </div>
 
             {/* Комментарий */}
             <div className="space-y-2">
               <Label htmlFor="comment">Причина откомандирования *</Label>
               <Textarea
-                id="comment"
+                {...fieldProps("comment", fieldErrors.comment)}
                 placeholder="Дополнительная информация об откомандировании..."
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 rows={3}
               />
+              <FieldError id="comment" error={fieldErrors.comment} />
             </div>
 
             {/* Ошибки валидации */}

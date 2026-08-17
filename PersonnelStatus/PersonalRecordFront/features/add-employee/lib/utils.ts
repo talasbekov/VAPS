@@ -43,6 +43,37 @@ export function validateIIN(iin: string): boolean {
   return /^\d{12}$/.test(iin);
 }
 
+export type EmployeeFormField =
+  | "lastName"
+  | "firstName"
+  | "iin"
+  | "divisionId"
+  | "positionId";
+
+/**
+ * Валидация формы ПО ПОЛЯМ: сводка списком строк не позволяла подсветить само
+ * поле — человек читал «Введите ИИН» под кнопкой и искал, где это поле.
+ */
+export function validateEmployeeFields(formData: {
+  firstName: string;
+  lastName: string;
+  iin: string;
+  positionId: string;
+  divisionId: string;
+}): Partial<Record<EmployeeFormField, string>> {
+  const errors: Partial<Record<EmployeeFormField, string>> = {};
+
+  if (!formData.lastName.trim()) errors.lastName = "Введите фамилию сотрудника.";
+  if (!formData.firstName.trim()) errors.firstName = "Введите имя сотрудника.";
+  if (!formData.iin.trim()) errors.iin = "Введите ИИН сотрудника.";
+  else if (!validateIIN(formData.iin))
+    errors.iin = "ИИН должен состоять из 12 цифр.";
+  if (!formData.divisionId) errors.divisionId = "Выберите подразделение.";
+  if (!formData.positionId) errors.positionId = "Выберите должность.";
+
+  return errors;
+}
+
 /**
  * Валидация формы добавления сотрудника
  */

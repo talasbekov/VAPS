@@ -28,7 +28,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/shared/hooks/use-toast";
 import { createEmployee } from "../api/add-employee-api";
 import type { CreateEmployeeFormData } from "../model/types";
-import { flattenDivisions, validateEmployeeForm } from "../lib/utils";
+import { flattenDivisions, validateEmployeeFields } from "../lib/utils";
+import type { EmployeeFormField } from "../lib/utils";
+import {
+  FieldError,
+  fieldProps,
+  focusFirstInvalid,
+} from "@/shared/lib/field-errors";
 
 interface AddEmployeeDialogProps {
   open: boolean;
@@ -51,6 +57,11 @@ export function AddEmployeeDialog({
     divisionId: "",
   });
   const [errors, setErrors] = useState<string[]>([]);
+  // Ошибки по полям — рядом с полем; сводка ниже осталась для того, что к
+  // конкретному полю не относится (сбой справочников, отказ сервера).
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<EmployeeFormField, string>>
+  >({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Используем React Query для загрузки справочников
@@ -97,6 +108,7 @@ export function AddEmployeeDialog({
         divisionId: "",
       });
       setErrors([]);
+      setFieldErrors({});
     }
   }, [open]);
 
@@ -112,10 +124,31 @@ export function AddEmployeeDialog({
     }
   }, [positionsError, ranksError, divisionsError]);
 
+  /** Порядок полей на экране — по нему ищем, куда вести фокус. */
+  const FIELD_ORDER: readonly EmployeeFormField[] = [
+    "lastName",
+    "firstName",
+    "iin",
+    "divisionId",
+    "positionId",
+  ];
+
   const validateForm = () => {
-    const newErrors = validateEmployeeForm(formData);
-    setErrors(newErrors);
-    return newErrors.length === 0;
+    const next = validateEmployeeFields(formData);
+    setFieldErrors(next);
+    if (Object.keys(next).length > 0) {
+      // Без перевода фокуса сабмит выглядел как «ничего не произошло»:
+      // сводка ошибок могла быть за пределами видимой части формы.
+      focusFirstInvalid(FIELD_ORDER, next);
+      return false;
+    }
+    return true;
+  };
+
+  /** Проверка одного поля на уходе фокуса: ошибка находится сразу, а не после «Добавить». */
+  const validateField = (field: EmployeeFormField) => {
+    const next = validateEmployeeFields(formData);
+    setFieldErrors((prev) => ({ ...prev, [field]: next[field] }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -194,7 +227,10 @@ export function AddEmployeeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[60vw] sm:w-[60vw] !max-w-5xl max-h-[90vh] overflow-y-auto">
+      {/* 60vw на телефоне — это 225 px под многополевую форму: на узком экране
+          диалог занимает почти всю ширину, а «шестьдесят процентов» включаются
+          с планшета. */}
+      <DialogContent className="w-[calc(100vw-2rem)] sm:w-[60vw] !max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Добавить нового сотрудника</DialogTitle>
         </DialogHeader>
@@ -208,25 +244,29 @@ export function AddEmployeeDialog({
               <div className="space-y-2">
                 <Label htmlFor="lastName">Фамилия *</Label>
                 <Input
-                  id="lastName"
+                  {...fieldProps("lastName", fieldErrors.lastName)}
                   placeholder="Петров"
                   value={formData.lastName}
                   onChange={(e) =>
                     handleInputChange("lastName", e.target.value)
                   }
+                  onBlur={() => validateField("lastName")}
                 />
+                <FieldError id="lastName" error={fieldErrors.lastName} />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="firstName">Имя *</Label>
                 <Input
-                  id="firstName"
+                  {...fieldProps("firstName", fieldErrors.firstName)}
                   placeholder="Володя"
                   value={formData.firstName}
                   onChange={(e) =>
                     handleInputChange("firstName", e.target.value)
                   }
+                  onBlur={() => validateField("firstName")}
                 />
+                <FieldError id="firstName" error={fieldErrors.firstName} />
               </div>
 
               <div className="space-y-2">
@@ -244,12 +284,15 @@ export function AddEmployeeDialog({
               <div className="space-y-2">
                 <Label htmlFor="iin">ИИН *</Label>
                 <Input
-                  id="iin"
+                  {...fieldProps("iin", fieldErrors.iin)}
                   placeholder="971126300673"
+                  inputMode="numeric"
                   value={formData.iin}
                   onChange={(e) => handleInputChange("iin", e.target.value)}
+                  onBlur={() => validateField("iin")}
                   maxLength={12}
                 />
+                <FieldError id="iin" error={fieldErrors.iin} />
               </div>
             </div>
           </div>
@@ -260,7 +303,7 @@ export function AddEmployeeDialog({
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="division">Подразделение *</Label>
+                <Label htmlFor="divisionId">Подразделение *</Label>
                 <Select
                   value={formData.divisionId}
                   onValueChange={(value) =>
@@ -268,7 +311,10 @@ export function AddEmployeeDialog({
                   }
                   disabled={loadingDictionaries}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger
+                    className="w-full"
+                    {...fieldProps("divisionId", fieldErrors.divisionId)}
+                  >
                     <SelectValue
                       placeholder={
                         loadingDictionaries
@@ -294,11 +340,12 @@ export function AddEmployeeDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                <FieldError id="divisionId" error={fieldErrors.divisionId} />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="position">Должность *</Label>
+                  <Label htmlFor="positionId">Должность *</Label>
                   <Select
                     value={formData.positionId}
                     onValueChange={(value) =>
@@ -306,7 +353,9 @@ export function AddEmployeeDialog({
                     }
                     disabled={loadingDictionaries}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger
+                      {...fieldProps("positionId", fieldErrors.positionId)}
+                    >
                       <SelectValue
                         placeholder={
                           loadingDictionaries
@@ -326,6 +375,7 @@ export function AddEmployeeDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                  <FieldError id="positionId" error={fieldErrors.positionId} />
                 </div>
 
                 <div className="space-y-2">

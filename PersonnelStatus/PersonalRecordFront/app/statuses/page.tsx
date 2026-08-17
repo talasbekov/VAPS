@@ -115,12 +115,12 @@ export default function StatusesPage() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Управление статусами</h1>
             <p className="text-muted-foreground mt-1">Контроль и обновление статусов сотрудников</p>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Badge variant="outline" className="text-sm">
               Последнее обновление: {lastUpdate ? lastUpdate.toLocaleString("ru-RU") : "—"}
             </Badge>
@@ -181,13 +181,14 @@ export default function StatusesPage() {
         {/* Main Content */}
         <Tabs defaultValue="table" className="space-y-6">
           <div className="flex items-center justify-between">
-            <TabsList>
+            {/* Ряд вкладок шире экрана телефона — скроллим сам ряд, а не страницу. */}
+            <TabsList className="max-w-full overflow-x-auto">
               <TabsTrigger value="table">Таблица сотрудников</TabsTrigger>
               <TabsTrigger value="calendar">Календарь статусов</TabsTrigger>
               <TabsTrigger value="mass-update">Массовое обновление</TabsTrigger>
             </TabsList>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               <SecondmentRequestsDialog />
               <Button variant="outline" size="sm">
                 <Upload className="h-4 w-4 mr-2" />

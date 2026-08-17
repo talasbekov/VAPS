@@ -216,7 +216,7 @@ export default function EmployeesPage() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold text-foreground">
               Управление персоналом
@@ -225,7 +225,7 @@ export default function EmployeesPage() {
               Управление сотрудниками организации
             </p>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Badge variant="outline" className="text-sm">
               Всего сотрудников: {filteredEmployees.length}
             </Badge>
@@ -313,8 +313,8 @@ export default function EmployeesPage() {
 
         {/* Main Content */}
         <Tabs defaultValue="table" className="space-y-6">
-          <div className="flex items-center justify-between">
-            <TabsList>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <TabsList className="max-w-full overflow-x-auto">
               <TabsTrigger value="table">Список сотрудников</TabsTrigger>
               <TabsTrigger value="cards">Карточки</TabsTrigger>
               {selectedEmployee && (
@@ -322,7 +322,7 @@ export default function EmployeesPage() {
               )}
             </TabsList>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               <PermissionGate resource="employees" action="read">
                 <Button variant="outline" size="sm">
                   <Upload className="h-4 w-4 mr-2" />

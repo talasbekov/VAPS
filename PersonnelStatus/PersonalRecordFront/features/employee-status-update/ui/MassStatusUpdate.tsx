@@ -44,6 +44,12 @@ import {
   SELECTABLE_STATUS_ITEMS,
   getEmployeeStatusPaint,
 } from "@/lib/status";
+import {
+  FieldError,
+  fieldProps,
+  focusFirstInvalid,
+} from "@/shared/lib/field-errors";
+import { toast } from "@/shared/hooks/use-toast";
 
 interface MassStatusUpdateProps {
   selectedEmployees: string[];
@@ -61,6 +67,7 @@ export function MassStatusUpdate({
   const [notifyManagers, setNotifyManagers] = useState<CheckedState>(true);
   const [scheduleUpdate, setScheduleUpdate] = useState<CheckedState>(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Используем React Query для загрузки данных
@@ -76,11 +83,16 @@ export function MassStatusUpdate({
   /** «В строю» — бессрочный статус по умолчанию, дат не требует. */
   const isInService = status === EMPLOYEE_STATUS_LABELS.in_service;
 
+  /** Порядок полей на экране — по нему ведём фокус к первой ошибке. */
+  const FIELD_ORDER = ["status", "mass-start-date", "mass-end-date"] as const;
+
   const validateForm = () => {
     const errors: string[] = [];
+    const byField: Record<string, string> = {};
 
     if (!status) {
       errors.push("Выберите статус");
+      byField.status = "Выберите статус.";
     }
 
     if (selectedEmployees.length === 0) {
@@ -89,6 +101,7 @@ export function MassStatusUpdate({
 
     if (startDate && endDate && startDate > endDate) {
       errors.push("Дата начала не может быть позже даты окончания");
+      byField["mass-end-date"] = "Дата окончания раньше даты начала.";
     }
 
     // Правило то же, что в одиночной модалке: «В строю» бессрочен и дат не
@@ -97,11 +110,19 @@ export function MassStatusUpdate({
     // дежурстве» форма пропускала пустые даты, а статус без даты начала
     // невозможен, и обновление отклонялось уже на сервере.
     if (status && !isInService) {
-      if (!startDate) errors.push("Укажите дату начала");
-      if (!endDate) errors.push("Укажите дату окончания");
+      if (!startDate) {
+        errors.push("Укажите дату начала");
+        byField["mass-start-date"] = "Укажите дату начала.";
+      }
+      if (!endDate) {
+        errors.push("Укажите дату окончания");
+        byField["mass-end-date"] = "Укажите дату окончания.";
+      }
     }
 
     setValidationErrors(errors);
+    setFieldErrors(byField);
+    if (errors.length > 0) focusFirstInvalid(FIELD_ORDER, byField);
     return errors.length === 0;
   };
 
@@ -246,11 +267,19 @@ export function MassStatusUpdate({
         onSuccess();
       }
 
-      // Show success message (в реальном приложении лучше использовать toast)
-      alert(
+      // alert() блокирует вкладку и не читается скринридером как сообщение
+      // приложения; тост в проекте уже есть и используется соседними экранами.
+      toast(
         failures.length > 0
-          ? `Статус обновлён для ${applied} из ${employeesWithIds.length} сотрудников; часть не обновлена.`
-          : `Статус успешно обновлен для ${applied} сотрудников`
+          ? {
+              title: "Статус обновлён частично",
+              description: `Обновлено ${applied} из ${employeesWithIds.length}; часть строк не обновлена.`,
+              variant: "destructive",
+            }
+          : {
+              title: "Статус обновлён",
+              description: `Обновлено сотрудников: ${applied}.`,
+            }
       );
     } catch (error) {
       console.error("Error updating statuses:", error);
@@ -283,7 +312,7 @@ export function MassStatusUpdate({
               <div className="space-y-2">
                 <Label htmlFor="status">Новый статус *</Label>
                 <Select value={status} onValueChange={setStatus}>
-                  <SelectTrigger>
+                  <SelectTrigger {...fieldProps("status", fieldErrors.status)}>
                     <SelectValue placeholder="Выберите статус" />
                   </SelectTrigger>
                   <SelectContent>
@@ -316,15 +345,17 @@ export function MassStatusUpdate({
                     })}
                   </SelectContent>
                 </Select>
+                <FieldError id="status" error={fieldErrors.status} />
               </div>
 
               {/* Date Range */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Дата начала</Label>
+                  <Label htmlFor="mass-start-date">Дата начала</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
+                        {...fieldProps("mass-start-date", fieldErrors["mass-start-date"])}
                         variant="outline"
                         className="w-full justify-start text-left font-normal bg-transparent"
                       >
@@ -343,13 +374,15 @@ export function MassStatusUpdate({
                       />
                     </PopoverContent>
                   </Popover>
+                  <FieldError id="mass-start-date" error={fieldErrors["mass-start-date"]} />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Дата окончания</Label>
+                  <Label htmlFor="mass-end-date">Дата окончания</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
+                        {...fieldProps("mass-end-date", fieldErrors["mass-end-date"])}
                         variant="outline"
                         className="w-full justify-start text-left font-normal bg-transparent"
                       >
@@ -368,6 +401,7 @@ export function MassStatusUpdate({
                       />
                     </PopoverContent>
                   </Popover>
+                  <FieldError id="mass-end-date" error={fieldErrors["mass-end-date"]} />
                 </div>
               </div>
 

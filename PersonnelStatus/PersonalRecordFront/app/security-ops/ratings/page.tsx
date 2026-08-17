@@ -90,8 +90,10 @@ export default function OperationalRatingsPage() {
               )}
             </section>
 
-            <section className="overflow-hidden rounded-xl border bg-card">
-              <table className="w-full border-collapse text-left">
+            <section className="overflow-x-auto rounded-xl border bg-card">
+              {/* overflow-x-auto, а не hidden: на узком экране правые колонки
+                  были недостижимы вообще — таблица обрезалась без скролла. */}
+              <table className="w-full min-w-[48rem] border-collapse text-left">
                 <caption className="sr-only">
                   Агрегированный оперативный рейтинг участников мероприятий
                 </caption>

@@ -36,7 +36,8 @@ function xAt(index: number, count: number): number {
 
 function yAt(value: number): number {
   const span = VIEW_HEIGHT - PAD_TOP - PAD_BOTTOM;
-  const ratio = (value - RATING_SCALE_MIN) / (RATING_SCALE_MAX - RATING_SCALE_MIN);
+  const ratio =
+    (value - RATING_SCALE_MIN) / (RATING_SCALE_MAX - RATING_SCALE_MIN);
   return VIEW_HEIGHT - PAD_BOTTOM - span * ratio;
 }
 
@@ -150,7 +151,7 @@ export function RatingDynamicsSection() {
                   сервера, экран их не выводит из соседних точек. */}
               {data.boundaries.map((boundary) => {
                 const index = data.points.findIndex(
-                  (point) => point.period === boundary.period
+                  (point) => point.period === boundary.period,
                 );
                 if (index <= 0) return null;
                 const x =
@@ -232,61 +233,64 @@ export function RatingDynamicsSection() {
               ))}
             </svg>
 
-            <table className="w-full border-collapse text-left">
-              <caption className="sr-only">
-                Точки динамики агрегированного рейтинга: {data.safeLabel}
-              </caption>
-              <thead>
-                <tr>
-                  {["Период", "Агрегат", "Учтено оценок", "Методика"].map(
-                    (title) => (
-                      <th
-                        key={title}
-                        scope="col"
-                        className="p-2 text-[11px] font-semibold text-muted-foreground"
-                      >
-                        {title}
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {data.points.map((point) => (
-                  <tr key={point.period} className="border-t">
-                    <td className="p-2 text-sm">{point.period}</td>
-                    <td className="p-2 text-sm tabular-nums">
-                      {point.aggregateRating === null
-                        ? DATA_STATE_LABEL[point.dataState]
-                        : ratingLabel(point.aggregateRating)}
-                    </td>
-                    <td className="p-2 text-sm tabular-nums">
-                      {point.evaluationsCount}
-                    </td>
-                    <td className="p-2 font-mono text-xs text-muted-foreground">
-                      {point.policyVersion}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[36rem] border-collapse text-left">
+                <caption className="sr-only">
+                  Точки динамики агрегированного рейтинга: {data.safeLabel}
+                </caption>
+                <thead>
+                  <tr>
+                    {["Период", "Агрегат", "Учтено оценок", "Методика"].map(
+                      (title) => (
+                        <th
+                          key={title}
+                          scope="col"
+                          className="p-2 text-[11px] font-semibold text-muted-foreground"
+                        >
+                          {title}
+                        </th>
+                      ),
+                    )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.points.map((point) => (
+                    <tr key={point.period} className="border-t">
+                      <td className="p-2 text-sm">{point.period}</td>
+                      <td className="p-2 text-sm tabular-nums">
+                        {point.aggregateRating === null
+                          ? DATA_STATE_LABEL[point.dataState]
+                          : ratingLabel(point.aggregateRating)}
+                      </td>
+                      <td className="p-2 text-sm tabular-nums">
+                        {point.evaluationsCount}
+                      </td>
+                      <td className="p-2 font-mono text-xs text-muted-foreground">
+                        {point.policyVersion}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
             <p className="mt-3 text-xs text-muted-foreground">
               {data.boundaries.length > 0
                 ? "Периоды разных методик не соединены одной линией: их значения получены по разным правилам и сравнивать их как однородный ряд нельзя."
                 : "Все точки ряда посчитаны по одной методике."}
             </p>
-            {data.currentPolicy !== null && !data.currentPolicyHasClosedPeriods && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Действующая методика{" "}
-                <span className="font-mono">
-                  {data.currentPolicy.policyVersion}
-                </span>{" "}
-                ещё не закрывала ни одного периода — её точек на графике нет.
-                Пересчитать по ней прошлые периоды нельзя: они закрыты по
-                методике, действовавшей тогда.
-              </p>
-            )}
+            {data.currentPolicy !== null &&
+              !data.currentPolicyHasClosedPeriods && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Действующая методика{" "}
+                  <span className="font-mono">
+                    {data.currentPolicy.policyVersion}
+                  </span>{" "}
+                  ещё не закрывала ни одного периода — её точек на графике нет.
+                  Пересчитать по ней прошлые периоды нельзя: они закрыты по
+                  методике, действовавшей тогда.
+                </p>
+              )}
           </>
         )}
     </section>

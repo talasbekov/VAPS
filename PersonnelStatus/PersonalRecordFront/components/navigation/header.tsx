@@ -42,8 +42,12 @@ export function Header({
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 bg-background border-b border-border">
-      <div className="flex items-center justify-between px-4 sm:px-6 h-14">
+    // Прилипает только сама шапка. Раньше `sticky` висел на всём <header>, и
+    // вместе с ним к верху экрана прилипала трёхстрочная плашка о правах —
+    // она отъедала треть экрана телефона на каждой странице у всех ролей,
+    // кроме role-2/4/6.
+    <header className="border-b border-border">
+      <div className="sticky top-0 z-40 flex h-14 items-center justify-between bg-background px-4 sm:px-6">
         <div className="flex items-center gap-2">
           {/* Бургер — единственный вход в навигацию на мобильном, и до этой
               правки у него не было имени вовсе: скринридер читал «кнопка». */}

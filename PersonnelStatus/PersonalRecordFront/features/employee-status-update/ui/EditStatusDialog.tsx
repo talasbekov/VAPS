@@ -46,6 +46,11 @@ import {
 } from "@/entities/duty-assignment";
 import { useDutyAssignment } from "@/hooks/use-duty-assignments";
 import {
+  FieldError,
+  fieldProps,
+  focusFirstInvalid,
+} from "@/shared/lib/field-errors";
+import {
   DutyAssignmentFields,
   EMPTY_DUTY_DRAFT,
   validateDutyDraft,
@@ -88,6 +93,8 @@ export function EditStatusDialog({
   const [comment, setComment] = useState("");
   const [duty, setDuty] = useState<DutyDraft>(EMPTY_DUTY_DRAFT);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  // Ошибки по полям: сводка внизу формы на 580 строк не видна с верхних полей.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Используем React Query для загрузки данных
@@ -222,22 +229,34 @@ export function EditStatusDialog({
     };
   }, [staffUnits, employeeId, ranks, employeePosition, employeeDepartment]);
 
+  /** Поля в порядке появления на экране — по нему ведём фокус. */
+  const FIELD_ORDER = ["status", "startDate", "endDate"] as const;
+
   const validateForm = () => {
     const errors: string[] = [];
+    const byField: Record<string, string> = {};
 
     if (!status) {
       errors.push("Выберите статус");
+      byField.status = "Выберите статус.";
     }
 
     // «В строю» бессрочен — дат у него нет. У любого другого статуса период
     // обязателен целиком: статус без конца не отличим от забытого.
     if (status && !isInService) {
-      if (!startDate) errors.push("Укажите дату начала");
-      if (!endDate) errors.push("Укажите дату окончания");
+      if (!startDate) {
+        errors.push("Укажите дату начала");
+        byField.startDate = "Укажите дату начала.";
+      }
+      if (!endDate) {
+        errors.push("Укажите дату окончания");
+        byField.endDate = "Укажите дату окончания.";
+      }
     }
 
     if (startDate && endDate && startDate > endDate) {
       errors.push("Дата начала не может быть позже даты окончания");
+      byField.endDate = "Дата окончания раньше даты начала.";
     }
 
     if (isOnDuty) {
@@ -245,6 +264,8 @@ export function EditStatusDialog({
     }
 
     setValidationErrors(errors);
+    setFieldErrors(byField);
+    if (errors.length > 0) focusFirstInvalid(FIELD_ORDER, byField);
     return errors.length === 0;
   };
 
@@ -383,7 +404,7 @@ export function EditStatusDialog({
           <div className="space-y-2">
             <Label htmlFor="status">Новый статус *</Label>
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger>
+              <SelectTrigger {...fieldProps("status", fieldErrors.status)}>
                 <SelectValue placeholder="Выберите статус" />
               </SelectTrigger>
               <SelectContent>
@@ -415,6 +436,7 @@ export function EditStatusDialog({
                 })}
               </SelectContent>
             </Select>
+            <FieldError id="status" error={fieldErrors.status} />
           </div>
 
           {/* Наряд: только у «На дежурстве» */}
@@ -430,10 +452,11 @@ export function EditStatusDialog({
           ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Дата начала *</Label>
+              <Label htmlFor="startDate">Дата начала *</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
+                    {...fieldProps("startDate", fieldErrors.startDate)}
                     variant="outline"
                     className="w-full justify-start text-left font-normal"
                   >
@@ -452,13 +475,15 @@ export function EditStatusDialog({
                   />
                 </PopoverContent>
               </Popover>
+              <FieldError id="startDate" error={fieldErrors.startDate} />
             </div>
 
             <div className="space-y-2">
-              <Label>Дата окончания *</Label>
+              <Label htmlFor="endDate">Дата окончания *</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
+                    {...fieldProps("endDate", fieldErrors.endDate)}
                     variant="outline"
                     className="w-full justify-start text-left font-normal"
                   >
@@ -477,6 +502,7 @@ export function EditStatusDialog({
                   />
                 </PopoverContent>
               </Popover>
+              <FieldError id="endDate" error={fieldErrors.endDate} />
             </div>
           </div>
           )}
