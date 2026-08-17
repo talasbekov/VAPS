@@ -1,79 +1,387 @@
 "use client";
 
-// Этап 5 «Расстановка»: назначения сотрудников на посты расчёта. Правила:
-// два поста одного ОМ одному сотруднику — жёсткий отказ (422); требование
-// поста к рейтингу — мягкий 409-конфликт, обходится причиной через общий
-// ConflictDialog. Возврат с согласования показывает причину.
+// Шаг 3 «Расстановка» — по экрану прототипа Smart Josparlau: панель сводки,
+// слева дерево «Объекты и посты», в центре выбранный пост, справа подбор
+// «Доступные сотрудники».
 //
-// Компоновка — из прототипа Smart Josparlau (экран «Расстановка»): слева
-// дерево «сектор → посты» с заполненностью, справа карточка выбранного поста.
-// Плоский список постов с отдельным подбором в каждом заставлял листать весь
-// расчёт, чтобы понять, где дыра.
+// Шаг покрывает ТРИ стадии бэкенда: DEMAND, FORCES и PLACEMENT. Сбор группы
+// (строки потребности) и выделение сил перенесены внутрь этого экрана —
+// отдельных шагов у них больше нет, как и в прототипе, где пул кандидатов
+// строится из выделенных сил с их группой.
 //
-// Чего из прототипа здесь НЕТ и почему: старший сектора, перемещение между
-// постами, автоподбор и версии расстановки требуют полей и ручек, которых у
-// бэка нет вовсе. Рисовать их поверх живого домена значило бы выдать мок за
-// работающую функцию.
-import { useState } from "react";
+// Чего у бэка нет и что поэтому не нарисовано (вместо выдумки — прямая
+// подпись на экране):
+// * версии расстановки и «Сохранить расстановку» — назначение уходит на
+//   сервер сразу, сохранять нечего;
+// * «Старший сектора» — поля у назначения нет;
+// * «Отменить ОМ» — ручки отмены нет;
+// * поимённый состав выделенных сил — бэк хранит выделение ЧИСЛОМ, поэтому
+//   подбор идёт по кадровому снимку, а числа выделения показаны чипами.
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
 import { ConflictDialog } from "@/features/ops-conflict-override";
 import {
+  useApproveDemand,
   useAssignPlacement,
+  useCompleteForces,
   useCompletePlacement,
   usePersonnelRoster,
   useUnassignPlacement,
+  useUpdateForceAllocation,
+  useUpdateRecon,
 } from "@/hooks/use-security-event-stages";
 import { useOperationalRatings } from "@/hooks/use-ops-ratings";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import type {
+  PersonnelSummarySnapshot,
   PlacementAssignment,
   ReconSectorPost,
   SecurityEvent,
+  StaffingDemandRow,
 } from "@/entities/security-event";
-import { StageError } from "./StageErrors";
+import { FieldErrors, StageError } from "./StageErrors";
+
+const SORT_OPTIONS = [
+  "Рекомендуемые",
+  "По соответствию",
+  "По рейтингу",
+  "По алфавиту",
+] as const;
+
+const RATE_OPTIONS = [
+  "Все",
+  "9,0–10,0",
+  "8,0–8,9",
+  "7,0–7,9",
+  "Ниже 7,0",
+  "Недостаточно данных",
+] as const;
+
+type SortOption = (typeof SORT_OPTIONS)[number];
+type RateOption = (typeof RATE_OPTIONS)[number];
 
 export function PlacementStage({ event }: { event: SecurityEvent }) {
+  // Сбор группы и выделение сил — стадии DEMAND и FORCES: пока они не
+  // пройдены, подбирать некого, поэтому экран открывается своей подготовкой.
+  if (event.stage === "DEMAND") return <DemandPanel event={event} />;
+  if (event.stage === "FORCES") return <ForcesPanel event={event} />;
+  return <PlacementBoard event={event} />;
+}
+
+// ── Подготовка: потребность (группа по каждой строке) ────────────────────
+
+function seedRows(event: SecurityEvent): StaffingDemandRow[] {
+  if (event.demandRows.length > 0) return event.demandRows;
+  return event.reconSectorPosts.map((post, index) => ({
+    id: `demand-${index + 1}`,
+    sector: post.sector,
+    task: post.task !== "" ? post.task : post.post,
+    shift: "",
+    need: post.need,
+    group: "",
+    requirements: post.requirements,
+    comment: "",
+  }));
+}
+
+function DemandPanel({ event }: { event: SecurityEvent }) {
+  const [rows, setRows] = useState<StaffingDemandRow[]>(() => seedRows(event));
+  const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
+    null
+  );
+  const approve = useApproveDemand(event.id, {
+    onFormError: (details) => setFieldErrors(details),
+  });
+
+  function patch(id: string, next: Partial<StaffingDemandRow>): void {
+    setRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...next } : row)));
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Расстановка · подготовка расчёта</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Группа по каждой строке — то, из чего собирается пул подбора. Строки
+          преднаполнены расчётом рекогносцировки; смену и группу задайте вручную.
+        </p>
+        <div className="flex flex-col gap-2">
+          {rows.map((row) => (
+            <div
+              key={row.id}
+              className="grid grid-cols-2 gap-2 border-b pb-2 last:border-0 md:grid-cols-[1fr_1.4fr_1fr_70px_1.2fr]"
+            >
+              <Input
+                className="h-8 text-xs"
+                aria-label={`Сектор строки ${row.id}`}
+                value={row.sector}
+                onChange={(e) => patch(row.id, { sector: e.target.value })}
+              />
+              <Input
+                className="h-8 text-xs"
+                aria-label={`Задача строки ${row.id}`}
+                value={row.task}
+                onChange={(e) => patch(row.id, { task: e.target.value })}
+              />
+              <Input
+                className="h-8 text-xs"
+                placeholder="Смена"
+                aria-label={`Смена строки ${row.id}`}
+                value={row.shift}
+                onChange={(e) => patch(row.id, { shift: e.target.value })}
+              />
+              <Input
+                className="h-8 text-xs"
+                type="number"
+                min={1}
+                aria-label={`Потребность строки ${row.id}`}
+                value={row.need}
+                onChange={(e) => patch(row.id, { need: Number(e.target.value) || 0 })}
+              />
+              <Input
+                className="h-8 text-xs"
+                placeholder="Группа"
+                aria-label={`Группа строки ${row.id}`}
+                value={row.group}
+                onChange={(e) => patch(row.id, { group: e.target.value })}
+              />
+            </div>
+          ))}
+        </div>
+        <FieldErrors errors={fieldErrors} />
+        <StageError error={approve.error} />
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            disabled={approve.isPending}
+            onClick={() => {
+              setFieldErrors(null);
+              approve.mutate({ rows });
+            }}
+          >
+            {approve.isPending ? "Утверждение…" : "Утвердить потребность → выделение сил"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Подготовка: выделение сил по группам ─────────────────────────────────
+
+function ForcesPanel({ event }: { event: SecurityEvent }) {
+  const complete = useCompleteForces(event.id);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Расстановка · выделение сил</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Выделенная численность по группам — она же даёт размер пула подбора на
+          расстановке.
+        </p>
+        {event.forceRequests.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Запросов нет — потребность не утверждена.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {event.forceRequests.map((request) => (
+              <AllocationRow key={request.id} event={event} request={request} />
+            ))}
+          </div>
+        )}
+        <StageError error={complete.error} />
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            disabled={complete.isPending}
+            onClick={() => complete.mutate({})}
+          >
+            {complete.isPending ? "Завершение…" : "Завершить выделение → расстановка"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AllocationRow({
+  event,
+  request,
+}: {
+  event: SecurityEvent;
+  request: SecurityEvent["forceRequests"][number];
+}) {
+  const [allocated, setAllocated] = useState(String(request.allocatedCount));
+  const update = useUpdateForceAllocation(event.id, request.id);
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border p-2.5 text-sm">
+      <span className="font-semibold">{request.group}</span>
+      <span className="text-xs text-muted-foreground">
+        запрошено {request.requestedCount}
+      </span>
+      <Input
+        className="h-8 w-24 text-xs"
+        type="number"
+        min={0}
+        aria-label={`Выделено: ${request.group}`}
+        value={allocated}
+        onChange={(e) => setAllocated(e.target.value)}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={update.isPending}
+        onClick={() =>
+          update.mutate({ allocatedCount: Number(allocated) || 0, comment: "" })
+        }
+      >
+        Выделить
+      </Button>
+      <StageError error={update.error} />
+    </div>
+  );
+}
+
+// ── Расстановка: три колонки прототипа ───────────────────────────────────
+
+function PlacementBoard({ event }: { event: SecurityEvent }) {
   const roster = usePersonnelRoster();
   const assign = useAssignPlacement(event.id);
   const unassign = useUnassignPlacement(event.id);
   const complete = useCompletePlacement(event.id);
+  const updateRecon = useUpdateRecon(event.id);
   const { hasPermission } = useOpsPermissions();
-  // Агрегат рейтинга — отдельное право (§19). Без него запрос не уходит
-  // вовсе, а плашка рейтинга просто не рисуется: пустое место честнее
-  // прочерка, который читается как «рейтинга нет».
   const canSeeRatings = hasPermission("rating.view_aggregate");
-  const ratingOf = useRatingLookup(canSeeRatings);
+  const ratings = useOperationalRatings({ enabled: canSeeRatings });
 
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
-  const [candidate, setCandidate] = useState("");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortOption>("Рекомендуемые");
+  const [band, setBand] = useState<RateOption>("Все");
+  const [comment, setComment] = useState<string | null>(null);
 
   const posts = event.reconSectorPosts;
-  // Выбор переживает перерисовку, но не удаление поста на рекогносцировке.
-  const selectedPost =
-    posts.find((post) => post.id === selectedPostId) ?? posts[0] ?? null;
-
-  const assignedEmployeeIds = new Set(
-    event.placementAssignments.map((a) => a.employeeId)
-  );
+  const selected = posts.find((p) => p.id === selectedPostId) ?? posts[0] ?? null;
   const assignmentsOf = (postId: string): PlacementAssignment[] =>
     event.placementAssignments.filter((a) => a.postId === postId);
 
-  const totalNeed = posts.reduce((sum, post) => sum + post.need, 0);
-  const totalAssigned = event.placementAssignments.length;
-  const understaffed = posts.filter(
-    (post) => assignmentsOf(post.id).length < post.need
-  ).length;
+  const ratingOf = (employeeId: string): number | null =>
+    ratings.data?.results.find((r) => r.employeeId === employeeId)
+      ?.aggregateRating ?? null;
 
-  // Порядок секторов — как в расчёте рекогносцировки, без сортировки:
-  // расчёт ведут сверху вниз, и перестановка сбила бы привычный обход.
-  const sectors: { name: string; posts: ReconSectorPost[] }[] = [];
-  for (const post of posts) {
-    const existing = sectors.find((sector) => sector.name === post.sector);
-    if (existing === undefined) sectors.push({ name: post.sector, posts: [post] });
-    else existing.posts.push(post);
+  const allocated = event.forceRequests.reduce(
+    (sum, request) => sum + request.allocatedCount,
+    0
+  );
+  const assignedCount = event.placementAssignments.length;
+  const totalNeed = posts.reduce((sum, post) => sum + post.need, 0);
+  const unfilled = posts.filter((p) => assignmentsOf(p.id).length < p.need).length;
+  const conflicts = event.placementAssignments.filter(
+    (a) => a.ratingOverrideReason !== null
+  ).length;
+  const free = Math.max(0, allocated - assignedCount);
+
+  const sectors = useMemo(() => {
+    const list: { name: string; posts: ReconSectorPost[] }[] = [];
+    for (const post of posts) {
+      const found = list.find((s) => s.name === post.sector);
+      if (found === undefined) list.push({ name: post.sector, posts: [post] });
+      else found.posts.push(post);
+    }
+    return list;
+  }, [posts]);
+
+  const assignedIds = new Set(event.placementAssignments.map((a) => a.employeeId));
+
+  /**
+   * «Совпадение» — прозрачная арифметика, а не выдуманный балл: 60 базовых,
+   * +25 за требование поста, встреченное в подразделении или звании
+   * кандидата, +15 при рейтинге не ниже требуемого постом. Считается на
+   * клиенте, потому что бэк такой оценки не даёт.
+   */
+  function fitOf(person: PersonnelSummarySnapshot): number {
+    if (selected === null) return 0;
+    let fit = 60;
+    const req = selected.requirements.trim().toLowerCase();
+    if (req !== "" && `${person.unit} ${person.rankLabel}`.toLowerCase().includes(req))
+      fit += 25;
+    const rating = ratingOf(person.id);
+    if (selected.minRating !== null && rating !== null && rating >= selected.minRating)
+      fit += 15;
+    else if (selected.minRating === null) fit += 15;
+    return Math.min(100, fit);
+  }
+
+  function inBand(rating: number | null): boolean {
+    switch (band) {
+      case "Все":
+        return true;
+      case "9,0–10,0":
+        return rating !== null && rating >= 9;
+      case "8,0–8,9":
+        return rating !== null && rating >= 8 && rating < 9;
+      case "7,0–7,9":
+        return rating !== null && rating >= 7 && rating < 8;
+      case "Ниже 7,0":
+        return rating !== null && rating < 7;
+      case "Недостаточно данных":
+        return rating === null;
+    }
+  }
+
+  const candidates = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const list = (roster.data?.results ?? [])
+      .filter((person) =>
+        needle === ""
+          ? true
+          : `${person.name} ${person.unit}`.toLowerCase().includes(needle)
+      )
+      .filter((person) => inBand(ratingOf(person.id)));
+    const withFit = list.map((person) => ({
+      person,
+      fit: fitOf(person),
+      rating: ratingOf(person.id),
+      busy: assignedIds.has(person.id),
+    }));
+    switch (sort) {
+      case "По рейтингу":
+        return withFit.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
+      case "По соответствию":
+        return withFit.sort((a, b) => b.fit - a.fit);
+      case "По алфавиту":
+        return withFit.sort((a, b) => a.person.name.localeCompare(b.person.name, "ru"));
+      default:
+        return withFit.sort(
+          (a, b) => Number(a.busy) - Number(b.busy) || b.fit - a.fit
+        );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roster.data, query, sort, band, selected, ratings.data, assignedIds.size]);
+
+  /** Автоподбор: реальные назначения свободных кандидатов на недобранные посты. */
+  function autoFill(): void {
+    const taken = new Set(assignedIds);
+    for (const post of posts) {
+      let missing = post.need - assignmentsOf(post.id).length;
+      for (const candidate of candidates) {
+        if (missing <= 0) break;
+        if (taken.has(candidate.person.id)) continue;
+        taken.add(candidate.person.id);
+        missing -= 1;
+        assign.mutate({ postId: post.id, employeeId: candidate.person.id });
+      }
+    }
   }
 
   return (
@@ -90,117 +398,331 @@ export function PlacementStage({ event }: { event: SecurityEvent }) {
           </Alert>
         )}
 
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2">
+          <div className="flex flex-wrap gap-4 text-xs">
+            <Kpi label="постов" value={posts.length} />
+            <Kpi label="требуется" value={totalNeed} />
+            <Kpi label="назначено" value={assignedCount} />
+            <Kpi label="свободно" value={free} />
+            <Kpi label="незаполнено" value={unfilled} tone={unfilled > 0 ? "warn" : undefined} />
+            <Kpi label="конфликтов" value={conflicts} tone={conflicts > 0 ? "bad" : undefined} />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={assign.isPending || unfilled === 0}
+              onClick={autoFill}
+            >
+              Сформировать автоматически
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={complete.isPending}
+              onClick={() => complete.mutate({})}
+            >
+              {complete.isPending ? "Завершение…" : "Завершить этап и перейти далее"}
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Назначения уходят на сервер сразу — отдельного сохранения и версий
+          расстановки у мероприятия нет.
+        </p>
+
         {posts.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             Постов нет — расчёт формируется на этапе рекогносцировки.
           </p>
         ) : (
-          <>
-            <div className="flex flex-wrap gap-4 rounded-md border bg-muted/40 px-3 py-2 text-xs">
-              <Kpi value={posts.length} label="постов" />
-              <Kpi value={totalAssigned} label="назначено" />
-              <Kpi value={totalNeed} label="потребность" />
-              <Kpi
-                value={understaffed}
-                label="не укомплектовано"
-                alarming={understaffed > 0}
-              />
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-[minmax(220px,280px)_1fr]">
-              <aside className="rounded-md border">
-                <p className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
-                  Объекты и посты
+          <div className="grid gap-3 lg:grid-cols-[minmax(200px,240px)_1fr_minmax(240px,300px)]">
+            <aside className="rounded-md border">
+              <div className="border-b px-3 py-2">
+                <p className="text-xs font-semibold">Объекты и посты</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {posts.length} постов · назначено {assignedCount} из {totalNeed}
                 </p>
-                <div className="max-h-[420px] overflow-y-auto p-2">
-                  {sectors.map((sector) => (
-                    <div key={sector.name} className="mb-2">
-                      <p className="px-1 py-1 text-xs font-semibold">
-                        {sector.name}
-                      </p>
-                      <ul className="flex flex-col gap-1">
-                        {sector.posts.map((post) => {
-                          const count = assignmentsOf(post.id).length;
-                          const full = count >= post.need;
-                          const isSelected = selectedPost?.id === post.id;
-                          return (
-                            <li key={post.id}>
-                              <button
-                                type="button"
-                                aria-current={isSelected}
-                                onClick={() => {
-                                  setSelectedPostId(post.id);
-                                  setCandidate("");
-                                }}
-                                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
-                                  isSelected ? "bg-accent" : "hover:bg-muted"
-                                }`}
+              </div>
+              <div className="max-h-[420px] overflow-y-auto p-2">
+                {sectors.map((sector) => (
+                  <div key={sector.name} className="mb-2">
+                    <p className="px-1 py-1 text-xs font-semibold">{sector.name}</p>
+                    <ul className="flex flex-col gap-1">
+                      {sector.posts.map((post) => {
+                        const count = assignmentsOf(post.id).length;
+                        const full = count >= post.need;
+                        return (
+                          <li key={post.id}>
+                            <button
+                              type="button"
+                              aria-current={selected?.id === post.id}
+                              onClick={() => {
+                                setSelectedPostId(post.id);
+                                setComment(null);
+                              }}
+                              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
+                                selected?.id === post.id ? "bg-accent" : "hover:bg-muted"
+                              }`}
+                            >
+                              <span
+                                aria-hidden
+                                className={`h-2 w-2 shrink-0 rounded-full ${full ? "bg-green-500" : "bg-amber-500"}`}
+                              />
+                              <span className="flex-1 truncate">{post.post}</span>
+                              <span
+                                className={`shrink-0 tabular-nums ${full ? "text-muted-foreground" : "text-amber-700"}`}
                               >
-                                <span
-                                  aria-hidden
-                                  className={`h-2 w-2 shrink-0 rounded-full ${
-                                    full ? "bg-green-500" : "bg-amber-500"
-                                  }`}
-                                />
-                                <span className="flex-1 truncate">{post.post}</span>
-                                <span
-                                  className={`shrink-0 tabular-nums ${
-                                    full ? "text-muted-foreground" : "text-amber-700"
-                                  }`}
-                                >
-                                  {count}/{post.need}
-                                </span>
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              </aside>
+                                {count}/{post.need}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </aside>
 
-              {selectedPost !== null && (
-                <PostPanel
-                  event={event}
-                  post={selectedPost}
-                  assignments={assignmentsOf(selectedPost.id)}
-                  assignedEmployeeIds={assignedEmployeeIds}
-                  roster={roster.data?.results ?? []}
-                  ratingOf={ratingOf}
-                  candidate={candidate}
-                  onCandidate={setCandidate}
-                  onAssign={() =>
-                    assign.mutate({
-                      postId: selectedPost.id,
-                      employeeId: candidate,
-                    })
-                  }
-                  assignPending={assign.isPending}
-                  onUnassign={(assignmentId) => unassign.mutate({ assignmentId })}
+            {selected !== null && (
+              <section className="rounded-md border p-3">
+                <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold">{selected.post}</p>
+                    <p className="text-xs text-muted-foreground">{selected.sector}</p>
+                  </div>
+                  <span
+                    className={
+                      assignmentsOf(selected.id).length >= selected.need
+                        ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
+                        : "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                    }
+                  >
+                    {assignmentsOf(selected.id).length} из {selected.need}
+                  </span>
+                </div>
+
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      Требования поста
+                    </p>
+                    <p className="text-xs">
+                      {selected.requirements === "" ? "—" : selected.requirements}
+                      {selected.minRating !== null
+                        ? ` · мин. рейтинг ${selected.minRating}`
+                        : ""}
+                    </p>
+                  </div>
+                  {event.passportBinding !== null && (
+                    <Link
+                      href={`/security-ops/objects/${event.passportBinding.objectId}/passports/${event.passportBinding.versionId}`}
+                      className="text-xs font-semibold text-primary"
+                    >
+                      Паспорт поста →
+                    </Link>
+                  )}
+                </div>
+                <p className="mb-2 text-xs">
+                  <b>Задача поста:</b> {selected.task === "" ? "—" : selected.task}
+                </p>
+
+                <ul className="mb-2 flex flex-col gap-1.5">
+                  {assignmentsOf(selected.id).map((assignment) => (
+                    <li
+                      key={assignment.id}
+                      className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm"
+                    >
+                      <span className="font-semibold">{assignment.employeeName}</span>
+                      {ratingOf(assignment.employeeId) !== null && (
+                        <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold tabular-nums">
+                          {ratingOf(assignment.employeeId)}
+                        </span>
+                      )}
+                      {assignment.ratingOverrideReason !== null && (
+                        <span className="text-xs text-amber-700">
+                          обход: {assignment.ratingOverrideReason}
+                        </span>
+                      )}
+                      <select
+                        aria-label={`Переместить: ${assignment.employeeName}`}
+                        className="ml-auto h-8 rounded-md border border-input bg-background px-2 text-xs"
+                        value=""
+                        onChange={(e) => {
+                          const target = e.target.value;
+                          if (target === "") return;
+                          // Перемещение = снятие с поста и назначение на другой:
+                          // своей операции «переместить» у бэка нет.
+                          unassign.mutate({ assignmentId: assignment.id });
+                          assign.mutate({
+                            postId: target,
+                            employeeId: assignment.employeeId,
+                          });
+                        }}
+                      >
+                        <option value="">Переместить…</option>
+                        {posts
+                          .filter((p) => p.id !== selected.id)
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.sector} · {p.post}
+                            </option>
+                          ))}
+                      </select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => unassign.mutate({ assignmentId: assignment.id })}
+                      >
+                        Удалить с поста
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+
+                {assignmentsOf(selected.id).length < selected.need && (
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Свободно мест:{" "}
+                    {selected.need - assignmentsOf(selected.id).length} — выберите
+                    сотрудника из списка справа
+                  </p>
+                )}
+
+                <label className="text-xs font-semibold" htmlFor="post-comment">
+                  Комментарий к посту
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    id="post-comment"
+                    className="h-8 text-xs"
+                    placeholder="—"
+                    value={comment ?? selected.comment}
+                    onChange={(e) => setComment(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={comment === null || updateRecon.isPending}
+                    onClick={() =>
+                      updateRecon.mutate({
+                        checklist: event.reconChecklist,
+                        sectorPosts: posts.map((p) =>
+                          p.id === selected.id ? { ...p, comment: comment ?? "" } : p
+                        ),
+                      })
+                    }
+                  >
+                    Сохранить
+                  </Button>
+                </div>
+              </section>
+            )}
+
+            <aside className="rounded-md border">
+              <div className="border-b px-3 py-2">
+                <p className="text-xs font-semibold">Доступные сотрудники</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Подбор по требованиям поста
+                </p>
+              </div>
+              <div className="space-y-2 p-2">
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="Поиск по ФИО или подразделению"
+                  aria-label="Поиск кандидатов"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
                 />
-              )}
-            </div>
-          </>
+                <div className="flex gap-2">
+                  <label className="flex-1 text-[9px] font-bold uppercase text-muted-foreground">
+                    Сортировка
+                    <select
+                      aria-label="Сортировка кандидатов"
+                      className="mt-0.5 block h-8 w-full rounded-md border border-input bg-background px-1 text-xs"
+                      value={sort}
+                      onChange={(e) => setSort(e.target.value as SortOption)}
+                    >
+                      {SORT_OPTIONS.map((option) => (
+                        <option key={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex-1 text-[9px] font-bold uppercase text-muted-foreground">
+                    Рейтинг
+                    <select
+                      aria-label="Фильтр по рейтингу"
+                      className="mt-0.5 block h-8 w-full rounded-md border border-input bg-background px-1 text-xs"
+                      value={band}
+                      onChange={(e) => setBand(e.target.value as RateOption)}
+                    >
+                      {RATE_OPTIONS.map((option) => (
+                        <option key={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  <Chip tone="info">Выделено {allocated}</Chip>
+                  <Chip>Свободны {free}</Chip>
+                  <Chip>Назначены {assignedCount}</Chip>
+                </div>
+                <div className="max-h-[360px] space-y-1 overflow-y-auto">
+                  {candidates.length === 0 ? (
+                    <p className="px-1 py-3 text-center text-xs text-muted-foreground">
+                      Нет кандидатов под выбранный фильтр рейтинга
+                    </p>
+                  ) : (
+                    candidates.map(({ person, fit, rating, busy }) => (
+                      <button
+                        key={person.id}
+                        type="button"
+                        disabled={selected === null || assign.isPending}
+                        onClick={() =>
+                          selected !== null &&
+                          assign.mutate({ postId: selected.id, employeeId: person.id })
+                        }
+                        className="flex w-full items-start gap-2 rounded-md border p-2 text-left text-xs hover:bg-muted disabled:opacity-50"
+                      >
+                        <span className="flex-1">
+                          <span className="block font-semibold">
+                            {person.rankLabel} {person.name}
+                          </span>
+                          <span className="block text-muted-foreground">
+                            {person.unit}
+                          </span>
+                          <span className="mt-0.5 flex flex-wrap items-center gap-1">
+                            {rating !== null && (
+                              <span className="rounded-full bg-secondary px-1.5 py-0.5 tabular-nums">
+                                {rating}
+                              </span>
+                            )}
+                            <span className="text-muted-foreground">
+                              Совпадение {fit}%
+                            </span>
+                            {busy && (
+                              <span className="text-amber-700">уже назначен</span>
+                            )}
+                          </span>
+                        </span>
+                        <b className="tabular-nums">{fit}</b>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </aside>
+          </div>
         )}
 
         <StageError error={assign.error} />
         <StageError error={unassign.error} />
+        <StageError error={updateRecon.error} />
         <StageError error={complete.error} />
 
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            disabled={complete.isPending}
-            onClick={() => complete.mutate({})}
-          >
-            {complete.isPending
-              ? "Завершение…"
-              : "Завершить расстановку → Согласование"}
-          </Button>
-        </div>
-
-        {/* мягкий 409: причина обхода уходит повтором мутации с override */}
         <ConflictDialog
           conflict={assign.conflict}
           onOverride={(reason) => assign.confirmOverride(reason)}
@@ -211,30 +733,21 @@ export function PlacementStage({ event }: { event: SecurityEvent }) {
   );
 }
 
-/** Рейтинг по сотруднику: null — права нет либо агрегат не посчитан. */
-function useRatingLookup(enabled: boolean): (employeeId: string) => number | null {
-  const query = useOperationalRatings({ enabled });
-  return (employeeId: string) => {
-    const found = query.data?.results.find(
-      (item) => item.employeeId === employeeId
-    );
-    return found?.aggregateRating ?? null;
-  };
-}
-
 function Kpi({
-  value,
   label,
-  alarming = false,
+  value,
+  tone,
 }: {
-  value: number;
   label: string;
-  alarming?: boolean;
+  value: number;
+  tone?: "warn" | "bad";
 }) {
   return (
     <span className="flex items-baseline gap-1">
       <b
-        className={`text-sm tabular-nums ${alarming ? "text-amber-700" : ""}`}
+        className={`text-base tabular-nums ${
+          tone === "bad" ? "text-red-700" : tone === "warn" ? "text-amber-700" : ""
+        }`}
       >
         {value}
       </b>
@@ -243,154 +756,20 @@ function Kpi({
   );
 }
 
-function PostPanel({
-  event,
-  post,
-  assignments,
-  assignedEmployeeIds,
-  roster,
-  ratingOf,
-  candidate,
-  onCandidate,
-  onAssign,
-  assignPending,
-  onUnassign,
+function Chip({
+  children,
+  tone,
 }: {
-  event: SecurityEvent;
-  post: ReconSectorPost;
-  assignments: PlacementAssignment[];
-  assignedEmployeeIds: ReadonlySet<string>;
-  roster: { id: string; name: string; rankLabel: string; unit: string }[];
-  ratingOf: (employeeId: string) => number | null;
-  candidate: string;
-  onCandidate: (value: string) => void;
-  onAssign: () => void;
-  assignPending: boolean;
-  onUnassign: (assignmentId: string) => void;
+  children: React.ReactNode;
+  tone?: "info";
 }) {
-  const full = assignments.length >= post.need;
-  const binding = event.passportBinding;
   return (
-    <section className="rounded-md border p-3">
-      <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-semibold">
-            {post.sector} · {post.post}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            потребность: {post.need}
-            {post.minRating !== null ? ` · мин. рейтинг: ${post.minRating}` : ""}
-          </p>
-        </div>
-        <span
-          className={
-            full
-              ? "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
-              : "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
-          }
-        >
-          {full
-            ? "Укомплектован"
-            : `Назначено ${assignments.length} из ${post.need}`}
-        </span>
-      </div>
-
-      {post.requirements !== "" && (
-        <p className="mb-2 text-xs">
-          <span className="font-semibold text-muted-foreground">
-            Требования поста:{" "}
-          </span>
-          {post.requirements}
-        </p>
-      )}
-      {post.task !== "" && (
-        <p className="mb-2 text-xs">
-          <span className="font-semibold text-muted-foreground">
-            Задача поста:{" "}
-          </span>
-          {post.task}
-        </p>
-      )}
-      {/* Паспорт открывается ровно той версией, к которой привязано ОМ, —
-          не действующей: согласованный расчёт не переписывается публикацией
-          новой редакции (entities/security-event: PassportBinding). */}
-      {binding !== null && (
-        <Link
-          href={`/security-ops/objects/${binding.objectId}/passports/${binding.versionId}`}
-          className="mb-3 inline-block text-xs font-semibold text-primary"
-        >
-          Паспорт поста (версия {binding.versionNumber}) →
-        </Link>
-      )}
-
-      {assignments.length === 0 ? (
-        <p className="mb-2 text-xs text-muted-foreground">Пост не укомплектован.</p>
-      ) : (
-        <ul className="mb-2 flex flex-col gap-1">
-          {assignments.map((assignment) => {
-            const rating = ratingOf(assignment.employeeId);
-            return (
-              <li key={assignment.id} className="flex items-center gap-2 text-sm">
-                <span>{assignment.employeeName}</span>
-                {rating !== null && (
-                  <span
-                    className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold tabular-nums"
-                    title="Оперативный рейтинг сотрудника"
-                  >
-                    {rating}
-                  </span>
-                )}
-                {assignment.ratingOverrideReason !== null && (
-                  <span
-                    className="text-xs text-amber-700"
-                    title={assignment.ratingOverrideReason}
-                  >
-                    (обход предупреждения)
-                  </span>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onUnassign(assignment.id)}
-                >
-                  Снять
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label={`Кандидат: ${post.post}`}
-          className="h-8 min-w-56 rounded-md border border-input bg-background px-2 text-xs"
-          value={candidate}
-          onChange={(e) => onCandidate(e.target.value)}
-        >
-          <option value="">— выберите сотрудника —</option>
-          {roster.map((person) => {
-            const rating = ratingOf(person.id);
-            return (
-              <option key={person.id} value={person.id}>
-                {person.name} · {person.rankLabel} · {person.unit}
-                {rating !== null ? ` · рейтинг ${rating}` : ""}
-                {assignedEmployeeIds.has(person.id) ? " — уже назначен" : ""}
-              </option>
-            );
-          })}
-        </select>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={candidate === "" || assignPending}
-          onClick={onAssign}
-        >
-          Назначить
-        </Button>
-      </div>
-    </section>
+    <span
+      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+        tone === "info" ? "bg-blue-100 text-blue-800" : "bg-secondary"
+      }`}
+    >
+      {children}
+    </span>
   );
 }

@@ -15,8 +15,6 @@ import {
   BulletinStage,
   ClosedView,
   ConductStage,
-  DemandStage,
-  ForcesStage,
   PlacementStage,
   ReconStage,
 } from "@/features/security-event-stages";
@@ -109,10 +107,10 @@ function ActiveStage({ event }: { event: SecurityEvent }) {
       return <BulletinStage event={event} />;
     case "RECON":
       return <ReconStage event={event} />;
+    // Сбор группы и выделение сил живут ВНУТРИ шага «Расстановка» — своих
+    // экранов у них больше нет, как и в прототипе.
     case "DEMAND":
-      return <DemandStage event={event} />;
     case "FORCES":
-      return <ForcesStage event={event} />;
     case "PLACEMENT":
       return <PlacementStage event={event} />;
     case "APPROVAL":
