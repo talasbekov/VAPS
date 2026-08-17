@@ -26,11 +26,16 @@ import { FieldErrors, StageError } from "./StageErrors";
 import { JournalList } from "./JournalList";
 
 export function ConductStage({ event }: { event: SecurityEvent }) {
+  // Порядок панелей — по шестому шагу прототипа: «Закрытие и итоги» первым,
+  // потому что шаг называется закрытием и ради него сюда и приходят. Журнал
+  // штаба и замена выбывшего идут следом: в прототипе их экрана больше нет
+  // (журнал остался плиткой в архиве), но операции живые и с аудитом, поэтому
+  // они сохранены здесь, а не выброшены вслед за макетом.
   return (
     <div className="flex flex-col gap-4">
+      <ClosurePanel event={event} />
       <JournalPanel event={event} />
       <ReplacementPanel event={event} />
-      <ClosurePanel event={event} />
     </div>
   );
 }

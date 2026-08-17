@@ -33,6 +33,23 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
   const facts = closureFacts(event);
   return (
     <div className="flex flex-col gap-4">
+      {/* Шапка архива из прототипа: замок и пометка read-only — дело закрыто,
+          править нечего. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            После закрытия
+          </p>
+          <h2 className="text-lg font-bold">🔒 Архив · {event.code}</h2>
+          <p className="text-xs text-muted-foreground">
+            {event.title} · {event.businessDate} · {event.objectName}
+          </p>
+        </div>
+        <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold">
+          read-only
+        </span>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Итоги направлений</CardTitle>
