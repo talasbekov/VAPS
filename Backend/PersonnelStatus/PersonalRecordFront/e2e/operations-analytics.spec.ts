@@ -288,14 +288,26 @@ test.describe(LIVE ? 'аналитика ОМ' : 'аналитика ОМ (ск�
     const firstRow = table.locator('tbody tr').first()
     await expect(firstRow).toContainText(serverFirst)
 
-    const header = table.getByRole('button', { name: 'Назначено' })
+    // Такт сортировки пиним по `aria-sort` самой колонки, а НЕ выводим из
+    // порядка строк: строчная проверка между щелчками успевает совпасть на
+    // промежуточном кадре, и щелчок, доставленный дважды, проезжал незамеченным
+    // (одиночное падение 17.08 — три щелчка, а состояние «убывание»).
+    const column = table.locator('th', { hasText: 'Назначено' })
+    const header = column.getByRole('button', { name: 'Назначено' })
+    await expect(column).toHaveAttribute('aria-sort', 'none')
+
     await header.click()
+    await expect(column).toHaveAttribute('aria-sort', 'descending')
     await expect(firstRow).toContainText(byAssigned[0].safeLabel)
+
     await header.click()
+    await expect(column).toHaveAttribute('aria-sort', 'ascending')
     await expect(firstRow).not.toContainText(byAssigned[0].safeLabel)
+
     await header.click()
     // Третий щелчок возвращает порядок сервера — иначе «как отдал сервер»
     // становится недостижимым состоянием.
+    await expect(column).toHaveAttribute('aria-sort', 'none')
     await expect(firstRow).toContainText(serverFirst)
 
     // Поиск сужает уже полученные строки, а не перезапрашивает снимок.

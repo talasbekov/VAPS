@@ -934,7 +934,21 @@ function DetailSection({
               <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="py-2 pr-3 font-semibold">Строка</th>
                 {data.columns.map((column) => (
-                  <th key={column.code} className="py-2 pr-3 font-semibold">
+                  // `aria-sort` — единственный признак порядка, доступный не
+                  // глазами: стрелка ниже помечена `aria-hidden`, и без этого
+                  // атрибута отсортированная колонка ничем не отличалась бы от
+                  // прочих для программы чтения с экрана.
+                  <th
+                    key={column.code}
+                    aria-sort={
+                      sort?.code !== column.code
+                        ? "none"
+                        : sort.desc
+                          ? "descending"
+                          : "ascending"
+                    }
+                    className="py-2 pr-3 font-semibold"
+                  >
                     <button
                       type="button"
                       className="inline-flex items-center gap-1 uppercase hover:text-foreground"
