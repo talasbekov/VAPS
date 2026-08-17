@@ -61,3 +61,55 @@ export const STAGE_BADGE_CLASS: Record<SecurityEventStage, string> = {
   CONDUCT: "bg-green-100 text-green-800 hover:bg-green-100",
   CLOSED: "bg-muted text-muted-foreground hover:bg-muted",
 };
+
+/**
+ * Цепочка шагов, которую видит пользователь, — ШЕСТЬ, как в прототипе
+ * Smart Josparlau (`stepNames`): Бюллетень → Рекогносцировка → Расстановка →
+ * Согласование → Ознакомление → Закрытие.
+ *
+ * Стадий у бэкенда по-прежнему девять, и это не рассинхрон по недосмотру:
+ *
+ * * «Потребность» и «Запрос сил» свёрнуты в шаг «Расстановка». Пропустить их
+ *   нельзя — сервер требует данных, которых прототип не собирает вовсе:
+ *   группу по каждой строке потребности и выделенную численность по каждому
+ *   запросу. Автоподстановка тут означала бы выдумать распределение сил;
+ * * «Проведение» свёрнуто в шаг «Закрытие»: закрытие мероприятия и так
+ *   происходит там, а журнал штаба и замена выбывшего — живые операции с
+ *   аудитом, и выкидывать их вместе с экраном нельзя;
+ * * «Закрыто» — не шаг, а состояние: закрытое дело показывает архив.
+ */
+export const EVENT_STEPS = [
+  { key: "BULLETIN", label: "Бюллетень", stages: ["BULLETIN"] },
+  { key: "RECON", label: "Рекогносцировка", stages: ["RECON"] },
+  { key: "PLACEMENT", label: "Расстановка", stages: ["DEMAND", "FORCES", "PLACEMENT"] },
+  { key: "APPROVAL", label: "Согласование", stages: ["APPROVAL"] },
+  { key: "ACKNOWLEDGEMENT", label: "Ознакомление", stages: ["ACKNOWLEDGEMENT"] },
+  { key: "CLOSURE", label: "Закрытие", stages: ["CONDUCT", "CLOSED"] },
+] as const satisfies readonly {
+  key: string;
+  label: string;
+  stages: readonly SecurityEventStage[];
+}[];
+
+/** Индекс шага цепочки для стадии бэкенда; -1 не бывает — покрыты все девять. */
+export function stepIndexOfStage(stage: SecurityEventStage): number {
+  return EVENT_STEPS.findIndex((step) =>
+    (step.stages as readonly string[]).includes(stage)
+  );
+}
+
+/**
+ * Подпись «где мы внутри шага» для стадий, свёрнутых в один шаг. Пустая
+ * строка — стадия занимает весь шаг и уточнять нечего.
+ */
+export const STAGE_WITHIN_STEP: Record<SecurityEventStage, string> = {
+  BULLETIN: "",
+  RECON: "",
+  DEMAND: "Подготовка расчёта: потребность",
+  FORCES: "Подготовка расчёта: выделение сил",
+  PLACEMENT: "",
+  APPROVAL: "",
+  ACKNOWLEDGEMENT: "",
+  CONDUCT: "Проведение и закрытие",
+  CLOSED: "Дело закрыто",
+};

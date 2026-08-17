@@ -2,6 +2,9 @@ export * from "./model/types";
 export {
   STAGE_ORDER,
   STAGE_LABEL,
+  EVENT_STEPS,
+  stepIndexOfStage,
+  STAGE_WITHIN_STEP,
   STAGE_BADGE_CLASS,
   STAGE_PROGRESS_CLASS,
   JOURNAL_TYPE_LABEL,
