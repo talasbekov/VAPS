@@ -1,7 +1,5 @@
 export { BulletinStage } from "./ui/BulletinStage";
 export { ReconStage } from "./ui/ReconStage";
-export { DemandStage } from "./ui/DemandStage";
-export { ForcesStage } from "./ui/ForcesStage";
 export { PlacementStage } from "./ui/PlacementStage";
 export { ApprovalStage } from "./ui/ApprovalStage";
 export { AcknowledgementStage } from "./ui/AcknowledgementStage";

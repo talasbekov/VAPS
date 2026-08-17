@@ -85,9 +85,22 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
     await expect(postButton).toBeVisible()
     await postButton.click()
 
-    // Карточка показывает выбранный пост с его сектором и потребностью
-    await expect(page.getByText(`${post.sector} · ${post.post}`)).toBeVisible()
-    await expect(page.getByText(`потребность: ${post.need}`)).toBeVisible()
+    // Карточка показывает выбранный пост, его сектор и заполненность
+    const panel = page.locator('section', { hasText: 'Требования поста' }).first()
+    await expect(panel).toContainText(post.post)
+    await expect(panel).toContainText(post.sector)
+    await expect(panel).toContainText(`из ${post.need}`)
+
+    // Правая колонка подбора — из прототипа: заголовок, чипы пула, кандидаты
+    await expect(page.getByText('Доступные сотрудники')).toBeVisible()
+    await expect(page.getByText('Подбор по требованиям поста')).toBeVisible()
+    await expect(page.getByText(/Выделено \d+/)).toBeVisible()
+    await expect(page.getByText(/Совпадение \d+%/).first()).toBeVisible()
+
+    // Сводка шага — шесть показателей прототипа
+    for (const label of ['постов', 'требуется', 'назначено', 'свободно', 'незаполнено', 'конфликтов']) {
+      await expect(page.getByText(label, { exact: true })).toBeVisible()
+    }
 
     // Назначение — живая мутация: счётчик в дереве растёт, и бэк это видит
     const assignedBefore = (
@@ -96,10 +109,8 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       ).json()
     ).placementAssignments.length as number
 
-    const select = page.getByRole('combobox', { name: `Кандидат: ${post.post}` })
-    const value = await select.locator('option:not([value=""])').first().getAttribute('value')
-    await select.selectOption(value!)
-    await page.getByRole('button', { name: 'Назначить', exact: true }).click()
+    // Назначение — клик по кандидату в правой колонке (как в прототипе)
+    await page.locator('aside button', { hasText: 'Совпадение' }).first().click()
 
     await expect
       .poll(async () => {
@@ -111,7 +122,7 @@ test.describe(LIVE ? 'расстановка' : 'расстановка (ски�
       .toBe(assignedBefore + 1)
 
     // Снимаем назначение обратно — проба не оставляет за собой мусор
-    await page.getByRole('button', { name: 'Снять' }).first().click()
+    await page.getByRole('button', { name: 'Удалить с поста' }).first().click()
     await expect
       .poll(async () => {
         const fresh = (await (
