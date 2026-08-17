@@ -151,6 +151,7 @@ from organization_management.apps.operations.strength_report import (
     StrengthReportService,
     submitted_expense,
 )
+from organization_management.apps.operations.expense_layout import column_label
 from organization_management.apps.operations.personal_export_service import (
     export_submission,
 )
@@ -1524,6 +1525,9 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 fields={
                     "business_date": serializers.DateField(),
                     "columns": serializers.ListField(child=serializers.CharField()),
+                    "column_labels": serializers.DictField(
+                        child=serializers.CharField()
+                    ),
                     "rows": serializers.ListField(child=serializers.DictField()),
                     "totals": serializers.DictField(),
                     "warnings": serializers.ListField(child=serializers.DictField()),
@@ -1553,6 +1557,13 @@ class StrengthReportViewSet(RequirePermissionMixin, viewsets.ViewSet):
             {
                 "business_date": report.business_date,
                 "columns": columns,
+                # Подписи колонок — из ОДНОГО владельца шапки расхода
+                # (expense_layout): свой словарь на экране разошёлся бы с
+                # выгрузками, а сличают их как раз тогда, когда что-то пошло
+                # не так. Незнакомый код по правилу владельца печатается сам
+                # собой — справочник статусов открыт, и колонка без подписи
+                # это норма, а не дефект данных.
+                "column_labels": {code: column_label(code) for code in columns},
                 "rows": [
                     {
                         "division_id": row.division_id,

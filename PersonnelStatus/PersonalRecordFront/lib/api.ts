@@ -243,10 +243,62 @@ export interface StrengthReportRow {
   columns: Record<string, number>;
 }
 
+export interface StrengthReportTotals {
+  staff_total: number;
+  list_total: number;
+  vacancies: number;
+  attached: number;
+  off_list: number;
+  columns: Record<string, number>;
+}
+
 export interface StrengthReport {
   business_date: string;
   columns: string[];
+  /**
+   * Подписи колонок расхода. Владелец — сервер (`expense_layout`), общий с
+   * выгрузками: свой словарь на клиенте разошёлся бы с файлами, а сличают их
+   * как раз тогда, когда что-то пошло не так. Незнакомый код сервер подписывает
+   * им же самим — пустая подпись скрыла бы, что колонка вообще есть.
+   */
+  column_labels: Record<string, string>;
   rows: StrengthReportRow[];
+  totals: StrengthReportTotals;
+  warnings: Record<string, unknown>[];
+}
+
+/** Страница расхода за один день внутри ответа периода. */
+export interface StrengthReportPage {
+  business_date: string;
+  rows: StrengthReportRow[];
+  totals: StrengthReportTotals;
+}
+
+export interface StrengthReportPeriod {
+  pages: StrengthReportPage[];
+}
+
+/**
+ * Узел светофора сдачи дня.
+ *
+ * Цветов ПЯТЬ, а не три: `NEUTRAL` — узлу нечего сдавать (людей нет),
+ * `UNKNOWN` — справочник узла сломан и цвет неизвестен. Оба намеренно не
+ * приравнены к зелёному: «не знаю» честнее, чем «всё в порядке».
+ *
+ * Цвет узла С ПОТОМКАМИ — худший в поддереве (каскад), поэтому складывать
+ * родителей с детьми нельзя: одно подразделение посчиталось бы дважды.
+ */
+export interface TrafficLightNode {
+  division_id: number;
+  name: string;
+  parent_id: number | null;
+  status: "GREEN" | "YELLOW" | "RED" | "NEUTRAL" | "UNKNOWN";
+  late: boolean;
+}
+
+export interface TrafficLightTree {
+  business_date: string;
+  nodes: TrafficLightNode[];
 }
 
 // Ошибка раздела ОМ: бэк отвечает конвертом {error_code, message, details}.
@@ -1412,6 +1464,53 @@ class ApiClient {
       throw await toDomainError(response);
     }
     return response.json();
+  }
+
+  // Чтение под тем же контрактом ошибок, что и расход выше: отказ раздела
+  // приезжает конвертом {error_code, message}, и общий `request` подменил бы
+  // его безымянным «HTTP error 403» — экран не смог бы отличить «нет права»
+  // от поломки.
+  private async getDomainJson<T>(endpoint: string): Promise<T> {
+    const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
+    const token = await getAccessToken();
+    const headers: HeadersInit = { accept: "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const response = await fetch(url, { headers, cache: "no-store" });
+    if (!response.ok) {
+      throw await toDomainError(response);
+    }
+    return response.json();
+  }
+
+  // Расход за ПЕРИОД: страница на дату. Отдельный маршрут, а не цикл запросов
+  // по дням — ряд собирает сервер, и день из середины периода не может
+  // разойтись с остальными из-за гонки отдельных ответов.
+  async getStrengthReportPeriod(params: {
+    dateFrom: string;
+    dateTo: string;
+    divisionId?: number;
+  }): Promise<StrengthReportPeriod> {
+    const query = new URLSearchParams();
+    query.append("date_from", params.dateFrom);
+    query.append("date_to", params.dateTo);
+    if (params.divisionId !== undefined) {
+      query.append("division_id", String(params.divisionId));
+    }
+    return this.getDomainJson<StrengthReportPeriod>(
+      `/api/operations/strength-report/period/?${query.toString()}`
+    );
+  }
+
+  // Светофор сдачи дня — дерево подразделений со статусом и признаком
+  // опоздания. Владелец витрины сдачи: своего счёта «сдали / не сдали» на
+  // других экранах быть не должно, иначе две витрины разойдутся.
+  async getTrafficLightTree(params: { businessDate?: string } = {}): Promise<TrafficLightTree> {
+    const query = new URLSearchParams();
+    if (params.businessDate) query.append("business_date", params.businessDate);
+    const queryString = query.toString();
+    return this.getDomainJson<TrafficLightTree>(
+      `/api/operations/traffic-light/tree/${queryString ? `?${queryString}` : ""}`
+    );
   }
 
   // Выгрузка расхода СДАННОГО дня файлом.
