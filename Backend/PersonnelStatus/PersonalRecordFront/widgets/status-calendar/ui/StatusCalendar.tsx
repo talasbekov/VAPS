@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, X, User, MapPin, Clock } from "lucide-react";
 import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
 import { motion, AnimatePresence } from "framer-motion";
+import { LoadFailure } from "@/components/load-failure";
 import "./calendar.css";
 
 // Типы статусов с цветами и названиями
@@ -82,7 +83,8 @@ interface TooltipData {
 }
 
 export function StatusCalendar() {
-  const { data, isLoading } = useStaffUnitsByDirectorate();
+  const { data, isLoading, isError, isFetching, refetch } =
+    useStaffUnitsByDirectorate();
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(
     null
@@ -224,6 +226,22 @@ export function StatusCalendar() {
           <div className="flex items-center justify-center h-[600px]">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Пустой месяц при отказе запроса читался как «в этом месяце никто не
+  // отсутствует» — самое дорогое из возможных недоразумений на этом экране.
+  if (isError) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <LoadFailure
+            what="календарь статусов"
+            onRetry={() => void refetch()}
+            isRetrying={isFetching}
+          />
         </CardContent>
       </Card>
     );

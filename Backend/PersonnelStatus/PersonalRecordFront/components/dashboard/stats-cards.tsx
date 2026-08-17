@@ -18,6 +18,7 @@ import {
   Clock,
   ArrowRightLeft,
 } from "lucide-react";
+import { LoadFailure } from "@/components/load-failure";
 
 interface StatsCardsProps {
   stats: {
@@ -39,6 +40,9 @@ interface StatsCardsProps {
     };
   } | null;
   isLoading?: boolean;
+  /** Запрос статистики не удался — плитки не «нулевые», а неизвестные. */
+  isError?: boolean;
+  onRetry?: () => void;
 }
 
 const absenceTypeConfig = {
@@ -184,7 +188,12 @@ const cardVariants = {
   },
 };
 
-export function StatsCards({ stats, isLoading }: StatsCardsProps) {
+export function StatsCards({
+  stats,
+  isLoading,
+  isError,
+  onRetry,
+}: StatsCardsProps) {
   if (isLoading) {
     return (
       <div className="space-y-3 mb-3">
@@ -207,8 +216,18 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
     );
   }
 
-  if (!stats) {
-    return null;
+  // `return null` при отсутствии данных превращал сбой статистики в молчаливо
+  // пустой дашборд: ни цифр, ни объяснения, ни кнопки.
+  if (isError === true || !stats) {
+    return (
+      <div className="mb-3">
+        <LoadFailure
+          what="сводку по личному составу"
+          onRetry={onRetry}
+          className="rounded-xl border bg-card px-4"
+        />
+      </div>
+    );
   }
 
   const absenceTypes = Object.entries(stats.by_type) as Array<

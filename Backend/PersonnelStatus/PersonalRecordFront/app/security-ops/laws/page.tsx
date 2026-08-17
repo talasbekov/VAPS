@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useLegalDocuments } from "@/hooks/use-legal-documents";
+import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import {
   LEGAL_DOCUMENT_KINDS,
   LEGAL_DOCUMENT_KIND_BADGE_CLASS,
@@ -62,6 +63,12 @@ export default function LegalDocumentsPage() {
     router.replace(qs === "" ? pathname : `${pathname}?${qs}`, { scroll: false });
   }
 
+  // Здесь фильтрация клиентская, но router.replace на каждую букву всё равно
+  // перерисовывал список целиком и забивал историю навигации.
+  const [searchDraft, setSearchDraft] = useDebouncedCommit(search, (value) =>
+    updateParam("search", value)
+  );
+
   if (!permissionsLoading && !canView) {
     return <OpsAccessDenied what="нормативной базы ОМ" />;
   }
@@ -92,8 +99,8 @@ export default function LegalDocumentsPage() {
             className="h-[38px] text-[13px]"
             placeholder="Поиск по названию, номеру документа или содержанию…"
             aria-label="Поиск по нормативной базе"
-            value={search}
-            onChange={(e) => updateParam("search", e.target.value)}
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
           />
           <div className="flex flex-wrap gap-2">
             {(["ALL", ...LEGAL_DOCUMENT_KINDS] as const).map((value) => (

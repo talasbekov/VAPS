@@ -436,10 +436,14 @@ export function PlannedStatusesDialog({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                          // focus-visible рядом с group-hover: кнопка, видимая
+                          // только по наведению, недостижима с клавиатуры —
+                          // фокус на ней оставался невидимым.
+                          className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                           onClick={() => handleEditClick(statuses.current!)}
+                          aria-label="Изменить текущий статус"
                         >
-                          <Edit className="h-4 w-4" />
+                          <Edit className="h-4 w-4" aria-hidden="true" />
                         </Button>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-foreground">
@@ -640,10 +644,11 @@ export function PlannedStatusesDialog({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                 onClick={() => handleEditClick(status)}
+                                aria-label={`Изменить запланированный статус: ${status.state_display}`}
                               >
-                                <Edit className="h-4 w-4" />
+                                <Edit className="h-4 w-4" aria-hidden="true" />
                               </Button>
                             )}
                           </div>

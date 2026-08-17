@@ -26,6 +26,7 @@ import type {
   ReportJobState,
 } from "@/entities/service-report";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 const JOB_STATE_CLASS: Record<ReportJobState, string> = {
@@ -108,9 +109,11 @@ export default function ServiceReportsPage() {
           <p className="text-sm text-muted-foreground">Загрузка…</p>
         )}
         {typesQuery.isError && (
-          <p className="text-sm text-destructive">
-            Не удалось загрузить типы отчётов.
-          </p>
+          <LoadFailure
+            what="типы отчётов"
+            onRetry={() => void typesQuery.refetch()}
+            isRetrying={typesQuery.isFetching}
+          />
         )}
 
         {reportType !== null && typesQuery.data !== undefined && (
@@ -200,8 +203,14 @@ export default function ServiceReportsPage() {
 
         <section className="rounded-xl border bg-card p-4">
           <h2 className="mb-2 text-sm font-semibold">Работы и артефакты</h2>
-          {jobsQuery.data === undefined ? (
+          {jobsQuery.isPending ? (
             <p className="text-sm text-muted-foreground">Загрузка реестра…</p>
+          ) : jobsQuery.data === undefined ? (
+            <LoadFailure
+              what="реестр работ"
+              onRetry={() => void jobsQuery.refetch()}
+              isRetrying={jobsQuery.isFetching}
+            />
           ) : jobsQuery.data.results.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Отчёты ещё не запускались.

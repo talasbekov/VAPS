@@ -63,6 +63,7 @@ import {
 } from "lucide-react";
 import { useSecurityObjects } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import {
   FRESHNESS_LABEL,
   OBJECT_STATE_LABEL,
@@ -369,6 +370,12 @@ export default function SecurityObjectsPage() {
     setParam(param.name, current === param.value ? ANY : param.value, ANY);
   }
 
+  // Поиск в URL — с задержкой: иначе каждая буква давала router.replace и
+  // пересчёт всех KPI-плиток реестра.
+  const [searchDraft, setSearchDraft] = useDebouncedCommit(search, (value) =>
+    setParam("search", value, "")
+  );
+
   function resetFilters(): void {
     const params = new URLSearchParams(searchParams);
     for (const name of ["search", "status", "passport", "region", "freshness"]) {
@@ -492,8 +499,8 @@ export default function SecurityObjectsPage() {
                 className="pl-9"
                 aria-label="Поиск по реестру объектов"
                 placeholder="Поиск по названию, адресу, рег. номеру или типу"
-                value={search}
-                onChange={(e) => setParam("search", e.target.value, "")}
+                value={searchDraft}
+                onChange={(e) => setSearchDraft(e.target.value)}
               />
             </div>
 

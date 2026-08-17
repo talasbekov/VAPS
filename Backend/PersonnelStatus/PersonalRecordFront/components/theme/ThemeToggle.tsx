@@ -16,8 +16,14 @@ export function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <Button variant="ghost" size="sm" className="h-9 w-9">
-        <Sun className="h-5 w-5" />
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-9 w-9"
+        aria-label="Переключение темы"
+        disabled
+      >
+        <Sun className="h-5 w-5" aria-hidden="true" />
       </Button>
     );
   }
@@ -28,16 +34,23 @@ export function ThemeToggle() {
       size="sm"
       className="h-9 w-9"
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      // title всплывает по наведению и мимо клавиатуры — доступное имя даёт
+      // aria-label, он же остаётся при выключенных подсказках.
+      aria-label={
+        theme === "dark"
+          ? "Переключить на светлую тему"
+          : "Переключить на тёмную тему"
+      }
       title={
         theme === "dark"
           ? "Переключить на светлую тему"
-          : "Переключить на темную тему"
+          : "Переключить на тёмную тему"
       }
     >
       {theme === "dark" ? (
-        <Sun className="h-5 w-5" />
+        <Sun className="h-5 w-5" aria-hidden="true" />
       ) : (
-        <Moon className="h-5 w-5" />
+        <Moon className="h-5 w-5" aria-hidden="true" />
       )}
     </Button>
   );
