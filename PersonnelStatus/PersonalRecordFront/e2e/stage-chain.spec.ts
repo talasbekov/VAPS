@@ -40,11 +40,23 @@ async function apiToken(): Promise<string> {
   return ((await res.json()) as { access: string }).access
 }
 
-async function events(token: string): Promise<EventRow[]> {
-  const res = await fetch(`${API}/api/ops/security-events/?page_size=50`, {
+async function events(token: string, stage = ''): Promise<EventRow[]> {
+  const query = `page_size=50${stage === '' ? '' : `&stage=${stage}`}`
+  const res = await fetch(`${API}/api/ops/security-events/?${query}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   return ((await res.json()) as { results: EventRow[] }).results
+}
+
+/** Первое ОМ на любой из свёрнутых стадий. Спрашиваем СЕРВЕР по стадиям:
+ * поиск по первой странице реестра перестаёт находить фикстуру, как только
+ * стенд наберёт полсотни мероприятий, и проба уходит в молчаливый skip. */
+async function collapsedStageEvent(token: string): Promise<EventRow | undefined> {
+  for (const stage of ['DEMAND', 'FORCES', 'CONDUCT', 'CLOSED']) {
+    const found = (await events(token, stage))[0]
+    if (found !== undefined) return found
+  }
+  return undefined
 }
 
 async function signIn(page: Page): Promise<void> {
@@ -81,9 +93,7 @@ test.describe(LIVE ? 'цепочка этапов' : 'цепочка этапо�
     }
 
     // Свёрнутая стадия подписана: где именно внутри шага стоит мероприятие
-    const collapsed = rows.find((e) =>
-      ['DEMAND', 'FORCES', 'CONDUCT', 'CLOSED'].includes(e.stage),
-    )
+    const collapsed = await collapsedStageEvent(token)
     test.skip(collapsed === undefined, 'на стенде нет ОМ на свёрнутой стадии')
     await page.goto(`${APP}/security-ops/events/${collapsed!.id}/`)
     const expected: Record<string, string> = {
