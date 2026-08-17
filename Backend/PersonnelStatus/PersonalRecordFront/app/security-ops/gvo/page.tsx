@@ -53,7 +53,7 @@ export default function GvoRegistryPage() {
 
   const canView = hasPermission("event.view");
   const eventsQuery = useSecurityEvents(
-    { search: "", stage: "ALL", page: 1, pageSize: PAGE_SIZE },
+    { search: "", stage: "ALL", from: "", to: "", owner: "", page: 1, pageSize: PAGE_SIZE },
     { enabled: canView }
   );
   const patchesQuery = useGvoPatches({ enabled: canView });

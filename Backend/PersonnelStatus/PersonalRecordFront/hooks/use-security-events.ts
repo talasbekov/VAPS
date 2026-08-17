@@ -16,6 +16,9 @@ function listQueryString(params: ListSecurityEventsParams): string {
   const qs = new URLSearchParams();
   if (params.search !== "") qs.set("search", params.search);
   if (params.stage !== "ALL") qs.set("stage", params.stage);
+  if (params.from !== "") qs.set("from", params.from);
+  if (params.to !== "") qs.set("to", params.to);
+  if (params.owner !== "") qs.set("owner", params.owner);
   qs.set("page", String(params.page));
   qs.set("page_size", String(params.pageSize));
   return qs.toString();
