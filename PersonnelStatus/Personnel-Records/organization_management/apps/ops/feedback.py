@@ -285,24 +285,16 @@ def _serialize_full(request):
 
 
 def _actor_label(actor):
-    """Безопасная подпись актора: имя из живой кадровой записи, иначе
-    username учётки, иначе сам идентификатор."""
-    if actor is None:
-        return ""
-    from django.contrib.auth.models import User
+    """Безопасная подпись актора — та же, что у реестра ОМ.
 
-    from organization_management.apps.employees.models import Employee
+    Правило одно на оба раздела: разойдясь, они называли бы одного человека
+    по-разному в обращении и в мероприятии.
+    """
     from organization_management.apps.ops.security_events import (
-        personnel_display_name,
+        actor_display_name,
     )
 
-    user = User.objects.filter(pk=actor).first() if actor.isdigit() else None
-    if user is None:
-        return actor
-    employee = Employee.objects.filter(user=user).first()
-    if employee is not None:
-        return personnel_display_name(employee)
-    return user.username
+    return actor_display_name(actor)
 
 
 def _label_for_user_id(user_id):

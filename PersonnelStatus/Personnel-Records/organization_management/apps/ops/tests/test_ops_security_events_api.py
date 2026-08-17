@@ -147,6 +147,42 @@ def test_create_requires_manage(viewer):
     assert create_event(viewer, obj).status_code == 403
 
 
+def test_owner_name_is_personnel_name_not_account_id():
+    """«Ответственный за ОМ» читает человек — там ФИО, а не id учётки.
+
+    Идентификатор актора остаётся у аудита: там он и нужен, а на экране
+    карточки и в значениях фильтра реестра стояло «1».
+    """
+    api, user = client_for(
+        "ev-owner", "EV_OWNER", perms=("event.view", "event.manage")
+    )
+    employee = make_employee(last_name="Сеитов", first_name="Алихан")
+    employee.user = user
+    employee.save(update_fields=["user"])
+
+    resp = create_event(api, make_object(with_passport=True))
+    assert resp.status_code == 201
+    assert resp.json()["ownerName"] == "Сеитов А."
+    assert resp.json()["ownerName"] != str(user.pk)
+    # Аудит по-прежнему хранит идентификатор, а не подпись
+    row = OpsAuditLog.objects.get(action=SECURITY_EVENT_CREATED)
+    assert row.actor_user_id == str(user.pk)
+
+
+def test_owner_name_falls_back_to_username_without_personnel_record():
+    """Привязки `Employee.user` у части учёток нет (сид её не заполняет) —
+    username там штатный исход, а не аварийный."""
+    api, _ = client_for(
+        "ev-nolink", "EV_NOLINK", perms=("event.view", "event.manage")
+    )
+    assert create_event(api, make_object(with_passport=True)).status_code == 201
+
+    data = api.get(URL).json()
+    assert data["results"][0]["ownerName"] == "ev-nolink"
+    # Значения фильтра «ответственный» собираются из тех же строк
+    assert data["owners"] == ["ev-nolink"]
+
+
 def test_list_filters_and_pages(manager, viewer):
     obj = make_object()
     for i in range(3):
