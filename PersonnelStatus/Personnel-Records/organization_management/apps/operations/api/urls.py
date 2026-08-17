@@ -12,6 +12,7 @@ from organization_management.apps.operations.api.views import (
     DailySummaryViewSet,
     IssuedDocumentViewSet,
     MyPermissionsViewSet,
+    MyEmployeeViewSet,
     NotificationViewSet,
     PermissionViewSet,
     RoleViewSet,
@@ -57,5 +58,6 @@ router.register(
     "notifications", NotificationViewSet, basename="ops-notification"
 )
 router.register("my-permissions", MyPermissionsViewSet, basename="ops-my-permissions")
+router.register("my-employee", MyEmployeeViewSet, basename="ops-my-employee")
 
 urlpatterns = router.urls

@@ -97,6 +97,9 @@ export function Sidebar() {
   // в стеке хоста (app/security-ops/*). Права проверяют сами страницы
   // (hooks/use-ops-permissions), фильтрации здесь нет.
   const nativeOpsNavigation = [
+    // «Мой профиль» первым: это единственная страница раздела, которая
+    // открывается любому вошедшему без прав — она про него самого.
+    { name: "Мой профиль", href: "/security-ops/profile", icon: UserRound },
     { name: "Командный центр", href: "/security-ops/command-center", icon: LineChart },
     { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList },
     // Реестр ГВО идёт сразу за реестром ОМ: его записи — проекция тех же

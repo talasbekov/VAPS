@@ -565,6 +565,66 @@ class MyPermissionsViewSet(viewsets.ViewSet):
         return Response({"permissions": sorted(perms)})
 
 
+class MyEmployeeViewSet(viewsets.ViewSet):
+    """GET /api/operations/my-employee/ — кадровая запись САМОГО вызывающего.
+
+    Самообслуживание, как и `my-permissions`: права раздела здесь не
+    спрашиваются, потому что человек читает СВОЮ запись, а не чужую. Единственный
+    гейт — быть аутентифицированным.
+
+    Отдельная ручка, а не фильтр списка сотрудников: связь `User → Employee`
+    живёт на сервере и наружу не отдавалась ни одним контрактом, поэтому по
+    `/api/core/employees/` клиент не может спросить «а который из них я».
+
+    ПРИВЯЗКИ МОЖЕТ НЕ БЫТЬ, и это штатный исход, а не сбой: поле заполняется
+    вручную, сид его не делает. Ответ тогда 200 с `employee: null` и причиной,
+    а не 404: 404 означал бы «такого адреса нет» и заставил бы экран гадать,
+    чего он не нашёл — себя или ручку.
+
+    Форма записи — общий сериализатор ядра: свой набор полей здесь разошёлся бы
+    с кадровой карточкой, которую тот же человек видит в списке сотрудников.
+    """
+
+    UNLINKED_REASON = (
+        "Учётная запись не связана с кадровой: поле «пользователь» в карточке "
+        "сотрудника заполняется вручную, и у этой учётки оно пусто. Пока связи "
+        "нет, показывать нечего — подставить сюда однофамильца значило бы выдать "
+        "чужую службу за свою."
+    )
+
+    @extend_schema(
+        responses=extend_schema_serializer(many=False)(
+            inline_serializer(
+                name="MyEmployeeResponse",
+                fields={
+                    "employee": serializers.DictField(allow_null=True),
+                    "unlinked_reason": serializers.CharField(allow_null=True),
+                },
+            )
+        )
+    )
+    def list(self, request, *args, **kwargs):
+        from organization_management.apps.core.api.serializers import (
+            EmployeeSerializer as CoreEmployeeSerializer,
+        )
+        from organization_management.apps.employees.models import Employee
+
+        actor_id = resolve_actor_id(request)
+        if not actor_id:
+            raise PermissionDenied("PERMISSION_DENIED")
+        employee = Employee.objects.filter(user_id=actor_id).first()
+        if employee is None:
+            return Response(
+                {"employee": None, "unlinked_reason": self.UNLINKED_REASON}
+            )
+        return Response(
+            {
+                "employee": CoreEmployeeSerializer(employee).data,
+                "unlinked_reason": None,
+            }
+        )
+
+
 class StatusViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """Статусы раздела ОМ: чтение, массовое создание и поштучная правка.
 
