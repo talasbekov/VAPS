@@ -4,19 +4,23 @@
 // бюллетень не завершается — следующему этапу не с чем работать.
 //
 // Сверено с экраном прототипа Smart Josparlau «Информационный бюллетень».
-// Оттуда добавлена только готовность этапа: до этого о том, что завершение
-// упрётся в пустое поле, узнавали по отказу сервера ПОСЛЕ нажатия.
+// Оттуда перенесены готовность этапа (до этого о том, что завершение упрётся
+// в пустое поле, узнавали по отказу сервера ПОСЛЕ нажатия) и справочный блок
+// «Сведения об ОМ» — паспортная шапка мероприятия перед его описанием.
+//
+// Блок пересекается с шапкой карточки (номер, объект, ответственный) и это
+// осознанно: шапка — строка-идентификатор на все девять этапов, блок —
+// сведения, по которым бюллетень и составляют. Расходиться им не на чем:
+// оба поля читают один и тот же объект события, второго источника нет.
 //
 // СОЗНАТЕЛЬНО не перенесено:
-// * «Сведения об ОМ» (11 фактов) — шапка карточки ОМ показывает их же: дату,
-//   объект, ответственного и версию паспорта. Второй такой блок был бы
-//   дублем, который начнёт расходиться с первым;
 // * «Редактировать ОМ» — правки названия, даты и объекта бэк не принимает:
 //   PATCH этапа принимает только описание и задачи;
 // * «Документы к подготовке» — в прототипе эта таблица набрана литералом
 //   (две строки прямо в разметке). Модели документов с ответственными и
 //   сроками нет ни у бэка, ни в контракте, и выдумывать её на экране нельзя.
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -25,7 +29,12 @@ import {
   useCompleteBulletin,
   useUpdateBulletin,
 } from "@/hooks/use-security-event-stages";
+import { useSecurityObject } from "@/hooks/use-security-objects";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { STAGE_LABEL } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
+import { daySpanInclusive, ruDate, ruDaysLabel, ruWeekdayName } from "@/lib/ru-date";
+import { Fact } from "./Fact";
 import { FieldErrors, StageError } from "./StageErrors";
 
 export function BulletinStage({ event }: { event: SecurityEvent }) {
@@ -57,6 +66,7 @@ export function BulletinStage({ event }: { event: SecurityEvent }) {
         <CardTitle>Бюллетень</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <EventFacts event={event} />
         <div className="space-y-1">
           <Label htmlFor="bulletin-brief">Краткое описание *</Label>
           <Textarea
@@ -132,4 +142,99 @@ export function BulletinStage({ event }: { event: SecurityEvent }) {
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * «Сведения об ОМ» — паспортная шапка мероприятия из прототипа. Read-only:
+ * ни одно поле блока бюллетень не правит.
+ *
+ * Все значения читаются из самого мероприятия; исключение — адрес: он живёт
+ * в карточке объекта реестра, и запрос за ним уходит только с правом
+ * `object.view` (иначе реестр объектов отвечает 403). Без права строка
+ * называет причину, а не пустоту — иначе «адрес не заполнен» и «адрес не
+ * показан» выглядели бы одинаково.
+ *
+ * Четыре факта прототипа система не хранит вовсе: охраняемые лица, старший
+ * ГВО, число участников и число охраняемых лиц. У мероприятия нет ни ссылки
+ * на охраняемое лицо, ни численности — рисовать под них ячейки «Не указано»
+ * (как делает прототип) значило бы обещать поля, которых некому заполнить.
+ * Вместо них — строка о том, где эти сведения действительно ведутся.
+ */
+function EventFacts({ event }: { event: SecurityEvent }) {
+  const { hasPermission } = useOpsPermissions();
+  const objectId = event.objectId;
+  const canViewObject = hasPermission("object.view") && objectId !== null;
+  const objectQuery = useSecurityObject(canViewObject ? objectId : "");
+
+  const address =
+    objectId === null
+      ? "мероприятие не привязано к объекту реестра"
+      : !canViewObject
+        ? "нужно право «Объекты: просмотр»"
+        : objectQuery.isLoading
+          ? "загрузка карточки объекта…"
+          : objectQuery.isError || objectQuery.data === undefined
+            ? "карточка объекта недоступна"
+            : objectQuery.data.address.trim() === ""
+              ? "в карточке объекта не указан"
+              : objectQuery.data.address;
+
+  return (
+    <section className="rounded-md border bg-muted/30 p-3">
+      <h3 className="mb-2 text-sm font-semibold">Сведения об ОМ</h3>
+      <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
+        <Fact label="Номер ОМ" value={event.code} />
+        <Fact label="Наименование ОМ" value={event.title} />
+        <Fact label="Объект проведения" value={event.objectName} />
+        <Fact label="Место / адрес" value={address} />
+        <Fact label="Дата начала" value={dayLabel(event.businessDate)} />
+        <Fact
+          label="Дата окончания"
+          value={
+            event.businessDateEnd === null
+              ? "не указана"
+              : dayLabel(event.businessDateEnd)
+          }
+        />
+        <Fact label="Продолжительность" value={durationLabel(event)} />
+        <Fact
+          label="Ответственный за ОМ"
+          value={event.ownerName.trim() === "" ? "не назначен" : event.ownerName}
+        />
+        <Fact label="Текущий статус" value={STAGE_LABEL[event.stage]} />
+      </dl>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Охраняемых лиц, старшего ГВО и числа участников мероприятие не хранит —
+        эти сведения ведутся в{" "}
+        <Link
+          href={`/security-ops/gvo/${event.id}`}
+          className="font-semibold text-primary"
+        >
+          сводке ГВО
+        </Link>
+        .
+      </p>
+    </section>
+  );
+}
+
+/** «25.08.2026, вторник». Не ISO-дата показывается как пришла — придумывать
+ * за сервер формат хуже, чем показать сырое значение. */
+function dayLabel(isoDate: string): string {
+  const day = ruDate(isoDate);
+  if (day === null) return isoDate;
+  const weekday = ruWeekdayName(isoDate);
+  return weekday === null ? day : `${day}, ${weekday}`;
+}
+
+/** Продолжительность выводится из пары дат, а не хранится: третье поле рядом
+ * с двумя датами разошлось бы с ними на первой же правке. */
+function durationLabel(event: SecurityEvent): string {
+  if (event.businessDateEnd === null) {
+    return "не рассчитывается: окончание не указано";
+  }
+  const days = daySpanInclusive(event.businessDate, event.businessDateEnd);
+  return days === null
+    ? "не рассчитывается: окончание раньше начала"
+    : ruDaysLabel(days);
 }

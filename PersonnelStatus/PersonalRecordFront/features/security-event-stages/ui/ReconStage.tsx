@@ -31,6 +31,7 @@ import type {
   ReconSectorPost,
   SecurityEvent,
 } from "@/entities/security-event";
+import { Fact } from "./Fact";
 import { FieldErrors, StageError } from "./StageErrors";
 
 let localSeq = 0;
@@ -433,14 +434,5 @@ function ObjectFacts({ event }: { event: SecurityEvent }) {
         </dl>
       )}
     </section>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="inline font-semibold text-muted-foreground">{label}: </dt>
-      <dd className="inline">{value}</dd>
-    </div>
   );
 }

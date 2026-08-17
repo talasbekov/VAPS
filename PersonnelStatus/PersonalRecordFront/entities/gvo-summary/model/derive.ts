@@ -2,6 +2,7 @@
 // Ни одна функция здесь не ходит в сеть и не читает время — только чистое
 // преобразование, поэтому одинаково работает и в моке, и на живых данных.
 import type { SecurityEvent } from "@/entities/security-event";
+import { ruDate, ruWeekdayName } from "@/lib/ru-date";
 import { UNSPECIFIED } from "./types";
 import type {
   GvoGroup,
@@ -9,24 +10,18 @@ import type {
   GvoSummaryPatch,
 } from "./types";
 
-/** «2026-06-18» → «18.06.2026». Разбор строкой: Date сдвинул бы дату в минусовых зонах. */
+// Сам разбор дат живёт в lib/ru-date (его же читают «Сведения об ОМ» в
+// бюллетене); здесь остаются только подписи-заглушки сводки.
+
+/** «2026-06-18» → «18.06.2026»; не дата — «уточняется». */
 export function formatRuDate(isoDate: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
-  if (match === null) return UNSPECIFIED;
-  return `${match[3]}.${match[2]}.${match[1]}`;
+  return ruDate(isoDate) ?? UNSPECIFIED;
 }
 
-/** День недели по ISO-дате. Считается в UTC — иначе зона меняет ответ. */
+/** День недели по ISO-дате; не дата — пустая строка: в сводке эта подпись
+ * стоит рядом с датой, и второе «уточняется» подряд только мешало бы. */
 export function ruWeekday(isoDate: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
-  if (match === null) return "";
-  const date = new Date(
-    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-  );
-  return date.toLocaleDateString("ru-RU", {
-    weekday: "long",
-    timeZone: "UTC",
-  });
+  return ruWeekdayName(isoDate) ?? "";
 }
 
 /**

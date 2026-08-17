@@ -1,14 +1,18 @@
 /**
  * Этап «Бюллетень» карточки ОМ на ЖИВОМ стенде.
  *
- * Проба отвечает на один вопрос: готовность этапа считается по СОХРАНЁННОМУ
- * бюллетеню, а не по набранному в полях. Разница не косметическая: сервер
- * смотрит на своё состояние, и набранный, но не сохранённый текст этап не
- * откроет — экран, считающий по форме, обещал бы завершение, которого не
- * будет.
+ * Первая проба отвечает на один вопрос: готовность этапа считается по
+ * СОХРАНЁННОМУ бюллетеню, а не по набранному в полях. Разница не
+ * косметическая: сервер смотрит на своё состояние, и набранный, но не
+ * сохранённый текст этап не откроет — экран, считающий по форме, обещал бы
+ * завершение, которого не будет.
  *
- * Фикстуру проба готовит сама (пустое ОМ на «Бюллетене») и доводит до
- * заполненного состояния; этап не завершает — иначе фикстура одноразовая.
+ * Вторая — что «Сведения об ОМ» собраны из ответов сервера, а не из вёрстки:
+ * адрес приходит из КАРТОЧКИ ОБЪЕКТА (отдельный запрос), продолжительность
+ * выводится из пары дат, статус — из стадии.
+ *
+ * Фикстуры проба готовит сама и переиспользует по названию; этапы не
+ * завершает — иначе фикстура одноразовая.
  */
 import { expect, test, type Page } from '@playwright/test'
 
@@ -16,10 +20,21 @@ const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
 const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
 
+// Фикстура «Сведений об ОМ»: даты выбраны так, что и дни недели, и
+// продолжительность различимы (вторник → четверг, три дня включительно).
+const FACTS_TITLE = 'Проба сведений об ОМ (e2e)'
+const FACTS_START = '2026-09-01'
+const FACTS_END = '2026-09-03'
+
 interface EventRow {
   id: string
   code: string
+  title: string
   stage: string
+  objectId: string | null
+  objectName: string
+  businessDate: string
+  businessDateEnd: string | null
   briefDescription: string
   initialTasks: string
 }
@@ -33,11 +48,19 @@ async function apiToken(): Promise<string> {
   return ((await res.json()) as { access: string }).access
 }
 
-async function events(token: string): Promise<EventRow[]> {
-  const res = await fetch(`${API}/api/ops/security-events/?page_size=50`, {
+async function events(token: string, search = ''): Promise<EventRow[]> {
+  const query = `page_size=50${search === '' ? '' : `&search=${encodeURIComponent(search)}`}`
+  const res = await fetch(`${API}/api/ops/security-events/?${query}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   return ((await res.json()) as { results: EventRow[] }).results
+}
+
+async function objectCard(token: string, id: string): Promise<{ address: string }> {
+  const res = await fetch(`${API}/api/ops/objects/${id}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return (await res.json()) as { address: string }
 }
 
 async function signIn(page: Page): Promise<void> {
@@ -90,16 +113,84 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     const fresh = (await events(token)).find((e) => e.id === target.id)
     expect(fresh?.briefDescription).toBe('Проба бюллетеня.')
   })
+
+  test('«Сведения об ОМ» собраны из ответов сервера', async ({ page }) => {
+    const token = await apiToken()
+    const target = await factsEvent(token)
+    expect(target.objectId, 'фикстура должна быть привязана к объекту').not.toBeNull()
+    const object = await objectCard(token, target.objectId!)
+    expect(object.address.trim(), 'у объекта стенда пустой адрес — проба вакуумна').not.toBe('')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+    const facts = page.locator('section').filter({
+      has: page.getByRole('heading', { name: 'Сведения об ОМ' }),
+    })
+    await expect(facts).toBeVisible({ timeout: 15_000 })
+
+    await expect(facts).toContainText(`Номер ОМ: ${target.code}`)
+    await expect(facts).toContainText(`Объект проведения: ${target.objectName}`)
+    // Адрес живёт НЕ в мероприятии: карточка ходит за ним в реестр объектов
+    await expect(facts).toContainText(`Место / адрес: ${object.address}`)
+    // Дни недели и продолжительность выводятся из дат, а не хранятся
+    await expect(facts).toContainText('Дата начала: 01.09.2026, вторник')
+    await expect(facts).toContainText('Дата окончания: 03.09.2026, четверг')
+    await expect(facts).toContainText('Продолжительность: 3 дня')
+    await expect(facts).toContainText('Текущий статус: Бюллетень')
+
+    // Чего система не хранит — названо, а не нарисовано пустыми ячейками
+    await expect(facts).toContainText('мероприятие не хранит')
+    // Слэш на конце добавляет Next (trailingSlash), в разметке его нет
+    await expect(facts.getByRole('link', { name: 'сводке ГВО' })).toHaveAttribute(
+      'href',
+      `/security-ops/gvo/${target.id}/`,
+    )
+  })
 })
 
 /** Заводит пустое ОМ на этапе «Бюллетень». */
 async function prepareEvent(token: string): Promise<void> {
+  await createEvent(token, {
+    title: 'Проба бюллетеня (e2e)',
+    businessDate: '2026-08-25',
+  })
+}
+
+/** ОМ с обеими датами для «Сведений об ОМ» — заводится один раз и потом
+ * находится по названию: каждый прогон новое мероприятие засорял бы реестр. */
+async function factsEvent(token: string): Promise<EventRow> {
+  const match = (rows: EventRow[]): EventRow | undefined =>
+    rows.find(
+      (e) =>
+        e.title === FACTS_TITLE &&
+        e.stage === 'BULLETIN' &&
+        e.businessDate === FACTS_START &&
+        e.businessDateEnd === FACTS_END,
+    )
+  let found = match(await events(token, FACTS_TITLE))
+  if (found === undefined) {
+    await createEvent(token, {
+      title: FACTS_TITLE,
+      businessDate: FACTS_START,
+      businessDateEnd: FACTS_END,
+    })
+    found = match(await events(token, FACTS_TITLE))
+  }
+  expect(found, 'не удалось подготовить ОМ со сведениями').toBeDefined()
+  return found!
+}
+
+/** Создаёт ОМ на первом объекте с опубликованным паспортом. */
+async function createEvent(
+  token: string,
+  body: { title: string; businessDate: string; businessDateEnd?: string },
+): Promise<void> {
   const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-  const call = async (method: string, path: string, body?: unknown): Promise<any> => {
+  const call = async (method: string, path: string, payload?: unknown): Promise<any> => {
     const res = await fetch(`${API}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: payload === undefined ? undefined : JSON.stringify(payload),
     })
     return res.json().catch(() => ({}))
   }
@@ -108,9 +199,5 @@ async function prepareEvent(token: string): Promise<void> {
     (item: { publishedVersionCount: number }) => item.publishedVersionCount > 0,
   )
   if (object === undefined) throw new Error('на стенде нет объекта с паспортом')
-  await call('POST', '/api/ops/security-events/', {
-    title: 'Проба бюллетеня (e2e)',
-    objectId: object.id,
-    businessDate: '2026-08-25',
-  })
+  await call('POST', '/api/ops/security-events/', { ...body, objectId: object.id })
 }
