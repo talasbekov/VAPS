@@ -220,9 +220,22 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         except ValueError:
             page_size = 20
 
+        # Период и ответственный фильтруются НА СЕРВЕРЕ: тот же фильтр на
+        # клиенте сузил бы только загруженную страницу, и «за июль ничего нет»
+        # означало бы «нет на этой странице» — худший вид вранья в реестре.
+        date_from = (request.query_params.get("from") or "").strip()
+        date_to = (request.query_params.get("to") or "").strip()
+        owner = (request.query_params.get("owner") or "").strip()
+
         rows = list(OpsSecurityEvent.objects.all())
         if stage:
             rows = [e for e in rows if e.stage == stage]
+        if date_from:
+            rows = [e for e in rows if str(e.business_date) >= date_from]
+        if date_to:
+            rows = [e for e in rows if str(e.business_date) <= date_to]
+        if owner:
+            rows = [e for e in rows if e.owner_name == owner]
         if search:
             rows = [
                 e
@@ -230,9 +243,13 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 if search
                 in f"{e.title} {e.code} {e.object_name} {e.owner_name}".lower()
             ]
+        # Значения фильтра «ответственный» считает СЕРВЕР по всему реестру:
+        # собранный по странице список предлагал бы не всех.
+        owners = sorted({e.owner_name for e in OpsSecurityEvent.objects.all() if e.owner_name})
         start = (page - 1) * page_size
         return Response(
             {
+                "owners": owners,
                 "count": len(rows),
                 "next": str(page + 1) if start + page_size < len(rows) else None,
                 "previous": str(page - 1) if page > 1 else None,

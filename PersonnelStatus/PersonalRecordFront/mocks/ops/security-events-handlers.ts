@@ -335,6 +335,12 @@ export const securityEventsHandlers = [
     if (stage) {
       filtered = filtered.filter((e) => e.stage === stage);
     }
+    const from = url.searchParams.get("from") ?? "";
+    const to = url.searchParams.get("to") ?? "";
+    const owner = url.searchParams.get("owner") ?? "";
+    if (from !== "") filtered = filtered.filter((e) => e.businessDate >= from);
+    if (to !== "") filtered = filtered.filter((e) => e.businessDate <= to);
+    if (owner !== "") filtered = filtered.filter((e) => e.ownerName === owner);
     if (search !== "") {
       filtered = filtered.filter((e) =>
         `${e.title} ${e.code} ${e.objectName} ${e.ownerName}`
@@ -344,6 +350,15 @@ export const securityEventsHandlers = [
     }
     const start = (page - 1) * pageSize;
     const response: ListSecurityEventsResponse = {
+      // Значения фильтра «ответственный» приходят с сервера — мок повторяет
+      // форму конверта, иначе экран падал бы на живом ответе иначе, чем здесь.
+      owners: [
+        ...new Set(
+          getEvents()
+            .map((event) => event.ownerName)
+            .filter((name) => name !== "")
+        ),
+      ].sort(),
       count: filtered.length,
       next: start + pageSize < filtered.length ? String(page + 1) : null,
       previous: page > 1 ? String(page - 1) : null,

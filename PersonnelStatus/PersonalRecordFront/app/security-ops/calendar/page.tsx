@@ -24,7 +24,10 @@ export default function ShiftCalendarPage() {
       search: "",
       stage: "ALL",
       page: 1,
-      pageSize: 100,
+      from: "",
+      to: "",
+      owner: "",
+    pageSize: 100,
     },
     { enabled: canSeeEvents }
   );

@@ -42,7 +42,7 @@ export default function ProtectedPersonsPage() {
   const canView = hasPermission("event.view");
   const personsQuery = useProtectedPersons({ enabled: canView });
   const eventsQuery = useSecurityEvents(
-    { search: "", stage: "ALL", page: 1, pageSize: PAGE_SIZE },
+    { search: "", stage: "ALL", from: "", to: "", owner: "", page: 1, pageSize: PAGE_SIZE },
     { enabled: canView }
   );
   const patchesQuery = useGvoPatches({ enabled: canView });

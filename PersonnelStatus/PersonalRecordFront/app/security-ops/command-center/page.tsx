@@ -38,6 +38,9 @@ export default function CommandCenterPage() {
     search: "",
     stage: "ALL",
     page: 1,
+    from: "",
+    to: "",
+    owner: "",
     pageSize: 100,
   });
 

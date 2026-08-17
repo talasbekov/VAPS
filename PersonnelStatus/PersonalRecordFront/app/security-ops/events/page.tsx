@@ -51,6 +51,11 @@ export default function SecurityEventsPage() {
   const params: ListSecurityEventsParams = {
     search: searchParams.get("search") ?? "",
     stage: isStage(stageParam) ? stageParam : "ALL",
+    // Период и ответственный фильтрует СЕРВЕР: тот же фильтр на клиенте сузил
+    // бы только загруженную страницу и врал бы про пустой результат.
+    from: searchParams.get("from") ?? "",
+    to: searchParams.get("to") ?? "",
+    owner: searchParams.get("owner") ?? "",
     page: Number(searchParams.get("page") ?? "1") || 1,
     pageSize: PAGE_SIZE,
   };
@@ -110,7 +115,44 @@ export default function SecurityEventsPage() {
               </option>
             ))}
           </select>
-          {(params.search !== "" || params.stage !== "ALL") && (
+          <label className="text-xs text-muted-foreground">
+            с
+            <input
+              type="date"
+              aria-label="Период с"
+              className="ml-1 h-9 rounded-md border border-input bg-background px-2 text-sm"
+              value={params.from}
+              onChange={(e) => updateParam("from", e.target.value)}
+            />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            по
+            <input
+              type="date"
+              aria-label="Период по"
+              className="ml-1 h-9 rounded-md border border-input bg-background px-2 text-sm"
+              value={params.to}
+              onChange={(e) => updateParam("to", e.target.value)}
+            />
+          </label>
+          <select
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            aria-label="Ответственный"
+            value={params.owner}
+            onChange={(e) => updateParam("owner", e.target.value)}
+          >
+            <option value="">Все ответственные</option>
+            {(query.data?.owners ?? []).map((owner) => (
+              <option key={owner} value={owner}>
+                {owner}
+              </option>
+            ))}
+          </select>
+          {(params.search !== "" ||
+            params.stage !== "ALL" ||
+            params.from !== "" ||
+            params.to !== "" ||
+            params.owner !== "") && (
             <Button
               variant="outline"
               size="sm"
@@ -209,8 +251,25 @@ function ResultsTable({
               <TableCell>
                 <StageBadge stage={event.stage} />
               </TableCell>
-              <TableCell className="tabular-nums">
-                {event.readinessPercent}%
+              <TableCell>
+                {/* Полоса готовности из прототипа: процент числом рядом —
+                    полоса без числа не читается на печати и в узкой колонке. */}
+                <div className="flex items-center gap-2">
+                  <span
+                    className="h-1.5 w-16 overflow-hidden rounded-full bg-muted"
+                    role="progressbar"
+                    aria-valuenow={event.readinessPercent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Готовность ${event.code}`}
+                  >
+                    <span
+                      className="block h-full bg-primary"
+                      style={{ width: `${event.readinessPercent}%` }}
+                    />
+                  </span>
+                  <span className="tabular-nums">{event.readinessPercent}%</span>
+                </div>
               </TableCell>
               <TableCell className="tabular-nums">{event.forceNeed}</TableCell>
               <TableCell>

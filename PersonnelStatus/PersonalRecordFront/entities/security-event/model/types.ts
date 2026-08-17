@@ -177,12 +177,19 @@ export const BINDABLE_OBJECTS_PATH = `${SECURITY_EVENTS_PATH}bindable-objects/`;
 export interface ListSecurityEventsParams {
   search: string;
   stage: SecurityEventStage | "ALL";
+  /** Границы периода по бизнес-дате (YYYY-MM-DD); пусто — без границы. */
+  from: string;
+  to: string;
+  /** Точное имя ответственного; пусто — все. */
+  owner: string;
   page: number;
   pageSize: number;
 }
 
 /** LimitOffset-подобный конверт — канон пагинируемых эндпоинтов. */
 export interface ListSecurityEventsResponse {
+  /** Значения фильтра «ответственный» — считает сервер по ВСЕМУ реестру. */
+  owners: string[];
   count: number;
   next: string | null;
   previous: string | null;
