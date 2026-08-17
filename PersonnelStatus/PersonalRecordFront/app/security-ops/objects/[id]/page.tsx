@@ -101,6 +101,9 @@ export default function SecurityObjectPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Возврат — на тот же отбор, с которым человек ушёл (параметр `back`).
+  const back = searchParams.get("back") ?? "";
+  const backTo = back === "" ? "/security-ops/objects" : `/security-ops/objects?${back}`;
   const tabParam = searchParams.get("tab");
   const tab: TabCode = isTab(tabParam) ? tabParam : DEFAULT_TAB;
   // Счётчик собственных сохранений паспорта: см. комментарий у key ниже.
@@ -141,7 +144,7 @@ export default function SecurityObjectPage() {
       <DashboardLayout>
         <p className="text-sm text-destructive-ink">Объект не найден или недоступен.</p>
         <Link
-          href="/security-ops/objects"
+          href={backTo}
           className="mt-2 inline-block text-sm font-semibold text-primary-ink"
         >
           ← Назад к реестру
@@ -155,7 +158,7 @@ export default function SecurityObjectPage() {
   return (
     <DashboardLayout>
       <Link
-        href="/security-ops/objects"
+        href={backTo}
         className="mb-3 inline-block text-xs font-semibold text-primary-ink"
       >
         ← Назад к реестру

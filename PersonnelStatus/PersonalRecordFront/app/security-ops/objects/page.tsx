@@ -269,6 +269,13 @@ export default function SecurityObjectsPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Текущий отбор едет с человеком в карточку: возврат «← Назад» без него
+  // приводил на голый корень реестра, и подобранный фильтр приходилось
+  // набирать заново.
+  const backSuffix = (() => {
+    const query = searchParams.toString();
+    return query === "" ? "" : `?back=${encodeURIComponent(query)}`;
+  })();
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
 
   const search = searchParams.get("search") ?? "";
@@ -576,6 +583,7 @@ export default function SecurityObjectsPage() {
           </div>
 
           <ObjectsRegistry
+            backSuffix={backSuffix}
             view={view}
             isLoading={query.isLoading}
             isError={query.isError}
@@ -648,12 +656,15 @@ function FilterSelect({
  * таблицу и карточки стоит ПОСЛЕ них, иначе переключатель менял бы вид
  * сообщения об ошибке. */
 function ObjectsRegistry({
+  backSuffix,
   view,
   isLoading,
   isError,
   objects,
   freshnessById,
 }: {
+  /** Текущий отбор реестра — уезжает в карточку для возврата на него. */
+  backSuffix: string;
   view: ViewMode;
   isLoading: boolean;
   isError: boolean;
@@ -688,9 +699,13 @@ function ObjectsRegistry({
     );
   }
   return view === "cards" ? (
-    <ObjectsCards objects={objects} />
+    <ObjectsCards backSuffix={backSuffix} objects={objects} />
   ) : (
-    <ObjectsTable objects={objects} freshnessById={freshnessById} />
+    <ObjectsTable
+      backSuffix={backSuffix}
+      objects={objects}
+      freshnessById={freshnessById}
+    />
   );
 }
 
@@ -698,9 +713,11 @@ const HEAD_CLASS =
   "whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
 
 function ObjectsTable({
+  backSuffix,
   objects,
   freshnessById,
 }: {
+  backSuffix: string;
   objects: SecurityObject[];
   freshnessById: Map<string, PassportFreshness>;
 }) {
@@ -733,7 +750,7 @@ function ObjectsTable({
                 <TableRow key={object.id}>
                   <TableCell className="min-w-[15rem]">
                     <Link
-                      href={`/security-ops/objects/${object.id}`}
+                      href={`/security-ops/objects/${object.id}${backSuffix}`}
                       className="block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="block font-semibold leading-snug">
@@ -787,7 +804,7 @@ function ObjectsTable({
                   </TableCell>
                   <TableCell className="text-right">
                     <Link
-                      href={`/security-ops/objects/${object.id}`}
+                      href={`/security-ops/objects/${object.id}${backSuffix}`}
                       aria-label={`Открыть объект ${object.name}`}
                       className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
@@ -808,7 +825,13 @@ function ObjectsTable({
  * название, тип с адресом и два состояния бейджами. Счётчики секторов и
  * постов и срок проверки живут в табличном виде: карточка отвечает на
  * «который из объектов это», таблица — на «что с ним по цифрам». */
-function ObjectsCards({ objects }: { objects: SecurityObject[] }) {
+function ObjectsCards({
+  backSuffix,
+  objects,
+}: {
+  backSuffix: string;
+  objects: SecurityObject[];
+}) {
   return (
     <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       {objects.map((object) => {
@@ -829,7 +852,7 @@ function ObjectsCards({ objects }: { objects: SecurityObject[] }) {
                   из-за чего обложку сжимало с 96px до 69px. */}
               <CardContent className="flex flex-1 flex-col gap-3 p-4">
                 <Link
-                  href={`/security-ops/objects/${object.id}`}
+                  href={`/security-ops/objects/${object.id}${backSuffix}`}
                   className="flex flex-col gap-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <span className="inline-flex w-fit rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-bold">

@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { EmployeeTable } from "@/entities/employee/ui/EmployeeTable";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
 import { AddEmployeeDialog } from "@/features/add-employee";
@@ -44,12 +46,47 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Employee } from "@/entities/employee/model/types";
 
 export default function EmployeesPage() {
+  // useSearchParams требует границы Suspense — иначе пререндер падает на сборке.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <EmployeesScreen />
+    </Suspense>
+  );
+}
+
+function EmployeesScreen() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(
     null
   );
-  const [searchQuery, setSearchQuery] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // Отбор живёт в АДРЕСЕ: раньше он держался в useState и пропадал при
+  // перезагрузке, а ссылкой на отфильтрованный список нельзя было поделиться.
+  // Так уже сделаны девять экранов раздела ОМ — здесь тот же приём.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const searchQuery = searchParams.get("search") ?? "";
+  const departmentFilter = searchParams.get("department") ?? "all";
+  const statusFilter = searchParams.get("status") ?? "all";
+
+  const setFilter = useCallback(
+    (key: string, value: string, fallback: string) => {
+      const next = new URLSearchParams(searchParams);
+      // Умолчание в адрес не пишем — ссылка на нетронутый список чистая.
+      if (value === fallback) next.delete(key);
+      else next.set(key, value);
+      const query = next.toString();
+      router.replace(query === "" ? pathname : `${pathname}?${query}`, {
+        scroll: false,
+      });
+    },
+    [router, pathname, searchParams]
+  );
+
+  // Поиск фиксируется с задержкой: значение уходит в адрес по окончании ввода.
+  const [searchDraft, setSearchDraft] = useDebouncedCommit(
+    searchQuery,
+    (value) => setFilter("search", value, "")
+  );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const queryClient = useQueryClient();
   const { user, hasPermission } = useAuth();
@@ -342,17 +379,18 @@ export default function EmployeesPage() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Поиск по ФИО, должности, отделу..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Поиск по сотрудникам"
+                value={searchDraft}
+                onChange={(e) => setSearchDraft(e.target.value)}
                 className="pl-10"
               />
             </div>
 
             <Select
               value={departmentFilter}
-              onValueChange={setDepartmentFilter}
+              onValueChange={(value) => setFilter("department", value, "all")}
             >
-              <SelectTrigger className="w-full sm:w-64">
+              <SelectTrigger className="w-full sm:w-64" aria-label="Фильтр по отделу">
                 <SelectValue placeholder="Все отделы" />
               </SelectTrigger>
               <SelectContent>
@@ -365,8 +403,11 @@ export default function EmployeesPage() {
               </SelectContent>
             </Select>
 
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-48">
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => setFilter("status", value, "all")}
+            >
+              <SelectTrigger className="w-full sm:w-48" aria-label="Фильтр по статусу">
                 <SelectValue placeholder="Все статусы" />
               </SelectTrigger>
               <SelectContent>

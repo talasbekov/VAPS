@@ -3,8 +3,9 @@
 // Карточка ОМ: шапка + степпер стадий + активный этап. Компонент этапа
 // получает key по updatedAt — успешная операция пересоздаёт его от свежего
 // серверного состояния (локальные черновики не переживают переходы).
+import { Suspense } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,7 +29,21 @@ import {
 import type { SecurityEvent } from "@/entities/security-event";
 
 export default function SecurityEventPage() {
+  // useSearchParams требует границы Suspense при пререндере.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <SecurityEventScreen />
+    </Suspense>
+  );
+}
+
+function SecurityEventScreen() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  // Возврат — на тот отбор реестра, с которым человек сюда пришёл.
+  const back = searchParams.get("back") ?? "";
+  const backTo =
+    back === "" ? "/security-ops/events" : `/security-ops/events?${back}`;
   const id = params?.id ?? "";
   const query = useSecurityEvent(id);
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
@@ -54,7 +69,7 @@ export default function SecurityEventPage() {
           Мероприятие не найдено или недоступно.
         </p>
         <Link
-          href="/security-ops/events"
+          href={backTo}
           className="mt-2 inline-block text-sm font-semibold text-primary-ink"
         >
           ← Назад к реестру
@@ -68,7 +83,7 @@ export default function SecurityEventPage() {
   return (
     <DashboardLayout>
       <Link
-        href="/security-ops/events"
+        href={backTo}
         className="mb-3 inline-block text-xs font-semibold text-primary-ink"
       >
         ← Назад к реестру
