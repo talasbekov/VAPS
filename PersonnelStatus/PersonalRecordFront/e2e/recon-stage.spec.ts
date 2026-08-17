@@ -109,10 +109,10 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
     // Заполняем и сверяем с тем, что вернул БЭК, а не с полем на экране.
     const post = target.reconSectorPosts[0]
     const note = `Проба осмотра ${Date.now()}`
-    await stage.getByLabel(`Тип поста: ${post.post}`).fill('Стационарный')
-    await stage.getByLabel(`Вооружение: ${post.post}`).fill('АКС-74У')
-    await stage.getByLabel(`Форма одежды: ${post.post}`).fill('Повседневная')
-    await stage.getByLabel(`Примечание к посту: ${post.post}`).fill(note)
+    await stage.getByLabel(`Тип поста: ${post.post}`, { exact: true }).fill('Стационарный')
+    await stage.getByLabel(`Вооружение: ${post.post}`, { exact: true }).fill('АКС-74У')
+    await stage.getByLabel(`Форма одежды: ${post.post}`, { exact: true }).fill('Повседневная')
+    await stage.getByLabel(`Примечание к посту: ${post.post}`, { exact: true }).fill(note)
     await stage.getByRole('button', { name: 'Сохранить рекогносцировку' }).click()
 
     await expect
@@ -126,9 +126,15 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
       )
       .toBe(`Стационарный|АКС-74У|Повседневная|${note}`)
 
-    // Подпост из прототипа: строка встаёт за родителем и доезжает до сервера
-    const before = target.reconSectorPosts.length
-    await stage.getByLabel(`Добавить подпост: ${post.post}`).click()
+    // Подпост из прототипа: строка встаёт за родителем и доезжает до сервера.
+    // Ожидание считается ОТ ИСХОДНОГО состояния фикстуры: проба добавляет
+    // подпост каждым прогоном, и зашитая единица делала бы её одноразовой.
+    const fresh0 = (await events(token)).find((e) => e.id === target.id)!
+    const before = fresh0.reconSectorPosts.length
+    const subsBefore = fresh0.reconSectorPosts.filter(
+      (r) => (r.parentPostId ?? '') !== '',
+    ).length
+    await stage.getByLabel(`Добавить подпост: ${post.post}`, { exact: true }).click()
     await stage.getByRole('button', { name: 'Сохранить рекогносцировку' }).click()
     await expect
       .poll(
@@ -141,7 +147,7 @@ test.describe(LIVE ? 'рекогносцировка' : 'рекогносцир�
         },
         { timeout: 15_000 },
       )
-      .toEqual({ total: before + 1, subs: 1 })
+      .toEqual({ total: before + 1, subs: subsBefore + 1 })
   })
 })
 
