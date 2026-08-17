@@ -11,6 +11,7 @@ import type { UseOpsMutationResult } from "@/hooks/use-ops-mutation";
 import type { OpsApiFailure } from "@/lib/ops-errors";
 import {
   OPS_PERSONNEL_PATH,
+  OPS_PERSONNEL_ME_PATH,
   securityEventAcknowledgePath,
   securityEventAcknowledgementCompletePath,
   securityEventApprovalApprovePath,
@@ -35,6 +36,7 @@ import type {
   AssignPlacementRequest,
   CloseSecurityEventRequest,
   ListPersonnelResponse,
+  PersonnelSummarySnapshot,
   ReplaceAssignmentRequest,
   ReturnPlacementRequest,
   SecurityEvent,
@@ -223,4 +225,18 @@ export function useCloseSecurityEvent(id: string, options?: StageMutationOptions
     (body) => opsApiClient.post<SecurityEvent>(securityEventClosePath(id), body),
     options
   );
+}
+
+/**
+ * Своя кадровая запись. Ошибку не ретраим: 404 «не привязан» — это ответ, а
+ * не сбой, и повторять его бессмысленно.
+ */
+export function usePersonnelMe(options: { enabled?: boolean } = {}) {
+  return useQuery<PersonnelSummarySnapshot, OpsApiFailure>({
+    queryKey: ["ops-personnel", "me"],
+    queryFn: () =>
+      opsApiClient.get<PersonnelSummarySnapshot>(OPS_PERSONNEL_ME_PATH),
+    enabled: options.enabled ?? true,
+    retry: false,
+  });
 }

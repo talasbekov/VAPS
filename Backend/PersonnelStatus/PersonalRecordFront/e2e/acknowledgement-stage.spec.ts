@@ -30,7 +30,13 @@ interface EventRow {
   id: string
   code: string
   stage: string
-  placementAssignments: { id: string; employeeName: string; acknowledgedAt: string | null }[]
+  objectName: string
+  placementAssignments: {
+    id: string
+    employeeId: string
+    employeeName: string
+    acknowledgedAt: string | null
+  }[]
 }
 
 async function apiToken(): Promise<string> {
@@ -86,6 +92,28 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     await expect(card).toBeVisible({ timeout: 15_000 })
     await expect(card).toContainText(`Ознакомление (${total - pending.length}/${total})`)
 
+    // Две колонки прототипа: свой экран и экран старшего объекта
+    await expect(card.getByText('Экран сотрудника')).toBeVisible()
+    await expect(card.getByText('Экран старшего объекта')).toBeVisible()
+    // Своё назначение опознаётся по ЖИВОЙ связи учётки с кадровой записью.
+    // Ассерт различающий: спрашиваем бэк, кто «я», и сверяем, ЧТО именно
+    // показала колонка — назначение или «вы не назначены». Проверка «нет
+    // текста про непривязанную учётку» была бы вакуумной: этот текст исчезает
+    // и когда колонка сломана.
+    const meRes = await fetch(`${API}/api/ops/personnel/me/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(meRes.status, 'у admin должна быть привязка к сотруднику').toBe(200)
+    const me = (await meRes.json()) as { id: string }
+    const mine = event.placementAssignments.find((a) => a.employeeId === me.id)
+    const own = card.locator('section', { hasText: 'Экран сотрудника' }).first()
+    if (mine === undefined) {
+      await expect(own).toContainText('Вы не назначены на это мероприятие')
+    } else {
+      await expect(own).toContainText(`Ваше назначение · ${event.code}`)
+      await expect(own).toContainText(event.objectName)
+    }
+
     // Полоса готовности отражает долю подтверждённых
     const bar = card.getByRole('progressbar', { name: 'Готовность ознакомления' })
     await expect(bar).toHaveAttribute(
@@ -99,7 +127,7 @@ test.describe(LIVE ? 'ознакомление' : 'ознакомление (с�
     await expect(card.getByText('Подтверждено', { exact: false })).toHaveCount(0)
 
     // Завершить этап не даёт сервер, а не экран: кнопка активна
-    const finish = card.getByRole('button', { name: /Завершить ознакомление/ })
+    const finish = card.getByRole('button', { name: /Завершить этап/ })
     await expect(finish).toBeEnabled()
     await finish.click()
     await expect(card).toContainText('подтвердили ознакомление', { timeout: 15_000 })

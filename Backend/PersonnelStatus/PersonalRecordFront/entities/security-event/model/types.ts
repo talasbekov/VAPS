@@ -265,6 +265,14 @@ export interface ReplaceAssignmentRequest extends Record<string, unknown> {
 
 export const OPS_PERSONNEL_PATH = "/api/ops/personnel/";
 
+/**
+ * Сотрудник, привязанный к учётной записи. Нужен «экрану сотрудника» на
+ * ознакомлении: связать учётку с кадровой записью можно только через
+ * Employee.user, а сопоставление по ФИО показало бы тёзке чужое назначение.
+ * 404 EMPLOYEE_NOT_LINKED — привязки нет (сид её не заполняет).
+ */
+export const OPS_PERSONNEL_ME_PATH = "/api/ops/personnel/me/";
+
 export interface ListPersonnelResponse {
   results: PersonnelSummarySnapshot[];
 }

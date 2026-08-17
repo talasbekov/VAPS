@@ -8,19 +8,25 @@
 // «Ожидают»: на большом ОМ список назначений — сотни строк, и найти в нём
 // оставшихся глазами нельзя, а именно они держат этап.
 //
-// «Экран сотрудника» («Ваше назначение» + кнопка «Ознакомлен» от первого
-// лица) НЕ перенесён: опознать своё назначение нечем. Связь учётки с
-// сотрудником в модели есть (Employee.user), но ни одна ручка раздела ОМ её
-// не отдаёт, а кадровый снимок /api/ops/personnel/ идёт без неё. Сопоставлять
-// по ФИО нельзя: показать чужое назначение как своё — хуже, чем не показать.
-// Статуса «Недоступен» из прототипа тоже нет: доступности сотрудника на дату
-// в назначении не хранится.
+// Экран двухколоночный, как в прототипе: слева «Экран сотрудника» — своё
+// назначение и подтверждение от первого лица, справа «Экран старшего
+// объекта» — готовность по всем назначенным.
+//
+// Своё назначение опознаётся по ЖИВОЙ связи учётки с кадровой записью
+// (`/api/ops/personnel/me/` → Employee.user). Сопоставление по ФИО отвергнуто:
+// тёзка увидел бы чужое назначение как своё. Привязки может не быть — тогда
+// колонка честно говорит, что учётка не привязана, а не молчит.
+//
+// Статуса «Недоступен» из прототипа нет: доступности сотрудника на дату в
+// назначении не хранится. Кнопки «Уведомить повторно» нет: ручки повторного
+// уведомления не существует.
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   useAcknowledgePlacement,
   useCompleteAcknowledgement,
+  usePersonnelMe,
 } from "@/hooks/use-security-event-stages";
 import type { SecurityEvent } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
@@ -32,6 +38,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
   const complete = useCompleteAcknowledgement(event.id);
   const [scope, setScope] = useState<Scope>("all");
 
+  const me = usePersonnelMe();
   const assignments = event.placementAssignments;
   const acknowledgedCount = assignments.filter(
     (a) => a.acknowledgedAt !== null
@@ -51,7 +58,25 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           Ознакомление ({acknowledgedCount}/{assignments.length})
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="grid gap-4 lg:grid-cols-2">
+        <section className="rounded-md border p-3">
+          <p className="text-xs font-semibold text-muted-foreground">
+            Экран сотрудника
+          </p>
+          <MyAssignment
+            event={event}
+            meId={me.data?.id ?? null}
+            meFailed={me.isError}
+            loading={me.isLoading}
+            onAcknowledge={(assignmentId) => acknowledge.mutate({ assignmentId })}
+            pending={acknowledge.isPending}
+          />
+        </section>
+
+        <section className="space-y-4">
+        <p className="text-xs font-semibold text-muted-foreground">
+          Экран старшего объекта
+        </p>
         <div>
           <div
             className="h-2 w-full overflow-hidden rounded-full bg-muted"
@@ -154,10 +179,90 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
           >
             {complete.isPending
               ? "Завершение…"
-              : "Завершить ознакомление → Проведение"}
+              : "Завершить этап и перейти далее"}
           </Button>
         </div>
+        </section>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * «Ваше назначение» — карточка от первого лица. Три честных исхода: учётка не
+ * привязана к сотруднику, привязана но в этом ОМ не назначен, назначен —
+ * тогда подтверждение доступно прямо здесь.
+ */
+function MyAssignment({
+  event,
+  meId,
+  meFailed,
+  loading,
+  onAcknowledge,
+  pending,
+}: {
+  event: SecurityEvent;
+  meId: string | null;
+  meFailed: boolean;
+  loading: boolean;
+  onAcknowledge: (assignmentId: string) => void;
+  pending: boolean;
+}) {
+  if (loading) {
+    return <p className="mt-2 text-xs text-muted-foreground">Загрузка…</p>;
+  }
+  if (meFailed || meId === null) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        Учётная запись не привязана к сотруднику — своё назначение показать
+        нечем.
+      </p>
+    );
+  }
+  const mine = event.placementAssignments.find((a) => a.employeeId === meId);
+  if (mine === undefined) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        Вы не назначены на это мероприятие.
+      </p>
+    );
+  }
+  const post = event.reconSectorPosts.find((p) => p.id === mine.postId);
+  return (
+    <div className="mt-2 space-y-2">
+      <p className="text-sm font-semibold">Ваше назначение · {event.code}</p>
+      <dl className="space-y-1 text-xs">
+        <Row label="Объект" value={event.objectName} />
+        <Row
+          label="Сектор / пост"
+          value={post ? `${post.sector} · ${post.post}` : mine.postId}
+        />
+        <Row label="Дата" value={event.businessDate} />
+        <Row label="Задача поста" value={post?.task === "" ? "—" : (post?.task ?? "—")} />
+      </dl>
+      {mine.acknowledgedAt !== null ? (
+        <p className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
+          Подтверждено ({mine.acknowledgedAt})
+        </p>
+      ) : (
+        <Button
+          type="button"
+          size="sm"
+          disabled={pending}
+          onClick={() => onAcknowledge(mine.id)}
+        >
+          ✓ Ознакомлен
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="w-28 shrink-0 text-muted-foreground">{label}</dt>
+      <dd>{value}</dd>
+    </div>
   );
 }

@@ -451,7 +451,13 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
     кадровые записи (Employee + звание + подразделение штатной единицы), а не
     своя таблица: раздел ОМ кадры не ведёт, он их читает."""
 
-    permission_map = {"list": _MANAGE_EVENT_PERMISSION}
+    # «me» перечислен ЯВНО: action без записи в карте проваливается в
+    # автоопределение, которое для нестандартного имени возвращает None, то
+    # есть ручка осталась бы без права вовсе.
+    permission_map = {
+        "list": _MANAGE_EVENT_PERMISSION,
+        "me": _READ_EVENT_PERMISSION,
+    }
 
     def list(self, request):
         from organization_management.apps.employees.models import Employee
@@ -485,6 +491,51 @@ class OpsPersonnelViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 }
             )
         return Response({"results": results})
+
+    @action(detail=False, methods=["get"], url_path="me")
+    def me(self, request):
+        """Сотрудник, привязанный к учётной записи, — для «своего назначения».
+
+        Экран ознакомления показывает сотруднику ЕГО назначение, а связать
+        учётку с кадровой записью можно только здесь: `Employee.user` —
+        единственное место, где эта связь существует. Сопоставлять по ФИО
+        нельзя: тёзка увидел бы чужое назначение как своё.
+
+        Привязки может не быть (сид её не заполняет) — тогда 404 с причиной, а
+        не пустой объект: экран обязан отличать «связи нет» от «назначений
+        нет».
+        """
+        from organization_management.apps.employees.models import Employee
+        from organization_management.apps.ops.security_events import (
+            personnel_display_name,
+        )
+
+        employee = getattr(request.user, "employee", None)
+        if employee is None or not employee.is_active:
+            return Response(
+                {
+                    "error_code": "EMPLOYEE_NOT_LINKED",
+                    "message": "Учётная запись не привязана к сотруднику.",
+                },
+                status=404,
+            )
+        try:
+            staff_unit = employee.staff_unit
+        except Employee.staff_unit.RelatedObjectDoesNotExist:
+            staff_unit = None
+        unit = (
+            staff_unit.division.name
+            if staff_unit is not None and staff_unit.division is not None
+            else ""
+        )
+        return Response(
+            {
+                "id": str(employee.pk),
+                "name": personnel_display_name(employee),
+                "rankLabel": employee.rank.name if employee.rank else "",
+                "unit": unit,
+            }
+        )
 
 
 # ── План дежурств ───────────────────────────────────────────────────────────
