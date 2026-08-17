@@ -153,50 +153,64 @@ export default function EmployeesPage() {
     refetch();
   };
 
-  const stats = {
-    total: employees.length,
-    active: employees.filter(
-      (e) => e.status === EMPLOYEE_STATUS_LABELS.in_service
-    ).length,
-    onLeave: employees.filter((e) =>
-      [
-        EMPLOYEE_STATUS_LABELS.vacation,
-        EMPLOYEE_STATUS_LABELS.sick_leave,
-        EMPLOYEE_STATUS_LABELS.leave_by_report,
-      ].includes(e.status)
-    ).length,
-    onTrip: employees.filter(
-      (e) => e.status === EMPLOYEE_STATUS_LABELS.business_trip
-    ).length,
-  };
+  // Сводка считалась тремя отдельными `filter` на каждый рендер, то есть на
+  // каждое нажатие клавиши в поиске. Считаем один раз и одним проходом — от
+  // ввода в поле сводка не зависит вовсе.
+  const stats = useMemo(() => {
+    const leaveLabels: string[] = [
+      EMPLOYEE_STATUS_LABELS.vacation,
+      EMPLOYEE_STATUS_LABELS.sick_leave,
+      EMPLOYEE_STATUS_LABELS.leave_by_report,
+    ];
+    let active = 0;
+    let onLeave = 0;
+    let onTrip = 0;
+    for (const employee of employees) {
+      if (employee.status === EMPLOYEE_STATUS_LABELS.in_service) active += 1;
+      else if (leaveLabels.includes(employee.status)) onLeave += 1;
+      else if (employee.status === EMPLOYEE_STATUS_LABELS.business_trip)
+        onTrip += 1;
+    }
+    return { total: employees.length, active, onLeave, onTrip };
+  }, [employees]);
 
-  const canViewEmployee = (employee: Employee) => {
-    if (hasPermission("employees", "read")) return true;
-    if (
-      hasPermission("employees", "read-department") &&
-      user?.departmentId === employee.departmentId
-    )
-      return true;
-    return false;
-  };
+  const canSeeAll = hasPermission("employees", "read");
+  const canSeeOwnDepartment = hasPermission("employees", "read-department");
 
-  const filteredEmployees = employees.filter((employee) => {
-    if (!canViewEmployee(employee)) return false;
+  // Отбор — в useMemo, как в соседнем status-table.tsx: раньше полный обход
+  // списка (плюс `toLowerCase` на каждое поле каждой строки) выполнялся заново
+  // при любом рендере страницы.
+  const filteredEmployees = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    return employees.filter((employee) => {
+      const visible =
+        canSeeAll ||
+        (canSeeOwnDepartment && user?.departmentId === employee.departmentId);
+      if (!visible) return false;
 
-    const matchesSearch =
-      searchQuery === "" ||
-      employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      employee.position.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      employee.department.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch =
+        needle === "" ||
+        employee.name.toLowerCase().includes(needle) ||
+        employee.position.toLowerCase().includes(needle) ||
+        employee.department.toLowerCase().includes(needle);
 
-    const matchesDepartment =
-      departmentFilter === "all" || employee.department === departmentFilter;
+      const matchesDepartment =
+        departmentFilter === "all" || employee.department === departmentFilter;
 
-    const matchesStatus =
-      statusFilter === "all" || employee.status === statusFilter;
+      const matchesStatus =
+        statusFilter === "all" || employee.status === statusFilter;
 
-    return matchesSearch && matchesDepartment && matchesStatus;
-  });
+      return matchesSearch && matchesDepartment && matchesStatus;
+    });
+  }, [
+    employees,
+    searchQuery,
+    departmentFilter,
+    statusFilter,
+    canSeeAll,
+    canSeeOwnDepartment,
+    user?.departmentId,
+  ]);
 
   return (
     <DashboardLayout>

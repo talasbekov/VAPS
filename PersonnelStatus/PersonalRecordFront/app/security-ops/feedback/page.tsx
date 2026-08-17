@@ -23,6 +23,7 @@ import type {
 } from "@/entities/ops-feedback";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 
 function formatMoment(iso: string): string {
   const at = new Date(iso);
@@ -86,6 +87,12 @@ export default function FeedbackPage() {
     apply();
     setPage(1);
   }
+
+  // `search` уходит прямо в queryKey — без задержки каждая буква была отдельным
+  // запросом к реестру обращений.
+  const [searchDraft, setSearchDraft] = useDebouncedCommit(search, (value) =>
+    changeFilter(() => setSearch(value))
+  );
 
   if (!permissionsLoading && !hasPermission("feedback.view")) {
     return <OpsAccessDenied what="обращений" />;
@@ -167,9 +174,9 @@ export default function FeedbackPage() {
               <input
                 aria-label="Поиск по обращениям"
                 className="rounded-md border bg-background p-2 text-sm font-normal"
-                value={search}
+                value={searchDraft}
                 placeholder="Тема или описание"
-                onChange={(event) => changeFilter(() => setSearch(event.target.value))}
+                onChange={(event) => setSearchDraft(event.target.value)}
               />
             </label>
             <label className="flex flex-col gap-1 text-xs font-semibold">

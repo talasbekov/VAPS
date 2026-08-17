@@ -19,6 +19,7 @@ import {
 import type { RegistryFilters } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 
 const DIRECTION_OPTIONS = [
   { value: "SENIOR_TO_EMPLOYEE", label: "Старший → сотрудник" },
@@ -71,6 +72,13 @@ export default function EvaluationRegistryPage() {
     const queryString = next.toString();
     router.replace(queryString === "" ? pathname : `${pathname}?${queryString}`);
   }
+
+  // Поиск здесь серверный и значение уходит в queryKey: без задержки запрос
+  // отправлялся на каждое нажатие клавиши.
+  const [searchDraft, setSearchDraft] = useDebouncedCommit(
+    filters.search,
+    (value) => update("search", value)
+  );
 
   if (!permissionsLoading && !hasPermission("rating.view_aggregate")) {
     return <OpsAccessDenied what="реестра итоговых оценок" />;
@@ -220,8 +228,8 @@ export default function EvaluationRegistryPage() {
                   Поиск
                   <input
                     className="mt-1 w-full rounded-md border bg-background p-2 text-sm font-normal"
-                    value={filters.search}
-                    onChange={(event) => update("search", event.target.value)}
+                    value={searchDraft}
+                    onChange={(event) => setSearchDraft(event.target.value)}
                     aria-label="Поиск"
                     placeholder="Участник, мероприятие, объект"
                   />

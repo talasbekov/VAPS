@@ -45,13 +45,16 @@ export function Header({
     <header className="sticky top-0 z-40 bg-background border-b border-border">
       <div className="flex items-center justify-between px-4 sm:px-6 h-14">
         <div className="flex items-center gap-2">
+          {/* Бургер — единственный вход в навигацию на мобильном, и до этой
+              правки у него не было имени вовсе: скринридер читал «кнопка». */}
           <Button
             variant="ghost"
             size="sm"
-            className="lg:hidden"
+            className="lg:hidden min-h-11 min-w-11"
             onClick={onMenuClick}
+            aria-label="Открыть меню"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-5 w-5" aria-hidden="true" />
           </Button>
           {onDesktopMenuClick && (
             <Button
@@ -59,8 +62,12 @@ export function Header({
               size="sm"
               className="hidden lg:flex"
               onClick={onDesktopMenuClick}
+              aria-label={
+                desktopSidebarOpen ? "Скрыть боковое меню" : "Показать боковое меню"
+              }
+              aria-expanded={desktopSidebarOpen}
             >
-              <Menu className="h-5 w-5" />
+              <Menu className="h-5 w-5" aria-hidden="true" />
             </Button>
           )}
         </div>
@@ -71,7 +78,11 @@ export function Header({
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+              <Button
+                variant="ghost"
+                className="relative h-9 w-9 rounded-full"
+                aria-label="Меню пользователя"
+              >
                 <Avatar className="h-9 w-9">
                   <AvatarImage
                     src="/placeholder.svg?height=36&width=36"

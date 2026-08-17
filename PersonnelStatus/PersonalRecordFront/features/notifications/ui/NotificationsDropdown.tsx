@@ -21,6 +21,7 @@ import {
   Notification,
 } from "../api/notifications-api";
 import { toast } from "@/shared/hooks/use-toast";
+import { LoadFailure } from "@/components/load-failure";
 
 // Варианты анимации для списка уведомлений
 const listVariants = {
@@ -72,6 +73,14 @@ export function NotificationsDropdown() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
+    // Без onError клик «прочитано» тихо не срабатывал: уведомление
+    // оставалось в списке, и это выглядело как залипший интерфейс.
+    onError: () =>
+      toast({
+        title: "Не удалось отметить прочитанным",
+        description: "Уведомление осталось непрочитанным. Попробуйте ещё раз.",
+        variant: "destructive",
+      }),
   });
 
   const markAllMutation = useMutation({
@@ -151,6 +160,15 @@ export function NotificationsDropdown() {
           >
             <Loader2 className="h-6 w-6 animate-spin" />
           </motion.div>
+        ) : unreadQuery.isError ? (
+          // «Уведомлений нет» и «список не пришёл» — разные факты; второй
+          // раньше маскировался первым, и человек не узнавал о новых.
+          <LoadFailure
+            what="уведомления"
+            onRetry={() => void unreadQuery.refetch()}
+            isRetrying={unreadQuery.isFetching}
+            className="items-center px-4 text-center"
+          />
         ) : notifications.length === 0 ? (
           <motion.div 
             className="text-center text-muted-foreground py-6 flex flex-col items-center gap-2"

@@ -26,6 +26,7 @@ import type {
   ReportJobState,
 } from "@/entities/service-report";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
 /** Порядок фильтра состояний — порядок жизни работы, а не алфавит. */
@@ -176,8 +177,16 @@ export default function ReportHistoryPage() {
         )}
 
         <section className="rounded-xl border bg-card p-4">
-          {data === undefined ? (
+          {jobsQuery.isPending ? (
             <p className="text-sm text-muted-foreground">Загрузка истории…</p>
+          ) : data === undefined ? (
+            // Развилка была на `data === undefined` без ветки ошибки: после
+            // retry: 1 экран застревал в «Загрузка истории…» навсегда.
+            <LoadFailure
+              what="историю отчётов"
+              onRetry={() => void jobsQuery.refetch()}
+              isRetrying={jobsQuery.isFetching}
+            />
           ) : data.results.length === 0 ? (
             // «Ничего не нашлось» и «отчётов ещё не запускали» — разные факты.
             <p className="text-sm text-muted-foreground">

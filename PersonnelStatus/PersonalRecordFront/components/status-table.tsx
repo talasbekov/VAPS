@@ -54,6 +54,7 @@ import { SecondEmployeeDialog } from "@/features/employee-status-update/ui/Secon
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import type { Employee as EmployeeType } from "@/entities/employee/model/types";
+import { LoadFailure } from "@/components/load-failure";
 
 interface Employee {
   id: string;
@@ -104,6 +105,8 @@ export function StatusTable({
   const {
     data,
     isLoading: queryLoading,
+    isError: queryFailed,
+    isFetching: queryFetching,
     refetch,
   } = useStaffUnitsByDirectorate();
 
@@ -634,8 +637,15 @@ export function StatusTable({
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
-                          <MoreHorizontal className="h-4 w-4" />
+                        <Button
+                          variant="ghost"
+                          className="h-8 w-8 p-0"
+                          // Имя с фамилией: в таблице таких кнопок столько же,
+                          // сколько строк, и «Действия» без адресата не
+                          // отличает одну от другой.
+                          aria-label={`Действия: ${employee.name}`}
+                        >
+                          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -687,7 +697,18 @@ export function StatusTable({
           </div>
         )}
 
-        {!loading && filteredEmployees.length === 0 && (
+        {/* Отказ запроса и «никто не подошёл под фильтр» — разные факты:
+            раньше оба давали «Сотрудники не найдены» на главном экране. */}
+        {!loading && queryFailed && (
+          <LoadFailure
+            what="список сотрудников"
+            onRetry={() => void refetch()}
+            isRetrying={queryFetching}
+            className="items-center text-center"
+          />
+        )}
+
+        {!loading && !queryFailed && filteredEmployees.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
             <p>Сотрудники не найдены</p>

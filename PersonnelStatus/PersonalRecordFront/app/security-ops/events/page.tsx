@@ -21,6 +21,7 @@ import {
 import { ClipboardList } from "lucide-react";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { CreateSecurityEventDialog } from "@/features/create-security-event";
 import {
   SECURITY_EVENT_STAGES,
@@ -62,6 +63,13 @@ export default function SecurityEventsPage() {
 
   const query = useSecurityEvents(params);
 
+  // Поиск фиксируется с задержкой: в URL и в запрос уезжает набранное слово, а
+  // не каждая его буква. Само поле отвечает мгновенно — оно живёт в черновике.
+  const [searchDraft, setSearchDraft] = useDebouncedCommit(
+    params.search ?? "",
+    (value) => updateParam("search", value)
+  );
+
   function updateParam(key: string, value: string): void {
     const next = new URLSearchParams(searchParams);
     if (value === "") next.delete(key);
@@ -97,8 +105,8 @@ export default function SecurityEventsPage() {
           <Input
             className="min-w-56 flex-1"
             placeholder="Поиск по названию, объекту или ответственному"
-            value={params.search}
-            onChange={(e) => updateParam("search", e.target.value)}
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
           />
           <select
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"

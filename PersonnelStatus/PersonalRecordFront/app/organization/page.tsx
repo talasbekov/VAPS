@@ -13,9 +13,16 @@ import {
   Search,
 } from "lucide-react";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
+import { LoadFailure } from "@/components/load-failure";
 
 export default function OrganizationPage() {
-  const { data: statistics, isLoading } = useStaffUnitStatistics();
+  const {
+    data: statistics,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useStaffUnitStatistics();
 
   const summary = statistics?.summary;
 
@@ -48,6 +55,17 @@ export default function OrganizationPage() {
             />
           </div>
         </div>
+
+        {/* Отказ запроса статистики: без этой врезки шесть плиток показывали
+            прочерки, и сбой сервера читался как «в организации никого нет». */}
+        {isError && (
+          <LoadFailure
+            what="статистику по структуре"
+            onRetry={() => void refetch()}
+            isRetrying={isFetching}
+            className="rounded-xl border bg-card px-4"
+          />
+        )}
 
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">

@@ -36,6 +36,7 @@ export default function DashboardPage() {
     data: absenceStats,
     isLoading: isLoadingStats,
     error: statsError,
+    refetch: refetchStats,
   } = useAbsenceStatistics();
 
   const recentActivities = [
@@ -106,6 +107,8 @@ export default function DashboardPage() {
               : null
           }
           isLoading={isLoadingStats}
+          isError={statsError !== null && statsError !== undefined}
+          onRetry={() => void refetchStats()}
         />
 
         {/* Main Content Grid */}

@@ -37,8 +37,22 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <PerformanceProfiler id="DashboardLayout">
       <div className="flex min-h-screen bg-background">
+        {/* Проброс к содержимому: до первой кнопки контента на «Управлении
+            персоналом» было 26 нажатий Tab — весь сайдбар целиком. Ссылка
+            невидима, пока не получит фокус. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground"
+        >
+          Перейти к содержимому
+        </a>
+
         {/* Desktop Sidebar - Fixed */}
         <div
+          // Уехавший за левый край сайдбар оставался в порядке табуляции: ~25
+          // ссылок ловили фокус за экраном. inert убирает и фокус, и чтение
+          // скринридером, но оставляет анимацию скрытия.
+          inert={desktopSidebarOpen ? undefined : true}
           className={`hidden lg:block fixed left-0 top-0 h-screen z-30 transition-transform duration-300 ease-in-out ${
             desktopSidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
@@ -68,7 +82,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           />
 
           {/* Page content */}
-          <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4">
+          <main
+            id="main-content"
+            // tabIndex={-1}: без него переход по «якорю» в части браузеров
+            // сдвигает только прокрутку, а фокус остаётся на skip-link.
+            tabIndex={-1}
+            className="flex-1 px-4 sm:px-6 lg:px-8 py-4"
+          >
             {apiGap && <ApiGapNotice gap={apiGap} />}
             {children}
           </main>
