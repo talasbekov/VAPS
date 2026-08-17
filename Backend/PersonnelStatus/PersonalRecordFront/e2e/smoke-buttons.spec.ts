@@ -405,12 +405,27 @@ async function collect(page: Page, container: string): Promise<Descriptor[]> {
   )
 }
 
-/** Сигнатура экрана — по ней судим «клик что-то поменял». */
+const SIGNATURE_JS = () =>
+  `${location.pathname}${location.search}|${document.body.innerText.length}|${document.querySelectorAll('*').length}|${document.querySelectorAll('[role="dialog"],[aria-modal="true"]').length}`
+
+/**
+ * Сигнатура экрана — по ней судим «клик что-то поменял».
+ *
+ * 🔴 Клик, уводящий на другой маршрут, сносит контекст исполнения ПРЯМО в
+ * момент замера: `page.evaluate` падает с «Execution context was destroyed».
+ * Это не дефект портала, а гонка самого обхода — и она роняла ВЕСЬ прогон
+ * (`115 did not run` на `/security-ops/duties/combat` 17.08). Ждём, пока
+ * навигация уляжется, и снимаем сигнатуру уже нового экрана: она заведомо
+ * отличается от прежней, то есть вердикт честно станет «навигация».
+ */
 async function signature(page: Page): Promise<string> {
-  return page.evaluate(
-    () =>
-      `${location.pathname}${location.search}|${document.body.innerText.length}|${document.querySelectorAll('*').length}|${document.querySelectorAll('[role="dialog"],[aria-modal="true"]').length}`,
-  )
+  try {
+    return await page.evaluate(SIGNATURE_JS)
+  } catch (e) {
+    if (!/Execution context was destroyed|navigating and changing/i.test(String(e))) throw e
+    await page.waitForLoadState('domcontentloaded').catch(() => {})
+    return page.evaluate(SIGNATURE_JS)
+  }
 }
 
 // ────────────────────────── находки ──────────────────────────
