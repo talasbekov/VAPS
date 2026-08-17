@@ -120,3 +120,19 @@ export const PASSPORT_STATE_LABEL: Record<
   YELLOW: "Требует проверки",
   RED: "Требует внимания",
 };
+
+/**
+ * Подписи полей объекта живут ЗДЕСЬ, а не на экранах: реестр и карточка
+ * показывают одно и то же поле, и два словаря разошлись бы ровно тогда, когда
+ * их сличают — при разборе «почему в списке одно, а в карточке другое».
+ */
+export const OBJECT_STATE_LABEL: Record<SecurityObject["objectState"], string> =
+  {
+    ACTIVE: "Действующий",
+    ARCHIVED: "В архиве",
+  };
+
+export const OWNERSHIP_LABEL: Record<SecurityObject["ownership"], string> = {
+  OWN: "Собственный",
+  GUARDED: "Охраняемый",
+};

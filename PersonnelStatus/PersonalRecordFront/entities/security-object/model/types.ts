@@ -145,7 +145,10 @@ export interface PublishPassportVersionRequest extends Record<string, unknown> {
   note: string;
 }
 
-// Контракты путей бэкенда ОМ (реального бэка нет — статус pending, см. отчёт).
+// Контракты путей бэкенда ОМ. Бэк ЖИВОЙ (срез A2): `SecurityObjectViewSet`
+// отдаёт конверт реестра со свежестью и KPI, правит действующую редакцию
+// паспорта и публикует версии. Пометка «реального бэка нет — статус pending»
+// устарела и снята: по ней экран числился бы моком.
 export const OPS_OBJECTS_PATH = "/api/ops/objects/";
 
 export function objectDetailPath(id: string): string {

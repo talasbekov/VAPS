@@ -65,6 +65,7 @@ import { useSecurityObjects } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   FRESHNESS_LABEL,
+  OBJECT_STATE_LABEL,
   PASSPORT_STATE_LABEL,
   PassportStateBadge,
 } from "@/entities/security-object";
@@ -172,11 +173,6 @@ type ObjectTab = keyof typeof OBJECT_TABS;
 /** Умолчание — весь реестр: вкладка, выбранная за пользователя, спрятала бы
  * от него часть строк ещё до того, как он что-то сделал. В URL не пишется. */
 const ALL_TABS = "all";
-
-const OBJECT_STATE_LABEL: Record<ObjectState, string> = {
-  ACTIVE: "Действующий",
-  ARCHIVED: "В архиве",
-};
 
 const OBJECT_STATE_CLASS: Record<ObjectState, string> = {
   ACTIVE: "bg-green-100 text-green-800 hover:bg-green-100",
