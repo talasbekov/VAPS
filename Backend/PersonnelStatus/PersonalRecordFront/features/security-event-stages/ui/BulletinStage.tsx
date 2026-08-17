@@ -161,18 +161,21 @@ export function BulletinStage({ event }: { event: SecurityEvent }) {
  * Вместо них — строка о том, где эти сведения действительно ведутся.
  */
 function EventFacts({ event }: { event: SecurityEvent }) {
-  const { hasPermission } = useOpsPermissions();
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const objectId = event.objectId;
   const canViewObject = hasPermission("object.view") && objectId !== null;
   const objectQuery = useSecurityObject(canViewObject ? objectId : "");
 
+  // Незагруженные права — это ЕЩЁ НЕ отказ: `hasPermission` до ответа
+  // /my-permissions отвечает false, и без этой ветки блок успевал обвинить
+  // администратора в отсутствии права на первом кадре.
   const address =
     objectId === null
       ? "мероприятие не привязано к объекту реестра"
-      : !canViewObject
-        ? "нужно право «Объекты: просмотр»"
-        : objectQuery.isLoading
-          ? "загрузка карточки объекта…"
+      : permissionsLoading || objectQuery.isLoading
+        ? "загрузка карточки объекта…"
+        : !canViewObject
+          ? "нужно право «Объекты: просмотр»"
           : objectQuery.isError || objectQuery.data === undefined
             ? "карточка объекта недоступна"
             : objectQuery.data.address.trim() === ""

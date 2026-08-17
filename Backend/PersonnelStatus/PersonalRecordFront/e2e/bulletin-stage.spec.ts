@@ -146,6 +146,33 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
       `/security-ops/gvo/${target.id}/`,
     )
   })
+
+  test('незагруженные права — не отказ: адрес ждёт, а не обвиняет', async ({ page }) => {
+    const token = await apiToken()
+    const target = await factsEvent(token)
+    const object = await objectCard(token, target.objectId!)
+
+    await signIn(page)
+    // Права приходят медленно — ровно то состояние, в котором hasPermission
+    // ещё отвечает false, хотя право у администратора есть
+    await page.route('**/api/operations/my-permissions/**', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 4_000))
+      await route.continue()
+    })
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+    const facts = page.locator('section').filter({
+      has: page.getByRole('heading', { name: 'Сведения об ОМ' }),
+    })
+    await expect(facts).toContainText('Место / адрес: загрузка карточки объекта…', {
+      timeout: 15_000,
+    })
+    await expect(facts).not.toContainText('нужно право')
+
+    // Дождались прав — адрес появился, отказа не было ни на одном кадре
+    await expect(facts).toContainText(`Место / адрес: ${object.address}`, {
+      timeout: 15_000,
+    })
+  })
 })
 
 /** Заводит пустое ОМ на этапе «Бюллетень». */
