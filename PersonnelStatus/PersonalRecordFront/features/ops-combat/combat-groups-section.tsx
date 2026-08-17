@@ -84,7 +84,7 @@ function ActionButton({
     tone === "primary"
       ? "bg-primary text-primary-foreground hover:bg-primary/90"
       : tone === "danger"
-        ? "border border-destructive/40 text-destructive hover:bg-destructive/10"
+        ? "border border-destructive/40 text-destructive-ink hover:bg-destructive/10"
         : "border hover:bg-muted";
   return (
     <button
@@ -101,7 +101,7 @@ function ActionButton({
 function ErrorLine({ error }: { error: OpsApiFailure | null }) {
   if (error === null) return null;
   return (
-    <p role="alert" className="text-sm text-destructive">
+    <p role="alert" className="text-sm text-destructive-ink">
       {failureText(error)}
     </p>
   );
@@ -668,7 +668,7 @@ function CombatShiftCard({
           submission.returnReason !== null ? (
             <div className="sm:col-span-2">
               <dt className="text-muted-foreground">Причина возврата</dt>
-              <dd className="text-destructive">{submission.returnReason}</dd>
+              <dd className="text-destructive-ink">{submission.returnReason}</dd>
             </div>
           ) : null}
         </dl>
@@ -880,7 +880,7 @@ export function CombatDutyGroupsSection() {
     shiftsQuery.error;
   if (firstError) {
     return (
-      <p role="alert" className="text-sm text-destructive">
+      <p role="alert" className="text-sm text-destructive-ink">
         Не удалось загрузить боевые группы: {failureText(firstError)}
       </p>
     );

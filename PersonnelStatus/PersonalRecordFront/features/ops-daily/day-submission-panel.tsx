@@ -240,7 +240,7 @@ export function DaySubmissionPanel({
         {isError && (
           // Ошибка чтения — НЕ «пустой день»: молчаливая трактовка показала бы
           // кнопку сдачи там, где читать нельзя вовсе.
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-ink">
             Не удалось прочитать состояние дня.
           </p>
         )}

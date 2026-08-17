@@ -100,7 +100,7 @@ export default function ReportHistoryPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <History className="h-8 w-8 text-primary" />
+          <History className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">История отчётов</h1>
             <p className="text-muted-foreground">
@@ -165,15 +165,15 @@ export default function ReportHistoryPage() {
         </section>
 
         {notice !== null && (
-          <p role="status" className="text-sm font-semibold text-primary">
+          <p role="status" className="text-sm font-semibold text-primary-ink">
             {notice}
           </p>
         )}
         {rerun.error !== null && (
-          <p className="text-sm text-destructive">{rerun.error.message}</p>
+          <p className="text-sm text-destructive-ink">{rerun.error.message}</p>
         )}
         {download.error !== null && (
-          <p className="text-sm text-destructive">{download.error.message}</p>
+          <p className="text-sm text-destructive-ink">{download.error.message}</p>
         )}
 
         <section className="rounded-xl border bg-card p-4">
@@ -222,7 +222,7 @@ export default function ReportHistoryPage() {
                       >
                         <td className="py-2 pr-3">
                           <Link
-                            className="font-semibold text-primary underline"
+                            className="font-semibold text-primary-ink underline"
                             href={`/security-ops/service-reports/${job.reportJobId}`}
                           >
                             {artifact?.safeTitle ?? job.reportTypeCode}
@@ -348,7 +348,7 @@ export default function ReportHistoryPage() {
                           )}
                           {errorShown === job.reportJobId &&
                             job.safeFailureMessage !== null && (
-                              <p className="mt-2 text-xs text-destructive">
+                              <p className="mt-2 text-xs text-destructive-ink">
                                 {job.failureCode}: {job.safeFailureMessage}
                               </p>
                             )}

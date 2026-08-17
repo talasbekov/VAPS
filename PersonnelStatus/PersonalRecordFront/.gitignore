@@ -5,6 +5,8 @@
 
 # next.js
 /.next/
+# каталог проверочной сборки (NEXT_DIST_DIR), чтобы не трогать .next стенда
+/.next-build/
 /out/
 
 # production

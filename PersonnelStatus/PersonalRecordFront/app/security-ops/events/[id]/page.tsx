@@ -50,12 +50,12 @@ export default function SecurityEventPage() {
   if (query.isError || query.data === undefined) {
     return (
       <DashboardLayout>
-        <p className="text-sm text-destructive">
+        <p className="text-sm text-destructive-ink">
           Мероприятие не найдено или недоступно.
         </p>
         <Link
           href="/security-ops/events"
-          className="mt-2 inline-block text-sm font-semibold text-primary"
+          className="mt-2 inline-block text-sm font-semibold text-primary-ink"
         >
           ← Назад к реестру
         </Link>
@@ -69,7 +69,7 @@ export default function SecurityEventPage() {
     <DashboardLayout>
       <Link
         href="/security-ops/events"
-        className="mb-3 inline-block text-xs font-semibold text-primary"
+        className="mb-3 inline-block text-xs font-semibold text-primary-ink"
       >
         ← Назад к реестру
       </Link>

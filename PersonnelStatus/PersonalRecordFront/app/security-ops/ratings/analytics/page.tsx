@@ -44,7 +44,7 @@ export default function RatingAnalyticsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <BarChart3 className="h-8 w-8 text-primary" />
+          <BarChart3 className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Аналитика рейтинга</h1>
             <p className="text-muted-foreground">
@@ -60,7 +60,7 @@ export default function RatingAnalyticsPage() {
           <p className="text-sm text-muted-foreground">Загрузка отчёта…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive">{query.error.message}</p>
+          <p className="text-sm text-destructive-ink">{query.error.message}</p>
         )}
 
         {data !== undefined && data.unpublishedReason !== null && (

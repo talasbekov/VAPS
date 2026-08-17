@@ -119,7 +119,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
               Паспорт объекта сохранён на момент мероприятия —{" "}
               <Link
                 href={`/security-ops/objects/${event.passportBinding.objectId}/passports/${event.passportBinding.versionId}`}
-                className="font-semibold text-primary"
+                className="font-semibold text-primary-ink"
               >
                 версия {event.passportBinding.versionNumber}
               </Link>{" "}
@@ -280,7 +280,7 @@ function EvaluationsSection({ event }: { event: SecurityEvent }) {
         {registry.isLoading ? (
           <p className="text-xs text-muted-foreground">Загрузка реестра оценок…</p>
         ) : registry.isError ? (
-          <p className="text-xs text-destructive">
+          <p className="text-xs text-destructive-ink">
             Реестр оценок недоступен.
           </p>
         ) : (
@@ -305,7 +305,7 @@ function EvaluationsSection({ event }: { event: SecurityEvent }) {
         )}
         <Link
           href={`/security-ops/ratings/evaluations?event=${encodeURIComponent(event.code)}`}
-          className="inline-block text-xs font-semibold text-primary"
+          className="inline-block text-xs font-semibold text-primary-ink"
         >
           Итоговые оценки участников ОМ →
         </Link>

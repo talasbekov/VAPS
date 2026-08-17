@@ -76,7 +76,7 @@ export default function GvoRegistryPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <header>
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary">
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary-ink">
             Охранные мероприятия
           </p>
           <h1 className="text-[25px] font-bold leading-[1.15] tracking-[-0.02em]">
@@ -157,7 +157,7 @@ function RegistryTable({
   if (isError) {
     return (
       <Card>
-        <CardContent className="p-9 text-center text-sm text-destructive">
+        <CardContent className="p-9 text-center text-sm text-destructive-ink">
           Не удалось загрузить реестр ОМ. Попробуйте обновить страницу.
         </CardContent>
       </Card>

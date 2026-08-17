@@ -137,10 +137,10 @@ export default function SecurityObjectPage() {
   if (query.isError || query.data === undefined) {
     return (
       <DashboardLayout>
-        <p className="text-sm text-destructive">Объект не найден или недоступен.</p>
+        <p className="text-sm text-destructive-ink">Объект не найден или недоступен.</p>
         <Link
           href="/security-ops/objects"
-          className="mt-2 inline-block text-sm font-semibold text-primary"
+          className="mt-2 inline-block text-sm font-semibold text-primary-ink"
         >
           ← Назад к реестру
         </Link>
@@ -154,7 +154,7 @@ export default function SecurityObjectPage() {
     <DashboardLayout>
       <Link
         href="/security-ops/objects"
-        className="mb-3 inline-block text-xs font-semibold text-primary"
+        className="mb-3 inline-block text-xs font-semibold text-primary-ink"
       >
         ← Назад к реестру
       </Link>
@@ -179,7 +179,7 @@ export default function SecurityObjectPage() {
               onClick={() => pickTab(item.code)}
               className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
                 active
-                  ? "border-primary text-primary"
+                  ? "border-primary text-primary-ink"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >

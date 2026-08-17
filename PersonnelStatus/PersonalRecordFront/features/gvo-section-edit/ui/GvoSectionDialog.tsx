@@ -161,7 +161,7 @@ function OpenDialog({
           ))}
 
           {failure !== null && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm text-destructive-ink" role="alert">
               Не удалось сохранить раздел. Попробуйте ещё раз.
             </p>
           )}

@@ -72,7 +72,7 @@ export default function ProtectedPersonsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <header>
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary">
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary-ink">
             Охранные мероприятия
           </p>
           <h1 className="text-[25px] font-bold leading-[1.15] tracking-[-0.02em]">
@@ -110,7 +110,7 @@ export default function ProtectedPersonsPage() {
           </Card>
         ) : personsQuery.isError ? (
           <Card>
-            <CardContent className="p-9 text-center text-sm text-destructive">
+            <CardContent className="p-9 text-center text-sm text-destructive-ink">
               Не удалось загрузить каталог охраняемых лиц.
             </CardContent>
           </Card>
@@ -245,7 +245,7 @@ function PersonLinks({
           <li key={event.id} className="text-[12.5px]">
             <Link
               href={`/security-ops/gvo/${event.id}`}
-              className="font-semibold text-primary"
+              className="font-semibold text-primary-ink"
             >
               {event.code}
             </Link>{" "}
@@ -273,7 +273,7 @@ function PersonLinks({
           ) : (
             <Link
               href={`/security-ops/objects/${event.objectId}`}
-              className="font-semibold text-primary"
+              className="font-semibold text-primary-ink"
             >
               {event.objectName}
             </Link>

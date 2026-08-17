@@ -249,9 +249,9 @@ export default function ServiceAnalyticsPage() {
       <div className="space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Activity className="h-8 w-8 text-primary" />
+            <Activity className="h-8 w-8 text-primary-ink" />
             <div>
-              <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary">
+              <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary-ink">
                 Аналитика службы
               </p>
               <h1 className="text-2xl font-bold">
@@ -329,7 +329,7 @@ export default function ServiceAnalyticsPage() {
             </button>
             {filtersActive && (
               <>
-                <span className="text-xs font-semibold text-primary">
+                <span className="text-xs font-semibold text-primary-ink">
                   Фильтры активны
                 </span>
                 <button
@@ -435,7 +435,7 @@ export default function ServiceAnalyticsPage() {
         <DaySubmissionSection gate={strengthGate} />
 
         {snapshotQuery.error !== null && (
-          <p className="text-sm text-destructive">{snapshotQuery.error.message}</p>
+          <p className="text-sm text-destructive-ink">{snapshotQuery.error.message}</p>
         )}
         {snapshotQuery.isLoading && (
           <p className="text-sm text-muted-foreground">Загрузка аналитики…</p>
@@ -475,7 +475,7 @@ export default function ServiceAnalyticsPage() {
               >
                 <h2 className="mb-2 text-sm font-semibold">Строки показателя</h2>
                 {drilldownQuery.error !== null ? (
-                  <p className="text-sm text-destructive">
+                  <p className="text-sm text-destructive-ink">
                     {drilldownQuery.error.message}
                   </p>
                 ) : drilldownQuery.data === undefined ? (
@@ -553,7 +553,7 @@ export default function ServiceAnalyticsPage() {
             >
               <h2 className="mb-2 text-sm font-semibold">Требует внимания</h2>
               {attentionQuery.error !== null ? (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-destructive-ink">
                   {attentionQuery.error.message}
                 </p>
               ) : attentionQuery.data === undefined ? (

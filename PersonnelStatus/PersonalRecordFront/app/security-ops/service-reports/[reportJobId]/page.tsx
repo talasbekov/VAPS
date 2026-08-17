@@ -57,7 +57,7 @@ export default function ReportJobPage() {
           </p>
           <p>
             <Link
-              className="text-sm font-semibold text-primary underline"
+              className="text-sm font-semibold text-primary-ink underline"
               href="/security-ops/service-reports/history"
             >
               ← История отчётов
@@ -84,7 +84,7 @@ export default function ReportJobPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <FileSearch className="h-8 w-8 text-primary" />
+          <FileSearch className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">{data.reportTypeTitle}</h1>
             <p className="text-muted-foreground">
@@ -92,7 +92,7 @@ export default function ReportJobPage() {
               <span>{data.isOwn ? "ваш запуск" : "запуск другого пользователя"}</span>
             </p>
             <Link
-              className="text-sm font-semibold text-primary underline"
+              className="text-sm font-semibold text-primary-ink underline"
               href="/security-ops/service-reports/history"
             >
               ← История отчётов
@@ -123,7 +123,7 @@ export default function ReportJobPage() {
             <dd>{job.format}</dd>
           </dl>
           {job.state === "FAILED" && job.safeFailureMessage !== null && (
-            <p className="mt-3 text-sm text-destructive">
+            <p className="mt-3 text-sm text-destructive-ink">
               {job.failureCode}: {job.safeFailureMessage}
             </p>
           )}
@@ -232,15 +232,15 @@ export default function ReportJobPage() {
               ))}
           </ul>
           {rerun.error !== null && (
-            <p className="mt-2 text-sm text-destructive">{rerun.error.message}</p>
+            <p className="mt-2 text-sm text-destructive-ink">{rerun.error.message}</p>
           )}
           {download.error !== null && (
-            <p className="mt-2 text-sm text-destructive">
+            <p className="mt-2 text-sm text-destructive-ink">
               {download.error.message}
             </p>
           )}
           {rerunResult !== undefined && (
-            <p role="status" className="mt-2 text-sm font-semibold text-primary">
+            <p role="status" className="mt-2 text-sm font-semibold text-primary-ink">
               {rerunResult.reused ? (
                 "Готовый артефакт с теми же параметрами уже есть — новая работа не запускалась."
               ) : (

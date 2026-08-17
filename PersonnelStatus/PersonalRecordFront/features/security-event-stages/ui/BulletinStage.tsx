@@ -211,7 +211,7 @@ function EventFacts({ event }: { event: SecurityEvent }) {
         эти сведения ведутся в{" "}
         <Link
           href={`/security-ops/gvo/${event.id}`}
-          className="font-semibold text-primary"
+          className="font-semibold text-primary-ink"
         >
           сводке ГВО
         </Link>

@@ -13,6 +13,12 @@
   --popover-foreground: 222.2 84% 4.9%;
   --primary: 221.2 83.2% 53.3%;
   --primary-foreground: 210 40% 98%;
+  /* Текстовые пары к заливкам. Насыщенные --primary и --destructive хороши как
+     ФОН, но как БУКВЫ не проходят 4.5:1: primary 5.17 на белом и 3.46 на
+     тёмном, на чипе bg-primary/10 — 1.69; destructive 3.76 и 3.52. Отдельный
+     токен разводит «цвет плашки» и «цвет надписи», сохраняя оттенок. */
+  --primary-ink: 221.2 83.2% 45%; /* 6.81:1 на белом */
+  --destructive-ink: 0 72% 42%; /* 6.47:1 на белом */
   --secondary: 210 40% 96%;
   --secondary-foreground: 222.2 84% 4.9%;
   --muted: 210 40% 96%;
@@ -49,6 +55,10 @@
   --popover-foreground: 210 40% 98%;
   --primary: 221.2 83.2% 53.3%;
   --primary-foreground: 210 40% 98%;
+  /* В тёмной теме текстовая пара уходит В СВЕТЛУЮ сторону: тот же оттенок,
+     но 9.65:1 на фоне и 8.85 на чипе bg-primary/10. */
+  --primary-ink: 213 93% 78%;
+  --destructive-ink: 0 91% 78%; /* 8.29:1 на тёмном */
   --secondary: 217.2 32.6% 25%;
   --secondary-foreground: 210 40% 98%;
   --muted: 217.2 32.6% 25%;
@@ -175,16 +185,36 @@
   border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
+/* В тёмной теме белое стекло превращало карточку в светлое пятно с белым же
+   текстом. Прозрачность и размытие те же, подложка — от темы. */
+.dark .glass-effect {
+  background: hsl(var(--card) / 0.9);
+  border: 1px solid hsl(var(--border));
+}
+
 /* Плавные переходы для всех интерактивных элементов */
 * {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Оптимизация производительности для анимаций курсора */
-.pointer-events-none {
-  will-change: transform, opacity;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
+/* Уважение к системной настройке «меньше движения». Три бесконечные анимации
+   выше (shimmer, float, pulse-glow) крутились всегда и у всех; здесь они
+   останавливаются вместе со всеми переходами. Движение framer-motion гасится
+   отдельно — MotionConfig reducedMotion="user" в components/providers.tsx:
+   оно живёт в inline-стилях и CSS-правилом не отменяется. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
+
+/* Здесь был глобальный оверрайд `.pointer-events-none` с translateZ(0).
+   Класс стоит во всём shadcn-слое (`[&_svg]:pointer-events-none`), а
+   `transform` создаёт containing block: любой `position: fixed` внутри такого
+   элемента начинал считаться от него, а не от окна. Ускорение одной анимации
+   курсора не стоит сломанного позиционирования во всём ui-слое. */

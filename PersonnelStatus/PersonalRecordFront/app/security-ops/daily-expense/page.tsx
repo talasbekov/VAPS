@@ -283,7 +283,7 @@ export default function DailyExpensePage() {
         className="space-y-4"
       >
         <div className="flex items-center gap-3">
-          <CalendarCheck className="h-8 w-8 text-primary" />
+          <CalendarCheck className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">Расход дня</h1>
             <p className="text-muted-foreground">
@@ -337,7 +337,7 @@ export default function DailyExpensePage() {
             </p>
           )}
           {divisionsQuery.isError && (
-            <p role="alert" className="mt-2 text-sm text-destructive">
+            <p role="alert" className="mt-2 text-sm text-destructive-ink">
               Не удалось загрузить список подразделений.
             </p>
           )}
@@ -370,7 +370,7 @@ export default function DailyExpensePage() {
           )}
 
           {dateInvalid && (
-            <p role="alert" className="mt-2 text-sm text-destructive">
+            <p role="alert" className="mt-2 text-sm text-destructive-ink">
               Укажите дату в формате ГГГГ-ММ-ДД — без неё день сдать нельзя.
             </p>
           )}
@@ -478,7 +478,7 @@ export default function DailyExpensePage() {
           </section>
         ) : employeesQuery.isError ? (
           <section className="rounded-xl border bg-card p-6">
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-sm text-destructive-ink">
               Не удалось загрузить личный состав.
             </p>
           </section>

@@ -172,7 +172,7 @@ export default function ReportsPage() {
               </div>
 
               {reportError && (
-                <p className="text-sm text-destructive">{reportError}</p>
+                <p className="text-sm text-destructive-ink">{reportError}</p>
               )}
 
               {report && report.rows.length === 0 && (

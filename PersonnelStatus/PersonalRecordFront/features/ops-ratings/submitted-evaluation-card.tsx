@@ -78,7 +78,7 @@ export function SubmittedEvaluationCard({
   if (query.isLoading)
     return <p className="text-sm text-muted-foreground">Загрузка карточки…</p>;
   if (query.error !== null)
-    return <p className="text-sm text-destructive">{query.error.message}</p>;
+    return <p className="text-sm text-destructive-ink">{query.error.message}</p>;
   if (data === undefined) return null;
 
   const submitted = data.submitted;
@@ -257,7 +257,7 @@ export function SubmittedEvaluationCard({
             ))}
           </select>
           {errorFor("score") !== null && (
-            <p className="mb-2 text-xs text-destructive">{errorFor("score")}</p>
+            <p className="mb-2 text-xs text-destructive-ink">{errorFor("score")}</p>
           )}
 
           <label
@@ -280,7 +280,7 @@ export function SubmittedEvaluationCard({
             ))}
           </select>
           {errorFor("basisCode") !== null && (
-            <p className="mb-2 text-xs text-destructive">
+            <p className="mb-2 text-xs text-destructive-ink">
               {errorFor("basisCode")}
             </p>
           )}
@@ -300,7 +300,7 @@ export function SubmittedEvaluationCard({
                 onChange={(event) => setBasisNote(event.target.value)}
               />
               {errorFor("basisNote") !== null && (
-                <p className="mb-2 text-xs text-destructive">
+                <p className="mb-2 text-xs text-destructive-ink">
                   {errorFor("basisNote")}
                 </p>
               )}
@@ -322,7 +322,7 @@ export function SubmittedEvaluationCard({
             onChange={(event) => setComment(event.target.value)}
           />
           {errorFor("comment") !== null && (
-            <p className="mb-2 text-xs text-destructive">{errorFor("comment")}</p>
+            <p className="mb-2 text-xs text-destructive-ink">{errorFor("comment")}</p>
           )}
 
           <label
@@ -339,7 +339,7 @@ export function SubmittedEvaluationCard({
             onChange={(event) => setReason(event.target.value)}
           />
           {errorFor("reason") !== null && (
-            <p className="mb-2 text-xs text-destructive">{errorFor("reason")}</p>
+            <p className="mb-2 text-xs text-destructive-ink">{errorFor("reason")}</p>
           )}
 
           <div className="flex gap-2">
@@ -401,7 +401,7 @@ export function SubmittedEvaluationCard({
               "details" in mutation.error &&
               "currentRevision" in mutation.error.details
             ) && (
-              <p className="mb-2 text-xs text-destructive">
+              <p className="mb-2 text-xs text-destructive-ink">
                 {mutation.error.message}
               </p>
             )}

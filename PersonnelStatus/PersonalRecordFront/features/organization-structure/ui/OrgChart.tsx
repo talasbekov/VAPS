@@ -29,26 +29,17 @@ import {
   convertStaffUnitsResponseToOrgUnit,
 } from "@/lib/api";
 import { useStaffUnits } from "@/hooks/use-staff-units";
-import { EMPLOYEE_STATUS_LABELS } from "@/lib/status";
+import { EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_PAINT } from "@/lib/status";
 import { OrgNode } from "./OrgNode";
 
 // Mock данные удалены - используем только данные из API
 
-const statusColors = {
-  in_service: "bg-green-500",
-  vacation: "bg-yellow-500",
-  leave_by_report: "bg-yellow-400",
-  sick_leave: "bg-red-500",
-  business_trip: "bg-blue-500",
-  training: "bg-purple-500",
-  competition: "bg-pink-500",
-  conference: "bg-violet-500",
-  other_absence: "bg-gray-500",
-  on_duty: "bg-indigo-500",
-  after_duty: "bg-cyan-500",
-  seconded_from: "bg-orange-500",
-  seconded_to: "bg-teal-500",
-};
+// Точки-индикаторы берут ОБЩУЮ палитру статусов: своя таблица тут расходилась
+// с бейджами таблицы (командировка синяя вместо фиолетовой, дежурство индиго
+// вместо синего, «иное отсутствие» серое вместо оранжевого).
+const statusColors: Record<string, string> = Object.fromEntries(
+  Object.entries(EMPLOYEE_STATUS_PAINT).map(([code, paint]) => [code, paint.dot])
+);
 
 const statusStateLabels = {
   planned: "Запланирован",

@@ -94,9 +94,9 @@ export default function FeedbackDetailPage() {
       <DashboardLayout>
         <div className="space-y-3">
           <h1 className="text-2xl font-bold">Обращение</h1>
-          <p className="text-sm text-destructive">{detailQuery.error.message}</p>
+          <p className="text-sm text-destructive-ink">{detailQuery.error.message}</p>
           <Link
-            className="text-sm font-semibold text-primary underline"
+            className="text-sm font-semibold text-primary-ink underline"
             href={registryPath}
           >
             ← К реестру обращений
@@ -143,10 +143,10 @@ export default function FeedbackDetailPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <MessageSquareText className="h-8 w-8 text-primary" />
+          <MessageSquareText className="h-8 w-8 text-primary-ink" />
           <div>
             <Link
-              className="text-sm font-semibold text-primary underline"
+              className="text-sm font-semibold text-primary-ink underline"
               href={registryPath}
             >
               ← К реестру обращений
@@ -213,7 +213,7 @@ export default function FeedbackDetailPage() {
                 <span>{data.duplicateOf.hiddenReason}</span>
               ) : (
                 <Link
-                  className="font-semibold text-primary underline"
+                  className="font-semibold text-primary-ink underline"
                   href={`${registryPath}/${data.duplicateOf.feedbackId}`}
                 >
                   {data.duplicateOf.subject}
@@ -366,7 +366,7 @@ export default function FeedbackDetailPage() {
               </p>
             )}
             {triage.error !== null && (
-              <p className="mt-2 text-xs text-destructive">{triage.error.message}</p>
+              <p className="mt-2 text-xs text-destructive-ink">{triage.error.message}</p>
             )}
           </section>
         )}
@@ -439,7 +439,7 @@ export default function FeedbackDetailPage() {
                 обращение, узнаёт причину, а не только новый статус.
               </p>
               {close.error !== null && (
-                <p className="text-xs text-destructive">{close.error.message}</p>
+                <p className="text-xs text-destructive-ink">{close.error.message}</p>
               )}
             </div>
           </section>
@@ -550,7 +550,7 @@ function CommentForms(props: CommentFormsProps) {
         </>
       )}
       {props.errorMessage !== null && (
-        <p className="text-xs text-destructive">{props.errorMessage}</p>
+        <p className="text-xs text-destructive-ink">{props.errorMessage}</p>
       )}
     </div>
   );

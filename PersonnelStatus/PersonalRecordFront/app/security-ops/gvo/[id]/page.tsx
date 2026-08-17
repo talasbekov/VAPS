@@ -45,7 +45,7 @@ export default function GvoSummaryPage() {
   const backLink = (
     <Link
       href="/security-ops/gvo"
-      className="text-[12px] font-semibold text-primary"
+      className="text-[12px] font-semibold text-primary-ink"
     >
       ← Назад к реестру ГВО
     </Link>
@@ -73,7 +73,7 @@ export default function GvoSummaryPage() {
         <div className="space-y-3">
           {backLink}
           <Card>
-            <CardContent className="p-9 text-center text-sm text-destructive">
+            <CardContent className="p-9 text-center text-sm text-destructive-ink">
               Мероприятие не найдено — сводных данных по нему нет.
             </CardContent>
           </Card>

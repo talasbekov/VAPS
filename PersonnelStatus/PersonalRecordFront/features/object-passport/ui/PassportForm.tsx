@@ -175,7 +175,7 @@ export function PassportForm({ objectId, sectors: initial }: PassportFormProps) 
         </Button>
         <div className="flex flex-col items-end gap-2">
           {mutation.error !== null && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm text-destructive-ink" role="alert">
               Не удалось сохранить паспорт.
             </p>
           )}

@@ -40,10 +40,10 @@ export default function PassportVersionPage() {
   if (query.isError || query.data === undefined) {
     return (
       <DashboardLayout>
-        <p className="text-sm text-destructive">Объект не найден или недоступен.</p>
+        <p className="text-sm text-destructive-ink">Объект не найден или недоступен.</p>
         <Link
           href="/security-ops/objects"
-          className="mt-2 inline-block text-sm font-semibold text-primary"
+          className="mt-2 inline-block text-sm font-semibold text-primary-ink"
         >
           ← Назад к реестру
         </Link>
@@ -58,7 +58,7 @@ export default function PassportVersionPage() {
     <DashboardLayout>
       <Link
         href={`/security-ops/objects/${object.id}`}
-        className="mb-3 inline-block text-xs font-semibold text-primary"
+        className="mb-3 inline-block text-xs font-semibold text-primary-ink"
       >
         ← Назад к паспорту объекта
       </Link>
@@ -66,14 +66,14 @@ export default function PassportVersionPage() {
       {version === undefined ? (
         <Card>
           <CardContent className="p-9 text-center">
-            <p className="text-sm text-destructive">{VERSION_NOT_FOUND_TEXT}</p>
+            <p className="text-sm text-destructive-ink">{VERSION_NOT_FOUND_TEXT}</p>
           </CardContent>
         </Card>
       ) : (
         <>
           <header className="mb-4 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-primary">
+              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-primary-ink">
                 Паспорт объекта
               </p>
               <h1 className="text-xl font-bold">

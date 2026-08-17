@@ -97,7 +97,7 @@ export function RatingDynamicsSection() {
         <p className="text-sm text-muted-foreground">Загрузка динамики…</p>
       )}
       {query.error !== null && (
-        <p className="text-sm text-destructive">{query.error.message}</p>
+        <p className="text-sm text-destructive-ink">{query.error.message}</p>
       )}
 
       {data !== undefined && !data.capabilities.operationalRatings && (

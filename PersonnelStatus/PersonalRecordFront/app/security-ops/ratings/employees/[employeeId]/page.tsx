@@ -37,7 +37,7 @@ export default function RatingEmployeeDetailPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <UserRound className="h-8 w-8 text-primary" />
+          <UserRound className="h-8 w-8 text-primary-ink" />
           <div>
             <h1 className="text-2xl font-bold">
               Агрегированный рейтинг участника
@@ -54,7 +54,7 @@ export default function RatingEmployeeDetailPage() {
           <p className="text-sm text-muted-foreground">Загрузка карточки…</p>
         )}
         {query.error !== null && (
-          <p className="text-sm text-destructive">{query.error.message}</p>
+          <p className="text-sm text-destructive-ink">{query.error.message}</p>
         )}
 
         {data !== undefined && (

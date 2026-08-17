@@ -6,27 +6,17 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw, User } from "lucide-react";
 import { StaffUnit, StaffUnitEmployee } from "@/lib/api";
 import { useStaffUnits } from "@/hooks/use-staff-units";
+import { EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_PAINT } from "@/lib/status";
 import "./org-board.styles.css";
 
 const MEDIA_URL = process.env.NEXT_PUBLIC_MEDIA_URL || "";
 
-const statusColors = {
-  in_service: "bg-green-500",
-  vacation: "bg-yellow-500",
-  leave_by_report: "bg-yellow-400",
-  sick_leave: "bg-red-500",
-  business_trip: "bg-blue-500",
-  training: "bg-purple-500",
-  competition: "bg-pink-500",
-  conference: "bg-violet-500",
-  other_absence: "bg-gray-500",
-  on_duty: "bg-indigo-500",
-  after_duty: "bg-cyan-500",
-  seconded_from: "bg-orange-500",
-  seconded_to: "bg-teal-500",
-};
+// Шестой источник той же таблицы — теперь производная от общей палитры.
+const statusColors: Record<string, string> = Object.fromEntries(
+  Object.entries(EMPLOYEE_STATUS_PAINT).map(([code, paint]) => [code, paint.dot])
+);
 
-import { EMPLOYEE_STATUS_LABELS } from "@/lib/status";
+
 
 // Построение дерева из плоского списка
 const buildTree = (units: StaffUnit[]): Map<number, StaffUnit> => {

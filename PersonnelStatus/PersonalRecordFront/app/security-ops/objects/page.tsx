@@ -393,7 +393,7 @@ export default function SecurityObjectsPage() {
       <div className="space-y-5">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-primary-ink">
               Объекты и паспорта
             </p>
             <h1 className="mt-1 text-3xl font-bold tracking-tight">
@@ -672,7 +672,7 @@ function ObjectsRegistry({
   if (isError) {
     return (
       <Card>
-        <CardContent className="p-9 text-center text-sm text-destructive">
+        <CardContent className="p-9 text-center text-sm text-destructive-ink">
           Не удалось загрузить реестр объектов. Попробуйте обновить страницу.
         </CardContent>
       </Card>

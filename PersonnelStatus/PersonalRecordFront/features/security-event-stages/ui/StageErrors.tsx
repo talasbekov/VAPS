@@ -7,7 +7,7 @@ import type { OpsApiFailure } from "@/lib/ops-errors";
 export function StageError({ error }: { error: OpsApiFailure | null }) {
   if (error === null) return null;
   return (
-    <p className="text-sm text-destructive" role="alert">
+    <p className="text-sm text-destructive-ink" role="alert">
       {error.message}
     </p>
   );
@@ -20,7 +20,7 @@ export function FieldErrors({
 }) {
   if (errors === null || Object.keys(errors).length === 0) return null;
   return (
-    <ul className="list-disc pl-5 text-xs text-destructive" role="alert">
+    <ul className="list-disc pl-5 text-xs text-destructive-ink" role="alert">
       {Object.entries(errors).map(([field, value]) => (
         <li key={field}>
           {field}: {Array.isArray(value) ? String(value[0]) : String(value)}

@@ -198,7 +198,7 @@ export function NotificationsDropdown() {
                     className="flex flex-col items-start space-y-0.5 py-3 cursor-pointer hover:bg-accent/50 transition-colors"
                   >
                     <motion.span 
-                      className="font-medium text-primary"
+                      className="font-medium text-primary-ink"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: index * 0.05 + 0.1 }}

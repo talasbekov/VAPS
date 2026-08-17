@@ -7,55 +7,47 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import { EventClickArg, EventHoveringArg } from "@fullcalendar/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, X, User, MapPin, Clock } from "lucide-react";
+import { Calendar, User, MapPin, Clock } from "lucide-react";
 import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
+import {
+  EMPLOYEE_STATUS_LABELS,
+  EMPLOYEE_STATUS_PAINT,
+  UNKNOWN_STATUS_PAINT,
+} from "@/lib/status";
+import type { EmployeeStatusType } from "@/lib/status";
 import { motion, AnimatePresence } from "framer-motion";
 import { LoadFailure } from "@/components/load-failure";
 import "./calendar.css";
 
-// Типы статусов с цветами и названиями
+// Цвета и подписи статусов — из ОБЩЕЙ палитры, а не из своей hex-таблицы:
+// в ней «Отпуск» был синим (в бейджах таблицы — жёлтым), а текст события
+// набирался насыщенным 500-м оттенком поверх светлой заливки (≈2.6:1).
+// Здесь текст берёт тёмный тон палитры, рамка — насыщенный.
+// «В строю» в календаре не рисуется: это не событие, а норма.
 const STATUS_CONFIG: Record<
   string,
-  { label: string; color: string; bgColor: string }
-> = {
-  vacation: { label: "Отпуск", color: "#3b82f6", bgColor: "#dbeafe" },
-  leave_by_report: {
-    label: "Отпуск по рапорту",
-    color: "#eab308",
-    bgColor: "#fef9c3",
-  },
-  sick_leave: { label: "Больничный", color: "#ef4444", bgColor: "#fee2e2" },
-  business_trip: {
-    label: "Командировка",
-    color: "#6366f1",
-    bgColor: "#e0e7ff",
-  },
-  training: { label: "Учёба", color: "#a855f7", bgColor: "#f3e8ff" },
-  competition: { label: "Соревнования", color: "#ec4899", bgColor: "#fce7f3" },
-  conference: { label: "Конференция", color: "#7c3aed", bgColor: "#ede9fe" },
-  other_absence: {
-    label: "Иное отсутствие",
-    color: "#6b7280",
-    bgColor: "#f3f4f6",
-  },
-  on_duty: { label: "На дежурстве", color: "#14b8a6", bgColor: "#ccfbf1" },
-  after_duty: {
-    label: "После дежурства",
-    color: "#06b6d4",
-    bgColor: "#cffafe",
-  },
-  seconded_from: {
-    label: "Прикомандирован",
-    color: "#f97316",
-    bgColor: "#ffedd5",
-  },
-  seconded_to: {
-    label: "Откомандирован",
-    color: "#84cc16",
-    bgColor: "#ecfccb",
-  },
-};
+  { label: string; color: string; border: string; bgColor: string }
+> = Object.fromEntries(
+  (Object.keys(EMPLOYEE_STATUS_PAINT) as EmployeeStatusType[])
+    .filter((code) => code !== "in_service")
+    .map((code) => [
+      code,
+      {
+        label: EMPLOYEE_STATUS_LABELS[code],
+        color: EMPLOYEE_STATUS_PAINT[code].hex.text,
+        border: EMPLOYEE_STATUS_PAINT[code].hex.accent,
+        bgColor: EMPLOYEE_STATUS_PAINT[code].hex.bg,
+      },
+    ])
+);
 
 interface CalendarEvent {
   id: string;
@@ -112,10 +104,11 @@ export function StatusCalendar() {
           // Пропускаем статус "в строю"
           if (status.status_type === "in_service") return;
 
-          const config = STATUS_CONFIG[status.status_type] || {
+          const config = STATUS_CONFIG[status.status_type] ?? {
             label: status.status_type,
-            color: "#6b7280",
-            bgColor: "#f3f4f6",
+            color: UNKNOWN_STATUS_PAINT.hex.text,
+            border: UNKNOWN_STATUS_PAINT.hex.accent,
+            bgColor: UNKNOWN_STATUS_PAINT.hex.bg,
           };
 
           const fullName = `${emp.last_name || ""} ${emp.first_name || ""} ${
@@ -146,7 +139,7 @@ export function StatusCalendar() {
             start: status.start_date,
             end: endDate,
             backgroundColor: config.bgColor,
-            borderColor: config.color,
+            borderColor: config.border,
             textColor: config.color,
             extendedProps: {
               employeeId: emp.id,
@@ -269,7 +262,7 @@ export function StatusCalendar() {
             >
               <div
                 className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: config.color }}
+                style={{ backgroundColor: config.border }}
               />
               {config.label}
             </div>
@@ -332,47 +325,30 @@ export function StatusCalendar() {
           )}
         </AnimatePresence>
 
-        {/* Модальное окно с деталями */}
-        <AnimatePresence>
-          {selectedEvent && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-              onClick={() => setSelectedEvent(null)}
-            >
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                transition={{
-                  type: "spring" as const,
-                  stiffness: 300,
-                  damping: 25,
-                }}
-                className="bg-card rounded-xl shadow-2xl p-6 max-w-md w-full mx-4"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold">
-                      {selectedEvent.extendedProps?.employeeName}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedEvent.extendedProps?.position}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setSelectedEvent(null)}
-                    className="p-1 hover:bg-muted rounded-lg transition-colors"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
+        {/* Карточка события — на базовом диалоге. Раньше это был оверлей из
+            motion.div: без role="dialog", без aria-modal, без ловушки фокуса,
+            без Escape и без возврата фокуса на место; закрывашка была
+            безымянной иконкой. Всё это Radix даёт из коробки. */}
+        <Dialog
+          open={selectedEvent !== null}
+          onOpenChange={(open) => {
+            if (!open) setSelectedEvent(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            {selectedEvent !== null && (
+              <>
+                <DialogHeader>
+                  <DialogTitle>
+                    {selectedEvent.extendedProps?.employeeName}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {selectedEvent.extendedProps?.position}
+                  </DialogDescription>
+                </DialogHeader>
 
                 <div className="space-y-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Badge
                       style={{
                         backgroundColor:
@@ -386,21 +362,19 @@ export function StatusCalendar() {
                       {selectedEvent.extendedProps?.statusLabel}
                     </Badge>
                     <Badge
-                      className={getStateColor(
-                        selectedEvent.extendedProps?.state
-                      )}
+                      className={getStateColor(selectedEvent.extendedProps?.state)}
                     >
                       {getStateLabel(selectedEvent.extendedProps?.state)}
                     </Badge>
                   </div>
 
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <MapPin className="h-4 w-4" />
+                    <MapPin className="h-4 w-4" aria-hidden="true" />
                     {selectedEvent.extendedProps?.division}
                   </div>
 
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
+                    <Clock className="h-4 w-4" aria-hidden="true" />
                     {new Date(selectedEvent.start as string).toLocaleDateString(
                       "ru-RU"
                     )}
@@ -415,10 +389,10 @@ export function StatusCalendar() {
                     )}
                   </div>
                 </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

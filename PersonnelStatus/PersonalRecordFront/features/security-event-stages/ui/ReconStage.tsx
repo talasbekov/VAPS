@@ -400,7 +400,7 @@ function ObjectFacts({ event }: { event: SecurityEvent }) {
             поэтому «история по объекту» — это тот же реестр с запросом. */}
         <Link
           href={`/security-ops/events?search=${encodeURIComponent(event.objectName)}`}
-          className="text-xs font-semibold text-primary"
+          className="text-xs font-semibold text-primary-ink"
         >
           История ОМ по объекту →
         </Link>

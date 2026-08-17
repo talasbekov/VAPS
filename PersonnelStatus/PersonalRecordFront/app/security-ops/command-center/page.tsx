@@ -124,7 +124,7 @@ export default function CommandCenterPage() {
         value: strengthGap === null ? String(personnel!.staff) : "—",
         hint: strengthGap ?? `${personnel!.list} по списку`,
         icon: Users,
-        iconClass: "text-primary",
+        iconClass: "text-primary-ink",
       },
       {
         key: "in-service",
@@ -152,7 +152,7 @@ export default function CommandCenterPage() {
             ? "конфликтов нет"
             : `${attention.length} требуют внимания`,
         icon: Activity,
-        iconClass: attention.length > 0 ? "text-red-600" : "text-primary",
+        iconClass: attention.length > 0 ? "text-red-600" : "text-primary-ink",
       },
       {
         key: "deficit",
@@ -204,7 +204,7 @@ export default function CommandCenterPage() {
       <div className="space-y-4">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-center gap-3">
-            <LineChart className="h-8 w-8 text-primary" />
+            <LineChart className="h-8 w-8 text-primary-ink" />
             <div>
               <h1 className="text-2xl font-bold">Командный центр</h1>
               <p className="text-muted-foreground">
@@ -249,7 +249,7 @@ export default function CommandCenterPage() {
               <p className="text-sm text-muted-foreground">Загрузка…</p>
             )}
             {query.isError && (
-              <p className="text-sm text-destructive">
+              <p className="text-sm text-destructive-ink">
                 Не удалось загрузить данные командного центра.
               </p>
             )}

@@ -53,7 +53,7 @@ export default function DictionaryDetailPage() {
     <DashboardLayout>
       <Link
         href="/security-ops/dictionaries"
-        className="mb-3 inline-block text-xs font-semibold text-primary"
+        className="mb-3 inline-block text-xs font-semibold text-primary-ink"
       >
         ← Назад к справочникам
       </Link>
@@ -70,7 +70,7 @@ export default function DictionaryDetailPage() {
         <p className="text-sm text-muted-foreground">Загрузка записей…</p>
       )}
       {query.isError && (
-        <p className="text-sm text-destructive">
+        <p className="text-sm text-destructive-ink">
           Справочник не найден или недоступен.
         </p>
       )}
@@ -91,7 +91,7 @@ export default function DictionaryDetailPage() {
           </div>
 
           {mutationError !== null && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm text-destructive-ink" role="alert">
               {mutationError.message}
             </p>
           )}
@@ -148,7 +148,7 @@ export default function DictionaryDetailPage() {
               </Button>
               {fieldErrors !== null && Object.keys(fieldErrors).length > 0 && (
                 <ul
-                  className="w-full list-disc pl-5 text-xs text-destructive"
+                  className="w-full list-disc pl-5 text-xs text-destructive-ink"
                   role="alert"
                 >
                   {Object.entries(fieldErrors).map(([field, value]) => (
