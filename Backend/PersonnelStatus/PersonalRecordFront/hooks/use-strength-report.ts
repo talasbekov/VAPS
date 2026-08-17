@@ -2,7 +2,12 @@
 
 // Живой расход (строевая записка) — источник численности личного состава.
 import { useQuery } from "@tanstack/react-query";
-import { apiClient, type StrengthReport } from "@/lib/api";
+import {
+  apiClient,
+  type StrengthReport,
+  type StrengthReportPeriod,
+  type TrafficLightTree,
+} from "@/lib/api";
 
 /**
  * Расход за СЕГОДНЯ. Дата намеренно не передаётся: её ставит сервер по Clock
@@ -17,6 +22,40 @@ export function useStrengthReport(enabled: boolean) {
   return useQuery<StrengthReport>({
     queryKey: ["strength-report", "live", "today"],
     queryFn: () => apiClient.getStrengthReport({}),
+    enabled,
+  });
+}
+
+/**
+ * Расход за ПЕРИОД — страница на дату; источник ряда «динамики доступности».
+ *
+ * Даты приходят снаружи (из периода аналитического снимка), а не считаются
+ * здесь: экран показывает ряд ровно за тот период, за который посчитаны
+ * показатели, иначе график и плитки говорили бы о разных днях.
+ */
+export function useStrengthReportPeriod(
+  period: { from: string; to: string } | null,
+  enabled: boolean
+) {
+  return useQuery<StrengthReportPeriod>({
+    queryKey: ["strength-report", "period", period?.from ?? "", period?.to ?? ""],
+    queryFn: () =>
+      apiClient.getStrengthReportPeriod({
+        dateFrom: (period as { from: string; to: string }).from,
+        dateTo: (period as { from: string; to: string }).to,
+      }),
+    enabled: enabled && period !== null,
+  });
+}
+
+/**
+ * Светофор сдачи дня. Дата не передаётся по той же причине, что и у живого
+ * расхода: её ставит сервер по Clock раздела.
+ */
+export function useTrafficLightTree(enabled: boolean) {
+  return useQuery<TrafficLightTree>({
+    queryKey: ["traffic-light", "tree", "today"],
+    queryFn: () => apiClient.getTrafficLightTree({}),
     enabled,
   });
 }

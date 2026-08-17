@@ -419,6 +419,54 @@ class TestStrengthReportEndpoint:
         assert row["columns"]["ON_DUTY"] == 1
         assert response.data["totals"]["staff_total"] == 2
 
+    def test_column_labels_come_from_the_document_owner(
+        self, seeded_catalog, division
+    ):
+        """Подписи колонок — из владельца шапки расхода, не из своего словаря.
+
+        Экран аналитики службы печатает статусы словами; свой словарь на
+        клиенте разошёлся бы с выгрузками, а сличают их как раз тогда, когда
+        что-то пошло не так.
+        """
+        from organization_management.apps.operations.expense_layout import (
+            COLUMN_LABELS,
+        )
+
+        api, _ = client_for("viewer-labels", "VIEWER", ["status.view"])
+        make_employee(division)
+        with clock.override(TODAY):
+            response = api.get(REPORT_URL)
+
+        labels = response.data["column_labels"]
+        # Подпись есть у КАЖДОЙ отданной колонки: колонка без подписи молча
+        # исчезла бы из легенды доната.
+        assert set(labels) == set(response.data["columns"])
+        assert labels["ON_DUTY"] == COLUMN_LABELS["ON_DUTY"]
+        assert labels["IN_SERVICE"] == COLUMN_LABELS["IN_SERVICE"]
+
+    def test_an_unknown_column_is_labelled_by_its_own_code(
+        self, seeded_catalog, division
+    ):
+        """Справочник статусов открыт: колонка без подписи — норма.
+
+        Пустая подпись скрыла бы от читателя, что колонка вообще есть, —
+        поэтому незнакомый код печатается сам собой (правило владельца).
+        """
+        StatusType.objects.create(
+            code="SPACE_WATCH",
+            name="Наблюдение за небом",
+            priority=5,
+            report_column_code="SPACE_WATCH",
+            counts_in_staff=True,
+        )
+        api, _ = client_for("viewer-unknown", "VIEWER", ["status.view"])
+        make_employee(division)
+        with clock.override(TODAY):
+            response = api.get(REPORT_URL)
+
+        assert "SPACE_WATCH" in response.data["columns"]
+        assert response.data["column_labels"]["SPACE_WATCH"] == "SPACE_WATCH"
+
     def test_business_date_param_is_honoured(self, seeded_catalog, division):
         api, _ = client_for("viewer-date", "VIEWER", ["status.view"])
         employee = make_employee(division)
