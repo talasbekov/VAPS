@@ -333,7 +333,7 @@ export function StatusCalendar() {
                   stiffness: 300,
                   damping: 25,
                 }}
-                className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4"
+                className="bg-card rounded-xl shadow-2xl p-6 max-w-md w-full mx-4"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-start justify-between mb-4">
@@ -341,13 +341,13 @@ export function StatusCalendar() {
                     <h3 className="text-lg font-semibold">
                       {selectedEvent.extendedProps?.employeeName}
                     </h3>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-muted-foreground">
                       {selectedEvent.extendedProps?.position}
                     </p>
                   </div>
                   <button
                     onClick={() => setSelectedEvent(null)}
-                    className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="p-1 hover:bg-muted rounded-lg transition-colors"
                   >
                     <X className="h-5 w-5" />
                   </button>
@@ -376,12 +376,12 @@ export function StatusCalendar() {
                     </Badge>
                   </div>
 
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <MapPin className="h-4 w-4" />
                     {selectedEvent.extendedProps?.division}
                   </div>
 
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Clock className="h-4 w-4" />
                     {new Date(selectedEvent.start as string).toLocaleDateString(
                       "ru-RU"

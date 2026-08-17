@@ -7,7 +7,9 @@
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { UserRound } from "lucide-react";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useRatingEmployeeDetail } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import { DATA_STATE_LABEL } from "@/entities/operational-rating";
@@ -23,6 +25,13 @@ export default function RatingEmployeeDetailPage() {
     back === ""
       ? "/security-ops/ratings/evaluations"
       : `/security-ops/ratings/evaluations?${back}`;
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+
+  // Тот же код, что у реестра оценок (`ratings/evaluations`), откуда сюда
+  // ведёт ссылка: карточка агрегата достижима и прямой ссылкой.
+  if (!permissionsLoading && !hasPermission("rating.view_aggregate")) {
+    return <OpsAccessDenied what="карточки рейтинга участника" />;
+  }
 
   return (
     <DashboardLayout>

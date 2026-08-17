@@ -6,6 +6,8 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { FileSearch } from "lucide-react";
 import {
   useDownloadArtifact,
@@ -35,6 +37,14 @@ export default function ReportJobPage() {
 
   const download = useDownloadArtifact((file) => saveFile(file.fileName, file.content));
   const rerun = useRerunReportJob(() => undefined);
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+
+  // Выше ветки jobQuery.error: без гварда отказ по правам приезжал сюда как
+  // 403 и печатался экраном «Работа недоступна» — той же формулировкой, что
+  // и чужой/удалённый запуск.
+  if (!permissionsLoading && !hasPermission("report.generate")) {
+    return <OpsAccessDenied what="карточки работы отчёта" />;
+  }
 
   if (jobQuery.error !== null) {
     // §22.27: отказ — это ВЕСЬ экран, а не бейдж поверх карточки.

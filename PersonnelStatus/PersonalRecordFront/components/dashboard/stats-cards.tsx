@@ -89,8 +89,8 @@ const absenceTypeConfig = {
   other_absence: {
     label: "Иные причины",
     icon: AlertCircle,
-    color: "text-gray-600",
-    bgColor: "text-gray-600",
+    color: "text-muted-foreground",
+    bgColor: "text-muted-foreground",
   },
   on_duty: {
     label: "На дежурстве",
@@ -193,12 +193,12 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
             <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
-                  <div className="h-4 w-24 bg-gray-200 animate-pulse rounded" />
+                  <div className="h-4 w-24 bg-muted animate-pulse rounded" />
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mb-2" />
-                <div className="h-3 w-32 bg-gray-200 animate-pulse rounded" />
+                <div className="h-8 w-16 bg-muted animate-pulse rounded mb-2" />
+                <div className="h-3 w-32 bg-muted animate-pulse rounded" />
               </CardContent>
             </Card>
           ))}

@@ -43,7 +43,7 @@ export function StatusOverview() {
               </Badge>
             </div>
             <Progress value={status.percentage} className="h-2" />
-            <div className="text-xs text-gray-500 text-right">
+            <div className="text-xs text-muted-foreground text-right">
               {status.percentage}%
             </div>
           </div>

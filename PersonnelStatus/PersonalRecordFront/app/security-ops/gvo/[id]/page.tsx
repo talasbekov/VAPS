@@ -195,7 +195,7 @@ export default function GvoSummaryPage() {
                     </div>
                     <div className="mt-3 grid gap-px bg-[hsl(210_40%_94%)] [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
                       {person.facts.map((fact) => (
-                        <div key={fact.key} className="bg-white px-3 py-2">
+                        <div key={fact.key} className="bg-card px-3 py-2">
                           <p className="text-[10.5px] font-semibold text-muted-foreground">
                             {fact.key}
                           </p>
@@ -400,7 +400,7 @@ export default function GvoSummaryPage() {
                 ) : (
                   <div className="grid gap-px bg-[hsl(210_40%_94%)]">
                     {visit.items.map((item, itemIndex) => (
-                      <div key={`${item.obj}-${itemIndex}`} className="bg-white px-3 py-2">
+                      <div key={`${item.obj}-${itemIndex}`} className="bg-card px-3 py-2">
                         <p className="text-[12.5px] font-semibold">{item.obj}</p>
                         <p className="text-[11.5px] text-muted-foreground">{item.note}</p>
                       </div>

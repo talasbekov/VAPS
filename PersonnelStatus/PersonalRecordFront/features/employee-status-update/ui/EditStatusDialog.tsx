@@ -479,7 +479,7 @@ export function EditStatusDialog({
 
           {/* Период. У «В строю» дат нет — он бессрочный и стоит по умолчанию. */}
           {isInService ? (
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               «{IN_SERVICE_LABEL}» — бессрочный статус, даты не указываются.
             </p>
           ) : (

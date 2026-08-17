@@ -280,7 +280,7 @@ export function AddEmployeeDialog({
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px]">
                     {divisions.length === 0 && !loadingDictionaries && (
-                      <div className="px-2 py-1.5 text-sm text-gray-500">
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
                         Нет доступных подразделений
                       </div>
                     )}

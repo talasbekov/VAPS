@@ -103,7 +103,7 @@ export default function GvoRegistryPage() {
                 onClick={() => setScope(value)}
                 className={
                   scope === value
-                    ? "h-[30px] rounded-[7px] bg-white px-3 text-[12.5px] font-semibold shadow-sm"
+                    ? "h-[30px] rounded-[7px] bg-card px-3 text-[12.5px] font-semibold shadow-sm"
                     : "h-[30px] rounded-[7px] px-3 text-[12.5px] font-semibold text-muted-foreground"
                 }
               >

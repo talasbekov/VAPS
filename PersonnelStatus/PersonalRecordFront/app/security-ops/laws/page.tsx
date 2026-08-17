@@ -144,7 +144,7 @@ export default function LegalDocumentsPage() {
 
 function DocumentCard({ document }: { document: LegalDocument }) {
   return (
-    <article className="flex flex-col rounded-[12px] border bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)]">
+    <article className="flex flex-col rounded-[12px] border bg-card p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)]">
       <div className="mb-[10px] flex items-start justify-between gap-2">
         <span
           className={`inline-flex whitespace-nowrap rounded-full px-[9px] py-0.5 text-[10.5px] font-bold ${LEGAL_DOCUMENT_KIND_BADGE_CLASS[document.kind]}`}

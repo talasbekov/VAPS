@@ -222,7 +222,7 @@ export function OrgNode({
                 {unit.type === "directorate" && (
                   <Users className="w-4 h-4 text-green-600" />
                 )}
-                <h3 className="font-semibold text-gray-900 text-xs">
+                <h3 className="font-semibold text-foreground text-xs">
                   {unit.name}
                 </h3>
               </div>
@@ -251,7 +251,7 @@ export function OrgNode({
 
             {unit.employees.length > 0 && (
               <div className="mb-2">
-                <div className="text-xs text-gray-600 mb-1 font-medium">
+                <div className="text-xs text-muted-foreground mb-1 font-medium">
                   Сотрудники ({unit.employees.length})
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-1">

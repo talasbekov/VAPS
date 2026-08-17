@@ -472,7 +472,7 @@ export function StatusTable({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Сотрудники организации</CardTitle>
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-muted-foreground">
             Выбрано: {selectedEmployees.length} из {filteredEmployees.length}
           </div>
         </div>
@@ -481,7 +481,7 @@ export function StatusTable({
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Поиск по ФИО, отделу, должности..."
               value={searchQuery}
@@ -565,7 +565,7 @@ export function StatusTable({
                   <TableCell>
                     <div>
                       <div className="font-medium">{employee.name}</div>
-                      <div className="text-sm text-gray-500">
+                      <div className="text-sm text-muted-foreground">
                         {employee.phone}
                       </div>
                     </div>
@@ -681,14 +681,14 @@ export function StatusTable({
         </div>
 
         {loading && (
-          <div className="text-center py-8 text-gray-500">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+          <div className="text-center py-8 text-muted-foreground">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
             <p className="mt-2">Загрузка данных...</p>
           </div>
         )}
 
         {!loading && filteredEmployees.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-muted-foreground">
             <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
             <p>Сотрудники не найдены</p>
           </div>

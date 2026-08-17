@@ -125,7 +125,7 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
               </Avatar>
               <div>
                 <h2 className="text-2xl font-bold">{employee.name}</h2>
-                <p className="text-gray-600">{employee.position}</p>
+                <p className="text-muted-foreground">{employee.position}</p>
                 <div className="flex items-center space-x-2 mt-2">
                   {getStatusBadge(employee.status)}
                   <Badge variant="outline">№{employee.number}</Badge>
@@ -158,33 +158,33 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center">
-                  <Calendar className="h-4 w-4 mr-3 text-gray-400" />
+                  <Calendar className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">Дата рождения</p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       {formatDate(employee.birthDate)}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center">
-                  <Phone className="h-4 w-4 mr-3 text-gray-400" />
+                  <Phone className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">Телефон</p>
-                    <p className="text-sm text-gray-600">{employee.phone}</p>
+                    <p className="text-sm text-muted-foreground">{employee.phone}</p>
                   </div>
                 </div>
                 <div className="flex items-center">
-                  <Mail className="h-4 w-4 mr-3 text-gray-400" />
+                  <Mail className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">Email</p>
-                    <p className="text-sm text-gray-600">{employee.email}</p>
+                    <p className="text-sm text-muted-foreground">{employee.email}</p>
                   </div>
                 </div>
                 <div className="flex items-start">
-                  <MapPin className="h-4 w-4 mr-3 text-gray-400 mt-0.5" />
+                  <MapPin className="h-4 w-4 mr-3 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-sm font-medium">Адрес</p>
-                    <p className="text-sm text-gray-600">{employee.address}</p>
+                    <p className="text-sm text-muted-foreground">{employee.address}</p>
                   </div>
                 </div>
               </CardContent>
@@ -200,35 +200,35 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center">
-                  <Building2 className="h-4 w-4 mr-3 text-gray-400" />
+                  <Building2 className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">Отдел</p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       {employee.department}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center">
-                  <Users className="h-4 w-4 mr-3 text-gray-400" />
+                  <Users className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">Руководитель</p>
-                    <p className="text-sm text-gray-600">{employee.manager}</p>
+                    <p className="text-sm text-muted-foreground">{employee.manager}</p>
                   </div>
                 </div>
                 <div className="flex items-center">
-                  <Calendar className="h-4 w-4 mr-3 text-gray-400" />
+                  <Calendar className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">Дата найма</p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       {formatDate(employee.hireDate)}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center">
-                  <Clock className="h-4 w-4 mr-3 text-gray-400" />
+                  <Clock className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">Стаж работы</p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       {calculateWorkExperience(employee.hireDate)}
                     </p>
                   </div>
@@ -261,11 +261,11 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                     <div className="flex-1">
                       <div className="flex items-center space-x-2 mb-1">
                         {getStatusBadge(record.status)}
-                        <span className="text-sm text-gray-500">
+                        <span className="text-sm text-muted-foreground">
                           {formatDate(record.date)}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600">{record.comment}</p>
+                      <p className="text-sm text-muted-foreground">{record.comment}</p>
                     </div>
                   </div>
                 ))}
@@ -290,10 +290,10 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                     className="flex items-center justify-between p-3 border rounded-lg"
                   >
                     <div className="flex items-center space-x-3">
-                      <FileText className="h-5 w-5 text-gray-400" />
+                      <FileText className="h-5 w-5 text-muted-foreground" />
                       <div>
                         <p className="font-medium">{doc.name}</p>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-muted-foreground">
                           Добавлен {formatDate(doc.date)}
                         </p>
                       </div>
@@ -333,10 +333,10 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium">{achievement.title}</h4>
-                      <p className="text-sm text-gray-600 mb-1">
+                      <p className="text-sm text-muted-foreground mb-1">
                         {achievement.description}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         {formatDate(achievement.date)}
                       </p>
                     </div>

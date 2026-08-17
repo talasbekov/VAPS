@@ -514,7 +514,7 @@ export function MassStatusUpdate({
                     {selectedStatusType.label}
                   </Badge>
                 ) : (
-                  <span className="text-gray-500">Не выбран</span>
+                  <span className="text-muted-foreground">Не выбран</span>
                 )}
               </div>
             </div>
@@ -530,7 +530,7 @@ export function MassStatusUpdate({
                 ) : startDate ? (
                   `С ${format(startDate, "dd.MM.yyyy")}`
                 ) : (
-                  <span className="text-gray-500">Не указан</span>
+                  <span className="text-muted-foreground">Не указан</span>
                 )}
               </div>
             </div>
@@ -549,7 +549,7 @@ export function MassStatusUpdate({
             {comment && (
               <div>
                 <Label className="text-sm font-medium">Комментарий:</Label>
-                <div className="mt-1 text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                <div className="mt-1 text-sm text-muted-foreground bg-muted p-2 rounded">
                   {comment}
                 </div>
               </div>

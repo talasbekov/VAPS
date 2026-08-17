@@ -8,6 +8,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { MessageSquareText } from "lucide-react";
 import {
   useAddFeedbackComment,
@@ -79,6 +81,14 @@ export default function FeedbackDetailPage() {
   const [duplicateOfId, setDuplicateOfId] = useState("");
 
   const data = detailQuery.data;
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+
+  // Тот же код, что у реестра обращений. Без гварда карточка по прямой ссылке
+  // печатала 403 сырым текстом сервера в ветке detailQuery.isError.
+  if (!permissionsLoading && !hasPermission("feedback.view")) {
+    return <OpsAccessDenied what="обращения" />;
+  }
+
   if (detailQuery.isError) {
     return (
       <DashboardLayout>

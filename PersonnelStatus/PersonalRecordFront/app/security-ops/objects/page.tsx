@@ -454,7 +454,7 @@ export default function SecurityObjectsPage() {
                   return (
                     <div
                       key={tile.key}
-                      className="rounded-xl border bg-card p-4 shadow-xs"
+                      className="rounded-xl border bg-card p-4 shadow-sm"
                     >
                       {body}
                     </div>
@@ -467,7 +467,7 @@ export default function SecurityObjectsPage() {
                     type="button"
                     aria-pressed={active}
                     onClick={() => toggleTile(param)}
-                    className={`rounded-xl border p-4 text-left shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                    className={`rounded-xl border p-4 text-left shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                       active
                         ? "border-primary bg-primary/10"
                         : "bg-card hover:bg-muted/40"
