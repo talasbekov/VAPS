@@ -1,12 +1,14 @@
 """
 Сигналы для автоматической обработки статусов
 """
+from django.db import transaction
 from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus, StatusChangeHistory
+from organization_management.apps.statuses.services import ensure_active_status
 
 
 @receiver(pre_save, sender=Employee)
@@ -74,6 +76,27 @@ def close_statuses_on_dismissal(sender, instance, **kwargs):
             reason=f"Автоматически отменен в связи с увольнением сотрудника ({dismissal_date})",
             user=None
         )
+
+
+@receiver(post_save, sender=Employee)
+def give_new_employee_a_status(sender, instance, created, **kwargs):
+    """Заведённый сотрудник сразу получает действующий статус «в строю».
+
+    Инвариант «у каждого работающего есть действующий статус» держится здесь,
+    а не в конкретной ручке. До этого дефолт заводил только
+    `_directorate_create`, и всякий, кто приходил импортом, админкой или сидом,
+    оставался без статуса — таких на стенде оказалось четверо из четырнадцати.
+
+    `transaction.on_commit` — потому что сотрудник может создаваться внутри
+    транзакции, которая ещё откатится (импорт пачкой, ошибка дальше по коду).
+    Статус, заведённый до отката, ссылался бы на несуществующего человека.
+
+    Автор пуст намеренно: завела система, а не человек. Ручки, у которых автор
+    есть, зовут `ensure_active_status(employee, created_by=user)` сами.
+    """
+    if not created:
+        return
+    transaction.on_commit(lambda: ensure_active_status(instance))
 
 
 @receiver(post_save, sender=EmployeeStatus)
