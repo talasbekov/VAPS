@@ -109,13 +109,13 @@ const absenceTypeConfig = {
     bgColor: "text-cyan-600",
   },
   seconded_from: {
-    label: "Прикомандирован из",
+    label: "Прикомандирован",
     icon: ArrowRightLeft,
     color: "text-orange-600",
     bgColor: "text-orange-600",
   },
   seconded_to: {
-    label: "Откомандирован в",
+    label: "Откомандирован",
     icon: ArrowRightLeft,
     color: "text-teal-600",
     bgColor: "text-teal-600",

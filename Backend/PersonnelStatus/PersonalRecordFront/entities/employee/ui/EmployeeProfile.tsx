@@ -21,6 +21,7 @@ import {
   Users,
 } from "lucide-react";
 import { useAuth, PermissionGate } from "@/lib/auth";
+import { formatIsoDateLong } from "@/shared/lib/date";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   getEmployeeStatusColor,
@@ -36,14 +37,6 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
   const [activeTab, setActiveTab] = useState("overview");
   const { hasPermission } = useAuth();
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("ru-RU", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
-
   const getStatusBadge = (status: string) => {
     if (status === "Не обновлено") {
       return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
@@ -53,21 +46,6 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
     const colorClass = getEmployeeStatusColor(code);
 
     return <Badge className={colorClass}>{status}</Badge>;
-  };
-
-  const calculateWorkExperience = (hireDate: string) => {
-    const hire = new Date(hireDate);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - hire.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const years = Math.floor(diffDays / 365);
-    const months = Math.floor((diffDays % 365) / 30);
-
-    if (years > 0) {
-      return `${years} лет ${months} месяцев`;
-    } else {
-      return `${months} месяцев`;
-    }
   };
 
   // Mock additional data
@@ -162,22 +140,8 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                   <div>
                     <p className="text-sm font-medium">Дата рождения</p>
                     <p className="text-sm text-muted-foreground">
-                      {formatDate(employee.birthDate)}
+                      {formatIsoDateLong(employee.birthDate)}
                     </p>
-                  </div>
-                </div>
-                <div className="flex items-center">
-                  <Phone className="h-4 w-4 mr-3 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">Телефон</p>
-                    <p className="text-sm text-muted-foreground">{employee.phone}</p>
-                  </div>
-                </div>
-                <div className="flex items-center">
-                  <Mail className="h-4 w-4 mr-3 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">Email</p>
-                    <p className="text-sm text-muted-foreground">{employee.email}</p>
                   </div>
                 </div>
                 <div className="flex items-start">
@@ -218,18 +182,20 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                 <div className="flex items-center">
                   <Calendar className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium">Дата найма</p>
+                    {/* Подпись «Дата найма» врала: в поле лежит начало
+                        ТЕКУЩЕГО статуса. Даты найма фронт не получает. */}
+                    <p className="text-sm font-medium">Статус с</p>
                     <p className="text-sm text-muted-foreground">
-                      {formatDate(employee.hireDate)}
+                      {formatIsoDateLong(employee.statusSince)}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center">
                   <Clock className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium">Стаж работы</p>
+                    <p className="text-sm font-medium">Статус по</p>
                     <p className="text-sm text-muted-foreground">
-                      {calculateWorkExperience(employee.hireDate)}
+                      {formatIsoDateLong(employee.statusUntil, "бессрочно")}
                     </p>
                   </div>
                 </div>
@@ -262,7 +228,7 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                       <div className="flex items-center space-x-2 mb-1">
                         {getStatusBadge(record.status)}
                         <span className="text-sm text-muted-foreground">
-                          {formatDate(record.date)}
+                          {formatIsoDateLong(record.date)}
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground">{record.comment}</p>
@@ -294,7 +260,7 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                       <div>
                         <p className="font-medium">{doc.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          Добавлен {formatDate(doc.date)}
+                          Добавлен {formatIsoDateLong(doc.date)}
                         </p>
                       </div>
                     </div>
@@ -337,7 +303,7 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                         {achievement.description}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {formatDate(achievement.date)}
+                        {formatIsoDateLong(achievement.date)}
                       </p>
                     </div>
                   </div>

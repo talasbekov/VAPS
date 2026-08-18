@@ -26,9 +26,6 @@ import {
   Edit,
   Trash2,
   Eye,
-  Phone,
-  Mail,
-  Calendar,
 } from "lucide-react";
 import { useAuth, PermissionGate } from "@/lib/auth";
 import {
@@ -37,6 +34,7 @@ import {
 } from "@/lib/status";
 import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatusDialog";
 import { useQueryClient } from "@tanstack/react-query";
+import { formatIsoDate } from "@/shared/lib/date";
 import type { Employee } from "../model/types";
 
 interface EmployeeTableProps {
@@ -80,10 +78,6 @@ export function EmployeeTable({
     return <Badge className={colorClass}>{status}</Badge>;
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("ru-RU");
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -122,8 +116,10 @@ export function EmployeeTable({
                 <TableHead>Должность</TableHead>
                 <TableHead>Отдел</TableHead>
                 <TableHead>Статус</TableHead>
-                <TableHead>Контакты</TableHead>
-                <TableHead>Дата найма</TableHead>
+                {/* Колонка «Контакты» удалена: телефон и почта приходили
+                    захардкоженной пустой строкой — 97 px иконок поверх поля,
+                    которое ручка штатки не отдаёт вовсе. */}
+                <TableHead>Статус с</TableHead>
 
                 <TableHead className="w-12"></TableHead>
               </TableRow>
@@ -132,7 +128,10 @@ export function EmployeeTable({
               {employees.map((employee) => (
                 <TableRow
                   key={employee.id}
-                  className="cursor-pointer hover:bg-muted"
+                  // Чередование фона: «Отдел» повторяет одно значение по
+                  // шесть строк подряд, и на однородной заливке взгляд
+                  // соскакивает на соседнюю строку.
+                  className="cursor-pointer odd:bg-muted/40 hover:bg-muted"
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -174,23 +173,12 @@ export function EmployeeTable({
                       getStatusBadge(employee.status)
                     )}
                   </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <div className="flex items-center text-sm">
-                        <Phone className="h-3 w-3 mr-1 text-muted-foreground" />
-                        {employee.phone}
-                      </div>
-                      <div className="flex items-center text-sm">
-                        <Mail className="h-3 w-3 mr-1 text-muted-foreground" />
-                        {employee.email}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    <div className="flex items-center">
-                      <Calendar className="h-3 w-3 mr-1 text-muted-foreground" />
-                      {formatDate(employee.hireDate)}
-                    </div>
+                  {/* Подпись «Дата найма» врала: сюда клали начало ТЕКУЩЕГО
+                      статуса, а без него — сегодняшнее число, отчего у всех
+                      строк стояла одна и та же дата. Иконка календаря убрана:
+                      повторённая в каждой строке, она ничего не различает. */}
+                  <TableCell className="text-sm tabular-nums">
+                    {formatIsoDate(employee.statusSince)}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
