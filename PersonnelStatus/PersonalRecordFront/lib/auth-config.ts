@@ -45,7 +45,6 @@ export const authOptions: NextAuthOptions = {
             NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
             resolved: backendUrl,
           });
-          console.log("Credentials:", { username: credentials.username });
 
           const response = await fetch(url, {
             method: "POST",
@@ -90,7 +89,8 @@ export const authOptions: NextAuthOptions = {
           }
 
           const data = await response.json();
-          console.log("Auth response received:", JSON.stringify(data, null, 2));
+          // SECURITY: never log the raw auth response — it carries the access &
+          // refresh JWTs. (The redacted `user` object is logged below.)
 
           if (data.access) {
             // Сохраняем информацию о пользователе из ответа бэкенда
