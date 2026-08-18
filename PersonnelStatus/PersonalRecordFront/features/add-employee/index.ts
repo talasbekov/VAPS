@@ -13,7 +13,11 @@ export type {
 export { createEmployee } from "./api/add-employee-api";
 
 // Экспортируем утилиты
-export { flattenDivisions, validateIIN, validateEmployeeForm } from "./lib/utils";
+export { flattenDivisions } from "./lib/utils";
+
+// Правила формы — единственный источник, схема
+export { employeeFormSchema, EMPTY_EMPLOYEE_FORM } from "./model/schema";
+export type { EmployeeFormValues } from "./model/schema";
 
 
 

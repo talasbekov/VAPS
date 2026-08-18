@@ -1,7 +1,10 @@
 "use client";
 
-import type React from "react";
-import { useState, useEffect, useMemo, useRef } from "react";
+// Форма на react-hook-form + zod. Правила — в `model/edit-status-schema.ts`,
+// разметка ошибки и фокус — в `shared/lib/form`; здесь остаётся то, что знает
+// только эта модалка: засев с сервера, сборка запроса и наряд.
+import { useEffect, useMemo, useRef } from "react";
+import { Controller } from "react-hook-form";
 import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
 import { useRanks } from "@/hooks/use-ranks";
 import {
@@ -21,7 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -36,7 +38,6 @@ import { apiClient } from "@/lib/api";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   EMPLOYEE_STATUS_ITEMS,
-  EMPLOYEE_STATUS_LABELS,
   getEmployeeStatusLabel,
   getEmployeeStatusPaint,
 } from "@/lib/status";
@@ -45,22 +46,16 @@ import {
   upsertDutyAssignment,
 } from "@/entities/duty-assignment";
 import { useDutyAssignment } from "@/hooks/use-duty-assignments";
+import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
+import { DutyAssignmentFields } from "./DutyAssignmentFields";
 import {
-  FieldError,
-  fieldProps,
-  focusFirstInvalid,
-} from "@/shared/lib/field-errors";
-import {
-  DutyAssignmentFields,
   EMPTY_DUTY_DRAFT,
-  validateDutyDraft,
-  type DutyDraft,
-} from "./DutyAssignmentFields";
-
-/** «В строю» — бессрочный статус по умолчанию, дат у него нет. */
-const IN_SERVICE_LABEL = EMPLOYEE_STATUS_LABELS.in_service;
-/** «На дежурстве» — единственный статус, который дополняется нарядом. */
-const ON_DUTY_LABEL = EMPLOYEE_STATUS_LABELS.on_duty;
+  EMPTY_EDIT_STATUS_FORM,
+  IN_SERVICE_LABEL,
+  ON_DUTY_LABEL,
+  editStatusFormSchema,
+  type EditStatusFormValues,
+} from "../model/edit-status-schema";
 
 interface EditStatusDialogProps {
   open: boolean;
@@ -87,15 +82,16 @@ export function EditStatusDialog({
   employeePosition,
   employeeDepartment,
 }: EditStatusDialogProps) {
-  const [status, setStatus] = useState("");
-  const [startDate, setStartDate] = useState<Date>();
-  const [endDate, setEndDate] = useState<Date>();
-  const [comment, setComment] = useState("");
-  const [duty, setDuty] = useState<DutyDraft>(EMPTY_DUTY_DRAFT);
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  // Ошибки по полям: сводка внизу формы на 580 строк не видна с верхних полей.
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const {
+    control,
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    setError,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useZodForm(editStatusFormSchema, EMPTY_EDIT_STATUS_FORM);
 
   // Используем React Query для загрузки данных
   const { data } = useStaffUnitsByDirectorate();
@@ -103,6 +99,10 @@ export function EditStatusDialog({
 
   const { data: ranks } = useRanks();
   const existingDuty = useDutyAssignment(employeeId);
+
+  // Ветки формы зависят только от статуса: у «В строю» дат нет, у «На
+  // дежурстве» появляется наряд.
+  const status = watch("status");
 
   const isInService = status === IN_SERVICE_LABEL;
   const isOnDuty = status === ON_DUTY_LABEL;
@@ -154,30 +154,31 @@ export function EditStatusDialog({
       }
 
       if (emp?.current_status) {
-        const status = emp.current_status;
-        setStatus(getEmployeeStatusLabel(status.status_type, ""));
+        const current = emp.current_status;
+        setValue("status", getEmployeeStatusLabel(current.status_type, ""));
         // Если передан initialStartDate (для планирования), используем его
         if (initialStartDate) {
-          setStartDate(initialStartDate);
-        } else if (status.start_date) {
-          setStartDate(new Date(status.start_date));
+          setValue("startDate", initialStartDate);
+        } else if (current.start_date) {
+          setValue("startDate", new Date(current.start_date));
         }
-        if (status.end_date) {
-          setEndDate(new Date(status.end_date));
+        if (current.end_date) {
+          setValue("endDate", new Date(current.end_date));
         }
       } else if (initialStartDate) {
         // Если нет текущего статуса, но есть начальная дата для планирования
-        setStartDate(initialStartDate);
+        setValue("startDate", initialStartDate);
       }
     }
-  }, [open, employeeId, staffUnits, initialStartDate]);
+  }, [open, employeeId, staffUnits, initialStartDate, setValue]);
 
   // Действующий наряд подставляется в форму при открытии: модалка правит
   // статус, а не заводит его заново — потерять при повторном входе объект и
   // пост значило бы показать пустую форму там, где наряд есть.
   useEffect(() => {
     if (!open) return;
-    setDuty(
+    setValue(
+      "duty",
       existingDuty
         ? {
             dutyKind: existingDuty.dutyKind,
@@ -193,20 +194,15 @@ export function EditStatusDialog({
     // existingDuty намеренно вне зависимостей: подстановка нужна на открытии,
     // дальше форму ведёт пользователь.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, employeeId]);
+  }, [open, employeeId, setValue]);
 
   // Сброс формы при закрытии
   useEffect(() => {
     if (!open) {
       seededForRef.current = null;
-      setStatus("");
-      setStartDate(undefined);
-      setEndDate(undefined);
-      setComment("");
-      setDuty(EMPTY_DUTY_DRAFT);
-      setValidationErrors([]);
+      reset(EMPTY_EDIT_STATUS_FORM);
     }
-  }, [open]);
+  }, [open, reset]);
 
   // Перечень статусов берётся целиком — включая прикомандирование: модалка
   // показывает статусы сотрудника, а не подмножество, удобное форме.
@@ -229,133 +225,90 @@ export function EditStatusDialog({
     };
   }, [staffUnits, employeeId, ranks, employeePosition, employeeDepartment]);
 
-  /** Поля в порядке появления на экране — по нему ведём фокус. */
-  const FIELD_ORDER = ["status", "startDate", "endDate"] as const;
+  const submit = async (values: EditStatusFormValues) => {
+    if (!employeeId) return;
 
-  const validateForm = () => {
-    const errors: string[] = [];
-    const byField: Record<string, string> = {};
+    // Парсим ID - формат: unitId-employeeId или unitId-vacant-index
+    const [, employeeIdStr] = employeeId.split("-");
+    const employeeIdNum =
+      employeeIdStr && !employeeIdStr.startsWith("vacant")
+        ? parseInt(employeeIdStr, 10)
+        : null;
 
-    if (!status) {
-      errors.push("Выберите статус");
-      byField.status = "Выберите статус.";
-    }
-
-    // «В строю» бессрочен — дат у него нет. У любого другого статуса период
-    // обязателен целиком: статус без конца не отличим от забытого.
-    if (status && !isInService) {
-      if (!startDate) {
-        errors.push("Укажите дату начала");
-        byField.startDate = "Укажите дату начала.";
-      }
-      if (!endDate) {
-        errors.push("Укажите дату окончания");
-        byField.endDate = "Укажите дату окончания.";
-      }
-    }
-
-    if (startDate && endDate && startDate > endDate) {
-      errors.push("Дата начала не может быть позже даты окончания");
-      byField.endDate = "Дата окончания раньше даты начала.";
-    }
-
-    if (isOnDuty) {
-      errors.push(...validateDutyDraft(duty));
-    }
-
-    setValidationErrors(errors);
-    setFieldErrors(byField);
-    if (errors.length > 0) focusFirstInvalid(FIELD_ORDER, byField);
-    return errors.length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!validateForm() || !employeeId) {
+    if (!employeeIdNum) {
+      setError("root", { message: "Сотрудник не найден" });
       return;
     }
 
-    setIsSubmitting(true);
-    setValidationErrors([]);
+    // Примечание: НЕ проверяем штатную единицу - прикомандированные сотрудники
+    // могут не иметь штатную единицу в текущем подразделении, но им тоже можно назначать статус
+
+    // Преобразуем статус в формат API
+    const apiStatusType = EMPLOYEE_STATUS_CODE_BY_LABEL[values.status];
+    if (!apiStatusType) {
+      setError("root", { message: "Неверный тип статуса" });
+      return;
+    }
+
+    // Формат YYYY-MM-DD по МЕСТНОЙ дате: toISOString() отдаёт UTC и в минусовых
+    // зонах уводит дату на сутки назад.
+    const formatDate = (date: Date) => format(date, "yyyy-MM-dd");
+
+    const valueIsInService = values.status === IN_SERVICE_LABEL;
+    const valueIsOnDuty = values.status === ON_DUTY_LABEL;
+
+    // Определяем related_division:
+    // - Для прикомандированных: используем текущее подразделение директората (куда прикомандирован)
+    // - Для обычных сотрудников: используем подразделение директората (их текущее подразделение)
+    // Приоритет: data.division.id (подразделение директората) > подразделение штатной единицы
+    const relatedDivision = data?.division?.id || (() => {
+      // Fallback: пытаемся найти через штатную единицу
+      const [unitIdStr] = employeeId.split("-");
+      const unitId = parseInt(unitIdStr, 10);
+      const staffUnit = staffUnits.find((unit) => unit.id === unitId);
+      return staffUnit?.division?.id;
+    })();
+
+    // У «В строю» дат в форме нет, но start_date на бэкенде обязателен:
+    // бессрочный статус начинается сегодня и не кончается.
+    const startDateValue = valueIsInService
+      ? formatDate(new Date())
+      : formatDate(values.startDate!);
 
     try {
-      // Парсим ID - формат: unitId-employeeId или unitId-vacant-index
-      const [, employeeIdStr] = employeeId.split("-");
-      const employeeIdNum =
-        employeeIdStr && !employeeIdStr.startsWith("vacant")
-          ? parseInt(employeeIdStr, 10)
-          : null;
-
-      if (!employeeIdNum) {
-        setValidationErrors(["Сотрудник не найден"]);
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Примечание: НЕ проверяем штатную единицу - прикомандированные сотрудники
-      // могут не иметь штатную единицу в текущем подразделении, но им тоже можно назначать статус
-
-      // Преобразуем статус в формат API
-      const apiStatusType = EMPLOYEE_STATUS_CODE_BY_LABEL[status];
-      if (!apiStatusType) {
-        setValidationErrors(["Неверный тип статуса"]);
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Форматируем даты в формат YYYY-MM-DD
-      const formatDate = (date: Date) => {
-        return format(date, "yyyy-MM-dd");
-      };
-
-      // Определяем related_division:
-      // - Для прикомандированных: используем текущее подразделение директората (куда прикомандирован)
-      // - Для обычных сотрудников: используем подразделение директората (их текущее подразделение)
-      // Приоритет: data.division.id (подразделение директората) > подразделение штатной единицы
-      const relatedDivision = data?.division?.id || (() => {
-        // Fallback: пытаемся найти через штатную единицу
-        const [unitIdStr] = employeeId.split("-");
-        const unitId = parseInt(unitIdStr, 10);
-        const staffUnit = staffUnits.find((unit) => unit.id === unitId);
-        return staffUnit?.division?.id;
-      })();
-
-      // Формируем запрос - используем правильный эндпоинт для создания статуса
-      // У «В строю» дат в форме нет, но start_date на бэкенде обязателен:
-      // бессрочный статус начинается сегодня и не кончается.
-      const startDateValue = isInService
-        ? formatDate(new Date())
-        : formatDate(startDate!);
-
       await apiClient.createEmployeeStatus({
         employee: employeeIdNum,
         status_type: apiStatusType,
         start_date: startDateValue,
-        end_date: isInService || !endDate ? undefined : formatDate(endDate),
-        comment: comment || undefined,
+        end_date:
+          valueIsInService || !values.endDate
+            ? undefined
+            : formatDate(values.endDate),
+        comment: values.comment || undefined,
         related_division: relatedDivision,
       });
 
       // Наряд — расшифровка статуса, поэтому пишется тем же действием.
       // ЛЮБОЙ статус, кроме «На дежурстве», наряд снимает: иначе сотрудник
       // остался бы в «Дежурных силах» объекта после ухода в отпуск.
-      if (isOnDuty) {
+      if (valueIsOnDuty) {
         upsertDutyAssignment({
           employeeKey: employeeId,
           employeeName: employeeName || "",
           rankName: employeeSnapshot.rankName,
           positionName: employeeSnapshot.positionName,
           departmentName: employeeSnapshot.departmentName,
-          dutyKind: duty.dutyKind as "POST" | "GROUP",
-          objectId: duty.objectId,
-          objectName: duty.objectName,
-          postId: duty.dutyKind === "POST" ? duty.postId : null,
-          postName: duty.dutyKind === "POST" ? duty.postName : null,
-          groupId: duty.dutyKind === "GROUP" ? duty.groupId : null,
-          groupName: duty.dutyKind === "GROUP" ? duty.groupName : null,
+          dutyKind: values.duty.dutyKind as "POST" | "GROUP",
+          objectId: values.duty.objectId,
+          objectName: values.duty.objectName,
+          postId: values.duty.dutyKind === "POST" ? values.duty.postId : null,
+          postName:
+            values.duty.dutyKind === "POST" ? values.duty.postName : null,
+          groupId: values.duty.dutyKind === "GROUP" ? values.duty.groupId : null,
+          groupName:
+            values.duty.dutyKind === "GROUP" ? values.duty.groupName : null,
           startDate: startDateValue,
-          endDate: formatDate(endDate!),
+          endDate: formatDate(values.endDate!),
           assignedAt: new Date().toISOString(),
         });
       } else {
@@ -371,17 +324,16 @@ export function EditStatusDialog({
       }
     } catch (error) {
       console.error("Error updating status:", error);
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Произошла ошибка при обновлении статуса";
-      setValidationErrors([errorMessage]);
-    } finally {
-      setIsSubmitting(false);
+      // Ручка статусов отдаёт причину отказа текстом («период пересекается с
+      // отпуском»), а не парами «поле: текст» — раскладывать по полям нечего.
+      setError("root", {
+        message:
+          error instanceof Error
+            ? error.message
+            : "Произошла ошибка при обновлении статуса",
+      });
     }
   };
-
-  const selectedStatusType = statusTypes.find((s) => s.value === status);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -399,49 +351,79 @@ export function EditStatusDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form
+          onSubmit={(e) =>
+            void handleSubmit(submit, (invalid) => focusFirstError(invalid))(e)
+          }
+          className="space-y-6"
+          noValidate
+        >
           {/* Status Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="status">Новый статус *</Label>
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger {...fieldProps("status", fieldErrors.status)}>
-                <SelectValue placeholder="Выберите статус" />
-              </SelectTrigger>
-              <SelectContent>
-                {statusTypes.map((statusType) => {
-                  // Цвет пункта — из общей палитры по КОДУ статуса. Здесь лежала копия
-                  // таблицы «класс Tailwind → hex» на 28 литералов (вторая такая же —
-                  // в соседнем диалоге): inline-стиль Radix-пункта классами не
-                  // задать, но и знать про классы ему незачем.
-                  const colors = getEmployeeStatusPaint(statusType.value).hex;
-
-                  return (
-                    <SelectItem
-                      key={statusType.value}
-                      value={statusType.value}
-                      style={{
-                        backgroundColor: colors.bg,
-                        color: colors.text,
-                        // Переопределяем стили для hover и focus
-                        ["--status-bg" as any]: colors.bg,
-                        ["--status-text" as any]: colors.text,
-                      }}
-                      className="[&[data-highlighted]]:!bg-[var(--status-bg)] [&[data-highlighted]]:!text-[var(--status-text)] [&:focus]:!bg-[var(--status-bg)] [&:focus]:!text-[var(--status-text)] [&:hover]:!bg-[var(--status-bg)] [&:hover]:!text-[var(--status-text)]"
+          <Field name="status" label="Новый статус" required error={errors.status}>
+            {(field) => (
+              <Controller
+                control={control}
+                name="status"
+                render={({ field: input }) => (
+                  <Select value={input.value} onValueChange={input.onChange}>
+                    <SelectTrigger
+                      {...field}
+                      ref={input.ref}
+                      onBlur={input.onBlur}
                     >
-                      <div className="flex items-center w-full">
-                        <span className="font-medium">{statusType.label}</span>
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-            <FieldError id="status" error={fieldErrors.status} />
-          </div>
+                      <SelectValue placeholder="Выберите статус" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statusTypes.map((statusType) => {
+                        // Цвет пункта — из общей палитры по КОДУ статуса. Здесь лежала копия
+                        // таблицы «класс Tailwind → hex» на 28 литералов (вторая такая же —
+                        // в соседнем диалоге): inline-стиль Radix-пункта классами не
+                        // задать, но и знать про классы ему незачем.
+                        const colors = getEmployeeStatusPaint(
+                          statusType.value
+                        ).hex;
+
+                        return (
+                          <SelectItem
+                            key={statusType.value}
+                            value={statusType.value}
+                            style={{
+                              backgroundColor: colors.bg,
+                              color: colors.text,
+                              // Переопределяем стили для hover и focus
+                              ["--status-bg" as any]: colors.bg,
+                              ["--status-text" as any]: colors.text,
+                            }}
+                            className="[&[data-highlighted]]:!bg-[var(--status-bg)] [&[data-highlighted]]:!text-[var(--status-text)] [&:focus]:!bg-[var(--status-bg)] [&:focus]:!text-[var(--status-text)] [&:hover]:!bg-[var(--status-bg)] [&:hover]:!text-[var(--status-text)]"
+                          >
+                            <div className="flex items-center w-full">
+                              <span className="font-medium">
+                                {statusType.label}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            )}
+          </Field>
 
           {/* Наряд: только у «На дежурстве» */}
           {isOnDuty && (
-            <DutyAssignmentFields value={duty} onChange={setDuty} />
+            <Controller
+              control={control}
+              name="duty"
+              render={({ field: input }) => (
+                <DutyAssignmentFields
+                  value={input.value}
+                  onChange={input.onChange}
+                  errors={errors.duty}
+                />
+              )}
+            />
           )}
 
           {/* Период. У «В строю» дат нет — он бессрочный и стоит по умолчанию. */}
@@ -450,61 +432,93 @@ export function EditStatusDialog({
               «{IN_SERVICE_LABEL}» — бессрочный статус, даты не указываются.
             </p>
           ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="startDate">Дата начала *</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    {...fieldProps("startDate", fieldErrors.startDate)}
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {startDate
-                      ? format(startDate, "dd MMMM yyyy", { locale: ru })
-                      : "Выберите дату"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={startDate}
-                    onSelect={setStartDate}
-                    initialFocus
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field
+                name="startDate"
+                label="Дата начала"
+                required
+                error={errors.startDate}
+              >
+                {(field) => (
+                  <Controller
+                    control={control}
+                    name="startDate"
+                    render={({ field: input }) => (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            {...field}
+                            ref={input.ref}
+                            onBlur={input.onBlur}
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-start text-left font-normal"
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {input.value
+                              ? format(input.value, "dd MMMM yyyy", {
+                                  locale: ru,
+                                })
+                              : "Выберите дату"}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={input.value}
+                            onSelect={input.onChange}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    )}
                   />
-                </PopoverContent>
-              </Popover>
-              <FieldError id="startDate" error={fieldErrors.startDate} />
-            </div>
+                )}
+              </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="endDate">Дата окончания *</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    {...fieldProps("endDate", fieldErrors.endDate)}
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {endDate
-                      ? format(endDate, "dd MMMM yyyy", { locale: ru })
-                      : "Выберите дату"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={endDate}
-                    onSelect={setEndDate}
-                    initialFocus
+              <Field
+                name="endDate"
+                label="Дата окончания"
+                required
+                error={errors.endDate}
+              >
+                {(field) => (
+                  <Controller
+                    control={control}
+                    name="endDate"
+                    render={({ field: input }) => (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            {...field}
+                            ref={input.ref}
+                            onBlur={input.onBlur}
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-start text-left font-normal"
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {input.value
+                              ? format(input.value, "dd MMMM yyyy", {
+                                  locale: ru,
+                                })
+                              : "Выберите дату"}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={input.value}
+                            onSelect={input.onChange}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    )}
                   />
-                </PopoverContent>
-              </Popover>
-              <FieldError id="endDate" error={fieldErrors.endDate} />
+                )}
+              </Field>
             </div>
-          </div>
           )}
 
           {/* Comment */}
@@ -513,23 +527,16 @@ export function EditStatusDialog({
             <Textarea
               id="comment"
               placeholder="Дополнительная информация о изменении статуса..."
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
               rows={3}
+              {...register("comment")}
             />
           </div>
 
-          {/* Validation Errors */}
-          {validationErrors.length > 0 && (
+          {/* Отказ сервера: к конкретному полю он не относится. */}
+          {errors.root?.message !== undefined && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <ul className="list-disc list-inside space-y-1">
-                  {validationErrors.map((error, index) => (
-                    <li key={index}>{error}</li>
-                  ))}
-                </ul>
-              </AlertDescription>
+              <AlertDescription>{errors.root.message}</AlertDescription>
             </Alert>
           )}
 

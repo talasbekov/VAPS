@@ -1,8 +1,11 @@
 "use client";
 
-import type React from "react";
-
+// Форма на react-hook-form + zod. Правила — в `model/mass-status-schema.ts`,
+// разметка ошибки и фокус — в `shared/lib/form`; здесь остаётся только то, что
+// относится к массовому обновлению: разбор выбранных строк, сборка запроса и
+// чтение ответа ручки.
 import { useState } from "react";
+import { Controller } from "react-hook-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -34,7 +37,6 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
-import type { CheckedState } from "@radix-ui/react-checkbox";
 import { apiClient } from "@/lib/api";
 import { removeDutyAssignment } from "@/entities/duty-assignment";
 import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
@@ -44,12 +46,13 @@ import {
   SELECTABLE_STATUS_ITEMS,
   getEmployeeStatusPaint,
 } from "@/lib/status";
-import {
-  FieldError,
-  fieldProps,
-  focusFirstInvalid,
-} from "@/shared/lib/field-errors";
+import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
 import { toast } from "@/shared/hooks/use-toast";
+import {
+  EMPTY_MASS_STATUS_FORM,
+  massStatusSchema,
+  type MassStatusFormValues,
+} from "../model/mass-status-schema";
 
 interface MassStatusUpdateProps {
   selectedEmployees: string[];
@@ -60,15 +63,22 @@ export function MassStatusUpdate({
   selectedEmployees,
   onSuccess,
 }: MassStatusUpdateProps) {
-  const [status, setStatus] = useState("");
-  const [startDate, setStartDate] = useState<Date>();
-  const [endDate, setEndDate] = useState<Date>();
-  const [comment, setComment] = useState("");
-  const [notifyManagers, setNotifyManagers] = useState<CheckedState>(true);
-  const [scheduleUpdate, setScheduleUpdate] = useState<CheckedState>(false);
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const {
+    control,
+    register,
+    handleSubmit,
+    reset,
+    setError,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useZodForm(massStatusSchema, EMPTY_MASS_STATUS_FORM);
+
+  // Причины отказов от сервера при ЧАСТИЧНОМ успехе — это отчёт о результате,
+  // а не ошибка валидации: форма прошла проверку, запрос ушёл, часть строк
+  // сервер не принял. В `errors` таким строкам не место — `handleSubmit` на
+  // каждом сабмите сносит `root`, а поля они не называют и чинить их в форме
+  // нечем. Поэтому отдельное состояние, живущее до следующего сабмита.
+  const [failures, setFailures] = useState<string[]>([]);
 
   // Используем React Query для загрузки данных
   const { data } = useStaffUnitsByDirectorate();
@@ -80,61 +90,25 @@ export function MassStatusUpdate({
     color: item.color,
   }));
 
-  /** «В строю» — бессрочный статус по умолчанию, дат не требует. */
-  const isInService = status === EMPLOYEE_STATUS_LABELS.in_service;
+  const status = watch("status");
+  const startDate = watch("startDate");
+  const endDate = watch("endDate");
+  const comment = watch("comment");
 
-  /** Порядок полей на экране — по нему ведём фокус к первой ошибке. */
-  const FIELD_ORDER = ["status", "mass-start-date", "mass-end-date"] as const;
+  const submit = async (values: MassStatusFormValues) => {
+    setFailures([]);
+    // «В строю» — бессрочный статус по умолчанию, дат не требует. Берём от
+    // ЗНАЧЕНИЙ сабмита, а не от подписки `watch`: сборка запроса читает только
+    // `values`, и второй источник того же признака разошёлся бы.
+    const submittedInService =
+      values.status === EMPLOYEE_STATUS_LABELS.in_service;
 
-  const validateForm = () => {
-    const errors: string[] = [];
-    const byField: Record<string, string> = {};
-
-    if (!status) {
-      errors.push("Выберите статус");
-      byField.status = "Выберите статус.";
-    }
-
+    // Выбор сотрудников живёт в таблице снаружи формы — это не её поле, но без
+    // него обновлять нечего. Поэтому проверка есть, а место ей — в сводке.
     if (selectedEmployees.length === 0) {
-      errors.push("Выберите сотрудников для обновления");
-    }
-
-    if (startDate && endDate && startDate > endDate) {
-      errors.push("Дата начала не может быть позже даты окончания");
-      byField["mass-end-date"] = "Дата окончания раньше даты начала.";
-    }
-
-    // Правило то же, что в одиночной модалке: «В строю» бессрочен и дат не
-    // требует, у остальных период обязателен целиком. Прежний список был
-    // перечислением трёх статусов из тринадцати — для «Учёбы» или «На
-    // дежурстве» форма пропускала пустые даты, а статус без даты начала
-    // невозможен, и обновление отклонялось уже на сервере.
-    if (status && !isInService) {
-      if (!startDate) {
-        errors.push("Укажите дату начала");
-        byField["mass-start-date"] = "Укажите дату начала.";
-      }
-      if (!endDate) {
-        errors.push("Укажите дату окончания");
-        byField["mass-end-date"] = "Укажите дату окончания.";
-      }
-    }
-
-    setValidationErrors(errors);
-    setFieldErrors(byField);
-    if (errors.length > 0) focusFirstInvalid(FIELD_ORDER, byField);
-    return errors.length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
+      setError("root", { message: "Выберите сотрудников для обновления" });
       return;
     }
-
-    setIsSubmitting(true);
-    setValidationErrors([]);
 
     try {
       // Парсим ID из выбранных сотрудников - формат: unitId-employeeId или unitId-vacant-index
@@ -180,16 +154,14 @@ export function MassStatusUpdate({
       });
 
       if (employeesWithIds.length === 0) {
-        setValidationErrors(["Не найдены сотрудники для обновления"]);
-        setIsSubmitting(false);
+        setError("root", { message: "Не найдены сотрудники для обновления" });
         return;
       }
 
       // Преобразуем статус в формат API
-      const apiStatusType = EMPLOYEE_STATUS_CODE_BY_LABEL[status];
+      const apiStatusType = EMPLOYEE_STATUS_CODE_BY_LABEL[values.status];
       if (!apiStatusType) {
-        setValidationErrors(["Неверный тип статуса"]);
-        setIsSubmitting(false);
+        setError("root", { message: "Неверный тип статуса" });
         return;
       }
 
@@ -200,17 +172,20 @@ export function MassStatusUpdate({
 
       // У «В строю» дат в форме нет, но start_date на бэкенде обязателен:
       // бессрочный статус начинается сегодня и не кончается.
-      const startDateValue = isInService
+      const startDateValue = submittedInService
         ? formatDate(new Date())
-        : formatDate(startDate!);
+        : formatDate(values.startDate!);
 
       // Формируем массив статусов для отправки
       const employeeStatuses = employeesWithIds.map(({ employeeId }) => ({
         employee: employeeId,
         status_type: apiStatusType,
         start_date: startDateValue,
-        end_date: isInService || !endDate ? undefined : formatDate(endDate),
-        comment: comment || undefined,
+        end_date:
+          submittedInService || !values.endDate
+            ? undefined
+            : formatDate(values.endDate),
+        comment: values.comment || undefined,
       }));
 
       // Отправляем запрос на обновление
@@ -225,7 +200,7 @@ export function MassStatusUpdate({
       const applied = Number(response?.updated?.statuses ?? 0);
       // Сервер кладёт причины парами {поле: текст}. Показываем текст: JSON со
       // скобками и кавычками читателю ничего не объясняет.
-      const failures: string[] = Array.isArray(response?.errors)
+      const serverFailures: string[] = Array.isArray(response?.errors)
         ? response.errors.map((item: unknown) => {
             if (typeof item === "string") return item;
             if (item && typeof item === "object") {
@@ -237,9 +212,9 @@ export function MassStatusUpdate({
         : [];
 
       if (applied === 0) {
-        setValidationErrors(
-          failures.length > 0
-            ? failures
+        setFailures(
+          serverFailures.length > 0
+            ? serverFailures
             : ["Не удалось обновить ни одного сотрудника."]
         );
         return;
@@ -256,11 +231,8 @@ export function MassStatusUpdate({
       );
 
       // Reset form
-      setStatus("");
-      setStartDate(undefined);
-      setEndDate(undefined);
-      setComment("");
-      setValidationErrors(failures);
+      reset(EMPTY_MASS_STATUS_FORM);
+      setFailures(serverFailures);
 
       // Вызываем callback для обновления данных
       if (onSuccess) {
@@ -270,7 +242,7 @@ export function MassStatusUpdate({
       // alert() блокирует вкладку и не читается скринридером как сообщение
       // приложения; тост в проекте уже есть и используется соседними экранами.
       toast(
-        failures.length > 0
+        serverFailures.length > 0
           ? {
               title: "Статус обновлён частично",
               description: `Обновлено ${applied} из ${employeesWithIds.length}; часть строк не обновлена.`,
@@ -283,13 +255,13 @@ export function MassStatusUpdate({
       );
     } catch (error) {
       console.error("Error updating statuses:", error);
+      // Ручка отдаёт отказ текстом (`Error`), а не полевым 400-ответом: класть
+      // под поля нечего, всё идёт в сводку формы.
       const errorMessage =
         error instanceof Error
           ? error.message
           : "Произошла ошибка при обновлении статусов";
-      setValidationErrors([errorMessage]);
-    } finally {
-      setIsSubmitting(false);
+      setError("root", { message: errorMessage });
     }
   };
 
@@ -307,148 +279,225 @@ export function MassStatusUpdate({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form
+              onSubmit={(e) =>
+                void handleSubmit(submit, (invalid) => focusFirstError(invalid))(
+                  e
+                )
+              }
+              className="space-y-6"
+              noValidate
+            >
               {/* Status Selection */}
-              <div className="space-y-2">
-                <Label htmlFor="status">Новый статус *</Label>
-                <Select value={status} onValueChange={setStatus}>
-                  <SelectTrigger {...fieldProps("status", fieldErrors.status)}>
-                    <SelectValue placeholder="Выберите статус" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {statusTypes.map((statusType) => {
-                      // Цвет пункта — из общей палитры по КОДУ статуса. Здесь лежала копия
-                  // таблицы «класс Tailwind → hex» на 28 литералов (вторая такая же —
-                  // в соседнем диалоге): inline-стиль Radix-пункта классами не
-                  // задать, но и знать про классы ему незачем.
-                  const colors = getEmployeeStatusPaint(statusType.value).hex;
-
-                      return (
-                        <SelectItem
-                          key={statusType.value}
-                          value={statusType.value}
-                          style={{
-                            backgroundColor: colors.bg,
-                            color: colors.text,
-                            ["--status-bg" as any]: colors.bg,
-                            ["--status-text" as any]: colors.text,
-                          }}
-                          className="[&[data-highlighted]]:!bg-[var(--status-bg)] [&[data-highlighted]]:!text-[var(--status-text)] [&:focus]:!bg-[var(--status-bg)] [&:focus]:!text-[var(--status-text)] [&:hover]:!bg-[var(--status-bg)] [&:hover]:!text-[var(--status-text)]"
+              <Field
+                name="status"
+                label="Новый статус"
+                required
+                error={errors.status}
+              >
+                {(field) => (
+                  <Controller
+                    control={control}
+                    name="status"
+                    render={({ field: input }) => (
+                      <Select value={input.value} onValueChange={input.onChange}>
+                        <SelectTrigger
+                          {...field}
+                          ref={input.ref}
+                          onBlur={input.onBlur}
                         >
-                          <div className="flex items-center w-full">
-                            <span className="font-medium">
-                              {statusType.label}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-                <FieldError id="status" error={fieldErrors.status} />
-              </div>
+                          <SelectValue placeholder="Выберите статус" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {statusTypes.map((statusType) => {
+                            // Цвет пункта — из общей палитры по КОДУ статуса. Здесь лежала копия
+                            // таблицы «класс Tailwind → hex» на 28 литералов (вторая такая же —
+                            // в соседнем диалоге): inline-стиль Radix-пункта классами не
+                            // задать, но и знать про классы ему незачем.
+                            const colors = getEmployeeStatusPaint(
+                              statusType.value
+                            ).hex;
+
+                            return (
+                              <SelectItem
+                                key={statusType.value}
+                                value={statusType.value}
+                                style={{
+                                  backgroundColor: colors.bg,
+                                  color: colors.text,
+                                  ["--status-bg" as any]: colors.bg,
+                                  ["--status-text" as any]: colors.text,
+                                }}
+                                className="[&[data-highlighted]]:!bg-[var(--status-bg)] [&[data-highlighted]]:!text-[var(--status-text)] [&:focus]:!bg-[var(--status-bg)] [&:focus]:!text-[var(--status-text)] [&:hover]:!bg-[var(--status-bg)] [&:hover]:!text-[var(--status-text)]"
+                              >
+                                <div className="flex items-center w-full">
+                                  <span className="font-medium">
+                                    {statusType.label}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                )}
+              </Field>
 
               {/* Date Range */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="mass-start-date">Дата начала</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        {...fieldProps("mass-start-date", fieldErrors["mass-start-date"])}
-                        variant="outline"
-                        className="w-full justify-start text-left font-normal bg-transparent"
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {startDate
-                          ? format(startDate, "dd MMMM yyyy", { locale: ru })
-                          : "Выберите дату"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={startDate}
-                        onSelect={setStartDate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FieldError id="mass-start-date" error={fieldErrors["mass-start-date"]} />
-                </div>
+                <Field
+                  name="startDate"
+                  label="Дата начала"
+                  error={errors.startDate}
+                >
+                  {(field) => (
+                    <Controller
+                      control={control}
+                      name="startDate"
+                      render={({ field: input }) => (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              {...field}
+                              ref={input.ref}
+                              onBlur={input.onBlur}
+                              variant="outline"
+                              className="w-full justify-start text-left font-normal bg-transparent"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {input.value
+                                ? format(input.value, "dd MMMM yyyy", {
+                                    locale: ru,
+                                  })
+                                : "Выберите дату"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={input.value}
+                              onSelect={input.onChange}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    />
+                  )}
+                </Field>
 
-                <div className="space-y-2">
-                  <Label htmlFor="mass-end-date">Дата окончания</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        {...fieldProps("mass-end-date", fieldErrors["mass-end-date"])}
-                        variant="outline"
-                        className="w-full justify-start text-left font-normal bg-transparent"
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {endDate
-                          ? format(endDate, "dd MMMM yyyy", { locale: ru })
-                          : "Выберите дату"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={endDate}
-                        onSelect={setEndDate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FieldError id="mass-end-date" error={fieldErrors["mass-end-date"]} />
-                </div>
+                <Field
+                  name="endDate"
+                  label="Дата окончания"
+                  error={errors.endDate}
+                >
+                  {(field) => (
+                    <Controller
+                      control={control}
+                      name="endDate"
+                      render={({ field: input }) => (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              {...field}
+                              ref={input.ref}
+                              onBlur={input.onBlur}
+                              variant="outline"
+                              className="w-full justify-start text-left font-normal bg-transparent"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {input.value
+                                ? format(input.value, "dd MMMM yyyy", {
+                                    locale: ru,
+                                  })
+                                : "Выберите дату"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={input.value}
+                              onSelect={input.onChange}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    />
+                  )}
+                </Field>
               </div>
 
               {/* Comment */}
-              <div className="space-y-2">
-                <Label htmlFor="comment">Комментарий</Label>
-                <Textarea
-                  id="comment"
-                  placeholder="Дополнительная информация о изменении статуса..."
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  rows={3}
-                />
-              </div>
+              <Field name="comment" label="Комментарий" error={errors.comment}>
+                {(field) => (
+                  <Textarea
+                    {...field}
+                    placeholder="Дополнительная информация о изменении статуса..."
+                    rows={3}
+                    {...register("comment")}
+                  />
+                )}
+              </Field>
 
               {/* Options */}
               <div className="space-y-3">
                 <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="notify"
-                    checked={notifyManagers}
-                    onCheckedChange={setNotifyManagers}
+                  <Controller
+                    control={control}
+                    name="notifyManagers"
+                    render={({ field: input }) => (
+                      <Checkbox
+                        id="notifyManagers"
+                        ref={input.ref}
+                        checked={input.value}
+                        onBlur={input.onBlur}
+                        onCheckedChange={(checked) =>
+                          input.onChange(checked === true)
+                        }
+                      />
+                    )}
                   />
-                  <Label htmlFor="notify" className="text-sm">
+                  <Label htmlFor="notifyManagers" className="text-sm">
                     Уведомить руководителей подразделений
                   </Label>
                 </div>
 
                 <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="schedule"
-                    checked={scheduleUpdate}
-                    onCheckedChange={setScheduleUpdate}
+                  <Controller
+                    control={control}
+                    name="scheduleUpdate"
+                    render={({ field: input }) => (
+                      <Checkbox
+                        id="scheduleUpdate"
+                        ref={input.ref}
+                        checked={input.value}
+                        onBlur={input.onBlur}
+                        onCheckedChange={(checked) =>
+                          input.onChange(checked === true)
+                        }
+                      />
+                    )}
                   />
-                  <Label htmlFor="schedule" className="text-sm">
+                  <Label htmlFor="scheduleUpdate" className="text-sm">
                     Запланировать автоматическое обновление
                   </Label>
                 </div>
               </div>
 
-              {/* Validation Errors */}
-              {validationErrors.length > 0 && (
+              {/* То, что не относится к конкретному полю: отказ сервера при
+                  сохранении и причины непринятых строк. */}
+              {(errors.root !== undefined || failures.length > 0) && (
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
                     <ul className="list-disc list-inside space-y-1">
-                      {validationErrors.map((error, index) => (
+                      {errors.root?.message !== undefined && (
+                        <li>{errors.root.message}</li>
+                      )}
+                      {failures.map((error, index) => (
                         <li key={index}>{error}</li>
                       ))}
                     </ul>

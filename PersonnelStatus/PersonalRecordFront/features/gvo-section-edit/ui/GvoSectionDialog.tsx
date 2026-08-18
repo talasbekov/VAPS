@@ -3,7 +3,17 @@
 // Правка одного раздела сводной карточки ГВО. Окно всегда несёт РОВНО свой
 // раздел: сводка большая, и общая форма на всю карточку сделала бы каждую
 // правку конфликтом за весь документ.
-import { useState } from "react";
+//
+// Форма на react-hook-form. Правил валидации у раздела нет — набор полей
+// приходит из спеки, и схема собирается по ней же. Выигрыш здесь не в
+// правилах, а в механизме: поля перестали быть управляемыми, и каждое нажатие
+// клавиши больше не пересобирает объект формы целиком.
+//
+// 🔴 `required` у полей НЕ ставим: `Field` дописал бы к подписи звёздочку, а
+// подписи этого окна пинит проба `e2e/gvo-sections.spec.ts` по доступному
+// имени («Название группы»).
+import { useMemo } from "react";
+import { z } from "zod";
 import {
   Dialog,
   DialogContent,
@@ -12,8 +22,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Field, useZodForm } from "@/shared/lib/form";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   gvoFormFromSummary,
@@ -53,9 +63,31 @@ function OpenDialog({
 }: GvoSectionDialogProps) {
   const { toast } = useToast();
   const spec = gvoSectionSpec(section);
-  const [form, setForm] = useState<GvoSectionForm>(() =>
-    gvoFormFromSummary(section, summary)
+
+  // Схема по спеке раздела: полей у разных разделов разное число, и
+  // перечислять их вторым списком значило бы завести копию спеки.
+  const schema = useMemo(
+    () =>
+      z.object(
+        Object.fromEntries(
+          spec.fields.map((field) => [field.key, z.string()])
+        ) as Record<string, z.ZodString>
+      ),
+    [spec]
   );
+
+  // Засев из сводки — один раз: RHF читает `defaultValues` на первом рендере,
+  // а пересобирать текст всей карточки на каждый рендер незачем.
+  const defaults = useMemo(
+    () => gvoFormFromSummary(section, summary),
+    [section, summary]
+  );
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useZodForm<GvoSectionForm>(schema, defaults);
 
   const save = useSaveGvoSection({
     onSaved: () => {
@@ -87,11 +119,11 @@ function OpenDialog({
   const index = sectionIndex(section);
   const canDelete = index !== null && (isPersonSection(section) || isGroupSection(section));
 
-  function submit(): void {
+  function submit(values: GvoSectionForm): void {
     save.mutate({
       omCode,
       section,
-      values: gvoPatchFromForm(section, form, summary),
+      values: gvoPatchFromForm(section, values, summary),
     });
   }
 
@@ -120,44 +152,37 @@ function OpenDialog({
 
         <form
           className="flex flex-col gap-[13px]"
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}
+          noValidate
+          onSubmit={(e) => void handleSubmit(submit)(e)}
         >
           {spec.fields.map((field) => (
-            <div key={field.key} className="space-y-1">
-              <Label
-                htmlFor={`gvo-${field.key}`}
-                className="text-[11.5px] font-bold text-[hsl(215.4_16.3%_36.9%)]"
-              >
-                {field.label}
-              </Label>
-              {field.multiline ? (
-                <Textarea
-                  id={`gvo-${field.key}`}
-                  rows={field.rows}
-                  className="resize-y text-[12.5px] leading-relaxed"
-                  value={form[field.key] ?? ""}
-                  onChange={(e) =>
-                    setForm({ ...form, [field.key]: e.target.value })
-                  }
-                />
-              ) : (
-                <Input
-                  id={`gvo-${field.key}`}
-                  className="h-[38px] text-[13px]"
-                  placeholder={field.placeholder}
-                  value={form[field.key] ?? ""}
-                  onChange={(e) =>
-                    setForm({ ...form, [field.key]: e.target.value })
-                  }
-                />
-              )}
-              {field.hint !== "" && (
-                <p className="text-[11px] text-muted-foreground">{field.hint}</p>
-              )}
-            </div>
+            <Field
+              key={field.key}
+              name={field.key}
+              label={field.label}
+              error={errors[field.key]}
+              hint={field.hint === "" ? undefined : field.hint}
+              className="space-y-1"
+              labelClassName="text-[11.5px] font-bold text-[hsl(215.4_16.3%_36.9%)]"
+            >
+              {(control) =>
+                field.multiline ? (
+                  <Textarea
+                    {...control}
+                    rows={field.rows}
+                    className="resize-y text-[12.5px] leading-relaxed"
+                    {...register(field.key)}
+                  />
+                ) : (
+                  <Input
+                    {...control}
+                    className="h-[38px] text-[13px]"
+                    placeholder={field.placeholder}
+                    {...register(field.key)}
+                  />
+                )
+              }
+            </Field>
           ))}
 
           {failure !== null && (

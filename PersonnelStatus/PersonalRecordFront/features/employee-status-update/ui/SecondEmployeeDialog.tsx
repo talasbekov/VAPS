@@ -1,7 +1,10 @@
 "use client";
 
-import type React from "react";
-import { useState, useEffect, useMemo } from "react";
+// Форма на react-hook-form + zod. Правила — в `model/secondment-schema.ts`,
+// разметка ошибки и фокус — в `shared/lib/form`; здесь остаётся только то, что
+// относится к откомандированию: дерево подразделений и сборка запроса.
+import { useEffect, useMemo } from "react";
+import { Controller } from "react-hook-form";
 import {
   Dialog,
   DialogContent,
@@ -10,13 +13,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  FieldError,
-  fieldProps,
-  focusFirstInvalid,
-} from "@/shared/lib/field-errors";
 import {
   Select,
   SelectContent,
@@ -34,11 +31,25 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CalendarIcon, AlertTriangle, Save, X, Building2 } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
-import { apiClient, getAccessToken } from "@/lib/api";
+import { getAccessToken } from "@/lib/api";
 import { BACKEND_URL } from "@/shared/config/env";
 import { useDivisionsTree } from "@/hooks/use-divisions-tree";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { ApiRequestError, readApiError } from "@/shared/lib/api-error";
+import {
+  Field,
+  applyServerErrors,
+  focusFirstError,
+  focusFirstOf,
+  useZodForm,
+} from "@/shared/lib/form";
+import {
+  EMPTY_SECONDMENT_FORM,
+  SECONDMENT_API_FIELDS,
+  secondmentSchema,
+  type SecondmentFormValues,
+} from "../model/secondment-schema";
 
 interface Division {
   id: number;
@@ -66,14 +77,20 @@ export function SecondEmployeeDialog({
   employeeName,
   onSuccess,
 }: SecondEmployeeDialogProps) {
-  const [startDate, setStartDate] = useState<Date>();
-  const [endDate, setEndDate] = useState<Date>();
-  const [targetDivisionId, setTargetDivisionId] = useState<string>("");
-  const [comment, setComment] = useState("");
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+
+  const {
+    control,
+    register,
+    handleSubmit,
+    reset,
+    setError,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useZodForm(secondmentSchema, EMPTY_SECONDMENT_FORM);
+
+  // Календарь окончания не должен предлагать дни раньше начала.
+  const startDate = watch("startDate");
 
   // Загружаем дерево подразделений
   const {
@@ -82,14 +99,16 @@ export function SecondEmployeeDialog({
     error: divisionsError,
   } = useDivisionsTree();
 
-  // Преобразуем дерево подразделений в плоский список
+  // Преобразуем дерево подразделений в плоский список.
+  //
+  // Это НЕ `flattenDivisions` из `features/add-employee/lib/utils`: там ветка
+  // неактивного подразделения отсекается целиком, а здесь спуск в детей
+  // продолжается — откомандировать можно в активный отдел, висящий под
+  // расформированным управлением.
   const divisions = useMemo(() => {
     if (!divisionsTree) {
-      console.log("Divisions tree is not loaded yet");
       return [];
     }
-
-    console.log("Divisions tree loaded:", divisionsTree);
 
     const flattenDivisions = (
       division: Division,
@@ -132,92 +151,20 @@ export function SecondEmployeeDialog({
       return result;
     };
 
-    const flattened = flattenDivisions(divisionsTree);
-    console.log("Flattened divisions:", flattened);
-    console.log("Total divisions count:", flattened.length);
-    return flattened;
+    return flattenDivisions(divisionsTree);
   }, [divisionsTree]);
 
   // Сброс формы при закрытии
   useEffect(() => {
-    if (!open) {
-      setStartDate(undefined);
-      setEndDate(undefined);
-      setTargetDivisionId("");
-      setComment("");
-      setValidationErrors([]);
-    }
-  }, [open]);
+    if (!open) reset(EMPTY_SECONDMENT_FORM);
+  }, [open, reset]);
 
-  /** Порядок полей на экране — по нему ведём фокус к первой ошибке. */
-  const FIELD_ORDER = [
-    "start-date",
-    "end-date",
-    "division",
-    "comment",
-  ] as const;
-
-  /**
-   * Имена полей API → поля формы. Без этой таблицы 400-ответ печатался
-   * как есть — человек читал «date_from: ...» и не понимал, что чинить.
-   */
-  const API_FIELD_MAP: Record<string, string> = {
-    start_date: "start-date",
-    date_from: "start-date",
-    end_date: "end-date",
-    date_to: "end-date",
-    to_division: "division",
-    target_division: "division",
-    reason: "comment",
-  };
-
-  const validateForm = (): boolean => {
-    const errors: string[] = [];
-    const byField: Record<string, string> = {};
-
-    if (!startDate) {
-      errors.push("Необходимо указать дату начала откомандирования");
-      byField["start-date"] = "Укажите дату начала.";
-    }
-
-    if (!endDate) {
-      errors.push("Необходимо указать дату окончания откомандирования");
-      byField["end-date"] = "Укажите дату окончания.";
-    }
-
-    if (startDate && endDate && startDate > endDate) {
-      errors.push("Дата начала не может быть позже даты окончания");
-      byField["end-date"] = "Дата окончания раньше даты начала.";
-    }
-
-    if (!targetDivisionId) {
-      errors.push("Необходимо выбрать подразделение для откомандирования");
-      byField.division = "Выберите подразделение.";
-    }
-
-    if (!comment || comment.trim() === "") {
-      errors.push("Необходимо указать причину откомандирования");
-      byField.comment = "Укажите причину откомандирования.";
-    }
-
-    setValidationErrors(errors);
-    setFieldErrors(byField);
-    if (errors.length > 0) focusFirstInvalid(FIELD_ORDER, byField);
-    return errors.length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!validateForm() || !employeeId) {
-      return;
-    }
-
-    setIsSubmitting(true);
+  const submit = async (values: SecondmentFormValues) => {
+    if (!employeeId) return;
 
     try {
       // Парсим ID сотрудника - формат: unitId-employeeId
-      const [unitIdStr, employeeIdStr] = employeeId.split("-");
+      const [, employeeIdStr] = employeeId.split("-");
       const employeeIdNum =
         employeeIdStr && !employeeIdStr.startsWith("vacant")
           ? parseInt(employeeIdStr, 10)
@@ -228,8 +175,12 @@ export function SecondEmployeeDialog({
       }
 
       // Форматируем даты в ISO формат
-      const startDateISO = startDate ? format(startDate, "yyyy-MM-dd") : null;
-      const endDateISO = endDate ? format(endDate, "yyyy-MM-dd") : null;
+      const startDateISO = values.startDate
+        ? format(values.startDate, "yyyy-MM-dd")
+        : null;
+      const endDateISO = values.endDate
+        ? format(values.endDate, "yyyy-MM-dd")
+        : null;
 
       if (!startDateISO || !endDateISO) {
         throw new Error("Необходимо указать даты начала и окончания");
@@ -250,92 +201,26 @@ export function SecondEmployeeDialog({
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const requestBody = {
-        employee: employeeIdNum,
-        to_division: parseInt(targetDivisionId, 10),
-        start_date: startDateISO,
-        end_date: endDateISO,
-        reason: comment.trim(),
-      };
-
-      console.log("Отправка запроса на откомандирование:", {
-        url,
-        body: requestBody,
-      });
-
       const response = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          employee: employeeIdNum,
+          to_division: parseInt(values.divisionId, 10),
+          start_date: startDateISO,
+          end_date: endDateISO,
+          reason: values.comment.trim(),
+        }),
       });
 
+      // Тело отказа доезжает до формы КАК ЕСТЬ: раскладкой по полям занимается
+      // `applyServerErrors` ниже — она одна знает, что `date_from` в ответе это
+      // поле «Дата начала откомандирования».
       if (!response.ok) {
-        let errorMessage = `Ошибка ${response.status}`;
-        const errors: string[] = [];
-
-        try {
-          const errorData = await response.json();
-          console.error("Ошибка от API:", errorData);
-
-          // Обрабатываем различные форматы ошибок от API
-          if (errorData.detail) {
-            errorMessage = errorData.detail;
-            errors.push(errorData.detail);
-          } else if (errorData.message) {
-            errorMessage = errorData.message;
-            errors.push(errorData.message);
-          } else if (typeof errorData === "string") {
-            errorMessage = errorData;
-            errors.push(errorData);
-          } else if (errorData.non_field_errors) {
-            const nonFieldErrors = Array.isArray(errorData.non_field_errors)
-              ? errorData.non_field_errors.join(", ")
-              : errorData.non_field_errors;
-            errorMessage = nonFieldErrors;
-            errors.push(nonFieldErrors);
-          } else {
-            // Ошибки валидации полей: то, что удалось сопоставить с полем
-            // формы, уезжает ПОД это поле; остальное — в общую сводку.
-            const fromApi: Record<string, string> = {};
-            Object.keys(errorData).forEach((key) => {
-              const raw = errorData[key];
-              const text = Array.isArray(raw)
-                ? raw.join(", ")
-                : typeof raw === "string"
-                  ? raw
-                  : JSON.stringify(raw);
-              const field = API_FIELD_MAP[key];
-              if (field !== undefined) {
-                fromApi[field] = text;
-              } else {
-                errors.push(`${key}: ${text}`);
-              }
-            });
-            if (Object.keys(fromApi).length > 0) {
-              setFieldErrors(fromApi);
-              focusFirstInvalid(FIELD_ORDER, fromApi);
-              if (errors.length === 0) {
-                errorMessage = "Проверьте отмеченные поля.";
-              }
-            }
-
-            if (errors.length > 0) {
-              errorMessage = errors.join("; ");
-            }
-          }
-        } catch (e) {
-          const errorText = await response.text();
-          console.error("Не удалось распарсить ошибку:", errorText);
-          errorMessage = errorText || errorMessage;
-          errors.push(errorMessage);
-        }
-
-        setValidationErrors(errors.length > 0 ? errors : [errorMessage]);
-        throw new Error(errorMessage);
+        throw await readApiError(response);
       }
 
       const data = await response.json();
-      console.log("Запрос на откомандирование создан:", data);
 
       // Показываем уведомление об успехе
       toast({
@@ -347,20 +232,35 @@ export function SecondEmployeeDialog({
         }`,
       });
 
-      // Успешно отправлено
       if (onSuccess) {
         onSuccess();
       }
       onOpenChange(false);
     } catch (error) {
       console.error("Ошибка при откомандировании сотрудника:", error);
-      setValidationErrors([
-        error instanceof Error
-          ? error.message
-          : "Произошла ошибка при откомандировании сотрудника",
-      ]);
-    } finally {
-      setIsSubmitting(false);
+      // Полевой отказ ложится под свои поля, остальное — в сводку формы.
+      const { fields, rest } =
+        error instanceof ApiRequestError
+          ? applyServerErrors<SecondmentFormValues>(
+              setError,
+              error.payload,
+              SECONDMENT_API_FIELDS
+            )
+          : {
+              fields: [],
+              rest: [
+                error instanceof Error
+                  ? error.message
+                  : "Произошла ошибка при откомандировании сотрудника",
+              ],
+            };
+      if (rest.length > 0) {
+        setError("root", { message: rest.join("; ") });
+      }
+      // Сервер мог отметить поле, которое сейчас за пределами видимой части.
+      // Свежего `formState.errors` в этом замыкании ещё нет — идём по списку
+      // полей, которые отметил сам сервер.
+      focusFirstOf(fields);
     }
   };
 
@@ -381,143 +281,191 @@ export function SecondEmployeeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+        <form
+          onSubmit={(e) =>
+            void handleSubmit(submit, (invalid) => focusFirstError(invalid))(e)
+          }
+          className="flex flex-col flex-1 min-h-0"
+          noValidate
+        >
           <div className="space-y-4 overflow-y-auto flex-1 pr-2">
             {/* Дата начала откомандирования */}
-            <div className="space-y-2">
-              <Label htmlFor="start-date">Дата начала откомандирования *</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    {...fieldProps("start-date", fieldErrors["start-date"])}
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !startDate && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {startDate ? (
-                      format(startDate, "PPP", { locale: ru })
-                    ) : (
-                      <span>Выберите дату начала</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={startDate}
-                    onSelect={setStartDate}
-                    initialFocus
-                    locale={ru}
-                  />
-                </PopoverContent>
-              </Popover>
-              <FieldError id="start-date" error={fieldErrors["start-date"]} />
-            </div>
+            <Field
+              name="startDate"
+              label="Дата начала откомандирования"
+              required
+              error={errors.startDate}
+            >
+              {(field) => (
+                <Controller
+                  control={control}
+                  name="startDate"
+                  render={({ field: input }) => (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          {...field}
+                          ref={input.ref}
+                          onBlur={input.onBlur}
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !input.value && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {input.value ? (
+                            format(input.value, "PPP", { locale: ru })
+                          ) : (
+                            <span>Выберите дату начала</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={input.value}
+                          onSelect={input.onChange}
+                          initialFocus
+                          locale={ru}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                />
+              )}
+            </Field>
 
             {/* Дата окончания откомандирования */}
-            <div className="space-y-2">
-              <Label htmlFor="end-date">
-                Дата окончания откомандирования *
-              </Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    {...fieldProps("end-date", fieldErrors["end-date"])}
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !endDate && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {endDate ? (
-                      format(endDate, "PPP", { locale: ru })
-                    ) : (
-                      <span>Выберите дату окончания</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={endDate}
-                    onSelect={setEndDate}
-                    initialFocus
-                    disabled={(date) => (startDate ? date < startDate : false)}
-                    locale={ru}
-                  />
-                </PopoverContent>
-              </Popover>
-              <FieldError id="end-date" error={fieldErrors["end-date"]} />
-            </div>
+            <Field
+              name="endDate"
+              label="Дата окончания откомандирования"
+              required
+              error={errors.endDate}
+            >
+              {(field) => (
+                <Controller
+                  control={control}
+                  name="endDate"
+                  render={({ field: input }) => (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          {...field}
+                          ref={input.ref}
+                          onBlur={input.onBlur}
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !input.value && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {input.value ? (
+                            format(input.value, "PPP", { locale: ru })
+                          ) : (
+                            <span>Выберите дату окончания</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={input.value}
+                          onSelect={input.onChange}
+                          initialFocus
+                          disabled={(date) =>
+                            startDate ? date < startDate : false
+                          }
+                          locale={ru}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                />
+              )}
+            </Field>
 
             {/* Выбор подразделения */}
-            <div className="space-y-2">
-              <Label htmlFor="division">
-                Подразделение для откомандирования *
-              </Label>
-              <Select
-                value={targetDivisionId}
-                onValueChange={setTargetDivisionId}
-                disabled={loadingDivisions}
-              >
-                <SelectTrigger {...fieldProps("division", fieldErrors.division)}>
-                  <SelectValue placeholder="Выберите подразделение" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[400px] overflow-y-auto">
-                  {loadingDivisions ? (
-                    <SelectItem value="loading" disabled>
-                      Загрузка подразделений...
-                    </SelectItem>
-                  ) : divisionsError ? (
-                    <SelectItem value="error" disabled>
-                      Ошибка загрузки подразделений
-                    </SelectItem>
-                  ) : divisions.length === 0 ? (
-                    <SelectItem value="empty" disabled>
-                      Нет доступных подразделений
-                    </SelectItem>
-                  ) : (
-                    divisions.map((division) => (
-                      <SelectItem
-                        key={division.id}
-                        value={division.id.toString()}
-                        className="whitespace-normal"
+            <Field
+              name="divisionId"
+              label="Подразделение для откомандирования"
+              required
+              error={errors.divisionId}
+            >
+              {(field) => (
+                <Controller
+                  control={control}
+                  name="divisionId"
+                  render={({ field: input }) => (
+                    <Select
+                      value={input.value}
+                      onValueChange={input.onChange}
+                      disabled={loadingDivisions}
+                    >
+                      <SelectTrigger
+                        {...field}
+                        ref={input.ref}
+                        onBlur={input.onBlur}
                       >
-                        {division.name}
-                      </SelectItem>
-                    ))
+                        <SelectValue placeholder="Выберите подразделение" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[400px] overflow-y-auto">
+                        {loadingDivisions ? (
+                          <SelectItem value="loading" disabled>
+                            Загрузка подразделений...
+                          </SelectItem>
+                        ) : divisionsError ? (
+                          <SelectItem value="error" disabled>
+                            Ошибка загрузки подразделений
+                          </SelectItem>
+                        ) : divisions.length === 0 ? (
+                          <SelectItem value="empty" disabled>
+                            Нет доступных подразделений
+                          </SelectItem>
+                        ) : (
+                          divisions.map((division) => (
+                            <SelectItem
+                              key={division.id}
+                              value={division.id.toString()}
+                              className="whitespace-normal"
+                            >
+                              {division.name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   )}
-                </SelectContent>
-              </Select>
-              <FieldError id="division" error={fieldErrors.division} />
-            </div>
+                />
+              )}
+            </Field>
 
             {/* Комментарий */}
-            <div className="space-y-2">
-              <Label htmlFor="comment">Причина откомандирования *</Label>
-              <Textarea
-                {...fieldProps("comment", fieldErrors.comment)}
-                placeholder="Дополнительная информация об откомандировании..."
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={3}
-              />
-              <FieldError id="comment" error={fieldErrors.comment} />
-            </div>
+            <Field
+              name="comment"
+              label="Причина откомандирования"
+              required
+              error={errors.comment}
+            >
+              {(field) => (
+                <Textarea
+                  {...field}
+                  placeholder="Дополнительная информация об откомандировании..."
+                  rows={3}
+                  {...register("comment")}
+                />
+              )}
+            </Field>
 
-            {/* Ошибки валидации */}
-            {validationErrors.length > 0 && (
+            {/* То, что не относится к конкретному полю: отказ сервера при
+                сохранении. */}
+            {errors.root?.message !== undefined && (
               <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
                   <ul className="list-disc list-inside space-y-1">
-                    {validationErrors.map((error, index) => (
-                      <li key={index}>{error}</li>
-                    ))}
+                    <li>{errors.root.message}</li>
                   </ul>
                 </AlertDescription>
               </Alert>
