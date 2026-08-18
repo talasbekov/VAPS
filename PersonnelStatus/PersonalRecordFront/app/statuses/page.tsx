@@ -10,7 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Calendar, Users, AlertTriangle, Clock, Download, Upload, RefreshCw } from "lucide-react"
-import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate"
+import { DirectorateAccessNotice } from "@/components/directorate-access-notice"
+import {
+  isDirectorateForbidden,
+  useStaffUnitsByDirectorate,
+} from "@/hooks/use-staff-units-by-directorate"
 import { useQueryClient } from "@tanstack/react-query"
 import { SecondmentRequestsDialog } from "@/features/secondment-requests/ui/SecondmentRequestsDialog";
 
@@ -109,6 +113,16 @@ export default function StatusesPage() {
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["staff-units-by-directorate"] })
     refetch()
+  }
+
+  // Все три вкладки и счётчики читают ОДИН запрос directorate: закрыта ручка —
+  // закрыт экран. Показывать шапку с нулями было бы враньём о подразделении.
+  if (isDirectorateForbidden(queryError)) {
+    return (
+      <DashboardLayout>
+        <DirectorateAccessNotice reason={queryError.message} />
+      </DashboardLayout>
+    )
   }
 
   return (

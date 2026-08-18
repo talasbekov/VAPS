@@ -403,6 +403,38 @@ export class OpsApiError extends Error {
   }
 }
 
+// Отказ ручки старого стека (staff_unit и соседи): статус несём полем, а не
+// строкой «HTTP error! status: 403 - ...». UI обязан разводить «нет прав» и
+// «сервер упал» РАЗНЫМИ экранами, а по тексту сообщения это делалось бы
+// подстрокой — сломается при первой же правке формулировки на бэке.
+//
+// Намеренно НЕ переиспользуем OpsApiError: тот разбирает конверт
+// {error_code, message} раздела ОМ, а у старого стека конверта нет вовсе —
+// тут прилетает {"error": "..."} или голый текст.
+export class ApiHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiHttpError";
+    this.status = status;
+  }
+}
+
+// Достаёт человекочитаемую причину из тела отказа старого стека. Тело читаем
+// как текст и лишь потом пробуем как JSON: на 500 Django отдаёт HTML-страницу,
+// и response.json() подменил бы причину отказа своим SyntaxError.
+function staffErrorMessage(raw: string, status: number): string {
+  try {
+    const body = JSON.parse(raw);
+    const detail = body?.error ?? body?.detail;
+    if (typeof detail === "string" && detail !== "") return detail;
+  } catch {
+    // не JSON — падать обратно на сырой текст
+  }
+  return raw !== "" ? raw : `HTTP ${status}`;
+}
+
 // Разбирает неуспешный ответ в OpsApiError. Тело читаем как текст и лишь
 // потом пробуем как JSON: у выгрузки тип ответа файловый, и на ошибке там
 // может прийти не-JSON — `response.json()` тогда бросил бы SyntaxError,
@@ -813,8 +845,9 @@ class ApiClient {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`API request failed: ${response.status}`, errorText);
-        throw new Error(
-          `HTTP error! status: ${response.status} - ${errorText}`
+        throw new ApiHttpError(
+          response.status,
+          staffErrorMessage(errorText, response.status)
         );
       }
 
