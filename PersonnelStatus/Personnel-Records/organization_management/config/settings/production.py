@@ -1,9 +1,19 @@
 import os
+from django.core.exceptions import ImproperlyConfigured
 from .base import *
+
+# SECURITY: the dev SECRET_KEY baked into base.py must never run in production.
+# Require DJANGO_SECRET_KEY explicitly and refuse to boot on the insecure default.
+if not os.getenv('DJANGO_SECRET_KEY') or SECRET_KEY.startswith('django-insecure-'):
+    raise ImproperlyConfigured(
+        'DJANGO_SECRET_KEY must be set to a non-default value in production.'
+    )
 
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',')
+# SECURITY: default to no hosts rather than '*' — a wildcard Host allowlist
+# enables Host-header / password-reset-link poisoning. Set ALLOWED_HOSTS in env.
+ALLOWED_HOSTS = [h for h in os.getenv('ALLOWED_HOSTS', '').split(',') if h]
 
 # Database configuration from environment variables
 DATABASES = {
