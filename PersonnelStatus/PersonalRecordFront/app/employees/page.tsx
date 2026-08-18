@@ -43,6 +43,7 @@ import {
 } from "@/lib/status";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { formatIsoDate } from "@/shared/lib/date";
 import type { Employee } from "@/entities/employee/model/types";
 
 export default function EmployeesPage() {
@@ -131,11 +132,10 @@ function EmployeesScreen() {
             department: unit.division.name,
             departmentId: unit.division.id.toString(),
             status: statusText,
-            phone: "",
-            email: "",
-            hireDate:
-              currentStatus?.start_date ||
-              new Date().toISOString().split("T")[0],
+            // Кадровых контактов эта ручка не отдаёт вовсе — поля больше не
+            // выдумываются пустой строкой, и колонки под них нет.
+            statusSince: currentStatus?.start_date || "",
+            statusUntil: currentStatus?.end_date || "",
             birthDate: "",
             address: "",
             manager: "",
@@ -157,10 +157,8 @@ function EmployeesScreen() {
           department: unit.division.name,
           departmentId: unit.division.id.toString(),
           status: statusText,
-          phone: "",
-          email: "",
-          hireDate:
-            currentStatus?.start_date || new Date().toISOString().split("T")[0],
+          statusSince: currentStatus?.start_date || "",
+          statusUntil: currentStatus?.end_date || "",
           birthDate: "",
           address: "",
           manager: "",
@@ -513,13 +511,20 @@ function EmployeesScreen() {
                                 {employee.department}
                               </span>
                             </div>
+                            {/* Телефон и почта приходили захардкоженной пустой
+                                строкой: две иконки поверх ничего. Ручка штатки
+                                контактов не отдаёт — вместо них период
+                                статуса, который отдаёт. */}
                             <div className="flex items-center text-sm">
-                              <Phone className="h-4 w-4 mr-2 text-muted-foreground" />
-                              <span>{employee.phone}</span>
-                            </div>
-                            <div className="flex items-center text-sm">
-                              <Mail className="h-4 w-4 mr-2 text-muted-foreground" />
-                              <span className="truncate">{employee.email}</span>
+                              <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
+                              <span className="tabular-nums">
+                                {employee.statusSince === ""
+                                  ? "статус не назначен"
+                                  : `с ${formatIsoDate(employee.statusSince)}`}
+                                {employee.statusUntil === ""
+                                  ? ""
+                                  : ` по ${formatIsoDate(employee.statusUntil)}`}
+                              </span>
                             </div>
                             <div className="flex items-center justify-between mt-3">
                               <Badge

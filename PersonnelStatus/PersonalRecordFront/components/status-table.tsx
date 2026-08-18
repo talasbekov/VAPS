@@ -48,6 +48,7 @@ import {
   Eye,
   ArrowRightLeft,
 } from "lucide-react";
+import { formatIsoDate, parseIsoDate } from "@/shared/lib/date";
 import { EditStatusDialog } from "@/features/employee-status-update/ui/EditStatusDialog";
 import { PlannedStatusesDialog } from "@/features/employee-status-update/ui/PlannedStatusesDialog";
 import { SecondEmployeeDialog } from "@/features/employee-status-update/ui/SecondEmployeeDialog";
@@ -68,8 +69,12 @@ interface Employee {
   department: string;
   position: string;
   status: string;
-  lastUpdate: string;
-  nextUpdate: string;
+  /** ISO «ГГГГ-ММ-ДД» или пустая строка. Форматируется ТОЛЬКО на выводе:
+   *  раньше в поле лежал уже готовый текст, и `isOverdue` пытался разобрать
+   *  его обратно через `new Date("14.08.2026, 00:00:00")` — это NaN, поэтому
+   *  подсветка просрочки не срабатывала ни разу. */
+  startDate: string;
+  endDate: string;
   phone: string;
   email: string;
   priority: "normal" | "high" | "critical";
@@ -159,22 +164,8 @@ export function StatusTable({
             department: unit.division?.name || "Не указан",
             position: empData.position?.name || "Должность не указана",
             status: statusText,
-            lastUpdate: status?.start_date
-              ? (() => {
-                  const date = new Date(status.start_date);
-                  return isNaN(date.getTime())
-                    ? "Не обновлено"
-                    : date.toLocaleString("ru-RU");
-                })()
-              : "Не обновлено",
-            nextUpdate: status?.end_date
-              ? (() => {
-                  const date = new Date(status.end_date);
-                  return isNaN(date.getTime())
-                    ? "Не указано"
-                    : date.toLocaleString("ru-RU");
-                })()
-              : "Не указано",
+            startDate: status?.start_date ?? "",
+            endDate: status?.end_date ?? "",
             phone: "",
             email: "",
             priority,
@@ -202,22 +193,8 @@ export function StatusTable({
           department: unit.division?.name || "Не указан",
           position: (unit as any).position?.name || "Должность не указана",
           status: statusText,
-          lastUpdate: status?.start_date
-            ? (() => {
-                const date = new Date(status.start_date);
-                return isNaN(date.getTime())
-                  ? "Не обновлено"
-                  : date.toLocaleString("ru-RU");
-              })()
-            : "Не обновлено",
-          nextUpdate: status?.end_date
-            ? (() => {
-                const date = new Date(status.end_date);
-                return isNaN(date.getTime())
-                  ? "Не указано"
-                  : date.toLocaleString("ru-RU");
-              })()
-            : "Не указано",
+          startDate: status?.start_date ?? "",
+          endDate: status?.end_date ?? "",
           phone: "",
           email: "",
           priority,
@@ -232,8 +209,8 @@ export function StatusTable({
           department: unit.division?.name || "Не указан",
           position: (unit as any).position?.name || "Должность не указана",
           status: "Не обновлено",
-          lastUpdate: "Не обновлено",
-          nextUpdate: "Не указано",
+          startDate: "",
+          endDate: "",
           phone: "",
           email: "",
           priority: "critical",
@@ -333,9 +310,8 @@ export function StatusTable({
       department: employee.department,
       departmentId: staffUnit.division.id.toString(),
       status: employee.status,
-      phone: "",
-      email: "",
-      hireDate: status?.start_date || new Date().toISOString().split("T")[0],
+      statusSince: status?.start_date || "",
+      statusUntil: status?.end_date || "",
       birthDate: "",
       address: "",
       manager: "",
@@ -469,10 +445,14 @@ export function StatusTable({
     }
   };
 
-  const isOverdue = (nextUpdate: string) => {
-    if (nextUpdate === "Не указано") return false;
-    const date = new Date(nextUpdate);
-    return !isNaN(date.getTime()) && date < new Date();
+  /** Срок статуса вышел. Считается по ISO-дате: разбирать обратно то, что
+   *  сами же отформатировали, значит зависеть от локали вывода. */
+  const isOverdue = (endDate: string) => {
+    const date = parseIsoDate(endDate);
+    if (date === null) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return date < today;
   };
 
   return (
@@ -555,8 +535,11 @@ export function StatusTable({
               {filteredEmployees.map((employee) => (
                 <TableRow
                   key={employee.id}
-                  className={`${getPriorityColor(employee.priority)} ${
-                    isOverdue(employee.nextUpdate) ? "bg-red-50" : ""
+                  // Зебра только там, где нет подсветки просрочки: вариант
+                  // `odd:` в сгенерированном CSS идёт после базового класса и
+                  // перекрыл бы красный фон на каждой второй строке.
+                  className={`${getPriorityColor(employee.priority)} hover:bg-muted ${
+                    isOverdue(employee.endDate) ? "bg-red-50" : "odd:bg-muted/40"
                   }`}
                 >
                   <TableCell>
@@ -599,44 +582,21 @@ export function StatusTable({
                       </button>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm">
-                    {employee.lastUpdate === "Не обновлено"
-                      ? employee.lastUpdate
-                      : (() => {
-                          try {
-                            const date = new Date(employee.lastUpdate);
-                            return isNaN(date.getTime())
-                              ? "Не обновлено"
-                              : date.toLocaleString("ru-RU");
-                          } catch {
-                            return "Не обновлено";
-                          }
-                        })()}
+                  <TableCell className="text-sm tabular-nums">
+                    {formatIsoDate(employee.startDate, "Не обновлено")}
                   </TableCell>
                   <TableCell className="text-sm">
                     <div
                       className={
-                        isOverdue(employee.nextUpdate)
-                          ? "text-red-600 font-medium"
+                        isOverdue(employee.endDate)
+                          ? "text-destructive-ink font-medium"
                           : ""
                       }
                     >
-                      {employee.nextUpdate === "Не указано"
-                        ? employee.nextUpdate
-                        : (() => {
-                            try {
-                              const date = new Date(employee.nextUpdate);
-                              return isNaN(date.getTime())
-                                ? "Не указано"
-                                : date.toLocaleString("ru-RU");
-                            } catch {
-                              return "Не указано";
-                            }
-                          })()}
-                      {isOverdue(employee.nextUpdate) &&
-                        employee.nextUpdate !== "Не указано" && (
-                          <AlertCircle className="h-4 w-4 inline ml-1" />
-                        )}
+                      {formatIsoDate(employee.endDate, "Не указано")}
+                      {isOverdue(employee.endDate) && (
+                        <AlertCircle className="h-4 w-4 inline ml-1" aria-hidden="true" />
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>

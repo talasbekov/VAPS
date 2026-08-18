@@ -487,9 +487,17 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     'id': unit.employee.id,
                     'first_name': unit.employee.first_name,
                     'last_name': unit.employee.last_name,
+                    # Период едет вместе со статусом. Без него таблица статусов
+                    # печатала «Не обновлено» и «Не указано» во ВСЕХ строках —
+                    # две колонки на 362 px не несли ни бита, — а карточка
+                    # сотрудника подставляла вместо даты сегодняшнее число.
+                    # Даты в модели есть, их просто не клали в ответ; соседний
+                    # EmployeeStatusBriefSerializer отдаёт все четыре поля.
                     'current_status': {
                         'status_type': current_status.status_type,
                         'state': current_status.state,
+                        'start_date': current_status.start_date,
+                        'end_date': current_status.end_date,
                     } if current_status else None
                 }
 
