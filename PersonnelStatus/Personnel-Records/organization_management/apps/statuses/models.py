@@ -96,10 +96,18 @@ class EmployeeStatus(models.Model):
     )
 
     # Служебная информация
+    #
+    # `blank=True` — не косметика. Колонка в БД и так `null=True`, но `save()`
+    # зовёт `full_clean()`, и из-за расхождения системная запись без автора была
+    # НЕВОЗМОЖНА: ветка автосоздания статуса в списке подразделения роняла ручку
+    # 500 вместо того, чтобы завести статус. Пустой автор читается как «завёл не
+    # человек, а система» — сигнал при заведении сотрудника и команда
+    # `ensure_employee_statuses`.
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
+        blank=True,
         related_name='created_statuses',
         verbose_name='Создал'
     )
