@@ -32,7 +32,11 @@ import {
   Mail,
 } from "lucide-react";
 import { useAuth, PermissionGate } from "@/lib/auth";
-import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
+import { DirectorateAccessNotice } from "@/components/directorate-access-notice";
+import {
+  isDirectorateForbidden,
+  useStaffUnitsByDirectorate,
+} from "@/hooks/use-staff-units-by-directorate";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   EMPLOYEE_STATUS_ITEMS,
@@ -246,6 +250,17 @@ function EmployeesScreen() {
     canSeeOwnDepartment,
     user?.departmentId,
   ]);
+
+  // Список, карточки, фильтр отделов и счётчики растут из ОДНОГО запроса
+  // directorate. Закрыта ручка — закрывается вся страница: иначе на экране
+  // остались бы нули и пустые фильтры без объяснения причины.
+  if (isDirectorateForbidden(queryError)) {
+    return (
+      <DashboardLayout>
+        <DirectorateAccessNotice reason={queryError.message} />
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
