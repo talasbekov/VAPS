@@ -440,11 +440,20 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         ).select_related(
             'division', 'position', 'employee', 'vacancy'
         ).prefetch_related(
+            # `to_attr` не для красоты: без него достаточно случайного
+            # `.filter()`/`.order_by()` на `employee.statuses`, чтобы префетч
+            # молча превратился в запрос на каждого сотрудника. Ровно так
+            # здесь и было.
+            #
+            # `-created_at` вторым: у двух статусов может совпасть start_date,
+            # и без устойчивого второго ключа «текущий» выбирался бы по
+            # усмотрению планировщика.
             Prefetch(
                 'employee__statuses',
                 queryset=EmployeeStatus.objects.filter(
                     state=EmployeeStatus.StatusState.ACTIVE
-                ).order_by('-start_date')
+                ).order_by('-start_date', '-created_at'),
+                to_attr='active_statuses',
             )
         ).order_by('tree_id', 'lft')
 
@@ -470,18 +479,31 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
 
             # Employee с current_status
             if unit.employee:
-                current_status = unit.employee.statuses.order_by('-created_at').first()
-
-                # Если у сотрудника нет статуса, создаем дефолтный "в строю"
-                if not current_status:
-                    from django.utils import timezone
-                    current_status = EmployeeStatus.objects.create(
-                        employee=unit.employee,
-                        status_type=EmployeeStatus.StatusType.IN_SERVICE,
-                        start_date=timezone.now().date(),
-                        state=EmployeeStatus.StatusState.ACTIVE,
-                        comment='Автоматически создан при отсутствии статуса'
-                    )
+                # ЧТЕНИЕ НИЧЕГО НЕ ПИШЕТ. Здесь стояло
+                # `EmployeeStatus.objects.create(...)` для сотрудников без
+                # статуса — и работало это не так, как читается.
+                #
+                # `EmployeeStatus.save()` зовёт `full_clean()` (models.py:258),
+                # а `created_by` объявлен без `blank=True`. Создание отсюда его
+                # не передавало, поэтому ветка не создавала статус, а роняла
+                # ВЕСЬ список: подразделение, где есть хоть один сотрудник без
+                # действующего статуса, отвечало 500. В базе стенда её следов
+                # нет ни одного — 0 записей с этим комментарием из 93.
+                #
+                # Если бы `created_by` передали, стало бы хуже, а не лучше:
+                # запись при чтении делает GET неповторяемым (выдача меняет
+                # выдачу следующего запроса), а `start_date=today` объявляет
+                # «в строю с сегодня» тем, у кого статус был и завершён.
+                #
+                # Дефолтный «в строю» заводится там, где это осмысленно, —
+                # `_directorate_create` при заведении сотрудника, с `created_by`.
+                # Сотрудникам, заведённым мимо неё (сиды, импорт), статус ставит
+                # разовая правка данных, а не ручка чтения.
+                #
+                # `state=ACTIVE` — из префетча: прежний `.order_by('-created_at')`
+                # брал последний СОЗДАННЫЙ статус независимо от состояния, и
+                # отменённый приезжал как действующий.
+                current_status = next(iter(unit.employee.active_statuses), None)
 
                 unit_data['employee'] = {
                     'id': unit.employee.id,
