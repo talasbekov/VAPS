@@ -14,11 +14,18 @@
 // чем она собрана.
 import type { ReactElement } from "react";
 
+/** Атрибуты, которые получает контрол: id и связка с текстом ошибки. */
+export interface FieldControlProps {
+  id: string;
+  "aria-invalid"?: true;
+  "aria-describedby"?: string;
+}
+
 /** Атрибуты поля: помечают его неверным и связывают с текстом ошибки. */
 export function fieldProps(
   id: string,
   error: string | undefined
-): { id: string; "aria-invalid"?: true; "aria-describedby"?: string } {
+): FieldControlProps {
   if (error === undefined) return { id };
   return { id, "aria-invalid": true, "aria-describedby": `${id}-error` };
 }

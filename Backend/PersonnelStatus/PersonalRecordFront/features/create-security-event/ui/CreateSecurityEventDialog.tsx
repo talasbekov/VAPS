@@ -3,10 +3,12 @@
 // «Создать ОМ»: RHF + Zod, объект выбирается из реестра (без id объекта
 // версию паспорта не к чему привязать). 400-канал бэка кладёт ошибки в поля
 // через setError; успех — переход в карточку созданного ОМ.
+//
+// Форма была на RHF раньше остальных, но собирала поля вручную: `aria-invalid`
+// и `aria-describedby` у неё не было ни у одного поля — текст ошибки лежал
+// рядом и ни с чем не связан. Общий `Field` эту связку ставит сам.
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   Dialog,
@@ -17,9 +19,10 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
 import { useBindableObjects, useCreateSecurityEvent } from "@/hooks/use-create-security-event";
 
+/** Поля — в порядке появления на экране: так схему проще читать. */
 const formSchema = z.object({
   title: z.string().trim().min(1, "Обязательное поле."),
   objectId: z.string().trim().min(1, "Обязательное поле."),
@@ -29,6 +32,8 @@ const formSchema = z.object({
 });
 
 type FormValues = z.infer<typeof formSchema>;
+
+const EMPTY_FORM: FormValues = { title: "", objectId: "", businessDate: "" };
 
 export interface CreateSecurityEventDialogProps {
   open: boolean;
@@ -53,7 +58,7 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
     handleSubmit,
     setError,
     formState: { errors },
-  } = useForm<FormValues>({ resolver: zodResolver(formSchema) });
+  } = useZodForm(formSchema, EMPTY_FORM);
 
   const mutation = useCreateSecurityEvent({
     onFormError: (details) => {
@@ -84,60 +89,66 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
-          onSubmit={(e) => void handleSubmit((values) => mutation.mutate(values))(e)}
+          noValidate
+          onSubmit={(e) =>
+            void handleSubmit(
+              (values) => mutation.mutate(values),
+              (invalid) => focusFirstError(invalid)
+            )(e)
+          }
         >
-          <div className="space-y-1">
-            <Label htmlFor="om-title">Название</Label>
-            <Input id="om-title" {...register("title")} />
-            {errors.title && (
-              <p className="text-xs text-destructive-ink">{errors.title.message}</p>
+          <Field name="title" label="Название" required error={errors.title}>
+            {(field) => <Input {...field} {...register("title")} />}
+          </Field>
+
+          <Field name="objectId" label="Объект" required error={errors.objectId}>
+            {(field) => (
+              <>
+                <select
+                  {...field}
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  defaultValue=""
+                  disabled={objectsQuery.isPending}
+                  {...register("objectId")}
+                >
+                  <option value="">
+                    {objectsQuery.isPending
+                      ? "Загрузка реестра…"
+                      : "— выберите объект —"}
+                  </option>
+                  {(objectsQuery.data?.results ?? []).map((object) => (
+                    <option key={object.id} value={object.id}>
+                      {/* отсутствие опубликованного паспорта названо прямо в списке:
+                          узнать об этом после создания ОМ поздно; выбирать такой
+                          объект при этом можно — вести мероприятие не запрещено */}
+                      {object.code} · {object.name}
+                      {object.publishedVersionCount === 0
+                        ? " — паспорт не опубликован"
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+                {objectsQuery.isError && (
+                  <p className="text-xs text-destructive-ink" role="alert">
+                    Реестр объектов недоступен — мероприятие нельзя привязать к
+                    объекту.
+                  </p>
+                )}
+              </>
             )}
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="om-object">Объект</Label>
-            <select
-              id="om-object"
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-              defaultValue=""
-              disabled={objectsQuery.isPending}
-              {...register("objectId")}
-            >
-              <option value="">
-                {objectsQuery.isPending
-                  ? "Загрузка реестра…"
-                  : "— выберите объект —"}
-              </option>
-              {(objectsQuery.data?.results ?? []).map((object) => (
-                <option key={object.id} value={object.id}>
-                  {/* отсутствие опубликованного паспорта названо прямо в списке:
-                      узнать об этом после создания ОМ поздно; выбирать такой
-                      объект при этом можно — вести мероприятие не запрещено */}
-                  {object.code} · {object.name}
-                  {object.publishedVersionCount === 0
-                    ? " — паспорт не опубликован"
-                    : ""}
-                </option>
-              ))}
-            </select>
-            {objectsQuery.isError && (
-              <p className="text-xs text-destructive-ink" role="alert">
-                Реестр объектов недоступен — мероприятие нельзя привязать к
-                объекту.
-              </p>
+          </Field>
+
+          <Field
+            name="businessDate"
+            label="Дата проведения"
+            required
+            error={errors.businessDate}
+          >
+            {(field) => (
+              <Input {...field} type="date" {...register("businessDate")} />
             )}
-            {errors.objectId && (
-              <p className="text-xs text-destructive-ink">{errors.objectId.message}</p>
-            )}
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="om-date">Дата проведения</Label>
-            <Input id="om-date" type="date" {...register("businessDate")} />
-            {errors.businessDate && (
-              <p className="text-xs text-destructive-ink">
-                {errors.businessDate.message}
-              </p>
-            )}
-          </div>
+          </Field>
+
           {mutation.error !== null && (
             <p className="text-sm text-destructive-ink" role="alert">
               Не удалось создать мероприятие. Проверьте поля и попробуйте снова.

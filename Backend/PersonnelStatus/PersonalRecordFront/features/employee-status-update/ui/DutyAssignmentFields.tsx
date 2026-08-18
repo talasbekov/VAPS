@@ -4,9 +4,13 @@
 // Отдельный файл, а не ветка внутри модалки: у блока своя зависимость полей
 // (вид дежурства → чем уточняется объект), и держать её рядом с датами значит
 // смешивать два разных набора правил.
+//
+// Черновик наряда — вложенный объект формы (`duty`), поэтому имена полей здесь
+// с точкой: `duty.objectId`. Они же — id в DOM, и по ним форма ведёт фокус к
+// первой ошибке. Раньше ошибки наряда уезжали в общую сводку списком строк —
+// «Выберите объект» не показывал, какое из четырёх полей блока пустое.
 
 import { useMemo } from "react";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -14,49 +18,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Field } from "@/shared/lib/form";
 import { useSecurityObjects } from "@/hooks/use-security-objects";
+import { DUTY_GROUPS, DUTY_KINDS } from "@/entities/duty-assignment";
 import {
-  DUTY_GROUPS,
-  DUTY_KINDS,
-  type DutyKindCode,
-} from "@/entities/duty-assignment";
+  EMPTY_DUTY_DRAFT,
+  type DutyDraft,
+} from "../model/edit-status-schema";
 
-/**
- * Черновик наряда в форме: пустая строка — «не выбрано».
- *
- * Имена объекта/поста/группы едут в черновике вместе с идентификаторами.
- * Так реестр объектов читает ровно один компонент — этот, и только когда
- * блок наряда показан: страница статусов не должна дёргать /api/ops/objects/
- * ради закрытой модалки.
- */
-export interface DutyDraft {
-  dutyKind: DutyKindCode | "";
-  objectId: string;
-  objectName: string;
-  postId: string;
-  postName: string;
-  groupId: string;
-  groupName: string;
-}
-
-export const EMPTY_DUTY_DRAFT: DutyDraft = {
-  dutyKind: "",
-  objectId: "",
-  objectName: "",
-  postId: "",
-  postName: "",
-  groupId: "",
-  groupName: "",
-};
+export { EMPTY_DUTY_DRAFT };
+export type { DutyDraft };
 
 interface DutyAssignmentFieldsProps {
   value: DutyDraft;
   onChange: (next: DutyDraft) => void;
+  /** Ошибки вложенного объекта `duty` из формы: `Field` берёт из них `message`. */
+  errors?: { [K in keyof DutyDraft]?: unknown };
 }
 
 export function DutyAssignmentFields({
   value,
   onChange,
+  errors,
 }: DutyAssignmentFieldsProps) {
   const { data, isLoading, isError } = useSecurityObjects();
   const objects = useMemo(() => data?.results ?? [], [data]);
@@ -91,157 +74,165 @@ export function DutyAssignmentFields({
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label>Тип дежурства *</Label>
-          <Select
-            value={value.dutyKind}
-            onValueChange={(next) =>
-              // Смена вида пересобирает зависимое поле: значение прежнего вида
-              // здесь бессмысленно, и оставленный «пост» у группового дежурства
-              // уехал бы в наряд молча.
-              onChange({
-                ...value,
-                dutyKind: next as DutyKindCode,
-                postId: "",
-                postName: "",
-                groupId: "",
-                groupName: "",
-              })
-            }
-          >
-            <SelectTrigger aria-label="Тип дежурства">
-              <SelectValue placeholder="Выберите тип дежурства" />
-            </SelectTrigger>
-            <SelectContent>
-              {DUTY_KINDS.map((kind) => (
-                <SelectItem key={kind.code} value={kind.code}>
-                  {kind.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Field
+          name="duty.dutyKind"
+          label="Тип дежурства"
+          required
+          error={errors?.dutyKind}
+        >
+          {(field) => (
+            <Select
+              value={value.dutyKind}
+              onValueChange={(next) =>
+                // Смена вида пересобирает зависимое поле: значение прежнего вида
+                // здесь бессмысленно, и оставленный «пост» у группового дежурства
+                // уехал бы в наряд молча.
+                onChange({
+                  ...value,
+                  dutyKind: next as DutyDraft["dutyKind"],
+                  postId: "",
+                  postName: "",
+                  groupId: "",
+                  groupName: "",
+                })
+              }
+            >
+              <SelectTrigger {...field}>
+                <SelectValue placeholder="Выберите тип дежурства" />
+              </SelectTrigger>
+              <SelectContent>
+                {DUTY_KINDS.map((kind) => (
+                  <SelectItem key={kind.code} value={kind.code}>
+                    {kind.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </Field>
 
-        <div className="space-y-2">
-          <Label>Объект *</Label>
-          <Select
-            value={value.objectId}
-            onValueChange={(next) =>
-              // Пост принадлежит объекту — при смене объекта он сбрасывается.
-              onChange({
-                ...value,
-                objectId: next,
-                objectName:
-                  objects.find((item) => item.id === next)?.name ?? "",
-                postId: "",
-                postName: "",
-              })
-            }
-            disabled={isLoading || isError || objects.length === 0}
-          >
-            <SelectTrigger aria-label="Объект наряда">
-              <SelectValue
-                placeholder={
-                  isLoading
-                    ? "Загрузка объектов…"
-                    : isError
-                    ? "Объекты недоступны"
-                    : "Выберите объект"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {objects.map((object) => (
-                <SelectItem key={object.id} value={object.id}>
-                  {object.name} ({object.code})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Field
+          name="duty.objectId"
+          label="Объект"
+          required
+          error={errors?.objectId}
+        >
+          {(field) => (
+            <Select
+              value={value.objectId}
+              onValueChange={(next) =>
+                // Пост принадлежит объекту — при смене объекта он сбрасывается.
+                onChange({
+                  ...value,
+                  objectId: next,
+                  objectName:
+                    objects.find((item) => item.id === next)?.name ?? "",
+                  postId: "",
+                  postName: "",
+                })
+              }
+              disabled={isLoading || isError || objects.length === 0}
+            >
+              <SelectTrigger {...field}>
+                <SelectValue
+                  placeholder={
+                    isLoading
+                      ? "Загрузка объектов…"
+                      : isError
+                      ? "Объекты недоступны"
+                      : "Выберите объект"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {objects.map((object) => (
+                  <SelectItem key={object.id} value={object.id}>
+                    {object.name} ({object.code})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </Field>
       </div>
 
       {value.dutyKind === "POST" && (
-        <div className="space-y-2">
-          <Label>Пост *</Label>
-          <Select
-            value={value.postId}
-            onValueChange={(next) =>
-              onChange({
-                ...value,
-                postId: next,
-                postName: posts.find((item) => item.id === next)?.name ?? "",
-              })
-            }
-            disabled={dependentDisabled || posts.length === 0}
-          >
-            <SelectTrigger aria-label="Пост наряда">
-              <SelectValue
-                placeholder={
-                  dependentDisabled
-                    ? "Сначала выберите объект"
-                    : posts.length === 0
-                    ? "У объекта нет постов в паспорте"
-                    : "Выберите пост"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {posts.map((post) => (
-                <SelectItem key={post.id} value={post.id}>
-                  {post.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Field name="duty.postId" label="Пост" required error={errors?.postId}>
+          {(field) => (
+            <Select
+              value={value.postId}
+              onValueChange={(next) =>
+                onChange({
+                  ...value,
+                  postId: next,
+                  postName: posts.find((item) => item.id === next)?.name ?? "",
+                })
+              }
+              disabled={dependentDisabled || posts.length === 0}
+            >
+              <SelectTrigger {...field}>
+                <SelectValue
+                  placeholder={
+                    dependentDisabled
+                      ? "Сначала выберите объект"
+                      : posts.length === 0
+                      ? "У объекта нет постов в паспорте"
+                      : "Выберите пост"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {posts.map((post) => (
+                  <SelectItem key={post.id} value={post.id}>
+                    {post.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </Field>
       )}
 
       {value.dutyKind === "GROUP" && (
-        <div className="space-y-2">
-          <Label>Группа *</Label>
-          <Select
-            value={value.groupId}
-            onValueChange={(next) =>
-              onChange({
-                ...value,
-                groupId: next,
-                groupName:
-                  DUTY_GROUPS.find((item) => item.id === next)?.name ?? "",
-              })
-            }
-            disabled={dependentDisabled}
-          >
-            <SelectTrigger aria-label="Группа наряда">
-              <SelectValue
-                placeholder={
-                  dependentDisabled
-                    ? "Сначала выберите объект"
-                    : "Выберите группу"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {DUTY_GROUPS.map((group) => (
-                <SelectItem key={group.id} value={group.id}>
-                  {group.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Field
+          name="duty.groupId"
+          label="Группа"
+          required
+          error={errors?.groupId}
+        >
+          {(field) => (
+            <Select
+              value={value.groupId}
+              onValueChange={(next) =>
+                onChange({
+                  ...value,
+                  groupId: next,
+                  groupName:
+                    DUTY_GROUPS.find((item) => item.id === next)?.name ?? "",
+                })
+              }
+              disabled={dependentDisabled}
+            >
+              <SelectTrigger {...field}>
+                <SelectValue
+                  placeholder={
+                    dependentDisabled
+                      ? "Сначала выберите объект"
+                      : "Выберите группу"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {DUTY_GROUPS.map((group) => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </Field>
       )}
     </div>
   );
-}
-
-/** Что мешает сохранить наряд. Пустой список — можно сохранять. */
-export function validateDutyDraft(draft: DutyDraft): string[] {
-  const errors: string[] = [];
-  if (!draft.dutyKind) errors.push("Выберите тип дежурства");
-  if (!draft.objectId) errors.push("Выберите объект");
-  if (draft.dutyKind === "POST" && !draft.postId) errors.push("Выберите пост");
-  if (draft.dutyKind === "GROUP" && !draft.groupId)
-    errors.push("Выберите группу");
-  return errors;
 }
