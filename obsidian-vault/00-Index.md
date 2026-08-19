@@ -1,24 +1,20 @@
-# VAPS Documentation Vault
+# VAPS — Obsidian Vault Index
 
-Navigation and index for VAPS project documentation.
+Единственный источник правды по документации, задачам и истории проекта VAPS. Заменяет `.claude/memory` (auto-memory) и `docs/api-gaps.md` для VAPS-специфичного контента — см. правила в корневом `CLAUDE.md`, раздел «Obsidian vault».
 
-## Modules
+## Модули
 
-- [[Personnel-Records/Status|Personnel-Records]]
-- [[VisitX/Status|VisitX]]
-- [[Accreditation/Status|Accreditation]]
-- [[Frontend/Status|Frontend]]
-- [[Infrastructure/Status|Infrastructure]]
-- [[BMAD-Process/Status|BMAD-Process]]
+- [[Personnel-Records/Status|Personnel Records]] — [[Personnel-Records/Changelog|Changelog]] · [[Personnel-Records/Decisions|Decisions]] · [[Personnel-Records/Known-Issues|Known Issues]]
+- [[VisitX/Status|VisitX]] — [[VisitX/Changelog|Changelog]] · [[VisitX/Decisions|Decisions]] · [[VisitX/Known-Issues|Known Issues]]
+- [[Accreditation/Status|Accreditation]] — [[Accreditation/Changelog|Changelog]] · [[Accreditation/Decisions|Decisions]] · [[Accreditation/Known-Issues|Known Issues]]
+- [[Frontend/Status|Frontend]] — [[Frontend/Changelog|Changelog]] · [[Frontend/Decisions|Decisions]] · [[Frontend/Known-Issues|Known Issues]]
+- [[Infrastructure/Status|Infrastructure]] — [[Infrastructure/Changelog|Changelog]] · [[Infrastructure/Decisions|Decisions]] · [[Infrastructure/Known-Issues|Known Issues]]
+- [[BMAD-Process/Status|BMAD Process]] — [[BMAD-Process/Changelog|Changelog]] · [[BMAD-Process/Decisions|Decisions]] · [[BMAD-Process/Known-Issues|Known Issues]]
 
-## Structure
+## Архив
 
-Each module contains:
-- **Status.md** — Current state and progress
-- **Changelog.md** — Commit history and milestones
-- **Decisions.md** — Architectural decisions and lessons
-- **Known-Issues.md** — Open defects and gaps
+- [[Archive/README|О снапшоте]] — копии старых источников на 2026-08-19.
 
----
+## Как пользоваться (для Claude Code)
 
-See also: [[Archive]]
+См. корневой `CLAUDE.md`, раздел «Obsidian vault»: перед началом работы читать `Status.md`+`Known-Issues.md` модуля, после — обновлять `Status.md`/`Changelog.md`/`Decisions.md`/`Known-Issues.md`.

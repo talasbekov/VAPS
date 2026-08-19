@@ -24,7 +24,7 @@ _Открытые дефекты (перенесено из docs/api-gaps.md)._
 
 **How to apply:** пробу, которой нужно определённое состояние данных, снабжать фикстурой САМОЙ — перехватом ответа (`page.route` + `route.fetch()`, поправить тело, `route.fulfill`). Не опираться на то, что стенд «обычно такой». Гвард против вакуума при этом обязателен: он и отличает «фикстура не сложилась» от «дефект».
 
-Смежное: `smoke-buttons` объявлен `test.describe.configure({ mode: 'serial' })` — ОДНО падение внутри персоны снимает весь её хвост. 19.08 разрыв соединения на `/api/auth/csrf/` унёс 52 проверки в «did not run». Поэтому итог обхода читать по трём числам (passed / failed / did not run), а не по одному, и догонять непрогнанное через `-g "persona observer|persona erda"`. См. TODO-LINK: feedback_playwright_tail_hides_failures.
+Смежное: `smoke-buttons` объявлен `test.describe.configure({ mode: 'serial' })` — ОДНО падение внутри персоны снимает весь её хвост. 19.08 разрыв соединения на `/api/auth/csrf/` унёс 52 проверки в «did not run». Поэтому итог обхода читать по трём числам (passed / failed / did not run), а не по одному, и догонять непрогнанное через `-g "persona observer|persona erda"`. См. [[../Infrastructure/Decisions#Playwright прячет упавшие спеки в хвосте — grep на failed, не tail]].
 
 ## `getStaffUnits` не понимал конверт DRF-пагинации (найден и починен)
 
