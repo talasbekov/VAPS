@@ -281,7 +281,7 @@ export default function OrganizationPage() {
                   </TableHeader>
                   <TableBody>
                     {rows.map((row) => (
-                      <TableRow key={row.key} className="odd:bg-muted/40">
+                      <TableRow key={row.key}>
                         <TableCell className="font-medium">{row.name}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {row.level}

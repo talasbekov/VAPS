@@ -530,11 +530,10 @@ export function StatusTable({
               {filteredEmployees.map((employee) => (
                 <TableRow
                   key={employee.id}
-                  // Зебра только там, где нет подсветки просрочки: вариант
-                  // `odd:` в сгенерированном CSS идёт после базового класса и
-                  // перекрыл бы красный фон на каждой второй строке.
+                  // Подсветка просрочки ОСТАЁТСЯ: она несёт смысл, а не
+                  // декорацию. Уходит только зебра.
                   className={`${getPriorityColor(employee.priority)} hover:bg-muted ${
-                    isOverdue(employee.endDate) ? "bg-red-50" : "odd:bg-muted/40"
+                    isOverdue(employee.endDate) ? "bg-red-50" : ""
                   }`}
                 >
                   <TableCell>

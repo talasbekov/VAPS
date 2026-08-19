@@ -23,7 +23,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      className={cn("[&_tr]:border-border [&_tr]:border-b", className)}
       {...props}
     />
   )
@@ -57,7 +57,9 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors",
+        // Разделитель СВЕТЛЕЕ внешней рамки — так в прототипе (210 40% 95%
+        // против 214.3 31.8% 91.4%). Зебры в прототипе нет.
+        "border-table-divider hover:bg-muted/40 data-[state=selected]:bg-muted border-b transition-colors",
         className
       )}
       {...props}
@@ -70,7 +72,11 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        // Значения сняты из прототипа: padding:10px 14px; font-size:11px;
+        // font-weight:600; color:--muted-foreground; background:hsl(210 40% 98%).
+        // Регистр НЕ задаётся: см. e2e/tables-data.spec.ts — заголовки пинятся
+        // по тексту, а в прототипе text-transform на th нет.
+        "text-muted-foreground bg-muted/50 h-auto px-3.5 py-2.5 text-left align-middle text-[11px] font-semibold whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className
       )}
       {...props}
@@ -83,7 +89,8 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        // Прототип: padding:11px 10px; font-size:12.5px.
+        "px-2.5 py-[11px] align-middle text-[12.5px] whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className
       )}
       {...props}
