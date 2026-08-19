@@ -17,6 +17,14 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { transition } from "@/entities/daily-grid";
 import type {
   Bounds,
@@ -274,18 +282,16 @@ export function DailyGrid({
         правка с фильтром по подписи, Enter — подтвердить и вниз, Tab — вправо,
         Esc — вернуть прежнее значение.
       </p>
-      <div className="overflow-x-auto" onKeyDown={handleKeyDown}>
-        <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
+      <div onKeyDown={handleKeyDown}>
+        <Table className="min-w-[36rem]">
+          <TableHeader>
+            <TableRow>
               {COLUMN_TITLES.map((title) => (
-                <th key={title} className="py-2 pr-3 font-semibold">
-                  {title}
-                </th>
+                <TableHead key={title}>{title}</TableHead>
               ))}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row, rowIndex) => {
               const value = values[row.id];
               const initial = initials[row.id];
@@ -295,9 +301,9 @@ export function DailyGrid({
                 (value.statusCode !== initial.statusCode ||
                   value.period !== initial.period);
               return (
-                <tr
+                <TableRow
                   key={row.id}
-                  className={`border-b last:border-0 ${dirty ? "bg-amber-50 dark:bg-amber-950/20" : ""}`}
+                  className={dirty ? "bg-amber-50 dark:bg-amber-950/20" : ""}
                 >
                   {COLUMN_KINDS.map((kind, colIndex) => {
                     const focused =
@@ -305,7 +311,7 @@ export function DailyGrid({
                     const editingHere =
                       focused && (cellState === "EDIT" || cellState === "PERIOD_EDIT");
                     return (
-                      <td
+                      <TableCell
                         key={kind}
                         ref={(node) => {
                           if (node !== null)
@@ -316,7 +322,7 @@ export function DailyGrid({
                           setCellState("NAVIGATE");
                           setPosition({ row: rowIndex, col: colIndex });
                         }}
-                        className={`py-1.5 pr-3 outline-none ${
+                        className={`outline-none ${
                           focused ? "ring-2 ring-primary/60 ring-inset rounded-sm" : ""
                         }`}
                       >
@@ -404,14 +410,14 @@ export function DailyGrid({
                                 : value.period}
                             </span>
                           ))}
-                      </td>
+                      </TableCell>
                     );
                   })}
-                </tr>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
       <div className="mt-3 flex items-center gap-3">
         <button
