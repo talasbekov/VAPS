@@ -268,4 +268,38 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(geometry.gapRight).toBeCloseTo(parseFloat(shape.btnPadX), 1)
     expect(geometry.textOverlapsChevron, 'текст заголовка налез на шеврон').toBe(false)
   })
+
+  test('подписи KPI-плиток не обрезаются', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/dashboard/`)
+    await expect(page.getByRole('heading', { name: 'Обзор' })).toBeVisible()
+
+    const labels = page.locator('[data-slot="stat-label"]')
+    // 🔴 Guard ДО содержательной проверки: getBoundingClientRect/scrollWidth на
+    // СКРЫТОМ узле отдаёт нули с обеих сторон неравенства, и «обрезанных нет»
+    // означает «я ничего не нашёл», а не «оформление верное».
+    await expect(labels.first()).toBeVisible()
+    const count = await labels.count()
+    expect(count, 'ни одной KPI-плитки на экране — проверка была бы вакуумной').toBeGreaterThan(0)
+
+    const clipped = await labels.evaluateAll((els) => {
+      const visible = els.filter((el) => (el as HTMLElement).clientWidth > 0)
+      if (visible.length === 0) {
+        throw new Error('все data-slot="stat-label" скрыты — clientWidth=0 у всех')
+      }
+      return visible
+        .filter((el) => el.scrollWidth > el.clientWidth + 1)
+        .map((el) => `${el.textContent?.trim()} (${el.scrollWidth}>${el.clientWidth})`)
+    })
+    expect(clipped, `обрезанные подписи: ${clipped.join('; ')}`).toEqual([])
+
+    const value = page.locator('[data-slot="stat-value"]').first()
+    const shape = await value.evaluate((el) => {
+      const cs = getComputedStyle(el)
+      return { size: cs.fontSize, weight: cs.fontWeight, numeric: cs.fontVariantNumeric }
+    })
+    expect(shape.size).toBe('24px')
+    expect(shape.weight).toBe('800')
+    expect(shape.numeric).toContain('tabular-nums')
+  })
 })
