@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { PageHeader } from "@/components/page-header"
 import { StatusTable } from "@/components/status-table"
 import { MassStatusUpdate } from "@/components/mass-status-update"
 import { StatusCalendar } from "@/widgets/status-calendar"
@@ -129,21 +130,22 @@ export default function StatusesPage() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Управление статусами</h1>
-            <p className="text-muted-foreground mt-1">Контроль и обновление статусов сотрудников</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge variant="outline" className="text-sm">
-              Последнее обновление: {lastUpdate ? lastUpdate.toLocaleString("ru-RU") : "—"}
-            </Badge>
-            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing || loading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
-              Обновить
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Личный состав"
+          title="Управление статусами"
+          description="Контроль и обновление статусов сотрудников"
+          actions={
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge variant="outline" className="text-sm">
+                Последнее обновление: {lastUpdate ? lastUpdate.toLocaleString("ru-RU") : "—"}
+              </Badge>
+              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing || loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+                Обновить
+              </Button>
+            </div>
+          }
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

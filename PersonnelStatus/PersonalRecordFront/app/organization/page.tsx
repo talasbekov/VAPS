@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import OrgChart from "@/features/organization-structure/ui/OrgChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/stat-card";
@@ -92,33 +93,30 @@ export default function OrganizationPage() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">
-              Структура организации
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Визуальная организационная диаграмма с иерархией подразделений
-            </p>
-          </div>
-          {/* Бейдж «Обновлено: <сегодня>» убран. Он печатал `new Date()`
-              прямо в разметке: дата была СЕГОДНЯШНЕЙ всегда и о свежести
-              данных не говорила ничего — а ровно такой `new Date()` в JSX
-              уже давал расхождение гидратации на /dashboard. Свежести своих
-              данных ручка статистики не сообщает, поэтому подписи нет.
-              Заодно отсюда убрана строка поиска: у неё не было ни состояния,
-              ни обработчика, ни доступа к дереву — набранное в ней не делало
-              ничего. Живой поиск теперь внутри OrgChart, рядом с деревом. */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={exportCsv}
-            disabled={statistics === undefined}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Экспорт CSV
-          </Button>
-        </div>
+        <PageHeader
+          eyebrow="Личный состав"
+          title="Структура организации"
+          description="Визуальная организационная диаграмма с иерархией подразделений"
+          actions={
+            // Бейдж «Обновлено: <сегодня>» убран. Он печатал `new Date()`
+            // прямо в разметке: дата была СЕГОДНЯШНЕЙ всегда и о свежести
+            // данных не говорила ничего — а ровно такой `new Date()` в JSX
+            // уже давал расхождение гидратации на /dashboard. Свежести своих
+            // данных ручка статистики не сообщает, поэтому подписи нет.
+            // Заодно отсюда убрана строка поиска: у неё не было ни состояния,
+            // ни обработчика, ни доступа к дереву — набранное в ней не делало
+            // ничего. Живой поиск теперь внутри OrgChart, рядом с деревом.
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCsv}
+              disabled={statistics === undefined}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Экспорт CSV
+            </Button>
+          }
+        />
 
         {/* Отказ запроса статистики: без этой врезки шесть плиток показывали
             прочерки, и сбой сервера читался как «в организации никого нет». */}
