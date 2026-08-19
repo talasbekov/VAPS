@@ -36,7 +36,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <PerformanceProfiler id="DashboardLayout">
-      <div className="flex min-h-screen bg-background">
+      {/* Без bg-*: полотно даёт body (--canvas), карточки всплывают над ним. */}
+      <div className="flex min-h-screen">
         {/* Проброс к содержимому: до первой кнопки контента на «Управлении
             персоналом» было 26 нажатий Tab — весь сайдбар целиком. Ссылка
             невидима, пока не получит фокус. */}
