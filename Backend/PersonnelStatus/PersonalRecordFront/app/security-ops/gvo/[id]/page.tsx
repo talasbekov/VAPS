@@ -18,6 +18,12 @@ import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
 import { StageBadge } from "@/entities/security-event";
 import { GvoSectionDialog } from "@/features/gvo-section-edit";
 import {
+  Table,
+  TableBody,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table";
+import {
   deriveGvoSummary,
   gvoCountryAbbr,
   gvoStaffCount,
@@ -328,26 +334,26 @@ export default function GvoSummaryPage() {
                     Состав не назначен
                   </p>
                 ) : (
-                  <table className="w-full">
-                    <tbody>
+                  <Table>
+                    <TableBody>
                       {group.members.map((member, memberIndex) => (
-                        <tr
+                        <TableRow
                           key={`${member.name}-${memberIndex}`}
                           className="border-t border-[hsl(210_40%_96%)]"
                         >
-                          <td className="w-2/5 px-3 py-1.5 text-[12.5px] font-semibold">
+                          <TableCell className="w-2/5 font-semibold">
                             {member.name}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-[11.5px] tabular-nums text-muted-foreground">
+                          </TableCell>
+                          <TableCell className="tabular-nums text-muted-foreground">
                             {member.callsign}
-                          </td>
-                          <td className="px-3 py-1.5 text-[12px] text-muted-foreground">
+                          </TableCell>
+                          <TableCell className="whitespace-normal text-muted-foreground">
                             {member.role}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 )}
               </div>
             ))}

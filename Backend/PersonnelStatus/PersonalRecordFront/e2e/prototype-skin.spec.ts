@@ -485,4 +485,39 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       'на /dashboard/ последняя ячейка шапки (уровень отделов) не залита — значит не примитив'
     ).not.toBe('rgba(0, 0, 0, 0)')
   })
+
+  // Task 12: хвост сырых таблиц (история отчётов, сводный отчёт по расходу).
+  // Оба экрана уже несли text-[11px] явным классом на ручной разметке — проба
+  // «размер 11px» одна вакуумна (см. уроки задач 9-11), поэтому вторым
+  // ассертом проверяется фон шапки: TableHead даёт bg-muted/50, у ручной
+  // разметки заливки нет.
+  for (const route of ['/security-ops/service-reports/history/', '/reports/']) {
+    test(`хвост переведён на примитив: ${route}`, async ({ page }) => {
+      await signIn(page)
+      await page.goto(`${APP}${route}`)
+
+      if (route === '/reports/') {
+        // Таблица расхода не монтируется на заход — она приезжает по клику
+        // «Показать расход» после загрузки отчёта за выбранную (сегодняшнюю)
+        // дату.
+        await page.getByRole('button', { name: 'Показать расход' }).click()
+      }
+
+      await expect(page.locator('thead th').first()).toBeVisible()
+
+      const heads = page.locator('thead th')
+      const count = await heads.count()
+      expect(count, `на ${route} нет ни одной ячейки заголовка — проверка была бы вакуумной`).toBeGreaterThan(0)
+
+      const sizes = await heads.evaluateAll((els) => [...new Set(els.map((el) => getComputedStyle(el).fontSize))])
+      expect(sizes, `на ${route} шапка набрана не 11px`).toEqual(['11px'])
+
+      const bg = await heads
+        .first()
+        .evaluate((el) => getComputedStyle(el).backgroundColor)
+      expect(bg, `на ${route} шапка таблицы не залита — значит не примитив`).not.toBe(
+        'rgba(0, 0, 0, 0)'
+      )
+    })
+  }
 })
