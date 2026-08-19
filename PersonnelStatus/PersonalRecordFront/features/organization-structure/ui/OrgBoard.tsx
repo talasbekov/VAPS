@@ -18,7 +18,6 @@ import {
   EMPLOYEE_STATUS_PAINT,
   getEmployeeStatusLabel,
 } from "@/lib/status";
-import "./org-board.styles.css";
 
 const MEDIA_URL = process.env.NEXT_PUBLIC_MEDIA_URL || "";
 
@@ -632,7 +631,7 @@ export default function OrgBoard() {
                       return (
                         <TableCell
                           key={`${management.unit.id}-${rowIndex}`}
-                          className={`border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
+                          className={`min-w-[140px] overflow-hidden border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
                             isHighlighted ? "!bg-red-400" : ""
                           }`}
                         >
@@ -718,7 +717,7 @@ export default function OrgBoard() {
                         return (
                           <TableCell
                             key={`${management.unit.id}-${division.unit.id}-${rowIndex}`}
-                            className={`border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
+                            className={`min-w-[140px] overflow-hidden border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
                               isHighlighted ? "!bg-red-400" : ""
                             }`}
                           >

@@ -121,7 +121,11 @@ export default function SecurityEventsPage() {
             onChange={(e) => setSearchDraft(e.target.value)}
           />
           <select
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            // Высота НЕ задаётся здесь: её навязывает сам ряд FilterBar
+            // (`[&_select]:h-9`) — так e2e/prototype-skin.spec.ts, тест
+            // «контролы фильтров одной высоты», действительно стережёт
+            // правило компонента, а не совпадение дефолтов.
+            className="rounded-md border border-input bg-background px-2 text-sm"
             aria-label="Этап"
             value={params.stage}
             onChange={(e) =>
