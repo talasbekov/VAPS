@@ -79,4 +79,21 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     // местах e2e, а в исходнике прототипа text-transform на th нет.
     expect(shape.thTransform).toBe('none')
   })
+
+  test('строки таблицы не полосатые', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/employees/`)
+    await expect(page.getByRole('heading', { name: 'Управление персоналом' })).toBeVisible()
+
+    const rows = page.locator('tbody tr')
+    // 🔴 Нужны минимум ТРИ строки: на двух ассерт «фоны совпадают» вырождается —
+    // любая пара соседей в зебре различна, и проба не отличит зебру от её
+    // отсутствия по одной паре.
+    await expect(rows.nth(2)).toBeVisible()
+
+    const backgrounds = await rows.evaluateAll((els) =>
+      els.slice(0, 3).map((el) => getComputedStyle(el).backgroundColor)
+    )
+    expect(new Set(backgrounds).size, `фоны первых трёх строк: ${backgrounds.join(', ')}`).toBe(1)
+  })
 })

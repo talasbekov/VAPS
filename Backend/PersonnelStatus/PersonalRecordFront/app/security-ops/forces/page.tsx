@@ -209,7 +209,7 @@ function ForcesList({
                 return (
                   <TableRow
                     key={event.id}
-                    className="cursor-pointer odd:bg-muted/40 hover:bg-muted"
+                    className="cursor-pointer"
                     onClick={() => onSelect(event.id)}
                   >
                     <TableCell>
