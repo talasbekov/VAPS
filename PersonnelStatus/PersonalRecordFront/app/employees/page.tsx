@@ -24,7 +24,6 @@ import {
   UserPlus,
   Search,
   Download,
-  Upload,
   RefreshCw,
   Building2,
   Calendar,
@@ -41,13 +40,12 @@ import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   EMPLOYEE_STATUS_ITEMS,
   EMPLOYEE_STATUS_LABELS,
-  getEmployeeStatusLabel,
   getEmployeeStatusColor,
-  getFormattedEmployeeStatus,
 } from "@/lib/status";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { formatIsoDate } from "@/shared/lib/date";
+import { personnelFields } from "@/entities/employee/model/from-api";
 import type { Employee } from "@/entities/employee/model/types";
 
 export default function EmployeesPage() {
@@ -123,49 +121,25 @@ function EmployeesScreen() {
           const emp = empData.employee;
           if (!emp) return;
 
-          // Используем форматированный статус с учетом local_status для прикомандированных
-          const statusText = getFormattedEmployeeStatus(emp);
-          const currentStatus = emp.current_status;
-
           result.push({
-            id: emp.id.toString(),
+            ...personnelFields(emp),
             staffUnitId: unit.id.toString(),
             number: globalIndex++,
-            name: `${emp.last_name} ${emp.first_name}`,
             position: empData.position?.name || "Должность не указана",
             department: unit.division.name,
             departmentId: unit.division.id.toString(),
-            status: statusText,
-            // Кадровых контактов эта ручка не отдаёт вовсе — поля больше не
-            // выдумываются пустой строкой, и колонки под них нет.
-            statusSince: currentStatus?.start_date || "",
-            statusUntil: currentStatus?.end_date || "",
-            birthDate: "",
-            address: "",
-            manager: "",
           });
         });
       }
       // Если есть одиночный employee (старый формат)
       else if (employee) {
-        // Используем форматированный статус с учетом local_status для прикомандированных
-        const statusText = getFormattedEmployeeStatus(employee);
-        const currentStatus = employee.current_status;
-
         result.push({
-          id: employee.id.toString(),
+          ...personnelFields(employee),
           staffUnitId: unit.id.toString(),
           number: globalIndex++,
-          name: `${employee.last_name} ${employee.first_name}`,
           position: (unit as any).position?.name || "Должность не указана",
           department: unit.division.name,
           departmentId: unit.division.id.toString(),
-          status: statusText,
-          statusSince: currentStatus?.start_date || "",
-          statusUntil: currentStatus?.end_date || "",
-          birthDate: "",
-          address: "",
-          manager: "",
         });
       }
     });
@@ -213,7 +187,20 @@ function EmployeesScreen() {
     return { total: employees.length, active, onLeave, onTrip };
   }, [employees]);
 
+  // Пустой список от ОТБОРА и пустой список от отсутствия данных — разные
+  // вещи, и выход из них разный. Прототип на первом даёт «Сбросить фильтры»,
+  // здесь же обе ветки печатали одно «Сотрудники не найдены» и оставляли
+  // человека наедине с фильтром, который он мог поставить три экрана назад.
+  const filtersApplied =
+    searchQuery !== "" || departmentFilter !== "all" || statusFilter !== "all";
+
+  const resetFilters = useCallback(() => {
+    setSearchDraft("");
+    router.replace(pathname, { scroll: false });
+  }, [router, pathname, setSearchDraft]);
+
   const canSeeAll = hasPermission("employees", "read");
+
   const canSeeOwnDepartment = hasPermission("employees", "read-department");
 
   // Отбор — в useMemo, как в соседнем status-table.tsx: раньше полный обход
@@ -251,6 +238,54 @@ function EmployeesScreen() {
     user?.departmentId,
   ]);
 
+  // Выгружается ТО, ЧТО ПОКАЗАНО: те же строки и в том же порядке, что на
+  // экране, с учётом отбора и прав. Файл собирается из уже загруженных
+  // данных — отдельной ручки выгрузки на бэке нет, и «Экспорт» до этого был
+  // кнопкой вовсе без обработчика.
+  //
+  // ИИН уходит в файл ХВОСТОМ: полных двенадцати цифр во фронте нет.
+  const exportCsv = useCallback(() => {
+    const head = [
+      "№",
+      "ФИО",
+      "Звание",
+      "ИИН",
+      "Должность",
+      "Отдел",
+      "Статус",
+      "Статус с",
+      "Дата найма",
+      "Табельный номер",
+    ];
+    const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const rows = filteredEmployees.map((employee) =>
+      [
+        String(employee.number),
+        employee.name,
+        employee.rank,
+        employee.iinMasked,
+        employee.position,
+        employee.department,
+        employee.status,
+        formatIsoDate(employee.statusSince, ""),
+        formatIsoDate(employee.hireDate, ""),
+        employee.personnelNumber,
+      ]
+        .map(cell)
+        .join(";")
+    );
+    // BOM — иначе Excel читает кириллицу как мусор.
+    const csv = `﻿${[head.map(cell).join(";"), ...rows].join("\r\n")}`;
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8" })
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "сотрудники.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [filteredEmployees]);
+
   // Список, карточки, фильтр отделов и счётчики растут из ОДНОГО запроса
   // directorate. Закрыта ручка — закрывается вся страница: иначе на экране
   // остались бы нули и пустые фильтры без объяснения причины.
@@ -276,8 +311,12 @@ function EmployeesScreen() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {/* Здесь стояло «Всего сотрудников: {filteredEmployees.length}» —
+                под подписью «всего» печаталось число ПОСЛЕ отбора, и любой
+                фильтр менял «общую численность». Форма прототипа: сколько
+                показано и из скольких. */}
             <Badge variant="outline" className="text-sm">
-              Всего сотрудников: {filteredEmployees.length}
+              Показано {filteredEmployees.length} из {stats.total}
             </Badge>
             <Button
               variant="outline"
@@ -372,15 +411,21 @@ function EmployeesScreen() {
               )}
             </TabsList>
 
+            {/* Кнопка «Импорт» убрана: обработчика у неё не было вовсе, а
+                загрузка сотрудников в системе есть только management-командой
+                — ручки, к которой её можно подключить, не существует.
+                «Экспорт» обработчика тоже не имел; теперь он выгружает то, что
+                показано на экране, — прямо из уже загруженного отбора. */}
             <div className="flex flex-wrap items-center gap-2">
               <PermissionGate resource="employees" action="read">
-                <Button variant="outline" size="sm">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Импорт
-                </Button>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportCsv}
+                  disabled={filteredEmployees.length === 0}
+                >
                   <Download className="h-4 w-4 mr-2" />
-                  Экспорт
+                  Экспорт CSV
                 </Button>
               </PermissionGate>
             </div>
@@ -435,6 +480,18 @@ function EmployeesScreen() {
             </Select>
           </div>
 
+          {/* Четвёртого отбора прототипа — по рейтингу сотрудника — здесь нет,
+              и это не пропуск. Оперативный рейтинг живой (`/api/ops/…`), но
+              его домен ДЕ-ИДЕНТИФИЦИРОВАН намеренно: участник хранится
+              синтетическим кодом и «безопасной подписью» без идентификатора,
+              связи с кадровой записью в нём нет. Ключа для соединения с этой
+              таблицей не существует — колонка, сортировка по ней и чипы
+              «есть благодарности / есть замечания» были бы выдумкой. */}
+          <p className="text-xs text-muted-foreground">
+            Рейтинг сотрудника в этом списке не показывается: оперативный
+            рейтинг ведётся обезличенно и не связан с кадровой карточкой.
+          </p>
+
           <TabsContent value="table" className="space-y-6">
             {loading && (
               <div className="text-center py-8 text-muted-foreground">
@@ -459,6 +516,7 @@ function EmployeesScreen() {
               <EmployeeTable
                 employees={filteredEmployees}
                 onSelectEmployee={setSelectedEmployee}
+                onResetFilters={filtersApplied ? resetFilters : undefined}
               />
             )}
           </TabsContent>
@@ -488,7 +546,26 @@ function EmployeesScreen() {
                 {filteredEmployees.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>Сотрудники не найдены</p>
+                    <p>
+                      {filtersApplied
+                        ? "Ничего не найдено"
+                        : "Сотрудники не найдены"}
+                    </p>
+                    {filtersApplied && (
+                      <>
+                        <p className="text-sm mt-1">
+                          Измените запрос или сбросьте фильтры.
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-4"
+                          onClick={resetFilters}
+                        >
+                          Сбросить фильтры
+                        </Button>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -512,8 +589,11 @@ function EmployeesScreen() {
                               <CardTitle className="text-lg truncate">
                                 {employee.name}
                               </CardTitle>
+                              {/* Карточка прототипа: «звание · должность». */}
                               <p className="text-sm text-muted-foreground truncate">
-                                {employee.position}
+                                {employee.rank === ""
+                                  ? employee.position
+                                  : `${employee.rank} · ${employee.position}`}
                               </p>
                             </div>
                           </div>
@@ -540,6 +620,13 @@ function EmployeesScreen() {
                                   ? ""
                                   : ` по ${formatIsoDate(employee.statusUntil)}`}
                               </span>
+                            </div>
+                            {/* Подвал карточки прототипа — дата найма. */}
+                            <div className="flex items-center justify-between border-t pt-2 text-xs text-muted-foreground">
+                              <span>Дата найма</span>
+                              <b className="tabular-nums font-medium text-foreground">
+                                {formatIsoDate(employee.hireDate)}
+                              </b>
                             </div>
                             <div className="flex items-center justify-between mt-3">
                               <Badge

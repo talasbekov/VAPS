@@ -59,6 +59,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { personnelFields } from "@/entities/employee/model/from-api";
 import type { Employee as EmployeeType } from "@/entities/employee/model/types";
 import { LoadFailure } from "@/components/load-failure";
 
@@ -300,22 +301,16 @@ export function StatusTable({
 
     if (!emp) return;
 
-    const status = emp.current_status;
-
+    // Кадровые поля разбирает общий `personnelFields` — тот же, что у
+    // `/employees`. Своя копия здесь подставляла пустые строки в звание, ИИН
+    // и дату найма, и карточка с этого экрана выглядела беднее той же
+    // карточки с соседнего.
     const employeeProfile: EmployeeType = {
-      id: employee.id,
+      ...personnelFields(emp),
       number: employee.number,
-      name: employee.name,
       position: employee.position,
       department: employee.department,
       departmentId: staffUnit.division.id.toString(),
-      status: employee.status,
-      statusSince: status?.start_date || "",
-      statusUntil: status?.end_date || "",
-      birthDate: "",
-      address: "",
-      manager: "",
-      photo: emp.photo,
     };
 
     setSelectedEmployeeForProfile(employeeProfile);

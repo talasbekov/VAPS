@@ -223,6 +223,211 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       [...document.querySelectorAll('table thead th')].map((th) => th.textContent?.trim() ?? ''),
     )
     expect(heads).not.toContain('Контакты')
-    expect(heads).not.toContain('Дата найма')
+  })
+
+  test('«Дата найма» — своя дата, а не начало статуса', async ({ page }) => {
+    /**
+     * Колонка прототипа вернулась, но уже со своим источником: ручка штатки
+     * теперь кладёт `hire_date` из модели. Раньше под этой подписью ехало
+     * начало ТЕКУЩЕГО СТАТУСА — отсюда её и сняли.
+     *
+     * 🔴 Проба обязана СРАВНИТЬ две колонки между собой. Ассерт «даты найма
+     * различаются» зеленел бы и на прежней подмене: начала статусов тоже
+     * разные. Отличает подмену только то, что у одного и того же человека
+     * «Статус с» и «Дата найма» — РАЗНЫЕ дни.
+     */
+    const token = await tokenFor('admin', 'admin123')
+    const raw = await fetch(`${API}/api/staff_unit/staff-units/directorate/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const body = (await raw.json()) as {
+      staff_units: {
+        employee: {
+          hire_date?: string | null
+          rank?: string | null
+          iin_masked?: string | null
+          current_status: StatusBrief | null
+        } | null
+      }[]
+    }
+    const people = body.staff_units
+      .map((unit) => unit.employee)
+      .filter((employee): employee is NonNullable<typeof employee> => employee != null)
+
+    expect(people.length, 'на стенде нет сотрудников — проба вакуумна').toBeGreaterThan(1)
+    const hired = people.map((p) => p.hire_date).filter((v): v is string => !!v)
+    expect(hired.length, 'ручка не отдаёт hire_date — колонке неоткуда взяться').toBe(people.length)
+    expect(new Set(hired).size, 'дата найма одинакова у всех — проба не различает поля')
+      .toBeGreaterThan(1)
+
+    // Гвард против вакуума ГЛАВНОГО ассерта: хотя бы у одного человека дата
+    // найма обязана отличаться от начала его статуса. Если совпадут все,
+    // подмену полей ничем не поймать.
+    const differing = people.filter(
+      (p) => p.hire_date && p.current_status?.start_date && p.hire_date !== p.current_status.start_date,
+    )
+    expect(
+      differing.length,
+      'ни у кого дата найма не отличается от начала статуса — подмену не отличить',
+    ).toBeGreaterThan(0)
+
+    await signIn(page, 'admin', 'admin123')
+    await page.goto('/employees')
+    await hydrated(page)
+    await tableFilled(page)
+
+    const heads = await page.evaluate(() =>
+      [...document.querySelectorAll('table thead th')].map((th) => th.textContent?.trim() ?? ''),
+    )
+    expect(heads).toContain('Дата найма')
+    expect(heads).toContain('Статус с')
+
+    const hiredColumn = await column(page, 'Дата найма')
+    const sinceColumn = await column(page, 'Статус с')
+    expect(hiredColumn.length).toBeGreaterThan(1)
+    expect(new Set(hiredColumn).size, 'колонка «Дата найма» одинакова во всех строках')
+      .toBeGreaterThan(1)
+    // Две колонки не совпадают построчно — значит в правой не копия левой.
+    expect(
+      hiredColumn.some((value, index) => value !== sinceColumn[index]),
+      '«Дата найма» построчно повторяет «Статус с» — вернулась подмена полей',
+    ).toBe(true)
+  })
+
+  test('под именем стоит звание, а не пустая строка', async ({ page }) => {
+    /**
+     * Подстрока прототипа. На её месте печаталось поле `manager`, которому
+     * ручка штатки не даёт источника: во ВСЕХ строках стояла пустая строка.
+     */
+    const token = await tokenFor('admin', 'admin123')
+    const raw = await fetch(`${API}/api/staff_unit/staff-units/directorate/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const body = (await raw.json()) as {
+      staff_units: { employee: { last_name: string; rank?: string | null } | null }[]
+    }
+    const people = body.staff_units
+      .map((unit) => unit.employee)
+      .filter((employee): employee is NonNullable<typeof employee> => employee != null)
+
+    const ranked = people.filter((p) => !!p.rank)
+    expect(ranked.length, 'ни у кого на стенде нет звания — проба вакуумна').toBeGreaterThan(0)
+    // Гвард против «звание у всех одинаковое»: тогда ассерт ниже не отличит
+    // живое поле от подставленной константы.
+    expect(new Set(ranked.map((p) => p.rank)).size, 'звание одинаково у всех — проба вырождена')
+      .toBeGreaterThan(1)
+
+    await signIn(page, 'admin', 'admin123')
+    await page.goto('/employees')
+    await hydrated(page)
+    await tableFilled(page)
+
+    const names = await column(page, 'ФИО')
+    expect(names.length).toBeGreaterThan(1)
+    // Каждое звание стоит в строке СВОЕГО человека, а не «где-то в таблице».
+    for (const person of ranked.slice(0, 3)) {
+      const cell = names.find((value) => value.includes(person.last_name))
+      expect(cell, `строки ${person.last_name} нет в таблице`).toBeTruthy()
+      expect(cell, `под именем ${person.last_name} нет звания «${person.rank}»`).toContain(
+        person.rank!,
+      )
+    }
+  })
+
+  test('ИИН печатается хвостом — фикстура перехватом', async ({ page }) => {
+    /**
+     * 🔴 Фикстура НЕ берётся из данных стенда: у сотрудников подразделения
+     * `admin` ИИН не заполнен ни у кого, и проба «хвост напечатан» была бы
+     * вакуумной — она молча проверяла бы пустоту.
+     *
+     * Маскирование как таковое стережёт бэк
+     * (`test_directorate_personnel_fields.py`): там и полного ИИН нет во всём
+     * теле ответа, и короткое значение скрывается целиком. Здесь проверяется
+     * ровно одно — что фронт ПЕЧАТАЕТ пришедший хвост, а не роняет его.
+     *
+     * Перехват по предикату, а не по глобу: путь заканчивается слэшем, и
+     * `/**` его не ловит.
+     */
+    const TAIL = '•••••• 4216'
+    await page.route(
+      (url) => url.pathname.endsWith('/staff-units/directorate/'),
+      async (route) => {
+        const response = await route.fetch()
+        const body = (await response.json()) as {
+          staff_units: { employee: { iin_masked?: string | null } | null }[]
+        }
+        const first = body.staff_units.find((unit) => unit.employee != null)
+        expect(first, 'в ответе нет ни одного сотрудника — перехват нечего править').toBeTruthy()
+        first!.employee!.iin_masked = TAIL
+        await route.fulfill({ response, json: body })
+      },
+    )
+
+    await signIn(page, 'admin', 'admin123')
+    await page.goto('/employees')
+    await hydrated(page)
+    await tableFilled(page)
+
+    const names = await column(page, 'ФИО')
+    const withTail = names.filter((cell) => cell.includes(`ИИН ${TAIL}`))
+    expect(withTail.length, 'хвост ИИН не напечатан ни в одной строке').toBe(1)
+    // Остальным ИИН не выдуман: строк с хвостом ровно одна — та, что подменена.
+    expect(names.some((cell) => cell.includes('ИИН') && !cell.includes(TAIL))).toBe(false)
+  })
+
+  test('«Экспорт CSV» выгружает ОТОБРАННОЕ, а не весь список', async ({ page }) => {
+    /**
+     * Кнопка была без обработчика вовсе — нажатие не делало ничего и ничего не
+     * сообщало. Теперь она собирает файл из уже загруженного отбора.
+     *
+     * 🔴 Ассерт «в файле есть строки» вакуумен: он зеленеет и на выгрузке
+     * ВСЕГО списка. Отличает одно от другого только то, что отобранного
+     * СТРОГО МЕНЬШЕ, чем всего, и лишних имён в файле нет. Поэтому проба
+     * сначала убеждается, что отбор что-то отсёк.
+     */
+    await signIn(page, 'admin', 'admin123')
+    await page.goto('/employees')
+    await hydrated(page)
+    await tableFilled(page)
+
+    const allNames = await column(page, 'ФИО')
+    expect(allNames.length, 'таблица пуста — проба вакуумна').toBeGreaterThan(2)
+
+    // Отбор по первой букве фамилии первого человека: он обязан отсечь хоть
+    // кого-то, иначе «отобранное» неотличимо от «всего».
+    const firstSurname = allNames[0].split('\n')[0].trim().split(' ')[0]
+    await page.goto(`/employees?search=${encodeURIComponent(firstSurname)}`)
+    await hydrated(page)
+    await tableFilled(page)
+    const pickedNames = await column(page, 'ФИО')
+    expect(
+      pickedNames.length,
+      `отбор по «${firstSurname}» ничего не отсёк — выгрузку отбора не отличить от полной`,
+    ).toBeLessThan(allNames.length)
+    expect(pickedNames.length).toBeGreaterThan(0)
+
+    const download = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: 'Экспорт CSV' }).click(),
+    ]).then(([event]) => event)
+
+    const stream = await download.createReadStream()
+    const chunks: Buffer[] = []
+    for await (const chunk of stream) chunks.push(chunk as Buffer)
+    const csv = Buffer.concat(chunks).toString('utf8')
+
+    const lines = csv.trim().split('\r\n')
+    expect(lines[0], 'в файле нет шапки').toContain('Дата найма')
+    expect(lines.length - 1, 'число строк в файле не совпало с отбором').toBe(pickedNames.length)
+    expect(csv).toContain(firstSurname)
+
+    // Ни одного имени, которого в отборе нет.
+    const dropped = allNames
+      .map((cell) => cell.split('\n')[0].trim())
+      .filter((name) => !pickedNames.some((picked) => picked.includes(name)))
+    expect(dropped.length, 'отбор не отсёк ни одного имени — проба вырождена').toBeGreaterThan(0)
+    for (const name of dropped) {
+      expect(csv, `в файл попало отсечённое отбором имя «${name}»`).not.toContain(name)
+    }
   })
 })

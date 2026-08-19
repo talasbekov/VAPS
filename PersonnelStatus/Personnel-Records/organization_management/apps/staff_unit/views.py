@@ -27,6 +27,7 @@ from organization_management.apps.common.drf_permissions import (
 )
 from organization_management.apps.common.rbac import get_user_scope_queryset, check_permission
 from organization_management.apps.divisions.models import Division
+from organization_management.apps.employees.masking import mask_iin
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus
 from organization_management.apps.statuses.selectors import (
@@ -442,7 +443,9 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         staff_units = StaffUnit.objects.filter(
             division__in=all_divisions
         ).select_related(
-            'division', 'position', 'employee', 'vacancy'
+            # `employee__rank` — вместе с сотрудником: звание печатается в
+            # КАЖДОЙ строке списка, без него был бы запрос на строку.
+            'division', 'position', 'employee', 'employee__rank', 'vacancy'
         ).prefetch_related(
             # Правило «какой статус действующий» и его префетч — в
             # `statuses.selectors`, одним куском. Своя копия здесь уже
@@ -503,6 +506,23 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                     'id': unit.employee.id,
                     'first_name': unit.employee.first_name,
                     'last_name': unit.employee.last_name,
+                    # Кадровая подпись строки. Всё перечисленное лежит в
+                    # модели `Employee` с самого начала и просто не клалось в
+                    # ответ: список печатал под именем ПУСТУЮ строку (поле
+                    # `manager`, захардкоженное `""`), а колонку с датой найма
+                    # пришлось снять — вместо неё туда ехало начало текущего
+                    # статуса.
+                    #
+                    # ИИН уходит только хвостом: списку он нужен, чтобы
+                    # различить однофамильцев, и для этого достаточно четырёх
+                    # цифр. Маскирует сервер — см. `employees.masking`.
+                    'rank': (
+                        unit.employee.rank.name if unit.employee.rank else None
+                    ),
+                    'iin_masked': mask_iin(unit.employee.iin),
+                    'hire_date': unit.employee.hire_date,
+                    'birth_date': unit.employee.birth_date,
+                    'personnel_number': unit.employee.personnel_number,
                     # Период едет вместе со статусом. Без него таблица статусов
                     # печатала «Не обновлено» и «Не указано» во ВСЕХ строках —
                     # две колонки на 362 px не несли ни бита, — а карточка
