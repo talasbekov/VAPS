@@ -366,4 +366,43 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       )
     })
   }
+
+  // 🔴 Минимальная ширина — ОСОЗНАННОЕ решение, а не случайность разметки: без
+  // неё правые колонки на узком экране сжимаются до нечитаемости (в исходнике
+  // рядом с `min-w-[48rem]` стоял комментарий именно об этом). При переводе на
+  // примитив эта ширина уже однажды потерялась молча: `Table` даёт
+  // `overflow-x-auto` сам, скролл не пропал, и ни один ассерт оформления
+  // просадку не заметил. Проба меряет ЖИВУЮ ширину на узком окне, а не наличие
+  // класса: класс мог бы стоять в разметке и не генерироваться сборкой.
+  test('таблицы аналитики рейтинга не сжимаются на узком экране', async ({ page }) => {
+    await signIn(page)
+    await page.setViewportSize({ width: 640, height: 900 })
+    await page.goto(`${APP}/security-ops/ratings/analytics/`)
+    await expect(page.locator('thead th').first()).toBeVisible()
+
+    const tables = page.locator('[data-slot="table"]')
+    // Guard ДО содержательной проверки: на пустом множестве `evaluateAll`
+    // вернул бы [], цикл ниже не выполнился бы ни разу и проба прошла бы на
+    // пустом месте.
+    const count = await tables.count()
+    expect(count, 'на странице нет двух таблиц — проверка была бы вакуумной').toBe(2)
+
+    const shapes = await tables.evaluateAll((els) =>
+      els.map((el) => ({
+        min: getComputedStyle(el).minWidth,
+        rendered: Math.round(el.getBoundingClientRect().width),
+      }))
+    )
+
+    for (const [index, shape] of shapes.entries()) {
+      expect(shape.min, `таблица №${index + 1} потеряла min-width`).toBe('768px')
+      // Окно уже минимума (640 < 768): таблица ОБЯЗАНА выйти за контейнер и
+      // отдать скролл, а не ужаться. Ассерт по отрисованной ширине ловит и
+      // случай, когда класс есть, но перебит чем-то снаружи.
+      expect(
+        shape.rendered,
+        `таблица №${index + 1} сжалась до ${shape.rendered}px при минимуме 768px`
+      ).toBeGreaterThanOrEqual(768)
+    }
+  })
 })
