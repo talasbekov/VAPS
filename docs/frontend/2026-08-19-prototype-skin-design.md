@@ -188,7 +188,7 @@ H1            25px / 700 / line-height 1.15 / letter-spacing -.02em / mb 6px
 | `bg-background` = поверхность контрола, не полотно (93 вхождения) | новый `--canvas`, применяется в одном месте |
 | `thead th` пинится в e2e по тексту | регистр и литералы заголовков не трогать |
 | слой `ui/*` сгенерирован под Tailwind v4, собирается v3.4.18 | не вводить `shadow-xs`, `rounded-xs`, `outline-hidden`, `field-sizing-content` |
-| `styles/globals.css` мёртв (не импортируется), написан под v4 с другой палитрой | править только `app/globals.css` |
+| в проекте один файл глобальных стилей — `app/globals.css` | других `globals.css` нет (`styles/globals.css` удалён коммитом `1cc83efe` до этой ветки), путать не с чем |
 | `next build` травит `.next` работающего стенда | только `NEXT_DIST_DIR=.next-build npx next build` |
 | у прототипа нет тёмной темы | значения выводим сами, контраст проверяем 4.5:1 в обеих |
 | `--primary` как цвет **текста** не проходит контраст | для букв брать `--primary-ink` / `--destructive-ink` |
