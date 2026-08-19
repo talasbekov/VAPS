@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
@@ -8,6 +8,7 @@ from organization_management.apps.staff_unit.models import Vacancy, StaffUnit
 from organization_management.apps.dictionaries.models import Position, Rank
 from organization_management.apps.dictionaries.api.serializers import PositionSerializer as DictionaryPositionSerializer
 from organization_management.apps.statuses.models import EmployeeStatus
+from organization_management.apps.statuses.selectors import active_status
 
 
 class VacancySerializer(serializers.ModelSerializer):
@@ -46,27 +47,23 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "last_name": {"required": True},
         }
 
-    @extend_schema_field(EmployeeStatusBriefSerializer)
-    def get_current_status(self, obj: Employee) -> Dict[str, Any]:
-        """
-        Получить текущий статус сотрудника
+    @extend_schema_field(EmployeeStatusBriefSerializer(allow_null=True))
+    def get_current_status(self, obj: Employee) -> Optional[Dict[str, Any]]:
+        """Действующий статус сотрудника; `None` — такого нет.
 
-        Args:
-            obj: Объект Employee
+        Правило «какой статус текущий» живёт в `statuses.selectors`: раньше оно
+        было здесь СВОЕЙ копией (порядок `-start_date` без доводчика), а рядом
+        в `staff_unit/views.py` — другой.
 
-        Returns:
-            Словарь с данными текущего статуса
+        Синтетического «в строю» больше нет. Отсутствие статуса — это факт, и
+        подменять его правдоподобным объектом БЕЗ ДАТ значило врать дважды:
+        экран показывал статус, которого нет в базе, и period-колонки при этом
+        оставались пустыми. Теперь у каждого работающего сотрудника статус есть
+        по-настоящему — его держит сигнал `give_new_employee_a_status` и
+        команда `ensure_employee_statuses`.
         """
-        status = (
-            obj.statuses
-            .filter(state=EmployeeStatus.StatusState.ACTIVE)
-            .order_by("-start_date")
-            .first()
-        )
-        return EmployeeStatusBriefSerializer(status).data if status else {
-            "status_type": EmployeeStatus.StatusType.IN_SERVICE,
-            "state": EmployeeStatus.StatusState.ACTIVE,
-        }
+        status = active_status(obj)
+        return EmployeeStatusBriefSerializer(status).data if status else None
 
 
 class StaffUnitSerializer(serializers.ModelSerializer):

@@ -15,6 +15,7 @@ from organization_management.apps.statuses.models import (
     StatusDocument
 )
 from organization_management.apps.employees.models import Employee
+from organization_management.apps.statuses.selectors import status_on_date
 from organization_management.apps.divisions.models import Division
 
 logger = logging.getLogger(__name__)
@@ -387,23 +388,20 @@ class StatusApplicationService:
         return status
 
     def get_employee_current_status(self, employee_id: int) -> Optional[EmployeeStatus]:
-        """
-        Получение текущего активного статуса сотрудника
+        """Статус, действующий СЕГОДНЯ. `None` — на сегодня статуса нет.
 
-        Args:
-            employee_id: ID сотрудника
+        Это НЕ то же, что «действующий статус» в списках
+        (`statuses.selectors.active_status`), и разница намеренная: сюда не
+        попадает статус, чей период уже прошёл, но который ещё не закрыт
+        задачей `complete_expired_statuses_task`. Списку такой статус нужен —
+        он подсвечивает его как просроченный; ответу на вопрос «что с
+        человеком сегодня» — нет.
 
-        Returns:
-            Optional[EmployeeStatus]: Текущий статус или None
+        Само правило живёт в `statuses.selectors.status_on_date`: здесь была
+        третья копия выборки «текущего статуса», и она уже отличалась от двух
+        остальных.
         """
-        today = timezone.now().date()
-        return EmployeeStatus.objects.filter(
-            employee_id=employee_id,
-            state=EmployeeStatus.StatusState.ACTIVE,
-            start_date__lte=today
-        ).filter(
-            Q(end_date__isnull=True) | Q(end_date__gte=today)
-        ).first()
+        return status_on_date(employee_id, timezone.now().date())
 
     def get_employee_status_history(
         self,

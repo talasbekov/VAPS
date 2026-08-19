@@ -29,6 +29,10 @@ from organization_management.apps.common.rbac import get_user_scope_queryset, ch
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus
+from organization_management.apps.statuses.selectors import (
+    active_status,
+    active_status_prefetch,
+)
 
 
 def _as_date(value):
@@ -440,21 +444,10 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
         ).select_related(
             'division', 'position', 'employee', 'vacancy'
         ).prefetch_related(
-            # `to_attr` не для красоты: без него достаточно случайного
-            # `.filter()`/`.order_by()` на `employee.statuses`, чтобы префетч
-            # молча превратился в запрос на каждого сотрудника. Ровно так
-            # здесь и было.
-            #
-            # `-created_at` вторым: у двух статусов может совпасть start_date,
-            # и без устойчивого второго ключа «текущий» выбирался бы по
-            # усмотрению планировщика.
-            Prefetch(
-                'employee__statuses',
-                queryset=EmployeeStatus.objects.filter(
-                    state=EmployeeStatus.StatusState.ACTIVE
-                ).order_by('-start_date', '-created_at'),
-                to_attr='active_statuses',
-            )
+            # Правило «какой статус действующий» и его префетч — в
+            # `statuses.selectors`, одним куском. Своя копия здесь уже
+            # разъезжалась с копией в `staff_unit/serializers.py`.
+            active_status_prefetch()
         ).order_by('tree_id', 'lft')
 
         # Создаем плоский список с полной информацией (БЕЗ children)
@@ -500,10 +493,11 @@ class StaffUnitViewSet(viewsets.ModelViewSet):
                 # Сотрудникам, заведённым мимо неё (сиды, импорт), статус ставит
                 # разовая правка данных, а не ручка чтения.
                 #
-                # `state=ACTIVE` — из префетча: прежний `.order_by('-created_at')`
-                # брал последний СОЗДАННЫЙ статус независимо от состояния, и
-                # отменённый приезжал как действующий.
-                current_status = next(iter(unit.employee.active_statuses), None)
+                # Прежний `.order_by('-created_at')` брал последний СОЗДАННЫЙ
+                # статус независимо от состояния, и отменённый приезжал как
+                # действующий. Теперь выбор — общий селектор; он же сам
+                # подхватывает префетч и не делает лишнего запроса.
+                current_status = active_status(unit.employee)
 
                 unit_data['employee'] = {
                     'id': unit.employee.id,
