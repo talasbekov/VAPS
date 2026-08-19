@@ -596,4 +596,52 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       expect(await h1.evaluate((el) => getComputedStyle(el).fontSize)).toBe('25px')
     })
   }
+
+  // Task 14b: KPI-плитки на /employees/ и /statuses/ оставались на старой
+  // ручной вёрстке (Card+CardHeader+иконка), пока /dashboard и /organization
+  // уже несли `StatCard`. Тот же снаряд, что и «подписи KPI-плиток не
+  // обрезаются» выше (строка ~272), но по этим двум маршрутам: плитки
+  // действительно на `StatCard` (guard числа > 0, число набрано
+  // 24px/800/tabular-nums) и подписи не обрезаются (scrollWidth <= clientWidth
+  // с guard на пустое множество/clientWidth=0).
+  for (const [route, heading] of [
+    ['/employees/', 'Управление персоналом'],
+    ['/statuses/', 'Управление статусами'],
+  ] as const) {
+    test(`KPI-плитки на StatCard: ${route}`, async ({ page }) => {
+      await signIn(page)
+      await page.goto(`${APP}${route}`)
+      await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible()
+
+      const cards = page.locator('[data-slot="stat-card"]')
+      await expect(cards.first()).toBeVisible()
+      const cardCount = await cards.count()
+      expect(cardCount, `на ${route} нет ни одной [data-slot="stat-card"] — проверка была бы вакуумной`).toBeGreaterThan(0)
+
+      const value = page.locator('[data-slot="stat-value"]').first()
+      const shape = await value.evaluate((el) => {
+        const cs = getComputedStyle(el)
+        return { size: cs.fontSize, weight: cs.fontWeight, numeric: cs.fontVariantNumeric }
+      })
+      expect(shape.size, `на ${route} число плитки не 24px`).toBe('24px')
+      expect(shape.weight, `на ${route} число плитки не весом 800`).toBe('800')
+      expect(shape.numeric, `на ${route} число плитки не tabular-nums`).toContain('tabular-nums')
+
+      const labels = page.locator('[data-slot="stat-label"]')
+      await expect(labels.first()).toBeVisible()
+      const labelCount = await labels.count()
+      expect(labelCount, `на ${route} нет ни одной [data-slot="stat-label"] — проверка была бы вакуумной`).toBeGreaterThan(0)
+
+      const clipped = await labels.evaluateAll((els) => {
+        const visible = els.filter((el) => (el as HTMLElement).clientWidth > 0)
+        if (visible.length === 0) {
+          throw new Error('все data-slot="stat-label" скрыты — clientWidth=0 у всех')
+        }
+        return visible
+          .filter((el) => el.scrollWidth > el.clientWidth + 1)
+          .map((el) => `${el.textContent?.trim()} (${el.scrollWidth}>${el.clientWidth})`)
+      })
+      expect(clipped, `на ${route} обрезанные подписи: ${clipped.join('; ')}`).toEqual([])
+    })
+  }
 })

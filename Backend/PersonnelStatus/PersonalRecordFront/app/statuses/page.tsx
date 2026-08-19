@@ -6,11 +6,12 @@ import { PageHeader } from "@/components/page-header"
 import { StatusTable } from "@/components/status-table"
 import { MassStatusUpdate } from "@/components/mass-status-update"
 import { StatusCalendar } from "@/widgets/status-calendar"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
+import { StatCard } from "@/components/stat-card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Calendar, Users, AlertTriangle, Clock, Download, Upload, RefreshCw } from "lucide-react"
+import { Download, Upload, RefreshCw } from "lucide-react"
 import { DirectorateAccessNotice } from "@/components/directorate-access-notice"
 import {
   isDirectorateForbidden,
@@ -149,49 +150,32 @@ export default function StatusesPage() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Всего сотрудников</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalEmployees}</div>
-              <p className="text-xs text-muted-foreground">Активных записей</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Всего сотрудников"
+            value={stats.totalEmployees}
+            caption="Активных записей"
+          />
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Требует обновления</CardTitle>
-              <Clock className="h-4 w-4 text-yellow-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{stats.needUpdate}</div>
-              <p className="text-xs text-muted-foreground">Статусы устарели</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Требует обновления"
+            value={stats.needUpdate}
+            tone="warning"
+            caption="Статусы устарели"
+          />
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Просрочено</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">{stats.overdue}</div>
-              <p className="text-xs text-muted-foreground">Критические задержки</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Просрочено"
+            value={stats.overdue}
+            tone="danger"
+            caption="Критические задержки"
+          />
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Запланировано</CardTitle>
-              <Calendar className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">{stats.scheduled}</div>
-              <p className="text-xs text-muted-foreground">Будущие изменения</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Запланировано"
+            value={stats.scheduled}
+            tone="info"
+            caption="Будущие изменения"
+          />
         </div>
 
         {/* Main Content */}
