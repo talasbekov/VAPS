@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import OrgChart from "@/features/organization-structure/ui/OrgChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -13,13 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Building2,
-  Users,
-  UserCheck,
-  AlertTriangle,
-  Download,
-} from "lucide-react";
+import { Download } from "lucide-react";
 import { useStaffUnitStatistics } from "@/hooks/use-staff-unit-statistics";
 import { LoadFailure } from "@/components/load-failure";
 
@@ -138,111 +133,51 @@ export default function OrganizationPage() {
 
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
-          <Card className="shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-              <CardTitle className="text-base font-semibold">
-                Занято
-              </CardTitle>
-              <Users className="h-8 w-8 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-4xl font-bold text-blue-600">
-                {summary ? summary.employees_count : isLoading ? "…" : "—"}
-              </div>
-              {/* Здесь стояло «+12 за последний месяц» — выдумка под живым
-                  числом: прироста ручка не считает вовсе. Подпись говорит,
-                  ЧТО именно посчитано: ручка считает занятые СЛОТЫ, поэтому
-                  сотрудник без штатной единицы сюда не попадает. */}
-              <p className="text-sm text-muted-foreground mt-2">
-                Занятых штатных единиц
-              </p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Занято"
+            value={summary ? summary.employees_count : isLoading ? "…" : "—"}
+            tone="info"
+            // Здесь стояло «+12 за последний месяц» — выдумка под живым
+            // числом: прироста ручка не считает вовсе. Подпись говорит,
+            // ЧТО именно посчитано: ручка считает занятые СЛОТЫ, поэтому
+            // сотрудник без штатной единицы сюда не попадает.
+            caption="Занятых штатных единиц"
+          />
 
-          <Card className="shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-              <CardTitle className="text-base font-semibold">
-                Департаментов
-              </CardTitle>
-              <Building2 className="h-8 w-8 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-4xl font-bold text-green-600">
-                {summary ? summary.departments_count : isLoading ? "…" : "—"}
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                В зоне видимости пользователя
-              </p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Департаментов"
+            value={summary ? summary.departments_count : isLoading ? "…" : "—"}
+            tone="success"
+            caption="В зоне видимости пользователя"
+          />
 
-          <Card className="shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-              <CardTitle className="text-base font-semibold">
-                Управлений
-              </CardTitle>
-              <UserCheck className="h-8 w-8 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-4xl font-bold text-green-600">
-                {summary ? summary.directorates_count : isLoading ? "…" : "—"}
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                Структур в выбранном департаменте
-              </p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Управлений"
+            value={summary ? summary.directorates_count : isLoading ? "…" : "—"}
+            tone="success"
+            caption="Структур в выбранном департаменте"
+          />
 
-          <Card className="shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-              <CardTitle className="text-base font-semibold">
-                Отделов
-              </CardTitle>
-              <Building2 className="h-8 w-8 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-4xl font-bold text-green-600">
-                {summary ? summary.divisions_count : isLoading ? "…" : "—"}
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                Подразделений нижнего уровня
-              </p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Отделов"
+            value={summary ? summary.divisions_count : isLoading ? "…" : "—"}
+            tone="success"
+            caption="Подразделений нижнего уровня"
+          />
 
-          <Card className="shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-              <CardTitle className="text-base font-semibold">
-                Штатных единиц
-              </CardTitle>
-              <AlertTriangle className="h-8 w-8 text-yellow-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-4xl font-bold text-yellow-600">
-                {summary ? summary.staff_units_count : isLoading ? "…" : "—"}
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                Всего позиций в штатном расписании
-              </p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Штатных единиц"
+            value={summary ? summary.staff_units_count : isLoading ? "…" : "—"}
+            tone="warning"
+            caption="Всего позиций в штатном расписании"
+          />
 
-          <Card className="shadow-lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-              <CardTitle className="text-base font-semibold">
-                Вакансий
-              </CardTitle>
-              <AlertTriangle className="h-8 w-8 text-yellow-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-4xl font-bold text-yellow-600">
-                {summary ? summary.vacancies_count : isLoading ? "…" : "—"}
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                Свободных должностей
-              </p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Вакансий"
+            value={summary ? summary.vacancies_count : isLoading ? "…" : "—"}
+            tone="warning"
+            caption="Свободных должностей"
+          />
         </div>
 
         {/* Разрез по подразделениям. Ручка статистики отдаёт его С САМОГО
