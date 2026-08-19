@@ -136,10 +136,7 @@ export function EmployeeTable({
               {employees.map((employee) => (
                 <TableRow
                   key={employee.id}
-                  // Чередование фона: «Отдел» повторяет одно значение по
-                  // шесть строк подряд, и на однородной заливке взгляд
-                  // соскакивает на соседнюю строку.
-                  className="cursor-pointer odd:bg-muted/40 hover:bg-muted"
+                  className="cursor-pointer"
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Checkbox
