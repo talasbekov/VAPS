@@ -130,7 +130,12 @@ export default function RatingAnalyticsPage() {
             </section>
 
             <section className="rounded-xl border bg-card">
-              <Table>
+              {/* Минимальная ширина обязательна: без неё на узком экране
+                  правые колонки сжимаются до нечитаемости. Скролл даёт сам
+                  `Table` (`overflow-x-auto` на контейнере), но точка его
+                  срабатывания без минимума уезжает — колонки жмутся раньше.
+                  Сторожит проба «таблицы аналитики рейтинга не сжимаются». */}
+              <Table className="min-w-[48rem]">
                 <TableCaption className="mt-0 p-3 text-left text-sm font-semibold text-foreground">
                   Распределение агрегированных значений
                 </TableCaption>
@@ -152,7 +157,9 @@ export default function RatingAnalyticsPage() {
             </section>
 
             <section className="rounded-xl border bg-card">
-              <Table>
+              {/* Минимальная ширина: см. соседнюю таблицу — без неё правые
+                  колонки жмутся раньше, чем контейнер отдаёт скролл. */}
+              <Table className="min-w-[48rem]">
                 <TableCaption className="mt-0 p-3 text-left text-sm font-semibold text-foreground">
                   Агрегат по группам участников
                 </TableCaption>
