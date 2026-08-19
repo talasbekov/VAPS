@@ -21,6 +21,7 @@ import {
   Landmark,
   LineChart,
   ScrollText,
+  Flag,
   Scale,
   Star,
   UserRound,
@@ -170,6 +171,10 @@ export function Sidebar() {
         // Реестр ГВО идёт сразу за реестром ОМ: его записи — проекция тех же
         // мероприятий, и появляются они вместе с бюллетенем.
         { name: "Реестр ГВО", href: "/security-ops/gvo", icon: Users },
+        // «Сбор сил» стоит здесь, как в прототипе: это не этап карточки ОМ
+        // (в `lifecycleViews` его нет), а разрез по ВСЕМ мероприятиям,
+        // стоящим на стадии «Запрос сил».
+        { name: "Сбор сил на ОМ", href: "/security-ops/forces", icon: Flag },
         { name: "Охраняемые лица", href: "/security-ops/persons", icon: UserRound },
         { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
         { name: "Законы об ОМ", href: "/security-ops/laws", icon: Scale },

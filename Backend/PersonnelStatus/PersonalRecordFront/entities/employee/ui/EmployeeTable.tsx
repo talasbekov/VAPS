@@ -40,11 +40,15 @@ import type { Employee } from "../model/types";
 interface EmployeeTableProps {
   employees: Employee[];
   onSelectEmployee: (employee: Employee) => void;
+  /** Сброс отбора. `undefined` — отбор не применён, и сбрасывать нечего:
+   * пустой список тогда означает «данных нет», а не «фильтр не совпал». */
+  onResetFilters?: () => void;
 }
 
 export function EmployeeTable({
   employees,
   onSelectEmployee,
+  onResetFilters,
 }: EmployeeTableProps) {
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [statusDialogFor, setStatusDialogFor] = useState<Employee | null>(null);
@@ -120,6 +124,10 @@ export function EmployeeTable({
                     захардкоженной пустой строкой — 97 px иконок поверх поля,
                     которое ручка штатки не отдаёт вовсе. */}
                 <TableHead>Статус с</TableHead>
+                {/* Колонка прототипа. Раньше её подпись стояла над началом
+                    текущего статуса; теперь дата найма приезжает с бэка
+                    отдельным полем и стоит рядом с ним, а не вместо него. */}
+                <TableHead>Дата найма</TableHead>
 
                 <TableHead className="w-12"></TableHead>
               </TableRow>
@@ -147,8 +155,20 @@ export function EmployeeTable({
                   <TableCell onClick={() => onSelectEmployee(employee)}>
                     <div>
                       <div className="font-medium">{employee.name}</div>
+                      {/* Подстрока прототипа: «звание · ИИН». Здесь стояло
+                          поле `manager`, которому ручка штатки не даёт
+                          источника, — во всех строках печаталась пустая
+                          строка. Пустое звание не занимает места вовсе:
+                          подпись без значения читается как «не заполнено». */}
                       <div className="text-sm text-muted-foreground">
-                        {employee.manager}
+                        {[
+                          employee.rank,
+                          employee.iinMasked === ""
+                            ? ""
+                            : `ИИН ${employee.iinMasked}`,
+                        ]
+                          .filter((part) => part !== "")
+                          .join(" · ")}
                       </div>
                     </div>
                   </TableCell>
@@ -179,6 +199,9 @@ export function EmployeeTable({
                       повторённая в каждой строке, она ничего не различает. */}
                   <TableCell className="text-sm tabular-nums">
                     {formatIsoDate(employee.statusSince)}
+                  </TableCell>
+                  <TableCell className="text-sm tabular-nums">
+                    {formatIsoDate(employee.hireDate)}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
@@ -223,7 +246,24 @@ export function EmployeeTable({
 
         {employees.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
-            <p>Сотрудники не найдены</p>
+            <p>
+              {onResetFilters ? "Ничего не найдено" : "Сотрудники не найдены"}
+            </p>
+            {onResetFilters && (
+              <>
+                <p className="text-sm mt-1">
+                  Измените запрос или сбросьте фильтры.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={onResetFilters}
+                >
+                  Сбросить фильтры
+                </Button>
+              </>
+            )}
           </div>
         )}
       </CardContent>
