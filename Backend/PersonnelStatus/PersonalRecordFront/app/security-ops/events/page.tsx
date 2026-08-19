@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ClipboardList } from "lucide-react";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
@@ -95,18 +95,12 @@ export default function SecurityEventsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <ClipboardList className="h-8 w-8 text-primary-ink" />
-            <div>
-              <h1 className="text-2xl font-bold">Реестр ОМ</h1>
-              <p className="text-muted-foreground">
-                Полный цикл: от бюллетеня и рекогносцировки до закрытия и архива
-              </p>
-            </div>
-          </div>
-          <Button onClick={() => setDialogOpen(true)}>+ Создать ОМ</Button>
-        </header>
+        <PageHeader
+          eyebrow="Охранные мероприятия"
+          title="Реестр ОМ"
+          description="Полный цикл: от бюллетеня и рекогносцировки до закрытия и архива"
+          actions={<Button onClick={() => setDialogOpen(true)}>+ Создать ОМ</Button>}
+        />
 
         <div className="flex flex-wrap items-center gap-2">
           <Input

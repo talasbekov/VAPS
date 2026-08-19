@@ -115,4 +115,23 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(shape.size).toBe('11px')
     expect(shape.weight).toBe('600')
   })
+
+  test('заголовок страницы набран по прототипу', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+
+    const h1 = page.getByRole('heading', { name: 'Реестр ОМ', level: 1 })
+    await expect(h1).toBeVisible()
+
+    const shape = await h1.evaluate((el) => {
+      const cs = getComputedStyle(el)
+      return { size: cs.fontSize, weight: cs.fontWeight }
+    })
+    expect(shape.size).toBe('25px')
+    expect(shape.weight).toBe('700')
+
+    const eyebrow = page.locator('[data-slot="page-eyebrow"]')
+    await expect(eyebrow).toHaveText('ОХРАННЫЕ МЕРОПРИЯТИЯ')
+    expect(await eyebrow.evaluate((el) => getComputedStyle(el).textTransform)).toBe('uppercase')
+  })
 })
