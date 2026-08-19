@@ -1,26 +1,20 @@
 "use client";
 
-import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   User,
-  Phone,
-  Mail,
-  MapPin,
+  BadgeCheck,
+  Briefcase,
   Calendar,
   Building2,
   Edit,
   X,
-  FileText,
   Clock,
-  Award,
-  Users,
 } from "lucide-react";
-import { useAuth, PermissionGate } from "@/lib/auth";
+import { PermissionGate } from "@/lib/auth";
 import { formatIsoDateLong } from "@/shared/lib/date";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
@@ -34,9 +28,6 @@ interface EmployeeProfileProps {
 }
 
 export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
-  const [activeTab, setActiveTab] = useState("overview");
-  const { hasPermission } = useAuth();
-
   const getStatusBadge = (status: string) => {
     if (status === "Не обновлено") {
       return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
@@ -48,39 +39,14 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
     return <Badge className={colorClass}>{status}</Badge>;
   };
 
-  // Mock additional data
-  const statusHistory = [
-    {
-      date: "2024-01-15",
-      status: "В строю",
-      comment: "Возвращение из отпуска",
-    },
-    {
-      date: "2023-12-20",
-      status: "Отпуск",
-      comment: "Ежегодный оплачиваемый отпуск",
-    },
-    { date: "2023-12-01", status: "В строю", comment: "Обычный рабочий режим" },
-  ];
-
-  const documents = [
-    { name: "Трудовой договор", date: "2020-09-15", type: "PDF" },
-    { name: "Должностная инструкция", date: "2023-01-10", type: "PDF" },
-    { name: "Справка о доходах", date: "2024-01-01", type: "PDF" },
-  ];
-
-  const achievements = [
-    {
-      title: "Лучший сотрудник месяца",
-      date: "2023-11-01",
-      description: "За выдающиеся результаты в работе",
-    },
-    {
-      title: "Сертификат повышения квалификации",
-      date: "2023-06-15",
-      description: "Управление персоналом",
-    },
-  ];
+  // 🔴 Здесь лежали три набора выдуманных данных — «История изменения
+  // статусов» с датами 2023–2024, документы («Трудовой договор», «Справка о
+  // доходах») и достижения («Лучший сотрудник месяца»). Показаться они не
+  // могли НИ РАЗУ: `<Tabs>` рисовался без `TabsList`, а `activeTab` никем не
+  // менялся с «overview» — 130 строк фикстуры за недостижимой вкладкой.
+  // Источника ни у документов, ни у достижений в системе нет вовсе; история
+  // статусов есть (`/api/operations/statuses/?employee_id=`), но это отдельная
+  // работа, а не оправдание держать на её месте вымысел.
 
   return (
     <div className="space-y-6">
@@ -103,10 +69,19 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
               </Avatar>
               <div>
                 <h2 className="text-2xl font-bold">{employee.name}</h2>
-                <p className="text-muted-foreground">{employee.position}</p>
+                {/* Шапка прототипа: «звание · должность». */}
+                <p className="text-muted-foreground">
+                  {employee.rank === ""
+                    ? employee.position
+                    : `${employee.rank} · ${employee.position}`}
+                </p>
                 <div className="flex items-center space-x-2 mt-2">
                   {getStatusBadge(employee.status)}
-                  <Badge variant="outline">№{employee.number}</Badge>
+                  {employee.personnelNumber !== "" && (
+                    <Badge variant="outline">
+                      Табельный № {employee.personnelNumber}
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>
@@ -117,15 +92,23 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                   Редактировать
                 </Button>
               </PermissionGate>
+              {/* Выход из карточки. `onClose` передавался сюда с самого
+                  начала и не был подключён ни к чему: вкладка «Профиль
+                  сотрудника» открывалась и не закрывалась. */}
+              <Button variant="ghost" size="sm" onClick={onClose}>
+                <X className="h-4 w-4 mr-2" aria-hidden="true" />
+                Закрыть
+              </Button>
             </div>
           </div>
         </CardHeader>
       </Card>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Вкладок здесь больше нет: их было четыре, а переключателя не было ни
+          одного — три из четырёх не могли показаться. Осталось то, что
+          показывалось. */}
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Personal Information */}
             <Card>
               <CardHeader>
@@ -144,11 +127,15 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-start">
-                  <MapPin className="h-4 w-4 mr-3 text-muted-foreground mt-0.5" />
+                {/* Поле «Адрес» убрано: адреса проживания в модели сотрудника
+                    нет вовсе, и печаталась пустая строка под подписью. */}
+                <div className="flex items-center">
+                  <BadgeCheck className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium">Адрес</p>
-                    <p className="text-sm text-muted-foreground">{employee.address}</p>
+                    <p className="text-sm font-medium">ИИН</p>
+                    <p className="text-sm text-muted-foreground tabular-nums">
+                      {employee.iinMasked === "" ? "—" : employee.iinMasked}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -172,18 +159,24 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                     </p>
                   </div>
                 </div>
+                {/* Поле «Руководитель» убрано: ручка штатки его не отдаёт, и
+                    под подписью печаталась пустая строка. На его месте —
+                    дата найма прототипа, которая теперь приезжает с бэка. */}
                 <div className="flex items-center">
-                  <Users className="h-4 w-4 mr-3 text-muted-foreground" />
+                  <Briefcase className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium">Руководитель</p>
-                    <p className="text-sm text-muted-foreground">{employee.manager}</p>
+                    <p className="text-sm font-medium">Дата найма</p>
+                    <p className="text-sm text-muted-foreground">
+                      {formatIsoDateLong(employee.hireDate)}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center">
                   <Calendar className="h-4 w-4 mr-3 text-muted-foreground" />
                   <div>
-                    {/* Подпись «Дата найма» врала: в поле лежит начало
-                        ТЕКУЩЕГО статуса. Даты найма фронт не получает. */}
+                    {/* Подпись «Дата найма» здесь врала: в поле лежит начало
+                        ТЕКУЩЕГО статуса. Теперь оба поля рядом и подписаны
+                        каждое своим. */}
                     <p className="text-sm font-medium">Статус с</p>
                     <p className="text-sm text-muted-foreground">
                       {formatIsoDateLong(employee.statusSince)}
@@ -201,118 +194,8 @@ export function EmployeeProfile({ employee, onClose }: EmployeeProfileProps) {
                 </div>
               </CardContent>
             </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="history" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Clock className="h-5 w-5 mr-2" />
-                История изменения статусов
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {statusHistory.map((record, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start space-x-4 pb-4 border-b last:border-b-0"
-                  >
-                    <div className="flex-shrink-0">
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                        <Clock className="h-4 w-4 text-blue-600" />
-                      </div>
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-1">
-                        {getStatusBadge(record.status)}
-                        <span className="text-sm text-muted-foreground">
-                          {formatIsoDateLong(record.date)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{record.comment}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="documents" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <FileText className="h-5 w-5 mr-2" />
-                Документы сотрудника
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {documents.map((doc, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 border rounded-lg"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <FileText className="h-5 w-5 text-muted-foreground" />
-                      <div>
-                        <p className="font-medium">{doc.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Добавлен {formatIsoDateLong(doc.date)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge variant="outline">{doc.type}</Badge>
-                      <Button variant="ghost" size="sm">
-                        Скачать
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="achievements" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Award className="h-5 w-5 mr-2" />
-                Достижения и награды
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {achievements.map((achievement, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start space-x-4 pb-4 border-b last:border-b-0"
-                  >
-                    <div className="flex-shrink-0">
-                      <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                        <Award className="h-4 w-4 text-yellow-600" />
-                      </div>
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-medium">{achievement.title}</h4>
-                      <p className="text-sm text-muted-foreground mb-1">
-                        {achievement.description}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatIsoDateLong(achievement.date)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
     </div>
   );
 }
