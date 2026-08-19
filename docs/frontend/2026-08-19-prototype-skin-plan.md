@@ -752,7 +752,10 @@ export function PageHeader(props: PageHeaderProps): JSX.Element
 
 - [ ] **Step 2: Прогнать — проба КРАСНАЯ**
 
-Ожидание: **4 passed, 1 failed**; `size` = `30px` (сейчас `text-3xl`).
+Ожидание: **4 passed, 1 failed**; `size` = `24px` — на этой странице заголовок
+`text-2xl` (`app/security-ops/events/page.tsx:102`), в отличие от легаси-портала,
+где везде `text-3xl`. Надзаголовка нет вовсе, поэтому второе падение — на
+`page-eyebrow`.
 
 - [ ] **Step 3: Создать компонент**
 
