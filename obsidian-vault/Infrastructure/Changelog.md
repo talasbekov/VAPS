@@ -288,3 +288,5 @@ _Одна строка на коммит: дата, короткий хэш, с�
 - 2026-08-19 `8397eb28` docs(api-gaps): итог смоук-обхода 19.08 — красных по существу нет, три падения на входе
 - 2026-08-19 `d6b31728` docs(obsidian): дизайн vault для VAPS — единственный источник правды
 - 2026-08-19 `cdc20e95` docs(obsidian): план миграции в vault — 11 задач от скелета до CLAUDE.md
+- 2026-08-19 `90446857` chore(obsidian): scaffold vault skeleton for VAPS documentation
+- 2026-08-19 `5d4dbc4f` feat(obsidian): generate per-module changelogs from full git log
