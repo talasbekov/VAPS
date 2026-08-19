@@ -644,4 +644,40 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       expect(clipped, `на ${route} обрезанные подписи: ${clipped.join('; ')}`).toEqual([])
     })
   }
+
+  // Регрессия финальной проверки: PageHeader actions-слот (`shrink-0` без
+  // `min-w-0`) не сжимался на узком экране и физически уезжал за вьюпорт —
+  // кнопка первичного действия была недостижима на телефоне. Ассерт по
+  // правому краю И блока actions, И самой кнопки внутри — обе точки должны
+  // остаться в пределах вьюпорта.
+  for (const [route, buttonName] of [
+    ['/employees/', 'Добавить сотрудника'],
+    ['/statuses/', 'Обновить'],
+  ] as const) {
+    test(`actions-слот PageHeader не обрезается на 375px: ${route}`, async ({ page }) => {
+      await signIn(page)
+      await page.setViewportSize({ width: 375, height: 900 })
+      await page.goto(`${APP}${route}`)
+
+      const actions = page.locator('[data-slot="page-header-actions"]')
+      await expect(actions).toBeVisible()
+
+      const button = page.getByRole('button', { name: buttonName })
+      await expect(button).toBeVisible()
+
+      const [actionsBox, buttonBox] = await Promise.all([
+        actions.evaluate((el) => el.getBoundingClientRect().right),
+        button.evaluate((el) => el.getBoundingClientRect().right),
+      ])
+
+      expect(
+        actionsBox,
+        `на ${route} блок actions уходит за правый край вьюпорта (375px): right=${actionsBox}`
+      ).toBeLessThanOrEqual(375)
+      expect(
+        buttonBox,
+        `на ${route} кнопка «${buttonName}» уходит за правый край вьюпорта (375px): right=${buttonBox}`
+      ).toBeLessThanOrEqual(375)
+    })
+  }
 })
