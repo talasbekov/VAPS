@@ -524,6 +524,15 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   // Task 13: ряд фильтров «Реестра ОМ» — поиск, селект этапа, две даты и
   // селект ответственного — должен иметь одну высоту на весь ряд, включая
   // кнопку «Сбросить фильтры».
+  //
+  // 🔴 Эта проба стережёт ПРАВИЛО компонента (`[&_button]:h-9 [&_input]:h-9
+  // [&_select]:h-9` на самом FilterBar), а не случайное совпадение дефолтов
+  // детей. Гарантия: селект «Этап» (app/security-ops/events/page.tsx) НЕ
+  // несёт свой `h-9` в разметке — высоту ему навязывает исключительно ряд.
+  // Если снести className у FilterBar целиком, этот селект просядет до
+  // высоты браузерного `<select>` по умолчанию (не 36px) и тест обязан
+  // упасть. Порог по числу контролов — `> 1`: на единственном контроле
+  // `toHaveLength(1)` истинно тривиально и ничего не доказывает.
   test('контролы фильтров одной высоты', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/`)
@@ -532,7 +541,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
 
     const controls = bar.locator('input, select, button')
     const count = await controls.count()
-    expect(count, 'в ряду фильтров нет ни одного контрола — проверка была бы вакуумной').toBeGreaterThan(0)
+    expect(count, 'в ряду фильтров меньше двух контролов — сравнивать высоты было бы не с чем').toBeGreaterThan(1)
 
     const heights = await controls.evaluateAll((els) => [
       ...new Set(els.map((el) => Math.round(el.getBoundingClientRect().height))),
@@ -680,4 +689,43 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       ).toBeLessThanOrEqual(375)
     })
   }
+
+  // Финальное ревью: `features/organization-structure/ui/org-board.styles.css`
+  // — обычный (нескоупленный) .css, импортированный из OrgBoard.tsx. Чанк
+  // маршрута /dashboard/ в App Router дописывает эти правила в документ при
+  // клиентской навигации и НЕ снимает их при уходе с маршрута — `tbody td` и
+  // `table` продолжают действовать на любой другой таблице, до которой потом
+  // дошли кликом (без полной перезагрузки страницы).
+  //
+  // 🔴 Проба обязана перейти на /employees/ КЛИКОМ по пункту меню, а не через
+  // page.goto — goto делает полную навигацию, которая эту утечку не ловит:
+  // js-чанк /dashboard/ просто не грузится вовсе, и раз внесённые правила в
+  // документе нечему было оставить.
+  test('переход с /dashboard кликом не красит таблицу /employees чужим CSS', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/dashboard/`)
+    // Ждём, что доска подразделений (носитель org-board.styles.css) реально
+    // смонтирована — иначе чанк не гарантированно загружен.
+    await expect(page.locator('table').first()).toBeVisible()
+
+    await page.getByRole('link', { name: 'Управление персоналом' }).click()
+    await expect(page).toHaveURL(new RegExp('/employees/?$'))
+
+    const cell = page.locator('table tbody td').first()
+    await expect(cell).toBeVisible()
+
+    const style = await cell.evaluate((el) => {
+      const cs = getComputedStyle(el)
+      return { borderBottomColor: cs.borderBottomColor, minWidth: cs.minWidth }
+    })
+
+    expect(
+      style.borderBottomColor,
+      `ячейка таблицы /employees закрашена рамкой org-board.styles.css (утечка нескоупленного tbody td): ${style.borderBottomColor}`
+    ).not.toBe('rgb(0, 0, 0)')
+    expect(
+      style.minWidth,
+      `ячейка таблицы /employees унаследовала min-width:140px из org-board.styles.css`
+    ).not.toBe('140px')
+  })
 })
