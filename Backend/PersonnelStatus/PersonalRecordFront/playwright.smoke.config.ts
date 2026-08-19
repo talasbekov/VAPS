@@ -21,7 +21,7 @@ export default defineConfig({
   // Обход и точечные пробы по живому стенду перечислены явно: `**/*.spec.ts`
   // затянул бы сюда любую будущую спеку, которой живой стенд не нужен, и она
   // падала бы у всех, кто его не поднял.
-  testMatch: ['smoke-buttons.spec.ts', 'objects-tabs.spec.ts', 'gvo-sections.spec.ts', 'protected-persons.spec.ts', 'legal-documents.spec.ts', 'placement-stage.spec.ts', 'closure-stage.spec.ts', 'acknowledgement-stage.spec.ts', 'approval-stage.spec.ts', 'recon-stage.spec.ts', 'bulletin-stage.spec.ts', 'command-center.spec.ts', 'stage-chain.spec.ts', 'events-registry.spec.ts', 'operations-analytics.spec.ts', 'service-analytics.spec.ts', 'my-profile.spec.ts', 'object-passport.spec.ts', 'forms-validation.spec.ts', 'tables-data.spec.ts', 'org-structure-status.spec.ts'],
+  testMatch: ['smoke-buttons.spec.ts', 'objects-tabs.spec.ts', 'gvo-sections.spec.ts', 'protected-persons.spec.ts', 'legal-documents.spec.ts', 'placement-stage.spec.ts', 'closure-stage.spec.ts', 'acknowledgement-stage.spec.ts', 'approval-stage.spec.ts', 'recon-stage.spec.ts', 'bulletin-stage.spec.ts', 'command-center.spec.ts', 'stage-chain.spec.ts', 'events-registry.spec.ts', 'operations-analytics.spec.ts', 'service-analytics.spec.ts', 'my-profile.spec.ts', 'object-passport.spec.ts', 'forms-validation.spec.ts', 'tables-data.spec.ts', 'org-structure-status.spec.ts', 'org-structure-view.spec.ts'],
   // Один воркер: обход кликает по живому стенду и меняет его состояние —
   // параллельные персоны видели бы правки друг друга.
   workers: 1,
