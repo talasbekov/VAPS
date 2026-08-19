@@ -156,6 +156,9 @@ const ROUTES: readonly RouteSpec[] = [
   // может не быть, и тогда экран показывает причину — это не отказ.
   { template: '/security-ops/profile' },
   { template: '/security-ops/command-center' },
+  // «Сбор сил на ОМ» — разрез по ВСЕМ мероприятиям на сборе разом (не по
+  // одному id), поэтому маршрут статический, как и command-center.
+  { template: '/security-ops/forces' },
   { template: '/security-ops/events' },
   { template: '/security-ops/events/{eventId}', needs: ['eventId'] },
   // Реестр ГВО — та же сущность, что и ОМ: карточка сводки открывается по id
