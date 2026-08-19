@@ -9,6 +9,7 @@ import { EmployeeTable } from "@/entities/employee/ui/EmployeeTable";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
 import { AddEmployeeDialog } from "@/features/add-employee";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -28,8 +29,6 @@ import {
   RefreshCw,
   Building2,
   Calendar,
-  Phone,
-  Mail,
 } from "lucide-react";
 import { useAuth, PermissionGate } from "@/lib/auth";
 import { DirectorateAccessNotice } from "@/components/directorate-access-notice";
@@ -339,63 +338,32 @@ function EmployeesScreen() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Всего сотрудников
-              </CardTitle>
-              <Users className="h-6 w-6 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total}</div>
-              <p className="text-xs text-muted-foreground">Активных записей</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="Всего сотрудников"
+            value={stats.total}
+            caption="Активных записей"
+          />
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">В строю</CardTitle>
-              <Building2 className="h-6 w-6 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {stats.active}
-              </div>
-              <p className="text-xs text-muted-foreground">Работают</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="В строю"
+            value={stats.active}
+            tone="success"
+            caption="Работают"
+          />
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                В отпуске/больничном
-              </CardTitle>
-              <Calendar className="h-6 w-6 text-yellow-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">
-                {stats.onLeave}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Временно отсутствуют
-              </p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="В отпуске/больничном"
+            value={stats.onLeave}
+            tone="warning"
+            caption="Временно отсутствуют"
+          />
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                В командировке
-              </CardTitle>
-              <Phone className="h-6 w-6 text-purple-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-purple-600">
-                {stats.onTrip}
-              </div>
-              <p className="text-xs text-muted-foreground">Служебные поездки</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            label="В командировке"
+            value={stats.onTrip}
+            tone="info"
+            caption="Служебные поездки"
+          />
         </div>
 
         {/* Main Content */}
