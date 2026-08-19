@@ -539,4 +539,43 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     ])
     expect(heights, `высоты контролов: ${heights.join(', ')}`).toHaveLength(1)
   })
+
+  // Task 13: кнопка «Сбросить фильтры» должна ДЕЙСТВОВАТЬ, а не просто быть на
+  // экране. Проверяются оба следствия сброса: адрес теряет параметры отбора И
+  // список возвращается к полному. Одного мало — почистить адрес можно, не
+  // перезапросив список, а перерисовать список можно, оставив мусор в адресе.
+  //
+  // Отбор задан этапом RECON: он заведомо уже страницы в 20 строк. Если
+  // фикстура стенда съедет и записей на этом этапе не станет (или станет
+  // больше страницы), ассерты ниже упадут ГРОМКО с числами в сообщении — это
+  // дрейф фикстуры, а не молчаливо вакуумная проба.
+  test('«Сбросить фильтры» очищает адрес и возвращает полный список', async ({ page }) => {
+    await signIn(page)
+
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible()
+    await expect(page.locator('tbody tr').first()).toBeVisible()
+    const fullCount = await page.locator('tbody tr').count()
+    expect(fullCount, 'реестр пуст без фильтров — сравнивать было бы не с чем').toBeGreaterThan(0)
+
+    await page.goto(`${APP}/security-ops/events/?stage=RECON&from=2026-01-01`)
+    await expect(page.locator('tbody tr').first()).toBeVisible()
+    const filteredCount = await page.locator('tbody tr').count()
+    expect(
+      filteredCount,
+      `отбор не сузил реестр: было ${fullCount}, стало ${filteredCount}`
+    ).toBeLessThan(fullCount)
+    expect(filteredCount, 'отбор обнулил реестр — сброс нечем отличить от ошибки').toBeGreaterThan(0)
+
+    await page.getByRole('button', { name: 'Сбросить фильтры' }).click()
+
+    await expect
+      .poll(() => page.url(), { timeout: 15_000 })
+      .not.toContain('stage=')
+    expect(page.url(), 'в адресе остался период — сброс почистил не всё').not.toContain('from=')
+
+    await expect
+      .poll(() => page.locator('tbody tr').count(), { timeout: 15_000 })
+      .toBe(fullCount)
+  })
 })
