@@ -25,6 +25,7 @@ import { useAuth, ROLES, ResourceGate } from "@/lib/auth";
 import { NotificationsDropdown } from "@/features/notifications/ui/NotificationsDropdown";
 import { EditProfileDialog } from "@/features/edit-profile";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -47,8 +48,8 @@ export function Header({
     // она отъедала треть экрана телефона на каждой странице у всех ролей,
     // кроме role-2/4/6.
     <header className="border-b border-border">
-      <div className="sticky top-0 z-40 flex h-14 items-center justify-between bg-background px-4 sm:px-6">
-        <div className="flex items-center gap-2">
+      <div className="sticky top-0 z-40 flex h-14 items-center justify-between gap-2 bg-card px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2">
           {/* Бургер — единственный вход в навигацию на мобильном, и до этой
               правки у него не было имени вовсе: скринридер читал «кнопка». */}
           <Button
@@ -74,9 +75,10 @@ export function Header({
               <Menu className="h-5 w-5" aria-hidden="true" />
             </Button>
           )}
+          <Breadcrumbs />
         </div>
 
-        <div className="flex items-center space-x-4 ml-auto">
+        <div className="flex shrink-0 items-center space-x-4 ml-auto">
           <ThemeToggle />
           <NotificationsDropdown />
 

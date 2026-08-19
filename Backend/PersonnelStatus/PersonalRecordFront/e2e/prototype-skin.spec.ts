@@ -137,4 +137,135 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     await expect(eyebrow).toHaveText('Охранные мероприятия')
     expect(await eyebrow.evaluate((el) => getComputedStyle(el).textTransform)).toBe('uppercase')
   })
+
+  test('в шапке есть хлебные крошки', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible()
+
+    const crumbs = page.getByRole('navigation', { name: 'Хлебные крошки' })
+    await expect(crumbs).toBeVisible()
+    await expect(crumbs).toContainText('Реестр ОМ')
+
+    // Шапка белая, а не в цвет полотна — иначе она сливается с ним.
+    const header = page.locator('header').first()
+    const headerBg = await header.evaluate((el) => getComputedStyle(el).backgroundColor)
+    const bodyBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+    expect(headerBg).not.toBe(bodyBg)
+  })
+
+  test('крошка называет страницу так же, как её h1', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/daily-expense/`)
+    const h1 = page.getByRole('heading', { level: 1 })
+    await expect(h1).toBeVisible()
+    const h1Text = await h1.textContent()
+
+    const lastCrumb = page.locator('nav[aria-label="Хлебные крошки"] [aria-current="page"]')
+    await expect(lastCrumb).toBeVisible()
+    await expect(lastCrumb).toHaveText(h1Text!.trim())
+  })
+
+  test('сайдбар 256px и светлая шапка', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible()
+
+    const aside = page.locator('aside').first()
+    await expect(aside).toBeVisible()
+    expect(await aside.evaluate((el) => el.getBoundingClientRect().width)).toBe(256)
+
+    // Шапка сайдбара больше не залита синим: сравниваем с --primary кнопки.
+    const brandBg = await page
+      .locator('[data-slot="sidebar-brand"]')
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+    const asideBg = await aside.evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(brandBg).toBe(asideBg)
+  })
+
+  test('заголовок подгруппы набран в одной плотности с пунктами', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible()
+
+    const aside = page.locator('aside').first()
+    await expect(aside).toBeVisible()
+
+    // Группа «Оперативная работа» открыта сама: текущий адрес лежит внутри неё.
+    const groupButton = aside.locator('button[aria-controls^="sidebar-group-"]').first()
+    await expect(groupButton).toBeVisible()
+    const listId = await groupButton.getAttribute('aria-controls')
+    // 🔴 Лист берём ИЗ ЭТОЙ ЖЕ группы: сравнивать заголовок с пунктом чужой
+    // (закрытой) группы нельзя — у скрытого узла размеры не считаются.
+    const leafLink = aside.locator(`#${listId} a`).first()
+    await expect(leafLink).toBeVisible()
+
+    const shape = await page.evaluate(
+      ([btnId, id]) => {
+        const btn = document.querySelector(`button[aria-controls="${btnId}"]`) as HTMLElement
+        const leaf = document.querySelector(`#${id} a`) as HTMLElement
+        if (!btn || !leaf) throw new Error('нет пары «заголовок группы + пункт» — ассерт был бы вакуумным')
+        const b = getComputedStyle(btn)
+        const l = getComputedStyle(leaf)
+        return {
+          btnSize: b.fontSize,
+          leafSize: l.fontSize,
+          btnPadY: b.paddingTop,
+          leafPadY: l.paddingTop,
+          btnPadX: b.paddingRight,
+          btnRadius: b.borderRadius,
+          leafRadius: l.borderRadius,
+          btnHeight: Math.round(btn.getBoundingClientRect().height),
+          leafHeight: Math.round(leaf.getBoundingClientRect().height),
+          // Иерархия держится ВЕСОМ, а не кеглем: заголовок группы должен
+          // остаться тяжелее листа, иначе уровни сольются.
+          btnWeight: b.fontWeight,
+          leafWeight: l.fontWeight,
+        }
+      },
+      [listId, listId]
+    )
+
+    // Единая сетка: заголовок группы и пункт под ним набраны одним кеглем.
+    expect(shape.btnSize, `заголовок ${shape.btnSize} против пункта ${shape.leafSize}`).toBe(
+      shape.leafSize
+    )
+    expect(shape.leafSize).toBe('13px')
+    // Плотность та же: вертикальные поля, радиус и итоговая высота строки.
+    expect(shape.btnPadY).toBe(shape.leafPadY)
+    expect(shape.btnRadius).toBe(shape.leafRadius)
+    expect(shape.btnHeight).toBe(shape.leafHeight)
+    // ...но уровень всё ещё различим: заголовок тяжелее листа.
+    expect(Number(shape.btnWeight)).toBeGreaterThan(Number(shape.leafWeight))
+
+    // Шеврон не разъехался после уплотнения.
+    const geometry = await groupButton.evaluate((el) => {
+      const svg = el.querySelector('svg')
+      const span = el.querySelector('span')
+      if (!svg || !span) throw new Error('в заголовке группы нет шеврона или текста')
+      const b = el.getBoundingClientRect()
+      const s = svg.getBoundingClientRect()
+      const t = span.getBoundingClientRect()
+      return {
+        btnW: b.width,
+        svgW: s.width,
+        svgH: s.height,
+        inside: s.top >= b.top && s.bottom <= b.bottom && s.right <= b.right && s.left >= b.left,
+        gapRight: b.right - s.right,
+        textOverlapsChevron: t.right > s.left,
+      }
+    })
+    // 🔴 Сначала доказываем, что мерили ЖИВУЮ геометрию: у скрытого сайдбара
+    // (`hidden lg:block` на узком экране) все rect'ы нулевые, и проверки
+    // «внутри» и «зазор не больше N» вырождаются в истину сами собой.
+    expect(geometry.btnW).toBeGreaterThan(0)
+    expect(geometry.svgW).toBeGreaterThan(0)
+    expect(geometry.svgH).toBeGreaterThan(0)
+    expect(geometry.inside, 'шеврон вылез за пределы кнопки').toBe(true)
+    // Зазор справа — ровно поле кнопки: шеврон не прилип к краю и не уехал
+    // внутрь. Сравнение с допуском: rect'ы приходят субпикселями (наблюдалось
+    // 11.999998 против 12), точное равенство здесь давало бы флейк.
+    expect(geometry.gapRight).toBeCloseTo(parseFloat(shape.btnPadX), 1)
+    expect(geometry.textOverlapsChevron, 'текст заголовка налез на шеврон').toBe(false)
+  })
 })

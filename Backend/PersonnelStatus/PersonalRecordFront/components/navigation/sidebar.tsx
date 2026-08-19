@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth, ROLES } from "@/lib/auth";
-import { motion } from "framer-motion";
 import {
   Building2,
   Users,
@@ -26,7 +25,6 @@ import {
   Star,
   UserRound,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
@@ -41,8 +39,10 @@ function normalizePath(path: string): string {
 }
 
 // Общий вид пункта: единственное место, где живёт разметка ссылки меню.
+// Прототип: компактный пункт 13px, radius 9px. Было 15px/600 с px-4 py-3 —
+// при 256px такие пункты переносились в две строки.
 const ITEM_CLASS =
-  "flex items-center rounded-xl px-4 py-3 text-[15px] font-semibold transition-colors";
+  "flex items-center rounded-[9px] px-3 py-2 text-[13px] font-medium transition-colors";
 
 function NavLink({
   href,
@@ -214,17 +214,22 @@ export function Sidebar() {
   return (
     <aside className="h-screen w-full bg-sidebar border-r border-sidebar-border shadow-lg flex flex-col">
       {/* Логотип */}
-      <div className="sidebar-header flex items-center justify-center h-16 px-4 bg-primary flex-shrink-0">
-        <div className="flex items-center">
-          <motion.div
-            whileHover={{ rotate: 15, scale: 1.1 }}
-            transition={{ type: "spring" as const, stiffness: 400 }}
-          >
-            <Building2 className="h-8 w-8 text-primary-foreground mr-3" />
-          </motion.div>
-          <span className="text-primary-foreground font-bold text-lg whitespace-nowrap">
+      <div
+        data-slot="sidebar-brand"
+        className="bg-sidebar border-sidebar-border flex h-16 flex-shrink-0 items-center gap-[11px] border-b px-[18px]"
+      >
+        {/* Прототип: плитка 36px, radius 10px, bg-primary, белый текст 800/13px.
+            Заливка ушла с шапки на плитку — шапка стала светлой. */}
+        <div className="bg-primary text-primary-foreground grid size-9 shrink-0 place-items-center rounded-[10px] text-[13px] font-extrabold">
+          ПР
+        </div>
+        <div className="min-w-0">
+          <div className="text-sidebar-foreground truncate text-[15px] font-bold tracking-[.06em]">
             Проект Расход
-          </span>
+          </div>
+          <div className="text-sidebar-foreground/55 truncate text-[10.5px]">
+            Учёт личного состава
+          </div>
         </div>
       </div>
 
@@ -251,7 +256,7 @@ export function Sidebar() {
 
         {/* Охранные мероприятия — нативный порт Smart Josparlau. */}
         <div className="mt-6">
-          <div className="px-4 pb-2 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
+          <div className="text-sidebar-foreground/45 mx-2.5 mb-1.5 text-[10px] font-bold tracking-[.12em] uppercase">
             Охранные мероприятия
           </div>
           <ul className="space-y-1">
@@ -284,7 +289,11 @@ export function Sidebar() {
                         [group.title]: !open,
                       }))
                     }
-                    className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-[15px] font-semibold transition-colors hover:bg-sidebar-accent ${
+                    // Та же сетка, что у ITEM_CLASS: 13px / rounded-[9px] /
+                    // px-3 py-2. Иерархия держится ВЕСОМ (semibold против
+                    // medium у листьев), а не кеглем — иначе при 256px
+                    // заголовки читались разнобоем, а не уровнем.
+                    className={`flex w-full items-center justify-between rounded-[9px] px-3 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-sidebar-accent ${
                       hasActive
                         ? "text-sidebar-accent-foreground"
                         : "text-sidebar-foreground"
@@ -350,25 +359,20 @@ export function Sidebar() {
 
       {/* Информация о роли */}
       {userRole && (
-        <div className="px-4 pb-6 flex-shrink-0 sidebar-role-card">
-          <motion.div
-            className="bg-sidebar-accent rounded-xl p-4 shadow-md border border-sidebar-border"
-            whileHover={{ scale: 1.02 }}
-            transition={{ type: "spring" as const, stiffness: 400 }}
-          >
-            <p className="text-sm font-semibold text-sidebar-foreground mb-2">
+        <div
+          className="border-sidebar-border flex items-center gap-2.5 border-t px-3 py-2.5 sidebar-role-card"
+          // Описание роли и отдел не помещаются в строку при 256px — уходят в
+          // title, а не пропадают совсем.
+          title={`${userRole.description}. Отдел: ${user?.department}`}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-sidebar-foreground/45 text-[10px] uppercase tracking-[.12em]">
               Текущая роль
             </p>
-            <Badge className={`text-sm px-2 py-1 ${userRole.color}`}>
+            <p className="text-sidebar-foreground truncate text-[12.5px] font-semibold">
               {userRole.name}
-            </Badge>
-            <p className="text-sm text-sidebar-foreground/80 mt-2">
-              {userRole.description}
             </p>
-            <div className="mt-3 text-sm text-sidebar-foreground/70 font-medium">
-              Отдел: {user?.department}
-            </div>
-          </motion.div>
+          </div>
         </div>
       )}
     </aside>
