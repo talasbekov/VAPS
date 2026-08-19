@@ -1822,10 +1822,26 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
         avatar: "/placeholder.svg",
       };
 
-  // Преобразуем остальных сотрудников (исключая руководителя)
+  // Остальные строки подразделения, кроме руководителя.
+  //
+  // 🔴 Вакантные строки (`employee === null`) ОСТАЮТСЯ в списке. Пока узлом
+  // дерева была одна штатная единица, вакансия оказывалась «руководителем»
+  // своей карточки и была видна; после склейки строк по подразделению она
+  // попала бы под этот фильтр и пропала с экрана вовсе — а «Подразделения»
+  // ровно про занятые ставки И вакансии. Статуса у вакансии нет: точка
+  // остаётся серой, подпись — «Вакантная должность».
   const otherEmployees = staffUnit.employees
-    .filter((emp) => emp !== headEmployee && emp.employee)
-    .map((emp) => ({
+    .filter((emp) => emp !== headEmployee)
+    .map((emp) => {
+      if (!emp.employee) {
+        return {
+          id: `vacant-${staffUnit.id}-${emp.position.id}-${emp.position.name}`,
+          name: "Вакантная должность",
+          position: emp.position.name,
+          avatar: "/placeholder.svg",
+        };
+      }
+      return {
       id: emp.employee!.id.toString(),
       name: `${emp.employee!.first_name} ${emp.employee!.last_name}`,
       position: emp.position.name,
@@ -1856,7 +1872,8 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
         // Иначе используем заглушку
         return "/placeholder.svg";
       })(),
-    }));
+      };
+    });
 
   // Преобразуем детей (если они есть)
   const children: OrgUnit[] = (staffUnit.children || []).map(
@@ -1876,12 +1893,73 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
 
 // Функция для преобразования ответа API в OrgUnit
 // API возвращает массив, нужно построить дерево на основе parent_id
+/**
+ * Схлопнуть штатные единицы ОДНОГО подразделения в один узел дерева.
+ *
+ * 🔴 Дерево строилось по штатным единицам, а КАЖДЫЙ узел подписывался именем
+ * своего подразделения. Отдел из пяти ставок рисовался пятью карточками с
+ * ОДНИМ И ТЕМ ЖЕ заголовком «Отдел пропускного режима», в каждой по одному
+ * человеку: экран показывал пять отделов вместо одного отдела с пятью людьми.
+ *
+ * Узел дерева — это ПОДРАЗДЕЛЕНИЕ, а штатная единица — строка внутри него.
+ * Поэтому строки группируются по `division.id`, их `employees` складываются, а
+ * родителем группы становится ближайшее по цепочке `parent_id` подразделение,
+ * ОТЛИЧНОЕ от своего (иначе отдел оказался бы сам себе родителем).
+ */
+export function mergeStaffUnitsByDivision(staffUnits: StaffUnit[]): StaffUnit[] {
+  const byId = new Map(staffUnits.map((unit) => [unit.id, unit]));
+
+  // Представитель подразделения — строка с минимальным id: у неё же берутся
+  // id узла и порядок сортировки, поэтому выбор обязан быть устойчивым.
+  const representative = new Map<number, StaffUnit>();
+  for (const unit of staffUnits) {
+    const current = representative.get(unit.division.id);
+    if (current === undefined || unit.id < current.id) {
+      representative.set(unit.division.id, unit);
+    }
+  }
+
+  /** Ближайший вверх по цепочке предок ДРУГОГО подразделения. */
+  const parentDivisionId = (unit: StaffUnit): number | null => {
+    const seen = new Set<number>([unit.id]);
+    let parent = unit.parent_id === null ? undefined : byId.get(unit.parent_id);
+    while (parent !== undefined && !seen.has(parent.id)) {
+      if (parent.division.id !== unit.division.id) return parent.division.id;
+      seen.add(parent.id);
+      parent = parent.parent_id === null ? undefined : byId.get(parent.parent_id);
+    }
+    return null;
+  };
+
+  const merged: StaffUnit[] = [];
+  for (const [divisionId, head] of representative) {
+    const rows = staffUnits.filter((unit) => unit.division.id === divisionId);
+    const parentId = (() => {
+      for (const row of rows) {
+        const found = parentDivisionId(row);
+        if (found !== null) return representative.get(found)?.id ?? null;
+      }
+      return null;
+    })();
+
+    merged.push({
+      ...head,
+      parent_id: parentId,
+      employees: rows.flatMap((row) => row.employees ?? []),
+    });
+  }
+
+  return merged;
+}
+
 export function convertStaffUnitsResponseToOrgUnit(
-  staffUnits: StaffUnit[]
+  rawStaffUnits: StaffUnit[]
 ): OrgUnit | null {
-  if (!staffUnits || staffUnits.length === 0) {
+  if (!rawStaffUnits || rawStaffUnits.length === 0) {
     return null;
   }
+
+  const staffUnits = mergeStaffUnitsByDivision(rawStaffUnits);
 
   // Создаем Set всех существующих ID для быстрой проверки
   const existingIds = new Set(staffUnits.map((unit) => unit.id));

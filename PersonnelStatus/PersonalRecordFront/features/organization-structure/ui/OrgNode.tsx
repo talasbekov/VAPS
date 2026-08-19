@@ -251,8 +251,25 @@ export function OrgNode({
 
             {unit.employees.length > 0 && (
               <div className="mb-2">
+                {/* Вакансии лежат в том же списке (иначе их не было бы видно
+                    вовсе), но в счётчик «Сотрудники» не входят: пустая ставка
+                    не человек. Число вакансий называется отдельно. */}
                 <div className="text-xs text-muted-foreground mb-1 font-medium">
-                  Сотрудники ({unit.employees.length})
+                  Сотрудники (
+                  {
+                    unit.employees.filter(
+                      (emp) => emp.name !== "Вакантная должность"
+                    ).length
+                  }
+                  )
+                  {unit.employees.some(
+                    (emp) => emp.name === "Вакантная должность"
+                  ) &&
+                    ` · вакансий (${
+                      unit.employees.filter(
+                        (emp) => emp.name === "Вакантная должность"
+                      ).length
+                    })`}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
                   {unit.employees.map((emp) => renderEmployee(emp, "small"))}

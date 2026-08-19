@@ -21,7 +21,9 @@ import {
   AlertCircle,
   RefreshCw,
   ChevronDown,
+  Search,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
 import {
   OrgUnit,
@@ -74,6 +76,7 @@ export default function OrgChart() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [focusedUnitId, setFocusedUnitId] = useState<string>("");
   const [treePosition, setTreePosition] = useState({ x: 0, y: 0, scale: 1 });
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Обновляем expandedUnits и focusedUnitId при изменении данных
   useEffect(() => {
@@ -143,6 +146,55 @@ export default function OrgChart() {
       setExpandedUnits(new Set([orgData.id]));
     }
   };
+
+  // Поиск по дереву. Строка ввода стояла на СТРАНИЦЕ — без состояния, без
+  // обработчика и без доступа к дереву: набранное в ней не делало ничего.
+  // Здесь она рядом с данными и с `focusOnUnit`, который уже умеет
+  // разворачивать путь до узла.
+  const matches = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (needle === "" || orgData === null) return [];
+
+    const found: { id: string; unit: string; hit: string }[] = [];
+    const walk = (unit: OrgUnit) => {
+      if (unit.name.toLowerCase().includes(needle)) {
+        found.push({ id: unit.id, unit: unit.name, hit: "подразделение" });
+      }
+      // Руководитель и личный состав ищутся по имени и должности: человека
+      // в структуре ищут именно так, а не по названию отдела, в котором он
+      // сидит.
+      const people = [unit.head, ...(unit.employees ?? [])].filter(Boolean);
+      for (const person of people) {
+        const haystack = `${person.name} ${person.position}`.toLowerCase();
+        if (haystack.includes(needle)) {
+          found.push({
+            id: unit.id,
+            unit: unit.name,
+            hit: `${person.name} · ${person.position}`,
+          });
+        }
+      }
+      unit.children?.forEach(walk);
+    };
+    walk(orgData);
+    return found.slice(0, 8);
+  }, [searchQuery, orgData]);
+
+  // Имя СФОКУСИРОВАННОГО узла. Подпись «Фокус: …» печатала `orgData.name`,
+  // то есть имя КОРНЯ, при любом выбранном узле: сфокусировавшись на отделе,
+  // человек читал название всей структуры.
+  const focusedUnitName = useMemo(() => {
+    if (orgData === null) return "";
+    const find = (unit: OrgUnit): OrgUnit | null => {
+      if (unit.id === focusedUnitId) return unit;
+      for (const child of unit.children ?? []) {
+        const hit = find(child);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    return find(orgData)?.name ?? "";
+  }, [orgData, focusedUnitId]);
 
   const renderEmployee = (
     employee: Employee,
@@ -234,8 +286,54 @@ export default function OrgChart() {
           <Sparkles className="w-4 h-4 shrink-0 text-primary-ink" aria-hidden="true" />
           {focusedUnitId === orgData?.id
             ? "Кликните на подразделение для фокуса"
-            : `Фокус: ${orgData?.name || "Структура организации"}`}
+            : `Фокус: ${focusedUnitName || "неизвестный узел"}`}
         </div>
+      </div>
+
+      {/* Поиск по структуре */}
+      <div className="relative">
+        <div className="relative">
+          <Search
+            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Поиск по подразделениям, сотрудникам и должностям…"
+            aria-label="Поиск по структуре организации"
+            className="pl-9"
+            disabled={orgData === null}
+          />
+        </div>
+        {searchQuery.trim() !== "" && (
+          <div className="mt-2 rounded-lg border bg-card p-2 text-sm shadow-sm">
+            {matches.length === 0 ? (
+              <p className="px-2 py-1.5 text-muted-foreground">
+                Ничего не найдено
+              </p>
+            ) : (
+              <ul>
+                {matches.map((match, index) => (
+                  <li key={`${match.id}-${index}`}>
+                    <button
+                      type="button"
+                      className="w-full rounded px-2 py-1.5 text-left hover:bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onClick={() => {
+                        focusOnUnit(match.id);
+                        setSearchQuery("");
+                      }}
+                    >
+                      <span className="font-medium">{match.unit}</span>
+                      <span className="text-muted-foreground"> — {match.hit}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       {loading && (
