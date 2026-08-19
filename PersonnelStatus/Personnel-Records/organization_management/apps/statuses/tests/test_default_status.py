@@ -207,3 +207,52 @@ def test_explicit_creation_and_signal_do_not_collide():
         )
 
     assert _active(employee).count() == 1, 'сигнал добавил второй действующий статус'
+
+
+@pytest.mark.django_db
+def test_start_ignores_cancelled_and_respects_actual_end():
+    """Дата дефолта считается по СОСТОЯВШЕМУСЯ концу периода.
+
+    🔴 Оба правила поймал смоук-обход, а не мысленный разбор. Первая версия
+    брала `Max(end_date)` и `Max(actual_end_date)` ПОРОЗНЬ и не отсеивала
+    отменённые: у реального сотрудника стенда получалась дата в БУДУЩЕМ,
+    статус создавался `planned` вместо `active`, а команда рапортовала
+    «Заведено статусов: 7», не восстановив инвариант.
+    """
+    today = timezone.now().date()
+    employee = Employee.objects.create(
+        personnel_number="def-calc", last_name="Расчётов", first_name="Роман",
+        hire_date=today - timedelta(days=900),
+    )
+    _active(employee).delete()
+
+    # Досрочно завершённый: числился до +10, фактически закрыт -5 дней назад.
+    EmployeeStatus.objects.create(
+        employee=employee, status_type=_ST.VACATION,
+        start_date=today - timedelta(days=20),
+        end_date=today + timedelta(days=10),
+        actual_end_date=today - timedelta(days=5),
+    )
+    # Отменённый с ДАЛЁКИМ концом: период он не занимал вовсе.
+    cancelled = EmployeeStatus.objects.create(
+        employee=employee, status_type=_ST.TRAINING,
+        start_date=today - timedelta(days=3),
+        end_date=today + timedelta(days=100),
+    )
+    EmployeeStatus.objects.filter(pk=cancelled.pk).update(state=_STATE.CANCELLED)
+
+    # Гвард против вакуума: без него проба не отличала бы правило от совпадения.
+    assert not _active(employee).exists()
+
+    expected = today - timedelta(days=4)
+    assert default_status_start(employee) == expected, (
+        'дата взята не по фактическому концу либо испорчена отменённым статусом'
+    )
+
+    status = ensure_active_status(employee)
+    assert status is not None
+    assert status.start_date == expected
+    # Главное следствие: статус ДЕЙСТВУЮЩИЙ, а не запланированный.
+    assert status.state == _STATE.ACTIVE, (
+        'статус ушёл в planned — инвариант не восстановлен'
+    )
