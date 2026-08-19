@@ -47,4 +47,36 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     const dark = await read()
     expect(dark.canvas, 'тёмная: полотно слилось с карточкой').not.toBe(dark.card)
   })
+
+  test('таблица набрана по плотности прототипа', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible()
+    await expect(page.locator('tbody tr').first()).toBeVisible()
+
+    const shape = await page.evaluate(() => {
+      const th = document.querySelector('thead th') as HTMLElement | null
+      const td = document.querySelector('tbody td') as HTMLElement | null
+      if (!th || !td) throw new Error('таблицы на экране нет — ассерт был бы вакуумным')
+      const cs = getComputedStyle(th)
+      return {
+        thSize: cs.fontSize,
+        thWeight: cs.fontWeight,
+        thBg: cs.backgroundColor,
+        thTransform: cs.textTransform,
+        tdSize: getComputedStyle(td).fontSize,
+        bodyBg: getComputedStyle(document.body).backgroundColor,
+      }
+    })
+
+    expect(shape.thSize).toBe('11px')
+    expect(shape.thWeight).toBe('600')
+    expect(shape.tdSize).toBe('12.5px')
+    // Шапка таблицы залита — но не тем же, чем полотно: иначе на белой карточке
+    // она невидима.
+    expect(shape.thBg).not.toBe('rgba(0, 0, 0, 0)')
+    // 🔴 Регистр заголовков НЕ задаём: thead th пинится по textContent в пяти
+    // местах e2e, а в исходнике прототипа text-transform на th нет.
+    expect(shape.thTransform).toBe('none')
+  })
 })
