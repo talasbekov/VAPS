@@ -137,4 +137,32 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     await expect(eyebrow).toHaveText('Охранные мероприятия')
     expect(await eyebrow.evaluate((el) => getComputedStyle(el).textTransform)).toBe('uppercase')
   })
+
+  test('в шапке есть хлебные крошки', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible()
+
+    const crumbs = page.getByRole('navigation', { name: 'Хлебные крошки' })
+    await expect(crumbs).toBeVisible()
+    await expect(crumbs).toContainText('Реестр ОМ')
+
+    // Шапка белая, а не в цвет полотна — иначе она сливается с ним.
+    const header = page.locator('header').first()
+    const headerBg = await header.evaluate((el) => getComputedStyle(el).backgroundColor)
+    const bodyBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+    expect(headerBg).not.toBe(bodyBg)
+  })
+
+  test('крошка называет страницу так же, как её h1', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/daily-expense/`)
+    const h1 = page.getByRole('heading', { level: 1 })
+    await expect(h1).toBeVisible()
+    const h1Text = await h1.textContent()
+
+    const lastCrumb = page.locator('nav[aria-label="Хлебные крошки"] [aria-current="page"]')
+    await expect(lastCrumb).toBeVisible()
+    await expect(lastCrumb).toHaveText(h1Text!.trim())
+  })
 })
