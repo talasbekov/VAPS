@@ -302,4 +302,36 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(shape.weight).toBe('800')
     expect(shape.numeric).toContain('tabular-nums')
   })
+
+  // Один ассерт на все переведённые экраны: если хоть один остался на сырой
+  // <table>, его th сохранит прежние 14px и проба покажет, какой именно.
+  for (const route of [
+    '/security-ops/ratings/',
+    '/security-ops/ratings/export/',
+    '/security-ops/ratings/evaluations/',
+    '/security-ops/ratings/audit/',
+  ]) {
+    test(`таблица переведена на примитив: ${route}`, async ({ page }) => {
+      await signIn(page)
+      await page.goto(`${APP}${route}`)
+      await expect(page.locator('thead th').first()).toBeVisible()
+
+      const sizes = await page
+        .locator('thead th')
+        .evaluateAll((els) => [...new Set(els.map((el) => getComputedStyle(el).fontSize))])
+      expect(sizes, `на ${route} шапка набрана не 11px`).toEqual(['11px'])
+
+      // 🔴 Font-size один в один совпадает с ручной версткой этих файлов
+      // (text-[11px] уже стоял на th) — сам по себе ассерт вакуумен для
+      // ЭТОГО набора маршрутов. Примитив TableHead ещё и заливает шапку
+      // (bg-muted/50); ручная разметка — нет. Проверяем оба признака.
+      const bg = await page
+        .locator('thead th')
+        .first()
+        .evaluate((el) => getComputedStyle(el).backgroundColor)
+      expect(bg, `на ${route} шапка таблицы не залита — значит не примитив`).not.toBe(
+        'rgba(0, 0, 0, 0)'
+      )
+    })
+  }
 })

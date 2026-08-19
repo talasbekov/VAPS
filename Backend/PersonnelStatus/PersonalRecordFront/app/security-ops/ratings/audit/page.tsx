@@ -6,6 +6,14 @@
 // наравне с успехами.
 import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { ScrollText } from "lucide-react";
 import { useRatingAudit } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
@@ -75,11 +83,11 @@ export default function RatingAuditPage() {
 
         {data !== undefined && (
           <>
-            <section className="overflow-x-auto rounded-xl border bg-card">
-              <table className="w-full border-collapse text-left">
+            <section className="rounded-xl border bg-card">
+              <Table>
                 <caption className="sr-only">Журнал действий оценивания</caption>
-                <thead>
-                  <tr>
+                <TableHeader>
+                  <TableRow>
                     {[
                       "Время",
                       "Событие",
@@ -88,40 +96,32 @@ export default function RatingAuditPage() {
                       "Мероприятие",
                       "Ссылки",
                     ].map((title) => (
-                      <th
-                        key={title}
-                        scope="col"
-                        className="p-3 text-[11px] font-semibold text-muted-foreground"
-                      >
+                      <TableHead key={title} scope="col">
                         {title}
-                      </th>
+                      </TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {data.results.map((entry) => (
-                    <tr key={entry.id} className="border-t align-top">
-                      <td className="p-3 text-xs tabular-nums">
+                    <TableRow key={entry.id}>
+                      <TableCell className="tabular-nums">
                         {dateTime(entry.occurredAt)}
-                      </td>
-                      <td className="p-3 text-sm">
-                        {EVENT_LABEL[entry.eventCode]}
-                      </td>
-                      <td className="p-3 text-xs">
+                      </TableCell>
+                      <TableCell>{EVENT_LABEL[entry.eventCode]}</TableCell>
+                      <TableCell>
                         {entry.outcome === "SUCCESS" ? "Выполнено" : "Отклонено"}
                         {entry.reasonCode !== null && (
                           <span className="ml-1 font-mono text-[11px] text-muted-foreground">
                             {entry.reasonCode}
                           </span>
                         )}
-                      </td>
+                      </TableCell>
                       {/* Кто действовал — НЕ «кто оценил»: связь оценки с
                           оценщиком остаётся закрытой. */}
-                      <td className="p-3 text-xs">{entry.actorUserId ?? "—"}</td>
-                      <td className="p-3 text-xs">
-                        {entry.securityEventId ?? "—"}
-                      </td>
-                      <td className="p-3 text-[11px] font-mono text-muted-foreground">
+                      <TableCell>{entry.actorUserId ?? "—"}</TableCell>
+                      <TableCell>{entry.securityEventId ?? "—"}</TableCell>
+                      <TableCell className="text-[11px] font-mono text-muted-foreground">
                         {[
                           entry.evaluationId,
                           entry.correctionId,
@@ -135,11 +135,11 @@ export default function RatingAuditPage() {
                         ]
                           .filter((value): value is string => value !== null)
                           .join(" · ")}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
               {data.results.length === 0 && (
                 <p className="p-4 text-sm text-muted-foreground">
                   Событий пока нет.
