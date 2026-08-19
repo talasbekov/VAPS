@@ -44,6 +44,7 @@ module.exports = {
         background: "hsl(var(--background))",
         canvas: "hsl(var(--canvas))",
         "table-divider": "hsl(var(--table-divider))",
+        "table-head-ink": "hsl(var(--table-head-ink))",
         foreground: "hsl(var(--foreground))",
         primary: {
           DEFAULT: "hsl(var(--primary))",

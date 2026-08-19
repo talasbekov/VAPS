@@ -120,7 +120,7 @@ function ForcesScreen() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-primary">
+            <p className="text-xs font-bold uppercase tracking-widest text-primary-ink">
               Охранные мероприятия
             </p>
             <h1 className="text-3xl font-bold text-foreground">

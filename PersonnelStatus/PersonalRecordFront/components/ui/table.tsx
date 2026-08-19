@@ -76,7 +76,11 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
         // font-weight:600; color:--muted-foreground; background:hsl(210 40% 98%).
         // Регистр НЕ задаётся: см. e2e/tables-data.spec.ts — заголовки пинятся
         // по тексту, а в прототипе text-transform на th нет.
-        "text-muted-foreground bg-muted/50 h-auto px-3.5 py-2.5 text-left align-middle text-[11px] font-semibold whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        // text-muted-foreground на bg-muted/50 давал 4.34-4.45:1 в светлой
+        // теме — погранично ниже 4.5:1. `table-head-ink` — тот же оттенок,
+        // на тон темнее в светлой теме (4.89-5.03:1 замерено); в тёмной теме
+        // не меняется (там уже 7.92:1).
+        "text-table-head-ink bg-muted/50 h-auto px-3.5 py-2.5 text-left align-middle text-[11px] font-semibold whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className
       )}
       {...props}
