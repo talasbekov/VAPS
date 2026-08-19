@@ -28,6 +28,14 @@ import type {
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 
 /** Порядок фильтра состояний — порядок жизни работы, а не алфавит. */
 const STATE_FILTERS: readonly ReportJobState[] = [
@@ -195,32 +203,31 @@ export default function ReportHistoryPage() {
                 : "По выбранным фильтрам работ нет."}
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[64rem] text-left text-sm">
-                <thead>
-                  <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="py-2 pr-3 font-semibold">Отчёт</th>
-                    <th className="py-2 pr-3 font-semibold">Период</th>
-                    <th className="py-2 pr-3 font-semibold">Формат</th>
-                    <th className="py-2 pr-3 font-semibold">Состояние</th>
-                    <th className="py-2 pr-3 font-semibold">Редакция</th>
-                    <th className="py-2 pr-3 font-semibold">Сформировал</th>
-                    <th className="py-2 pr-3 font-semibold">Создан</th>
-                    <th className="py-2 pr-3 font-semibold">Завершён</th>
-                    <th className="py-2 pr-3 font-semibold">Срок доступности</th>
-                    <th className="py-2 font-semibold">Действия</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <Table className="min-w-[64rem] text-left">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Отчёт</TableHead>
+                    <TableHead>Период</TableHead>
+                    <TableHead>Формат</TableHead>
+                    <TableHead>Состояние</TableHead>
+                    <TableHead>Редакция</TableHead>
+                    <TableHead>Сформировал</TableHead>
+                    <TableHead>Создан</TableHead>
+                    <TableHead>Завершён</TableHead>
+                    <TableHead>Срок доступности</TableHead>
+                    <TableHead>Действия</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {data.results.map((job) => {
                     const artifact = artifactsByJob.get(job.reportJobId) ?? null;
                     const actions = actionsByJob.get(job.reportJobId) ?? [];
                     return (
-                      <tr
+                      <TableRow
                         key={job.reportJobId}
-                        className="border-b align-top last:border-0"
+                        className="align-top"
                       >
-                        <td className="py-2 pr-3">
+                        <TableCell className="whitespace-normal">
                           <Link
                             className="font-semibold text-primary-ink underline"
                             href={`/security-ops/service-reports/${job.reportJobId}`}
@@ -232,9 +239,9 @@ export default function ReportHistoryPage() {
                               Со скрытыми полями
                             </span>
                           )}
-                        </td>
+                        </TableCell>
                         {/* §22.26: период чужого запуска сюда не приезжает. */}
-                        <td className="py-2 pr-3">
+                        <TableCell className="whitespace-normal">
                           {job.parameters === null ? (
                             <span className="text-muted-foreground">
                               скрыт (чужой запуск)
@@ -242,30 +249,30 @@ export default function ReportHistoryPage() {
                           ) : (
                             `${job.parameters.from} — ${job.parameters.to}`
                           )}
-                        </td>
-                        <td className="py-2 pr-3">{job.format}</td>
-                        <td className="py-2 pr-3 font-semibold">
+                        </TableCell>
+                        <TableCell>{job.format}</TableCell>
+                        <TableCell className="font-semibold">
                           {JOB_STATE_LABEL[job.state]}
-                        </td>
+                        </TableCell>
                         {/* Редакция — свойство собранного артефакта. */}
-                        <td className="py-2 pr-3">
+                        <TableCell>
                           {artifact === null ? "—" : artifact.revision}
-                        </td>
-                        <td className="py-2 pr-3">{job.createdBy.safeLabel}</td>
-                        <td className="py-2 pr-3">{formatMoment(job.createdAt)}</td>
-                        <td className="py-2 pr-3">
+                        </TableCell>
+                        <TableCell>{job.createdBy.safeLabel}</TableCell>
+                        <TableCell>{formatMoment(job.createdAt)}</TableCell>
+                        <TableCell>
                           {job.completedAt === null
                             ? "—"
                             : formatMoment(job.completedAt)}
-                        </td>
-                        <td className="py-2 pr-3">
+                        </TableCell>
+                        <TableCell>
                           {artifact === null
                             ? "—"
                             : artifact.available
                               ? `до ${formatMoment(artifact.expiresAt)}`
                               : "срок истёк"}
-                        </td>
-                        <td className="py-2">
+                        </TableCell>
+                        <TableCell className="whitespace-normal">
                           <div className="flex flex-wrap gap-1.5">
                             {actions.map((action) => (
                               <button
@@ -352,13 +359,12 @@ export default function ReportHistoryPage() {
                                 {job.failureCode}: {job.safeFailureMessage}
                               </p>
                             )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
           )}
         </section>
 

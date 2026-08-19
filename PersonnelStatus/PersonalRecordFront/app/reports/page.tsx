@@ -36,6 +36,14 @@ import {
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 
 export default function ReportsPage() {
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -183,38 +191,37 @@ export default function ReportsPage() {
               )}
 
               {report && report.rows.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left">
-                        <th className="py-2 pr-4 font-medium">Подразделение</th>
-                        <th className="py-2 px-2 font-medium">Штат</th>
-                        <th className="py-2 px-2 font-medium">В списке</th>
-                        <th className="py-2 px-2 font-medium">Вакансии</th>
+                <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Подразделение</TableHead>
+                        <TableHead>Штат</TableHead>
+                        <TableHead>В списке</TableHead>
+                        <TableHead>Вакансии</TableHead>
                         {/* Порядок колонок задаёт сервер (report.columns), а не
                             ключи объекта row.columns — их порядок в JS не
                             гарантирован и разъехался бы с шапкой. */}
                         {report.columns.map((code) => (
-                          <th key={code} className="py-2 px-2 font-medium">
+                          <TableHead key={code}>
                             {code}
-                          </th>
+                          </TableHead>
                         ))}
-                        <th className="py-2 pl-2 font-medium">Выгрузка</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                        <TableHead>Выгрузка</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {report.rows.map((row) => (
-                        <tr key={row.division_id} className="border-b">
-                          <td className="py-2 pr-4">{row.name}</td>
-                          <td className="py-2 px-2">{row.staff_total}</td>
-                          <td className="py-2 px-2">{row.list_total}</td>
-                          <td className="py-2 px-2">{row.vacancies}</td>
+                        <TableRow key={row.division_id}>
+                          <TableCell>{row.name}</TableCell>
+                          <TableCell>{row.staff_total}</TableCell>
+                          <TableCell>{row.list_total}</TableCell>
+                          <TableCell>{row.vacancies}</TableCell>
                           {report.columns.map((code) => (
-                            <td key={code} className="py-2 px-2">
+                            <TableCell key={code}>
                               {row.columns[code] ?? 0}
-                            </td>
+                            </TableCell>
                           ))}
-                          <td className="py-2 pl-2">
+                          <TableCell>
                             <Button
                               size="sm"
                               variant="outline"
@@ -227,12 +234,11 @@ export default function ReportsPage() {
                                 <Download className="h-4 w-4" />
                               )}
                             </Button>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
+                    </TableBody>
+                  </Table>
               )}
             </CardContent>
           </Card>
