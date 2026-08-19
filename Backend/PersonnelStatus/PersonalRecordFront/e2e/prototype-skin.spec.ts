@@ -131,7 +131,10 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(shape.weight).toBe('700')
 
     const eyebrow = page.locator('[data-slot="page-eyebrow"]')
-    await expect(eyebrow).toHaveText('ОХРАННЫЕ МЕРОПРИЯТИЯ')
+    // 🔴 textContent — в ЕСТЕСТВЕННОМ регистре: капс делает CSS, а не JS.
+    // Если проба потребует здесь капс, компонент придётся уродовать
+    // toUpperCase()-ом, и он начнёт терять регистр акронимов и имён.
+    await expect(eyebrow).toHaveText('Охранные мероприятия')
     expect(await eyebrow.evaluate((el) => getComputedStyle(el).textTransform)).toBe('uppercase')
   })
 })

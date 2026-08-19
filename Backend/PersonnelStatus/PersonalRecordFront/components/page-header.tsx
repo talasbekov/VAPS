@@ -20,6 +20,11 @@ interface PageHeaderProps {
  *
  * Надзаголовок набран `text-primary-ink`, а не `text-primary`: насыщенный
  * --primary как БУКВЫ даёт 3.46:1 на тёмном фоне и не проходит 4.5:1.
+ *
+ * 🔴 Капс делает CSS (`uppercase`), а НЕ `toUpperCase()` в JSX: иначе компонент
+ * молча уродует данные вызывающего — акронимы и имена собственные теряют
+ * регистр безвозвратно, а текст в DOM перестаёт совпадать с переданным пропом
+ * (грепать по исходной строке станет нечем).
  */
 export function PageHeader({
   eyebrow,
@@ -36,7 +41,7 @@ export function PageHeader({
             data-slot="page-eyebrow"
             className="text-primary-ink mb-1.5 text-[10.5px] font-bold tracking-[.12em] uppercase"
           >
-            {eyebrow.toUpperCase()}
+            {eyebrow}
           </p>
         ) : null}
         <h1 className="mb-1.5 text-[25px] leading-[1.15] font-bold tracking-[-.02em]">
