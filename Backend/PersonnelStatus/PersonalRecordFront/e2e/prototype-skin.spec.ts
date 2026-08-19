@@ -578,4 +578,22 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       .poll(() => page.locator('tbody tr').count(), { timeout: 15_000 })
       .toBe(fullCount)
   })
+
+  // Task 14: раскатка PageHeader на легаси-портал — H1 набран 25px, как и на
+  // уже переведённых экранах /security-ops/*.
+  for (const [route, heading] of [
+    ['/dashboard/', 'Обзор'],
+    ['/employees/', 'Управление персоналом'],
+    ['/organization/', 'Структура организации'],
+    ['/statuses/', 'Управление статусами'],
+    ['/reports/', 'Отчеты'],
+  ] as const) {
+    test(`заголовок по прототипу: ${route}`, async ({ page }) => {
+      await signIn(page)
+      await page.goto(`${APP}${route}`)
+      const h1 = page.getByRole('heading', { name: heading, level: 1 })
+      await expect(h1).toBeVisible()
+      expect(await h1.evaluate((el) => getComputedStyle(el).fontSize)).toBe('25px')
+    })
+  }
 })

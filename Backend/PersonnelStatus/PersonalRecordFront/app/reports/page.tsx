@@ -36,6 +36,7 @@ import {
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import {
   Table,
   TableHeader,
@@ -117,12 +118,11 @@ export default function ReportsPage() {
   return (
     <DashboardLayout>
       <div className="container mx-auto py-10 space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Отчеты</h1>
-          <p className="text-muted-foreground">
-            Генерация и скачивание отчетов по сотрудникам и статусам.
-          </p>
-        </div>
+        <PageHeader
+          eyebrow="Официальные документы"
+          title="Отчеты"
+          description="Генерация и скачивание отчетов по сотрудникам и статусам."
+        />
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           <Card className="md:col-span-2 lg:col-span-3">

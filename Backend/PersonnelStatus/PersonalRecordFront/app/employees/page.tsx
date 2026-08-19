@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { EmployeeTable } from "@/entities/employee/ui/EmployeeTable";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
@@ -301,43 +302,40 @@ function EmployeesScreen() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">
-              Управление персоналом
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Управление сотрудниками организации
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Здесь стояло «Всего сотрудников: {filteredEmployees.length}» —
-                под подписью «всего» печаталось число ПОСЛЕ отбора, и любой
-                фильтр менял «общую численность». Форма прототипа: сколько
-                показано и из скольких. */}
-            <Badge variant="outline" className="text-sm">
-              Показано {filteredEmployees.length} из {stats.total}
-            </Badge>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={refreshing}
-            >
-              <RefreshCw
-                className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`}
-              />
-              Обновить
-            </Button>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700"
-              onClick={() => setIsAddDialogOpen(true)}
-            >
-              <UserPlus className="h-4 w-4 mr-2" />
-              Добавить сотрудника
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Личный состав"
+          title="Управление персоналом"
+          description="Управление сотрудниками организации"
+          actions={
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Здесь стояло «Всего сотрудников: {filteredEmployees.length}» —
+                  под подписью «всего» печаталось число ПОСЛЕ отбора, и любой
+                  фильтр менял «общую численность». Форма прототипа: сколько
+                  показано и из скольких. */}
+              <Badge variant="outline" className="text-sm">
+                Показано {filteredEmployees.length} из {stats.total}
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={refreshing}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`}
+                />
+                Обновить
+              </Button>
+              <Button
+                className="bg-blue-600 hover:bg-blue-700"
+                onClick={() => setIsAddDialogOpen(true)}
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Добавить сотрудника
+              </Button>
+            </div>
+          }
+        />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

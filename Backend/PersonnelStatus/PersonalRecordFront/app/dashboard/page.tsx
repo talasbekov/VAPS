@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { StatusOverview } from "@/widgets/status-overview";
 import OrgBoard from "@/features/organization-structure/ui/OrgBoard";
@@ -85,15 +86,17 @@ export default function DashboardPage() {
     <DashboardLayout>
       <div className="space-y-4 pt-0">
         {/* Header */}
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Обзор</h1>
-            <p className="text-muted-foreground mt-1">Обзор состояния организации</p>
-          </div>
-          <Badge variant="outline" className="text-sm">
-            Последнее обновление: {now ? now.toLocaleString("ru-RU") : "…"}
-          </Badge>
-        </div>
+        <PageHeader
+          className="mb-4"
+          eyebrow="Личный состав"
+          title="Обзор"
+          description="Обзор состояния организации"
+          actions={
+            <Badge variant="outline" className="text-sm">
+              Последнее обновление: {now ? now.toLocaleString("ru-RU") : "…"}
+            </Badge>
+          }
+        />
 
         {/* Stats Cards */}
         <StatsCards
