@@ -49,6 +49,15 @@ import type {
 } from "@/lib/api";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 /** §22.3: карта идёт от СОСТОЯНИЯ — ни одна ветка не смотрит на value. */
 const STATE_CLASS: Record<MetricState, string> = {
@@ -487,28 +496,26 @@ export default function ServiceAnalyticsPage() {
                         {drilldownQuery.data.data.personalDetailReason}
                       </p>
                     )}
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[36rem] text-left text-sm">
-                        <thead>
-                          <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                            <th className="py-2 pr-3 font-semibold">Дата</th>
-                            <th className="py-2 pr-3 font-semibold">Объект</th>
-                            <th className="py-2 pr-3 font-semibold">Состояние</th>
-                            <th className="py-2 font-semibold">Сотрудник</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {drilldownQuery.data.data.rows.map((row) => (
-                            <tr key={row.rowId} className="border-b last:border-0">
-                              <td className="py-2 pr-3">{row.businessDate}</td>
-                              <td className="py-2 pr-3">{row.objectLabel}</td>
-                              <td className="py-2 pr-3">{row.stateLabel}</td>
-                              <td className="py-2">{row.employeeLabel ?? "скрыт"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <Table className="min-w-[36rem]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Дата</TableHead>
+                          <TableHead>Объект</TableHead>
+                          <TableHead>Состояние</TableHead>
+                          <TableHead>Сотрудник</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {drilldownQuery.data.data.rows.map((row) => (
+                          <TableRow key={row.rowId}>
+                            <TableCell>{row.businessDate}</TableCell>
+                            <TableCell>{row.objectLabel}</TableCell>
+                            <TableCell>{row.stateLabel}</TableCell>
+                            <TableCell>{row.employeeLabel ?? "скрыт"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                     <div className="mt-2 flex items-center gap-3">
                       <span className="text-xs text-muted-foreground">
                         Всего строк: {drilldownQuery.data.data.totalCount}
@@ -743,87 +750,64 @@ function LoadSection() {
         <p className="text-xs text-muted-foreground">Смен в окне расчёта нет.</p>
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <caption className="mb-1 text-left text-[11px] font-semibold text-muted-foreground">
-                По подразделениям
-              </caption>
-              <thead>
-                <tr className="border-b text-[11px] text-muted-foreground">
-                  <th scope="col" className="py-1 pr-2 font-semibold">
-                    Подразделение
-                  </th>
-                  <th scope="col" className="py-1 pr-2 font-semibold">
-                    План
-                  </th>
-                  <th scope="col" className="py-1 pr-2 font-semibold">
-                    Факт
-                  </th>
-                  <th scope="col" className="py-1 pr-2 font-semibold">
-                    Состояние
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.units.map((row) => (
-                  <tr key={row.organizationUnitId} className="border-b last:border-b-0">
-                    <td className="py-1 pr-2">{row.safeLabel}</td>
-                    <td className="py-1 pr-2 tabular-nums">
-                      {formatMinutes(row.plannedMinutes)}
-                    </td>
-                    <td className="py-1 pr-2 tabular-nums">
-                      {formatMinutes(row.actualMinutes)}
-                    </td>
-                    <td className="py-1 pr-2">
-                      {LOAD_STATE_LABEL[row.loadState] ?? row.loadState}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <caption className="mb-1 text-left text-[11px] font-semibold text-muted-foreground">
-                По сотрудникам
-              </caption>
-              <thead>
-                <tr className="border-b text-[11px] text-muted-foreground">
-                  <th scope="col" className="py-1 pr-2 font-semibold">
-                    Сотрудник
-                  </th>
-                  <th scope="col" className="py-1 pr-2 font-semibold">
-                    План
-                  </th>
-                  <th scope="col" className="py-1 pr-2 font-semibold">
-                    Факт
-                  </th>
-                  <th scope="col" className="py-1 pr-2 font-semibold">
-                    Состояние
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.employees.map((row) => (
-                  <tr
-                    key={row.employeeId ?? row.safeLabel}
-                    className="border-b last:border-b-0"
-                  >
-                    <td className="py-1 pr-2">{row.safeLabel}</td>
-                    <td className="py-1 pr-2 tabular-nums">
-                      {formatMinutes(row.plannedMinutes)}
-                    </td>
-                    <td className="py-1 pr-2 tabular-nums">
-                      {formatMinutes(row.actualMinutes)}
-                    </td>
-                    <td className="py-1 pr-2">
-                      {LOAD_STATE_LABEL[row.loadState] ?? row.loadState}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableCaption className="mb-1 mt-0 text-left text-[11px] font-semibold text-muted-foreground">
+              По подразделениям
+            </TableCaption>
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Подразделение</TableHead>
+                <TableHead scope="col">План</TableHead>
+                <TableHead scope="col">Факт</TableHead>
+                <TableHead scope="col">Состояние</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {view.units.map((row) => (
+                <TableRow key={row.organizationUnitId}>
+                  <TableCell>{row.safeLabel}</TableCell>
+                  <TableCell className="tabular-nums">
+                    {formatMinutes(row.plannedMinutes)}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {formatMinutes(row.actualMinutes)}
+                  </TableCell>
+                  <TableCell>
+                    {LOAD_STATE_LABEL[row.loadState] ?? row.loadState}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <Table>
+            <TableCaption className="mb-1 mt-0 text-left text-[11px] font-semibold text-muted-foreground">
+              По сотрудникам
+            </TableCaption>
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Сотрудник</TableHead>
+                <TableHead scope="col">План</TableHead>
+                <TableHead scope="col">Факт</TableHead>
+                <TableHead scope="col">Состояние</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {view.employees.map((row) => (
+                <TableRow key={row.employeeId ?? row.safeLabel}>
+                  <TableCell>{row.safeLabel}</TableCell>
+                  <TableCell className="tabular-nums">
+                    {formatMinutes(row.plannedMinutes)}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {formatMinutes(row.actualMinutes)}
+                  </TableCell>
+                  <TableCell>
+                    {LOAD_STATE_LABEL[row.loadState] ?? row.loadState}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
       {view.unlinkedShiftsCount > 0 && (
@@ -1347,44 +1331,42 @@ function DivisionComparison({ report }: { report: StrengthReport }) {
           ))}
         </ul>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[44rem] text-left text-sm">
-            <thead>
-              <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="py-2 pr-3 font-semibold">Подразделение</th>
-                <th className="py-2 pr-3 font-semibold">Штат</th>
-                <th className="py-2 pr-3 font-semibold">По списку</th>
-                <th className="py-2 pr-3 font-semibold">Вакансии</th>
-                <th className="py-2 pr-3 font-semibold">Укомплектованность</th>
-                {report.columns.map((code) => (
-                  <th key={code} className="py-2 pr-3 font-semibold">
-                    {report.column_labels[code] ?? code}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row: StrengthReportRow) => (
-                <tr key={row.division_id} className="border-b last:border-0">
-                  <td className="py-2 pr-3">{row.name}</td>
-                  <td className="py-2 pr-3 tabular-nums">{row.staff_total}</td>
-                  <td className="py-2 pr-3 tabular-nums">{row.list_total}</td>
-                  <td className="py-2 pr-3 tabular-nums">{row.vacancies}</td>
-                  <td className="py-2 pr-3 tabular-nums">
-                    {row.staff_total === 0
-                      ? "—"
-                      : sharePercent(row.list_total, row.staff_total)}
-                  </td>
-                  {report.columns.map((code) => (
-                    <td key={code} className="py-2 pr-3 tabular-nums">
-                      {row.columns[code] ?? 0}
-                    </td>
-                  ))}
-                </tr>
+        <Table className="min-w-[44rem]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Подразделение</TableHead>
+              <TableHead>Штат</TableHead>
+              <TableHead>По списку</TableHead>
+              <TableHead>Вакансии</TableHead>
+              <TableHead>Укомплектованность</TableHead>
+              {report.columns.map((code) => (
+                <TableHead key={code}>
+                  {report.column_labels[code] ?? code}
+                </TableHead>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row: StrengthReportRow) => (
+              <TableRow key={row.division_id}>
+                <TableCell>{row.name}</TableCell>
+                <TableCell className="tabular-nums">{row.staff_total}</TableCell>
+                <TableCell className="tabular-nums">{row.list_total}</TableCell>
+                <TableCell className="tabular-nums">{row.vacancies}</TableCell>
+                <TableCell className="tabular-nums">
+                  {row.staff_total === 0
+                    ? "—"
+                    : sharePercent(row.list_total, row.staff_total)}
+                </TableCell>
+                {report.columns.map((code) => (
+                  <TableCell key={code} className="tabular-nums">
+                    {row.columns[code] ?? 0}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
       {report.rows.length > 0 && rows.length === 0 && (
         <p className="mt-2 text-sm text-muted-foreground">

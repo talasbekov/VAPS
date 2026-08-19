@@ -13,6 +13,15 @@ import type { RatingGroupAggregate } from "@/entities/operational-rating";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 /** Формулировка §22.17 — дословно. */
 const SUPPRESSED_LABEL = "Недостаточно данных для безопасного отображения";
@@ -120,85 +129,56 @@ export default function RatingAnalyticsPage() {
               ))}
             </section>
 
-            <section className="overflow-x-auto rounded-xl border bg-card">
-              {/* overflow-x-auto, а не hidden: на узком экране правые колонки
-                  были недостижимы вообще — таблица обрезалась без скролла. */}
-              <table className="w-full min-w-[48rem] border-collapse text-left">
-                <caption className="p-3 text-left text-sm font-semibold">
+            <section className="rounded-xl border bg-card">
+              <Table>
+                <TableCaption className="mt-0 p-3 text-left text-sm font-semibold text-foreground">
                   Распределение агрегированных значений
-                </caption>
-                <thead>
-                  <tr>
-                    <th
-                      scope="col"
-                      className="p-3 text-[11px] font-semibold text-muted-foreground"
-                    >
-                      Полоса
-                    </th>
-                    <th
-                      scope="col"
-                      className="p-3 text-[11px] font-semibold text-muted-foreground"
-                    >
-                      Участников
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                </TableCaption>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Полоса</TableHead>
+                    <TableHead scope="col">Участников</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {figures.distribution.map((band) => (
-                    <tr key={band.code} className="border-t">
-                      <td className="p-3 text-sm">{band.label}</td>
-                      <td className="p-3 text-sm tabular-nums">{band.count}</td>
-                    </tr>
+                    <TableRow key={band.code}>
+                      <TableCell>{band.label}</TableCell>
+                      <TableCell className="tabular-nums">{band.count}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </section>
 
-            <section className="overflow-x-auto rounded-xl border bg-card">
-              {/* overflow-x-auto, а не hidden: на узком экране правые колонки
-                  были недостижимы вообще — таблица обрезалась без скролла. */}
-              <table className="w-full min-w-[48rem] border-collapse text-left">
-                <caption className="p-3 text-left text-sm font-semibold">
+            <section className="rounded-xl border bg-card">
+              <Table>
+                <TableCaption className="mt-0 p-3 text-left text-sm font-semibold text-foreground">
                   Агрегат по группам участников
-                </caption>
-                <thead>
-                  <tr>
-                    <th
-                      scope="col"
-                      className="p-3 text-[11px] font-semibold text-muted-foreground"
-                    >
-                      Группа
-                    </th>
-                    <th
-                      scope="col"
-                      className="p-3 text-[11px] font-semibold text-muted-foreground"
-                    >
-                      Агрегат
-                    </th>
-                    <th
-                      scope="col"
-                      className="p-3 text-[11px] font-semibold text-muted-foreground"
-                    >
-                      С агрегатом
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                </TableCaption>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Группа</TableHead>
+                    <TableHead scope="col">Агрегат</TableHead>
+                    <TableHead scope="col">С агрегатом</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {figures.groups.map((group) => (
-                    <tr key={group.groupCode} className="border-t align-top">
-                      <td className="p-3 text-sm font-medium">
+                    <TableRow key={group.groupCode} className="align-top">
+                      <TableCell className="font-medium">
                         {group.safeLabel}
-                      </td>
-                      <td className="p-3 text-sm tabular-nums">
+                      </TableCell>
+                      <TableCell className="tabular-nums">
                         {groupValue(group)}
-                      </td>
-                      <td className="p-3 text-sm tabular-nums">
+                      </TableCell>
+                      <TableCell className="tabular-nums">
                         {group.ratedCount} из {group.memberCount}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </section>
 
             <section className="rounded-xl border bg-card p-4">

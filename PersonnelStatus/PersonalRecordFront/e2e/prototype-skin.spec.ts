@@ -334,4 +334,36 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       )
     })
   }
+
+  // Task 10: аналитика (analytics, analytics/operations, ratings/analytics).
+  // 🔴 `ratings/analytics/page.tsx` уже несёт `text-[11px] font-semibold
+  // text-muted-foreground` на ручных th — проба по одному только font-size
+  // зелёная и ДО перевода на примитив. TableHead жёстко даёт ещё и
+  // `bg-muted/50` заливку шапки, которой у ручной разметки нет вовсе:
+  // второй ассерт отличает переведённую таблицу от непереведённой там, где
+  // первый бессилен.
+  for (const route of [
+    '/security-ops/analytics/',
+    '/security-ops/analytics/operations/',
+    '/security-ops/ratings/analytics/',
+  ]) {
+    test(`аналитика переведена на примитив: ${route}`, async ({ page }) => {
+      await signIn(page)
+      await page.goto(`${APP}${route}`)
+      await expect(page.locator('thead th').first()).toBeVisible()
+
+      const sizes = await page
+        .locator('thead th')
+        .evaluateAll((els) => [...new Set(els.map((el) => getComputedStyle(el).fontSize))])
+      expect(sizes, `на ${route} шапка набрана не 11px`).toEqual(['11px'])
+
+      const bg = await page
+        .locator('thead th')
+        .first()
+        .evaluate((el) => getComputedStyle(el).backgroundColor)
+      expect(bg, `на ${route} шапка таблицы не залита — значит не примитив`).not.toBe(
+        'rgba(0, 0, 0, 0)'
+      )
+    })
+  }
 })

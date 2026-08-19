@@ -23,6 +23,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Activity,
   AlertTriangle,
   CheckCircle2,
@@ -608,45 +616,41 @@ function FunnelSection({ funnel }: { funnel: FunnelView }) {
       </div>
 
       {asTable ? (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[42rem] text-left text-sm">
-            <thead>
-              <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="py-2 pr-3 font-semibold">Этап</th>
-                <th className="py-2 pr-3 font-semibold">Конверсия</th>
-                {funnel.measures.map((item) => (
-                  <th key={item.code} className="py-2 pr-3 font-semibold">
-                    {item.safeLabel}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {funnel.stages.map((stage) => (
-                <tr key={stage.stateCode} className="border-b last:border-0">
-                  <td className="py-2 pr-3">{stage.safeLabel}</td>
-                  <td className="py-2 pr-3 tabular-nums">
-                    {percentOrDash(stage.values.REACHED ?? null, baseReached)}
-                  </td>
-                  {funnel.measures.map((item) => {
-                    const value = stage.values[item.code];
-                    return (
-                      <td key={item.code} className="py-2 pr-3 tabular-nums">
-                        {value === null || value === undefined ? (
-                          <span className="text-xs text-muted-foreground">
-                            нет готового значения
-                          </span>
-                        ) : (
-                          formatNumber(value)
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
+        <Table className="min-w-[42rem]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Этап</TableHead>
+              <TableHead>Конверсия</TableHead>
+              {funnel.measures.map((item) => (
+                <TableHead key={item.code}>{item.safeLabel}</TableHead>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {funnel.stages.map((stage) => (
+              <TableRow key={stage.stateCode}>
+                <TableCell>{stage.safeLabel}</TableCell>
+                <TableCell className="tabular-nums">
+                  {percentOrDash(stage.values.REACHED ?? null, baseReached)}
+                </TableCell>
+                {funnel.measures.map((item) => {
+                  const value = stage.values[item.code];
+                  return (
+                    <TableCell key={item.code} className="tabular-nums">
+                      {value === null || value === undefined ? (
+                        <span className="text-xs text-muted-foreground">
+                          нет готового значения
+                        </span>
+                      ) : (
+                        formatNumber(value)
+                      )}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       ) : (
         <ul className="flex flex-col gap-2">
           {funnel.stages.map((stage, index) => {
@@ -936,81 +940,78 @@ function DetailSection({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[36rem] text-left text-sm">
-            <thead>
-              <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="py-2 pr-3 font-semibold">Строка</th>
-                {data.columns.map((column) => (
-                  // `aria-sort` — единственный признак порядка, доступный не
-                  // глазами: стрелка ниже помечена `aria-hidden`, и без этого
-                  // атрибута отсортированная колонка ничем не отличалась бы от
-                  // прочих для программы чтения с экрана.
-                  <th
-                    key={column.code}
-                    aria-sort={
-                      sort?.code !== column.code
-                        ? "none"
-                        : sort.desc
-                          ? "descending"
-                          : "ascending"
-                    }
-                    className="py-2 pr-3 font-semibold"
+        <Table className="min-w-[36rem]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Строка</TableHead>
+              {data.columns.map((column) => (
+                // `aria-sort` — единственный признак порядка, доступный не
+                // глазами: стрелка ниже помечена `aria-hidden`, и без этого
+                // атрибута отсортированная колонка ничем не отличалась бы от
+                // прочих для программы чтения с экрана.
+                <TableHead
+                  key={column.code}
+                  aria-sort={
+                    sort?.code !== column.code
+                      ? "none"
+                      : sort.desc
+                        ? "descending"
+                        : "ascending"
+                  }
+                >
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 uppercase hover:text-foreground"
+                    onClick={() => toggleSort(column.code)}
                   >
+                    {column.safeLabel}
+                    {sort?.code === column.code && (
+                      <span aria-hidden>{sort.desc ? "↓" : "↑"}</span>
+                    )}
+                  </button>
+                </TableHead>
+              ))}
+              <TableHead>
+                <span className="sr-only">Переход</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row: OpsRow) => (
+              <TableRow key={row.rowId}>
+                <TableCell>{row.safeLabel}</TableCell>
+                {data.columns.map((column) => {
+                  const cell = row.cells.find((item) => item.code === column.code);
+                  return (
+                    <TableCell key={column.code} className="tabular-nums">
+                      {cell === undefined || cell.value === null ? (
+                        <span
+                          className="text-xs text-muted-foreground"
+                          title={cell?.unavailableReason ?? undefined}
+                        >
+                          нет данных
+                        </span>
+                      ) : (
+                        formatNumber(cell.value)
+                      )}
+                    </TableCell>
+                  );
+                })}
+                <TableCell>
+                  {row.childLevel !== null && (
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1 uppercase hover:text-foreground"
-                      onClick={() => toggleSort(column.code)}
+                      className="rounded-md border px-3 py-1.5 text-sm"
+                      onClick={() => onDrill(row.childLevel as OpsLevel, row.rowId)}
                     >
-                      {column.safeLabel}
-                      {sort?.code === column.code && (
-                        <span aria-hidden>{sort.desc ? "↓" : "↑"}</span>
-                      )}
+                      Детализировать
                     </button>
-                  </th>
-                ))}
-                <th className="py-2 font-semibold">
-                  <span className="sr-only">Переход</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row: OpsRow) => (
-                <tr key={row.rowId} className="border-b last:border-0">
-                  <td className="py-2 pr-3">{row.safeLabel}</td>
-                  {data.columns.map((column) => {
-                    const cell = row.cells.find((item) => item.code === column.code);
-                    return (
-                      <td key={column.code} className="py-2 pr-3 tabular-nums">
-                        {cell === undefined || cell.value === null ? (
-                          <span
-                            className="text-xs text-muted-foreground"
-                            title={cell?.unavailableReason ?? undefined}
-                          >
-                            нет данных
-                          </span>
-                        ) : (
-                          formatNumber(cell.value)
-                        )}
-                      </td>
-                    );
-                  })}
-                  <td className="py-2">
-                    {row.childLevel !== null && (
-                      <button
-                        type="button"
-                        className="rounded-md border px-3 py-1.5 text-sm"
-                        onClick={() => onDrill(row.childLevel as OpsLevel, row.rowId)}
-                      >
-                        Детализировать
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
         {data.rows.length === 0 && (
           <p className="mt-2 text-sm text-muted-foreground">
             На этом уровне строк нет — источник мероприятий недоступен либо
