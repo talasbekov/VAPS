@@ -165,4 +165,21 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     await expect(lastCrumb).toBeVisible()
     await expect(lastCrumb).toHaveText(h1Text!.trim())
   })
+
+  test('сайдбар 256px и светлая шапка', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible()
+
+    const aside = page.locator('aside').first()
+    await expect(aside).toBeVisible()
+    expect(await aside.evaluate((el) => el.getBoundingClientRect().width)).toBe(256)
+
+    // Шапка сайдбара больше не залита синим: сравниваем с --primary кнопки.
+    const brandBg = await page
+      .locator('[data-slot="sidebar-brand"]')
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+    const asideBg = await aside.evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(brandBg).toBe(asideBg)
+  })
 })
