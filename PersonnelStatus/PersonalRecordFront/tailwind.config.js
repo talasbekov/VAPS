@@ -42,6 +42,8 @@ module.exports = {
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
+        canvas: "hsl(var(--canvas))",
+        "table-divider": "hsl(var(--table-divider))",
         foreground: "hsl(var(--foreground))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
