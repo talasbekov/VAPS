@@ -55,17 +55,23 @@
   показывает выбранное в закрытом триггере (defaultValue + items в SelectContent); Checkbox
   defaultChecked рендерит indicator; Tooltip донора без Portal (нужен запас сверху);
   ToastProvider>Toast(open)+ToastViewport.
-- Textarea: `field-sizing-content` не поддержан капчей → явный rows={4}.
+- Textarea: `field-sizing-content` УБРАН из донора (сверка 19.08.2026: класс отсутствует,
+  теперь min-h-16) — явный rows больше не обязателен; в существующих превью безвреден.
 - Label peer-disabled: label ПОСЛЕ peer-элемента в DOM, Input с className="peer".
-- Битые <img> в капче: donor `/placeholder.svg` 404-ит → data:image/svg+xml URI.
+- Битые <img> в капче: сверка 19.08.2026 — `public/placeholder.svg` в доноре ЕСТЬ (ca7343de,
+  21.06), но капча превью не поднимает донорский сервер → data:image/svg+xml URI в превью
+  по-прежнему нужен (причина — среда капчи, а не 404 донора).
 - ThemeToggle: обёртка ThemeProvider (next-themes) attribute="class" defaultTheme="light"
   enableSystem={false}; mounted-гвард в капче проходит.
 - Calendar: react-day-picker v9, `locale={ru}` (date-fns) прокидывается; фиксировать month и
   selected для детерминизма.
 - Донорский баг (не чинить в превью): цвета юнитов орг-структуры из lib/api.ts:1253 содержат
-  несуществующие шейды (via-green-150 и т.п.) — градиент рендерится без via-стопа, как и в проде.
+  несуществующие шейды (via-green-150 и т.п.) — градиент рендерится без via-стопа, как и в проде
+  (19.08.2026: строки уехали на lib/api.ts:1766-1770 — файл вырос, квирк жив).
 - --status-bg/--status-text живут в features/employee-status-update/*; OrgNode их не читает —
-  статусные цвета орг-дерева передаёт renderEmployee-колбэк вызывающего (OrgChart.tsx:37).
+  статусные цвета орг-дерева передаёт renderEmployee-колбэк вызывающего (OrgChart.tsx:147,
+  бывш. :37; точка статуса теперь через getEmployeeStatusDot(employee.status) — при ресинке
+  сверить превью OrgNode с текущим телом колбэка).
 
 ## Known render warns
 Нет. Финальный validate первого синка (2026-07-03): 23/23 previews render cleanly, 0 предупреждений.
