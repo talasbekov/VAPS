@@ -3,3 +3,455 @@
 _Одна строка на коммит: дата, короткий хэш, сообщение. Сгенерировано скриптом из git log, дополняется вручную по ходу будущей работы._
 
 (наполняется скриптом в Задаче 2)
+
+## История (git log)
+
+- 2026-06-01 `7577182f` Add VAPS project: backend modules, BMAD/WDS tooling, docs and graphify graph
+- 2026-06-02 `38f4e5d4` test: add golden master tests for daily expense report
+- 2026-06-02 `52bfa78d` test: add golden master tests for daily expense report
+- 2026-06-03 `e8f4a8a7` test: lock current daily expense report behavior
+- 2026-06-03 `355bd2af` docs: add architecture dependency map and import audit script
+- 2026-06-04 `f0fbcd4b` docs: query performance audit for daily expense
+- 2026-06-04 `7402cc57` docs: add sync vs async daily expense contract tests
+- 2026-06-04 `9492b00d` fix: resolve DataAggregator FieldError and finalize contract tests
+- 2026-06-04 `7dc07260` docs: data aggregator parity design
+- 2026-06-04 `b118767c` fix: add missing vacancy stats to DataAggregator output
+- 2026-06-04 `b734ce01` refactor(reports): implement DataAggregator parity with sync XLSX
+- 2026-06-04 `d91432a7` refactor(reports): consume DataAggregator inside daily expense sync generator
+- 2026-06-04 `c45c7b07` refactor(reports): eliminate N+1 queries from sync XLSX generator
+- 2026-06-04 `703eba96` refactor(reports): eliminate N+1 queries from sync XLSX generator
+- 2026-06-04 `1d762ddd` docs: finalize daily expense stabilization summary
+- 2026-06-04 `9a70829d` test(architecture): introduce Bounded Context isolation guardrails
+- 2026-06-04 `d285a7cd` docs(auth): external JWT authentication boundary audit
+- 2026-06-04 `363e39e8` docs(auth): PermissionService design and current RBAC audit
+- 2026-06-05 `48c5f1da` feat(auth): implement PermissionService skeleton and unit tests
+- 2026-06-05 `e5fe52bb` feat(auth): cleanup PermissionService error handling and tests
+- 2026-06-05 `341c14c3` docs(auth): PermissionService view migration plan
+- 2026-06-05 `c9eb0fd5` test(reports): implement view access integration tests
+- 2026-06-05 `49b4d32a` docs: generate architecture dependency map
+- 2026-06-05 `a206eb5a` feat(auth): introduce centralized PermissionService for RBAC
+- 2026-06-06 `e9e51b8f` chore: setup graphifyy workflow
+- 2026-06-06 `37f5eb12` chore: correct Graphify configuration and restore code
+- 2026-06-06 `05f537ec` chore: fix Graphifyy setup and revert code modifications
+- 2026-06-06 `6c35a2a0` chore: configure basic Graphify setup
+- 2026-06-06 `804d97af` docs: enforce Graphifyy mapping for AI sessions
+- 2026-06-06 `f5be3f70` test: restore report access tests and safely enable report generation POST
+- 2026-06-07 `bae941db` refactor: integrate PermissionService into ReportViewSet
+- 2026-06-07 `afbc1f92` docs: restore architecture dependency map and script
+- 2026-06-07 `fb1e43b2` feat(core): scaffold VAPS target project with config and core app
+- 2026-06-07 `04c9e449` build(core): add setuptools packages config and .gitignore
+- 2026-06-07 `43aefb8d` test(core): add ARCH-006 cross-context import isolation test
+- 2026-06-07 `18f6c666` feat(core): add core_organizations model (DB-CORE-001)
+- 2026-06-07 `18627203` feat(core): add core_division_types model and seed command (DB-CORE-002)
+- 2026-06-07 `c0707bad` feat(core): add core_positions model and seed (DB-CORE-008)
+- 2026-06-07 `5af53134` feat(core): add core_ranks model and seed (DB-CORE-009)
+- 2026-06-07 `c79be074` feat(core): add core_divisions model with org-scoped unique code (DB-CORE-003)
+- 2026-06-07 `9d568174` feat(core): add CoreDivisionTreeSelector with leaf_descendants (ARCH-004)
+- 2026-06-07 `fc306bdd` feat(core): add rich core_employees model with IIN validator and full_name sync (DB-CORE-004, §45.2)
+- 2026-06-07 `85043551` feat(core): add division history model and assign service (DB-CORE-005)
+- 2026-06-07 `9c352877` feat(core): add core_user_employee_bindings (DB-CORE-006)
+- 2026-06-07 `7faf5438` feat(core): add core_division_historical_slots (DB-CORE-007)
+- 2026-06-07 `1aa577f3` feat(core): add employee selectors with historical fallback (ARCH-004, BR-CORE-HISTORY-003)
+- 2026-06-07 `650b293b` feat(core): add core_staffing_slots with parent chain (DB-CORE-010)
+- 2026-06-07 `9bf40414` feat(core): add core_employee_staffing_assignments (DB-CORE-011)
+- 2026-06-07 `9d71b80c` feat(core): add core_vacancies and free-slot computation (DB-CORE-012, BR-CORE-STAFF-002)
+- 2026-06-07 `67330b3c` feat(core): add sensitive-field policies and masking service (DB-CORE-013, §45.5)
+- 2026-06-07 `74f1579b` feat(core): add employee API with filters, masking, archive/restore (§45.6)
+- 2026-06-07 `2ad6bab8` feat(core): add division API with leaf-descendants endpoint (§1532)
+- 2026-06-07 `af6d0e49` feat(core): add positions/ranks/staffing-slots/vacancies API (§3117-3122)
+- 2026-06-07 `701729ef` docs(core): add README and verify full core suite green
+- 2026-06-08 `7ca6c311` feat(operations): scaffold operations app mounted at /api/operations/
+- 2026-06-08 `f2398eef` test(operations): add core.models isolation test and TimeStampedModel base (ARCH-004/006)
+- 2026-06-08 `af521aef` feat(operations): add ops_roles and ops_permissions models (DB-OPS-001)
+- 2026-06-08 `11fedb61` feat(operations): add ops_role_permissions mapping (DB-OPS-001)
+- 2026-06-08 `310b5215` feat(operations): add ops_user_roles with division scope (DB-OPS-001)
+- 2026-06-08 `5736c8e5` feat(operations): add ops_temporary_duty_permissions with duty-role validator (DB-OPS-038)
+- 2026-06-08 `20c03c3b` feat(operations): add seed_operations command for RBAC reference data (DB-OPS-001)
+- 2026-06-08 `e3ecaf99` feat(operations): add OpsUserRoleSelector read access (ARCH-004)
+- 2026-06-08 `77621076` feat(operations): add PermissionService with wildcard resolution (§1254, STORY-003)
+- 2026-06-08 `03034822` feat(operations): add division-scope resolution via core selector (ARCH-004)
+- 2026-06-08 `21240caf` feat(operations): fold active temporary duty into permission resolution (DB-OPS-038, BR-TEMP-PERM-002)
+- 2026-06-08 `105da851` feat(operations): add RoleAdminService write wrappers for assignments and temp duty
+- 2026-06-08 `116eff27` feat(operations): add X-User-Id identity stub and require_permission helper (§1255, §7007)
+- 2026-06-08 `cf1b6952` feat(operations): add roles/permissions read API guarded by admin.roles (§6)
+- 2026-06-08 `7452d9c0` feat(operations): add user-role assignment API (§6)
+- 2026-06-08 `815d52c8` feat(operations): add temporary-duty API and my-permissions endpoint (§6, DB-OPS-038)
+- 2026-06-08 `4473325a` docs(operations): add README and verify full suite green
+- 2026-06-08 `8a5eff48` feat(audit): add AuditLog initial migration (audit-consolidation Story 1.1)
+- 2026-06-08 `8a606534` feat(audit): repoint middleware to AuditLog, resolve name collision (Story 1.2)
+- 2026-06-08 `2b356382` feat(audit): guard AuditLogViewSet with IsAuthenticated (Story 1.3)
+- 2026-06-08 `1ff37ed0` feat(audit): restore audit API routing in root URL conf (Story 1.4)
+- 2026-06-08 `cb4a52f2` feat(audit): delete legacy AuditEntry stack (Story 1.5)
+- 2026-06-08 `451dc8fb` test(audit): consolidate audit tests onto AuditLog (Story 1.6)
+- 2026-06-08 `fc2d7e22` feat(db): generate initial migrations for local apps (initial-migrations Story 1.1)
+- 2026-06-09 `ee064593` feat(divisions): enable divisions write API (initial-migrations Story 4.x)
+- 2026-06-09 `0a63068a` test(divisions): fix stale DivisionViewSet tests (Story 6.x)
+- 2026-06-09 `5cfaa93a` test(notifications): fix stale NotificationViewSet tests (Story 6.x)
+- 2026-06-09 `bd7b79ef` ci(migrations): add GitHub Actions makemigrations drift gate (Story 3.x)
+- 2026-06-09 `98987106` feat(db): seed dictionaries reference data via migration (Story 2.x)
+- 2026-06-15 `4ce19ddc` feat(E1): walking skeleton stories 1.1–1.8 + BMAD artifacts + graph
+- 2026-06-16 `ec5ac3ad` fix(E1): ревью спайка 1.9 — guard отрицательных счётчиков + install-probe fallback (+ бандл 1.8-hardening)
+- 2026-06-21 `ca7343de` 2.2 Story
+- 2026-06-21 `ff90c84b` 2.3 story
+- 2026-06-22 `68a397ad` fix(E2): стори 2.1 — патч ревью пр.2 (явное ребро DAG миграций)
+- 2026-06-22 `d0cb150b` feat(E2): стори 2.4 — списочный состав на дату (версионированный знаменатель)
+- 2026-06-22 `da365d77` feat(E2): стори 2.5 — сервис увольнения (сервис-слой)
+- 2026-06-22 `b304ba29` feat(E2): стори 2.6 — канон сортировки списков (FR-5)
+- 2026-06-23 `c3ce5d3b` feat(E2): стори 2.7 — импорт справочников должностей/званий из CSV (FR-39)
+- 2026-06-23 `66585685` feat(E2): стори 2.8 — Django-auth-совместимость User (фундамент Admin)
+- 2026-06-23 `c5779d92` 2.8 story
+- 2026-06-25 `edc922ef` 3.1-3.6 stories
+- 2026-06-25 `ba735d61` 3.7-3.10 stories
+- 2026-06-25 `9294d0a7` feat(E3): стори 3.11 — секондмент-возврат (FR-15) + DETACHED read-only (FR-16); ревью 3.10→done
+- 2026-06-26 `7d6ce75e` feat(E3): стори 3.12 — движок catch-up материализации эффектов (FR-41 ядро)
+- 2026-06-26 `c014b70f` test(E3): стори 3.14 — сервис-уровневый конкурентный смоук статусов
+- 2026-06-26 `20a4e8a2` test(E3): стори 3.14 — патчи code-review (docstring + ассерт pk победителя)
+- 2026-06-26 `4bdea8e8` 4.4 stories review
+- 2026-06-27 `f367b4a5` fix(E4): стори 4.4 — патч ревью (честный коммент update_status)
+- 2026-06-27 `0ced6b15` feat(E4): стори 4.5 — read-only API чтения аудита (FR-36)
+- 2026-06-27 `50094591` test(E4): стори 4.6 — audit-coverage CI-страж (AR-9) + чистка статического теста 4.4
+- 2026-06-29 `5e98fe3f` feat(E4): стори 4.7 — аудит увольнения + ревью 4.6/4.7 + ретроспектива E4
+- 2026-06-29 `e95a5e14` feat(E5): стори 5.1 — вход оператора (JWT-middleware)
+- 2026-06-29 `fec75d97` fix(E5): стори 5.1 — security-патчи code-review (JWT trust-architecture)
+- 2026-06-29 `f49218cf` 5.2, 5.3a, 5.3b stories
+- 2026-06-30 `6104efbd` feat(E5): amendment-flow — 5.4a сервис версий v2+ + 5.4b энфорс ретро-правки
+- 2026-06-30 `ac5c24c5` feat(E5): светофор-селектор — 5.5a светофор подразделения + 5.5b каскад по дереву
+- 2026-06-30 `3799ac54` feat(E5): 5.6a derive-блокировка «на завтра» + декомпозиция 5.6
+- 2026-06-30 `23b00741` feat(E5): 5.6b override-сущность + легальный обход блокировки «на завтра»
+- 2026-06-30 `6b724607` 5.7 story
+- 2026-07-01 `00bca91b` fix(E5): 5.7a code-review — notify() вариант B (in-txn) + non-fatal + kind CheckConstraint + recipient strip
+- 2026-07-01 `281d4048` feat(E5): 5.7b1 recipient-config + 5.7b2 catch-up детект отставания + code-review
+- 2026-07-01 `9f646ec4` feat(E5): 5.7c read-API уведомлений (GET /notifications/?since=)
+- 2026-07-02 `97fc0299` fix(E5): 5.7c code-review — isolation-гвард (alias/relative + непустой скан), blank-guard селектора, anon-write 405 + фикс 500 на whitespace X-User-Id
+- 2026-07-02 `d0d4af6c` feat(E5): 5.8a POST /api/operations/daily-submissions/ — сдача дня по HTTP + code-review
+- 2026-07-02 `4bcc00e6` feat(E5): 5.8b POST /{id}/amend/ — ручной amendment по HTTP + code-review
+- 2026-07-02 `d0c728c6` feat(E5): 5.8c GET list+detail сдач — история и деталь по HTTP + code-review
+- 2026-07-04 `8307295c` chore(design-sync): первый синк дизайн-системы донора в claude.ai/design
+- 2026-07-04 `dd2af16e` feat(E5): 5.9 аудит сдач — DAILY_SUBMISSION_SUBMITTED/AMENDED + TOMORROW_BLOCK_OVERRIDDEN + code-review
+- 2026-07-07 `4d9ad410` feat(story-8.3): Кодоген типов из схемы
+- 2026-07-07 `dcf5ec42` feat(story-8.6): Auth-подключение
+- 2026-07-07 `76c42040` feat(story-5.10): Property — иммутабельность снапшота
+- 2026-07-08 `cc2dc2cd` feat(story-5.11): Фрактальная сводка
+- 2026-07-08 `5e2b4ed6` chore(E5): ретроспектива эпика 5 + doc-синхронизация
+- 2026-07-08 `9ad9d62c` feat(story-6.1): App documents и Attachment
+- 2026-07-08 `671167d6` feat(story-6.2): DocumentSequence
+- 2026-07-08 `4e1350b2` feat(story-6.3): Генератор .docx (перенос из донора)
+- 2026-07-08 `02cd511d` feat(story-6.4): Генераторы .xlsx/.csv/.pdf
+- 2026-07-08 `4f9906da` feat(story-6.5): Выпуск расхода
+- 2026-07-09 `9f0657d7` feat(story-6.7): Story 6.7: Скачивание и повторная выдача
+- 2026-07-09 `e515fb65` feat(story-6.8): Golden master 20–30 исторических дней (расход)
+- 2026-07-09 `98ad0e0c` feat(story-6.9): Зерно parallel-run — ночная diff-джоба против донора
+- 2026-07-09 `00bb0bbf` feat(story-6.10a): HTTP-выпуск расхода и чтение по дате/периоду
+- 2026-07-09 `c735813a` feat(story-6.10b): блокировка «на завтра» — HTTP и override
+- 2026-07-13 `8aa089f1` fix(story-6.9): правки cross-model ревью — non-blocking контракт закрыт с обеих сторон
+- 2026-07-13 `148833a0` fix(story-6.10a): правки cross-model ревью — реальный горизонт данных вместо вакуумной пробы
+- 2026-07-14 `a56608d4` fix(story-6.10b): правки cross-model ревью — блок по живым laggards, 409 на дубль override, горизонт 31д
+- 2026-07-15 `f0868806` feat(story-10.1a): REST bulk-роут статусов — backfill AI-4 (bulk-POST + regen схемы)
+- 2026-07-19 `e2c78902` feat(story-11.1): ASGI + channels_redis — WS-транспорт уведомлений
+- 2026-07-19 `7c88f0a2` feat(story-11.2): публикация в WS из notify() через transaction.on_commit
+- 2026-07-19 `a56ad92b` feat(story-10.3a): роут каскадного дерева светофора
+- 2026-07-19 `39dd5178` feat(story-11.5): kill-switch WS через env-флаг VAPS_WS_ENABLED
+- 2026-07-19 `c5a6ee44` feat(story-11.6): e2e-уведомления — живой стек с браузером
+- 2026-07-19 `a5cfcb38` feat(story-10.8): личный экспорт оператора («щит»)
+- 2026-07-20 `21617863` feat(story-10.10): e2e сдачи целиком — живая цепочка через все экраны
+- 2026-07-28 `f64013f9` chore(deploy): restart:unless-stopped for db/redis containers
+- 2026-07-28 `c2625f2d` feat: add Sentry error monitoring (backend + frontend)
+- 2026-08-01 `45d9b639` feat(host-перенос): Smart Josparlau SPA внутри PersonalRecordFront на /ops (Этап M1)
+- 2026-08-02 `6dcf2072` feat(host-перенос): эквивалентность доказана — 125/125 общих e2e против PersonalRecordFront (Этап M2)
+- 2026-08-03 `63ef14ff` feat(host-перенос): единый источник — josparlau/src генерируется синком (Этап M3)
+- 2026-08-03 `16a26623` feat(натив-порт): Фаза 0 — фундамент /security-ops (ops-клиент, 409-override, права, host-MSW)
+- 2026-08-03 `f2acd119` feat(host-перенос): Этап M4 — SPA в каркасе хоста + sidebar-секции ОМ (/ops и натив)
+- 2026-08-03 `aec5a31d` feat(натив-порт): Фаза 1 — Объекты и паспорта (/security-ops/objects)
+- 2026-08-03 `d3b2650c` fix(sidebar): старые модули не исчезают без host-логина
+- 2026-08-03 `43a7515b` fix(стенд): локальный бэкенд Personnel-Records + прокси Next до него
+- 2026-08-03 `0b2400f9` feat(натив-порт): Фаза 2 — Реестр ОМ (/security-ops/events)
+- 2026-08-03 `30517941` feat(натив-порт): Фаза 3 — Карточка ОМ: полный цикл шести этапов
+- 2026-08-03 `a8232e03` feat(натив-порт): Фаза 4 — Командный центр (/security-ops/command-center)
+- 2026-08-03 `857aa8d5` feat(натив-порт): Фаза 5 — План дежурств (/security-ops/duties)
+- 2026-08-03 `acc66758` feat(натив-порт): Фаза 6 — Календарь смен (/security-ops/calendar)
+- 2026-08-03 `3abc61d0` feat(натив-порт): вторая очередь — Аудит, Справочники, Настройки
+- 2026-08-03 `b5f6d45d` feat(натив-порт): вторая очередь — Оперативный рейтинг (/security-ops/ratings/*)
+- 2026-08-03 `ce0d2218` feat(натив-порт): вторая очередь — Аналитика службы (/security-ops/analytics)
+- 2026-08-03 `caa57d3c` feat(натив-порт): вторая очередь — Отчёты службы (/security-ops/service-reports)
+- 2026-08-03 `6682db7c` feat(натив-порт): вторая очередь — WS-уведомления и журнал изменений
+- 2026-08-03 `2c19df82` feat(натив-порт): вторая очередь — Обратная связь (/security-ops/feedback)
+- 2026-08-03 `536ae45e` feat(натив-порт): вторая очередь — Расход дня / Daily Grid (/security-ops/daily-expense)
+- 2026-08-04 `a5a636ea` feat(натив-порт): Боевые группы на Трассе (/security-ops/duties/combat)
+- 2026-08-04 `a2c5fc27` feat(натив-порт): api-режим /security-ops — живой my-permissions + rewrites
+- 2026-08-04 `58a2d835` feat(переезд): срез 1 — ops-RBAC из Backend/VAPS нативно в старый проект
+- 2026-08-04 `fa612c61` feat(переезд): срез 2 — админ-API RBAC раздела ОМ
+- 2026-08-04 `50543df8` feat(переезд): срез 3 — справочник типов статусов с мостом к старому словарю
+- 2026-08-04 `4f0d6a3b` feat(переезд): срез 4 — статусы ОМ на PostgreSQL (модель, матрица, сервис)
+- 2026-08-04 `30384f0e` feat(переезд): срез 5 — массовое создание статусов ОМ (bulk)
+- 2026-08-04 `777ff275` feat(переезд): срез 6 — эндпоинт пачки POST /api/operations/statuses/bulk/
+- 2026-08-04 `2c8267fb` feat(переезд): срез 7 — расход (строевая записка) и GET /strength-report/
+- 2026-08-04 `730d4aa4` feat(переезд): срез 8 — правка статуса (update_status) с общей преамбулой блокировки
+- 2026-08-04 `c91a1eeb` feat(переезд): срез 9 — эндпоинт правки PATCH /api/operations/statuses/{id}/
+- 2026-08-04 `8fb483d8` feat(переезд): срез 10 — эндпоинт отмены POST /api/operations/statuses/{id}/cancel/
+- 2026-08-04 `3b3ecb9d` feat(переезд): срез 11 — чтение статусов GET /api/operations/statuses/ и /{id}/
+- 2026-08-04 `b561031a` feat(переезд): срез 12 — откомандирование, связанная пара DETACHED+ATTACHED
+- 2026-08-04 `3f0483b4` feat(переезд): срез 13 — досрочное закрытие статуса (complete_status_early)
+- 2026-08-04 `237b0c3a` feat(переезд): срез 14 — возврат из прикомандирования (запрос → подтверждение)
+- 2026-08-04 `8516595c` feat(переезд): срез 15 — эндпоинты прикомандирования (пара и оба такта возврата)
+- 2026-08-04 `0019ef27` feat(переезд): срез 16 — чтение пар прикомандирования GET /secondments/ и /{id}/
+- 2026-08-04 `8f8f96e2` fix(operations/schema): страничный ответ у user-roles и temporary-duty
+- 2026-08-04 `5ebde4ef` feat(переезд): срез 17 — проекция «+N» прикомандированных в расход
+- 2026-08-04 `a029fecf` feat(переезд): срез 18 — увольнение, закрытие статусов и пар раздела
+- 2026-08-04 `4abf80db` feat(переезд): срез 19 — врезка раздела в увольнение (сигнал вместо мёртвого экшена)
+- 2026-08-04 `58536bcf` feat(переезд): срез 20 — журнал раздела: модель, единственная точка записи, append-only
+- 2026-08-04 `e8e2da74` fix(operations/schema): limit/offset у temporary-duty, statuses и secondments
+- 2026-08-04 `fd0bd6d3` feat(переезд): срез 21 — врезка record(...) в мутации раздела
+- 2026-08-04 `1cc13828` fix(tests): тестовая БД своя у каждого чекаута — снимает гонку TestDatabaseGuarantee
+- 2026-08-04 `48c92c1e` feat(переезд): срез 22 — чтение журнала раздела (GET /api/operations/audit-logs/)
+- 2026-08-04 `ad0c0909` feat(переезд): срез 23 — продление статуса (extend_status)
+- 2026-08-04 `c8658c46` feat(переезд): срез 24 — модель сдачи дня (ops_daily_submissions)
+- 2026-08-04 `46264feb` feat(переезд): срез 25 — билдер снимка сдачи дня
+- 2026-08-04 `f90602eb` feat(переезд): срез 26 — сервис сдачи дня (submit_day)
+- 2026-08-04 `c0cce80c` feat(переезд): срез 27 — маршрут сдачи дня (POST /api/operations/daily-submissions/)
+- 2026-08-04 `529be057` feat(переезд): срез 28 — поправка сданного дня (amend_day)
+- 2026-08-04 `8ce46e5f` feat(переезд): срез 29 — маршрут поправки (POST /api/operations/daily-submissions/{id}/amend/)
+- 2026-08-04 `e622ae75` feat(переезд): срез 30 — чтение сдач (GET /api/operations/daily-submissions/ и /{id}/)
+- 2026-08-04 `e63e035f` feat(переезд): срез 31 — светофор подразделения (свой уровень)
+- 2026-08-05 `de5f4fea` feat(переезд): срез 32 — свод светофора по дереву
+- 2026-08-05 `064e459a` feat(переезд): срез 33 — маршрут светофора (GET /api/operations/traffic-light/tree/)
+- 2026-08-05 `81e38321` feat(переезд): срез 34 — точечный светофор (GET /api/operations/traffic-light/{id}/)
+- 2026-08-05 `d0f4427a` feat(переезд): срез 35 — расход по СДАННОМУ дню (из снимка)
+- 2026-08-05 `542f23c7` feat(переезд): срез 36 — маршрут сданного расхода
+- 2026-08-05 `2cc11946` feat(переезд): срез 37 — справочник контроля сдачи (контрольный час)
+- 2026-08-05 `5f4116a3` feat(переезд): срез 38 — блокировка завтрашнего дня (вывод)
+- 2026-08-05 `e8088b41` feat(переезд): срез 39 — законный обход блокировки на завтра
+- 2026-08-05 `7df4cf32` feat(переезд): срез 40 — гейт блокировки на живом расходе (422 TOMORROW_BLOCKED)
+- 2026-08-05 `2233f8c6` feat(переезд): срез 41 — маршрут обхода (POST /api/operations/tomorrow-block/override/)
+- 2026-08-05 `eece878d` feat(переезд): срез 42 — состояние блокировки (GET /api/operations/tomorrow-block/)
+- 2026-08-05 `c55301b4` feat(переезд): срез 43 — Admin справочника контроля сдачи (и гвард на всё остальное)
+- 2026-08-05 `edfafc07` feat(переезд): срез 44 — сборка сводки дня уровня выше
+- 2026-08-05 `59b6e862` feat(переезд): срез 45 — свежесть сводки (выводится, не хранится)
+- 2026-08-05 `4d2fef18` feat(переезд): срез 46 — пересборка сводки «взамен»
+- 2026-08-05 `58284093` feat(переезд): срез 47 — маршруты сводки (/api/operations/daily-summaries/)
+- 2026-08-05 `0cb5e688` feat(переезд): срез 48 — данные документа расхода (контракт + билдер)
+- 2026-08-05 `d733a093` feat(переезд): срез 49 — раскладка выгрузок и рендерер .csv
+- 2026-08-05 `15e87633` feat(переезд): срез 50 — рендерер .xlsx расхода
+- 2026-08-05 `4c918769` feat(переезд): срез 51 — маршрут выгрузки расхода (GET .../strength-report/export/)
+- 2026-08-05 `dd3a349a` feat(переезд): срез 52 — документ сводного расхода (строка на подразделение)
+- 2026-08-05 `d752400f` feat(переезд): срез 53 — маршрут выгрузки сводки (GET .../daily-summaries/export/)
+- 2026-08-05 `47bada38` feat(переезд): срез 54 — личная копия сданного дня («щит»)
+- 2026-08-05 `00bdf64d` feat(переезд): срез 55 — маршрут личной копии (GET .../daily-submissions/{id}/export/)
+- 2026-08-05 `c7a3468e` feat(переезд): срез 56 — рендерер .docx расхода (печатная форма)
+- 2026-08-05 `3b5ef0aa` feat(переезд): срез 57 — обнаружение накрытых сдач (принуждение к поправке)
+- 2026-08-05 `05548906` feat(переезд): срез 58 — врезка принуждения к поправке в пути правки статуса
+- 2026-08-05 `d32e6374` feat(переезд): срез 59 — шов поправки в массовой пачке
+- 2026-08-05 `80253ce9` feat(переезд): срез 60 — шов поправки при увольнении
+- 2026-08-05 `c852bd6b` feat(переезд): срез 61 — шов поправки в прикомандировании (+ починка дубля)
+- 2026-08-05 `7a9a6539` feat(переезд): срез 62 — разрешение заглушки «уточняется» (последняя операция статуса)
+- 2026-08-05 `31a62129` feat(переезд): срез 63 — маршрут разрешения заглушки (POST .../statuses/{id}/resolve/)
+- 2026-08-05 `7c0cadc2` feat(переезд): срез 64 — опора догона: водяной знак (ops_watermarks) и сеансовый замок
+- 2026-08-05 `be459267` feat(переезд): срез 65 — движок догона эффектов (день за днём, знак и замок)
+- 2026-08-05 `637b7dc4` feat(переезд): срез 66 — команда запуска догона (materialize_status_effects)
+- 2026-08-05 `37152f33` feat(переезд): срез 67 — уведомление раздела (ops_notifications) и идемпотентный notify()
+- 2026-08-05 `3cfe6e16` feat(переезд): срез 68 — справочник получателей уведомлений и разрешение адресата
+- 2026-08-05 `e86ed2ad` feat(переезд): срез 69 — догон отставших сдач (контрольный час, группировка, знак)
+- 2026-08-06 `a3b43fb3` feat(переезд): срез 70 — команда запуска поиска отставших (check_lagging_submissions)
+- 2026-08-06 `abcbc9ac` feat(переезд): срез 71 — селектор личной ленты уведомлений (self-scope, курсор, порядок)
+- 2026-08-06 `dc89a2cb` feat(переезд): срез 72 — маршрут личной ленты (GET /api/operations/notifications/)
+- 2026-08-06 `8e5bb178` refactor(ops): страничная обёртка списков — один владелец pagination_class
+- 2026-08-06 `433b6f7a` feat(переезд): срез 73 — WS-транспорт личной ленты (/ws/operations/notifications/)
+- 2026-08-06 `9f4172f9` fix(tests): PR_TEST_DB_NAME больше не краснит тест изоляции БД
+- 2026-08-06 `c62c818f` feat(переезд): срез 74 — публикация уведомления в сокет из notify()
+- 2026-08-06 `eb6e67ad` feat(переезд): срез 75 — выключатель WS (OPS_WS_ENABLED)
+- 2026-08-06 `dbb80daa` feat(переезд): срез 76 — запись о файле (ops_attachments)
+- 2026-08-06 `7d079a7a` feat(переезд): срез 77 — приватное хранилище: корень, путь, адрес отдачи
+- 2026-08-06 `28d83439` feat(переезд): срез 78 — запись файла в приватное хранилище
+- 2026-08-06 `15064192` feat(переезд): срез 79 — чтение вложения по идентификатору из адреса
+- 2026-08-06 `6cc9f639` feat(переезд): срез 80 — счётчик исходящих номеров (ops_document_sequences)
+- 2026-08-06 `09a53230` feat(переезд): срез 81 — выдача исходящего номера (замок, откат без дырки)
+- 2026-08-06 `b62e6233` feat(переезд): срез 82 — выпуск документа (ops_issued_documents)
+- 2026-08-06 `1ce90ef2` feat(переезд): срез 83 — какой выпуск действует по этому дню
+- 2026-08-06 `e5f1d4ba` feat(переезд): срез 84 — выпуск расхода: номер, байты, фиксация версии
+- 2026-08-06 `1888434e` feat(переезд): срез 85 — замена документа «взамен исходящего №…»
+- 2026-08-06 `32d615d7` feat(переезд): срез 86 — маршруты выпуска и замены документа
+- 2026-08-06 `68f4d045` feat(переезд): срез 87 — сверка байт перед выдачей
+- 2026-08-06 `e7de3428` feat(переезд): срез 88 — подготовка выдачи: сверка, журнал, путь
+- 2026-08-06 `3d823e61` feat(переезд): срез 89 — маршрут выдачи байт документа
+- 2026-08-06 `f55310f4` feat(переезд): срез 90 — реестр выпущенных документов
+- 2026-08-06 `11e32ebb` feat(ops): срез 91 — отметка уведомления прочитанным
+- 2026-08-06 `f030c57a` feat(ops): срез 92 — маршрут отметки прочтения
+- 2026-08-06 `c8b12d1e` feat(ops): срез 93 — массовая отметка «прочитать всё»
+- 2026-08-06 `5e4cdef8` feat(ops): срез 94 — непрочитанные: фильтр ленты и счётчик
+- 2026-08-06 `863628ed` feat(переезд): срез 95 — расход за период: страница на дату
+- 2026-08-06 `878f909a` feat(переезд): срез 96 — маршрут расхода за период
+- 2026-08-06 `72021341` feat(переезд): срез 97 — выгрузка расхода за период
+- 2026-08-06 `ad4754bd` feat(переезд): срез 98 — рендерер .pdf расхода
+- 2026-08-06 `1ab939ac` feat(переезд): срез 99 — .pdf врезан в выгрузку расхода и сводки
+- 2026-08-06 `e992d6bf` feat(переезд): срез 100 — детерминированный отпечаток .docx
+- 2026-08-06 `97aff3a4` feat(переезд): срез 101 — эталон печатной формы расхода
+- 2026-08-06 `a56fce40` feat(переезд): срез 102 — команда пересчёта эталона
+- 2026-08-06 `8f6d8a19` feat(ops): срез 103 — одновременный выпуск одного дня
+- 2026-08-06 `cb6909db` feat(переезд): срез 104 — сид контура несдачи для стенда
+- 2026-08-06 `c655cddf` feat(ops): срез 105 — обход хранилища: сверка байт всех выпусков
+- 2026-08-06 `d4f97d55` feat(ops): срез 106 — маршрут досрочного завершения статуса
+- 2026-08-06 `157a9dc9` feat(ops): срез 107 — маршрут продления статуса
+- 2026-08-06 `2c8414bd` feat(ops): срез 108 — закрытый словарь кодов отказа
+- 2026-08-06 `d4224996` feat(ops): срез 109 — покрытие словаря кодов в обе стороны
+- 2026-08-06 `80e1432e` feat(ops): срез 110 — канон порядка личного состава
+- 2026-08-06 `53dcc085` feat(ops): срез 111 — снимок замораживает уровень должности (схема 2)
+- 2026-08-06 `cab07cb7` feat(ops): срез 112 — состав печатной формы по канону + починка вёрстки PDF
+- 2026-08-06 `d9eebab5` feat(ops): срез 113 — все формы расхода перечисляют людей одинаково
+- 2026-08-06 `c81a7209` feat(ops): срез 114 — гвард: ни один маршрут не отвечает анониму делом
+- 2026-08-06 `0efe4d07` fix(ops): срез 115 — период потерял схему ответа; гвард полноты спецификации
+- 2026-08-06 `13b04b04` feat(ops): срез 116 — конверт отказа: одна форма на все коды раздела
+- 2026-08-06 `dc1b69af` feat(ops): срез 117 — гвард: настенные часы читает только Clock
+- 2026-08-06 `895156f1` fix(ops): срез 118 — страничные списки без разрыва ничьей
+- 2026-08-06 `aa68848b` feat(ops): срез 119 — запрет Admin теперь закрывает новые модели сам
+- 2026-08-06 `78bf8b7d` feat(ops): срез 120 — сид цепочки расхода для стенда
+- 2026-08-06 `c30b118f` feat(ops): срез 121 — одновременная сдача одного дня
+- 2026-08-06 `b27f2b47` fix(ops): срез 122 — замок дня вместо замка головы у поправки
+- 2026-08-06 `25c5c4d3` feat(ops): срез 123 — маршрут одиночного создания статуса; конкурентность пачки
+- 2026-08-06 `3eb676f8` fix(ops): срез 124 — уволенному статус не заводят
+- 2026-08-06 `091708dd` feat(ops): срез 125 — одновременное прикомандирование и возврат
+- 2026-08-06 `8dbd2a18` feat(ops): срез 126 — равенства расхода на случайных мирах
+- 2026-08-06 `a13266fc` feat(ops): срез 127 — Python и SQL считают состояние одинаково
+- 2026-08-06 `473f5577` fix(ops): срез 128 — личная копия идёт по тому же порядку, что и расход
+- 2026-08-06 `8e8c40d7` test(ops): срез 129 — рендерер периода на справочнике, дополненном посреди срока
+- 2026-08-06 `da6e75a7` fix(ops): срез 130 — лента объекта требует тип, а не одно число
+- 2026-08-06 `76fa5a47` fix(ops): срез 131 — фильтр по актору не принимает того, чего журнал не пишет
+- 2026-08-06 `e7a97133` fix(ops): срез 132 — потолок страницы: размер выдачи назначает сервер
+- 2026-08-06 `cf45a695` test(ops): срез 133 — сданный день не переписывается живыми данными
+- 2026-08-06 `512e75d4` fix(ops): срез 134 — использованный тип статуса не удаляется
+- 2026-08-06 `db4521da` feat(ops): срез 135 — схема снимка 3: справочник замерзает вместе с днём
+- 2026-08-07 `613aca13` fix(ops): срез 136 — день с непригодным справочником не сдаётся
+- 2026-08-07 `53581451` fix(ops): срез 137 — сид не помечал заглушку, и ретро-замена была мертва
+- 2026-08-07 `4843e78d` fix(ops): срез 138 — ограничивающие типы задаёт справочник, а не литерал
+- 2026-08-07 `c12e96b2` fix(ops): срез 139 — сводка за день с переименованием колонки печатается
+- 2026-08-07 `d1eae9c1` fix(ops): срез 140 — светофор молчал о расхождении, если правили справочник
+- 2026-08-07 `c4d581da` fix(ops): срез 141 — схема снимка 4: подпись статуса замерзает вместе с днём
+- 2026-08-07 `c900afbf` fix(ops): срез 142 — схема снимка 5: название подразделения замерзает с днём
+- 2026-08-07 `48d43156` fix(ops): срез 143 — печатный документ называет подразделение как копия
+- 2026-08-07 `93a55b28` feat(ops): срез 144 — схема снимка 6: подписанный документ сходится сам с собой
+- 2026-08-07 `d2159ab3` test(ops): срез 145 — щит подписанного дня целиком, а не по частям
+- 2026-08-07 `0921fa10` feat(ops): срез 146 — схема снимка 7: «+N» приданных замерзает вместе с днём
+- 2026-08-07 `4876ee47` fix(ops): срез 147 — щит сводки: шапка брала колонки у живого справочника
+- 2026-08-07 `a38d314c` test(ops): срез 148 — договор раскладки снимка под замком
+- 2026-08-07 `bb7fde62` fix(ops): срез 149 — эталон печатной формы охраняет ту ветку, по которой идёт прод
+- 2026-08-07 `23fe9e72` test(ops): срез 150 — гвард на следующую утечку в подписанный день
+- 2026-08-07 `3c446bb2` test(ops): срез 151 — сид ролей и прав: механика проверена, политика видна
+- 2026-08-07 `0a95cb12` test(ops): срез 152 — контракт часов: что принимает override и что считает план
+- 2026-08-07 `2bd2c70c` fix: три дефекта, найденные подъёмом стенда и чтением логов обеих сторон
+- 2026-08-07 `a2519243` fix: CORS стенда рубил весь обмен фронта с бэком + гейт не собирался
+- 2026-08-07 `46112f94` test: снял донорскую восьмёрку мёртвых тестов, гейт зелёный целиком
+- 2026-08-07 `280bafbc` feat(reports): расход на хосте переведён на живую ручку бэка
+- 2026-08-07 `95459b33` feat(core): срез 153 — /api/core/divisions/ поверх старого дерева
+- 2026-08-07 `4d8a2932` feat(core): срез 154a — код у справочников Position и Rank
+- 2026-08-07 `67993f0c` feat(core): срез 154b — /api/core/employees/ поверх старой кадровой модели
+- 2026-08-07 `df95a858` feat(core): срез 155 — /api/core/positions/ поверх старого справочника
+- 2026-08-07 `1aa5fcfc` feat(core): срез 156 — /api/core/ranks/ поверх старого справочника званий
+- 2026-08-07 `a6a32078` fix(front): /organization/ читал живой бэк и показывал «данные не загружены»
+- 2026-08-07 `58ed56be` fix(front): /feedback/ выдавал отсутствующий бэк за пустую ленту и долбил 404
+- 2026-08-07 `a259d20f` feat(front): видимая пометка «раздел не подключён» на экранах без бэкенда
+- 2026-08-08 `0fc50618` feat(core): срез 157 — /api/core/staffing-slots/ поверх старых штатных единиц
+- 2026-08-08 `d17d3b7f` feat(core): срез 158 — /api/core/vacancies/ как свободные штатные слоты
+- 2026-08-08 `88e9d17b` feat(documents): срез 159 — /api/documents/attachments/ поверх старых вложений
+- 2026-08-08 `034b2b74` fix(core-api): /api/core/employees/ фильтрует по division_id
+- 2026-08-08 `0867f959` feat(core-api): /api/core/employees/ — фильтры status/rank_code/position_code/search
+- 2026-08-08 `648e3341` feat(ops): срез A1 — /api/ops/objects/ и модель охраняемого объекта
+- 2026-08-08 `3ca67ab6` fix(ops): bulk-статусы читают гвард откомандированного из справочника, а не литерала
+- 2026-08-08 `853dad17` fix(config): fail-closed дефолты — DEBUG выключен по умолчанию, прод без VAPS_SECRET_KEY не стартует
+- 2026-08-08 `38619bcd` fix(statuses): update_status — refresh_from_db под локом + запрет правки отменённого статуса
+- 2026-08-08 `c0666e28` fix(expense): печатная форма — та же вкладка вместо target=_blank (implicit noopener)
+- 2026-08-10 `478d39a2` docs(api-gaps): реестр по факту бэка — objects-список и staffing-slots/attachments уже живые
+- 2026-08-10 `93db190f` feat(ops): срез A2 — паспорт объекта живой end-to-end: секторы/посты, версии, свежесть, KPI
+- 2026-08-10 `cecc0c18` feat(ops): срез B1 — командный центр и реестр ОМ живые: жизненный цикл всех девяти стадий
+- 2026-08-10 `3ea0d528` feat(ops): срез C1 — план дежурств живой: виды, смены, месячный план, конфликты
+- 2026-08-10 `782b5904` feat(ops): срез C2 — боевые группы живые, календарь закрыт целиком
+- 2026-08-10 `5e974489` feat(ops): срез D1 — настройки (владелец политик), справочники и аудит живые
+- 2026-08-10 `5619be19` feat(ops): срез G — оперативный рейтинг живой: все 15 адресов и семь экранов
+- 2026-08-10 `78a9f915` feat(ops): срез H — аналитика службы и мероприятий живая: все 6 адресов
+- 2026-08-10 `1754be70` feat(ops): срез I — служебные отчёты живые: каталог, генерация, артефакты
+- 2026-08-10 `bc2783e1` feat(ops): срез J — обратная связь живая: реестр, карточка, разбор, закрытие
+- 2026-08-10 `faca519f` refactor(front): обратная связь переписана целиком — легаси-чат /feedback удалён
+- 2026-08-10 `3c8addd3` refactor(front): /feedback рендерит новый модуль сам — без редиректа в раздел ОМ
+- 2026-08-10 `1edd09cc` refactor(front): дублирующая SPA-группа /ops/* выведена — адреса ведут на переписанные страницы
+- 2026-08-10 `7b9ccaa7` chore(front): демонтаж копии josparlau и host-e2e — SPA-встройка выведена целиком
+- 2026-08-10 `b2ae02a7` feat(ops): расход дня ОМ живой — тонкие адаптеры /api/ops/daily/* над /api/operations/
+- 2026-08-10 `8bd89bd0` fix(front): пустой src аватарки на доске оргструктуры — фолбэк на placeholder
+- 2026-08-10 `11020c80` fix(security): NEXTAUTH_SECRET убран из git — fail-closed без секрета
+- 2026-08-10 `861958bf` fix(core): гонки легаси-эндпоинтов core закрыты — лок, state-гвард и аудит
+- 2026-08-11 `00a7c37f` fix(stand): обход Playwright по всем кнопкам — 404-дефекты закрыты
+- 2026-08-11 `8179e037` fix(front): hydration mismatch на /dashboard — часы рендерятся после маунта
+- 2026-08-11 `907f9c99` fix(ops): раздел ОМ живой по умолчанию — живость больше не держится на .env.local
+- 2026-08-11 `7666db11` fix(ops): права раздела ОМ живые — identityHandlers снят, коды прав приведены к бэку
+- 2026-08-11 `2fbe1ef9` feat(ops): роль OPS_READER в сиде RBAC — чтение объектов и плана дежурств
+- 2026-08-12 `4e015edd` fix(reports): порядок пагинируемого списка задаёт модель + CheckConstraint.condition
+- 2026-08-12 `c3fdc293` chore: вывести vite-SPA frontend/ и бэк Backend/VAPS — работаем на старом стеке
+- 2026-08-12 `19b4db80` test(e2e): смоук-обход старого стека по живому стенду — 41 маршрут × 3 персоны
+- 2026-08-12 `2a2066b8` fix(ops): гвард прав на 16 страницах раздела — экран отказа вместо пустоты
+- 2026-08-13 `92e6bb9f` feat(ops): реестр объектов по макету — KPI-полоса, панель фильтров, широкая таблица
+- 2026-08-13 `48f6b34e` refactor(ops): убрать списки «Тип» и «Актуализация» из панели фильтров реестра
+- 2026-08-13 `713db780` feat(ops): карточки — умолчание реестра объектов, кнопка «Карточки» первой
+- 2026-08-13 `ff2edf3f` refactor(ops): убрать подвал карточки объекта — секторы/посты и срок проверки
+- 2026-08-13 `137358e1` refactor(ops): убрать блок «Колонки прототипа, которых нет в модели»
+- 2026-08-13 `2b748a04` refactor(ops): убрать подпись про политику актуальности из KPI-полосы
+- 2026-08-13 `e1cf290f` feat(ops): принадлежность объекта — хранимые OWN/GUARDED, признак ОМ производный
+- 2026-08-13 `2c158443` feat(ops): вкладки реестра объектов — собственные, охраняемые, объекты ОМ
+- 2026-08-13 `5f4383aa` fix(ops): вернуть производный признак вкладки «Объекты ОМ»
+- 2026-08-13 `cba88eba` feat(ops): связка «статус На дежурстве → наряд → дежурные силы объекта»
+- 2026-08-14 `bf536353` feat(statuses): тип статуса «Конференция» (conference)
+- 2026-08-14 `dc055c34` fix(reports): сборка расхода считала не всех и падала до арифметики
+- 2026-08-14 `458c8cf6` fix(secondments): одобрение и возврат прикомандирования не работали
+- 2026-08-14 `1b84d6bc` fix(statuses): вернувшийся сотрудник в строю с того же дня
+- 2026-08-14 `49319a7e` fix(statuses): запланированное «В строю» больше не блокирует статусы
+- 2026-08-14 `00c3e677` fix(statuses): «В строю» не конфликтует ни с какой стороны + читаемый отказ
+- 2026-08-14 `b72b3e16` fix(statuses): активация запланированного статуса закрывает прежний
+- 2026-08-14 `0328b493` fix(statuses): массовое обновление молча не работало
+- 2026-08-14 `53658a6d` fix(ui): фоновый рефетч больше не затирает открытую форму
+- 2026-08-14 `28eb2588` feat(security-ops): модуль «Реестр ГВО» по прототипу
+- 2026-08-14 `4a602ecb` feat(security-ops): модуль «Охраняемые лица» по прототипу
+- 2026-08-14 `7c560dc6` fix(ops): карточка ОМ не пересобирает форму этапа на каждом обновлении
+- 2026-08-15 `144aac67` feat(security-ops): модуль «Законы об ОМ» по прототипу
+- 2026-08-15 `10583bac` feat(ops): этап «Расстановка» доведён до вида прототипа
+- 2026-08-15 `43fd0b7d` feat(ops): «Закрытие и итоги» доведено до вида прототипа
+- 2026-08-15 `d9b86e7b` feat(ops): архив дела — закрытое ОМ разбирается по разделам прототипа
+- 2026-08-15 `6c8780e3` fix(smoke): обход /employees и /statuses падал по таймауту
+- 2026-08-15 `061fa5a2` feat(ops): этап «Ознакомление» доведён до вида прототипа
+- 2026-08-17 `f5742c5b` feat(ops): этап «Согласование» доведён до вида прототипа
+- 2026-08-17 `8023e55f` feat(ops): этап «Рекогносцировка» доведён до вида прототипа
+- 2026-08-17 `01c6c7f3` feat(ops): бюллетень показывает готовность этапа
+- 2026-08-17 `f930cea4` feat(ops): цепочка ОМ показывает шесть шагов, как в прототипе
+- 2026-08-17 `e883f520` feat(ops): расстановка по прототипу — сбор группы и выделение сил внутри шага
+- 2026-08-17 `664a60d1` feat(ops): ознакомление в двух колонках — своё назначение по живой связи
+- 2026-08-17 `abf7edde` feat(ops): шаг «Закрытие» открывается закрытием, архив получил шапку прототипа
+- 2026-08-17 `498ef8c1` feat(ops): реестр ОМ — фильтры периода и ответственного, полоса готовности
+- 2026-08-17 `bd672c7e` feat(ops): таблица рекогносцировки — колонки и подпосты прототипа
+- 2026-08-17 `4a8e8796` fix(e2e): проба рекогносцировки переживает повторные прогоны
+- 2026-08-17 `5b6e2426` feat(ops): маршрут согласования — из прототипа, с живым бэком
+- 2026-08-17 `622d76cf` feat(ops): у мероприятия появилась дата окончания
+- 2026-08-17 `f72059d8` feat(ops): «Сведения об ОМ» в бюллетене — из данных сервера
+- 2026-08-17 `d0140b63` fix(ops): незагруженные права — не отказ в «Сведениях об ОМ»
+- 2026-08-17 `b475a538` fix(ops): «Ответственный за ОМ» — подпись человека, а не id учётки
+- 2026-08-17 `b8ea801a` test(e2e): проба прав в бюллетене перехватывает запрос, а не ловит удачу
+- 2026-08-17 `c20f379c` test(e2e): фикстуру ищет сервер по стадии, а не первая страница реестра
+- 2026-08-17 `77f8ad38` feat(ops): командный центр доведён до вида прототипа
+- 2026-08-17 `646616ff` feat(ops): аналитика ОМ доведена до вида прототипа
+- 2026-08-17 `6213e9f5` fix(ops): порядок таблицы аналитики ОМ объявлен aria-sort, проба пинит его
+- 2026-08-17 `bd7b8495` test(e2e): сигнатура обхода переживает навигацию, а не роняет прогон
+- 2026-08-17 `91411dbb` feat(ops): аналитика службы доведена до вида прототипа
+- 2026-08-17 `4a653f3f` feat(ops): паспорт объекта доведён до вида прототипа
+- 2026-08-17 `cf2f481f` feat(ops): «Мой профиль» — экран есть, и он знает, который сотрудник ты
+- 2026-08-17 `4c0956bc` fix(front): спринт 1 аудита — утилиты v4→v3, тёмная тема, границы ошибок, гварды
+- 2026-08-17 `bc383eb4` fix(front): спринт 2 аудита — отказ ≠ пустота, дебаунс поиска, сайдбар и клавиатура
+- 2026-08-17 `1cc83efe` fix(front): спринт 3, часть 1 — токены текста, единая палитра статусов, вход и диалоги
+- 2026-08-17 `cc55d4de` fix(front): спринт 3, часть 2 — мобильные переполнения и ошибки форм у полей
+- 2026-08-17 `36e8eeb2` fix(front): спринт 3, часть 3 — повтор вместо тупика, бандл календарей, мелочи Medium
+- 2026-08-17 `76db025a` fix(front): спринт 3, часть 4 — отбор в адресе и возврат на него из карточки
+- 2026-08-17 `246de7d7` fix(front): живой обход поймал две мои поломки — канон-строка и лишний role="status"
+- 2026-08-17 `ee910fe7` fix(front): спринт 3, хвост — имена фильтрам, слово к цветной точке, подписи KPI
+- 2026-08-18 `6920a88b` fix(front): спринт 4 — формы стали одним механизмом, RHF + zod
+- 2026-08-18 `1190b817` fix(security): убрать логирование JWT/учётных данных в NextAuth authorize()
+- 2026-08-18 `a66a2725` fix(front,api): таблицы перестали врать — период статуса вместо трёх выдумок
+- 2026-08-18 `8361f1e5` fix(security): SECRET_KEY из окружения + запрет wildcard ALLOWED_HOSTS в проде
+- 2026-08-18 `419170b3` fix(api): список подразделения больше не пишет в базу и не падает на безстатусном
+- 2026-08-18 `159f811f` fix(front): экран отказа на /employees и /statuses вместо пустоты при 403
+- 2026-08-18 `f87c543c` feat(statuses): у каждого работающего сотрудника есть действующий статус
+- 2026-08-19 `8a6e98d7` refactor(statuses): «текущий статус» — одно правило и два ЯВНО разных вопроса
+- 2026-08-19 `6ad0daff` fix(front): отсутствие статуса больше не выдаётся за «В строю»
+- 2026-08-19 `a68c86d6` test(e2e): покрыта ветка «узел без единой записи о людях»
+- 2026-08-19 `96a20757` fix(statuses): смоук-обход вскрыл три дыры в инварианте и одну хрупкую пробу

@@ -3,3 +3,137 @@
 _Одна строка на коммит: дата, короткий хэш, сообщение. Сгенерировано скриптом из git log, дополняется вручную по ходу будущей работы._
 
 (наполняется скриптом в Задаче 2)
+
+## История (git log)
+
+- 2026-07-04 `6392562b` feat(E8): 8.1 scaffold Vite react-ts — каркас фронтенда с контурным гейтом
+- 2026-07-06 `75519a00` fix(E8): 8.1 code-review проход 1 — даунгрейд до спеки + ужесточение гейта
+- 2026-07-07 `026f6044` feat(E8): 8.2 канон-линтеры — boundaries/баны/deps-gate/самотест + code-review проход 1
+- 2026-07-07 `4d9ad410` feat(story-8.3): Кодоген типов из схемы
+- 2026-07-07 `6d747804` feat(story-8.4): apiClient и DomainError-парсинг
+- 2026-07-07 `1ef7009d` feat(story-8.5): useApiMutation и ConflictDialog
+- 2026-07-07 `dcf5ec42` feat(story-8.6): Auth-подключение
+- 2026-07-07 `fd136f41` feat(story-8.7): Роутер, routes.ts и layout
+- 2026-07-07 `454aacbc` feat(story-8.8): Печатный каркас
+- 2026-07-07 `0938c430` chore(E8): ретроспектива эпика 8 + doc-синхронизация
+- 2026-07-08 `9ad9d62c` feat(story-6.1): App documents и Attachment
+- 2026-07-09 `4e0172e3` feat(story-9.2): чистая state machine клавиатурной грамматики грида
+- 2026-07-09 `0cc64ad5` feat(story-9.3): property-based свойства грамматики (fast-check)
+- 2026-07-09 `bafab604` feat(story-9.4): грид-компонент (TanStack Virtual + грамматика 9.2)
+- 2026-07-09 `0b586161` feat(story-9.5): фокус-слой грида (RTL+userEvent + ConflictDialog focus-return)
+- 2026-07-09 `3a1a5c10` feat(story-9.6): валидация в гриде (zod + конфликт-маркеры soft/hard)
+- 2026-07-09 `6ba10217` feat(story-9.7): prefill «вчера» + отправка только дельт (bulk-3.8)
+- 2026-07-09 `7530b19d` feat(story-9.8): перф-смоук грида — блокирующие детерминированные счётчики
+- 2026-07-13 `148833a0` fix(story-6.10a): правки cross-model ревью — реальный горизонт данных вместо вакуумной пробы
+- 2026-07-14 `a56608d4` fix(story-6.10b): правки cross-model ревью — блок по живым laggards, 409 на дубль override, горизонт 31д
+- 2026-07-14 `d13fed85` fix(story-9.2): правки cross-model ревью — guard-тест сверяет с ожидаемой таблицей §3.2, самоисцеление входа
+- 2026-07-14 `f4b653be` fix(story-9.4): правки cross-model ревью — type-ahead seed живой, самоисцеление rows, фокус не падает при скролле
+- 2026-07-14 `6d8f9c59` fix(story-9.3): правки cross-model ревью — инвариант «нажатия не теряются» перестал быть вакуумным
+- 2026-07-14 `d2aec070` fix(story-9.5): правки cross-model ревью — клик-синк фокуса, оверрайд только с причиной, позиционные ассерты
+- 2026-07-14 `1d858e5e` fix(story-9.6): правки cross-model ревью — блокируются данные, а не только фокус
+- 2026-07-14 `30de448e` fix(story-9.7): правки cross-model ревью — bulk-shape выровнен с живым 3.8
+- 2026-07-14 `8535e275` fix(story-9.8): правки cross-model ревью — перф-смоук перестал быть вакуумным
+- 2026-07-14 `f8f10873` feat(story-9.9): e2e слепого ввода — реальный браузер против прод-харнеса
+- 2026-07-14 `ea748c8c` fix(story-9.9): правки cross-model ревью — вакуумные ассерты закрыты
+- 2026-07-15 `f0868806` feat(story-10.1a): REST bulk-роут статусов — backfill AI-4 (bulk-POST + regen схемы)
+- 2026-07-19 `d7bb85ed` feat(story-10.2): экран массового обновления
+- 2026-07-19 `9e013d2e` feat(story-10.3): экран сдачи дня
+- 2026-07-19 `a56ad92b` feat(story-10.3a): роут каскадного дерева светофора
+- 2026-07-19 `1353291c` feat(story-11.3): WS-клиент с reconnect, дочиткой ?since= и индикатором связи
+- 2026-07-19 `15b9268f` feat(story-10.4): светофор-дерево
+- 2026-07-19 `8573b329` feat(story-11.4): центр уведомлений — колокольчик, панель и WS-обновление кэша
+- 2026-07-19 `ad59582a` feat(story-10.5): экран расхода
+- 2026-07-19 `53b30a4e` feat(story-10.6): amendment-флоу UI
+- 2026-07-19 `c5a6ee44` feat(story-11.6): e2e-уведомления — живой стек с браузером
+- 2026-07-19 `84515f6c` feat(story-10.7): печатная форма расхода
+- 2026-07-19 `a5cfcb38` feat(story-10.8): личный экспорт оператора («щит»)
+- 2026-07-20 `c18d992e` feat(story-10.9): журнал «сообщено → исправлено» (каркас)
+- 2026-07-20 `21617863` feat(story-10.10): e2e сдачи целиком — живая цепочка через все экраны
+- 2026-07-24 `3891e7ba` feat(smart-josparlau): frontend-only mock-driven implementation, Этапы 0-7
+- 2026-07-24 `22715ed6` test(smart-josparlau): add Playwright E2E for mock-mode build
+- 2026-07-24 `eef4e2cb` feat(smart-josparlau): add Service Analytics screen (§22)
+- 2026-07-24 `4a5a6bcf` test(smart-josparlau): extend E2E to Approval→Closure, fix real a11y bug
+- 2026-07-24 `832d19fc` feat(smart-josparlau): add Duty Plan screen (§21/§24)
+- 2026-07-24 `01491212` feat(smart-josparlau): add Dictionaries screen (§30)
+- 2026-07-24 `a0f1a394` feat(smart-josparlau): add unified shift calendar (§25, day view)
+- 2026-07-24 `b4ef1c15` feat(smart-josparlau): add remaining §30 dictionaries (journal entry types, post requirement groups)
+- 2026-07-24 `92430180` test(smart-josparlau): extend e2e-mock to personnel/objects/dictionaries/calendar/placement
+- 2026-07-24 `a24cd27c` test(smart-josparlau): close the last e2e-mock gap — RECON→DEMAND→FORCES→PLACEMENT
+- 2026-07-24 `3f3fb1c5` test(smart-josparlau): e2e-mock coverage for audit, analytics, duties
+- 2026-07-24 `b4f26ea8` feat(smart-josparlau): operational profile tab structure (§20.5)
+- 2026-07-24 `59e4f58a` feat(smart-josparlau): combat duty groups on Routes (§24.5-24.10)
+- 2026-07-24 `642aa70b` feat(smart-josparlau): combat duty execution lifecycle (§24.19-24.23)
+- 2026-07-24 `82b08550` feat(smart-josparlau): combat duty roster replacement (§24.21)
+- 2026-07-24 `8003d3f3` style(smart-josparlau): readiness progress bar on Command Center (per-stage fill)
+- 2026-07-24 `7db8fffd` feat(smart-josparlau): form combat duty requirement for a period (§24.1)
+- 2026-07-24 `b6f0f673` feat(smart-josparlau): combat duty groups on the day calendar (§25.12)
+- 2026-07-24 `15f528b6` feat(smart-josparlau): duty-shift breakdown on Service Analytics (§22)
+- 2026-07-24 `475eb177` feat(smart-josparlau): combat-group breakdown on Service Analytics (§22/§24)
+- 2026-07-25 `447b7515` fix(smart-josparlau): accessibility — unlabeled inputs and icon-only button
+- 2026-07-25 `1209af55` feat(smart-josparlau): combat duty shift handover checkpoint (§24.22)
+- 2026-07-25 `d4ea1354` feat(smart-josparlau): cascading replacement of departed staff (§9.11)
+- 2026-07-25 `1633d9bc` feat(smart-josparlau): keyboard navigation for operational-profile tabs
+- 2026-07-25 `7870b6db` feat(smart-josparlau): axe-core accessibility audit across all screens
+- 2026-07-25 `fe088a33` fix(ui): darken default Button hover to meet WCAG AA contrast
+- 2026-07-25 `6a3a23c2` fix(smart-josparlau): close moderate/minor axe findings, fix real contrast bug
+- 2026-07-25 `abacc30a` feat(a11y): add skip-to-content link to AppLayout (WCAG 2.4.1)
+- 2026-07-27 `7a2ce30a` feat(smart-josparlau): placement print form (§9.15) as marked demo preview
+- 2026-07-27 `40141290` feat(smart-josparlau): read-only case archive of a closed security event
+- 2026-07-27 `3c90bf00` feat(smart-josparlau): immutable passport versions with deep-linked read-only view
+- 2026-07-27 `f26da1ee` feat(smart-josparlau): bind security events to a published passport version (§9.6)
+- 2026-07-27 `e4b56442` feat(smart-josparlau): bind duty shifts to a published passport version (§9.6)
+- 2026-07-27 `d7520ea2` feat(smart-josparlau): monthly duty plan with server-side KPI and conflicts (§21.27-21.30)
+- 2026-07-27 `d0a45704` feat(smart-josparlau): create individual duty shifts from the UI (§21.31/§21.33/§21.34)
+- 2026-07-27 `90bf1ff0` feat(smart-josparlau): duty shift card with server-side conflicts and named gaps (§21.32)
+- 2026-07-27 `87bc906f` feat(smart-josparlau): edit and cancel a planned duty shift (§21.31)
+- 2026-07-27 `a393d0ca` feat(smart-josparlau): employee availability matrix with named missing layers (§21.30)
+- 2026-07-28 `9d4538de` feat(smart-josparlau): duty shift list and history with named missing columns (§21.30)
+- 2026-07-28 `1c3e60b6` feat(smart-josparlau): objects registry KPI with policy-driven passport freshness (§21.7)
+- 2026-07-28 `5bb22e34` feat(smart-josparlau): monthly plan lifecycle with server-side action policy (§21.27-21.28)
+- 2026-07-28 `ab6b24ae` feat(smart-josparlau): server-side safe projection and sensitive identity disclosure (§20.27-20.33)
+- 2026-07-28 `05a0d480` feat(smart-josparlau): service report registry with async jobs and server-side masking (§22.18-22.25)
+- 2026-07-28 `328ec0fd` feat(smart-josparlau): report history with artifact revisions and permission-scoped visibility (§22.25)
+- 2026-07-28 `82015f21` feat(smart-josparlau): report job card with server-side redaction of foreign parameters (§22.26-22.28)
+- 2026-07-28 `98a3155d` feat(smart-josparlau): server-owned analytics snapshot and stable-ID drill-down (§22.3-22.12)
+- 2026-07-28 `37e4fef3` feat(smart-josparlau): server-owned attention detectors with own policy (§22.11)
+- 2026-07-28 `3c5b4633` feat(smart-josparlau): operations analytics hierarchy by stable IDs (§22.13/§22.15)
+- 2026-07-28 `d7797d2d` feat(smart-josparlau): append-only transition journal and §22.14 funnel
+- 2026-07-28 `e420ef42` feat(smart-josparlau): feedback registry with server-owned confidentiality (§28)
+- 2026-07-28 `40ac55e0` feat(smart-josparlau): feedback card with diff-written timeline (§28 detail)
+- 2026-07-28 `e1a57169` chore(frontend): allow ngrok-free.dev hosts in vite dev server
+- 2026-07-28 `c2625f2d` feat: add Sentry error monitoring (backend + frontend)
+- 2026-07-28 `ffa19f5d` feat(smart-josparlau): settings section owns the attention policy (§29)
+- 2026-07-28 `00c4f2e7` Merge origin/main (Sentry, ngrok hosts, docker restart) into main
+- 2026-07-28 `ef2a4655` feat(smart-josparlau): conflict rules own the rest-after-duty mode (§29/§21.35)
+- 2026-07-28 `ce4a9107` feat(smart-josparlau): settings own the passport freshness policy (§29/§21.7)
+- 2026-07-29 `faeb0af1` feat(smart-josparlau): dictionary usage becomes a live server-side count (§30)
+- 2026-07-29 `4dd580e3` feat(smart-josparlau): пределы периодов и хранения переезжают в «Настройки» (§22.5/§29)
+- 2026-07-29 `a6025d3a` feat(smart-josparlau): оперативный рейтинг — read model и сводка агрегатов (§19)
+- 2026-07-29 `0a98ee9f` feat(smart-josparlau): динамика оперативного рейтинга — ряд закрытых периодов и граница смены методики (§19.20)
+- 2026-07-29 `9d481a84` feat(smart-josparlau): аналитика рейтинга — отчёт с подавлением малых групп (§22.16-22.17)
+- 2026-07-31 `0f385b11` feat(smart-josparlau): рабочее пространство оценивания — задания, форма, отправка (§19.7-19.10, §19.14)
+- 2026-07-31 `7d29faf6` feat(smart-josparlau): исправление оценки — новая запись, цепочка и diff (§19.17-19.18)
+- 2026-07-31 `accb0858` feat(smart-josparlau): реестр итоговых оценок и карточка агрегата (§19.15-19.17)
+- 2026-07-31 `5af40845` feat(smart-josparlau): конфликты редакций и идемпотентность отправки (§19.25-19.26)
+- 2026-07-31 `c6b51a25` feat(smart-josparlau): журнал оценивания — события, отказы и ссылки (§19.27)
+- 2026-07-31 `50616da7` feat(smart-josparlau): уведомления оценивания — код вместо текста, deep link с перепроверкой прав (§19.28)
+- 2026-07-31 `52089489` feat(smart-josparlau): экспорт рейтинга — агрегированная выгрузка, состояния и отказ sensitive (§19.29)
+- 2026-07-31 `649da3c0` feat(smart-josparlau): рейтинг при расстановке — min_rating поста, soft warning с override и краткая сводка (§19.24)
+- 2026-07-31 `bb212b33` feat(smart-josparlau): канонические empty states оценивания §19.31 — дословные формулировки без потери причины (§19.30)
+- 2026-07-31 `5291155a` feat(smart-josparlau): замок закрытого мероприятия для поздней оценки (§19.23)
+- 2026-07-31 `cd10db88` feat(smart-josparlau): гард фактического участия — ревизия перечня §19.33
+- 2026-07-31 `f3d965c2` test(smart-josparlau): экраны оценивания в axe-аудите + heading-order сводки (§19.32)
+- 2026-08-01 `c0145c1a` feat(smart-josparlau): устойчивый ID сотрудника и подразделения на смене дежурства (§22.9)
+- 2026-08-01 `8363320a` feat(smart-josparlau): аналитика нагрузки — раздел LOAD_POLICY и серверный LoadMetric (§22.9)
+- 2026-08-01 `d49f9708` fix(smart-josparlau): разделы «Настроек» выводятся из SECTION_TITLE — LOAD_POLICY был молча спрятан списком
+- 2026-08-01 `74a4dad8` fix(smart-josparlau): живое первое впечатление — донор-дефолты demo-режима и посадочная «/» (Этап 71)
+- 2026-08-01 `3efff53b` fix(smart-josparlau): переход Бюллетень→Рекогносцировка + сквозная e2e полного цикла ОМ (Этап 72)
+- 2026-08-01 `487e1931` refactor(smart-josparlau): фиксы код-ревью — 15 замечаний пяти углов (Этап 73)
+- 2026-08-02 `6dcf2072` feat(host-перенос): эквивалентность доказана — 125/125 общих e2e против PersonalRecordFront (Этап M2)
+- 2026-08-02 `3603748f` chore(host-перенос): npm run test:e2e:host
+- 2026-08-03 `f2acd119` feat(host-перенос): Этап M4 — SPA в каркасе хоста + sidebar-секции ОМ (/ops и натив)
+- 2026-08-07 `2bd2c70c` fix: три дефекта, найденные подъёмом стенда и чтением логов обеих сторон
+- 2026-08-08 `c0666e28` fix(expense): печатная форма — та же вкладка вместо target=_blank (implicit noopener)
+- 2026-08-10 `7b9ccaa7` chore(front): демонтаж копии josparlau и host-e2e — SPA-встройка выведена целиком
+- 2026-08-12 `1a8c34e7` test(e2e): смоук-обход портала по живому стенду — 39 маршрутов × 3 персоны
+- 2026-08-12 `c3fdc293` chore: вывести vite-SPA frontend/ и бэк Backend/VAPS — работаем на старом стеке

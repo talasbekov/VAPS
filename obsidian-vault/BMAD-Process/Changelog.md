@@ -3,3 +3,116 @@
 _Одна строка на коммит: дата, короткий хэш, сообщение. Сгенерировано скриптом из git log, дополняется вручную по ходу будущей работы._
 
 (наполняется скриптом в Задаче 2)
+
+## История (git log)
+
+- 2026-06-01 `7577182f` Add VAPS project: backend modules, BMAD/WDS tooling, docs and graphify graph
+- 2026-06-15 `4ce19ddc` feat(E1): walking skeleton stories 1.1–1.8 + BMAD artifacts + graph
+- 2026-06-16 `d849611b` feat(E1): спайк 1.9 — контур-проба, бандл носителя + рунбук (путь B, A5 открыт)
+- 2026-06-16 `ec5ac3ad` fix(E1): ревью спайка 1.9 — guard отрицательных счётчиков + install-probe fallback (+ бандл 1.8-hardening)
+- 2026-06-16 `59d43b49` docs(E1): зафиксировать драфт A5/A8-эскалации (AC-3 спайка 1.9, ревью пр.4)
+- 2026-06-17 `0bd68fb8` feat(E1): спайк 1.10 — перф-грид прототип + инструментация + BUDGET (путь A, замер за Bratan)
+- 2026-06-18 `faf52f3d` 1.9 story
+- 2026-06-18 `aef97623` docs(E1): спайк 1.9 — финализация ревью пр.6 (RUNBOOK + findings + defer)
+- 2026-06-18 `9e424eb0` feat(E1): спайк 1.10 — патчи ревью пр.1 (детектор каскада D1 + BUDGET)
+- 2026-06-18 `777610ac` feat(E1): спайк 1.11 — выгрузка донора (рецепт + stdlib-профилировщик + ревью)
+- 2026-06-21 `ca7343de` 2.2 Story
+- 2026-06-21 `ff90c84b` 2.3 story
+- 2026-06-22 `be2db041` chore(bmad): трекинг сессии + graphify (E2: 2.4 done, 2.5 done)
+- 2026-06-22 `40c7a6f6` chore(E2): gate+round-trip — стори 2.1/2.2/2.3 → done
+- 2026-06-23 `66585685` feat(E2): стори 2.8 — Django-auth-совместимость User (фундамент Admin)
+- 2026-06-23 `c5779d92` 2.8 story
+- 2026-06-25 `edc922ef` 3.1-3.6 stories
+- 2026-06-25 `ba735d61` 3.7-3.10 stories
+- 2026-06-25 `9294d0a7` feat(E3): стори 3.11 — секондмент-возврат (FR-15) + DETACHED read-only (FR-16); ревью 3.10→done
+- 2026-06-26 `bcc77a9b` chore(bmad): трекинг E3 — sprint-status + deferred-work (стори 3.12–3.14, ревью 1.11)
+- 2026-06-26 `00998e7f` docs(bmad): ретроспектива E3 + трекинг (epic-3-retro, 3.14→done, deferred-work)
+- 2026-06-26 `4bdea8e8` 4.4 stories review
+- 2026-06-27 `01108350` docs(bmad): трекинг E4 — sprint-status + deferred-work (ревью 4.4, стори 4.5/4.6)
+- 2026-06-29 `5e98fe3f` feat(E4): стори 4.7 — аудит увольнения + ревью 4.6/4.7 + ретроспектива E4
+- 2026-06-29 `e95a5e14` feat(E5): стори 5.1 — вход оператора (JWT-middleware)
+- 2026-06-29 `fec75d97` fix(E5): стори 5.1 — security-патчи code-review (JWT trust-architecture)
+- 2026-06-29 `f49218cf` 5.2, 5.3a, 5.3b stories
+- 2026-06-30 `6104efbd` feat(E5): amendment-flow — 5.4a сервис версий v2+ + 5.4b энфорс ретро-правки
+- 2026-06-30 `3799ac54` feat(E5): 5.6a derive-блокировка «на завтра» + декомпозиция 5.6
+- 2026-06-30 `23b00741` feat(E5): 5.6b override-сущность + легальный обход блокировки «на завтра»
+- 2026-06-30 `6b724607` 5.7 story
+- 2026-07-01 `00bca91b` fix(E5): 5.7a code-review — notify() вариант B (in-txn) + non-fatal + kind CheckConstraint + recipient strip
+- 2026-07-01 `28e4487c` docs(bmad): E5 — декомпозиция 5.7b → 5.7b1 (recipient-config) + 5.7b2 (catch-up-джоба)
+- 2026-07-01 `281d4048` feat(E5): 5.7b1 recipient-config + 5.7b2 catch-up детект отставания + code-review
+- 2026-07-01 `9f646ec4` feat(E5): 5.7c read-API уведомлений (GET /notifications/?since=)
+- 2026-07-02 `97fc0299` fix(E5): 5.7c code-review — isolation-гвард (alias/relative + непустой скан), blank-guard селектора, anon-write 405 + фикс 500 на whitespace X-User-Id
+- 2026-07-02 `d0d4af6c` feat(E5): 5.8a POST /api/operations/daily-submissions/ — сдача дня по HTTP + code-review
+- 2026-07-02 `4bcc00e6` feat(E5): 5.8b POST /{id}/amend/ — ручной amendment по HTTP + code-review
+- 2026-07-02 `d0c728c6` feat(E5): 5.8c GET list+detail сдач — история и деталь по HTTP + code-review
+- 2026-07-04 `dd2af16e` feat(E5): 5.9 аудит сдач — DAILY_SUBMISSION_SUBMITTED/AMENDED + TOMORROW_BLOCK_OVERRIDDEN + code-review
+- 2026-07-04 `999a98d4` docs(planning): ревизия UI-стека — донорский shadcn вместо Mantine (активация Плана Б)
+- 2026-07-04 `6392562b` feat(E8): 8.1 scaffold Vite react-ts — каркас фронтенда с контурным гейтом
+- 2026-07-06 `75519a00` fix(E8): 8.1 code-review проход 1 — даунгрейд до спеки + ужесточение гейта
+- 2026-07-06 `362c7d91` docs(E8): спека 8.2 канон-линтеры — ready-for-dev
+- 2026-07-07 `026f6044` feat(E8): 8.2 канон-линтеры — boundaries/баны/deps-gate/самотест + code-review проход 1
+- 2026-07-07 `4d9ad410` feat(story-8.3): Кодоген типов из схемы
+- 2026-07-07 `6d747804` feat(story-8.4): apiClient и DomainError-парсинг
+- 2026-07-07 `1ef7009d` feat(story-8.5): useApiMutation и ConflictDialog
+- 2026-07-07 `dcf5ec42` feat(story-8.6): Auth-подключение
+- 2026-07-07 `fd136f41` feat(story-8.7): Роутер, routes.ts и layout
+- 2026-07-07 `454aacbc` feat(story-8.8): Печатный каркас
+- 2026-07-07 `0938c430` chore(E8): ретроспектива эпика 8 + doc-синхронизация
+- 2026-07-07 `ac028c25` Automator BMAD stories 8.3-8.8 done
+- 2026-07-07 `76c42040` feat(story-5.10): Property — иммутабельность снапшота
+- 2026-07-08 `cc2dc2cd` feat(story-5.11): Фрактальная сводка
+- 2026-07-08 `5e2b4ed6` chore(E5): ретроспектива эпика 5 + doc-синхронизация
+- 2026-07-08 `9ad9d62c` feat(story-6.1): App documents и Attachment
+- 2026-07-08 `671167d6` feat(story-6.2): DocumentSequence
+- 2026-07-08 `4e1350b2` feat(story-6.3): Генератор .docx (перенос из донора)
+- 2026-07-08 `02cd511d` feat(story-6.4): Генераторы .xlsx/.csv/.pdf
+- 2026-07-08 `4f9906da` feat(story-6.5): Выпуск расхода
+- 2026-07-09 `984c5283` feat(story-6.6): спайк async-timing — async по умолчанию числами не оправдан
+- 2026-07-09 `9f0657d7` feat(story-6.7): Story 6.7: Скачивание и повторная выдача
+- 2026-07-09 `b7f7d927` docs(story-6.8): спека golden-master → ready-for-dev; авто-оркестратор остановлен
+- 2026-07-09 `98ad0e0c` feat(story-6.9): Зерно parallel-run — ночная diff-джоба против донора
+- 2026-07-09 `00bb0bbf` feat(story-6.10a): HTTP-выпуск расхода и чтение по дате/периоду
+- 2026-07-09 `c735813a` feat(story-6.10b): блокировка «на завтра» — HTTP и override
+- 2026-07-09 `37035ff9` docs(story-9.1): бумажный контракт экрана №1 (массовый слепой ввод)
+- 2026-07-09 `4e0172e3` feat(story-9.2): чистая state machine клавиатурной грамматики грида
+- 2026-07-09 `0cc64ad5` feat(story-9.3): property-based свойства грамматики (fast-check)
+- 2026-07-09 `bafab604` feat(story-9.4): грид-компонент (TanStack Virtual + грамматика 9.2)
+- 2026-07-09 `0b586161` feat(story-9.5): фокус-слой грида (RTL+userEvent + ConflictDialog focus-return)
+- 2026-07-09 `3a1a5c10` feat(story-9.6): валидация в гриде (zod + конфликт-маркеры soft/hard)
+- 2026-07-09 `6ba10217` feat(story-9.7): prefill «вчера» + отправка только дельт (bulk-3.8)
+- 2026-07-09 `7530b19d` feat(story-9.8): перф-смоук грида — блокирующие детерминированные счётчики
+- 2026-07-13 `8aa089f1` fix(story-6.9): правки cross-model ревью — non-blocking контракт закрыт с обеих сторон
+- 2026-07-13 `148833a0` fix(story-6.10a): правки cross-model ревью — реальный горизонт данных вместо вакуумной пробы
+- 2026-07-14 `a56608d4` fix(story-6.10b): правки cross-model ревью — блок по живым laggards, 409 на дубль override, горизонт 31д
+- 2026-07-14 `87bec54f` docs(story-9.1): правки ревью вычиткой — таблица §3.2 синхронизирована с реализованной грамматикой
+- 2026-07-14 `d13fed85` fix(story-9.2): правки cross-model ревью — guard-тест сверяет с ожидаемой таблицей §3.2, самоисцеление входа
+- 2026-07-14 `f4b653be` fix(story-9.4): правки cross-model ревью — type-ahead seed живой, самоисцеление rows, фокус не падает при скролле
+- 2026-07-14 `6d8f9c59` fix(story-9.3): правки cross-model ревью — инвариант «нажатия не теряются» перестал быть вакуумным
+- 2026-07-14 `d2aec070` fix(story-9.5): правки cross-model ревью — клик-синк фокуса, оверрайд только с причиной, позиционные ассерты
+- 2026-07-14 `1d858e5e` fix(story-9.6): правки cross-model ревью — блокируются данные, а не только фокус
+- 2026-07-14 `30de448e` fix(story-9.7): правки cross-model ревью — bulk-shape выровнен с живым 3.8
+- 2026-07-14 `8535e275` fix(story-9.8): правки cross-model ревью — перф-смоук перестал быть вакуумным
+- 2026-07-14 `f8f10873` feat(story-9.9): e2e слепого ввода — реальный браузер против прод-харнеса
+- 2026-07-14 `ea748c8c` fix(story-9.9): правки cross-model ревью — вакуумные ассерты закрыты
+- 2026-07-14 `cfeeca90` docs(epic-9): ретроспектива — грид слепого ввода закрыт
+- 2026-07-14 `fa619070` feat(story-10.1): бумажные контракты экранов светофора и расхода
+- 2026-07-14 `596987c4` fix(story-10.1): правки cross-model ревью — контракты сверены с raise-сайтами
+- 2026-07-15 `f0868806` feat(story-10.1a): REST bulk-роут статусов — backfill AI-4 (bulk-POST + regen схемы)
+- 2026-07-19 `d7bb85ed` feat(story-10.2): экран массового обновления
+- 2026-07-19 `e2c78902` feat(story-11.1): ASGI + channels_redis — WS-транспорт уведомлений
+- 2026-07-19 `7c88f0a2` feat(story-11.2): публикация в WS из notify() через transaction.on_commit
+- 2026-07-19 `9e013d2e` feat(story-10.3): экран сдачи дня
+- 2026-07-19 `a56ad92b` feat(story-10.3a): роут каскадного дерева светофора
+- 2026-07-19 `1353291c` feat(story-11.3): WS-клиент с reconnect, дочиткой ?since= и индикатором связи
+- 2026-07-19 `15b9268f` feat(story-10.4): светофор-дерево
+- 2026-07-19 `8573b329` feat(story-11.4): центр уведомлений — колокольчик, панель и WS-обновление кэша
+- 2026-07-19 `ad59582a` feat(story-10.5): экран расхода
+- 2026-07-19 `39dd5178` feat(story-11.5): kill-switch WS через env-флаг VAPS_WS_ENABLED
+- 2026-07-19 `53b30a4e` feat(story-10.6): amendment-флоу UI
+- 2026-07-19 `c5a6ee44` feat(story-11.6): e2e-уведомления — живой стек с браузером
+- 2026-07-19 `84515f6c` feat(story-10.7): печатная форма расхода
+- 2026-07-19 `a5cfcb38` feat(story-10.8): личный экспорт оператора («щит»)
+- 2026-07-20 `c18d992e` feat(story-10.9): журнал «сообщено → исправлено» (каркас)
+- 2026-07-20 `21617863` feat(story-10.10): e2e сдачи целиком — живая цепочка через все экраны
+- 2026-07-20 `09058990` docs(retro): epic 10/11 retrospectives — E9 follow-through, Epic 12 prep notes
+- 2026-07-20 `f47afb07` chore(sprint): epic-9 → done — все стори 9.1–9.9 и ретроспектива закрыты

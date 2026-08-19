@@ -3,3 +3,288 @@
 _Одна строка на коммит: дата, короткий хэш, сообщение. Сгенерировано скриптом из git log, дополняется вручную по ходу будущей работы._
 
 (наполняется скриптом в Задаче 2)
+
+## История (git log)
+
+- 2026-05-31 `664a04c6` Initial commit
+- 2026-06-01 `7577182f` Add VAPS project: backend modules, BMAD/WDS tooling, docs and graphify graph
+- 2026-06-02 `9cf3815e` Update README.md
+- 2026-06-02 `baad1f7e` docs: add technical audit report based on VAPS v7.8.2
+- 2026-06-02 `a3b9e3d9` Delete ПланРасстановка.docx
+- 2026-06-02 `dc68bcf1` docs: update technical audit report with prioritized execution plan
+- 2026-06-05 `49b4d32a` docs: generate architecture dependency map
+- 2026-06-05 `a206eb5a` feat(auth): introduce centralized PermissionService for RBAC
+- 2026-06-07 `fe2a9730` Add RECONCILIATION.md: single source of truth across VAPS docs
+- 2026-06-07 `1fa238a1` docs: add core context foundation implementation plan
+- 2026-06-07 `fc306bdd` feat(core): add rich core_employees model with IIN validator and full_name sync (DB-CORE-004, §45.2)
+- 2026-06-08 `bcd54cff` docs(operations): add RBAC foundation design spec
+- 2026-06-08 `64ced023` docs(operations): add RBAC foundation implementation plan
+- 2026-06-08 `246c5f12` docs(epics): add initial-migrations epic (generate missing app migrations)
+- 2026-06-08 `fc2d7e22` feat(db): generate initial migrations for local apps (initial-migrations Story 1.1)
+- 2026-06-09 `75ee10d8` docs(epics): mark initial-migrations Story 1.1 verified complete
+- 2026-06-09 `13ddb4a5` docs(epics): mark initial-migrations Story 4.x done, log new test-cleanup follow-up
+- 2026-06-09 `acbea52b` docs(epics): mark Story 6.x done, split out websocket follow-up (Story 7.x)
+- 2026-06-09 `bd7b79ef` ci(migrations): add GitHub Actions makemigrations drift gate (Story 3.x)
+- 2026-06-09 `d03f064d` docs(plans): add Story 6.x fix-broken-tests implementation plan
+- 2026-06-09 `98987106` feat(db): seed dictionaries reference data via migration (Story 2.x)
+- 2026-06-10 `462a80c1` chore: stop tracking docs/ and graphify-out/ (local-only)
+- 2026-06-10 `44a17fde` deleted docs
+- 2026-06-10 `eeea4660` Added description to README.md
+- 2026-06-10 `b12603a9` Changed .gitignore
+- 2026-06-15 `4ce19ddc` feat(E1): walking skeleton stories 1.1–1.8 + BMAD artifacts + graph
+- 2026-06-16 `d849611b` feat(E1): спайк 1.9 — контур-проба, бандл носителя + рунбук (путь B, A5 открыт)
+- 2026-06-16 `ec5ac3ad` fix(E1): ревью спайка 1.9 — guard отрицательных счётчиков + install-probe fallback (+ бандл 1.8-hardening)
+- 2026-06-16 `3b2485b1` chore(graph): graphify update после ревью спайка 1.9 (AST-only)
+- 2026-06-17 `0bd68fb8` feat(E1): спайк 1.10 — перф-грид прототип + инструментация + BUDGET (путь A, замер за Bratan)
+- 2026-06-18 `faf52f3d` 1.9 story
+- 2026-06-18 `aef97623` docs(E1): спайк 1.9 — финализация ревью пр.6 (RUNBOOK + findings + defer)
+- 2026-06-18 `9e424eb0` feat(E1): спайк 1.10 — патчи ревью пр.1 (детектор каскада D1 + BUDGET)
+- 2026-06-18 `777610ac` feat(E1): спайк 1.11 — выгрузка донора (рецепт + stdlib-профилировщик + ревью)
+- 2026-06-18 `1b65f54f` chore: graphify по необходимости — ослабить CLAUDE.md + убрать PreToolUse-нудж
+- 2026-06-21 `ca7343de` 2.2 Story
+- 2026-06-21 `ff90c84b` 2.3 story
+- 2026-06-22 `21841e08` fix(E1): спайк 1.11 — патч ревью пр.4 (валидация типа поля model)
+- 2026-06-22 `68a397ad` fix(E2): стори 2.1 — патч ревью пр.2 (явное ребро DAG миграций)
+- 2026-06-22 `d0cb150b` feat(E2): стори 2.4 — списочный состав на дату (версионированный знаменатель)
+- 2026-06-22 `da365d77` feat(E2): стори 2.5 — сервис увольнения (сервис-слой)
+- 2026-06-22 `be2db041` chore(bmad): трекинг сессии + graphify (E2: 2.4 done, 2.5 done)
+- 2026-06-22 `b304ba29` feat(E2): стори 2.6 — канон сортировки списков (FR-5)
+- 2026-06-22 `40c7a6f6` chore(E2): gate+round-trip — стори 2.1/2.2/2.3 → done
+- 2026-06-23 `c3ce5d3b` feat(E2): стори 2.7 — импорт справочников должностей/званий из CSV (FR-39)
+- 2026-06-23 `66585685` feat(E2): стори 2.8 — Django-auth-совместимость User (фундамент Admin)
+- 2026-06-23 `c5779d92` 2.8 story
+- 2026-06-25 `edc922ef` 3.1-3.6 stories
+- 2026-06-25 `ba735d61` 3.7-3.10 stories
+- 2026-06-25 `9294d0a7` feat(E3): стори 3.11 — секондмент-возврат (FR-15) + DETACHED read-only (FR-16); ревью 3.10→done
+- 2026-06-26 `7d6ce75e` feat(E3): стори 3.12 — движок catch-up материализации эффектов (FR-41 ядро)
+- 2026-06-26 `c014b70f` test(E3): стори 3.14 — сервис-уровневый конкурентный смоук статусов
+- 2026-06-26 `cd183653` docs(E3): спайк 3.13 — часы без NTP (FINDINGS + RUNBOOK админа)
+- 2026-06-26 `e25112d2` fix(E1): спайк 1.11 — патчи ревью пр.5 (natural-key guard, mask, отчёт)
+- 2026-06-26 `20a4e8a2` test(E3): стори 3.14 — патчи code-review (docstring + ассерт pk победителя)
+- 2026-06-26 `4bdea8e8` 4.4 stories review
+- 2026-06-27 `f367b4a5` fix(E4): стори 4.4 — патч ревью (честный коммент update_status)
+- 2026-06-27 `0ced6b15` feat(E4): стори 4.5 — read-only API чтения аудита (FR-36)
+- 2026-06-27 `50094591` test(E4): стори 4.6 — audit-coverage CI-страж (AR-9) + чистка статического теста 4.4
+- 2026-06-29 `5e98fe3f` feat(E4): стори 4.7 — аудит увольнения + ревью 4.6/4.7 + ретроспектива E4
+- 2026-06-29 `e95a5e14` feat(E5): стори 5.1 — вход оператора (JWT-middleware)
+- 2026-06-29 `fec75d97` fix(E5): стори 5.1 — security-патчи code-review (JWT trust-architecture)
+- 2026-06-29 `f49218cf` 5.2, 5.3a, 5.3b stories
+- 2026-06-30 `0d90d35a` docs(bmad): закрытие спайков 1.11/3.13 → done (E1/E3 завершены)
+- 2026-06-30 `6104efbd` feat(E5): amendment-flow — 5.4a сервис версий v2+ + 5.4b энфорс ретро-правки
+- 2026-06-30 `ac5c24c5` feat(E5): светофор-селектор — 5.5a светофор подразделения + 5.5b каскад по дереву
+- 2026-06-30 `3799ac54` feat(E5): 5.6a derive-блокировка «на завтра» + декомпозиция 5.6
+- 2026-06-30 `23b00741` feat(E5): 5.6b override-сущность + легальный обход блокировки «на завтра»
+- 2026-06-30 `6b724607` 5.7 story
+- 2026-07-01 `00bca91b` fix(E5): 5.7a code-review — notify() вариант B (in-txn) + non-fatal + kind CheckConstraint + recipient strip
+- 2026-07-01 `28e4487c` docs(bmad): E5 — декомпозиция 5.7b → 5.7b1 (recipient-config) + 5.7b2 (catch-up-джоба)
+- 2026-07-01 `281d4048` feat(E5): 5.7b1 recipient-config + 5.7b2 catch-up детект отставания + code-review
+- 2026-07-01 `9f646ec4` feat(E5): 5.7c read-API уведомлений (GET /notifications/?since=)
+- 2026-07-02 `97fc0299` fix(E5): 5.7c code-review — isolation-гвард (alias/relative + непустой скан), blank-guard селектора, anon-write 405 + фикс 500 на whitespace X-User-Id
+- 2026-07-02 `d0d4af6c` feat(E5): 5.8a POST /api/operations/daily-submissions/ — сдача дня по HTTP + code-review
+- 2026-07-02 `4bcc00e6` feat(E5): 5.8b POST /{id}/amend/ — ручной amendment по HTTP + code-review
+- 2026-07-02 `6f49ec24` chore(graphify): обновление графа кода после 5.8a/5.8b
+- 2026-07-02 `d0c728c6` feat(E5): 5.8c GET list+detail сдач — история и деталь по HTTP + code-review
+- 2026-07-02 `c898dc83` chore(graphify): обновление графа кода после 5.8c
+- 2026-07-04 `8307295c` chore(design-sync): первый синк дизайн-системы донора в claude.ai/design
+- 2026-07-04 `be847033` chore(design-sync): зафиксировано одобрение ревью превью пользователем
+- 2026-07-04 `dd2af16e` feat(E5): 5.9 аудит сдач — DAILY_SUBMISSION_SUBMITTED/AMENDED + TOMORROW_BLOCK_OVERRIDDEN + code-review
+- 2026-07-04 `2b0fe72c` chore(graphify): обновление графа кода после 5.9
+- 2026-07-04 `6392562b` feat(E8): 8.1 scaffold Vite react-ts — каркас фронтенда с контурным гейтом
+- 2026-07-06 `75519a00` fix(E8): 8.1 code-review проход 1 — даунгрейд до спеки + ужесточение гейта
+- 2026-07-06 `362c7d91` docs(E8): спека 8.2 канон-линтеры — ready-for-dev
+- 2026-07-07 `026f6044` feat(E8): 8.2 канон-линтеры — boundaries/баны/deps-gate/самотест + code-review проход 1
+- 2026-07-07 `4d9ad410` feat(story-8.3): Кодоген типов из схемы
+- 2026-07-07 `6d747804` feat(story-8.4): apiClient и DomainError-парсинг
+- 2026-07-07 `1ef7009d` feat(story-8.5): useApiMutation и ConflictDialog
+- 2026-07-07 `dcf5ec42` feat(story-8.6): Auth-подключение
+- 2026-07-07 `fd136f41` feat(story-8.7): Роутер, routes.ts и layout
+- 2026-07-07 `454aacbc` feat(story-8.8): Печатный каркас
+- 2026-07-07 `76c42040` feat(story-5.10): Property — иммутабельность снапшота
+- 2026-07-08 `cc2dc2cd` feat(story-5.11): Фрактальная сводка
+- 2026-07-08 `5e2b4ed6` chore(E5): ретроспектива эпика 5 + doc-синхронизация
+- 2026-07-08 `9ad9d62c` feat(story-6.1): App documents и Attachment
+- 2026-07-08 `4e1350b2` feat(story-6.3): Генератор .docx (перенос из донора)
+- 2026-07-08 `02cd511d` feat(story-6.4): Генераторы .xlsx/.csv/.pdf
+- 2026-07-08 `4f9906da` feat(story-6.5): Выпуск расхода
+- 2026-07-09 `984c5283` feat(story-6.6): спайк async-timing — async по умолчанию числами не оправдан
+- 2026-07-09 `9f0657d7` feat(story-6.7): Story 6.7: Скачивание и повторная выдача
+- 2026-07-09 `b7f7d927` docs(story-6.8): спека golden-master → ready-for-dev; авто-оркестратор остановлен
+- 2026-07-09 `e515fb65` feat(story-6.8): Golden master 20–30 исторических дней (расход)
+- 2026-07-09 `98ad0e0c` feat(story-6.9): Зерно parallel-run — ночная diff-джоба против донора
+- 2026-07-09 `00bb0bbf` feat(story-6.10a): HTTP-выпуск расхода и чтение по дате/периоду
+- 2026-07-09 `c735813a` feat(story-6.10b): блокировка «на завтра» — HTTP и override
+- 2026-07-09 `37035ff9` docs(story-9.1): бумажный контракт экрана №1 (массовый слепой ввод)
+- 2026-07-09 `4e0172e3` feat(story-9.2): чистая state machine клавиатурной грамматики грида
+- 2026-07-09 `0cc64ad5` feat(story-9.3): property-based свойства грамматики (fast-check)
+- 2026-07-09 `bafab604` feat(story-9.4): грид-компонент (TanStack Virtual + грамматика 9.2)
+- 2026-07-09 `0b586161` feat(story-9.5): фокус-слой грида (RTL+userEvent + ConflictDialog focus-return)
+- 2026-07-09 `3a1a5c10` feat(story-9.6): валидация в гриде (zod + конфликт-маркеры soft/hard)
+- 2026-07-09 `6ba10217` feat(story-9.7): prefill «вчера» + отправка только дельт (bulk-3.8)
+- 2026-07-09 `7530b19d` feat(story-9.8): перф-смоук грида — блокирующие детерминированные счётчики
+- 2026-07-13 `8aa089f1` fix(story-6.9): правки cross-model ревью — non-blocking контракт закрыт с обеих сторон
+- 2026-07-13 `6fff9ec6` chore(graphify): обновление графа после правок ревью 6.9 (parallel_run)
+- 2026-07-13 `148833a0` fix(story-6.10a): правки cross-model ревью — реальный горизонт данных вместо вакуумной пробы
+- 2026-07-13 `972c6195` chore(graphify): обновление графа после правок ревью 6.10a
+- 2026-07-14 `a56608d4` fix(story-6.10b): правки cross-model ревью — блок по живым laggards, 409 на дубль override, горизонт 31д
+- 2026-07-14 `cfdbbbb0` chore(graphify): обновление графа после правок ревью 6.10b
+- 2026-07-14 `87bec54f` docs(story-9.1): правки ревью вычиткой — таблица §3.2 синхронизирована с реализованной грамматикой
+- 2026-07-14 `d13fed85` fix(story-9.2): правки cross-model ревью — guard-тест сверяет с ожидаемой таблицей §3.2, самоисцеление входа
+- 2026-07-14 `f4b653be` fix(story-9.4): правки cross-model ревью — type-ahead seed живой, самоисцеление rows, фокус не падает при скролле
+- 2026-07-14 `6d8f9c59` fix(story-9.3): правки cross-model ревью — инвариант «нажатия не теряются» перестал быть вакуумным
+- 2026-07-14 `d2aec070` fix(story-9.5): правки cross-model ревью — клик-синк фокуса, оверрайд только с причиной, позиционные ассерты
+- 2026-07-14 `1d858e5e` fix(story-9.6): правки cross-model ревью — блокируются данные, а не только фокус
+- 2026-07-14 `30de448e` fix(story-9.7): правки cross-model ревью — bulk-shape выровнен с живым 3.8
+- 2026-07-14 `8535e275` fix(story-9.8): правки cross-model ревью — перф-смоук перестал быть вакуумным
+- 2026-07-14 `f8f10873` feat(story-9.9): e2e слепого ввода — реальный браузер против прод-харнеса
+- 2026-07-14 `ea748c8c` fix(story-9.9): правки cross-model ревью — вакуумные ассерты закрыты
+- 2026-07-14 `fa619070` feat(story-10.1): бумажные контракты экранов светофора и расхода
+- 2026-07-14 `596987c4` fix(story-10.1): правки cross-model ревью — контракты сверены с raise-сайтами
+- 2026-07-15 `f0868806` feat(story-10.1a): REST bulk-роут статусов — backfill AI-4 (bulk-POST + regen схемы)
+- 2026-07-18 `22fa60d5` chore: добавлен HTML-прототип VAPS (визуальный эталон)
+- 2026-07-19 `d7bb85ed` feat(story-10.2): экран массового обновления
+- 2026-07-19 `e2c78902` feat(story-11.1): ASGI + channels_redis — WS-транспорт уведомлений
+- 2026-07-19 `3cce774e` chore(graphify): обновление графа после story-10.2/11.1
+- 2026-07-19 `7c88f0a2` feat(story-11.2): публикация в WS из notify() через transaction.on_commit
+- 2026-07-19 `9e013d2e` feat(story-10.3): экран сдачи дня
+- 2026-07-19 `608765f4` chore(graphify): обновление графа после story-10.3/11.2
+- 2026-07-19 `a56ad92b` feat(story-10.3a): роут каскадного дерева светофора
+- 2026-07-19 `1353291c` feat(story-11.3): WS-клиент с reconnect, дочиткой ?since= и индикатором связи
+- 2026-07-19 `303476eb` chore(graphify): обновление графа после story-10.3a/11.3
+- 2026-07-19 `15b9268f` feat(story-10.4): светофор-дерево
+- 2026-07-19 `8573b329` feat(story-11.4): центр уведомлений — колокольчик, панель и WS-обновление кэша
+- 2026-07-19 `ad59582a` feat(story-10.5): экран расхода
+- 2026-07-19 `101cc01e` chore(graphify): обновление графа после story-10.4/10.5/11.4/11.5
+- 2026-07-19 `53b30a4e` feat(story-10.6): amendment-флоу UI
+- 2026-07-19 `c5a6ee44` feat(story-11.6): e2e-уведомления — живой стек с браузером
+- 2026-07-19 `ca8f849d` chore(graphify): обновление графа после story-10.6/11.6
+- 2026-07-19 `84515f6c` feat(story-10.7): печатная форма расхода
+- 2026-07-19 `a5cfcb38` feat(story-10.8): личный экспорт оператора («щит»)
+- 2026-07-19 `dee419f7` chore(graphify): обновление графа после story-10.7/10.8
+- 2026-07-20 `c18d992e` feat(story-10.9): журнал «сообщено → исправлено» (каркас)
+- 2026-07-20 `21617863` feat(story-10.10): e2e сдачи целиком — живая цепочка через все экраны
+- 2026-07-20 `5e94c1dc` chore(graphify): обновление графа после story-10.9/10.10
+- 2026-07-20 `bd5009d5` chore(bmad-story-automator): cross-model review + File List check are defaults, not habits
+- 2026-07-24 `82ffba89` chore(gitignore): track docs/frontend/ — Smart Josparlau session memory
+- 2026-07-24 `01491212` feat(smart-josparlau): add Dictionaries screen (§30)
+- 2026-07-24 `a0f1a394` feat(smart-josparlau): add unified shift calendar (§25, day view)
+- 2026-07-24 `b4ef1c15` feat(smart-josparlau): add remaining §30 dictionaries (journal entry types, post requirement groups)
+- 2026-07-24 `92430180` test(smart-josparlau): extend e2e-mock to personnel/objects/dictionaries/calendar/placement
+- 2026-07-24 `a24cd27c` test(smart-josparlau): close the last e2e-mock gap — RECON→DEMAND→FORCES→PLACEMENT
+- 2026-07-24 `3f3fb1c5` test(smart-josparlau): e2e-mock coverage for audit, analytics, duties
+- 2026-07-24 `b4f26ea8` feat(smart-josparlau): operational profile tab structure (§20.5)
+- 2026-07-24 `59e4f58a` feat(smart-josparlau): combat duty groups on Routes (§24.5-24.10)
+- 2026-07-24 `642aa70b` feat(smart-josparlau): combat duty execution lifecycle (§24.19-24.23)
+- 2026-07-24 `82b08550` feat(smart-josparlau): combat duty roster replacement (§24.21)
+- 2026-07-24 `43e573e6` docs(smart-josparlau): update ledger for §24.1 requirement formation (Этап 18)
+- 2026-07-24 `88ca928b` docs(smart-josparlau): ledger for Этап 19 — calendar+analytics combat groups
+- 2026-07-25 `ea03583f` docs(smart-josparlau): ledger for Этап 20 — accessibility audit pass one
+- 2026-07-25 `cf348837` docs(smart-josparlau): ledger for Этап 21 — §24.22 handover checkpoint
+- 2026-07-25 `d4ea1354` feat(smart-josparlau): cascading replacement of departed staff (§9.11)
+- 2026-07-25 `d33b0ee8` docs(smart-josparlau): ledger for Этап 22 — §9.11 cascading replacement
+- 2026-07-25 `1633d9bc` feat(smart-josparlau): keyboard navigation for operational-profile tabs
+- 2026-07-25 `7870b6db` feat(smart-josparlau): axe-core accessibility audit across all screens
+- 2026-07-25 `6a3a23c2` fix(smart-josparlau): close moderate/minor axe findings, fix real contrast bug
+- 2026-07-25 `abacc30a` feat(a11y): add skip-to-content link to AppLayout (WCAG 2.4.1)
+- 2026-07-27 `7a2ce30a` feat(smart-josparlau): placement print form (§9.15) as marked demo preview
+- 2026-07-27 `40141290` feat(smart-josparlau): read-only case archive of a closed security event
+- 2026-07-27 `3c90bf00` feat(smart-josparlau): immutable passport versions with deep-linked read-only view
+- 2026-07-27 `f26da1ee` feat(smart-josparlau): bind security events to a published passport version (§9.6)
+- 2026-07-27 `e4b56442` feat(smart-josparlau): bind duty shifts to a published passport version (§9.6)
+- 2026-07-27 `d7520ea2` feat(smart-josparlau): monthly duty plan with server-side KPI and conflicts (§21.27-21.30)
+- 2026-07-27 `d0a45704` feat(smart-josparlau): create individual duty shifts from the UI (§21.31/§21.33/§21.34)
+- 2026-07-27 `90bf1ff0` feat(smart-josparlau): duty shift card with server-side conflicts and named gaps (§21.32)
+- 2026-07-27 `87bc906f` feat(smart-josparlau): edit and cancel a planned duty shift (§21.31)
+- 2026-07-27 `a393d0ca` feat(smart-josparlau): employee availability matrix with named missing layers (§21.30)
+- 2026-07-28 `9d4538de` feat(smart-josparlau): duty shift list and history with named missing columns (§21.30)
+- 2026-07-28 `1c3e60b6` feat(smart-josparlau): objects registry KPI with policy-driven passport freshness (§21.7)
+- 2026-07-28 `5bb22e34` feat(smart-josparlau): monthly plan lifecycle with server-side action policy (§21.27-21.28)
+- 2026-07-28 `ab6b24ae` feat(smart-josparlau): server-side safe projection and sensitive identity disclosure (§20.27-20.33)
+- 2026-07-28 `05a0d480` feat(smart-josparlau): service report registry with async jobs and server-side masking (§22.18-22.25)
+- 2026-07-28 `328ec0fd` feat(smart-josparlau): report history with artifact revisions and permission-scoped visibility (§22.25)
+- 2026-07-28 `82015f21` feat(smart-josparlau): report job card with server-side redaction of foreign parameters (§22.26-22.28)
+- 2026-07-28 `98a3155d` feat(smart-josparlau): server-owned analytics snapshot and stable-ID drill-down (§22.3-22.12)
+- 2026-07-28 `37e4fef3` feat(smart-josparlau): server-owned attention detectors with own policy (§22.11)
+- 2026-07-28 `3c5b4633` feat(smart-josparlau): operations analytics hierarchy by stable IDs (§22.13/§22.15)
+- 2026-07-28 `d7797d2d` feat(smart-josparlau): append-only transition journal and §22.14 funnel
+- 2026-07-28 `e420ef42` feat(smart-josparlau): feedback registry with server-owned confidentiality (§28)
+- 2026-07-28 `40ac55e0` feat(smart-josparlau): feedback card with diff-written timeline (§28 detail)
+- 2026-07-28 `ffa19f5d` feat(smart-josparlau): settings section owns the attention policy (§29)
+- 2026-07-28 `ef2a4655` feat(smart-josparlau): conflict rules own the rest-after-duty mode (§29/§21.35)
+- 2026-07-28 `4745e97b` fix(deploy): wait for redis before starting vaps-backend.service
+- 2026-07-28 `3b937e36` fix(deploy): wait for postgres before starting vaps-backend.service
+- 2026-07-28 `a6070600` fix(deploy): check dep readiness via backend venv, not host binaries
+- 2026-07-28 `ce4a9107` feat(smart-josparlau): settings own the passport freshness policy (§29/§21.7)
+- 2026-07-29 `faeb0af1` feat(smart-josparlau): dictionary usage becomes a live server-side count (§30)
+- 2026-07-29 `4dd580e3` feat(smart-josparlau): пределы периодов и хранения переезжают в «Настройки» (§22.5/§29)
+- 2026-07-29 `a6025d3a` feat(smart-josparlau): оперативный рейтинг — read model и сводка агрегатов (§19)
+- 2026-07-29 `0a98ee9f` feat(smart-josparlau): динамика оперативного рейтинга — ряд закрытых периодов и граница смены методики (§19.20)
+- 2026-07-29 `9d481a84` feat(smart-josparlau): аналитика рейтинга — отчёт с подавлением малых групп (§22.16-22.17)
+- 2026-07-31 `0f385b11` feat(smart-josparlau): рабочее пространство оценивания — задания, форма, отправка (§19.7-19.10, §19.14)
+- 2026-07-31 `7d29faf6` feat(smart-josparlau): исправление оценки — новая запись, цепочка и diff (§19.17-19.18)
+- 2026-07-31 `accb0858` feat(smart-josparlau): реестр итоговых оценок и карточка агрегата (§19.15-19.17)
+- 2026-07-31 `5af40845` feat(smart-josparlau): конфликты редакций и идемпотентность отправки (§19.25-19.26)
+- 2026-07-31 `c6b51a25` feat(smart-josparlau): журнал оценивания — события, отказы и ссылки (§19.27)
+- 2026-07-31 `50616da7` feat(smart-josparlau): уведомления оценивания — код вместо текста, deep link с перепроверкой прав (§19.28)
+- 2026-07-31 `52089489` feat(smart-josparlau): экспорт рейтинга — агрегированная выгрузка, состояния и отказ sensitive (§19.29)
+- 2026-08-01 `e334f433` docs(smart-josparlau): ledger A146-A152 — решения Этапов 64-68
+- 2026-08-01 `c0145c1a` feat(smart-josparlau): устойчивый ID сотрудника и подразделения на смене дежурства (§22.9)
+- 2026-08-01 `8363320a` feat(smart-josparlau): аналитика нагрузки — раздел LOAD_POLICY и серверный LoadMetric (§22.9)
+- 2026-08-01 `d49f9708` fix(smart-josparlau): разделы «Настроек» выводятся из SECTION_TITLE — LOAD_POLICY был молча спрятан списком
+- 2026-08-01 `74a4dad8` fix(smart-josparlau): живое первое впечатление — донор-дефолты demo-режима и посадочная «/» (Этап 71)
+- 2026-08-01 `3efff53b` fix(smart-josparlau): переход Бюллетень→Рекогносцировка + сквозная e2e полного цикла ОМ (Этап 72)
+- 2026-08-01 `487e1931` refactor(smart-josparlau): фиксы код-ревью — 15 замечаний пяти углов (Этап 73)
+- 2026-08-02 `6dcf2072` feat(host-перенос): эквивалентность доказана — 125/125 общих e2e против PersonalRecordFront (Этап M2)
+- 2026-08-03 `63ef14ff` feat(host-перенос): единый источник — josparlau/src генерируется синком (Этап M3)
+- 2026-08-08 `7f6c3c27` docs: карта пробелов API — какие экраны стоят без бэкенда
+- 2026-08-08 `7aa934b1` docs: очередь переезда — вычеркнуты staffing-slots, vacancies и attachments
+- 2026-08-08 `35c1bd6b` docs: план бэка раздела ОМ — 64 адреса /api/ops/*, а не 37
+- 2026-08-08 `3102df3b` chore(graphify): обновление графа после фиксов ревью 08.08
+- 2026-08-10 `478d39a2` docs(api-gaps): реестр по факту бэка — objects-список и staffing-slots/attachments уже живые
+- 2026-08-10 `93db190f` feat(ops): срез A2 — паспорт объекта живой end-to-end: секторы/посты, версии, свежесть, KPI
+- 2026-08-10 `cecc0c18` feat(ops): срез B1 — командный центр и реестр ОМ живые: жизненный цикл всех девяти стадий
+- 2026-08-10 `3ea0d528` feat(ops): срез C1 — план дежурств живой: виды, смены, месячный план, конфликты
+- 2026-08-10 `782b5904` feat(ops): срез C2 — боевые группы живые, календарь закрыт целиком
+- 2026-08-10 `5e974489` feat(ops): срез D1 — настройки (владелец политик), справочники и аудит живые
+- 2026-08-10 `5619be19` feat(ops): срез G — оперативный рейтинг живой: все 15 адресов и семь экранов
+- 2026-08-10 `78a9f915` feat(ops): срез H — аналитика службы и мероприятий живая: все 6 адресов
+- 2026-08-10 `1754be70` feat(ops): срез I — служебные отчёты живые: каталог, генерация, артефакты
+- 2026-08-10 `bc2783e1` feat(ops): срез J — обратная связь живая: реестр, карточка, разбор, закрытие
+- 2026-08-10 `faca519f` refactor(front): обратная связь переписана целиком — легаси-чат /feedback удалён
+- 2026-08-10 `3c8addd3` refactor(front): /feedback рендерит новый модуль сам — без редиректа в раздел ОМ
+- 2026-08-10 `1edd09cc` refactor(front): дублирующая SPA-группа /ops/* выведена — адреса ведут на переписанные страницы
+- 2026-08-10 `7b9ccaa7` chore(front): демонтаж копии josparlau и host-e2e — SPA-встройка выведена целиком
+- 2026-08-10 `b2ae02a7` feat(ops): расход дня ОМ живой — тонкие адаптеры /api/ops/daily/* над /api/operations/
+- 2026-08-10 `861958bf` fix(core): гонки легаси-эндпоинтов core закрыты — лок, state-гвард и аудит
+- 2026-08-10 `7aeaea18` chore(graphify): обновление графа после фикса гонок core
+- 2026-08-11 `af94b77f` docs(ledger): обход стенда 11.08 и hydration-фикс занесены в журнал дефектов
+- 2026-08-11 `00dbe361` chore(graphify): обновление графа после обхода стенда 11.08
+- 2026-08-11 `2c9f3ef9` docs(ledger): дефект №8 — живость раздела ОМ держалась на untracked .env.local
+- 2026-08-11 `7666db11` fix(ops): права раздела ОМ живые — identityHandlers снят, коды прав приведены к бэку
+- 2026-08-11 `2fbe1ef9` feat(ops): роль OPS_READER в сиде RBAC — чтение объектов и плана дежурств
+- 2026-08-12 `4e015edd` fix(reports): порядок пагинируемого списка задаёт модель + CheckConstraint.condition
+- 2026-08-12 `c3fdc293` chore: вывести vite-SPA frontend/ и бэк Backend/VAPS — работаем на старом стеке
+- 2026-08-14 `6dcef734` docs(api-gaps): два дефекта перетирания формы фоновыми данными
+- 2026-08-15 `70499e90` docs(api-gaps): три модуля прототипа без бэка — ГВО, охраняемые лица, законы
+- 2026-08-15 `9e9a7eea` docs(api-gaps): таймаут смоука на /employees и /statuses
+- 2026-08-17 `1300472a` docs(api-gaps): сведения об ОМ — четыре факта без источника и дефект «ответственный»
+- 2026-08-17 `3b0c2b78` docs(api-gaps): «ответственный» починен, молчаливые skip проб — тоже
+- 2026-08-17 `96343669` docs(api-gaps): командный центр — источник численности и чего в нём нет
+- 2026-08-17 `c51eb851` docs(api-gaps): аналитика ОМ — что перенесено, что нет и почему
+- 2026-08-17 `6213e9f5` fix(ops): порядок таблицы аналитики ОМ объявлен aria-sort, проба пинит его
+- 2026-08-17 `8db5e625` docs(api-gaps): аналитика службы — два владельца чисел и что осталось без источника
+- 2026-08-17 `7416c475` docs(api-gaps): паспорт объекта — три вкладки из шести и почему
+- 2026-08-17 `0031dbb7` docs(api-gaps): профиль — ручка «кто я», молчащий фильтр статусов и мёртвый путь правки
+- 2026-08-17 `ee910fe7` fix(front): спринт 3, хвост — имена фильтрам, слово к цветной точке, подписи KPI
+- 2026-08-17 `54583a35` docs(api-gaps): дашборд-500 перепроверен playwright-cli, фикс подтверждён
+- 2026-08-18 `6920a88b` fix(front): спринт 4 — формы стали одним механизмом, RHF + zod
+- 2026-08-18 `db3b6c70` docs(api-gaps): период статуса не доезжал из ручки штатки — три врущие колонки от одного корня
+- 2026-08-18 `d9990781` docs(api-gaps): «GET, который пишет» оказался «GET, который падает 500»
+- 2026-08-18 `7381aa2b` docs(api-gaps): инвариант «у каждого работающего есть статус» — сигнал плюс команда
+- 2026-08-19 `09f06e63` chore: игнорировать .playwright-cli/ (снапшоты @playwright/cli)
+- 2026-08-19 `9b742063` docs(api-gaps): три определения текущего статуса сведены к двум явно разным
+- 2026-08-19 `b1c4a615` docs(api-gaps): фолбэк «в строю» на фронте — шесть мест, включая вакансии
+- 2026-08-19 `b86f68e3` docs(api-gaps): непокрытая ветка оргструктуры закрыта перехватом
+- 2026-08-19 `0366260b` docs(api-gaps): Celery-задачи статусов не доезжают на стенде — инвариант рвался тремя путями
+- 2026-08-19 `8397eb28` docs(api-gaps): итог смоук-обхода 19.08 — красных по существу нет, три падения на входе
+- 2026-08-19 `d6b31728` docs(obsidian): дизайн vault для VAPS — единственный источник правды
+- 2026-08-19 `cdc20e95` docs(obsidian): план миграции в vault — 11 задач от скелета до CLAUDE.md
