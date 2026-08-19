@@ -405,4 +405,84 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       ).toBeGreaterThanOrEqual(768)
     }
   })
+
+  // Task 11: сырые таблицы слоя features (ratings dynamics, daily-grid,
+  // changelog). Однородная шапка — единственный размер 11px.
+  for (const route of ['/security-ops/daily-expense/', '/security-ops/changelog/']) {
+    test(`features переведены на примитив: ${route}`, async ({ page }) => {
+      await signIn(page)
+      await page.goto(`${APP}${route}`)
+
+      if (route === '/security-ops/daily-expense/') {
+        // Грид не монтируется, пока не выбрано подразделение с личным
+        // составом: у первого по алфавиту подразделения сотрудников может не
+        // быть («Личный состав не загружен» вместо таблицы), поэтому перебор
+        // идёт до первого варианта, где реально появляется строка грида.
+        const division = page.locator('select').first()
+        const options = division.locator('option')
+        await expect(options.nth(1)).toBeAttached()
+        const values = await options.evaluateAll((els) =>
+          els
+            .map((el) => (el as HTMLOptionElement).value)
+            .filter((value) => value !== '')
+        )
+        for (const value of values) {
+          await division.selectOption(value)
+          const found = await page
+            .locator('thead th')
+            .first()
+            .waitFor({ state: 'visible', timeout: 3000 })
+            .then(() => true)
+            .catch(() => false)
+          if (found) break
+        }
+      }
+
+      await expect(page.locator('thead th').first()).toBeVisible()
+
+      const sizes = await page
+        .locator('thead th')
+        .evaluateAll((els) => [...new Set(els.map((el) => getComputedStyle(el).fontSize))])
+      expect(sizes, `на ${route} шапка набрана не 11px`).toEqual(['11px'])
+
+      const bg = await page
+        .locator('thead th')
+        .first()
+        .evaluate((el) => getComputedStyle(el).backgroundColor)
+      expect(bg, `на ${route} шапка таблицы не залита — значит не примитив`).not.toBe(
+        'rgba(0, 0, 0, 0)'
+      )
+    })
+  }
+
+  // `OrgBoard` (`/dashboard/`) — особый случай: шапка НЕ однородна по
+  // замыслу. Первые две строки — акцентные заголовки департамента и
+  // заместителей с намеренным `!text-lg` поверх примитива (30px), остальные
+  // — рядовые 11px `TableHead`. Проба проверяет ПРИМИТИВ по структурному
+  // признаку (data-slot) и по факту заливки фона, а не по единственному
+  // размеру шрифта — тот здесь заведомо смешанный.
+  test('OrgBoard переведён на примитив: /dashboard/', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/dashboard/`)
+
+    const heads = page.locator('[data-slot="table-head"]')
+    await expect(heads.first()).toBeVisible()
+    const count = await heads.count()
+    expect(count, 'на /dashboard/ нет ни одной ячейки заголовка — проверка была бы вакуумной').toBeGreaterThan(0)
+
+    const sizes = await heads.evaluateAll((els) => [
+      ...new Set(els.map((el) => getComputedStyle(el).fontSize)),
+    ])
+    // Рядовые заголовки управлений/отделов обязаны нести 11px примитива;
+    // акцентные (`!text-lg`) добавляют второй размер — оба ожидаемы.
+    expect(sizes, 'на /dashboard/ шапка не несёт 11px примитива').toContain('11px')
+
+    const bg = await heads
+      .nth(count - 1)
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(
+      bg,
+      'на /dashboard/ последняя ячейка шапки (уровень отделов) не залита — значит не примитив'
+    ).not.toBe('rgba(0, 0, 0, 0)')
+  })
 })

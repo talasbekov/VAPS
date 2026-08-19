@@ -8,6 +8,15 @@
 import { useState } from "react";
 import { useRatingDynamics } from "@/hooks/use-ops-ratings";
 import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   DATA_STATE_LABEL,
   RATING_SCALE_MAX,
   RATING_SCALE_MIN,
@@ -233,46 +242,40 @@ export function RatingDynamicsSection() {
               ))}
             </svg>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[36rem] border-collapse text-left">
-                <caption className="sr-only">
-                  Точки динамики агрегированного рейтинга: {data.safeLabel}
-                </caption>
-                <thead>
-                  <tr>
-                    {["Период", "Агрегат", "Учтено оценок", "Методика"].map(
-                      (title) => (
-                        <th
-                          key={title}
-                          scope="col"
-                          className="p-2 text-[11px] font-semibold text-muted-foreground"
-                        >
-                          {title}
-                        </th>
-                      ),
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.points.map((point) => (
-                    <tr key={point.period} className="border-t">
-                      <td className="p-2 text-sm">{point.period}</td>
-                      <td className="p-2 text-sm tabular-nums">
-                        {point.aggregateRating === null
-                          ? DATA_STATE_LABEL[point.dataState]
-                          : ratingLabel(point.aggregateRating)}
-                      </td>
-                      <td className="p-2 text-sm tabular-nums">
-                        {point.evaluationsCount}
-                      </td>
-                      <td className="p-2 font-mono text-xs text-muted-foreground">
-                        {point.policyVersion}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table className="min-w-[36rem]">
+              <TableCaption className="sr-only">
+                Точки динамики агрегированного рейтинга: {data.safeLabel}
+              </TableCaption>
+              <TableHeader>
+                <TableRow>
+                  {["Период", "Агрегат", "Учтено оценок", "Методика"].map(
+                    (title) => (
+                      <TableHead key={title} scope="col">
+                        {title}
+                      </TableHead>
+                    ),
+                  )}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.points.map((point) => (
+                  <TableRow key={point.period}>
+                    <TableCell>{point.period}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {point.aggregateRating === null
+                        ? DATA_STATE_LABEL[point.dataState]
+                        : ratingLabel(point.aggregateRating)}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {point.evaluationsCount}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {point.policyVersion}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
 
             <p className="mt-3 text-xs text-muted-foreground">
               {data.boundaries.length > 0

@@ -10,6 +10,14 @@
 // · Автоматической связи с обратной связью — её принесёт порт «Обратной
 //   связи ОМ»: журнал наполняется закрытыми исправлениями, а не тикетами.
 import { DashboardLayout } from "@/components/dashboard-layout";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { GitBranch } from "lucide-react";
 import {
   CLOSED_FIXES,
@@ -71,37 +79,28 @@ export function ChangelogView({
               <p className="text-sm text-muted-foreground">{EMPTY_HINT}</p>
             </div>
           ) : (
-            // Обёртка со скроллом: узкий экран иначе тянет всю страницу вбок.
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[40rem] text-sm">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th scope="col" className="py-2 pr-4 font-medium">
-                      Версия
-                    </th>
-                    <th scope="col" className="py-2 pr-4 font-medium">
-                      Дата
-                    </th>
-                    <th scope="col" className="py-2 font-medium">
-                      Что исправлено
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((fix) => (
-                    <tr key={fix.id} className="border-b last:border-b-0">
-                      <td className="py-2 pr-4 align-top font-mono">
-                        {fix.version}
-                      </td>
-                      <td className="whitespace-nowrap py-2 pr-4 align-top">
-                        {formatJournalDate(fix.releasedAt)}
-                      </td>
-                      <td className="py-2 align-top">{fix.summary}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table className="min-w-[40rem]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">Версия</TableHead>
+                  <TableHead scope="col">Дата</TableHead>
+                  <TableHead scope="col">Что исправлено</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((fix) => (
+                  <TableRow key={fix.id}>
+                    <TableCell className="align-top font-mono">
+                      {fix.version}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-top">
+                      {formatJournalDate(fix.releasedAt)}
+                    </TableCell>
+                    <TableCell className="align-top">{fix.summary}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </section>
 

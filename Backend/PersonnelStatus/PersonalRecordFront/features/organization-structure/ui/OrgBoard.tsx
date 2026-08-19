@@ -3,6 +3,14 @@
 import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { RefreshCw, User } from "lucide-react";
 import { StaffUnit, StaffUnitEmployee } from "@/lib/api";
 import { useStaffUnits } from "@/hooks/use-staff-units";
@@ -454,12 +462,12 @@ export default function OrgBoard() {
           </p>
         </div>
       ) : (
-        <div className="flex justify-center overflow-x-auto">
-          <table className="table-auto mt-5 w-full">
-            <thead>
+        <div className="flex justify-center">
+          <Table className="table-auto mt-5 w-full">
+            <TableHeader>
               {/* Первый уровень: заголовки департаментов */}
-              <tr>
-                <th
+              <TableRow>
+                <TableHead
                   colSpan={totalCols}
                   className="border-2 border-border bg-primary px-4 py-2 !text-lg text-primary-foreground"
                 >
@@ -481,14 +489,14 @@ export default function OrgBoard() {
                       );
                     })()}
                   </b>
-                </th>
-              </tr>
+                </TableHead>
+              </TableRow>
 
               {/* Второй уровень: заместители */}
-              <tr>
+              <TableRow>
                 {orgStructure.deputies.length > 0 ? (
                   orgStructure.deputies.map((deputy, index) => (
-                    <th
+                    <TableHead
                       key={`deputy-${deputy.employee?.id ?? index}-${index}`}
                       colSpan={totalCols / 2}
                       className={`border-2 text-white !text-lg border-zinc-700 bg-zinc-500 px-4 py-2 ${
@@ -513,20 +521,20 @@ export default function OrgBoard() {
                             : "Заместитель не назначен";
                         })()}
                       </b>
-                    </th>
+                    </TableHead>
                   ))
                 ) : (
-                  <th
+                  <TableHead
                     colSpan={totalCols}
                     className="border-2 text-white !text-lg border-zinc-700 bg-zinc-500 px-4 py-2"
                   >
                     <b>Заместитель не назначен</b>
-                  </th>
+                  </TableHead>
                 )}
-              </tr>
+              </TableRow>
 
               {/* Третий уровень: управления */}
-              <tr>
+              <TableRow>
                 {orgStructure.managements.map((management) => {
                   const divisionsCount =
                     management.divisions.length > 0
@@ -541,7 +549,7 @@ export default function OrgBoard() {
                   )?.employee;
                   const status = managementHead?.current_status?.status_type;
                   return (
-                    <th
+                    <TableHead
                       key={management.unit.id}
                       colSpan={divisionsCount}
                       className={`border-2 border-border bg-muted px-4 py-2 text-foreground ${
@@ -574,40 +582,40 @@ export default function OrgBoard() {
                           </div>
                         </div>
                       )}
-                    </th>
+                    </TableHead>
                   );
                 })}
-              </tr>
+              </TableRow>
 
               {/* Четвертый уровень: подразделения */}
-              <tr>
+              <TableRow>
                 {orgStructure.managements.flatMap((management) => {
                   const divisions = management.divisions || [];
 
                   return divisions.length > 0 ? (
                     divisions.map((division) => (
-                      <th
+                      <TableHead
                         key={division.unit.id}
                         className="border border-border px-4 py-2"
                       >
                         {division.unit.division.name}
-                      </th>
+                      </TableHead>
                     ))
                   ) : (
-                    <th
+                    <TableHead
                       key={management.unit.id}
                       className="border border-border px-4 py-2"
                     >
                       Нет отделов
-                    </th>
+                    </TableHead>
                   );
                 })}
-              </tr>
-            </thead>
+              </TableRow>
+            </TableHeader>
 
-            <tbody>
+            <TableBody>
               {Array.from({ length: maxRows }).map((_, rowIndex) => (
-                <tr key={rowIndex}>
+                <TableRow key={rowIndex}>
                   {orgStructure.managements.flatMap((management) => {
                     const divisions = management.divisions || [];
 
@@ -622,7 +630,7 @@ export default function OrgBoard() {
                       const isHighlighted = status === highlightedStatus;
 
                       return (
-                        <td
+                        <TableCell
                           key={`${management.unit.id}-${rowIndex}`}
                           className={`border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
                             isHighlighted ? "!bg-red-400" : ""
@@ -696,7 +704,7 @@ export default function OrgBoard() {
                               </span>
                             </div>
                           ) : null}
-                        </td>
+                        </TableCell>
                       );
                     } else {
                       // Для управлений с отделами - берем сотрудников из массива employees отдела
@@ -708,7 +716,7 @@ export default function OrgBoard() {
                         const isHighlighted = status === highlightedStatus;
 
                         return (
-                          <td
+                          <TableCell
                             key={`${management.unit.id}-${division.unit.id}-${rowIndex}`}
                             className={`border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
                               isHighlighted ? "!bg-red-400" : ""
@@ -780,15 +788,15 @@ export default function OrgBoard() {
                                 </span>
                               </div>
                             ) : null}
-                          </td>
+                          </TableCell>
                         );
                       });
                     }
                   })}
-                </tr>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>
