@@ -7,6 +7,14 @@
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { UserRound } from "lucide-react";
@@ -121,47 +129,43 @@ export default function RatingEmployeeDetailPage() {
                   Закрытых периодов ещё нет.
                 </p>
               ) : (
-                <table className="w-full border-collapse text-left">
+                <Table>
                   <caption className="sr-only">
                     Агрегаты закрытых периодов
                   </caption>
-                  <thead>
-                    <tr>
+                  <TableHeader>
+                    <TableRow>
                       {["Период", "Агрегат", "Учтено оценок", "Методика"].map(
                         (title) => (
-                          <th
-                            key={title}
-                            scope="col"
-                            className="p-2 text-[11px] font-semibold text-muted-foreground"
-                          >
+                          <TableHead key={title} scope="col">
                             {title}
-                          </th>
+                          </TableHead>
                         )
                       )}
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {data.points.map((point) => (
-                      <tr key={point.period} className="border-t">
-                        <td className="p-2 text-xs tabular-nums">
+                      <TableRow key={point.period}>
+                        <TableCell className="tabular-nums">
                           {point.period}
-                        </td>
-                        <td className="p-2 text-xs tabular-nums">
+                        </TableCell>
+                        <TableCell className="tabular-nums">
                           {/* Пропуск печатается прочерком, а не нулём. */}
                           {point.aggregateRating === null
                             ? "—"
                             : String(point.aggregateRating).replace(".", ",")}
-                        </td>
-                        <td className="p-2 text-xs tabular-nums">
+                        </TableCell>
+                        <TableCell className="tabular-nums">
                           {point.evaluationsCount}
-                        </td>
-                        <td className="p-2 font-mono text-xs">
+                        </TableCell>
+                        <TableCell className="font-mono">
                           {point.policyVersion}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               )}
             </section>
 

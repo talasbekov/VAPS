@@ -7,6 +7,14 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { ListChecks } from "lucide-react";
 import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
@@ -252,13 +260,13 @@ export default function EvaluationRegistryPage() {
               </label>
             </section>
 
-            <section className="overflow-x-auto rounded-xl border bg-card">
-              <table className="w-full border-collapse text-left">
+            <section className="rounded-xl border bg-card">
+              <Table>
                 <caption className="sr-only">
                   Итоговые оценки участников мероприятий
                 </caption>
-                <thead>
-                  <tr>
+                <TableHeader>
+                  <TableRow>
                     {[
                       "Участник",
                       "Подразделение",
@@ -272,59 +280,55 @@ export default function EvaluationRegistryPage() {
                       "Агрегат",
                       "Действие",
                     ].map((title) => (
-                      <th
-                        key={title}
-                        scope="col"
-                        className="p-3 text-[11px] font-semibold text-muted-foreground"
-                      >
+                      <TableHead key={title} scope="col">
                         {title}
-                      </th>
+                      </TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {data.results.map((row) => (
-                    <tr key={row.rowId} className="border-t align-top">
-                      <td className="p-3 text-sm font-medium">
+                    <TableRow key={row.rowId}>
+                      <TableCell className="font-medium">
                         {row.employeeSafeLabel}
-                      </td>
-                      <td className="p-3 text-xs">{row.unitSafeLabel}</td>
-                      <td className="p-3 text-xs">
+                      </TableCell>
+                      <TableCell>{row.unitSafeLabel}</TableCell>
+                      <TableCell>
                         {row.eventNumber} — {row.eventTitle}
-                      </td>
-                      <td className="p-3 text-xs">{row.objectLabel}</td>
-                      <td className="p-3 text-xs">{row.postLabel ?? "—"}</td>
-                      <td className="p-3 text-xs">
+                      </TableCell>
+                      <TableCell>{row.objectLabel}</TableCell>
+                      <TableCell>{row.postLabel ?? "—"}</TableCell>
+                      <TableCell>
                         {row.participated === null
                           ? "нет сведений"
                           : row.participated
                             ? "участвовал"
                             : "не участвовал"}
-                      </td>
-                      <td className="p-3 text-xs tabular-nums">
+                      </TableCell>
+                      <TableCell className="tabular-nums">
                         {row.evaluatedAt}
-                      </td>
-                      <td className="p-3 text-xs">
+                      </TableCell>
+                      <TableCell>
                         {safeEvaluatorContext(
                           row.method,
                           row.evaluationDirection,
                           row.corrected
                         )}
-                      </td>
+                      </TableCell>
                       {/* На месте score, основания и комментария — подпись
                           §19.16: сервер этих полей не присылает. */}
-                      <td className="p-3 text-xs text-muted-foreground">
+                      <TableCell className="text-muted-foreground">
                         {CLOSED_DETAILS_LABEL}
-                      </td>
-                      <td className="p-3 text-sm tabular-nums">
+                      </TableCell>
+                      <TableCell className="tabular-nums">
                         {aggregateLabel(row.aggregateRating)}
                         <span className="ml-1 text-[11px] text-muted-foreground">
                           {row.aggregateState === "READY"
                             ? ""
                             : DATA_STATE_LABEL[row.aggregateState]}
                         </span>
-                      </td>
-                      <td className="p-3 text-xs">
+                      </TableCell>
+                      <TableCell>
                         {/* Ссылка несёт ТЕКУЩИЙ запрос: возврат из карточки
                             должен вернуть тот же отбор и страницу (§19.15). */}
                         <Link
@@ -333,11 +337,11 @@ export default function EvaluationRegistryPage() {
                         >
                           Открыть агрегат
                         </Link>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
               {/* §19.31: каноническая формулировка дословно. */}
               {data.results.length === 0 && (
                 <p className="p-4 text-sm text-muted-foreground">

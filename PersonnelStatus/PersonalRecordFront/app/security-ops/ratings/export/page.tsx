@@ -6,6 +6,14 @@
 // операция. Недоступные форматы и режимы приходят с сервера С ПРИЧИНОЙ.
 import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { FileDown } from "lucide-react";
 import {
   useCancelRatingExport,
@@ -141,11 +149,11 @@ export default function RatingExportPage() {
               )}
             </section>
 
-            <section className="overflow-x-auto rounded-xl border bg-card">
-              <table className="w-full border-collapse text-left">
+            <section className="rounded-xl border bg-card">
+              <Table>
                 <caption className="sr-only">Мои выгрузки рейтинга</caption>
-                <thead>
-                  <tr>
+                <TableHeader>
+                  <TableRow>
                     {[
                       "Заказана",
                       "Что выгружается",
@@ -154,42 +162,38 @@ export default function RatingExportPage() {
                       "Файл",
                       "Действия",
                     ].map((title) => (
-                      <th
-                        key={title}
-                        scope="col"
-                        className="p-3 text-[11px] font-semibold text-muted-foreground"
-                      >
+                      <TableHead key={title} scope="col">
                         {title}
-                      </th>
+                      </TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {data.results.map((job) => {
                     const artifact = artifactsByJob.get(job.exportJobId);
                     return (
-                      <tr key={job.exportJobId} className="border-t align-top">
-                        <td className="p-3 text-xs tabular-nums">
+                      <TableRow key={job.exportJobId}>
+                        <TableCell className="tabular-nums">
                           {dateTime(job.createdAt)}
-                        </td>
-                        <td className="p-3 text-sm">{SCOPE_LABEL[job.scope]}</td>
-                        <td className="p-3 text-xs">{job.format}</td>
-                        <td className="p-3 text-xs">
+                        </TableCell>
+                        <TableCell>{SCOPE_LABEL[job.scope]}</TableCell>
+                        <TableCell>{job.format}</TableCell>
+                        <TableCell>
                           {STATE_LABEL[job.state]}
                           {job.safeFailureMessage !== null && (
                             <span className="ml-1 text-muted-foreground">
                               {job.safeFailureMessage}
                             </span>
                           )}
-                        </td>
+                        </TableCell>
                         {/* Ссылки на файл в строке нет: пока сервер не отдал
                             артефакт, показывать нечего. */}
-                        <td className="p-3 text-xs text-muted-foreground">
+                        <TableCell className="text-muted-foreground">
                           {artifact === undefined
                             ? "—"
                             : `${artifact.fileName} · строк ${artifact.rowCount}`}
-                        </td>
-                        <td className="p-3">
+                        </TableCell>
+                        <TableCell>
                           <div className="flex flex-wrap gap-2">
                             {job.state === "READY" && artifact !== undefined && (
                               <button
@@ -219,12 +223,12 @@ export default function RatingExportPage() {
                               </button>
                             )}
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
               {data.results.length === 0 && (
                 <p className="p-4 text-sm text-muted-foreground">
                   Выгрузок пока нет.

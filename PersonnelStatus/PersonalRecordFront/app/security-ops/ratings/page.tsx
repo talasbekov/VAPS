@@ -5,6 +5,14 @@
 // отсортированы сервером по подписи, а не по значению: сортировка по рейтингу
 // и есть таблица лидеров, запрещённая §22.16.
 import { DashboardLayout } from "@/components/dashboard-layout";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { Star } from "lucide-react";
 import { useOperationalRatings } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
@@ -98,15 +106,15 @@ export default function OperationalRatingsPage() {
               )}
             </section>
 
-            <section className="overflow-x-auto rounded-xl border bg-card">
-              {/* overflow-x-auto, а не hidden: на узком экране правые колонки
-                  были недостижимы вообще — таблица обрезалась без скролла. */}
-              <table className="w-full min-w-[48rem] border-collapse text-left">
+            <section className="rounded-xl border bg-card">
+              {/* Скролл теперь даёт сам примитив Table — двойная обёртка
+                  overflow-x-auto давала вложенный скролл. */}
+              <Table className="min-w-[48rem]">
                 <caption className="sr-only">
                   Агрегированный оперативный рейтинг участников мероприятий
                 </caption>
-                <thead>
-                  <tr>
+                <TableHeader>
+                  <TableRow>
                     {[
                       "Сотрудник",
                       "Агрегат",
@@ -114,38 +122,34 @@ export default function OperationalRatingsPage() {
                       "Период",
                       "Состояние",
                     ].map((title) => (
-                      <th
-                        key={title}
-                        scope="col"
-                        className="p-3 text-[11px] font-semibold text-muted-foreground"
-                      >
+                      <TableHead key={title} scope="col">
                         {title}
-                      </th>
+                      </TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {data.results.map((summary) => (
-                    <tr key={summary.employeeId} className="border-t align-top">
-                      <td className="p-3 text-sm font-medium">
+                    <TableRow key={summary.employeeId}>
+                      <TableCell className="font-medium">
                         {summary.safeLabel}
-                      </td>
-                      <td className="p-3 text-sm tabular-nums">
+                      </TableCell>
+                      <TableCell className="tabular-nums">
                         {aggregateLabel(summary)}
-                      </td>
-                      <td className="p-3 text-sm tabular-nums">
+                      </TableCell>
+                      <TableCell className="tabular-nums">
                         {summary.evaluationsCount}
-                      </td>
-                      <td className="p-3 text-xs text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
                         {periodLabel(summary)}
-                      </td>
-                      <td className="p-3 text-xs">
+                      </TableCell>
+                      <TableCell>
                         {DATA_STATE_LABEL[summary.dataState]}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </section>
 
             <RatingDynamicsSection />
