@@ -96,4 +96,23 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     )
     expect(new Set(backgrounds).size, `фоны первых трёх строк: ${backgrounds.join(', ')}`).toBe(1)
   })
+
+  test('бейдж — таблетка 11px', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/employees/`)
+    await expect(page.getByRole('heading', { name: 'Управление персоналом' })).toBeVisible()
+
+    const badge = page.locator('tbody [data-slot="badge"]').first()
+    await expect(badge).toBeVisible()
+
+    const shape = await badge.evaluate((el) => {
+      const cs = getComputedStyle(el)
+      return { radius: parseFloat(cs.borderRadius), size: cs.fontSize, weight: cs.fontWeight }
+    })
+
+    // Таблетка: радиус заведомо больше половины высоты бейджа.
+    expect(shape.radius).toBeGreaterThan(100)
+    expect(shape.size).toBe('11px')
+    expect(shape.weight).toBe('600')
+  })
 })
