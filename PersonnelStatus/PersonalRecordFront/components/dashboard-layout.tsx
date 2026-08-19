@@ -58,7 +58,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             desktopSidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <div className="w-80 h-full">
+          <div className="w-64 h-full">
             <Sidebar />
           </div>
         </div>
@@ -71,7 +71,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         {/* Main Content */}
         <div
           className={`flex flex-col flex-1 min-w-0 ${
-            desktopSidebarOpen ? "lg:ml-80" : "lg:ml-0"
+            desktopSidebarOpen ? "lg:ml-64" : "lg:ml-0"
           } transition-all duration-300`}
         >
           <Header

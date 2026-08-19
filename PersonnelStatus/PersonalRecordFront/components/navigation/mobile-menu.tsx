@@ -43,13 +43,25 @@ export function MobileMenu({ isOpen, onClose, children }: MobileMenuProps) {
           <DialogPrimitive.Title className="sr-only">
             Меню навигации
           </DialogPrimitive.Title>
-          <div className="flex h-16 shrink-0 items-center justify-between bg-blue-600 px-4">
-            <span className="text-lg font-bold text-white">Проект Расход</span>
+          <div className="border-sidebar-border flex h-16 shrink-0 items-center justify-between border-b px-4">
+            <div className="flex items-center gap-[11px]">
+              <div className="bg-primary text-primary-foreground grid size-9 shrink-0 place-items-center rounded-[10px] text-[13px] font-extrabold">
+                ПР
+              </div>
+              <div className="min-w-0">
+                <div className="text-sidebar-foreground truncate text-[15px] font-bold tracking-[.06em]">
+                  Проект Расход
+                </div>
+                <div className="text-sidebar-foreground/55 truncate text-[10.5px]">
+                  Учёт личного состава
+                </div>
+              </div>
+            </div>
             <DialogPrimitive.Close asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="min-h-11 min-w-11 text-white"
+                className="min-h-11 min-w-11 text-sidebar-foreground"
                 aria-label="Закрыть меню"
               >
                 <X className="h-5 w-5" aria-hidden="true" />
