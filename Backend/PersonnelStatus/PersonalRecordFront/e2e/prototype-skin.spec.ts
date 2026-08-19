@@ -520,4 +520,23 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       )
     })
   }
+
+  // Task 13: ряд фильтров «Реестра ОМ» — поиск, селект этапа, две даты и
+  // селект ответственного — должен иметь одну высоту на весь ряд, включая
+  // кнопку «Сбросить фильтры».
+  test('контролы фильтров одной высоты', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    const bar = page.locator('[data-slot="filter-bar"]')
+    await expect(bar).toBeVisible()
+
+    const controls = bar.locator('input, select, button')
+    const count = await controls.count()
+    expect(count, 'в ряду фильтров нет ни одного контрола — проверка была бы вакуумной').toBeGreaterThan(0)
+
+    const heights = await controls.evaluateAll((els) => [
+      ...new Set(els.map((el) => Math.round(el.getBoundingClientRect().height))),
+    ])
+    expect(heights, `высоты контролов: ${heights.join(', ')}`).toHaveLength(1)
+  })
 })
