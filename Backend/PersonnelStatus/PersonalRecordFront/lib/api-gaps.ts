@@ -120,7 +120,14 @@ const PROFILE_MOCK_BY_CONFIG: ApiGap = {
     "NEXT_PUBLIC_OPS_LIVE_DOMAINS=security-events,duties.",
 };
 
-const SECURITY_EVENT_ROUTES = ["/security-ops/command-center", "/security-ops/events"];
+// «Сбор сил» читает тот же реестр ОМ (`/api/ops/security-events/?stage=FORCES`)
+// и правит выделение той же ручкой, что карточка мероприятия, — значит и
+// врезка у него та же, что у реестра, а не общая «на бэке нет /api/ops/*».
+const SECURITY_EVENT_ROUTES = [
+  "/security-ops/command-center",
+  "/security-ops/events",
+  "/security-ops/forces",
+];
 
 const COMBAT_MOCK_BY_CONFIG: ApiGap = {
   subject: "Боевые группы",
