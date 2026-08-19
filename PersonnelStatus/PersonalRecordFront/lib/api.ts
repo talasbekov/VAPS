@@ -15,7 +15,12 @@ export interface Employee {
   id: string;
   name: string;
   position: string;
-  status:
+  /**
+   * Действующий статус; `undefined` — статуса нет (в том числе у вакантной
+   * должности). Раньше поле было обязательным, и отсутствие подменялось
+   * литералом "in_service" — вакансия показывалась «в строю».
+   */
+  status?:
     | "in_service"
     | "vacation"
     | "leave_by_report"
@@ -1775,9 +1780,11 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
           ? `${headEmployee.employee.first_name} ${headEmployee.employee.last_name}`
           : "Вакантная должность",
         position: headEmployee.position.name,
-        status:
-          headEmployee.employee?.current_status?.status_type || "in_service",
-        statusState: headEmployee.employee?.current_status?.state || "active",
+        // Без фолбэка на «в строю»: `headEmployee` бывает ВАКАНСИЕЙ (имя
+        // тогда «Вакантная должность»), и приписывать ей действующий статус
+        // значит показывать человека там, где его нет.
+        status: headEmployee.employee?.current_status?.status_type,
+        statusState: headEmployee.employee?.current_status?.state,
         statusStartDate: headEmployee.employee?.current_status?.start_date,
         statusEndDate:
           headEmployee.employee?.current_status?.end_date || undefined,
@@ -1809,8 +1816,9 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
         id: staffUnit.id.toString(),
         name: "Вакантная должность",
         position: "Должность не указана",
-        status: "in_service",
-        statusState: "active",
+        // У вакансии статуса нет и быть не может: здесь стояло «в строю»
+        // литералом, и пустая должность светилась в оргструктуре зелёной
+        // точкой наравне с работающим человеком.
         avatar: "/placeholder.svg",
       };
 
@@ -1821,8 +1829,8 @@ export function convertStaffUnitToOrgUnit(staffUnit: StaffUnit): OrgUnit {
       id: emp.employee!.id.toString(),
       name: `${emp.employee!.first_name} ${emp.employee!.last_name}`,
       position: emp.position.name,
-      status: emp.employee!.current_status?.status_type || "in_service",
-      statusState: emp.employee!.current_status?.state || "active",
+      status: emp.employee!.current_status?.status_type,
+      statusState: emp.employee!.current_status?.state,
       statusStartDate: emp.employee!.current_status?.start_date,
       statusEndDate: emp.employee!.current_status?.end_date || undefined,
       avatar: (() => {

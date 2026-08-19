@@ -29,17 +29,14 @@ import {
   convertStaffUnitsResponseToOrgUnit,
 } from "@/lib/api";
 import { useStaffUnits } from "@/hooks/use-staff-units";
-import { EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_PAINT } from "@/lib/status";
+import {
+  getEmployeeStatusColor,
+  getEmployeeStatusDot,
+  getEmployeeStatusLabel,
+} from "@/lib/status";
 import { OrgNode } from "./OrgNode";
 
 // Mock данные удалены - используем только данные из API
-
-// Точки-индикаторы берут ОБЩУЮ палитру статусов: своя таблица тут расходилась
-// с бейджами таблицы (командировка синяя вместо фиолетовой, дежурство индиго
-// вместо синего, «иное отсутствие» серое вместо оранжевого).
-const statusColors: Record<string, string> = Object.fromEntries(
-  Object.entries(EMPLOYEE_STATUS_PAINT).map(([code, paint]) => [code, paint.dot])
-);
 
 const statusStateLabels = {
   planned: "Запланирован",
@@ -171,15 +168,13 @@ export default function OrgChart() {
           {/* Цвет — единственный носитель смысла у точки: дублируем словом
               для скринридера, иначе статус читается только глазами. */}
           <div
-            className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${
-              statusColors[employee.status] || statusColors.in_service
-            } shadow-sm`}
+            className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${getEmployeeStatusDot(
+              employee.status
+            )} shadow-sm`}
             aria-hidden="true"
           />
           <span className="sr-only">
-            {EMPLOYEE_STATUS_LABELS[
-              employee.status as keyof typeof EMPLOYEE_STATUS_LABELS
-            ] ?? "Статус не указан"}
+            {getEmployeeStatusLabel(employee.status, "Статус не назначен")}
           </span>
         </div>
         <div className="flex-1 min-w-0">
@@ -329,10 +324,9 @@ export default function OrgChart() {
                             className="w-14 h-14 rounded-full object-cover ring-2 ring-white shadow-md"
                           />
                           <div
-                            className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white ${
-                              statusColors[selectedUnit.head.status] ||
-                              statusColors.in_service
-                            } shadow-sm`}
+                            className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white ${getEmployeeStatusDot(
+                              selectedUnit.head.status
+                            )} shadow-sm`}
                           />
                         </div>
                         <div className="flex-1 min-w-0">
@@ -343,17 +337,19 @@ export default function OrgChart() {
                             {selectedUnit.head.position}
                           </div>
                           <div className="flex items-center gap-2 flex-wrap">
+                            {/* Бейдж берёт ОБЩУЮ палитру: у статуса свои
+                                классы фона и текста, а «нет статуса» — серый.
+                                Прежний вариант красил белым текстом поверх
+                                точечного цвета и подставлял «В строю». */}
                             <Badge
-                              className={`${
-                                statusColors[selectedUnit.head.status] ||
-                                statusColors.in_service
-                              } text-white border-0 text-[10px] px-1.5 py-0.5 h-5`}
+                              className={`${getEmployeeStatusColor(
+                                selectedUnit.head.status
+                              )} border-0 text-[10px] px-1.5 py-0.5 h-5`}
                             >
-                              {EMPLOYEE_STATUS_LABELS[
-                                (selectedUnit.head
-                                  .status as keyof typeof EMPLOYEE_STATUS_LABELS) ||
-                                  "in_service"
-                              ] || EMPLOYEE_STATUS_LABELS.in_service}
+                              {getEmployeeStatusLabel(
+                                selectedUnit.head.status,
+                                "Статус не назначен"
+                              )}
                             </Badge>
                             {selectedUnit.head.statusState && (
                               <Badge
@@ -424,16 +420,16 @@ export default function OrgChart() {
                                 className="w-10 h-10 rounded-full object-cover ring-1 ring-white shadow-sm group-hover:ring-2 transition-all"
                               />
                               <div
-                                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${
-                                  statusColors[emp.status] ||
-                                  statusColors.in_service
-                                }`}
+                                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${getEmployeeStatusDot(
+                                  emp.status
+                                )}`}
                                 aria-hidden="true"
                               />
                               <span className="sr-only">
-                                {EMPLOYEE_STATUS_LABELS[
-                                  emp.status as keyof typeof EMPLOYEE_STATUS_LABELS
-                                ] ?? "Статус не указан"}
+                                {getEmployeeStatusLabel(
+                                  emp.status,
+                                  "Статус не назначен"
+                                )}
                               </span>
                             </div>
                             <div className="flex-1 min-w-0">
