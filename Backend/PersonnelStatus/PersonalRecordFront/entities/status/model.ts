@@ -1,7 +1,12 @@
 import type { Employee } from "@/lib/api";
 
-// Тип кодов статусов из API (совпадает с TextChoices на бэке)
-export type EmployeeStatusType = Employee["status"];
+// Тип кодов статусов из API (совпадает с TextChoices на бэке).
+//
+// `NonNullable` намеренно: у сотрудника статуса может НЕ БЫТЬ, и поле в
+// `Employee` необязательное — но «нет статуса» не код статуса, и в таблицах
+// кодов ему места нет. Отсутствие обрабатывают хелперы ниже
+// (`getEmployeeStatusLabel` и соседи принимают `null | undefined`).
+export type EmployeeStatusType = NonNullable<Employee["status"]>;
 
 // Человекочитаемые названия статусов (как в Django TextChoices)
 export const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatusType, string> = {
@@ -152,6 +157,22 @@ export const getEmployeeStatusColor = (
 ): string => {
   if (!statusType) return fallback;
   return EMPLOYEE_STATUS_COLORS[statusType] ?? fallback;
+};
+
+/**
+ * Цвет точки-индикатора по коду. Нет статуса — СЕРАЯ точка.
+ *
+ * Зачем хелпер, а не обращение к таблице напрямую: места, где рисуется точка,
+ * подставляли зелёный «в строю» всякий раз, когда статуса не было
+ * (`statusColors[status] || statusColors.in_service`). Вакантная должность в
+ * оргструктуре из-за этого светилась зелёным, как человек в строю.
+ */
+export const getEmployeeStatusDot = (
+  statusType: EmployeeStatusType | null | undefined,
+  fallback = "bg-gray-300"
+): string => {
+  if (!statusType) return fallback;
+  return EMPLOYEE_STATUS_PAINT[statusType]?.dot ?? fallback;
 };
 
 // Маппинг "русское название -> код статуса" (удобно для Select'ов)

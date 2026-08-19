@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw, User } from "lucide-react";
 import { StaffUnit, StaffUnitEmployee } from "@/lib/api";
 import { useStaffUnits } from "@/hooks/use-staff-units";
-import { EMPLOYEE_STATUS_LABELS, EMPLOYEE_STATUS_PAINT } from "@/lib/status";
+import {
+  EMPLOYEE_STATUS_PAINT,
+  getEmployeeStatusLabel,
+} from "@/lib/status";
 import "./org-board.styles.css";
 
 const MEDIA_URL = process.env.NEXT_PUBLIC_MEDIA_URL || "";
@@ -665,13 +668,17 @@ export default function OrgBoard() {
                                 {employeeData.employee?.current_status
                                   ?.status_type !== "in_service" && (
                                   <>
+                                    {/* Отсутствие статуса называется вслух.
+                                        Прежний `|| "in_service"` печатал
+                                        «В строю» тому, у кого статуса нет
+                                        вовсе, — а ветка сюда как раз и
+                                        попадает при `undefined`. */}
                                     <span className="font-semibold text-blue-600">
-                                      {
-                                        EMPLOYEE_STATUS_LABELS[
-                                          employeeData.employee?.current_status
-                                            ?.status_type || "in_service"
-                                        ]
-                                      }
+                                      {getEmployeeStatusLabel(
+                                        employeeData.employee?.current_status
+                                          ?.status_type,
+                                        "Статус не назначен"
+                                      )}
                                     </span>
                                     <br />
                                     {employeeData.employee?.current_status
@@ -747,14 +754,15 @@ export default function OrgBoard() {
                                   {employeeData.employee?.current_status
                                     ?.status_type !== "in_service" && (
                                     <>
+                                      {/* Второй такой же блок: отсутствие
+                                          статуса называется вслух, а не
+                                          подменяется «В строю». */}
                                       <span className="font-semibold text-blue-600">
-                                        {
-                                          EMPLOYEE_STATUS_LABELS[
-                                            employeeData.employee
-                                              ?.current_status?.status_type ||
-                                              "in_service"
-                                          ]
-                                        }
+                                        {getEmployeeStatusLabel(
+                                          employeeData.employee?.current_status
+                                            ?.status_type,
+                                          "Статус не назначен"
+                                        )}
                                       </span>
                                       <br />
                                       {employeeData.employee?.current_status
