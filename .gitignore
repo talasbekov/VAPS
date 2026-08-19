@@ -261,3 +261,7 @@ Backend/PersonnelStatus/PersonalRecordFront/.ds-tailwind.css
 !frontend/**/lib/
 !frontend/**/build/
 .claude/.story-automator-active
+
+# playwright-cli (@playwright/cli) складывает снапшоты страниц в .playwright-cli/
+# относительно cwd — то есть каталог заводится в любой папке, откуда его позвали.
+.playwright-cli/
