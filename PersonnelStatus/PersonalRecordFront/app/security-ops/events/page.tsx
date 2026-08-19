@@ -8,6 +8,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
+import { FilterBar } from "@/components/filter-bar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,7 +103,17 @@ export default function SecurityEventsPage() {
           actions={<Button onClick={() => setDialogOpen(true)}>+ Создать ОМ</Button>}
         />
 
-        <div className="flex flex-wrap items-center gap-2">
+        <FilterBar
+          onReset={
+            params.search !== "" ||
+            params.stage !== "ALL" ||
+            params.from !== "" ||
+            params.to !== "" ||
+            params.owner !== ""
+              ? () => router.replace(pathname, { scroll: false })
+              : undefined
+          }
+        >
           <Input
             className="min-w-56 flex-1"
             placeholder="Поиск по названию, объекту или ответственному"
@@ -124,22 +135,22 @@ export default function SecurityEventsPage() {
               </option>
             ))}
           </select>
-          <label className="text-xs text-muted-foreground">
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
             с
-            <input
+            <Input
               type="date"
               aria-label="Период с"
-              className="ml-1 h-9 rounded-md border border-input bg-background px-2 text-sm"
+              className="w-auto"
               value={params.from}
               onChange={(e) => updateParam("from", e.target.value)}
             />
           </label>
-          <label className="text-xs text-muted-foreground">
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
             по
-            <input
+            <Input
               type="date"
               aria-label="Период по"
-              className="ml-1 h-9 rounded-md border border-input bg-background px-2 text-sm"
+              className="w-auto"
               value={params.to}
               onChange={(e) => updateParam("to", e.target.value)}
             />
@@ -157,20 +168,7 @@ export default function SecurityEventsPage() {
               </option>
             ))}
           </select>
-          {(params.search !== "" ||
-            params.stage !== "ALL" ||
-            params.from !== "" ||
-            params.to !== "" ||
-            params.owner !== "") && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.replace(pathname, { scroll: false })}
-            >
-              Сбросить фильтры
-            </Button>
-          )}
-        </div>
+        </FilterBar>
 
         <ResultsTable
           backSuffix={backSuffix}
