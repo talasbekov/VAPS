@@ -289,7 +289,11 @@ export function Sidebar() {
                         [group.title]: !open,
                       }))
                     }
-                    className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-[15px] font-semibold transition-colors hover:bg-sidebar-accent ${
+                    // Та же сетка, что у ITEM_CLASS: 13px / rounded-[9px] /
+                    // px-3 py-2. Иерархия держится ВЕСОМ (semibold против
+                    // medium у листьев), а не кеглем — иначе при 256px
+                    // заголовки читались разнобоем, а не уровнем.
+                    className={`flex w-full items-center justify-between rounded-[9px] px-3 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-sidebar-accent ${
                       hasActive
                         ? "text-sidebar-accent-foreground"
                         : "text-sidebar-foreground"
