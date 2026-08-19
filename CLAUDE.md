@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 This file defines how Claude Code must work in this repository.
-
+Вообще не останавливайся. Как только заканчиваешь одну задачу, очищаешь сессию /clear и дальше начинаешь следующую задачу выполнять. 
 It contains:
 
 1. project-level development rules;
@@ -15,15 +15,23 @@ request into a planning exercise.
 
 ## 1. Project
 
-**VAPS** is a personnel and operational management system that includes:
+**VAPS** is a personnel and operational management system. The live product
+today is **Personnel-Records** (Django backend) + **PersonalRecordFront**
+(Next.js frontend), under `Backend/PersonnelStatus/`.
 
-- Smart Josparlau;
-- related organizational, reporting, scheduling, status, object, and access
-  management modules.
+A parallel greenfield stack (`Backend/VAPS/` + top-level `frontend/`) was
+built earlier and withdrawn from active work on **2026-08-12** (commit
+`c3fdc293`, decision by the project owner after a smoke-test walkthrough).
+Those directories may still be physically present in the tree — do not treat
+their contents, or any documentation written for them, as canon. If you find
+yourself editing under `Backend/VAPS/` or top-level `frontend/`, stop and
+confirm that's actually intended.
 
 Treat the repository itself as the source of truth for the current stack,
 architecture, paths, commands, and implementation status. Do not infer the
-technology stack from `.gitignore`, filenames, or old documentation.
+technology stack from `.gitignore`, filenames, or old documentation —
+including this file: verify a claim against the actual code before relying on
+it for anything consequential (migrations, security, contracts).
 
 Before changing code in an unfamiliar area, inspect:
 
@@ -40,96 +48,168 @@ preserve.
 
 ### 1.1 Repository Map
 
-- `Backend/VAPS/` — target Django project (greenfield, built to canon 7.8.2
-  read through `docs/RECONCILIATION.md`). All backend work happens here.
-- `Backend/PersonnelStatus/` — legacy monolith, donor of logic and visual
-  reference only (decision G1). Do not develop it.
-- `frontend/` — Vite + React + TypeScript SPA (PersonnelStatus UI).
-- `docs/` — specification hierarchy; `docs/README.md` is the index,
-  `docs/RECONCILIATION.md` is the arbiter of contradictions between documents.
+- `Backend/PersonnelStatus/Personnel-Records/` — live Django backend.
+  Commonly run on `:8100`.
+- `Backend/PersonnelStatus/PersonalRecordFront/` — live Next.js frontend.
+  Commonly run on `:3106`. No fixed port in `package.json`/`next.config` —
+  confirm the actual launch convention before assuming one.
+- `Backend/VAPS/`, `frontend/` — the withdrawn greenfield stack (see §1).
+  Historical reference only.
+- `docs/` — specification hierarchy; untracked except `docs/registries/`
+  (`.gitignore`: `docs/*` + `!docs/registries/` — donor material and PII stay
+  off the remote). `docs/README.md` is the index, `docs/RECONCILIATION.md` is
+  the arbiter of contradictions between documents — but `docs/README.md`'s
+  own repository-map section still names `Backend/VAPS/` as "the target
+  project"; that line predates the 12.08 pivot and is itself stale. Don't
+  trust any `docs/` claim about "the current backend" without cross-checking
+  the live code.
 - `docs/registries/` — `error-codes.yaml`, `audit-events.yaml`,
   `ws-message-types.yaml`. Registries can carry donor phantoms: when verifying
   error behavior, check the actual raise sites in code, not the yaml.
 - `_bmad-output/` — BMAD planning and implementation artifacts (epics, story
   files, `planning-artifacts/architecture.md` with the ARCH-* rules).
-- `graphify-out/` — generated knowledge graph (see section 6).
-- `spikes/`, `Прототип/`, `Smart Josparlau (Прототип HTML)/` — prototypes and
-  visual references.
-- Smart Josparlau (named in section 1) is a UI being built against the HTML
-  prototype above; its frontend work lives on a separate branch
-  (`claude/gifted-hertz-ebe729`, worktree under `.claude/worktrees/`), not in
-  mainline `frontend/`. Check `git worktree list` before assuming where an
-  epic's predecessors live — worktrees diverge.
+- `graphify-out/` — generated knowledge graph (see section 6). **Stale** —
+  built against the withdrawn `Backend/VAPS/`; run `graphify update .` before
+  trusting it for the live stack.
+- `spikes/`, `Прототип/` — spike and prototype material. `deploy/` currently
+  holds only a single spike (`spike-1.9`) — no live deployment orchestration
+  exists at the repo root today.
+- No root-level `Makefile` or `package.json`. Nothing at the repo root
+  orchestrates backend and frontend together — each is installed, run, and
+  tested independently from its own directory (§3).
 
-### 1.2 Backend Architecture (`Backend/VAPS/`)
+### 1.2 Backend Architecture (`Backend/PersonnelStatus/Personnel-Records/`)
 
-Django 5 + DRF + drf-spectacular, Python 3.12, Postgres in gate/production
-(docker compose `db`, host port 5433), SQLite for plain local pytest.
+Django 5.1.15 + DRF 3.17.1 + drf-spectacular 0.29.0, Python 3.12,
+djangorestframework-simplejwt 5.5.1 for auth.
 
-Bounded contexts live as Django apps under `apps/`:
+Settings live under `organization_management/config/settings/`:
 
-- `core` — org structure, divisions, employees, reference data, `clock.py`
-  (all "today" logic goes through Clock, never raw `date.today()`), `locks.py`,
-  sensitive-field masking, authentication;
-- `operations` — RBAC (`rbac/PermissionService`), employee statuses,
-  daily submissions;
-- `audit` — audit log (consolidation target per decision G2);
+- `base.py` — shared `INSTALLED_APPS`, middleware, auth config;
+- `production.py` — Postgres + Redis (Celery, Channels); used by
+  `docker/entrypoint.sh`, which runs `migrate` then execs the given command;
+- `sqlite.py` — file-based SQLite, in-memory cache/channels, `DEBUG=True` —
+  local dev without Docker;
+- `local_postgres.py` — layers Postgres onto `sqlite.py`'s other settings
+  (cache/channels/logging stay local-dev-shaped, only `DATABASES` changes);
+- `test.py` — in-memory SQLite, dummy cache, eager Celery, migrations
+  disabled; `pytest.ini` pins `DJANGO_SETTINGS_MODULE` to this.
+- `manage.py` defaults to `production` settings if `DJANGO_SETTINGS_MODULE`
+  is unset — always export it explicitly.
+
+Apps under `organization_management/apps/` (verified against `origin/main`):
+
+- `audit` — audit log (CRUD + custom events);
+- `common` — roles/permissions, IP-logging middleware, shared utilities;
+- `core` — a thin projection of the donor's core contract over
+  divisions/employees/dictionaries; no models of its own (see
+  `apps/core/api/serializers.py`);
+- `dictionaries` — reference data / lookup tables;
+- `divisions` — org hierarchy (MPTT tree);
+- `documents` — a thin projection of the donor's documents contract over the
+  same rows `operations`'s attachment-download endpoint serves;
+- `employees` — employee records; its own API router is wired in
+  `config/urls.py` but currently commented out;
 - `notifications` — notifications + WebSocket delivery;
-- `migration_legacy` — legacy data import (runs in an air-gapped image).
+- `operations` — the large native-ported core: daily statuses/submissions,
+  catch-up clock (`catch_up.py`, `clock.py`, `lagging_check.py`), expense
+  reports (`expense_*.py`), traffic-light — **and** the models for the
+  «Охранные мероприятия» / раздел ОМ domain (`models_event.py`,
+  `models_object.py`, `models_duty.py`, `models_combat.py`,
+  `models_rating.py`, `models_feedback.py`, `models_settings.py`,
+  `models_report.py`, `models_watermark.py`). ОМ models live here even though
+  its API surface is a separate app;
+- `ops` — the API/URL surface for the раздел ОМ resources whose models live
+  in `operations` (per `config/urls.py`: "Модели живут в apps/operations
+  рядом с остальными ОМ, здесь — только адреса"); backs the frontend's
+  `/security-ops/*` route group (§1.3);
+- `reports` — reporting/analytics;
+- `secondments` — secondment/delegation; the donor route was disabled since
+  import (it referenced a custom-user `role`/`division` the target model
+  doesn't have) and was re-enabled after porting the area onto
+  `User → Employee → StaffUnit → Division`;
+- `staff_unit` — staff unit/position structures; its
+  `directorate_management` endpoint is role-gated (ROLE_3/6/7) and is the
+  single data source behind both `/employees` and `/statuses` on the
+  frontend — a 403 there must close the whole page, not just a widget (§1.3);
+- `statuses` — employee status lifecycle.
 
-Cross-context isolation (ARCH-004): a context imports another context only via
-its `selectors.py`, never its models. Enforced by `tests/test_isolation.py` in
-each app — architectural rules here are tested, not aspirational.
+URL routing (`config/urls.py`): `/api/token/` + `/api/token/refresh/`
+(SimpleJWT), `/api/schema/` + `/docs` + `/redoc` (drf-spectacular, schema
+cached 1h), then `/api/{common,operations,core,documents,ops,staff_unit,
+statuses,secondments,reports,notifications,audit,dictionaries,divisions}/`.
+`/api/employees/` exists in code but is commented out.
 
-Auth: no passwords stored (ARCH-SEC-030 — a guard test scans string literals,
-including docstrings). External JWT verification lives in `apps/core/auth/`;
-an identifying request header (MVP stub for the JWT `sub`) sets
-`request.actor_id`. `user_id` everywhere means the external auth account id
-(ARCH-007), never `core_employees.id`.
+Auth: JWT via `djangorestframework-simplejwt`. `POST /api/token/` returns
+`{access, refresh, user: {..., role}}`; the frontend's NextAuth
+`CredentialsProvider` bridges this into a session (§1.3).
 
-API contract: `make schema` regenerates `schema.yaml` (drift is caught by a
-gate test); the frontend generates its types from it via
-`npm run generate:api` (ARCH-FE-011). After any API change run both.
+### 1.3 Frontend Architecture (`Backend/PersonnelStatus/PersonalRecordFront/`)
 
-Tests: pytest markers `property` (hypothesis), `concurrency`, `slow` are
-excluded from `make gate` and included in `make test-full`. No factory_boy —
-tests seed data directly (e.g. `bulk_create`).
+Next.js 15.2.4 (App Router) + React 19 + TypeScript + Tailwind CSS 3.4 +
+`@tanstack/react-query` 5.90.
 
-### 1.3 Frontend Architecture (`frontend/`)
+Directory layout:
 
-Target environment is a closed network: Firefox ≥ 100, no CDN or external
-requests. `size-gate` enforces ≤ 300 KB gzip of JS in `dist/` and rejects any
-external-host loads. Tailwind is pinned to v3.4 (v4 needs FF128+); shadcn
-components are vendored by hand into `shared/ui` — never use the shadcn CLI.
+- `app/` — App Router routes: `dashboard/`, `employees/`, `organization/`,
+  `statuses/`, `reports/`, `feedback/`, `api/auth/` (NextAuth), and
+  `security-ops/` — 20+ route groups implementing the «Охранные мероприятия»
+  / раздел ОМ module (events, objects, duties, combat, ratings,
+  daily-expense, feedback, dictionaries, analytics, service-reports,
+  settings, audit, gvo, laws, persons, command-center, changelog, calendar);
+- `components/` — shared/shadcn-style UI components;
+- `entities/` — domain models (`employee/`, `status/`);
+- `features/` — feature modules (`add-employee`, `edit-profile`,
+  `feedback-chat`, `notifications`, `organization-structure`,
+  `secondment-requests`, `send-feedback`, ...);
+- `hooks/` — data-fetching hooks (react-query wrappers over `lib/api.ts`);
+- `lib/` — `api.ts` (API client, see below), `auth-config.ts` (NextAuth),
+  `auth.tsx`, `ops-env.ts` (live/mock toggle for раздел ОМ, see below);
+- `widgets/` — composed UI (calendars, KPI cards, steppers, ...);
+- `mocks/ops/` — MSW fixtures for раздел ОМ when a domain is in mock mode.
 
-Layers (ARCH-FE-013), enforced by eslint-plugin-boundaries:
+`lib/api.ts` is not a single generated client — at least two error models
+coexist, and more than one call site still throws a bare `Error` with no
+typed status at all. Check the specific method you're touching rather than
+assuming one shape project-wide:
 
-- `src/app/` — entry, root App, providers, section stubs, cross-layer flow
-  tests;
-- `src/features/` — user-facing flows (`auth/`, `print-forms/`);
-- `src/shared/` — `api/` (client, errors, `useApiMutation`, generated
-  `schema.d.ts`, MSW testing), `auth/` (context, permissions, guards),
-  `ui/`, `routes.ts`.
+- `OpsApiError` — раздел ОМ (`/api/ops/*`); answers with an
+  `{error_code, message, details}` envelope;
+- `ApiHttpError` — the older per-endpoint style (`staff_unit` and
+  neighbours); the backend answers with `{"error": "..."}` or bare text, no
+  envelope. Introduced 18.08.2026 for the `/employees` and `/statuses`
+  403-guard (see below) — most older call sites still throw plain `Error`.
 
-Forbidden imports: `features/A → features/B`, `shared → features/app`.
+Раздел ОМ (`/security-ops/*`) live/mock toggle: `lib/ops-env.ts`. Per-domain
+data source is controlled by `isDomainLive()` — **live by default** since the
+ОМ backend was closed out (2026-08-10); `NEXT_PUBLIC_OPS_MOCK_DOMAINS` is the
+opt-**out** (comma-separated domains to force back onto MSW mocks), not an
+opt-in. `NEXT_PUBLIC_OPS_DATA_SOURCE=api` is a *separate* switch that only
+controls the WebSocket notification transport (host-MSW vs real socket) — do
+not confuse the two; read the comment block at the top of `lib/ops-env.ts`
+before touching either.
 
-This three-layer set is the deliberate, complete layout (ARCH-FE-013) — a
-reduced FSD. Do not "complete" it toward classic FSD by adding `entities/`,
-`widgets/`, or `pages/` layers; new top-level layers require an explicit
-architecture decision.
+`/employees` and `/statuses` are both entirely fed by one endpoint
+(`staff_unit`'s `directorate_management`, role-gated ROLE_3/6/7): a 403 there
+must close the whole page (`DirectorateAccessNotice`), not degrade into
+zero-filled counters and empty filters. Follow this pattern if you add
+another screen with a single all-or-nothing data source.
 
-Playwright e2e (`e2e/`) is deliberately outside `npm run gate`: a broken e2e
-assertion does not turn the gate red, so run e2e explicitly when touching
-flows it covers.
+Frontend does **not** auto-generate types from the backend's OpenAPI schema —
+no `generate:api` step exists. Backend response shapes are hand-mirrored as
+TypeScript interfaces in `lib/api.ts`; keep them in sync manually when the
+backend contract changes.
 
 ### 1.4 Documentation Hierarchy
 
-When product documents contradict each other, seniority is defined in
-`docs/README.md`: `RECONCILIATION.md` (arbiter) → `ПланРасстановка` (MASTER)
-→ `VAPS_7.8.2.md` (canon detail) → use cases → superseded/historical docs.
-Within `VAPS_7.8.2.md` itself, override sections 44–81 (v7.8/v7.8.2) beat the
-earlier v7.5–v7.7 layers. When documents contradict code, apply section 1
-above: surface the mismatch.
+`docs/README.md` still defines seniority: `RECONCILIATION.md` (arbiter) →
+`PersonnelStatus/ПланРасстановка` (MASTER) →
+`PersonnelStatus/VAPS_7.8.2.md` (canon detail) → use cases →
+superseded/historical docs. This hierarchy structure appears intact, but
+apply §1's rule here too: `docs/README.md`'s own repository-map still calls
+`Backend/VAPS/apps/` "the target project" — that predates the 12.08 pivot and
+is stale. When a `docs/` claim is about "the current backend," cross-check
+the live code before trusting it.
 
 Note: `docs/` is deliberately untracked (`.gitignore`: `docs/*` with the sole
 exception `!docs/registries/` — donor material and PII stay off the remote).
@@ -168,42 +248,52 @@ from:
 - existing developer documentation.
 
 Update this section only after the commands have been verified in the current
-repository.
+repository. Where a command below is marked "not independently re-verified,"
+confirm it works before relying on it — don't propagate the gap by copying it
+into a future edit without checking.
 
-Both gates must be run from their own directories. Running vitest from the
-repository root silently picks up a foreign config and produces a false
-result.
-
-Backend — run from `Backend/VAPS/`:
+Backend — run from `Backend/PersonnelStatus/Personnel-Records/`:
 
 ```text
-Install:   python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-Migrate:   .venv/bin/python manage.py migrate
-Seed:      .venv/bin/python manage.py seed_core
-           .venv/bin/python manage.py seed_operations
-Gate:      make gate        # ruff check + fast pytest subset + makemigrations --check;
-                            # starts Postgres via docker compose (host port 5433); 300s budget
-Test all:  make test-full   # adds property/concurrency/slow markers, HYPOTHESIS_PROFILE=full; 1500s budget
-One test:  .venv/bin/pytest apps/core/tests/test_clock.py -k <name>
-                            # plain pytest runs on SQLite; the gate runs under Postgres
-Lint:      .venv/bin/ruff check .   # gate lints rules E,F only; ruff format is NOT part of
-                                    # the gate — when formatting, scope it to changed files only
-Schema:    make schema      # regen schema.yaml; then: cd ../../frontend && npm run generate:api
+Install:    pip install -r requirements.txt
+                              # Python 3.12; requirements.txt has no separate [dev] extra
+Settings:   export DJANGO_SETTINGS_MODULE=organization_management.config.settings.<sqlite|local_postgres|test|production>
+                              # manage.py defaults to production if unset — always set this explicitly
+Migrate:    python manage.py migrate
+Seed:       python scripts/create_users.py
+                              # per repo docs; not independently re-verified this session
+Test:       pytest            # pytest.ini pins settings.test (in-memory SQLite, migrations disabled)
+Schema:     python manage.py spectacular --file schema.yaml
+                              # drf-spectacular is installed; exact flags not independently
+                              # re-verified this session — check `manage.py spectacular --help`
+Docker:     docker/entrypoint.sh runs `migrate` then execs the given command under settings.production
+CI:         .github/workflows/ci.yml runs `python manage.py makemigrations --check --dry-run`
 ```
 
-Frontend — run from `frontend/`:
+No repo-root or backend-root `Makefile` was found, and no dedicated lint
+command was found for the backend this session — do not assume `ruff`,
+`black`, or `flake8` are wired; check `requirements.txt`/CI before inventing
+one.
+
+Frontend — run from `Backend/PersonnelStatus/PersonalRecordFront/`:
 
 ```text
-Install:   npm install       # Node >= 22.12 (.nvmrc = 24)
-Dev:       npm run dev       # proxies /api/* and /ws/* to http://localhost:8000
-Gate:      npm run gate      # deps-gate → schema-check → tsc -b → eslint →
-                             # canon/drift self-tests → vitest run → vite build → size-gate
-Test:      npm test          # vitest run
-One test:  npx vitest run src/app/AppLayout.test.tsx
-E2E:       npm run test:e2e  # Playwright; NOT part of the gate — run explicitly
-Lint:      npm run lint
-Types:     npm run generate:api   # after make schema on the backend
+Install:    npm install
+Dev:        npm run dev       # `next dev --turbo`; no fixed port in config — commonly run as
+                              # `npx next dev -p 3106`, backend expected on :8100
+Build:      npm run build     # next build
+Start:      npm run start     # next start, after build
+Lint:       npm run lint      # next lint
+Test:       not wired as an npm script — jest ^29.7.0 is a devDependency; invoke directly
+                              # (`npx jest`) and verify config before relying on it
+E2E:        not wired as an npm script — @playwright/test ^1.56.1 is a devDependency; a
+                              # smoke config exists at playwright.smoke.config.ts
+                              # (`npx playwright test --config=playwright.smoke.config.ts`) —
+                              # verify the exact invocation before relying on it
 ```
+
+No `generate:api` step exists — API types are hand-maintained in `lib/api.ts`
+(§1.3), not generated from the backend schema.
 
 Never report a command as passing if it was not run successfully.
 
