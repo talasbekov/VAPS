@@ -14,7 +14,6 @@
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Max
 
 from organization_management.apps.employees.models import Employee
 from organization_management.apps.statuses.models import EmployeeStatus
@@ -39,14 +38,29 @@ def default_status_start(employee: Employee):
     Дата приёма — правда о том, с какого дня человек в строю; `today` объявил
     бы «в строю с сегодня» тому, кто работает пятый год.
 
-    Но если у сотрудника уже есть статусы (все завершённые), начинать с даты
-    приёма нельзя: `EmployeeStatus.clean()` запрещает пересечение периодов, и
-    создание упало бы. Тогда берётся день после последнего известного конца.
+    Но если у сотрудника уже есть статусы, начинать с даты приёма нельзя:
+    `EmployeeStatus.clean()` запрещает пересечение периодов, и создание упало
+    бы. Тогда берётся день после последнего СОСТОЯВШЕГОСЯ конца.
+
+    🔴 Две тонкости, на которых первая версия ошибалась (поймал смоук-обход):
+
+    1. конец периода у статуса — это `actual_end_date`, если он есть, и только
+       иначе `end_date`. Досрочно завершённый отпуск (`end_date` 20-е,
+       `actual_end_date` 13-е) освобождает период с 14-го, а не с 21-го.
+       Прежний код брал максимумы обоих полей ПОРОЗНЬ и складывал худшее из
+       двух: получалась дата в БУДУЩЕМ, статус создавался `planned` вместо
+       `active`, и команда рапортовала об успехе, не восстановив инвариант;
+
+    2. `cancelled` статусы период не занимали вовсе — отменённое не случилось.
+       Их конец на расчёт влиять не должен.
     """
-    last_end = employee.statuses.aggregate(
-        by_end=Max('end_date'), by_actual=Max('actual_end_date')
-    )
-    ends = [value for value in last_end.values() if value is not None]
+    ends = [
+        actual or end
+        for actual, end in employee.statuses.exclude(
+            state=EmployeeStatus.StatusState.CANCELLED
+        ).values_list('actual_end_date', 'end_date')
+        if (actual or end) is not None
+    ]
     if not ends:
         return employee.hire_date
     return max(employee.hire_date, max(ends) + timedelta(days=1))

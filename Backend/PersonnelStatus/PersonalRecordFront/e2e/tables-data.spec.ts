@@ -121,6 +121,48 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
   })
 
   test('просроченные статусы отмечены, действующие — нет', async ({ page }) => {
+    /**
+     * 🔴 Фикстура задаётся ПЕРЕХВАТОМ, а не берётся из данных стенда.
+     *
+     * Первая версия полагалась на то, что просроченные статусы на стенде есть.
+     * Полный смоук-обход это опроверг: он сам кликает по кнопкам `/statuses` и
+     * меняет статусы — после него просроченных не осталось ни одного, и проба
+     * упала на собственном гварде против вакуума. Поодиночке она при этом была
+     * зелёной, то есть падала бы только в общем прогоне.
+     *
+     * Обе стороны (просроченный и действующий) задаются здесь явно, поэтому
+     * проба больше не зависит от того, что стенд успел пережить до неё.
+     */
+    const YESTERDAY = new Date()
+    YESTERDAY.setDate(YESTERDAY.getDate() - 3)
+    const TOMORROW = new Date()
+    TOMORROW.setDate(TOMORROW.getDate() + 5)
+    const iso = (value: Date) => value.toISOString().slice(0, 10)
+
+    await page.route(
+      (url) => url.pathname.includes('/api/staff_unit/staff-units/directorate'),
+      async (route) => {
+        const response = await route.fetch()
+        const body = (await response.json()) as {
+          staff_units?: {
+            employee?: { current_status?: Record<string, unknown> | null } | null
+          }[]
+        }
+        const withStatus = (body.staff_units ?? []).filter(
+          (unit) => unit.employee?.current_status != null,
+        )
+        expect(
+          withStatus.length,
+          'на стенде нет сотрудников со статусом — подменять нечего',
+        ).toBeGreaterThan(1)
+
+        // Первому — истёкший период, второму — действующий. Остальные как есть.
+        withStatus[0].employee!.current_status!.end_date = iso(YESTERDAY)
+        withStatus[1].employee!.current_status!.end_date = iso(TOMORROW)
+        await route.fulfill({ response, json: body })
+      },
+    )
+
     await signIn(page, 'admin', 'admin123')
     await page.goto('/statuses')
     await hydrated(page)
