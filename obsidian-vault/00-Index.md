@@ -1,20 +1,53 @@
-# VAPS — Obsidian Vault Index
+---
+title: VAPS — индекс vault
+module: product
+updated: 2026-08-20
+tags: [index]
+---
 
-Единственный источник правды по документации, задачам и истории проекта VAPS. Заменяет `.claude/memory` (auto-memory) и `docs/api-gaps.md` для VAPS-специфичного контента — см. правила в корневом `CLAUDE.md`, раздел «Obsidian vault».
+# VAPS — индекс vault
 
-## Модули
+Единственный источник правды по документации проекта. Иерархия истины: 1) прототип `Прототип/` → 2) код (фронт+бэк) → 3) канон требований ([[Требования/Канон]]). Правила ведения — корневой `CLAUDE.md`.
 
-- [[Personnel-Records/Status|Personnel Records]] — [[Personnel-Records/Changelog|Changelog]] · [[Personnel-Records/Decisions|Decisions]] · [[Personnel-Records/Known-Issues|Known Issues]]
-- [[VisitX/Status|VisitX]] — [[VisitX/Changelog|Changelog]] · [[VisitX/Decisions|Decisions]] · [[VisitX/Known-Issues|Known Issues]]
-- [[Accreditation/Status|Accreditation]] — [[Accreditation/Changelog|Changelog]] · [[Accreditation/Decisions|Decisions]] · [[Accreditation/Known-Issues|Known Issues]]
-- [[Frontend/Status|Frontend]] — [[Frontend/Changelog|Changelog]] · [[Frontend/Decisions|Decisions]] · [[Frontend/Known-Issues|Known Issues]]
-- [[Infrastructure/Status|Infrastructure]] — [[Infrastructure/Changelog|Changelog]] · [[Infrastructure/Decisions|Decisions]] · [[Infrastructure/Known-Issues|Known Issues]]
-- [[BMAD-Process/Status|BMAD Process]] — [[BMAD-Process/Changelog|Changelog]] · [[BMAD-Process/Decisions|Decisions]] · [[BMAD-Process/Known-Issues|Known Issues]]
+## Продукт
 
-## Архив
+- [[Продукт/Обзор-продукта|Обзор продукта]] — что такое система, стек, роли
+- [[Продукт/Карта-модулей|Карта модулей]] — маппинг код ↔ прототип, вкл. «Сотрудники и штат» → 4 модуля
+- [[Продукт/_backlog-unverified|Backlog — непроверенное]] — что есть только в одном источнике
 
-- [[Archive/README|О снапшоте]] — копии старых источников на 2026-08-19.
+### Портал
 
-## Как пользоваться (для Claude Code)
+[[Продукт/Портал/Обзор|Обзор]] · [[Продукт/Портал/Структура-организации|Структура организации]] · [[Продукт/Портал/Управление-персоналом|Управление персоналом]] · [[Продукт/Портал/Статусы-сотрудников|Статусы сотрудников]] · [[Продукт/Портал/Отчеты|Отчеты]] · [[Продукт/Портал/Настройки|Настройки]]
 
-См. корневой `CLAUDE.md`, раздел «Obsidian vault»: перед началом работы читать `Status.md`+`Known-Issues.md` модуля, после — обновлять `Status.md`/`Changelog.md`/`Decisions.md`/`Known-Issues.md`.
+### Охранные мероприятия (`/security-ops/*`)
+
+[[Продукт/Охранные-мероприятия/Командный-центр|Командный центр]] · [[Продукт/Охранные-мероприятия/Реестр-ОМ|Реестр ОМ]] · [[Продукт/Охранные-мероприятия/Реестр-ГВО|Реестр ГВО]] · [[Продукт/Охранные-мероприятия/Сбор-сил-на-ОМ|Сбор сил на ОМ]] · [[Продукт/Охранные-мероприятия/Охраняемые-лица|Охраняемые лица]] · [[Продукт/Охранные-мероприятия/Объекты-и-паспорта|Объекты и паспорта]] · [[Продукт/Охранные-мероприятия/Законы-об-ОМ|Законы об ОМ]] · [[Продукт/Охранные-мероприятия/Календарь-смен|Календарь смен]] · [[Продукт/Охранные-мероприятия/Боевые-группы|Боевые группы]] · [[Продукт/Охранные-мероприятия/Расход-дня-ОМ|Расход дня (ОМ)]] · [[Продукт/Охранные-мероприятия/Оперативный-рейтинг|Оперативный рейтинг]] · [[Продукт/Охранные-мероприятия/Аналитика-и-отчёты-службы|Аналитика и отчёты службы]] · [[Продукт/Охранные-мероприятия/Администрирование|Администрирование]]
+
+## Требования
+
+- [[Требования/Канон|Канон требований]] — карта документов заказчика в `docs/` (не редактируются)
+
+## Рабочие разделы (Status / Changelog / Decisions / Known-Issues)
+
+| Раздел | Статус | Изменения | Решения | Дефекты |
+| --- | --- | --- | --- | --- |
+| Personnel-Records (бэк + портал) | [[Personnel-Records/Status\|Status]] | [[Personnel-Records/Changelog\|Changelog]] | [[Personnel-Records/Decisions\|Decisions]] | [[Personnel-Records/Known-Issues\|Known-Issues]] |
+| Frontend | [[Frontend/Status\|Status]] | [[Frontend/Changelog\|Changelog]] | [[Frontend/Decisions\|Decisions]] | [[Frontend/Known-Issues\|Known-Issues]] |
+| BMAD-Process | [[BMAD-Process/Status\|Status]] | [[BMAD-Process/Changelog\|Changelog]] | [[BMAD-Process/Decisions\|Decisions]] | [[BMAD-Process/Known-Issues\|Known-Issues]] |
+| Infrastructure | [[Infrastructure/Status\|Status]] | [[Infrastructure/Changelog\|Changelog]] | [[Infrastructure/Decisions\|Decisions]] | [[Infrastructure/Known-Issues\|Known-Issues]] |
+
+Frontend дополнительно: [[Frontend/Архитектура|Архитектура]] · [[Frontend/Тестирование|Тестирование]] · [[Frontend/Дизайн-и-скин|Дизайн и скин]]
+
+Модули VisitX и Accreditation не начаты — разделы будут созданы при старте работ.
+
+## Archive
+
+[[Archive/README|Archive]] — снапшоты заморозки (auto-memory, api-gaps) и переезды консолидации 20.08.2026: BMAD-артефакты, концепты, ops-backend-plan, выполненные планы. Архив — история, не истина.
+
+## Вне vault (ссылки)
+
+- Канон требований: `docs/PersonnelStatus/`, `docs/RECONCILIATION.md`, `docs/registries/`
+- Дизайн-система: `.design-sync/`, `ds-bundle/`
+- Спайки и деплой: `spikes/`, `deploy/systemd/`
+- Бэк-доки у кода: `Backend/PersonnelStatus/Personnel-Records/{schemas,docs/audit}`
+- Прототип: `Прототип/` (экспорт Claude Design 20.08.2026)

@@ -1,3 +1,10 @@
+---
+title: Personnel-Records — Changelog
+module: personnel-records
+updated: 2026-08-20
+tags: [backend, changelog]
+---
+
 # Personnel-Records — Changelog
 
 _Одна строка на коммит: дата, короткий хэш, сообщение. Сгенерировано скриптом из git log, дополняется вручную по ходу будущей работы._

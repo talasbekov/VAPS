@@ -1,3 +1,10 @@
+---
+title: Frontend — Known Issues
+module: frontend
+updated: 2026-08-20
+tags: [frontend, known-issues]
+---
+
 # Frontend — Known Issues
 
 _Открытые дефекты (перенесено из docs/api-gaps.md)._

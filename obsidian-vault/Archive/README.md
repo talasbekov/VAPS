@@ -1,3 +1,10 @@
+---
+title: Archive
+module: archive
+updated: 2026-08-20
+tags: [archive]
+---
+
 # Archive
 
 Снапшот старых источников документации на момент миграции в Obsidian vault (2026-08-19) и переезды консолидации (2026-08-20).

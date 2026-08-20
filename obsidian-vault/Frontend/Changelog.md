@@ -1,3 +1,10 @@
+---
+title: Frontend — Changelog
+module: frontend
+updated: 2026-08-20
+tags: [frontend, changelog]
+---
+
 # Frontend — Changelog
 
 _Одна строка на коммит: дата, короткий хэш, сообщение. Сгенерировано скриптом из git log, дополняется вручную по ходу будущей работы._

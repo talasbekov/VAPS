@@ -1,3 +1,10 @@
+---
+title: BMAD-Process — Status
+module: bmad
+updated: 2026-08-19
+tags: [process, status]
+---
+
 # BMAD-Process — Status
 
 _Обновляется по ходу работы. См. также [[Changelog]], [[Decisions]], [[Known-Issues]]._

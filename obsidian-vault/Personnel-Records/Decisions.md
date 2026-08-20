@@ -1,3 +1,10 @@
+---
+title: Personnel-Records — Decisions
+module: personnel-records
+updated: 2026-08-20
+tags: [backend, decisions]
+---
+
 # Personnel-Records — Decisions
 
 _Архитектурные решения и уроки (перенесено из auto-memory)._

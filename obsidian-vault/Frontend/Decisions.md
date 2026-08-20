@@ -1,3 +1,10 @@
+---
+title: Frontend — Decisions
+module: frontend
+updated: 2026-08-20
+tags: [frontend, decisions]
+---
+
 # Frontend — Decisions
 
 _Архитектурные решения и уроки (перенесено из auto-memory)._

@@ -1,3 +1,10 @@
+---
+title: Infrastructure — Known Issues
+module: infrastructure
+updated: 2026-08-19
+tags: [infra, known-issues]
+---
+
 # Infrastructure — Known Issues
 
 _Открытые дефекты (перенесено из docs/api-gaps.md)._

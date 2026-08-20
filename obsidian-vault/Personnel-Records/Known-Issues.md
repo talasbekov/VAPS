@@ -1,3 +1,10 @@
+---
+title: Personnel-Records — Known Issues
+module: personnel-records
+updated: 2026-08-20
+tags: [backend, known-issues]
+---
+
 # Personnel-Records — Known Issues
 
 _Открытые дефекты (перенесено из docs/api-gaps.md)._

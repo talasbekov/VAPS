@@ -1,3 +1,10 @@
+---
+title: Personnel-Records — Status
+module: personnel-records
+updated: 2026-08-19
+tags: [backend, status]
+---
+
 # Personnel-Records — Status
 
 _Обновляется по ходу работы. См. также [[Changelog]], [[Decisions]], [[Known-Issues]]._

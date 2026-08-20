@@ -1,3 +1,10 @@
+---
+title: BMAD-Process — Changelog
+module: bmad
+updated: 2026-08-19
+tags: [process, changelog]
+---
+
 # BMAD-Process — Changelog
 
 _Одна строка на коммит: дата, короткий хэш, сообщение. Сгенерировано скриптом из git log, дополняется вручную по ходу будущей работы._

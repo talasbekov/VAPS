@@ -1,3 +1,10 @@
+---
+title: BMAD-Process — Known Issues
+module: bmad
+updated: 2026-08-19
+tags: [process, known-issues]
+---
+
 # BMAD-Process — Known Issues
 
 _Открытые дефекты (перенесено из docs/api-gaps.md)._

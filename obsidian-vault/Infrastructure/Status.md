@@ -1,3 +1,10 @@
+---
+title: Infrastructure — Status
+module: infrastructure
+updated: 2026-08-19
+tags: [infra, status]
+---
+
 # Infrastructure — Status
 
 _Обновляется по ходу работы. См. также [[Changelog]], [[Decisions]], [[Known-Issues]]._
