@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from organization_management.apps.ops.api.views import (
     OpsGvoSummariesViewSet,
+    OpsLegalDocumentsViewSet,
     OpsProtectedPersonsViewSet,
     CombatDutyShiftViewSet,
     OpsAuditLogViewSet,
@@ -203,6 +204,10 @@ router.register(
 router.register(
     "gvo-summaries", OpsGvoSummariesViewSet,
     basename="ops-gvo-summaries",
+)
+router.register(
+    "legal-documents", OpsLegalDocumentsViewSet,
+    basename="ops-legal-documents",
 )
 
 urlpatterns = router.urls

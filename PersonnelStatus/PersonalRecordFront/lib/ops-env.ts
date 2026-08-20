@@ -66,6 +66,10 @@ export function isOpsProtectedPersonsLive(): boolean {
   return isDomainLive("protected-persons");
 }
 
+export function isOpsLegalDocumentsLive(): boolean {
+  return isDomainLive("legal-documents");
+}
+
 export function isOpsDictionariesLive(): boolean {
   return isDomainLive("dictionaries");
 }
