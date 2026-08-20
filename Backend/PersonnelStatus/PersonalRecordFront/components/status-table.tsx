@@ -559,7 +559,12 @@ export function StatusTable({
                     {employee.department}
                   </TableCell>
                   <TableCell className="text-sm">{employee.position}</TableCell>
-                  {/* Статус — точка входа в модалку «Статусы сотрудника».
+                  {/* Статус — точка входа в СПИСОК статусов сотрудника
+                      (текущий + запланированные), а не в форму заведения
+                      нового: щелчок по уже проставленному статусу — это
+                      вопрос «что у человека сейчас и что впереди», и форма
+                      на этот вопрос не отвечает. Завести новый статус
+                      по-прежнему можно пунктом меню «Запланировать статус».
                       Кнопка, а не onClick на ячейке: строка кликабельна и с
                       клавиатуры, и роль элемента не приходится угадывать. */}
                   <TableCell>
@@ -568,7 +573,7 @@ export function StatusTable({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handleEditStatus(employee)}
+                        onClick={() => handleScheduleStatus(employee)}
                         title="Открыть статусы сотрудника"
                         className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 hover:opacity-80"
                       >
