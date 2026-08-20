@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { opsApiClient } from "@/lib/ops-api";
 import {
   Card,
   CardContent,
@@ -57,6 +59,43 @@ export default function ReportsPage() {
   const { toast } = useToast();
 
   const dateStr = date ? format(date, "yyyy-MM-dd") : undefined;
+
+  const [periodFrom, setPeriodFrom] = useState("");
+  const [periodTo, setPeriodTo] = useState("");
+  const [periodExporting, setPeriodExporting] = useState(false);
+
+  // Выгрузка периода — CSV с живой ручки period-export; отказы сервера
+  // (инверсия дат, будущее, слишком длинный период) показываем его словами.
+  const handlePeriodExport = async () => {
+    try {
+      setPeriodExporting(true);
+      const query = new URLSearchParams({
+        date_from: periodFrom,
+        date_to: periodTo,
+      });
+      const { blob, filename } = await opsApiClient.download(
+        `/api/operations/strength-report/period-export/?${query.toString()}`
+      );
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename ?? `расход_${periodFrom}_${periodTo}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast({ title: "Готово", description: "Расход за период скачан" });
+    } catch (error) {
+      toast({
+        title: "Выгрузка не удалась",
+        description:
+          error instanceof Error ? error.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    } finally {
+      setPeriodExporting(false);
+    }
+  };
 
   // Читаем ЖИВОЙ расход. `division_id` не передаём намеренно: бэк сужает
   // выборку по области видимости сам, и «свой департамент» — его решение.
@@ -243,6 +282,70 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
+          {/* «Расход за период» — карточка экрана прототипа «Отчёты» (РП).
+              Формат один — CSV: период смотрят, чтобы считать и строить
+              графики, а не подписывать (слова бэка, period-export). Обе даты
+              обязательны, инверсию и будущее сервер отбивает 400 — сообщение
+              показываем как есть. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-purple-600" />
+                Расход за период
+              </CardTitle>
+              <CardDescription>
+                Одна таблица, строка на дату — динамика численности за
+                интервал. Дни без сдачи входят наравне с прочими.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-2">
+                  <label
+                    htmlFor="period-from"
+                    className="text-sm font-medium leading-none"
+                  >
+                    С
+                  </label>
+                  <input
+                    id="period-from"
+                    type="date"
+                    value={periodFrom}
+                    onChange={(e) => setPeriodFrom(e.target.value)}
+                    className="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label
+                    htmlFor="period-to"
+                    className="text-sm font-medium leading-none"
+                  >
+                    По
+                  </label>
+                  <input
+                    id="period-to"
+                    type="date"
+                    value={periodTo}
+                    onChange={(e) => setPeriodTo(e.target.value)}
+                    className="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={handlePeriodExport}
+                  disabled={periodExporting || periodFrom === "" || periodTo === ""}
+                >
+                  {periodExporting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4" />
+                  )}
+                  Выгрузить CSV
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Заглушка: Статистика отсутствий */}
           <Card className="relative overflow-hidden border-dashed">
             <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1.5 rounded-full shadow-sm">
@@ -294,31 +397,40 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          {/* Заглушка: История изменений */}
-          <Card className="relative overflow-hidden border-dashed">
-            <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1.5 rounded-full shadow-sm">
-              <Wrench className="h-3.5 w-3.5 animate-pulse" />
-              <span>В работе</span>
-            </div>
+          {/* Журнал действий раздела ЖИВОЙ — на /security-ops/audit; мёртвая
+              кнопка «Просмотреть» была бы враньём при работающем экране. */}
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-orange-500" />
                 Журнал действий
               </CardTitle>
               <CardDescription>
-                История изменений статусов и структуры организации.
+                Доменные события раздела: кто, что и когда изменил. Журнал
+                append-only, только чтение.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="h-24 bg-muted/30 rounded-md flex items-center justify-center text-muted-foreground text-sm border border-dashed">
-                Логи системы
-              </div>
-              <Button variant="outline" className="w-full" disabled>
-                Просмотреть
+            <CardContent>
+              <Button variant="outline" className="w-full" asChild>
+                <Link href="/security-ops/audit">Открыть журнал</Link>
               </Button>
             </CardContent>
           </Card>
         </div>
+
+        {/* Блоки прототипного экрана «Отчёты», которым источника нет, —
+            вслух, а не пустыми карточками. */}
+        <p className="text-xs text-muted-foreground">
+          «Светофор сдачи за период» из прототипа не формируется: ручки
+          дисциплины сдачи за интервал на бэке нет (светофор считается на
+          день). Хранилища «последних выгрузок» нет — файл отдаётся в момент
+          формирования; официальные выпуски с исходящими номерами и версиями —
+          на экране{" "}
+          <Link href="/security-ops/traffic" className="underline">
+            «Расход и светофор»
+          </Link>
+          .
+        </p>
       </div>
     </DashboardLayout>
   );
