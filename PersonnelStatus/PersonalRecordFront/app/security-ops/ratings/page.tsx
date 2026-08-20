@@ -5,6 +5,7 @@
 // отсортированы сервером по подписи, а не по значению: сортировка по рейтингу
 // и есть таблица лидеров, запрещённая §22.16.
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import {
   Table,
   TableHeader,
@@ -13,7 +14,6 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { Star } from "lucide-react";
 import { useOperationalRatings } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import { RatingDynamicsSection } from "@/features/ops-ratings/rating-dynamics-section";
@@ -48,17 +48,11 @@ export default function OperationalRatingsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <Star className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Оперативный рейтинг</h1>
-            <p className="text-muted-foreground">
-              Агрегированные итоги оценивания участников мероприятий. Отдельные
-              оценки, оценщики и комментарии закрыты и на сервере не
-              запрашиваются.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Оценка и отчётность"
+          title="Оперативный рейтинг"
+          description="Агрегированные итоги оценивания участников мероприятий. Отдельные оценки, оценщики и комментарии закрыты и на сервере не запрашиваются."
+        />
 
         <RatingsNav />
 
