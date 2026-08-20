@@ -8,10 +8,9 @@
  * судейства сохранена дословно; переписано ровно то, что различает стеки:
  *
  *   1. ВХОД. У SPA был JWT в sessionStorage — здесь NextAuth-сессия в cookie.
- *      Логинимся программно (csrf + callback/credentials) через
- *      `page.context().request`: его банка кук — та же, что у страницы, поэтому
- *      навигация уже идёт залогиненной. Пароли берём живым POST /api/token/
- *      только для резолвера id, а не для входа в UI.
+ *      Логинимся программно (csrf + callback/credentials) ОДИН РАЗ НА ПЕРСОНУ и
+ *      раздаём контекстам сохранённое состояние (`storageState`). Пароли берём
+ *      живым POST /api/token/ только для резолвера id, а не для входа в UI.
  *   2. МАРШРУТЫ. Роутинг файловый (app/**\/page.tsx), поэтому карта сверяется с
  *      ФАЙЛОВОЙ СИСТЕМОЙ, а не с shared/routes.ts, которого здесь нет.
  *   3. `trailingSlash: true` в next.config.js: /dashboard отдаёт 308 на
@@ -32,10 +31,16 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { expect, test, type Page, type Request } from '@playwright/test'
+import { expect, request as apiRequest, test, type Page, type Request } from '@playwright/test'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const API_ORIGIN = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
+/**
+ * Тот же адрес, что и `baseURL` в playwright.smoke.config.ts. Дублируется
+ * намеренно: вход теперь делается ВНЕ страницы, собственным
+ * `request.newContext()`, а тот про `use.baseURL` конфига ничего не знает.
+ */
+const APP_ORIGIN = process.env.SMOKE_BASE_URL ?? 'http://localhost:3106'
 /**
  * 🔴 НЕ под `test-results/`: Playwright сносит свой outputDir перед КАЖДЫМ
  * прогоном. Отчёт по одной персоне, лежавший там, стирался стартом обхода по
@@ -794,36 +799,85 @@ async function apiToken(username: string, password: string): Promise<string> {
 }
 
 /**
+ * Файл с сохранённой сессией персоны. Лежит ПОДКАТАЛОГОМ в `smoke-results/`:
+ * каталог уже в .gitignore (снимок конкретного стенда), а сборщик отчёта
+ * (`scripts/smoke-report.mjs`) читает только `*.json` ВЕРХНЕГО уровня — вложенный
+ * `.auth/` в отчёт не попадёт.
+ */
+function statePath(persona: Persona): string {
+  return path.join(OUT_DIR, '.auth', `${persona.key}.json`)
+}
+
+/**
  * Вход в UI — NextAuth-сессия в cookie. Идём тем же путём, что и форма входа
- * (`signIn('credentials')`): csrf → callback. `page.context().request` делит
- * банку кук со страницей, поэтому после этого вызова обычный `page.goto`
- * открывается уже залогиненным — без прохода через форму на каждой из 40
- * страниц.
+ * (`signIn('credentials')`): csrf → callback.
+ *
+ * 🔴 ОДИН РАЗ НА ПЕРСОНУ, а не на каждый маршрут. Раньше вход висел в
+ * `beforeEach` и стоил трёх запросов к `/api/auth/*` перед каждым из ~46 тестов
+ * персоны. Прогон 19.08.2026 показал цену: ВСЕ ТРИ падения обхода случились
+ * ровно здесь — у разных персон, на разных маршрутах, с разными подписями
+ * (`read ECONNRESET`, `TimeoutError 10000ms`), и каждое при повторе зеленело.
+ * Падал не экран, а вход; а так как describe персоны идёт `mode: 'serial'`,
+ * одно такое падение снимало ВЕСЬ её хвост — 52 проверки из прогона.
+ *
+ * Сессия переиспользуется через `storageState`: контекст у каждого теста
+ * по-прежнему СВОЙ (изоляция персон и «выхода из системы» не тронута), но
+ * поднимается уже с куками, а не логинится заново. Django выдаёт access на 8
+ * часов (SIMPLE_JWT, base.py) — на прогон в десятки минут одного входа хватает
+ * с запасом.
  *
  * Слэши в адресах обязательны: `trailingSlash: true` отвечает 308 на путь без
  * него, а 308 на POST сохраняет метод, но обход всё равно упёрся бы в лишний
  * редирект.
  */
-async function signInPersona(page: Page, persona: Persona): Promise<void> {
-  const api = page.context().request
-  const csrfRes = await api.get('/api/auth/csrf/')
-  const { csrfToken } = (await csrfRes.json()) as { csrfToken: string }
-  const res = await api.post('/api/auth/callback/credentials/', {
-    form: {
-      csrfToken,
-      username: persona.username,
-      password: persona.password,
-      json: 'true',
-      redirect: 'false',
-    },
-  })
-  if (!res.ok()) throw new Error(`signIn ${persona.key}: HTTP ${res.status()}`)
-  // Сессия ДОЛЖНА появиться: без неё весь обход прошёл бы анонимом и отчитался
-  // сорока строками «выкинуло на /» — сорок ложных дефектов вместо одного
-  // честного «вход не работает».
-  const session = await (await api.get('/api/auth/session/')).json()
-  if (session?.user?.name === undefined) {
-    throw new Error(`signIn ${persona.key}: сессия пуста — ${JSON.stringify(session)}`)
+async function signInPersona(persona: Persona): Promise<void> {
+  // 🔴 `storageState: undefined` — не украшение. `request.newContext()` из
+  // `@playwright/test` подмешивает `use`-опции текущей области
+  // (`playwright._defaultContextOptions`), а там лежит НАШ ЖЕ `storageState` с
+  // путём к файлу, которого ещё нет: первый прогон падал с ENOENT прямо здесь,
+  // в том самом вызове, который этот файл и создаёт. Явное `undefined`
+  // перебивает унаследованное (опции склеиваются спредом) и рвёт круг.
+  const api = await apiRequest.newContext({ baseURL: APP_ORIGIN, storageState: undefined })
+  try {
+    const csrfRes = await api.get('/api/auth/csrf/')
+    const { csrfToken } = (await csrfRes.json()) as { csrfToken: string }
+    const res = await api.post('/api/auth/callback/credentials/', {
+      form: {
+        csrfToken,
+        username: persona.username,
+        password: persona.password,
+        json: 'true',
+        redirect: 'false',
+      },
+    })
+    if (!res.ok()) throw new Error(`signIn ${persona.key}: HTTP ${res.status()}`)
+    // Сессия ДОЛЖНА появиться: без неё весь обход прошёл бы анонимом и отчитался
+    // сорока строками «выкинуло на /» — сорок ложных дефектов вместо одного
+    // честного «вход не работает».
+    const session = await (await api.get('/api/auth/session/')).json()
+    if (session?.user?.name === undefined) {
+      throw new Error(`signIn ${persona.key}: сессия пуста — ${JSON.stringify(session)}`)
+    }
+    fs.mkdirSync(path.dirname(statePath(persona)), { recursive: true })
+    const state = await api.storageState({ path: statePath(persona) })
+    // Живая сессия в API-контексте ещё не значит, что в файл легла КУКА, а без
+    // куки контексты тестов поднялись бы анонимами — и мы вернулись бы к сорока
+    // ложным «выкинуло на /» вместо одного честного отказа. Проверяем ровно то,
+    // что дальше раздаётся браузеру.
+    //
+    // 🔴 Хвост `.0`/`.1` обязателен в шаблоне: у `admin` сессионный JWT не лезет
+    // в 4 КБ (в токене едет весь `userData` с ролью и её скоупом), и NextAuth
+    // режет куку на куски `next-auth.session-token.0/.1`. Точное имя без
+    // суффикса ловило только мелкие сессии — observer проходил, admin падал.
+    if (!state.cookies.some((c) => /next-auth\.session-token(\.\d+)?$/.test(c.name))) {
+      throw new Error(
+        `signIn ${persona.key}: в состоянии нет куки сессии — ${state.cookies
+          .map((c) => c.name)
+          .join(', ')}`,
+      )
+    }
+  } finally {
+    await api.dispose()
   }
 }
 
@@ -867,12 +921,15 @@ test.describe('смоук-обход портала', () => {
     test.describe(`persona ${persona.key}`, () => {
       let ids: Record<string, string> = {}
 
-      test.beforeAll(async () => {
-        ids = await resolveIds(await apiToken(persona.username, persona.password))
-      })
+      // Состояние своё на КАЖДУЮ персону: контексты соседних describe его не
+      // видят, поэтому переиспользование сессии не смешивает права.
+      // `storageState` читается при создании контекста теста, то есть уже ПОСЛЕ
+      // beforeAll, который этот файл и пишет.
+      test.use({ storageState: statePath(persona) })
 
-      test.beforeEach(async ({ page }) => {
-        await signInPersona(page, persona)
+      test.beforeAll(async () => {
+        await signInPersona(persona)
+        ids = await resolveIds(await apiToken(persona.username, persona.password))
       })
 
       for (const route of ROUTES) {
