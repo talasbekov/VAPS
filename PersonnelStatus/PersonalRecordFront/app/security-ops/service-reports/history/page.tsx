@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { History } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import {
   useDownloadArtifact,
   useReportJobs,
@@ -107,16 +107,11 @@ export default function ReportHistoryPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <History className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">История отчётов</h1>
-            <p className="text-muted-foreground">
-              Работы и артефакты, доступные вам, с параметрами, редакциями и
-              сроком хранения.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Оценка и отчётность"
+          title="История отчётов"
+          description="Работы и артефакты, доступные вам, с параметрами, редакциями и сроком хранения."
+        />
 
         <nav className="flex flex-wrap gap-2" aria-label="Разделы отчётов">
           <Link
