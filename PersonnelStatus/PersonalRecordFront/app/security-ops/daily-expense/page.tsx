@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { CalendarCheck } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import { opsApiClient } from "@/lib/ops-api";
 import { useOpsMutation } from "@/hooks/use-ops-mutation";
 import { DailyGrid } from "@/features/ops-daily/daily-grid";
@@ -282,16 +282,11 @@ export default function DailyExpensePage() {
         onKeyDownCapture={handleKeyDownCapture}
         className="space-y-4"
       >
-        <div className="flex items-center gap-3">
-          <CalendarCheck className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Расход дня</h1>
-            <p className="text-muted-foreground">
-              Правьте отклонения и сохраняйте их одной отправкой, затем сдайте
-              день. Ctrl+Enter — сохранить правки с клавиатуры.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Дежурства и расход"
+          title="Расход дня"
+          description="Правьте отклонения и сохраняйте их одной отправкой, затем сдайте день. Ctrl+Enter — сохранить правки с клавиатуры."
+        />
 
         <section className="rounded-xl border bg-card p-4">
           <div className="flex flex-wrap items-end gap-4">

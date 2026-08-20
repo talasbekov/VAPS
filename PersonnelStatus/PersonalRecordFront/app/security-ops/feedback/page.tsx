@@ -8,7 +8,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { MessageSquare } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import {
   useCreateFeedback,
   useFeedbackRequests,
@@ -102,18 +102,17 @@ export default function FeedbackPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <MessageSquare className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Обратная связь</h1>
-            <p className="text-muted-foreground">
-              Обращения пользователей: ошибки, неверные данные, UX, идеи, доступ
-              и помощь.{" "}
-              <Link className="underline" href="/security-ops/changelog">
-                Журнал исправлений
-              </Link>
-            </p>
-          </div>
+        <div>
+          <PageHeader
+            eyebrow="Администрирование"
+            title="Обратная связь"
+            description="Обращения пользователей: ошибки, неверные данные, UX, идеи, доступ и помощь."
+          />
+          <p className="text-sm text-muted-foreground">
+            <Link className="underline" href="/security-ops/changelog">
+              Журнал исправлений
+            </Link>
+          </p>
         </div>
 
         {listQuery.isError && (

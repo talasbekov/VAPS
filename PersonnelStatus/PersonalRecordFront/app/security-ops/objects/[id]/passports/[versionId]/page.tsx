@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityObject } from "@/hooks/use-security-objects";
@@ -71,23 +72,17 @@ export default function PassportVersionPage() {
         </Card>
       ) : (
         <>
-          <header className="mb-4 flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-primary-ink">
-                Паспорт объекта
-              </p>
-              <h1 className="text-xl font-bold">
-                {object.name} · версия {version.versionNumber}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Действует с {version.effectiveFrom} · опубликовано{" "}
-                {version.publishedAt} · {version.publishedBy}
-              </p>
-            </div>
-            <span className="inline-flex rounded-full bg-muted px-3 py-1 text-[11.5px] font-semibold text-muted-foreground">
-              read-only
-            </span>
-          </header>
+          <PageHeader
+            className="mb-4"
+            eyebrow="Паспорт объекта"
+            title={`${object.name} · версия ${version.versionNumber}`}
+            description={`Действует с ${version.effectiveFrom} · опубликовано ${version.publishedAt} · ${version.publishedBy}`}
+            actions={
+              <span className="inline-flex rounded-full bg-muted px-3 py-1 text-[11.5px] font-semibold text-muted-foreground">
+                read-only
+              </span>
+            }
+          />
 
           <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
             {READ_ONLY_HINT}

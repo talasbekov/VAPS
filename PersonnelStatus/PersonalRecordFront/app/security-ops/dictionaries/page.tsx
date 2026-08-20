@@ -3,6 +3,7 @@
 // Реестр справочников: код, название, всего/активных значений.
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -12,7 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { BookMarked } from "lucide-react";
 import { useDictionaries } from "@/hooks/use-dictionaries";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
@@ -29,15 +29,11 @@ export default function DictionariesPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <BookMarked className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Справочники</h1>
-            <p className="text-muted-foreground">
-              Значения, которые читают формы раздела ОМ
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Администрирование"
+          title="Справочники"
+          description="Значения, которые читают формы раздела ОМ"
+        />
 
         {query.isLoading && (
           <Card>

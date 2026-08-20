@@ -14,9 +14,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ScrollText } from "lucide-react";
 import { useOpsAuditLogs } from "@/hooks/use-ops-audit";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { PageHeader } from "@/components/page-header";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 
@@ -43,15 +43,11 @@ export default function OpsAuditPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <ScrollText className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Аудит</h1>
-            <p className="text-muted-foreground">
-              Журнал действий раздела ОМ — только для чтения
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Администрирование"
+          title="Аудит"
+          description="Журнал действий раздела ОМ — только для чтения"
+        />
 
         <Input
           className="max-w-md"

@@ -5,7 +5,7 @@
 // стора у них нет намеренно.
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { Shield } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import { CombatDutyGroupsSection } from "@/features/ops-combat/combat-groups-section";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
@@ -19,16 +19,11 @@ export default function CombatDutyGroupsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <Shield className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Боевые группы на Трассе</h1>
-            <p className="text-muted-foreground">
-              Потребность, подача и рассмотрение состава, ознакомление,
-              заступление, сдача смены и факт несения.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Дежурства и расход"
+          title="Боевые группы на Трассе"
+          description="Потребность, подача и рассмотрение состава, ознакомление, заступление, сдача смены и факт несения."
+        />
         <p className="text-sm">
           <Link href="/security-ops/duties" className="text-primary-ink underline">
             ← План дежурств
