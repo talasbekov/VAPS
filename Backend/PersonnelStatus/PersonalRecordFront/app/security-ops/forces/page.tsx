@@ -16,6 +16,7 @@
 import { Suspense, useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -118,20 +119,11 @@ function ForcesScreen() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-primary-ink">
-              Охранные мероприятия
-            </p>
-            <h1 className="text-3xl font-bold text-foreground">
-              Сбор сил на ОМ
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Мероприятия на стадии «Запрос сил»: сколько личного состава
-              запрошено расчётом и сколько уже выделено
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Оперативная работа"
+          title="Сбор сил на ОМ"
+          description="Мероприятия на стадии «Запрос сил»: сколько личного состава запрошено расчётом и сколько уже выделено"
+        />
 
         {/* Чего на этом экране нет и почему — строкой, а не пустыми ячейками. */}
         <p className="text-xs text-muted-foreground">
