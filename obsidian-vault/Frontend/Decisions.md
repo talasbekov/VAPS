@@ -242,3 +242,25 @@ UX-спайны для поверхности PersonnelStatus созданы ч�
 **Why:** граница «фича → чужой слайс» специально построена нетипизированной, чтобы соблюсти запрет cross-feature импорта. Цена — компилятор её не проверяет.
 
 **How to apply:** правя имя или наличие поля в слайсе/модели, грепать СТРОКУ ИМЕНИ ПОЛЯ по всему `src/`, а не полагаться на `tsc`; отдельно проверять файлы `*Slice.ts` соседних фич. Если поле читает больше одного потребителя — заводить тест проекции, он краснеет там, где типы молчат.
+
+## Из FRONTEND_DECISIONS (слито 2026-08-20)
+
+Не-дизайн решения демонтированной SPA (`frontend/`, Smart Josparlau) — принципы переносимы, пути кода историчны. Дизайн-часть — в [[Дизайн-и-скин]].
+
+**Стек и сборка:**
+- Vite + React + TypeScript, TanStack Query, MSW (mock-режим), Playwright (e2e-mock + e2e live), vitest; Firefox100 build-target; size-gate 300 KB gzip на production-сборку.
+- Два build-режима (A7/A8): production без MSW и `--mode mock`; `import.meta.env.MODE === 'mock'` как build-time литерал — иначе MSW (~92 KB gzip) не выкидывается tree-shaking'ом.
+- Persistence demo-режима: IndexedDB в браузере, in-memory в тестах, `SCHEMA_VERSION`-версионирование сида с безопасным reset (A3/A14); multi-tab через BroadcastChannel (A4).
+
+**API-подход:**
+- Единый `apiClient` на старые (`/api/core|operations/`) и новые (`/api/ops/`) пути; UI не знает источника данных (A1, A17); новые контракты — `pending-contracts.ts` per feature, чужая схема не трогается (A6).
+- Demo persona — runtime-переключатель поверх существующего `AuthContext.login()`, не вторая auth-модель (A5); права проверяются дважды — UI-скрытие И 403 в repository.
+
+**Границы и формы:**
+- features→features запрещён (ARCH-FE-013): cross-feature данные — только «серверный» join узкой проекцией чужого слайса; граница нетипизирована → контрактный тест снапшота в `app/` обязателен (A98).
+- Канонический 409-протокол обхода конфликтов: код из `error-codes.yaml` + общий ConflictDialog + `override/override_reason` в корне переменных мутации (A64); hard → 422 без обхода.
+- Права дробятся до наблюдаемости: каждое разделение демонстрируется persona, у которой права НЕТ (view/manage, drilldown/personal_detail, evaluate/view_aggregate и т.д.).
+
+## Мок-контракт /api/ops/* (слито из FRONTEND_MOCK_API_CONTRACT)
+
+`docs/frontend/FRONTEND_MOCK_API_CONTRACT.md` — реестр всех frontend-операций SPA (operation_id → owner_feature → method/path → permission → mock_handler → contract_test) в namespace `/api/ops/…`, статус `backend-contract-pending`. Документ ссылался на **демонтированную SPA** (`frontend/src/features/*/mocks/`) — как реестр кода он устарел. Истина по действующему мок-контракту — `mocks/ops/` в коде PersonalRecordFront; документ остаётся справкой по составу операций и принципу «каждая операция = права + error-codes + contract-test».
