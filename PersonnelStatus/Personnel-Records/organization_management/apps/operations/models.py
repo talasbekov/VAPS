@@ -252,3 +252,7 @@ from organization_management.apps.operations.models_feedback import (  # noqa: E
     OpsFeedbackRegistry,  # noqa: F401
     OpsFeedbackRequest,  # noqa: F401
 )
+from organization_management.apps.operations.models_gvo import (  # noqa: E402
+    OpsGvoSummaryPatch,  # noqa: F401
+    OpsProtectedPerson,  # noqa: F401
+)
