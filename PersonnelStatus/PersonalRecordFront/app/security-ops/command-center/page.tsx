@@ -14,12 +14,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Activity,
   AlertTriangle,
-  LineChart,
   ShieldCheck,
   Users,
   UserMinus,
@@ -202,36 +202,32 @@ export default function CommandCenterPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <LineChart className="h-8 w-8 text-primary-ink" />
-            <div>
-              <h1 className="text-2xl font-bold">Командный центр</h1>
-              <p className="text-muted-foreground">
-                Готовность охранных мероприятий
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {freshness !== null && (
-              <span className="text-xs text-muted-foreground">{freshness}</span>
-            )}
-            <Button
-              variant="outline"
-              disabled={refreshing}
-              onClick={() => {
-                void query.refetch();
-                void strength.refetch();
-              }}
-            >
-              {refreshing ? "Обновление…" : "Обновить"}
-            </Button>
-            <Link href="/security-ops/events">
-              <Button variant="outline">Все мероприятия</Button>
-            </Link>
-            <Button onClick={() => setDialogOpen(true)}>Создать ОМ</Button>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Оперативная работа"
+          title="Командный центр"
+          description="Готовность охранных мероприятий"
+          actions={
+            <>
+              {freshness !== null && (
+                <span className="text-xs text-muted-foreground">{freshness}</span>
+              )}
+              <Button
+                variant="outline"
+                disabled={refreshing}
+                onClick={() => {
+                  void query.refetch();
+                  void strength.refetch();
+                }}
+              >
+                {refreshing ? "Обновление…" : "Обновить"}
+              </Button>
+              <Link href="/security-ops/events">
+                <Button variant="outline">Все мероприятия</Button>
+              </Link>
+              <Button onClick={() => setDialogOpen(true)}>Создать ОМ</Button>
+            </>
+          }
+        />
 
         {query.data !== undefined && <OpsKpiCards items={kpi} />}
 

@@ -8,9 +8,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { MessageSquareText } from "lucide-react";
 import {
   useAddFeedbackComment,
   useCloseFeedback,
@@ -142,21 +142,18 @@ export default function FeedbackDetailPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <MessageSquareText className="h-8 w-8 text-primary-ink" />
-          <div>
-            <Link
-              className="text-sm font-semibold text-primary-ink underline"
-              href={registryPath}
-            >
-              ← К реестру обращений
-            </Link>
-            <h1 className="text-2xl font-bold">{request.subject}</h1>
-            <p className="text-muted-foreground">
-              {labelOf("type", request.typeCode)} · {moduleLabel} ·{" "}
-              {request.authorLabel} · {formatMoment(request.createdAt)}
-            </p>
-          </div>
+        <div>
+          <Link
+            className="text-sm font-semibold text-primary-ink underline"
+            href={registryPath}
+          >
+            ← К реестру обращений
+          </Link>
+          <PageHeader
+            eyebrow="Администрирование"
+            title={request.subject}
+            description={`${labelOf("type", request.typeCode)} · ${moduleLabel} · ${request.authorLabel} · ${formatMoment(request.createdAt)}`}
+          />
         </div>
 
         <section

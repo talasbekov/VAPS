@@ -6,6 +6,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -75,18 +76,11 @@ export default function GvoRegistryPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <header>
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary-ink">
-            Охранные мероприятия
-          </p>
-          <h1 className="text-[25px] font-bold leading-[1.15] tracking-[-0.02em]">
-            Реестр ГВО
-          </h1>
-          <p className="text-[12.5px] text-muted-foreground">
-            Сводные данные по каждому ОМ — запись появляется сразу после создания
-            бюллетеня
-          </p>
-        </header>
+        <PageHeader
+          eyebrow="Оперативная работа"
+          title="Реестр ГВО"
+          description="Сводные данные по каждому ОМ — запись появляется сразу после создания бюллетеня"
+        />
 
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="inline-flex gap-[3px] rounded-[9px] bg-[hsl(210_40%_93%)] p-[3px]">

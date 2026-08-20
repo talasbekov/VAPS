@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { Activity } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import {
   useAnalyticsDrilldown,
   useAnalyticsPresets,
@@ -256,39 +256,29 @@ export default function ServiceAnalyticsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Activity className="h-8 w-8 text-primary-ink" />
-            <div>
-              <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary-ink">
-                Аналитика службы
-              </p>
-              <h1 className="text-2xl font-bold">
-                Состояние службы и личного состава
-              </h1>
-              <p className="text-muted-foreground">
-                Оперативная картина численности, статусов, дежурств и нагрузки
-                подразделений
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {freshness !== null && (
-              <span className="text-xs text-muted-foreground">{freshness}</span>
-            )}
-            <button
-              type="button"
-              className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-              disabled={refreshing}
-              onClick={() => {
-                void snapshotQuery.refetch();
-                void attentionQuery.refetch();
-              }}
-            >
-              {refreshing ? "Обновление…" : "Обновить"}
-            </button>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Оценка и отчётность"
+          title="Состояние службы и личного состава"
+          description="Оперативная картина численности, статусов, дежурств и нагрузки подразделений"
+          actions={
+            <>
+              {freshness !== null && (
+                <span className="text-xs text-muted-foreground">{freshness}</span>
+              )}
+              <button
+                type="button"
+                className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+                disabled={refreshing}
+                onClick={() => {
+                  void snapshotQuery.refetch();
+                  void attentionQuery.refetch();
+                }}
+              >
+                {refreshing ? "Обновление…" : "Обновить"}
+              </button>
+            </>
+          }
+        />
 
         <nav className="flex flex-wrap gap-2" aria-label="Разделы аналитики">
           <span className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground">

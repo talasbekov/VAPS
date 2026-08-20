@@ -8,6 +8,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { Badge } from "@/components/ui/badge";
@@ -59,11 +60,11 @@ export default function DictionaryDetailPage() {
       </Link>
 
       <div className="mb-4">
-        <h1 className="text-2xl font-bold">{code}</h1>
-        <p className="text-muted-foreground text-sm">
-          Значения и их связи; удаление возможно только при доказанном
-          отсутствии связей.
-        </p>
+        <PageHeader
+          eyebrow="Администрирование"
+          title={code}
+          description="Значения и их связи; удаление возможно только при доказанном отсутствии связей."
+        />
       </div>
 
       {query.isLoading && (

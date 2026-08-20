@@ -17,6 +17,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
@@ -253,10 +254,11 @@ function PassportHeader({
             </span>
           )}
         </div>
-        <h1 className="text-xl font-bold">{object.name}</h1>
-        <p className="text-sm text-muted-foreground">
-          {object.type} · {object.region} · {object.address}
-        </p>
+        <PageHeader
+          eyebrow="Оперативная работа"
+          title={object.name}
+          description={`${object.type} · ${object.region} · ${object.address}`}
+        />
       </CardContent>
     </Card>
   );

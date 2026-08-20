@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
@@ -121,13 +122,14 @@ export default function GvoSummaryPage() {
                   {filled ? "Сводка заполнена" : "Черновик сводки"}
                 </span>
               </div>
-              <h1 className="mt-1 text-[21px] font-bold leading-[1.2]">
-                Сводные данные
-              </h1>
-              <p className="text-[12px] text-muted-foreground">
-                {event.title} · {summary.country} · {summary.arrival.date} —{" "}
-                {summary.departure.date}
-              </p>
+              {/* Надзаголовок не передаём: над H1 уже стоит ряд бейджей (код
+                  ОМ, этап, состояние сводки) — он и есть контекст записи.
+                  Второй капсовый лейбл сверху дублировал бы его. */}
+              <PageHeader
+                className="mt-1"
+                title="Сводные данные"
+                description={`${event.title} · ${summary.country} · ${summary.arrival.date} — ${summary.departure.date}`}
+              />
             </div>
             <div className="text-right">
               <p className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">

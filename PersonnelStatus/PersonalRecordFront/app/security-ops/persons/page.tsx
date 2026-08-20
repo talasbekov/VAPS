@@ -10,6 +10,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
@@ -71,17 +72,11 @@ export default function ProtectedPersonsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <header>
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary-ink">
-            Охранные мероприятия
-          </p>
-          <h1 className="text-[25px] font-bold leading-[1.15] tracking-[-0.02em]">
-            Охраняемые лица
-          </h1>
-          <p className="text-[12.5px] text-muted-foreground">
-            Профили лиц, в отношении которых организуются охранные мероприятия
-          </p>
-        </header>
+        <PageHeader
+          eyebrow="Оперативная работа"
+          title="Охраняемые лица"
+          description="Профили лиц, в отношении которых организуются охранные мероприятия"
+        />
 
         <div className="flex gap-2">
           {PROTECTED_PERSON_CATEGORIES.map((value) => (

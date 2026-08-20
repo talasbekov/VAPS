@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvent } from "@/hooks/use-security-events";
@@ -100,11 +101,13 @@ function SecurityEventScreen() {
               готовность {event.readinessPercent}%
             </span>
           </div>
-          <h1 className="text-xl font-bold">{event.title}</h1>
-          <p className="text-sm text-muted-foreground">
-            {event.businessDate} · {event.objectName} · ответственный:{" "}
-            {event.ownerName}
-          </p>
+          {/* Надзаголовок не передаём: над H1 уже стоит ряд бейджей (код ОМ,
+              этап, готовность) — он и есть контекст записи. Второй капсовый
+              лейбл сверху дублировал бы его. */}
+          <PageHeader
+            title={event.title}
+            description={`${event.businessDate} · ${event.objectName} · ответственный: ${event.ownerName}`}
+          />
           <p className="mt-1 text-xs text-muted-foreground">
             {event.passportBinding !== null
               ? `Паспорт: версия ${event.passportBinding.versionNumber} (действует с ${event.passportBinding.effectiveFrom})`

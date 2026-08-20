@@ -7,6 +7,7 @@
 // реестр объектов.
 import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +21,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Settings as SettingsIcon } from "lucide-react";
 import {
   useOpsSettings,
   useSettingChangeLog,
@@ -50,16 +50,11 @@ export default function OpsSettingsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <SettingsIcon className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Настройки ОМ</h1>
-            <p className="text-muted-foreground">
-              Политики, которые читают другие разделы — правка меняет исход
-              операций, а не окраску экрана
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Администрирование"
+          title="Настройки ОМ"
+          description="Политики, которые читают другие разделы — правка меняет исход операций, а не окраску экрана"
+        />
 
         {query.isLoading && (
           <p className="text-sm text-muted-foreground">Загрузка настроек…</p>

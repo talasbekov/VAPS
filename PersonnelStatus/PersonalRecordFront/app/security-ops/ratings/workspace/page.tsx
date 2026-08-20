@@ -9,7 +9,7 @@ import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { ClipboardCheck } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import {
   useEvaluationWorkspace,
   useSubmitEvaluation,
@@ -297,16 +297,11 @@ export default function EvaluationWorkspacePage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <ClipboardCheck className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Оценивание участников</h1>
-            <p className="text-muted-foreground">
-              Задания на оценивание формирует сервер. Оценки, полученные вами от
-              других лиц, здесь не показываются и не запрашиваются.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Оценка и отчётность"
+          title="Оценивание участников"
+          description="Задания на оценивание формирует сервер. Оценки, полученные вами от других лиц, здесь не показываются и не запрашиваются."
+        />
 
         <RatingsNav />
 
