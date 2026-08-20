@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Правила для Claude Code:
 
-- **Перед началом работы** над модулем (Personnel-Records / VisitX / Accreditation / Frontend / Infrastructure / BMAD-Process) — прочитать `obsidian-vault/<Модуль>/Status.md` и `obsidian-vault/<Модуль>/Known-Issues.md`.
+- **Перед началом работы** над модулем (Personnel-Records / Frontend / Infrastructure / BMAD-Process) — прочитать `obsidian-vault/<Модуль>/Status.md` и `obsidian-vault/<Модуль>/Known-Issues.md`. Разделы VisitX и Accreditation не начаты — создаются при старте работ. Описание продукта и модулей — `obsidian-vault/Продукт/` (карта: `Продукт/Карта-модулей.md`).
 - **После завершения работы** — обновить `Status.md` (если сменилось состояние модуля), добавить строку в `Changelog.md` (дата, что сделано, короткий хэш коммита), и `Decisions.md`/`Known-Issues.md` при необходимости.
 - **Не заводить** новые записи в `.claude/memory` (auto-memory) или `docs/api-gaps.md` для VAPS-специфичного контента — только в vault. Auto-memory может продолжать накапливать записи только НЕ специфичные для VAPS (например, про личность/стиль работы разработчика в целом), если харнесс сам их предлагает.
 - `docs/api-gaps.md` и старая `.claude/memory` заморожены на 2026-08-19 — актуальные версии их содержимого перенесены в `obsidian-vault/*/Known-Issues.md` и `obsidian-vault/*/Decisions.md`; снапшот на дату заморозки лежит в `obsidian-vault/Archive/`.

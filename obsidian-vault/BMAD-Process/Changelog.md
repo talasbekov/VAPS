@@ -121,3 +121,4 @@ _Одна строка на коммит: дата, короткий хэш, с�
 - 2026-07-20 `21617863` feat(story-10.10): e2e сдачи целиком — живая цепочка через все экраны
 - 2026-07-20 `09058990` docs(retro): epic 10/11 retrospectives — E9 follow-through, Epic 12 prep notes
 - 2026-07-20 `f47afb07` chore(sprint): epic-9 → done — все стори 9.1–9.9 и ретроспектива закрыты
+- 2026-08-20 `684d3e18` docs(vault): _bmad-output (PRD, architecture, epics, 137 стори-логов) перенесён в obsidian-vault/Archive/bmad — планирование целилось в выведенный стек Backend/VAPS и отстало от кода; story-automator-логи удалены
