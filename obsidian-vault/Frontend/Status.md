@@ -1,3 +1,10 @@
+---
+title: Frontend — Status
+module: frontend
+updated: 2026-08-19
+tags: [frontend, status]
+---
+
 # Frontend — Status
 
 _Обновляется по ходу работы. См. также [[Changelog]], [[Decisions]], [[Known-Issues]]._

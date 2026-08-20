@@ -1,3 +1,10 @@
+---
+title: BMAD-Process — Decisions
+module: bmad
+updated: 2026-08-19
+tags: [process, decisions]
+---
+
 # BMAD-Process — Decisions
 
 _Архитектурные решения и уроки (перенесено из auto-memory)._

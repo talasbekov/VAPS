@@ -1,3 +1,10 @@
+---
+title: Infrastructure — Decisions
+module: infrastructure
+updated: 2026-08-19
+tags: [infra, decisions]
+---
+
 # Infrastructure — Decisions
 
 _Архитектурные решения и уроки (перенесено из auto-memory)._
