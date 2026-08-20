@@ -2691,9 +2691,33 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 "business_date": business_date.isoformat(),
                 "status": light.status,
                 "late": light.late,
-                "drift": light.drift,
+                "drift": _drift_with_names(light.drift),
             }
         )
+
+
+def _drift_with_names(drift):
+    """Доклеить к поимённому расхождению карту имён {id: «Фамилия Имя»}.
+
+    Движок светофора несёт только id (его зона — сравнение победителей);
+    имена — забота выдачи: дежурный должен видеть, КОГО проверять, не делая
+    второй запрос. Уволенный/удалённый сотрудник имени не найдёт — id в
+    карте просто не будет, UI покажет номер, и это честнее выдумки.
+    """
+    from organization_management.apps.employees.models import Employee
+
+    if drift is None:
+        return None
+    ids = set(drift["added"]) | set(drift["removed"]) | {
+        row["employee_id"] for row in drift["changed"]
+    }
+    names = {
+        str(pk): f"{last} {first}".strip()
+        for pk, last, first in Employee.objects.filter(pk__in=ids).values_list(
+            "pk", "last_name", "first_name"
+        )
+    }
+    return {**drift, "names": names}
 
 
 class TomorrowBlockViewSet(RequirePermissionMixin, viewsets.ViewSet):
