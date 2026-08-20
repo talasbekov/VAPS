@@ -6,8 +6,8 @@
 // Записи НЕ объединяются в карточку сотрудника — каждая от своего источника.
 import { useMemo } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
-import { CalendarDays } from "lucide-react";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useDutyShiftsAll } from "@/hooks/use-duty-shifts";
 import { useSecurityEvents } from "@/hooks/use-security-events";
@@ -64,15 +64,11 @@ export default function ShiftCalendarPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <CalendarDays className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Календарь смен</h1>
-            <p className="text-muted-foreground">
-              Дежурства и расстановки ОМ — по видимым записям
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Дежурства и расход"
+          title="Календарь смен"
+          description="Дежурства и расстановки ОМ — по видимым записям"
+        />
 
         {(!canSeeDuties || !canSeeEvents) && (
           <p className="text-xs text-muted-foreground">

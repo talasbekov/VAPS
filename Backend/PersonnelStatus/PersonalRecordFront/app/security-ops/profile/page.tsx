@@ -19,7 +19,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserRound } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import {
   useCoreDirectories,
   useEmployeeStatuses,
@@ -114,18 +114,11 @@ export default function MyProfilePage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <header className="flex items-center gap-3">
-          <UserRound className="h-8 w-8 text-primary-ink" />
-          <div>
-            <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary-ink">
-              Личный кабинет
-            </p>
-            <h1 className="text-2xl font-bold">Мой профиль</h1>
-            <p className="text-muted-foreground">
-              Личные данные, назначения, мой календарь и статистика службы
-            </p>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Личный кабинет"
+          title="Мой профиль"
+          description="Личные данные, назначения, мой календарь и статистика службы"
+        />
 
         {me.isPending && (
           <p className="text-sm text-muted-foreground">Загрузка профиля…</p>
