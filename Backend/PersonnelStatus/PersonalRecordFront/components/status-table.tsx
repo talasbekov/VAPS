@@ -698,6 +698,15 @@ export function StatusTable({
         onOpenChange={setScheduleDialogOpen}
         employeeId={selectedEmployeeForSchedule?.id || null}
         employeeName={selectedEmployeeForSchedule?.name}
+        // Список закрываем ДО открытия формы: два Radix-диалога разом дерутся
+        // за фокус-ловушку. Сотрудник берётся из состояния списка — он же
+        // адресат формы, и спрашивать его заново не у чего.
+        onSchedule={() => {
+          const employee = selectedEmployeeForSchedule;
+          if (!employee) return;
+          setScheduleDialogOpen(false);
+          handleEditStatus(employee);
+        }}
       />
 
       {/* Диалог откомандирования сотрудника */}

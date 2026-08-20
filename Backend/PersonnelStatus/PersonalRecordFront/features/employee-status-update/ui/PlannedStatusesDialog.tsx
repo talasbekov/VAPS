@@ -36,6 +36,7 @@ import {
   Save,
   X,
   CalendarIcon,
+  Plus,
 } from "lucide-react";
 import {
   EMPLOYEE_STATUS_ITEMS,
@@ -85,6 +86,13 @@ interface PlannedStatusesDialogProps {
   /** ID штатной единицы (из таблицы) */
   employeeId: string | null;
   employeeName?: string;
+  /**
+   * Завести новый статус. Форму открывает ВЫЗЫВАЮЩИЙ, а не этот диалог:
+   * оба окна принадлежат таблице, и вложенный Radix-диалог поверх открытого
+   * забирает фокус-ловушку себе — закрыв верхний, пользователь остаётся в
+   * нижнем без фокуса. Кнопки нет вовсе, если обработчик не передан.
+   */
+  onSchedule?: () => void;
 }
 
 export function PlannedStatusesDialog({
@@ -92,6 +100,7 @@ export function PlannedStatusesDialog({
   onOpenChange,
   employeeId,
   employeeName,
+  onSchedule,
 }: PlannedStatusesDialogProps) {
   const queryClient = useQueryClient();
   const { data } = useStaffUnitsByDirectorate();
@@ -482,10 +491,30 @@ export function PlannedStatusesDialog({
 
             {/* Запланированные статусы */}
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-blue-600" />
-                Запланированные статусы
-              </h3>
+              {/* Кнопка стоит У СПИСКА, а не в шапке диалога: она пополняет
+                  именно его, и при пустом списке это единственная подсказка,
+                  чем его заполнить. */}
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-blue-600" />
+                  Запланированные статусы
+                </h3>
+                {onSchedule && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onSchedule}
+                    aria-label={
+                      employeeName
+                        ? `Запланировать статус: ${employeeName}`
+                        : "Запланировать статус"
+                    }
+                  >
+                    <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
+                    Запланировать
+                  </Button>
+                )}
+              </div>
               {statuses.planned.length > 0 ? (
                 <div className="space-y-3">
                   {statuses.planned.map((status) => (
