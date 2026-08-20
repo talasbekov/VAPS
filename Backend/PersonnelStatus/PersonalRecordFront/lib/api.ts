@@ -334,6 +334,24 @@ export interface OpsEmployeeStatusRow {
   cancelled_reason: string;
 }
 
+/**
+ * Строка журнала раздела ОМ (`/api/operations/audit-logs/`, право
+ * `audit.view`). Плоский снимок доменного события — сервер не отдаёт ни
+ * имени актора, ни имени сущности, только идентификаторы; собирать из них
+ * читаемое имя на фронте значило бы придумывать данные, которых нет.
+ */
+export interface OpsAuditLogEntry {
+  id: number;
+  actor_user_id: string;
+  action: string;
+  entity_type: string;
+  entity_id: number;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  reason: string;
+  created_at: string;
+}
+
 export interface StrengthReportTotals {
   staff_total: number;
   list_total: number;
@@ -390,6 +408,24 @@ export interface TrafficLightNode {
 export interface TrafficLightTree {
   business_date: string;
   nodes: TrafficLightNode[];
+}
+
+/** Поимённое расхождение сданного дня с живыми данными (только у жёлтого).
+ * names доклеивает бэк: {employee_id: «Фамилия Имя»}; id без имени — человек
+ * уже не находится (уволен/удалён), UI показывает номер честно. */
+export interface TrafficLightDrift {
+  added: number[];
+  removed: number[];
+  changed: { employee_id: number; from: string; to: string }[];
+  names: Record<string, string>;
+}
+
+export interface DivisionTrafficLight {
+  division_id: number;
+  business_date: string;
+  status: TrafficLightNode["status"];
+  late: boolean;
+  drift: TrafficLightDrift | null;
 }
 
 // Ошибка раздела ОМ: бэк отвечает конвертом {error_code, message, details}.
@@ -1623,6 +1659,16 @@ class ApiClient {
     );
   }
 
+  // Лента журнала для дашборда: последние N записей, свежие первыми (порядок
+  // задаёт сервер). Право `audit.view` — не у каждой роли, отказ прилетает
+  // тем же конвертом {error_code, message}, что и у остальных ручек раздела.
+  async getRecentAuditLogs(limit: number = 4): Promise<OpsAuditLogEntry[]> {
+    const page = await this.getDomainJson<{ results: OpsAuditLogEntry[] }>(
+      `/api/operations/audit-logs/?limit=${limit}`
+    );
+    return page.results;
+  }
+
   // Справочники ядра. Именно ядра, а не `/api/dictionaries/`: карточка
   // ссылается на звание и должность КОДОМ (`RANK-1`, `POS-4`), а у должностей
   // в справочнике кода нет вовсе — сопоставить было бы нечем.
@@ -1675,6 +1721,15 @@ class ApiClient {
     const queryString = query.toString();
     return this.getDomainJson<TrafficLightTree>(
       `/api/operations/traffic-light/tree/${queryString ? `?${queryString}` : ""}`
+    );
+  }
+
+  // Точечный светофор одного подразделения — с поимённым расхождением.
+  // Дерево выше расхождение НЕ несёт (свод отвечает «куда смотреть»);
+  // подробности «кого проверять» берутся этой ручкой по клику.
+  async getDivisionTrafficLight(divisionId: number): Promise<DivisionTrafficLight> {
+    return this.getDomainJson<DivisionTrafficLight>(
+      `/api/operations/traffic-light/${divisionId}/`
     );
   }
 

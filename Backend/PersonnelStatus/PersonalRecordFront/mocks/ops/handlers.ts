@@ -2,7 +2,23 @@
 // сюда добавляются handler-наборы (objects, security-events, duties, …).
 // Пути пишутся с завершающим слэшом — в next.config.js включён
 // trailingSlash: true, паттерны без слэша промахиваются мимо перехвата.
-import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDailyLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
+import {
+  isOpsAnalyticsLive,
+  isOpsAuditLive,
+  isOpsCombatLive,
+  isOpsDailyLive,
+  isOpsDictionariesLive,
+  isOpsDutiesLive,
+  isOpsFeedbackLive,
+  isOpsGvoLive,
+  isOpsLegalDocumentsLive,
+  isOpsObjectsLive,
+  isOpsProtectedPersonsLive,
+  isOpsRatingsLive,
+  isOpsSecurityEventsLive,
+  isOpsServiceReportsLive,
+  isOpsSettingsLive,
+} from "@/lib/ops-env";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
 import { dutiesHandlers } from "./duties-handlers";
@@ -54,14 +70,12 @@ export function composeOpsHandlers() {
     // «Расход дня» живьём — адаптеры над /api/operations/ (без своего бэка).
     ...(isOpsDailyLive() ? [] : dailyHandlers),
     ...(isOpsCombatLive() ? [] : combatHandlers),
-    // «Реестр ГВО» — без пер-доменного переключателя: своего бэкенда у раздела
-    // нет вовсе, поэтому live-режим ему нечего означать. Патчи правок живут в
-    // моке всегда (запись об этом — в lib/api-gaps.ts).
-    ...gvoHandlers,
-    // Каталог охраняемых лиц — по той же причине без переключателя: справочник
-    // существует только в мок-слое.
-    ...protectedPersonsHandlers,
-    // Нормативная база — тот же случай: справочник существует только в моке.
-    ...legalDocumentsHandlers,
+    // «Реестр ГВО» живьём с 20.08.2026 (патчи сводок — /api/ops/gvo-summaries/);
+    // мок остаётся для демо через NEXT_PUBLIC_OPS_MOCK_DOMAINS=gvo.
+    ...(isOpsGvoLive() ? [] : gvoHandlers),
+    // Каталог охраняемых лиц живьём с 20.08.2026 (/api/ops/protected-persons/).
+    ...(isOpsProtectedPersonsLive() ? [] : protectedPersonsHandlers),
+    // Нормативная база живьём с 21.08.2026 (/api/ops/legal-documents/).
+    ...(isOpsLegalDocumentsLive() ? [] : legalDocumentsHandlers),
   ];
 }

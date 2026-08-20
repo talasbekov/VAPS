@@ -138,6 +138,9 @@ def test_drift_names_who_changed(types, tree):
         "changed": [
             {"employee_id": employee.id, "from": "IN_SERVICE", "to": "DUTY"}
         ],
+        # Имена доклеивает ВЬЮХА (движок светофора остаётся на id):
+        # дежурный в UI видит, кого проверять, без второго запроса.
+        "names": {str(employee.id): str(employee)},
     }
 
 

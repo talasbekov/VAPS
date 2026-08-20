@@ -19,6 +19,9 @@ import {
   Wrench,
 } from "lucide-react";
 import { useAbsenceStatistics } from "@/hooks/use-absence-statistics";
+import { useRecentAuditLogs } from "@/hooks/use-recent-audit-logs";
+import { formatDistanceToNow } from "date-fns";
+import { ru } from "date-fns/locale";
 
 export default function DashboardPage() {
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(
@@ -40,36 +43,28 @@ export default function DashboardPage() {
     refetch: refetchStats,
   } = useAbsenceStatistics();
 
-  const recentActivities = [
-    {
-      id: 1,
-      action: "Обновлен статус",
-      employee: "Иванов И.И.",
-      time: "2 мин назад",
-      type: "update",
-    },
-    {
-      id: 2,
-      action: "Добавлен сотрудник",
-      employee: "Петров П.П.",
-      time: "15 мин назад",
-      type: "add",
-    },
-    {
-      id: 3,
-      action: "Изменена структура",
-      employee: "Отдел IT",
-      time: "1 час назад",
-      type: "structure",
-    },
-    {
-      id: 4,
-      action: "Создан отчет",
-      employee: "Менеджер",
-      time: "2 часа назад",
-      type: "report",
-    },
-  ];
+  const {
+    data: recentActivities,
+    isLoading: isLoadingActivities,
+    isError: isActivitiesError,
+    error: activitiesError,
+  } = useRecentAuditLogs(4);
+
+  // Цвет точки — по глаголу в коде события (закрытый словарь на бэке,
+  // audit_service.ACTIONS): создание зелёным, снятие/отмена оранжевым,
+  // остальное (обновление, продление и т.п.) синим. Действие-к-цвету, а не
+  // сущность-к-цвету — так же, как было у старого литерала.
+  const activityDotColor = (action: string) => {
+    if (action.endsWith("_CREATED") || action.endsWith("_INITIATED"))
+      return "bg-green-500";
+    if (
+      action.endsWith("_CANCELLED") ||
+      action.endsWith("_DELETED") ||
+      action.endsWith("_DISMISSED")
+    )
+      return "bg-orange-500";
+    return "bg-blue-500";
+  };
 
   const performanceMetrics = [
     {
@@ -143,10 +138,6 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
           {/* Recent Activities */}
           <Card className="relative overflow-hidden">
-            <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1.5 rounded-full shadow-sm z-10">
-              <Wrench className="h-3.5 w-3.5 animate-pulse" />
-              <span>В работе</span>
-            </div>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5" />
@@ -154,37 +145,47 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {recentActivities.map((activity) => (
-                  <div
-                    key={activity.id}
-                    className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-2 h-2 rounded-full ${
-                          activity.type === "update"
-                            ? "bg-blue-500"
-                            : activity.type === "add"
-                            ? "bg-green-500"
-                            : activity.type === "structure"
-                            ? "bg-purple-500"
-                            : "bg-orange-500"
-                        }`}
-                      />
-                      <div>
-                        <p className="font-medium text-sm">{activity.action}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {activity.employee}
-                        </p>
+              {isLoadingActivities && (
+                <p className="text-sm text-muted-foreground">Загрузка…</p>
+              )}
+              {isActivitiesError && (
+                <p className="text-sm text-muted-foreground">
+                  {activitiesError?.message ?? "Не удалось загрузить журнал"}
+                </p>
+              )}
+              {recentActivities !== undefined && recentActivities.length === 0 && (
+                <p className="text-sm text-muted-foreground">Записей нет</p>
+              )}
+              {recentActivities !== undefined && recentActivities.length > 0 && (
+                <div className="space-y-4">
+                  {recentActivities.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-2 h-2 rounded-full ${activityDotColor(
+                            entry.action
+                          )}`}
+                        />
+                        <div>
+                          <p className="font-mono text-sm">{entry.action}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {entry.entity_type} · {entry.entity_id}
+                          </p>
+                        </div>
                       </div>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatDistanceToNow(new Date(entry.created_at), {
+                          addSuffix: true,
+                          locale: ru,
+                        })}
+                      </span>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {activity.time}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -22,6 +22,7 @@ from organization_management.apps.operations.models_object import (
 from organization_management.apps.ops.api.serializers import (
     SecurityObjectSerializer,
 )
+from organization_management.apps.ops import gvo as gvo_service
 from organization_management.apps.ops import passport as passport_service
 from organization_management.apps.ops import analytics as analytics_service
 from organization_management.apps.ops import ratings as ratings_service
@@ -31,6 +32,8 @@ from organization_management.apps.operations.api.permissions import (
     resolve_actor_id,
 )
 from organization_management.apps.operations.clock import Clock
+from django.core.exceptions import ValidationError
+
 from organization_management.apps.operations.exceptions import DomainError
 
 # Реестр объектов открывается СВОИМ правом, а не оргструктурным. Подразделение
@@ -1946,3 +1949,92 @@ class OpsFeedbackRequestsViewSet(RequirePermissionMixin, viewsets.ViewSet):
                 request.data,
             )
         )
+
+
+# ── ГВО: каталог охраняемых лиц и патчи сводок (спека 2026-08-20) ─────────
+
+
+class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/protected-persons/ — справочник охраняемых лиц.
+
+    Только чтение с фронта; правка — Django Admin (Admin = справочники).
+    """
+
+    permission_map = {"list": "event.view"}
+
+    def list(self, request):
+        return Response({"results": gvo_service.list_persons()})
+
+
+class OpsLegalDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/legal-documents/ — нормативная база ОМ (только чтение).
+
+    Файлы документов система не хранит: fileUrl честно null.
+    """
+
+    permission_map = {"list": "event.view"}
+
+    def list(self, request):
+        return Response({"results": gvo_service.list_legal_documents()})
+
+
+class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/gvo-summaries/ — ручные правки сводок ГВО по коду ОМ.
+
+    База сводки собирается на клиенте из бюллетеня; здесь только патчи —
+    та же семантика, что у мока MSW (list / patch / reset).
+    """
+
+    permission_map = {
+        "list": "event.view",
+        "partial_update": "event.manage",
+        "reset": "event.manage",
+    }
+    # Код ОМ содержит кириллицу и дефисы («ОМ-2026-1») — дефолтный lookup
+    # [^/.]+ подходит, но объявим явно ради читаемости.
+    lookup_value_regex = r"[^/]+"
+
+    def list(self, request):
+        return Response({"results": gvo_service.list_patches()})
+
+    def partial_update(self, request, pk=None):
+        try:
+            record = gvo_service.apply_patch(
+                pk, request.data, request.user,
+                actor=resolve_actor_id(request),
+            )
+        except ValidationError as exc:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail=exc.message_dict,
+                message="Проверьте состав патча.",
+            )
+        if record is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                message="Мероприятие с таким кодом не найдено.",
+            )
+        return Response(record)
+
+    @action(detail=True, methods=["post"], url_path="reset")
+    def reset(self, request, pk=None):
+        try:
+            record = gvo_service.reset_patch(
+                pk, request.data, actor=resolve_actor_id(request)
+            )
+        except ValidationError as exc:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail=exc.message_dict,
+                message="Проверьте раздел сброса.",
+            )
+        if record is None:
+            raise DomainError(
+                "ENTITY_NOT_FOUND",
+                404,
+                message="Мероприятие с таким кодом не найдено.",
+            )
+        return Response(record)
