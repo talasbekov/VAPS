@@ -8,7 +8,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { FileText } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import {
   useCreateReportJob,
   useDownloadArtifact,
@@ -83,15 +83,11 @@ export default function ServiceReportsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <FileText className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Отчёты службы</h1>
-            <p className="text-muted-foreground">
-              Асинхронное формирование отчётов, метаданные артефактов и выгрузка.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Оценка и отчётность"
+          title="Отчёты службы"
+          description="Асинхронное формирование отчётов, метаданные артефактов и выгрузка."
+        />
 
         <nav className="flex flex-wrap gap-2" aria-label="Разделы отчётов">
           <span className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground">

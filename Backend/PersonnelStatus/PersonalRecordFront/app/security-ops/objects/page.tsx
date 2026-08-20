@@ -31,6 +31,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -398,20 +399,11 @@ export default function SecurityObjectsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-5">
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-primary-ink">
-              Объекты и паспорта
-            </p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight">
-              Объекты и паспорта
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Реестр охраняемых объектов, их паспортов, секторов, постов и
-              истории публикаций
-            </p>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Оперативная работа"
+          title="Объекты и паспорта"
+          description="Реестр охраняемых объектов, их паспортов, секторов, постов и истории публикаций"
+        />
 
         {query.data !== undefined && (
           <div

@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,6 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
-  Layers,
   ListChecks,
   PlayCircle,
   ShieldAlert,
@@ -164,30 +164,25 @@ export default function OperationsAnalyticsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Layers className="h-8 w-8 text-primary-ink" />
-            <div>
-              <h1 className="text-2xl font-bold">Аналитика мероприятий</h1>
-              <p className="text-muted-foreground">
-                Подготовка, обеспеченность, расстановка, проведение, конфликты и
-                результаты охранных мероприятий
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {freshness !== null && (
-              <span className="text-xs text-muted-foreground">{freshness}</span>
-            )}
-            <Button
-              variant="outline"
-              disabled={query.isFetching}
-              onClick={() => void query.refetch()}
-            >
-              {query.isFetching ? "Обновление…" : "Обновить"}
-            </Button>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="Оценка и отчётность"
+          title="Аналитика мероприятий"
+          description="Подготовка, обеспеченность, расстановка, проведение, конфликты и результаты охранных мероприятий"
+          actions={
+            <>
+              {freshness !== null && (
+                <span className="text-xs text-muted-foreground">{freshness}</span>
+              )}
+              <Button
+                variant="outline"
+                disabled={query.isFetching}
+                onClick={() => void query.refetch()}
+              >
+                {query.isFetching ? "Обновление…" : "Обновить"}
+              </Button>
+            </>
+          }
+        />
 
         <nav className="flex flex-wrap gap-2" aria-label="Разделы аналитики">
           <Link

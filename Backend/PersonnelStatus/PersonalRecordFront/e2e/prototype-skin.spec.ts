@@ -116,27 +116,9 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(shape.weight).toBe('600')
   })
 
-  test('заголовок страницы набран по прототипу', async ({ page }) => {
-    await signIn(page)
-    await page.goto(`${APP}/security-ops/events/`)
-
-    const h1 = page.getByRole('heading', { name: 'Реестр ОМ', level: 1 })
-    await expect(h1).toBeVisible()
-
-    const shape = await h1.evaluate((el) => {
-      const cs = getComputedStyle(el)
-      return { size: cs.fontSize, weight: cs.fontWeight }
-    })
-    expect(shape.size).toBe('25px')
-    expect(shape.weight).toBe('700')
-
-    const eyebrow = page.locator('[data-slot="page-eyebrow"]')
-    // 🔴 textContent — в ЕСТЕСТВЕННОМ регистре: капс делает CSS, а не JS.
-    // Если проба потребует здесь капс, компонент придётся уродовать
-    // toUpperCase()-ом, и он начнёт терять регистр акронимов и имён.
-    await expect(eyebrow).toHaveText('Охранные мероприятия')
-    expect(await eyebrow.evaluate((el) => getComputedStyle(el).textTransform)).toBe('uppercase')
-  })
+  // Заголовок /security-ops/events/ покрыт единой таблицей HEADER_ROUTES в
+  // конце файла вместе с остальными 29 статическими маршрутами — отдельный
+  // тест на него был бы её дублем.
 
   test('в шапке есть хлебные крошки', async ({ page }) => {
     await signIn(page)
@@ -588,24 +570,6 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       .toBe(fullCount)
   })
 
-  // Task 14: раскатка PageHeader на легаси-портал — H1 набран 25px, как и на
-  // уже переведённых экранах /security-ops/*.
-  for (const [route, heading] of [
-    ['/dashboard/', 'Обзор'],
-    ['/employees/', 'Управление персоналом'],
-    ['/organization/', 'Структура организации'],
-    ['/statuses/', 'Управление статусами'],
-    ['/reports/', 'Отчеты'],
-  ] as const) {
-    test(`заголовок по прототипу: ${route}`, async ({ page }) => {
-      await signIn(page)
-      await page.goto(`${APP}${route}`)
-      const h1 = page.getByRole('heading', { name: heading, level: 1 })
-      await expect(h1).toBeVisible()
-      expect(await h1.evaluate((el) => getComputedStyle(el).fontSize)).toBe('25px')
-    })
-  }
-
   // Task 14b: KPI-плитки на /employees/ и /statuses/ оставались на старой
   // ручной вёрстке (Card+CardHeader+иконка), пока /dashboard и /organization
   // уже несли `StatCard`. Тот же снаряд, что и «подписи KPI-плиток не
@@ -728,4 +692,146 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       `ячейка таблицы /employees унаследовала min-width:140px из org-board.styles.css`
     ).not.toBe('140px')
   })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Единый сторож заголовков: ВСЕ статические маршруты приложения на одной
+  // таблице.
+  //
+  // Раньше это были три отдельные группы (Task 5 — только /security-ops/events,
+  // Task 14 — пять экранов легаси-портала, PH-1 — шесть экранов рейтинга) с
+  // побайтово одинаковыми телами. Финальное ревью ветки отметило такое
+  // дублирование как запах; здесь оно свёрнуто.
+  //
+  // 🔴 Заголовок ищется через getByRole(..., { level: 1 }), а НЕ по подстроке
+  // текста: текстовый локатор поймал бы <p> с тем же словом.
+  //
+  // 🔴 Размер меряется через getComputedStyle, а НЕ проверкой класса в
+  // className. Слой ui/* сгенерирован под Tailwind v4, а собирается 3.4.18 —
+  // часть классов молча не генерируется, и ассерт «класс есть» был бы зелёным
+  // на неработающем стиле.
+  //
+  // 🔴 Надзаголовок ассертится в ЕСТЕСТВЕННОМ регистре, а капс проверяется
+  // отдельно через textTransform. Playwright читает textContent и не видит CSS
+  // text-transform; проба, написанная капсом, заставила бы дублировать капс в
+  // JSX через toUpperCase() — компонент начал бы терять регистр акронимов и
+  // имён собственных (так уже случилось в Task 5 и откатывалось).
+  const HEADER_ROUTES: Array<{ path: string; title: string; eyebrow: string }> = [
+    // Легаси-портал
+    { path: '/dashboard/', title: 'Обзор', eyebrow: 'Личный состав' },
+    { path: '/employees/', title: 'Управление персоналом', eyebrow: 'Личный состав' },
+    { path: '/organization/', title: 'Структура организации', eyebrow: 'Личный состав' },
+    { path: '/statuses/', title: 'Управление статусами', eyebrow: 'Личный состав' },
+    { path: '/reports/', title: 'Отчеты', eyebrow: 'Официальные документы' },
+    // Оперативная работа
+    { path: '/security-ops/command-center/', title: 'Командный центр', eyebrow: 'Оперативная работа' },
+    { path: '/security-ops/events/', title: 'Реестр ОМ', eyebrow: 'Охранные мероприятия' },
+    { path: '/security-ops/gvo/', title: 'Реестр ГВО', eyebrow: 'Оперативная работа' },
+    { path: '/security-ops/forces/', title: 'Сбор сил на ОМ', eyebrow: 'Оперативная работа' },
+    { path: '/security-ops/persons/', title: 'Охраняемые лица', eyebrow: 'Оперативная работа' },
+    { path: '/security-ops/objects/', title: 'Объекты и паспорта', eyebrow: 'Оперативная работа' },
+    { path: '/security-ops/laws/', title: 'Законы об ОМ', eyebrow: 'Оперативная работа' },
+    // Дежурства и расход
+    { path: '/security-ops/calendar/', title: 'Календарь смен', eyebrow: 'Дежурства и расход' },
+    { path: '/security-ops/duties/combat/', title: 'Боевые группы на Трассе', eyebrow: 'Дежурства и расход' },
+    { path: '/security-ops/daily-expense/', title: 'Расход дня', eyebrow: 'Дежурства и расход' },
+    // Оценка и отчётность
+    { path: '/security-ops/ratings/', title: 'Оперативный рейтинг', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/ratings/workspace/', title: 'Оценивание участников', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/ratings/evaluations/', title: 'Итоговые оценки участников', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/ratings/export/', title: 'Выгрузка рейтинга', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/ratings/audit/', title: 'Журнал оценивания', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/ratings/analytics/', title: 'Аналитика рейтинга', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/analytics/', title: 'Состояние службы и личного состава', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/analytics/operations/', title: 'Аналитика мероприятий', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/service-reports/', title: 'Отчёты службы', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/service-reports/history/', title: 'История отчётов', eyebrow: 'Оценка и отчётность' },
+    // Администрирование
+    { path: '/security-ops/dictionaries/', title: 'Справочники', eyebrow: 'Администрирование' },
+    { path: '/security-ops/settings/', title: 'Настройки ОМ', eyebrow: 'Администрирование' },
+    { path: '/security-ops/feedback/', title: 'Обратная связь', eyebrow: 'Администрирование' },
+    { path: '/security-ops/audit/', title: 'Аудит', eyebrow: 'Администрирование' },
+    // Личный кабинет
+    { path: '/security-ops/profile/', title: 'Мой профиль', eyebrow: 'Личный кабинет' },
+  ]
+
+  for (const { path, title, eyebrow } of HEADER_ROUTES) {
+    test(`заголовок по прототипу: ${path}`, async ({ page }) => {
+      await signIn(page)
+      await page.goto(`${APP}${path}`)
+
+      const h1 = page.getByRole('heading', { name: title, level: 1 })
+      await expect(h1, `${path}: нет H1 «${title}»`).toBeVisible()
+
+      const shape = await h1.evaluate((el) => {
+        const cs = getComputedStyle(el)
+        return { size: cs.fontSize, weight: cs.fontWeight }
+      })
+      expect(shape.size, `${path}: размер H1`).toBe('25px')
+      expect(shape.weight, `${path}: вес H1`).toBe('700')
+
+      // Ровно один H1 на странице: раскатка PageHeader не должна была
+      // оставить прежний заголовок рядом с новым.
+      const h1Count = await page.getByRole('heading', { level: 1 }).count()
+      expect(h1Count, `${path}: на странице ${h1Count} заголовков H1`).toBe(1)
+
+      const eyebrowEl = page.locator('[data-slot="page-eyebrow"]')
+      await expect(eyebrowEl, `${path}: нет надзаголовка`).toHaveText(eyebrow)
+      expect(
+        await eyebrowEl.evaluate((el) => getComputedStyle(el).textTransform),
+        `${path}: капс надзаголовка должен делать CSS`
+      ).toBe('uppercase')
+    })
+  }
+
+  // Детальные маршруты требуют живой записи в пути, поэтому идут отдельно:
+  // идентификатор берётся из реестра, а не выдумывается. Заголовок здесь —
+  // ИМЯ ЗАПИСИ, поэтому пинить текст нечем; проверяется только набор.
+  const DETAIL_ROUTES: Array<{ registry: string; name: string }> = [
+    { registry: '/security-ops/events/', name: 'карточка ОМ' },
+    { registry: '/security-ops/objects/', name: 'карточка объекта' },
+    { registry: '/security-ops/gvo/', name: 'карточка ГВО' },
+  ]
+
+  for (const { registry, name } of DETAIL_ROUTES) {
+    test(`заголовок по прототипу: ${name}`, async ({ page }) => {
+      await signIn(page)
+      await page.goto(`${APP}${registry}`)
+
+      // 🔴 Адрес записи вычисляем из разметки, а не кликаем по «первой ссылке
+      // в таблице»: реестр объектов по умолчанию показывает КАРТОЧКИ, а не
+      // таблицу (`view === 'cards'`, app/security-ops/objects/page.tsx:693), и
+      // табличный локатор там не находит ничего. Отбрасываем ссылки на сам
+      // реестр — иначе «переход» никуда не ведёт и проба падает по своей вине.
+      // Реестр наливается запросом уже после монтирования, поэтому ссылку
+      // ЖДЁМ, а не читаем сразу после goto: иначе guard сработает на пустой
+      // странице и обвинит фикстуру вместо гонки.
+      const readHref = () =>
+        page.evaluate((base) => {
+          const links = [...document.querySelectorAll<HTMLAnchorElement>('a[href]')]
+            .map((a) => a.getAttribute('href') ?? '')
+            .filter(
+              (h) => h.startsWith(base) && h.replace(base, '').replace(/\/$/, '') !== ''
+            )
+          return links[0] ?? null
+        }, registry)
+
+      await expect
+        .poll(readHref, {
+          timeout: 20_000,
+          message: `${name}: в реестре не появилось ни одной ссылки на запись — проба была бы вакуумной`,
+        })
+        .not.toBeNull()
+
+      const href = await readHref()
+
+      await page.goto(`${APP}${href}`)
+
+      const h1 = page.getByRole('heading', { level: 1 }).first()
+      await expect(h1, `${name}: нет H1`).toBeVisible()
+      expect(
+        await h1.evaluate((el) => getComputedStyle(el).fontSize),
+        `${name}: размер H1`
+      ).toBe('25px')
+    })
+  }
 })

@@ -6,6 +6,7 @@
 // наравне с успехами.
 import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import {
   Table,
   TableHeader,
@@ -14,7 +15,6 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { ScrollText } from "lucide-react";
 import { useRatingAudit } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import type { RatingAuditEntry } from "@/entities/operational-rating";
@@ -54,16 +54,11 @@ export default function RatingAuditPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <ScrollText className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Журнал оценивания</h1>
-            <p className="text-muted-foreground">
-              Действия с записями оценивания: отправки, исправления, отклонённые
-              попытки. Значений оценок, комментариев и оценщиков в журнале нет.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Оценка и отчётность"
+          title="Журнал оценивания"
+          description="Действия с записями оценивания: отправки, исправления, отклонённые попытки. Значений оценок, комментариев и оценщиков в журнале нет."
+        />
 
         <RatingsNav />
 

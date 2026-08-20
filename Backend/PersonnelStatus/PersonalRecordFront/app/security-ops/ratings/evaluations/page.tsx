@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import {
   Table,
   TableHeader,
@@ -15,7 +16,6 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { ListChecks } from "lucide-react";
 import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import {
@@ -96,16 +96,11 @@ export default function EvaluationRegistryPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <ListChecks className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Итоговые оценки участников</h1>
-            <p className="text-muted-foreground">
-              Реестр записей оценивания в безопасном представлении: значения
-              оценок, комментарии и оценщики закрыты и с сервера не приходят.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Оценка и отчётность"
+          title="Итоговые оценки участников"
+          description="Реестр записей оценивания в безопасном представлении: значения оценок, комментарии и оценщики закрыты и с сервера не приходят."
+        />
 
         <RatingsNav />
 

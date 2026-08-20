@@ -6,7 +6,7 @@
 // значения, а не со скрытым в разметке. Группы отсортированы сервером по
 // подписи — сортировка по значению и есть «место».
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { BarChart3 } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import { useRatingAnalytics } from "@/hooks/use-ops-ratings";
 import { RatingsNav } from "@/features/ops-ratings/ratings-nav";
 import type { RatingGroupAggregate } from "@/entities/operational-rating";
@@ -53,16 +53,11 @@ export default function RatingAnalyticsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <BarChart3 className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Аналитика рейтинга</h1>
-            <p className="text-muted-foreground">
-              Только агрегированные значения. Отдельные оценки, оценщики и
-              комментарии в отчёт не входят и с сервера не запрашиваются.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Оценка и отчётность"
+          title="Аналитика рейтинга"
+          description="Только агрегированные значения. Отдельные оценки, оценщики и комментарии в отчёт не входят и с сервера не запрашиваются."
+        />
 
         <RatingsNav />
 

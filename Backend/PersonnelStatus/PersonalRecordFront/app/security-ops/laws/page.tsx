@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,18 +82,11 @@ export default function LegalDocumentsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <header>
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-primary-ink">
-            Нормативная база
-          </p>
-          <h1 className="text-[25px] font-bold leading-[1.15] tracking-[-0.02em]">
-            Законы об ОМ
-          </h1>
-          <p className="text-[12.5px] text-muted-foreground">
-            Действующие законы, приказы, регламенты и инструкции по организации
-            охранных мероприятий
-          </p>
-        </header>
+        <PageHeader
+          eyebrow="Оперативная работа"
+          title="Законы об ОМ"
+          description="Действующие законы, приказы, регламенты и инструкции по организации охранных мероприятий"
+        />
 
         <div className="space-y-[10px]">
           <Input
