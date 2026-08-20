@@ -6,6 +6,7 @@
 // операция. Недоступные форматы и режимы приходят с сервера С ПРИЧИНОЙ.
 import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
+import { PageHeader } from "@/components/page-header";
 import {
   Table,
   TableHeader,
@@ -14,7 +15,6 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { FileDown } from "lucide-react";
 import {
   useCancelRatingExport,
   useCreateRatingExport,
@@ -83,17 +83,11 @@ export default function RatingExportPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <FileDown className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">Выгрузка рейтинга</h1>
-            <p className="text-muted-foreground">
-              Агрегированная сводка оперативного рейтинга. Отдельных оценок,
-              оценщиков, комментариев и оснований в файле нет — он собирается из
-              той же сводки, что и экран.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Оценка и отчётность"
+          title="Выгрузка рейтинга"
+          description="Агрегированная сводка оперативного рейтинга. Отдельных оценок, оценщиков, комментариев и оснований в файле нет — он собирается из той же сводки, что и экран."
+        />
 
         <RatingsNav />
 

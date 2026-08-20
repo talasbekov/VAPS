@@ -728,4 +728,41 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       `ячейка таблицы /employees унаследовала min-width:140px из org-board.styles.css`
     ).not.toBe('140px')
   })
+
+  // PageHeader на разделе «Оценка и отчётность» (ratings/*): та же проба, что
+  // и у /security-ops/events/ выше, прогнанная по всем шести маршрутам без
+  // идентификатора в пути. Седьмой (ratings/employees/[employeeId]) сюда не
+  // входит — ему нужен живой участник, см. отдельную ручную проверку.
+  const RATINGS_ROUTES: Array<{ path: string; title: string }> = [
+    { path: '/security-ops/ratings/', title: 'Оперативный рейтинг' },
+    { path: '/security-ops/ratings/workspace/', title: 'Оценивание участников' },
+    { path: '/security-ops/ratings/evaluations/', title: 'Итоговые оценки участников' },
+    { path: '/security-ops/ratings/export/', title: 'Выгрузка рейтинга' },
+    { path: '/security-ops/ratings/audit/', title: 'Журнал оценивания' },
+    { path: '/security-ops/ratings/analytics/', title: 'Аналитика рейтинга' },
+  ]
+
+  for (const { path, title } of RATINGS_ROUTES) {
+    test(`заголовок ${path} набран по прототипу`, async ({ page }) => {
+      await signIn(page)
+      await page.goto(`${APP}${path}`)
+
+      const h1 = page.getByRole('heading', { name: title, level: 1 })
+      await expect(h1).toBeVisible()
+
+      const shape = await h1.evaluate((el) => {
+        const cs = getComputedStyle(el)
+        return { size: cs.fontSize, weight: cs.fontWeight }
+      })
+      expect(shape.size).toBe('25px')
+      expect(shape.weight).toBe('700')
+
+      const eyebrow = page.locator('[data-slot="page-eyebrow"]')
+      // 🔴 textContent — в ЕСТЕСТВЕННОМ регистре: капс делает CSS, а не JS.
+      await expect(eyebrow).toHaveText('Оценка и отчётность')
+      expect(await eyebrow.evaluate((el) => getComputedStyle(el).textTransform)).toBe(
+        'uppercase'
+      )
+    })
+  }
 })
