@@ -8,12 +8,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Obsidian vault — единственный источник правды
 
-Вся документация, статус, история и открытые дефекты проекта VAPS ведутся в `obsidian-vault/` (открывается как обычный Obsidian vault — папка markdown-файлов, без live-коннектора). Точка входа: `obsidian-vault/00-Index.md`.
+Вся документация, знания, статус, история и открытые дефекты проекта VAPS ведутся в `obsidian-vault/` (открывается как обычный Obsidian vault — папка markdown-файлов, без live-коннектора). Точка входа и карта знаний: `obsidian-vault/00-Index.md` — читать первым.
+
+Vault устроен в два слоя:
+
+- **Слой знаний («второй мозг»)**: `RAW/` (сырые материалы — не переписывать, только ссылаться), `WIKI/` (структурированные заметки с `[[wiki-ссылками]]`, сюда же планы/эпики), `OUTPUT/` (готовые документы для внешнего использования), `LOG.md` (журнал обработки). Описание продукта — `Продукт/`, канон требований — `Требования/`.
+- **Слой разработки**: рабочие разделы (Personnel-Records / Frontend / Infrastructure / BMAD-Process) с оперативным состоянием — Status / Changelog / Decisions / Known-Issues.
 
 Правила для Claude Code:
 
 - **Перед началом работы** над модулем (Personnel-Records / Frontend / Infrastructure / BMAD-Process) — прочитать `obsidian-vault/<Модуль>/Status.md` и `obsidian-vault/<Модуль>/Known-Issues.md`. Разделы VisitX и Accreditation не начаты — создаются при старте работ. Описание продукта и модулей — `obsidian-vault/Продукт/` (карта: `Продукт/Карта-модулей.md`).
 - **После завершения работы** — обновить `Status.md` (если сменилось состояние модуля), добавить строку в `Changelog.md` (дата, что сделано, короткий хэш коммита), и `Decisions.md`/`Known-Issues.md` при необходимости.
+- **Новый сырой материал** (транскрипт, статья, черновик) класть в `obsidian-vault/RAW/`, обработку вести по циклу из `00-Index.md` (RAW → WIKI → индекс → запись в LOG.md).
 - **Не заводить** новые записи в `.claude/memory` (auto-memory) или `docs/api-gaps.md` для VAPS-специфичного контента — только в vault. Auto-memory может продолжать накапливать записи только НЕ специфичные для VAPS (например, про личность/стиль работы разработчика в целом), если харнесс сам их предлагает.
 - `docs/api-gaps.md` и старая `.claude/memory` заморожены на 2026-08-19 — актуальные версии их содержимого перенесены в `obsidian-vault/*/Known-Issues.md` и `obsidian-vault/*/Decisions.md`; снапшот на дату заморозки лежит в `obsidian-vault/Archive/`.
 
