@@ -410,6 +410,24 @@ export interface TrafficLightTree {
   nodes: TrafficLightNode[];
 }
 
+/** Поимённое расхождение сданного дня с живыми данными (только у жёлтого).
+ * names доклеивает бэк: {employee_id: «Фамилия Имя»}; id без имени — человек
+ * уже не находится (уволен/удалён), UI показывает номер честно. */
+export interface TrafficLightDrift {
+  added: number[];
+  removed: number[];
+  changed: { employee_id: number; from: string; to: string }[];
+  names: Record<string, string>;
+}
+
+export interface DivisionTrafficLight {
+  division_id: number;
+  business_date: string;
+  status: TrafficLightNode["status"];
+  late: boolean;
+  drift: TrafficLightDrift | null;
+}
+
 // Ошибка раздела ОМ: бэк отвечает конвертом {error_code, message, details}.
 // Держим `code` отдельно от текста, чтобы UI мог разводить случаи по коду
 // (например DAY_NOT_SUBMITTED — это не поломка, а «выгружать нечего»), а не
@@ -1703,6 +1721,15 @@ class ApiClient {
     const queryString = query.toString();
     return this.getDomainJson<TrafficLightTree>(
       `/api/operations/traffic-light/tree/${queryString ? `?${queryString}` : ""}`
+    );
+  }
+
+  // Точечный светофор одного подразделения — с поимённым расхождением.
+  // Дерево выше расхождение НЕ несёт (свод отвечает «куда смотреть»);
+  // подробности «кого проверять» берутся этой ручкой по клику.
+  async getDivisionTrafficLight(divisionId: number): Promise<DivisionTrafficLight> {
+    return this.getDomainJson<DivisionTrafficLight>(
+      `/api/operations/traffic-light/${divisionId}/`
     );
   }
 

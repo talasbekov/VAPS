@@ -47,6 +47,8 @@ import type {
   StrengthReportRow,
   TrafficLightNode,
 } from "@/lib/api";
+import { apiClient } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
@@ -1432,6 +1434,59 @@ function StaffingSection({ report }: { report: StrengthReport }) {
   );
 }
 
+/** Поимённое расхождение жёлтого узла. Грузится ПО КЛИКУ (точечная ручка
+ * светофора): дерево деталей не несёт, а тянуть их для всех жёлтых сразу
+ * значило бы N запросов ради свёрнутых блоков. Имя доклеивает бэк; id без
+ * имени показывается номером — человек уже не находится в кадрах. */
+function SubmissionDriftDetails({ divisionId }: { divisionId: number }) {
+  const [open, setOpen] = useState(false);
+  const detail = useQuery({
+    queryKey: ["traffic-light", "division", divisionId],
+    queryFn: () => apiClient.getDivisionTrafficLight(divisionId),
+    enabled: open,
+  });
+  const name = (drift: { names: Record<string, string> }, id: number) =>
+    drift.names[String(id)] ?? `№${id}`;
+  return (
+    <div className="w-full">
+      <button
+        type="button"
+        className="text-xs text-primary underline-offset-2 hover:underline"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? "Скрыть расхождение" : "Показать расхождение"}
+      </button>
+      {open && (
+        <div className="mt-1 rounded-md border bg-muted/40 p-2 text-xs">
+          {detail.isPending && <p>Загрузка…</p>}
+          {detail.isError && <p>Расхождение сейчас недоступно.</p>}
+          {detail.data &&
+            (detail.data.drift === null ? (
+              <p>
+                Расхождение уже ушло: живые данные снова отвечают сданному дню.
+              </p>
+            ) : (
+              <ul className="space-y-0.5">
+                {detail.data.drift.changed.map((row) => (
+                  <li key={`c-${row.employee_id}`}>
+                    {name(detail.data.drift!, row.employee_id)}: {row.from} → {row.to}
+                  </li>
+                ))}
+                {detail.data.drift.added.map((id) => (
+                  <li key={`a-${id}`}>{name(detail.data.drift!, id)} — появился в составе</li>
+                ))}
+                {detail.data.drift.removed.map((id) => (
+                  <li key={`r-${id}`}>{name(detail.data.drift!, id)} — выбыл из состава</li>
+                ))}
+              </ul>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Подписи цветов светофора. Не «сдан / не сдан»: жёлтый — это СДАН, но
  * живые данные с подписанным снимком разошлись, а серый — узлу некого
  * сдавать. Свести их к двум состояниям значило бы обвинить или оправдать
@@ -1560,7 +1615,7 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
             {problems.map((node) => (
               <li
                 key={node.division_id}
-                className="flex items-baseline gap-2 border-b py-1 text-xs last:border-0"
+                className="flex flex-wrap items-baseline gap-2 border-b py-1 text-xs last:border-0"
               >
                 <span
                   aria-hidden
@@ -1572,6 +1627,9 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
                 </span>
                 {node.late && (
                   <span className="text-muted-foreground">с опозданием</span>
+                )}
+                {node.status === "YELLOW" && (
+                  <SubmissionDriftDetails divisionId={node.division_id} />
                 )}
               </li>
             ))}
