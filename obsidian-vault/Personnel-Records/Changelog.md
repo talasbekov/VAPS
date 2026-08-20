@@ -467,3 +467,4 @@ _Одна строка на коммит: дата, короткий хэш, с�
 - 2026-08-20 `2a2353e3` feat(ops-gvo): Реестр ГВО и Охраняемые лица переведены с мока на живой бэк — модели OpsProtectedPerson/OpsGvoSummaryPatch (миграция 0031), /api/ops/{protected-persons,gvo-summaries}/ под event.view/manage с журналом аудита, сид 5 лиц, фронт-домены live по умолчанию, 4/4 live-спека зелёные (коммиты 23cb2812…2a2353e3; graphify update — отдельным chore)
 - 2026-08-21 (ночная смена) feat(ops-legal): Законы об ОМ переведены на живой бэк — OpsLegalDocument (0032), /api/ops/legal-documents/ под event.view, сид 8 доков, фронт-домен live
 - 2026-08-21 (ночная смена) feat(traffic-light): drift с именами в точечной ручке + разворот «Показать расхождение» у жёлтых узлов аналитики
+- 2026-08-21 (ночная смена, финал) chore: полный прогон 3109/0 — вечно-красные тесты лечились pypdf+hypothesis в .venv; graphify пересобран
