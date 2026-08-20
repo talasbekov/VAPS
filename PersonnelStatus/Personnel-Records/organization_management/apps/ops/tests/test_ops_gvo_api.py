@@ -114,7 +114,11 @@ def test_gvo_patch_merges_top_level_keys():
         event=ev, patch={"country": "X", "weapons": "нет"}
     )
     api, _ = manager("gvo-patcher")
-    r = api.patch(f"{GVO_URL}ОМ-Т-11/", {"country": "Y"}, format="json")
+    r = api.patch(
+        f"{GVO_URL}ОМ-Т-11/",
+        {"section": "head", "values": {"country": "Y"}},
+        format="json",
+    )
     assert r.status_code == 200
     # Присланный ключ заменён, отсутствующий — не тронут.
     assert r.json()["patch"] == {"country": "Y", "weapons": "нет"}
@@ -125,7 +129,11 @@ def test_gvo_patch_merges_top_level_keys():
 def test_gvo_patch_unknown_key_is_400():
     make_event("ОМ-Т-12")
     api, _ = manager("gvo-bad-patcher")
-    r = api.patch(f"{GVO_URL}ОМ-Т-12/", {"weird": 1}, format="json")
+    r = api.patch(
+        f"{GVO_URL}ОМ-Т-12/",
+        {"section": "head", "values": {"weird": 1}},
+        format="json",
+    )
     assert r.status_code == 400
     assert OpsGvoSummaryPatch.objects.count() == 0  # мусор не сохранён
 
@@ -133,26 +141,49 @@ def test_gvo_patch_unknown_key_is_400():
 def test_gvo_patch_unknown_om_code_is_404():
     api, _ = manager("gvo-lost-patcher")
     assert (
-        api.patch(f"{GVO_URL}НЕТ-ТАКОГО/", {"country": "Y"}, format="json")
+        api.patch(
+            f"{GVO_URL}НЕТ-ТАКОГО/",
+            {"section": "head", "values": {"country": "Y"}},
+            format="json",
+        )
     ).status_code == 404
 
 
 def test_gvo_patch_denied_for_viewer():
     make_event("ОМ-Т-13")
     r = viewer("gvo-view-only").patch(
-        f"{GVO_URL}ОМ-Т-13/", {"country": "Y"}, format="json"
+        f"{GVO_URL}ОМ-Т-13/",
+        {"section": "head", "values": {"country": "Y"}},
+        format="json",
     )
     assert r.status_code == 403
 
 
-def test_gvo_reset_deletes_patch_and_is_denied_for_viewer():
+def test_gvo_reset_removes_only_section_keys():
     ev = make_event("ОМ-Т-14")
-    OpsGvoSummaryPatch.objects.create(event=ev, patch={"country": "X"})
+    OpsGvoSummaryPatch.objects.create(
+        event=ev, patch={"country": "X", "weapons": "нет"}
+    )
     assert (
-        viewer("gvo-reset-viewer").post(f"{GVO_URL}ОМ-Т-14/reset/")
+        viewer("gvo-reset-viewer").post(
+            f"{GVO_URL}ОМ-Т-14/reset/", {"section": "head"}, format="json"
+        )
     ).status_code == 403
     api, _ = manager("gvo-resetter")
-    assert api.post(f"{GVO_URL}ОМ-Т-14/reset/").status_code == 200
+    r = api.post(f"{GVO_URL}ОМ-Т-14/reset/", {"section": "head"}, format="json")
+    assert r.status_code == 200
+    ev.refresh_from_db()
+    # Снят только ключ раздела head (country); чужой ключ остался.
+    assert ev.gvo_patch.patch == {"weapons": "нет"}
+
+
+def test_gvo_reset_of_last_section_deletes_record():
+    ev = make_event("ОМ-Т-16")
+    OpsGvoSummaryPatch.objects.create(event=ev, patch={"country": "X"})
+    api, _ = manager("gvo-last-resetter")
+    r = api.post(f"{GVO_URL}ОМ-Т-16/reset/", {"section": "head"}, format="json")
+    assert r.status_code == 200
+    assert r.json()["patch"] == {}
     assert not OpsGvoSummaryPatch.objects.filter(event=ev).exists()
 
 
@@ -163,7 +194,11 @@ def test_gvo_patch_writes_new_audit_row():
     before_pks = set(OpsAuditLog.objects.values_list("pk", flat=True))
     api, _ = manager("gvo-audited")
     assert (
-        api.patch(f"{GVO_URL}ОМ-Т-15/", {"country": "Z"}, format="json")
+        api.patch(
+            f"{GVO_URL}ОМ-Т-15/",
+            {"section": "head", "values": {"country": "Z"}},
+            format="json",
+        )
     ).status_code == 200
     new_rows = OpsAuditLog.objects.exclude(pk__in=before_pks)
     # Новый pk, не счётчик: строка именно ОБ ЭТОЙ правке.
