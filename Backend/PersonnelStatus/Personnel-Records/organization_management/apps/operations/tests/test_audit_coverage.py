@@ -918,5 +918,13 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
     )
     dict_service.delete_entry(tracked.pk, actor=ACTOR)
 
+    # ГВО: ручная правка сводки и её сброс — оба пишут журнал (сводные
+    # данные уходят в бумагу); база сводки — производная бюллетеня, следа
+    # не оставляет.
+    from organization_management.apps.ops import gvo as gvo_service
+
+    gvo_service.apply_patch(om.code, {"country": "Покрытие"}, None, actor=ACTOR)
+    gvo_service.reset_patch(om.code, actor=ACTOR)
+
     written = {entry.action for entry in events()}
     assert written == audit_service.ACTIONS

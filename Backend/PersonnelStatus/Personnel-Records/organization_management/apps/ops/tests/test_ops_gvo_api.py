@@ -92,3 +92,79 @@ def test_persons_denied_without_permission():
 
 def test_persons_denied_anonymous():
     assert APIClient().get(PERSONS_URL).status_code == 403
+
+
+# ── Сводки ГВО: list / patch / reset ─────────────────────────────────────
+
+
+def test_gvo_list_returns_patches_with_om_code():
+    ev = make_event("ОМ-Т-10")
+    OpsGvoSummaryPatch.objects.create(event=ev, patch={"country": "Черногория"})
+    r = viewer("gvo-list-viewer").get(GVO_URL)
+    assert r.status_code == 200
+    rows = r.json()["results"]
+    assert [row["omCode"] for row in rows] == ["ОМ-Т-10"]
+    assert rows[0]["patch"] == {"country": "Черногория"}
+    assert "updatedAt" in rows[0]
+
+
+def test_gvo_patch_merges_top_level_keys():
+    ev = make_event("ОМ-Т-11")
+    OpsGvoSummaryPatch.objects.create(
+        event=ev, patch={"country": "X", "weapons": "нет"}
+    )
+    api, _ = manager("gvo-patcher")
+    r = api.patch(f"{GVO_URL}ОМ-Т-11/", {"country": "Y"}, format="json")
+    assert r.status_code == 200
+    # Присланный ключ заменён, отсутствующий — не тронут.
+    assert r.json()["patch"] == {"country": "Y", "weapons": "нет"}
+    ev.refresh_from_db()
+    assert ev.gvo_patch.patch == {"country": "Y", "weapons": "нет"}  # из БД
+
+
+def test_gvo_patch_unknown_key_is_400():
+    make_event("ОМ-Т-12")
+    api, _ = manager("gvo-bad-patcher")
+    r = api.patch(f"{GVO_URL}ОМ-Т-12/", {"weird": 1}, format="json")
+    assert r.status_code == 400
+    assert OpsGvoSummaryPatch.objects.count() == 0  # мусор не сохранён
+
+
+def test_gvo_patch_unknown_om_code_is_404():
+    api, _ = manager("gvo-lost-patcher")
+    assert (
+        api.patch(f"{GVO_URL}НЕТ-ТАКОГО/", {"country": "Y"}, format="json")
+    ).status_code == 404
+
+
+def test_gvo_patch_denied_for_viewer():
+    make_event("ОМ-Т-13")
+    r = viewer("gvo-view-only").patch(
+        f"{GVO_URL}ОМ-Т-13/", {"country": "Y"}, format="json"
+    )
+    assert r.status_code == 403
+
+
+def test_gvo_reset_deletes_patch_and_is_denied_for_viewer():
+    ev = make_event("ОМ-Т-14")
+    OpsGvoSummaryPatch.objects.create(event=ev, patch={"country": "X"})
+    assert (
+        viewer("gvo-reset-viewer").post(f"{GVO_URL}ОМ-Т-14/reset/")
+    ).status_code == 403
+    api, _ = manager("gvo-resetter")
+    assert api.post(f"{GVO_URL}ОМ-Т-14/reset/").status_code == 200
+    assert not OpsGvoSummaryPatch.objects.filter(event=ev).exists()
+
+
+def test_gvo_patch_writes_new_audit_row():
+    from organization_management.apps.operations.models_audit import OpsAuditLog
+
+    make_event("ОМ-Т-15")
+    before_pks = set(OpsAuditLog.objects.values_list("pk", flat=True))
+    api, _ = manager("gvo-audited")
+    assert (
+        api.patch(f"{GVO_URL}ОМ-Т-15/", {"country": "Z"}, format="json")
+    ).status_code == 200
+    new_rows = OpsAuditLog.objects.exclude(pk__in=before_pks)
+    # Новый pk, не счётчик: строка именно ОБ ЭТОЙ правке.
+    assert new_rows.filter(action="GVO_SUMMARY_PATCHED").count() == 1
