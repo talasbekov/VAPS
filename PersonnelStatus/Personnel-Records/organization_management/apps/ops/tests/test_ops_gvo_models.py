@@ -64,3 +64,15 @@ def test_gvo_patch_one_per_event():
     OpsGvoSummaryPatch.objects.create(event=ev, patch={"country": "X"})
     with pytest.raises(IntegrityError):
         OpsGvoSummaryPatch.objects.create(event=ev, patch={})
+
+
+@pytest.mark.django_db
+def test_seed_protected_persons_is_idempotent():
+    from django.core.management import call_command
+
+    call_command("seed_protected_persons")
+    call_command("seed_protected_persons")
+    qs = OpsProtectedPerson.objects.all()
+    assert qs.count() == 5
+    assert qs.filter(category="OURS").count() == 3
+    assert qs.filter(category="FOREIGN").count() == 2
