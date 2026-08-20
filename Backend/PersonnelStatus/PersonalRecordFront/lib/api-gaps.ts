@@ -246,17 +246,6 @@ const RATINGS_MOCK_BY_CONFIG: ApiGap = {
 // duties остался живым понятием — на нём стоит календарь смен, см.
 // CALENDAR_MOCK_BY_CONFIG ниже.
 
-// Нормативная база: справочника документов на бэке нет, файлов тем более —
-// карточка честно говорит, что файл не хранится (см. app/security-ops/laws).
-const LEGAL_DOCUMENTS_NO_BACKEND: ApiGap = {
-  subject: "Нормативная база ОМ",
-  paths: ["/api/ops/legal-documents/"],
-  note:
-    "Перечень документов отдаёт браузерный мок-слой MSW: справочника " +
-    "нормативной базы на бэке нет. Файлов документов система не хранит " +
-    "вовсе — скачивание не заведено ни на одном источнике.",
-};
-
 export function findApiGap(pathname: string | null | undefined): ApiGap | null {
   if (!pathname) return null;
   {
@@ -318,12 +307,6 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       return isOpsDutiesLive() && isOpsCombatLive()
         ? null
         : CALENDAR_MOCK_BY_CONFIG;
-    }
-    if (
-      normalized === "/security-ops/laws" ||
-      normalized.startsWith("/security-ops/laws/")
-    ) {
-      return LEGAL_DOCUMENTS_NO_BACKEND;
     }
     for (const [route, isLive] of Object.entries(SIMPLE_LIVE_CHECK)) {
       if (normalized === route || normalized.startsWith(`${route}/`)) {

@@ -11,6 +11,7 @@ import {
   isOpsDutiesLive,
   isOpsFeedbackLive,
   isOpsGvoLive,
+  isOpsLegalDocumentsLive,
   isOpsObjectsLive,
   isOpsProtectedPersonsLive,
   isOpsRatingsLive,
@@ -69,14 +70,12 @@ export function composeOpsHandlers() {
     // «Расход дня» живьём — адаптеры над /api/operations/ (без своего бэка).
     ...(isOpsDailyLive() ? [] : dailyHandlers),
     ...(isOpsCombatLive() ? [] : combatHandlers),
-    // «Реестр ГВО» — без пер-доменного переключателя: своего бэкенда у раздела
-    // нет вовсе, поэтому live-режим ему нечего означать. Патчи правок живут в
-    // моке всегда (запись об этом — в lib/api-gaps.ts).
+    // «Реестр ГВО» живьём с 20.08.2026 (патчи сводок — /api/ops/gvo-summaries/);
+    // мок остаётся для демо через NEXT_PUBLIC_OPS_MOCK_DOMAINS=gvo.
     ...(isOpsGvoLive() ? [] : gvoHandlers),
-    // Каталог охраняемых лиц — по той же причине без переключателя: справочник
-    // существует только в мок-слое.
+    // Каталог охраняемых лиц живьём с 20.08.2026 (/api/ops/protected-persons/).
     ...(isOpsProtectedPersonsLive() ? [] : protectedPersonsHandlers),
-    // Нормативная база — тот же случай: справочник существует только в моке.
-    ...legalDocumentsHandlers,
+    // Нормативная база живьём с 21.08.2026 (/api/ops/legal-documents/).
+    ...(isOpsLegalDocumentsLive() ? [] : legalDocumentsHandlers),
   ];
 }

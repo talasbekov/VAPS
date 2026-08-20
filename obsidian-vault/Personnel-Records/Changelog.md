@@ -465,3 +465,4 @@ _Одна строка на коммит: дата, короткий хэш, с�
 - 2026-08-20 `b1f6054d` feat(statuses): «Запланировать» прямо из списка статусов сотрудника
 - 2026-08-20 `d938d28f` docs(vault): консолидация документации — раздел Продукт (19 модульных доков + карта модулей + backlog-unverified), Требования/Канон, слияние docs/frontend → Frontend/{Архитектура,Тестирование,Дизайн-и-скин}, frontmatter повсюду, новый 00-Index
 - 2026-08-20 `2a2353e3` feat(ops-gvo): Реестр ГВО и Охраняемые лица переведены с мока на живой бэк — модели OpsProtectedPerson/OpsGvoSummaryPatch (миграция 0031), /api/ops/{protected-persons,gvo-summaries}/ под event.view/manage с журналом аудита, сид 5 лиц, фронт-домены live по умолчанию, 4/4 live-спека зелёные (коммиты 23cb2812…2a2353e3; graphify update — отдельным chore)
+- 2026-08-21 (ночная смена) feat(ops-legal): Законы об ОМ переведены на живой бэк — OpsLegalDocument (0032), /api/ops/legal-documents/ под event.view, сид 8 доков, фронт-домен live

@@ -159,3 +159,24 @@ def reset_patch(om_code, body, actor=None):
         new_value={"omCode": event.code, "section": (body or {}).get("section")},
     )
     return {"omCode": event.code, "patch": remaining}
+
+
+def list_legal_documents():
+    from organization_management.apps.operations.models_legal import (
+        OpsLegalDocument,
+    )
+
+    return [
+        {
+            "id": str(d.id),
+            "kind": d.kind,
+            "code": d.code,
+            "title": d.title,
+            "description": d.description,
+            "revision": d.revision,
+            "status": d.status,
+            "pages": d.pages,
+            "fileUrl": d.file_url,
+        }
+        for d in OpsLegalDocument.objects.filter(is_active=True)
+    ]

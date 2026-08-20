@@ -256,3 +256,6 @@ from organization_management.apps.operations.models_gvo import (  # noqa: E402
     OpsGvoSummaryPatch,  # noqa: F401
     OpsProtectedPerson,  # noqa: F401
 )
+from organization_management.apps.operations.models_legal import (  # noqa: E402
+    OpsLegalDocument,  # noqa: F401
+)

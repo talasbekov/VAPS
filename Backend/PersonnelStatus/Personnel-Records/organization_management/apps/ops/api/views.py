@@ -1966,6 +1966,18 @@ class OpsProtectedPersonsViewSet(RequirePermissionMixin, viewsets.ViewSet):
         return Response({"results": gvo_service.list_persons()})
 
 
+class OpsLegalDocumentsViewSet(RequirePermissionMixin, viewsets.ViewSet):
+    """/api/ops/legal-documents/ — нормативная база ОМ (только чтение).
+
+    Файлы документов система не хранит: fileUrl честно null.
+    """
+
+    permission_map = {"list": "event.view"}
+
+    def list(self, request):
+        return Response({"results": gvo_service.list_legal_documents()})
+
+
 class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
     """/api/ops/gvo-summaries/ — ручные правки сводок ГВО по коду ОМ.
 
