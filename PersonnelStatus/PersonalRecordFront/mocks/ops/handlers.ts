@@ -2,7 +2,22 @@
 // сюда добавляются handler-наборы (objects, security-events, duties, …).
 // Пути пишутся с завершающим слэшом — в next.config.js включён
 // trailingSlash: true, паттерны без слэша промахиваются мимо перехвата.
-import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDailyLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
+import {
+  isOpsAnalyticsLive,
+  isOpsAuditLive,
+  isOpsCombatLive,
+  isOpsDailyLive,
+  isOpsDictionariesLive,
+  isOpsDutiesLive,
+  isOpsFeedbackLive,
+  isOpsGvoLive,
+  isOpsObjectsLive,
+  isOpsProtectedPersonsLive,
+  isOpsRatingsLive,
+  isOpsSecurityEventsLive,
+  isOpsServiceReportsLive,
+  isOpsSettingsLive,
+} from "@/lib/ops-env";
 import { objectsHandlers } from "./objects-handlers";
 import { securityEventsHandlers } from "./security-events-handlers";
 import { dutiesHandlers } from "./duties-handlers";
@@ -57,10 +72,10 @@ export function composeOpsHandlers() {
     // «Реестр ГВО» — без пер-доменного переключателя: своего бэкенда у раздела
     // нет вовсе, поэтому live-режим ему нечего означать. Патчи правок живут в
     // моке всегда (запись об этом — в lib/api-gaps.ts).
-    ...gvoHandlers,
+    ...(isOpsGvoLive() ? [] : gvoHandlers),
     // Каталог охраняемых лиц — по той же причине без переключателя: справочник
     // существует только в мок-слое.
-    ...protectedPersonsHandlers,
+    ...(isOpsProtectedPersonsLive() ? [] : protectedPersonsHandlers),
     // Нормативная база — тот же случай: справочник существует только в моке.
     ...legalDocumentsHandlers,
   ];
