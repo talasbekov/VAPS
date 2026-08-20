@@ -1987,7 +1987,10 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     def partial_update(self, request, pk=None):
         try:
-            record = gvo_service.apply_patch(pk, request.data, request.user)
+            record = gvo_service.apply_patch(
+                pk, request.data, request.user,
+                actor=resolve_actor_id(request),
+            )
         except ValidationError as exc:
             raise DomainError(
                 "VALIDATION_ERROR",
@@ -2005,7 +2008,7 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="reset")
     def reset(self, request, pk=None):
-        if gvo_service.reset_patch(pk) is None:
+        if gvo_service.reset_patch(pk, actor=resolve_actor_id(request)) is None:
             raise DomainError(
                 "ENTITY_NOT_FOUND",
                 404,

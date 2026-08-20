@@ -6,6 +6,7 @@
 """
 from django.core.exceptions import ValidationError
 
+from organization_management.apps.operations import audit_service
 from organization_management.apps.operations.models_event import OpsSecurityEvent
 from organization_management.apps.operations.models_gvo import (
     OpsGvoSummaryPatch,
@@ -65,7 +66,7 @@ def list_patches():
     ]
 
 
-def apply_patch(om_code, body, user):
+def apply_patch(om_code, body, user, actor=None):
     """Merge по ключам верхнего уровня: присланный ключ замещает секцию
     целиком, отсутствующий — не трогается (семантика мока)."""
     event = _event_or_none(om_code)
@@ -82,6 +83,13 @@ def apply_patch(om_code, body, user):
     rec.patch = {**rec.patch, **body}
     rec.updated_by = user if getattr(user, "is_authenticated", False) else None
     rec.save(update_fields=["patch", "updated_by", "updated_at"])
+    audit_service.record(
+        actor=actor,
+        action=audit_service.GVO_SUMMARY_PATCHED,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={"omCode": event.code, "keys": sorted(body)},
+    )
     return {
         "omCode": event.code,
         "patch": rec.patch,
@@ -89,10 +97,17 @@ def apply_patch(om_code, body, user):
     }
 
 
-def reset_patch(om_code):
+def reset_patch(om_code, actor=None):
     """True — патч был и удалён либо его не было (идемпотентно); None — нет ОМ."""
     event = _event_or_none(om_code)
     if event is None:
         return None
     OpsGvoSummaryPatch.objects.filter(event=event).delete()
+    audit_service.record(
+        actor=actor,
+        action=audit_service.GVO_SUMMARY_RESET,
+        entity_type=audit_service.ENTITY_SECURITY_EVENT,
+        entity_id=event.pk,
+        new_value={"omCode": event.code},
+    )
     return True
