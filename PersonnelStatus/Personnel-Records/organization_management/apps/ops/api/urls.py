@@ -2,6 +2,8 @@
 from rest_framework.routers import DefaultRouter
 
 from organization_management.apps.ops.api.views import (
+    OpsGvoSummariesViewSet,
+    OpsProtectedPersonsViewSet,
     CombatDutyShiftViewSet,
     OpsAuditLogViewSet,
     OpsDictionariesViewSet,
@@ -191,6 +193,16 @@ router.register(
 router.register(
     "feedback-requests", OpsFeedbackRequestsViewSet,
     basename="ops-feedback-requests",
+)
+
+# ГВО: каталог лиц и патчи сводок (спека 2026-08-20).
+router.register(
+    "protected-persons", OpsProtectedPersonsViewSet,
+    basename="ops-protected-persons",
+)
+router.register(
+    "gvo-summaries", OpsGvoSummariesViewSet,
+    basename="ops-gvo-summaries",
 )
 
 urlpatterns = router.urls
