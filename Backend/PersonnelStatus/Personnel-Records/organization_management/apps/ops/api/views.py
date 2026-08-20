@@ -2008,10 +2008,21 @@ class OpsGvoSummariesViewSet(RequirePermissionMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["post"], url_path="reset")
     def reset(self, request, pk=None):
-        if gvo_service.reset_patch(pk, actor=resolve_actor_id(request)) is None:
+        try:
+            record = gvo_service.reset_patch(
+                pk, request.data, actor=resolve_actor_id(request)
+            )
+        except ValidationError as exc:
+            raise DomainError(
+                "VALIDATION_ERROR",
+                400,
+                detail=exc.message_dict,
+                message="Проверьте раздел сброса.",
+            )
+        if record is None:
             raise DomainError(
                 "ENTITY_NOT_FOUND",
                 404,
                 message="Мероприятие с таким кодом не найдено.",
             )
-        return Response({"omCode": pk, "patch": None})
+        return Response(record)
