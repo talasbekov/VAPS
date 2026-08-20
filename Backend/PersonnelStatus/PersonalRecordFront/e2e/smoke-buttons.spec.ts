@@ -159,6 +159,9 @@ const ROUTES: readonly RouteSpec[] = [
   // «Сбор сил на ОМ» — разрез по ВСЕМ мероприятиям на сборе разом (не по
   // одному id), поэтому маршрут статический, как и command-center.
   { template: '/security-ops/forces' },
+  // «Расход и светофор» — контроль сдачи по всему дереву области; выбранное
+  // подразделение живёт в query (?division=), маршрут статический.
+  { template: '/security-ops/traffic' },
   { template: '/security-ops/events' },
   { template: '/security-ops/events/{eventId}', needs: ['eventId'] },
   // Реестр ГВО — та же сущность, что и ОМ: карточка сводки открывается по id

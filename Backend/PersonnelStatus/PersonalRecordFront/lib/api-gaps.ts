@@ -312,6 +312,16 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       return isOpsSecurityEventsLive() ? null : SECURITY_EVENTS_MOCK_BY_CONFIG;
     }
     if (
+      normalized === "/security-ops/traffic" ||
+      normalized.startsWith("/security-ops/traffic/")
+    ) {
+      // «Расход и светофор» целиком на живых ручках /api/operations/*
+      // (светофор, сдачи, блокировка завтрашнего дня, выпуски) — мок-слоя у
+      // него нет вовсе, режим доменов /api/ops/* его не касается, и общее
+      // правило «на бэке нет /api/ops/*» было бы неправдой. Как у профиля.
+      return null;
+    }
+    if (
       normalized === "/security-ops/ratings" ||
       normalized.startsWith("/security-ops/ratings/")
     ) {

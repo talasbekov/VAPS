@@ -16,6 +16,7 @@ import {
   // Иконки раздела «Охранные мероприятия» (Smart Josparlau, Этап M4) — только
   // добавка, существующая навигация не изменялась.
   CalendarDays,
+  CircleDot,
   ClipboardList,
   Landmark,
   LineChart,
@@ -189,6 +190,10 @@ export function Sidebar() {
         { name: "Календарь смен", href: "/security-ops/calendar", icon: CalendarDays },
         { name: "Боевые группы", href: "/security-ops/duties/combat", icon: Shield },
         { name: "Расход дня (ОМ)", href: "/security-ops/daily-expense", icon: CalendarDays },
+        // «Расход и светофор» — контроль сдачи по подразделениям; в прототипе
+        // пункт стоит в «Личном составе», но хостовая группа личного состава —
+        // это портальные страницы, а экран живёт на данных раздела ОМ.
+        { name: "Расход и светофор", href: "/security-ops/traffic", icon: CircleDot },
       ],
     },
     {
