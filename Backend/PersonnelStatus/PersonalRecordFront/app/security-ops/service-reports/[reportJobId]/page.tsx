@@ -7,8 +7,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
+import { PageHeader } from "@/components/page-header";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { FileSearch } from "lucide-react";
 import {
   useDownloadArtifact,
   useReportJob,
@@ -83,21 +83,18 @@ export default function ReportJobPage() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <FileSearch className="h-8 w-8 text-primary-ink" />
-          <div>
-            <h1 className="text-2xl font-bold">{data.reportTypeTitle}</h1>
-            <p className="text-muted-foreground">
-              <span>{job.reportJobId}</span> ·{" "}
-              <span>{data.isOwn ? "ваш запуск" : "запуск другого пользователя"}</span>
-            </p>
-            <Link
-              className="text-sm font-semibold text-primary-ink underline"
-              href="/security-ops/service-reports/history"
-            >
-              ← История отчётов
-            </Link>
-          </div>
+        <div>
+          <PageHeader
+            eyebrow="Оценка и отчётность"
+            title={data.reportTypeTitle}
+            description={`${job.reportJobId} · ${data.isOwn ? "ваш запуск" : "запуск другого пользователя"}`}
+          />
+          <Link
+            className="text-sm font-semibold text-primary-ink underline"
+            href="/security-ops/service-reports/history"
+          >
+            ← История отчётов
+          </Link>
         </div>
 
         <section
