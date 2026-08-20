@@ -334,6 +334,24 @@ export interface OpsEmployeeStatusRow {
   cancelled_reason: string;
 }
 
+/**
+ * Строка журнала раздела ОМ (`/api/operations/audit-logs/`, право
+ * `audit.view`). Плоский снимок доменного события — сервер не отдаёт ни
+ * имени актора, ни имени сущности, только идентификаторы; собирать из них
+ * читаемое имя на фронте значило бы придумывать данные, которых нет.
+ */
+export interface OpsAuditLogEntry {
+  id: number;
+  actor_user_id: string;
+  action: string;
+  entity_type: string;
+  entity_id: number;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  reason: string;
+  created_at: string;
+}
+
 export interface StrengthReportTotals {
   staff_total: number;
   list_total: number;
@@ -1621,6 +1639,16 @@ class ApiClient {
     return this.getDomainJson<MyEmployeeResponse>(
       "/api/operations/my-employee/"
     );
+  }
+
+  // Лента журнала для дашборда: последние N записей, свежие первыми (порядок
+  // задаёт сервер). Право `audit.view` — не у каждой роли, отказ прилетает
+  // тем же конвертом {error_code, message}, что и у остальных ручек раздела.
+  async getRecentAuditLogs(limit: number = 4): Promise<OpsAuditLogEntry[]> {
+    const page = await this.getDomainJson<{ results: OpsAuditLogEntry[] }>(
+      `/api/operations/audit-logs/?limit=${limit}`
+    );
+    return page.results;
   }
 
   // Справочники ядра. Именно ядра, а не `/api/dictionaries/`: карточка
