@@ -34,6 +34,14 @@ import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { STAGE_LABEL } from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { daySpanInclusive, ruDate, ruDaysLabel, ruWeekdayName } from "@/lib/ru-date";
+import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
+import {
+  UNSPECIFIED,
+  deriveGvoSummary,
+  gvoSenior,
+  gvoStaffCount,
+  mergeGvoSummary,
+} from "@/entities/gvo-summary";
 import { Fact } from "./Fact";
 import { FieldErrors, StageError } from "./StageErrors";
 
@@ -154,17 +162,30 @@ export function BulletinStage({ event }: { event: SecurityEvent }) {
  * называет причину, а не пустоту — иначе «адрес не заполнен» и «адрес не
  * показан» выглядели бы одинаково.
  *
- * Четыре факта прототипа система не хранит вовсе: охраняемые лица, старший
- * ГВО, число участников и число охраняемых лиц. У мероприятия нет ни ссылки
- * на охраняемое лицо, ни численности — рисовать под них ячейки «Не указано»
- * (как делает прототип) значило бы обещать поля, которых некому заполнить.
- * Вместо них — строка о том, где эти сведения действительно ведутся.
+ * Факты прототипа «охраняемые лица / старший ГВО / численность» с 21.08.2026
+ * ЖИВЫЕ: они выводятся из сводки ГВО (база из бюллетеня + патч ручных правок
+ * с бэка) — тем же слиянием, которым живёт реестр ГВО. Своего хранилища у
+ * мероприятия по-прежнему нет, и это правильно: две записи об одних лицах
+ * разошлись бы при первой правке. Пока сводка не заполнена, значения честно
+ * говорят «уточняется», а ссылка ведёт туда, где их заполняют.
  */
 function EventFacts({ event }: { event: SecurityEvent }) {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
   const objectId = event.objectId;
   const canViewObject = hasPermission("object.view") && objectId !== null;
   const objectQuery = useSecurityObject(canViewObject ? objectId : "");
+  // Сводка ГВО: та же сборка, что у реестра ГВО (база из бюллетеня + патч).
+  // Страница уже за гейтом event.view — отдельного права у сводки нет.
+  const patchesQuery = useGvoPatches();
+  const summary = mergeGvoSummary(
+    deriveGvoSummary(event),
+    patchesByCode(patchesQuery.data)[event.code]
+  );
+  const personsLabel =
+    summary.persons.length === 0
+      ? UNSPECIFIED
+      : summary.persons.map((person) => person.name).join(", ");
+  const staff = gvoStaffCount(summary);
 
   // Незагруженные права — это ЕЩЁ НЕ отказ: `hasPermission` до ответа
   // /my-permissions отвечает false, и без этой ветки блок успевал обвинить
@@ -205,17 +226,26 @@ function EventFacts({ event }: { event: SecurityEvent }) {
           value={event.ownerName.trim() === "" ? "не назначен" : event.ownerName}
         />
         <Fact label="Текущий статус" value={STAGE_LABEL[event.stage]} />
+        <Fact label="Охраняемые лица" value={personsLabel} />
+        <Fact
+          label="Количество охраняемых лиц"
+          value={summary.persons.length === 0 ? UNSPECIFIED : String(summary.persons.length)}
+        />
+        <Fact label="Старший ГВО" value={gvoSenior(summary)} />
+        <Fact
+          label="Численность ГВО"
+          value={staff === 0 ? UNSPECIFIED : String(staff)}
+        />
       </dl>
       <p className="mt-2 text-xs text-muted-foreground">
-        Охраняемых лиц, старшего ГВО и числа участников мероприятие не хранит —
-        эти сведения ведутся в{" "}
+        Охраняемые лица, старший ГВО и численность выводятся из{" "}
         <Link
           href={`/security-ops/gvo/${event.id}`}
           className="font-semibold text-primary-ink"
         >
-          сводке ГВО
+          сводки ГВО
         </Link>
-        .
+        {" "}— заполняются там же.
       </p>
     </section>
   );
