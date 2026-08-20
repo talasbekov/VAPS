@@ -265,3 +265,10 @@ Backend/PersonnelStatus/PersonalRecordFront/.ds-tailwind.css
 # playwright-cli (@playwright/cli) складывает снапшоты страниц в .playwright-cli/
 # относительно cwd — то есть каталог заводится в любой папке, откуда его позвали.
 .playwright-cli/
+
+# Obsidian vault: workspace.json переписывается от каждого клика по заметке (какие
+# панели открыты, позиция курсора) — это состояние конкретной машины, не документация.
+# Остальное в .obsidian/ (плагины, тема, настройки) отслеживается: одинаковый вид vault
+# на всех машинах. Пути к vault лежат в ~/.config/obsidian/, в репозиторий не входят.
+obsidian-vault/.obsidian/workspace.json
+obsidian-vault/.obsidian/workspace-mobile.json
