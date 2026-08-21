@@ -30,6 +30,7 @@ import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
 import { useStrengthReport } from "@/hooks/use-strength-report";
 import { DAILY_EMPLOYEES_PATH, STATUS_TYPE_OPTIONS } from "@/entities/daily-grid";
+import { LeadershipStrip } from "./LeadershipStrip";
 
 // Ярлык статуса — из ЕДИНСТВЕННОГО каталога раздела (STATUS_TYPE_OPTIONS),
 // свой словарь заводить нельзя. Цвет пилюли НАМЕРЕННО один на все статусы:
@@ -285,6 +286,12 @@ export function DailyExpenseBoard() {
           />
         </div>
       )}
+
+      {/* «Руководство департамента» — ПЕРВЫМ, над рядовыми управлениями,
+          раскрыт всегда (своя карточка, не строка в списке ниже). Своя дата —
+          та же `data.business_date`, что и у управлений: оба блока обязаны
+          говорить об одном дне. */}
+      {data && <LeadershipStrip businessDate={data.business_date} />}
 
       {data && (
         <div className="space-y-2">
