@@ -8,6 +8,7 @@ import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { EmployeeTable } from "@/entities/employee/ui/EmployeeTable";
 import { EmployeeProfile } from "@/entities/employee/ui/EmployeeProfile";
 import { AddEmployeeDialog } from "@/features/add-employee";
+import { DailyExpenseBoard } from "@/features/daily-expense";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
@@ -468,13 +469,21 @@ function EmployeesScreen() {
           description="Ежедневный расход департамента и сбор сил на мероприятия"
           actions={
             <div className="flex flex-wrap items-center gap-3">
-              {/* Здесь стояло «Всего сотрудников: {filteredEmployees.length}» —
-                  под подписью «всего» печаталось число ПОСЛЕ отбора, и любой
-                  фильтр менял «общую численность». Форма прототипа: сколько
-                  показано и из скольких. */}
-              <Badge variant="outline" className="text-sm">
-                Показано {filteredEmployees.length} из {stats.total}
-              </Badge>
+              {/* Счётчик и заведение сотрудника относятся к реестру «Сбор
+                  сил» — на вкладке «Ежедневный расход» ни фильтруемого
+                  списка, ни диалога заведения нет, и обе кнопки повисали бы
+                  над чужим экраном. */}
+              {view === "forces" && (
+                <>
+                  {/* Здесь стояло «Всего сотрудников: {filteredEmployees.length}» —
+                      под подписью «всего» печаталось число ПОСЛЕ отбора, и любой
+                      фильтр менял «общую численность». Форма прототипа: сколько
+                      показано и из скольких. */}
+                  <Badge variant="outline" className="text-sm">
+                    Показано {filteredEmployees.length} из {stats.total}
+                  </Badge>
+                </>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -486,13 +495,15 @@ function EmployeesScreen() {
                 />
                 Обновить
               </Button>
-              <Button
-                className="bg-blue-600 hover:bg-blue-700"
-                onClick={() => setIsAddDialogOpen(true)}
-              >
-                <UserPlus className="h-4 w-4 mr-2" />
-                Добавить сотрудника
-              </Button>
+              {view === "forces" && (
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700"
+                  onClick={() => setIsAddDialogOpen(true)}
+                >
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Добавить сотрудника
+                </Button>
+              )}
             </div>
           }
         />
@@ -530,11 +541,7 @@ function EmployeesScreen() {
           </button>
         </nav>
 
-        {view === "daily" && (
-          <Card>
-            <CardContent>Ежедневный расход — следующая задача плана</CardContent>
-          </Card>
-        )}
+        {view === "daily" && <DailyExpenseBoard />}
 
         {view === "forces" && (
         <>
