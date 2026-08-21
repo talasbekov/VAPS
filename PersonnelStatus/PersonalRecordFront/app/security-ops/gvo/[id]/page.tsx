@@ -34,6 +34,12 @@ import {
 } from "@/entities/gvo-summary";
 import type { GvoFlight, GvoSection } from "@/entities/gvo-summary";
 
+// Однострочная константа, а не текст прямо в JSX: e2e пинит её ДОСЛОВНО
+// (см. e2e/gvo-sections.spec.ts), а JSX схлопывает переносы строк по своим
+// правилам — рисковать переносами там, где важен точный текст, незачем.
+const PERSONS_REGISTRY_GAP_LINE =
+  "С реестром «Охраняемые лица» эти карточки не связаны — модель ГВО хранит только текст бюллетеня, без ссылки на запись каталога; появится бэк-этапом.";
+
 export default function GvoSummaryPage() {
   const params = useParams<{ id: string }>();
   const id = typeof params.id === "string" ? params.id : "";
@@ -98,7 +104,24 @@ export default function GvoSummaryPage() {
   return (
     <DashboardLayout>
       <div className="space-y-3">
-        {backLink}
+        <div className="flex flex-wrap items-center gap-2">
+          {backLink}
+          <span aria-hidden className="text-muted-foreground">
+            ·
+          </span>
+          {/* Обратный переход к своей карточке ОМ (Task 9): сводка не имеет
+              собственной записи — id сводки это id мероприятия (Task 8), и
+              ссылка назад ведёт на ТОТ ЖЕ id, с которого сводка открыта.
+              Код ОМ в текст ссылки не выносим: он и так дублируется бейджем
+              в шапке — второй раз тем же текстом «ловит» substring-пробы
+              других экранов (e2e/events-registry.spec.ts) в неоднозначность. */}
+          <Link
+            href={`/security-ops/events/${event.id}`}
+            className="text-[12px] font-semibold text-primary-ink"
+          >
+            К мероприятию →
+          </Link>
+        </div>
 
         {/* Шапка */}
         <Card>
@@ -145,6 +168,7 @@ export default function GvoSummaryPage() {
                   className="mt-1 h-9"
                   onClick={edit("head")}
                 >
+                  <Pencil className="mr-1 h-[13px] w-[13px]" aria-hidden />
                   Страна
                 </Button>
               )}
@@ -169,6 +193,9 @@ export default function GvoSummaryPage() {
             )
           }
         >
+          <p className="mb-3 text-xs text-muted-foreground">
+            {PERSONS_REGISTRY_GAP_LINE}
+          </p>
           {summary.persons.length === 0 ? (
             <EmptyBox text="Охраняемые лица не указаны в бюллетене" />
           ) : (
@@ -257,9 +284,14 @@ export default function GvoSummaryPage() {
             ).map(([key, value]) => (
               <div
                 key={key}
-                className="rounded-[8px] border border-[hsl(210_40%_94%)] bg-[hsl(210_40%_98%)] px-3 py-[10px]"
+                // bg-muted, а не хардкод hsl(210 40% 98%) из прототипа: тот
+                // не переопределён под тёмную тему, и текст значения (без
+                // явного цвета, значит text-foreground) на нём становился
+                // белым по белому — нечитаемо. bg-muted инвертируется темой,
+                // тон в светлой теме почти не отличим (96% против 98%).
+                className="rounded-[8px] border bg-muted px-3 py-[10px]"
               >
-                <p className="text-[10.5px] font-bold uppercase text-muted-foreground">
+                <p className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
                   {key}
                 </p>
                 <p className="text-[12.5px] font-semibold [text-wrap:pretty]">{value}</p>
@@ -314,7 +346,10 @@ export default function GvoSummaryPage() {
           <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(330px,1fr))]">
             {summary.groups.map((group, index) => (
               <div key={`${group.name}-${index}`} className="overflow-hidden rounded-[10px] border">
-                <div className="flex items-center gap-2 bg-[hsl(210_40%_98%)] px-3 py-2">
+                {/* bg-muted вместо хардкода прототипа: тот не переопределён
+                    под тёмную тему, и имя группы (без явного цвета) на нём
+                    было белым по белому. */}
+                <div className="flex items-center gap-2 bg-muted px-3 py-2">
                   <span className="text-[12.5px] font-bold">{group.name}</span>
                   <span className="inline-flex rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold">
                     {group.members.length > 0
@@ -397,7 +432,10 @@ export default function GvoSummaryPage() {
           <div className="grid gap-[11px] [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
             {summary.visits.map((visit, index) => (
               <div key={`${visit.day}-${index}`} className="overflow-hidden rounded-[10px] border">
-                <div className="flex items-baseline justify-between gap-2 bg-[hsl(210_40%_98%)] px-3 py-2">
+                {/* bg-muted вместо хардкода прототипа: тот не переопределён
+                    под тёмную тему, и дата дня (без явного цвета) на нём
+                    была белой по белому. */}
+                <div className="flex items-baseline justify-between gap-2 bg-muted px-3 py-2">
                   <span className="text-[12.5px] font-bold tabular-nums">{visit.day}</span>
                   <span className="text-[11px] text-muted-foreground">{visit.weekday}</span>
                 </div>

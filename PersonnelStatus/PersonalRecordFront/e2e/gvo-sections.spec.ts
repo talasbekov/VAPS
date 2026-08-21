@@ -16,6 +16,34 @@ import { expect, test, type Page } from '@playwright/test'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
+const API = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
+
+// Пин дословно совпадает с константой на экране (app/security-ops/gvo/[id]/page.tsx)
+// — проба ловит расхождение текста, а не только факт наличия какой-то строки.
+const PERSONS_REGISTRY_GAP_LINE =
+  'С реестром «Охраняемые лица» эти карточки не связаны — модель ГВО хранит только текст бюллетеня, без ссылки на запись каталога; появится бэк-этапом.'
+
+interface EventRow {
+  id: string
+  code: string
+}
+
+async function apiToken(): Promise<string> {
+  const res = await fetch(`${API}/api/token/`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+  })
+  return ((await res.json()) as { access: string }).access
+}
+
+async function registryEvents(): Promise<EventRow[]> {
+  const token = await apiToken()
+  const res = await fetch(`${API}/api/ops/security-events/?page_size=200`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return ((await res.json()) as { results: EventRow[] }).results
+}
 
 async function signIn(page: Page, username = 'admin', password = 'admin123'): Promise<void> {
   const api = page.context().request
@@ -144,3 +172,62 @@ test.describe(LIVE ? 'сводные данные ГВО' : 'сводные да
     await expect(page.getByRole('heading', { name: 'Реестр ГВО' })).toBeHidden()
   })
 })
+
+/**
+ * Обратный переход «сводка → своё ОМ» (Task 9). Своей записи у сводки нет —
+ * её id это id мероприятия (Task 8, entities/gvo-summary), поэтому ссылка
+ * назад обязана вести на карточку С ТЕМ ЖЕ id, с которого сводка открыта.
+ *
+ * Ассерт на URL один не ловит подмену «ссылка ведёт на ДРУГОЕ, но валидное
+ * ОМ» — форма адреса совпадёт, а запись под ней будет чужая. Поэтому после
+ * перехода дополнительно проверяется код мероприятия НА ЛАНДЕД-СТРАНИЦЕ —
+ * это и есть красная проба из отчёта (id захардкожен на «1» — он гарантированно
+ * существует на стенде и гарантированно НЕ совпадает с целью теста).
+ */
+test.describe(
+  LIVE ? 'сводка ГВО ↔ карточка ОМ' : 'сводка ГВО ↔ карточка ОМ (скип: нет SMOKE_LIVE=1)',
+  () => {
+    test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+
+    test('ссылка со сводки ведёт на карточку СВОЕГО ОМ', async ({ page }) => {
+      const rows = await registryEvents()
+      // id «1» зарезервирован под красную пробу отчёта — цель теста должна
+      // гарантированно от него отличаться.
+      const target = rows.find((r) => r.id !== '1') ?? rows[0]
+      expect(target, 'на стенде нет ни одного ОМ').toBeDefined()
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/gvo/${target!.id}/`)
+      await expect(page.getByRole('heading', { name: 'Сводные данные' })).toBeVisible({
+        timeout: 15_000,
+      })
+
+      const link = page.getByRole('main').getByRole('link', { name: /мероприятию/i })
+      await expect(link).toBeVisible()
+      await link.click()
+
+      await expect(page).toHaveURL(new RegExp(`/security-ops/events/${target!.id}/?$`))
+      // Landed-identity: код мероприятия на КАРТОЧКЕ ОМ, а не только форма URL.
+      // .first() — на этапе «Бюллетень» код мероприятия дублируется в фактах
+      // шага; первый в DOM — код-бейдж шапки карточки, оба варианта верны.
+      await expect(
+        page.getByRole('main').getByText(target!.code, { exact: true }).first(),
+      ).toBeVisible({ timeout: 15_000 })
+    })
+
+    test('сводка честно называет отсутствие связи с реестром лиц', async ({ page }) => {
+      const rows = await registryEvents()
+      const target = rows[0]
+      expect(target, 'на стенде нет ни одного ОМ').toBeDefined()
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/gvo/${target!.id}/`)
+      await expect(page.getByRole('heading', { name: 'Сводные данные' })).toBeVisible({
+        timeout: 15_000,
+      })
+      await expect(
+        page.getByText(PERSONS_REGISTRY_GAP_LINE, { exact: true }),
+      ).toBeVisible()
+    })
+  },
+)
