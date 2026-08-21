@@ -1,5 +1,6 @@
 /**
- * «Сбор сил на ОМ» (`/employees`) — ЖИВОЙ стенд.
+ * «Сбор сил на ОМ» (`/employees`) — ЖИВОЙ стенд. С 21.08 экран СЛИТ с
+ * реестром личного состава: реестр — первая вкладка, разрез сбора — соседние.
  *
  * Экран сводит три источника, и проба стережёт ровно стыки между ними:
  *
@@ -119,33 +120,47 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)
 
+    // Слитый экран открывается реестром; разрез сбора — за вкладкой с ТЕМ ЖЕ
+    // списком, суженным по статусу. Счётчик вкладки — люди из ручки статусов,
+    // найденные в реестре: под admin без фильтров сужать список нечему.
     const assignedTab = page.getByRole('tab', { name: /Участие в ОМ/ })
     await expect(assignedTab).toBeVisible({ timeout: 25_000 })
     await expect(assignedTab).toContainText(`(${assigned})`)
+    await assignedTab.click()
+    await expect(assignedTab).toHaveAttribute('aria-selected', 'true')
 
-    // Список разложен ПО УПРАВЛЕНИЯМ: имя подразделения приезжает из расхода,
-    // и хотя бы одно из его подразделений обязано быть названо на экране.
+    // Люди во вкладке — те же, что вернула ручка статусов, по числу строк:
+    // вкладки сбора переиспользуют таблицу реестра, своей разметки нет.
     const panel = page.getByRole('tabpanel')
+    const rows = panel.locator('tbody tr')
+    await expect(rows).toHaveCount(assigned)
+
+    // Список разложен ПО УПРАВЛЕНИЯМ: хотя бы одно подразделение расхода
+    // обязано быть названо на экране.
     const divisionNames = report.rows.map((row) => row.name)
     const shown = await panel.innerText()
     expect(
       divisionNames.some((name) => shown.includes(name)),
       `ни одно подразделение расхода не названо в списке: ${divisionNames.join(', ')}`,
     ).toBe(true)
-    // Люди во вкладке — те же, что вернула ручка статусов, по числу карточек.
-    const rows = panel.getByRole('listitem')
-    await expect(rows).toHaveCount(assigned)
 
     // Вторая вкладка — ОСТАЛЬНЫЕ: привлечённый не может стоять в обеих, иначе
-    // «осталось» и «отдано» описывали бы одних людей.
-    const assignedNames = (await rows.allInnerTexts()).map((text) => text.split('\n')[0])
+    // «осталось» и «отдано» описывали бы одних людей. ФИО берём из aria-label
+    // кнопки действий — единственного места в строке, где оно стоит целиком.
+    const assignedNames = await panel
+      .locator('button[aria-label^="Действия: "]')
+      .evaluateAll((buttons) =>
+        buttons.map((button) => (button.getAttribute('aria-label') ?? '').replace('Действия: ', '')),
+      )
+    expect(assignedNames.length, 'ФИО из вкладки не прочитаны — сравнивать нечего').toBe(assigned)
     const inServiceTab = page.getByRole('tab', { name: /В строю/ })
     await inServiceTab.click()
     // 🔴 Ждать ОБЯЗАТЕЛЬНО: без этого innerText читается с ещё не сменившейся
     // панели, и проба сравнивает список привлечённых сам с собой — она падала
     // именно так, показывая «человек в обеих вкладках» там, где его не было.
+    // Адрес вкладку больше не хранит (в URL живёт только отбор) — достаточно
+    // aria-selected: Radix меняет его и содержимое панели одним коммитом.
     await expect(inServiceTab).toHaveAttribute('aria-selected', 'true')
-    await expect(page).toHaveURL(/tab=in-service/)
     const inServiceText = await page.getByRole('tabpanel').innerText()
     for (const name of assignedNames) {
       expect(
@@ -209,10 +224,18 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
   test('реестр личного состава остался достижим', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}${SCREEN}`)
-    await page.getByRole('link', { name: 'Реестр личного состава' }).click()
-    await expect(page).toHaveURL(/\/employees\/registry/)
+    // Слияние 21.08: реестр больше не отдельный маршрут — он ПЕРВАЯ вкладка
+    // самого экрана, и открывается именно он, а не разрез сбора.
     await expect(page.getByRole('heading', { name: 'Управление персоналом' })).toBeVisible({
       timeout: 25_000,
     })
+    const tableTab = page.getByRole('tab', { name: 'Список сотрудников' })
+    await expect(tableTab).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tabpanel').locator('tbody tr').first()).toBeVisible({
+      timeout: 25_000,
+    })
+    // Старый адрес мёртв по-настоящему: живой значил бы, что реестр раздвоён.
+    const response = await page.goto(`${APP}/employees/registry/`)
+    expect(response?.status()).toBe(404)
   })
 })

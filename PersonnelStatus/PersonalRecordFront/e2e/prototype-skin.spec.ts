@@ -82,7 +82,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
 
   test('строки таблицы не полосатые', async ({ page }) => {
     await signIn(page)
-    await page.goto(`${APP}/employees/registry/`)
+    await page.goto(`${APP}/employees/`)
     await expect(page.getByRole('heading', { name: 'Управление персоналом' })).toBeVisible()
 
     const rows = page.locator('tbody tr')
@@ -99,7 +99,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
 
   test('бейдж — таблетка 11px', async ({ page }) => {
     await signIn(page)
-    await page.goto(`${APP}/employees/registry/`)
+    await page.goto(`${APP}/employees/`)
     await expect(page.getByRole('heading', { name: 'Управление персоналом' })).toBeVisible()
 
     const badge = page.locator('tbody [data-slot="badge"]').first()
@@ -578,7 +578,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   // 24px/800/tabular-nums) и подписи не обрезаются (scrollWidth <= clientWidth
   // с guard на пустое множество/clientWidth=0).
   for (const [route, heading] of [
-    ['/employees/registry/', 'Управление персоналом'],
+    ['/employees/', 'Управление персоналом'],
     ['/statuses/', 'Управление статусами'],
   ] as const) {
     test(`KPI-плитки на StatCard: ${route}`, async ({ page }) => {
@@ -624,7 +624,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   // правому краю И блока actions, И самой кнопки внутри — обе точки должны
   // остаться в пределах вьюпорта.
   for (const [route, buttonName] of [
-    ['/employees/registry/', 'Добавить сотрудника'],
+    ['/employees/', 'Добавить сотрудника'],
     ['/statuses/', 'Обновить'],
   ] as const) {
     test(`actions-слот PageHeader не обрезается на 375px: ${route}`, async ({ page }) => {
@@ -665,7 +665,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   // page.goto — goto делает полную навигацию, которая эту утечку не ловит:
   // js-чанк /dashboard/ просто не грузится вовсе, и раз внесённые правила в
   // документе нечему было оставить.
-  test('переход с /dashboard кликом не красит таблицу реестра чужим CSS', async ({ page }) => {
+  test('переход с /dashboard кликом не красит таблицу /employees чужим CSS', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}/dashboard/`)
     // Ждём, что доска подразделений (носитель org-board.styles.css) реально
@@ -673,13 +673,8 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     await expect(page.locator('table').first()).toBeVisible()
 
     // Путь ДВУМЯ клиентскими переходами: пункт меню ведёт на «Сбор сил на ОМ»
-    // (таблиц там нет), а реестр кадров — за ссылкой с него. Полная навигация
-    // сюда не годится по той же причине, что и выше: чанк /dashboard/ тогда
-    // не грузится, и оставлять правила в документе нечему.
     await page.getByRole('link', { name: 'Сбор сил на ОМ' }).click()
     await expect(page).toHaveURL(new RegExp('/employees/?$'))
-    await page.getByRole('link', { name: 'Реестр личного состава' }).click()
-    await expect(page).toHaveURL(/\/employees\/registry/)
 
     const cell = page.locator('table tbody td').first()
     await expect(cell).toBeVisible()
@@ -724,8 +719,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   const HEADER_ROUTES: Array<{ path: string; title: string; eyebrow: string }> = [
     // Легаси-портал
     { path: '/dashboard/', title: 'Обзор', eyebrow: 'Личный состав' },
-    { path: '/employees/', title: 'Сбор сил на ОМ', eyebrow: 'Охранные мероприятия' },
-    { path: '/employees/registry/', title: 'Управление персоналом', eyebrow: 'Личный состав' },
+    { path: '/employees/', title: 'Управление персоналом', eyebrow: 'Личный состав' },
     { path: '/organization/', title: 'Структура организации', eyebrow: 'Личный состав' },
     { path: '/statuses/', title: 'Управление статусами', eyebrow: 'Личный состав' },
     { path: '/reports/', title: 'Отчеты', eyebrow: 'Официальные документы' },
