@@ -106,8 +106,37 @@ function SecurityEventScreen() {
               лейбл сверху дублировал бы его. */}
           <PageHeader
             title={event.title}
-            description={`${event.businessDate} · ${event.objectName} · ответственный: ${event.ownerName}`}
+            description={`${event.businessDate} · ответственный: ${event.ownerName}`}
           />
+          {/* Карточка ОМ — хаб: объект и сводка ГВО кликабельны отсюда на
+              ЛЮБОМ этапе, а не только внутри блока «Сведения об ОМ»
+              бюллетеня. Сводка ГВО адресуется id самого мероприятия — своей
+              записи у неё нет (см. entities/gvo-summary), поэтому ссылка
+              жива всегда. Объект — только если он у ОМ есть: ссылка на
+              null не бывает. */}
+          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs">
+            {event.objectId !== null ? (
+              <Link
+                href={`/security-ops/objects/${event.objectId}`}
+                className="font-semibold text-primary-ink"
+              >
+                Объект: {event.objectName} →
+              </Link>
+            ) : (
+              <span className="text-muted-foreground">
+                Объект: {event.objectName}
+              </span>
+            )}
+            <span aria-hidden className="text-muted-foreground">
+              ·
+            </span>
+            <Link
+              href={`/security-ops/gvo/${event.id}`}
+              className="font-semibold text-primary-ink"
+            >
+              Сводка ГВО →
+            </Link>
+          </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {event.passportBinding !== null
               ? `Паспорт: версия ${event.passportBinding.versionNumber} (действует с ${event.passportBinding.effectiveFrom})`
