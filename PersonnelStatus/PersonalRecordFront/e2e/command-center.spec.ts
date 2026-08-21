@@ -123,6 +123,49 @@ function countSubmission(tree: TrafficLightTree): {
   return { submitted, late, missing, leaves }
 }
 
+/**
+ * Синтетическое дерево светофора — перехват `page.route`, СТЕНД НЕ
+ * МУТИРУЕТСЯ. Живой стенд сегодня (2026-08-21, до контрольного часа)
+ * вырожден: все листья RED, `late=false` — ветки «Сдано» и «Просрочено»
+ * (весь `if (GREEN||YELLOW)` в `classify()`) ни разу не исполнились на
+ * реальном ответе, а `UNKNOWN` («Не сдано» из-за сломанного справочника,
+ * не из-за красного) — вывод из чтения бэкового `_PRECEDENCE`, а не
+ * наблюдаемый факт. Эта фикстура закрывает обе дыры разом.
+ *
+ * Дерево НАРОЧНО плоское (все узлы без `parent_id` и без детей): каждый
+ * узел одновременно и лист (участвует в счётчиках), и верхний уровень
+ * (участвует в списке отстающих) — так проверка счёта и проверка списка не
+ * зависят одна от другой через вложенность.
+ *
+ * Узлов «Сдано» — ДВА, узел «Просрочено» — ОДИН (2 ≠ 1) НАМЕРЕННО: красная
+ * проба 21.08 нашла, что при 1-к-1 перестановка веток «Сдано»/«Просрочено»
+ * меняет, КАКОЙ узел в какой корзине, но не меняет ИТОГОВЫЕ числа корзин —
+ * счётчик-ассерт такую порчу не ловит. При 2-к-1 перестановка обязана
+ * изменить сумму (стало бы 1 и 2) — тест ловит именно порчу счёта, а не
+ * только порчу состава.
+ */
+const SYNTHETIC_TREE: TrafficLightTree = {
+  business_date: '2026-01-15',
+  // НАРОЧНО не 17:00:00 живого стенда — доказывает, что подпись контрольного
+  // часа на экране берётся из ответа, а не зашита строкой.
+  control_hour: '09:30:00',
+  nodes: [
+    { division_id: 9001, name: 'Синт. департамент зелёный', parent_id: null, status: 'GREEN', late: false },
+    { division_id: 9006, name: 'Синт. департамент зелёный-2', parent_id: null, status: 'GREEN', late: false },
+    { division_id: 9002, name: 'Синт. департамент жёлтый просроченный', parent_id: null, status: 'YELLOW', late: true },
+    { division_id: 9003, name: 'Синт. департамент красный', parent_id: null, status: 'RED', late: false },
+    { division_id: 9004, name: 'Синт. департамент сломанный', parent_id: null, status: 'UNKNOWN', late: false },
+    { division_id: 9005, name: 'Синт. департамент нейтральный', parent_id: null, status: 'NEUTRAL', late: false },
+  ],
+}
+
+async function mockTrafficLightTree(page: Page, tree: TrafficLightTree): Promise<void> {
+  await page.route(
+    (url) => url.pathname.includes('/api/operations/traffic-light/tree/'),
+    (route) => route.fulfill({ json: tree }),
+  )
+}
+
 async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
@@ -275,6 +318,76 @@ test.describe(LIVE ? 'командный центр' : 'командный це�
         exact: true,
       }),
     ).toBeVisible()
+  })
+
+  test('«Расход дня» на синтетическом дереве: все статусы, late и UNKNOWN — наблюдаемый факт', async ({
+    page,
+  }) => {
+    // Числа считаются ТОЙ ЖЕ функцией, что и в живом тесте выше — не
+    // хардкод. Разница только в источнике тела: здесь это перехваченная
+    // фикстура, а не живой ответ бэка.
+    const { submitted, late, missing, leaves } = countSubmission(SYNTHETIC_TREE)
+    expect(leaves.length, 'фикстура должна быть плоской (все узлы — листья)').toBe(
+      SYNTHETIC_TREE.nodes.length,
+    )
+    // НЕвырожденность: в отличие от живого стенда сегодня, три разных
+    // статуса дают три разных ненулевых счётчика — и «Сдано» ≠ «Просрочено»
+    // числом (2 ≠ 1), см. докстринг фикстуры про красную пробу.
+    expect(submitted, '2 узла GREEN(late:false) — «Сдано»').toBe(2)
+    expect(late, '1 узел YELLOW(late:true) — «Просрочено»').toBe(1)
+    // «Не сдано» = RED(1) + UNKNOWN(1) = 2: если бы UNKNOWN не учитывался
+    // (вывод из бэкового _PRECEDENCE перестал бы быть фактом), здесь было
+    // бы 1, и ассерт ниже (сравнение с рендером) поймал бы расхождение.
+    expect(missing, 'RED(1) + UNKNOWN(1) — обе ветки «Не сдано»').toBe(2)
+
+    await signIn(page)
+    await mockTrafficLightTree(page, SYNTHETIC_TREE)
+    await page.goto(`${APP}/security-ops/command-center/`)
+
+    const card = page.getByRole('region', { name: 'Расход дня', exact: true })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+
+    await expect(
+      card.locator('[data-metric="submitted"] [data-slot="stat-value"]'),
+    ).toHaveText(String(submitted))
+    await expect(
+      card.locator('[data-metric="missing"] [data-slot="stat-value"]'),
+    ).toHaveText(String(missing))
+    await expect(
+      card.locator('[data-metric="late"] [data-slot="stat-value"]'),
+    ).toHaveText(String(late))
+
+    // Контрольный час — взят из подменённого тела (09:30), а не из живого
+    // стенда (17:00) и не зашит строкой в компоненте.
+    await expect(
+      card.getByText('Контрольный час 09:30 — сдача после него считается опозданием.', {
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // Отстающие верхнего уровня — РОВНО красный и жёлтый, ни зелёного, ни
+    // сломанного (UNKNOWN в список не входит по брифу — только red/yellow),
+    // ни нейтрального: список не должен подтащить сдавших.
+    const laggingRows = card.locator('ul li')
+    await expect(laggingRows).toHaveCount(2)
+
+    const yellowRow = laggingRows.nth(0)
+    await expect(yellowRow.locator('span').nth(0)).toHaveText('Синт. департамент жёлтый просроченный')
+    await expect(yellowRow.locator('span').nth(1)).toHaveText('сдан, данные разошлись')
+    await expect(yellowRow.locator('span').nth(2)).toHaveText('с опозданием')
+
+    const redRow = laggingRows.nth(1)
+    await expect(redRow.locator('span').nth(0)).toHaveText('Синт. департамент красный')
+    await expect(redRow.locator('span').nth(1)).toHaveText('не сдан')
+    await expect(redRow.locator('span')).toHaveCount(2) // нет тега «с опозданием» — late: false
+
+    // Явное отрицание: сдавший, сломанный и нейтральный узлы в список не
+    // попали (двух строк выше уже достаточно, но проверка по имени —
+    // прямое доказательство, а не вывод из count()).
+    await expect(card.getByText('Синт. департамент зелёный', { exact: true })).toHaveCount(0)
+    await expect(card.getByText('Синт. департамент зелёный-2', { exact: true })).toHaveCount(0)
+    await expect(card.getByText('Синт. департамент сломанный', { exact: true })).toHaveCount(0)
+    await expect(card.getByText('Синт. департамент нейтральный', { exact: true })).toHaveCount(0)
   })
 })
 
