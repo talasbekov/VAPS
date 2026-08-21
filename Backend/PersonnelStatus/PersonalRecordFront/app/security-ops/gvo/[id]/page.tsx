@@ -201,9 +201,6 @@ export default function GvoSummaryPage() {
             )
           }
         >
-          <p className="mb-3 text-xs text-muted-foreground">
-            {PERSONS_REGISTRY_GAP_LINE}
-          </p>
           {summary.persons.length === 0 ? (
             <EmptyBox text="Охраняемые лица не указаны в бюллетене" />
           ) : (
@@ -256,6 +253,13 @@ export default function GvoSummaryPage() {
               ))}
             </div>
           )}
+          {/* Честная подпись — ПОД списком, как у «Руководства департамента»
+              и у вкладок паспорта объекта (ревью ветки 22.08: здесь она одна
+              стояла НАД содержимым и читалась как заголовок раздела, а не как
+              оговорка о нём). */}
+          <p className="mt-3 text-xs text-muted-foreground">
+            {PERSONS_REGISTRY_GAP_LINE}
+          </p>
         </Section>
 
         {/* Борта */}
