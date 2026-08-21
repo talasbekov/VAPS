@@ -83,7 +83,11 @@ export default function GvoRegistryPage() {
         />
 
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="inline-flex gap-[3px] rounded-[9px] bg-[hsl(210_40%_93%)] p-[3px]">
+          {/* bg-muted вместо хардкода hsl(210 40% 93%) (Task 9, fix round 1):
+              тот же баг-класс, что у трёх карточек сводки — не переопределён
+              под тёмную тему. Неактивная вкладка использует text-muted-foreground
+              (тоже themed), контраст деградировал, но не исчезал — Minor. */}
+          <div className="inline-flex gap-[3px] rounded-[9px] bg-muted p-[3px]">
             {(
               [
                 ["mine", "Мои"],
