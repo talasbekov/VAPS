@@ -33,6 +33,13 @@ import type { SecurityEvent } from "@/entities/security-event";
 // с фильтром — фильтровать по охраняемому лицу бэк не умеет.
 const PAGE_SIZE = 200;
 
+// Однострочная константа, а не текст прямо в JSX (тот же приём, что и у
+// PERSONS_REGISTRY_GAP_LINE на карточке ГВО, entities/gvo-summary): e2e пинит
+// её ДОСЛОВНО (см. e2e/protected-persons.spec.ts), а JSX схлопывает переносы
+// строк по своим правилам.
+const EVENTS_LINK_GAP_LINE =
+  "связь по совпадению имени в сводках ГВО; прямой ссылки в модели нет (бэк-этап)";
+
 type Disclosure = { personId: string; kind: "events" | "objects" } | null;
 
 export default function ProtectedPersonsPage() {
@@ -154,9 +161,19 @@ function PersonCard({
   onDisclose: (kind: "events" | "objects") => void;
 }) {
   return (
-    <article className="rounded-[14px] border bg-gradient-to-br from-white from-55% to-primary/[0.06] p-5 shadow-[0_1px_2px_rgba(16,24,40,.04)]">
+    /* from-card, а не хардкод from-white из прототипа: тот же приём, что
+       profile/page.tsx уже использует (bg-gradient-to-br from-card via-card
+       to-primary/10) — токен инвертируется под тёмную тему (в тёмной теме
+       --card тон темнее полотна), а from-white оставался белым патчем на
+       тёмном фоне (Task 10, дельта-скрин). В светлой теме визуально не
+       меняется: --card в светлой теме = 0 0% 100%, то есть тот же белый. */
+    <article className="rounded-[14px] border bg-gradient-to-br from-card from-55% to-primary/[0.06] px-[22px] py-5 shadow-[0_1px_2px_rgba(16,24,40,.04)]">
       <div className="flex flex-wrap items-center gap-[22px]">
-        <div className="flex h-[104px] w-[104px] shrink-0 items-center justify-center rounded-[16px] bg-[hsl(210_40%_96.1%)] text-[12px] text-muted-foreground shadow-[0_10px_24px_hsl(221.2_83.2%_53.3%_/_.15)]">
+        {/* bg-muted, а не хардкод hsl(210 40% 96.1%) из прототипа — тот же
+            баг-класс, что Task 9 нашла на карточке ГВО (плашка страны, фото
+            ОЛ): без override под тёмную тему текст (text-muted-foreground,
+            в тёмной теме почти белый) читался почти белым по почти белому. */}
+        <div className="flex h-[104px] w-[104px] shrink-0 items-center justify-center rounded-[16px] bg-muted text-[12px] text-muted-foreground shadow-[0_10px_24px_hsl(221.2_83.2%_53.3%_/_.15)]">
           Фото
         </div>
         <div className="min-w-56 flex-1">
@@ -164,7 +181,11 @@ function PersonCard({
             <h2 className="text-[19px] font-bold tracking-[-0.01em]">
               {person.name}
             </h2>
-            <span className="rounded-[20px] bg-secondary px-[10px] py-1 text-[10.5px] font-semibold text-[hsl(215.4_16.3%_36.9%)]">
+            {/* text-secondary-foreground, а не хардкод hsl(215.4 16.3% 36.9%)
+                из прототипа — тот же приём, что profile/page.tsx уже
+                использует для bg-secondary-плашек: токен инвертируется под
+                тёмную тему, хардкод — нет. */}
+            <span className="rounded-[20px] bg-secondary px-[10px] py-1 text-[10.5px] font-semibold text-secondary-foreground">
               Позывной «{person.callsign}»
             </span>
           </div>
@@ -225,31 +246,51 @@ function PersonLinks({
       <p className="text-[12.5px] text-muted-foreground">Загрузка реестра ОМ…</p>
     );
   }
+  // Блок «Мероприятия с участием» — только у панели событий: подпись честно
+  // называет, ЧТО именно за связь показана, и остаётся на месте и когда
+  // совпадений нет (пустое состояние ниже), и когда они есть — блок никогда
+  // не бывает голым.
+  const heading = kind === "events" && (
+    <div className="mb-2">
+      <h3 className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+        Мероприятия с участием
+      </h3>
+      <p className="mt-1 text-[11.5px] text-muted-foreground">
+        {EVENTS_LINK_GAP_LINE}
+      </p>
+    </div>
+  );
   if (events.length === 0) {
     return (
-      <p className="text-[12.5px] text-muted-foreground">
-        {person.name} не назван ни в одной сводке ГВО — связанных мероприятий и
-        объектов нет.
-      </p>
+      <>
+        {heading}
+        <p className="text-[12.5px] text-muted-foreground">
+          {person.name} не назван ни в одной сводке ГВО — связанных мероприятий и
+          объектов нет.
+        </p>
+      </>
     );
   }
   if (kind === "events") {
     return (
-      <ul className="space-y-1">
-        {events.map((event) => (
-          <li key={event.id} className="text-[12.5px]">
-            <Link
-              href={`/security-ops/gvo/${event.id}`}
-              className="font-semibold text-primary-ink"
-            >
-              {event.code}
-            </Link>{" "}
-            <span className="text-muted-foreground">
-              {event.title} · {event.businessDate}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <>
+        {heading}
+        <ul className="space-y-1">
+          {events.map((event) => (
+            <li key={event.id} className="text-[12.5px]">
+              <Link
+                href={`/security-ops/events/${event.id}`}
+                className="font-semibold text-primary-ink"
+              >
+                {event.code}
+              </Link>{" "}
+              <span className="text-muted-foreground">
+                {event.title} · {event.businessDate}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </>
     );
   }
   // Объект у ОМ один — снимок имени; уникализируем, чтобы повторы визитов на
