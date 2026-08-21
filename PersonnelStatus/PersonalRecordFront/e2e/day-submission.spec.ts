@@ -11,25 +11,27 @@
  * бейдж в шапке КАЖДОГО управления, доступная кнопка ищется ВНУТРИ группы
  * конкретного управления (`role="group"` по имени из расхода).
  *
- * Вторая находка координатора (21.08, после первой сдачи): сводка борда
- * читалась ОДНИМ агрегатным GET под СВОИМ ключом кэша
- * (`daily-expense-board`) — недостижимым для `invalidateQueries`, которую
- * панель САМА зовёт на submit/amend (ключ `["ops-daily","day-submission",
- * divisionId,businessDate]`, per-division). Успешная сдача в шапке НЕ
- * двигала сводку — видимое пользователю противоречие в пределах одного
- * кадра. Почтено: сводка переведена на N per-division запросов ПОД ТЕМ ЖЕ
- * ключом, что уже заводит `DivisionGroup` (react-query дедуплицирует — одна
- * запись кэша на обоих потребителей), поэтому инвалидация панели освежает
- * ОБЕИХ. Проба ниже проверяет это прямо: после успешной (перехваченной)
- * сдачи сводка обязана СМЕНИТЬСЯ.
+ * Третья находка ревью (21.08, после второй фикс-секции): панель сдачи
+ * заводит СВОЙ внутренний запрос истории версий на каждое монтирование
+ * (`historyQuery`, БЕЗ гейта на `open`) — держать её смонтированной у КАЖДОЙ
+ * группы сразу означало бы N безусловных запросов при каждой загрузке
+ * экрана, что прямо противоречит правилу ленивости, которое сам файл
+ * объявляет в шапке («шесть управлений … иначе означали бы шесть запросов…»).
+ * Починено: панель монтируется ТОЛЬКО при раскрытии строки; в свёрнутом виде
+ * шапка несёт лёгкий БЕЗ-интерактивный бейдж («День не сдан» / «Сдан · vN»),
+ * собранный из ОДНОГО списочного запроса борда (`business_date`-фильтр, без
+ * `division_id`) — того же, что кормит сводку сверху. Спека проверяет ОБА
+ * состояния бейджа (до и после сдачи) и то, что сводка/бейдж синхронно
+ * реагируют на сдачу БЕЗ дополнительного действия пользователя.
  *
  * Проба НЕ мутирует стенд: POST сдачи перехвачен `page.route` и отвечает
  * подменённым, но валидным по форме конвертом (`DaySubmission`, 9 полей) —
- * реальной строки в БД не появляется. Последующий GET состояния дня ИМЕННО
- * этого управления (тот, что уходит по инвалидации панели) тоже перехвачен —
- * без этого пришлось бы ждать реальной записи в БД, чтобы увидеть смену
- * сводки. Остальные живые GET (история версий, другие управления) проба не
- * трогает — читать стенд можно, менять нельзя.
+ * реальной строки в БД не появляется. После успешного POST перехвачен ТОЛЬКО
+ * повторный списочный GET борда (`business_date`-фильтр, без `division_id`)
+ * — он и есть тот запрос, который борд перечитывает по сигналу инвалидации
+ * панели; отвечает списком с добавленной (фейковой) записью, имитируя то,
+ * что легло бы в БД. Любой другой GET (история версий конкретного
+ * управления, другие управления) идёт НАЖИВУЮ.
  *
  * 🔴 Service worker MSW блокируется: без этого `page.route` не перехватывает
  * запросы приложения.
@@ -85,6 +87,16 @@ function nameRegExp(name: string): RegExp {
   return new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 }
 
+// Тот же алгоритм, что `formatIsoDate` в `shared/lib/date.ts` («ГГГГ-ММ-ДД» →
+// «ДД.ММ.ГГГГ»), но БЕЗ `toLocaleDateString`: движок теста (Node) и движок
+// страницы (Chromium) не обязаны иметь идентичные ICU-данные, а точный текст
+// (Minor-находка ревью: не подстрочный `toContainText`) требует байт-в-байт
+// совпадения.
+function formatIsoDateRu(iso: string): string {
+  const [year, month, day] = iso.split('-')
+  return `${day}.${month}.${year}`
+}
+
 function fakeSubmission(divisionId: string, businessDate: string) {
   return {
     id: 999999,
@@ -102,12 +114,13 @@ function fakeSubmission(divisionId: string, businessDate: string) {
 /**
  * Перехват сдачи ОДНОГО целевого управления:
  * - POST → тело складывается в `captured`, ответ — правдоподобный фейк.
- * - GET `?division_id=<target>&business_date=<date>` (ключ, который панель
- *   инвалидирует на success, и та же строка запроса, что заводит
- *   `DivisionGroup`/сводка борда) — ДО успешной сдачи проходит НАЖИВУЮ
- *   (честный «0 сдач»), ПОСЛЕ — отвечает списком с добавленной записью:
- *   имитирует то, что реально легло бы в БД, не трогая её.
- * - Любой другой GET (история версий, другие управления) — НАЖИВУЮ всегда.
+ * - GET БЕЗ `division_id`, С `business_date=<дата>` (списочный запрос
+ *   борда — тот, что борд перечитывает по сигналу инвалидации панели) — ДО
+ *   успешной сдачи проходит НАЖИВУЮ (честный список без цели), ПОСЛЕ —
+ *   отвечает списком с добавленной записью для целевого управления.
+ * - Любой другой GET (история версий конкретного управления — свой
+ *   внутренний запрос панели, БЕЗ `business_date`, с `division_id`; другие
+ *   управления) — НАЖИВУЮ всегда.
  */
 async function interceptSubmit(
   page: Page,
@@ -128,10 +141,10 @@ async function interceptSubmit(
         return
       }
       const requestUrl = new URL(request.url())
-      const isTargetQuery =
-        requestUrl.searchParams.get('division_id') === targetDivisionId &&
-        requestUrl.searchParams.get('business_date') === businessDate
-      if (submitted && isTargetQuery) {
+      const isBoardListQuery =
+        requestUrl.searchParams.get('business_date') === businessDate &&
+        requestUrl.searchParams.get('division_id') === null
+      if (submitted && isBoardListQuery) {
         await route.fulfill({
           status: 200,
           json: {
@@ -153,7 +166,7 @@ test.use({ serviceWorkers: 'block' })
 test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет SMOKE_LIVE=1)', () => {
   test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
 
-  test('кнопка «Сдать день» видна внутри группы своего управления, POST и сводка борда сходятся с живым расходом', async ({
+  test('бейдж/кнопка сдачи — внутри группы своего управления, ленивая панель, сводка синхронна с сдачей', async ({
     page,
   }) => {
     const token = await apiToken()
@@ -176,6 +189,9 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     const target = report.rows.find((row) => !submittedIdsBefore.has(String(row.division_id)))
     expect(target, 'все управления уже сданы на сегодня — пробе нечем проверить кнопку').toBeDefined()
     const targetDivisionId = String(target!.division_id)
+    const notSubmittedNamesBefore = report.rows
+      .filter((row) => !submittedIdsBefore.has(String(row.division_id)))
+      .map((row) => row.name)
 
     const captured: { body: DaySubmissionBody | null } = { body: null }
     await interceptSubmit(page, captured, targetDivisionId, report.business_date)
@@ -185,20 +201,30 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     const board = page.getByRole('region', { name: 'Ежедневный расход' })
     await expect(board).toBeVisible({ timeout: 25_000 })
 
-    // Сводка сверху — «Сдано N из M управлений» — ДО события, N/M РАЗДЕЛЬНО
-    // из живых ответов (расход даёт M, фильтр `daily-submissions` даёт N).
-    // Гвард вырождения (N === M): тогда строки «Не сдали» бы не было.
+    // Сводка сверху — ТОЧНЫЙ текст (не подстрочный toContainText — Minor-
+    // находка ревью), N/M/дата из живых ответов, не хардкод.
     const summary = board.getByRole('group', { name: 'Сводка сдачи дня' })
-    const beforeText = `Сдано ${submittedIdsBefore.size} из ${report.rows.length} управлений на`
-    await expect(summary).toContainText(beforeText)
-    if (submittedIdsBefore.size < report.rows.length) {
-      await expect(summary).toContainText('Не сдали:')
-      await expect(summary).toContainText(target!.name)
+    const summaryHeadline = summary.locator('p').first()
+    await expect(summaryHeadline).toHaveText(
+      `Сдано ${submittedIdsBefore.size} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
+    )
+    if (notSubmittedNamesBefore.length > 0) {
+      await expect(summary.locator('p').nth(1)).toHaveText(
+        `Не сдали: ${notSubmittedNamesBefore.join(', ')}`,
+      )
+    } else {
+      await expect(summary.locator('p')).toHaveCount(1)
     }
 
-    // Кнопка — ВНУТРИ группы ИМЕННО этого управления (`role="group"` по
-    // имени), не где-то ещё на экране (у соседних управлений своя кнопка).
+    // Группа ИМЕННО этого управления — бейдж СВЁРНУТОЙ шапки: «День не
+    // сдан», без запроса и без интерактивности (панель ещё не смонтирована —
+    // требование A.3 держится ленивостью, не наоборот).
     const group = board.getByRole('group', { name: nameRegExp(target!.name) })
+    await expect(group.getByText('День не сдан', { exact: true })).toBeVisible()
+    await expect(group.getByRole('button', { name: 'Сдать день' })).toHaveCount(0)
+
+    // Раскрытие строки — ТОЛЬКО теперь монтируется интерактивная панель.
+    await group.getByRole('button', { name: nameRegExp(target!.name) }).click()
     const submitButton = group.getByRole('button', { name: 'Сдать день' })
     await expect(submitButton).toBeVisible()
     await submitButton.click()
@@ -210,19 +236,28 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
     expect(captured.body?.business_date).toBe(report.business_date)
     expect(captured.body?.division_id).toBe(targetDivisionId)
 
-    // UI дошёл до конца по подменённому ответу, и бейдж появился ИМЕННО в
-    // группе этого управления.
+    // UI дошёл до конца по подменённому ответу — бейдж «День сдан» появился
+    // ИМЕННО в группе этого управления (собственное состояние панели, без
+    // ожидания рефетча).
     await expect(group.getByText(/День сдан/)).toBeVisible()
 
-    // Сводка ОБЯЗАНА смениться: N выросло ровно на единицу против
-    // дособытийного значения (не свой счёт — та же формула, что и «до»).
-    const afterText = `Сдано ${submittedIdsBefore.size + 1} из ${report.rows.length} управлений на`
-    await expect(summary).toContainText(afterText)
-    if (submittedIdsBefore.size + 1 === report.rows.length) {
-      // Вырождение: все управления сданы — строки «Не сдали» больше нет.
-      await expect(summary).not.toContainText('Не сдали:')
+    // Сводка ОБЯЗАНА смениться: N выросло ровно на единицу, целевое
+    // управление ушло из списка несдавших — точный текст, не хардкод.
+    await expect(summaryHeadline).toHaveText(
+      `Сдано ${submittedIdsBefore.size + 1} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
+    )
+    const notSubmittedNamesAfter = notSubmittedNamesBefore.filter((name) => name !== target!.name)
+    if (notSubmittedNamesAfter.length > 0) {
+      await expect(summary.locator('p').nth(1)).toHaveText(
+        `Не сдали: ${notSubmittedNamesAfter.join(', ')}`,
+      )
     } else {
-      await expect(summary).not.toContainText(target!.name)
+      await expect(summary.locator('p')).toHaveCount(1)
     }
+
+    // Схлопнули строку обратно — свёрнутый бейдж ТОЖЕ синхронен (питается тем
+    // же обновлённым списочным ответом борда, без своего запроса).
+    await group.getByRole('button', { name: nameRegExp(target!.name) }).click()
+    await expect(group.getByText('Сдан · v1', { exact: true })).toBeVisible()
   })
 })
