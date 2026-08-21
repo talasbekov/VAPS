@@ -62,7 +62,7 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
     page,
   }) => {
     await signIn(page, 'admin', 'admin123')
-    await page.goto('/employees/registry')
+    await page.goto('/employees')
     await hydrated(page)
 
     await page.getByRole('button', { name: 'Добавить сотрудника' }).first().click()
