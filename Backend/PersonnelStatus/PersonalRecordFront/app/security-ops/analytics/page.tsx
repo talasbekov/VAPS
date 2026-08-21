@@ -53,7 +53,7 @@ import type {
 import { apiClient } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check } from "lucide-react";
+import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
@@ -1495,10 +1495,20 @@ function SubmissionDriftDetails({ divisionId }: { divisionId: number }) {
 }
 
 /** «17:00:00» → «17:00». Секунды у порога не значат ничего: сравнение идёт по
- * времени суток, и хвост нулей в подписи только шумит. Нечитаемое значение
- * возвращается как есть — выдумывать за сервер нечего. */
-function formatControlHour(raw: string): string {
-  return /^\d{2}:\d{2}/.test(raw) ? raw.slice(0, 5) : raw;
+ * времени суток, и хвост нулей в подписи только шумит.
+ *
+ * `null` — значение НЕВАЛИДНО (пусто, не строка формата HH:MM…) — тогда
+ * вызывающий код печатает честную фразу («Контрольный час не задан.») вместо
+ * эха сырого значения: полуоборванная фраза «Контрольный час  — сдача…»
+ * читалась бы как баг компонента, а не как честное «сервер не прислал час».
+ * Порт ТОЙ ЖЕ функции из `ExpenseTrafficCard.formatControlHour`
+ * (`features/command-expense/ui/ExpenseTrafficCard.tsx`) — второй словарь
+ * форматирования того же поля здесь не заводится; известный долг задачи 6
+ * («не трогаем чужой файл, зафиксирован текстом отчёта») закрыт этой
+ * правкой. */
+function formatControlHour(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  return /^\d{2}:\d{2}/.test(raw) ? raw.slice(0, 5) : null;
 }
 
 /** Подписи цветов светофора. Не «сдан / не сдан»: жёлтый — это СДАН, но
@@ -1520,6 +1530,158 @@ const SUBMISSION_DOT: Record<TrafficLightNode["status"], string> = {
   NEUTRAL: "bg-muted-foreground",
   UNKNOWN: "bg-muted-foreground",
 };
+
+/** Узел «проблемный» — RED/YELLOW/UNKNOWN (тот же словарь, что раньше нёс
+ * список «Проблемные подразделения» этого файла: RED — не сдали, YELLOW —
+ * сдали, но данные разошлись, UNKNOWN — справочник узла сломан, «не знаю»
+ * СТАРШЕ красного). Проверка полноты switch на этапе компиляции — тот же
+ * приём, что `ExpenseTrafficCard.classify`/`assertNever`
+ * (`features/command-expense/ui/ExpenseTrafficCard.tsx`): пополнится
+ * `TrafficLightNode["status"]` шестым значением — `default` перестанет
+ * сужаться до `never`, и `tsc` откажется собирать файл вместо того, чтобы
+ * шестой статус молча посчитался «здоровым» и свернулся в сводку. */
+function isProblemStatus(status: TrafficLightNode["status"]): boolean {
+  switch (status) {
+    case "RED":
+    case "YELLOW":
+    case "UNKNOWN":
+      return true;
+    case "GREEN":
+    case "NEUTRAL":
+      return false;
+    default:
+      return assertNeverTrafficStatus(status);
+  }
+}
+
+function assertNeverTrafficStatus(value: never): never {
+  throw new Error(`Неизвестный статус светофора: ${String(value)}`);
+}
+
+/**
+ * Лес подразделений по `parent_id`. Корень — узел БЕЗ РАЗРЕШИМОГО родителя:
+ * `parent_id === null`, ИЛИ `parent_id` указывает на id, которого среди
+ * узлов ответа нет (битая ссылка). Оба случая становятся ОТДЕЛЬНЫМ корнем
+ * леса, а не пропадают молча — узел, который никогда бы не отрендерился,
+ * хуже некрасивого узла.
+ *
+ * На этом стенде лес — буквально ДВА дерева: «Служба» (id=1) и сиротский
+ * стенд-артефакт «Управление (стенд)» (id=6, второе независимое дерево, см.
+ * отчёты задач 3 и 6) — оба несут `parent_id === null` напрямую, без битой
+ * ссылки; защита от битой ссылки здесь на будущее, а не по наблюдаемому
+ * сегодня случаю.
+ */
+function buildDivisionForest(nodes: TrafficLightNode[]): {
+  roots: TrafficLightNode[];
+  childrenOf: Map<number, TrafficLightNode[]>;
+} {
+  const ids = new Set(nodes.map((node) => node.division_id));
+  const roots: TrafficLightNode[] = [];
+  const childrenOf = new Map<number, TrafficLightNode[]>();
+  for (const node of nodes) {
+    const parentId = node.parent_id;
+    const hasResolvableParent = parentId !== null && ids.has(parentId);
+    if (!hasResolvableParent) {
+      roots.push(node);
+      continue;
+    }
+    const siblings = childrenOf.get(parentId);
+    if (siblings) siblings.push(node);
+    else childrenOf.set(parentId, [node]);
+  }
+  return { roots, childrenOf };
+}
+
+/** Число узлов ПОД веткой (не считая её саму) — для сводки «+N сдавших» у
+ * свёрнутой здоровой ветки. Каскад светофора (`traffic_light_tree()` бэка)
+ * гарантирует: если сама ветка GREEN/NEUTRAL, ни один её потомок не может
+ * быть RED/YELLOW/UNKNOWN — иначе каскад отразил бы худшее состояние
+ * потомка в статусе самой ветки. Сворачивать здоровую ветку безопасно: ни
+ * один проблемный узел под сводкой спрятаться не может. */
+function countDescendants(
+  divisionId: number,
+  childrenOf: Map<number, TrafficLightNode[]>
+): number {
+  const children = childrenOf.get(divisionId) ?? [];
+  let total = children.length;
+  for (const child of children) {
+    total += countDescendants(child.division_id, childrenOf);
+  }
+  return total;
+}
+
+/**
+ * Строка дерева, рекурсивно. Проблемные ветки (RED/YELLOW/UNKNOWN)
+ * развёрнуты по умолчанию; здоровые (GREEN/NEUTRAL) свёрнуты в сводку
+ * «+N сдавших», разворачиваемую по клику. Переключатель (`aria-expanded`) —
+ * только у узла с потомками; у листа переключать нечего.
+ *
+ * Свой стейт раскрытия у каждого узла ЛОКАЛЬНЫЙ и пересоздаётся при
+ * сворачивании/разворачивании родителя (снова дефолт по статусу) — вместо
+ * того чтобы помнить ручной клик пользователя вглубь уже скрытой ветки, чего
+ * требование задачи не просит.
+ */
+function DivisionTreeRow({
+  node,
+  childrenOf,
+}: {
+  node: TrafficLightNode;
+  childrenOf: Map<number, TrafficLightNode[]>;
+}) {
+  const children = childrenOf.get(node.division_id) ?? [];
+  const hasChildren = children.length > 0;
+  const [expanded, setExpanded] = useState(() => isProblemStatus(node.status));
+
+  return (
+    <li data-division-id={node.division_id}>
+      <div className="flex flex-wrap items-center gap-2 border-b py-1 text-xs last:border-0">
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Свернуть" : "Развернуть"} ${node.name}`}
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+          >
+            {expanded ? (
+              <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
+          </button>
+        ) : (
+          <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+        )}
+        <span
+          aria-hidden="true"
+          className={`h-2 w-2 shrink-0 rounded-full ${SUBMISSION_DOT[node.status]}`}
+        />
+        <span className="flex-1 truncate">{node.name}</span>
+        <span className="text-muted-foreground">{SUBMISSION_LABEL[node.status]}</span>
+        {node.late && <span className="text-muted-foreground">с опозданием</span>}
+        {node.status === "YELLOW" && (
+          <SubmissionDriftDetails divisionId={node.division_id} />
+        )}
+      </div>
+      {hasChildren &&
+        (expanded ? (
+          <ul className="ml-2 border-l pl-3">
+            {children.map((child) => (
+              <DivisionTreeRow key={child.division_id} node={child} childrenOf={childrenOf} />
+            ))}
+          </ul>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="ml-6 block py-1 text-left text-xs text-muted-foreground hover:underline"
+          >
+            + {countDescendants(node.division_id, childrenOf)} сдавших
+          </button>
+        ))}
+    </li>
+  );
+}
 
 /** «Актуальность ежедневного расхода»: счёт берётся у СВЕТОФОРА — владельца
  * витрины сдачи дня. Второй счёт разошёлся бы с его экраном, поэтому здесь
@@ -1575,9 +1737,10 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
   const unknown = nodes.filter((node) => node.status === "UNKNOWN");
   const late = nodes.filter((node) => node.late);
   const total = nodes.length || 1;
-  // «Неизвестно» стоит рядом с несданными, а не растворяется в остальных:
-  // сломанный справочник узла — повод проверить, а не повод молчать.
-  const problems = [...red, ...yellow, ...unknown];
+  const controlHour = formatControlHour(tree.data.control_hour);
+  // Дерево ниже рисует ВСЕ узлы ответа (не только листья) — полная
+  // иерархия подразделений, а не сводка по обязанности сдавать.
+  const forest = buildDivisionForest(tree.data.nodes);
 
   return (
     <section
@@ -1601,8 +1764,9 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
               нечем отличить от нормы. Час приходит с тем же ответом, а не
               зашит числом — в настройках раздела он меняется. */}
           <p className="text-xs text-muted-foreground">
-            Контрольный час {formatControlHour(tree.data.control_hour)} — сдача
-            после него считается опозданием.
+            {controlHour !== null
+              ? `Контрольный час ${controlHour} — сдача после него считается опозданием.`
+              : "Контрольный час не задан."}
           </p>
         </div>
         <Link
@@ -1628,32 +1792,18 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
         />
       </div>
 
-      {problems.length > 0 && (
+      {forest.roots.length > 0 && (
         <>
           <p className="mb-1 mt-3 text-xs font-semibold text-muted-foreground">
-            Проблемные подразделения
+            Подразделения
           </p>
-          <ul className="space-y-1">
-            {problems.map((node) => (
-              <li
-                key={node.division_id}
-                className="flex flex-wrap items-baseline gap-2 border-b py-1 text-xs last:border-0"
-              >
-                <span
-                  aria-hidden
-                  className={`h-2 w-2 shrink-0 rounded-full ${SUBMISSION_DOT[node.status]}`}
-                />
-                <span className="flex-1 truncate">{node.name}</span>
-                <span className="text-muted-foreground">
-                  {SUBMISSION_LABEL[node.status]}
-                </span>
-                {node.late && (
-                  <span className="text-muted-foreground">с опозданием</span>
-                )}
-                {node.status === "YELLOW" && (
-                  <SubmissionDriftDetails divisionId={node.division_id} />
-                )}
-              </li>
+          <ul className="space-y-0.5">
+            {forest.roots.map((root) => (
+              <DivisionTreeRow
+                key={root.division_id}
+                node={root}
+                childrenOf={forest.childrenOf}
+              />
             ))}
           </ul>
         </>
@@ -1737,7 +1887,7 @@ function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
         <div>
           <h2 className="text-sm font-semibold">Напоминания об отставших</h2>
           <p className="text-xs text-muted-foreground">
-            {tree.data
+            {tree.data && formatControlHour(tree.data.control_hour) !== null
               ? `Уходят ответственным автоматически после контрольного часа ${formatControlHour(tree.data.control_hour)} — одно за день.`
               : "Уходят ответственным автоматически после контрольного часа — одно за день."}
           </p>
