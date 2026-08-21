@@ -12,7 +12,7 @@
 // иначе означали бы шесть запросов на людей и шесть на статусы, которые
 // никто ещё не открыл.
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -140,18 +140,16 @@ function DivisionGroup({
 
   // Состояние сдачи ЭТОГО управления — СВОЯ живая правда для его собственной
   // панели: без запроса панель лгала бы «день не сдан», даже когда он уже
-  // сдан. Ключ СВОЙ (`daily-expense-board`), не занят `use-forces-gathering.ts`
-  // (`daily-employees`) и отличается от ключей, которые заводит сама панель
-  // (`ops-daily`). Не гейтим `enabled`: `businessDate` тут ВСЕГДА валидная
-  // строка сервера (родитель монтирует группу только когда `data` уже есть).
+  // сдан. Ключ — СЕМЬЯ `ops-daily`, та же, что панель САМА инвалидирует в
+  // `onSuccess` (submit и amend: `["ops-daily","day-submission",divisionId,
+  // businessDate]`) — НЕ своя (`daily-expense-board`) специально: react-query
+  // дедуплицирует одинаковый ключ в ОДНУ запись кэша с сводкой борда ниже, и
+  // panel-мутация освежает обе стороны без единой правки восстановленного
+  // файла. Не гейтим `enabled`: `businessDate` тут ВСЕГДА валидная строка
+  // сервера (родитель монтирует группу только когда `data` уже есть).
   const submissionDivisionId = String(row.id);
   const daySubmissionQuery = useQuery({
-    queryKey: [
-      "daily-expense-board",
-      "day-submission",
-      submissionDivisionId,
-      businessDate,
-    ],
+    queryKey: ["ops-daily", "day-submission", submissionDivisionId, businessDate],
     queryFn: () =>
       opsApiClient.get<unknown>(
         `${DAILY_SUBMISSIONS_PATH}?division_id=${encodeURIComponent(
@@ -292,26 +290,45 @@ export function DailyExpenseBoard() {
   // журнал 21→22.08): сдача версионируется ПО УПРАВЛЕНИЮ
   // (`DaySubmission.division_id`) — одна кнопка на весь департамент была бы
   // семантической ложью (реально сдавала бы одно управление, выглядела бы
-  // как «весь департамент сдан»). Источник N/M — ЖИВЫЕ ответы (та же ручка,
-  // фильтр по `business_date` без `division_id`, `is_current: true`,
-  // уникальные `division_id`, сверенные со строками расхода) — свой счёт не
+  // как «весь департамент сдан»). Источник N/M — ЖИВЫЕ ответы, свой счёт не
   // заводим.
+  //
+  // ПОЧЕМУ N ЗАПРОСОВ, А НЕ ОДИН АГРЕГАТ: живая ложь, найденная координатором
+  // 21.08 — успешная сдача в шапке управления не двигала сводку борда, пока
+  // она читалась ОДНИМ GET под СВОИМ ключом (`daily-expense-board`,
+  // недостижимым для инвалидации панели). Панель (не переписана) сама зовёт
+  // `invalidateQueries({queryKey: ["ops-daily","day-submission",divisionId,
+  // businessDate]})` на submit/amend — ключ per-division. Единственный способ
+  // «подписаться» на эту инвалидацию БЕЗ правки восстановленного файла — самому
+  // читать ПОД ТЕМ ЖЕ ключом. Один агрегат под чужим division_id-less ключом
+  // так подписаться не может: инвалидация — точное совпадение по позиции
+  // сегментов ключа, `division_id` в ней обязателен. N per-division запросов
+  // (`useQueries`, тот же приём, что уже в `LeadershipStrip.tsx`) — тот же
+  // ключ, что уже завела `DivisionGroup` выше, поэтому кэш ОДИН на обоих
+  // потребителей, а не N лишних сетевых запросов сверх уже идущих.
   const businessDate = data?.business_date ?? null;
   const dateValid = businessDate !== null && /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
-  const submissionsSummaryQuery = useQuery({
-    queryKey: ["daily-expense-board", "submissions", businessDate],
-    queryFn: () =>
-      opsApiClient.get<unknown>(
-        `${DAILY_SUBMISSIONS_PATH}?business_date=${encodeURIComponent(
-          businessDate as string
-        )}&limit=200`
-      ),
-    enabled: dateValid,
+  const submissionQueries = useQueries({
+    queries: (data?.rows ?? []).map((row) => {
+      const divisionId = String(row.division_id);
+      return {
+        queryKey: ["ops-daily", "day-submission", divisionId, businessDate],
+        queryFn: () =>
+          opsApiClient.get<unknown>(
+            `${DAILY_SUBMISSIONS_PATH}?division_id=${encodeURIComponent(
+              divisionId
+            )}&business_date=${encodeURIComponent(businessDate as string)}`
+          ),
+        enabled: dateValid,
+      };
+    }),
   });
   const submittedDivisionIds = new Set(
-    parseSubmissionList(submissionsSummaryQuery.data)
-      .filter((submission) => submission.is_current)
-      .map((submission) => submission.division_id)
+    submissionQueries.flatMap((query) =>
+      parseSubmissionList(query.data)
+        .filter((submission) => submission.is_current)
+        .map((submission) => submission.division_id)
+    )
   );
   const submittedRows =
     data?.rows.filter((row) => submittedDivisionIds.has(String(row.division_id))) ?? [];
