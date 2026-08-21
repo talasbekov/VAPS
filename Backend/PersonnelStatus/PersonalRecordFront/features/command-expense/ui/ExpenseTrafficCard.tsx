@@ -52,11 +52,27 @@ import type { TrafficLightNode } from "@/lib/api";
 
 const CARD_LABEL = "Расход дня";
 
+/** Потолок видимых строк списка отстающих. Карточка — обзорная (детализация
+ * — на экране аналитики по ссылке), а структуре подразделений потолка нет:
+ * без ограничения список раздулся бы вместе с числом подразделений и порвал
+ * бы вёрстку командного центра (найдено ревью 21.08). 5 — влезает рядом со
+ * счётчиками на этой карточке визуально не разрастаясь. */
+const LAGGING_VISIBLE_LIMIT = 5;
+
 /** «17:00:00» → «17:00». Тот же приём, что у `formatControlHour` в
  * аналитике: секунды порога сравнения суток не значат ничего, хвост нулей
- * только шумит. Нечитаемое значение возвращается как есть. */
-function formatControlHour(raw: string): string {
-  return /^\d{2}:\d{2}/.test(raw) ? raw.slice(0, 5) : raw;
+ * только шумит.
+ *
+ * `null` — значение НЕВАЛИДНО (пусто, не строка формата HH:MM…) — тогда
+ * вызывающий код печатает честную фразу «не задан», а не сырое значение:
+ * эхо сырого `raw` при пустом/битом ответе рисовало бы на экране
+ * «Контрольный час undefined —», что читается как баг компонента, а не как
+ * честное «сервер не прислал час». (В `app/security-ops/analytics/page.tsx`
+ * та же яма — `formatControlHour` там эхует сырое значение без проверки;
+ * не трогаем чужой файл, см. отчёт задачи.) */
+function formatControlHour(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  return /^\d{2}:\d{2}/.test(raw) ? raw.slice(0, 5) : null;
 }
 
 /** Подписи цветов светофора — ДОСЛОВНО те же, что в аналитике
@@ -73,14 +89,31 @@ const SUBMISSION_LABEL: Record<TrafficLightNode["status"], string> = {
 
 type SubmissionBucket = "submitted" | "late" | "missing";
 
+/** Проверка полноты switch НА ЭТАПЕ КОМПИЛЯЦИИ (стандартный приём): если
+ * `TrafficLightNode["status"]` пополнится шестым значением, `node.status`
+ * в `default` перестанет сужаться до `never`, и `tsc` откажется собирать
+ * файл — вместо того чтобы шестой статус молча выпал из всех трёх
+ * счётчиков (ветки switch без этого default просто не сработали бы ни на
+ * одном из трёх return, и узел исчез бы из счёта без единого сигнала). */
+function assertNever(value: never): never {
+  throw new Error(`Неизвестный статус светофора: ${String(value)}`);
+}
+
 /** Три состояния сдачи листа. NEUTRAL — не факт сдачи, а её отсутствие как
  * обязанности; в трёх счётчиках не участвует (см. докстринг файла). */
 function classify(node: TrafficLightNode): SubmissionBucket | null {
-  if (node.status === "RED" || node.status === "UNKNOWN") return "missing";
-  if (node.status === "GREEN" || node.status === "YELLOW") {
-    return node.late ? "late" : "submitted";
+  switch (node.status) {
+    case "RED":
+    case "UNKNOWN":
+      return "missing";
+    case "GREEN":
+    case "YELLOW":
+      return node.late ? "late" : "submitted";
+    case "NEUTRAL":
+      return null;
+    default:
+      return assertNever(node.status);
   }
-  return null;
 }
 
 function GateCard({ children }: { children: React.ReactNode }) {
@@ -125,7 +158,18 @@ export function ExpenseTrafficCard() {
         node.parent_id === null &&
         (node.status === "RED" || node.status === "YELLOW")
     );
-    return { data, counts, lagging };
+    // Порядок: сперва просроченные (`late`) — они срочнее, значит хвост при
+    // обрезке обязан состоять из МЕНЕЕ срочных, а не из случайных узлов.
+    // Внутри каждой группы порядок — КАК ПРИШЁЛ С СЕРВЕРА (устойчивый
+    // filter, свой порядок не выдумывается). RED структурно никогда не
+    // late (см. докстринг файла), поэтому «просроченные» здесь — это
+    // всегда YELLOW-узлы с `late: true`.
+    const overdue = lagging.filter((node) => node.late);
+    const rest = lagging.filter((node) => !node.late);
+    const orderedLagging = [...overdue, ...rest];
+    const visibleLagging = orderedLagging.slice(0, LAGGING_VISIBLE_LIMIT);
+    const hiddenLaggingCount = orderedLagging.length - visibleLagging.length;
+    return { data, counts, visibleLagging, hiddenLaggingCount };
   }, [tree.data]);
 
   // Нет права — карточки нет вовсе, как у соседних гейтов страницы
@@ -151,15 +195,17 @@ export function ExpenseTrafficCard() {
     );
   }
 
-  const { data, counts, lagging } = derived;
+  const { data, counts, visibleLagging, hiddenLaggingCount } = derived;
+  const controlHour = formatControlHour(data.control_hour);
 
   return (
     <Card role="region" aria-label={CARD_LABEL}>
       <CardHeader>
         <CardTitle>{CARD_LABEL}: светофор сдачи</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Контрольный час {formatControlHour(data.control_hour)} — сдача
-          после него считается опозданием.
+          {controlHour !== null
+            ? `Контрольный час ${controlHour} — сдача после него считается опозданием.`
+            : "Контрольный час не задан."}
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -194,13 +240,13 @@ export function ExpenseTrafficCard() {
           <p className="mb-1 text-xs font-semibold text-muted-foreground">
             Отстающие департаменты
           </p>
-          {lagging.length === 0 ? (
+          {visibleLagging.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               Отстающих департаментов нет.
             </p>
           ) : (
             <ul className="space-y-1">
-              {lagging.map((node) => (
+              {visibleLagging.map((node) => (
                 <li
                   key={node.division_id}
                   className="flex flex-wrap items-baseline gap-2 border-b py-1 text-xs last:border-0"
@@ -218,12 +264,27 @@ export function ExpenseTrafficCard() {
               ))}
             </ul>
           )}
-          <Link
-            href="/security-ops/analytics"
-            className="mt-2 inline-block text-xs text-primary underline-offset-2 hover:underline"
-          >
-            Открыть светофор в аналитике
-          </Link>
+          {/* Ссылка на аналитику — ОДНА на карточку: если хвост обрезан,
+              она встраивается в саму строку хвоста («и ещё K — в
+              аналитике»), а не дублируется отдельной строкой ниже. */}
+          {hiddenLaggingCount > 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              и ещё {hiddenLaggingCount} —{" "}
+              <Link
+                href="/security-ops/analytics"
+                className="text-primary underline-offset-2 hover:underline"
+              >
+                в аналитике
+              </Link>
+            </p>
+          ) : (
+            <Link
+              href="/security-ops/analytics"
+              className="mt-2 inline-block text-xs text-primary underline-offset-2 hover:underline"
+            >
+              Открыть светофор в аналитике
+            </Link>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-t pt-3">
