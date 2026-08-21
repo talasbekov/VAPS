@@ -1,41 +1,23 @@
 "use client";
 
 // «Расход дня: светофор сдачи» — командный центр смотрит на ТУ ЖЕ сдачу дня,
-// что и аналитика (`useTrafficLightTree`, `/security-ops/analytics`): счёт
-// «Сдано / Не сдано / Просрочено» и контрольный час берутся из ЕЁ ответа
-// (`GET traffic-light/tree/`, тот же ключ кэша ["traffic-light", "tree",
-// "today"]), второго счёта здесь не заводится — иначе цифры разошлись бы с
-// экраном светофора при первом же расхождении.
+// что и аналитика (`useTrafficLightTree`, `/security-ops/analytics`) и борд
+// «Ежедневного расхода»: счёт «Сдано / Не сдано / Просрочено» и контрольный
+// час берутся из ЕЁ ответа (`GET traffic-light/tree/`, тот же ключ кэша
+// ["traffic-light", "tree", "today"]).
 //
-// СЧЁТ — ПО ЛИСТЬЯМ ДЕРЕВА (узлы без потомков), тем же приёмом, что и у
-// DaySubmissionSection в аналитике: цвет узла С ПОТОМКАМИ — худший в
-// поддереве (каскад светофора, organization_management/apps/operations/
-// traffic_light.py::traffic_light_tree), и суммировать родителя с детьми
-// значило бы посчитать одно подразделение дважды.
+// РАЗБОР КОРЗИН ЗДЕСЬ НЕ ЖИВЁТ — он в `entities/daily-grid`
+// (`classifyLeaf` / `countSubmissions` / `trafficLeaves`), общий на все три
+// экрана. До ревью ветки 22.08 каждый экран раскладывал ответ по корзинам
+// сам, и слово «Сдано» значило три разных числа: опоздавший GREEN попадал
+// здесь в «Просрочено», в аналитике — сразу в «сдали» И «с опозданием», в
+// борде — в «Сдано». Прежняя шапка этого файла обещала, что «второго счёта
+// здесь не заводится» — обещание было неправдой ровно потому, что счёт
+// повторялся в трёх местах; теперь он один физически, а не по договорённости.
 //
-// СЛОВАРЬ СТАТУСА НЕ ТРЁХЗНАЧЕН (GREEN/YELLOW/RED/NEUTRAL/UNKNOWN + булев
-// `late`), А ЗДЕСЬ НУЖНО ТРИ СЧЁТЧИКА — маппинг установлен по бэку, а не
-// придуман на глаз (см. traffic_light.py, DivisionTrafficLight.late и
-// _own_states):
-//
-//   * `late` — отметка опоздания САМОЙ СДАЧИ (`submission.late`), а не
-//     свойство цвета. У узла БЕЗ сдачи (RED — «есть кого сдавать, не
-//     сдали», NEUTRAL — «сдавать некого») сдачи нет вовсе, и бэк
-//     жёстко возвращает `late=False` — опаздывать нечему. Поэтому
-//     «Просрочено» — это НЕ «красный, у которого истёк час», а «сдали,
-//     но после контрольного часа»;
-//   * Сдано      = статус GREEN|YELLOW и НЕ late — сдали вовремя. YELLOW
-//     («сдан, данные разошлись» — подпись аналитики) это тоже СДАЧА, а не
-//     её отсутствие: расхождение с живыми данными не значит, что дня не
-//     было;
-//   * Просрочено = статус GREEN|YELLOW и late — сдали, но после
-//     контрольного часа;
-//   * Не сдано   = статус RED (сдачи нет) ИЛИ UNKNOWN (справочник узла
-//     сломан — свод считает «не знаю» СТАРШЕ красного, см. `_PRECEDENCE`
-//     traffic_light.py: «не знаю» честнее, чем «всё в порядке», и класть
-//     сломанный узел в «Сдано» значило бы обвинить отчёт зелёным цветом);
-//   * NEUTRAL (сдавать некого) — вне трёх счётчиков: это не факт сдачи, а
-//     отсутствие обязанности сдавать.
+// Аналитика печатает БОЛЕЕ ДРОБНУЮ разбивку (RED против UNKNOWN, YELLOW
+// внутри сдавших), но выводит её из ТЕХ ЖЕ корзин: её «сдали» — это ровно
+// «Сдано» этой карточки на том же дереве.
 //
 // Список «отстающих» — ВЕРХНИЙ уровень дерева (parent_id === null), не
 // листья: карточка командного центра — обзорная, показывает, в какой ветке
@@ -48,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/stat-card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useTrafficLightTree } from "@/hooks/use-strength-report";
-import type { TrafficLightNode } from "@/lib/api";
+import { SUBMISSION_LABEL, countSubmissions } from "@/entities/daily-grid";
 
 const CARD_LABEL = "Расход дня";
 
@@ -75,47 +57,6 @@ function formatControlHour(raw: string | null | undefined): string | null {
   return /^\d{2}:\d{2}/.test(raw) ? raw.slice(0, 5) : null;
 }
 
-/** Подписи цветов светофора — ДОСЛОВНО те же, что в аналитике
- * (`SUBMISSION_LABEL`, app/security-ops/analytics/page.tsx): второй словарь
- * с другими словами для тех же пяти статусов разошёлся бы с ней при первом
- * же новом состоянии. */
-const SUBMISSION_LABEL: Record<TrafficLightNode["status"], string> = {
-  GREEN: "сдан",
-  YELLOW: "сдан, данные разошлись",
-  RED: "не сдан",
-  NEUTRAL: "нечего сдавать",
-  UNKNOWN: "состояние неизвестно",
-};
-
-type SubmissionBucket = "submitted" | "late" | "missing";
-
-/** Проверка полноты switch НА ЭТАПЕ КОМПИЛЯЦИИ (стандартный приём): если
- * `TrafficLightNode["status"]` пополнится шестым значением, `node.status`
- * в `default` перестанет сужаться до `never`, и `tsc` откажется собирать
- * файл — вместо того чтобы шестой статус молча выпал из всех трёх
- * счётчиков (ветки switch без этого default просто не сработали бы ни на
- * одном из трёх return, и узел исчез бы из счёта без единого сигнала). */
-function assertNever(value: never): never {
-  throw new Error(`Неизвестный статус светофора: ${String(value)}`);
-}
-
-/** Три состояния сдачи листа. NEUTRAL — не факт сдачи, а её отсутствие как
- * обязанности; в трёх счётчиках не участвует (см. докстринг файла). */
-function classify(node: TrafficLightNode): SubmissionBucket | null {
-  switch (node.status) {
-    case "RED":
-    case "UNKNOWN":
-      return "missing";
-    case "GREEN":
-    case "YELLOW":
-      return node.late ? "late" : "submitted";
-    case "NEUTRAL":
-      return null;
-    default:
-      return assertNever(node.status);
-  }
-}
-
 function GateCard({ children }: { children: React.ReactNode }) {
   return (
     <Card role="region" aria-label={CARD_LABEL}>
@@ -138,21 +79,12 @@ export function ExpenseTrafficCard() {
   const derived = useMemo(() => {
     const data = tree.data;
     if (data === undefined) return null;
-    const parents = new Set(
-      data.nodes
-        .map((node) => node.parent_id)
-        .filter((id): id is number => id !== null)
-    );
-    const leaves = data.nodes.filter((node) => !parents.has(node.division_id));
-    const counts: Record<SubmissionBucket, number> = {
-      submitted: 0,
-      late: 0,
-      missing: 0,
-    };
-    for (const node of leaves) {
-      const bucket = classify(node);
-      if (bucket !== null) counts[bucket] += 1;
-    }
+    // Счёт — общей функцией раздела: по ЛИСТЬЯМ леса (цвет узла с потомками
+    // — худший в поддереве, каскад светофора; сложение родителя с детьми
+    // посчитало бы подразделение дважды), листья берутся из ЛЕСА, а не
+    // наивным «кто ни у кого не родитель» — иначе пара узлов, замкнутых в
+    // цикл `parent_id`, выпадала бы из счёта молча.
+    const counts = countSubmissions(data.nodes);
     const lagging = data.nodes.filter(
       (node) =>
         node.parent_id === null &&
@@ -162,8 +94,8 @@ export function ExpenseTrafficCard() {
     // обрезке обязан состоять из МЕНЕЕ срочных, а не из случайных узлов.
     // Внутри каждой группы порядок — КАК ПРИШЁЛ С СЕРВЕРА (устойчивый
     // filter, свой порядок не выдумывается). RED структурно никогда не
-    // late (см. докстринг файла), поэтому «просроченные» здесь — это
-    // всегда YELLOW-узлы с `late: true`.
+    // late (см. `classifyLeaf` в `entities/daily-grid`), поэтому
+    // «просроченные» здесь — это всегда YELLOW-узлы с `late: true`.
     const overdue = lagging.filter((node) => node.late);
     const rest = lagging.filter((node) => !node.late);
     const orderedLagging = [...overdue, ...rest];

@@ -51,6 +51,12 @@ import type {
   TrafficLightNode,
 } from "@/lib/api";
 import { apiClient } from "@/lib/api";
+import {
+  SUBMISSION_LABEL,
+  buildDivisionForest,
+  classifyLeaf,
+  countSubmissions,
+} from "@/entities/daily-grid";
 import { opsApiClient } from "@/lib/ops-api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
@@ -1511,18 +1517,6 @@ function formatControlHour(raw: string | null | undefined): string | null {
   return /^\d{2}:\d{2}/.test(raw) ? raw.slice(0, 5) : null;
 }
 
-/** Подписи цветов светофора. Не «сдан / не сдан»: жёлтый — это СДАН, но
- * живые данные с подписанным снимком разошлись, а серый — узлу некого
- * сдавать. Свести их к двум состояниям значило бы обвинить или оправдать
- * подразделение чужой формулировкой. */
-const SUBMISSION_LABEL: Record<TrafficLightNode["status"], string> = {
-  GREEN: "сдан",
-  YELLOW: "сдан, данные разошлись",
-  RED: "не сдан",
-  NEUTRAL: "нечего сдавать",
-  UNKNOWN: "состояние неизвестно",
-};
-
 const SUBMISSION_DOT: Record<TrafficLightNode["status"], string> = {
   GREEN: "bg-green-600",
   YELLOW: "bg-amber-500",
@@ -1535,9 +1529,8 @@ const SUBMISSION_DOT: Record<TrafficLightNode["status"], string> = {
  * список «Проблемные подразделения» этого файла: RED — не сдали, YELLOW —
  * сдали, но данные разошлись, UNKNOWN — справочник узла сломан, «не знаю»
  * СТАРШЕ красного). Проверка полноты switch на этапе компиляции — тот же
- * приём, что `ExpenseTrafficCard.classify`/`assertNever`
- * (`features/command-expense/ui/ExpenseTrafficCard.tsx`): пополнится
- * `TrafficLightNode["status"]` шестым значением — `default` перестанет
+ * приём, что `classifyLeaf`/`assertNeverStatus` (`entities/daily-grid`):
+ * пополнится `TrafficLightNode["status"]` шестым значением — `default` перестанет
  * сужаться до `never`, и `tsc` откажется собирать файл вместо того, чтобы
  * шестой статус молча посчитался «здоровым» и свернулся в сводку. */
 function isProblemStatus(status: TrafficLightNode["status"]): boolean {
@@ -1558,75 +1551,34 @@ function assertNeverTrafficStatus(value: never): never {
   throw new Error(`Неизвестный статус светофора: ${String(value)}`);
 }
 
-/**
- * Лес подразделений по `parent_id`. Корень — узел БЕЗ РАЗРЕШИМОГО родителя:
- * `parent_id === null`, ИЛИ `parent_id` указывает на id, которого среди
- * узлов ответа нет (битая ссылка), ИЛИ цепочка родителей ЗАЦИКЛЕНА (находка
- * ревью 22.08: A→B, B→A разрешают друг друга ПОПАРНО — обход леса идёт
- * только от `roots` вниз, и без этой защиты оба узла не отрисовались бы
- * НИКОГДА, без единого технического зависания — узел, до которого
- * пользователь не доберётся). Все три случая становятся ОТДЕЛЬНЫМ корнем
- * леса, а не пропадают молча — узел, который никогда бы не отрендерился,
- * хуже некрасивого узла.
- *
- * Цикл ищется ХОДОМ ВВЕРХ по родителям от КАЖДОГО узла с множеством
- * `visited`: если цепочка возвращается к уже посещённому В ЭТОМ ХОДЕ id —
- * позиция узла в иерархии структурно неопределима (сам узел в цикле, ИЛИ
- * его цепочка родителей ЧЕРЕЗ цикл проходит) — узел уходит в `cyclic`,
- * становится корнем леса и получает честную пометку в строке (см.
- * `DivisionTreeRow`), а не молча теряется.
- *
- * На этом стенде лес — буквально ДВА дерева: «Служба» (id=1) и сиротский
- * стенд-артефакт «Управление (стенд)» (id=6, второе независимое дерево, см.
- * отчёты задач 3 и 6) — оба несут `parent_id === null` напрямую, без битой
- * ссылки и без цикла; обе защиты (битая ссылка, цикл) — на будущее, не по
- * наблюдаемому сегодня случаю.
- */
-function buildDivisionForest(nodes: TrafficLightNode[]): {
-  roots: TrafficLightNode[];
-  childrenOf: Map<number, TrafficLightNode[]>;
-  cyclic: Set<number>;
-} {
-  const byId = new Map(nodes.map((node) => [node.division_id, node]));
-
-  const cyclic = new Set<number>();
-  for (const node of nodes) {
-    const visited = new Set<number>();
-    let current: TrafficLightNode | undefined = node;
-    while (current !== undefined) {
-      if (visited.has(current.division_id)) {
-        cyclic.add(node.division_id);
-        break;
-      }
-      visited.add(current.division_id);
-      const parentId: number | null = current.parent_id;
-      current = parentId === null ? undefined : byId.get(parentId);
-    }
-  }
-
-  const roots: TrafficLightNode[] = [];
-  const childrenOf = new Map<number, TrafficLightNode[]>();
-  for (const node of nodes) {
-    const parentId = node.parent_id;
-    const hasResolvableParent =
-      parentId !== null && byId.has(parentId) && !cyclic.has(node.division_id);
-    if (!hasResolvableParent) {
-      roots.push(node);
-      continue;
-    }
-    const siblings = childrenOf.get(parentId);
-    if (siblings) siblings.push(node);
-    else childrenOf.set(parentId, [node]);
-  }
-  return { roots, childrenOf, cyclic };
+/** Русское склонение слова «подразделение» по числу: 1 — подразделение,
+ * 2-4 — подразделения, 0/5+ и 11-14 — подразделений. Своя функция, а не
+ * `Intl.PluralRules`: правило здесь короче собственного вызова, а результат
+ * пинится e2e-пробой дословно. */
+function divisionsPlural(count: number): string {
+  const mod100 = count % 100;
+  if (mod100 >= 11 && mod100 <= 14) return "подразделений";
+  const mod10 = count % 10;
+  if (mod10 === 1) return "подразделение";
+  if (mod10 >= 2 && mod10 <= 4) return "подразделения";
+  return "подразделений";
 }
 
-/** Число узлов ПОД веткой (не считая её саму) — для сводки «+N сдавших» у
- * свёрнутой здоровой ветки. Каскад светофора (`traffic_light_tree()` бэка)
+/** Число узлов ПОД веткой (не считая её саму) — для сводки свёрнутой
+ * здоровой ветки. Каскад светофора (`traffic_light_tree()` бэка)
  * гарантирует: если сама ветка GREEN/NEUTRAL, ни один её потомок не может
  * быть RED/YELLOW/UNKNOWN — иначе каскад отразил бы худшее состояние
  * потомка в статусе самой ветки. Сворачивать здоровую ветку безопасно: ни
- * один проблемный узел под сводкой спрятаться не может. */
+ * один проблемный узел под сводкой спрятаться не может.
+ *
+ * Считается СТРУКТУРА, а не сдача: подпись сводки называет подразделения, а
+ * не «сдавших» (находка ревью ветки 22.08, отменяющая прежнее решение
+ * координатора). Прежнее «+N сдавших» утверждало о данных неправду: под
+ * зелёной веткой каскад ДОПУСКАЕТ NEUTRAL-потомков («сдавать некого»), и
+ * целиком нейтральная ветка читалась как «нечего сдавать … + 3 сдавших».
+ * Одним словом эту смесь не назвать честно и через корзины `classifyLeaf`:
+ * потомки могут одновременно попадать в `submitted`, `late` и вне корзин —
+ * поэтому подпись говорит только то, что действительно посчитано. */
 function countDescendants(
   divisionId: number,
   childrenOf: Map<number, TrafficLightNode[]>
@@ -1642,8 +1594,8 @@ function countDescendants(
 /**
  * Строка дерева, рекурсивно. Проблемные ветки (RED/YELLOW/UNKNOWN)
  * развёрнуты по умолчанию; здоровые (GREEN/NEUTRAL) свёрнуты в сводку
- * «+N сдавших», разворачиваемую по клику. Переключатель (`aria-expanded`) —
- * только у узла с потомками; у листа переключать нечего.
+ * «+N подразделений», разворачиваемую по клику. Переключатель
+ * (`aria-expanded`) — только у узла с потомками; у листа переключать нечего.
  *
  * Свой стейт раскрытия у каждого узла ЛОКАЛЬНЫЙ и пересоздаётся при
  * сворачивании/разворачивании родителя (снова дефолт по статусу) — вместо
@@ -1662,6 +1614,7 @@ function DivisionTreeRow({
   const children = childrenOf.get(node.division_id) ?? [];
   const hasChildren = children.length > 0;
   const isCyclic = cyclic.has(node.division_id);
+  const descendants = countDescendants(node.division_id, childrenOf);
   const [expanded, setExpanded] = useState(() => isProblemStatus(node.status));
 
   return (
@@ -1723,7 +1676,7 @@ function DivisionTreeRow({
             aria-expanded={expanded}
             className="ml-6 block py-1 text-left text-xs text-muted-foreground hover:underline"
           >
-            + {countDescendants(node.division_id, childrenOf)} сдавших
+            + {descendants} {divisionsPlural(descendants)}
           </button>
         ))}
     </li>
@@ -1731,8 +1684,11 @@ function DivisionTreeRow({
 }
 
 /** «Актуальность ежедневного расхода»: счёт берётся у СВЕТОФОРА — владельца
- * витрины сдачи дня. Второй счёт разошёлся бы с его экраном, поэтому здесь
- * только сводка и переход. */
+ * витрины сдачи дня, и раскладывается по корзинам ОБЩЕЙ функцией раздела
+ * (`countSubmissions`, `entities/daily-grid`), а не своим маппингом. Свой
+ * разбор разошёлся бы с карточкой «Расход дня» командного центра — ровно это
+ * ревью ветки 22.08 и нашло. Разбивка здесь ТОНЬШЕ трёх корзин, но выведена
+ * из них: «сдали» — это в точности «Сдано» карточки на том же дереве. */
 function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
   const tree = useTrafficLightTree(gate === "allowed");
 
@@ -1768,21 +1724,31 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
     );
   }
 
+  // Корзины сдачи — ОБЩЕЙ функцией раздела (`countSubmissions`,
+  // `entities/daily-grid`), той же, что кормит карточку «Расход дня» в
+  // командном центре: до ревью ветки 22.08 этот экран раскладывал ответ по
+  // корзинам сам, и его «сдали» (GREEN, в том числе опоздавшие) не совпадало
+  // с «Сдано» карточки (GREEN|YELLOW и НЕ late) на том же дереве. Теперь
+  // «сдали» здесь — это ровно «Сдано» там.
+  //
   // Считаются ЛИСТЬЯ дерева: цвет узла с потомками — худший в поддереве
   // (каскад светофора), и сложение его с детьми посчитало бы одно
   // подразделение дважды.
-  const parents = new Set(
-    tree.data.nodes
-      .map((node) => node.parent_id)
-      .filter((id): id is number => id !== null)
+  const counts = countSubmissions(tree.data.nodes);
+  const nodes = counts.leaves;
+  // Разбивка ТОНЬШЕ трёх корзин — но ВЫВЕДЕННАЯ из них, а не своим
+  // маппингом: `missing` раскладывается на RED («не сдали») и UNKNOWN
+  // («неизвестно»), а YELLOW — это ПОМЕТКА ВНУТРИ сдавших и просрочивших,
+  // отдельной долей она здесь не считается (её строка ниже это говорит).
+  const missingRed = nodes.filter(
+    (node) => classifyLeaf(node) === "missing" && node.status === "RED"
   );
-  const nodes = tree.data.nodes.filter((node) => !parents.has(node.division_id));
-  const green = nodes.filter((node) => node.status === "GREEN");
-  const yellow = nodes.filter((node) => node.status === "YELLOW");
-  const red = nodes.filter((node) => node.status === "RED");
-  const neutral = nodes.filter((node) => node.status === "NEUTRAL");
-  const unknown = nodes.filter((node) => node.status === "UNKNOWN");
-  const late = nodes.filter((node) => node.late);
+  const missingUnknown = nodes.filter(
+    (node) => classifyLeaf(node) === "missing" && node.status === "UNKNOWN"
+  );
+  const drift = nodes.filter(
+    (node) => classifyLeaf(node) !== null && node.status === "YELLOW"
+  );
   const total = nodes.length || 1;
   const controlHour = formatControlHour(tree.data.control_hour);
   // Дерево ниже рисует ВСЕ узлы ответа (не только листья) — полная
@@ -1802,9 +1768,18 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
           </h2>
           <p className="text-xs text-muted-foreground">
             На {tree.data.business_date} · подразделений {nodes.length} · сдали{" "}
-            {green.length} · с расхождением {yellow.length} · не сдали{" "}
-            {red.length} · нечего сдавать {neutral.length} · неизвестно{" "}
-            {unknown.length} · с опозданием {late.length}
+            {counts.submitted} · с опозданием {counts.late} · не сдали{" "}
+            {missingRed.length} · неизвестно {missingUnknown.length} · нечего
+            сдавать {counts.neutral}
+          </p>
+          {/* «С расхождением» — НЕ шестая доля рядом с пятью выше, а пометка
+              внутри уже посчитанных: жёлтый узел это СДАЧА, у которой живые
+              данные разошлись с подписанным снимком. Без этой оговорки числа
+              строки выше не сходились бы в сумму, и читателю пришлось бы
+              гадать, что с чем складывать. */}
+          <p className="text-xs text-muted-foreground">
+            С расхождением данных {drift.length} — уже посчитаны в «сдали» и «с
+            опозданием».
           </p>
           {/* Контрольный час назван рядом со счётчиком опозданий: именно по
               нему сервер выставляет `late`, и без порога «с опозданием N»
@@ -1825,17 +1800,21 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
       </div>
 
       <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
+        {/* Полоса — ТЕ ЖЕ три корзины, что и числа над ней (сдали /
+            с опозданием / не сдали), а не свой разрез по цвету статуса:
+            иначе доли и подписи говорили бы о разном на одном экране.
+            «Нечего сдавать» доли не занимает — остаток полосы. */}
         <span
           className="block bg-green-600"
-          style={{ width: `${(green.length / total) * 100}%` }}
+          style={{ width: `${(counts.submitted / total) * 100}%` }}
         />
         <span
           className="block bg-amber-500"
-          style={{ width: `${(yellow.length / total) * 100}%` }}
+          style={{ width: `${(counts.late / total) * 100}%` }}
         />
         <span
           className="block bg-red-600"
-          style={{ width: `${(red.length / total) * 100}%` }}
+          style={{ width: `${(counts.missing / total) * 100}%` }}
         />
       </div>
 

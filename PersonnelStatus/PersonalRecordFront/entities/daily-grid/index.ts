@@ -3,6 +3,7 @@
 // грида слепого ввода (чистая state machine), prefill и bulk-дельты, контракт
 // сдачи дня и исправлений, мапперы отказов.
 import type { OpsApiFailure } from "@/lib/ops-errors";
+import type { TrafficLightNode } from "@/lib/api";
 
 // ── Каталог статус-типов (зеркало seed-каталога бэка, 17 типов) ──────────
 
@@ -754,3 +755,194 @@ export function dailyAmendPath(id: number): string {
 }
 export const DAILY_AMEND_PATH_PATTERN =
   "/api/ops/daily/daily-submissions/:submissionId/amend/";
+
+// ── Светофор сдачи дня: ОДИН классификатор на все экраны ─────────────────
+//
+// Ревью ветки 22.08 нашло, что слово «Сдано» значило ТРИ РАЗНЫХ ЧИСЛА на трёх
+// экранах: карточка командного центра (`ExpenseTrafficCard`), аналитика
+// (`/security-ops/analytics`) и борд «Ежедневного расхода» читали ОДИН И ТОТ
+// ЖЕ ответ светофора (`GET /api/operations/traffic-light/tree/`) и раскладывали
+// его по корзинам каждый по-своему — опоздавший GREEN попадал у одного экрана
+// в «Сдано», у другого сразу в две доли («сдали» И «с опозданием»), у третьего
+// в «Просрочено». Разбор корзин теперь ЖИВЁТ ЗДЕСЬ, в одном месте, и экраны
+// его не повторяют: разойтись им больше нечем.
+//
+// Почему в `entities/daily-grid`, а не в отдельном модуле: этот модуль УЖЕ
+// владеет контрактом сдачи дня (`DaySubmission`, `currentSubmission`,
+// `EVENT_LABELS`, пути ручек), а вердикт светофора — это ровно проекция той же
+// сдачи на подразделение (`submission.late` — поле сдачи, не свойство цвета).
+// Цикла импортов не возникает: `lib/api.ts` (владелец `TrafficLightNode`) не
+// импортирует `entities/*` вовсе, а здесь тип берётся `import type` (сам
+// импорт стоит в шапке файла, рядом с остальными).
+
+/** Подписи цветов светофора — ЕДИНСТВЕННЫЙ словарь на все экраны. Второй
+ * набор слов для тех же пяти статусов разошёлся бы при первом же новом
+ * состоянии. */
+export const SUBMISSION_LABEL: Record<TrafficLightNode["status"], string> = {
+  GREEN: "сдан",
+  YELLOW: "сдан, данные разошлись",
+  RED: "не сдан",
+  NEUTRAL: "нечего сдавать",
+  UNKNOWN: "состояние неизвестно",
+};
+
+/** Три корзины сдачи. NEUTRAL сюда не входит вовсе — см. `classifyLeaf`. */
+export type SubmissionBucket = "submitted" | "late" | "missing";
+
+/** Проверка полноты switch НА ЭТАПЕ КОМПИЛЯЦИИ: если статусов светофора
+ * станет шесть, `default` перестанет сужаться до `never` и `tsc` откажется
+ * собирать файл — вместо того чтобы шестой статус молча выпал из всех
+ * счётчиков сразу на трёх экранах. */
+function assertNeverStatus(value: never): never {
+  throw new Error(`Неизвестный статус светофора: ${String(value)}`);
+}
+
+/**
+ * Корзина сдачи ОДНОГО узла светофора. Маппинг снят по бэку
+ * (`organization_management/apps/operations/traffic_light.py`,
+ * `DivisionTrafficLight.late`, `_own_states`, `_PRECEDENCE`), а не придуман:
+ *
+ *   * `late` — отметка опоздания САМОЙ СДАЧИ (`submission.late`), а не
+ *     свойство цвета: у узла БЕЗ сдачи (RED — «есть кого сдавать, не сдали»,
+ *     NEUTRAL — «сдавать некого») сдачи нет вовсе, и бэк жёстко возвращает
+ *     `late=False`. Поэтому «просрочено» — это НЕ «красный, у которого истёк
+ *     час», а «сдали, но после контрольного часа»;
+ *   * `submitted` = GREEN|YELLOW и НЕ late. YELLOW («сдан, данные
+ *     разошлись») — это тоже СДАЧА: расхождение с живыми данными не значит,
+ *     что дня не было;
+ *   * `late`      = GREEN|YELLOW и late;
+ *   * `missing`   = RED (сдачи нет) ИЛИ UNKNOWN (справочник узла сломан —
+ *     свод считает «не знаю» СТАРШЕ красного: класть сломанный узел в
+ *     «сдано» значило бы обвинить отчёт зелёным цветом);
+ *   * `null`      = NEUTRAL — сдавать некого. Это не факт сдачи и не её
+ *     отсутствие, а отсутствие ОБЯЗАННОСТИ сдавать, поэтому узел стоит вне
+ *     всех трёх счётчиков.
+ */
+export function classifyLeaf(node: TrafficLightNode): SubmissionBucket | null {
+  switch (node.status) {
+    case "RED":
+    case "UNKNOWN":
+      return "missing";
+    case "GREEN":
+    case "YELLOW":
+      return node.late ? "late" : "submitted";
+    case "NEUTRAL":
+      return null;
+    default:
+      return assertNeverStatus(node.status);
+  }
+}
+
+export interface DivisionForest {
+  roots: TrafficLightNode[];
+  childrenOf: Map<number, TrafficLightNode[]>;
+  cyclic: Set<number>;
+}
+
+/**
+ * Лес подразделений по `parent_id`. Корень — узел БЕЗ РАЗРЕШИМОГО родителя:
+ * `parent_id === null`, ИЛИ `parent_id` указывает на id, которого среди узлов
+ * ответа нет (битая ссылка), ИЛИ цепочка родителей ЗАЦИКЛЕНА (A→B, B→A
+ * разрешают друг друга ПОПАРНО — обход леса идёт только от `roots` вниз, и без
+ * этой защиты оба узла не отрисовались бы НИКОГДА, без единого технического
+ * зависания). Все три случая становятся ОТДЕЛЬНЫМ корнем леса, а не пропадают
+ * молча — узел, до которого пользователь не доберётся, хуже некрасивого узла.
+ *
+ * Цикл ищется ХОДОМ ВВЕРХ по родителям от КАЖДОГО узла с множеством `visited`:
+ * если цепочка возвращается к уже посещённому В ЭТОМ ХОДЕ id — позиция узла в
+ * иерархии структурно неопределима (сам узел в цикле, ИЛИ его цепочка
+ * родителей ЧЕРЕЗ цикл проходит) — узел уходит в `cyclic` и становится корнем.
+ */
+export function buildDivisionForest(nodes: TrafficLightNode[]): DivisionForest {
+  const byId = new Map(nodes.map((node) => [node.division_id, node]));
+
+  const cyclic = new Set<number>();
+  for (const node of nodes) {
+    const visited = new Set<number>();
+    let current: TrafficLightNode | undefined = node;
+    while (current !== undefined) {
+      if (visited.has(current.division_id)) {
+        cyclic.add(node.division_id);
+        break;
+      }
+      visited.add(current.division_id);
+      const parentId: number | null = current.parent_id;
+      current = parentId === null ? undefined : byId.get(parentId);
+    }
+  }
+
+  const roots: TrafficLightNode[] = [];
+  const childrenOf = new Map<number, TrafficLightNode[]>();
+  for (const node of nodes) {
+    const parentId = node.parent_id;
+    const hasResolvableParent =
+      parentId !== null && byId.has(parentId) && !cyclic.has(node.division_id);
+    if (!hasResolvableParent) {
+      roots.push(node);
+      continue;
+    }
+    const siblings = childrenOf.get(parentId);
+    if (siblings) siblings.push(node);
+    else childrenOf.set(parentId, [node]);
+  }
+  return { roots, childrenOf, cyclic };
+}
+
+/**
+ * Листья дерева — узлы БЕЗ ПОТОМКОВ. Считать надо именно по ним: цвет узла С
+ * ПОТОМКАМИ — худший в поддереве (каскад светофора), и сложение родителя с
+ * детьми посчитало бы одно подразделение дважды.
+ *
+ * Лист определяется по `childrenOf` ЛЕСА, а не наивным `!parents.has(id)`
+ * (находка ревью ветки 22.08): при цикле A→B, B→A оба узла попадают в
+ * множество «кто чей-то родитель», и наивная проверка выбрасывала бы из счёта
+ * ОБА — подразделения молча исчезали бы из всех трёх счётчиков. В лесу
+ * зациклённый узел становится корнем без потомков, то есть честным листом.
+ */
+export function trafficLeaves(nodes: TrafficLightNode[]): TrafficLightNode[] {
+  const { childrenOf } = buildDivisionForest(nodes);
+  return nodes.filter(
+    (node) => (childrenOf.get(node.division_id) ?? []).length === 0
+  );
+}
+
+export interface SubmissionCounts {
+  /** Узлы, по которым посчитаны корзины (листья дерева). */
+  leaves: TrafficLightNode[];
+  submitted: number;
+  late: number;
+  missing: number;
+  /** NEUTRAL — вне трёх корзин, но названо числом: «сдавать некого» это факт,
+   * а не пустота. */
+  neutral: number;
+}
+
+/** Счёт корзин по ЛИСТЬЯМ дерева — единственный на все экраны. Экран, которому
+ * нужна более дробная разбивка (RED против UNKNOWN, YELLOW внутри сдавших),
+ * берёт её из `leaves` тем же `classifyLeaf`, а не своим маппингом. */
+export function countSubmissions(nodes: TrafficLightNode[]): SubmissionCounts {
+  const leaves = trafficLeaves(nodes);
+  const counts: SubmissionCounts = {
+    leaves,
+    submitted: 0,
+    late: 0,
+    missing: 0,
+    neutral: 0,
+  };
+  for (const node of leaves) {
+    const bucket = classifyLeaf(node);
+    if (bucket === null) counts.neutral += 1;
+    else counts[bucket] += 1;
+  }
+  return counts;
+}
+
+// ── Подписи статусов раздела ─────────────────────────────────────────────
+
+/** Код статуса → подпись, ИЗ ЕДИНСТВЕННОГО каталога раздела. До ревью ветки
+ * 22.08 эта карта была скопирована дословно в трёх местах
+ * (`DailyExpenseBoard`, `LeadershipStrip`, экран профиля) — три копии одного
+ * словаря разъехались бы при первом же новом статусе в каталоге. */
+export const STATUS_LABEL_BY_CODE: ReadonlyMap<string, string> = new Map(
+  STATUS_TYPE_OPTIONS.map((option) => [option.code, option.label])
+);

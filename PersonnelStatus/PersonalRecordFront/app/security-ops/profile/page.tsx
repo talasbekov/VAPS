@@ -29,7 +29,7 @@ import {
 } from "@/hooks/use-my-employee";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useDutyShiftsAll } from "@/hooks/use-duty-shifts";
-import { STATUS_TYPE_OPTIONS } from "@/entities/daily-grid";
+import { STATUS_LABEL_BY_CODE } from "@/entities/daily-grid";
 import { STAGE_LABEL } from "@/entities/security-event";
 import type { CoreEmployee, OpsEmployeeStatusRow } from "@/lib/api";
 import type { SecurityEvent } from "@/entities/security-event";
@@ -43,10 +43,10 @@ const TAB_LABEL: Record<ProfileTab, string> = {
 };
 
 /** Подписи статусов берутся из каталога раздела — одного владельца на все
- * экраны расхода; свой словарь здесь разошёлся бы с сеткой дня. */
-const STATUS_LABEL: Record<string, string> = Object.fromEntries(
-  STATUS_TYPE_OPTIONS.map((option) => [option.code, option.label])
-);
+ * экраны расхода; свой словарь здесь разошёлся бы с сеткой дня. Карта
+ * `STATUS_LABEL_BY_CODE` живёт в `entities/daily-grid`: до ревью ветки 22.08
+ * она была скопирована сюда и ещё в два места «Ежедневного расхода». */
+const STATUS_LABEL = STATUS_LABEL_BY_CODE;
 
 /** Цвет отметки в календаре — по СОСТОЯНИЮ строки, а не по её типу: экран не
  * решает, какой статус «важнее», он показывает, что с ним сейчас. */
@@ -349,7 +349,7 @@ function HeroCard({
               </span>
             ) : (
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary-ink">
-                {STATUS_LABEL[active.status_type_code] ?? active.status_type_code}
+                {STATUS_LABEL.get(active.status_type_code) ?? active.status_type_code}
               </span>
             )}
           </div>
@@ -576,7 +576,7 @@ function CalendarTab({
       [
         ...statuses.map((row) => ({
           key: `status-${row.id}`,
-          title: STATUS_LABEL[row.status_type_code] ?? row.status_type_code,
+          title: STATUS_LABEL.get(row.status_type_code) ?? row.status_type_code,
           from: row.date_start,
           to: row.date_end,
           state: row.state,
@@ -792,7 +792,7 @@ function StatsTab({
       const from = new Date(`${row.date_start}T00:00:00Z`).getTime();
       const to = new Date(`${row.date_end}T00:00:00Z`).getTime();
       const span = Math.max(1, Math.round((to - from) / 86_400_000) + 1);
-      const label = STATUS_LABEL[row.status_type_code] ?? row.status_type_code;
+      const label = STATUS_LABEL.get(row.status_type_code) ?? row.status_type_code;
       days.set(label, (days.get(label) ?? 0) + span);
     }
     const rows = [...days.entries()].sort((a, b) => b[1] - a[1]);
