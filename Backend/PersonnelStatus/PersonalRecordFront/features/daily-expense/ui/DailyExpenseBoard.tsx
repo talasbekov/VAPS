@@ -29,7 +29,14 @@ import { formatIsoDate } from "@/shared/lib/date";
 import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
 import { useStrengthReport } from "@/hooks/use-strength-report";
-import { DAILY_EMPLOYEES_PATH, STATUS_TYPE_OPTIONS } from "@/entities/daily-grid";
+import {
+  DAILY_EMPLOYEES_PATH,
+  DAILY_SUBMISSIONS_PATH,
+  STATUS_TYPE_OPTIONS,
+  currentSubmission,
+  parseSubmissionList,
+} from "@/entities/daily-grid";
+import { DaySubmissionPanel } from "@/features/ops-daily";
 import { LeadershipStrip } from "./LeadershipStrip";
 
 // Ярлык статуса — из ЕДИНСТВЕННОГО каталога раздела (STATUS_TYPE_OPTIONS),
@@ -227,6 +234,47 @@ export function DailyExpenseBoard() {
   const data = strength.data;
   const totals = data?.totals;
 
+  // «Сдать день»: ручка сдачи работает НА ОДНО подразделение
+  // (`DaySubmissionCreateBody` = ровно `{division_id, business_date}`), а
+  // этот экран — департаментский обзор БЕЗ выбора подразделения. У
+  // `/api/ops/daily/divisions/` нет поля родителя (см. `LeadershipStrip.tsx`)
+  // — понятия «id департамента» тут нет вовсе, и панель прагматично
+  // привязана к ПЕРВОМУ управлению расхода (`data.rows[0]`, стабильный
+  // порядок сервера): реальное подразделение, не выдумка, но не «весь
+  // департамент» — сдача департаментом целиком бэком не поддерживается
+  // (ручка принимает ровно один division_id). Открытый вопрос для отдельного
+  // решения — см. отчёт Task 4 (План-фронтенда-2026-08-21).
+  const submissionDivision = data?.rows[0] ?? null;
+  const submissionDivisionId = submissionDivision
+    ? String(submissionDivision.division_id)
+    : null;
+  const businessDate = data?.business_date ?? null;
+  const dateValid = businessDate !== null && /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
+
+  // Состояние дня выбранного управления — СВОЯ живая правда, не выдумка
+  // панели: без запроса «Сдать день» лгала бы «день не сдан» даже когда он
+  // уже сдан. Ключ СВОЙ (`daily-expense-board`) — не занят
+  // `use-forces-gathering.ts` (`daily-employees`) и отличается от ключей,
+  // которые заводит сама панель (`ops-daily`) — три независимых владельца
+  // кэша на один путь ручки.
+  const daySubmissionQuery = useQuery({
+    queryKey: [
+      "daily-expense-board",
+      "day-submission",
+      submissionDivisionId,
+      businessDate,
+    ],
+    queryFn: () =>
+      opsApiClient.get<unknown>(
+        `${DAILY_SUBMISSIONS_PATH}?division_id=${encodeURIComponent(
+          submissionDivisionId as string
+        )}&business_date=${encodeURIComponent(businessDate as string)}`
+      ),
+    enabled: submissionDivisionId !== null && dateValid,
+  });
+  const daySubmissions = parseSubmissionList(daySubmissionQuery.data);
+  const daySubmission = currentSubmission(daySubmissions);
+
   return (
     <section role="region" aria-label="Ежедневный расход" className="space-y-4">
       {strength.isPending && (
@@ -285,6 +333,27 @@ export function DailyExpenseBoard() {
             caption="Не входят в списочный состав"
           />
         </div>
+      )}
+
+      {/* Панель сдачи — СРАЗУ под сводной строкой, там, где человек только
+          что проверил цифры. Экран здесь read-only (грида правок нет): драфт
+          изменений (`dirtyCount`/`localDrift`) отсюда взять НЕОТКУДА —
+          честные нулевые значения, а не выдумка. Ключ `businessDate` в key
+          снимает ответ прошлой сдачи и подтверждение при смене дня. */}
+      {data && submissionDivisionId !== null && (
+        <DaySubmissionPanel
+          key={`${submissionDivisionId}-${data.business_date}`}
+          divisionId={submissionDivisionId}
+          businessDate={data.business_date}
+          dateValid={dateValid}
+          rowCount={submissionDivision?.list_total ?? 0}
+          dirtyCount={0}
+          localDrift={[]}
+          submission={daySubmission}
+          submissions={daySubmissions}
+          isLoading={daySubmissionQuery.isPending && submissionDivisionId !== null}
+          isError={daySubmissionQuery.isError}
+        />
       )}
 
       {/* «Руководство департамента» — ПЕРВЫМ, над рядовыми управлениями,
