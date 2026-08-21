@@ -10,9 +10,17 @@
 // Поимённый список управления грузится ЛЕНИВО — только по первому раскрытию
 // строки (`enabled: open`): шесть управлений расхода на одну загрузку экрана
 // иначе означали бы шесть запросов на людей и шесть на статусы, которые
-// никто ещё не открыл.
-import { useState } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+// никто ещё не открыл. Состояние сдачи дня подчиняется ТОМУ ЖЕ правилу —
+// ревью 21.08 поймало нарушение (N безусловных запросов на состояние сдачи,
+// по одному на управление, независимо от `open`) и потребовало починки:
+// сейчас борд читает состояние сдачи ОДНИМ списочным запросом
+// (`GET daily-submissions?business_date=`, без `division_id` — фильтр
+// поддержан) и раздаёт его строкам; интерактивная панель `DaySubmissionPanel`
+// (со своим собственным внутренним запросом истории версий) монтируется
+// ТОЛЬКО при раскрытии строки — при схлопывании её место занимает лёгкий
+// бейдж, собранный из ТОГО ЖЕ списочного ответа, без нового запроса.
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -36,6 +44,7 @@ import {
   currentSubmission,
   parseSubmissionList,
 } from "@/entities/daily-grid";
+import type { DaySubmission } from "@/entities/daily-grid";
 import { DaySubmissionPanel } from "@/features/ops-daily";
 import { LeadershipStrip } from "./LeadershipStrip";
 
@@ -86,12 +95,50 @@ function SkeletonTableRows() {
   );
 }
 
+/** Состояние сдачи ОДНОГО управления — производная ОДНОГО списочного запроса
+ * борда (`DailyExpenseBoard`), а не своего запроса группы: `isPending`/
+ * `isError` тут ОБЩИЕ на все управления разом (запрос один), `submission`/
+ * `submissions` — уже отфильтрованы по этому division_id. */
+interface DivisionSubmissionSummary {
+  isPending: boolean;
+  isError: boolean;
+  submission: DaySubmission | null;
+  submissions: DaySubmission[];
+}
+
+/** Свёрнутая шапка группы: лёгкий бейдж БЕЗ интерактивности и БЕЗ своего
+ * запроса — питается тем же `DivisionSubmissionSummary`, что и раскрытая
+ * панель. Ошибка чтения показана СЛОВАМИ отдельно от «не сдал»: молчаливое
+ * чтение отказа как «не сдал» было бы враньём (находка ревью). */
+function CollapsedSubmissionBadge({ summary }: { summary: DivisionSubmissionSummary }) {
+  if (summary.isPending) {
+    return <span className="text-muted-foreground">Загрузка состояния сдачи…</span>;
+  }
+  if (summary.isError) {
+    return (
+      <span role="alert" className="text-muted-foreground">
+        Не удалось узнать, сдан ли день
+      </span>
+    );
+  }
+  if (summary.submission === null) {
+    return <span className="text-muted-foreground">День не сдан</span>;
+  }
+  return (
+    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+      Сдан · v{summary.submission.version}
+      {summary.submission.late && " · с опозданием"}
+    </span>
+  );
+}
+
 interface DivisionGroupProps {
   row: DivisionRowVM;
   columnLabels: Record<string, string>;
   businessDate: string;
   open: boolean;
   onToggle: () => void;
+  submissionsSummary: DivisionSubmissionSummary;
 }
 
 function DivisionGroup({
@@ -100,6 +147,7 @@ function DivisionGroup({
   businessDate,
   open,
   onToggle,
+  submissionsSummary,
 }: DivisionGroupProps) {
   // Раскрытую строку НЕ размонтируем при повторном схлопывании — теряли бы
   // скролл и уже загруженные данные. До первого раскрытия таблицы в разметке
@@ -138,34 +186,11 @@ function DivisionGroup({
 
   const nonZeroColumns = Object.entries(row.columns).filter(([, count]) => count > 0);
 
-  // Состояние сдачи ЭТОГО управления — СВОЯ живая правда для его собственной
-  // панели: без запроса панель лгала бы «день не сдан», даже когда он уже
-  // сдан. Ключ — СЕМЬЯ `ops-daily`, та же, что панель САМА инвалидирует в
-  // `onSuccess` (submit и amend: `["ops-daily","day-submission",divisionId,
-  // businessDate]`) — НЕ своя (`daily-expense-board`) специально: react-query
-  // дедуплицирует одинаковый ключ в ОДНУ запись кэша с сводкой борда ниже, и
-  // panel-мутация освежает обе стороны без единой правки восстановленного
-  // файла. Не гейтим `enabled`: `businessDate` тут ВСЕГДА валидная строка
-  // сервера (родитель монтирует группу только когда `data` уже есть).
-  const submissionDivisionId = String(row.id);
-  const daySubmissionQuery = useQuery({
-    queryKey: ["ops-daily", "day-submission", submissionDivisionId, businessDate],
-    queryFn: () =>
-      opsApiClient.get<unknown>(
-        `${DAILY_SUBMISSIONS_PATH}?division_id=${encodeURIComponent(
-          submissionDivisionId
-        )}&business_date=${encodeURIComponent(businessDate)}`
-      ),
-  });
-  const daySubmissions = parseSubmissionList(daySubmissionQuery.data);
-  const daySubmission = currentSubmission(daySubmissions);
-
   return (
-    // `role="group"` — оборачивает ВСЮ группу (шапку + панель сдачи + раскрытую
-    // таблицу) ОДНИМ именем управления: панель сдачи теперь ВСЕГДА видна и
-    // живёт ВНЕ раскрываемого `role="region"` ниже — без своего имени на
-    // контейнере пробе было бы нечем отличить кнопку «Сдать день» ЭТОГО
-    // управления от кнопки соседнего в плоском дереве ролей.
+    // `role="group"` — оборачивает ВСЮ группу (шапку + сдачу + раскрытую
+    // таблицу) ОДНИМ именем управления: без своего имени на контейнере пробе
+    // было бы нечем отличить кнопку «Сдать день» ЭТОГО управления от кнопки
+    // соседнего в плоском дереве ролей.
     <div className="rounded-lg border" role="group" aria-label={row.name}>
       <button
         type="button"
@@ -192,28 +217,37 @@ function DivisionGroup({
         </span>
       </button>
 
-      {/* Панель сдачи ЭТОГО управления — ВСЕГДА видна (не гейтится
-          `open`/`everOpened`), рядом со счётчиками шапки, а не внутри
+      {/* Сдача ЭТОГО управления — рядом со счётчиками шапки, а не внутри
           раскрытой таблицы: решение координатора 21.08 — одна кнопка на весь
           департамент семантически невозможна без бэк-этапа (сдача
-          версионируется ПО УПРАВЛЕНИЮ, `DaySubmission.division_id`), сводка
-          «сдано N из M» живёт на уровне борда, а само действие — здесь.
-          Компонент НЕ переписан: бейдж «День сдан: vN · …» и кнопка
-          «Исправить сдачу» — его собственная, восстановленная логика. */}
-      <div className="border-t px-3 py-2">
-        <DaySubmissionPanel
-          key={`${submissionDivisionId}-${businessDate}`}
-          divisionId={submissionDivisionId}
-          businessDate={businessDate}
-          dateValid={true}
-          rowCount={row.listTotal}
-          dirtyCount={0}
-          localDrift={[]}
-          submission={daySubmission}
-          submissions={daySubmissions}
-          isLoading={daySubmissionQuery.isPending}
-          isError={daySubmissionQuery.isError}
-        />
+          версионируется ПО УПРАВЛЕНИЮ). Второе решение (после ревью 21.08):
+          ИНТЕРАКТИВНАЯ панель (кнопка/подтверждение/amendment-форма) грузится
+          ТОЛЬКО при раскрытии — она несёт СВОЙ внутренний запрос истории
+          версий (см. восстановленный файл), и держать её смонтированной
+          всегда означало бы вернуть N eager-запросов, которых правило
+          ленивости файла как раз запрещает. Свёрнутая шапка получает лёгкий
+          бейдж БЕЗ интерактивности и БЕЗ своего запроса — из ТОГО ЖЕ
+          списочного ответа борда, что уже прочитан для сводки выше.
+          Компонент панели НЕ переписан: бейдж «День сдан: vN · …» и кнопка
+          «Исправить сдачу» внутри неё — её собственная восстановленная логика. */}
+      <div className="border-t px-3 py-2 text-sm">
+        {open ? (
+          <DaySubmissionPanel
+            key={`${row.id}-${businessDate}`}
+            divisionId={String(row.id)}
+            businessDate={businessDate}
+            dateValid={true}
+            rowCount={row.listTotal}
+            dirtyCount={0}
+            localDrift={[]}
+            submission={submissionsSummary.submission}
+            submissions={submissionsSummary.submissions}
+            isLoading={submissionsSummary.isPending}
+            isError={submissionsSummary.isError}
+          />
+        ) : (
+          <CollapsedSubmissionBadge summary={submissionsSummary} />
+        )}
       </div>
 
       {everOpened && (
@@ -269,6 +303,7 @@ function DivisionGroup({
 
 export function DailyExpenseBoard() {
   const strength = useStrengthReport(true);
+  const queryClient = useQueryClient();
   const [openIds, setOpenIds] = useState<Set<number>>(new Set());
 
   const toggle = (id: number) => {
@@ -285,55 +320,88 @@ export function DailyExpenseBoard() {
   const data = strength.data;
   const totals = data?.totals;
 
-  // Сводка сдачи дня — «Сдано N из M управлений» + кто не сдал. Кнопка
-  // сдачи переехала В КАЖДУЮ группу управления (решение координатора 21.08,
-  // журнал 21→22.08): сдача версионируется ПО УПРАВЛЕНИЮ
-  // (`DaySubmission.division_id`) — одна кнопка на весь департамент была бы
-  // семантической ложью (реально сдавала бы одно управление, выглядела бы
-  // как «весь департамент сдан»). Источник N/M — ЖИВЫЕ ответы, свой счёт не
-  // заводим.
-  //
-  // ПОЧЕМУ N ЗАПРОСОВ, А НЕ ОДИН АГРЕГАТ: живая ложь, найденная координатором
-  // 21.08 — успешная сдача в шапке управления не двигала сводку борда, пока
-  // она читалась ОДНИМ GET под СВОИМ ключом (`daily-expense-board`,
-  // недостижимым для инвалидации панели). Панель (не переписана) сама зовёт
-  // `invalidateQueries({queryKey: ["ops-daily","day-submission",divisionId,
-  // businessDate]})` на submit/amend — ключ per-division. Единственный способ
-  // «подписаться» на эту инвалидацию БЕЗ правки восстановленного файла — самому
-  // читать ПОД ТЕМ ЖЕ ключом. Один агрегат под чужим division_id-less ключом
-  // так подписаться не может: инвалидация — точное совпадение по позиции
-  // сегментов ключа, `division_id` в ней обязателен. N per-division запросов
-  // (`useQueries`, тот же приём, что уже в `LeadershipStrip.tsx`) — тот же
-  // ключ, что уже завела `DivisionGroup` выше, поэтому кэш ОДИН на обоих
-  // потребителей, а не N лишних сетевых запросов сверх уже идущих.
+  // Сводка сдачи дня — «Сдано N из M управлений» + кто не сдал, и state для
+  // КАЖДОГО управления (бейдж/панель в `DivisionGroup`) — из ОДНОГО списочного
+  // запроса, а не N: ревью 21.08 поймало нарушение файлового правила
+  // ленивости («шесть управлений … иначе означали бы шесть запросов…», шапка
+  // файла) — предыдущая версия читала состояние сдачи N запросами
+  // (`useQueries`, по одному на управление) БЕЗУСЛОВНО, независимо от того,
+  // раскрыта ли строка. Разбор факта: restored-панель `DaySubmissionPanel`
+  // САМА заводит внутренний запрос истории версий на каждое монтирование
+  // (`historyQuery`, `["ops-daily","division-submissions",divisionId]`,
+  // `enabled: divisionId !== null && dateValid` — БЕЗ гейта на `open`) — то
+  // есть N рождала САМА панель, будучи смонтированной у каждой группы сразу.
+  // Починка (без правки восстановленного файла): панель теперь монтируется
+  // ЛЕНИВО (см. `DivisionGroup`, только при `open`), а борд читает состояние
+  // сдачи ВСЕХ управлений ОДНИМ запросом (`business_date`-фильтр без
+  // `division_id` — поддержан живой ручкой), раздавая срез каждой строке.
   const businessDate = data?.business_date ?? null;
   const dateValid = businessDate !== null && /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
-  const submissionQueries = useQueries({
-    queries: (data?.rows ?? []).map((row) => {
-      const divisionId = String(row.division_id);
-      return {
-        queryKey: ["ops-daily", "day-submission", divisionId, businessDate],
-        queryFn: () =>
-          opsApiClient.get<unknown>(
-            `${DAILY_SUBMISSIONS_PATH}?division_id=${encodeURIComponent(
-              divisionId
-            )}&business_date=${encodeURIComponent(businessDate as string)}`
-          ),
-        enabled: dateValid,
-      };
-    }),
+  const submissionsListQuery = useQuery({
+    queryKey: ["daily-expense-board", "submissions", businessDate],
+    queryFn: () =>
+      opsApiClient.get<unknown>(
+        `${DAILY_SUBMISSIONS_PATH}?business_date=${encodeURIComponent(
+          businessDate as string
+        )}&limit=200`
+      ),
+    enabled: dateValid,
   });
-  const submittedDivisionIds = new Set(
-    submissionQueries.flatMap((query) =>
-      parseSubmissionList(query.data)
-        .filter((submission) => submission.is_current)
-        .map((submission) => submission.division_id)
-    )
-  );
+
+  // Свежесть после сдачи БЕЗ правки восстановленного файла: панель на
+  // submit/amend success сама зовёт `invalidateQueries({queryKey:
+  // ["ops-daily","day-submission",divisionId,businessDate]})` И
+  // `invalidateQueries({queryKey: ["ops-daily","division-submissions",
+  // divisionId]})` — второй ключ СОВПАДАЕТ с её же `historyQuery`, которая
+  // РЕАЛЬНО есть в кэше, пока панель смонтирована (т.е. пока управление
+  // раскрыто — единственное состояние, из которого вообще можно сдать день).
+  // Подписка на `QueryCache` ловит ИМЕННО это событие (`action.type ===
+  // "invalidate"` — вызывается ТОЛЬКО явным `invalidateQueries`, обычная
+  // загрузка/рефетч такого action не порождает) и инвалидирует список борда.
+  // Никакого колбэка в контракте панели заводить не пришлось.
+  useEffect(() => {
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== "updated" || event.action.type !== "invalidate") return;
+      const key = event.query.queryKey;
+      if (key[0] !== "ops-daily" || key[1] !== "division-submissions") return;
+      void queryClient.invalidateQueries({
+        queryKey: ["daily-expense-board", "submissions", businessDate],
+      });
+    });
+  }, [queryClient, businessDate]);
+
+  const listIsPending = dateValid && submissionsListQuery.isPending;
+  const listIsError = submissionsListQuery.isError;
+
+  const submissionsByDivision = new Map<string, DaySubmission[]>();
+  for (const submission of parseSubmissionList(submissionsListQuery.data)) {
+    const list = submissionsByDivision.get(submission.division_id) ?? [];
+    list.push(submission);
+    submissionsByDivision.set(submission.division_id, list);
+  }
+
+  function summaryFor(divisionId: number): DivisionSubmissionSummary {
+    const divisionSubs = submissionsByDivision.get(String(divisionId)) ?? [];
+    return {
+      isPending: listIsPending,
+      isError: listIsError,
+      submission: listIsPending || listIsError ? null : currentSubmission(divisionSubs),
+      submissions: divisionSubs,
+    };
+  }
+
+  // N/M — «неизвестно» вместо «не сдал» при ошибке/загрузке (находка ревью):
+  // упавшая или ещё не ответившая ручка не должна молча читаться как «никто
+  // не сдал» — пустые списки здесь означают именно «нечем посчитать», а не
+  // «ноль сдач».
   const submittedRows =
-    data?.rows.filter((row) => submittedDivisionIds.has(String(row.division_id))) ?? [];
+    listIsPending || listIsError
+      ? []
+      : data?.rows.filter((row) => currentSubmission(submissionsByDivision.get(String(row.division_id)) ?? []) !== null) ?? [];
   const notSubmittedRows =
-    data?.rows.filter((row) => !submittedDivisionIds.has(String(row.division_id))) ?? [];
+    listIsPending || listIsError
+      ? []
+      : data?.rows.filter((row) => currentSubmission(submissionsByDivision.get(String(row.division_id)) ?? []) === null) ?? [];
 
   return (
     <section role="region" aria-label="Ежедневный расход" className="space-y-4">
@@ -398,21 +466,35 @@ export function DailyExpenseBoard() {
       {/* Сводка сдачи дня — СРАЗУ под сводной строкой, там, где человек
           только что проверил цифры. Сама кнопка «Сдать день» — в шапке
           КАЖДОГО управления ниже (сдача версионируется по управлению, одной
-          кнопки на департамент быть не может). */}
+          кнопки на департамент быть не может). Три состояния явные: ждём
+          ответ / не удалось узнать / готово — «не удалось» НЕ схлопнуто в
+          «Сдано 0 из M» (это была бы видимая ложь при живой ошибке ручки). */}
       {data && (
         <div
           role="group"
           aria-label="Сводка сдачи дня"
           className="rounded-lg border bg-card p-3 text-sm"
         >
-          <p className="font-medium">
-            Сдано {submittedRows.length} из {data.rows.length} управлений на{" "}
-            {formatIsoDate(data.business_date)}
-          </p>
-          {notSubmittedRows.length > 0 && (
-            <p className="mt-1 text-muted-foreground">
-              Не сдали: {notSubmittedRows.map((row) => row.name).join(", ")}
+          {listIsPending && (
+            <p className="text-muted-foreground">Загрузка сводки сдачи…</p>
+          )}
+          {!listIsPending && listIsError && (
+            <p role="alert" className="text-muted-foreground">
+              Не удалось узнать, кто сдал день — сводка недоступна
             </p>
+          )}
+          {!listIsPending && !listIsError && (
+            <>
+              <p className="font-medium">
+                Сдано {submittedRows.length} из {data.rows.length} управлений на{" "}
+                {formatIsoDate(data.business_date)}
+              </p>
+              {notSubmittedRows.length > 0 && (
+                <p className="mt-1 text-muted-foreground">
+                  Не сдали: {notSubmittedRows.map((row) => row.name).join(", ")}
+                </p>
+              )}
+            </>
           )}
         </div>
       )}
@@ -440,6 +522,7 @@ export function DailyExpenseBoard() {
                 businessDate={data.business_date}
                 open={openIds.has(row.division_id)}
                 onToggle={() => toggle(row.division_id)}
+                submissionsSummary={summaryFor(row.division_id)}
               />
             );
           })}
