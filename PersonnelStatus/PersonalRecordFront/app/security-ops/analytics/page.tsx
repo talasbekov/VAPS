@@ -35,6 +35,7 @@ import {
   useTrafficLightTree,
 } from "@/hooks/use-strength-report";
 import { useOpsLaggingNotifications } from "@/hooks/use-ops-lagging-notifications";
+import { useOpsMutation } from "@/hooks/use-ops-mutation";
 import type { AnalyticsPeriodRequest } from "@/hooks/use-ops-analytics";
 import type {
   AnalyticsPeriod,
@@ -44,12 +45,15 @@ import type {
   MetricValue,
 } from "@/entities/service-analytics";
 import type {
+  OpsNotification,
   StrengthReport,
   StrengthReportRow,
   TrafficLightNode,
 } from "@/lib/api";
 import { apiClient } from "@/lib/api";
-import { useQuery } from "@tanstack/react-query";
+import { opsApiClient } from "@/lib/ops-api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check } from "lucide-react";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
@@ -1688,11 +1692,44 @@ function formatBusinessDate(raw: string): string {
 function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
   const feed = useOpsLaggingNotifications();
   const tree = useTrafficLightTree(gate === "allowed");
+  const queryClient = useQueryClient();
+  // pk строки, которую отмечаем прямо сейчас — кнопку блокирует ТОЛЬКО она,
+  // соседние непрочитанные остаются кликабельны на время её отправки.
+  const [markingId, setMarkingId] = useState<number | null>(null);
+
+  /**
+   * POST /api/operations/notifications/{id}/read/ — снят с `/api/schema/`
+   * (operationId `api_operations_notifications_read_create`): тела у запроса
+   * нет, момент прочтения ставит сервер, действие идемпотентно (повторный
+   * вызов момент не двигает). 404 — уведомление чужое или его уже нет.
+   *
+   * ОПТИМИСТИЧНОЙ ПРАВКИ КЭША ЗДЕСЬ НЕТ: onSuccess только инвалидирует
+   * запрос, и лента перечитывается у сервера. Патч в кэш заранее замаскировал
+   * бы отказ (404/403) видимостью успеха — строка погасла бы, а read_at на
+   * сервере остался бы null.
+   */
+  const markRead = useOpsMutation<OpsNotification, { id: number }>({
+    mutationFn: ({ id }) =>
+      opsApiClient.post<OpsNotification>(`/api/operations/notifications/${id}/read/`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["ops-notifications", "feed"],
+      });
+    },
+  });
+
+  function handleMarkRead(id: number) {
+    setMarkingId(id);
+    markRead.mutate({ id });
+  }
 
   const names = new Map<number, string>(
     (tree.data?.nodes ?? []).map((node) => [node.division_id, node.name])
   );
   const rows = feed.data?.results ?? [];
+  // Счётчик — НЕПРОЧИТАННЫЕ, а не длина ленты: отметка строки обязана его
+  // уменьшить, иначе кнопка визуально ничего не меняла бы в шапке блока.
+  const unreadCount = rows.filter((row) => row.read_at === null).length;
 
   return (
     <section
@@ -1709,9 +1746,9 @@ function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
               : "Уходят ответственным автоматически после контрольного часа — одно за день."}
           </p>
         </div>
-        {rows.length > 0 && (
+        {unreadCount > 0 && (
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
-            {rows.length}
+            {unreadCount}
           </span>
         )}
       </div>
@@ -1733,10 +1770,14 @@ function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
         <ul className="space-y-1">
           {rows.map((row) => {
             const ids = row.payload.laggard_division_ids ?? [];
+            const isRead = row.read_at !== null;
             return (
               <li
                 key={row.id}
-                className="flex flex-wrap items-baseline gap-2 border-b py-1 text-xs last:border-0"
+                // Прочитанное гаснет (muted): opacity — единственный сигнал
+                // прочтения слишком тонок, поэтому слово «прочитано» ниже
+                // остаётся при любой теме и остроте зрения.
+                className={`flex flex-wrap items-center gap-2 border-b py-1 text-xs last:border-0 ${isRead ? "opacity-60" : ""}`}
               >
                 <span className="shrink-0 tabular-nums text-muted-foreground">
                   {formatBusinessDate(row.business_date)}
@@ -1748,13 +1789,36 @@ function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
                         .map((id) => names.get(id) ?? `№${id}`)
                         .join(", ")}
                 </span>
-                <span className="shrink-0 text-muted-foreground">
-                  {row.read_at === null ? "не прочитано" : "прочитано"}
+                <span className="shrink-0 flex items-center gap-2 text-muted-foreground">
+                  {isRead ? (
+                    "прочитано"
+                  ) : (
+                    <>
+                      не прочитано
+                      <button
+                        type="button"
+                        onClick={() => handleMarkRead(row.id)}
+                        disabled={markRead.isPending && markingId === row.id}
+                        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Check className="h-3 w-3" aria-hidden="true" />
+                        Прочитано
+                      </button>
+                    </>
+                  )}
                 </span>
               </li>
             );
           })}
         </ul>
+      )}
+
+      {/* 5xx/сеть/401 сюда не доходят (silent-канал useOpsMutation): 404
+          (чужое/удалённое уведомление) и прочее фича обязана назвать сама. */}
+      {markRead.error !== null && (
+        <p role="alert" className="mt-2 text-xs text-destructive-ink">
+          Не удалось отметить уведомление прочитанным. Попробуйте ещё раз.
+        </p>
       )}
 
       {/* Чего в разделе НЕТ — названо словами, а не нарисовано пустой кнопкой:
