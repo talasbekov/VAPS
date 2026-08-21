@@ -40,6 +40,13 @@ const PAGE_SIZE = 200;
 const EVENTS_LINK_GAP_LINE =
   "связь по совпадению имени в сводках ГВО; прямой ссылки в модели нет (бэк-этап)";
 
+// Отдельная ветка от пустого состояния: без неё отказ реестра ОМ или сводок
+// ГВО выглядел бы как честное «не назван ни в одной сводке» — та же строка,
+// но неправда, потому что данные не загрузились, а не отсутствуют. Идиома —
+// как у EventsTab профиля (profile/page.tsx): «X сейчас недоступен — Y».
+const LINKS_ERROR_LINE =
+  "Реестр ОМ или сводки ГВО сейчас не отвечают — связанные мероприятия показать нечем.";
+
 type Disclosure = { personId: string; kind: "events" | "objects" } | null;
 
 export default function ProtectedPersonsPage() {
@@ -128,6 +135,7 @@ export default function ProtectedPersonsPage() {
                 person={person}
                 events={eventsOf(person)}
                 isLoadingLinks={eventsQuery.isLoading || patchesQuery.isLoading}
+                isErrorLinks={eventsQuery.isError || patchesQuery.isError}
                 disclosure={
                   disclosure?.personId === person.id ? disclosure.kind : null
                 }
@@ -151,12 +159,14 @@ function PersonCard({
   person,
   events,
   isLoadingLinks,
+  isErrorLinks,
   disclosure,
   onDisclose,
 }: {
   person: ProtectedPerson;
   events: SecurityEvent[];
   isLoadingLinks: boolean;
+  isErrorLinks: boolean;
   disclosure: "events" | "objects" | null;
   onDisclose: (kind: "events" | "objects") => void;
 }) {
@@ -223,6 +233,7 @@ function PersonCard({
             events={events}
             kind={disclosure}
             isLoading={isLoadingLinks}
+            isError={isErrorLinks}
           />
         </div>
       )}
@@ -235,15 +246,26 @@ function PersonLinks({
   events,
   kind,
   isLoading,
+  isError,
 }: {
   person: ProtectedPerson;
   events: SecurityEvent[];
   kind: "events" | "objects";
   isLoading: boolean;
+  isError: boolean;
 }) {
   if (isLoading) {
     return (
       <p className="text-[12.5px] text-muted-foreground">Загрузка реестра ОМ…</p>
+    );
+  }
+  // Отдельная ветка ОТ пустого состояния ниже: без неё отказ запроса и
+  // настоящее отсутствие совпадений печатали БЫ ОДНУ И ТУ ЖЕ строку —
+  // «не назван ни в одной сводке ГВО» звучала бы правдиво, а была ложью
+  // (данные не загрузились, а не отсутствуют).
+  if (isError) {
+    return (
+      <p className="text-[12.5px] text-muted-foreground">{LINKS_ERROR_LINE}</p>
     );
   }
   // Блок «Мероприятия с участием» — только у панели событий: подпись честно
