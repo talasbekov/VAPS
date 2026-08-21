@@ -6,8 +6,10 @@
  * 1. кадровая часть (численность, статусы, подразделения, вакансии) взята у
  *    расхода — владельца этих чисел, а не посчитана из смен; подписи колонок
  *    приходят с сервера, а не из своего словаря;
- * 2. сдача дня считается по ЛИСТЬЯМ светофора: цвет узла с потомками — худший
- *    в поддереве, и сложение его с детьми посчитало бы подразделение дважды;
+ * 2. сдача дня считается по ЛИСТЬЯМ светофора В СЧЁТЧИКАХ (цвет узла с
+ *    потомками — худший в поддереве, и сложение его с детьми посчитало бы
+ *    подразделение дважды), а под счётчиками — ПОЛНОЕ дерево: все узлы,
+ *    вложенные буквально по `parent_id`, здоровые ветки свёрнуты в сводку;
  * 3. ряд динамики строится за период снимка и обрывается датой раздела —
  *    расхода за будущее не существует;
  * 4. отсутствие права `status.view` названо вслух, а не показано нулями.
@@ -16,7 +18,7 @@
  * перехватывает запросы приложения (они идут через воркер), и подмена прав
  * ниже молча не применилась бы.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -92,6 +94,42 @@ function share(part: number, whole: number): string {
   return `${((part / whole) * 100).toFixed(1).replace('.', ',')}%`
 }
 
+/** Кликает по каждому свёрнутому переключателю ветки, пока не останется ни
+ * одного. Сводка «+N …» прячет потомков полностью (не CSS) — без клика их
+ * не будет в DOM, и без этого цикла количество строк не сравнить с
+ * `nodes.length` ответа. */
+async function expandAllBranches(container: Locator): Promise<void> {
+  for (let guard = 0; guard < 50; guard += 1) {
+    const toggle = container.locator('button[aria-expanded="false"]').first()
+    if ((await toggle.count()) === 0) break
+    await toggle.click()
+  }
+}
+
+const SYNTHETIC_TREE_WITH_HEALTHY_BRANCH = {
+  business_date: '2026-08-22',
+  control_hour: '17:00:00',
+  nodes: [
+    { division_id: 9001, name: 'Служба (проба)', parent_id: null, status: 'RED', late: false },
+    {
+      division_id: 9002,
+      name: 'Управление (проба, здоровое)',
+      parent_id: 9001,
+      status: 'GREEN',
+      late: false,
+    },
+    { division_id: 9003, name: 'Отдел А (проба)', parent_id: 9002, status: 'GREEN', late: false },
+    {
+      division_id: 9004,
+      name: 'Отдел Б (проба)',
+      parent_id: 9002,
+      status: 'NEUTRAL',
+      late: false,
+    },
+    { division_id: 9005, name: 'Отдел В (проба)', parent_id: 9001, status: 'YELLOW', late: true },
+  ],
+}
+
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'аналитика службы' : 'аналитика службы (скип: нет SMOKE_LIVE=1)', () => {
@@ -153,7 +191,7 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
     await expect(firstRow).toContainText(share(first.list_total, first.staff_total))
   })
 
-  test('сдача дня считается по листьям светофора, а не по всем узлам', async ({ page }) => {
+  test('счётчики считаются по листьям светофора, а не по всем узлам', async ({ page }) => {
     const token = await apiToken()
     const tree = await get<{ business_date: string; nodes: TrafficNode[] }>(
       token,
@@ -177,15 +215,147 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
 
     const red = leaves.filter((node) => node.status === 'RED')
     await expect(block).toContainText(`не сдали ${red.length}`)
+  })
 
-    // Родитель в списке проблемных не появляется: его цвет — худший в
-    // поддереве, и он повторил бы своего же ребёнка под другим именем.
-    const parentNode = tree.nodes.find((node) => parents.has(node.division_id))
-    expect(parentNode, 'в дереве нет родителя').toBeDefined()
-    await expect(block.getByRole('listitem').filter({ hasText: parentNode!.name })).toHaveCount(0)
-    for (const leaf of red) {
-      await expect(block.getByRole('listitem').filter({ hasText: leaf.name })).toHaveCount(1)
+  test('дерево показывает всю иерархию: родитель виден, потомок вложен буквально в его DOM', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const tree = await get<{ business_date: string; nodes: TrafficNode[] }>(
+      token,
+      '/api/operations/traffic-light/tree/',
+    )
+    const parents = new Set(
+      tree.nodes.map((node) => node.parent_id).filter((id): id is number => id !== null),
+    )
+    expect(parents.size, 'в дереве нет ни одного родителя — вложенность не проверить').toBeGreaterThan(0)
+
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    const block = page.getByRole('group', { name: 'Актуальность ежедневного расхода' })
+    await expect(block).toBeVisible({ timeout: 20_000 })
+
+    // Каждый узел дерева виден — включая родителей, не только листья.
+    for (const node of tree.nodes) {
+      await expect(block.locator(`[data-division-id="${node.division_id}"]`)).toHaveCount(1)
     }
+
+    // Цепочка «лист → … → корень» обязана лежать ОДНА ВНУТРИ ДРУГОЙ в DOM —
+    // проверка САМОЙ вложенности по parent_id, а не присутствия имени
+    // где-то в блоке текстом (плоский рендер прошёл бы вторую проверку, но
+    // не эту: nestedSelector требует буквальной CSS-вложенности).
+    const startLeaf = tree.nodes.find(
+      (node) => !tree.nodes.some((other) => other.parent_id === node.division_id),
+    )
+    expect(startLeaf, 'в дереве нет ни одного листа').toBeDefined()
+    const chain: number[] = []
+    let current: TrafficNode | undefined = startLeaf
+    while (current !== undefined) {
+      chain.unshift(current.division_id)
+      current = tree.nodes.find((node) => node.division_id === current!.parent_id)
+    }
+    expect(chain.length, 'выбранный лист лежит на верхнем уровне — цепочку не собрать').toBeGreaterThan(1)
+    const nestedSelector = chain.map((id) => `[data-division-id="${id}"]`).join(' ')
+    await expect(block.locator(nestedSelector)).toHaveCount(1)
+
+    // Два независимых корня стенда (`parent_id === null` — «Служба» и
+    // сиротский стенд-артефакт «Управление (стенд)», см. отчёты задач 3/6)
+    // — второй корень НЕ вложен в DOM первого, и наоборот.
+    const roots = tree.nodes.filter((node) => node.parent_id === null)
+    if (roots.length > 1) {
+      await expect(
+        block.locator(
+          `[data-division-id="${roots[0].division_id}"] [data-division-id="${roots[1].division_id}"]`,
+        ),
+      ).toHaveCount(0)
+      await expect(
+        block.locator(
+          `[data-division-id="${roots[1].division_id}"] [data-division-id="${roots[0].division_id}"]`,
+        ),
+      ).toHaveCount(0)
+    }
+  })
+
+  test('полное дерево: после разворачивания всех веток строк столько же, сколько узлов в ответе', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const tree = await get<{ nodes: TrafficNode[] }>(token, '/api/operations/traffic-light/tree/')
+    expect(tree.nodes.length, 'светофор пуст — проба вакуумна').toBeGreaterThan(0)
+
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    const block = page.getByRole('group', { name: 'Актуальность ежедневного расхода' })
+    await expect(block).toBeVisible({ timeout: 20_000 })
+
+    await expandAllBranches(block)
+
+    await expect(block.locator('[data-division-id]')).toHaveCount(tree.nodes.length)
+  })
+
+  test('здоровая ветка сворачивается в сводку «+N сдавших» и разворачивается по клику (стенд сегодня вырожден — все узлы RED, эта ветка живыми данными не покрыта, синтетическая фикстура через page.route)', async ({
+    page,
+  }) => {
+    await signIn(page)
+    await page.route(
+      (url) => url.pathname.endsWith('/api/operations/traffic-light/tree/'),
+      (route) => route.fulfill({ json: SYNTHETIC_TREE_WITH_HEALTHY_BRANCH }),
+    )
+    await page.goto(`${APP}${SCREEN}`)
+    const block = page.getByRole('group', { name: 'Актуальность ежедневного расхода' })
+    await expect(block).toBeVisible({ timeout: 20_000 })
+
+    // Здоровая ветка (9002, GREEN) свёрнута по умолчанию — потомки (9003,
+    // 9004) не в DOM вовсе, не просто скрыты стилем.
+    await expect(block.locator('[data-division-id="9002"]')).toHaveCount(1)
+    await expect(block.locator('[data-division-id="9003"]')).toHaveCount(0)
+    await expect(block.locator('[data-division-id="9004"]')).toHaveCount(0)
+    const summary = block.locator('[data-division-id="9002"] > button', { hasText: 'сдавших' })
+    await expect(summary).toHaveText('+ 2 сдавших')
+
+    // Проблемная ветка (9001, корень RED) и её проблемный лист (9005,
+    // YELLOW) — развёрнуты по умолчанию без единого клика.
+    await expect(block.locator('[data-division-id="9005"]')).toHaveCount(1)
+    const rootToggle = block.locator('[data-division-id="9001"] > div > button[aria-expanded]')
+    await expect(rootToggle).toHaveAttribute('aria-expanded', 'true')
+
+    // Клик по сводке разворачивает ветку — счётчик уступает место строкам.
+    await summary.click()
+    await expect(block.locator('[data-division-id="9003"]')).toHaveCount(1)
+    await expect(block.locator('[data-division-id="9004"]')).toHaveCount(1)
+    await expect(
+      block.locator('[data-division-id="9002"] > button', { hasText: 'сдавших' }),
+    ).toHaveCount(0)
+    const branchToggle = block.locator('[data-division-id="9002"] > div > button[aria-expanded]')
+    await expect(branchToggle).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  test('пустой контрольный час — честная фраза, не эхо сырого значения', async ({ page }) => {
+    const token = await apiToken()
+    const tree = await get<{ control_hour: string; business_date: string; nodes: TrafficNode[] }>(
+      token,
+      '/api/operations/traffic-light/tree/',
+    )
+
+    await signIn(page)
+    await page.route(
+      (url) => url.pathname.endsWith('/api/operations/traffic-light/tree/'),
+      (route) => route.fulfill({ json: { ...tree, control_hour: '' } }),
+    )
+    await page.goto(`${APP}${SCREEN}`)
+
+    const block = page.getByRole('group', { name: 'Актуальность ежедневного расхода' })
+    await expect(block).toBeVisible({ timeout: 20_000 })
+    await expect(block).toContainText('Контрольный час не задан.')
+    await expect(block.getByText(/undefined/)).toHaveCount(0)
+    // Полуоборванная фраза с эхом пустоты («Контрольный час  — сдача…») не
+    // должна остаться на экране — вместо неё честная альтернатива выше.
+    await expect(block.getByText(/Контрольный час\s{2,}/)).toHaveCount(0)
+
+    const reminders = page.getByRole('group', { name: 'Напоминания об отставших' })
+    await expect(reminders).toContainText(
+      'Уходят ответственным автоматически после контрольного часа — одно за день.',
+    )
   })
 
   test('контрольный час показан тот, что вернул сервер', async ({ page }) => {
