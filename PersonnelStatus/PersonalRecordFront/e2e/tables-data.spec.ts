@@ -199,6 +199,74 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     expect(actual.some((row) => row.marked), 'действующая строка отмечена как просроченная').toBe(false)
   })
 
+  test('«Участие в ОМ» ведёт на разрез сбора сил и не выдаёт себя за адрес события', async ({
+    page,
+  }) => {
+    /**
+     * 🔴 Фикстура — ПЕРЕХВАТ, не мутация стенда: `EmployeeStatus.StatusType`
+     * на бэке `staff_unit/staff-units/directorate/` вообще не знает кода
+     * `EVENT_ASSIGNMENT` — это код каталога `operations` (раздел «Сбор сил на
+     * ОМ», см. `seed_status_types.py`), другая модель. На живом стенде такой
+     * строки быть не может в принципе — только перехватом.
+     */
+    const EVENT_ASSIGNMENT = 'EVENT_ASSIGNMENT'
+    const CAPTION =
+      'Статус не хранит связь с конкретным ОМ — ссылка ведёт на общий разрез «Сбор сил»'
+
+    await page.route(
+      (url) => url.pathname.includes('/api/staff_unit/staff-units/directorate'),
+      async (route) => {
+        const response = await route.fetch()
+        const body = (await response.json()) as {
+          staff_units?: {
+            employee?: { current_status?: Record<string, unknown> | null } | null
+          }[]
+        }
+        const withStatus = (body.staff_units ?? []).filter(
+          (unit) => unit.employee?.current_status != null,
+        )
+        expect(
+          withStatus.length,
+          'на стенде меньше двух сотрудников со статусом — вакуумный гвард не на чем проверить',
+        ).toBeGreaterThan(1)
+
+        // Только ПЕРВОМУ — «Участие в ОМ»: остальные остаются как есть, иначе
+        // гвард «ссылка не у всех» вырождается в «ни у кого».
+        withStatus[0].employee!.current_status!.status_type = EVENT_ASSIGNMENT
+        await route.fulfill({ response, json: body })
+      },
+    )
+
+    await signIn(page, 'admin', 'admin123')
+    await page.goto('/statuses')
+    await hydrated(page)
+    await tableFilled(page)
+
+    const rows = page.locator('table tbody tr')
+    const rowCount = await rows.count()
+    expect(rowCount, 'таблица пуста — пробе не на чем стоять').toBeGreaterThan(1)
+
+    const links = page.getByRole('link', { name: '→ Сбор сил' })
+    await expect(links).toHaveCount(1)
+    // `next.config.js` несёт `trailingSlash: true` — рендер добавляет слэш
+    // перед строкой запроса (как и у соседней ссылки в PlacementStage.tsx,
+    // см. `events-registry.spec.ts:170`); адрес назначения от этого не
+    // меняется, поэтому слэш здесь необязательный, а не расплывчатый.
+    await expect(links.first()).toHaveAttribute('href', /^\/employees\/?\?view=forces$/)
+
+    // 🔴 Вакуумный гвард: если бы ссылка рисовалась у КАЖДОЙ строки, предикат
+    // «только у «Участие в ОМ»» был бы сломан и остался незамеченным —
+    // «есть ссылка» превратилось бы в «есть таблица».
+    expect(
+      rowCount - (await links.count()),
+      'ссылка есть у каждой строки — предикат статуса её не фильтрует',
+    ).toBeGreaterThan(0)
+
+    const row = rows.filter({ has: page.getByRole('link', { name: '→ Сбор сил' }) })
+    await expect(row).toHaveCount(1)
+    await expect(row.getByText(CAPTION, { exact: true })).toBeVisible()
+  })
+
   test('кадровая таблица не выдаёт сегодняшнее число за дату у всех', async ({ page }) => {
     await signIn(page, 'admin', 'admin123')
     await page.goto('/employees')
