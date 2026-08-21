@@ -166,6 +166,71 @@ async function mockTrafficLightTree(page: Page, tree: TrafficLightTree): Promise
   )
 }
 
+/** Потолок видимых строк списка отстающих — ДОЛЖЕН совпадать с
+ * `LAGGING_VISIBLE_LIMIT` в `ExpenseTrafficCard.tsx` (ревью 21.08: список
+ * без потолка раздувается вместе со структурой и рвёт вёрстку). Это не
+ * значение, которое можно вычислить из ответа сервера — это решение
+ * вёрстки, и здесь оно продублировано намеренно, а не хардкод чего-то
+ * серверного. */
+const LAGGING_VISIBLE_LIMIT = 5
+
+/**
+ * Порядок и обрезка списка отстающих — ТА ЖЕ методика, что в компоненте:
+ * сперва просроченные (`late`, срочнее), потом остальные, порядок внутри
+ * каждой группы — как пришёл с сервера (устойчивая фильтрация). Обрезаются
+ * последние N — по построению это НАИМЕНЕЕ срочный хвост, а не случайный.
+ */
+function orderLagging(tree: TrafficLightTree): {
+  visible: TrafficLightNode[]
+  hiddenCount: number
+} {
+  const lagging = tree.nodes.filter(
+    (n) => n.parent_id === null && (n.status === 'RED' || n.status === 'YELLOW'),
+  )
+  const overdue = lagging.filter((n) => n.late)
+  const rest = lagging.filter((n) => !n.late)
+  const ordered = [...overdue, ...rest]
+  const visible = ordered.slice(0, LAGGING_VISIBLE_LIMIT)
+  return { visible, hiddenCount: ordered.length - visible.length }
+}
+
+/**
+ * Дерево с ЧИСЛОМ отстающих БОЛЬШЕ потолка (N+2=7 при N=5) — для проверки
+ * обрезки хвоста (ревью 21.08). Узлы намеренно ПЕРЕМЕШАНЫ в теле ответа
+ * (просроченные не идут одним блоком в начале или в конце): это доказывает,
+ * что видимые строки сортируются «просроченные сначала», а не просто
+ * повторяют порядок ответа сервера как есть.
+ *
+ * RED структурно никогда не `late` (см. докстринг компонента) — поэтому
+ * «просроченные» здесь только среди YELLOW.
+ */
+const SYNTHETIC_TREE_MANY_LAGGING: TrafficLightTree = {
+  business_date: '2026-01-15',
+  control_hour: '09:30:00',
+  nodes: [
+    { division_id: 9101, name: 'Хвост обычный красный 1', parent_id: null, status: 'RED', late: false },
+    { division_id: 9102, name: 'Хвост просроченный жёлтый 1', parent_id: null, status: 'YELLOW', late: true },
+    { division_id: 9103, name: 'Хвост обычный красный 2', parent_id: null, status: 'RED', late: false },
+    { division_id: 9104, name: 'Хвост обычный жёлтый 3', parent_id: null, status: 'YELLOW', late: false },
+    { division_id: 9105, name: 'Хвост просроченный жёлтый 2', parent_id: null, status: 'YELLOW', late: true },
+    { division_id: 9106, name: 'Хвост обычный красный 4', parent_id: null, status: 'RED', late: false },
+    { division_id: 9107, name: 'Хвост обычный красный 5', parent_id: null, status: 'RED', late: false },
+  ],
+}
+
+/** Дерево с ПУСТЫМ `control_hour` — Minor 2 ревью 21.08: до фикса
+ * `formatControlHour` эхoвало сырое значение, и пустая строка рисовала бы
+ * «Контрольный час  — сдача…» (или «undefined» при отсутствии поля вовсе).
+ * Один лист RED — карточка обязана отрендериться (не «загрузка», не
+ * «недоступен»), сам счёт здесь не важен. */
+const SYNTHETIC_TREE_BAD_CONTROL_HOUR: TrafficLightTree = {
+  business_date: '2026-01-15',
+  control_hour: '',
+  nodes: [
+    { division_id: 9201, name: 'Синт. департамент для проверки часа', parent_id: null, status: 'RED', late: false },
+  ],
+}
+
 async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
@@ -388,6 +453,83 @@ test.describe(LIVE ? 'командный центр' : 'командный це�
     await expect(card.getByText('Синт. департамент зелёный-2', { exact: true })).toHaveCount(0)
     await expect(card.getByText('Синт. департамент сломанный', { exact: true })).toHaveCount(0)
     await expect(card.getByText('Синт. департамент нейтральный', { exact: true })).toHaveCount(0)
+  })
+
+  test('«Расход дня»: список отстающих обрезан потолком, хвост — «и ещё K», просроченные впереди', async ({
+    page,
+  }) => {
+    // Числа и состав — той же функцией, что и в компоненте (см. её
+    // докстринг), применённой к перехваченному телу — не хардкод.
+    const { visible, hiddenCount } = orderLagging(SYNTHETIC_TREE_MANY_LAGGING)
+    const totalLagging = visible.length + hiddenCount
+    expect(totalLagging, 'фикстура должна давать больше отстающих, чем потолок').toBeGreaterThan(
+      LAGGING_VISIBLE_LIMIT,
+    )
+    expect(visible.length, 'видимых строк — ровно потолок').toBe(LAGGING_VISIBLE_LIMIT)
+    expect(hiddenCount, 'обрезанный хвост — не ноль').toBeGreaterThan(0)
+    // Обе просроченные (late) записи фикстуры обязаны попасть в видимые —
+    // они срочнее любой непросроченной, и хвост из них состоять не может.
+    const overdueNames = SYNTHETIC_TREE_MANY_LAGGING.nodes
+      .filter((n) => n.late)
+      .map((n) => n.name)
+    expect(overdueNames.length, 'в фикстуре должно быть хотя бы 2 просроченных').toBeGreaterThanOrEqual(2)
+    for (const name of overdueNames) {
+      expect(visible.map((n) => n.name)).toContain(name)
+    }
+
+    await signIn(page)
+    await mockTrafficLightTree(page, SYNTHETIC_TREE_MANY_LAGGING)
+    await page.goto(`${APP}/security-ops/command-center/`)
+
+    const card = page.getByRole('region', { name: 'Расход дня', exact: true })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+
+    // Строк ровно потолок, не totalLagging
+    const rows = card.locator('ul li')
+    await expect(rows).toHaveCount(visible.length)
+
+    // Порядок и состав — точное совпадение с вычисленным «visible», строка
+    // за строкой, первым спаном (имя)
+    for (let i = 0; i < visible.length; i += 1) {
+      await expect(rows.nth(i).locator('span').nth(0)).toHaveText(visible[i].name)
+    }
+
+    // Хвост — ОДНОЙ строкой с точным числом и ОДНОЙ ссылкой на аналитику
+    // (не второй рядом с уже существующей)
+    await expect(
+      card.getByText(`и ещё ${hiddenCount} — в аналитике`, { exact: true }),
+    ).toBeVisible()
+    await expect(
+      card.getByRole('link', { name: 'в аналитике', exact: true }),
+    ).toHaveAttribute('href', '/security-ops/analytics/')
+    // Ссылка ровно одна на карточку — не расползлась на «в аналитике» +
+    // отдельную «Открыть светофор в аналитике»
+    await expect(card.getByRole('link')).toHaveCount(1)
+    await expect(
+      card.getByText('Открыть светофор в аналитике', { exact: true }),
+    ).toHaveCount(0)
+
+    // Обрезанный хвост в DOM отсутствует целиком — не только числом
+    const hiddenNames = SYNTHETIC_TREE_MANY_LAGGING.nodes
+      .filter((n) => !visible.some((v) => v.division_id === n.division_id))
+      .map((n) => n.name)
+    expect(hiddenNames.length).toBe(hiddenCount)
+    for (const name of hiddenNames) {
+      await expect(card.getByText(name, { exact: true })).toHaveCount(0)
+    }
+  })
+
+  test('«Расход дня»: пустой контрольный час — честная фраза, не «undefined»', async ({ page }) => {
+    await signIn(page)
+    await mockTrafficLightTree(page, SYNTHETIC_TREE_BAD_CONTROL_HOUR)
+    await page.goto(`${APP}/security-ops/command-center/`)
+
+    const card = page.getByRole('region', { name: 'Расход дня', exact: true })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+
+    await expect(card.getByText('Контрольный час не задан.', { exact: true })).toBeVisible()
+    await expect(card.getByText(/undefined/)).toHaveCount(0)
+    await expect(card.getByText(/Контрольный час\s*—/)).toHaveCount(0)
   })
 })
 
