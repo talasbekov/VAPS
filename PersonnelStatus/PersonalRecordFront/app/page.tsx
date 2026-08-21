@@ -391,7 +391,7 @@ function LoginScreen() {
               <Users className="h-5 w-5 text-white" />
             </div>
             <p className="relative z-10 text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">
-              Управление персоналом
+              Сбор сил на ОМ
             </p>
           </div>
           <div
