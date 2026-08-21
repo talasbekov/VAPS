@@ -474,7 +474,7 @@ function TreeRow({
           {node.name === "" ? `Подразделение №${node.division_id}` : node.name}
         </button>
         {node.late && (
-          <span className="whitespace-nowrap text-[11px] font-medium text-amber-700">
+          <span className="whitespace-nowrap text-[11px] font-medium text-amber-700 dark:text-amber-400">
             с опозданием
           </span>
         )}
@@ -640,7 +640,7 @@ function DivisionCard({
                       </span>
                     )}
                     {submission.late && (
-                      <span className="ml-2 text-[10.5px] font-medium text-amber-700">
+                      <span className="ml-2 text-[10.5px] font-medium text-amber-700 dark:text-amber-400">
                         с опозданием
                       </span>
                     )}

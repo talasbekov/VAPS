@@ -12,8 +12,8 @@ const DOT_CLASS: Record<StatTone, string> = {
 
 const VALUE_CLASS: Record<StatTone, string> = {
   neutral: "",
-  success: "text-green-700",
-  warning: "text-amber-700",
+  success: "text-green-700 dark:text-green-400",
+  warning: "text-amber-700 dark:text-amber-400",
   danger: "text-destructive-ink",
   info: "text-primary-ink",
 };

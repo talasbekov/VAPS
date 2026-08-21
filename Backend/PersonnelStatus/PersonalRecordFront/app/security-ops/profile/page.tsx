@@ -475,9 +475,9 @@ function AssignmentRow({ item }: { item: MyAssignment }) {
       <p className="mt-1 text-xs">{item.postLabel}</p>
       <p className="mt-1 text-[11px]">
         {item.acknowledgedAt === null ? (
-          <span className="text-amber-600">Ознакомление не подтверждено</span>
+          <span className="text-amber-600 dark:text-amber-400">Ознакомление не подтверждено</span>
         ) : (
-          <span className="text-green-700">
+          <span className="text-green-700 dark:text-green-400">
             Ознакомлен: {item.acknowledgedAt.slice(0, 10)}
           </span>
         )}
