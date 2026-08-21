@@ -188,6 +188,38 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
     }
   })
 
+  test('контрольный час показан тот, что вернул сервер', async ({ page }) => {
+    // «с опозданием N» без порога нечем прочитать. Ожидание берётся из
+    // ОТВЕТА: час — настройка раздела, и пин литералом «17:00» сторожил бы
+    // дефолт, а не проводку.
+    const token = await apiToken()
+    const tree = await get<{ control_hour: string; business_date: string; nodes: TrafficNode[] }>(
+      token,
+      '/api/operations/traffic-light/tree/',
+    )
+    expect(tree.control_hour, 'сервер не отдал контрольный час').toMatch(/^\d{2}:\d{2}/)
+
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    const block = page.getByRole('group', { name: 'Актуальность ежедневного расхода' })
+    await expect(block).toBeVisible({ timeout: 20_000 })
+    await expect(block).toContainText(`Контрольный час ${tree.control_hour.slice(0, 5)}`)
+    // Секунды порога на экране не печатаются: сравнение идёт по времени суток.
+    await expect(block).not.toContainText(tree.control_hour)
+
+    // 🔴 Ассерта выше МАЛО: на стенде стоит дефолт 17:00, и зашитая в вёрстку
+    // строка «17:00» прошла бы его. Порог подменяется в ОТВЕТЕ — экран обязан
+    // поехать за сервером. Такой ответ бэк вернуть может: час меняется в
+    // настройках контроля сдачи, выдуманного состояния здесь нет.
+    const moved = { ...tree, control_hour: '09:30:00' }
+    await page.route(
+      (url) => url.pathname.endsWith('/api/operations/traffic-light/tree/'),
+      (route) => route.fulfill({ json: moved }),
+    )
+    await page.goto(`${APP}${SCREEN}`)
+    await expect(block).toContainText('Контрольный час 09:30', { timeout: 20_000 })
+  })
+
   test('ряд динамики идёт за период снимка и обрывается датой раздела', async ({ page }) => {
     const token = await apiToken()
     const report = await get<StrengthReport>(token, '/api/operations/strength-report/')

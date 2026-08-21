@@ -5,7 +5,7 @@
 (имя, родитель) и полный порядок. Сами цвета считает свод и покрывает
 test_traffic_light_tree.py — здесь проверяется, что вьюха их не пересчитывает.
 """
-from datetime import timedelta
+from datetime import time, timedelta
 
 import pytest
 from django.db import connection
@@ -15,6 +15,9 @@ from rest_framework.test import APIClient
 from organization_management.apps.divisions.models import Division
 from organization_management.apps.operations import clock
 from organization_management.apps.operations.day_submission_service import submit_day
+from organization_management.apps.operations.selectors import (
+    SubmissionControlSettingsSelector,
+)
 from organization_management.apps.operations.services import PermissionService
 from organization_management.apps.operations.traffic_light import TrafficLightStatus
 from organization_management.apps.operations.tests.test_bulk_status_api import (
@@ -220,6 +223,30 @@ def test_view_does_not_recompute_the_colour(types, tree):
     assert nodes[second.id]["status"] == TrafficLightStatus.RED.value
     assert nodes[root.id]["status"] == TrafficLightStatus.RED.value
     assert nodes[root.id]["late"] is False
+
+
+# ── Контрольный час ──────────────────────────────────────────────────────
+
+def test_tree_carries_the_control_hour(types, tree):
+    # `late` считается ОТНОСИТЕЛЬНО контрольного часа, а порог живёт в
+    # настройках раздела. Без него экран печатает «с опозданием N», не имея
+    # чем это объяснить, и читателю нечем отличить опоздание от нормы.
+    root, *_ = tree
+    api, _ = client_for("tl-hour", "ADMIN", ["*"])
+    response = get(api, root_division_id=root.id)
+    assert response.data["control_hour"] == "17:00:00"
+
+
+def test_control_hour_comes_from_settings_not_a_literal(types, tree):
+    # Дефолт настройки — 17:00, и ассерт выше сам по себе не отличил бы его от
+    # зашитого в ответ числа. Меняем справочник: ответ обязан поехать за ним.
+    root, *_ = tree
+    settings = SubmissionControlSettingsSelector.get()
+    settings.control_hour = time(9, 30)
+    settings.save(update_fields=["control_hour"])
+    api, _ = client_for("tl-hour-moved", "ADMIN", ["*"])
+    response = get(api, root_division_id=root.id)
+    assert response.data["control_hour"] == "09:30:00"
 
 
 # ── Дата ─────────────────────────────────────────────────────────────────

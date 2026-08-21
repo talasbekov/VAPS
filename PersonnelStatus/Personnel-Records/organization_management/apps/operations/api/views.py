@@ -129,6 +129,7 @@ from organization_management.apps.operations.selectors import (
     OpsAuditLogSelector,
     OpsNotificationSelector,
     StaffUnitSelector,
+    SubmissionControlSettingsSelector,
 )
 from organization_management.apps.operations.services import (
     PermissionService,
@@ -2487,6 +2488,7 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
                     name="TrafficLightTree",
                     fields={
                         "business_date": serializers.DateField(),
+                        "control_hour": serializers.TimeField(),
                         "nodes": inline_serializer(
                             name="TrafficLightNode",
                             many=True,
@@ -2510,7 +2512,9 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
             "Свод светофора поддерева под правом status.view: цвет каждого "
             "узла — худший из своего и цветов потомков, late поднимается "
             "снизу. Корень по умолчанию берётся из области актора, дата — "
-            "сегодняшняя по часам раздела и возвращается эхом. 400 — "
+            "сегодняшняя по часам раздела и возвращается эхом; рядом с ней "
+            "контрольный час из настроек контроля сдачи — порог, по которому "
+            "и выставлен late. 400 — "
             "нечитаемый параметр; 403 — чужой корень; 404 — корня нет."
         ),
     )
@@ -2588,8 +2592,19 @@ class TrafficLightViewSet(RequirePermissionMixin, viewsets.ViewSet):
         nodes.sort(key=lambda node: (node["name"], node["division_id"]))
         # Дата эхом: сервер считает по часам раздела, экран — по браузеру, и
         # на границе суток «сегодня» у них разное.
+        #
+        # Контрольный час едет ВМЕСТЕ с вердиктом, а не отдельной ручкой: по
+        # нему выставлен `late`, и разъехавшись, порог и вердикт объяснили бы
+        # опоздание не тем часом. Настройка глобальная (синглтон), сужения по
+        # актору у неё нет — «контрольный час у всех один».
         return Response(
-            {"business_date": business_date.isoformat(), "nodes": nodes}
+            {
+                "business_date": business_date.isoformat(),
+                "control_hour": SubmissionControlSettingsSelector
+                .control_hour()
+                .isoformat(),
+                "nodes": nodes,
+            }
         )
 
     @extend_schema(

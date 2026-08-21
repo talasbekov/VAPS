@@ -407,6 +407,10 @@ export interface TrafficLightNode {
 
 export interface TrafficLightTree {
   business_date: string;
+  /** Порог опоздания из настроек контроля сдачи, «HH:MM:SS». Едет вместе с
+   * вердиктом: по нему выставлен `late` у узлов, и отдельной ручкой порог
+   * разъехался бы с вердиктом, который объясняет. */
+  control_hour: string;
   nodes: TrafficLightNode[];
 }
 
