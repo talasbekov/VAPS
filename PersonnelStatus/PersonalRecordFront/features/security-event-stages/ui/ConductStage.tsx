@@ -27,16 +27,139 @@ import { JournalList } from "./JournalList";
 
 export function ConductStage({ event }: { event: SecurityEvent }) {
   // Порядок панелей — по шестому шагу прототипа: «Закрытие и итоги» первым,
-  // потому что шаг называется закрытием и ради него сюда и приходят. Журнал
-  // штаба и замена выбывшего идут следом: в прототипе их экрана больше нет
-  // (журнал остался плиткой в архиве), но операции живые и с аудитом, поэтому
-  // они сохранены здесь, а не выброшены вслед за макетом.
+  // потому что шаг называется закрытием и ради него сюда и приходят. «Контроль
+  // постов» идёт вторым — он даёт разрез той же сводки и объясняет, кого
+  // менять ниже. Журнал штаба и замена выбывшего идут следом: в прототипе их
+  // экрана больше нет (журнал остался плиткой в архиве), но операции живые и с
+  // аудитом, поэтому они сохранены здесь, а не выброшены вслед за макетом.
   return (
     <div className="flex flex-col gap-4">
       <ClosurePanel event={event} />
+      <PostControlPanel event={event} />
       <JournalPanel event={event} />
       <ReplacementPanel event={event} />
     </div>
+  );
+}
+
+/**
+ * Разрез укомплектованности по направлениям — «Контроль постов» прототипа.
+ * Считается из ЖИВЫХ данных карточки: потребность несут посты расчёта
+ * (`reconSectorPosts.need`), занятость — назначения (`placementAssignments`).
+ *
+ * 🔴 Недобор здесь — РЕАЛЬНОЕ состояние, а не артефакт показа. Гейт завершения
+ * расстановки (`complete_placement`, apps/ops/security_events.py) требует,
+ * чтобы у каждого поста был ХОТЯ БЫ ОДИН назначенный, а не чтобы пост был
+ * закрыт по потребности: пост с `need: 3` и одним человеком проходит дальше.
+ * До этой панели на «Проведении» о постах не было сказано ничего вовсе — карточка
+ * показывает только активный этап, и карта расстановки с этого шага не видна.
+ *
+ * Чего в панели нет намеренно: счётчика «состав на местах» и часов проведения
+ * из прототипа — присутствия домен не учитывает (у назначения есть только
+ * ознакомление), а времени старта у мероприятия нет, только бизнес-дата.
+ * Постовых «открытых указаний» тоже нет: запись журнала не привязана к сектору.
+ */
+export function postControl(event: SecurityEvent): {
+  sector: string;
+  filled: number;
+  need: number;
+  posts: { id: string; post: string; filled: number; need: number }[];
+}[] {
+  const filledByPost = new Map<string, number>();
+  for (const assignment of event.placementAssignments) {
+    filledByPost.set(
+      assignment.postId,
+      (filledByPost.get(assignment.postId) ?? 0) + 1
+    );
+  }
+
+  const sectors: {
+    sector: string;
+    filled: number;
+    need: number;
+    posts: { id: string; post: string; filled: number; need: number }[];
+  }[] = [];
+  for (const post of event.reconSectorPosts) {
+    const filled = filledByPost.get(post.id) ?? 0;
+    let sector = sectors.find((s) => s.sector === post.sector);
+    if (sector === undefined) {
+      sector = { sector: post.sector, filled: 0, need: 0, posts: [] };
+      sectors.push(sector);
+    }
+    sector.filled += filled;
+    sector.need += post.need;
+    sector.posts.push({ id: post.id, post: post.post, filled, need: post.need });
+  }
+  return sectors;
+}
+
+function PostControlPanel({ event }: { event: SecurityEvent }) {
+  const sectors = postControl(event);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Контроль постов</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {sectors.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Расчёт постов пуст — контролировать нечего.
+          </p>
+        ) : (
+          sectors.map((sector) => {
+            const short = sector.need - sector.filled;
+            return (
+              // aria-label делает блок направления адресуемым (role=region):
+              // у панели нет ни таблицы, ни заголовков-якорей, и проба иначе
+              // цеплялась бы за классы вёрстки.
+              <section
+                key={sector.sector}
+                aria-label={`Направление ${sector.sector}`}
+                className="rounded-md border"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+                  <p className="text-sm font-semibold">{sector.sector}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {sector.filled} / {sector.need}
+                    </span>
+                    <span
+                      className={
+                        short > 0
+                          ? "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                          : "inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800"
+                      }
+                    >
+                      {short > 0 ? `Недобор ${short}` : "Штатно"}
+                    </span>
+                  </div>
+                </div>
+                <ul className="divide-y">
+                  {sector.posts.map((post) => (
+                    <li
+                      key={post.id}
+                      className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs"
+                    >
+                      <span>{post.post}</span>
+                      <span
+                        className={
+                          post.filled < post.need
+                            ? "tabular-nums font-semibold text-amber-700"
+                            : "tabular-nums text-muted-foreground"
+                        }
+                      >
+                        {post.filled} / {post.need}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

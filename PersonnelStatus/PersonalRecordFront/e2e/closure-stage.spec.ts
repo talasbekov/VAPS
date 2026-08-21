@@ -32,9 +32,9 @@ interface EventRow {
   businessDate: string
   objectName: string
   passportBinding: { versionNumber: number } | null
-  reconSectorPosts: { sector: string; need: number }[]
+  reconSectorPosts: { id: string; post: string; sector: string; need: number }[]
   demandRows: { sector: string }[]
-  placementAssignments: unknown[]
+  placementAssignments: { postId: string }[]
   journalEntries: { type: string; title: string }[]
   closureDirectionSummaries: { direction: string; summary: string }[]
 }
@@ -254,5 +254,110 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
     ])
     expect(decodeURIComponent(registryRequest.url())).toContain(`event=${target.code}`)
     await expect(page).toHaveURL(/\/security-ops\/ratings\/evaluations/)
+  })
+
+  // 🔴 Воркер MSW блокируется ТОЛЬКО здесь: `page.route` в пробе недобора иначе
+  // не перехватит запрос карточки. На весь файл ставить нельзя — соседняя проба
+  // сторожит пустую консоль, а неудачная регистрация воркера пишет в неё ошибку.
+  test.describe('контроль постов', () => {
+    test.use({ serviceWorkers: 'block' })
+
+    test('контроль постов считает укомплектованность по живым данным карточки', async ({ page }) => {
+      const token = await apiToken()
+      const conduct = (await events(token, 'CONDUCT'))[0]
+      test.skip(conduct === undefined, 'на стенде нет ОМ на стадии «Проведение»')
+      const target = conduct!
+
+      // Ожидание считается из ОТВЕТА сервера, а не пишется числом: фикстура
+      // стенда меняется, а пин литералом однажды начал бы сторожить прошлое.
+      const filledByPost = new Map<string, number>()
+      for (const assignment of target.placementAssignments) {
+        filledByPost.set(assignment.postId, (filledByPost.get(assignment.postId) ?? 0) + 1)
+      }
+      const sectors = new Map<string, { filled: number; need: number }>()
+      for (const post of target.reconSectorPosts) {
+        const row = sectors.get(post.sector) ?? { filled: 0, need: 0 }
+        row.filled += filledByPost.get(post.id) ?? 0
+        row.need += post.need
+        sectors.set(post.sector, row)
+      }
+      expect(sectors.size, 'фикстуре нужно хотя бы одно направление').toBeGreaterThan(0)
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/events/${target.id}/`)
+      const panel = page.locator('[data-slot="card"]', {
+        has: page.locator('[data-slot="card-title"]', { hasText: 'Контроль постов' }),
+      })
+      await expect(panel).toBeVisible({ timeout: 15_000 })
+
+      for (const [sector, row] of sectors) {
+        const block = panel.getByRole('region', { name: `Направление ${sector}` })
+        await expect(block).toContainText(`${row.filled} / ${row.need}`)
+        await expect(block).toContainText(row.filled < row.need ? `Недобор ${row.need - row.filled}` : 'Штатно')
+      }
+      // Посты названы поимённо — панель отвечает «где», а не только «сколько».
+      for (const post of target.reconSectorPosts) {
+        await expect(
+          panel.getByRole('region', { name: `Направление ${post.sector}` }),
+        ).toContainText(post.post)
+      }
+    })
+
+    test('недобор на посту виден, хотя расстановка завершена', async ({ page }) => {
+      // Гейт `complete_placement` требует у поста ХОТЯ БЫ ОДНОГО назначенного, а
+      // не закрытия по потребности (apps/ops/security_events.py) — пост с
+      // `need: 3` и одним человеком проходит на «Проведение». Такого ОМ на
+      // стенде сейчас нет, и создавать его цепочкой из десяти вызовов ради
+      // одного экрана — значит мутировать данные стенда; потребность поднимается
+      // перехватом ОТВЕТА. Сервер такой ответ вернуть может: это его же карточка
+      // с другой потребностью, выдуманного состояния здесь нет.
+      const token = await apiToken()
+      const conduct = (await events(token, 'CONDUCT'))[0]
+      test.skip(conduct === undefined, 'на стенде нет ОМ на стадии «Проведение»')
+      const target = conduct!
+      const first = target.reconSectorPosts[0]
+      test.skip(first === undefined, 'у фикстуры нет ни одного поста')
+
+      const detail = await eventDetail(token, target.id)
+      const patched = {
+        ...detail,
+        reconSectorPosts: detail.reconSectorPosts.map((post) =>
+          post.id === first.id ? { ...post, need: post.need + 2 } : post,
+        ),
+      }
+
+      await signIn(page)
+      await page.route(
+        (url) => url.pathname.endsWith(`/api/ops/security-events/${target.id}/`),
+        (route) => route.fulfill({ json: patched }),
+      )
+      await page.goto(`${APP}/security-ops/events/${target.id}/`)
+
+      const panel = page.locator('[data-slot="card"]', {
+        has: page.locator('[data-slot="card-title"]', { hasText: 'Контроль постов' }),
+      })
+      const block = panel.getByRole('region', { name: `Направление ${first.sector}` })
+      await expect(block).toContainText('Недобор 2', { timeout: 15_000 })
+      await expect(block).not.toContainText('Штатно')
+
+      // Свод направления читает ИМЕННО потребность, а не число постов: у
+      // фикстуры стенда `need` у каждого поста равен единице, и без поднятой
+      // потребности эти два числа совпадали бы — ассерт был бы вакуумным.
+      const sectorPosts = detail.reconSectorPosts.filter((p) => p.sector === first.sector)
+      const sectorFilled = detail.placementAssignments.filter((a) =>
+        sectorPosts.some((p) => p.id === a.postId),
+      ).length
+      const sectorNeed = sectorPosts.reduce((sum, p) => sum + p.need, 0) + 2
+      await expect(block).toContainText(`${sectorFilled} / ${sectorNeed}`)
+
+      // Недобор назван на КОНКРЕТНОМ посту, а не только в итоге направления:
+      // иначе панель говорила бы «где-то не хватает двоих».
+      const filledOnFirst = detail.placementAssignments.filter(
+        (a) => a.postId === first.id,
+      ).length
+      await expect(
+        block.getByRole('listitem').filter({ hasText: first.post }),
+      ).toContainText(`${filledOnFirst} / ${first.need + 2}`)
+    })
   })
 })
