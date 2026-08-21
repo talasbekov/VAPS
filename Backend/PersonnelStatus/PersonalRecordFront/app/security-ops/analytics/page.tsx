@@ -1693,9 +1693,6 @@ function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
   const feed = useOpsLaggingNotifications();
   const tree = useTrafficLightTree(gate === "allowed");
   const queryClient = useQueryClient();
-  // pk строки, которую отмечаем прямо сейчас — кнопку блокирует ТОЛЬКО она,
-  // соседние непрочитанные остаются кликабельны на время её отправки.
-  const [markingId, setMarkingId] = useState<number | null>(null);
 
   /**
    * POST /api/operations/notifications/{id}/read/ — снят с `/api/schema/`
@@ -1719,7 +1716,6 @@ function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
   });
 
   function handleMarkRead(id: number) {
-    setMarkingId(id);
     markRead.mutate({ id });
   }
 
@@ -1795,10 +1791,19 @@ function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
                   ) : (
                     <>
                       не прочитано
+                      {/* disabled — ОБЩИЙ на все непрочитанные строки, пока
+                          мутация в полёте, а не только на кликнутую. Мутация
+                          одна на блок (useOpsMutation-инстанс один), и её
+                          isPending/error отражают ТОЛЬКО последний вызов —
+                          пометка «занята только эта строка» по id развязала
+                          бы соседние кнопки, пока первый запрос ещё летит
+                          (react-query не даёт per-variables статус второй
+                          мутации на том же хуке), и второй клик до ответа
+                          сервера бил бы по чужому pk без видимой блокировки. */}
                       <button
                         type="button"
                         onClick={() => handleMarkRead(row.id)}
-                        disabled={markRead.isPending && markingId === row.id}
+                        disabled={markRead.isPending}
                         className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Check className="h-3 w-3" aria-hidden="true" />
@@ -1813,8 +1818,10 @@ function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
         </ul>
       )}
 
-      {/* 5xx/сеть/401 сюда не доходят (silent-канал useOpsMutation): 404
-          (чужое/удалённое уведомление) и прочее фича обязана назвать сама. */}
+      {/* Молчаливый канал useOpsMutation — ТОЛЬКО 5xx и обрыв сети (тост
+          внутри хука). 401/403/404 и остальное приезжают ОДНИМ OpsApiError
+          без отдельной ветки на код — фича обязана показать mutation.error
+          сама, что и делает блок ниже. */}
       {markRead.error !== null && (
         <p role="alert" className="mt-2 text-xs text-destructive-ink">
           Не удалось отметить уведомление прочитанным. Попробуйте ещё раз.
