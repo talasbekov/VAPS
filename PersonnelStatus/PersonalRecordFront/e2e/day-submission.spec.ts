@@ -161,6 +161,66 @@ async function interceptSubmit(
   )
 }
 
+
+/** Конверт отказа бэкенда ОМ — 9-полевой не бывает, но `error_code` НЕСУЩИЙ:
+ * `readEnvelope` (`lib/ops-errors.ts`) без него читает тело как «конверта
+ * нет», и 409 деградировал бы в безымянный отказ вместо
+ * `DAY_ALREADY_SUBMITTED`. */
+function conflictEnvelope(businessDate: string) {
+  return {
+    error_code: 'DAY_ALREADY_SUBMITTED',
+    message: 'День уже сдан.',
+    details: {},
+    request_id: null,
+    timestamp: `${businessDate}T12:00:00+05:00`,
+  }
+}
+
+/**
+ * Перехват ГОНКИ двух операторов: POST сдачи отвечает 409
+ * `DAY_ALREADY_SUBMITTED` («пока ты жал кнопку, день сдал кто-то другой»), а
+ * списочный GET борда ПОСЛЕ этого отвечает списком, в котором целевое
+ * управление УЖЕ сдано — ровно то, что лежало бы в БД после чужой сдачи.
+ *
+ * До 409 списочный GET идёт НАЖИВУЮ: иначе проба не отличила бы «борд
+ * перечитал состояние» от «борд с самого начала видел сданный день».
+ */
+async function interceptSubmitConflict(
+  page: Page,
+  targetDivisionId: string,
+  businessDate: string,
+): Promise<void> {
+  let conflicted = false
+  await page.route(
+    (url) => url.pathname.includes('/api/ops/daily/daily-submissions/'),
+    async (route) => {
+      const request = route.request()
+      if (request.method() === 'POST') {
+        conflicted = true
+        await route.fulfill({ status: 409, json: conflictEnvelope(businessDate) })
+        return
+      }
+      const requestUrl = new URL(request.url())
+      const isBoardListQuery =
+        requestUrl.searchParams.get('business_date') === businessDate &&
+        requestUrl.searchParams.get('division_id') === null
+      if (conflicted && isBoardListQuery) {
+        await route.fulfill({
+          status: 200,
+          json: {
+            count: 1,
+            next: null,
+            previous: null,
+            results: [fakeSubmission(targetDivisionId, businessDate)],
+          },
+        })
+        return
+      }
+      await route.continue()
+    },
+  )
+}
+
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет SMOKE_LIVE=1)', () => {
@@ -257,6 +317,69 @@ test.describe(LIVE ? 'сдача дня' : 'сдача дня (скип: нет 
 
     // Схлопнули строку обратно — свёрнутый бейдж ТОЖЕ синхронен (питается тем
     // же обновлённым списочным ответом борда, без своего запроса).
+    await group.getByRole('button', { name: nameRegExp(target!.name) }).click()
+    await expect(group.getByText('Сдан · v1', { exact: true })).toBeVisible()
+  })
+
+  test('409 «день уже сдан» (гонка операторов) — борд перечитывает состояние, кнопка сдачи гаснет', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+
+    // Тот же гвард вакуумности, что у пробы выше: цель — управление, которое
+    // СЕЙЧАС не сдано. Иначе кнопки «Сдать день» не было бы вовсе, 409 неоткуда
+    // было бы получить, и «состояние перечиталось» проверялось бы на том, что и
+    // так стояло на экране.
+    const existing = await get<{ results: DaySubmissionRow[] }>(
+      token,
+      `/api/ops/daily/daily-submissions/?business_date=${report.business_date}&limit=200`,
+    )
+    const submittedIdsBefore = new Set(
+      existing.results.filter((row) => row.is_current).map((row) => row.division_id),
+    )
+    const target = report.rows.find((row) => !submittedIdsBefore.has(String(row.division_id)))
+    expect(target, 'все управления уже сданы на сегодня — пробе нечем поймать 409').toBeDefined()
+    const targetDivisionId = String(target!.division_id)
+
+    await interceptSubmitConflict(page, targetDivisionId, report.business_date)
+
+    await signIn(page)
+    await page.goto(`${APP}/employees?view=daily`)
+    const board = page.getByRole('region', { name: 'Ежедневный расход' })
+    await expect(board).toBeVisible({ timeout: 25_000 })
+
+    const summary = board.getByRole('group', { name: 'Сводка сдачи дня' })
+    const summaryHeadline = summary.locator('p').first()
+    await expect(summaryHeadline).toHaveText(
+      `Сдано ${submittedIdsBefore.size} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
+    )
+
+    const group = board.getByRole('group', { name: nameRegExp(target!.name) })
+    await group.getByRole('button', { name: nameRegExp(target!.name) }).click()
+    await group.getByRole('button', { name: 'Сдать день' }).click()
+    await group.getByRole('button', { name: 'Подтвердить сдачу' }).click()
+
+    // Отказ назван словами — точным текстом словаря `describeSubmitFailure`.
+    await expect(
+      group.getByText('День уже сдан. Исправить его можно кнопкой «Исправить сдачу».', {
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // ГЛАВНОЕ: борд ПЕРЕЧИТАЛ состояние. До правки 22.08 панель на 409
+    // инвалидировала ключ ["ops-daily","day-submission",…], у которого НЕТ ни
+    // одного читателя (владение списком уехало в борд задачей 4) — запроса под
+    // этим ключом в кэше не существует, `invalidateQueries` не находит его и не
+    // рассылает события вовсе, борд ничего не перечитывал, и рядом с текстом
+    // «день уже сдан» продолжала стоять живая кнопка «Сдать день».
+    await expect(summaryHeadline).toHaveText(
+      `Сдано ${submittedIdsBefore.size + 1} из ${report.rows.length} управлений на ${formatIsoDateRu(report.business_date)}`,
+    )
+    await expect(group.getByRole('button', { name: 'Сдать день' })).toHaveCount(0)
+    await expect(group.getByText('День не сдан', { exact: true })).toHaveCount(0)
+
+    // Свёрнутая шапка тоже говорит правду — тем же перечитанным ответом.
     await group.getByRole('button', { name: nameRegExp(target!.name) }).click()
     await expect(group.getByText('Сдан · v1', { exact: true })).toBeVisible()
   })

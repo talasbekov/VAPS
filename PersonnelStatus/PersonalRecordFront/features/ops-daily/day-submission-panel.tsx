@@ -146,6 +146,15 @@ export function DaySubmissionPanel({
     void queryClient.invalidateQueries({
       queryKey: ["ops-daily", "day-submission", divisionId, businessDate],
     });
+    // Второй ключ — ТОТ ЖЕ, что уже инвалидируют оба `onSuccess` выше. Правка
+    // ревью ветки 22.08: ключа "day-submission" НЕ ЧИТАЕТ НИКТО (владение
+    // списком сдач уехало в борд «Ежедневного расхода»), а `invalidateQueries`
+    // рассылает событие только тем запросам, которые РЕАЛЬНО есть в кэше —
+    // значит на 409/404 не перечитывалось ничего вообще, и рядом с текстом
+    // отказа оставалось устаревшее состояние дня.
+    void queryClient.invalidateQueries({
+      queryKey: ["ops-daily", "division-submissions", divisionId],
+    });
   }, [amendStale, queryClient, divisionId, businessDate]);
 
   /** Форма открыта — чистая производная, не стейт: после гонки версий день
@@ -165,6 +174,11 @@ export function DaySubmissionPanel({
     if (!alreadySubmitted) return;
     void queryClient.invalidateQueries({
       queryKey: ["ops-daily", "day-submission", divisionId, businessDate],
+    });
+    // См. тот же комментарий у восстановления после 409/404 исправления: без
+    // этой второй инвалидации перечитывать состояние дня было нечему.
+    void queryClient.invalidateQueries({
+      queryKey: ["ops-daily", "division-submissions", divisionId],
     });
   }, [alreadySubmitted, queryClient, divisionId, businessDate]);
 
@@ -315,7 +329,7 @@ export function DaySubmissionPanel({
                     {formatSubmittedAt(version.submitted_at)} · {version.submitted_by}
                   </span>
                   {version.is_current && (
-                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">
+                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
                       действующая
                     </span>
                   )}

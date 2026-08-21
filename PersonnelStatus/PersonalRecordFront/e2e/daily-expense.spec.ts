@@ -184,6 +184,15 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     await board.getByRole('button', { name: nameRegExp(first.name) }).click()
     await expect(board.getByRole('region', { name: nameRegExp(first.name) })
       .locator('tbody tr')).toHaveCount(employees.results.length)
+
+    // Честная подпись под списком — verbatim, не подстрокой. Соседний вид
+    // того же экрана («Сбор сил») пилюли статусов КРАСИТ, этот — нет, и
+    // причина названа вслух, а не оставлена читателю на догадку (ревью ветки
+    // 22.08). Ниже — та же практика, что у «Руководства департамента».
+    await expect(board.getByText(
+      'Статусы в списке показаны одной пилюлей без цвета: коды статусов раздела и колонки расхода — разные пространства кодов, и раскраска между ними была бы придуманным на фронте словарём; появится бэк-этапом.',
+      { exact: true }
+    )).toBeVisible()
   })
 
   test('«Руководство департамента» — первым, раскрыт сразу, состав и статусы по правде штатки', async ({ page }) => {
@@ -502,5 +511,66 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     // чем читать флаг.
     await page.waitForTimeout(500)
     expect(summariesRequested, 'запрос версий ушёл, хотя узел не определён по дереву').toBe(false)
+  })
+
+  test('без status.view борд назван закрытым правом, а не «расход не ответил» — и своих запросов не шлёт', async ({
+    page,
+  }) => {
+    // Персоны «есть вход, но нет status.view» на стенде нет (у admin wildcard
+    // `*`), поэтому право снимается перехватом ответа о правах — тот же приём,
+    // что в `command-center.spec.ts`. Подменяется ТОЛЬКО список прав; всё
+    // остальное живое.
+    await page.route(
+      (url) => url.pathname.includes('/api/operations/my-permissions/'),
+      (route) => route.fulfill({ json: { permissions: ['event.view'] } }),
+    )
+
+    // Гейт проверяется НЕ ТОЛЬКО текстом: считаем реальные запросы. Без этого
+    // проба прошла бы и на «текст показали, а запросы всё равно ушли и вернули
+    // 403» — то есть ровно на том, что чинится.
+    //
+    // Считаются ручки, которые на этом экране заводит ТОЛЬКО борд:
+    // списочная сдача дня и дерево светофора (узел «Суточного свода»).
+    // `strength-report` и `staff-units/directorate/` сюда НЕ входят намеренно:
+    // их безусловно, вне зависимости от вида экрана, дёргает соседний «Сбор
+    // сил» (`hooks/use-forces-gathering.ts`, тот же ключ кэша) — их гейт это
+    // отдельный разговор о ДРУГОМ виде, и ассерт на них был бы ассертом не о
+    // борде. Именно поэтому текстовая ветка выше проверяется отдельно: даже
+    // когда чужой запрос за расходом всё-таки ушёл и вернул 403, борд обязан
+    // назвать причиной ПРАВО, а не молчание сервера.
+    const closedEndpointCalls: string[] = []
+    page.on('request', (request) => {
+      const path = new URL(request.url()).pathname
+      if (
+        path === '/api/ops/daily/daily-submissions/' ||
+        path === '/api/operations/traffic-light/tree/'
+      ) {
+        closedEndpointCalls.push(path)
+      }
+    })
+
+    await signIn(page)
+    await page.goto(`${APP}/employees?view=daily`)
+    const board = page.getByRole('region', { name: 'Ежедневный расход' })
+    await expect(board).toBeVisible({ timeout: 25_000 })
+
+    // Причина названа правом — дословно, тем же оборотом, что у светофора в
+    // аналитике («… закрыт правом «Статусы: просмотр».»).
+    await expect(
+      board.getByText('Ежедневный расход закрыт правом «Статусы: просмотр».', { exact: true }),
+    ).toBeVisible()
+
+    // И НЕ названа отказом сервера: до правки 22.08 гейта здесь не было вовсе,
+    // 403 приходил в `strength.isError`, и экран печатал «не ответил» —
+    // обвинял сервер в нехватке права у читателя.
+    await expect(
+      board.getByText('Ежедневный расход не ответил — управления показать нечем.', {
+        exact: true,
+      }),
+    ).toHaveCount(0)
+
+    // Даём сети шанс уйти, если бы запросы всё-таки отправились.
+    await page.waitForTimeout(1000)
+    expect(closedEndpointCalls, 'запрос ушёл в закрытую правом ручку').toEqual([])
   })
 })

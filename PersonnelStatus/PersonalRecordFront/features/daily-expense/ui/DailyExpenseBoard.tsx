@@ -37,10 +37,11 @@ import { formatIsoDate } from "@/shared/lib/date";
 import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
 import { opsApiClient } from "@/lib/ops-api";
 import { useStrengthReport } from "@/hooks/use-strength-report";
+import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
   DAILY_EMPLOYEES_PATH,
   DAILY_SUBMISSIONS_PATH,
-  STATUS_TYPE_OPTIONS,
+  STATUS_LABEL_BY_CODE,
   currentSubmission,
   parseSubmissionList,
 } from "@/entities/daily-grid";
@@ -49,16 +50,25 @@ import { DaySubmissionPanel } from "@/features/ops-daily";
 import { LeadershipStrip } from "./LeadershipStrip";
 import { SummaryVersions } from "./SummaryVersions";
 
-// Ярлык статуса — из ЕДИНСТВЕННОГО каталога раздела (STATUS_TYPE_OPTIONS),
-// свой словарь заводить нельзя. Цвет пилюли НАМЕРЕННО один на все статусы:
-// каталог несёт только код и подпись, а колонка расхода (`report_column_code`,
-// 11 колонок) и код статуса раздела (17 кодов) — разные пространства кодов;
-// придумывать между ними раскраску значило бы завести локальный словарь,
-// который и запрещён.
-const STATUS_LABEL_BY_CODE = new Map(
-  STATUS_TYPE_OPTIONS.map((option) => [option.code, option.label])
-);
+// Ярлык статуса — из ЕДИНСТВЕННОГО каталога раздела (`STATUS_LABEL_BY_CODE`,
+// `entities/daily-grid`), свой словарь заводить нельзя. До ревью ветки 22.08
+// эта карта строилась здесь дословной копией — и такие же копии стояли в
+// `LeadershipStrip` и на экране профиля; теперь она одна.
 const IN_SERVICE_LABEL = STATUS_LABEL_BY_CODE.get("IN_SERVICE") ?? "В строю";
+
+// Цвет пилюли НАМЕРЕННО один на все статусы: каталог несёт только код и
+// подпись, а колонка расхода (`report_column_code`, 11 колонок) и код статуса
+// раздела (17 кодов) — разные пространства кодов; придумывать между ними
+// раскраску значило бы завести локальный словарь, который и запрещён. Соседний
+// вид того же экрана («Сбор сил») пилюли КРАСИТ — у него в руках кадровые коды
+// `EMPLOYEE_STATUS_PAINT`, к кодам раздела не сводимые. Расхождение видно
+// глазом, поэтому оно названо вслух подписью под списком (`PAINT_GAP_LINE`), а
+// не оставлено читателю на догадку.
+//
+// Однострочная константа, а не текст прямо в JSX: JSX схлопывает переносы
+// строк по своим правилам, а строка пинится e2e-пробой дословно.
+const PAINT_GAP_LINE =
+  "Статусы в списке показаны одной пилюлей без цвета: коды статусов раздела и колонки расхода — разные пространства кодов, и раскраска между ними была бы придуманным на фронте словарём; появится бэк-этапом.";
 
 /** Нет активного статуса на дату — не «нет данных», а derived «в строю»
  * (тот же инвариант, что в `use-forces-gathering.ts`). */
@@ -303,7 +313,17 @@ function DivisionGroup({
 }
 
 export function DailyExpenseBoard() {
-  const strength = useStrengthReport(true);
+  // Гейт права — ТОТ ЖЕ, что у соседних экранов той же ручки: командный центр
+  // (`command-center/page.tsx`) и аналитика (`analytics/page.tsx`) включают
+  // `useStrengthReport` только при `status.view`. Ревью ветки 22.08 нашло, что
+  // здесь стояло жёсткое `true` — единственная из четырёх точек вызова хука:
+  // без права страница била в закрытые ручки и печатала 403 как «Ежедневный
+  // расход не ответил», то есть винила сервер в нехватке права. `useOpsPermissions`
+  // работает и вне `/security-ops` (запрос уходит безусловно, `enabled: true`).
+  const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+  const canRead = hasPermission("status.view");
+  const gateAllowed = !permissionsLoading && canRead;
+  const strength = useStrengthReport(gateAllowed);
   const queryClient = useQueryClient();
   const [openIds, setOpenIds] = useState<Set<number>>(new Set());
 
@@ -346,7 +366,9 @@ export function DailyExpenseBoard() {
           businessDate as string
         )}&limit=200`
       ),
-    enabled: dateValid,
+    // Гейт права — тот же, что у расхода выше: без `status.view` ручка
+    // ответила бы 403, и сводка сдачи прочла бы отказ как «нечем посчитать».
+    enabled: gateAllowed && dateValid,
   });
 
   // Свежесть после сдачи БЕЗ правки восстановленного файла: панель на
@@ -403,6 +425,28 @@ export function DailyExpenseBoard() {
     listIsPending || listIsError
       ? []
       : data?.rows.filter((row) => currentSubmission(submissionsByDivision.get(String(row.division_id)) ?? []) === null) ?? [];
+
+  // Права ещё грузятся / права нет — честная строка вместо кожи борда, как у
+  // соседних экранов той же ручки («Светофор сдачи закрыт правом „Статусы:
+  // просмотр"» в аналитике). Ветка обязана стоять ОТДЕЛЬНО от `strength.isError`:
+  // без права запрос выключен, и `isPending` у выключенного запроса остаётся
+  // true навсегда — борд крутил бы скелет, а не объяснял отказ.
+  if (permissionsLoading) {
+    return (
+      <section role="region" aria-label="Ежедневный расход" className="space-y-4">
+        <p className="text-sm text-muted-foreground">Загрузка прав…</p>
+      </section>
+    );
+  }
+  if (!canRead) {
+    return (
+      <section role="region" aria-label="Ежедневный расход" className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Ежедневный расход закрыт правом «Статусы: просмотр».
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section role="region" aria-label="Ежедневный расход" className="space-y-4">
@@ -543,6 +587,12 @@ export function DailyExpenseBoard() {
           })}
         </div>
       )}
+
+      {/* Честная подпись — ПОД списком, как у «Руководства департамента» и у
+          вкладок паспорта объекта. Расхождение видно глазом (соседний вид
+          «Сбор сил» на этом же экране красит пилюли статусов), и молчать о
+          нём значило бы оставить читателю догадку «почему тут серо». */}
+      {data && <p className="text-xs text-muted-foreground">{PAINT_GAP_LINE}</p>}
     </section>
   );
 }
