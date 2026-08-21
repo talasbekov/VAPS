@@ -201,7 +201,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
 
   test('кадровая таблица не выдаёт сегодняшнее число за дату у всех', async ({ page }) => {
     await signIn(page, 'admin', 'admin123')
-    await page.goto('/employees')
+    await page.goto('/employees/registry')
     await hydrated(page)
     await tableFilled(page)
 
@@ -272,7 +272,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     ).toBeGreaterThan(0)
 
     await signIn(page, 'admin', 'admin123')
-    await page.goto('/employees')
+    await page.goto('/employees/registry')
     await hydrated(page)
     await tableFilled(page)
 
@@ -318,7 +318,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       .toBeGreaterThan(1)
 
     await signIn(page, 'admin', 'admin123')
-    await page.goto('/employees')
+    await page.goto('/employees/registry')
     await hydrated(page)
     await tableFilled(page)
 
@@ -364,7 +364,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     )
 
     await signIn(page, 'admin', 'admin123')
-    await page.goto('/employees')
+    await page.goto('/employees/registry')
     await hydrated(page)
     await tableFilled(page)
 
@@ -386,7 +386,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
      * сначала убеждается, что отбор что-то отсёк.
      */
     await signIn(page, 'admin', 'admin123')
-    await page.goto('/employees')
+    await page.goto('/employees/registry')
     await hydrated(page)
     await tableFilled(page)
 
@@ -396,7 +396,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     // Отбор по первой букве фамилии первого человека: он обязан отсечь хоть
     // кого-то, иначе «отобранное» неотличимо от «всего».
     const firstSurname = allNames[0].split('\n')[0].trim().split(' ')[0]
-    await page.goto(`/employees?search=${encodeURIComponent(firstSurname)}`)
+    await page.goto(`/employees/registry?search=${encodeURIComponent(firstSurname)}`)
     await hydrated(page)
     await tableFilled(page)
     const pickedNames = await column(page, 'ФИО')

@@ -335,6 +335,25 @@ export interface OpsEmployeeStatusRow {
 }
 
 /**
+ * Тип статуса из справочника раздела (`/api/operations/status-types/`).
+ *
+ * `report_column_code` — В КАКУЮ КОЛОНКУ РАСХОДА попадает этот статус, и это
+ * не то же самое, что сам код: «Привлечён на мероприятие» и «Группа
+ * экстренного выезда» ложатся в чужие колонки («В строю» и «На дежурстве»
+ * соответственно). Поэтому счёт «сколько на мероприятии» из расхода не
+ * выводится — его даёт только поимённый разрез по статусам.
+ */
+export interface OpsStatusType {
+  code: string;
+  name: string;
+  report_column_code: string;
+  priority: number;
+  counts_in_list: boolean;
+  counts_in_staff: boolean;
+  is_active: boolean;
+}
+
+/**
  * Строка журнала раздела ОМ (`/api/operations/audit-logs/`, право
  * `audit.view`). Плоский снимок доменного события — сервер не отдаёт ни
  * имени актора, ни имени сущности, только идентификаторы; собирать из них
@@ -1678,6 +1697,42 @@ class ApiClient {
   async getOpsStatusesFor(employeeId: number): Promise<OpsEmployeeStatusRow[]> {
     const page = await this.getDomainJson<{ results: OpsEmployeeStatusRow[] }>(
       `/api/operations/statuses/?employee_id=${employeeId}&page_size=200`
+    );
+    return page.results;
+  }
+
+  // Статусы РАЗДЕЛА на деловую дату — тот же адрес, но разрез другой: не «чья
+  // служба», а «кто сегодня в каком состоянии». Дата серверная (business_date):
+  // «сегодня», посчитанное в браузере, в минусовых зонах спрашивало бы вчера.
+  //
+  // `period__contains` на сервере означает, что запрошенный день попадает
+  // ВНУТРЬ интервала статуса — вчерашний отпуск, кончившийся вчера, сюда не
+  // приедет.
+  async getOpsStatusesOn(params: {
+    businessDate?: string;
+    statusTypeCode?: string;
+    divisionId?: number;
+  }): Promise<OpsEmployeeStatusRow[]> {
+    const query = new URLSearchParams();
+    if (params.businessDate) query.append("business_date", params.businessDate);
+    if (params.statusTypeCode)
+      query.append("status_type_code", params.statusTypeCode);
+    if (params.divisionId !== undefined)
+      query.append("division_id", String(params.divisionId));
+    query.append("page_size", "500");
+    const page = await this.getDomainJson<{ results: OpsEmployeeStatusRow[] }>(
+      `/api/operations/statuses/?${query.toString()}`
+    );
+    return page.results;
+  }
+
+  // Справочник типов статусов: он несёт КОЛОНКУ РАСХОДА у каждого кода
+  // (`report_column_code`), и без неё «в строю» не отличить от отсутствия —
+  // своя копия этой таблицы на фронте разошлась бы со справочником при первой
+  // же правке в админке.
+  async getOpsStatusTypes(): Promise<OpsStatusType[]> {
+    const page = await this.getDomainJson<{ results: OpsStatusType[] }>(
+      "/api/operations/status-types/?page_size=200"
     );
     return page.results;
   }

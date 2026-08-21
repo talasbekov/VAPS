@@ -48,7 +48,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   feedback: "Обратная связь",
   profile: "Мой профиль",
   dashboard: "Обзор",
-  employees: "Управление персоналом",
+  employees: "Сбор сил на ОМ",
   organization: "Структура организации",
   statuses: "Управление статусами",
   reports: "Отчеты",
