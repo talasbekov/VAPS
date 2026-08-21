@@ -211,4 +211,56 @@ test.describe(LIVE ? 'напоминания об отставших' : 'нап�
     await expect(feed(page)).not.toContainText('не сдали')
     await expect(feed(page)).not.toContainText('подразделений 3')
   })
+
+  test('отметка прочтения ставит read_at на СЕРВЕРЕ — не только гасит строку', async ({ page }) => {
+    // ЖИВАЯ лента, без routeFeed: кнопка обязана бить по РЕАЛЬНОЙ строке —
+    // перехват здесь доказал бы только разметку, не контракт ручки.
+    const token = await apiToken()
+    const before = await get<{ results: OpsNotification[] }>(
+      token,
+      '/api/operations/notifications/',
+    )
+    // Проба без непрочитанного напоминания ничего не доказывает: клик был
+    // бы не по чему отмечать.
+    const targetIndex = before.results.findIndex((row) => row.read_at === null)
+    expect(
+      targetIndex,
+      'на стенде нет ни одного непрочитанного напоминания — пробе нечего отмечать',
+    ).toBeGreaterThanOrEqual(0)
+    const target = before.results[targetIndex]!
+
+    await signIn(page)
+    await page.goto(`${APP}${SCREEN}`)
+    await expect(feed(page)).toBeVisible({ timeout: 20_000 })
+    await expect(feed(page)).not.toContainText('Загрузка напоминаний', { timeout: 20_000 })
+
+    // Строки экрана идут в том же порядке, что и ответ ручки (проба выше по
+    // файлу это уже держит инвариантом) — поэтому целевая строка адресуется
+    // тем же индексом.
+    const row = feed(page).getByRole('listitem').nth(targetIndex)
+    await expect(row).toContainText('не прочитано')
+    const markButton = row.getByRole('button', { name: 'Прочитано', exact: true })
+    await markButton.click()
+
+    // UI-признак — гаснущая строка без кнопки. Он ПОДСКАЗЫВАЕТ, но не
+    // доказывает: доказательство — перечитка ручкой ниже.
+    await expect(row).not.toContainText('не прочитано', { timeout: 20_000 })
+    await expect(
+      row.getByRole('button', { name: 'Прочитано', exact: true }),
+    ).toHaveCount(0)
+
+    // Источник истины — СЕРВЕР: перечитываем ленту той же ручкой и смотрим
+    // на flag КОНКРЕТНОГО pk, не на счёт строк (счёт не меняется — уведомление
+    // остаётся в ленте прочитанным, а не пропадает).
+    const after = await get<{ results: OpsNotification[] }>(
+      token,
+      '/api/operations/notifications/',
+    )
+    const updated = after.results.find((row) => row.id === target.id)
+    expect(updated, `уведомление pk=${target.id} пропало из ленты после отметки`).toBeDefined()
+    expect(
+      updated!.read_at,
+      `read_at уведомления pk=${target.id} обязан выставиться сервером`,
+    ).not.toBeNull()
+  })
 })
