@@ -83,7 +83,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   test('строки таблицы не полосатые', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}/employees/`)
-    await expect(page.getByRole('heading', { name: 'Управление персоналом' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Сбор сил на ОМ' })).toBeVisible()
 
     const rows = page.locator('tbody tr')
     // 🔴 Нужны минимум ТРИ строки: на двух ассерт «фоны совпадают» вырождается —
@@ -100,7 +100,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   test('бейдж — таблетка 11px', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}/employees/`)
-    await expect(page.getByRole('heading', { name: 'Управление персоналом' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Сбор сил на ОМ' })).toBeVisible()
 
     const badge = page.locator('tbody [data-slot="badge"]').first()
     await expect(badge).toBeVisible()
@@ -578,7 +578,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   // 24px/800/tabular-nums) и подписи не обрезаются (scrollWidth <= clientWidth
   // с guard на пустое множество/clientWidth=0).
   for (const [route, heading] of [
-    ['/employees/', 'Управление персоналом'],
+    ['/employees/', 'Сбор сил на ОМ'],
     ['/statuses/', 'Управление статусами'],
   ] as const) {
     test(`KPI-плитки на StatCard: ${route}`, async ({ page }) => {
@@ -719,7 +719,7 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   const HEADER_ROUTES: Array<{ path: string; title: string; eyebrow: string }> = [
     // Легаси-портал
     { path: '/dashboard/', title: 'Обзор', eyebrow: 'Личный состав' },
-    { path: '/employees/', title: 'Управление персоналом', eyebrow: 'Личный состав' },
+    { path: '/employees/', title: 'Сбор сил на ОМ', eyebrow: 'Охранные мероприятия' },
     { path: '/organization/', title: 'Структура организации', eyebrow: 'Личный состав' },
     { path: '/statuses/', title: 'Управление статусами', eyebrow: 'Личный состав' },
     { path: '/reports/', title: 'Отчеты', eyebrow: 'Официальные документы' },

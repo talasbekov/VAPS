@@ -144,6 +144,10 @@ function EmployeesScreen() {
   const searchQuery = searchParams.get("search") ?? "";
   const departmentFilter = searchParams.get("department") ?? "all";
   const statusFilter = searchParams.get("status") ?? "all";
+  // Верхний вид экрана: «Сбор сил» (прежнее содержимое, умолчание) или
+  // «Ежедневный расход» (Task 2). Тот же приём URL-состояния, что у
+  // search/department/status — умолчание в адрес не пишется.
+  const view = searchParams.get("view") === "daily" ? "daily" : "forces";
 
   const setFilter = useCallback(
     (key: string, value: string, fallback: string) => {
@@ -459,9 +463,9 @@ function EmployeesScreen() {
       <div className="space-y-6">
         {/* Header */}
         <PageHeader
-          eyebrow="Личный состав"
-          title="Управление персоналом"
-          description="Управление сотрудниками организации"
+          eyebrow="Охранные мероприятия"
+          title="Сбор сил на ОМ"
+          description="Ежедневный расход департамента и сбор сил на мероприятия"
           actions={
             <div className="flex flex-wrap items-center gap-3">
               {/* Здесь стояло «Всего сотрудников: {filteredEmployees.length}» —
@@ -493,6 +497,47 @@ function EmployeesScreen() {
           }
         />
 
+        {/* Верхний вид экрана: «Сбор сил» — прежнее содержимое (плитки,
+            заявки, вкладки реестра) без изменений; «Ежедневный расход» —
+            задача Task 2, до неё карточка-заглушка. */}
+        <nav
+          className="flex w-fit gap-1 rounded-lg bg-muted p-1"
+          aria-label="Разделы модуля"
+        >
+          <button
+            type="button"
+            aria-current={view === "forces" ? "page" : undefined}
+            className={
+              view === "forces"
+                ? "rounded-md bg-background px-3 py-1.5 text-sm font-semibold shadow-sm"
+                : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+            }
+            onClick={() => setFilter("view", "forces", "forces")}
+          >
+            Сбор сил
+          </button>
+          <button
+            type="button"
+            aria-current={view === "daily" ? "page" : undefined}
+            className={
+              view === "daily"
+                ? "rounded-md bg-background px-3 py-1.5 text-sm font-semibold shadow-sm"
+                : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+            }
+            onClick={() => setFilter("view", "daily", "forces")}
+          >
+            Ежедневный расход
+          </button>
+        </nav>
+
+        {view === "daily" && (
+          <Card>
+            <CardContent>Ежедневный расход — следующая задача плана</CardContent>
+          </Card>
+        )}
+
+        {view === "forces" && (
+        <>
         {/* Счёт сбора сил. Плитки взяты у РАСХОДА — владельца этих чисел;
             прежние («Всего сотрудников», «В отпуске/больничном», «В
             командировке») считались по загруженному списку и с расходом
@@ -968,6 +1013,8 @@ function EmployeesScreen() {
             </TabsContent>
           )}
         </Tabs>
+        </>
+        )}
 
         <AddEmployeeDialog
           open={isAddDialogOpen}
