@@ -28,6 +28,7 @@ import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useStrengthReport } from "@/hooks/use-strength-report";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { CreateSecurityEventDialog } from "@/features/create-security-event";
+import { ExpenseTrafficCard } from "@/features/command-expense";
 import { OpsKpiCards } from "@/widgets/ops-kpi-cards";
 import type { OpsKpiItem } from "@/widgets/ops-kpi-cards";
 import {
@@ -230,6 +231,8 @@ export default function CommandCenterPage() {
         />
 
         {query.data !== undefined && <OpsKpiCards items={kpi} />}
+
+        <ExpenseTrafficCard />
 
         <Card>
           <CardHeader>

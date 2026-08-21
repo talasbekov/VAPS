@@ -1,14 +1,18 @@
 /**
  * Командный центр на ЖИВОМ стенде.
  *
- * Проба отвечает на два вопроса:
+ * Проба отвечает на три вопроса:
  *
  * 1. показатели шапки взяты из ответов сервера, а не нарисованы: численность
  *    сходится с расходом (строевой запиской), дефицит — с незакрытыми
  *    запросами сил по НЕЗАВЕРШЁННЫМ мероприятиям;
  * 2. незагруженные права не выдаются за отказ, а отсутствие права
  *    `status.view` названо вслух — численность тогда прочерк с причиной,
- *    а не ноль.
+ *    а не ноль;
+ * 3. карточка «Расход дня» считает счётчики «Сдано / Не сдано / Просрочено»
+ *    ПО ЛИСТЬЯМ дерева светофора (`traffic-light/tree/`) — тем же ответом,
+ *    что и её собственный экран (`/security-ops/analytics`), без второго
+ *    счёта; без права `status.view` карточка не рендерится вовсе.
  *
  * 🔴 Service worker MSW блокируется на весь файл: без этого `page.route` не
  * перехватывает запросы приложения (они идут через воркер), и подмена прав
@@ -38,6 +42,20 @@ interface StrengthRow {
   columns: Record<string, number>
 }
 
+interface TrafficLightNode {
+  division_id: number
+  name: string
+  parent_id: number | null
+  status: 'GREEN' | 'YELLOW' | 'RED' | 'NEUTRAL' | 'UNKNOWN'
+  late: boolean
+}
+
+interface TrafficLightTree {
+  business_date: string
+  control_hour: string
+  nodes: TrafficLightNode[]
+}
+
 async function apiToken(): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
     method: 'POST',
@@ -61,6 +79,48 @@ async function strengthReport(
     headers: { Authorization: `Bearer ${token}` },
   })
   return (await res.json()) as { columns: string[]; rows: StrengthRow[] }
+}
+
+async function trafficLightTree(token: string): Promise<TrafficLightTree> {
+  const res = await fetch(`${API}/api/operations/traffic-light/tree/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return (await res.json()) as TrafficLightTree
+}
+
+/**
+ * Счёт «Сдано / Не сдано / Просрочено» — ТА ЖЕ методика, что в
+ * `ExpenseTrafficCard.tsx` (см. её докстринг): по ЛИСТЬЯМ дерева (родители
+ * исключены — их цвет каскад, суммировать значило бы посчитать подразделение
+ * дважды), `late` берётся с бэка (`submission.late`) и у узла без сдачи
+ * (RED/NEUTRAL) он структурно всегда `false` — опаздывать нечему.
+ *
+ *   Сдано     = GREEN|YELLOW и !late
+ *   Просрочено = GREEN|YELLOW и late
+ *   Не сдано  = RED или UNKNOWN
+ *   NEUTRAL   вне счёта (сдавать некого)
+ */
+function countSubmission(tree: TrafficLightTree): {
+  submitted: number
+  late: number
+  missing: number
+  leaves: TrafficLightNode[]
+} {
+  const parents = new Set(
+    tree.nodes.map((n) => n.parent_id).filter((id): id is number => id !== null),
+  )
+  const leaves = tree.nodes.filter((n) => !parents.has(n.division_id))
+  let submitted = 0
+  let late = 0
+  let missing = 0
+  for (const node of leaves) {
+    if (node.status === 'RED' || node.status === 'UNKNOWN') missing += 1
+    else if (node.status === 'GREEN' || node.status === 'YELLOW') {
+      if (node.late) late += 1
+      else submitted += 1
+    }
+  }
+  return { submitted, late, missing, leaves }
 }
 
 async function signIn(page: Page): Promise<void> {
@@ -146,6 +206,75 @@ test.describe(LIVE ? 'командный центр' : 'командный це�
     await expect(personnelCard).not.toContainText('по списку')
     // Реестр ОМ правом не закрыт — показатели мероприятий на месте
     await expect(kpiCard(page, 'Активные ОМ')).toBeVisible()
+    // Тот же гейт («Статусы: просмотр») закрывает и карточку светофора —
+    // её не должно быть в дереве вовсе, не «пусто», не «загрузка».
+    await expect(
+      page.getByRole('region', { name: 'Расход дня', exact: true }),
+    ).toHaveCount(0)
+  })
+
+  test('«Расход дня»: счётчики сходятся со светофором, кнопка ждёт бэк-этапа', async ({
+    page,
+  }) => {
+    const token = await apiToken()
+    const tree = await trafficLightTree(token)
+    expect(tree.nodes.length, 'на стенде пустое дерево светофора — проба вакуумна').toBeGreaterThan(0)
+
+    const { submitted, late, missing, leaves } = countSubmission(tree)
+    expect(leaves.length, 'на стенде дерево без листьев — проба вакуумна').toBeGreaterThan(0)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/command-center/`)
+
+    const card = page.getByRole('region', { name: 'Расход дня', exact: true })
+    await expect(card).toBeVisible({ timeout: 15_000 })
+
+    // Каждый счётчик — отдельным ассертом против значения, посчитанного из
+    // ответа ручки: стенд сейчас вырожденный (все листья RED, late=false —
+    // см. отчёт задачи), «не все счётчики нулевые» здесь было бы вакуумно.
+    await expect(
+      card.locator('[data-metric="submitted"] [data-slot="stat-value"]'),
+    ).toHaveText(String(submitted))
+    await expect(
+      card.locator('[data-metric="missing"] [data-slot="stat-value"]'),
+    ).toHaveText(String(missing))
+    await expect(
+      card.locator('[data-metric="late"] [data-slot="stat-value"]'),
+    ).toHaveText(String(late))
+
+    await expect(
+      card.locator('[data-metric="submitted"] [data-slot="stat-label"]'),
+    ).toHaveText('Сдано')
+    await expect(
+      card.locator('[data-metric="missing"] [data-slot="stat-label"]'),
+    ).toHaveText('Не сдано')
+    await expect(
+      card.locator('[data-metric="late"] [data-slot="stat-label"]'),
+    ).toHaveText('Просрочено')
+
+    // Контрольный час словами — та же формулировка, что у аналитики
+    const hour = /^\d{2}:\d{2}/.test(tree.control_hour) ? tree.control_hour.slice(0, 5) : tree.control_hour
+    await expect(
+      card.getByText(`Контрольный час ${hour} — сдача после него считается опозданием.`, {
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // Ссылка на аналитику — детальный светофор живёт там
+    await expect(card.getByRole('link', { name: 'Открыть светофор в аналитике', exact: true })).toHaveAttribute(
+      'href',
+      '/security-ops/analytics/',
+    )
+
+    // Кнопка — заглушка бэк-этапа: disabled и пояснение рядом, не молча
+    const remindButton = card.getByRole('button', { name: 'Напомнить департаментам', exact: true })
+    await expect(remindButton).toBeVisible()
+    await expect(remindButton).toBeDisabled()
+    await expect(
+      card.getByText('Рассылка идёт автоматически к контрольному часу; ручная — бэк-этапом.', {
+        exact: true,
+      }),
+    ).toBeVisible()
   })
 })
 
