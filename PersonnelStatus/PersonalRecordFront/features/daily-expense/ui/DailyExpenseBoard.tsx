@@ -507,7 +507,12 @@ export function DailyExpenseBoard() {
           департамент целиком), и читателю естественно сравнить их одним
           взглядом. «Руководство» и построчный список ниже — другая история
           («кто сейчас на месте»), поэтому отделены. */}
-      {data && <SummaryVersions businessDate={data.business_date} />}
+      {data && (
+        <SummaryVersions
+          businessDate={data.business_date}
+          boardDivisionIds={data.rows.map((row) => row.division_id)}
+        />
+      )}
 
       {/* «Руководство департамента» — ПЕРВЫМ среди рядовых управлений,
           раскрыт всегда (своя карточка, не строка в списке ниже). Своя дата —

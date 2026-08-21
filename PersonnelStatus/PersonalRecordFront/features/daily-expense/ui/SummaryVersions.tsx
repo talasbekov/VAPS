@@ -8,41 +8,56 @@
 // версий. На деле у него НЕТ действия чтения списка вовсе — только
 // `create` (собрать, `daily_report.generate`), `rebuild` (пересобрать
 // «взамен», `daily_report.correct`), `freshness` (свежесть ОДНОЙ действующей)
-// и `export` (файл). Docstring вьюсета
-// говорит прямо: «Сводка возвращается тем же сериализатором, что и сдача:
-// это одна сущность» — свод физически ХРАНИТСЯ в ТОЙ ЖЕ таблице
-// (`OpsDailySubmission`), что обычная сдача листового подразделения:
-// «версия свода» — это строка `daily-submissions` с `division_id`
-// СОСТАВНОГО (не листового) подразделения.
+// и `export` (файл). Docstring вьюсета говорит прямо: «Сводка возвращается
+// тем же сериализатором, что и сдача: это одна сущность» — свод физически
+// ХРАНИТСЯ в ТОЙ ЖЕ таблице (`OpsDailySubmission`), что обычная сдача
+// листового подразделения: «версия свода» — это строка `daily-submissions`
+// с `division_id` СОСТАВНОГО (не листового) подразделения.
 //
 // Поэтому источник версий — УЖЕ ИЗВЕСТНАЯ ручка `DAILY_SUBMISSIONS_PATH`
 // (`/api/ops/daily/daily-submissions/`, тот же адаптер, что уже импортирован
 // борд-ом для сводки сдачи), с фильтром `division_id=<департамент>`. Этот
 // фильтр здесь ТОЧНЫЙ (см. `DailySubmissionSelector.list`: `division_id`
 // param — `.filter(division_id=division_id)`, ровно равенство), а НЕ
-// поддеревный (поддерево фильтрует только `scope`, когда `division_id` не
-// передан отдельным параметром) — то есть ответ несёт РОВНО версии свода
-// этого узла, не сдачи его детей. Право чтения — `status.view`, ТО ЖЕ самое,
-// что уже открывает остальной экран (проверено curl под admin 21.08.2026 —
-// 200, без новых прав).
+// поддеревный — то есть ответ несёт РОВНО версии свода этого узла, не сдачи
+// его детей. Право чтения — `status.view`, ТО ЖЕ самое, что уже открывает
+// остальной экран.
 //
-// `SUMMARY_DIVISION_ID` — id составного «Департамент охраны», родителя
-// управлений 4/5 этого борда (снят с `/api/divisions/divisions_tree/` на
-// живом стенде). Не вызываем этот эндпоинт из браузера: как и у
-// `LEADERSHIP_MAX_LEVEL` в `LeadershipStrip.tsx`, орг-дерево живёт под
-// другим правом (`orgstructure.view`), которого у этого экрана нет — id
-// записан константой той же природы, что и порог уровня руководства.
-// Управление 6 «Управление (стенд)» — сирота вне этого дерева (см. отчёт
-// Task 3/4), поэтому свод департамента 2 НЕ покрывает его целиком — честная
-// граница, не баг.
+// УЗЕЛ СВОДА ВЫВОДИТСЯ ИЗ СЕРВЕРНОЙ СТРУКТУРЫ, А НЕ ЗАШИТ ID-ОМ (правка по
+// ревью координатора 21.08.2026). Первая версия файла хранила
+// `SUMMARY_DIVISION_ID = 2` константой — это была прямая привязка к
+// идентификатору из БД КОНКРЕТНОГО стенда: на другой инсталляции она молча
+// указала бы не туда. Это принципиально ДРУГОЙ класс константы, чем
+// `LEADERSHIP_MAX_LEVEL` в `LeadershipStrip.tsx` — тот опирается на
+// СЕРВЕРНОЕ поле (`position.level`), устойчивое к смене инсталляции, а не на
+// конкретный id из данных стенда.
+//
+// Источник структуры — `GET /api/operations/traffic-light/tree/` (то же
+// право `status.view`, БЕЗ `root_division_id` — сервер сам сужает дерево
+// до области актора). Это заодно честно решает случай оператора,
+// закреплённого за ЛИСТОВЫМ подразделением: в его дереве родитель-предок
+// обрезан областью, кандидатов по правилу ниже не найдётся, и сработает
+// честная ветка «узел не определён», а не молчаливая подстановка чужого узла.
+//
+// ПРАВИЛО ВЫВОДА УЗЛА (координатор, эмпирически на живом дереве): узел
+// свода — тот, чей РОДИТЕЛЬ сам является КОРНЕМ (`parent_id === null`), и
+// в чьём поддереве лежит НАИБОЛЬШЕЕ число управлений борда (`division_id`
+// строк расхода, проп `boardDivisionIds`). На живых данных стенда это
+// однозначно «Департамент охраны» (id=2, родитель — корень «Служба», id=1):
+// у сироты «Управление (стенд)» (id=6) родителя нет вовсе (сам корень, не
+// подходит под правило вообще), у «Управление объектами» (id=3) родитель
+// (2) сам не корень. При НУЛЕ кандидатов, при максимальном покрытии = 0
+// или при НЕОДНОЗНАЧНОСТИ (два и более кандидата делят максимальное
+// ненулевое покрытие) — компонент НЕ гадает: показывает честную строку и
+// НЕ шлёт запрос версий вовсе (`enabled` гейт запроса версий).
 //
 // Снимок ОДНОЙ версии («Открыть») отдаёт только `retrieve` вьюсета
 // `daily-submissions` РАЗДЕЛА `/api/operations/` (не адаптер `/api/ops/
-// daily/`: у адаптера действия `retrieve` нет вовсе, см. `OpsDailySubmis
-// sionsViewSet` — только `list`/`create`/`amend`). То же право `status.view`,
-// другая база пути — как и `apiClient.getOpsStatusesOn`, уже бьющий в
-// `/api/operations/` напрямую с этого экрана.
-import { useState } from "react";
+// daily/`: у адаптера действия `retrieve` нет вовсе — только `list`/
+// `create`/`amend`). То же право `status.view`, другая база пути — как и
+// `apiClient.getOpsStatusesOn`, уже бьющий в `/api/operations/` напрямую с
+// этого экрана.
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { opsApiClient } from "@/lib/ops-api";
@@ -55,18 +70,94 @@ import type { DaySubmission } from "@/entities/daily-grid";
  * `entities/daily-grid` при первой же правке контракта сдачи. */
 export type DailySummaryRow = DaySubmission;
 
-/** id составного «Департамент охраны» — см. обоснование в заголовке файла. */
-export const SUMMARY_DIVISION_ID = 2;
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null) return null;
+  return value as Record<string, unknown>;
+}
+
+interface DivisionTreeNode {
+  divisionId: number;
+  parentId: number | null;
+}
+
+/** Узлы дерева читаем ЗАЩИТНО, тем же приёмом, что `parseSubmission` в
+ * `entities/daily-grid`: кривой узел выпадает из вычисления, а не роняет
+ * блок целиком. */
+function parseTreeNodes(payload: unknown): DivisionTreeNode[] {
+  const envelope = asRecord(payload);
+  if (envelope === null) return [];
+  const rawNodes = envelope.nodes;
+  if (!Array.isArray(rawNodes)) return [];
+  const result: DivisionTreeNode[] = [];
+  for (const raw of rawNodes) {
+    const row = asRecord(raw);
+    if (row === null) continue;
+    if (typeof row.division_id !== "number") continue;
+    const parentId = row.parent_id;
+    if (parentId !== null && typeof parentId !== "number") continue;
+    result.push({ divisionId: row.division_id, parentId: parentId as number | null });
+  }
+  return result;
+}
+
+/**
+ * Узел свода по правилу координатора — см. заголовок файла: кандидат —
+ * узел, чей родитель сам корневой; победитель — кандидат с максимальным
+ * (ненулевым) покрытием `boardDivisionIds` в своём поддереве, при условии
+ * что он ЕДИНСТВЕННЫЙ такой. `null` — «не определён», честно, не гадаем.
+ */
+function resolveSummaryDivisionId(
+  nodes: DivisionTreeNode[],
+  boardDivisionIds: readonly number[]
+): number | null {
+  const rootIds = new Set(
+    nodes.filter((node) => node.parentId === null).map((node) => node.divisionId)
+  );
+  const candidates = nodes.filter(
+    (node) => node.parentId !== null && rootIds.has(node.parentId)
+  );
+  if (candidates.length === 0) return null;
+
+  const childrenOf = new Map<number, number[]>();
+  for (const node of nodes) {
+    if (node.parentId === null) continue;
+    const list = childrenOf.get(node.parentId) ?? [];
+    list.push(node.divisionId);
+    childrenOf.set(node.parentId, list);
+  }
+  function subtreeIds(rootId: number): Set<number> {
+    const seen = new Set<number>([rootId]);
+    const stack = [rootId];
+    while (stack.length > 0) {
+      const current = stack.pop() as number;
+      for (const child of childrenOf.get(current) ?? []) {
+        if (!seen.has(child)) {
+          seen.add(child);
+          stack.push(child);
+        }
+      }
+    }
+    return seen;
+  }
+
+  const boardSet = new Set(boardDivisionIds);
+  const coverage = candidates.map((candidate) => {
+    const subtree = subtreeIds(candidate.divisionId);
+    let count = 0;
+    for (const id of boardSet) if (subtree.has(id)) count += 1;
+    return { id: candidate.divisionId, count };
+  });
+  const maxCoverage = Math.max(...coverage.map((entry) => entry.count));
+  if (maxCoverage === 0) return null;
+  const winners = coverage.filter((entry) => entry.count === maxCoverage);
+  if (winners.length !== 1) return null;
+  return winners[0].id;
+}
 
 function formatSubmittedAt(value: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString("ru-RU");
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null) return null;
-  return value as Record<string, unknown>;
 }
 
 interface SnapshotBody {
@@ -130,23 +221,47 @@ function VersionSnapshot({ id }: { id: number }) {
   );
 }
 
-/** «Суточный свод» — версии сводного заявления департамента. Дата — из ТОГО
- * ЖЕ ответа расхода, что и остальной борд (см. `DailyExpenseBoard.tsx`):
- * оба блока обязаны говорить об одном дне. */
-export function SummaryVersions({ businessDate }: { businessDate: string }) {
+interface SummaryVersionsProps {
+  /** Дата — из ТОГО ЖЕ ответа расхода, что и остальной борд: оба блока
+   * обязаны говорить об одном дне. */
+  businessDate: string;
+  /** `division_id` строк борда (расхода) — правилу вывода узла нужно
+   * знать, какие управления борд вообще показывает, чтобы выбрать узел,
+   * РЕАЛЬНО накрывающий их поддеревом, а не любой формальный корневой. */
+  boardDivisionIds: readonly number[];
+}
+
+/** «Суточный свод» — версии сводного заявления департамента. */
+export function SummaryVersions({ businessDate, boardDivisionIds }: SummaryVersionsProps) {
   const [openId, setOpenId] = useState<number | null>(null);
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
+
+  const treeQuery = useQuery({
+    queryKey: ["daily-expense-board", "division-tree"],
+    queryFn: () => opsApiClient.get<unknown>("/api/operations/traffic-light/tree/"),
+  });
+
+  const treeNodes = useMemo(() => parseTreeNodes(treeQuery.data), [treeQuery.data]);
+  const treeReady = dateValid && !treeQuery.isPending && !treeQuery.isError;
+  const summaryDivisionId = useMemo(
+    () => (treeReady ? resolveSummaryDivisionId(treeNodes, boardDivisionIds) : null),
+    [treeReady, treeNodes, boardDivisionIds]
+  );
+  const unresolved = treeReady && summaryDivisionId === null;
+  const resolved = treeReady && summaryDivisionId !== null;
 
   const query = useQuery({
     queryKey: ["daily-expense-board", "summaries", businessDate],
     queryFn: () =>
       opsApiClient.get<unknown>(
-        `${DAILY_SUBMISSIONS_PATH}?division_id=${SUMMARY_DIVISION_ID}&business_date=${encodeURIComponent(businessDate)}`
+        `${DAILY_SUBMISSIONS_PATH}?division_id=${summaryDivisionId}&business_date=${encodeURIComponent(businessDate)}`
       ),
-    enabled: dateValid,
+    // Гейт на `resolved`, а не только на дату: узел не определён — запрос не
+    // уходит вовсе, а не уходит с бессмысленным division_id.
+    enabled: resolved,
   });
 
-  const versions: DailySummaryRow[] = dateValid ? parseSubmissionList(query.data) : [];
+  const versions: DailySummaryRow[] = resolved ? parseSubmissionList(query.data) : [];
 
   return (
     <section role="region" aria-label="Суточный свод" className="space-y-2">
@@ -163,22 +278,37 @@ export function SummaryVersions({ businessDate }: { businessDate: string }) {
               деловая дата ещё не известна
             </p>
           )}
-          {dateValid && query.isPending && (
+          {dateValid && treeQuery.isPending && (
+            <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
+              Загрузка структуры подразделений…
+            </p>
+          )}
+          {dateValid && !treeQuery.isPending && treeQuery.isError && (
+            <p role="alert" className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
+              Не удалось прочитать структуру подразделений — узел свода не определён
+            </p>
+          )}
+          {unresolved && (
+            <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
+              Узел суточного свода не определён по структуре подразделений
+            </p>
+          )}
+          {resolved && query.isPending && (
             <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
               Загрузка свода…
             </p>
           )}
-          {dateValid && !query.isPending && query.isError && (
+          {resolved && !query.isPending && query.isError && (
             <p role="alert" className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
               Не удалось узнать, собирался ли свод
             </p>
           )}
-          {dateValid && !query.isPending && !query.isError && versions.length === 0 && (
+          {resolved && !query.isPending && !query.isError && versions.length === 0 && (
             <p className="whitespace-normal px-4 py-3 text-sm text-muted-foreground">
               свод ещё не собирался
             </p>
           )}
-          {dateValid &&
+          {resolved &&
             !query.isPending &&
             !query.isError &&
             versions.map((version) => (
