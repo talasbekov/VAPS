@@ -22,7 +22,7 @@ import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { apiClient, type OpsEmployeeStatusRow } from "@/lib/api";
-import { STATUS_TYPE_OPTIONS } from "@/entities/daily-grid";
+import { STATUS_LABEL_BY_CODE } from "@/entities/daily-grid";
 import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
 
 /** Порог уровня должности: `level <= LEADERSHIP_MAX_LEVEL` — «руководство».
@@ -32,10 +32,6 @@ import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directora
  * (`position.level`) нашёлся. Живой стенд: level=1 — «Начальник отдела»,
  * 2 — «Старший инспектор», 3 — «Инспектор», 4 — «Дежурный». */
 export const LEADERSHIP_MAX_LEVEL = 1;
-
-const STATUS_LABEL_BY_CODE = new Map(
-  STATUS_TYPE_OPTIONS.map((option) => [option.code, option.label])
-);
 
 /** У рядовых строк расхода (`DivisionGroup`) отсутствие статуса — derived
  * «в строю»: там это инвариант раздела (нет активного статуса = в строю).

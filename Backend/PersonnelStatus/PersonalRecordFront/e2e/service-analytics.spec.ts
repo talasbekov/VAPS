@@ -8,8 +8,11 @@
  *    приходят с сервера, а не из своего словаря;
  * 2. сдача дня считается по ЛИСТЬЯМ светофора В СЧЁТЧИКАХ (цвет узла с
  *    потомками — худший в поддереве, и сложение его с детьми посчитало бы
- *    подразделение дважды), а под счётчиками — ПОЛНОЕ дерево: все узлы,
- *    вложенные буквально по `parent_id`, здоровые ветки свёрнуты в сводку;
+ *    подразделение дважды, а корзины «сдали / с опозданием / не сдали»
+ *    считает ОБЩАЯ функция раздела — `countSubmissions`, `entities/daily-grid`,
+ *    та же, что кормит карточку «Расход дня» командного центра), а под
+ *    счётчиками — ПОЛНОЕ дерево: все узлы, вложенные буквально по `parent_id`,
+ *    здоровые ветки свёрнуты в сводку по числу подразделений;
  * 3. ряд динамики строится за период снимка и обрывается датой раздела —
  *    расхода за будущее не существует;
  * 4. отсутствие права `status.view` названо вслух, а не показано нулями.
@@ -172,6 +175,35 @@ const SYNTHETIC_TREE_WITH_CYCLE = {
 }
 
 const CYCLE_LABEL = 'структура зациклена — место в иерархии не определить'
+
+
+/**
+ * Дерево, на котором ТРИ ЭКРАНА расходились до ревью ветки 22.08. Плоское
+ * (каждый узел — и корень, и лист), чтобы счётчики не зависели от вложенности.
+ *
+ * Ключевые узлы — ровно те, на которых старый разбор врал:
+ *   * 9302 GREEN + late — карточка командного центра клала его в «Просрочено»,
+ *     аналитика считала его И в «сдали» (он зелёный), И в «с опозданием»;
+ *   * 9303/9307 YELLOW без опоздания — карточка считала их СДАЧЕЙ, аналитика
+ *     уводила в отдельную долю «с расхождением», из «сдали» исключая.
+ *
+ * Числа НЕ вырождены: новое «сдали» = 3 (9301 + 9303 + 9307), старое было бы 2
+ * (только GREEN: 9301 + 9302). Совпади они, проба равенства двух экранов
+ * прошла бы и на сломанном коде.
+ */
+const SYNTHETIC_TREE_MIXED_SUBMISSION = {
+  business_date: '2026-08-22',
+  control_hour: '17:00:00',
+  nodes: [
+    { division_id: 9301, name: 'Сдал вовремя (проба)', parent_id: null, status: 'GREEN', late: false },
+    { division_id: 9302, name: 'Сдал с опозданием (проба)', parent_id: null, status: 'GREEN', late: true },
+    { division_id: 9303, name: 'Сдал, данные разошлись (проба)', parent_id: null, status: 'YELLOW', late: false },
+    { division_id: 9307, name: 'Сдал, данные разошлись — 2 (проба)', parent_id: null, status: 'YELLOW', late: false },
+    { division_id: 9304, name: 'Не сдал (проба)', parent_id: null, status: 'RED', late: false },
+    { division_id: 9305, name: 'Справочник сломан (проба)', parent_id: null, status: 'UNKNOWN', late: false },
+    { division_id: 9306, name: 'Сдавать некого (проба)', parent_id: null, status: 'NEUTRAL', late: false },
+  ],
+}
 
 test.use({ serviceWorkers: 'block' })
 
@@ -336,7 +368,7 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
     await expect(block.locator('[data-division-id]')).toHaveCount(tree.nodes.length)
   })
 
-  test('здоровая ветка сворачивается в сводку «+N сдавших» и разворачивается по клику (стенд сегодня вырожден — все узлы RED, эта ветка живыми данными не покрыта, синтетическая фикстура через page.route)', async ({
+  test('здоровая ветка сворачивается в сводку «+N подразделений» и разворачивается по клику (стенд сегодня вырожден — все узлы RED, эта ветка живыми данными не покрыта, синтетическая фикстура через page.route)', async ({
     page,
   }) => {
     await signIn(page)
@@ -353,8 +385,15 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
     await expect(block.locator('[data-division-id="9002"]')).toHaveCount(1)
     await expect(block.locator('[data-division-id="9003"]')).toHaveCount(0)
     await expect(block.locator('[data-division-id="9004"]')).toHaveCount(0)
-    const summary = block.locator('[data-division-id="9002"] > button', { hasText: 'сдавших' })
-    await expect(summary).toHaveText('+ 2 сдавших')
+    // Подпись сводки называет СТРУКТУРУ, а не сдачу (ревью ветки 22.08,
+    // отменившее прежнее «+N сдавших»): в этой самой фикстуре узел 9004 —
+    // NEUTRAL под GREEN-родителем, то есть «сдавать некого», и прежняя строка
+    // прямо утверждала о нём неправду. Склонение — часть пина: «+ 2
+    // подразделения», а не «подразделений».
+    const summary = block.locator('[data-division-id="9002"] > button', {
+      hasText: 'подразделени',
+    })
+    await expect(summary).toHaveText('+ 2 подразделения')
 
     // Проблемная ветка (9001, корень RED) и её проблемный лист (9005,
     // YELLOW) — развёрнуты по умолчанию без единого клика.
@@ -367,7 +406,7 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
     await expect(block.locator('[data-division-id="9003"]')).toHaveCount(1)
     await expect(block.locator('[data-division-id="9004"]')).toHaveCount(1)
     await expect(
-      block.locator('[data-division-id="9002"] > button', { hasText: 'сдавших' }),
+      block.locator('[data-division-id="9002"] > button', { hasText: 'подразделени' }),
     ).toHaveCount(0)
     const branchToggle = block.locator('[data-division-id="9002"] > div > button[aria-expanded]')
     await expect(branchToggle).toHaveAttribute('aria-expanded', 'true')
@@ -522,5 +561,50 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
     const anyMetric = metrics.data.metrics[0]
     expect(anyMetric, 'сервер не отдал ни одного показателя дежурств').toBeDefined()
     await expect(page.getByRole('group', { name: anyMetric.safeLabel })).toBeVisible()
+  })
+
+  test('«сдали» аналитики — ТО ЖЕ ЧИСЛО, что «Сдано» карточки командного центра на одном дереве', async ({
+    page,
+  }) => {
+    // Одно и то же перехваченное дерево на ОБА экрана: расхождение, если оно
+    // есть, будет расхождением РАЗБОРА, а не разных ответов сервера.
+    await signIn(page)
+    await page.route(
+      (url) => url.pathname.endsWith('/api/operations/traffic-light/tree/'),
+      (route) => route.fulfill({ json: SYNTHETIC_TREE_MIXED_SUBMISSION }),
+    )
+
+    await page.goto(`${APP}/security-ops/command-center/`)
+    const card = page.getByRole('region', { name: 'Расход дня', exact: true })
+    await expect(card).toBeVisible({ timeout: 20_000 })
+    const submittedTile = card.locator('[data-metric="submitted"] [data-slot="stat-value"]')
+    await expect(submittedTile).toHaveText('3')
+    await expect(card.locator('[data-metric="late"] [data-slot="stat-value"]')).toHaveText('1')
+    await expect(card.locator('[data-metric="missing"] [data-slot="stat-value"]')).toHaveText('2')
+    const cardSubmitted = await submittedTile.innerText()
+
+    await page.goto(`${APP}${SCREEN}`)
+    const block = page.getByRole('group', { name: 'Актуальность ежедневного расхода' })
+    await expect(block).toBeVisible({ timeout: 20_000 })
+
+    // Строка счётчиков — ДОСЛОВНО, а не подстрокой: подстрочный ассерт прошёл
+    // бы и на «сдали 30».
+    const counters = block.locator('p').first()
+    await expect(counters).toHaveText(
+      'На 2026-08-22 · подразделений 7 · сдали 3 · с опозданием 1 · не сдали 1 · неизвестно 1 · нечего сдавать 1',
+    )
+
+    // «С расхождением» осталось на экране, но названо ПОМЕТКОЙ ВНУТРИ уже
+    // посчитанных, а не шестой долей рядом: иначе числа строки выше не
+    // складывались бы в число подразделений.
+    await expect(block.locator('p').nth(1)).toHaveText(
+      'С расхождением данных 2 — уже посчитаны в «сдали» и «с опозданием».',
+    )
+
+    // И собственно равенство — из ДВУХ ПРОЧИТАННЫХ С ЭКРАНОВ чисел, а не из
+    // двух хардкодов рядом: до правки 22.08 здесь было бы 2 против 3.
+    const analyticsSubmitted = /сдали (\d+)/.exec(await counters.innerText())?.[1] ?? null
+    expect(analyticsSubmitted, 'в строке счётчиков нет числа «сдали»').not.toBeNull()
+    expect(analyticsSubmitted).toBe(cardSubmitted)
   })
 })

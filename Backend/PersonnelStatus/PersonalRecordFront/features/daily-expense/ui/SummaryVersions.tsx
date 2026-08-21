@@ -61,6 +61,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { opsApiClient } from "@/lib/ops-api";
+import { useTrafficLightTree } from "@/hooks/use-strength-report";
 import { DAILY_SUBMISSIONS_PATH, parseSubmissionList } from "@/entities/daily-grid";
 import type { DaySubmission } from "@/entities/daily-grid";
 
@@ -82,7 +83,9 @@ interface DivisionTreeNode {
 
 /** Узлы дерева читаем ЗАЩИТНО, тем же приёмом, что `parseSubmission` в
  * `entities/daily-grid`: кривой узел выпадает из вычисления, а не роняет
- * блок целиком. */
+ * блок целиком. Тип с сервера объявлен (`TrafficLightNode`), но объявление —
+ * это обещание, а не проверка: ответ читается через `unknown`-приведение
+ * ровно потому, что подтверждать форму некому. */
 function parseTreeNodes(payload: unknown): DivisionTreeNode[] {
   const envelope = asRecord(payload);
   if (envelope === null) return [];
@@ -236,10 +239,14 @@ export function SummaryVersions({ businessDate, boardDivisionIds }: SummaryVersi
   const [openId, setOpenId] = useState<number | null>(null);
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
 
-  const treeQuery = useQuery({
-    queryKey: ["daily-expense-board", "division-tree"],
-    queryFn: () => opsApiClient.get<unknown>("/api/operations/traffic-light/tree/"),
-  });
+  // Дерево — ЧЕРЕЗ ОБЩИЙ ХУК СВЕТОФОРА (`useTrafficLightTree`, ключ
+  // ["traffic-light","tree","today"]), а не своим `opsApiClient.get` под
+  // вторым ключом кэша: до ревью ветки 22.08 один и тот же ответ лежал в кэше
+  // ДВАЖДЫ под разными ключами, то есть и запрашивался дважды, и мог
+  // разъехаться во времени с деревом соседних экранов. Гейт `enabled` тут
+  // всегда true: борд не монтирует этот блок, пока сам не прошёл гейт
+  // `status.view` и не получил ответ расхода.
+  const treeQuery = useTrafficLightTree(true);
 
   const treeNodes = useMemo(() => parseTreeNodes(treeQuery.data), [treeQuery.data]);
   const treeReady = dateValid && !treeQuery.isPending && !treeQuery.isError;
@@ -251,7 +258,11 @@ export function SummaryVersions({ businessDate, boardDivisionIds }: SummaryVersi
   const resolved = treeReady && summaryDivisionId !== null;
 
   const query = useQuery({
-    queryKey: ["daily-expense-board", "summaries", businessDate],
+    // `summaryDivisionId` — ЧАСТЬ КЛЮЧА: он стоит в URL запроса, и без него
+    // ответы для разных узлов свода легли бы в одну ячейку кэша (находка ревью
+    // ветки 22.08). Узел выводится из дерева и на другой инсталляции/области
+    // актора будет другим.
+    queryKey: ["daily-expense-board", "summaries", businessDate, summaryDivisionId],
     queryFn: () =>
       opsApiClient.get<unknown>(
         `${DAILY_SUBMISSIONS_PATH}?division_id=${summaryDivisionId}&business_date=${encodeURIComponent(businessDate)}`
