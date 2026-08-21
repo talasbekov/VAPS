@@ -32,7 +32,7 @@ tags: [index]
 
 ## Второй мозг (RAW → WIKI → OUTPUT)
 
-Ночная смена 21.08.2026: [[WIKI/Ночная-смена-2026-08-20-21|журнал]] · [[WIKI/Сверка-прототип-код-2026-08-21|сверка прототип↔код]] · [[WIKI/Хендофф-2026-08-21|хендофф на следующую сессию]]
+Активное: [[WIKI/Хендофф-2026-08-21|хендофф на следующую сессию]] (закрытые журналы смен и отчёты сверок уезжают в [[Archive/README|Archive/sessions]])
 
 - [[RAW/README|RAW]] — сырые материалы: транскрипты, статьи, черновики, веб-клипы. Архив источников, не переписывается.
 - [[WIKI/README|WIKI]] — структурированные заметки: исследования, планы/эпики, знания без своего раздела. Связывать `[[ссылками]]`, без сирот.
@@ -47,17 +47,16 @@ tags: [index]
 | --- | --- | --- | --- | --- |
 | Personnel-Records (бэк + портал) | [[Personnel-Records/Status\|Status]] | [[Personnel-Records/Changelog\|Changelog]] | [[Personnel-Records/Decisions\|Decisions]] | [[Personnel-Records/Known-Issues\|Known-Issues]] |
 | Frontend | [[Frontend/Status\|Status]] | [[Frontend/Changelog\|Changelog]] | [[Frontend/Decisions\|Decisions]] | [[Frontend/Known-Issues\|Known-Issues]] |
-| BMAD-Process | [[BMAD-Process/Status\|Status]] | [[BMAD-Process/Changelog\|Changelog]] | [[BMAD-Process/Decisions\|Decisions]] | [[BMAD-Process/Known-Issues\|Known-Issues]] |
 | Infrastructure | [[Infrastructure/Status\|Status]] | [[Infrastructure/Changelog\|Changelog]] | [[Infrastructure/Decisions\|Decisions]] | [[Infrastructure/Known-Issues\|Known-Issues]] |
 
 Frontend дополнительно: [[Frontend/Архитектура|Архитектура]] · [[Frontend/Тестирование|Тестирование]] · [[Frontend/Дизайн-и-скин|Дизайн и скин]]
 Personnel-Records дополнительно: [[Personnel-Records/Архитектура|Архитектура бэкенда]] (14 apps, API-группы, инварианты, тесты)
 
-Модули VisitX и Accreditation не начаты — разделы будут созданы при старте работ.
+Модули VisitX и Accreditation не начаты — разделы будут созданы при старте работ. Раздел BMAD-Process в архиве с 21.08.2026 ([[Archive/bmad-process/Status|Archive/bmad-process]]) — стори-цикл спит с разворота 10.08; возвращается при возврате к BMAD.
 
 ## Archive
 
-[[Archive/README|Archive]] — снапшоты заморозки (auto-memory, api-gaps) и переезды консолидации 20.08.2026: BMAD-артефакты, концепты, ops-backend-plan, выполненные планы. Архив — история, не истина.
+[[Archive/README|Archive]] — снапшоты заморозки (auto-memory, api-gaps), переезды консолидации 20.08.2026 (BMAD-артефакты, концепты, ops-backend-plan, выполненные планы) и уборка 21.08.2026: `bmad-process/` (спящий раздел процесса), `spa/` (конспекты демонтированной SPA + справки удалённого стека), `sessions/` (закрытые журналы смен и сверки). Архив — история, не истина.
 
 ## Вне vault (ссылки)
 

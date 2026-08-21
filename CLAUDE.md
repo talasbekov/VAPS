@@ -13,11 +13,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Vault устроен в два слоя:
 
 - **Слой знаний («второй мозг»)**: `RAW/` (сырые материалы — не переписывать, только ссылаться), `WIKI/` (структурированные заметки с `[[wiki-ссылками]]`, сюда же планы/эпики), `OUTPUT/` (готовые документы для внешнего использования), `LOG.md` (журнал обработки). Описание продукта — `Продукт/`, канон требований — `Требования/`.
-- **Слой разработки**: рабочие разделы (Personnel-Records / Frontend / Infrastructure / BMAD-Process) с оперативным состоянием — Status / Changelog / Decisions / Known-Issues.
+- **Слой разработки**: рабочие разделы (Personnel-Records / Frontend / Infrastructure) с оперативным состоянием — Status / Changelog / Decisions / Known-Issues. Раздел BMAD-Process — в `Archive/bmad-process/` (стори-цикл спит с 10.08.2026; вернуть из архива при возврате к BMAD).
 
 Правила для Claude Code:
 
-- **Перед началом работы** над модулем (Personnel-Records / Frontend / Infrastructure / BMAD-Process) — прочитать `obsidian-vault/<Модуль>/Status.md` и `obsidian-vault/<Модуль>/Known-Issues.md`. Разделы VisitX и Accreditation не начаты — создаются при старте работ. Описание продукта и модулей — `obsidian-vault/Продукт/` (карта: `Продукт/Карта-модулей.md`).
+- **Перед началом работы** над модулем (Personnel-Records / Frontend / Infrastructure) — прочитать `obsidian-vault/<Модуль>/Status.md` и `obsidian-vault/<Модуль>/Known-Issues.md`. Разделы VisitX и Accreditation не начаты — создаются при старте работ. Описание продукта и модулей — `obsidian-vault/Продукт/` (карта: `Продукт/Карта-модулей.md`).
 - **После завершения работы** — обновить `Status.md` (если сменилось состояние модуля), добавить строку в `Changelog.md` (дата, что сделано, короткий хэш коммита), и `Decisions.md`/`Known-Issues.md` при необходимости.
 - **Новый сырой материал** (транскрипт, статья, черновик) класть в `obsidian-vault/RAW/`, обработку вести по циклу из `00-Index.md` (RAW → WIKI → индекс → запись в LOG.md).
 - **Не заводить** новые записи в `.claude/memory` (auto-memory) или `docs/api-gaps.md` для VAPS-специфичного контента — только в vault. Auto-memory может продолжать накапливать записи только НЕ специфичные для VAPS (например, про личность/стиль работы разработчика в целом), если харнесс сам их предлагает.
