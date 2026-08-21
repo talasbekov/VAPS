@@ -187,6 +187,15 @@ function ForcesPanel({ event }: { event: SecurityEvent }) {
           Выделенная численность по группам — она же даёт размер пула подбора на
           расстановке.
         </p>
+        {/* «Сбор сил на ОМ» — отдельный модуль (Tasks 1-2): кого отдали на
+            мероприятия и кто остался. Экран выделения читает только числа по
+            группам; поимённый список собирает тот модуль. */}
+        <Link
+          href="/employees?view=forces"
+          className="inline-block text-xs font-semibold text-primary-ink"
+        >
+          Открыть «Сбор сил на ОМ» →
+        </Link>
         {event.forceRequests.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             Запросов нет — потребность не утверждена.

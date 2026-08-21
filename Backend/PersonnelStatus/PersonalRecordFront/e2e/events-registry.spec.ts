@@ -1,9 +1,16 @@
 /**
- * Реестр ОМ на ЖИВОМ стенде: фильтры периода и ответственного.
+ * Реестр ОМ на ЖИВОМ стенде: фильтры периода и ответственного, и карточка ОМ
+ * как хаб — перекрёстные переходы к объекту, сводке ГВО и «Сбору сил на ОМ».
  *
- * Проба отвечает на один вопрос: фильтры сужают выборку НА СЕРВЕРЕ, а не по
- * загруженной странице. Разница принципиальна — фильтр по странице отвечал бы
- * «ничего не найдено» там, где записи есть на следующей.
+ * Проба фильтров отвечает на один вопрос: фильтры сужают выборку НА СЕРВЕРЕ, а
+ * не по загруженной странице. Разница принципиальна — фильтр по странице
+ * отвечал бы «ничего не найдено» там, где записи есть на следующей.
+ *
+ * Пробы ссылок отвечают на другой вопрос: ссылка ведёт на ТУ запись, которую
+ * реально несёт карточка, а не на первую попавшуюся. Для объекта поэтому
+ * берётся ОМ, чей objectId отличается от самого частого в выборке —
+ * иначе баг «ссылка всегда на первый/самый частый объект» остался бы
+ * незамеченным (событие с частым объектом привело бы туда же по случайности).
  */
 import { expect, test, type Page } from '@playwright/test'
 
@@ -26,6 +33,40 @@ async function signIn(page: Page): Promise<void> {
   await api.post(`${APP}/api/auth/callback/credentials/`, {
     form: { csrfToken: csrf.csrfToken, username: 'admin', password: 'admin123', json: 'true' },
   })
+}
+
+interface EventRow {
+  id: string
+  code: string
+  stage: string
+  objectId: string | null
+  objectName: string
+}
+
+async function events(token: string, stage = ''): Promise<EventRow[]> {
+  const query = `page_size=200${stage === '' ? '' : `&stage=${stage}`}`
+  const res = await fetch(`${API}/api/ops/security-events/?${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return ((await res.json()) as { results: EventRow[] }).results
+}
+
+/** ОМ, чей объект НЕ самый частый в выборке — см. заголовок файла. */
+function pickDistinctObjectEvent(rows: EventRow[]): EventRow | undefined {
+  const withObject = rows.filter((r) => r.objectId !== null)
+  const counts = new Map<string, number>()
+  for (const r of withObject) {
+    counts.set(r.objectId as string, (counts.get(r.objectId as string) ?? 0) + 1)
+  }
+  const mode = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+  return withObject.find((r) => r.objectId !== mode) ?? withObject[0]
+}
+
+async function objectName(token: string, objectId: string): Promise<string> {
+  const res = await fetch(`${API}/api/ops/objects/${objectId}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return ((await res.json()) as { name: string }).name
 }
 
 test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет SMOKE_LIVE=1)', () => {
@@ -65,5 +106,73 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const owner = all.owners[0]
     const select = page.getByLabel('Ответственный')
     await expect(select.locator('option', { hasText: owner })).toHaveCount(1)
+  })
+
+  test('карточка ОМ: ссылка на объект ведёт на его паспорт', async ({ page }) => {
+    const token = await apiToken()
+    const rows = await events(token)
+    const target = pickDistinctObjectEvent(rows)
+    expect(target, 'на стенде нет ни одного ОМ с привязанным объектом').toBeDefined()
+    const expectedName = await objectName(token, target!.objectId as string)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+    // Скоуп — контент, а не боковое меню: там уже есть пункт «Объекты и
+    // паспорта», и без скоупа локатор ловит оба.
+    const link = page.getByRole('main').getByRole('link', { name: /объект/i })
+    await expect(link).toBeVisible({ timeout: 15_000 })
+    await link.click()
+
+    await expect(page).toHaveURL(/\/security-ops\/objects\//)
+    await expect(page).toHaveURL(new RegExp(`/security-ops/objects/${target!.objectId}/?$`))
+    await expect(
+      page.getByRole('heading', { name: expectedName }),
+    ).toBeVisible({ timeout: 15_000 })
+  })
+
+  test('карточка ОМ: ссылка на сводку ГВО открывает сводку этого ОМ', async ({ page }) => {
+    const token = await apiToken()
+    const rows = await events(token)
+    // Стадия НЕ «Бюллетень» намеренно: там своя ссылка на сводку уже стоит
+    // внутри блока «Сведения об ОМ» с 21.08 — эта проба стережёт ссылку,
+    // видимую на карточке ОБЩО, вне зависимости от активного этапа.
+    const target = rows.find((r) => r.stage !== 'BULLETIN')
+    expect(target, 'на стенде нет ни одного ОМ вне стадии «Бюллетень»').toBeDefined()
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target!.id}/`)
+    const link = page.getByRole('main').getByRole('link', { name: /сводк.*гво/i })
+    await expect(link).toBeVisible({ timeout: 15_000 })
+    await link.click()
+
+    await expect(page).toHaveURL(new RegExp(`/security-ops/gvo/${target!.id}/?$`))
+    await expect(
+      page.getByRole('heading', { name: 'Сводные данные' }),
+    ).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(target!.code)).toBeVisible()
+  })
+
+  test('этап «Запрос сил» ведёт в «Сбор сил на ОМ»', async ({ page }) => {
+    const token = await apiToken()
+    const forces = await events(token, 'FORCES')
+    const target = forces[0]
+    // Не молчаливый skip: причина явно записана в отчёте прогона.
+    test.skip(target === undefined, 'на стенде нет ОМ на стадии FORCES («Запрос сил»)')
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${target.id}/`)
+    // Скоуп — контент: в боковом меню уже есть пункт «Сбор сил на ОМ» с
+    // тем же текстом, а строгий режим Playwright не терпит двух совпадений.
+    const link = page.getByRole('main').getByRole('link', { name: /сбор сил/i })
+    await expect(link).toBeVisible({ timeout: 15_000 })
+    await link.click()
+
+    await expect(page).toHaveURL(/\/employees\/?\?view=forces/)
+    await expect(
+      page.getByRole('heading', { name: 'Сбор сил на ОМ' }),
+    ).toBeVisible({ timeout: 15_000 })
+    await expect(
+      page.getByRole('group', { name: 'Личный состав на сбор' }),
+    ).toBeVisible({ timeout: 15_000 })
   })
 })
