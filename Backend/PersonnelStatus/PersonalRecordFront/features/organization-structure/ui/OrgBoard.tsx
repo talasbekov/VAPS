@@ -3,14 +3,6 @@
 import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { RefreshCw, User } from "lucide-react";
 import { StaffUnit, StaffUnitEmployee } from "@/lib/api";
 import { useStaffUnits } from "@/hooks/use-staff-units";
@@ -18,6 +10,7 @@ import {
   EMPLOYEE_STATUS_PAINT,
   getEmployeeStatusLabel,
 } from "@/lib/status";
+import styles from "./org-board.module.css";
 
 const MEDIA_URL = process.env.NEXT_PUBLIC_MEDIA_URL || "";
 
@@ -461,12 +454,12 @@ export default function OrgBoard() {
           </p>
         </div>
       ) : (
-        <div className="flex justify-center">
-          <Table className="table-auto mt-5 w-full">
-            <TableHeader>
+        <div className={`flex justify-center overflow-x-auto ${styles.board}`}>
+          <table className={`${styles.tableAuto} mt-5 w-full`}>
+            <thead>
               {/* Первый уровень: заголовки департаментов */}
-              <TableRow>
-                <TableHead
+              <tr>
+                <th
                   colSpan={totalCols}
                   className="border-2 border-border bg-primary px-4 py-2 !text-lg text-primary-foreground"
                 >
@@ -488,14 +481,14 @@ export default function OrgBoard() {
                       );
                     })()}
                   </b>
-                </TableHead>
-              </TableRow>
+                </th>
+              </tr>
 
               {/* Второй уровень: заместители */}
-              <TableRow>
+              <tr>
                 {orgStructure.deputies.length > 0 ? (
                   orgStructure.deputies.map((deputy, index) => (
-                    <TableHead
+                    <th
                       key={`deputy-${deputy.employee?.id ?? index}-${index}`}
                       colSpan={totalCols / 2}
                       className={`border-2 text-white !text-lg border-zinc-700 bg-zinc-500 px-4 py-2 ${
@@ -520,20 +513,20 @@ export default function OrgBoard() {
                             : "Заместитель не назначен";
                         })()}
                       </b>
-                    </TableHead>
+                    </th>
                   ))
                 ) : (
-                  <TableHead
+                  <th
                     colSpan={totalCols}
                     className="border-2 text-white !text-lg border-zinc-700 bg-zinc-500 px-4 py-2"
                   >
                     <b>Заместитель не назначен</b>
-                  </TableHead>
+                  </th>
                 )}
-              </TableRow>
+              </tr>
 
               {/* Третий уровень: управления */}
-              <TableRow>
+              <tr>
                 {orgStructure.managements.map((management) => {
                   const divisionsCount =
                     management.divisions.length > 0
@@ -548,7 +541,7 @@ export default function OrgBoard() {
                   )?.employee;
                   const status = managementHead?.current_status?.status_type;
                   return (
-                    <TableHead
+                    <th
                       key={management.unit.id}
                       colSpan={divisionsCount}
                       className={`border-2 border-border bg-muted px-4 py-2 text-foreground ${
@@ -581,40 +574,40 @@ export default function OrgBoard() {
                           </div>
                         </div>
                       )}
-                    </TableHead>
+                    </th>
                   );
                 })}
-              </TableRow>
+              </tr>
 
               {/* Четвертый уровень: подразделения */}
-              <TableRow>
+              <tr>
                 {orgStructure.managements.flatMap((management) => {
                   const divisions = management.divisions || [];
 
                   return divisions.length > 0 ? (
                     divisions.map((division) => (
-                      <TableHead
+                      <th
                         key={division.unit.id}
                         className="border border-border px-4 py-2"
                       >
                         {division.unit.division.name}
-                      </TableHead>
+                      </th>
                     ))
                   ) : (
-                    <TableHead
+                    <th
                       key={management.unit.id}
                       className="border border-border px-4 py-2"
                     >
                       Нет отделов
-                    </TableHead>
+                    </th>
                   );
                 })}
-              </TableRow>
-            </TableHeader>
+              </tr>
+            </thead>
 
-            <TableBody>
+            <tbody>
               {Array.from({ length: maxRows }).map((_, rowIndex) => (
-                <TableRow key={rowIndex}>
+                <tr key={rowIndex}>
                   {orgStructure.managements.flatMap((management) => {
                     const divisions = management.divisions || [];
 
@@ -629,9 +622,9 @@ export default function OrgBoard() {
                       const isHighlighted = status === highlightedStatus;
 
                       return (
-                        <TableCell
+                        <td
                           key={`${management.unit.id}-${rowIndex}`}
-                          className={`min-w-[140px] overflow-hidden border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
+                          className={`border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
                             isHighlighted ? "!bg-red-400" : ""
                           }`}
                         >
@@ -703,7 +696,7 @@ export default function OrgBoard() {
                               </span>
                             </div>
                           ) : null}
-                        </TableCell>
+                        </td>
                       );
                     } else {
                       // Для управлений с отделами - берем сотрудников из массива employees отдела
@@ -715,9 +708,9 @@ export default function OrgBoard() {
                         const isHighlighted = status === highlightedStatus;
 
                         return (
-                          <TableCell
+                          <td
                             key={`${management.unit.id}-${division.unit.id}-${rowIndex}`}
-                            className={`min-w-[140px] overflow-hidden border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
+                            className={`border border-border px-4 py-3 bg-card shadow-md rounded-md transition-all duration-300 ${
                               isHighlighted ? "!bg-red-400" : ""
                             }`}
                           >
@@ -787,15 +780,15 @@ export default function OrgBoard() {
                                 </span>
                               </div>
                             ) : null}
-                          </TableCell>
+                          </td>
                         );
                       });
                     }
                   })}
-                </TableRow>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
+            </tbody>
+          </table>
         </div>
       )}
     </div>

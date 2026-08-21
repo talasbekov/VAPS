@@ -417,35 +417,55 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     })
   }
 
-  // `OrgBoard` (`/dashboard/`) — особый случай: шапка НЕ однородна по
-  // замыслу. Первые две строки — акцентные заголовки департамента и
-  // заместителей с намеренным `!text-lg` поверх примитива (30px), остальные
-  // — рядовые 11px `TableHead`. Проба проверяет ПРИМИТИВ по структурному
-  // признаку (data-slot) и по факту заливки фона, а не по единственному
-  // размеру шрифта — тот здесь заведомо смешанный.
-  test('OrgBoard переведён на примитив: /dashboard/', async ({ page }) => {
+  // `OrgBoard` (`/dashboard/`) НАМЕРЕННО не на примитиве: карточка «Структура
+  // организации» откачена 21.08.2026 к прежнему виду — своя <table> со своей
+  // плотностью и рамками. Перевод на Table/TableHead (19.08, 788ad0e0) заодно
+  // снял горизонтальную прокрутку обёртки, из-за чего широкая доска вела себя
+  // иначе.
+  //
+  // Стили при этом живут в CSS-МОДУЛЕ, а не в глобальном файле, каким они были
+  // до 935a0f52: правила `tbody td`/`table`/`td:empty` вложены в `.board` и за
+  // доску не выходят. Проба сторожит ОБА условия — вид вернулся, утечка нет
+  // (сама утечка проверяется отдельным тестом переходом /dashboard → /employees).
+  test('OrgBoard: своя таблица со scoped-стилями, а не примитив', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}/dashboard/`)
 
-    const heads = page.locator('[data-slot="table-head"]')
-    await expect(heads.first()).toBeVisible()
-    const count = await heads.count()
-    expect(count, 'на /dashboard/ нет ни одной ячейки заголовка — проверка была бы вакуумной').toBeGreaterThan(0)
+    const board = page.locator('table').first()
+    await expect(board).toBeVisible()
+    // Примитива на доске быть не должно: он и есть откаченное состояние.
+    await expect(page.locator('[data-slot="table"]')).toHaveCount(0)
+    await expect(page.locator('[data-slot="table-head"]')).toHaveCount(0)
 
-    const sizes = await heads.evaluateAll((els) => [
-      ...new Set(els.map((el) => getComputedStyle(el).fontSize)),
-    ])
-    // Рядовые заголовки управлений/отделов обязаны нести 11px примитива;
-    // акцентные (`!text-lg`) добавляют второй размер — оба ожидаемы.
-    expect(sizes, 'на /dashboard/ шапка не несёт 11px примитива').toContain('11px')
+    const cells = board.locator('tbody td')
+    const cellCount = await cells.count()
+    expect(cellCount, 'на доске нет ни одной ячейки — проверка была бы вакуумной').toBeGreaterThan(0)
 
-    const bg = await heads
-      .nth(count - 1)
-      .evaluate((el) => getComputedStyle(el).backgroundColor)
+    // Плотность и рамка приезжают из модуля. Пустые клетки правило не трогает
+    // (`td:empty` снимает рамку), поэтому мерка идёт по НЕПУСТОЙ ячейке.
+    const filled = board.locator('tbody td:not(:empty)').first()
+    await expect(filled).toBeVisible()
+    const style = await filled.evaluate((el) => {
+      const computed = getComputedStyle(el)
+      return {
+        minWidth: computed.minWidth,
+        border: computed.borderBottomStyle,
+        padding: computed.paddingTop,
+      }
+    })
+    expect(style.minWidth, 'ячейка доски не несёт min-width из модуля').toBe('140px')
+    expect(style.border, 'ячейка доски осталась без рамки модуля').toBe('solid')
+    expect(style.padding, 'ячейка доски не несёт padding модуля').toBe('5px')
+
+    // Класс обёртки ХЭШИРОВАН сборщиком — признак модуля. Голое `board`
+    // означало бы возврат глобального файла, а с ним и утечки.
+    const wrapper = page.locator('div:has(> table)').first()
+    const className = await wrapper.getAttribute('class')
+    expect(className ?? '', 'на доске нет класса-обёртки').not.toBe('')
     expect(
-      bg,
-      'на /dashboard/ последняя ячейка шапки (уровень отделов) не залита — значит не примитив'
-    ).not.toBe('rgba(0, 0, 0, 0)')
+      /board(?![_a-zA-Z0-9])/.test(className ?? ''),
+      `класс обёртки не хэширован (${className}) — похоже на глобальный CSS вместо модуля`,
+    ).toBe(false)
   })
 
   // Task 12: хвост сырых таблиц (история отчётов, сводный отчёт по расходу).

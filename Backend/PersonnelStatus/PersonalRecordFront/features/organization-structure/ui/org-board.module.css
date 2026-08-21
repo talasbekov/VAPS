@@ -1,0 +1,46 @@
+/* Стили доски оргструктуры «Обзора».
+ *
+ * ВОЗВРАТ ВИДА, НО НЕ ДЕФЕКТА. До 19.08.2026 те же правила лежали в
+ * НЕСКОУПЛЕННОМ org-board.styles.css: селекторы `tbody td`, `table`,
+ * `td:empty` и `img` дописывались в документ чанком App Router и красили
+ * таблицы ЛЮБОЙ другой страницы после клиентского перехода (935a0f52).
+ * Здесь те же правила живут в CSS-модуле и вложены в `.board` — за пределы
+ * доски они не выходят по построению, а не по договорённости.
+ *
+ * Мёртвых правил прежнего файла (.table-image, .table-image-cell,
+ * .text-container) здесь нет: разметка их не использовала уже тогда. */
+
+.tableAuto th {
+  font-size: 11px;
+}
+
+.tableAuto td {
+  font-size: 10px;
+}
+
+.board table {
+  margin: 0 auto;
+  width: 100%;
+}
+
+.board tbody td {
+  min-width: 140px;
+  min-height: 100px;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 5px;
+  border: 1px solid #000;
+  vertical-align: top;
+}
+
+/* Пустая клетка — это дырка сетки, а не ячейка: рамка и фон делали бы её
+ * похожей на настоящую карточку. */
+.board td:empty {
+  border: none;
+  background: transparent;
+}
+
+.board img {
+  max-width: 100%;
+  height: auto;
+}
