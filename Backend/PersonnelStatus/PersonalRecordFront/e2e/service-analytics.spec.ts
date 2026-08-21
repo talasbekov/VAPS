@@ -130,6 +130,49 @@ const SYNTHETIC_TREE_WITH_HEALTHY_BRANCH = {
   ],
 }
 
+const SYNTHETIC_TREE_WITH_CYCLE = {
+  business_date: '2026-08-22',
+  control_hour: '17:00:00',
+  nodes: [
+    // Обычная ветка — полностью НЕЗАВИСИМА от цикла ниже (свой корень, свои
+    // id), чтобы «не пострадала» проверялось буквально, а не по совпадению.
+    {
+      division_id: 9101,
+      name: 'Служба (проба, цикл рядом)',
+      parent_id: null,
+      status: 'RED',
+      late: false,
+    },
+    {
+      division_id: 9102,
+      name: 'Отдел обычный (проба)',
+      parent_id: 9101,
+      status: 'RED',
+      late: false,
+    },
+    // Взаимный цикл: A→B и B→A разрешают друг друга ПОПАРНО — без защиты
+    // buildDivisionForest ни один не становится корнем (у обоих формально
+    // ЕСТЬ родитель среди узлов ответа), а обход леса идёт только от
+    // `roots` вниз: оба узла не отрисовались бы никогда.
+    {
+      division_id: 9201,
+      name: 'Узел А (проба, цикл)',
+      parent_id: 9202,
+      status: 'RED',
+      late: false,
+    },
+    {
+      division_id: 9202,
+      name: 'Узел Б (проба, цикл)',
+      parent_id: 9201,
+      status: 'RED',
+      late: false,
+    },
+  ],
+}
+
+const CYCLE_LABEL = 'структура зациклена — место в иерархии не определить'
+
 test.use({ serviceWorkers: 'block' })
 
 test.describe(LIVE ? 'аналитика службы' : 'аналитика службы (скип: нет SMOKE_LIVE=1)', () => {
@@ -328,6 +371,44 @@ test.describe(LIVE ? 'аналитика службы' : 'аналитика с�
     ).toHaveCount(0)
     const branchToggle = block.locator('[data-division-id="9002"] > div > button[aria-expanded]')
     await expect(branchToggle).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  test('цикл в parent_id не теряет узлы: оба зациклённых видны с честной пометкой, обычная ветка не пострадала (живых циклов нет — синтетическая фикстура через page.route)', async ({
+    page,
+  }) => {
+    await signIn(page)
+    await page.route(
+      (url) => url.pathname.endsWith('/api/operations/traffic-light/tree/'),
+      (route) => route.fulfill({ json: SYNTHETIC_TREE_WITH_CYCLE }),
+    )
+    await page.goto(`${APP}${SCREEN}`)
+    const block = page.getByRole('group', { name: 'Актуальность ежедневного расхода' })
+    await expect(block).toBeVisible({ timeout: 20_000 })
+
+    // Оба зациклённых узла отрисованы — по одному разу каждый, а не 0
+    // (потеряны) и не больше 1 (задвоены).
+    await expect(block.locator('[data-division-id="9201"]')).toHaveCount(1)
+    await expect(block.locator('[data-division-id="9202"]')).toHaveCount(1)
+
+    // Честная пометка — точным текстом, у ОБОИХ зациклённых узлов.
+    await expect(
+      block.locator('[data-division-id="9201"]').getByText(CYCLE_LABEL, { exact: true }),
+    ).toHaveCount(1)
+    await expect(
+      block.locator('[data-division-id="9202"]').getByText(CYCLE_LABEL, { exact: true }),
+    ).toHaveCount(1)
+
+    // Обычная ветка НЕ пострадала: родитель виден, ребёнок вложен буквально
+    // в его DOM (не просто рядом текстом), пометки о цикле у него нет.
+    await expect(
+      block.locator('[data-division-id="9101"] [data-division-id="9102"]'),
+    ).toHaveCount(1)
+    await expect(
+      block.locator('[data-division-id="9101"]').getByText(CYCLE_LABEL, { exact: true }),
+    ).toHaveCount(0)
+    await expect(
+      block.locator('[data-division-id="9102"]').getByText(CYCLE_LABEL, { exact: true }),
+    ).toHaveCount(0)
   })
 
   test('пустой контрольный час — честная фраза, не эхо сырого значения', async ({ page }) => {

@@ -1561,26 +1561,55 @@ function assertNeverTrafficStatus(value: never): never {
 /**
  * Лес подразделений по `parent_id`. Корень — узел БЕЗ РАЗРЕШИМОГО родителя:
  * `parent_id === null`, ИЛИ `parent_id` указывает на id, которого среди
- * узлов ответа нет (битая ссылка). Оба случая становятся ОТДЕЛЬНЫМ корнем
+ * узлов ответа нет (битая ссылка), ИЛИ цепочка родителей ЗАЦИКЛЕНА (находка
+ * ревью 22.08: A→B, B→A разрешают друг друга ПОПАРНО — обход леса идёт
+ * только от `roots` вниз, и без этой защиты оба узла не отрисовались бы
+ * НИКОГДА, без единого технического зависания — узел, до которого
+ * пользователь не доберётся). Все три случая становятся ОТДЕЛЬНЫМ корнем
  * леса, а не пропадают молча — узел, который никогда бы не отрендерился,
  * хуже некрасивого узла.
+ *
+ * Цикл ищется ХОДОМ ВВЕРХ по родителям от КАЖДОГО узла с множеством
+ * `visited`: если цепочка возвращается к уже посещённому В ЭТОМ ХОДЕ id —
+ * позиция узла в иерархии структурно неопределима (сам узел в цикле, ИЛИ
+ * его цепочка родителей ЧЕРЕЗ цикл проходит) — узел уходит в `cyclic`,
+ * становится корнем леса и получает честную пометку в строке (см.
+ * `DivisionTreeRow`), а не молча теряется.
  *
  * На этом стенде лес — буквально ДВА дерева: «Служба» (id=1) и сиротский
  * стенд-артефакт «Управление (стенд)» (id=6, второе независимое дерево, см.
  * отчёты задач 3 и 6) — оба несут `parent_id === null` напрямую, без битой
- * ссылки; защита от битой ссылки здесь на будущее, а не по наблюдаемому
- * сегодня случаю.
+ * ссылки и без цикла; обе защиты (битая ссылка, цикл) — на будущее, не по
+ * наблюдаемому сегодня случаю.
  */
 function buildDivisionForest(nodes: TrafficLightNode[]): {
   roots: TrafficLightNode[];
   childrenOf: Map<number, TrafficLightNode[]>;
+  cyclic: Set<number>;
 } {
-  const ids = new Set(nodes.map((node) => node.division_id));
+  const byId = new Map(nodes.map((node) => [node.division_id, node]));
+
+  const cyclic = new Set<number>();
+  for (const node of nodes) {
+    const visited = new Set<number>();
+    let current: TrafficLightNode | undefined = node;
+    while (current !== undefined) {
+      if (visited.has(current.division_id)) {
+        cyclic.add(node.division_id);
+        break;
+      }
+      visited.add(current.division_id);
+      const parentId: number | null = current.parent_id;
+      current = parentId === null ? undefined : byId.get(parentId);
+    }
+  }
+
   const roots: TrafficLightNode[] = [];
   const childrenOf = new Map<number, TrafficLightNode[]>();
   for (const node of nodes) {
     const parentId = node.parent_id;
-    const hasResolvableParent = parentId !== null && ids.has(parentId);
+    const hasResolvableParent =
+      parentId !== null && byId.has(parentId) && !cyclic.has(node.division_id);
     if (!hasResolvableParent) {
       roots.push(node);
       continue;
@@ -1589,7 +1618,7 @@ function buildDivisionForest(nodes: TrafficLightNode[]): {
     if (siblings) siblings.push(node);
     else childrenOf.set(parentId, [node]);
   }
-  return { roots, childrenOf };
+  return { roots, childrenOf, cyclic };
 }
 
 /** Число узлов ПОД веткой (не считая её саму) — для сводки «+N сдавших» у
@@ -1624,12 +1653,15 @@ function countDescendants(
 function DivisionTreeRow({
   node,
   childrenOf,
+  cyclic,
 }: {
   node: TrafficLightNode;
   childrenOf: Map<number, TrafficLightNode[]>;
+  cyclic: Set<number>;
 }) {
   const children = childrenOf.get(node.division_id) ?? [];
   const hasChildren = children.length > 0;
+  const isCyclic = cyclic.has(node.division_id);
   const [expanded, setExpanded] = useState(() => isProblemStatus(node.status));
 
   return (
@@ -1659,6 +1691,15 @@ function DivisionTreeRow({
         <span className="flex-1 truncate">{node.name}</span>
         <span className="text-muted-foreground">{SUBMISSION_LABEL[node.status]}</span>
         {node.late && <span className="text-muted-foreground">с опозданием</span>}
+        {/* Находка ревью 22.08: parent_id этого узла замкнут в цикл — его
+            МЕСТО в иерархии структурно не определить (не «нет данных», а
+            «данные противоречивы»), честная пометка вместо тихой потери
+            узла или произвольного места в дереве. */}
+        {isCyclic && (
+          <span className="text-destructive-ink">
+            структура зациклена — место в иерархии не определить
+          </span>
+        )}
         {node.status === "YELLOW" && (
           <SubmissionDriftDetails divisionId={node.division_id} />
         )}
@@ -1667,13 +1708,19 @@ function DivisionTreeRow({
         (expanded ? (
           <ul className="ml-2 border-l pl-3">
             {children.map((child) => (
-              <DivisionTreeRow key={child.division_id} node={child} childrenOf={childrenOf} />
+              <DivisionTreeRow
+                key={child.division_id}
+                node={child}
+                childrenOf={childrenOf}
+                cyclic={cyclic}
+              />
             ))}
           </ul>
         ) : (
           <button
             type="button"
             onClick={() => setExpanded(true)}
+            aria-expanded={expanded}
             className="ml-6 block py-1 text-left text-xs text-muted-foreground hover:underline"
           >
             + {countDescendants(node.division_id, childrenOf)} сдавших
@@ -1803,6 +1850,7 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
                 key={root.division_id}
                 node={root}
                 childrenOf={forest.childrenOf}
+                cyclic={forest.cyclic}
               />
             ))}
           </ul>
@@ -1876,6 +1924,9 @@ function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
   // Счётчик — НЕПРОЧИТАННЫЕ, а не длина ленты: отметка строки обязана его
   // уменьшить, иначе кнопка визуально ничего не меняла бы в шапке блока.
   const unreadCount = rows.filter((row) => row.read_at === null).length;
+  // Один вызов на рендер — тот же приём, что `controlHour` в
+  // `DaySubmissionSection` (находка ревью 22.08: было два вызова подряд).
+  const controlHour = tree.data ? formatControlHour(tree.data.control_hour) : null;
 
   return (
     <section
@@ -1887,8 +1938,8 @@ function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
         <div>
           <h2 className="text-sm font-semibold">Напоминания об отставших</h2>
           <p className="text-xs text-muted-foreground">
-            {tree.data && formatControlHour(tree.data.control_hour) !== null
-              ? `Уходят ответственным автоматически после контрольного часа ${formatControlHour(tree.data.control_hour)} — одно за день.`
+            {controlHour !== null
+              ? `Уходят ответственным автоматически после контрольного часа ${controlHour} — одно за день.`
               : "Уходят ответственным автоматически после контрольного часа — одно за день."}
           </p>
         </div>
