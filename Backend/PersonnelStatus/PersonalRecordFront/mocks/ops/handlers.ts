@@ -5,8 +5,6 @@
 import {
   isOpsAnalyticsLive,
   isOpsAuditLive,
-  isOpsCombatLive,
-  isOpsDailyLive,
   isOpsDictionariesLive,
   isOpsDutiesLive,
   isOpsFeedbackLive,
@@ -29,8 +27,6 @@ import { ratingsHandlers } from "./ratings-handlers";
 import { analyticsHandlers } from "./analytics-handlers";
 import { reportsHandlers } from "./reports-handlers";
 import { feedbackHandlers } from "./feedback-handlers";
-import { dailyHandlers } from "./daily-handlers";
-import { combatHandlers } from "./combat-handlers";
 import { gvoHandlers } from "./gvo-handlers";
 import { protectedPersonsHandlers } from "./protected-persons-handlers";
 import { legalDocumentsHandlers } from "./legal-documents-handlers";
@@ -49,8 +45,7 @@ export function composeOpsHandlers() {
     // (срез B1). Стор мока остаётся: dictionaries/analytics/ratings читают
     // его фикстуры через readSecurityEventsStore().
     ...(isOpsSecurityEventsLive() ? [] : securityEventsHandlers),
-    // План дежурств — тот же пер-доменный переключатель (срез C1). Боевые
-    // группы (combatHandlers) остаются на моке — их бэка ещё нет.
+    // План дежурств — тот же пер-доменный переключатель (срез C1).
     ...(isOpsDutiesLive() ? [] : dutiesHandlers),
     ...(isOpsAuditLive() ? [] : auditHandlers),
     // Настройки живьём — владелец политик (сквозная запись в синглтоны);
@@ -67,9 +62,6 @@ export function composeOpsHandlers() {
     ...(isOpsServiceReportsLive() ? [] : reportsHandlers),
     // Обратная связь живьём — тот же пер-доменный переключатель (срез J).
     ...(isOpsFeedbackLive() ? [] : feedbackHandlers),
-    // «Расход дня» живьём — адаптеры над /api/operations/ (без своего бэка).
-    ...(isOpsDailyLive() ? [] : dailyHandlers),
-    ...(isOpsCombatLive() ? [] : combatHandlers),
     // «Реестр ГВО» живьём с 20.08.2026 (патчи сводок — /api/ops/gvo-summaries/);
     // мок остаётся для демо через NEXT_PUBLIC_OPS_MOCK_DOMAINS=gvo.
     ...(isOpsGvoLive() ? [] : gvoHandlers),

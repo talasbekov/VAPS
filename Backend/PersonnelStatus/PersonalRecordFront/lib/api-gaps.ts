@@ -13,7 +13,7 @@
 //
 // Сводка целиком: docs/api-gaps.md в корне worktree.
 
-import { isOpsAnalyticsLive, isOpsAuditLive, isOpsCombatLive, isOpsDailyLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
+import { isOpsAnalyticsLive, isOpsAuditLive, isOpsDictionariesLive, isOpsDutiesLive, isOpsFeedbackLive, isOpsObjectsLive, isOpsRatingsLive, isOpsSecurityEventsLive, isOpsServiceReportsLive, isOpsSettingsLive } from "@/lib/ops-env";
 
 export interface ApiGap {
   /** Что на экране не обеспечено бэком. */
@@ -60,15 +60,10 @@ const GAPS: Readonly<Record<string, ApiGap>> = {
   // конфликтами и action policy, смены с циклом исполнения, объекты и
   // кандидаты формы). Запись строится в findApiGap — зависит от режима.
 
-  // «Боевые группы»: бэк ГОТОВ (срез C2 — реестры видов/Трасс, кандидаты из
-  // живых кадров, смены с процессом §24.1 целиком). Запись — в findApiGap.
-
-  // «Календарь смен»: оба источника (duty-shifts срез C1, combat-duty-shifts
-  // срез C2) живые — запись собирается в findApiGap по режимам обоих доменов.
-
-  // «Расход дня (ОМ)»: бэк ГОТОВ адаптерами над живым /api/operations/
-  // (статусы, сдача, поправка — те же сервисы, свой только адрес и форма
-  // контракта). Запись собирается в findApiGap по режиму домена daily.
+  // Экранов «Боевые группы», «Календарь смен» и «Расход дня (ОМ)» больше
+  // нет (группа удалена 21.08.2026) — врезкам не на чем показываться. Бэк их
+  // доменов (combat, duties, daily) остался живым: ручки сдачи дня читает
+  // светофор аналитики, наряды — «Мой профиль».
   // Оперативный рейтинг: бэк ГОТОВ (срез G) — запись собирается в findApiGap
   // по режиму домена ratings (все семь экранов — один домен).
   // Аналитика службы и мероприятий: бэк ГОТОВ (срез H) — запись собирается
@@ -120,32 +115,10 @@ const PROFILE_MOCK_BY_CONFIG: ApiGap = {
     "NEXT_PUBLIC_OPS_LIVE_DOMAINS=security-events,duties.",
 };
 
-// «Сбор сил» читает тот же реестр ОМ (`/api/ops/security-events/?stage=FORCES`)
-// и правит выделение той же ручкой, что карточка мероприятия, — значит и
-// врезка у него та же, что у реестра, а не общая «на бэке нет /api/ops/*».
 const SECURITY_EVENT_ROUTES = [
   "/security-ops/command-center",
   "/security-ops/events",
-  "/security-ops/forces",
 ];
-
-const COMBAT_MOCK_BY_CONFIG: ApiGap = {
-  subject: "Боевые группы",
-  paths: [],
-  note:
-    "Бэкенд боевых групп готов (/api/ops/combat-duty-types|routes|" +
-    "roster-candidates|duty-shifts/); экран работает на MSW по конфигурации. " +
-    "Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=combat.",
-};
-
-const CALENDAR_MOCK_BY_CONFIG: ApiGap = {
-  subject: "Календарь смен",
-  paths: [],
-  note:
-    "Бэкенд обоих источников календаря готов (duty-shifts и " +
-    "combat-duty-shifts); экран работает на MSW по конфигурации. Живой " +
-    "режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=duties,combat.",
-};
 
 const SIMPLE_MOCK_BY_CONFIG: Record<string, ApiGap> = {
   "/security-ops/dictionaries": {
@@ -183,14 +156,6 @@ const SIMPLE_MOCK_BY_CONFIG: Record<string, ApiGap> = {
       "комментарии, разбор и закрытие с ответом автору); экран на MSW по " +
       "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=feedback.",
   },
-  "/security-ops/daily-expense": {
-    subject: "Расход дня (ОМ)",
-    paths: [],
-    note:
-      "Бэкенд расхода дня готов (/api/ops/daily/* — адаптеры над живыми " +
-      "статусами, сдачей дня и поправкой /api/operations/); экран на MSW по " +
-      "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=daily.",
-  },
   "/security-ops/feedback": {
     subject: "Обратная связь раздела ОМ",
     paths: [],
@@ -207,7 +172,6 @@ const SIMPLE_LIVE_CHECK: Record<string, () => boolean> = {
   "/security-ops/settings": isOpsSettingsLive,
   "/security-ops/audit": isOpsAuditLive,
   "/security-ops/feedback": isOpsFeedbackLive,
-  "/security-ops/daily-expense": isOpsDailyLive,
   "/feedback": isOpsFeedbackLive,
 };
 
@@ -242,9 +206,10 @@ const RATINGS_MOCK_BY_CONFIG: ApiGap = {
     "конфигурации. Живой режим: NEXT_PUBLIC_OPS_LIVE_DOMAINS=ratings.",
 };
 
-// Пометки «Плана дежурств» здесь больше нет: раздел удалён 13.08.2026. Домен
-// duties остался живым понятием — на нём стоит календарь смен, см.
-// CALENDAR_MOCK_BY_CONFIG ниже.
+// Пометок «Плана дежурств», «Календаря смен», «Боевых групп» и «Расхода дня»
+// здесь больше нет: группа «Дежурства и расход» удалена 21.08.2026 вместе с
+// экранами и адресами. Домен duties остался живым понятием — его ручки читает
+// «Мой профиль» (свои наряды).
 
 export function findApiGap(pathname: string | null | undefined): ApiGap | null {
   if (!pathname) return null;
@@ -293,20 +258,6 @@ export function findApiGap(pathname: string | null | undefined): ApiGap | null {
       normalized.startsWith("/security-ops/analytics/")
     ) {
       return isOpsAnalyticsLive() ? null : ANALYTICS_MOCK_BY_CONFIG;
-    }
-    if (
-      normalized === "/security-ops/duties/combat" ||
-      normalized.startsWith("/security-ops/duties/combat/")
-    ) {
-      return isOpsCombatLive() ? null : COMBAT_MOCK_BY_CONFIG;
-    }
-    if (
-      normalized === "/security-ops/calendar" ||
-      normalized.startsWith("/security-ops/calendar/")
-    ) {
-      return isOpsDutiesLive() && isOpsCombatLive()
-        ? null
-        : CALENDAR_MOCK_BY_CONFIG;
     }
     for (const [route, isLive] of Object.entries(SIMPLE_LIVE_CHECK)) {
       if (normalized === route || normalized.startsWith(`${route}/`)) {

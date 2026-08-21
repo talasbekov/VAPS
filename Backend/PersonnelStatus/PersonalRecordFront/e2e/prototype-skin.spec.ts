@@ -138,7 +138,11 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
 
   test('крошка называет страницу так же, как её h1', async ({ page }) => {
     await signIn(page)
-    await page.goto(`${APP}/security-ops/daily-expense/`)
+    // Экран берётся такой, где подпись крошки СОВПАДАЕТ с h1. У части
+    // страниц это не так по замыслу («Журнал: сообщено → исправлено» в крошке
+    // сокращён до «Журнал»), и проба на них сторожила бы сокращение, а не
+    // проводку. «Охраняемые лица» — h1 и подпись сегмента дословно равны.
+    await page.goto(`${APP}/security-ops/persons/`)
     const h1 = page.getByRole('heading', { level: 1 })
     await expect(h1).toBeVisible()
     const h1Text = await h1.textContent()
@@ -390,35 +394,11 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
 
   // Task 11: сырые таблицы слоя features (ratings dynamics, daily-grid,
   // changelog). Однородная шапка — единственный размер 11px.
-  for (const route of ['/security-ops/daily-expense/', '/security-ops/changelog/']) {
+  for (const route of ['/security-ops/changelog/']) {
     test(`features переведены на примитив: ${route}`, async ({ page }) => {
       await signIn(page)
       await page.goto(`${APP}${route}`)
 
-      if (route === '/security-ops/daily-expense/') {
-        // Грид не монтируется, пока не выбрано подразделение с личным
-        // составом: у первого по алфавиту подразделения сотрудников может не
-        // быть («Личный состав не загружен» вместо таблицы), поэтому перебор
-        // идёт до первого варианта, где реально появляется строка грида.
-        const division = page.locator('select').first()
-        const options = division.locator('option')
-        await expect(options.nth(1)).toBeAttached()
-        const values = await options.evaluateAll((els) =>
-          els
-            .map((el) => (el as HTMLOptionElement).value)
-            .filter((value) => value !== '')
-        )
-        for (const value of values) {
-          await division.selectOption(value)
-          const found = await page
-            .locator('thead th')
-            .first()
-            .waitFor({ state: 'visible', timeout: 3000 })
-            .then(() => true)
-            .catch(() => false)
-          if (found) break
-        }
-      }
 
       await expect(page.locator('thead th').first()).toBeVisible()
 
@@ -726,14 +706,9 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     { path: '/security-ops/command-center/', title: 'Командный центр', eyebrow: 'Оперативная работа' },
     { path: '/security-ops/events/', title: 'Реестр ОМ', eyebrow: 'Охранные мероприятия' },
     { path: '/security-ops/gvo/', title: 'Реестр ГВО', eyebrow: 'Оперативная работа' },
-    { path: '/security-ops/forces/', title: 'Сбор сил на ОМ', eyebrow: 'Оперативная работа' },
     { path: '/security-ops/persons/', title: 'Охраняемые лица', eyebrow: 'Оперативная работа' },
     { path: '/security-ops/objects/', title: 'Объекты и паспорта', eyebrow: 'Оперативная работа' },
     { path: '/security-ops/laws/', title: 'Законы об ОМ', eyebrow: 'Оперативная работа' },
-    // Дежурства и расход
-    { path: '/security-ops/calendar/', title: 'Календарь смен', eyebrow: 'Дежурства и расход' },
-    { path: '/security-ops/duties/combat/', title: 'Боевые группы на Трассе', eyebrow: 'Дежурства и расход' },
-    { path: '/security-ops/daily-expense/', title: 'Расход дня', eyebrow: 'Дежурства и расход' },
     // Оценка и отчётность
     { path: '/security-ops/ratings/', title: 'Оперативный рейтинг', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/ratings/workspace/', title: 'Оценивание участников', eyebrow: 'Оценка и отчётность' },

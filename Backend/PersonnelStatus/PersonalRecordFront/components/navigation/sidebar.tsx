@@ -15,12 +15,10 @@ import {
   ChevronDown,
   // Иконки раздела «Охранные мероприятия» (Smart Josparlau, Этап M4) — только
   // добавка, существующая навигация не изменялась.
-  CalendarDays,
   ClipboardList,
   Landmark,
   LineChart,
   ScrollText,
-  Flag,
   Scale,
   Star,
   UserRound,
@@ -171,24 +169,9 @@ export function Sidebar() {
         // Реестр ГВО идёт сразу за реестром ОМ: его записи — проекция тех же
         // мероприятий, и появляются они вместе с бюллетенем.
         { name: "Реестр ГВО", href: "/security-ops/gvo", icon: Users },
-        // «Сбор сил» стоит здесь, как в прототипе: это не этап карточки ОМ
-        // (в `lifecycleViews` его нет), а разрез по ВСЕМ мероприятиям,
-        // стоящим на стадии «Запрос сил».
-        { name: "Сбор сил на ОМ", href: "/security-ops/forces", icon: Flag },
         { name: "Охраняемые лица", href: "/security-ops/persons", icon: UserRound },
         { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
         { name: "Законы об ОМ", href: "/security-ops/laws", icon: Scale },
-      ],
-    },
-    {
-      title: "Дежурства и расход",
-      items: [
-        // «План дежурств» (/security-ops/duties) удалён 13.08.2026 вместе со
-        // страницей и адресом. «Боевые группы» (/security-ops/duties/combat) —
-        // отдельный раздел на том же префиксе, он сохранён.
-        { name: "Календарь смен", href: "/security-ops/calendar", icon: CalendarDays },
-        { name: "Боевые группы", href: "/security-ops/duties/combat", icon: Shield },
-        { name: "Расход дня (ОМ)", href: "/security-ops/daily-expense", icon: CalendarDays },
       ],
     },
     {
