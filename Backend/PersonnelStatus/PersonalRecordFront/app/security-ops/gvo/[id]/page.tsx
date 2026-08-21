@@ -126,7 +126,15 @@ export default function GvoSummaryPage() {
         {/* Шапка */}
         <Card>
           <CardContent className="flex flex-wrap items-start gap-4 p-[17px]">
-            <div className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-[11px] border bg-[hsl(210_40%_96.1%)] text-[14px] font-extrabold">
+            {/* bg-muted, а не хардкод hsl(210 40% 96.1%) из прототипа — тот же
+                баг, что и у трёх карточек ниже (Task 9, fix round 1): без
+                override под тёмную тему текст (без явного цвета →
+                text-foreground, в тёмной теме почти белый) читался белым по
+                белому. data-testid — для регрессии тёмной темы в e2e. */}
+            <div
+              data-testid="gvo-country-abbr"
+              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-[11px] border bg-muted text-[14px] font-extrabold"
+            >
               {gvoCountryAbbr(summary.country)}
             </div>
             <div className="min-w-56 flex-1">
@@ -205,7 +213,10 @@ export default function GvoSummaryPage() {
                   key={`${person.name}-${index}`}
                   className="flex flex-wrap gap-4 rounded-[12px] border p-[14px]"
                 >
-                  <div className="flex h-[196px] w-[150px] shrink-0 items-center justify-center rounded-[12px] bg-[hsl(210_40%_96.1%)] text-[12px] text-muted-foreground shadow-[0_8px_22px_rgba(16,24,40,.10)]">
+                  {/* bg-muted вместо того же хардкода (fix round 1): текст тут
+                      уже themed (text-muted-foreground), поэтому баг был
+                      Minor — контраст деградировал, но не исчезал целиком. */}
+                  <div className="flex h-[196px] w-[150px] shrink-0 items-center justify-center rounded-[12px] bg-muted text-[12px] text-muted-foreground shadow-[0_8px_22px_rgba(16,24,40,.10)]">
                     Фото ОЛ
                   </div>
                   <div className="min-w-56 flex-1">

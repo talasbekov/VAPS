@@ -231,3 +231,81 @@ test.describe(
     })
   },
 )
+
+/**
+ * Регресс тёмной темы (Task 9, fix round 1). Плашка аббревиатуры страны в
+ * шапке сводки красилась хардкодным hsl(210 40% 96.1%) без override под
+ * тёмную тему: фон оставался почти белым, а текст (без явного цвета — значит
+ * text-foreground, в тёмной теме тоже почти белый) читался белым по белому
+ * («gvo-summary-dark.png» в отчёте — плашка выглядела пустым белым квадратом).
+ *
+ * Проверка не сравнивает цвета на «не равны» буквально: в баг-состоянии фон
+ * (~96% светлоты) и текст (~98%) дают РАЗНЫЕ RGB побитово, но неразличимые
+ * глазом — строгое неравенство было бы вакуумным и прошло бы даже на баге.
+ * Поэтому считается WCAG relative-luminance контраст и требуется порог,
+ * который заведомо проваливает «два почти одинаково светлых» и заведомо
+ * проходит «тёмный фон / светлый текст».
+ */
+function relativeLuminance([r, g, b]: [number, number, number]): number {
+  const channel = (c: number): number => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+function parseRgb(css: string): [number, number, number] {
+  const m = css.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+  if (!m) throw new Error(`не удалось разобрать цвет: ${css}`)
+  return [Number(m[1]), Number(m[2]), Number(m[3])]
+}
+
+function contrastRatio(colorA: string, colorB: string): number {
+  const la = relativeLuminance(parseRgb(colorA))
+  const lb = relativeLuminance(parseRgb(colorB))
+  const lighter = Math.max(la, lb)
+  const darker = Math.min(la, lb)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+test.describe(
+  LIVE
+    ? 'тёмная тема — плашка страны в сводке ГВО'
+    : 'тёмная тема — плашка страны в сводке ГВО (скип: нет SMOKE_LIVE=1)',
+  () => {
+    test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+
+    test('фон и текст плашки различимы в тёмной теме', async ({ page }) => {
+      const rows = await registryEvents()
+      const target = rows[0]
+      expect(target, 'на стенде нет ни одного ОМ').toBeDefined()
+
+      await signIn(page)
+      await page.goto(`${APP}/security-ops/gvo/${target!.id}/`)
+      await expect(page.getByRole('heading', { name: 'Сводные данные' })).toBeVisible({
+        timeout: 15_000,
+      })
+
+      // Настоящий тумблер темы приложения, а не подмена data-theme мимо него.
+      await page.getByRole('button', { name: 'Переключить на тёмную тему' }).click()
+      await expect(page.locator('html')).toHaveClass(/dark/)
+
+      const abbrBox = page.getByTestId('gvo-country-abbr')
+      // toBeVisible проверяет РЕАЛЬНУЮ видимость (размер, opacity, display) —
+      // getComputedStyle отдаёт значения и у скрытого узла, само по себе это
+      // не страховка от вакуумной пробы.
+      await expect(abbrBox).toBeVisible()
+
+      const [bg, fg] = await abbrBox.evaluate((el) => {
+        const style = getComputedStyle(el)
+        return [style.backgroundColor, style.color]
+      })
+
+      const ratio = contrastRatio(bg, fg)
+      // Порог 2.5: баг-состояние (два почти-белых оттенка, ~96.1% и ~98%
+      // светлоты) даёт ratio ~1.0-1.1; исправленное (тёмный bg-muted и
+      // светлый text-foreground) — на порядок больше.
+      expect(ratio, `фон ${bg} и текст ${fg} почти неразличимы`).toBeGreaterThan(2.5)
+    })
+  },
+)
