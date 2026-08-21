@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { StatsCards } from "@/components/dashboard/stats-cards";
@@ -8,16 +9,7 @@ import { StatusOverview } from "@/widgets/status-overview";
 import OrgBoard from "@/features/organization-structure/ui/OrgBoard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Building2,
-  Activity,
-  Target,
-  BarChart3,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Wrench,
-} from "lucide-react";
+import { Building2, Activity, Target } from "lucide-react";
 import { useAbsenceStatistics } from "@/hooks/use-absence-statistics";
 import { useRecentAuditLogs } from "@/hooks/use-recent-audit-logs";
 import { formatDistanceToNow } from "date-fns";
@@ -66,15 +58,29 @@ export default function DashboardPage() {
     return "bg-blue-500";
   };
 
-  const performanceMetrics = [
+  /**
+   * Показатели прототипа, которых система не считает, — с причиной у
+   * каждого. Тот же приём, что у сервера в `unavailableKpi` (ops/passport.py)
+   * и `UNAVAILABLE_METRICS` (ops/analytics.py): пока считать нечего, об этом
+   * говорят словами. Раньше здесь стояли три постоянных числа (87/92/94 при
+   * целях 90/85/95) — они не менялись никогда и ни из чего не выводились.
+   */
+  const unavailableMetrics = [
     {
       name: "Эффективность обновления",
-      value: 87,
-      target: 90,
-      color: "bg-blue-500",
+      reason:
+        "Ближайшая живая мера — сдача ежедневного расхода, и владелец у неё один: светофор. Второй счёт здесь разошёлся бы с его экраном.",
     },
-    { name: "Время ответа", value: 92, target: 85, color: "bg-green-500" },
-    { name: "Точность данных", value: 94, target: 95, color: "bg-purple-500" },
+    {
+      name: "Время ответа",
+      reason:
+        "Показатель о работе системы, а не о личном составе: ни одна ручка времени обработки не возвращает.",
+    },
+    {
+      name: "Точность данных",
+      reason:
+        "Точность измеряется сверкой с внешним источником, которого у системы нет — сверять не с чем.",
+    },
   ];
 
   return (
@@ -191,10 +197,6 @@ export default function DashboardPage() {
 
           {/* Performance Metrics */}
           <Card className="relative overflow-hidden">
-            <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1.5 rounded-full shadow-sm z-10">
-              <Wrench className="h-3.5 w-3.5 animate-pulse" />
-              <span>В работе</span>
-            </div>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="h-5 w-5" />
@@ -202,29 +204,35 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {performanceMetrics.map((metric) => (
-                  <div key={metric.name} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{metric.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold">
-                          {metric.value}%
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          цель: {metric.target}%
-                        </span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-muted rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full ${metric.color}`}
-                        style={{ width: `${metric.value}%` }}
-                      />
-                    </div>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Система этих показателей не считает — ниже сказано, почему у
+                каждого.
+              </p>
+              <dl className="space-y-3">
+                {unavailableMetrics.map((metric) => (
+                  <div key={metric.name}>
+                    <dt className="text-sm font-medium text-foreground">
+                      {metric.name}
+                    </dt>
+                    <dd className="text-xs text-muted-foreground">
+                      {metric.reason}
+                    </dd>
                   </div>
                 ))}
-              </div>
+              </dl>
+              {/*
+                Ссылка ведёт туда, где живёт названная в первой причине мера:
+                светофор сдачи расхода рисует «Аналитика службы»
+                (app/security-ops/analytics, queryKey traffic-light). Права
+                страница проверяет сама (use-ops-permissions), поэтому ссылка
+                безопасна и для того, кому раздел закрыт.
+              */}
+              <Link
+                href="/security-ops/analytics"
+                className="mt-4 inline-block rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+              >
+                Смотреть светофор сдачи в «Аналитике службы»
+              </Link>
             </CardContent>
           </Card>
         </div>
