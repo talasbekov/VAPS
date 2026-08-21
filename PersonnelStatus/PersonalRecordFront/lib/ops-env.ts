@@ -54,10 +54,6 @@ export function isOpsDutiesLive(): boolean {
   return isDomainLive("duties");
 }
 
-export function isOpsCombatLive(): boolean {
-  return isDomainLive("combat");
-}
-
 export function isOpsGvoLive(): boolean {
   return isDomainLive("gvo");
 }
@@ -98,6 +94,3 @@ export function isOpsFeedbackLive(): boolean {
   return isDomainLive("feedback");
 }
 
-export function isOpsDailyLive(): boolean {
-  return isDomainLive("daily");
-}

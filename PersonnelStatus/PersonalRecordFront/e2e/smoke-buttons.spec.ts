@@ -161,9 +161,8 @@ const ROUTES: readonly RouteSpec[] = [
   // может не быть, и тогда экран показывает причину — это не отказ.
   { template: '/security-ops/profile' },
   { template: '/security-ops/command-center' },
-  // «Сбор сил на ОМ» — разрез по ВСЕМ мероприятиям на сборе разом (не по
-  // одному id), поэтому маршрут статический, как и command-center.
-  { template: '/security-ops/forces' },
+  // Маршруты «Сбор сил на ОМ», «Календарь смен», «Боевые группы» и «Расход
+  // дня (ОМ)» удалены 21.08.2026 вместе с экранами — обходить нечего.
   { template: '/security-ops/events' },
   { template: '/security-ops/events/{eventId}', needs: ['eventId'] },
   // Реестр ГВО — та же сущность, что и ОМ: карточка сводки открывается по id
@@ -179,10 +178,6 @@ const ROUTES: readonly RouteSpec[] = [
     needs: ['objectId', 'passportVersionId'],
   },
   // «План дежурств» и карточка смены удалены 13.08.2026 — обходить нечего;
-  // «Боевые группы» живут на том же префиксе и остаются в обходе.
-  { template: '/security-ops/duties/combat' },
-  { template: '/security-ops/daily-expense' },
-  { template: '/security-ops/calendar' },
   { template: '/security-ops/analytics' },
   { template: '/security-ops/analytics/operations' },
   { template: '/security-ops/ratings' },

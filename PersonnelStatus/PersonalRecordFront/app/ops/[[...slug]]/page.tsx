@@ -14,6 +14,9 @@ import { redirect } from "next/navigation";
 // Первый сегмент SPA-маршрута → база в старом фронте. Хвост маршрута
 // сохраняется там, где нативный раздел повторяет структуру SPA (карточки,
 // подстраницы рейтинга/отчётов/аналитики).
+// Разделов duties/calendar/daily-expense здесь больше нет: группа «Дежурства
+// и расход» удалена 21.08.2026 вместе с экранами. Их старые адреса попадают в
+// умолчание ниже — командный центр: вести на 404 хуже, чем в живой раздел.
 const SECTION_BASE: Record<
   string,
   { base: string; keepTail: boolean; emptyTail?: string }
@@ -21,12 +24,6 @@ const SECTION_BASE: Record<
   "command-center": { base: "/security-ops/command-center", keepTail: false },
   "security-events": { base: "/security-ops/events", keepTail: true },
   objects: { base: "/security-ops/objects", keepTail: true },
-  // «План дежурств» удалён (13.08.2026), но /security-ops/duties/combat —
-  // живой раздел «Боевые группы», и хвост ведёт туда. Голый /ops/duties
-  // отправляется в календарь смен: страницы плана больше нет, а ближайший
-  // экран про дежурства — он.
-  duties: { base: "/security-ops/duties", keepTail: true, emptyTail: "/security-ops/calendar" },
-  calendar: { base: "/security-ops/calendar", keepTail: false },
   analytics: { base: "/security-ops/analytics", keepTail: true },
   ratings: { base: "/security-ops/ratings", keepTail: true },
   "service-reports": { base: "/security-ops/service-reports", keepTail: true },
@@ -34,7 +31,6 @@ const SECTION_BASE: Record<
   settings: { base: "/security-ops/settings", keepTail: false },
   audit: { base: "/security-ops/audit", keepTail: false },
   changelog: { base: "/security-ops/changelog", keepTail: false },
-  "daily-expense": { base: "/security-ops/daily-expense", keepTail: false },
   // Обратная связь живёт на своём адресе раздела (один модуль — два входа).
   feedback: { base: "/feedback", keepTail: true },
   // Донорские дубли SPA → живые хостовые экраны.
