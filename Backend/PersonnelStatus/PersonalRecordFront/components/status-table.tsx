@@ -1,10 +1,13 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { useStaffUnitsByDirectorate } from "@/hooks/use-staff-units-by-directorate";
+import { EVENT_ASSIGNMENT_CODE } from "@/hooks/use-forces-gathering";
 import {
   EMPLOYEE_STATUS_CODE_BY_LABEL,
   EMPLOYEE_STATUS_ITEMS,
+  UNKNOWN_STATUS_PAINT,
   getEmployeeStatusColor,
   getEmployeeStatusLabel,
   getFormattedEmployeeStatus,
@@ -70,6 +73,12 @@ interface Employee {
   department: string;
   position: string;
   status: string;
+  /** Сырой код текущего статуса (`current_status.status_type` /
+   *  `local_status.status_type`), а не подпись. Нужен, чтобы отличить
+   *  «Участие в ОМ» (код `EVENT_ASSIGNMENT` из справочника operations, этой
+   *  ручке в принципе не родной) от обычных статусов, не гадая по тексту
+   *  подписи. */
+  statusCode: string | null;
   /** ISO «ГГГГ-ММ-ДД» или пустая строка. Форматируется ТОЛЬКО на выводе:
    *  раньше в поле лежал уже готовый текст, и `isOverdue` пытался разобрать
    *  его обратно через `new Date("14.08.2026, 00:00:00")` — это NaN, поэтому
@@ -79,6 +88,29 @@ interface Employee {
   phone: string;
   email: string;
   priority: "normal" | "high" | "critical";
+}
+
+/**
+ * Текст статуса + его сырой код. «Участие в ОМ» (`EVENT_ASSIGNMENT`) — код
+ * справочника operations («Сбор сил на ОМ»), эта ручка его не знает вовсе:
+ * `getFormattedEmployeeStatus` прочитал бы его как «Не обновлено» — то есть
+ * спутал бы «статус ЕСТЬ, просто из другого каталога» с «статуса нет
+ * вовсе». В реальном ответе `staff-units/directorate/` такого кода не бывает
+ * (модель `EmployeeStatus.StatusType` его не содержит) — веточка нужна
+ * только затем, чтобы не соврать, если он всё же придёт.
+ */
+function describeStatus(
+  // `any`: вызывающие берут `emp`/`employee` из ответа API тем же способом
+  // (`(unit as any).employee`) — своя строгая форма здесь разошлась бы с
+  // `EmployeeStatusType`, который код `EVENT_ASSIGNMENT` в принципе не
+  // содержит (см. комментарий выше).
+  emp: any
+): { text: string; code: string | null } {
+  const code = emp?.current_status?.status_type ?? null;
+  if (code === EVENT_ASSIGNMENT_CODE) {
+    return { text: "Участие в ОМ", code };
+  }
+  return { text: getFormattedEmployeeStatus(emp), code };
 }
 
 interface StatusTableProps {
@@ -97,7 +129,13 @@ export function StatusTable({
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sortBy, setSortBy] = useState<keyof Employee>("number");
+  // `statusCode` не сортируемое поле (нет управления, задающего его как
+  // ключ сортировки, и код — не то же самое, что видимый текст статуса):
+  // исключено явно, а не через `keyof Employee`, чтобы `a[sortBy] < b[sortBy]`
+  // ниже не пришлось разбирать `null`.
+  const [sortBy, setSortBy] = useState<Exclude<keyof Employee, "statusCode">>(
+    "number"
+  );
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEmployeeForEdit, setSelectedEmployeeForEdit] =
@@ -144,7 +182,7 @@ export function StatusTable({
           const status = emp?.current_status;
 
           // Используем форматированный статус с учетом local_status для прикомандированных
-          const statusText = getFormattedEmployeeStatus(emp);
+          const { text: statusText, code: statusCode } = describeStatus(emp);
 
           let priority: "normal" | "high" | "critical" = "normal";
           if (!status) {
@@ -165,6 +203,7 @@ export function StatusTable({
             department: unit.division?.name || "Не указан",
             position: empData.position?.name || "Должность не указана",
             status: statusText,
+            statusCode,
             startDate: status?.start_date ?? "",
             endDate: status?.end_date ?? "",
             phone: "",
@@ -178,7 +217,7 @@ export function StatusTable({
         const status = employee.current_status;
 
         // Используем форматированный статус с учетом local_status для прикомандированных
-        const statusText = getFormattedEmployeeStatus(employee);
+        const { text: statusText, code: statusCode } = describeStatus(employee);
 
         let priority: "normal" | "high" | "critical" = "normal";
         if (!status) {
@@ -194,6 +233,7 @@ export function StatusTable({
           department: unit.division?.name || "Не указан",
           position: (unit as any).position?.name || "Должность не указана",
           status: statusText,
+          statusCode,
           startDate: status?.start_date ?? "",
           endDate: status?.end_date ?? "",
           phone: "",
@@ -210,6 +250,7 @@ export function StatusTable({
           department: unit.division?.name || "Не указан",
           position: (unit as any).position?.name || "Должность не указана",
           status: "Не обновлено",
+          statusCode: null,
           startDate: "",
           endDate: "",
           phone: "",
@@ -354,7 +395,9 @@ export function StatusTable({
 
   const getStatusBadge = (status: string) => {
     if (status === "Не обновлено") {
-      return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
+      // Не отдельный литерал: тот же серый, что и у любого нераспознанного
+      // кода (`UNKNOWN_STATUS_PAINT`) — один источник, а не вторая копия.
+      return <Badge className={UNKNOWN_STATUS_PAINT.badge}>{status}</Badge>;
     }
 
     const statusType = statusTypes.find((s) => s.value === status);
@@ -547,13 +590,12 @@ export function StatusTable({
                   <TableCell className="font-medium">
                     {employee.number}
                   </TableCell>
+                  {/* Подстрока телефона снята: ручка штатки телефон не
+                      отдаёт вовсе (`employee.phone` — всегда пустая строка),
+                      и пустая строка держала лишнюю строку высоты в КАЖДОЙ
+                      строке таблицы без единого символа текста. */}
                   <TableCell>
-                    <div>
-                      <div className="font-medium">{employee.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {employee.phone}
-                      </div>
-                    </div>
+                    <div className="font-medium">{employee.name}</div>
                   </TableCell>
                   <TableCell className="text-sm">
                     {employee.department}
@@ -567,18 +609,44 @@ export function StatusTable({
                       по-прежнему можно пунктом меню «Запланировать статус».
                       Кнопка, а не onClick на ячейке: строка кликабельна и с
                       клавиатуры, и роль элемента не приходится угадывать. */}
-                  <TableCell>
+                  {/* whitespace-normal перебивает умолчание примитива
+                      (nowrap): у соседних ячеек это верно (одна строка,
+                      известной ширины), а подпись под ссылкой — фраза на
+                      два-три слова короче своей ширины, и nowrap растянул бы
+                      её в одну строку через всю таблицу вместо переноса. */}
+                  <TableCell className="whitespace-normal">
                     {employee.name === "ВАКАНТ" ? (
                       getStatusBadge(employee.status)
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleScheduleStatus(employee)}
-                        title="Открыть статусы сотрудника"
-                        className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 hover:opacity-80"
-                      >
-                        {getStatusBadge(employee.status)}
-                      </button>
+                      <div className="flex flex-col items-start gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleScheduleStatus(employee)}
+                          title="Открыть статусы сотрудника"
+                          className="rounded focus:outline-none focus:ring-2 focus:ring-blue-500 hover:opacity-80"
+                        >
+                          {getStatusBadge(employee.status)}
+                        </button>
+                        {/* Статус НЕ хранит, на какое именно ОМ отдан
+                            человек (модель их не связывает) — ссылка ведёт
+                            на общий разрез «Сбор сил», а подпись рядом
+                            говорит об этом прямо, чтобы ссылка не выглядела
+                            адресом конкретного мероприятия. */}
+                        {employee.statusCode === EVENT_ASSIGNMENT_CODE && (
+                          <div className="flex max-w-[220px] flex-col items-start gap-0.5">
+                            <Link
+                              href="/employees?view=forces"
+                              className="text-primary-ink text-xs font-medium hover:underline"
+                            >
+                              → Сбор сил
+                            </Link>
+                            <p className="text-muted-foreground text-[11px] leading-tight">
+                              Статус не хранит связь с конкретным ОМ — ссылка
+                              ведёт на общий разрез «Сбор сил»
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </TableCell>
                   <TableCell className="text-sm tabular-nums">
