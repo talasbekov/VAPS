@@ -14,6 +14,17 @@
  * 3. блок «Руководство департамента» (первым, раскрыт сразу) — состав и
  *    статус-пилюли сверяются с ПРАВДОЙ штатки (`staff-units/directorate/`,
  *    `position.level`), а не со счётом в разметке.
+ * 4. блок «Суточный свод» — версии СВОДНОГО заявления департамента
+ *    (`division_id=2`, составное подразделение — родитель управлений 4/5,
+ *    см. `/api/divisions/divisions_tree/`). У вьюсета `daily-summaries`
+ *    (задуманного брифом источника) НЕТ действия чтения списка версий
+ *    вовсе (только create/rebuild/freshness/export) — свод физически ХРАНИТСЯ
+ *    в ТОЙ ЖЕ таблице/сериализаторе, что обычная сдача (см. докстринг
+ *    `DailySummaryViewSet` на бэке), и версии читаются ЧЕРЕЗ УЖЕ ИЗВЕСТНУЮ
+ *    `daily-submissions` с точным (не поддеревным) фильтром `division_id`.
+ *    На живом стенде (21.08.2026) свода ЗА ЛЮБУЮ дату ещё ни разу не
+ *    собирали (`count: 0`) — вакуумный гвард честно уходит в пустое
+ *    состояние; строчный рендер отдельно проверен перехватом.
  *
  * 🔴 Service worker MSW блокируется: иначе `page.route` (в будущих пробах
  * этого файла) не перехватывал бы запросы приложения.
@@ -75,6 +86,24 @@ async function signIn(page: Page): Promise<void> {
 // перед «стенд» без скобок между ними и не находил бы ничего. Имя экранируем.
 function nameRegExp(name: string): RegExp {
   return new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+}
+
+// Дублируем значение, а не импортируем `features/daily-expense`: та же
+// причина, что у `LEADERSHIP_MAX_LEVEL` выше — «use client» React-компонент,
+// сборка вне Next.js рискованна. Обязано совпадать с `SUMMARY_DIVISION_ID`,
+// экспортированным `features/daily-expense/index.ts`.
+const SUMMARY_DIVISION_ID = 2
+
+interface DailySubmissionRow {
+  id: number
+  division_id: string
+  business_date: string
+  version: number
+  is_current: boolean
+  event: string
+  submitted_by: string
+  submitted_at: string
+  late: boolean
 }
 
 test.use({ serviceWorkers: 'block' })
@@ -171,6 +200,136 @@ test.describe(LIVE ? 'ежедневный расход' : 'ежедневный
     // Честная подпись под блоком — verbatim, не подстрокой.
     await expect(leadership.getByText(
       'Руководство собрано по уровню должности из штатного расписания (level ≤ 1); отдельного серверного признака „руководство" нет — появится бэк-этапом.',
+      { exact: true }
+    )).toBeVisible()
+  })
+
+  test('«Суточный свод» — версии сходятся с живой ручкой (вакуумный гвард на честную пустоту)', async ({ page }) => {
+    const token = await apiToken()
+    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+    const businessDate = report.business_date
+    const live = await get<{ results: DailySubmissionRow[] }>(
+      token,
+      `/api/ops/daily/daily-submissions/?division_id=${SUMMARY_DIVISION_ID}&business_date=${businessDate}`
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/employees?view=daily`)
+    const board = page.getByRole('region', { name: 'Ежедневный расход' })
+    await expect(board).toBeVisible({ timeout: 25_000 })
+    const summary = board.getByRole('region', { name: 'Суточный свод' })
+    await expect(summary).toBeVisible()
+
+    const currentCount = live.results.filter((row) => row.is_current).length
+
+    if (live.results.length === 0) {
+      // Вакуумный гвард честно не проходит на этом стенде (свод ни разу не
+      // собирался ни на одну дату) — проверяем ЧЕСТНУЮ пустоту против ЖИВОГО
+      // «ноль», а не молчим об этом.
+      await expect(summary.getByText('свод ещё не собирался', { exact: true })).toBeVisible()
+      await expect(summary.getByRole('listitem')).toHaveCount(0)
+    } else {
+      expect(currentCount, 'на подразделении больше одной текущей версии — инвариант бэка нарушен').toBe(1)
+      await expect(summary.getByRole('listitem')).toHaveCount(live.results.length)
+      await expect(summary.getByText('Текущая', { exact: true })).toHaveCount(currentCount)
+      for (const row of live.results) {
+        await expect(summary.getByText(`Версия ${row.version}`, { exact: true })).toBeVisible()
+      }
+    }
+  })
+
+  test('«Суточный свод» — строки версии и снимок рендерятся по перехваченному ответу (2 версии, одна текущая)', async ({ page }) => {
+    const token = await apiToken()
+    const report = await get<StrengthReport>(token, '/api/operations/strength-report/')
+    const businessDate = report.business_date
+
+    const fakeRows: DailySubmissionRow[] = [
+      {
+        id: 90001,
+        division_id: String(SUMMARY_DIVISION_ID),
+        business_date: businessDate,
+        version: 2,
+        is_current: true,
+        event: 'AMENDED',
+        submitted_by: 'проба',
+        submitted_at: `${businessDate}T10:00:00+05:00`,
+        late: false,
+      },
+      {
+        id: 90000,
+        division_id: String(SUMMARY_DIVISION_ID),
+        business_date: businessDate,
+        version: 1,
+        is_current: false,
+        event: 'CHANGED',
+        submitted_by: 'проба',
+        submitted_at: `${businessDate}T09:00:00+05:00`,
+        late: false,
+      },
+    ]
+
+    // Предикат, а не глоб: путь совпадает с ДВУМЯ другими живыми запросами
+    // этого же экрана (сводкой борда без `division_id` и внутренней историей
+    // панели `DaySubmissionPanel` с `division_id` управления и `limit=200`,
+    // без `business_date`) — молчаливая коллизия глоба перехватила бы чужой
+    // запрос вместо нашего.
+    await page.route(
+      (url) =>
+        url.pathname === '/api/ops/daily/daily-submissions/' &&
+        url.searchParams.get('division_id') === String(SUMMARY_DIVISION_ID) &&
+        url.searchParams.get('business_date') === businessDate &&
+        url.searchParams.get('limit') === null,
+      async (route) => {
+        await route.fulfill({
+          json: { count: fakeRows.length, next: null, previous: null, results: fakeRows },
+        })
+      }
+    )
+    await page.route(
+      (url) => url.pathname === '/api/operations/daily-submissions/90001/',
+      async (route) => {
+        await route.fulfill({
+          json: {
+            id: 90001,
+            division_id: SUMMARY_DIVISION_ID,
+            business_date: businessDate,
+            version: 2,
+            is_current: true,
+            event: 'AMENDED',
+            submitted_by: '1',
+            submitted_at: `${businessDate}T10:00:00+05:00`,
+            late: false,
+            reason: 'проверка пробой',
+            sanction: 'выговор',
+            triggered_by_status_id: null,
+            snapshot: { roster: [{}, {}], rows: [{}] },
+          },
+        })
+      }
+    )
+
+    await signIn(page)
+    await page.goto(`${APP}/employees?view=daily`)
+    const board = page.getByRole('region', { name: 'Ежедневный расход' })
+    await expect(board).toBeVisible({ timeout: 25_000 })
+    const summary = board.getByRole('region', { name: 'Суточный свод' })
+
+    await expect(summary.getByRole('listitem')).toHaveCount(2)
+    await expect(summary.getByText('Текущая', { exact: true })).toHaveCount(1)
+    await expect(summary.getByText('Версия 2', { exact: true })).toBeVisible()
+    await expect(summary.getByText('Версия 1', { exact: true })).toBeVisible()
+
+    // Бейдж обязан стоять НА ПРАВИЛЬНОЙ строке (v2, `is_current: true`), а не
+    // просто существовать где-то в блоке — иначе счёт «ровно один» прошёл бы
+    // и при бейдже, ошибочно повешенном на v1.
+    const currentRow = summary.getByRole('listitem').filter({ hasText: 'Версия 2' })
+    const supersededRow = summary.getByRole('listitem').filter({ hasText: 'Версия 1' })
+    await expect(currentRow.getByText('Текущая', { exact: true })).toBeVisible()
+    await expect(supersededRow.getByText('Текущая', { exact: true })).toHaveCount(0)
+
+    await currentRow.getByRole('button', { name: 'Открыть' }).click()
+    await expect(currentRow.getByText(
+      'В списке 2, отклонений 1 · причина: проверка пробой · санкция: выговор',
       { exact: true }
     )).toBeVisible()
   })
