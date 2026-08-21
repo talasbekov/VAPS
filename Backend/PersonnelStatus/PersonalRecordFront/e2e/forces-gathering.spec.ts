@@ -226,7 +226,7 @@ test.describe(LIVE ? 'сбор сил на ОМ' : 'сбор сил на ОМ (�
     await page.goto(`${APP}${SCREEN}`)
     // Слияние 21.08: реестр больше не отдельный маршрут — он ПЕРВАЯ вкладка
     // самого экрана, и открывается именно он, а не разрез сбора.
-    await expect(page.getByRole('heading', { name: 'Управление персоналом' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'Сбор сил на ОМ' })).toBeVisible({
       timeout: 25_000,
     })
     const tableTab = page.getByRole('tab', { name: 'Список сотрудников' })
