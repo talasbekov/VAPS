@@ -147,10 +147,13 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     expect(target.ownerName, 'в ответе сервера id вместо подписи').not.toMatch(/^\d+$/)
     await expect(facts).toContainText(`Ответственный за ОМ: ${target.ownerName}`)
 
-    // Чего система не хранит — названо, а не нарисовано пустыми ячейками
-    await expect(facts).toContainText('мероприятие не хранит')
+    // Факты ГВО живые (21.08.2026): выводятся из сводки ГВО; пустая сводка
+    // отвечает «уточняется», а не пустой ячейкой и не выдумкой.
+    await expect(facts).toContainText('Охраняемые лица:')
+    await expect(facts).toContainText('Старший ГВО:')
+    await expect(facts).toContainText('Численность ГВО:')
     // Слэш на конце добавляет Next (trailingSlash), в разметке его нет
-    await expect(facts.getByRole('link', { name: 'сводке ГВО' })).toHaveAttribute(
+    await expect(facts.getByRole('link', { name: 'сводки ГВО' })).toHaveAttribute(
       'href',
       `/security-ops/gvo/${target.id}/`,
     )
