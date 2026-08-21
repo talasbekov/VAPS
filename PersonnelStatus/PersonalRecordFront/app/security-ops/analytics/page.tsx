@@ -34,6 +34,7 @@ import {
   useStrengthReportPeriod,
   useTrafficLightTree,
 } from "@/hooks/use-strength-report";
+import { useOpsLaggingNotifications } from "@/hooks/use-ops-lagging-notifications";
 import type { AnalyticsPeriodRequest } from "@/hooks/use-ops-analytics";
 import type {
   AnalyticsPeriod,
@@ -434,6 +435,8 @@ export default function ServiceAnalyticsPage() {
         />
 
         <DaySubmissionSection gate={strengthGate} />
+
+        <LaggingRemindersSection gate={strengthGate} />
 
         {snapshotQuery.error !== null && (
           <p className="text-sm text-destructive-ink">{snapshotQuery.error.message}</p>
@@ -1651,6 +1654,119 @@ function DaySubmissionSection({ gate }: { gate: StrengthGate }) {
           </ul>
         </>
       )}
+    </section>
+  );
+}
+
+/** «2026-08-21» → «21.08». Деловая дата у напоминания своя (догон проходит
+ * пропущенные дни), поэтому она названа у каждой строки. Нечитаемое значение
+ * возвращается как есть — выдумывать за сервер нечего. */
+function formatBusinessDate(raw: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  return match ? `${match[3]}.${match[2]}` : raw;
+}
+
+/**
+ * «Напоминания об отставших» — личная лента уведомлений раздела рядом со
+ * светофором сдачи.
+ *
+ * ВТОРОГО СЧЁТА СДАЧИ ЗДЕСЬ НЕТ. Владелец витрины «сдали / не сдали» —
+ * светофор выше; лента отвечает на другой вопрос: о чём МЕНЯ уже оповестили.
+ * Числа этих двух блоков законно расходятся — светофор говорит про сейчас,
+ * напоминание про день, за который оно ушло, — и сводить их к одному счётчику
+ * значило бы обещать равенство, которого нет.
+ *
+ * ИМЕНА ДОКЛЕИВАЮТСЯ ИЗ ДЕРЕВА СВЕТОФОРА. Уведомление хранит только
+ * идентификаторы (оно переживает удаление того, о чём сообщало), а дерево на
+ * этом же экране уже загружено — тот же ключ кэша, без второго запроса. Узел,
+ * которого в дереве нет, показывается номером: обязанность сдавать держит
+ * плоский список идентификаторов, и подразделения за ним может уже не быть.
+ *
+ * ЛЕНТА ЖИВЁТ БЕЗ ПРАВА НА СВЕТОФОР: её гейт — аутентификация. Поэтому запрос
+ * уходит и при `denied`, только имена тогда взять неоткуда.
+ */
+function LaggingRemindersSection({ gate }: { gate: StrengthGate }) {
+  const feed = useOpsLaggingNotifications();
+  const tree = useTrafficLightTree(gate === "allowed");
+
+  const names = new Map<number, string>(
+    (tree.data?.nodes ?? []).map((node) => [node.division_id, node.name])
+  );
+  const rows = feed.data?.results ?? [];
+
+  return (
+    <section
+      role="group"
+      aria-label="Напоминания об отставших"
+      className="rounded-xl border bg-card p-4"
+    >
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold">Напоминания об отставших</h2>
+          <p className="text-xs text-muted-foreground">
+            {tree.data
+              ? `Уходят ответственным автоматически после контрольного часа ${formatControlHour(tree.data.control_hour)} — одно за день.`
+              : "Уходят ответственным автоматически после контрольного часа — одно за день."}
+          </p>
+        </div>
+        {rows.length > 0 && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+            {rows.length}
+          </span>
+        )}
+      </div>
+
+      {feed.isPending && (
+        <p className="text-xs text-muted-foreground">Загрузка напоминаний…</p>
+      )}
+      {feed.isError && (
+        <p className="text-xs text-muted-foreground">
+          Лента напоминаний сейчас недоступна.
+        </p>
+      )}
+      {feed.data && rows.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          Напоминаний нет: за вами не числится дней, о которых оповестили.
+        </p>
+      )}
+      {rows.length > 0 && (
+        <ul className="space-y-1">
+          {rows.map((row) => {
+            const ids = row.payload.laggard_division_ids ?? [];
+            return (
+              <li
+                key={row.id}
+                className="flex flex-wrap items-baseline gap-2 border-b py-1 text-xs last:border-0"
+              >
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  {formatBusinessDate(row.business_date)}
+                </span>
+                <span className="flex-1">
+                  {ids.length === 0
+                    ? "Отставшие в напоминании не названы"
+                    : ids
+                        .map((id) => names.get(id) ?? `№${id}`)
+                        .join(", ")}
+                </span>
+                <span className="shrink-0 text-muted-foreground">
+                  {row.read_at === null ? "не прочитано" : "прочитано"}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* Чего в разделе НЕТ — названо словами, а не нарисовано пустой кнопкой:
+          эскалации руководителю (прототип обещает её на полчаса позже) бэк не
+          знает вовсе, а срок рассылки — это контрольный час, отдельного
+          времени напоминания в настройках нет. Экрана настройки напоминаний
+          тоже нет: получателей задаёт справочник раздела. */}
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        Эскалации руководителю и отдельного времени напоминания раздел пока не
+        хранит: рассылка привязана к контрольному часу, получателей задаёт
+        справочник ответственных.
+      </p>
     </section>
   );
 }

@@ -414,6 +414,33 @@ export interface TrafficLightTree {
   nodes: TrafficLightNode[];
 }
 
+/**
+ * Уведомление раздела — ФАКТ, а не готовый текст: вид, деловая дата и плоские
+ * данные. Как это прочитать человеку — дело читающего экрана, поэтому
+ * формулировка живёт в UI, а не в ответе.
+ *
+ * `payload.laggard_division_ids` несёт ТОЛЬКО идентификаторы: уведомление
+ * переживает удаление того, о чём сообщало, и хранить в нём имена значило бы
+ * хранить их снимок. Имя доклеивает экран из уже загруженного дерева
+ * светофора; чего в дереве нет — показывается номером.
+ */
+export interface OpsNotification {
+  id: number;
+  recipient: string;
+  kind: "SUBMISSION_LAGGING";
+  business_date: string;
+  payload: { laggard_division_ids?: number[] };
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface OpsNotificationPage {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: OpsNotification[];
+}
+
 /** Поимённое расхождение сданного дня с живыми данными (только у жёлтого).
  * names доклеивает бэк: {employee_id: «Фамилия Имя»}; id без имени — человек
  * уже не находится (уволен/удалён), UI показывает номер честно. */
@@ -1725,6 +1752,21 @@ class ApiClient {
     const queryString = query.toString();
     return this.getDomainJson<TrafficLightTree>(
       `/api/operations/traffic-light/tree/${queryString ? `?${queryString}` : ""}`
+    );
+  }
+
+  // Личная лента уведомлений раздела: своё и только своё — фильтр по
+  // получателю накладывает сервер безусловно, параметра «чья лента» нет и
+  // быть не может. Гейт ручки — аутентификация, а не код права: вопрос здесь
+  // не «кому можно читать», а «чьи».
+  async getOpsNotifications(
+    params: { unread?: boolean } = {}
+  ): Promise<OpsNotificationPage> {
+    const query = new URLSearchParams();
+    if (params.unread) query.append("unread", "true");
+    const queryString = query.toString();
+    return this.getDomainJson<OpsNotificationPage>(
+      `/api/operations/notifications/${queryString ? `?${queryString}` : ""}`
     );
   }
 
