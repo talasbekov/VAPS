@@ -20,6 +20,8 @@ import Link from "next/link";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
+import { StatCard } from "@/components/stat-card";
+import { formatIsoDate } from "@/shared/lib/date";
 import {
   useCoreDirectories,
   useEmployeeStatuses,
@@ -61,6 +63,16 @@ const STATE_LABEL: Record<string, string> = {
   COMPLETED: "Завершён",
   CANCELLED: "Отменён",
 };
+
+const MONTH_NAME = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+] as const;
+const MONTH_ABBR = [
+  "ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН",
+  "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК",
+] as const;
+const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
 
 /** Блоки прототипа, которым источника нет. Список статический: это решение
  * переноса, а не данные сервера. */
@@ -158,7 +170,7 @@ export default function MyProfilePage() {
             </p>
           </CardHeader>
           <CardContent>
-            <ul className="flex flex-col gap-2">
+            <ul className="grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
               {MISSING_BLOCKS.map((block) => (
                 <li key={block.title} className="text-xs text-muted-foreground">
                   <span className="font-semibold text-foreground">
@@ -238,15 +250,18 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
         statusesLoading={statuses.isPending}
       />
 
-      <nav className="flex flex-wrap gap-2" aria-label="Разделы профиля">
+      <nav
+        className="flex w-fit max-w-full flex-wrap gap-1 rounded-lg bg-muted p-1"
+        aria-label="Разделы профиля"
+      >
         {(Object.keys(TAB_LABEL) as ProfileTab[]).map((code) => (
           <button
             key={code}
             type="button"
             className={
               tab === code
-                ? "rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
-                : "rounded-md border px-3 py-1.5 text-sm"
+                ? "rounded-md bg-background px-3 py-1.5 text-sm font-semibold shadow-sm"
+                : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
             }
             onClick={() => setTab(code)}
           >
@@ -304,30 +319,26 @@ function HeroCard({
   const active = statuses.find((row) => row.state === "ACTIVE") ?? null;
   const initials = `${employee.last_name.slice(0, 1)}${employee.first_name.slice(0, 1)}`;
 
-  const facts: { label: string; value: string }[] = [
-    { label: "Табельный номер", value: employee.personnel_number ?? "нет данных" },
-    { label: "Подразделение", value: divisionLabel ?? "не указано" },
-    { label: "Дата приёма", value: employee.hire_date ?? "нет данных" },
-    {
-      label: "Служебный телефон",
-      value: employee.work_phone ?? "нет данных",
-    },
-    { label: "Служебная почта", value: employee.work_email ?? "нет данных" },
-    {
-      label: "Состояние учёта",
-      value: employee.is_active ? "числится" : "не числится",
-    },
+  const chips: string[] = [
+    employee.personnel_number === null
+      ? "Табельный № — нет данных"
+      : `Табельный № ${employee.personnel_number}`,
+    divisionLabel ?? "подразделение не указано",
+    employee.hire_date === null
+      ? "дата приёма — нет данных"
+      : `В службе с ${formatIsoDate(employee.hire_date)}`,
+    employee.is_active ? "Числится в учёте" : "Не числится в учёте",
   ];
 
   return (
-    <Card>
-      <CardContent className="flex flex-wrap items-start gap-5 p-5">
-        <span className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-primary/10 text-xl font-bold text-primary-ink">
+    <Card className="bg-gradient-to-br from-card via-card to-primary/10">
+      <CardContent className="flex flex-wrap items-center gap-5 p-5">
+        <span className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-2xl bg-primary text-2xl font-extrabold text-primary-foreground shadow-lg shadow-primary/25">
           {initials}
         </span>
         <div className="min-w-[16rem] flex-1">
-          <div className="flex flex-wrap items-baseline gap-3">
-            <h2 className="text-xl font-bold">{employee.full_name}</h2>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="text-xl font-bold tracking-tight">{employee.full_name}</h2>
             {statusesLoading ? (
               <span className="text-xs text-muted-foreground">
                 статус загружается…
@@ -342,18 +353,24 @@ function HeroCard({
               </span>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-0.5 text-sm text-muted-foreground">
             {[rankLabel, positionLabel].filter(Boolean).join(" · ") ||
               "звание и должность не указаны"}
           </p>
-          <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
-            {facts.map((fact) => (
-              <div key={fact.label} className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">{fact.label}</dt>
-                <dd className="font-semibold">{fact.value}</dd>
-              </div>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {chips.map((chip) => (
+              <span
+                key={chip}
+                className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-medium text-secondary-foreground"
+              >
+                {chip}
+              </span>
             ))}
-          </dl>
+          </div>
+          <p className="mt-2.5 text-[11px] text-muted-foreground">
+            Служебный телефон: {employee.work_phone ?? "нет данных"} · Служебная
+            почта: {employee.work_email ?? "нет данных"}
+          </p>
         </div>
       </CardContent>
     </Card>
@@ -399,7 +416,7 @@ function EventsTab({
   const past = assignments.filter((item) => item.event.stage === "CLOSED");
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+    <div className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Предстоящие назначения</CardTitle>
@@ -413,7 +430,7 @@ function EventsTab({
               Действующих назначений нет.
             </p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {upcoming.map((item) => (
                 <AssignmentRow key={`${item.event.id}:${item.postLabel}`} item={item} />
               ))}
@@ -435,11 +452,36 @@ function EventsTab({
               Закрытых мероприятий с вашим участием нет.
             </p>
           ) : (
-            <ul className="space-y-2">
-              {past.map((item) => (
-                <AssignmentRow key={`${item.event.id}:${item.postLabel}`} item={item} />
-              ))}
-            </ul>
+            <div className="overflow-x-auto">
+              <div className="min-w-[560px]">
+                <div className="grid grid-cols-[1.6fr_1fr_100px_180px] gap-2 rounded-md bg-muted/60 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  <span>Мероприятие</span>
+                  <span>Пост</span>
+                  <span>Дата</span>
+                  <span>Ознакомление</span>
+                </div>
+                {past.map((item) => (
+                  <div
+                    key={`${item.event.id}:${item.postLabel}`}
+                    className="grid grid-cols-[1.6fr_1fr_100px_180px] items-baseline gap-2 border-b px-3 py-2.5 last:border-0"
+                  >
+                    <Link
+                      href={`/security-ops/events/${item.event.id}`}
+                      className="truncate text-sm font-semibold hover:underline"
+                    >
+                      {item.event.code} — {item.event.title}
+                    </Link>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {item.postLabel}
+                    </span>
+                    <span className="text-xs tabular-nums">
+                      {formatIsoDate(item.event.businessDate)}
+                    </span>
+                    <AckBadge acknowledgedAt={item.acknowledgedAt} />
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
           <p className="mt-2 text-[11px] text-muted-foreground">
             Часов и итога участия здесь нет: назначение расстановки не несёт
@@ -451,37 +493,60 @@ function EventsTab({
   );
 }
 
+/** Плитка даты назначения — как в прототипе: число крупно, месяц подписью. */
+function DateTile({ iso }: { iso: string }) {
+  return (
+    <span className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-lg bg-primary/10 leading-tight">
+      <span className="text-base font-extrabold tabular-nums text-primary-ink">
+        {iso.slice(8, 10)}
+      </span>
+      <span className="text-[10px] font-bold text-primary-ink">
+        {MONTH_ABBR[Number(iso.slice(5, 7)) - 1] ?? ""}
+      </span>
+    </span>
+  );
+}
+
+function AckBadge({ acknowledgedAt }: { acknowledgedAt: string | null }) {
+  return acknowledgedAt === null ? (
+    <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+      Ознакомление не подтверждено
+    </span>
+  ) : (
+    <span className="inline-flex w-fit rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
+      Ознакомлен: {formatIsoDate(acknowledgedAt.slice(0, 10))}
+    </span>
+  );
+}
+
 function AssignmentRow({ item }: { item: MyAssignment }) {
   return (
-    <li className="rounded-lg border p-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <Link
-          href={`/security-ops/events/${item.event.id}`}
-          className="text-sm font-semibold hover:underline"
-        >
-          {item.event.code} — {item.event.title}
-        </Link>
-        <span className="text-xs text-muted-foreground">
-          {STAGE_LABEL[item.event.stage]}
-        </span>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {item.event.businessDate}
-        {item.event.businessDateEnd !== null &&
-          item.event.businessDateEnd !== item.event.businessDate &&
-          ` — ${item.event.businessDateEnd}`}{" "}
-        · {item.event.objectName}
-      </p>
-      <p className="mt-1 text-xs">{item.postLabel}</p>
-      <p className="mt-1 text-[11px]">
-        {item.acknowledgedAt === null ? (
-          <span className="text-amber-600">Ознакомление не подтверждено</span>
-        ) : (
-          <span className="text-green-700">
-            Ознакомлен: {item.acknowledgedAt.slice(0, 10)}
+    <li className="flex gap-3 rounded-lg border p-3">
+      <DateTile iso={item.event.businessDate} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <Link
+            href={`/security-ops/events/${item.event.id}`}
+            className="text-sm font-semibold hover:underline"
+          >
+            {item.event.code} — {item.event.title}
+          </Link>
+          <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-secondary-foreground">
+            {STAGE_LABEL[item.event.stage]}
           </span>
-        )}
-      </p>
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {formatIsoDate(item.event.businessDate)}
+          {item.event.businessDateEnd !== null &&
+            item.event.businessDateEnd !== item.event.businessDate &&
+            ` — ${formatIsoDate(item.event.businessDateEnd)}`}{" "}
+          · {item.event.objectName}
+        </p>
+        <p className="mt-1 text-xs font-semibold">{item.postLabel}</p>
+        <p className="mt-1.5">
+          <AckBadge acknowledgedAt={item.acknowledgedAt} />
+        </p>
+      </div>
     </li>
   );
 }
@@ -499,37 +564,166 @@ function CalendarTab({
   shifts: { id: string; businessDate: string; stateCode: string; target: { safeLabel: string } }[];
   loading: boolean;
 }) {
+  // Хуки стоят ДО раннего выхода на загрузке — иначе между рендерами
+  // разъезжается их порядок.
+  const [cursor, setCursor] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
+
+  const periods = useMemo(
+    () =>
+      [
+        ...statuses.map((row) => ({
+          key: `status-${row.id}`,
+          title: STATUS_LABEL[row.status_type_code] ?? row.status_type_code,
+          from: row.date_start,
+          to: row.date_end,
+          state: row.state,
+          note: row.comment,
+        })),
+        ...shifts.map((shift) => ({
+          key: `shift-${shift.id}`,
+          title: `Дежурство · ${shift.target.safeLabel}`,
+          from: shift.businessDate,
+          to: shift.businessDate,
+          state: shift.stateCode,
+          note: "",
+        })),
+      ].sort((a, b) => b.from.localeCompare(a.from)),
+    [statuses, shifts]
+  );
+
+  // Сетка месяца: дню приписаны СОСТОЯНИЯ покрывающих его периодов — те же
+  // цвета, что у списка рядом. Сравнение ISO-строк, без арифметики дат.
+  const grid = useMemo(() => {
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const daysInMonth = new Date(
+      Date.UTC(cursor.year, cursor.month + 1, 0)
+    ).getUTCDate();
+    const lead =
+      (new Date(Date.UTC(cursor.year, cursor.month, 1)).getUTCDay() + 6) % 7;
+    const cells: { iso: string; day: number; states: string[] }[] = [];
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const iso = `${cursor.year}-${pad(cursor.month + 1)}-${pad(day)}`;
+      const states: string[] = [];
+      for (const period of periods) {
+        const to = period.to ?? period.from;
+        if (iso >= period.from && iso <= to && !states.includes(period.state)) {
+          states.push(period.state);
+        }
+      }
+      cells.push({ iso, day, states: states.slice(0, 3) });
+    }
+    return { lead, cells };
+  }, [cursor, periods]);
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Загрузка календаря…</p>;
   }
-  const periods = [
-    ...statuses.map((row) => ({
-      key: `status-${row.id}`,
-      title: STATUS_LABEL[row.status_type_code] ?? row.status_type_code,
-      from: row.date_start,
-      to: row.date_end,
-      state: row.state,
-      note: row.comment,
-    })),
-    ...shifts.map((shift) => ({
-      key: `shift-${shift.id}`,
-      title: `Дежурство · ${shift.target.safeLabel}`,
-      from: shift.businessDate,
-      to: shift.businessDate,
-      state: shift.stateCode,
-      note: "",
-    })),
-  ].sort((a, b) => b.from.localeCompare(a.from));
+
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const todayIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const shiftMonth = (delta: number) => {
+    setCursor((current) => {
+      const next = new Date(Date.UTC(current.year, current.month + delta, 1));
+      return { year: next.getUTCFullYear(), month: next.getUTCMonth() };
+    });
+  };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Мои периоды</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Статусы и смены дежурств; состояние каждой строки задаёт сервер
-        </p>
-      </CardHeader>
-      <CardContent>
+    <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[1.35fr_1fr]">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+          <div>
+            <CardTitle>
+              Мой календарь · {MONTH_NAME[cursor.month]} {cursor.year}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Дни с отметками моих статусов и смен
+            </p>
+          </div>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              aria-label="Предыдущий месяц"
+              className="grid h-8 w-8 place-items-center rounded-md border text-sm hover:bg-muted"
+              onClick={() => shiftMonth(-1)}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              aria-label="Следующий месяц"
+              className="grid h-8 w-8 place-items-center rounded-md border text-sm hover:bg-muted"
+              onClick={() => shiftMonth(1)}
+            >
+              ›
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-7 gap-1">
+            {WEEKDAYS.map((day) => (
+              <span
+                key={day}
+                className="pb-1 text-center text-[10px] font-bold text-muted-foreground"
+              >
+                {day}
+              </span>
+            ))}
+            {Array.from({ length: grid.lead }, (_, index) => (
+              <span key={`lead-${index}`} aria-hidden />
+            ))}
+            {grid.cells.map((cell) => (
+              <div
+                key={cell.iso}
+                className={
+                  cell.iso === todayIso
+                    ? "flex min-h-[46px] flex-col items-center rounded-md border border-primary p-1"
+                    : "flex min-h-[46px] flex-col items-center rounded-md border p-1"
+                }
+              >
+                <span className="text-[11px] font-semibold tabular-nums">
+                  {cell.day}
+                </span>
+                <span className="mt-0.5 flex gap-0.5">
+                  {cell.states.map((state) => (
+                    <span
+                      key={state}
+                      title={STATE_LABEL[state] ?? state}
+                      className={`h-1.5 w-1.5 rounded-full ${STATE_DOT[state] ?? "bg-muted-foreground"}`}
+                    />
+                  ))}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-4 border-t pt-3">
+            {Object.entries(STATE_LABEL).map(([state, label]) => (
+              <span
+                key={state}
+                className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"
+              >
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${STATE_DOT[state] ?? "bg-muted-foreground"}`}
+                />
+                {label}
+              </span>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Мои периоды</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Статусы и смены дежурств; состояние каждой строки задаёт сервер
+          </p>
+        </CardHeader>
+        <CardContent>
         {periods.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Ни статусов, ни смен за вами не числится.
@@ -569,8 +763,9 @@ function CalendarTab({
           Пересечения периодов здесь не помечаются: их считает служба дежурств
           по своей политике конфликтов, и второй счёт разошёлся бы с ней.
         </p>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -628,25 +823,27 @@ function StatsTab({
         aria-label="Показатели службы"
         className="grid grid-cols-2 gap-3 lg:grid-cols-4"
       >
-        <StatTile
+        <StatCard
           label="Участие в ОМ"
           value={String(new Set(assignments.map((item) => item.event.id)).size)}
-          hint="мероприятий с вашим назначением"
+          caption="мероприятий с вашим назначением"
+          tone="info"
         />
-        <StatTile
+        <StatCard
           label="Назначений на посты"
           value={String(assignments.length)}
-          hint="строк расстановки"
+          caption="строк расстановки"
         />
-        <StatTile
+        <StatCard
           label="Ознакомлено"
           value={String(acknowledged)}
-          hint={`из ${assignments.length} назначений`}
+          caption={`из ${assignments.length} назначений`}
+          tone="success"
         />
-        <StatTile
+        <StatCard
           label="Дней под статусом"
           value={String(distribution.total)}
-          hint="по всем неотменённым строкам"
+          caption="по всем неотменённым строкам"
         />
       </section>
 
@@ -664,26 +861,27 @@ function StatsTab({
                 Строк статусов за вами не числится.
               </p>
             ) : (
-              <ul className="space-y-2">
+              <ul className="space-y-3">
                 {distribution.rows.map(([label, value]) => (
-                  <li key={label}>
-                    <div className="flex items-baseline justify-between gap-3 text-sm">
-                      <span>{label}</span>
-                      <span className="tabular-nums text-muted-foreground">
-                        {value} дн. ·{" "}
-                        {((value / distribution.total) * 100)
-                          .toFixed(1)
-                          .replace(".", ",")}
-                        %
-                      </span>
-                    </div>
-                    <span className="mt-1 block h-2 overflow-hidden rounded-full bg-muted">
+                  <li
+                    key={label}
+                    className="grid grid-cols-[minmax(110px,175px)_1fr_auto] items-center gap-3"
+                  >
+                    <span className="text-sm leading-tight">{label}</span>
+                    <span className="block h-2 overflow-hidden rounded-full bg-muted">
                       <span
                         className="block h-full rounded-full bg-primary"
                         style={{
                           width: `${(value / distribution.total) * 100}%`,
                         }}
                       />
+                    </span>
+                    <span className="text-right text-xs tabular-nums text-muted-foreground">
+                      {value} дн. ·{" "}
+                      {((value / distribution.total) * 100)
+                        .toFixed(1)
+                        .replace(".", ",")}
+                      %
                     </span>
                   </li>
                 ))}
@@ -705,14 +903,31 @@ function StatsTab({
                 Назначений на посты не было.
               </p>
             ) : (
-              <ol className="space-y-2">
+              <ol className="space-y-3">
                 {posts.map(([label, count], index) => (
-                  <li key={label} className="flex items-baseline gap-3 text-sm">
-                    <span className="text-xs text-muted-foreground">
-                      #{index + 1}
+                  <li
+                    key={label}
+                    className="grid grid-cols-[24px_1fr] items-start gap-2.5"
+                  >
+                    <b className="grid h-6 w-6 place-items-center rounded-full bg-primary/10 text-[11px] font-bold text-primary-ink">
+                      {index + 1}
+                    </b>
+                    <span className="min-w-0">
+                      <span className="flex items-baseline justify-between gap-3">
+                        <span className="truncate text-sm font-semibold">
+                          {label}
+                        </span>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {count}
+                        </span>
+                      </span>
+                      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-muted">
+                        <span
+                          className="block h-full rounded-full bg-primary"
+                          style={{ width: `${(count / posts[0][1]) * 100}%` }}
+                        />
+                      </span>
                     </span>
-                    <span className="flex-1 truncate">{label}</span>
-                    <span className="tabular-nums">{count}</span>
                   </li>
                 ))}
               </ol>
@@ -724,22 +939,3 @@ function StatsTab({
   );
 }
 
-function StatTile({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-}) {
-  return (
-    <div className="rounded-xl border bg-card p-4">
-      <p className="truncate text-[11px] font-semibold text-muted-foreground">
-        {label}
-      </p>
-      <p className="text-xl font-bold tabular-nums">{value}</p>
-      <p className="truncate text-[11px] text-muted-foreground">{hint}</p>
-    </div>
-  );
-}
