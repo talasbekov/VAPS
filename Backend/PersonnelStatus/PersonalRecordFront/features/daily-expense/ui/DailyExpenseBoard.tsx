@@ -138,8 +138,37 @@ function DivisionGroup({
 
   const nonZeroColumns = Object.entries(row.columns).filter(([, count]) => count > 0);
 
+  // Состояние сдачи ЭТОГО управления — СВОЯ живая правда для его собственной
+  // панели: без запроса панель лгала бы «день не сдан», даже когда он уже
+  // сдан. Ключ СВОЙ (`daily-expense-board`), не занят `use-forces-gathering.ts`
+  // (`daily-employees`) и отличается от ключей, которые заводит сама панель
+  // (`ops-daily`). Не гейтим `enabled`: `businessDate` тут ВСЕГДА валидная
+  // строка сервера (родитель монтирует группу только когда `data` уже есть).
+  const submissionDivisionId = String(row.id);
+  const daySubmissionQuery = useQuery({
+    queryKey: [
+      "daily-expense-board",
+      "day-submission",
+      submissionDivisionId,
+      businessDate,
+    ],
+    queryFn: () =>
+      opsApiClient.get<unknown>(
+        `${DAILY_SUBMISSIONS_PATH}?division_id=${encodeURIComponent(
+          submissionDivisionId
+        )}&business_date=${encodeURIComponent(businessDate)}`
+      ),
+  });
+  const daySubmissions = parseSubmissionList(daySubmissionQuery.data);
+  const daySubmission = currentSubmission(daySubmissions);
+
   return (
-    <div className="rounded-lg border">
+    // `role="group"` — оборачивает ВСЮ группу (шапку + панель сдачи + раскрытую
+    // таблицу) ОДНИМ именем управления: панель сдачи теперь ВСЕГДА видна и
+    // живёт ВНЕ раскрываемого `role="region"` ниже — без своего имени на
+    // контейнере пробе было бы нечем отличить кнопку «Сдать день» ЭТОГО
+    // управления от кнопки соседнего в плоском дереве ролей.
+    <div className="rounded-lg border" role="group" aria-label={row.name}>
       <button
         type="button"
         aria-expanded={open}
@@ -164,6 +193,30 @@ function DivisionGroup({
           ))}
         </span>
       </button>
+
+      {/* Панель сдачи ЭТОГО управления — ВСЕГДА видна (не гейтится
+          `open`/`everOpened`), рядом со счётчиками шапки, а не внутри
+          раскрытой таблицы: решение координатора 21.08 — одна кнопка на весь
+          департамент семантически невозможна без бэк-этапа (сдача
+          версионируется ПО УПРАВЛЕНИЮ, `DaySubmission.division_id`), сводка
+          «сдано N из M» живёт на уровне борда, а само действие — здесь.
+          Компонент НЕ переписан: бейдж «День сдан: vN · …» и кнопка
+          «Исправить сдачу» — его собственная, восстановленная логика. */}
+      <div className="border-t px-3 py-2">
+        <DaySubmissionPanel
+          key={`${submissionDivisionId}-${businessDate}`}
+          divisionId={submissionDivisionId}
+          businessDate={businessDate}
+          dateValid={true}
+          rowCount={row.listTotal}
+          dirtyCount={0}
+          localDrift={[]}
+          submission={daySubmission}
+          submissions={daySubmissions}
+          isLoading={daySubmissionQuery.isPending}
+          isError={daySubmissionQuery.isError}
+        />
+      </div>
 
       {everOpened && (
         <div hidden={!open} role="region" aria-label={row.name} className="border-t">
@@ -234,46 +287,36 @@ export function DailyExpenseBoard() {
   const data = strength.data;
   const totals = data?.totals;
 
-  // «Сдать день»: ручка сдачи работает НА ОДНО подразделение
-  // (`DaySubmissionCreateBody` = ровно `{division_id, business_date}`), а
-  // этот экран — департаментский обзор БЕЗ выбора подразделения. У
-  // `/api/ops/daily/divisions/` нет поля родителя (см. `LeadershipStrip.tsx`)
-  // — понятия «id департамента» тут нет вовсе, и панель прагматично
-  // привязана к ПЕРВОМУ управлению расхода (`data.rows[0]`, стабильный
-  // порядок сервера): реальное подразделение, не выдумка, но не «весь
-  // департамент» — сдача департаментом целиком бэком не поддерживается
-  // (ручка принимает ровно один division_id). Открытый вопрос для отдельного
-  // решения — см. отчёт Task 4 (План-фронтенда-2026-08-21).
-  const submissionDivision = data?.rows[0] ?? null;
-  const submissionDivisionId = submissionDivision
-    ? String(submissionDivision.division_id)
-    : null;
+  // Сводка сдачи дня — «Сдано N из M управлений» + кто не сдал. Кнопка
+  // сдачи переехала В КАЖДУЮ группу управления (решение координатора 21.08,
+  // журнал 21→22.08): сдача версионируется ПО УПРАВЛЕНИЮ
+  // (`DaySubmission.division_id`) — одна кнопка на весь департамент была бы
+  // семантической ложью (реально сдавала бы одно управление, выглядела бы
+  // как «весь департамент сдан»). Источник N/M — ЖИВЫЕ ответы (та же ручка,
+  // фильтр по `business_date` без `division_id`, `is_current: true`,
+  // уникальные `division_id`, сверенные со строками расхода) — свой счёт не
+  // заводим.
   const businessDate = data?.business_date ?? null;
   const dateValid = businessDate !== null && /^\d{4}-\d{2}-\d{2}$/.test(businessDate);
-
-  // Состояние дня выбранного управления — СВОЯ живая правда, не выдумка
-  // панели: без запроса «Сдать день» лгала бы «день не сдан» даже когда он
-  // уже сдан. Ключ СВОЙ (`daily-expense-board`) — не занят
-  // `use-forces-gathering.ts` (`daily-employees`) и отличается от ключей,
-  // которые заводит сама панель (`ops-daily`) — три независимых владельца
-  // кэша на один путь ручки.
-  const daySubmissionQuery = useQuery({
-    queryKey: [
-      "daily-expense-board",
-      "day-submission",
-      submissionDivisionId,
-      businessDate,
-    ],
+  const submissionsSummaryQuery = useQuery({
+    queryKey: ["daily-expense-board", "submissions", businessDate],
     queryFn: () =>
       opsApiClient.get<unknown>(
-        `${DAILY_SUBMISSIONS_PATH}?division_id=${encodeURIComponent(
-          submissionDivisionId as string
-        )}&business_date=${encodeURIComponent(businessDate as string)}`
+        `${DAILY_SUBMISSIONS_PATH}?business_date=${encodeURIComponent(
+          businessDate as string
+        )}&limit=200`
       ),
-    enabled: submissionDivisionId !== null && dateValid,
+    enabled: dateValid,
   });
-  const daySubmissions = parseSubmissionList(daySubmissionQuery.data);
-  const daySubmission = currentSubmission(daySubmissions);
+  const submittedDivisionIds = new Set(
+    parseSubmissionList(submissionsSummaryQuery.data)
+      .filter((submission) => submission.is_current)
+      .map((submission) => submission.division_id)
+  );
+  const submittedRows =
+    data?.rows.filter((row) => submittedDivisionIds.has(String(row.division_id))) ?? [];
+  const notSubmittedRows =
+    data?.rows.filter((row) => !submittedDivisionIds.has(String(row.division_id))) ?? [];
 
   return (
     <section role="region" aria-label="Ежедневный расход" className="space-y-4">
@@ -335,25 +378,26 @@ export function DailyExpenseBoard() {
         </div>
       )}
 
-      {/* Панель сдачи — СРАЗУ под сводной строкой, там, где человек только
-          что проверил цифры. Экран здесь read-only (грида правок нет): драфт
-          изменений (`dirtyCount`/`localDrift`) отсюда взять НЕОТКУДА —
-          честные нулевые значения, а не выдумка. Ключ `businessDate` в key
-          снимает ответ прошлой сдачи и подтверждение при смене дня. */}
-      {data && submissionDivisionId !== null && (
-        <DaySubmissionPanel
-          key={`${submissionDivisionId}-${data.business_date}`}
-          divisionId={submissionDivisionId}
-          businessDate={data.business_date}
-          dateValid={dateValid}
-          rowCount={submissionDivision?.list_total ?? 0}
-          dirtyCount={0}
-          localDrift={[]}
-          submission={daySubmission}
-          submissions={daySubmissions}
-          isLoading={daySubmissionQuery.isPending && submissionDivisionId !== null}
-          isError={daySubmissionQuery.isError}
-        />
+      {/* Сводка сдачи дня — СРАЗУ под сводной строкой, там, где человек
+          только что проверил цифры. Сама кнопка «Сдать день» — в шапке
+          КАЖДОГО управления ниже (сдача версионируется по управлению, одной
+          кнопки на департамент быть не может). */}
+      {data && (
+        <div
+          role="group"
+          aria-label="Сводка сдачи дня"
+          className="rounded-lg border bg-card p-3 text-sm"
+        >
+          <p className="font-medium">
+            Сдано {submittedRows.length} из {data.rows.length} управлений на{" "}
+            {formatIsoDate(data.business_date)}
+          </p>
+          {notSubmittedRows.length > 0 && (
+            <p className="mt-1 text-muted-foreground">
+              Не сдали: {notSubmittedRows.map((row) => row.name).join(", ")}
+            </p>
+          )}
+        </div>
       )}
 
       {/* «Руководство департамента» — ПЕРВЫМ, над рядовыми управлениями,
