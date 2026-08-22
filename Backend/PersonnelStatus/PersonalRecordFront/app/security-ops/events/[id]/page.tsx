@@ -27,7 +27,8 @@ import {
   NO_PUBLISHED_VERSION_TEXT,
   StageBadge,
 } from "@/entities/security-event";
-import type { SecurityEvent } from "@/entities/security-event";
+import type { SecurityEvent, SecurityEventStage } from "@/entities/security-event";
+import { formatIsoDate } from "@/shared/lib/date";
 
 export default function SecurityEventPage() {
   // useSearchParams требует границы Suspense при пререндере.
@@ -106,7 +107,7 @@ function SecurityEventScreen() {
               лейбл сверху дублировал бы его. */}
           <PageHeader
             title={event.title}
-            description={`${event.businessDate} · ответственный: ${event.ownerName}`}
+            description={`${formatIsoDate(event.businessDate)} · ответственный: ${event.ownerName}`}
           />
           {/* Карточка ОМ — хаб: объект и сводка ГВО кликабельны отсюда на
               ЛЮБОМ этапе, а не только внутри блока «Сведения об ОМ»
@@ -139,7 +140,7 @@ function SecurityEventScreen() {
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {event.passportBinding !== null
-              ? `Паспорт: версия ${event.passportBinding.versionNumber} (действует с ${event.passportBinding.effectiveFrom})`
+              ? `Паспорт: версия ${event.passportBinding.versionNumber} (действует с ${formatIsoDate(event.passportBinding.effectiveFrom)})`
               : event.objectId !== null
                 ? NO_PUBLISHED_VERSION_TEXT
                 : NO_OBJECT_TEXT}
@@ -150,11 +151,92 @@ function SecurityEventScreen() {
         </CardContent>
       </Card>
 
+      <StageHeading stage={event.stage} />
+
       {/* Ключ — ЭТАП, а не версия данных: смена этапа это новая форма, а
           обновление карточки (своя же мутация в соседней панели, инвалидация,
           чужая правка) не должно пересобирать форму и терять набранное. */}
       <ActiveStage key={event.stage} event={event} />
     </DashboardLayout>
+  );
+}
+
+/**
+ * Заголовок этапа из прототипа: «Этап N из 6», название и одна строка о том,
+ * что на этапе делают.
+ *
+ * До этого карточка ОМ не называла этап вовсе — человек видел форму и должен
+ * был опознать её по содержимому. Номер берётся от ШАГА, а не от стадии: три
+ * стадии модели («Потребность», «Запрос сил», «Расстановка») это один шаг
+ * прототипа, и нумеровать их подряд значило бы обещать девять шагов там, где
+ * степпер показывает шесть.
+ */
+const STAGE_HEADING: Record<
+  SecurityEventStage,
+  { step: number; title: string; description: string }
+> = {
+  BULLETIN: {
+    step: 1,
+    title: "Информационный бюллетень",
+    description:
+      "Краткое описание, первичные задачи и сроки подготовки документов",
+  },
+  RECON: {
+    step: 2,
+    title: "Рекогносцировка объекта",
+    description: "Зоны и посты, необходимые направления, предварительные риски",
+  },
+  DEMAND: {
+    step: 3,
+    title: "Расстановка сил",
+    description: "Потребность направлений, запрос сил и назначение на посты",
+  },
+  FORCES: {
+    step: 3,
+    title: "Расстановка сил",
+    description: "Потребность направлений, запрос сил и назначение на посты",
+  },
+  PLACEMENT: {
+    step: 3,
+    title: "Расстановка сил",
+    description: "Потребность направлений, запрос сил и назначение на посты",
+  },
+  APPROVAL: {
+    step: 4,
+    title: "Согласование расстановки",
+    description:
+      "Проверка конфликтов версии и подпись ЭЦП перед началом мероприятия",
+  },
+  ACKNOWLEDGEMENT: {
+    step: 5,
+    title: "Ознакомление с назначением",
+    description:
+      "Подтверждение прочтения назначения каждым сотрудником перед заступлением",
+  },
+  CONDUCT: {
+    step: 6,
+    title: "Проведение мероприятия",
+    description: "Журнал событий смены и подготовка итогов направлений",
+  },
+  CLOSED: {
+    step: 6,
+    title: "Закрытие и итоги ОМ",
+    description: "Итоги направлений, фактические часы, отклонения и полный архив",
+  },
+};
+
+function StageHeading({ stage }: { stage: SecurityEventStage }) {
+  const heading = STAGE_HEADING[stage];
+  return (
+    <div className="mb-3" data-slot="stage-heading">
+      <p className="text-primary-ink text-[10.5px] font-bold uppercase tracking-[.12em]">
+        Этап {heading.step} из 6
+      </p>
+      <h2 className="mt-1 text-xl font-bold tracking-tight">{heading.title}</h2>
+      <p className="text-muted-foreground mt-0.5 text-[12.5px]">
+        {heading.description}
+      </p>
+    </div>
   );
 }
 

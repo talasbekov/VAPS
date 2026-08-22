@@ -35,6 +35,7 @@ import type {
 } from "@/entities/security-event";
 import { Fact } from "./Fact";
 import { FieldErrors, StageError } from "./StageErrors";
+import { formatIsoDate } from "@/shared/lib/date";
 
 let localSeq = 0;
 function nextLocalId(): string {
@@ -218,6 +219,29 @@ export function ReconStage({ event }: { event: SecurityEvent }) {
             </p>
           ) : (
             <div className="flex flex-col gap-2">
+              {/* Шапка колонок из прототипа. До неё расчёт был рядом голых
+                  полей: подписи жили только в aria-label, и глазом колонку
+                  «Мин. рейтинг» от «Требований» отличить было нельзя —
+                  плейсхолдер исчезает, как только в поле что-то введено.
+                  Скринридеру шапка не нужна (у каждого поля своё имя) —
+                  поэтому aria-hidden, чтобы не читать заголовки дважды. */}
+              <div
+                aria-hidden="true"
+                className="text-muted-foreground hidden gap-2 px-1 text-[10px] font-bold uppercase tracking-wider md:grid md:grid-cols-[1fr_1fr_1.4fr_70px_1.1fr_80px_1fr_1fr_1fr_1.2fr_auto_auto]"
+              >
+                <span>Сектор</span>
+                <span>Пост</span>
+                <span>Задача поста</span>
+                <span>Кол-во</span>
+                <span>Требования</span>
+                <span>Рейтинг</span>
+                <span>Тип</span>
+                <span>Вооружение</span>
+                <span>Форма одежды</span>
+                <span>Примечание</span>
+                <span />
+                <span />
+              </div>
               {rows.map((row) => (
                 <div
                   key={row.id}
@@ -424,7 +448,7 @@ function ObjectFacts({ event }: { event: SecurityEvent }) {
           ) : (
             <Fact
               label="Версия паспорта"
-              value={`№ ${binding.versionNumber} (действует с ${binding.effectiveFrom})`}
+              value={`№ ${binding.versionNumber} (действует с ${formatIsoDate(binding.effectiveFrom)})`}
             />
           )}
           {postsInVersion !== null && boundVersion !== undefined && (

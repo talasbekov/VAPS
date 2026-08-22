@@ -27,6 +27,7 @@ import { useEvaluationRegistry } from "@/hooks/use-ops-ratings";
 import { EMPTY_FILTERS } from "@/entities/operational-rating";
 import { JournalList } from "./JournalList";
 import { closureFacts } from "./ConductStage";
+import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
 export function ClosedView({ event }: { event: SecurityEvent }) {
   const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
@@ -47,7 +48,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
             Архив · {event.code}
           </h2>
           <p className="text-xs text-muted-foreground">
-            {event.title} · {event.businessDate} · {event.objectName}
+            {event.title} · {formatIsoDate(event.businessDate)} · {event.objectName}
           </p>
         </div>
         <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold">
@@ -94,7 +95,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
           )}
           {event.closedAt !== null && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Закрыто: {event.closedAt}
+              Закрыто: {formatIsoDateTime(event.closedAt ?? "")}
             </p>
           )}
         </CardContent>
@@ -105,7 +106,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
           <CardTitle>Карточка, бюллетень, программа</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <Fact label="Дата проведения" value={event.businessDate} />
+          <Fact label="Дата проведения" value={formatIsoDate(event.businessDate)} />
           <Fact label="Объект" value={event.objectName} />
           <Fact
             label="Краткое описание"
@@ -128,7 +129,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
               >
                 версия {event.passportBinding.versionNumber}
               </Link>{" "}
-              (действует с {event.passportBinding.effectiveFrom}). Публикация
+              (действует с {formatIsoDate(event.passportBinding.effectiveFrom)}). Публикация
               новой редакции этот снимок не переписывает.
             </p>
           )}
@@ -220,7 +221,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
                     <span className="font-semibold">{entry.title}</span>
                     <span className="text-muted-foreground"> — {entry.description}</span>
                     <span className="ml-1 text-xs text-muted-foreground">
-                      ({JOURNAL_TYPE_LABEL[entry.type]}, {entry.createdAt})
+                      ({JOURNAL_TYPE_LABEL[entry.type]}, {formatIsoDateTime(entry.createdAt)})
                     </span>
                   </li>
                 ))}

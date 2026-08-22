@@ -37,3 +37,25 @@ export function formatIsoDateLong(value: string, fallback = "—"): string {
         day: "numeric",
       });
 }
+
+/**
+ * Метка времени сервера («2026-08-21T17:50:06.992336+00:00») → «21.08.2026,
+ * 22:50» в местной зоне.
+ *
+ * В отличие от даты без времени, тут разбор часового пояса НУЖЕН: сервер
+ * присылает момент, и показать его следует по часам того, кто смотрит.
+ * Сырая ISO-строка в интерфейсе — не «точность», а непрочитанное значение:
+ * микросекунды и «+00:00» человек всё равно отбрасывает глазом.
+ */
+export function formatIsoDateTime(value: string, fallback = "—"): string {
+  if (value === "") return fallback;
+  const moment = new Date(value);
+  if (Number.isNaN(moment.getTime())) return fallback;
+  return moment.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
