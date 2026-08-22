@@ -101,7 +101,13 @@ export default function OpsAuditPage() {
                     <TableCell className="text-muted-foreground tabular-nums">
                       {formatIsoDateTime(log.createdAt)}
                     </TableCell>
-                    <TableCell>{log.actorUserId}</TableCell>
+                    {/* Имени автора в журнале нет — сервер пишет только
+                        идентификатор учётной записи. Подпись «ID» ставит его
+                        на место: голая «1» в колонке «Пользователь» читалась
+                        как обрезанное имя. */}
+                    <TableCell className="tabular-nums">
+                      ID {log.actorUserId}
+                    </TableCell>
                     <TableCell className="font-mono text-xs">{log.action}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {log.entityType} · {log.entityId}
