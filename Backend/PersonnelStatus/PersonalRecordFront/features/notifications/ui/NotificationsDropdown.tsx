@@ -118,8 +118,12 @@ export function NotificationsDropdown() {
                 }}
                 className="absolute -top-1 -right-1"
               >
-                <Badge className="h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs font-bold">
-                  {unreadCount}
+                {/* Красный, как в прототипе: бейдж уведомлений — сигнал «есть
+                    несделанное», и синий (тот же цвет, что у ссылок и активного
+                    пункта меню) в этой роли не читается. Трёхзначное число
+                    распирает кружок в овал — с сотни показываем «99+». */}
+                <Badge className="bg-destructive text-destructive-foreground h-[17px] min-w-[17px] rounded-full px-1 flex items-center justify-center text-[9px] font-bold tabular-nums">
+                  {unreadCount > 99 ? "99+" : unreadCount}
                 </Badge>
               </motion.div>
             )}

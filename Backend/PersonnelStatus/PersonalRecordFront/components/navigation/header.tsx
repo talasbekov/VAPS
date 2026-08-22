@@ -78,7 +78,18 @@ export function Header({
           <Breadcrumbs />
         </div>
 
-        <div className="flex shrink-0 items-center space-x-4 ml-auto">
+        <div className="flex shrink-0 items-center gap-2 ml-auto sm:gap-3">
+          {/* Роль из прототипа. В эталоне это СЕЛЕКТ — там демонстрационный
+              стенд, где ролью переключают показ. Здесь роль назначает сервер,
+              и выпадающий список, который ничего не меняет, был бы мёртвым
+              контролом: показываем ту роль, что действительно выдана. */}
+          {userRole && (
+            <span className="text-foreground hidden items-center rounded-lg border px-3 py-1.5 text-xs font-semibold lg:inline-flex">
+              {/* Слова «Роль:» здесь нет намеренно: имена ролей в системе уже
+                  начинаются с «Роль-N», и префикс давал «Роль: Роль-4». */}
+              {userRole.name}
+            </span>
+          )}
           <ThemeToggle />
           <NotificationsDropdown />
 

@@ -18,8 +18,8 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Расход Организации - Система управления персоналом",
-  description: "Современная система управления персоналом с древовидной структурой организации",
+  title: "Smart Жоспарлау — силы и мероприятия",
+  description: "Учёт личного состава, охранных мероприятий и расхода сил",
   generator: "v0.app",
 }
 

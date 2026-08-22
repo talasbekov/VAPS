@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth, ROLES } from "@/lib/auth";
+import { useSecurityEvents } from "@/hooks/use-security-events";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
   ClipboardList,
@@ -60,6 +62,10 @@ type NavItem = {
   // экрана два входа: «Обратная связь» отрисована на /feedback, но открывается
   // и по /security-ops/feedback (реализация одна, адреса два).
   match?: string[];
+  /** Пункт несёт бейдж-счётчик прототипа. Число берётся ТОЛЬКО из ответа
+   * сервера: счётчик в меню — обещание «здесь столько-то дел», и выдуманное
+   * число врёт на каждой странице приложения сразу. */
+  counter?: "events";
 };
 
 // Категории нераскрываемые: заголовок — не кнопка, список под ним всегда
@@ -92,7 +98,7 @@ const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
   {
     title: "Охранные мероприятия",
     items: [
-      { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList },
+      { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList, counter: "events" },
       // Реестр ГВО идёт сразу за реестром ОМ: его записи — проекция тех же
       // мероприятий, и появляются они вместе с бюллетенем.
       { name: "Реестр ГВО", href: "/security-ops/gvo", icon: Users },
@@ -131,11 +137,13 @@ function NavLink({
   name,
   icon: Icon,
   active,
+  counter,
 }: {
   href: string;
   name: string;
   icon: LucideIcon;
   active: boolean;
+  counter?: { value: number; hint: string };
 }) {
   return (
     <Link
@@ -150,8 +158,91 @@ function NavLink({
       }`}
     >
       <Icon className="mr-3 h-4 w-4 shrink-0" aria-hidden="true" />
-      <span>{name}</span>
+      <span className="flex-1">{name}</span>
+      {counter !== undefined && (
+        // Бейдж — не «украшение справа»: для скринридера он часть имени
+        // ссылки, иначе тот прочитает «Реестр ОМ 6» без объяснения, что за 6.
+        <span
+          data-slot="sidebar-counter"
+          className="bg-sidebar-accent text-sidebar-accent-foreground ml-2 grid h-5 min-w-5 shrink-0 place-items-center rounded-full px-1.5 text-[11px] font-bold tabular-nums"
+          title={counter.hint}
+          aria-label={`${counter.hint}: ${counter.value}`}
+        >
+          {counter.value}
+        </span>
+      )}
     </Link>
+  );
+}
+
+/** Инициалы для аватара подвала: две первые буквы слов имени. */
+function initialsOf(name: string | undefined): string {
+  if (name === undefined || name.trim() === "") return "—";
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.slice(0, 1).toUpperCase())
+    .join("");
+}
+
+/**
+ * «Закрытый контур · связь есть» из подвала прототипа.
+ *
+ * Точка НЕ декоративная: она читает состояние САМОГО СВЕЖЕГО запроса
+ * приложения (react-query знает, когда каждый из них последний раз ответил
+ * или упал) и офлайн-признак браузера. Зелёная точка, нарисованная константой,
+ * утверждала бы «связь есть» ровно в ту минуту, когда её нет, — это худший
+ * вид индикатора, чем его отсутствие.
+ */
+function LinkStatus() {
+  const client = useQueryClient();
+  const [online, setOnline] = useState(true);
+
+  useEffect(() => {
+    const cache = client.getQueryCache();
+    const recompute = () => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        setOnline(false);
+        return;
+      }
+      // Свежесть меряется по ПОСЛЕДНЕМУ ответу — неважно, удачному или нет:
+      // старый успех не отменяет только что случившегося отказа, и наоборот.
+      let latest = 0;
+      let latestFailed = false;
+      for (const query of cache.getAll()) {
+        const state = query.state;
+        const stamp = Math.max(state.dataUpdatedAt, state.errorUpdatedAt);
+        if (stamp === 0 || stamp < latest) continue;
+        latest = stamp;
+        latestFailed = state.status === "error";
+      }
+      setOnline(latest === 0 ? true : !latestFailed);
+    };
+    recompute();
+    const unsubscribe = cache.subscribe(recompute);
+    window.addEventListener("online", recompute);
+    window.addEventListener("offline", recompute);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("online", recompute);
+      window.removeEventListener("offline", recompute);
+    };
+  }, [client]);
+
+  return (
+    <p
+      data-slot="sidebar-link-status"
+      className="text-sidebar-foreground/60 flex items-center gap-1.5 px-1.5 text-xs leading-4"
+    >
+      <span
+        aria-hidden="true"
+        className={`size-[7px] shrink-0 rounded-full ${
+          online ? "bg-emerald-500 sidebar-pulse" : "bg-amber-500"
+        }`}
+      />
+      Закрытый контур · {online ? "связь есть" : "связи нет"}
+    </p>
   );
 }
 
@@ -159,6 +250,27 @@ export function Sidebar() {
   const { user, hasPermission } = useAuth();
   const userRole = user ? ROLES[user.role] : null;
   const pathname = normalizePath(usePathname() ?? "");
+
+  // Счётчик у «Реестра ОМ». Берётся `count` СЕРВЕРА при `page_size=1`: строки
+  // не нужны, нужно число, и тащить ради бейджа страницу мероприятий было бы
+  // расточительством на каждом экране приложения. Отказ (нет права `event.view`
+  // — сервер отвечает 403) гасит бейдж целиком: пустое место честнее нуля,
+  // который читался бы как «мероприятий нет».
+  const eventsCount = useSecurityEvents({
+    search: "",
+    stage: "ALL",
+    page: 1,
+    from: "",
+    to: "",
+    owner: "",
+    pageSize: 1,
+  });
+  const counters: Record<NonNullable<NavItem["counter"]>, { value: number; hint: string } | null> = {
+    events:
+      eventsCount.data === undefined
+        ? null
+        : { value: eventsCount.data.count, hint: "Мероприятий в реестре" },
+  };
 
   // Подсвечивается ОДИН пункт — самый длинный подошедший адрес. Простое
   // `startsWith` зажигало бы «Аналитику службы» (/security-ops/analytics)
@@ -296,14 +408,14 @@ export function Sidebar() {
             Ужимание шапки 64→48px ради лишних пунктов отменено вместе с
             остальной погоней за влезанием — см. комментарий у ITEM_CLASS. */}
         <div className="bg-primary text-primary-foreground grid size-9 shrink-0 place-items-center rounded-[10px] text-[13px] font-extrabold">
-          ПР
+          SЖ
         </div>
         <div className="min-w-0">
           <div className="text-sidebar-foreground truncate text-base font-bold leading-5 tracking-[.06em]">
-            Проект Расход
+            Smart Жоспарлау
           </div>
           <div className="text-sidebar-foreground/55 truncate text-xs leading-4">
-            Учёт личного состава
+            Силы и мероприятия
           </div>
         </div>
       </div>
@@ -351,6 +463,11 @@ export function Sidebar() {
                           name={item.name}
                           icon={item.icon}
                           active={item.href === activeHref}
+                          counter={
+                            item.counter === undefined
+                              ? undefined
+                              : counters[item.counter] ?? undefined
+                          }
                         />
                       </li>
                     );
@@ -383,26 +500,33 @@ export function Sidebar() {
         />
       </div>
 
-      {/* Информация о роли */}
-      {userRole && (
-        <div
-          className="border-sidebar-border flex items-center gap-2.5 border-t px-4 py-3 sidebar-role-card"
-          // Описание роли и отдел не помещаются в строку при 256px — уходят в
-          // title, а не пропадают совсем.
-          title={`${userRole.description}. Отдел: ${user?.department}`}
-        >
-          <div className="min-w-0 flex-1">
-            {/* Кегли по той же шкале, что и меню (12/14). Однострочный вариант
-                на 10/12px был частью погони за высотой — отменён вместе с ней. */}
-            <p className="text-sidebar-foreground/60 text-xs uppercase leading-4 tracking-[.1em]">
-              Текущая роль
-            </p>
-            <p className="text-sidebar-foreground truncate text-sm font-semibold leading-5">
-              {userRole.name}
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Подвал прототипа: состояние связи и карточка человека. */}
+      <div className="border-sidebar-border shrink-0 border-t p-3 sidebar-role-card">
+        <LinkStatus />
+        {userRole && (
+          <Link
+            href="/security-ops/profile"
+            className="bg-sidebar-accent/60 hover:bg-sidebar-accent mt-2.5 flex w-full items-center gap-2.5 rounded-[9px] p-2.5 text-left transition-colors"
+            // Описание роли и отдел не помещаются в строку при 256px — уходят в
+            // title, а не пропадают совсем.
+            title={`${userRole.description}. Отдел: ${user?.department}`}
+          >
+            <span className="bg-primary/10 text-primary-ink grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold">
+              {initialsOf(user?.name)}
+            </span>
+            <span className="min-w-0 flex-1">
+              {/* Кегли по той же шкале, что и меню (12/14). Однострочный вариант
+                  на 10/12px был частью погони за высотой — отменён вместе с ней. */}
+              <span className="text-sidebar-foreground block truncate text-sm font-semibold leading-5">
+                {user?.name ?? "—"}
+              </span>
+              <span className="text-sidebar-foreground/60 block truncate text-xs leading-4">
+                {userRole.name}
+              </span>
+            </span>
+          </Link>
+        )}
+      </div>
     </aside>
   );
 }
