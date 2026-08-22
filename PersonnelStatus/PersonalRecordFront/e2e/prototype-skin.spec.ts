@@ -236,6 +236,52 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(total).toBe(19)
   })
 
+  test('меню целиком влезает в 1366×768 и не жмётся ниже шага 24px', async ({ page }) => {
+    await signIn(page)
+    // Категории развернули все 19 пунктов сразу — до уплотнения 22.08.2026
+    // семь из них уходили под сгиб на этом разрешении.
+    await page.setViewportSize({ width: 1366, height: 768 })
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ', level: 1 })).toBeVisible()
+
+    const nav = page.locator('aside nav').first()
+    const fit = await nav.evaluate((el) => {
+      const box = el.getBoundingClientRect()
+      const links = Array.from(el.querySelectorAll('a'))
+      const last = links[links.length - 1].getBoundingClientRect()
+      return {
+        // 🔴 Содержимое меряется низом ПОСЛЕДНЕЙ ссылки, а не scrollHeight:
+        // у невыходящего за край блока scrollHeight равен clientHeight, и
+        // «влезает» вырождалось бы в сравнение числа с самим собой.
+        contentBottom: Math.ceil(last.bottom - box.top),
+        clientH: el.clientHeight,
+        hidden: links.filter((a) => a.getBoundingClientRect().bottom > box.bottom + 0.5).length,
+        links: links.length,
+      }
+    })
+    expect(fit.links, 'меню недосчиталось пунктов — ассерт влезания был бы вакуумным').toBe(19)
+    expect(fit.clientH, 'сайдбар скрыт: у нулевой высоты влезает что угодно').toBeGreaterThan(0)
+    expect(fit.hidden, 'пункты ушли под сгиб при 1366×768').toBe(0)
+    expect(
+      fit.contentBottom,
+      `меню ${fit.contentBottom}px не помещается в ${fit.clientH}px`
+    ).toBeLessThanOrEqual(fit.clientH)
+
+    // Пол плотности. Уплотнять дальше за счёт СТРОКИ нельзя: 22px пункт плюс
+    // 2px зазор дают шаг ровно 24px — граница исключения по интервалу в
+    // WCAG 2.2 AA (2.5.8 Target Size). Проба берёт соседей ВНУТРИ одной
+    // категории: через границу категорий шаг включает заголовок и отступ,
+    // и порог проходил бы сам собой.
+    const pitch = await nav.evaluate((el) => {
+      const lists = Array.from(el.querySelectorAll('ul'))
+      const multi = lists.find((l) => l.querySelectorAll('a').length > 1)
+      if (!multi) throw new Error('нет категории с двумя пунктами — шаг мерить не на чем')
+      const [a, b] = Array.from(multi.querySelectorAll('a'))
+      return b.getBoundingClientRect().top - a.getBoundingClientRect().top
+    })
+    expect(pitch, 'шаг пунктов упал ниже 24px — цели перестали проходить WCAG 2.5.8').toBeGreaterThanOrEqual(24)
+  })
+
   test('подсвечен один пункт — самый длинный подошедший адрес', async ({ page }) => {
     await signIn(page)
 
