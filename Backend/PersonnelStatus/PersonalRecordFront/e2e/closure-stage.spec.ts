@@ -191,7 +191,11 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
         hasText: 'Карточка, бюллетень, программа',
       }),
     })
-    await expect(bulletin).toContainText(target.businessDate)
+    // Дата в архиве печатается по-русски, а не сырым ISO с сервера: ассерт
+    // собирает ожидаемое из ТОГО ЖЕ ответа, а не пинит литерал — иначе он
+    // сторожил бы формат вместо содержимого.
+    const [year, month, day] = target.businessDate.split('-')
+    await expect(bulletin).toContainText(`${day}.${month}.${year}`)
     await expect(bulletin).toContainText(target.objectName)
     if (target.passportBinding !== null) {
       await expect(
