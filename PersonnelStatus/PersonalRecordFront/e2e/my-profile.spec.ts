@@ -157,6 +157,23 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       page.getByText(new RegExp(`^${mine.length} назначени[ея]?й?$`)),
     ).toBeVisible()
 
+    // «Требует внимания»: карточка правой колонки прототипа, у которой в
+    // системе ЕСТЬ источник — назначения без подтверждённого ознакомления.
+    // Счётчик сверяется с ответом сервера, а не с самим собой; закрытые ОМ в
+    // него не входят — подтверждать ознакомление задним числом уже нечем.
+    const pending = registry.results
+      .filter((event) => event.stage !== 'CLOSED')
+      .flatMap((event) =>
+        event.placementAssignments.filter(
+          (assignment) =>
+            String(assignment.employeeId) === String(employee.id) &&
+            assignment.acknowledgedAt === null,
+        ),
+      ).length
+    const attention = page.locator('div').filter({ hasText: /^Требует внимания/ }).first()
+    await expect(page.getByText('Личные действия и сроки')).toBeVisible()
+    await expect(attention).toContainText(String(pending))
+
     await page.getByRole('button', { name: 'Моя статистика' }).click()
     const stats = page.getByRole('group', { name: 'Показатели службы' })
     await expect(stats).toContainText(String(mine.length))

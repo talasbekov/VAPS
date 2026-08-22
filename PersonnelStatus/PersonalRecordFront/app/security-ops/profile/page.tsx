@@ -29,6 +29,12 @@ import {
 } from "@/hooks/use-my-employee";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useDutyShiftsAll } from "@/hooks/use-duty-shifts";
+import { useLegalDocuments } from "@/hooks/use-legal-documents";
+import {
+  LEGAL_DOCUMENT_KIND_BADGE_CLASS,
+  LEGAL_DOCUMENT_KIND_LABEL,
+  LEGAL_DOCUMENT_STATUS_LABEL,
+} from "@/entities/legal-document";
 import { STATUS_LABEL_BY_CODE } from "@/entities/daily-grid";
 import { STAGE_LABEL } from "@/entities/security-event";
 import type { CoreEmployee, OpsEmployeeStatusRow } from "@/lib/api";
@@ -573,7 +579,11 @@ function EventsTab({
         </Card>
       </div>
 
-      <EquipmentCard />
+      <div className="space-y-4">
+        <EquipmentCard />
+        <QualificationsCard />
+        <AttentionCard assignments={upcoming} />
+      </div>
     </div>
   );
 }
@@ -587,6 +597,90 @@ function countLabel(count: number): string {
   if (last === 1) return `${count} назначение`;
   if (last >= 2 && last <= 4) return `${count} назначения`;
   return `${count} назначений`;
+}
+
+/**
+ * «Допуски и подготовка» — блок прототипа без источника: квалификаций, их
+ * сроков и отметок о подготовке модель не хранит вовсе. Карточка стоит на
+ * своём месте раскладки пустой: перечислить здесь «Огневую подготовку до
+ * 30.09» значило бы выдать человеку допуск, которого система не выдавала.
+ */
+function QualificationsCard() {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+        <div>
+          <CardTitle>Допуски и подготовка</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Срок действия квалификаций
+          </p>
+        </div>
+        <span className="bg-secondary text-secondary-foreground shrink-0 rounded-full px-3 py-1 text-xs font-semibold">
+          нет данных
+        </span>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Квалификаций, инструктажей и их сроков система не ведёт. Единственная
+          отметка об ознакомлении, которая в ней есть, — по конкретному
+          назначению в ОМ; она показана в карточке назначения и во вкладке
+          «Инструкции».
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * «Требует внимания» — единственная карточка правой колонки прототипа,
+ * которой источник ЕСТЬ: неподтверждённое ознакомление с назначением это и
+ * есть личное действие со сроком, а срок — дата мероприятия.
+ */
+function AttentionCard({ assignments }: { assignments: MyAssignment[] }) {
+  const pending = assignments.filter((item) => item.acknowledgedAt === null);
+
+  return (
+    <Card className="border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+        <div>
+          <CardTitle>Требует внимания</CardTitle>
+          <p className="text-xs text-amber-800 dark:text-amber-300/80">
+            Личные действия и сроки
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900 dark:bg-amber-900/60 dark:text-amber-100">
+          {pending.length}
+        </span>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {pending.length === 0 ? (
+          <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
+            Несделанного нет: ознакомление подтверждено по всем действующим
+            назначениям.
+          </p>
+        ) : (
+          pending.slice(0, 5).map((item) => (
+            <p
+              key={`${item.event.id}:${item.postLabel}`}
+              className="border-b border-amber-200/70 pb-2 text-xs leading-relaxed text-amber-900 last:border-0 last:pb-0 dark:border-amber-900/50 dark:text-amber-200"
+            >
+              <strong className="font-bold">
+                К {formatIsoDate(item.event.businessDate)}
+              </strong>{" "}
+              — подтвердить ознакомление с назначением: {item.event.code},{" "}
+              {item.postLabel}.
+            </p>
+          ))
+        )}
+        {pending.length > 5 && (
+          <p className="text-[11px] text-amber-800 dark:text-amber-300/80">
+            И ещё {pending.length - 5} — весь список во вкладке «Охранные
+            мероприятия».
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 /**
@@ -657,48 +751,51 @@ function AssignmentRow({ item }: { item: MyAssignment }) {
       ? `${formatIsoDate(item.event.businessDate)} — ${formatIsoDate(item.event.businessDateEnd)}`
       : formatIsoDate(item.event.businessDate);
 
+  // Сетка прототипа: плитка даты | описание | столбец состояния. Бейдж и
+  // кнопка стоят в СВОЁМ столбце (бейдж вверху, кнопка внизу) — в первой
+  // версии переноса бейдж уехал в строку заголовка, и правый край карточки
+  // разъезжался тем сильнее, чем длиннее название мероприятия.
   return (
-    <li className="flex gap-4 py-4 first:pt-0 last:pb-0">
+    <li className="grid grid-cols-[60px_minmax(0,1fr)_auto] gap-3 py-3.5 first:pt-0 last:pb-1">
       <DateTile iso={item.event.businessDate} />
 
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-bold tabular-nums text-secondary-foreground">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-[7px]">
+          <span className="bg-secondary text-secondary-foreground inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold tabular-nums">
             {item.event.code}
           </span>
           <Link
             href={`/security-ops/events/${item.event.id}`}
-            className="text-sm font-semibold hover:underline"
+            className="truncate text-xs font-bold hover:underline"
           >
             {item.event.title}
           </Link>
-          <span className="ml-auto shrink-0">
-            <AckBadge acknowledgedAt={item.acknowledgedAt} />
-          </span>
         </div>
 
-        <p className="mt-1.5 text-base font-bold tracking-tight">
+        <h3 className="mt-2 mb-[3px] text-[13px] font-semibold">
           {item.postLabel}
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
+        </h3>
+        <p className="text-[11px] text-muted-foreground">
           {item.event.objectName} · {period} · стадия:{" "}
           {STAGE_LABEL[item.event.stage]}
         </p>
 
-        <div className="mt-2.5 flex flex-wrap items-center gap-3">
-          <p className="min-w-[14rem] flex-1 rounded-md border-l-[3px] border-primary/40 bg-muted/50 px-3 py-2 text-xs leading-snug">
-            <span className="font-semibold">Краткая инструкция:</span>{" "}
-            {item.post === null || item.post.task.trim() === ""
-              ? "задача поста в расчёте не заполнена"
-              : item.post.task}
-          </p>
-          <Link
-            href={`/security-ops/events/${item.event.id}`}
-            className="inline-flex h-9 shrink-0 items-center rounded-md border bg-background px-3.5 text-xs font-semibold shadow-sm transition-colors hover:bg-muted"
-          >
-            Инструкция по посту
-          </Link>
-        </div>
+        <p className="border-primary/40 bg-muted/50 mt-2 rounded border-l-[3px] px-2.5 py-[7px] text-[10.5px] leading-[1.45]">
+          <span className="font-bold">Краткая инструкция:</span>{" "}
+          {item.post === null || item.post.task.trim() === ""
+            ? "задача поста в расчёте не заполнена"
+            : item.post.task}
+        </p>
+      </div>
+
+      <div className="flex flex-col items-end justify-between gap-2">
+        <AckBadge acknowledgedAt={item.acknowledgedAt} />
+        <Link
+          href={`/security-ops/events/${item.event.id}`}
+          className="hover:bg-muted inline-flex h-[31px] shrink-0 items-center rounded-lg border bg-background px-3 text-[11px] font-medium whitespace-nowrap transition-colors"
+        >
+          Инструкция по посту
+        </Link>
       </div>
     </li>
   );
@@ -723,6 +820,8 @@ function InstructionsTab({
   assignments: MyAssignment[];
   loading: boolean;
 }) {
+  const documents = useLegalDocuments();
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Загрузка инструкций…</p>;
   }
@@ -730,6 +829,66 @@ function InstructionsTab({
   const open = assignments.filter((item) => item.event.stage !== "CLOSED");
 
   return (
+    <div className="space-y-4">
+    <Card>
+      <CardHeader>
+        <CardTitle>Инструкции перед выходом на пост</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Приказы, регламенты и инструкции по организации ОМ
+        </p>
+      </CardHeader>
+      <CardContent>
+        {documents.isPending ? (
+          <p className="text-sm text-muted-foreground">Загрузка нормативной базы…</p>
+        ) : documents.isError ? (
+          <p className="text-sm text-muted-foreground">
+            Нормативная база сейчас недоступна — список не показан.
+          </p>
+        ) : (
+          <ul className="divide-y">
+            {(documents.data?.results ?? [])
+              // Инструктирует не всякий документ: закон описывает право, а
+              // перед выходом на пост читают приказ, регламент и инструкцию.
+              .filter((doc) => doc.kind !== "LAW")
+              .map((doc) => (
+                <li key={doc.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                  <span
+                    className={`grid size-[38px] shrink-0 place-items-center rounded-[9px] text-[10.5px] font-extrabold ${
+                      LEGAL_DOCUMENT_KIND_BADGE_CLASS[doc.kind]
+                    }`}
+                  >
+                    {LEGAL_DOCUMENT_KIND_LABEL[doc.kind].slice(0, 3).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12.5px] font-semibold">
+                      {doc.title}
+                    </span>
+                    <span className="text-muted-foreground mt-0.5 block truncate text-[11px]">
+                      {doc.code} · {doc.revision} · {doc.pages} с.
+                    </span>
+                  </span>
+                  <span
+                    className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[10.5px] font-bold ${
+                      doc.status === "IN_FORCE"
+                        ? "bg-green-100 text-green-800"
+                        : "bg-amber-100 text-amber-800"
+                    }`}
+                  >
+                    {LEGAL_DOCUMENT_STATUS_LABEL[doc.status]}
+                  </span>
+                  <Link
+                    href="/security-ops/laws"
+                    className="hover:bg-muted inline-flex h-8 shrink-0 items-center rounded-lg border bg-background px-3 text-xs font-medium transition-colors"
+                  >
+                    Открыть
+                  </Link>
+                </li>
+              ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div>
@@ -796,6 +955,7 @@ function InstructionsTab({
         </p>
       </CardContent>
     </Card>
+    </div>
   );
 }
 
