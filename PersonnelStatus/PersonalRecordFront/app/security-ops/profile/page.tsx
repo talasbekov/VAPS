@@ -32,14 +32,15 @@ import { useDutyShiftsAll } from "@/hooks/use-duty-shifts";
 import { STATUS_LABEL_BY_CODE } from "@/entities/daily-grid";
 import { STAGE_LABEL } from "@/entities/security-event";
 import type { CoreEmployee, OpsEmployeeStatusRow } from "@/lib/api";
-import type { SecurityEvent } from "@/entities/security-event";
+import type { ReconSectorPost, SecurityEvent } from "@/entities/security-event";
 
-type ProfileTab = "events" | "calendar" | "stats";
+type ProfileTab = "events" | "calendar" | "stats" | "instructions";
 
 const TAB_LABEL: Record<ProfileTab, string> = {
   events: "Охранные мероприятия",
   calendar: "Мой календарь",
   stats: "Моя статистика",
+  instructions: "Инструкции",
 };
 
 /** Подписи статусов берутся из каталога раздела — одного владельца на все
@@ -74,28 +75,16 @@ const MONTH_ABBR = [
 ] as const;
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
 
-/** Блоки прототипа, которым источника нет. Список статический: это решение
- * переноса, а не данные сервера. */
+/** Блоки прототипа, которым источника нет И которым не нашлось места прямо в
+ * раскладке. Те, что в прототипе занимают собственную карточку (рейтинг,
+ * готовность, имущество, инструкция по посту), стоят на своих местах и несут
+ * причину внутри — читать её там, где ждёшь данные, честнее, чем в сноске.
+ * Список статический: это решение переноса, а не данные сервера. */
 const MISSING_BLOCKS: readonly { title: string; reason: string }[] = [
-  {
-    title: "Мой рейтинг и его история",
-    reason:
-      "Оперативный рейтинг ведёт СВОЁ пространство идентификаторов («employee-1», подпись «Ерланов Д.») и с кадровыми записями не пересекается: связать свою карточку с рейтинговой нечем, а склейка по фамилии дала бы чужую оценку под своим именем.",
-  },
-  {
-    title: "«Готовность к службе» в процентах",
-    reason:
-      "Такой величины модель не считает: есть статус на дату и есть назначения, но правила, которое сводит их в один процент готовности, нет ни в справочниках, ни в настройках.",
-  },
   {
     title: "Стаж службы",
     reason:
       "Дата приёма в карточке есть, но стаж — не разность дат: перерывы, льготная выслуга и переводы в него входят по кадровым правилам, которых модель не знает. Показана сама дата приёма.",
-  },
-  {
-    title: "Закреплённое имущество и акт приёма-передачи",
-    reason:
-      "Материального учёта в системе нет вовсе — ни оружия, ни средств связи, ни экипировки. Прототип и сам помечает блок как будущий («после введения цифрового склада»).",
   },
   {
     title: "Допуски, подготовка и инструктажи",
@@ -106,11 +95,6 @@ const MISSING_BLOCKS: readonly { title: string; reason: string }[] = [
     title: "Часы на посту и «без замечаний» в статистике",
     reason:
       "Назначение расстановки — строка без часов: интервалов у постов ОМ нет, складывать нечего. Итог участия («без замечаний», «благодарность») тоже не фиксируется — есть только отметка ознакомления.",
-  },
-  {
-    title: "Инструкция по посту и подтверждение ознакомления с ней",
-    reason:
-      "У поста расчёта есть задача и требования, но отдельного документа-инструкции и подтверждения по нему нет. Ознакомление в модели одно — с назначением целиком.",
   },
   {
     title: "Мои документы",
@@ -206,11 +190,7 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
 
   const myAssignments = useMemo(() => {
     const rows = events.data?.results ?? [];
-    const mine: {
-      event: SecurityEvent;
-      postLabel: string;
-      acknowledgedAt: string | null;
-    }[] = [];
+    const mine: MyAssignment[] = [];
     for (const event of rows) {
       for (const assignment of event.placementAssignments) {
         // Сравнение по ИДЕНТИФИКАТОРУ: подписи совпадают у однофамильцев.
@@ -220,6 +200,7 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
         );
         mine.push({
           event,
+          post: post ?? null,
           postLabel:
             post === undefined
               ? "пост не найден в расчёте"
@@ -291,6 +272,12 @@ function ProfileBody({ employee }: { employee: CoreEmployee }) {
           loading={statuses.isPending || events.isPending}
         />
       )}
+      {tab === "instructions" && (
+        <InstructionsTab
+          assignments={myAssignments}
+          loading={events.isPending}
+        />
+      )}
     </>
   );
 }
@@ -332,8 +319,8 @@ function HeroCard({
 
   return (
     <Card className="bg-gradient-to-br from-card via-card to-primary/10">
-      <CardContent className="flex flex-wrap items-center gap-5 p-5">
-        <span className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-2xl bg-primary text-2xl font-extrabold text-primary-foreground shadow-lg shadow-primary/25">
+      <CardContent className="flex flex-wrap items-center gap-6 p-6 lg:flex-nowrap">
+        <span className="flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-2xl bg-primary text-3xl font-extrabold text-primary-foreground shadow-lg shadow-primary/25">
           {initials}
         </span>
         <div className="min-w-[16rem] flex-1">
@@ -372,8 +359,73 @@ function HeroCard({
             почта: {employee.work_email ?? "нет данных"}
           </p>
         </div>
+
+        <ServiceGauges />
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Правая половина шапки прототипа: кольцо рейтинга и полоса готовности.
+ *
+ * Обе величины система НЕ СЧИТАЕТ — рейтинг ведёт своё пространство
+ * идентификаторов, а правила «готовности в процентах» нет ни в справочниках,
+ * ни в настройках. Место под них занято формой прототипа, но внутри стоит
+ * прочерк и причина: подставить сюда правдоподобное число значило бы выдать
+ * выдуманную оценку живого человека за настоящую.
+ */
+function ServiceGauges() {
+  const RADIUS = 42;
+  const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+  return (
+    <div className="flex w-full shrink-0 flex-wrap items-center gap-5 border-t pt-5 lg:w-[23rem] lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+      <div className="text-center">
+        <span className="relative flex h-[104px] w-[104px] items-center justify-center">
+          <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+            <circle
+              cx="50"
+              cy="50"
+              r={RADIUS}
+              fill="none"
+              strokeWidth="8"
+              className="stroke-muted"
+              strokeDasharray={CIRCUMFERENCE}
+              strokeLinecap="round"
+            />
+          </svg>
+          <span className="absolute flex flex-col items-center leading-tight">
+            <span className="text-2xl font-extrabold text-muted-foreground">—</span>
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Рейтинг
+              <br />
+              из 10
+            </span>
+          </span>
+        </span>
+        <p className="mt-1 max-w-[7rem] text-[10px] leading-tight text-muted-foreground">
+          Оценки службы система не ведёт
+        </p>
+      </div>
+
+      <div className="min-w-[11rem] flex-1">
+        <p className="text-sm font-medium text-muted-foreground">
+          Готовность к службе
+        </p>
+        <p className="mt-0.5 text-3xl font-extrabold tracking-tight text-muted-foreground">
+          —
+        </p>
+        <div
+          className="mt-2 h-2.5 w-full rounded-full bg-muted-foreground/15"
+          role="presentation"
+        />
+        <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
+          Процент готовности система не считает: правила, которое сводит статус
+          и назначения в одно число, нет.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -383,6 +435,10 @@ function HeroCard({
 
 interface MyAssignment {
   event: SecurityEvent;
+  /** Строка расчёта, к которой привязано назначение; null — расчёт её потерял.
+   * Задача поста и есть «краткая инструкция» прототипа: своего документа-
+   * инструкции в модели нет, а эта строка — то, что человеку велено делать. */
+  post: ReconSectorPost | null;
   postLabel: string;
   acknowledgedAt: string | null;
 }
@@ -416,80 +472,146 @@ function EventsTab({
   const past = assignments.filter((item) => item.event.stage === "CLOSED");
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Предстоящие назначения</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Мероприятия и посты, на которые вы назначены — {upcoming.length}
-          </p>
-        </CardHeader>
-        <CardContent>
-          {upcoming.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Действующих назначений нет.
-            </p>
-          ) : (
-            <ul className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-              {upcoming.map((item) => (
-                <AssignmentRow key={`${item.event.id}:${item.postLabel}`} item={item} />
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>История участия</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Закрытые мероприятия — {past.length}
-          </p>
-        </CardHeader>
-        <CardContent>
-          {past.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Закрытых мероприятий с вашим участием нет.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <div className="min-w-[560px]">
-                <div className="grid grid-cols-[1.6fr_1fr_100px_180px] gap-2 rounded-md bg-muted/60 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  <span>Мероприятие</span>
-                  <span>Пост</span>
-                  <span>Дата</span>
-                  <span>Ознакомление</span>
-                </div>
-                {past.map((item) => (
-                  <div
-                    key={`${item.event.id}:${item.postLabel}`}
-                    className="grid grid-cols-[1.6fr_1fr_100px_180px] items-baseline gap-2 border-b px-3 py-2.5 last:border-0"
-                  >
-                    <Link
-                      href={`/security-ops/events/${item.event.id}`}
-                      className="truncate text-sm font-semibold hover:underline"
-                    >
-                      {item.event.code} — {item.event.title}
-                    </Link>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {item.postLabel}
-                    </span>
-                    <span className="text-xs tabular-nums">
-                      {formatIsoDate(item.event.businessDate)}
-                    </span>
-                    <AckBadge acknowledgedAt={item.acknowledgedAt} />
-                  </div>
-                ))}
-              </div>
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:items-start">
+      <div className="space-y-4">
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+            <div>
+              <CardTitle>Предстоящие назначения</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                ОМ и посты, на которые вы назначены
+              </p>
             </div>
-          )}
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            Часов и итога участия здесь нет: назначение расстановки не несёт
-            интервалов времени, а результат службы модель не фиксирует.
-          </p>
-        </CardContent>
-      </Card>
+            <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">
+              {countLabel(upcoming.length)}
+            </span>
+          </CardHeader>
+          <CardContent>
+            {upcoming.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Действующих назначений нет.
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {upcoming.map((item) => (
+                  <AssignmentRow
+                    key={`${item.event.id}:${item.postLabel}`}
+                    item={item}
+                  />
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+            <div>
+              <CardTitle>История участия в мероприятиях</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Закрытые ОМ — {past.length}
+              </p>
+            </div>
+            <Link
+              href="/security-ops/events"
+              className="shrink-0 text-sm font-semibold text-primary-ink hover:underline"
+            >
+              Вся история →
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {past.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Закрытых мероприятий с вашим участием нет.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <div className="min-w-[560px]">
+                  <div className="grid grid-cols-[1.6fr_1fr_100px_180px] gap-2 rounded-md bg-muted/60 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span>Мероприятие</span>
+                    <span>Пост</span>
+                    <span>Дата</span>
+                    <span>Ознакомление</span>
+                  </div>
+                  {past.map((item) => (
+                    <div
+                      key={`${item.event.id}:${item.postLabel}`}
+                      className="grid grid-cols-[1.6fr_1fr_100px_180px] items-baseline gap-2 border-b px-3 py-2.5 last:border-0"
+                    >
+                      <Link
+                        href={`/security-ops/events/${item.event.id}`}
+                        className="truncate text-sm font-semibold hover:underline"
+                      >
+                        {item.event.code} — {item.event.title}
+                      </Link>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {item.postLabel}
+                      </span>
+                      <span className="text-xs tabular-nums">
+                        {formatIsoDate(item.event.businessDate)}
+                      </span>
+                      <AckBadge acknowledgedAt={item.acknowledgedAt} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Часов и итога участия здесь нет: назначение расстановки не несёт
+              интервалов времени, а результат службы модель не фиксирует.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <EquipmentCard />
     </div>
+  );
+}
+
+/** Счётчик в шапке карточки — с русским согласованием: «1 назначение»,
+ * «2 назначения», «5 назначений». */
+function countLabel(count: number): string {
+  const tail = count % 100;
+  const last = count % 10;
+  if (tail >= 11 && tail <= 14) return `${count} назначений`;
+  if (last === 1) return `${count} назначение`;
+  if (last >= 2 && last <= 4) return `${count} назначения`;
+  return `${count} назначений`;
+}
+
+/**
+ * «Закреплённое имущество» — блок прототипа без источника: материального учёта
+ * в системе нет вовсе. Карточка стоит на своём месте раскладки, но вместо
+ * выдуманных радиостанций и жилетов несёт причину — ту же, которой прототип
+ * помечает блок сам («после введения цифрового склада»).
+ */
+function EquipmentCard() {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+        <div>
+          <CardTitle>Закреплённое имущество</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            По данным материального учёта
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">
+          нет данных
+        </span>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-snug text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+          Имущество будет доступно после введения цифрового склада
+        </p>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Оружия, средств связи и экипировки система сейчас не хранит — ни за
+          сотрудником, ни за подразделением. Список и акт приёма-передачи
+          появятся здесь вместе с учётом; до тех пор строки в этом блоке были бы
+          выдуманными.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -520,34 +642,151 @@ function AckBadge({ acknowledgedAt }: { acknowledgedAt: string | null }) {
 }
 
 function AssignmentRow({ item }: { item: MyAssignment }) {
+  const period =
+    item.event.businessDateEnd !== null &&
+    item.event.businessDateEnd !== item.event.businessDate
+      ? `${formatIsoDate(item.event.businessDate)} — ${formatIsoDate(item.event.businessDateEnd)}`
+      : formatIsoDate(item.event.businessDate);
+
   return (
-    <li className="flex gap-3 rounded-lg border p-3">
+    <li className="flex gap-4 py-4 first:pt-0 last:pb-0">
       <DateTile iso={item.event.businessDate} />
+
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-bold tabular-nums text-secondary-foreground">
+            {item.event.code}
+          </span>
           <Link
             href={`/security-ops/events/${item.event.id}`}
             className="text-sm font-semibold hover:underline"
           >
-            {item.event.code} — {item.event.title}
+            {item.event.title}
           </Link>
-          <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-secondary-foreground">
-            {STAGE_LABEL[item.event.stage]}
+          <span className="ml-auto shrink-0">
+            <AckBadge acknowledgedAt={item.acknowledgedAt} />
           </span>
         </div>
+
+        <p className="mt-1.5 text-base font-bold tracking-tight">
+          {item.postLabel}
+        </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {formatIsoDate(item.event.businessDate)}
-          {item.event.businessDateEnd !== null &&
-            item.event.businessDateEnd !== item.event.businessDate &&
-            ` — ${formatIsoDate(item.event.businessDateEnd)}`}{" "}
-          · {item.event.objectName}
+          {item.event.objectName} · {period} · стадия:{" "}
+          {STAGE_LABEL[item.event.stage]}
         </p>
-        <p className="mt-1 text-xs font-semibold">{item.postLabel}</p>
-        <p className="mt-1.5">
-          <AckBadge acknowledgedAt={item.acknowledgedAt} />
-        </p>
+
+        <div className="mt-2.5 flex flex-wrap items-center gap-3">
+          <p className="min-w-[14rem] flex-1 rounded-md border-l-[3px] border-primary/40 bg-muted/50 px-3 py-2 text-xs leading-snug">
+            <span className="font-semibold">Краткая инструкция:</span>{" "}
+            {item.post === null || item.post.task.trim() === ""
+              ? "задача поста в расчёте не заполнена"
+              : item.post.task}
+          </p>
+          <Link
+            href={`/security-ops/events/${item.event.id}`}
+            className="inline-flex h-9 shrink-0 items-center rounded-md border bg-background px-3.5 text-xs font-semibold shadow-sm transition-colors hover:bg-muted"
+          >
+            Инструкция по посту
+          </Link>
+        </div>
       </div>
     </li>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Вкладка «Инструкции»                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Что человеку велено делать на его постах.
+ *
+ * Отдельного документа-инструкции и подтверждения по нему в модели нет — есть
+ * ЗАДАЧА поста и ТРЕБОВАНИЯ к нему из расчёта ОМ. Вкладка показывает их как
+ * есть, по мероприятиям: это то же, что читает начальник смены в расстановке,
+ * и придумывать поверх этого «регламент» не из чего.
+ */
+function InstructionsTab({
+  assignments,
+  loading,
+}: {
+  assignments: MyAssignment[];
+  loading: boolean;
+}) {
+  if (loading) {
+    return <p className="text-sm text-muted-foreground">Загрузка инструкций…</p>;
+  }
+
+  const open = assignments.filter((item) => item.event.stage !== "CLOSED");
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+        <div>
+          <CardTitle>Задачи и требования по моим постам</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Из расчёта сил действующих мероприятий
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground">
+          {countLabel(open.length)}
+        </span>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {open.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Действующих назначений нет — читать нечего.
+          </p>
+        ) : (
+          open.map((item) => (
+            <div
+              key={`${item.event.id}:${item.postLabel}`}
+              className="rounded-lg border p-3.5"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-bold tabular-nums text-secondary-foreground">
+                  {item.event.code}
+                </span>
+                <span className="text-sm font-semibold">{item.postLabel}</span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {formatIsoDate(item.event.businessDate)}
+                </span>
+              </div>
+              <dl className="mt-2.5 grid gap-2 sm:grid-cols-2">
+                <div>
+                  <dt className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Задача поста
+                  </dt>
+                  <dd className="mt-0.5 text-xs leading-relaxed">
+                    {item.post === null || item.post.task.trim() === ""
+                      ? "не заполнена в расчёте"
+                      : item.post.task}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Требования
+                  </dt>
+                  <dd className="mt-0.5 text-xs leading-relaxed">
+                    {item.post === null || item.post.requirements.trim() === ""
+                      ? "не заполнены в расчёте"
+                      : item.post.requirements}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-2.5">
+                <AckBadge acknowledgedAt={item.acknowledgedAt} />
+              </p>
+            </div>
+          ))
+        )}
+        <p className="text-[11px] text-muted-foreground">
+          Подтверждение ознакомления в модели одно — с назначением целиком;
+          отдельной отметки «прочитал инструкцию по посту» нет.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

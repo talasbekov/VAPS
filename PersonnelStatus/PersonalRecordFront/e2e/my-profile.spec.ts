@@ -150,9 +150,11 @@ test.describe(LIVE ? 'мой профиль' : 'мой профиль (скип:
       await expect(page.getByText(employee.personnel_number).first()).toBeVisible()
     }
 
-    // Назначения: ровно мои, ни одним больше.
+    // Назначения: ровно мои, ни одним больше. Счётчик стоит бейджем в шапке
+    // карточки; ассерт ТОЧНЫЙ (не подстрока) — «29 назначений» иначе прошло бы
+    // и на «129 назначений».
     await expect(
-      page.getByText(`Мероприятия и посты, на которые вы назначены — ${mine.length}`),
+      page.getByText(new RegExp(`^${mine.length} назначени[ея]?й?$`)),
     ).toBeVisible()
 
     await page.getByRole('button', { name: 'Моя статистика' }).click()
