@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePublishPassportVersion } from "@/hooks/use-object-passport";
 import type { PassportVersion } from "@/entities/security-object";
+import { formatIsoDateTime, formatIsoDate } from "@/shared/lib/date";
 
 export const NOTHING_TO_PUBLISH_TEXT =
   "В паспорте нет ни одного поста — публиковать нечего.";
@@ -54,8 +55,8 @@ export function PassportVersionsPanel({
                     Версия {version.versionNumber}
                   </Link>{" "}
                   <span className="text-muted-foreground">
-                    действует с {version.effectiveFrom} · опубликовано{" "}
-                    {version.publishedAt}
+                    действует с {formatIsoDate(version.effectiveFrom)} · опубликовано{" "}
+                    {formatIsoDateTime(version.publishedAt)}
                     {version.note !== "" ? ` · ${version.note}` : ""}
                   </span>
                 </li>
