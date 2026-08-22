@@ -44,3 +44,4 @@ next-env.d.ts
 /smoke-results*/
 /test-results/
 /playwright-report/
+.shot-tmp/

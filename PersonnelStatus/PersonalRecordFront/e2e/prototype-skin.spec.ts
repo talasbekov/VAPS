@@ -229,11 +229,18 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
       expect(group.height, `«${group.title}»: список свёрнут`).toBeGreaterThan(0)
     }
 
-    // Сумма пунктов = число ссылок сайдбара: ни один пункт не спрятан мимо
-    // категорий и ни один не отрисован дважды.
+    // Сумма пунктов = число ссылок НАВИГАЦИИ: ни один пункт не спрятан мимо
+    // категорий и ни один не отрисован дважды. Считается внутри <nav>, а не по
+    // всему <aside>: в подвале с 23.08.2026 стоит своя ссылка — карточка
+    // человека, ведущая в «Мой профиль», и она пунктом меню не является.
     const total = groups.reduce((sum, group) => sum + group.links, 0)
-    expect(await aside.locator('a').count()).toBe(total)
+    expect(await aside.locator('nav a').count()).toBe(total)
     expect(total).toBe(19)
+
+    // Подвал: карточка человека ведёт в профиль, и статус связи подписан.
+    await expect(aside.locator('[data-slot="sidebar-link-status"]')).toContainText(
+      'Закрытый контур',
+    )
   })
 
   test('меню читается: кегль 14px, строка 36px, шаг 40px', async ({ page }) => {

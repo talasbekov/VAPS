@@ -335,7 +335,16 @@ function HeroCard({
                 действующих статусов нет
               </span>
             ) : (
-              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary-ink">
+              // Зелёный — только у «В строю», как в прототипе: цвет здесь
+              // утверждение о готовности человека, и красить им «В отпуске»
+              // значило бы врать глазом при верной подписи.
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  active.status_type_code === "IN_SERVICE"
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"
+                    : "bg-primary/10 text-primary-ink"
+                }`}
+              >
                 {STATUS_LABEL.get(active.status_type_code) ?? active.status_type_code}
               </span>
             )}

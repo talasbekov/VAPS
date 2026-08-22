@@ -54,6 +54,14 @@ const SEGMENT_LABELS: Record<string, string> = {
   reports: "Отчеты",
 };
 
+/** Бренд первым звеном крошек — как в прототипе: «Smart Жоспарлау / Экран».
+ * Ведёт на командный центр, а не на «/»: корень редиректит, и звено-петля в
+ * крошках читалась бы как сломанная ссылка. */
+const BRAND_CRUMB = {
+  href: "/security-ops/command-center/",
+  label: "Smart Жоспарлау",
+} as const;
+
 export function Breadcrumbs() {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
@@ -68,11 +76,15 @@ export function Breadcrumbs() {
 
   if (crumbs.length === 0) return null;
 
+  // Бренд не подменяет первый сегмент, а встаёт перед ним: «Охранные
+  // мероприятия» — настоящий раздел со своим адресом, и терять его нельзя.
+  const trail = [BRAND_CRUMB, ...crumbs];
+
   return (
     <nav aria-label="Хлебные крошки" className="min-w-0">
       <ol className="text-muted-foreground flex items-center gap-1.5 text-[12.5px]">
-        {crumbs.map((crumb, index) => {
-          const isLast = index === crumbs.length - 1;
+        {trail.map((crumb, index) => {
+          const isLast = index === trail.length - 1;
           return (
             <li key={crumb.href} className="flex min-w-0 items-center gap-1.5">
               {index > 0 ? (

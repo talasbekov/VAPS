@@ -46,14 +46,14 @@ export function MobileMenu({ isOpen, onClose, children }: MobileMenuProps) {
           <div className="border-sidebar-border flex h-16 shrink-0 items-center justify-between border-b px-4">
             <div className="flex items-center gap-[11px]">
               <div className="bg-primary text-primary-foreground grid size-9 shrink-0 place-items-center rounded-[10px] text-[13px] font-extrabold">
-                ПР
+                SЖ
               </div>
               <div className="min-w-0">
                 <div className="text-sidebar-foreground truncate text-[15px] font-bold tracking-[.06em]">
-                  Проект Расход
+                  Smart Жоспарлау
                 </div>
                 <div className="text-sidebar-foreground/55 truncate text-[10.5px]">
-                  Учёт личного состава
+                  Силы и мероприятия
                 </div>
               </div>
             </div>
