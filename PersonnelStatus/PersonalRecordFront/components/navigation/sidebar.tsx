@@ -201,18 +201,20 @@ export function Sidebar() {
       {/* Логотип */}
       <div
         data-slot="sidebar-brand"
-        className="bg-sidebar border-sidebar-border flex h-16 flex-shrink-0 items-center gap-[11px] border-b px-[18px]"
+        className="bg-sidebar border-sidebar-border flex h-12 flex-shrink-0 items-center gap-[10px] border-b px-[18px]"
       >
         {/* Прототип: плитка 36px, radius 10px, bg-primary, белый текст 800/13px.
-            Заливка ушла с шапки на плитку — шапка стала светлой. */}
-        <div className="bg-primary text-primary-foreground grid size-9 shrink-0 place-items-center rounded-[10px] text-[13px] font-extrabold">
+            Заливка ушла с шапки на плитку — шапка стала светлой.
+            22.08.2026 шапка ужата 64→48px (плитка 36→32): высота уходила
+            пунктам меню, которым при вьюпорте 648px её не хватало. */}
+        <div className="bg-primary text-primary-foreground grid size-8 shrink-0 place-items-center rounded-[9px] text-[12px] font-extrabold">
           ПР
         </div>
         <div className="min-w-0">
-          <div className="text-sidebar-foreground truncate text-[15px] font-bold tracking-[.06em]">
+          <div className="text-sidebar-foreground truncate text-[14px] font-bold leading-4 tracking-[.06em]">
             Проект Расход
           </div>
-          <div className="text-sidebar-foreground/55 truncate text-[10.5px]">
+          <div className="text-sidebar-foreground/55 truncate text-[10px] leading-3">
             Учёт личного состава
           </div>
         </div>
@@ -221,11 +223,11 @@ export function Sidebar() {
       {/* Навигация. Ссылки — next/link: раньше это были сырые <a>, и каждый
           клик по меню перезагружал документ (сброс кэша запросов, повторный
           бутстрап раздела, потеря позиции прокрутки). */}
-      <nav className="mt-2 px-4 flex-1 overflow-y-auto" aria-label="Основная навигация">
+      <nav className="mt-1 px-4 pb-1 flex-1 overflow-y-auto" aria-label="Основная навигация">
         {visibleCategories.map((category, categoryIndex) => {
           const headingId = `sidebar-category-${categoryIndex}`;
           return (
-            <div key={category.title} className={categoryIndex > 0 ? "mt-2" : undefined}>
+            <div key={category.title} className={categoryIndex > 0 ? "mt-1" : undefined}>
               {/* Заголовок категории — настоящий h2, а не подпись: категории
                   стали единственной структурой меню, и скринридер должен уметь
                   прыгать по ним, а не читать список из 20 ссылок подряд.
@@ -233,7 +235,7 @@ export function Sidebar() {
                   теряются акронимы («ОМ», «ГВО»). */}
               <h2
                 id={headingId}
-                className="text-sidebar-foreground/45 mx-2.5 mb-0.5 text-[10px] font-bold tracking-[.12em] uppercase"
+                className="text-sidebar-foreground/45 mx-2.5 text-[10px] font-bold leading-[12px] tracking-[.12em] uppercase"
               >
                 {category.title}
               </h2>
@@ -266,19 +268,21 @@ export function Sidebar() {
       {/* Информация о роли */}
       {userRole && (
         <div
-          className="border-sidebar-border flex items-center gap-2.5 border-t px-3 py-2.5 sidebar-role-card"
+          className="border-sidebar-border flex items-center gap-1.5 border-t px-3 py-1.5 sidebar-role-card"
           // Описание роли и отдел не помещаются в строку при 256px — уходят в
           // title, а не пропадают совсем.
           title={`${userRole.description}. Отдел: ${user?.department}`}
         >
-          <div className="min-w-0 flex-1">
-            <p className="text-sidebar-foreground/45 text-[10px] uppercase tracking-[.12em]">
-              Текущая роль
-            </p>
-            <p className="text-sidebar-foreground truncate text-[12.5px] font-semibold">
-              {userRole.name}
-            </p>
-          </div>
+          {/* Подпись и значение стоят в ОДНУ строку, а не друг под другом:
+              карточка была двухэтажной (55px) и съедала высоту, которой не
+              хватало пунктам меню при вьюпорте 648px. Слово «Роль» осталось —
+              без него имя роли внизу меню читается как ещё один пункт. */}
+          <span className="text-sidebar-foreground/45 shrink-0 text-[10px] uppercase tracking-[.12em]">
+            Роль
+          </span>
+          <span className="text-sidebar-foreground min-w-0 flex-1 truncate text-[12px] font-semibold">
+            {userRole.name}
+          </span>
         </div>
       )}
     </aside>
