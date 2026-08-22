@@ -18,7 +18,7 @@
 // как запрос прав ['ops-me'] у них общий — достаточно одного гейта на
 // сегмент. Честный 403 сюда НЕ попадает и обрабатывается страницами как
 // прежде (OpsAccessDenied).
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { OpsNotificationBell } from "@/features/ops-notifications/notification-bell";
 import {
@@ -89,7 +89,13 @@ export default function SecurityOpsLayout({
 
   return (
     <>
-      {children}
+      {/* 🔴 `children` приходит от Next МАССИВОМ сегментов. Отрендеренный
+          рядом с соседом (колокольчиком) он читается React как список, и
+          на каждом экране раздела в консоль летело «Each child in a list
+          should have a unique key» — ошибка в оверлее dev-режима, найдено
+          22.08.2026. Именованный Fragment делает массив ЕДИНСТВЕННЫМ
+          потомком, и обход списка не начинается. */}
+      <Fragment key="ops-segment">{children}</Fragment>
       <OpsNotificationBell />
     </>
   );
