@@ -459,13 +459,23 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
 
     // Класс обёртки ХЭШИРОВАН сборщиком — признак модуля. Голое `board`
     // означало бы возврат глобального файла, а с ним и утечки.
+    // 🔴 Судим по ТОКЕНАМ класса, а не по вхождению подстроки: сборщик даёт
+    // имя вида `org-board-module__myJ_sW__board`, где локальное имя стоит в
+    // КОНЦЕ. Прежняя проверка искала «board, за которым нет буквы/цифры» и
+    // краснела на исправном модуле — сторож кричал волками (22.08.2026).
+    // Признак глобального CSS ровно один: токен, РАВНЫЙ «board».
     const wrapper = page.locator('div:has(> table)').first()
     const className = await wrapper.getAttribute('class')
     expect(className ?? '', 'на доске нет класса-обёртки').not.toBe('')
+    const tokens = (className ?? '').split(/\s+/).filter(Boolean)
     expect(
-      /board(?![_a-zA-Z0-9])/.test(className ?? ''),
+      tokens.includes('board'),
       `класс обёртки не хэширован (${className}) — похоже на глобальный CSS вместо модуля`,
     ).toBe(false)
+    expect(
+      tokens.some((token) => token !== 'board' && token.includes('board')),
+      `среди классов обёртки нет модульного имени доски (${className})`,
+    ).toBe(true)
   })
 
   // Task 12: хвост сырых таблиц (история отчётов, сводный отчёт по расходу).
