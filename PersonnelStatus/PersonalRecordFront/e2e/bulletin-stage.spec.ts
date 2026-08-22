@@ -91,7 +91,11 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     let event = suitable(await events(token))
     if (event === undefined) {
       await prepareEvent(token)
-      event = suitable(await events(token))
+      // Ищем СВОЮ фикстуру запросом, а не на первой странице: реестр стенда
+      // перевалил за page_size, и только что созданное ОМ в первые 50 строк
+      // не попадало — проба падала на «не удалось подготовить фикстуру»,
+      // хотя фикстура была создана.
+      event = suitable(await events(token, 'Проба бюллетеня (e2e)'))
       expect(event, 'не удалось подготовить фикстуру').toBeDefined()
     }
     const target = event!

@@ -32,6 +32,7 @@ import {
 } from "@/hooks/use-security-event-stages";
 import type { SecurityEvent } from "@/entities/security-event";
 import { StageError } from "./StageErrors";
+import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
 type Scope = "all" | "pending";
 
@@ -144,7 +145,7 @@ export function AcknowledgementStage({ event }: { event: SecurityEvent }) {
                   </span>
                   {assignment.acknowledgedAt !== null ? (
                     <span className="ml-auto inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
-                      Подтверждено ({assignment.acknowledgedAt})
+                      Подтверждено ({formatIsoDateTime(assignment.acknowledgedAt ?? "")})
                     </span>
                   ) : (
                     <>
@@ -239,12 +240,12 @@ function MyAssignment({
           label="Сектор / пост"
           value={post ? `${post.sector} · ${post.post}` : mine.postId}
         />
-        <Row label="Дата" value={event.businessDate} />
+        <Row label="Дата" value={formatIsoDate(event.businessDate)} />
         <Row label="Задача поста" value={post?.task === "" ? "—" : (post?.task ?? "—")} />
       </dl>
       {mine.acknowledgedAt !== null ? (
         <p className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
-          Подтверждено ({mine.acknowledgedAt})
+          Подтверждено ({formatIsoDateTime(mine.acknowledgedAt ?? "")})
         </p>
       ) : (
         <Button

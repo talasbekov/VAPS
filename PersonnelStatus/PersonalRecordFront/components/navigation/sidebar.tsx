@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth, ROLES } from "@/lib/auth";
@@ -197,38 +203,48 @@ function initialsOf(name: string | undefined): string {
  */
 function LinkStatus() {
   const client = useQueryClient();
-  const [online, setOnline] = useState(true);
 
-  useEffect(() => {
-    const cache = client.getQueryCache();
-    const recompute = () => {
-      if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        setOnline(false);
-        return;
-      }
-      // Свежесть меряется по ПОСЛЕДНЕМУ ответу — неважно, удачному или нет:
-      // старый успех не отменяет только что случившегося отказа, и наоборот.
-      let latest = 0;
-      let latestFailed = false;
-      for (const query of cache.getAll()) {
-        const state = query.state;
-        const stamp = Math.max(state.dataUpdatedAt, state.errorUpdatedAt);
-        if (stamp === 0 || stamp < latest) continue;
-        latest = stamp;
-        latestFailed = state.status === "error";
-      }
-      setOnline(latest === 0 ? true : !latestFailed);
-    };
-    recompute();
-    const unsubscribe = cache.subscribe(recompute);
-    window.addEventListener("online", recompute);
-    window.addEventListener("offline", recompute);
-    return () => {
-      unsubscribe();
-      window.removeEventListener("online", recompute);
-      window.removeEventListener("offline", recompute);
-    };
+  // 🔴 useSyncExternalStore, а не useState + подписка. Кэш запросов меняется
+  // ВО ВРЕМЯ рендера других компонентов (панель закрытия дёргает свою мутацию
+  // при монтировании), и setState из обработчика подписки давал React-варнинг
+  // «Cannot update a component while rendering a different component» —
+  // e2e закрытия ловил его как ошибку консоли.
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      const unsubscribe = client.getQueryCache().subscribe(notify);
+      window.addEventListener("online", notify);
+      window.addEventListener("offline", notify);
+      return () => {
+        unsubscribe();
+        window.removeEventListener("online", notify);
+        window.removeEventListener("offline", notify);
+      };
+    },
+    [client]
+  );
+
+  const getSnapshot = useCallback((): boolean => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      return false;
+    }
+    // Свежесть меряется по ПОСЛЕДНЕМУ ответу — неважно, удачному или нет:
+    // старый успех не отменяет только что случившегося отказа, и наоборот.
+    let latest = 0;
+    let latestFailed = false;
+    for (const query of client.getQueryCache().getAll()) {
+      const state = query.state;
+      const stamp = Math.max(state.dataUpdatedAt, state.errorUpdatedAt);
+      if (stamp === 0 || stamp < latest) continue;
+      latest = stamp;
+      latestFailed = state.status === "error";
+    }
+    return latest === 0 ? true : !latestFailed;
   }, [client]);
+
+  // Снимок — примитив: сравнение по значению, лишних перерисовок нет.
+  // На сервере связь считается живой: индикатор о клиентском соединении, а
+  // разметка первого кадра должна совпасть с серверной.
+  const online = useSyncExternalStore(subscribe, getSnapshot, () => true);
 
   return (
     <p

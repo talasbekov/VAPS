@@ -40,6 +40,7 @@ import {
 } from "@/hooks/use-security-event-stages";
 import type { SecurityEvent } from "@/entities/security-event";
 import { FieldErrors, StageError } from "./StageErrors";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 export function ApprovalStage({ event }: { event: SecurityEvent }) {
   const approve = useApprovePlacement(event.id);
@@ -100,7 +101,7 @@ export function ApprovalStage({ event }: { event: SecurityEvent }) {
             label="обходов предупреждений"
             alarming={overrides.length > 0}
           />
-          <Kpi value={event.updatedAt} label="обновлено" />
+          <Kpi value={formatIsoDateTime(event.updatedAt)} label="обновлено" />
         </div>
 
         <ApprovalRoute event={event} />
@@ -332,7 +333,7 @@ function ApprovalRoute({ event }: { event: SecurityEvent }) {
                 </span>
                 {approver.decidedAt !== null && (
                   <span className="text-xs text-muted-foreground">
-                    {approver.decidedAt}
+                    {formatIsoDateTime(approver.decidedAt)}
                   </span>
                 )}
                 {approver.status === "PENDING" && (

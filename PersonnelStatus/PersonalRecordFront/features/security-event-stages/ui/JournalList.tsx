@@ -4,6 +4,7 @@
 import { Badge } from "@/components/ui/badge";
 import { JOURNAL_TYPE_LABEL } from "@/entities/security-event";
 import type { JournalEntry } from "@/entities/security-event";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 export function JournalList({ entries }: { entries: JournalEntry[] }) {
   if (entries.length === 0) {
@@ -17,7 +18,7 @@ export function JournalList({ entries }: { entries: JournalEntry[] }) {
             <Badge variant="outline">{JOURNAL_TYPE_LABEL[entry.type]}</Badge>
             <span className="font-semibold">{entry.title}</span>
             <span className="text-[11px] text-muted-foreground">
-              {entry.createdAt}
+              {formatIsoDateTime(entry.createdAt)}
             </span>
           </div>
           {entry.description !== "" && (
