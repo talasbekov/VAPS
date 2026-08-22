@@ -734,11 +734,11 @@ function DateTile({ iso }: { iso: string }) {
 
 function AckBadge({ acknowledgedAt }: { acknowledgedAt: string | null }) {
   return acknowledgedAt === null ? (
-    <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+    <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
       Ознакомление не подтверждено
     </span>
   ) : (
-    <span className="inline-flex w-fit rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
+    <span className="inline-flex w-fit rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800 dark:bg-green-950/60 dark:text-green-200">
       Ознакомлен: {formatIsoDate(acknowledgedAt.slice(0, 10))}
     </span>
   );
@@ -870,8 +870,8 @@ function InstructionsTab({
                   <span
                     className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[10.5px] font-bold ${
                       doc.status === "IN_FORCE"
-                        ? "bg-green-100 text-green-800"
-                        : "bg-amber-100 text-amber-800"
+                        ? "bg-green-100 text-green-800 dark:bg-green-950/60 dark:text-green-200"
+                        : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200"
                     }`}
                   >
                     {LEGAL_DOCUMENT_STATUS_LABEL[doc.status]}

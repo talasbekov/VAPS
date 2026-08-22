@@ -310,7 +310,7 @@ function ResultsTable({
                     href={`/security-ops/events/${event.id}${backSuffix}`}
                     className="block"
                   >
-                    <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800">
+                    <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-200">
                       {event.code}
                     </span>
                     <span className="mt-1 block font-semibold">{event.title}</span>
@@ -348,7 +348,7 @@ function ResultsTable({
                   <span className="flex flex-wrap items-center gap-1.5">
                     <StageBadge stage={event.stage} />
                     {event.conflictsCount > 0 && (
-                      <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800">
+                      <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800 dark:bg-red-950/60 dark:text-red-200">
                         конфликтов: {event.conflictsCount}
                       </span>
                     )}
@@ -591,7 +591,7 @@ function EventsCalendar({
               {listEvents.map((event) => (
                 <li key={event.id} className="py-3 first:pt-0 last:pb-0">
                   <span className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800">
+                    <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-200">
                       {event.code}
                     </span>
                     <StageBadge stage={event.stage} />
