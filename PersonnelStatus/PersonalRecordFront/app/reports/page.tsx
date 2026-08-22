@@ -119,7 +119,7 @@ export default function ReportsPage() {
     <DashboardLayout>
       <div className="container mx-auto py-10 space-y-8">
         <PageHeader
-          eyebrow="Официальные документы"
+          eyebrow="Ежедневный расход"
           title="Отчеты"
           description="Генерация и скачивание отчетов по сотрудникам и статусам."
         />

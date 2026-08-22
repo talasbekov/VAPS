@@ -464,7 +464,7 @@ function EmployeesScreen() {
       <div className="space-y-6">
         {/* Header */}
         <PageHeader
-          eyebrow="Охранные мероприятия"
+          eyebrow="Ежедневный расход"
           title="Сбор сил на ОМ"
           description="Ежедневный расход департамента и сбор сил на мероприятия"
           actions={

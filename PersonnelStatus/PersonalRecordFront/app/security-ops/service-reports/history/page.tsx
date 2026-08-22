@@ -108,7 +108,7 @@ export default function ReportHistoryPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Оценка и отчётность"
+          eyebrow="Охранные мероприятия"
           title="История отчётов"
           description="Работы и артефакты, доступные вам, с параметрами, редакциями и сроком хранения."
         />

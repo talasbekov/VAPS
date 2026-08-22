@@ -204,7 +204,7 @@ export default function CommandCenterPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Оперативная работа"
+          eyebrow="Ежедневный расход"
           title="Командный центр"
           description="Готовность охранных мероприятий"
           actions={

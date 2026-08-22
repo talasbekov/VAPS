@@ -169,90 +169,94 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(brandBg).toBe(asideBg)
   })
 
-  test('заголовок подгруппы набран в одной плотности с пунктами', async ({ page }) => {
+  // Категории заменили аккордеон 22.08.2026. Прежняя проба здесь меряла
+  // плотность кнопки-заголовка против пункта — контрола больше нет вовсе,
+  // и проба ушла вместе с ним: сравнивать стало нечего.
+  test('категории меню нераскрываемые: все пункты видны сразу', async ({ page }) => {
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/`)
     await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible()
 
     const aside = page.locator('aside').first()
     await expect(aside).toBeVisible()
+    // 🔴 Сначала доказываем, что сайдбар ЖИВОЙ: у скрытого (`hidden lg:block`
+    // на узком экране) размеры нулевые, и всё ниже вырождается в истину само.
+    expect(await aside.evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThan(0)
 
-    // Группа «Оперативная работа» открыта сама: текущий адрес лежит внутри неё.
-    const groupButton = aside.locator('button[aria-controls^="sidebar-group-"]').first()
-    await expect(groupButton).toBeVisible()
-    const listId = await groupButton.getAttribute('aria-controls')
-    // 🔴 Лист берём ИЗ ЭТОЙ ЖЕ группы: сравнивать заголовок с пунктом чужой
-    // (закрытой) группы нельзя — у скрытого узла размеры не считаются.
-    const leafLink = aside.locator(`#${listId} a`).first()
-    await expect(leafLink).toBeVisible()
+    // Ни одного раскрывающего контрола: категория — заголовок, а не кнопка.
+    // Ассерт именно по aria-expanded, а не по отсутствию <button>: скрытое
+    // состояние обязано быть слышно скринридеру, поэтому любой вернувшийся
+    // аккордеон объявит себя этим атрибутом и здесь же попадётся.
+    expect(await aside.locator('button[aria-expanded]').count()).toBe(0)
 
-    const shape = await page.evaluate(
-      ([btnId, id]) => {
-        const btn = document.querySelector(`button[aria-controls="${btnId}"]`) as HTMLElement
-        const leaf = document.querySelector(`#${id} a`) as HTMLElement
-        if (!btn || !leaf) throw new Error('нет пары «заголовок группы + пункт» — ассерт был бы вакуумным')
-        const b = getComputedStyle(btn)
-        const l = getComputedStyle(leaf)
+    // Порядок и состав категорий пинятся литерально: перестановка — это
+    // смена информационной архитектуры, а не косметика, и должна быть видна
+    // в диффе.
+    const headings = aside.getByRole('heading', { level: 2 })
+    await expect(headings).toHaveText([
+      'Личный кабинет',
+      'Ежедневный расход',
+      'Объекты',
+      'Охранные мероприятия',
+      'Администрирование',
+      'Обратная связь',
+    ])
+
+    // Капс — на CSS: в разметке естественный регистр, иначе теряются
+    // акронимы («ОМ», «ГВО»). Playwright читает textContent и капса не видит,
+    // поэтому проверяется отдельно вычисленным стилем.
+    expect(
+      await headings.first().evaluate((el) => getComputedStyle(el).textTransform)
+    ).toBe('uppercase')
+
+    // Под каждой категорией — непустой ВИДИМЫЙ список. Скрытый (свёрнутый)
+    // список — ровно то состояние, которого больше не должно быть.
+    const groups = await aside.evaluate((el) =>
+      Array.from(el.querySelectorAll('h2')).map((h) => {
+        const list = h.nextElementSibling as HTMLElement | null
         return {
-          btnSize: b.fontSize,
-          leafSize: l.fontSize,
-          btnPadY: b.paddingTop,
-          leafPadY: l.paddingTop,
-          btnPadX: b.paddingRight,
-          btnRadius: b.borderRadius,
-          leafRadius: l.borderRadius,
-          btnHeight: Math.round(btn.getBoundingClientRect().height),
-          leafHeight: Math.round(leaf.getBoundingClientRect().height),
-          // Иерархия держится ВЕСОМ, а не кеглем: заголовок группы должен
-          // остаться тяжелее листа, иначе уровни сольются.
-          btnWeight: b.fontWeight,
-          leafWeight: l.fontWeight,
+          title: h.textContent ?? '',
+          isList: list?.tagName === 'UL',
+          links: list ? list.querySelectorAll('a').length : 0,
+          height: list ? list.getBoundingClientRect().height : 0,
         }
-      },
-      [listId, listId]
+      })
     )
+    expect(groups.length).toBe(6)
+    for (const group of groups) {
+      expect(group.isList, `«${group.title}»: под заголовком не список`).toBe(true)
+      expect(group.links, `«${group.title}»: пустая категория`).toBeGreaterThan(0)
+      expect(group.height, `«${group.title}»: список свёрнут`).toBeGreaterThan(0)
+    }
 
-    // Единая сетка: заголовок группы и пункт под ним набраны одним кеглем.
-    expect(shape.btnSize, `заголовок ${shape.btnSize} против пункта ${shape.leafSize}`).toBe(
-      shape.leafSize
-    )
-    expect(shape.leafSize).toBe('13px')
-    // Плотность та же: вертикальные поля, радиус и итоговая высота строки.
-    expect(shape.btnPadY).toBe(shape.leafPadY)
-    expect(shape.btnRadius).toBe(shape.leafRadius)
-    expect(shape.btnHeight).toBe(shape.leafHeight)
-    // ...но уровень всё ещё различим: заголовок тяжелее листа.
-    expect(Number(shape.btnWeight)).toBeGreaterThan(Number(shape.leafWeight))
+    // Сумма пунктов = число ссылок сайдбара: ни один пункт не спрятан мимо
+    // категорий и ни один не отрисован дважды.
+    const total = groups.reduce((sum, group) => sum + group.links, 0)
+    expect(await aside.locator('a').count()).toBe(total)
+    expect(total).toBe(19)
+  })
 
-    // Шеврон не разъехался после уплотнения.
-    const geometry = await groupButton.evaluate((el) => {
-      const svg = el.querySelector('svg')
-      const span = el.querySelector('span')
-      if (!svg || !span) throw new Error('в заголовке группы нет шеврона или текста')
-      const b = el.getBoundingClientRect()
-      const s = svg.getBoundingClientRect()
-      const t = span.getBoundingClientRect()
-      return {
-        btnW: b.width,
-        svgW: s.width,
-        svgH: s.height,
-        inside: s.top >= b.top && s.bottom <= b.bottom && s.right <= b.right && s.left >= b.left,
-        gapRight: b.right - s.right,
-        textOverlapsChevron: t.right > s.left,
-      }
-    })
-    // 🔴 Сначала доказываем, что мерили ЖИВУЮ геометрию: у скрытого сайдбара
-    // (`hidden lg:block` на узком экране) все rect'ы нулевые, и проверки
-    // «внутри» и «зазор не больше N» вырождаются в истину сами собой.
-    expect(geometry.btnW).toBeGreaterThan(0)
-    expect(geometry.svgW).toBeGreaterThan(0)
-    expect(geometry.svgH).toBeGreaterThan(0)
-    expect(geometry.inside, 'шеврон вылез за пределы кнопки').toBe(true)
-    // Зазор справа — ровно поле кнопки: шеврон не прилип к краю и не уехал
-    // внутрь. Сравнение с допуском: rect'ы приходят субпикселями (наблюдалось
-    // 11.999998 против 12), точное равенство здесь давало бы флейк.
-    expect(geometry.gapRight).toBeCloseTo(parseFloat(shape.btnPadX), 1)
-    expect(geometry.textOverlapsChevron, 'текст заголовка налез на шеврон').toBe(false)
+  test('подсвечен один пункт — самый длинный подошедший адрес', async ({ page }) => {
+    await signIn(page)
+
+    // Вложенная пара: /security-ops/analytics (Аналитика службы) —
+    // префикс /security-ops/analytics/operations (Аналитика ОМ). Наивный
+    // startsWith зажигал бы оба, и «вы здесь» переставало быть местом.
+    await page.goto(`${APP}/security-ops/analytics/operations/`)
+    await expect(page.getByRole('heading', { name: 'Аналитика мероприятий', level: 1 })).toBeVisible()
+
+    const aside = page.locator('aside').first()
+    const current = aside.locator('a[aria-current="page"]')
+    await expect(current).toHaveCount(1)
+    await expect(current).toHaveText('Аналитика ОМ')
+
+    // Родительский адрес зажигает СВОЙ пункт — иначе «самый длинный» можно
+    // было бы получить, просто никогда не подсвечивая родителя.
+    await page.goto(`${APP}/security-ops/analytics/`)
+    await expect(
+      page.getByRole('heading', { name: 'Состояние службы и личного состава', level: 1 })
+    ).toBeVisible()
+    await expect(aside.locator('a[aria-current="page"]')).toHaveText('Аналитика службы')
   })
 
   test('подписи KPI-плиток не обрезаются', async ({ page }) => {
@@ -728,33 +732,33 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
   // имён собственных (так уже случилось в Task 5 и откатывалось).
   const HEADER_ROUTES: Array<{ path: string; title: string; eyebrow: string }> = [
     // Легаси-портал
-    { path: '/dashboard/', title: 'Обзор', eyebrow: 'Личный состав' },
-    { path: '/employees/', title: 'Сбор сил на ОМ', eyebrow: 'Охранные мероприятия' },
+    { path: '/dashboard/', title: 'Обзор', eyebrow: 'Ежедневный расход' },
+    { path: '/employees/', title: 'Сбор сил на ОМ', eyebrow: 'Ежедневный расход' },
     { path: '/organization/', title: 'Структура организации', eyebrow: 'Личный состав' },
-    { path: '/statuses/', title: 'Управление статусами', eyebrow: 'Личный состав' },
-    { path: '/reports/', title: 'Отчеты', eyebrow: 'Официальные документы' },
-    // Оперативная работа
-    { path: '/security-ops/command-center/', title: 'Командный центр', eyebrow: 'Оперативная работа' },
+    { path: '/statuses/', title: 'Управление статусами', eyebrow: 'Ежедневный расход' },
+    { path: '/reports/', title: 'Отчеты', eyebrow: 'Ежедневный расход' },
+    // Охранные мероприятия и объекты
+    { path: '/security-ops/command-center/', title: 'Командный центр', eyebrow: 'Ежедневный расход' },
     { path: '/security-ops/events/', title: 'Реестр ОМ', eyebrow: 'Охранные мероприятия' },
-    { path: '/security-ops/gvo/', title: 'Реестр ГВО', eyebrow: 'Оперативная работа' },
-    { path: '/security-ops/persons/', title: 'Охраняемые лица', eyebrow: 'Оперативная работа' },
-    { path: '/security-ops/objects/', title: 'Объекты и паспорта', eyebrow: 'Оперативная работа' },
-    { path: '/security-ops/laws/', title: 'Законы об ОМ', eyebrow: 'Оперативная работа' },
-    // Оценка и отчётность
+    { path: '/security-ops/gvo/', title: 'Реестр ГВО', eyebrow: 'Охранные мероприятия' },
+    { path: '/security-ops/persons/', title: 'Охраняемые лица', eyebrow: 'Охранные мероприятия' },
+    { path: '/security-ops/objects/', title: 'Объекты и паспорта', eyebrow: 'Объекты' },
+    { path: '/security-ops/laws/', title: 'Законы об ОМ', eyebrow: 'Охранные мероприятия' },
+    // Рейтинг вне меню (экран остался по адресу) + аналитика и отчёты
     { path: '/security-ops/ratings/', title: 'Оперативный рейтинг', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/ratings/workspace/', title: 'Оценивание участников', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/ratings/evaluations/', title: 'Итоговые оценки участников', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/ratings/export/', title: 'Выгрузка рейтинга', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/ratings/audit/', title: 'Журнал оценивания', eyebrow: 'Оценка и отчётность' },
     { path: '/security-ops/ratings/analytics/', title: 'Аналитика рейтинга', eyebrow: 'Оценка и отчётность' },
-    { path: '/security-ops/analytics/', title: 'Состояние службы и личного состава', eyebrow: 'Оценка и отчётность' },
-    { path: '/security-ops/analytics/operations/', title: 'Аналитика мероприятий', eyebrow: 'Оценка и отчётность' },
-    { path: '/security-ops/service-reports/', title: 'Отчёты службы', eyebrow: 'Оценка и отчётность' },
-    { path: '/security-ops/service-reports/history/', title: 'История отчётов', eyebrow: 'Оценка и отчётность' },
+    { path: '/security-ops/analytics/', title: 'Состояние службы и личного состава', eyebrow: 'Ежедневный расход' },
+    { path: '/security-ops/analytics/operations/', title: 'Аналитика мероприятий', eyebrow: 'Охранные мероприятия' },
+    { path: '/security-ops/service-reports/', title: 'Отчёты службы', eyebrow: 'Охранные мероприятия' },
+    { path: '/security-ops/service-reports/history/', title: 'История отчётов', eyebrow: 'Охранные мероприятия' },
     // Администрирование
     { path: '/security-ops/dictionaries/', title: 'Справочники', eyebrow: 'Администрирование' },
     { path: '/security-ops/settings/', title: 'Настройки ОМ', eyebrow: 'Администрирование' },
-    { path: '/security-ops/feedback/', title: 'Обратная связь', eyebrow: 'Администрирование' },
+    { path: '/security-ops/feedback/', title: 'Обратная связь', eyebrow: 'Обратная связь' },
     { path: '/security-ops/audit/', title: 'Аудит', eyebrow: 'Администрирование' },
     // Личный кабинет
     { path: '/security-ops/profile/', title: 'Мой профиль', eyebrow: 'Личный кабинет' },

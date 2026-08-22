@@ -1,34 +1,23 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth, ROLES } from "@/lib/auth";
 import {
-  Building2,
-  Users,
-  Shield,
-  FileText,
-  Settings,
   BarChart3,
-  MessageSquarePlus,
-  ChevronDown,
-  // Иконки раздела «Охранные мероприятия» (Smart Josparlau, Этап M4) — только
-  // добавка, существующая навигация не изменялась.
   ClipboardList,
+  FileText,
   Landmark,
   LineChart,
-  ScrollText,
+  MessageSquarePlus,
   Scale,
-  Star,
+  ScrollText,
+  Settings,
+  Shield,
   UserRound,
+  Users,
+  type LucideIcon,
 } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import "./sidebar.css";
 
 /** Активность пункта: `trailingSlash: true` в конфиге, хвостовой слэш есть. */
@@ -42,6 +31,86 @@ function normalizePath(path: string): string {
 const ITEM_CLASS =
   "flex items-center rounded-[9px] px-3 py-2 text-[13px] font-medium transition-colors";
 
+type NavItem = {
+  name: string;
+  href: string;
+  icon: LucideIcon;
+  // Права проверяются ТОЛЬКО у портальных экранов — там гвард живёт в хосте.
+  // У экранов раздела ОМ прав здесь нет намеренно: их считают сами страницы
+  // (hooks/use-ops-permissions), и дублировать решение в меню значило бы
+  // завести вторую правду о видимости.
+  resource?: string;
+  action?: string;
+  // Адреса, на которых пункт тоже подсвечивается. Нужен там, где у одного
+  // экрана два входа: «Обратная связь» отрисована на /feedback, но открывается
+  // и по /security-ops/feedback (реализация одна, адреса два).
+  match?: string[];
+};
+
+// Категории нераскрываемые: заголовок — не кнопка, список под ним всегда
+// виден. Прежний аккордеон (aria-expanded + ChevronDown) убран целиком —
+// состояние группы больше не существует, значит и хранить его нечем.
+const CATEGORIES: Array<{ title: string; items: NavItem[] }> = [
+  {
+    title: "Личный кабинет",
+    items: [
+      { name: "Мой профиль", href: "/security-ops/profile", icon: UserRound },
+    ],
+  },
+  {
+    title: "Ежедневный расход",
+    items: [
+      { name: "Командный центр", href: "/security-ops/command-center", icon: LineChart },
+      { name: "Обзор", href: "/dashboard", icon: BarChart3, resource: "organization", action: "read" },
+      { name: "Статусы сотрудников", href: "/statuses", icon: Shield, resource: "statuses", action: "read" },
+      { name: "Сбор сил на ОМ", href: "/employees", icon: Users, resource: "employees", action: "read" },
+      { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
+      { name: "Ежедневный отчет", href: "/reports", icon: FileText, resource: "reports", action: "read" },
+    ],
+  },
+  {
+    title: "Объекты",
+    items: [
+      { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
+    ],
+  },
+  {
+    title: "Охранные мероприятия",
+    items: [
+      { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList },
+      // Реестр ГВО идёт сразу за реестром ОМ: его записи — проекция тех же
+      // мероприятий, и появляются они вместе с бюллетенем.
+      { name: "Реестр ГВО", href: "/security-ops/gvo", icon: Users },
+      { name: "Охраняемые лица", href: "/security-ops/persons", icon: UserRound },
+      { name: "Законы об ОМ", href: "/security-ops/laws", icon: Scale },
+      // Экран существовал с 17.08.2026, но в меню не стоял никогда — на него
+      // попадали только по ссылкам с других экранов.
+      { name: "Аналитика ОМ", href: "/security-ops/analytics/operations", icon: LineChart },
+      { name: "Отчеты по ОМ", href: "/security-ops/service-reports", icon: ScrollText },
+    ],
+  },
+  {
+    title: "Администрирование",
+    items: [
+      { name: "Справочники", href: "/security-ops/dictionaries", icon: ClipboardList },
+      { name: "Настройки ОМ", href: "/security-ops/settings", icon: Settings },
+      { name: "Аудит", href: "/security-ops/audit", icon: ScrollText },
+      { name: "Журнал изменений", href: "/security-ops/changelog", icon: ClipboardList },
+    ],
+  },
+  {
+    title: "Обратная связь",
+    items: [
+      {
+        name: "Обратная связь",
+        href: "/feedback",
+        icon: MessageSquarePlus,
+        match: ["/security-ops/feedback"],
+      },
+    ],
+  },
+];
+
 function NavLink({
   href,
   name,
@@ -50,7 +119,7 @@ function NavLink({
 }: {
   href: string;
   name: string;
-  icon: typeof Building2;
+  icon: LucideIcon;
   active: boolean;
 }) {
   return (
@@ -76,126 +145,43 @@ export function Sidebar() {
   const userRole = user ? ROLES[user.role] : null;
   const pathname = normalizePath(usePathname() ?? "");
 
-  /** Пункт активен и на самом адресе, и на его вложенных страницах. */
-  function isActive(href: string): boolean {
-    return pathname === href || pathname.startsWith(`${href}/`);
-  }
+  // Подсвечивается ОДИН пункт — самый длинный подошедший адрес. Простое
+  // `startsWith` зажигало бы «Аналитику службы» (/security-ops/analytics)
+  // заодно с «Аналитикой ОМ» (/security-ops/analytics/operations): второй
+  // адрес вложен в первый.
+  const activeHref = CATEGORIES.flatMap((category) =>
+    category.items.flatMap((item) =>
+      [item.href, ...(item.match ?? [])].map((prefix) => ({ href: item.href, prefix }))
+    )
+  )
+    .filter(({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+    .sort((a, b) => b.prefix.length - a.prefix.length)[0]?.href;
 
-  // Явно открытые/закрытые группы. Пока человек не трогал группу, её состояние
-  // выводится из адреса — открыта та, где он сейчас.
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  // FIX: на /security-ops пользователь может быть не залогинен в хост
+  // (middleware эти пути не закрывает) — фильтр по правам оставлял меню
+  // пустым, и модули «исчезали». Без host-логина показываем навигацию целиком
+  // (страницы защищают себя сами); для залогиненных фильтр работает как раньше.
+  const visibleCategories = CATEGORIES.map((category) => ({
+    ...category,
+    items: category.items.filter(
+      (item) =>
+        user === null ||
+        item.resource === undefined ||
+        hasPermission(item.resource, item.action ?? "read")
+    ),
+  })).filter((category) => category.items.length > 0);
 
-  const navigation = [
-    {
-      name: "Обзор",
-      href: "/dashboard",
-      icon: BarChart3,
-      resource: "organization",
-      action: "read",
-    },
-    {
-      name: "Структура организации",
-      href: "/organization",
-      icon: Building2,
-      resource: "organization",
-      action: "read",
-    },
-    {
-      // Модуль переименован 21.08.2026: на /employees живёт «Сбор сил на ОМ»
-      // (кого отдали на мероприятия и кто остался). Право доступа осталось
-      // прежним — экран по-прежнему про личный состав.
-      name: "Сбор сил на ОМ",
-      href: "/employees",
-      icon: Users,
-      resource: "employees",
-      action: "read",
-    },
-    {
-      name: "Статусы сотрудников",
-      href: "/statuses",
-      icon: Shield,
-      resource: "statuses",
-      action: "read",
-    },
-    {
-      name: "Отчеты",
-      href: "/reports",
-      icon: FileText,
-      resource: "reports",
-      action: "read",
-    },
-    {
-      name: "Настройки",
-      href: "/settings",
-      icon: Settings,
-      resource: "settings",
-      action: "read",
-    },
-  ];
-
-  // FIX: на /ops и /security-ops пользователь может быть не залогинен в хост
-  // (middleware эти пути не закрывает) — фильтр по правам оставлял верх
-  // сайдбара пустым, и старые модули «исчезали». Без host-логина показываем
-  // базовую навигацию целиком (страницы защищают себя сами); для
-  // залогиненных фильтр по ролям работает как раньше.
-  const filteredNavigation =
-    user === null
-      ? navigation
-      : navigation.filter((item) => hasPermission(item.resource, item.action));
-
-  // Группа /ops/* (встроенная SPA Smart Josparlau) удалена: она дублировала
-  // переписанные нативные страницы /security-ops/*; старые адреса /ops/*
-  // редиректят на них (app/ops/[[...slug]]/page.tsx).
-
-  // Раздел «Охранные мероприятия» — нативный порт Smart Josparlau: страницы
-  // в стеке хоста (app/security-ops/*). Права проверяют сами страницы
-  // (hooks/use-ops-permissions), фильтрации здесь нет.
-  // «Мой профиль» стоит отдельно и выше групп: это единственная страница
-  // раздела, которая открывается любому вошедшему без прав — она про него
-  // самого, и искать её внутри группы неправильно.
-  const opsProfile = {
-    name: "Мой профиль",
-    href: "/security-ops/profile",
-    icon: UserRound,
-  };
-
-  // Раздел был плоским списком из 18 пунктов (плюс 6 портальных сверху) —
-  // втрое выше порога перегруза, и целиком уезжал в overflow-y-auto. Группы
-  // режут его по роду работы; открыта по умолчанию только та, в которой человек
-  // сейчас находится.
-  const opsGroups = [
-    {
-      title: "Оперативная работа",
-      items: [
-        { name: "Командный центр", href: "/security-ops/command-center", icon: LineChart },
-        { name: "Реестр ОМ", href: "/security-ops/events", icon: ClipboardList },
-        // Реестр ГВО идёт сразу за реестром ОМ: его записи — проекция тех же
-        // мероприятий, и появляются они вместе с бюллетенем.
-        { name: "Реестр ГВО", href: "/security-ops/gvo", icon: Users },
-        { name: "Охраняемые лица", href: "/security-ops/persons", icon: UserRound },
-        { name: "Объекты и паспорта", href: "/security-ops/objects", icon: Landmark },
-        { name: "Законы об ОМ", href: "/security-ops/laws", icon: Scale },
-      ],
-    },
-    {
-      title: "Оценка и отчётность",
-      items: [
-        { name: "Оперативный рейтинг", href: "/security-ops/ratings", icon: Star },
-        { name: "Аналитика службы", href: "/security-ops/analytics", icon: LineChart },
-        { name: "Отчёты службы", href: "/security-ops/service-reports", icon: ScrollText },
-      ],
-    },
-    {
-      title: "Администрирование",
-      items: [
-        { name: "Справочники", href: "/security-ops/dictionaries", icon: ClipboardList },
-        { name: "Настройки ОМ", href: "/security-ops/settings", icon: Settings },
-        { name: "Обратная связь ОМ", href: "/security-ops/feedback", icon: ClipboardList },
-        { name: "Аудит", href: "/security-ops/audit", icon: ScrollText },
-        { name: "Журнал изменений", href: "/security-ops/changelog", icon: ClipboardList },
-      ],
-    },
-  ];
+  // Сквозной счётчик для stagger-анимации: задержка считается от начала
+  // меню, а не от начала своей категории, иначе пункты разных категорий
+  // выезжали бы одновременно.
+  //
+  // Задержка обрезана восемью шагами. Раньше свёрнутые группы не рендерили
+  // своих пунктов, и до потолка дело не доходило; развернув все категории,
+  // сквозной счётчик дорос до 19 — нижние пункты («Обратная связь») выезжали
+  // почти через полторы секунды после загрузки. Эффект нужен на первых
+  // строках, а не в качестве задержки для половины меню.
+  const MAX_STAGGER_STEPS = 8;
+  let itemIndex = -1;
 
   return (
     <aside className="h-screen w-full bg-sidebar border-r border-sidebar-border shadow-lg flex flex-col">
@@ -223,125 +209,46 @@ export function Sidebar() {
           клик по меню перезагружал документ (сброс кэша запросов, повторный
           бутстрап раздела, потеря позиции прокрутки). */}
       <nav className="mt-6 px-4 flex-1 overflow-y-auto" aria-label="Основная навигация">
-        <ul className="space-y-1">
-          {filteredNavigation.map((item, index) => (
-            <li
-              key={item.name}
-              className="sidebar-nav-item"
-              style={{ animationDelay: `${index * 50}ms` }}
-            >
-              <NavLink
-                href={item.href}
-                name={item.name}
-                icon={item.icon}
-                active={isActive(item.href)}
-              />
-            </li>
-          ))}
-        </ul>
-
-        {/* Охранные мероприятия — нативный порт Smart Josparlau. */}
-        <div className="mt-6">
-          <div className="text-sidebar-foreground/45 mx-2.5 mb-1.5 text-[10px] font-bold tracking-[.12em] uppercase">
-            Охранные мероприятия
-          </div>
-          <ul className="space-y-1">
-            <li className="sidebar-nav-item">
-              <NavLink
-                href={opsProfile.href}
-                name={opsProfile.name}
-                icon={opsProfile.icon}
-                active={isActive(opsProfile.href)}
-              />
-            </li>
-          </ul>
-
-          <div className="mt-2 space-y-1">
-            {opsGroups.map((group) => {
-              const hasActive = group.items.some((item) => isActive(item.href));
-              const open = openGroups[group.title] ?? hasActive;
-              const listId = `sidebar-group-${group.items[0].href.replace(/\W+/g, "-")}`;
-              return (
-                <div key={group.title} className="sidebar-nav-item">
-                  <button
-                    type="button"
-                    // Раскрытие — обычная кнопка с aria-expanded: состояние
-                    // группы должно быть слышно, а не только видно по стрелке.
-                    aria-expanded={open}
-                    aria-controls={listId}
-                    onClick={() =>
-                      setOpenGroups((current) => ({
-                        ...current,
-                        [group.title]: !open,
-                      }))
-                    }
-                    // Та же сетка, что у ITEM_CLASS: 13px / rounded-[9px] /
-                    // px-3 py-2. Иерархия держится ВЕСОМ (semibold против
-                    // medium у листьев), а не кеглем — иначе при 256px
-                    // заголовки читались разнобоем, а не уровнем.
-                    className={`flex w-full items-center justify-between rounded-[9px] px-3 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-sidebar-accent ${
-                      hasActive
-                        ? "text-sidebar-accent-foreground"
-                        : "text-sidebar-foreground"
-                    }`}
-                  >
-                    <span>{group.title}</span>
-                    <ChevronDown
-                      className={`h-4 w-4 shrink-0 transition-transform ${
-                        open ? "rotate-180" : ""
-                      }`}
-                      aria-hidden="true"
-                    />
-                  </button>
-                  {open && (
-                    <ul id={listId} className="mt-1 space-y-1 pl-3">
-                      {group.items.map((item) => (
-                        <li key={item.href}>
-                          <NavLink
-                            href={item.href}
-                            name={item.name}
-                            icon={item.icon}
-                            active={isActive(item.href)}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-      </nav>
-
-      {/* Обратная связь */}
-      <div className="px-4 pb-2">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Link
-                href="/feedback"
-                aria-current={isActive("/feedback") ? "page" : undefined}
-                className={`sidebar-feedback w-full ${ITEM_CLASS} ${
-                  isActive("/feedback")
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent"
-                }`}
+        {visibleCategories.map((category, categoryIndex) => {
+          const headingId = `sidebar-category-${categoryIndex}`;
+          return (
+            <div key={category.title} className={categoryIndex > 0 ? "mt-6" : undefined}>
+              {/* Заголовок категории — настоящий h2, а не подпись: категории
+                  стали единственной структурой меню, и скринридер должен уметь
+                  прыгать по ним, а не читать список из 20 ссылок подряд.
+                  Капс делает CSS — в разметке естественный регистр, иначе
+                  теряются акронимы («ОМ», «ГВО»). */}
+              <h2
+                id={headingId}
+                className="text-sidebar-foreground/45 mx-2.5 mb-1.5 text-[10px] font-bold tracking-[.12em] uppercase"
               >
-                <MessageSquarePlus
-                  className="mr-3 h-5 w-5 shrink-0"
-                  aria-hidden="true"
-                />
-                <span>Обратная связь</span>
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Чат обратной связи</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
+                {category.title}
+              </h2>
+              <ul className="space-y-1" aria-labelledby={headingId}>
+                {category.items.map((item) => {
+                  itemIndex += 1;
+                  return (
+                    <li
+                      key={item.href}
+                      className="sidebar-nav-item"
+                      style={{
+                        animationDelay: `${Math.min(itemIndex, MAX_STAGGER_STEPS) * 50}ms`,
+                      }}
+                    >
+                      <NavLink
+                        href={item.href}
+                        name={item.name}
+                        icon={item.icon}
+                        active={item.href === activeHref}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
+      </nav>
 
       {/* Информация о роли */}
       {userRole && (

@@ -83,7 +83,7 @@ export default function LegalDocumentsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Оперативная работа"
+          eyebrow="Охранные мероприятия"
           title="Законы об ОМ"
           description="Действующие законы, приказы, регламенты и инструкции по организации охранных мероприятий"
         />

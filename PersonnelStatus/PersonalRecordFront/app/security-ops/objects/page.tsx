@@ -400,7 +400,7 @@ export default function SecurityObjectsPage() {
     <DashboardLayout>
       <div className="space-y-5">
         <PageHeader
-          eyebrow="Оперативная работа"
+          eyebrow="Объекты"
           title="Объекты и паспорта"
           description="Реестр охраняемых объектов, их паспортов, секторов, постов и истории публикаций"
         />

@@ -77,7 +77,7 @@ export default function GvoRegistryPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Оперативная работа"
+          eyebrow="Охранные мероприятия"
           title="Реестр ГВО"
           description="Сводные данные по каждому ОМ — запись появляется сразу после создания бюллетеня"
         />

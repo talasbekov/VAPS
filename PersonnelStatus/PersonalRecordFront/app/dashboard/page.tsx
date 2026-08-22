@@ -89,7 +89,7 @@ export default function DashboardPage() {
         {/* Header */}
         <PageHeader
           className="mb-4"
-          eyebrow="Личный состав"
+          eyebrow="Ежедневный расход"
           title="Обзор"
           description="Обзор состояния организации"
           actions={

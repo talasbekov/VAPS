@@ -150,7 +150,7 @@ export default function FeedbackDetailPage() {
             ← К реестру обращений
           </Link>
           <PageHeader
-            eyebrow="Администрирование"
+            eyebrow="Обратная связь"
             title={request.subject}
             description={`${labelOf("type", request.typeCode)} · ${moduleLabel} · ${request.authorLabel} · ${formatMoment(request.createdAt)}`}
           />

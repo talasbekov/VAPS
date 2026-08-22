@@ -276,7 +276,7 @@ function PassportHeader({
           )}
         </div>
         <PageHeader
-          eyebrow="Оперативная работа"
+          eyebrow="Объекты"
           title={object.name}
           description={`${object.type} · ${object.region} · ${object.address}`}
         />
