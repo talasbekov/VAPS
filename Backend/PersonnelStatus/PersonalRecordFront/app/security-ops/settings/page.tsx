@@ -34,6 +34,7 @@ import type {
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 export default function OpsSettingsPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
@@ -93,7 +94,7 @@ export default function OpsSettingsPage() {
                         </p>
                         {setting.updatedAt !== null && (
                           <p className="text-[11px] text-muted-foreground">
-                            Изменено: {setting.updatedAt} ({setting.updatedBy})
+                            Изменено: {formatIsoDateTime(setting.updatedAt)} ({setting.updatedBy})
                           </p>
                         )}
                       </div>

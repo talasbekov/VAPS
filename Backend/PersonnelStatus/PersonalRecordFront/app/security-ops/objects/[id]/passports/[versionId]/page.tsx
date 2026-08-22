@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityObject } from "@/hooks/use-security-objects";
+import { formatIsoDateTime, formatIsoDate } from "@/shared/lib/date";
 
 const VERSION_NOT_FOUND_TEXT =
   "Версия паспорта не найдена — возможно, ссылка ведёт на другой объект.";
@@ -76,7 +77,7 @@ export default function PassportVersionPage() {
             className="mb-4"
             eyebrow="Паспорт объекта"
             title={`${object.name} · версия ${version.versionNumber}`}
-            description={`Действует с ${version.effectiveFrom} · опубликовано ${version.publishedAt} · ${version.publishedBy}`}
+            description={`Действует с ${formatIsoDate(version.effectiveFrom)} · опубликовано ${formatIsoDateTime(version.publishedAt)} · ${version.publishedBy}`}
             actions={
               <span className="inline-flex rounded-full bg-muted px-3 py-1 text-[11.5px] font-semibold text-muted-foreground">
                 read-only

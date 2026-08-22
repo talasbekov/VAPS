@@ -19,6 +19,7 @@ import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { PageHeader } from "@/components/page-header";
 import { LoadFailure } from "@/components/load-failure";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { formatIsoDateTime } from "@/shared/lib/date";
 
 export default function OpsAuditPage() {
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
@@ -98,7 +99,7 @@ export default function OpsAuditPage() {
                 {filtered.map((log) => (
                   <TableRow key={log.id}>
                     <TableCell className="text-muted-foreground tabular-nums">
-                      {log.createdAt}
+                      {formatIsoDateTime(log.createdAt)}
                     </TableCell>
                     <TableCell>{log.actorUserId}</TableCell>
                     <TableCell className="font-mono text-xs">{log.action}</TableCell>
