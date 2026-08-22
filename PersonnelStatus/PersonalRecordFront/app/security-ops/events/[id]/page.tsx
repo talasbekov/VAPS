@@ -94,7 +94,7 @@ function SecurityEventScreen() {
       <Card className="mb-4">
         <CardContent className="p-4">
           <div className="mb-1 flex items-center gap-2">
-            <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800">
+            <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-[10.5px] font-bold text-purple-800 dark:bg-purple-950/60 dark:text-purple-200">
               {event.code}
             </span>
             <StageBadge stage={event.stage} />
