@@ -64,4 +64,54 @@ test.describe(LIVE ? 'гидратация каркаса' : 'гидратаци
       await expect(page.locator('div[inert]').first()).toBeAttached({ timeout: 10_000 })
     })
   }
+
+  /**
+   * Расширения браузера дописывают в <body> свои атрибуты (`data-gptw`,
+   * Grammarly, ColorZilla) ПОСЛЕ доставки SSR-разметки и ДО гидратации —
+   * React видит расхождение и заваливает консоль разработчика шумом, который
+   * не воспроизводится ни на чистом профиле, ни здесь. Щит — атрибут
+   * `suppressHydrationWarning` на `<body>` в `app/layout.tsx`; сторож нужен,
+   * чтобы его не сняли «за ненадобностью».
+   *
+   * 🔴 Проба обязана ставить атрибут ДО гидратации и проверять, что он дошёл
+   * до DOM: с атрибутом, поставленным после, расхождения нет вовсе, и тест был
+   * бы зелёным при любом коде.
+   */
+  test('атрибут расширения в <body> не поднимает шум о гидратации', async ({ page }) => {
+    const hydrationErrors: string[] = []
+    page.on('console', (message) => {
+      if (message.type() !== 'error') return
+      const text = message.text()
+      if (/hydrat/i.test(text)) hydrationErrors.push(text.slice(0, 400))
+    })
+    page.on('pageerror', (error) => {
+      if (/hydrat/i.test(String(error))) hydrationErrors.push(String(error).slice(0, 400))
+    })
+
+    await signIn(page)
+    // `setInterval`, а не готовый `document.body`: на момент init-скрипта тело
+    // документа ещё не распарсено, и одиночная попытка промахнулась бы.
+    await page.addInitScript(() => {
+      const stamp = (): void => {
+        if (document.body && !document.body.hasAttribute('data-gptw')) {
+          document.body.setAttribute('data-gptw', '')
+        }
+      }
+      const timer = setInterval(stamp, 1)
+      setTimeout(() => clearInterval(timer), 8_000)
+      stamp()
+    })
+
+    await page.goto(`${APP}/security-ops/events/`, { waitUntil: 'networkidle' })
+    await page.waitForTimeout(1500)
+
+    expect(
+      hydrationErrors,
+      `атрибут расширения в <body> поднял шум о гидратации: ${hydrationErrors.join(' | ')}`,
+    ).toEqual([])
+
+    // Атрибут ДЕЙСТВИТЕЛЬНО дошёл до DOM — иначе проба вакуумна: мы бы мерили
+    // гидратацию нетронутой страницы, где расхождения нет по определению.
+    await expect(page.locator('body[data-gptw]')).toBeAttached()
+  })
 })

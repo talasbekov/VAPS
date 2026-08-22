@@ -30,7 +30,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru" className={`${inter.variable} ${jetbrainsMono.variable} antialiased`} suppressHydrationWarning>
-      <body>
+      {/* suppressHydrationWarning здесь — щит от расширений браузера, а не
+          глушилка своих расхождений: расширения дописывают в <body> свои
+          атрибуты (data-gptw, Grammarly и пр.) ПОСЛЕ доставки SSR-разметки и
+          ДО гидратации, и React справедливо сообщает о несовпадении — шум,
+          который не воспроизводится ни на чистом профиле, ни в CI. Атрибут
+          действует ровно на ОДИН уровень: расхождения внутри дерева (тот же
+          свёрнутый сайдбар, 4ea89bc2) по-прежнему попадают в консоль и ловятся
+          e2e/hydration.spec.ts — проверено пробой на вложенном <div>. */}
+      <body suppressHydrationWarning>
         <Providers>{children}</Providers>
         {/* Toaster монтируется в КОРНЕ, а не в каркасе страницы: раньше он
             стоял только в app/security-ops/layout.tsx, поэтому на хостовых
