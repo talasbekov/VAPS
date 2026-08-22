@@ -152,6 +152,66 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(page.getByText(target!.code)).toBeVisible()
   })
 
+  test('колонки таблицы и календарь — по прототипу', async ({ page }) => {
+    const token = await apiToken()
+    const rows = await events(token)
+    expect(rows.length, 'реестр пуст — проба вакуумна').toBeGreaterThan(0)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible({
+      timeout: 20_000,
+    })
+
+    // Состав и ПОРЯДОК колонок пинятся литерально: перестановка — это другая
+    // таблица, а не другой стиль. «Конфликтов» отдельной колонкой быть не
+    // должно — сигнал переехал бейджем в «Этап и готовность».
+    // Ждём саму таблицу: до ответа сервера на экране стоит «Загрузка реестра…»,
+    // и снимок заголовков дал бы пустой список — ассерт прошёл бы мимо.
+    // Локатор по разметке, а не по роли: снимок страницы показывает, что
+    // Playwright читает эти <th> как cell, и getByRole('columnheader') их не
+    // находит вовсе — ассерт был бы вечнозелёным на пустом массиве.
+    const headCells = page.locator('thead th')
+    await expect(headCells.first()).toBeVisible({ timeout: 20_000 })
+    const headers = await headCells.allInnerTexts()
+    expect(headers.map((h) => h.trim()).filter((h) => h !== '')).toEqual([
+      'ОМ',
+      'Даты',
+      'Локация',
+      'Этап и готовность',
+      'Потребность',
+      'Ответственный',
+      // Последняя колонка — стрелка перехода; её заголовок скрыт визуально,
+      // но для скринридера подписан, и в текстовом снимке он есть.
+      'Действия',
+    ])
+
+    // Календарь мероприятий: второй режим экрана из прототипа. Открывается на
+    // месяце, где мероприятия ЕСТЬ, — пустая сетка вместо отобранных записей
+    // была бы худшим исходом, чем отсутствие режима.
+    await page.getByRole('button', { name: 'Календарь' }).click()
+    const calendar = page.getByText(/^Календарь мероприятий · /)
+    await expect(calendar).toBeVisible({ timeout: 15_000 })
+    const marks = page.locator('button[aria-label*="мероприятий"]:not([disabled])')
+    expect(
+      await marks.count(),
+      'календарь открылся на месяце без единой отметки',
+    ).toBeGreaterThan(0)
+
+    // День с отметкой открывает СВОЙ список: у первой отметки берём число из
+    // подписи и сверяем со счётчиком карточки справа.
+    const label = (await marks.first().getAttribute('aria-label')) ?? ''
+    const expected = Number(label.replace(/^.*мероприятий /, ''))
+    expect(expected, 'подпись дня не несёт числа').toBeGreaterThan(0)
+    await marks.first().click()
+    // Ассерт по САМОМУ счётчику и ТОЧНЫМ текстом. Первая версия искала число
+    // подстрокой во всей карточке — и была вакуумной: «1» находилась в коде
+    // ОМ и в дате, красная проба с константой 999 оставалась зелёной.
+    await expect(page.locator('[data-slot="events-day-count"]')).toHaveText(
+      String(expected),
+    )
+  })
+
   test('этап «Запрос сил» ведёт в «Сбор сил на ОМ»', async ({ page }) => {
     const token = await apiToken()
     const forces = await events(token, 'FORCES')
