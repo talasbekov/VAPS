@@ -132,7 +132,7 @@ export default function StatusesPage() {
       <div className="space-y-6">
         {/* Header */}
         <PageHeader
-          eyebrow="Личный состав"
+          eyebrow="Ежедневный расход"
           title="Управление статусами"
           description="Контроль и обновление статусов сотрудников"
           actions={

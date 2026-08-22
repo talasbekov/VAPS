@@ -270,7 +270,7 @@ export default function ServiceAnalyticsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Оценка и отчётность"
+          eyebrow="Ежедневный расход"
           title="Состояние службы и личного состава"
           description="Оперативная картина численности, статусов, дежурств и нагрузки подразделений"
           actions={

@@ -165,7 +165,7 @@ export default function OperationsAnalyticsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Оценка и отчётность"
+          eyebrow="Охранные мероприятия"
           title="Аналитика мероприятий"
           description="Подготовка, обеспеченность, расстановка, проведение, конфликты и результаты охранных мероприятий"
           actions={

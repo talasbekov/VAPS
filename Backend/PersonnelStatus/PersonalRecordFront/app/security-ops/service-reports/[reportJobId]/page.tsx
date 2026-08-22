@@ -85,7 +85,7 @@ export default function ReportJobPage() {
       <div className="space-y-4">
         <div>
           <PageHeader
-            eyebrow="Оценка и отчётность"
+            eyebrow="Охранные мероприятия"
             title={data.reportTypeTitle}
             description={`${job.reportJobId} · ${data.isOwn ? "ваш запуск" : "запуск другого пользователя"}`}
           />

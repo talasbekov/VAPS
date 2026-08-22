@@ -84,7 +84,7 @@ export default function ServiceReportsPage() {
     <DashboardLayout>
       <div className="space-y-4">
         <PageHeader
-          eyebrow="Оценка и отчётность"
+          eyebrow="Охранные мероприятия"
           title="Отчёты службы"
           description="Асинхронное формирование отчётов, метаданные артефактов и выгрузка."
         />

@@ -104,7 +104,7 @@ export default function FeedbackPage() {
       <div className="space-y-4">
         <div>
           <PageHeader
-            eyebrow="Администрирование"
+            eyebrow="Обратная связь"
             title="Обратная связь"
             description="Обращения пользователей: ошибки, неверные данные, UX, идеи, доступ и помощь."
           />
