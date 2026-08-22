@@ -242,6 +242,8 @@ function ResultsTable({
   events: SecurityEvent[];
   isEmpty: boolean;
 }) {
+  const router = useRouter();
+
   if (isLoading) {
     return (
       <Card>
@@ -288,7 +290,21 @@ function ResultsTable({
           </TableHeader>
           <TableBody>
             {events.map((event) => (
-              <TableRow key={event.id}>
+              // Строка кликабельна целиком, как в эталоне. Ссылки в ячейках
+              // остаются: они — то, что видит скринридер и что открывается в
+              // новой вкладке средней кнопкой; обработчик строки лишь избавляет
+              // мышь от прицеливания в текст. Клик по самой ссылке сюда не
+              // доходит дважды — переход делает она, а router.push уже не
+              // случается: событие останавливать не нужно, навигация одна.
+              <TableRow
+                key={event.id}
+                className="cursor-pointer"
+                onClick={(clickEvent) => {
+                  const target = clickEvent.target as HTMLElement;
+                  if (target.closest("a") !== null) return;
+                  router.push(`/security-ops/events/${event.id}${backSuffix}`);
+                }}
+              >
                 <TableCell>
                   <Link
                     href={`/security-ops/events/${event.id}${backSuffix}`}
