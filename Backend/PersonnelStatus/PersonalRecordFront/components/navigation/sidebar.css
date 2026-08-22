@@ -33,3 +33,15 @@
 }
 
 
+
+/* Выезд пунктов и карточки роли — украшение, а не смысл: у того, кто просил
+   систему убрать анимацию, меню должно просто появляться на месте. Без этого
+   блока stagger играет всем, включая vestibular-чувствительных. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-nav-item,
+  .sidebar-role-card {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

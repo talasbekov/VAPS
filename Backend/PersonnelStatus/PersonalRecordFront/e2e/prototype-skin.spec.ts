@@ -236,61 +236,142 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     expect(total).toBe(19)
   })
 
-  test('меню целиком влезает в вьюпорт ноутбука 1366×768 и не жмётся ниже шага 24px', async ({ page }) => {
+  test('меню читается: кегль 14px, строка 36px, шаг 40px', async ({ page }) => {
     await signIn(page)
-    // Категории развернули все 19 пунктов сразу — до уплотнения 22.08.2026
-    // семь из них уходили под сгиб на этом разрешении.
-    //
-    // 🔴 Высота 648, а не 768: 768 — это ЭКРАН ноутбука, а вьюпорт меньше на
-    // хром браузера (адресная строка + вкладки ≈ 120px). Проба на 768
-    // проходила, пока на живом ноутбуке два нижних пункта оставались под
-    // сгибом — она мерила высоту, которой у страницы никогда не бывает.
+    // 🔴 Этот сторож пришёл на смену прежнему «меню целиком влезает в
+    // 1366×648». Тот требовал невозможного: 19 пунктов на вьюпорте ноутбука
+    // помещаются только сжатием строки до пола WCAG 2.2 AA 2.5.8 (24px шаг),
+    // и получившееся меню заказчик прочитал как «мелкое и некрасивое».
+    // Требование отменено: размер строки НЕ разменивается на количество
+    // видимых пунктов, а нижние пункты достаются прокруткой (сторож ниже).
     await page.setViewportSize({ width: 1366, height: 648 })
     await page.goto(`${APP}/security-ops/events/`)
     await expect(page.getByRole('heading', { name: 'Реестр ОМ', level: 1 })).toBeVisible()
 
     const nav = page.locator('aside nav').first()
-    const fit = await nav.evaluate((el) => {
-      const box = el.getBoundingClientRect()
+    const metrics = await nav.evaluate((el) => {
       const links = Array.from(el.querySelectorAll('a'))
-      const last = links[links.length - 1].getBoundingClientRect()
-      return {
-        // 🔴 Содержимое меряется низом ПОСЛЕДНЕЙ ссылки, а не scrollHeight:
-        // у невыходящего за край блока scrollHeight равен clientHeight, и
-        // «влезает» вырождалось бы в сравнение числа с самим собой.
-        contentBottom: Math.ceil(last.bottom - box.top),
-        clientH: el.clientHeight,
-        hidden: links.filter((a) => a.getBoundingClientRect().bottom > box.bottom + 0.5).length,
-        links: links.length,
-      }
-    })
-    expect(fit.links, 'меню недосчиталось пунктов — ассерт влезания был бы вакуумным').toBe(19)
-    expect(fit.clientH, 'сайдбар скрыт: у нулевой высоты влезает что угодно').toBeGreaterThan(0)
-    expect(fit.hidden, 'пункты ушли под сгиб при вьюпорте 1366×648').toBe(0)
-    expect(
-      fit.contentBottom,
-      `меню ${fit.contentBottom}px не помещается в ${fit.clientH}px`
-    ).toBeLessThanOrEqual(fit.clientH)
-    // Запас, а не впритык: у пользователя может быть открыта панель закладок
-    // (≈30px), и меню обязано пережить её, не уезжая под сгиб.
-    expect(
-      fit.clientH - fit.contentBottom,
-      `запас меню ${fit.clientH - fit.contentBottom}px — панель закладок уведёт нижние пункты под сгиб`
-    ).toBeGreaterThanOrEqual(24)
-
-    // Пол плотности. Уплотнять дальше за счёт СТРОКИ нельзя: 22px пункт плюс
-    // 2px зазор дают шаг ровно 24px — граница исключения по интервалу в
-    // WCAG 2.2 AA (2.5.8 Target Size). Проба берёт соседей ВНУТРИ одной
-    // категории: через границу категорий шаг включает заголовок и отступ,
-    // и порог проходил бы сам собой.
-    const pitch = await nav.evaluate((el) => {
+      const heading = el.querySelector('h2')!
       const lists = Array.from(el.querySelectorAll('ul'))
       const multi = lists.find((l) => l.querySelectorAll('a').length > 1)
       if (!multi) throw new Error('нет категории с двумя пунктами — шаг мерить не на чем')
       const [a, b] = Array.from(multi.querySelectorAll('a'))
-      return b.getBoundingClientRect().top - a.getBoundingClientRect().top
+      return {
+        links: links.length,
+        // Кегль берётся ВЫЧИСЛЕННЫЙ: класс text-sm может стоять в разметке и
+        // не генерироваться сборкой — ровно так в этом проекте молча не
+        // работают v4-классы в слое ui/*.
+        fontPx: parseFloat(getComputedStyle(links[0]).fontSize),
+        headingPx: parseFloat(getComputedStyle(heading).fontSize),
+        minHeight: Math.min(...links.map((l) => l.getBoundingClientRect().height)),
+        pitch: b.getBoundingClientRect().top - a.getBoundingClientRect().top,
+      }
     })
-    expect(pitch, 'шаг пунктов упал ниже 24px — цели перестали проходить WCAG 2.5.8').toBeGreaterThanOrEqual(24)
+    expect(metrics.links, 'меню недосчиталось пунктов — замеры были бы не о том меню').toBe(19)
+    expect(metrics.fontPx, `кегль пункта ${metrics.fontPx}px — мельче 14px меню не читается`).toBeGreaterThanOrEqual(14)
+    expect(
+      metrics.headingPx,
+      `кегль заголовка категории ${metrics.headingPx}px — ниже 12px это уже не подпись, а шум`
+    ).toBeGreaterThanOrEqual(12)
+    expect(metrics.minHeight, `самая низкая строка ${metrics.minHeight}px — комфортный пункт от 36px`).toBeGreaterThanOrEqual(36)
+    // Шаг берётся у соседей ВНУТРИ категории: через границу категорий он
+    // включает заголовок с отступом и проходил бы порог сам собой.
+    expect(metrics.pitch, `шаг пунктов ${metrics.pitch}px — цели снова сомкнулись`).toBeGreaterThanOrEqual(40)
+  })
+
+  test('нижние пункты достаются прокруткой, и о ней сказано', async ({ page }) => {
+    await signIn(page)
+    await page.setViewportSize({ width: 1366, height: 648 })
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ', level: 1 })).toBeVisible()
+
+    const nav = page.locator('aside nav').first()
+    const hint = page.locator('[data-slot="sidebar-scroll-hint"]')
+
+    // Меню и правда длиннее окна — иначе весь сторож вакуумен: у
+    // непрокручиваемого списка «доскроллили до последнего пункта» истинно
+    // без единого движения.
+    const overflow = await nav.evaluate((el) => el.scrollHeight - el.clientHeight)
+    expect(overflow, 'меню помещается целиком — прокрутку проверять не на чем').toBeGreaterThan(0)
+    await expect(hint, 'о продолжении списка ничем не сказано').toHaveCSS('opacity', '1')
+
+    // Список при загрузке уже подкручен подводкой к активному пункту, поэтому
+    // «выше ничего нет» проверяется на ЯВНО поднятом наверх списке, а не на
+    // состоянии по умолчанию.
+    const topHint = page.locator('[data-slot="sidebar-scroll-hint-top"]')
+    await nav.evaluate((el) => {
+      el.scrollTop = 0
+    })
+    await expect(topHint, 'верхняя подсказка горит, когда выше ничего нет').toHaveCSS('opacity', '0')
+
+    const last = nav.locator('a').last()
+    await expect(last).toHaveText('Обратная связь')
+    await nav.evaluate((el) => {
+      el.scrollTop = el.scrollHeight
+    })
+    await expect(last).toBeInViewport()
+    // Доскроллив до низа, подсказку убираем: иначе она врёт о продолжении,
+    // которого нет.
+    await expect(hint, 'подсказка о продолжении осталась на самом низу списка').toHaveCSS('opacity', '0')
+    // Прокрутившись, список упирается в шапку и режет заголовок категории —
+    // верхняя подсказка обязана зажечься, иначе обрывок читается как брак.
+    await expect(topHint, 'о пунктах выше края ничем не сказано').toHaveCSS('opacity', '1')
+  })
+
+  test('активный пункт подводится в зону видимости сам', async ({ page }) => {
+    await signIn(page)
+    await page.setViewportSize({ width: 1366, height: 648 })
+    // «Обратная связь» — последний пункт меню: при загрузке он лежит ниже
+    // сгиба списка, и без подводки «вы здесь» существовало бы только в
+    // разметке.
+    await page.goto(`${APP}/feedback/`)
+
+    const nav = page.locator('aside nav').first()
+    const current = nav.locator('a[aria-current="page"]')
+    await expect(current).toHaveText('Обратная связь')
+
+    // 🔴 НЕ `toBeInViewport`: он меряет пересечение с ОКНОМ и слеп к обрезке
+    // прокручиваемым предком. Пункт, уехавший на 49px ниже нижнего края
+    // меню, лежит в границах окна и проходит его насквозь — этот ассерт уже
+    // был здесь зелёным при сломанной подводке. Меряем по коробке МЕНЮ.
+    // Подводка срабатывает не одним кадром: карточка роли доезжает вместе с
+    // `user` и меняет высоту меню, после чего подводка повторяется. Поэтому
+    // замер берётся опросом — но опрос ждёт УСТОЯВШЕГОСЯ состояния, а не
+    // прячет промежуточное: все четыре условия проверяются на одном снимке.
+    const measure = () => nav.evaluate((el) => {
+      const link = el.querySelector('a[aria-current="page"]')!
+      const navBox = el.getBoundingClientRect()
+      const linkBox = link.getBoundingClientRect()
+      const hint = document.querySelector('[data-slot="sidebar-scroll-hint"]')!
+      return {
+        aboveTop: Math.round(navBox.top - linkBox.top),
+        belowBottom: Math.round(linkBox.bottom - navBox.bottom),
+        // Подсказка лежит НАД списком: пункт, подведённый ей под низ, виден
+        // формально и не виден на деле. Считается это только пока подсказка
+        // ПОКАЗАНА: доскроллив до конца, она гаснет и ничего не закрывает —
+        // а последний пункт списка иначе всегда «под ней», и ассерт требовал
+        // бы недостижимого.
+        underHint: Math.round(linkBox.bottom - (navBox.bottom - hint.getBoundingClientRect().height)),
+        hintShown: parseFloat(getComputedStyle(hint).opacity) > 0,
+        scrolled: el.scrollTop,
+      }
+    })
+    await expect
+      .poll(async () => (await measure()).scrolled, {
+        message: 'меню не прокручивалось — подводку проверять не на чем',
+        timeout: 5_000,
+      })
+      .toBeGreaterThan(0)
+    const seen = await measure()
+    expect(seen.aboveTop, `активный пункт на ${seen.aboveTop}px выше верхнего края меню`).toBeLessThanOrEqual(0)
+    expect(seen.belowBottom, `активный пункт на ${seen.belowBottom}px ниже нижнего края меню`).toBeLessThanOrEqual(0)
+    if (seen.hintShown) {
+      expect(seen.underHint, `активный пункт на ${seen.underHint}px заехал под градиент-подсказку`).toBeLessThanOrEqual(0)
+    }
+
+    // Страница при этом остаётся наверху: подводка обязана двигать СВОЙ
+    // контейнер, а не окно (scrollIntoView прокручивает всех предков).
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
   })
 
   test('подсвечен один пункт — самый длинный подошедший адрес', async ({ page }) => {
