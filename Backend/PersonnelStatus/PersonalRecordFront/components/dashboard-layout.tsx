@@ -22,17 +22,37 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const apiGap = findApiGap(pathname);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("sidebarOpen");
-      return saved !== null ? saved === "true" : true;
-    }
-    return true;
-  });
+  // 🔴 Начальное состояние — РОВНО то же, что рисует сервер (развёрнутый
+  // сайдбар). Читать `localStorage` в инициализаторе нельзя: сервер такого
+  // хранилища не видит и всегда отдаёт `true`, а клиент у свернувшего меню
+  // пользователя рисовал бы `false` — React ловил это как расхождение
+  // гидратации на КАЖДОЙ странице («inert`/`lg:ml-64` против `lg:ml-0`) и
+  // отказывался чинить поддерево. Сохранённое значение применяем после
+  // монтирования, когда сервер уже не участвует.
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [restored, setRestored] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem("sidebarOpen", String(desktopSidebarOpen));
-  }, [desktopSidebarOpen]);
+    try {
+      const saved = localStorage.getItem("sidebarOpen");
+      if (saved !== null) setDesktopSidebarOpen(saved === "true");
+    } catch {
+      // Приватный режим и заблокированное хранилище — не повод падать:
+      // сайдбар просто останется развёрнутым.
+    }
+    setRestored(true);
+  }, []);
+
+  useEffect(() => {
+    // До восстановления писать нечего: иначе первый проход затрёт сохранённое
+    // значение дефолтом ещё до того, как мы его прочитали.
+    if (!restored) return;
+    try {
+      localStorage.setItem("sidebarOpen", String(desktopSidebarOpen));
+    } catch {
+      // См. выше: без хранилища состояние живёт только в этой вкладке.
+    }
+  }, [desktopSidebarOpen, restored]);
 
   return (
     <PerformanceProfiler id="DashboardLayout">
@@ -54,9 +74,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           // ссылок ловили фокус за экраном. inert убирает и фокус, и чтение
           // скринридером, но оставляет анимацию скрытия.
           inert={desktopSidebarOpen ? undefined : true}
-          className={`hidden lg:block fixed left-0 top-0 h-screen z-30 transition-transform duration-300 ease-in-out ${
-            desktopSidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+          // Анимация включается только ПОСЛЕ восстановления: иначе свёрнутый
+          // сайдбар на каждой загрузке заново уезжал бы за край на глазах у
+          // пользователя. Ручное переключение анимируется как прежде.
+          className={`hidden lg:block fixed left-0 top-0 h-screen z-30 ${
+            restored ? "transition-transform duration-300 ease-in-out" : ""
+          } ${desktopSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
         >
           <div className="w-64 h-full">
             <Sidebar />
@@ -72,7 +95,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         <div
           className={`flex flex-col flex-1 min-w-0 ${
             desktopSidebarOpen ? "lg:ml-64" : "lg:ml-0"
-          } transition-all duration-300`}
+          } ${restored ? "transition-all duration-300" : ""}`}
         >
           <Header
             onMenuClick={() => setSidebarOpen(true)}
