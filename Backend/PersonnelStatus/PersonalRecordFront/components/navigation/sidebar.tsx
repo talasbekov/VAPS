@@ -28,8 +28,21 @@ function normalizePath(path: string): string {
 // Общий вид пункта: единственное место, где живёт разметка ссылки меню.
 // Прототип: компактный пункт 13px, radius 9px. Было 15px/600 с px-4 py-3 —
 // при 256px такие пункты переносились в две строки.
+//
+// 22.08.2026 плотность поджата ещё раз: категории развернули все 19 пунктов
+// сразу, и при 1366×768 семь из них уходили под сгиб. Резался ВОЗДУХ —
+// вертикальные поля, межстрочный интервал и размер иконки; кегль 13px из
+// прототипа не тронут, читаемость страдать не должна. Что меню влезает в
+// 1366×768, держит сторож в e2e/prototype-skin.spec.ts.
+//
+// 🔴 Дальше строку жать НЕЛЬЗЯ: 22px пункт + 2px зазор дают шаг ровно 24px —
+// это граница исключения по интервалу в WCAG 2.2 AA (2.5.8 Target Size).
+// Ужав пункт до 20px или убрав `space-y-0.5`, соседние цели начнут
+// перекрываться 24-пиксельным кругом, и требование перестанет выполняться.
+// Остаток воздуха добирается на НЕинтерактивной обвязке — отступах категорий
+// и полях заголовков, у которых размера цели нет.
 const ITEM_CLASS =
-  "flex items-center rounded-[9px] px-3 py-2 text-[13px] font-medium transition-colors";
+  "flex items-center rounded-[9px] px-3 py-[3px] text-[13px] leading-4 font-medium transition-colors";
 
 type NavItem = {
   name: string;
@@ -134,7 +147,7 @@ function NavLink({
           : "text-sidebar-foreground hover:bg-sidebar-accent"
       }`}
     >
-      <Icon className="mr-3 h-5 w-5 shrink-0" aria-hidden="true" />
+      <Icon className="mr-2.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <span>{name}</span>
     </Link>
   );
@@ -208,11 +221,11 @@ export function Sidebar() {
       {/* Навигация. Ссылки — next/link: раньше это были сырые <a>, и каждый
           клик по меню перезагружал документ (сброс кэша запросов, повторный
           бутстрап раздела, потеря позиции прокрутки). */}
-      <nav className="mt-6 px-4 flex-1 overflow-y-auto" aria-label="Основная навигация">
+      <nav className="mt-2 px-4 flex-1 overflow-y-auto" aria-label="Основная навигация">
         {visibleCategories.map((category, categoryIndex) => {
           const headingId = `sidebar-category-${categoryIndex}`;
           return (
-            <div key={category.title} className={categoryIndex > 0 ? "mt-6" : undefined}>
+            <div key={category.title} className={categoryIndex > 0 ? "mt-2" : undefined}>
               {/* Заголовок категории — настоящий h2, а не подпись: категории
                   стали единственной структурой меню, и скринридер должен уметь
                   прыгать по ним, а не читать список из 20 ссылок подряд.
@@ -220,11 +233,11 @@ export function Sidebar() {
                   теряются акронимы («ОМ», «ГВО»). */}
               <h2
                 id={headingId}
-                className="text-sidebar-foreground/45 mx-2.5 mb-1.5 text-[10px] font-bold tracking-[.12em] uppercase"
+                className="text-sidebar-foreground/45 mx-2.5 mb-0.5 text-[10px] font-bold tracking-[.12em] uppercase"
               >
                 {category.title}
               </h2>
-              <ul className="space-y-1" aria-labelledby={headingId}>
+              <ul className="space-y-0.5" aria-labelledby={headingId}>
                 {category.items.map((item) => {
                   itemIndex += 1;
                   return (
