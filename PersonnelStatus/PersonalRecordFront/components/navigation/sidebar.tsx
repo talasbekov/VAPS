@@ -229,16 +229,22 @@ function LinkStatus() {
     }
     // Свежесть меряется по ПОСЛЕДНЕМУ ответу — неважно, удачному или нет:
     // старый успех не отменяет только что случившегося отказа, и наоборот.
+    //
+    // 🔴 Но «отказ» здесь — только СЕТЕВОЙ. 403 «нет права» это ОТВЕТ сервера,
+    // то есть связь как раз есть: первая версия гасила индикатор у любой
+    // персоны без права `event.view` — экран честно писал «связи нет» там, где
+    // связь работала. Признак берётся у клиента ОМ: `kind === "network"`.
     let latest = 0;
-    let latestFailed = false;
+    let latestOffline = false;
     for (const query of client.getQueryCache().getAll()) {
       const state = query.state;
       const stamp = Math.max(state.dataUpdatedAt, state.errorUpdatedAt);
       if (stamp === 0 || stamp < latest) continue;
       latest = stamp;
-      latestFailed = state.status === "error";
+      const error = state.error as { kind?: string } | null;
+      latestOffline = state.status === "error" && error?.kind === "network";
     }
-    return latest === 0 ? true : !latestFailed;
+    return latest === 0 ? true : !latestOffline;
   }, [client]);
 
   // Снимок — примитив: сравнение по значению, лишних перерисовок нет.

@@ -990,3 +990,38 @@ test.describe(LIVE ? 'слой прототипа' : 'слой прототип�
     })
   }
 })
+
+/**
+ * Индикатор связи в подвале сайдбара.
+ *
+ * 🔴 Своё описание с `serviceWorkers: 'block'`: без этого `page.route` не
+ * перехватывает запросы, ушедшие через service worker MSW, — обрыв сети
+ * подделать нельзя, и третий шаг пробы был зелёным на живых данных.
+ */
+test.describe(LIVE ? 'индикатор связи' : 'индикатор связи (скип: нет SMOKE_LIVE=1)', () => {
+  test.skip(!LIVE, 'нужен живой стек: SMOKE_LIVE=1')
+  test.use({ serviceWorkers: 'block' })
+
+  test('гаснет на СЕТЕВОМ отказе, а не на 403', async ({ page }) => {
+    await signIn(page)
+    const status = page.locator('[data-slot="sidebar-link-status"]')
+
+    // 1. Живой стенд: связь есть.
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(status).toContainText('связь есть', { timeout: 20_000 })
+
+    // 2. Персона БЕЗ права `event.view`: сервер отвечает 403 — это ответ, а
+    //    не обрыв. Индикатор обязан остаться зелёным; первая версия гасила
+    //    его на любой ошибке запроса и писала «связи нет» при живой связи.
+    await signIn(page, 'erda', 'erda123')
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(status).toContainText('связь есть', { timeout: 20_000 })
+
+    // 3. Обрыв сети: запросы раздела не доходят вовсе — вот теперь «связи нет».
+    await signIn(page)
+    await page.route('**/api/ops/**', (route) => route.abort('failed'))
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(status).toContainText('связи нет', { timeout: 20_000 })
+  })
+
+})
