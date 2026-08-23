@@ -18,6 +18,7 @@ from organization_management.apps.operations.audit_service import (
 )
 from organization_management.apps.operations.models_audit import OpsAuditLog
 from organization_management.apps.operations.models_event import OpsSecurityEvent
+from organization_management.apps.operations.models_gvo import OpsProtectedPerson
 from organization_management.apps.operations.models_object import (
     OpsObjectSector,
     OpsPassportVersion,
@@ -95,10 +96,18 @@ def viewer():
     return api
 
 
-def create_event(api, obj, title="Визит делегации", business_date="2026-08-10"):
+def create_event(
+    api, obj, title="Визит делегации", business_date="2026-08-10", **extra
+):
     return api.post(
         URL,
-        {"title": title, "objectId": str(obj.pk), "businessDate": business_date},
+        {
+            "title": title,
+            "objectId": str(obj.pk),
+            "businessDate": business_date,
+            "kind": "INTERNAL",
+            **extra,
+        },
         format="json",
     )
 
@@ -139,7 +148,89 @@ def test_create_validation(manager):
         format="json",
     )
     assert resp.status_code == 400
-    assert set(resp.json()["details"]) == {"title", "objectId", "businessDate"}
+    assert set(resp.json()["details"]) == {
+        "title",
+        "objectId",
+        "businessDate",
+        "kind",
+    }
+
+
+def test_create_carries_bulletin_fields(manager):
+    """Поля бюллетеня эталона доезжают до строки и обратно в контракт.
+
+    До 23.08.2026 окно создания собирало только название, объект и даты:
+    тип мероприятия, время, охраняемое лицо, локация и старший в форме
+    прототипа есть, а хранить их было негде — введённое пропадало.
+    """
+    person = OpsProtectedPerson.objects.create(
+        name="А. Тлеубердиев",
+        callsign="Беркут",
+        category=OpsProtectedPerson.Category.FOREIGN,
+    )
+    chief = make_employee(last_name="Нуртаев", first_name="Санжар")
+    resp = create_event(
+        manager,
+        make_object(with_passport=True),
+        kind="FOREIGN",
+        eventTime="09:30",
+        protectedPersonId=str(person.pk),
+        location="г. Алматы",
+        chiefEmployeeId=str(chief.pk),
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["kind"] == "FOREIGN"
+    assert data["eventTime"] == "09:30"
+    assert data["protectedPersonId"] == str(person.pk)
+    assert data["location"] == "г. Алматы"
+    assert data["chiefEmployeeId"] == str(chief.pk)
+    # Подписи — снимок рядом со ссылкой: скрытие лица из справочника или
+    # увольнение старшего не должны стирать имя из истории мероприятия.
+    assert data["protectedPersonName"] == "А. Тлеубердиев"
+    assert data["chiefName"] == "Нуртаев С."
+
+
+def test_create_optional_bulletin_fields_stay_empty(manager):
+    """Незаполненные поля остаются пустыми, а не подставляются за автора."""
+    resp = create_event(manager, make_object())
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["eventTime"] is None
+    assert data["protectedPersonId"] is None
+    assert data["chiefEmployeeId"] is None
+    assert data["protectedPersonName"] == ""
+    assert data["chiefName"] == ""
+    assert data["location"] == ""
+
+
+@pytest.mark.parametrize(
+    "payload,field",
+    [
+        ({"kind": "OUTER"}, "kind"),
+        ({"eventTime": "25:00"}, "eventTime"),
+        ({"protectedPersonId": "999999"}, "protectedPersonId"),
+        ({"chiefEmployeeId": "999999"}, "chiefEmployeeId"),
+    ],
+)
+def test_create_rejects_bad_bulletin_fields(manager, payload, field):
+    resp = create_event(manager, make_object(), **payload)
+    assert resp.status_code == 400
+    assert field in resp.json()["details"]
+
+
+def test_create_rejects_inactive_protected_person(manager):
+    """Скрытое лицо не выбирается: справочник отдаёт только активные."""
+    hidden = OpsProtectedPerson.objects.create(
+        name="Б. Скрытый",
+        category=OpsProtectedPerson.Category.OURS,
+        is_active=False,
+    )
+    resp = create_event(
+        manager, make_object(), protectedPersonId=str(hidden.pk)
+    )
+    assert resp.status_code == 400
+    assert "protectedPersonId" in resp.json()["details"]
 
 
 def test_create_requires_manage(viewer):

@@ -224,12 +224,23 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // бэк принимал `business_date_end`, вводить его было негде.
     const title = `Проба периода (e2e) ${Date.now()}`
     await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
-    await page.getByLabel('Название ОМ *').fill(title)
-    const objectSelect = page.getByLabel('Объект *')
+    const dialog = page.getByRole('dialog')
+    // Кнопка окна и кнопка реестра называются одинаково — скоуп обязателен,
+    // иначе строгий режим Playwright падает на двух совпадениях.
+    const submit = dialog.getByRole('button', { name: 'Создать бюллетень' })
+    await dialog.getByLabel('Название ОМ').fill(title)
+    await dialog.getByRole('button', { name: 'Внутреннее' }).click()
+    const objectSelect = dialog.getByLabel('Объект')
     await expect(objectSelect.locator('option').nth(1)).toBeAttached({ timeout: 20_000 })
     await objectSelect.selectOption({ index: 1 })
-    await page.getByLabel('Дата начала *').fill('2026-09-10')
-    await page.getByLabel('Дата окончания').fill('2026-09-12')
+    await dialog.getByLabel('Дата начала').fill('2026-09-10')
+    await dialog.getByLabel('Дата окончания').fill('2026-09-12')
+
+    // Сводка периода читает ОБЕ даты: до неё человек проверял ввод по двум
+    // машинным полям и не видел ни дней недели, ни числа дней.
+    await expect(dialog.getByText('10 сентября 2026', { exact: false })).toContainText(
+      '3 дня',
+    )
 
     // Перевёрнутый период форма отбивает САМА. Доказывается не текстом
     // ошибки — тот же текст возвращает и сервер, и ассерт на него проходил бы
@@ -247,13 +258,13 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
         postsSent += 1
       }
     })
-    await page.getByLabel('Дата окончания').fill('2026-09-01')
-    await page.getByRole('button', { name: 'Создать', exact: true }).click()
+    await dialog.getByLabel('Дата окончания').fill('2026-09-01')
+    await submit.click()
     await expect(page.getByText('Дата окончания раньше даты начала.')).toBeVisible()
     expect(postsSent, 'форма отправила заведомо неверный период на сервер').toBe(0)
 
-    await page.getByLabel('Дата окончания').fill('2026-09-12')
-    await page.getByRole('button', { name: 'Создать', exact: true }).click()
+    await dialog.getByLabel('Дата окончания').fill('2026-09-12')
+    await submit.click()
     await expect(page).toHaveURL(/\/security-ops\/events\/\d+/, { timeout: 30_000 })
 
     // В карточке — ПЕРИОД, а не одна дата: до правки трёхдневное ОМ читалось
@@ -267,6 +278,61 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     const row = page.locator('tbody tr').first()
     await expect(row).toContainText('10.09.2026', { timeout: 20_000 })
     await expect(row).toContainText('по 12.09.2026')
+  })
+
+  test('поля бюллетеня из окна создания доезжают до карточки', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible({
+      timeout: 20_000,
+    })
+
+    // До 23.08.2026 окно создания знало только название, объект и даты: тип
+    // мероприятия, время, охраняемое лицо, локацию и старшего в форме
+    // прототипа человек видел, а хранить их было негде.
+    const title = `Проба бюллетеня (e2e) ${Date.now()}`
+    await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Название ОМ').fill(title)
+
+    // Тип меняет подпись поля старшего ПРЯМО В ФОРМЕ — до выбора человек
+    // должен знать, кого он назначает.
+    // Сверяем ПОДПИСЬ поля (getByLabel), а не текст на экране: подсказка под
+    // полем содержит те же слова строчными, и getByText нашёл бы два узла.
+    await expect(dialog.getByLabel('Старший наряда')).toBeVisible()
+    await dialog.getByRole('button', { name: 'С участием иностранцев' }).click()
+    await expect(dialog.getByLabel('Старший ГВО')).toBeVisible()
+
+    const objectSelect = dialog.getByLabel('Объект')
+    await expect(objectSelect.locator('option').nth(1)).toBeAttached({ timeout: 20_000 })
+    await objectSelect.selectOption({ index: 1 })
+    await dialog.getByLabel('Дата начала').fill('2026-09-14')
+    await dialog.getByLabel('Время').fill('09:30')
+    await dialog.getByLabel('Локация').fill('г. Алматы')
+
+    const personSelect = dialog.getByLabel('Охраняемое лицо')
+    await expect(personSelect.locator('option').nth(1)).toBeAttached({ timeout: 20_000 })
+    const personName = (await personSelect.locator('option').nth(1).textContent()) ?? ''
+    await personSelect.selectOption({ index: 1 })
+
+    const chiefSelect = dialog.getByLabel('Старший ГВО')
+    await expect(chiefSelect.locator('option').nth(1)).toBeAttached({ timeout: 20_000 })
+    const chiefLabel = (await chiefSelect.locator('option').nth(1).textContent()) ?? ''
+    await chiefSelect.selectOption({ index: 1 })
+
+    await dialog.getByRole('button', { name: 'Создать бюллетень' }).click()
+    await expect(page).toHaveURL(/\/security-ops\/events\/\d+/, { timeout: 30_000 })
+
+    // Ассерты по «Сведениям об ОМ» карточки: введённое обязано вернуться с
+    // сервера, а не остаться в форме.
+    const facts = page.getByRole('main')
+    await expect(facts).toContainText('С участием иностранцев', { timeout: 20_000 })
+    await expect(facts).toContainText('09:30')
+    await expect(facts).toContainText('г. Алматы')
+    // Подписи выпадающих списков несут разделитель « · » — на карточке
+    // стоит только имя, поэтому сверяем по первой части подписи.
+    await expect(facts).toContainText(personName.split(' · ')[0]!.trim())
+    await expect(facts).toContainText(chiefLabel.split(' · ')[0]!.trim())
   })
 
   test('этап «Запрос сил» ведёт в «Сбор сил на ОМ»', async ({ page }) => {

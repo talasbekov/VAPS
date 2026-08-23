@@ -22,6 +22,9 @@ from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
     OpsSecurityEventTransition,
 )
+from organization_management.apps.operations.models_gvo import (
+    OpsProtectedPerson,
+)
 from organization_management.apps.operations.models_object import (
     OpsPassportVersion,
     OpsSecurityObject,
@@ -117,7 +120,19 @@ def bind_passport_version(security_object, version, bound_at):
 
 
 @transaction.atomic
-def create_event(*, title, object_id, business_date, business_date_end=None, actor):
+def create_event(
+    *,
+    title,
+    object_id,
+    business_date,
+    business_date_end=None,
+    kind=None,
+    event_time=None,
+    protected_person_id=None,
+    location=None,
+    chief_employee_id=None,
+    actor,
+):
     field_errors = {}
     title = str(title or "").strip()
     if title == "":
@@ -125,6 +140,14 @@ def create_event(*, title, object_id, business_date, business_date_end=None, act
     object_id = str(object_id or "").strip()
     if object_id == "":
         field_errors["objectId"] = ["Обязательное поле."]
+    # Тип — обязателен: от него зависят маршрут согласования и старший. У
+    # строк, заведённых до появления поля, он NULL, но новые без него не
+    # заводятся (иначе легаси-пробел рос бы дальше).
+    kind = str(kind or "").strip()
+    if kind == "":
+        field_errors["kind"] = ["Обязательное поле."]
+    elif kind not in dict(OpsSecurityEvent.Kind.choices):
+        field_errors["kind"] = ["Неизвестный тип мероприятия."]
     try:
         parsed_date = dt.date.fromisoformat(str(business_date or ""))
     except ValueError:
@@ -146,6 +169,41 @@ def create_event(*, title, object_id, business_date, business_date_end=None, act
                 field_errors["businessDateEnd"] = [
                     "Дата окончания раньше даты начала."
                 ]
+    parsed_time = None
+    raw_time = str(event_time or "").strip()
+    if raw_time != "":
+        try:
+            # Браузерный <input type="time"> шлёт «ЧЧ:ММ», но с включёнными
+            # секундами — «ЧЧ:ММ:СС»; принимаем оба.
+            parsed_time = dt.time.fromisoformat(raw_time)
+        except ValueError:
+            field_errors["eventTime"] = ["Укажите время в формате ЧЧ:ММ."]
+    location = str(location or "").strip()
+    if len(location) > 255:
+        field_errors["location"] = ["Не длиннее 255 символов."]
+
+    person = None
+    raw_person = str(protected_person_id or "").strip()
+    if raw_person != "":
+        person = (
+            OpsProtectedPerson.objects.filter(
+                pk=raw_person, is_active=True
+            ).first()
+            if raw_person.isdigit()
+            else None
+        )
+        if person is None:
+            field_errors["protectedPersonId"] = [
+                "Охраняемое лицо не найдено в справочнике."
+            ]
+
+    chief = None
+    raw_chief = str(chief_employee_id or "").strip()
+    if raw_chief != "":
+        chief = _find_personnel(raw_chief)
+        if chief is None:
+            field_errors["chiefEmployeeId"] = ["Сотрудник не найден."]
+
     security_object = None
     if not field_errors:
         security_object = (
@@ -175,6 +233,15 @@ def create_event(*, title, object_id, business_date, business_date_end=None, act
         passport_binding=binding,
         business_date=parsed_date,
         business_date_end=parsed_end,
+        kind=kind,
+        event_time=parsed_time,
+        protected_person=person,
+        # Снимок подписи рядом со ссылкой — как object_name у объекта: скрытие
+        # лица из справочника не должно стирать имя из истории.
+        protected_person_name=person.name if person is not None else "",
+        location=location,
+        chief_employee_id=chief.pk if chief is not None else None,
+        chief_name=personnel_display_name(chief) if chief is not None else "",
         stage="BULLETIN",
         readiness_percent=STAGE_READINESS["BULLETIN"],
         force_need=0,

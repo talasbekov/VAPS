@@ -54,6 +54,7 @@ import type {
 } from "@/entities/security-event";
 import { readObjectsStore } from "./objects-handlers";
 import { findPersonnel, PERSONNEL_ROSTER } from "./fixtures/personnel";
+import { PROTECTED_PERSONS_CATALOG } from "./protected-persons-handlers";
 import { appendAudit } from "./audit-store";
 
 const STORE_KEY = "ops-mock-security-events";
@@ -93,6 +94,13 @@ function emptyEvent(
     passportBinding: null,
     businessDate: date,
     businessDateEnd: null,
+    kind: null,
+    eventTime: null,
+    protectedPersonId: null,
+    protectedPersonName: "",
+    location: "",
+    chiefEmployeeId: null,
+    chiefName: "",
     stage: "BULLETIN",
     readinessPercent: 0,
     forceNeed: 0,
@@ -395,6 +403,28 @@ export const securityEventsHandlers = [
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.businessDate)) {
       fieldErrors.businessDate = ["Укажите дату в формате ГГГГ-ММ-ДД."];
     }
+    if (body.kind !== "INTERNAL" && body.kind !== "FOREIGN") {
+      fieldErrors.kind = ["Обязательное поле."];
+    }
+    const rawTime = body.eventTime ?? "";
+    if (rawTime !== "" && !/^\d{2}:\d{2}$/.test(rawTime)) {
+      fieldErrors.eventTime = ["Укажите время в формате ЧЧ:ММ."];
+    }
+    const rawPerson = body.protectedPersonId ?? "";
+    const person =
+      rawPerson === ""
+        ? null
+        : (PROTECTED_PERSONS_CATALOG.find((p) => p.id === rawPerson) ?? null);
+    if (rawPerson !== "" && person === null) {
+      fieldErrors.protectedPersonId = [
+        "Охраняемое лицо не найдено в справочнике.",
+      ];
+    }
+    const rawChief = body.chiefEmployeeId ?? "";
+    const chief = rawChief === "" ? null : (findPersonnel(rawChief) ?? null);
+    if (rawChief !== "" && chief === null) {
+      fieldErrors.chiefEmployeeId = ["Сотрудник не найден."];
+    }
     const object =
       readObjectsStore().find((o) => o.id === body.objectId) ?? null;
     if (Object.keys(fieldErrors).length === 0 && object === null) {
@@ -421,6 +451,17 @@ export const securityEventsHandlers = [
       body.businessDate,
       now
     );
+    created.businessDateEnd =
+      body.businessDateEnd === undefined || body.businessDateEnd === ""
+        ? null
+        : body.businessDateEnd;
+    created.kind = body.kind;
+    created.eventTime = rawTime === "" ? null : rawTime;
+    created.protectedPersonId = person === null ? null : person.id;
+    created.protectedPersonName = person === null ? "" : person.name;
+    created.location = (body.location ?? "").trim();
+    created.chiefEmployeeId = chief === null ? null : chief.id;
+    created.chiefName = chief === null ? "" : chief.name;
     // версия паспорта выбирается по бизнес-дате ОМ; её отсутствие — не ошибка
     // создания, расчёт постов будет ручным (карточка скажет об этом)
     const applicable = resolveApplicableVersion(object!, body.businessDate);
