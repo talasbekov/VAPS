@@ -29,6 +29,23 @@ import { JournalList } from "./JournalList";
 import { closureFacts } from "./ConductStage";
 import { formatIsoDate, formatIsoDateTime } from "@/shared/lib/date";
 
+/**
+ * Период мероприятия строкой. Архив — единственное место, где ОМ читают уже
+ * НЕ зная его наизусть, и одна дата вместо периода прямо врёт о длительности:
+ * трёхдневное мероприятие выглядело однодневным и в шапке архива, и в
+ * «Карточке, бюллетене, программе».
+ */
+function eventPeriod(event: SecurityEvent): string {
+  const start = formatIsoDate(event.businessDate);
+  if (
+    event.businessDateEnd === null ||
+    event.businessDateEnd === event.businessDate
+  ) {
+    return start;
+  }
+  return `${start} — ${formatIsoDate(event.businessDateEnd)}`;
+}
+
 export function ClosedView({ event }: { event: SecurityEvent }) {
   const postById = new Map(event.reconSectorPosts.map((p) => [p.id, p]));
   // Та же сводка, что видел закрывающий, — снимком: закрытое дело смотрят,
@@ -48,7 +65,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
             Архив · {event.code}
           </h2>
           <p className="text-xs text-muted-foreground">
-            {event.title} · {formatIsoDate(event.businessDate)} · {event.objectName}
+            {event.title} · {eventPeriod(event)} · {event.objectName}
           </p>
         </div>
         <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold">
@@ -106,7 +123,7 @@ export function ClosedView({ event }: { event: SecurityEvent }) {
           <CardTitle>Карточка, бюллетень, программа</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <Fact label="Дата проведения" value={formatIsoDate(event.businessDate)} />
+          <Fact label="Дата проведения" value={eventPeriod(event)} />
           <Fact label="Объект" value={event.objectName} />
           <Fact
             label="Краткое описание"

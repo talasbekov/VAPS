@@ -240,7 +240,17 @@ function MyAssignment({
           label="Сектор / пост"
           value={post ? `${post.sector} · ${post.post}` : mine.postId}
         />
-        <Row label="Дата" value={formatIsoDate(event.businessDate)} />
+        <Row
+          label="Дата"
+          // Период целиком: у многодневного ОМ одна дата в карточке своего
+          // назначения читается как «заступаю на день».
+          value={
+            event.businessDateEnd === null ||
+            event.businessDateEnd === event.businessDate
+              ? formatIsoDate(event.businessDate)
+              : `${formatIsoDate(event.businessDate)} — ${formatIsoDate(event.businessDateEnd)}`
+          }
+        />
         <Row label="Задача поста" value={post?.task === "" ? "—" : (post?.task ?? "—")} />
       </dl>
       {mine.acknowledgedAt !== null ? (
