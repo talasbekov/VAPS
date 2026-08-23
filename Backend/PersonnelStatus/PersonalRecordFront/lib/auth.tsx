@@ -283,12 +283,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /**
+   * Выход: сессию снимает NextAuth, УХОДИТ со страницы браузер.
+   *
+   * 🔴 Было `signOut({ redirect: true, callbackUrl: "/" })`. Относительный
+   * `callbackUrl` NextAuth резолвит от `NEXTAUTH_URL`, а НЕ от адреса, по
+   * которому открыто приложение. В dev переменная стоит на `:3000`, стенд
+   * живёт на `:3106` — и «Выйти» уводил на `http://localhost:3000/`, то есть
+   * на пустой порт: браузер показывал ошибку соединения, а человек оставался
+   * без приложения. Сессия при этом снималась, так что дефект читался как
+   * «кнопка ломает сайт».
+   *
+   * `window.location.origin` не может разъехаться с адресом вкладки, поэтому
+   * чинится здесь, а не правкой `NEXTAUTH_URL`: переменная у каждого стенда
+   * своя (dev :3106, docker :3100, прод — хост), и любая из них рано или
+   * поздно разойдётся с реальным портом снова.
+   *
+   * Полная перезагрузка, а не `router.push`: после выхода в памяти вкладки
+   * остаются кэш react-query с чужими данными и состояние провайдеров.
+   */
   const logout = async (): Promise<void> => {
     try {
-      await signOut({ redirect: true, callbackUrl: "/" });
+      await signOut({ redirect: false });
     } catch (error) {
       console.error("Logout error:", error);
     }
+    // Уходим и после ошибки: если сессия уцелела, «/» вернёт на дашборд —
+    // это видимый отказ, а не молчаливое «ничего не произошло».
+    window.location.href = "/";
   };
 
   const hasPermission = (resource: string, action: string): boolean => {

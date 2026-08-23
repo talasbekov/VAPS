@@ -1053,14 +1053,25 @@ test.describe('смоук-обход портала', () => {
           await logout.first().click()
           await page.waitForTimeout(SETTLE_MS)
           const { net, logs } = rec.since(mark)
-          const landed = currentPath(page).split('?')[0]
+          // ПОЛНЫЙ адрес, а не путь: выход уводил на `http://localhost:3000/`
+          // (пустой порт — NextAuth резолвил относительный callbackUrl от
+          // NEXTAUTH_URL), и проверка по одному `pathname` видела там «/» —
+          // вердикт был «✅ увело на экран входа» поверх мёртвой страницы.
+          const landedUrl = new URL(page.url())
+          const sameOrigin = landedUrl.origin === new URL(APP_ORIGIN).origin
+          const landed = `${sameOrigin ? '' : landedUrl.origin}${currentPath(page).split('?')[0]}`
           findings.push({
             page: '(каркас)',
             element: 'выход',
             action: 'клик',
             api: netApi(net),
             status: netStatus(net),
-            verdict: landed === '/' ? '✅ увело на экран входа' : '🔴 остались на месте',
+            verdict:
+              landed === '/'
+                ? '✅ увело на экран входа'
+                : sameOrigin
+                  ? '🔴 остались на месте'
+                  : '🔴 увело на ЧУЖОЙ origin',
             details: `приземлились на ${landed}; ${logs.map((l) => l.text).join('; ')}`,
           })
         }
