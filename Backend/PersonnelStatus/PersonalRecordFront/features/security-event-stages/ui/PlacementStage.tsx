@@ -112,6 +112,20 @@ function DemandPanel({ event }: { event: SecurityEvent }) {
           преднаполнены расчётом рекогносцировки; смену и группу задайте вручную.
         </p>
         <div className="flex flex-col gap-2">
+          {/* Шапка колонок: та же беда, что была у расчёта рекогносцировки —
+              подписи жили только в aria-label, а плейсхолдер исчезает, как
+              только в поле что-то введено. «Смена» от «Группы» глазом не
+              отличались. Скринридеру шапка не нужна (у каждого поля своё имя). */}
+          <div
+            aria-hidden="true"
+            className="text-muted-foreground hidden gap-2 px-1 text-[10px] font-bold uppercase tracking-wider md:grid md:grid-cols-[1fr_1.4fr_1fr_70px_1.2fr]"
+          >
+            <span>Направление</span>
+            <span>Задача</span>
+            <span>Смена</span>
+            <span>Кол-во</span>
+            <span>Группа</span>
+          </div>
           {rows.map((row) => (
             <div
               key={row.id}
