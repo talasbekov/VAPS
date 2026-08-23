@@ -773,6 +773,7 @@ def test_every_declared_action_is_actually_written(types, home, host, tmp_path):
         title="Покрытие журнала",
         object_id=str(secured.pk),
         business_date=TODAY.isoformat(),
+        kind="INTERNAL",
         actor=ACTOR,
     )
     event_service.update_bulletin(

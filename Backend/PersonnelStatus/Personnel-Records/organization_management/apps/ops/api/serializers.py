@@ -134,6 +134,26 @@ def serialize_security_event(event):
         "businessDateEnd": (
             str(event.business_date_end) if event.business_date_end else None
         ),
+        # Поля бюллетеня эталона. null у kind/eventTime/protectedPersonId —
+        # «не заполнено», а не «внутреннее»/«00:00»: заполнять их за автора
+        # нечем (см. models_event.OpsSecurityEvent.kind).
+        "kind": event.kind or None,
+        "eventTime": (
+            event.event_time.strftime("%H:%M") if event.event_time else None
+        ),
+        "protectedPersonId": (
+            str(event.protected_person_id)
+            if event.protected_person_id is not None
+            else None
+        ),
+        "protectedPersonName": event.protected_person_name,
+        "location": event.location,
+        "chiefEmployeeId": (
+            str(event.chief_employee_id)
+            if event.chief_employee_id is not None
+            else None
+        ),
+        "chiefName": event.chief_name,
         "approvalRoute": event.approval_route or [],
         "createdAt": event.created_at.isoformat(),
         "updatedAt": event.updated_at.isoformat(),

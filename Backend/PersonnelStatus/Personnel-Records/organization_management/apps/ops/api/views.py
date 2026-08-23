@@ -294,6 +294,11 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             object_id=data.get("objectId"),
             business_date=data.get("businessDate"),
             business_date_end=data.get("businessDateEnd"),
+            kind=data.get("kind"),
+            event_time=data.get("eventTime"),
+            protected_person_id=data.get("protectedPersonId"),
+            location=data.get("location"),
+            chief_employee_id=data.get("chiefEmployeeId"),
             actor=resolve_actor_id(request),
         )
         return self._event_response(event, status=201)

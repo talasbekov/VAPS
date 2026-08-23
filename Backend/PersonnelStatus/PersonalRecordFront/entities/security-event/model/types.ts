@@ -155,6 +155,17 @@ export interface ClosureDirectionSummary {
   summary: string;
 }
 
+/**
+ * Тип мероприятия. От него зависят маршрут согласования и старший:
+ * FOREIGN уводит запись в реестр ГВО и назначает старшего ГВО.
+ */
+export type SecurityEventKind = "INTERNAL" | "FOREIGN";
+
+export const SECURITY_EVENT_KIND_LABEL: Record<SecurityEventKind, string> = {
+  INTERNAL: "Внутреннее",
+  FOREIGN: "С участием иностранцев",
+};
+
 export interface SecurityEvent {
   id: string;
   code: string;
@@ -168,6 +179,20 @@ export interface SecurityEvent {
   businessDate: string;
   /** Дата окончания; null — однодневное ОМ либо заведённое до появления поля. */
   businessDateEnd: string | null;
+  /** Тип мероприятия; null — ОМ заведено до появления поля. */
+  kind: SecurityEventKind | null;
+  /** Время начала «ЧЧ:ММ»; null — час не назван (необязательная деталь). */
+  eventTime: string | null;
+  /** Охраняемое лицо из справочника; null — не выбрано. */
+  protectedPersonId: string | null;
+  /** Снимок имени лица: показывается и там, где лицо скрыто из справочника. */
+  protectedPersonName: string;
+  /** Локация мероприятия; пусто — не указана. */
+  location: string;
+  /** Старший (наряда или ГВО — по типу мероприятия); null — не назначен. */
+  chiefEmployeeId: string | null;
+  /** Снимок подписи старшего — как ownerName. */
+  chiefName: string;
   stage: SecurityEventStage;
   /** Готовность текущей стадии, 0–100 (демонстрационная метрика). */
   readinessPercent: number;
@@ -233,6 +258,15 @@ export interface CreateSecurityEventRequest extends Record<string, unknown> {
   /** ОМ заводится НА ОБЪЕКТ реестра — иначе версию паспорта не к чему привязать. */
   objectId: string;
   businessDate: string;
+  /** Обязателен: от типа зависят маршрут согласования и состав старших. */
+  kind: SecurityEventKind;
+  /** «ЧЧ:ММ»; пусто — час не назван. */
+  eventTime?: string;
+  /** Id из справочника «Охраняемые лица»; пусто — не выбрано. */
+  protectedPersonId?: string;
+  location?: string;
+  /** Id сотрудника — старшего наряда или ГВО; пусто — не назначен. */
+  chiefEmployeeId?: string;
 }
 
 /** Строка выпадающего списка объектов в форме создания ОМ. */

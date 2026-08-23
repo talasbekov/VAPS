@@ -37,6 +37,7 @@ _STAGES = (
     "CLOSED",
 )
 _APPROVAL_STATUSES = ("PENDING", "APPROVED", "RETURNED")
+_KINDS = ("INTERNAL", "FOREIGN")
 
 
 class OpsSecurityEvent(TimeStampedModel):
@@ -56,6 +57,10 @@ class OpsSecurityEvent(TimeStampedModel):
         APPROVED = "APPROVED", "Согласовано"
         RETURNED = "RETURNED", "Возвращено"
 
+    class Kind(models.TextChoices):
+        INTERNAL = "INTERNAL", "Внутреннее"
+        FOREIGN = "FOREIGN", "С участием иностранцев"
+
     code = models.CharField(max_length=50, unique=True)
     title = models.CharField(max_length=500)
     # SET_NULL, не CASCADE: удаление объекта реестра не вправе стирать историю
@@ -73,6 +78,34 @@ class OpsSecurityEvent(TimeStampedModel):
     # «Убытием» без неё невыводимы. null — заведённые раньше однодневные ОМ:
     # проставлять им business_date задним числом значило бы выдумать факт.
     business_date_end = models.DateField(null=True, blank=True)
+    # Тип мероприятия задаёт МАРШРУТ: «с участием иностранцев» уводит запись в
+    # реестр ГВО и меняет старшего (ГВО вместо наряда). Обязателен при
+    # создании — но null у строк, заведённых до появления поля: назвать их
+    # внутренними значило бы выдумать факт (та же логика, что у
+    # business_date_end выше).
+    kind = models.CharField(
+        max_length=20, choices=Kind.choices, null=True, blank=True
+    )
+    # Время начала — необязательная деталь бюллетеня: дата известна всегда,
+    # час — не всегда.
+    event_time = models.TimeField(null=True, blank=True)
+    # SET_NULL по той же причине, что у объекта: скрытие лица из справочника
+    # не вправе стирать историю мероприятий, снимок имени продолжает называть
+    # его и без ссылки.
+    protected_person = models.ForeignKey(
+        "operations.OpsProtectedPerson",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="security_events",
+    )
+    protected_person_name = models.CharField(max_length=200, blank=True)
+    location = models.CharField(max_length=255, blank=True)
+    # Плоская ссылка на employees.Employee без FK — идиома раздела ОМ
+    # (см. models_status: контексты разделены, каскады старой структуры не
+    # утаскивают факты ОМ). Подпись рядом — для экрана, как owner_name.
+    chief_employee_id = models.PositiveIntegerField(null=True, blank=True)
+    chief_name = models.CharField(max_length=255, blank=True)
     stage = models.CharField(max_length=20, choices=Stage.choices)
     readiness_percent = models.PositiveIntegerField()
     force_need = models.PositiveIntegerField()
@@ -131,6 +164,14 @@ class OpsSecurityEvent(TimeStampedModel):
             models.CheckConstraint(
                 condition=models.Q(title__regex=r"\S"),
                 name="chk_ops_security_event_title",
+            ),
+            # NULL разрешён ЯВНО (легаси-строки без типа), пустая строка — нет:
+            # без второй ветки `kind__in` пропускал бы "" мимо формы.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(kind__in=_KINDS) | models.Q(kind__isnull=True)
+                ),
+                name="chk_ops_security_event_kind",
             ),
         ]
 

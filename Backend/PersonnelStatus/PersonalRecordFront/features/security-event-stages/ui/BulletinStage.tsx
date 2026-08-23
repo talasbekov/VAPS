@@ -31,7 +31,10 @@ import {
 } from "@/hooks/use-security-event-stages";
 import { useSecurityObject } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
-import { STAGE_LABEL } from "@/entities/security-event";
+import {
+  SECURITY_EVENT_KIND_LABEL,
+  STAGE_LABEL,
+} from "@/entities/security-event";
 import type { SecurityEvent } from "@/entities/security-event";
 import { daySpanInclusive, ruDate, ruDaysLabel, ruWeekdayName } from "@/lib/ru-date";
 import { useGvoPatches, patchesByCode } from "@/hooks/use-gvo-summaries";
@@ -231,9 +234,28 @@ function EventFacts({ event }: { event: SecurityEvent }) {
       <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
         <Fact label="Номер ОМ" value={event.code} />
         <Fact label="Наименование ОМ" value={event.title} />
+        {/* Тип, локация, время и старший вводятся в окне создания. У ОМ,
+            заведённых до 23.08.2026, полей не было вовсе — «не указан»
+            здесь честнее подставленного «Внутреннее». */}
+        <Fact
+          label="Тип мероприятия"
+          value={
+            event.kind === null
+              ? "не указан"
+              : SECURITY_EVENT_KIND_LABEL[event.kind]
+          }
+        />
         <Fact label="Объект проведения" value={event.objectName} />
         <Fact label="Место / адрес" value={address} />
+        <Fact
+          label="Локация"
+          value={event.location.trim() === "" ? "не указана" : event.location}
+        />
         <Fact label="Дата начала" value={dayLabel(event.businessDate)} />
+        <Fact
+          label="Время начала"
+          value={event.eventTime === null ? "не указано" : event.eventTime}
+        />
         <Fact
           label="Дата окончания"
           value={
@@ -247,13 +269,22 @@ function EventFacts({ event }: { event: SecurityEvent }) {
           label="Ответственный за ОМ"
           value={event.ownerName.trim() === "" ? "не назначен" : event.ownerName}
         />
+        <Fact
+          // Подпись зависит от типа: у визита иностранного лица старший
+          // другой, и называть его «старшим наряда» было бы неправдой.
+          label={event.kind === "FOREIGN" ? "Старший ГВО" : "Старший наряда"}
+          value={event.chiefName.trim() === "" ? "не назначен" : event.chiefName}
+        />
         <Fact label="Текущий статус" value={STAGE_LABEL[event.stage]} />
         <Fact label="Охраняемые лица" value={personsLabel} />
         <Fact
           label="Количество охраняемых лиц"
           value={summary.persons.length === 0 ? UNSPECIFIED : String(summary.persons.length)}
         />
-        <Fact label="Старший ГВО" value={gvoSenior(summary)} />
+        {/* Именно ГРУППЫ: `gvoSenior` ищет старшего среди состава ГВО в
+            сводке. Старший мероприятия из бюллетеня стоит выше и это другой
+            человек — одинаковая подпись у двух фактов путала бы. */}
+        <Fact label="Старший группы ГВО" value={gvoSenior(summary)} />
         <Fact
           label="Численность ГВО"
           value={staff === 0 ? UNSPECIFIED : String(staff)}

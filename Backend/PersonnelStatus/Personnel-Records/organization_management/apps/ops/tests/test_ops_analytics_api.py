@@ -398,7 +398,8 @@ def ops_world(registries):
     )
     event = event_service.create_event(
         title="Международный форум", object_id=str(obj.pk),
-        business_date=Clock.today_local().isoformat(), actor="test",
+        business_date=Clock.today_local().isoformat(), kind="INTERNAL",
+        actor="test",
     )
     event.recon_sector_posts = [
         {"id": "post-1", "sector": "A", "post": "Пост 1", "need": 2,

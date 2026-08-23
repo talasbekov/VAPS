@@ -14,7 +14,7 @@ import type {
 } from "@/entities/protected-person";
 
 /** Каталог прототипа: состав и формулировки перенесены дословно. */
-const CATALOG: ProtectedPerson[] = [
+export const PROTECTED_PERSONS_CATALOG: ProtectedPerson[] = [
   {
     id: "pp-1",
     name: "Оспанов Бахыт Дюсенбаевич",
@@ -54,6 +54,8 @@ const CATALOG: ProtectedPerson[] = [
 
 export const protectedPersonsHandlers = [
   http.get(`*${PROTECTED_PERSONS_PATH}`, () =>
-    HttpResponse.json<ListProtectedPersonsResponse>({ results: CATALOG })
+    HttpResponse.json<ListProtectedPersonsResponse>({
+      results: PROTECTED_PERSONS_CATALOG,
+    })
   ),
 ];

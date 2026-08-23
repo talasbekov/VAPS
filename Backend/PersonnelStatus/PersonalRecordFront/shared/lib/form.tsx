@@ -137,6 +137,8 @@ export interface FieldProps {
   className?: string;
   /** Оформление подписи там, где у формы своя типографика. */
   labelClassName?: string;
+  /** То же для пояснения: у окна создания ОМ подсказки мельче общих. */
+  hintClassName?: string;
   /** Контрол получает `id` и связку с текстом ошибки — забыть её нельзя. */
   children: (control: FieldControlProps) => ReactNode;
 }
@@ -155,6 +157,7 @@ export function Field({
   hint,
   className,
   labelClassName,
+  hintClassName,
   children,
 }: FieldProps): ReactElement {
   const message = messageOf(error);
@@ -166,7 +169,9 @@ export function Field({
       </Label>
       {children(fieldProps(name, message))}
       {hint !== undefined && hint !== "" && (
-        <p className="text-xs text-muted-foreground">{hint}</p>
+        <p className={cn("text-xs text-muted-foreground", hintClassName)}>
+          {hint}
+        </p>
       )}
       <FieldErrorText id={name} error={message} />
     </div>
