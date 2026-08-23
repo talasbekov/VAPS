@@ -212,6 +212,63 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     )
   })
 
+  test('период мероприятия вводится в форме и доезжает до карточки', async ({ page }) => {
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    await expect(page.getByRole('heading', { name: 'Реестр ОМ' })).toBeVisible({
+      timeout: 20_000,
+    })
+
+    // Многодневное ОМ: до 23.08.2026 поля «Дата окончания» в форме не было
+    // вовсе, и каждое созданное вручную мероприятие выходило однодневным —
+    // бэк принимал `business_date_end`, вводить его было негде.
+    const title = `Проба периода (e2e) ${Date.now()}`
+    await page.getByRole('button', { name: '+ Создать бюллетень' }).click()
+    await page.getByLabel('Название ОМ *').fill(title)
+    const objectSelect = page.getByLabel('Объект *')
+    await expect(objectSelect.locator('option').nth(1)).toBeAttached({ timeout: 20_000 })
+    await objectSelect.selectOption({ index: 1 })
+    await page.getByLabel('Дата начала *').fill('2026-09-10')
+    await page.getByLabel('Дата окончания').fill('2026-09-12')
+
+    // Перевёрнутый период форма отбивает САМА. Доказывается не текстом
+    // ошибки — тот же текст возвращает и сервер, и ассерт на него проходил бы
+    // со снятой клиентской проверкой (красная проба это показала), — а тем,
+    // что запрос на создание НЕ УХОДИТ.
+    let postsSent = 0
+    // Слушатель, а не route: перехват маршрутом не видит запросов, ушедших
+    // через service worker, и молча считал ноль — красная проба со снятой
+    // клиентской проверкой оставалась зелёной.
+    page.on('request', (request) => {
+      if (
+        request.method() === 'POST' &&
+        request.url().includes('/api/ops/security-events')
+      ) {
+        postsSent += 1
+      }
+    })
+    await page.getByLabel('Дата окончания').fill('2026-09-01')
+    await page.getByRole('button', { name: 'Создать', exact: true }).click()
+    await expect(page.getByText('Дата окончания раньше даты начала.')).toBeVisible()
+    expect(postsSent, 'форма отправила заведомо неверный период на сервер').toBe(0)
+
+    await page.getByLabel('Дата окончания').fill('2026-09-12')
+    await page.getByRole('button', { name: 'Создать', exact: true }).click()
+    await expect(page).toHaveURL(/\/security-ops\/events\/\d+/, { timeout: 30_000 })
+
+    // В карточке — ПЕРИОД, а не одна дата: до правки трёхдневное ОМ читалось
+    // как однодневное.
+    await expect(
+      page.getByText('10.09.2026 — 12.09.2026', { exact: false }).first(),
+    ).toBeVisible({ timeout: 20_000 })
+
+    // И в реестре продолжительность считается по тому же полю.
+    await page.goto(`${APP}/security-ops/events/?search=${encodeURIComponent(title)}`)
+    const row = page.locator('tbody tr').first()
+    await expect(row).toContainText('10.09.2026', { timeout: 20_000 })
+    await expect(row).toContainText('по 12.09.2026')
+  })
+
   test('этап «Запрос сил» ведёт в «Сбор сил на ОМ»', async ({ page }) => {
     const token = await apiToken()
     const forces = await events(token, 'FORCES')
