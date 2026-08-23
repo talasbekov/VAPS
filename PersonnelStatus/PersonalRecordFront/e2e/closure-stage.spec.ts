@@ -136,7 +136,12 @@ test.describe(LIVE ? 'закрытие и итоги' : 'закрытие и и�
     await expect(closeButton).toBeEnabled()
     await closeButton.click()
     await expect(refusal).toBeVisible({ timeout: 15_000 })
-    await expect(panel).toContainText('directionSummaries.1.summary')
+    // Ошибка сервера названа по-человечески, а не машинным путём: ключ
+    // `directionSummaries.1.summary` переводится в «Строка 2 · Итог» (номер
+    // строки человек считает с единицы). Ассерт держит ОБА конца: и что
+    // сообщение про вторую строку, и что машинного пути на экране больше нет.
+    await expect(panel).toContainText('Строка 2 · Итог')
+    await expect(panel).not.toContainText('directionSummaries')
 
     // Отказ не сдвинул стадию
     const after = await eventDetail(token, target.id)
