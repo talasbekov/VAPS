@@ -23,17 +23,39 @@ import { Field, focusFirstError, useZodForm } from "@/shared/lib/form";
 import { useBindableObjects, useCreateSecurityEvent } from "@/hooks/use-create-security-event";
 
 /** Поля — в порядке появления на экране: так схему проще читать. */
-const formSchema = z.object({
-  title: z.string().trim().min(1, "Обязательное поле."),
-  objectId: z.string().trim().min(1, "Обязательное поле."),
-  businessDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Укажите дату в формате ГГГГ-ММ-ДД."),
-});
+const formSchema = z
+  .object({
+    title: z.string().trim().min(1, "Обязательное поле."),
+    objectId: z.string().trim().min(1, "Обязательное поле."),
+    businessDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Укажите дату в формате ГГГГ-ММ-ДД."),
+    // Пусто — однодневное ОМ: поле НЕобязательное, и пустая строка не должна
+    // краснеть как незаполненная.
+    businessDateEnd: z
+      .string()
+      .regex(/^(\d{4}-\d{2}-\d{2})?$/, "Укажите дату в формате ГГГГ-ММ-ДД."),
+  })
+  // Ту же пару сверяет сервер, но ждать от него отказа незачем: человек видит
+  // обе даты на экране и вправе узнать о перевёрнутом периоде сразу.
+  .refine(
+    (values) =>
+      values.businessDateEnd === "" ||
+      values.businessDateEnd >= values.businessDate,
+    {
+      path: ["businessDateEnd"],
+      message: "Дата окончания раньше даты начала.",
+    }
+  );
 
 type FormValues = z.infer<typeof formSchema>;
 
-const EMPTY_FORM: FormValues = { title: "", objectId: "", businessDate: "" };
+const EMPTY_FORM: FormValues = {
+  title: "",
+  objectId: "",
+  businessDate: "",
+  businessDateEnd: "",
+};
 
 export interface CreateSecurityEventDialogProps {
   open: boolean;
@@ -85,7 +107,13 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Создать охранное мероприятие</DialogTitle>
+          {/* Заголовок и надзаголовок эталона. Кнопка реестра называется
+              «+ Создать бюллетень» — окно, открывающееся по ней, обязано
+              называться так же, иначе человек не уверен, что попал куда хотел. */}
+          <p className="text-primary-ink text-[10.5px] font-bold uppercase tracking-[.12em]">
+            Новое охранное мероприятие
+          </p>
+          <DialogTitle>Создать бюллетень</DialogTitle>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -97,8 +125,14 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
             )(e)
           }
         >
-          <Field name="title" label="Название" required error={errors.title}>
-            {(field) => <Input {...field} {...register("title")} />}
+          <Field name="title" label="Название ОМ" required error={errors.title}>
+            {(field) => (
+              <Input
+                {...field}
+                placeholder="Например, Международный экономический форум"
+                {...register("title")}
+              />
+            )}
           </Field>
 
           <Field name="objectId" label="Объект" required error={errors.objectId}>
@@ -138,16 +172,34 @@ function OpenDialog({ onClose }: { onClose: () => void }) {
             )}
           </Field>
 
-          <Field
-            name="businessDate"
-            label="Дата проведения"
-            required
-            error={errors.businessDate}
-          >
-            {(field) => (
-              <Input {...field} type="date" {...register("businessDate")} />
-            )}
-          </Field>
+          {/* Две даты рядом, как в эталоне: период мероприятия читается парой,
+              а не двумя разрозненными полями. Окончание принимает и бэк
+              (`business_date_end`), и реестр — колонка «Даты» показывает по
+              нему продолжительность; до этой правки ввести его было негде, и
+              каждое созданное вручную ОМ выходило однодневным. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              name="businessDate"
+              label="Дата начала"
+              required
+              error={errors.businessDate}
+            >
+              {(field) => (
+                <Input {...field} type="date" {...register("businessDate")} />
+              )}
+            </Field>
+
+            <Field
+              name="businessDateEnd"
+              label="Дата окончания"
+              hint="Пусто — мероприятие на один день"
+              error={errors.businessDateEnd}
+            >
+              {(field) => (
+                <Input {...field} type="date" {...register("businessDateEnd")} />
+              )}
+            </Field>
+          </div>
 
           {mutation.error !== null && (
             <p className="text-sm text-destructive-ink" role="alert">

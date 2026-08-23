@@ -107,7 +107,16 @@ function SecurityEventScreen() {
               лейбл сверху дублировал бы его. */}
           <PageHeader
             title={event.title}
-            description={`${formatIsoDate(event.businessDate)} · ответственный: ${event.ownerName}`}
+            // Период, а не одна дата: ОМ бывает многодневным (бэк принимает
+            // `businessDateEnd`, реестр считает по нему продолжительность), и
+            // карточка, показывая только начало, теряла половину факта —
+            // человек читал трёхдневное мероприятие как однодневное.
+            description={`${formatIsoDate(event.businessDate)}${
+              event.businessDateEnd !== null &&
+              event.businessDateEnd !== event.businessDate
+                ? ` — ${formatIsoDate(event.businessDateEnd)}`
+                : ""
+            } · ответственный: ${event.ownerName}`}
           />
           {/* Карточка ОМ — хаб: объект и сводка ГВО кликабельны отсюда на
               ЛЮБОМ этапе, а не только внутри блока «Сведения об ОМ»
