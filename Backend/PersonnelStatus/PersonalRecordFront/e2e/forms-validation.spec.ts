@@ -19,6 +19,7 @@
  * 🔴 `serviceWorkers: 'block'` — иначе MSW перехватывает запросы живого стенда.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -61,7 +62,7 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
   test('добавление сотрудника: правило на blur, связка с полем, фокус на первой ошибке', async ({
     page,
   }) => {
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/employees')
     await hydrated(page)
 
@@ -106,7 +107,7 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
   test('статусы сотрудника: наряд проверяется по полям, «В строю» дат не требует', async ({
     page,
   }) => {
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/statuses')
     await hydrated(page)
 
@@ -156,7 +157,7 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
   test('откомандирование: фокус идёт к ВЕРХНЕМУ пустому полю, а не к третьему', async ({
     page,
   }) => {
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/statuses')
     await hydrated(page)
 
@@ -185,7 +186,7 @@ test.describe(LIVE ? 'формы: RHF + zod' : 'формы: RHF + zod (скип:
   test('массовое обновление: период обязателен у срочного статуса, как в одиночной модалке', async ({
     page,
   }) => {
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/statuses')
     await hydrated(page)
 

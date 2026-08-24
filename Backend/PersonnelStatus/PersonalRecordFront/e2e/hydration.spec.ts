@@ -12,6 +12,7 @@
  * сервера) расхождения нет вовсе, и тест был бы вакуумным при любом коде.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -23,7 +24,7 @@ async function signIn(page: Page): Promise<void> {
   const api = page.context().request
   const csrf = (await (await api.get(`${APP}/api/auth/csrf/`)).json()) as { csrfToken: string }
   await api.post(`${APP}/api/auth/callback/credentials/`, {
-    form: { csrfToken: csrf.csrfToken, username: 'admin', password: 'admin123', json: 'true' },
+    form: { csrfToken: csrf.csrfToken, username: STAND_USERNAME, password: STAND_PASSWORD, json: 'true' },
   })
 }
 

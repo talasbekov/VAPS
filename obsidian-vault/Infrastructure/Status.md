@@ -7,6 +7,21 @@ tags: [infra, status]
 
 # Infrastructure — Status
 
+## Секреты стендов перевыпущены, порт БД закрыт (24.08.2026)
+
+Дефолтных паролей на машине не осталось — ни в Plane, ни на стенде VAPS.
+
+**Plane.** Перевыпущены `POSTGRES_PASSWORD`+`DATABASE_URL`, `RABBITMQ_PASSWORD`+`AMQP_URL`, ключи MinIO (root-пользователь переименован), `SECRET_KEY`, `LIVE_SERVER_SECRET_KEY`, пароль учётки. Прежний API-ключ отозван (отвечает 403), выпущен новый. Значения — `/home/erda/plane/CREDENTIALS.txt` (600, вне git).
+
+**Стенд VAPS — две правки, одна из них важнее пароля.**
+
+1. **Postgres слушал `0.0.0.0:5434`** — база стенда была доступна из локальной сети с паролем `vaps`. Контейнер пересоздан с привязкой `127.0.0.1:5434` на ТОМ ЖЕ томе (данные целы: 168 ОМ на месте), пароль роли сменён.
+2. **Пароль стенда больше не литерал в коде.** Было: `vaps` дефолтом в двух `settings`, `admin123` — в 30 e2e-спеках и в `scripts/create_users.py`. Стало: единственное место правды — файлы `~/.config/vaps/db-password` и `~/.config/vaps/stand-admin-password` (права 600, вне репозитория). `settings` читают пароль сами (не требуют экспорта), `playwright.smoke.config.ts` кладёт пароль в `SMOKE_PASSWORD`, спеки берут его из `e2e/stand-credentials.ts`. Нет файла и нет переменной — проба падает с внятным «пароль стенда не задан», а не стучится общеизвестным паролем.
+
+Проверено после смены: `ops` 246 passed, `events-registry` 10/10, `auth-logout`/`bulletin`/`recon`/`command-center`/`hydration` зелёные. `my-profile` красный — это pre-existing (счётчик назначений на реестре >100 записей), к паролям отношения не имеет.
+
+**Чистка Docker (24.08).** Освобождено ~70 ГБ: `image prune -a` (60.6 ГБ), `builder prune` (9.8 ГБ), `volume prune` (1.8 ГБ, 79 томов без контейнеров — список сохранён в `/home/erda/plane/removed-docker-volumes-2026-08-24.txt`). Свободно на диске стало 106 ГБ вместо 46. **НЕ тронуты** тома остановленного чужого стека `infra-*` (Postgres ×2, Redis, MinIO) — это чьи-то базы, и удалять их без спроса нельзя; они и сейчас занимают ~7 ГБ.
+
 ## Трекер задач: self-hosted Plane (24.08.2026)
 
 Заказчик отказался от ClickUp; вместо него на рабочей машине поднят [Plane](https://github.com/makeplane/plane) community edition.

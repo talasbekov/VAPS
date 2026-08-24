@@ -14,6 +14,7 @@
  * 4. подпись «Фокус: …» печатала имя КОРНЯ при любом выбранном узле.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -42,7 +43,7 @@ async function tokenFor(username: string, password: string): Promise<string> {
 }
 
 async function statistics(): Promise<Statistics> {
-  const token = await tokenFor('admin', 'admin123')
+  const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
   const res = await fetch(`${API}/api/staff_unit/statistics/`, {
     headers: { Authorization: `Bearer ${token}` },
   })
@@ -100,7 +101,7 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
       'штат управления равен штату отдела — уровни не различить',
     ).not.toBe(division.staff_units_count)
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
@@ -125,7 +126,7 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
   test('плитка «Занято» не приписывает несуществующий прирост', async ({ page }) => {
     const stats = await statistics()
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
@@ -159,7 +160,7 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
     const names = stats.divisions.map((item) => item.division_name)
     expect(names.length, 'на стенде нет отделов — проба вакуумна').toBeGreaterThan(1)
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })
@@ -209,7 +210,7 @@ test.describe(LIVE ? 'подразделения: разрез и поиск' : 
       'нет подразделения больше чем с одной ставкой — дублирование не на чем проверить',
     ).toBeTruthy()
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/organization')
     await hydrated(page)
     await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 25_000 })

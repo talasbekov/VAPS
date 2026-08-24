@@ -32,6 +32,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { expect, request as apiRequest, test, type Page, type Request } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const API_ORIGIN = process.env.SMOKE_API ?? 'http://127.0.0.1:8100'
@@ -118,7 +119,7 @@ interface Persona {
 }
 
 const ALL_PERSONAS: readonly Persona[] = [
-  { key: 'admin', username: 'admin', password: 'admin123', role: 'ADMIN → `*`' },
+  { key: STAND_USERNAME, username: STAND_USERNAME, password: STAND_PASSWORD, role: 'ADMIN → `*`' },
   {
     key: 'observer',
     username: 'observer',

@@ -14,7 +14,22 @@
 // Заодно снимается ловушка кириллицы в пути: `__dirname` — обычный путь ФС, а
 // не URL, процентного кодирования в нём не бывает.
 import path from 'node:path'
+import fs from 'node:fs'
+import os from 'node:os'
 import { defineConfig, devices } from '@playwright/test'
+
+// Пароль стенда — из файла вне репозитория (`~/.config/vaps/stand-admin-password`,
+// права 600). В спеках литерала пароля больше нет: до 24.08.2026 `admin123` был
+// вписан в 30 файлов, и смена пароля означала правку каждого.
+if (process.env.SMOKE_PASSWORD === undefined) {
+  try {
+    process.env.SMOKE_PASSWORD = fs
+      .readFileSync(path.join(os.homedir(), '.config', 'vaps', 'stand-admin-password'), 'utf8')
+      .trim()
+  } catch {
+    // Файла нет — пусть падает сам спек с внятным текстом (stand-credentials.ts).
+  }
+}
 
 export default defineConfig({
   testDir: path.join(__dirname, 'e2e'),

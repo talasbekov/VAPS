@@ -10,6 +10,7 @@
  * Django :8100 + Next :3106.
  */
 import { expect, test } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://127.0.0.1:3106'
@@ -31,8 +32,8 @@ test.describe(LIVE ? 'вкладки реестра объектов' : 'вкл�
     await api.post(`${APP}/api/auth/callback/credentials/`, {
       form: {
         csrfToken: csrf.csrfToken,
-        username: 'admin',
-        password: 'admin123',
+        username: STAND_USERNAME,
+        password: STAND_PASSWORD,
         json: 'true',
       },
     })
@@ -75,8 +76,8 @@ test.describe(LIVE ? 'вкладки реестра объектов' : 'вкл�
     await api.post(`${APP}/api/auth/callback/credentials/`, {
       form: {
         csrfToken: csrf.csrfToken,
-        username: 'admin',
-        password: 'admin123',
+        username: STAND_USERNAME,
+        password: STAND_PASSWORD,
         json: 'true',
       },
     })

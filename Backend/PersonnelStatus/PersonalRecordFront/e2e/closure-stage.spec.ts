@@ -19,6 +19,7 @@
  * одноразовой. Успешный путь закрытия покрыт снимком уже закрытого дела.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -43,7 +44,7 @@ async function apiToken(): Promise<string> {
   const res = await fetch(`${API}/api/token/`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+    body: JSON.stringify({ username: STAND_USERNAME, password: STAND_PASSWORD }),
   })
   const body = (await res.json()) as { access?: string }
   if (body.access === undefined) throw new Error('нет токена стенда')
@@ -77,7 +78,7 @@ async function signIn(page: Page): Promise<void> {
     csrfToken: string
   }
   await api.post(`${APP}/api/auth/callback/credentials/`, {
-    form: { csrfToken: csrf.csrfToken, username: 'admin', password: 'admin123', json: 'true' },
+    form: { csrfToken: csrf.csrfToken, username: STAND_USERNAME, password: STAND_PASSWORD, json: 'true' },
   })
 }
 

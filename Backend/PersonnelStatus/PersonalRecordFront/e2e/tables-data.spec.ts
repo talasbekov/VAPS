@@ -17,6 +17,7 @@
  * ассерт «просроченные отмечены» вырождается в «отмечены все» или «никто».
  */
 import { expect, test, type Page } from '@playwright/test'
+import { STAND_PASSWORD, STAND_USERNAME } from './stand-credentials'
 
 const LIVE = process.env.SMOKE_LIVE === '1'
 const APP = process.env.SMOKE_APP ?? 'http://localhost:3106'
@@ -82,7 +83,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
 
   test('период статуса доезжает с бэка до обеих таблиц', async ({ page }) => {
     // Сверяемся с ответом сервера, а не с числами в коде: «сегодня» плавает.
-    const token = await tokenFor('admin', 'admin123')
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const raw = await fetch(`${API}/api/staff_unit/staff-units/directorate/`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -101,7 +102,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       statuses.length,
     )
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/statuses')
     await hydrated(page)
     await tableFilled(page)
@@ -163,7 +164,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       },
     )
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/statuses')
     await hydrated(page)
     await tableFilled(page)
@@ -237,7 +238,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       },
     )
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/statuses')
     await hydrated(page)
     await tableFilled(page)
@@ -268,7 +269,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
   })
 
   test('кадровая таблица не выдаёт сегодняшнее число за дату у всех', async ({ page }) => {
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/employees')
     await hydrated(page)
     await tableFilled(page)
@@ -304,7 +305,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
      * разные. Отличает подмену только то, что у одного и того же человека
      * «Статус с» и «Дата найма» — РАЗНЫЕ дни.
      */
-    const token = await tokenFor('admin', 'admin123')
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const raw = await fetch(`${API}/api/staff_unit/staff-units/directorate/`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -339,7 +340,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       'ни у кого дата найма не отличается от начала статуса — подмену не отличить',
     ).toBeGreaterThan(0)
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/employees')
     await hydrated(page)
     await tableFilled(page)
@@ -367,7 +368,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
      * Подстрока прототипа. На её месте печаталось поле `manager`, которому
      * ручка штатки не даёт источника: во ВСЕХ строках стояла пустая строка.
      */
-    const token = await tokenFor('admin', 'admin123')
+    const token = await tokenFor(STAND_USERNAME, STAND_PASSWORD)
     const raw = await fetch(`${API}/api/staff_unit/staff-units/directorate/`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -385,7 +386,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
     expect(new Set(ranked.map((p) => p.rank)).size, 'звание одинаково у всех — проба вырождена')
       .toBeGreaterThan(1)
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/employees')
     await hydrated(page)
     await tableFilled(page)
@@ -431,7 +432,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
       },
     )
 
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/employees')
     await hydrated(page)
     await tableFilled(page)
@@ -453,7 +454,7 @@ test.describe(LIVE ? 'таблицы: правда в колонках' : 'та�
      * СТРОГО МЕНЬШЕ, чем всего, и лишних имён в файле нет. Поэтому проба
      * сначала убеждается, что отбор что-то отсёк.
      */
-    await signIn(page, 'admin', 'admin123')
+    await signIn(page, STAND_USERNAME, STAND_PASSWORD)
     await page.goto('/employees')
     await hydrated(page)
     await tableFilled(page)
