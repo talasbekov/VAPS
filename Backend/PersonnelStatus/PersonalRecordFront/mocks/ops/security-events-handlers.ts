@@ -92,6 +92,22 @@ function emptyEvent(
     objectId,
     objectName,
     passportBinding: null,
+    // Объект бюллетеня — он же первый (и единственный) объект посещения:
+    // сервер заводит его вместе с ОМ, мок повторяет это, чтобы раскрытие
+    // строки реестра не выглядело пустым.
+    visitObjects: [
+      {
+        id: `${id}-visit-1`,
+        objectId,
+        objectName,
+        passportBinding: null,
+        protectedPersonId: null,
+        protectedPersonName: "",
+        position: 0,
+        placementNeed: 0,
+        placementAssigned: 0,
+      },
+    ],
     businessDate: date,
     businessDateEnd: null,
     kind: null,

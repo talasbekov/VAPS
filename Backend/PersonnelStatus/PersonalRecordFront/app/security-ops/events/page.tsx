@@ -2,8 +2,9 @@
 
 // Реестр ОМ: поиск, фильтр по этапу, таблица, создание. Фильтры — в URL
 // (обновление страницы не сбрасывает фильтр, ссылкой можно поделиться).
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { ReactNode } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -34,6 +35,7 @@ import type {
   ListSecurityEventsParams,
   SecurityEvent,
   SecurityEventStage,
+  VisitObject,
 } from "@/entities/security-event";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 
@@ -277,6 +279,9 @@ function ResultsTable({
         <Table>
           <TableHeader>
             <TableRow>
+              <Th>
+                <span className="sr-only">Объекты посещения</span>
+              </Th>
               <Th>ОМ</Th>
               <Th>Даты</Th>
               <Th>Локация</Th>
@@ -290,22 +295,91 @@ function ResultsTable({
           </TableHeader>
           <TableBody>
             {events.map((event) => (
-              // Строка кликабельна целиком, как в эталоне. Ссылки в ячейках
-              // остаются: они — то, что видит скринридер и что открывается в
-              // новой вкладке средней кнопкой; обработчик строки лишь избавляет
-              // мышь от прицеливания в текст. Клик по самой ссылке сюда не
-              // доходит дважды — переход делает она, а router.push уже не
-              // случается: событие останавливать не нужно, навигация одна.
-              <TableRow
+              <EventRow
                 key={event.id}
-                className="cursor-pointer"
-                onClick={(clickEvent) => {
-                  const target = clickEvent.target as HTMLElement;
-                  if (target.closest("a") !== null) return;
-                  router.push(`/security-ops/events/${event.id}${backSuffix}`);
-                }}
-              >
-                <TableCell>
+                event={event}
+                backSuffix={backSuffix}
+                onOpen={() =>
+                  router.push(`/security-ops/events/${event.id}${backSuffix}`)
+                }
+              />
+            ))}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* Колонки эталона, которых в таблице нет. Сноска, а не пустые столбцы:
+          пустая колонка на всю таблицу — это не «честная пустота», а шум в
+          каждой строке. */}
+      <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
+        Колонки «Старший» из прототипа здесь нет: старшего мероприятия модель
+        показывает в карточке, а в реестре его место занял список объектов
+        посещения — он раскрывается кнопкой в первой колонке и несёт
+        охраняемое лицо каждого объекта.
+      </p>
+    </>
+  );
+}
+
+/**
+ * Строка реестра = БЮЛЛЕТЕНЬ. Раскрытие показывает объекты посещения этого
+ * мероприятия: куда едет охраняемое лицо и насколько закрыта расстановка.
+ *
+ * Строка кликабельна целиком, как в эталоне. Ссылки в ячейках остаются: они —
+ * то, что видит скринридер и что открывается в новой вкладке средней кнопкой;
+ * обработчик строки лишь избавляет мышь от прицеливания в текст. Клик по самой
+ * ссылке сюда не доходит дважды — переход делает она, а router.push уже не
+ * случается: событие останавливать не нужно, навигация одна.
+ *
+ * Раскрыватель — кнопка, а не клик по строке: сама строка уже ведёт в карточку,
+ * и одно нажатие не может значить два разных действия. По той же причине
+ * обработчик строки пропускает клики, пришедшие из кнопки, — иначе раскрытие
+ * уводило бы со страницы.
+ *
+ * Детали живут ВТОРОЙ строкой таблицы, а не Accordion: внутрь `<tbody>` можно
+ * положить только `<tr>`, и обёртка Radix ломала бы разметку таблицы.
+ */
+function EventRow({
+  event,
+  backSuffix,
+  onOpen,
+}: {
+  event: SecurityEvent;
+  backSuffix: string;
+  onOpen: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
+  const visits = event.visitObjects ?? [];
+
+  return (
+    <>
+      <TableRow
+        className="cursor-pointer"
+        onClick={(clickEvent) => {
+          const target = clickEvent.target as HTMLElement;
+          if (target.closest("a") !== null) return;
+          if (target.closest("button") !== null) return;
+          onOpen();
+        }}
+      >
+        <TableCell className="w-9 align-top">
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            aria-controls={detailsId}
+            aria-label={`${expanded ? "Свернуть" : "Развернуть"} объекты посещения ${event.code}`}
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {expanded ? (
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
+        </TableCell>
+        <TableCell>
                   <Link
                     href={`/security-ops/events/${event.id}${backSuffix}`}
                     className="block"
@@ -375,25 +449,128 @@ function ResultsTable({
 
                 <TableCell className="tabular-nums">{event.forceNeed}</TableCell>
                 <TableCell>{event.ownerName}</TableCell>
-                <TableCell className="text-center text-muted-foreground">
-                  <Link href={`/security-ops/events/${event.id}${backSuffix}`}>›</Link>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+        <TableCell className="text-center text-muted-foreground">
+          <Link href={`/security-ops/events/${event.id}${backSuffix}`}>›</Link>
+        </TableCell>
+      </TableRow>
 
-      {/* Колонки эталона, которых в таблице нет. Сноска, а не пустые столбцы:
-          пустая колонка на всю таблицу — это не «честная пустота», а шум в
-          каждой строке. */}
-      <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-        Колонок «Охраняемое лицо» и «Старший» из прототипа здесь нет:
-        охраняемые лица ведутся отдельным каталогом и с мероприятием не
-        связаны (сводка ГВО собирается из бюллетеня), а старшего мероприятия
-        модель не хранит — есть ответственный и назначения на посты.
-      </p>
+      {expanded && (
+        <TableRow id={detailsId} className="bg-muted/40 hover:bg-muted/40">
+          <TableCell colSpan={8} className="p-0">
+            <VisitObjectList visits={visits} />
+          </TableCell>
+        </TableRow>
+      )}
     </>
+  );
+}
+
+/**
+ * Объекты посещения раскрытого бюллетеня: куда едут, с кем и насколько закрыта
+ * расстановка.
+ *
+ * Готовность НЕ выдумывается: `placementNeed === null` означает «расчёт постов
+ * не размечен по объектам» (так у второго и последующих объектов, пока посты
+ * ведутся на мероприятии целиком), и тогда вместо доли стоит причина, а не
+ * ноль и не прочерк.
+ */
+function VisitObjectList({ visits }: { visits: VisitObject[] }) {
+  if (visits.length === 0) {
+    return (
+      <p className="px-4 py-3 pl-12 text-xs text-muted-foreground">
+        Объекты посещения не заведены.
+      </p>
+    );
+  }
+  return (
+    // Врезка, а не «ещё одна таблица»: колонки раскрытия не совпадают с
+    // колонками реестра, и попытка выровнять их друг под друга читалась бы
+    // как сбитая вёрстка. Левая граница и отступ говорят «это внутри строки».
+    <div className="ml-9 border-l-2 border-primary/30 py-2 pl-4 pr-4">
+      <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Объекты посещения · {visits.length}
+      </p>
+      <ul className="space-y-1.5">
+        {visits.map((visit) => {
+          const known = visit.placementNeed !== null;
+          const need = visit.placementNeed ?? 0;
+          const assigned = visit.placementAssigned ?? 0;
+          const percent = need === 0 ? 0 : Math.round((assigned / need) * 100);
+          return (
+            <li
+              key={visit.id}
+              className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-xs"
+            >
+              <span className="min-w-52 font-medium">
+                {visit.objectId === null ? (
+                  visit.objectName
+                ) : (
+                  <Link
+                    href={`/security-ops/objects/${visit.objectId}`}
+                    className="hover:underline"
+                  >
+                    {visit.objectName}
+                  </Link>
+                )}
+                <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                  {visit.passportBinding === null
+                    ? "паспорт не привязан"
+                    : `паспорт вер. ${visit.passportBinding.versionNumber}`}
+                </span>
+              </span>
+
+              <span className="min-w-56 text-[11px] text-muted-foreground">
+                {visit.protectedPersonName === "" ? (
+                  "охраняемое лицо не назначено"
+                ) : (
+                  <>
+                    Охраняемое лицо:{" "}
+                    <span className="text-xs text-foreground">
+                      {visit.protectedPersonName}
+                    </span>
+                  </>
+                )}
+              </span>
+
+              {/* Полоса рисуется только когда есть что мерить: шкала с нулём
+                  при нерассчитанных постах читается как «расстановка пуста»,
+                  хотя постов ещё нет вовсе. */}
+              {known && need > 0 && (
+                <span className="flex items-center gap-2">
+                  <span
+                    className="h-[5px] w-24 overflow-hidden rounded-full bg-muted"
+                    role="progressbar"
+                    aria-valuenow={percent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Готовность расстановки: ${visit.objectName}`}
+                  >
+                    <span
+                      className="block h-full bg-primary"
+                      style={{ width: `${percent}%` }}
+                    />
+                  </span>
+                  <span className="tabular-nums text-[11px] text-muted-foreground">
+                    расстановка {assigned} из {need}
+                  </span>
+                </span>
+              )}
+              {known && need === 0 && (
+                <span className="text-[11px] text-muted-foreground">
+                  посты не рассчитаны
+                </span>
+              )}
+              {!known && (
+                <span className="text-[11px] text-muted-foreground">
+                  расстановка ведётся на мероприятии целиком — по объекту не
+                  разнесена
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
