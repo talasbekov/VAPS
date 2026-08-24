@@ -166,6 +166,30 @@ export const SECURITY_EVENT_KIND_LABEL: Record<SecurityEventKind, string> = {
   FOREIGN: "С участием иностранцев",
 };
 
+/**
+ * Объект посещения в рамках ОМ. Мероприятие — это бюллетень, у которого может
+ * быть несколько объектов: реестр раскрывает строку мероприятия именно этим
+ * списком. У объекта СВОЁ охраняемое лицо и своя привязка паспорта.
+ */
+export interface VisitObject {
+  id: string;
+  /** Объект реестра; null — объект удалён, снимок имени остался. */
+  objectId: string | null;
+  objectName: string;
+  passportBinding: PassportBinding | null;
+  /** Охраняемое лицо этого объекта; null — не названо. */
+  protectedPersonId: string | null;
+  protectedPersonName: string;
+  position: number;
+  /**
+   * Готовность расстановки: сколько людей нужно постам объекта и сколько
+   * назначено. `null` — НЕИЗВЕСТНО (расчёт постов не размечен по объектам),
+   * `0` — посты не рассчитаны. Это разные ответы, и экран их различает.
+   */
+  placementNeed: number | null;
+  placementAssigned: number | null;
+}
+
 export interface SecurityEvent {
   id: string;
   code: string;
@@ -199,6 +223,8 @@ export interface SecurityEvent {
   forceNeed: number;
   conflictsCount: number;
   ownerName: string;
+  /** Объекты посещения бюллетеня — минимум один (объект окна создания). */
+  visitObjects: VisitObject[];
   /** Бюллетень: краткое описание, обязательное поле этапа BULLETIN. */
   briefDescription: string;
   /** Бюллетень: первичные задачи направлениям. */

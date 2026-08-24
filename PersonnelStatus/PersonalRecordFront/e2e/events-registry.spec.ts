@@ -175,6 +175,9 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(headCells.first()).toBeVisible({ timeout: 20_000 })
     const headers = await headCells.allInnerTexts()
     expect(headers.map((h) => h.trim()).filter((h) => h !== '')).toEqual([
+      // Первая колонка — раскрыватель объектов посещения; заголовок скрыт
+      // визуально, но подписан для скринридера (как «Действия» в конце).
+      'Объекты посещения',
       'ОМ',
       'Даты',
       'Локация',
@@ -333,6 +336,61 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     // стоит только имя, поэтому сверяем по первой части подписи.
     await expect(facts).toContainText(personName.split(' · ')[0]!.trim())
     await expect(facts).toContainText(chiefLabel.split(' · ')[0]!.trim())
+  })
+
+  test('строка бюллетени раскрывается в объекты посещения', async ({ page }) => {
+    // Проба отвечает на два вопроса сразу: раскрытие ПОКАЗЫВАЕТ объекты
+    // посещения этого ОМ (а не «на экране где-то есть имя объекта» — оно и
+    // так стоит в колонке локации), и нажатие раскрывателя НЕ уводит в
+    // карточку, хотя строка кликабельна целиком.
+    const token = await apiToken()
+    const res = await fetch(`${API}/api/ops/security-events/?page_size=20`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const first = ((await res.json()) as {
+      results: (EventRow & {
+        visitObjects: { objectName: string; placementNeed: number | null }[]
+      })[]
+    }).results[0]
+    expect(first, 'реестр стенда пуст').toBeDefined()
+    expect(
+      first.visitObjects.length,
+      'у ОМ нет объектов посещения — бэкфилл 0035 не проходил',
+    ).toBeGreaterThan(0)
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/`)
+    const toggle = page.getByRole('button', {
+      name: `Развернуть объекты посещения ${first.code}`,
+    })
+    await expect(toggle).toBeVisible({ timeout: 15_000 })
+
+    // Панель объектов адресуется по aria-controls — так ассерт смотрит именно
+    // в раскрытие своей строки, а не в любое совпадение текста на странице.
+    const detailsId = await toggle.getAttribute('aria-controls')
+    const details = page.locator(`#${detailsId}`)
+    await expect(details).toBeHidden()
+
+    await toggle.click()
+    await expect(details).toBeVisible()
+    await expect(page).toHaveURL(/\/security-ops\/events\/?$/)
+    for (const visit of first.visitObjects) {
+      await expect(details).toContainText(visit.objectName)
+    }
+    // Готовность расстановки названа словами: доля — когда посты объекта
+    // известны, причина — когда расчёт по объектам не разнесён.
+    await expect(details).toContainText(
+      first.visitObjects[0].placementNeed === null
+        ? /по объекту не разнесена/
+        : /расстановка \d+ из \d+|посты не рассчитаны/,
+    )
+
+    // Свернуть: у той же кнопки МЕНЯЕТСЯ подпись — «Развернуть» → «Свернуть».
+    // Ищем по новой подписи: локатор по старой ждал бы кнопку, которой уже нет.
+    await page
+      .getByRole('button', { name: `Свернуть объекты посещения ${first.code}` })
+      .click()
+    await expect(details).toBeHidden()
   })
 
   test('этап «Запрос сил» ведёт в «Сбор сил на ОМ»', async ({ page }) => {
