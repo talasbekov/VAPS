@@ -3,8 +3,9 @@
 // Реестр ОМ: поиск, фильтр по этапу, таблица, создание. Фильтры — в URL
 // (обновление страницы не сбрасывает фильтр, ссылкой можно поделиться).
 import { useId, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -24,8 +25,13 @@ import {
 } from "@/components/ui/table";
 import { useSecurityEvents } from "@/hooks/use-security-events";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
+import { useToast } from "@/shared/hooks/use-toast";
 import { useDebouncedCommit } from "@/hooks/use-debounced-commit";
 import { CreateSecurityEventDialog } from "@/features/create-security-event";
+import {
+  AddVisitObjectsDialog,
+  removeVisitObject,
+} from "@/features/event-visit-objects";
 import {
   SECURITY_EVENT_STAGES,
   STAGE_LABEL,
@@ -349,8 +355,14 @@ function EventRow({
   onOpen: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const detailsId = useId();
   const visits = event.visitObjects ?? [];
+  const { hasPermission } = useOpsPermissions();
+  // Закрытое мероприятие — история: сервер маршрут в нём менять не даст, и
+  // кнопка, которая гарантированно получит отказ, — обещание, а не действие.
+  const canEditObjects =
+    hasPermission("event.manage") && event.stage !== "CLOSED";
 
   return (
     <>
@@ -363,21 +375,40 @@ function EventRow({
           onOpen();
         }}
       >
-        <TableCell className="w-9 align-top">
-          <button
-            type="button"
-            onClick={() => setExpanded((value) => !value)}
-            aria-expanded={expanded}
-            aria-controls={detailsId}
-            aria-label={`${expanded ? "Свернуть" : "Развернуть"} объекты посещения ${event.code}`}
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {expanded ? (
-              <ChevronDown className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        {/* Раскрыватель и «добавить объекты» — рядом со строкой бюллетеня, как
+            просил заказчик. Обе — кнопки: строка ведёт в карточку, и клик по
+            ней не должен значить ни то, ни другое. */}
+        <TableCell className="w-16 align-top">
+          <span className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={expanded}
+              aria-controls={detailsId}
+              aria-label={`${expanded ? "Свернуть" : "Развернуть"} объекты посещения ${event.code}`}
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {expanded ? (
+                <ChevronDown className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+            {canEditObjects && (
+              <button
+                type="button"
+                onClick={() => {
+                  setExpanded(true);
+                  setAddOpen(true);
+                }}
+                aria-label={`Добавить объекты посещения ${event.code}`}
+                title="Добавить объекты посещения"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              </button>
             )}
-          </button>
+          </span>
         </TableCell>
         <TableCell>
                   <Link
@@ -457,9 +488,22 @@ function EventRow({
       {expanded && (
         <TableRow id={detailsId} className="bg-muted/40 hover:bg-muted/40">
           <TableCell colSpan={8} className="p-0">
-            <VisitObjectList visits={visits} />
+            <VisitObjectList
+              event={event}
+              visits={visits}
+              canEdit={canEditObjects}
+              onAdd={() => setAddOpen(true)}
+            />
           </TableCell>
         </TableRow>
+      )}
+
+      {addOpen && (
+        <AddVisitObjectsDialog
+          event={event}
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+        />
       )}
     </>
   );
@@ -474,12 +518,53 @@ function EventRow({
  * ведутся на мероприятии целиком), и тогда вместо доли стоит причина, а не
  * ноль и не прочерк.
  */
-function VisitObjectList({ visits }: { visits: VisitObject[] }) {
+function VisitObjectList({
+  event,
+  visits,
+  canEdit,
+  onAdd,
+}: {
+  event: SecurityEvent;
+  visits: VisitObject[];
+  canEdit: boolean;
+  onAdd: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const removal = useMutation({
+    mutationFn: removeVisitObject,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ops-security-events"] });
+      toast({ title: "Объект снят с мероприятия" });
+    },
+    // Отказ сервера ОБЪЯСНЯЕТСЯ: снять объект нельзя, пока за ним числятся
+    // посты расчёта, и человеку нужно знать причину, а не «не получилось».
+    onError: (error: unknown) => {
+      const message =
+        typeof error === "object" && error !== null && "message" in error
+          ? String((error as { message: unknown }).message)
+          : "";
+      toast({
+        title: "Объект не снят",
+        description:
+          message === ""
+            ? "Сервис временно недоступен. Попробуйте ещё раз."
+            : message,
+        variant: "destructive",
+      });
+    },
+  });
+
   if (visits.length === 0) {
     return (
-      <p className="px-4 py-3 pl-12 text-xs text-muted-foreground">
-        Объекты посещения не заведены.
-      </p>
+      <div className="flex flex-wrap items-center gap-3 px-4 py-3 pl-12 text-xs text-muted-foreground">
+        <span>Объекты посещения не заведены.</span>
+        {canEdit && (
+          <Button size="sm" variant="outline" onClick={onAdd}>
+            Добавить объекты
+          </Button>
+        )}
+      </div>
     );
   }
   return (
@@ -565,6 +650,24 @@ function VisitObjectList({ visits }: { visits: VisitObject[] }) {
                   расстановка ведётся на мероприятии целиком — по объекту не
                   разнесена
                 </span>
+              )}
+
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    removal.mutate({
+                      eventId: event.id,
+                      visitObjectId: visit.id,
+                    })
+                  }
+                  disabled={removal.isPending}
+                  aria-label={`Снять объект ${visit.objectName} с мероприятия`}
+                  title="Снять объект с мероприятия"
+                  className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-destructive-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
               )}
             </li>
           );

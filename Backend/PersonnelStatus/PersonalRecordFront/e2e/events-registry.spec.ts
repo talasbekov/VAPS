@@ -393,6 +393,85 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await expect(details).toBeHidden()
   })
 
+  test('объекты посещения добавляются кнопкой у строки и снимаются', async ({ page }) => {
+    // Проба ведёт СВОЁ мероприятие, а не первое попавшееся: добавление меняет
+    // данные, и чужая строка реестра после прогона осталась бы с лишним
+    // объектом. В конце добавленный объект снимается — состояние стенда
+    // возвращается к исходному.
+    const token = await apiToken()
+    const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+    const objects = (await (
+      await fetch(`${API}/api/ops/security-events/bindable-objects/`, { headers })
+    ).json()) as { results: { id: string; name: string }[] }
+    expect(objects.results.length, 'на стенде меньше двух объектов').toBeGreaterThan(1)
+    const created = (await (
+      await fetch(`${API}/api/ops/security-events/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          title: `Проба объектов посещения (e2e) ${Date.now()}`,
+          objectId: objects.results[0].id,
+          businessDate: '2026-09-15',
+          kind: 'INTERNAL',
+        }),
+      })
+    ).json()) as { id: string; code: string; visitObjects: { objectName: string }[] }
+    expect(created.visitObjects).toHaveLength(1)
+    const second = objects.results.find((o) => o.id !== objects.results[0].id)!
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/?search=${encodeURIComponent(created.code)}`)
+    const add = page.getByRole('button', {
+      name: `Добавить объекты посещения ${created.code}`,
+    })
+    await expect(add).toBeVisible({ timeout: 15_000 })
+    await add.click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    // Уже добавленный объект выбрать нельзя — иначе человек ловил бы отказ
+    // сервера там, где ответ известен заранее.
+    await expect(
+      dialog.getByRole('checkbox', { name: new RegExp(objects.results[0].name) }),
+    ).toBeDisabled()
+
+    // Поиск сужает список — иначе на реестре объектов в сотни строк выбирать
+    // было бы нечем.
+    await dialog.getByLabel('Поиск объекта').fill(second.name)
+    await expect(dialog.getByRole('checkbox')).toHaveCount(1)
+    await dialog.getByRole('checkbox').check()
+    await dialog.getByRole('button', { name: /Добавить \(1\)/ }).click()
+
+    // Добавленное видно В РАСКРЫТИИ строки, а не только в тосте: тост уедет,
+    // а реестр обязан показывать новый факт.
+    // Имя раскрывателя начинается со «Свернуть/Развернуть»: без этой привязки
+    // локатор поймал бы и кнопку «Добавить объекты посещения …» — у неё в
+    // подписи те же слова.
+    const toggle = page.getByRole('button', {
+      name: new RegExp(`^(Свернуть|Развернуть) объекты посещения ${created.code}$`),
+    })
+    const detailsId = await toggle.getAttribute('aria-controls')
+    const details = page.locator(`#${detailsId}`)
+    await expect(details).toContainText(second.name, { timeout: 15_000 })
+    // Заголовок врезки читается КАПСОМ, но капс делает CSS: в DOM текст
+    // обычный, и ассерт по «ОБЪЕКТЫ ПОСЕЩЕНИЯ» был бы вечно красным.
+    await expect(details).toContainText('Объекты посещения · 2')
+
+    // Сервер, а не только экран: список приходит из ответа реестра.
+    const after = (await (
+      await fetch(`${API}/api/ops/security-events/${created.id}/`, { headers })
+    ).json()) as { visitObjects: { objectName: string }[] }
+    expect(after.visitObjects.map((v) => v.objectName)).toContain(second.name)
+
+    // Снятие возвращает стенд в исходное состояние — и это же проба кнопки.
+    await details.getByRole('button', { name: `Снять объект ${second.name} с мероприятия` }).click()
+    await expect(details).toContainText('Объекты посещения · 1', { timeout: 15_000 })
+    const restored = (await (
+      await fetch(`${API}/api/ops/security-events/${created.id}/`, { headers })
+    ).json()) as { visitObjects: unknown[] }
+    expect(restored.visitObjects).toHaveLength(1)
+  })
+
   test('этап «Запрос сил» ведёт в «Сбор сил на ОМ»', async ({ page }) => {
     const token = await apiToken()
     const forces = await events(token, 'FORCES')
