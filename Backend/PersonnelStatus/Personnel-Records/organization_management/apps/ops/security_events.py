@@ -21,6 +21,7 @@ from organization_management.apps.operations.exceptions import DomainError
 from organization_management.apps.operations.models_event import (
     OpsSecurityEvent,
     OpsSecurityEventTransition,
+    OpsSecurityEventVisitObject,
 )
 from organization_management.apps.operations.models_gvo import (
     OpsProtectedPerson,
@@ -271,6 +272,18 @@ def create_event(
         journal_entries=[],
         closure_direction_summaries=[],
         closed_at=None,
+    )
+    # Объект посещения заводится вместе с бюллетенем: реестр раскрывает строку
+    # мероприятия именно этим списком, и ОМ без единой строки в нём выглядело
+    # бы как «объекты не заведены», хотя объект выбран в окне создания.
+    OpsSecurityEventVisitObject.objects.create(
+        event=event,
+        security_object=security_object,
+        object_name=security_object.name,
+        passport_binding=binding,
+        protected_person=person,
+        protected_person_name=person.name if person is not None else "",
+        position=0,
     )
     record_transition(event, None, "BULLETIN")
     audit_service.record(

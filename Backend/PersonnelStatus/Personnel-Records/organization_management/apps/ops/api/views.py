@@ -235,7 +235,10 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         date_to = (request.query_params.get("to") or "").strip()
         owner = (request.query_params.get("owner") or "").strip()
 
-        rows = list(OpsSecurityEvent.objects.all())
+        # prefetch объектов посещения: без него каждая строка реестра
+        # добирала бы свой список отдельным запросом (страница в 20 строк —
+        # 20 лишних round-trip, календарь берёт 200).
+        rows = list(OpsSecurityEvent.objects.prefetch_related("visit_objects"))
         if stage:
             rows = [e for e in rows if e.stage == stage]
         if date_from:
