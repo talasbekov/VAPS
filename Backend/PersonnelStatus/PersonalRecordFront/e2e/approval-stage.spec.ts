@@ -185,6 +185,8 @@ async function prepareEvent(token: string): Promise<void> {
     title: 'Проба согласования (e2e)',
     objectId: object.id,
     businessDate: '2026-08-23',
+    // См. recon-stage: без обязательного `kind` создание отбивается 400.
+    kind: 'INTERNAL',
   })
   const base = `/api/ops/security-events/${created.id}`
 

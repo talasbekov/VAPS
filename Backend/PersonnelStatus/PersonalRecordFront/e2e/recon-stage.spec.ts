@@ -171,6 +171,9 @@ async function prepareEvent(token: string): Promise<void> {
     title: 'Проба рекогносцировки (e2e)',
     objectId: object.id,
     businessDate: '2026-08-24',
+    // `kind` обязателен с 23.08 — без него создание отбивается 400, и вся
+    // подготовка дальше бьёт по /security-events/undefined/.
+    kind: 'INTERNAL',
   })
   const base = `/api/ops/security-events/${created.id}`
   await call('PATCH', `${base}/bulletin/`, {
