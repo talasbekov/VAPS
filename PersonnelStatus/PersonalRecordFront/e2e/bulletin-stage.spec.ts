@@ -1,7 +1,9 @@
 /**
- * Этап «Бюллетень» карточки ОМ на ЖИВОМ стенде.
+ * Панель «Бюллетень мероприятия» карточки ОМ на ЖИВОМ стенде. Своим этапом
+ * бюллетень быть перестал 24.08.2026 — он стоит НАД цепочкой этапов, и проба
+ * ходит в панель, а не в карточку активного этапа.
  *
- * Первая проба отвечает на один вопрос: готовность этапа считается по
+ * Первая проба отвечает на один вопрос: готовность считается по
  * СОХРАНЁННОМУ бюллетеню, а не по набранному в полях. Разница не
  * косметическая: сервер смотрит на своё состояние, и набранный, но не
  * сохранённый текст этап не откроет — экран, считающий по форме, обещал бы
@@ -103,9 +105,7 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target.id}/`)
-    const card = page.locator('[data-slot="card"]', {
-      has: page.locator('[data-slot="card-title"]', { hasText: 'Бюллетень' }),
-    })
+    const card = page.getByTestId('bulletin-panel')
     await expect(card).toBeVisible({ timeout: 15_000 })
     await expect(card).toContainText('заполнено не всё')
     await expect(card).toContainText('Краткое описание — не заполнено')
@@ -117,12 +117,46 @@ test.describe(LIVE ? 'бюллетень' : 'бюллетень (скип: не�
     await expect(card).toContainText('заполнено не всё')
     await expect(card).toContainText('Краткое описание — не заполнено')
 
-    // Сохранение переводит этап в «можно завершать», и это видит бэк
+    // Сохранение открывает рекогносцировку, и это видит бэк
     await card.getByRole('button', { name: 'Сохранить бюллетень' }).click()
-    await expect(card).toContainText('можно завершать', { timeout: 15_000 })
+    await expect(card).toContainText('можно открывать рекогносцировку', {
+      timeout: 15_000,
+    })
     await expect(card).toContainText('Краткое описание — сохранено')
     const fresh = (await events(token)).find((e) => e.id === target.id)
     expect(fresh?.briefDescription).toBe('Проба бюллетеня.')
+  })
+
+  test('несохранённый бюллетень не даёт открыть рекогносцировку', async ({ page }) => {
+    // Панель бюллетеня стоит НАД этапами, а кнопка перехода — в области
+    // этапа: без переданного наружу признака черновика переход уносил бы
+    // набранный текст молча (после смены стадии сервер правку не примет).
+    const token = await apiToken()
+    const suitable = (rows: EventRow[]): EventRow | undefined =>
+      rows.find((e) => e.stage === 'BULLETIN')
+    let event = suitable(await events(token))
+    if (event === undefined) {
+      await prepareEvent(token)
+      event = suitable(await events(token, 'Проба бюллетеня (e2e)'))
+    }
+    expect(event, 'на стенде нет ОМ на стадии «Бюллетень»').toBeDefined()
+
+    await signIn(page)
+    await page.goto(`${APP}/security-ops/events/${event!.id}/`)
+    const open = page.getByRole('button', { name: 'Открыть рекогносцировку' })
+    await expect(open).toBeEnabled({ timeout: 15_000 })
+
+    // Набранное, но НЕ сохранённое запирает переход и говорит почему
+    const panel = page.getByTestId('bulletin-panel')
+    await panel
+      .getByLabel('Краткое описание *')
+      .fill('Черновик, который нельзя потерять.')
+    await expect(open).toBeDisabled()
+    await expect(page.getByText('иначе переход их потеряет')).toBeVisible()
+
+    // Сохранение снимает замок
+    await panel.getByRole('button', { name: 'Сохранить бюллетень' }).click()
+    await expect(open).toBeEnabled({ timeout: 15_000 })
   })
 
   test('«Сведения об ОМ» собраны из ответов сервера', async ({ page }) => {

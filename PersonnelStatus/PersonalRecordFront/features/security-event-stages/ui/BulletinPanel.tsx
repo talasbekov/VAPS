@@ -1,34 +1,33 @@
 "use client";
 
-// Этап 1 «Бюллетень»: описание и первичные задачи направлениям. Пустой
-// бюллетень не завершается — следующему этапу не с чем работать.
+// Бюллетень мероприятия — блок НАД этапами, а не первый этап цепочки
+// (решение заказчика 24.08.2026, Plane «Реестр ОМ-4»). Раньше «Сведения об
+// ОМ» и текст бюллетеня жили внутри первого шага и исчезали с экрана, как
+// только бюллетень завершали: на рекогносцировке и дальше человек не видел ни
+// типа мероприятия, ни периода, ни старшего.
 //
-// Сверено с экраном прототипа Smart Josparlau «Информационный бюллетень».
-// Оттуда перенесены готовность этапа (до этого о том, что завершение упрётся
-// в пустое поле, узнавали по отказу сервера ПОСЛЕ нажатия) и справочный блок
-// «Сведения об ОМ» — паспортная шапка мероприятия перед его описанием.
+// Панель сворачиваемая: пока ОМ на стадии «Бюллетень», её заполняют — она
+// раскрыта; дальше это справка о мероприятии — свёрнута, чтобы не отжимать
+// активный этап вниз.
 //
-// Блок пересекается с шапкой карточки (номер, объект, ответственный) и это
-// осознанно: шапка — строка-идентификатор на все девять этапов, блок —
-// сведения, по которым бюллетень и составляют. Расходиться им не на чем:
-// оба поля читают один и тот же объект события, второго источника нет.
+// Правка полей возможна только на стадии «Бюллетень»: PATCH бюллетеня сервер
+// принимает лишь там. На остальных стадиях панель показывает сохранённый
+// текст, а не поля, которые вернут отказ.
 //
-// СОЗНАТЕЛЬНО не перенесено:
+// СОЗНАТЕЛЬНО не перенесено из прототипа:
 // * «Редактировать ОМ» — правки названия, даты и объекта бэк не принимает:
 //   PATCH этапа принимает только описание и задачи;
 // * «Документы к подготовке» — в прототипе эта таблица набрана литералом
 //   (две строки прямо в разметке). Модели документов с ответственными и
 //   сроками нет ни у бэка, ни в контракте, и выдумывать её на экране нельзя.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  useCompleteBulletin,
-  useUpdateBulletin,
-} from "@/hooks/use-security-event-stages";
+import { useUpdateBulletin } from "@/hooks/use-security-event-stages";
 import { useSecurityObject } from "@/hooks/use-security-objects";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import {
@@ -49,7 +48,18 @@ import {
 import { Fact } from "./Fact";
 import { FieldErrors, StageError } from "./StageErrors";
 
-export function BulletinStage({ event }: { event: SecurityEvent }) {
+export function BulletinPanel({
+  event,
+  onDirtyChange,
+}: {
+  event: SecurityEvent;
+  /** Несохранённый черновик виден СНАРУЖИ: кнопка «Открыть рекогносцировку»
+   * живёт в области этапа, а завершённый бюллетень правку уже не примет —
+   * без этого сигнала набранный текст молча пропадал бы вместе с формой. */
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
+  const editable = event.stage === "BULLETIN";
+  const [open, setOpen] = useState(editable);
   const [briefDescription, setBriefDescription] = useState(event.briefDescription);
   const [initialTasks, setInitialTasks] = useState(event.initialTasks);
   const [fieldErrors, setFieldErrors] = useState<Record<string, unknown> | null>(
@@ -59,7 +69,6 @@ export function BulletinStage({ event }: { event: SecurityEvent }) {
   const update = useUpdateBulletin(event.id, {
     onFormError: (details) => setFieldErrors(details),
   });
-  const complete = useCompleteBulletin(event.id);
 
   const dirty =
     briefDescription !== event.briefDescription ||
@@ -68,110 +77,161 @@ export function BulletinStage({ event }: { event: SecurityEvent }) {
   // Готовность считается по СОХРАНЁННОМУ бюллетеню, а не по полям формы:
   // сервер смотрит на своё состояние, и набранный, но не сохранённый текст
   // этап не откроет.
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
   const savedBrief = event.briefDescription.trim() !== "";
   const savedTasks = event.initialTasks.trim() !== "";
   const ready = savedBrief && savedTasks;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Бюллетень</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <EventFacts event={event} />
-        <div className="space-y-1">
-          <Label htmlFor="bulletin-brief">Краткое описание *</Label>
-          <Textarea
-            id="bulletin-brief"
-            value={briefDescription}
-            onChange={(e) => setBriefDescription(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="bulletin-tasks">Первичные задачи направлениям *</Label>
-          <Textarea
-            id="bulletin-tasks"
-            value={initialTasks}
-            onChange={(e) => setInitialTasks(e.target.value)}
-          />
-        </div>
-        {/* Кнопка завершения НЕ блокируется по этим признакам: правило
-            «описание и задачи заполнены» держит сервер, и второй гард рядом
-            маскировал бы его отказ. Здесь только видимое состояние. */}
-        <div className="rounded-md border px-3 py-2 text-xs">
-          <p className="mb-1 font-semibold">
-            Готовность этапа:{" "}
-            <span className={ready ? "text-green-700" : "text-amber-700"}>
-              {ready ? "можно завершать" : "заполнено не всё"}
-            </span>
-          </p>
-          <ul className="space-y-0.5 text-muted-foreground">
-            <li>
-              Краткое описание — {savedBrief ? "сохранено" : "не заполнено"}
-            </li>
-            <li>
-              Первичные задачи — {savedTasks ? "сохранены" : "не заполнены"}
-            </li>
-          </ul>
-          {dirty && (
-            <p className="mt-1 text-amber-700">
-              Есть несохранённые правки — сервер их пока не видит.
-            </p>
+    <Card className="mb-4" data-testid="bulletin-panel">
+      <CardContent className="p-0">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          aria-controls="bulletin-panel-body"
+          className="flex w-full items-center gap-2 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {open ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           )}
-        </div>
+          <span className="text-sm font-semibold">Бюллетень мероприятия</span>
+          <span className="text-xs text-muted-foreground">
+            {editable
+              ? ready
+                ? "заполнен"
+                : "заполнен не полностью"
+              : "сведения об ОМ"}
+          </span>
+        </button>
 
-        {/* «Документы к подготовке» — блок эталона (таблица Документ /
-            Ответственный / Срок). Перечня документов и их сроков модель не
-            хранит вовсе: у мероприятия есть описание, задачи и расчёт, но
-            списка бумаг с ответственными нет. Пустая таблица с тремя
-            колонками выглядела бы поломкой, поэтому блок несёт причину и
-            отправляет туда, где документы действительно лежат. */}
-        <div className="rounded-lg border border-dashed p-3.5">
-          <p className="text-sm font-semibold">Документы к подготовке</p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Перечня документов с ответственными и сроками система не ведёт —
-            ни в мероприятии, ни в справочниках. Нормативные документы, по
-            которым готовят ОМ, лежат в разделе{" "}
-            <Link
-              href="/security-ops/laws"
-              className="font-semibold text-primary-ink"
-            >
-              «Законы об ОМ»
-            </Link>
-            , а расчёт сил появляется на следующем этапе.
-          </p>
-        </div>
+        {/* Тело не снимается со страницы, а прячется: `aria-controls`
+            обязан указывать на существующий узел именно в свёрнутом
+            состоянии, а набранный черновик не должен умирать от того, что
+            панель свернули. */}
+        <div
+          id="bulletin-panel-body"
+          hidden={!open}
+          className="space-y-4 px-4 pb-4"
+        >
+            <EventFacts event={event} />
 
-        <p className="text-xs text-muted-foreground">
-          Что дальше: после завершения бюллетеня открывается рекогносцировка —
-          осмотр объекта и расчёт постов старшим наряда.
-        </p>
+            {editable ? (
+              <>
+                <div className="space-y-1">
+                  <Label htmlFor="bulletin-brief">Краткое описание *</Label>
+                  <Textarea
+                    id="bulletin-brief"
+                    value={briefDescription}
+                    onChange={(e) => setBriefDescription(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="bulletin-tasks">
+                    Первичные задачи направлениям *
+                  </Label>
+                  <Textarea
+                    id="bulletin-tasks"
+                    value={initialTasks}
+                    onChange={(e) => setInitialTasks(e.target.value)}
+                  />
+                </div>
+                {/* Кнопка завершения живёт в области этапа и НЕ блокируется по
+                    этим признакам: правило «описание и задачи заполнены»
+                    держит сервер, и второй гард рядом маскировал бы его
+                    отказ. Здесь только видимое состояние. */}
+                <div className="rounded-md border px-3 py-2 text-xs">
+                  <p className="mb-1 font-semibold">
+                    Готовность бюллетеня:{" "}
+                    <span className={ready ? "text-green-700" : "text-amber-700"}>
+                      {ready ? "можно открывать рекогносцировку" : "заполнено не всё"}
+                    </span>
+                  </p>
+                  <ul className="space-y-0.5 text-muted-foreground">
+                    <li>
+                      Краткое описание — {savedBrief ? "сохранено" : "не заполнено"}
+                    </li>
+                    <li>
+                      Первичные задачи — {savedTasks ? "сохранены" : "не заполнены"}
+                    </li>
+                  </ul>
+                  {dirty && (
+                    <p className="mt-1 text-amber-700">
+                      Есть несохранённые правки — сервер их пока не видит.
+                    </p>
+                  )}
+                </div>
+              </>
+            ) : (
+              /* Переносы строк сохраняются: задачи направлениям набирают
+                 списком, и `Fact` со своим `dd.inline` склеивал бы их в одну
+                 строку. */
+              <dl className="space-y-2 text-xs">
+                <div>
+                  <dt className="font-semibold text-muted-foreground">
+                    Краткое описание
+                  </dt>
+                  <dd className="whitespace-pre-line">
+                    {savedBrief ? event.briefDescription : "не заполнено"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-muted-foreground">
+                    Первичные задачи направлениям
+                  </dt>
+                  <dd className="whitespace-pre-line">
+                    {savedTasks ? event.initialTasks : "не заполнены"}
+                  </dd>
+                </div>
+              </dl>
+            )}
 
-        <FieldErrors errors={fieldErrors} />
-        <StageError error={update.error} />
-        <StageError error={complete.error} />
-        <div className="flex justify-between">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!dirty || update.isPending}
-            onClick={() => {
-              setFieldErrors(null);
-              update.mutate({ briefDescription, initialTasks });
-            }}
-          >
-            {update.isPending ? "Сохранение…" : "Сохранить бюллетень"}
-          </Button>
-          <Button
-            type="button"
-            disabled={complete.isPending || dirty}
-            title={dirty ? "Сначала сохраните изменения." : undefined}
-            onClick={() => complete.mutate({})}
-          >
-            {complete.isPending
-              ? "Завершение…"
-              : "Завершить этап → Рекогносцировка"}
-          </Button>
+            {/* «Документы к подготовке» — блок эталона (таблица Документ /
+                Ответственный / Срок). Перечня документов и их сроков модель
+                не хранит вовсе: у мероприятия есть описание, задачи и расчёт,
+                но списка бумаг с ответственными нет. Пустая таблица с тремя
+                колонками выглядела бы поломкой, поэтому блок несёт причину и
+                отправляет туда, где документы действительно лежат. */}
+            <div className="rounded-lg border border-dashed p-3.5">
+              <p className="text-sm font-semibold">Документы к подготовке</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Перечня документов с ответственными и сроками система не ведёт —
+                ни в мероприятии, ни в справочниках. Нормативные документы, по
+                которым готовят ОМ, лежат в разделе{" "}
+                <Link
+                  href="/security-ops/laws"
+                  className="font-semibold text-primary-ink"
+                >
+                  «Законы об ОМ»
+                </Link>
+                , а расчёт сил появляется на этапах ниже.
+              </p>
+            </div>
+
+            {editable && (
+              <>
+                <FieldErrors errors={fieldErrors} />
+                <StageError error={update.error} />
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!dirty || update.isPending}
+                    onClick={() => {
+                      setFieldErrors(null);
+                      update.mutate({ briefDescription, initialTasks });
+                    }}
+                  >
+                    {update.isPending ? "Сохранение…" : "Сохранить бюллетень"}
+                  </Button>
+                </div>
+              </>
+            )}
         </div>
       </CardContent>
     </Card>

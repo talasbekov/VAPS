@@ -1,4 +1,5 @@
-export { BulletinStage } from "./ui/BulletinStage";
+export { BulletinPanel } from "./ui/BulletinPanel";
+export { AwaitingReconStage } from "./ui/AwaitingReconStage";
 export { ReconStage } from "./ui/ReconStage";
 export { PlacementStage } from "./ui/PlacementStage";
 export { ApprovalStage } from "./ui/ApprovalStage";

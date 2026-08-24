@@ -497,6 +497,7 @@ function EventRow({
               event={event}
               visits={visits}
               canEdit={canEditObjects}
+              backSuffix={backSuffix}
               onAdd={() => setAddOpen(true)}
             />
           </TableCell>
@@ -527,11 +528,13 @@ function VisitObjectList({
   event,
   visits,
   canEdit,
+  backSuffix,
   onAdd,
 }: {
   event: SecurityEvent;
   visits: VisitObject[];
   canEdit: boolean;
+  backSuffix: string;
   onAdd: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -591,15 +594,32 @@ function VisitObjectList({
               key={visit.id}
               className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-xs"
             >
+              {/* Клик по объекту открывает ЭТАПЫ мероприятия по этому
+                  объекту, а не карточку объекта реестра: заказчик просил
+                  «клик по объекту открывает этапы». Ссылка на сам объект
+                  осталась рядом подписью — это другой адрес (паспорт против
+                  этапов), и подменять один другим нельзя. */}
               <span className="min-w-52 font-medium">
-                {visit.objectId === null ? (
-                  visit.objectName
-                ) : (
+                <Link
+                  href={`/security-ops/events/${event.id}${
+                    backSuffix === ""
+                      ? `?visit=${visit.id}`
+                      : `${backSuffix}&visit=${visit.id}`
+                  }`}
+                  className="hover:underline"
+                >
+                  {visit.objectName}
+                </Link>
+                {visit.objectId !== null && (
                   <Link
                     href={`/security-ops/objects/${visit.objectId}`}
-                    className="hover:underline"
+                    // Имя ссылки называет ОБЪЕКТ: в раскрытой строке таких
+                    // ссылок столько же, сколько объектов, и список ссылок
+                    // скринридера был бы рядом одинаковых строк.
+                    aria-label={`Карточка объекта ${visit.objectName}`}
+                    className="ml-2 text-[11px] font-normal text-primary-ink hover:underline"
                   >
-                    {visit.objectName}
+                    карточка объекта →
                   </Link>
                 )}
                 <span className="ml-2 text-[11px] font-normal text-muted-foreground">

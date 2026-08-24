@@ -132,8 +132,14 @@ test.describe(LIVE ? 'реестр ОМ' : 'реестр ОМ (скип: нет 
     await signIn(page)
     await page.goto(`${APP}/security-ops/events/${target!.id}/`)
     // Скоуп — контент, а не боковое меню: там уже есть пункт «Объекты и
-    // паспорта», и без скоупа локатор ловит оба.
-    const link = page.getByRole('main').getByRole('link', { name: /объект/i })
+    // паспорта», и без скоупа локатор ловит оба. Имя ссылки ТОЧНОЕ: с
+    // 24.08.2026 в шапке карточки рядом стоит вторая ссылка на тот же объект
+    // («карточка объекта →» в контексте объекта посещения), и подстрочный
+    // матчер /объект/i ловил обе.
+    const escaped = expectedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const link = page
+      .getByRole('main')
+      .getByRole('link', { name: new RegExp(`^Объект: ${escaped} →$`) })
     await expect(link).toBeVisible({ timeout: 15_000 })
     await link.click()
 
