@@ -91,6 +91,71 @@ class SecurityObjectSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+def _visit_placement(event, visit, *, single):
+    """Готовность расстановки объекта посещения: (need, assigned) или (None, None).
+
+    Расчёт постов ведётся строками `recon_sector_posts`; строка МОЖЕТ нести
+    `visitObjectId` — тогда посты объекта известны точно. Пока разметки нет, у
+    ЕДИНСТВЕННОГО объекта мероприятия все посты — его (это не допущение: другим
+    объектам принадлежать они не могут). У второго и последующих объектов без
+    разметки ответ неизвестен, и тогда возвращается None — экран назовёт
+    причину. Делить общий расчёт поровну между объектами значило бы выдумать
+    число, которого в системе нет.
+    """
+    posts = event.recon_sector_posts or []
+    scoped = [
+        p for p in posts if str(p.get("visitObjectId") or "") == str(visit.pk)
+    ]
+    if not scoped:
+        if not single:
+            return None, None
+        scoped = posts
+    need = sum(int(p.get("need") or 0) for p in scoped)
+    post_ids = {str(p.get("id")) for p in scoped}
+    assigned = sum(
+        1
+        for a in (event.placement_assignments or [])
+        if str(a.get("postId")) in post_ids
+    )
+    return need, assigned
+
+
+def serialize_visit_object(event, visit, *, single):
+    need, assigned = _visit_placement(event, visit, single=single)
+    return {
+        "id": str(visit.pk),
+        "objectId": (
+            str(visit.security_object_id)
+            if visit.security_object_id is not None
+            else None
+        ),
+        "objectName": visit.object_name,
+        "passportBinding": visit.passport_binding,
+        "protectedPersonId": (
+            str(visit.protected_person_id)
+            if visit.protected_person_id is not None
+            else None
+        ),
+        "protectedPersonName": visit.protected_person_name,
+        "position": visit.position,
+        # null — «неизвестно» (расчёт постов не размечен по объектам), 0 —
+        # «посты не рассчитаны». Экран различает эти два случая словами.
+        "placementNeed": need,
+        "placementAssigned": assigned,
+    }
+
+
+def _serialize_visit_objects(event):
+    """Список объектов посещения ОМ в форме контракта.
+
+    `single` считается ОДИН раз по всему списку: от него зависит, можно ли
+    отнести нерасписанный расчёт постов к объекту (см. `_visit_placement`).
+    """
+    visits = list(event.visit_objects.all())
+    single = len(visits) == 1
+    return [serialize_visit_object(event, v, single=single) for v in visits]
+
+
 def serialize_security_event(event):
     """ОМ в форме контракта клиента (SecurityEvent, camelCase).
 
@@ -155,6 +220,10 @@ def serialize_security_event(event):
         ),
         "chiefName": event.chief_name,
         "approvalRoute": event.approval_route or [],
+        # Объекты посещения бюллетеня. Пустой список — только у строк, не
+        # прошедших бэкфилл 0035 (их быть не должно); объект мероприятия сюда
+        # перенесён как первый.
+        "visitObjects": _serialize_visit_objects(event),
         "createdAt": event.created_at.isoformat(),
         "updatedAt": event.updated_at.isoformat(),
     }

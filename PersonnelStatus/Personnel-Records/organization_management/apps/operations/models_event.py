@@ -217,3 +217,77 @@ class OpsSecurityEventTransition(TimeStampedModel):
 
     def __str__(self):
         return f"{self.event_id}: {self.from_stage} → {self.to_stage}"
+
+
+class OpsSecurityEventVisitObject(TimeStampedModel):
+    """Объект посещения в рамках одного ОМ.
+
+    Мероприятие — это бюллетень, у которого может быть НЕСКОЛЬКО объектов
+    посещения: заказчик ведёт реестр так, что строка списка = бюллетень, а
+    раскрытие строки = объекты, на которые едет охраняемое лицо. До появления
+    этой таблицы объект был единственным полем ОМ (`security_object`), и
+    второй объект было негде хранить.
+
+    Отдельной таблицей, а не JSONB рядом с коллекциями этапов: у объекта
+    посещения ЕСТЬ своя жизнь — он добавляется и убирается позже создания
+    бюллетеня, по нему идёт рекогносцировка и расстановка, на него ссылаются
+    строки расчёта постов. Это ровно тот случай, который оговорка в докстринге
+    модуля («контракт правит коллекцию целиком») выносит за скобки.
+
+    `security_object` — SET_NULL по той же причине, что у ОМ: удаление объекта
+    реестра не вправе стирать историю посещений, снимок имени продолжает
+    называть его и без ссылки. Привязка паспорта — снимок на дату ОМ, как у
+    мероприятия.
+    """
+
+    event = models.ForeignKey(
+        OpsSecurityEvent,
+        on_delete=models.CASCADE,
+        related_name="visit_objects",
+    )
+    security_object = models.ForeignKey(
+        OpsSecurityObject,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="event_visits",
+    )
+    object_name = models.CharField(max_length=255)
+    passport_binding = models.JSONField(null=True)
+    # Охраняемое лицо у объекта СВОЁ: в одном бюллетене лицо может посещать
+    # разные объекты, и на длинных мероприятиях объекты разных лиц идут одним
+    # ОМ. Пусто — лицо не названо (у ОМ оно тоже необязательно).
+    protected_person = models.ForeignKey(
+        "operations.OpsProtectedPerson",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="event_visits",
+    )
+    protected_person_name = models.CharField(max_length=200, blank=True)
+    # Порядок в раскрытии строки реестра: объекты идут так, как их завёл
+    # человек, а не по алфавиту и не по времени вставки в базу.
+    position = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = "ops_security_event_visit_objects"
+        verbose_name = "Объект посещения ОМ"
+        verbose_name_plural = "Объекты посещения ОМ"
+        ordering = ["position", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(object_name__regex=r"\S"),
+                name="chk_ops_event_visit_object_name",
+            ),
+            # Один объект реестра не заводится в одно ОМ дважды: две одинаковые
+            # строки в раскрытии — это не два посещения, а ошибка ввода.
+            # NULL-ссылка (объект удалён из реестра) под ограничение не
+            # попадает — такие строки уже история, а не ввод.
+            models.UniqueConstraint(
+                fields=["event", "security_object"],
+                condition=models.Q(security_object__isnull=False),
+                name="uniq_ops_event_visit_object",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.event_id}: {self.object_name}"

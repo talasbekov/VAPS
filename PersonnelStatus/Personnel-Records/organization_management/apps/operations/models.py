@@ -189,6 +189,7 @@ from organization_management.apps.operations.models_object import (  # noqa: E40
 from organization_management.apps.operations.models_event import (  # noqa: E402
     OpsSecurityEvent,  # noqa: F401
     OpsSecurityEventTransition,  # noqa: F401
+    OpsSecurityEventVisitObject,  # noqa: F401
 )
 
 # План дежурств — виды, смены, месячный план, политика конфликтов.

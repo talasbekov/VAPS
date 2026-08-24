@@ -8,6 +8,7 @@ conduct → closed. Правила, коды и тексты — порт мок
 выход одной стадии никогда не встретился бы со входом следующей.
 """
 import pytest
+from django.db.utils import IntegrityError
 
 from organization_management.apps.dictionaries.models import Rank
 from organization_management.apps.divisions.models import Division
@@ -17,7 +18,10 @@ from organization_management.apps.operations.audit_service import (
     SECURITY_EVENT_CREATED,
 )
 from organization_management.apps.operations.models_audit import OpsAuditLog
-from organization_management.apps.operations.models_event import OpsSecurityEvent
+from organization_management.apps.operations.models_event import (
+    OpsSecurityEvent,
+    OpsSecurityEventVisitObject,
+)
 from organization_management.apps.operations.models_gvo import OpsProtectedPerson
 from organization_management.apps.operations.models_object import (
     OpsObjectSector,
@@ -630,3 +634,137 @@ def test_unknown_event_is_enveloped_404(manager):
     resp = manager.get(f"{URL}999999/")
     assert resp.status_code == 404
     assert resp.json()["error_code"] == "ENTITY_NOT_FOUND"
+
+
+# ── Объекты посещения ────────────────────────────────────────────────────────
+
+
+def test_create_seeds_visit_object_from_bulletin(manager):
+    """Объект, выбранный в окне создания, становится объектом посещения.
+
+    Реестр раскрывает строку мероприятия ИМЕННО этим списком: пустой список у
+    только что заведённого ОМ читался бы как «объекты не заведены».
+    """
+    obj = make_object(with_passport=True)
+    person = OpsProtectedPerson.objects.create(
+        name="Ахметов Т. Б.", category=OpsProtectedPerson.Category.OURS
+    )
+    data = create_event(
+        manager, obj, protectedPersonId=str(person.pk)
+    ).json()
+
+    assert len(data["visitObjects"]) == 1
+    visit = data["visitObjects"][0]
+    assert visit["objectId"] == str(obj.pk)
+    assert visit["objectName"] == "Резиденция"
+    assert visit["protectedPersonId"] == str(person.pk)
+    assert visit["protectedPersonName"] == "Ахметов Т. Б."
+    assert visit["passportBinding"]["versionNumber"] == 1
+    assert visit["position"] == 0
+    # Расчёт постов ещё не делался: «ноль постов», а не «неизвестно».
+    assert visit["placementNeed"] == 0
+    assert visit["placementAssigned"] == 0
+
+
+def test_visit_object_placement_counts_posts_and_assignments(manager):
+    """Готовность расстановки единственного объекта = его посты и назначения.
+
+    Числа берутся из расчёта постов и назначений мероприятия, а не из
+    readinessPercent стадии: «готовность расстановки» — это сколько постов
+    закрыто людьми, а не как далеко ушло ОМ по этапам.
+    """
+    obj = make_object(with_passport=True)
+    employee = make_employee()
+    event_id = create_event(manager, obj).json()["id"]
+    base = f"{URL}{event_id}/"
+    manager.patch(
+        f"{base}bulletin/",
+        {"briefDescription": "x", "initialTasks": "y"},
+        format="json",
+    )
+    manager.post(f"{base}bulletin/complete/")
+    data = manager.post(f"{base}recon/import-from-passport/").json()
+    posts = data["reconSectorPosts"]
+    assert len(posts) == 1
+    posts[0]["need"] = 2
+
+    data = manager.patch(
+        f"{base}recon/",
+        {"checklist": data["reconChecklist"], "sectorPosts": posts},
+        format="json",
+    ).json()
+    visit = data["visitObjects"][0]
+    assert (visit["placementNeed"], visit["placementAssigned"]) == (2, 0)
+
+    data = manager.post(
+        f"{base}placement/assign/",
+        {"postId": posts[0]["id"], "employeeId": str(employee.pk)},
+        format="json",
+    ).json()
+    visit = data["visitObjects"][0]
+    assert (visit["placementNeed"], visit["placementAssigned"]) == (2, 1)
+
+
+def test_second_visit_object_without_post_mapping_reports_unknown(manager):
+    """Пока посты не размечены по объектам, готовность ВТОРОГО — неизвестна.
+
+    Общий расчёт нельзя ни отнести целиком к каждому объекту (число задвоится),
+    ни поделить поровну (такого факта в системе нет). Размеченные строки при
+    этом считаются точно — по своему объекту.
+    """
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    base = f"{URL}{event_id}/"
+    manager.patch(
+        f"{base}bulletin/",
+        {"briefDescription": "x", "initialTasks": "y"},
+        format="json",
+    )
+    manager.post(f"{base}bulletin/complete/")
+    data = manager.post(f"{base}recon/import-from-passport/").json()
+    manager.patch(
+        f"{base}recon/",
+        {
+            "checklist": data["reconChecklist"],
+            "sectorPosts": data["reconSectorPosts"],
+        },
+        format="json",
+    )
+
+    second_object = make_object(code="OBJ-2", name="Концертный зал")
+    second = OpsSecurityEventVisitObject.objects.create(
+        event_id=event_id,
+        security_object=second_object,
+        object_name=second_object.name,
+        passport_binding=None,
+        position=1,
+    )
+
+    visits = manager.get(f"{base}").json()["visitObjects"]
+    assert [v["objectName"] for v in visits] == ["Резиденция", "Концертный зал"]
+    assert visits[0]["placementNeed"] is None
+    assert visits[1]["placementNeed"] is None
+
+    # Размечаем единственный пост за вторым объектом — его готовность
+    # становится известной, у первого остаётся неизвестной.
+    event = OpsSecurityEvent.objects.get(pk=event_id)
+    event.recon_sector_posts[0]["visitObjectId"] = str(second.pk)
+    event.save(update_fields=["recon_sector_posts"])
+
+    visits = manager.get(f"{base}").json()["visitObjects"]
+    assert visits[0]["placementNeed"] is None
+    assert (visits[1]["placementNeed"], visits[1]["placementAssigned"]) == (1, 0)
+
+
+def test_same_object_not_added_to_event_twice(manager):
+    """Один объект реестра — одна строка посещения в мероприятии."""
+    obj = make_object(with_passport=True)
+    event_id = create_event(manager, obj).json()["id"]
+    with pytest.raises(IntegrityError):
+        OpsSecurityEventVisitObject.objects.create(
+            event_id=event_id,
+            security_object=obj,
+            object_name=obj.name,
+            passport_binding=None,
+            position=1,
+        )
