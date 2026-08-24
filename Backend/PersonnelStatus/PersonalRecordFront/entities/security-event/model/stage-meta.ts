@@ -63,9 +63,14 @@ export const STAGE_BADGE_CLASS: Record<SecurityEventStage, string> = {
 };
 
 /**
- * Цепочка шагов, которую видит пользователь, — ШЕСТЬ, как в прототипе
- * Smart Josparlau (`stepNames`): Бюллетень → Рекогносцировка → Расстановка →
- * Согласование → Ознакомление → Закрытие.
+ * Цепочка шагов, которую видит пользователь, — ПЯТЬ: Рекогносцировка →
+ * Расстановка → Согласование → Ознакомление → Закрытие.
+ *
+ * Шага «Бюллетень» в цепочке больше нет (решение заказчика 24.08.2026): его
+ * сведения и форма стоят НАД этапами, в шапке карточки. Стадия `BULLETIN` у
+ * бэкенда осталась — она уехала в шаг «Рекогносцировка», а не выброшена:
+ * `stepIndexOfStage` ищет стадию среди шагов, и стадия без шага печатала бы
+ * «Шаг 0 из 5».
  *
  * Стадий у бэкенда по-прежнему девять, и это не рассинхрон по недосмотру:
  *
@@ -79,8 +84,7 @@ export const STAGE_BADGE_CLASS: Record<SecurityEventStage, string> = {
  * * «Закрыто» — не шаг, а состояние: закрытое дело показывает архив.
  */
 export const EVENT_STEPS = [
-  { key: "BULLETIN", label: "Бюллетень", stages: ["BULLETIN"] },
-  { key: "RECON", label: "Рекогносцировка", stages: ["RECON"] },
+  { key: "RECON", label: "Рекогносцировка", stages: ["BULLETIN", "RECON"] },
   { key: "PLACEMENT", label: "Расстановка", stages: ["DEMAND", "FORCES", "PLACEMENT"] },
   { key: "APPROVAL", label: "Согласование", stages: ["APPROVAL"] },
   { key: "ACKNOWLEDGEMENT", label: "Ознакомление", stages: ["ACKNOWLEDGEMENT"] },
@@ -103,7 +107,7 @@ export function stepIndexOfStage(stage: SecurityEventStage): number {
  * строка — стадия занимает весь шаг и уточнять нечего.
  */
 export const STAGE_WITHIN_STEP: Record<SecurityEventStage, string> = {
-  BULLETIN: "",
+  BULLETIN: "Бюллетень заполняется над этапами",
   RECON: "",
   DEMAND: "Подготовка расчёта: потребность",
   FORCES: "Подготовка расчёта: выделение сил",

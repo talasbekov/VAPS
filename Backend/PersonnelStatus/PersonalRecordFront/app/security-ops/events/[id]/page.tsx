@@ -3,9 +3,9 @@
 // Карточка ОМ: шапка + степпер стадий + активный этап. Компонент этапа
 // получает key по updatedAt — успешная операция пересоздаёт его от свежего
 // серверного состояния (локальные черновики не переживают переходы).
-import { Suspense } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { OpsAccessDenied } from "@/components/ops-access-denied";
 import { PageHeader } from "@/components/page-header";
@@ -13,10 +13,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useOpsPermissions } from "@/hooks/use-ops-permissions";
 import { useSecurityEvent } from "@/hooks/use-security-events";
 import { EventStepper } from "@/widgets/security-event-stepper";
+import { EVENT_STEPS } from "@/entities/security-event";
 import {
   AcknowledgementStage,
   ApprovalStage,
-  BulletinStage,
+  AwaitingReconStage,
+  BulletinPanel,
   ClosedView,
   ConductStage,
   PlacementStage,
@@ -28,7 +30,11 @@ import {
   StageBadge,
   objectLabel,
 } from "@/entities/security-event";
-import type { SecurityEvent, SecurityEventStage } from "@/entities/security-event";
+import type {
+  SecurityEvent,
+  SecurityEventStage,
+  VisitObject,
+} from "@/entities/security-event";
 import { formatIsoDate } from "@/shared/lib/date";
 
 export default function SecurityEventPage() {
@@ -47,9 +53,44 @@ function SecurityEventScreen() {
   const back = searchParams.get("back") ?? "";
   const backTo =
     back === "" ? "/security-ops/events" : `/security-ops/events?${back}`;
+  const router = useRouter();
   const id = params?.id ?? "";
+  // Объект посещения, с которого пришли из реестра. В URL, а не в состоянии:
+  // «этапы вот этого объекта» — адрес, который пересылают, а не настроение
+  // текущей вкладки.
+  const visitParam = searchParams.get("visit");
   const query = useSecurityEvent(id);
+  // Несохранённый бюллетень: панель стоит НАД этапами, а кнопка «Открыть
+  // рекогносцировку» — в области этапа, и без этого сигнала переход стирал бы
+  // набранный текст (после смены стадии сервер правку бюллетеня не примет).
+  const [bulletinDirty, setBulletinDirty] = useState(false);
   const { hasPermission, isLoading: permissionsLoading } = useOpsPermissions();
+
+  // Объекты посещения и выбранный из них считаются ДО ранних веток: ниже
+  // стоят гварды прав и ошибки, а хуки не могут жить за ними.
+  const visits = query.data?.visitObjects ?? [];
+  // Неизвестный `visit` в адресе (объект сняли с мероприятия по чужой ссылке)
+  // не должен выглядеть как выбранный: берём первый, а не подставляем пустоту.
+  const selectedVisit =
+    visits.find((visit) => visit.id === visitParam) ?? visits[0] ?? null;
+  const replaceVisit = useCallback(
+    (visitId: string) => {
+      const next = new URLSearchParams(searchParams.toString());
+      next.set("visit", visitId);
+      router.replace(`?${next.toString()}`, { scroll: false });
+    },
+    [router, searchParams]
+  );
+  // Адрес с чужим/снятым объектом ЧИНИТСЯ, а не игнорируется: иначе подсвечен
+  // один объект, а в ссылке стоит другой, и пересланный адрес разносит ошибку
+  // дальше.
+  useEffect(() => {
+    if (selectedVisit === null) return;
+    if (visitParam === selectedVisit.id) return;
+    if (visitParam === null) return;
+    replaceVisit(selectedVisit.id);
+  }, [replaceVisit, selectedVisit, visitParam]);
+
 
   // Гвард прав ВЫШЕ ветки ошибки запроса: без него deep link в обход реестра
   // отдавал 403 в query, и отказ по правам печатался как «Мероприятие не
@@ -120,11 +161,9 @@ function SecurityEventScreen() {
             } · ответственный: ${event.ownerName}`}
           />
           {/* Карточка ОМ — хаб: объект и сводка ГВО кликабельны отсюда на
-              ЛЮБОМ этапе, а не только внутри блока «Сведения об ОМ»
-              бюллетеня. Сводка ГВО адресуется id самого мероприятия — своей
+              ЛЮБОМ этапе. Сводка ГВО адресуется id самого мероприятия — своей
               записи у неё нет (см. entities/gvo-summary), поэтому ссылка
-              жива всегда. Объект — только если он у ОМ есть: ссылка на
-              null не бывает. */}
+              жива всегда. */}
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs">
             {event.objectId !== null ? (
               <Link
@@ -155,31 +194,53 @@ function SecurityEventScreen() {
                 ? NO_PUBLISHED_VERSION_TEXT
                 : NO_OBJECT_TEXT}
           </p>
+          <VisitObjectContext
+            event={event}
+            selected={selectedVisit}
+            onSelect={replaceVisit}
+          />
           <div className="mt-3">
             <EventStepper stage={event.stage} />
           </div>
         </CardContent>
       </Card>
 
+      {/* Бюллетень — НАД этапами: он больше не шаг цепочки, а сведения о
+          мероприятии, нужные на каждом этапе. */}
+      <BulletinPanel
+        key={`bulletin-${event.stage}`}
+        event={event}
+        onDirtyChange={setBulletinDirty}
+      />
+
       <StageHeading stage={event.stage} />
 
       {/* Ключ — ЭТАП, а не версия данных: смена этапа это новая форма, а
           обновление карточки (своя же мутация в соседней панели, инвалидация,
           чужая правка) не должно пересобирать форму и терять набранное. */}
-      <ActiveStage key={event.stage} event={event} />
+      <ActiveStage
+        key={event.stage}
+        event={event}
+        bulletinDirty={bulletinDirty}
+      />
     </DashboardLayout>
   );
 }
 
 /**
- * Заголовок этапа из прототипа: «Этап N из 6», название и одна строка о том,
- * что на этапе делают.
+ * Заголовок этапа: «Этап N из 5», название и одна строка о том, что на этапе
+ * делают.
  *
  * До этого карточка ОМ не называла этап вовсе — человек видел форму и должен
  * был опознать её по содержимому. Номер берётся от ШАГА, а не от стадии: три
  * стадии модели («Потребность», «Запрос сил», «Расстановка») это один шаг
- * прототипа, и нумеровать их подряд значило бы обещать девять шагов там, где
- * степпер показывает шесть.
+ * цепочки, и нумеровать их подряд значило бы обещать девять шагов там, где
+ * степпер показывает пять.
+ *
+ * Шагов пять, а не шесть: «Бюллетень» снят из цепочки 24.08.2026, и стадия
+ * `BULLETIN` теперь занимает первый шаг вместе с рекогносцировкой — карточка
+ * на ней показывает вход в рекогносцировку, а сам бюллетень заполняется в
+ * панели над этапами.
  */
 const STAGE_HEADING: Record<
   SecurityEventStage,
@@ -187,49 +248,49 @@ const STAGE_HEADING: Record<
 > = {
   BULLETIN: {
     step: 1,
-    title: "Информационный бюллетень",
+    title: "Рекогносцировка объекта",
     description:
-      "Краткое описание, первичные задачи и сроки подготовки документов",
+      "Открывается после бюллетеня: осмотр объекта и расчёт постов старшим наряда",
   },
   RECON: {
-    step: 2,
+    step: 1,
     title: "Рекогносцировка объекта",
     description: "Зоны и посты, необходимые направления, предварительные риски",
   },
   DEMAND: {
-    step: 3,
+    step: 2,
     title: "Расстановка сил",
     description: "Потребность направлений, запрос сил и назначение на посты",
   },
   FORCES: {
-    step: 3,
+    step: 2,
     title: "Расстановка сил",
     description: "Потребность направлений, запрос сил и назначение на посты",
   },
   PLACEMENT: {
-    step: 3,
+    step: 2,
     title: "Расстановка сил",
     description: "Потребность направлений, запрос сил и назначение на посты",
   },
   APPROVAL: {
-    step: 4,
+    step: 3,
     title: "Согласование расстановки",
     description:
       "Проверка конфликтов версии и подпись ЭЦП перед началом мероприятия",
   },
   ACKNOWLEDGEMENT: {
-    step: 5,
+    step: 4,
     title: "Ознакомление с назначением",
     description:
       "Подтверждение прочтения назначения каждым сотрудником перед заступлением",
   },
   CONDUCT: {
-    step: 6,
+    step: 5,
     title: "Проведение мероприятия",
     description: "Журнал событий смены и подготовка итогов направлений",
   },
   CLOSED: {
-    step: 6,
+    step: 5,
     title: "Закрытие и итоги ОМ",
     description: "Итоги направлений, фактические часы, отклонения и полный архив",
   },
@@ -240,7 +301,7 @@ function StageHeading({ stage }: { stage: SecurityEventStage }) {
   return (
     <div className="mb-3" data-slot="stage-heading">
       <p className="text-primary-ink text-[10.5px] font-bold uppercase tracking-[.12em]">
-        Этап {heading.step} из 6
+        Этап {heading.step} из {EVENT_STEPS.length}
       </p>
       <h2 className="mt-1 text-xl font-bold tracking-tight">{heading.title}</h2>
       <p className="text-muted-foreground mt-0.5 text-[12.5px]">
@@ -250,10 +311,16 @@ function StageHeading({ stage }: { stage: SecurityEventStage }) {
   );
 }
 
-function ActiveStage({ event }: { event: SecurityEvent }) {
+function ActiveStage({
+  event,
+  bulletinDirty,
+}: {
+  event: SecurityEvent;
+  bulletinDirty: boolean;
+}) {
   switch (event.stage) {
     case "BULLETIN":
-      return <BulletinStage event={event} />;
+      return <AwaitingReconStage event={event} bulletinDirty={bulletinDirty} />;
     case "RECON":
       return <ReconStage event={event} />;
     // Сбор группы и выделение сил живут ВНУТРИ шага «Расстановка» — своих
@@ -271,4 +338,91 @@ function ActiveStage({ event }: { event: SecurityEvent }) {
     case "CLOSED":
       return <ClosedView event={event} />;
   }
+}
+
+/**
+ * Контекст объекта посещения в шапке карточки: из реестра сюда приходят
+ * кликом по КОНКРЕТНОМУ объекту, и карточка обязана показать, по какому
+ * объекту её открыли, а не молча показать мероприятие целиком.
+ *
+ * Переключатель появляется, когда объектов больше одного; выбор пишется в
+ * адрес (`?visit=`), чтобы ссылку можно было переслать.
+ *
+ * Расчёт постов по объектам НЕ разнесён (`recon_sector_posts` не размечены
+ * `visitObjectId`), и строка об этом стоит рядом с выбором: иначе смена
+ * объекта выглядела бы фильтром этапов, который на деле ничего не меняет.
+ */
+function VisitObjectContext({
+  event,
+  selected,
+  onSelect,
+}: {
+  event: SecurityEvent;
+  selected: VisitObject | null;
+  onSelect: (visitId: string) => void;
+}) {
+  const visits = event.visitObjects ?? [];
+  if (visits.length === 0 || selected === null) return null;
+
+  return (
+    <div className="mt-2 rounded-md border bg-muted/30 px-3 py-2" data-slot="visit-context">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
+          Объект посещения
+        </span>
+        {visits.length === 1 ? (
+          <span className="text-xs font-semibold">{selected.objectName}</span>
+        ) : (
+          <span
+            role="group"
+            aria-label="Объект посещения мероприятия"
+            className="flex flex-wrap gap-1"
+          >
+            {visits.map((visit) => {
+              const active = visit.id === selected.id;
+              return (
+                <button
+                  key={visit.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => onSelect(visit.id)}
+                  className={
+                    active
+                      ? "rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      : "rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  }
+                >
+                  {visit.objectName}
+                </button>
+              );
+            })}
+          </span>
+        )}
+        {selected.objectId !== null && (
+          <Link
+            href={`/security-ops/objects/${selected.objectId}`}
+            className="text-xs font-semibold text-primary-ink"
+          >
+            карточка объекта →
+          </Link>
+        )}
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {selected.protectedPersonName === ""
+          ? "охраняемое лицо не назначено"
+          : `Охраняемое лицо: ${selected.protectedPersonName}`}
+        {" · "}
+        {selected.passportBinding === null
+          ? "паспорт не привязан"
+          : `паспорт вер. ${selected.passportBinding.versionNumber}`}
+      </p>
+      {visits.length > 1 && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Этапы ниже ведутся по мероприятию целиком: расчёт постов пока не
+          разнесён по объектам, и переключение объекта меняет только эту
+          справку.
+        </p>
+      )}
+    </div>
+  );
 }
