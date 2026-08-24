@@ -183,6 +183,8 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
         "retrieve": _READ_EVENT_PERMISSION,
         "create": _MANAGE_EVENT_PERMISSION,
         "bindable_objects": _MANAGE_EVENT_PERMISSION,
+        "visit_object_add": _MANAGE_EVENT_PERMISSION,
+        "visit_object_remove": _MANAGE_EVENT_PERMISSION,
         "bulletin": _MANAGE_EVENT_PERMISSION,
         "bulletin_complete": _MANAGE_EVENT_PERMISSION,
         "recon": _MANAGE_EVENT_PERMISSION,
@@ -322,6 +324,30 @@ class SecurityEventViewSet(RequirePermissionMixin, viewsets.ViewSet):
             )
         ]
         return Response({"results": results})
+
+    # ── Объекты посещения ───────────────────────────────────────────────
+
+    @action(detail=True, methods=["post"], url_path="visit-objects")
+    def visit_object_add(self, request, pk=None):
+        data = request.data or {}
+        return self._event_response(
+            event_service.add_visit_object(
+                pk,
+                object_id=data.get("objectId"),
+                protected_person_id=data.get("protectedPersonId"),
+            ),
+            status=201,
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"visit-objects/(?P<visit_object_id>[^/.]+)",
+    )
+    def visit_object_remove(self, request, pk=None, visit_object_id=None):
+        return self._event_response(
+            event_service.remove_visit_object(pk, visit_object_id)
+        )
 
     # ── Стадии ──────────────────────────────────────────────────────────
 
