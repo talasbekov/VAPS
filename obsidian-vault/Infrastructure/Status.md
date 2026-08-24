@@ -1,11 +1,28 @@
 ---
 title: Infrastructure — Status
 module: infrastructure
-updated: 2026-08-21
+updated: 2026-08-24
 tags: [infra, status]
 ---
 
 # Infrastructure — Status
+
+## Трекер задач: self-hosted Plane (24.08.2026)
+
+Заказчик отказался от ClickUp; вместо него на рабочей машине поднят [Plane](https://github.com/makeplane/plane) community edition.
+
+- Каталог стека: `/home/erda/plane` (вне репозитория VAPS), проект compose — `plane-selfhost`, 13 контейнеров.
+- Адрес: **http://localhost:8090** (HTTP-порт уведён с 80, HTTPS — 8453): на машине уже живут стенд VAPS `:3106`/`:8100`, Postgres `:5434` и чужие контейнеры.
+- Рабочее пространство `VAPS` (slug `vaps`), 21 проект. Задачи Smart Josparlau (17 штук) перенесены снимком ClickUp; остальные проекты созданы пустыми — данных ClickUp на день переезда достать не удалось.
+- Доступы — `/home/erda/plane/CREDENTIALS.txt` (права 600, вне git). Пароль сгенерирован автоматически и подлежит смене.
+- Справка по стеку и командам — `/home/erda/plane/README-vaps.md`, карта переноса — `/home/erda/plane/migration/PLAN.md`.
+
+**Яма установки, стоившая часа.** Сменить пароли Postgres/RabbitMQ в `variables.env` НЕ достаточно: `docker-compose.yml` строит подключения из `DATABASE_URL`/`AMQP_URL`, а они в поставке ПУСТЫЕ — и подставляется дефолт `postgresql://plane:plane@plane-db/plane`. Базы поднялись с новым паролем, приложение ходило со старым: `migrator` падал с `password authentication failed`, **при этом главная страница отдавала 200**, и только `/api/instances/` выдавал 502. Меняешь пароль — заполняй и строку подключения.
+
+**Вторая яма — регистрация первого администратора.** `POST /api/instances/admins/sign-up/` отвечает 500 (не 4xx), и причина по ответу не видна. Администратор и рабочее пространство заведены напрямую через `manage.py shell` (`User` + `InstanceAdmin` + `Instance.is_setup_done`), после чего вход по паролю и API заработали штатно.
+
+**Память.** Plane + стенд VAPS вместе держат ~10 из 14 ГБ. При тесноте гасить то, что сейчас не нужно: `docker compose -p plane-selfhost --env-file .env down` (данные остаются в томах). Отдельно: Docker на машине держит ~64 ГБ образов, из них ~53 ГБ не используются.
+
 
 _Обновляется по ходу работы. См. также [[Changelog]], [[Decisions]], [[Known-Issues]]._
 
