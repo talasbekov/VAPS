@@ -6,9 +6,14 @@ source: ClickUp · Team Space → 🚀 Проекты → Smart Josparlau (list 
 tags: [backlog, clickup, frontend, реестр-ом]
 ---
 
-# Бэклог ClickUp — Smart Josparlau
+# Бэклог задач — Smart Josparlau
 
-Зеркало списка ClickUp [Smart Josparlau](https://app.clickup.com/v/li/901820659486) (Team Space → 🚀 Проекты, id `901820659486`) на 24.08.2026. Снято 17 задач: **5 открытых, 12 закрытых**.
+> **Переезд 24.08.2026: ClickUp → self-hosted Plane.** Заказчик отказался от ClickUp; вместо него на этой машине поднят [Plane](https://github.com/makeplane/plane) — `/home/erda/plane`, http://localhost:8090 (справка по стеку — `/home/erda/plane/README-vaps.md`). ClickUp с 24.08 не источник задач; таблицы ниже сохранены как СНИМОК его содержимого на день переезда и как карта переноса.
+>
+> **Перенос не завершён.** ClickUp в день переезда ушёл в rate limit («wait 296 minutes») — блокировано и чтение, поэтому выгрузить остальные списки нечем. Перенесены/готовы к переносу только задачи Smart Josparlau (снимок — `/home/erda/plane/migration/clickup-smart-josparlau.json`). Ждут переноса: TenderAI KZ, MasterQala, Клиентские проекты, Цели 2026, Привычки, Быт, CRM (Бизнес/Друзья/Семья/Личное), Финансы (Доходы, Расходы, Инвойсы, Подписки, Налоги), Мои идеи, Референсы, Желания, Inbox, «Задачи дня» — их содержимое НИ РАЗУ не читалось, известны только имена списков.
+
+
+Снимок списка ClickUp [Smart Josparlau](https://app.clickup.com/v/li/901820659486) (Team Space → 🚀 Проекты, id `901820659486`) на 24.08.2026, день переезда. Снято 17 задач: **5 открытых, 12 закрытых** — из открытых три закрыты работой 24.08.
 
 **Как читать.** ClickUp — вход задач от заказчика, vault — источник правды по их разбору и исполнению. Формулировки открытых задач приведены как есть (описания в ClickUp пустые, вся суть в заголовке); разбор и решения — в [[../Frontend/Status]], [[../Frontend/Decisions]], [[../Frontend/Known-Issues]]. Закрывая задачу в ClickUp, отмечать её и здесь + строкой в [[../Frontend/Changelog]].
 
